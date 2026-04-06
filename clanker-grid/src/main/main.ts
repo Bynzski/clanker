@@ -1,4 +1,4 @@
-import { app, BrowserWindow, WebContentsView, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, Menu, WebContentsView, ipcMain, dialog, shell } from 'electron';
 
 // Disable GPU acceleration for compatibility in some environments
 app.disableHardwareAcceleration();
@@ -124,6 +124,10 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+
+  mainWindow.setMenuBarVisibility(false);
+  mainWindow.setAutoHideMenuBar(true);
+  Menu.setApplicationMenu(null);
 
   // Load the app
   if (process.env.NODE_ENV === 'development') {

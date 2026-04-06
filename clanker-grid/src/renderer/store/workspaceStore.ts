@@ -106,6 +106,7 @@ interface WorkspaceState {
   togglePaneLock: (paneId: string) => void;
   toggleBrowserLock: () => void;
   swapPanes: (a: string, b: string) => void;
+  dockPaneToEdge: (paneId: string, edge: 'left' | 'right' | 'top' | 'bottom') => void;
   setSplitRatio: (nodeId: string, ratio: number) => void;
   canAddPane: () => boolean;
 }
@@ -549,6 +550,38 @@ function swapPaneIdsInLayout(
     first: swapPaneIdsInLayout(node.first, a, b)!,
     second: swapPaneIdsInLayout(node.second, a, b)!,
   };
+}
+
+function dockPaneToEdgeInLayout(
+  layoutRoot: LayoutNode | null,
+  paneId: string,
+  edge: 'left' | 'right' | 'top' | 'bottom'
+): LayoutNode | null {
+  if (layoutRoot == null) {
+    return createLayoutLeaf(paneId);
+  }
+
+  const leaves = collectLeafPaneIds(layoutRoot);
+  if (!leaves.includes(paneId)) {
+    return layoutRoot;
+  }
+
+  const trimmedLayout = removePaneFromLayout(layoutRoot, paneId);
+  if (trimmedLayout == null) {
+    return createLayoutLeaf(paneId);
+  }
+
+  const dockedLeaf = createLayoutLeaf(paneId);
+  if (edge === 'left') {
+    return createLayoutSplit(dockedLeaf, trimmedLayout, 'horizontal', 0.5);
+  }
+  if (edge === 'right') {
+    return createLayoutSplit(trimmedLayout, dockedLeaf, 'horizontal', 0.5);
+  }
+  if (edge === 'top') {
+    return createLayoutSplit(dockedLeaf, trimmedLayout, 'vertical', 0.5);
+  }
+  return createLayoutSplit(trimmedLayout, dockedLeaf, 'vertical', 0.5);
 }
 
 function setSplitRatioInLayout(
@@ -1269,6 +1302,23 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   swapPanes: (a, b) => set((state) => {
     if (a === b) return state;
     const nextLayoutRoot = swapPaneIdsInLayout(state.layoutRoot, a, b);
+
+    return {
+      layoutRoot: nextLayoutRoot,
+      layoutRevision: state.layoutRevision + 1,
+      workspaces: state.workspaces.map((workspace) =>
+        workspace.id === state.activeWorkspaceId
+          ? { ...workspace, layoutRoot: nextLayoutRoot }
+          : workspace
+      ),
+    };
+  }),
+
+  dockPaneToEdge: (paneId, edge) => set((state) => {
+    const nextLayoutRoot = dockPaneToEdgeInLayout(state.layoutRoot, paneId, edge);
+    if (nextLayoutRoot === state.layoutRoot) {
+      return state;
+    }
 
     return {
       layoutRoot: nextLayoutRoot,
