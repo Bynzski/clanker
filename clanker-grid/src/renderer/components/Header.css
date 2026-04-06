@@ -1,0 +1,142 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  min-height: 48px;
+  -webkit-app-region: drag;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.app-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  font-family: var(--font-mono);
+}
+
+.header-center {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  -webkit-app-region: no-drag;
+}
+
+.header-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  transition: all var(--transition);
+}
+
+.header-btn:hover {
+  background: var(--border-color);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.header-btn-primary {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #fff;
+}
+
+.header-btn-primary:hover {
+  background: #79b8ff;
+  border-color: #79b8ff;
+  color: var(--bg-primary);
+}
+
+.header-btn-danger {
+  color: var(--text-secondary);
+}
+
+.header-btn-danger:hover {
+  background: var(--accent-error);
+  border-color: var(--accent-error);
+  color: #fff;
+}
+
+/* Harness Pills - Modern selector */
+.harness-pills {
+  display: flex;
+  align-items: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 2px;
+}
+
+.harness-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  transition: all var(--transition);
+  border: 1px solid transparent;
+}
+
+.harness-pill:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.harness-pill.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.harness-pill.active svg {
+  color: var(--accent-primary);
+}
+
+/* Terminal harness indicator - plain icon to differentiate from accented ones */
+.harness-pill[title="Terminal"].active svg {
+  color: var(--text-secondary);
+}
+
+/* Legacy styles for compatibility */
+.layout-select,
+.harness-select {
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+
+.layout-select:hover,
+.harness-select:hover {
+  border-color: var(--text-secondary);
+}
+
+.layout-select option,
+.harness-select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}

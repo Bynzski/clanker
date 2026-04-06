@@ -1,0 +1,93 @@
+.workspace-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 12px 0;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-app-region: no-drag;
+}
+
+.workspace-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 200px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition);
+}
+
+.workspace-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.workspace-tab.active {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border-color: var(--border-color);
+  border-bottom-color: var(--bg-primary);
+}
+
+.workspace-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.workspace-tab-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.workspace-tab.active .workspace-tab-count {
+  background: rgba(88, 166, 255, 0.18);
+  color: var(--accent-primary);
+}
+
+.workspace-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  transition: all var(--transition);
+  opacity: 0;
+}
+
+.workspace-tab:hover .workspace-tab-close {
+  opacity: 1;
+}
+
+.workspace-tab-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.workspace-tab.active .workspace-tab-close {
+  opacity: 1;
+}

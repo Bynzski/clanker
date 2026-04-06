@@ -1,0 +1,40 @@
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px var(--space-md);
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  min-height: 26px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.status-left,
+.status-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.status-center {
+  flex: 1;
+  text-align: center;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-item svg {
+  opacity: 0.8;
+}
+
+.status-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
