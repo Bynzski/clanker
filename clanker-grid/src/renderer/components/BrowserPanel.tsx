@@ -181,8 +181,13 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
 
   return (
     <div className="browser-panel" ref={containerRef}>
-      <div className="browser-toolbar" {...dragHandleProps}>
-        <div className="browser-drag-handle" aria-hidden="true" title="Drag to move pane" />
+      <div className="browser-pane-header" {...dragHandleProps}>
+        <div className="browser-pane-drag-handle" aria-hidden="true" title="Drag to move pane" />
+        <span className="browser-pane-title">Browser</span>
+        <span className="browser-pane-spacer" />
+        {browserLocked ? <Lock size={12} strokeWidth={2} className="browser-pane-lock" /> : null}
+      </div>
+      <div className="browser-toolbar">
         <button
           className="browser-nav-btn"
           onClick={handleBack}

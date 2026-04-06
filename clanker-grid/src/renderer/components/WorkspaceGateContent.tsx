@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { FolderOpen, Folder, Loader2, Brain, Zap, Pi, Play, ChevronRight, Terminal } from 'lucide-react';
+import { FolderOpen, Folder, Loader2, Brain, Zap, Pi, Play, ChevronRight, Terminal, Sparkles } from 'lucide-react';
 import './WorkspaceGate.css';
 
 export interface WorkspaceFormData {
@@ -24,6 +24,7 @@ export const TERMINAL_PRESETS = [
 export const HARNESS_OPTIONS = [
   { id: '', label: 'Terminal', Icon: Terminal },
   { id: 'codex', label: 'Codex', Icon: Brain },
+  { id: 'claude', label: 'Claude', Icon: Sparkles },
   { id: 'opencode', label: 'OpenCode', Icon: Zap },
   { id: 'pi', label: 'Pi', Icon: Pi },
 ];
@@ -36,6 +37,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   const [isFocused, setIsFocused] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState(2); // Default to 2 (index 2)
   const [selectedHarness, setSelectedHarness] = useState('codex'); // Default to codex
+  const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
   
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -61,6 +63,36 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     };
     loadPath();
   }, [initialPath]);
+
+  // Load only the harnesses that are available on this machine
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadHarnessOptions = async () => {
+      try {
+        const options = await window.electronAPI.getHarnessOptions();
+        if (cancelled) return;
+
+        const availableIds = HARNESS_OPTIONS
+          .map((option) => option.id)
+          .filter((id) => id === '' || Boolean(options[id]));
+
+        setAvailableHarnessIds(availableIds);
+        setSelectedHarness((current) => availableIds.includes(current) ? current : (availableIds.find((id) => id !== '') ?? ''));
+      } catch {
+        if (!cancelled) {
+          setAvailableHarnessIds(['']);
+          setSelectedHarness('');
+        }
+      }
+    };
+
+    loadHarnessOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Fetch directory suggestions
   const fetchSuggestions = useCallback(async (path: string) => {
@@ -189,16 +221,16 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     } else if (e.key === '4' && !isFocused) {
       e.preventDefault();
       setSelectedPreset(2);
-    } else if ((e.key === 'b' || e.key === 'B') && !isFocused && harness !== '') {
+    } else if ((e.key === 'b' || e.key === 'B') && !isFocused && selectedHarness !== '') {
       e.preventDefault();
       setSelectedHarness('');
-    } else if ((e.key === 'c' || e.key === 'C') && !isFocused) {
+    } else if ((e.key === 'c' || e.key === 'C') && !isFocused && availableHarnessIds.includes('codex')) {
       e.preventDefault();
       setSelectedHarness('codex');
-    } else if ((e.key === 'o' || e.key === 'O') && !isFocused) {
+    } else if ((e.key === 'o' || e.key === 'O') && !isFocused && availableHarnessIds.includes('opencode')) {
       e.preventDefault();
       setSelectedHarness('opencode');
-    } else if ((e.key === 'p' || e.key === 'P') && !isFocused && !e.metaKey && !e.ctrlKey) {
+    } else if ((e.key === 'p' || e.key === 'P') && !isFocused && !e.metaKey && !e.ctrlKey && availableHarnessIds.includes('pi')) {
       e.preventDefault();
       setSelectedHarness('pi');
     }
@@ -338,12 +370,12 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       <div className="harness-selector">
         <span className="harness-selector-label">Harness</span>
         <div className="harness-options">
-          {HARNESS_OPTIONS.map((harness) => (
+          {HARNESS_OPTIONS.filter((harness) => availableHarnessIds.includes(harness.id)).map((harness) => (
             <button
               key={harness.id}
               className={`harness-option ${selectedHarness === harness.id ? 'selected' : ''}`}
               onClick={() => setSelectedHarness(harness.id)}
-              title={harness.id ? `Press ${harness.id[0].toUpperCase()} to select` : 'No harness (basic terminal)'}
+              title={harness.id ? `Select ${harness.label}` : 'No harness (basic terminal)'}
             >
               <harness.Icon size={20} strokeWidth={2} className="harness-icon" />
               <span className="harness-label">{harness.label}</span>
@@ -382,7 +414,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
           <kbd>Tab</kbd> autocomplete
         </span>
         <span className="shortcut">
-          <kbd>B</kbd><kbd>C</kbd><kbd>O</kbd><kbd>P</kbd> harness
+          Use buttons or shortcuts to choose a harness
         </span>
         <span className="shortcut">
           <kbd>↵</kbd> launch

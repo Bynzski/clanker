@@ -10,6 +10,55 @@
   position: relative;
 }
 
+.browser-pane-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.02), transparent), var(--bg-secondary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  cursor: grab;
+  user-select: none;
+}
+
+.browser-pane-header:active {
+  cursor: grabbing;
+}
+
+.browser-pane-drag-handle {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background:
+    radial-gradient(circle at 3px 3px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 9px 3px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 3px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 9px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px);
+  opacity: 0.55;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.browser-pane-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.browser-pane-spacer {
+  flex: 1;
+}
+
+.browser-pane-lock {
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
 .browser-toolbar {
   display: flex;
   align-items: center;

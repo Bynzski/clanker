@@ -2,10 +2,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-sm) var(--space-md);
-  background: var(--bg-secondary);
+  padding: 10px var(--space-md);
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.01), transparent), var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
-  min-height: 48px;
+  min-height: 46px;
   -webkit-app-region: drag;
 }
 
@@ -40,6 +40,7 @@
   align-items: center;
   gap: var(--space-sm);
   -webkit-app-region: no-drag;
+  flex-wrap: wrap;
 }
 
 .header-btn {

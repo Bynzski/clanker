@@ -8,6 +8,7 @@ app.commandLine.appendSwitch('disable-dev-shm-usage');
 app.commandLine.appendSwitch('disable-setuid-sandbox');
 
 import * as path from 'path';
+import * as fs from 'fs';
 import * as pty from 'node-pty';
 import Store from 'electron-store';
 
@@ -51,11 +52,52 @@ export const HARNESS_OPTIONS: Record<string, HarnessConfig> = {
   },
   'pi': {
     name: 'Pi',
-    command: 'npx',
-    args: ['-y', '@mariozechner/pi-coding-agent'],
+    command: 'pi',
+    args: [],
     icon: 'π',
   },
+  'claude': {
+    name: 'Claude',
+    command: 'claude',
+    args: [],
+    icon: '✨',
+  },
 };
+
+function isCommandAvailable(command: string): boolean {
+  const searchPaths = new Set<string>([
+    process.cwd(),
+    path.join(process.cwd(), 'node_modules', '.bin'),
+    app.getAppPath(),
+    path.join(app.getAppPath(), 'node_modules', '.bin'),
+    ...(process.env.PATH ?? '').split(path.delimiter).filter(Boolean),
+  ]);
+
+  const extensions = process.platform === 'win32'
+    ? (process.env.PATHEXT?.split(';').filter(Boolean) ?? ['.EXE', '.CMD', '.BAT', '.COM'])
+    : [''];
+  const candidates = path.extname(command) ? [command] : [command, ...extensions.map((ext) => `${command}${ext}`)];
+
+  for (const searchPath of searchPaths) {
+    for (const candidate of candidates) {
+      const fullPath = path.isAbsolute(candidate) ? candidate : path.join(searchPath, candidate);
+      try {
+        fs.accessSync(fullPath, fs.constants.X_OK);
+        return true;
+      } catch {
+        // continue searching
+      }
+    }
+  }
+
+  return false;
+}
+
+function getAvailableHarnessOptions() {
+  return Object.fromEntries(
+    Object.entries(HARNESS_OPTIONS).filter(([, config]) => isCommandAvailable(config.command))
+  );
+}
 
 const store = new Store<StoreSchema>({
   defaults: {
@@ -118,6 +160,7 @@ function createWindow() {
     backgroundColor: '#0d1117',
     icon: getIconPath(),
     show: true,
+    frame: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -360,8 +403,29 @@ ipcMain.handle('open-external', (_, url: string) => {
   shell.openExternal(url);
 });
 
+ipcMain.handle('minimize-window', () => {
+  mainWindow?.minimize();
+});
+
+ipcMain.handle('toggle-maximize-window', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
+});
+
+ipcMain.handle('close-window', () => {
+  mainWindow?.close();
+});
+
+ipcMain.handle('is-maximized-window', () => {
+  return mainWindow?.isMaximized() ?? false;
+});
+
 ipcMain.handle('get-harness-options', () => {
-  return HARNESS_OPTIONS;
+  return getAvailableHarnessOptions();
 });
 
 ipcMain.handle('get-browser-url', () => {

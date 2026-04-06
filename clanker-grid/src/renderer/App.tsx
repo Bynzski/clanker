@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import Header from './components/Header';
+import TitleBar from './components/TitleBar';
 import DynamicPaneLayout from './components/DynamicPaneLayout';
 import StatusBar from './components/StatusBar';
-import WorkspaceTabs from './components/WorkspaceTabs';
 import { WorkspaceGateFullscreen, WorkspaceGateModal } from './components/WorkspaceGate';
 import { Pane, Terminal, useWorkspaceStore } from './store/workspaceStore';
 import './App.css';
@@ -77,8 +77,8 @@ function App() {
 
   return (
     <div className="app">
+      <TitleBar />
       <Header onOpenWorkspace={() => setShowWorkspaceGate(true)} />
-      <WorkspaceTabs />
       <div className="main-content">
         <DynamicPaneLayout />
       </div>

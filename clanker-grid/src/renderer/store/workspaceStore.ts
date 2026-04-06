@@ -749,6 +749,13 @@ const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   layoutRoot: buildWorkspaceLayout(workspace),
 });
 
+function getWorkspaceNameFromPath(workspacePath: string): string {
+  const trimmed = workspacePath.replace(/\/+$/, '');
+  if (!trimmed) return 'Workspace';
+  const baseName = trimmed.split('/').pop();
+  return baseName && baseName.length > 0 ? baseName : 'Workspace';
+}
+
 const defaultWorkspaceState = {
   name: '',
   workspacePath: '',
@@ -771,7 +778,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
 
   addWorkspace: (workspace) => set((state) => {
     const id = createWorkspaceId();
-    const defaultName = workspace.name || workspace.workspacePath.split('/').pop() || 'Workspace';
+    const defaultName = workspace.name || getWorkspaceNameFromPath(workspace.workspacePath);
     const nextWorkspace: WorkspaceTab = sanitizeWorkspace({ id, ...workspace, name: defaultName });
 
     return {
