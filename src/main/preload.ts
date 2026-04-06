@@ -54,4 +54,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Harness
   getHarnessOptions: () => ipcRenderer.invoke('get-harness-options'),
+
+  // Git operations - managed by GitService in main process
+  gitStartPolling: (workspacePath: string) => ipcRenderer.invoke('git-start-polling', workspacePath),
+  gitStopPolling: () => ipcRenderer.invoke('git-stop-polling'),
+  gitGetStatus: (workspacePath: string) => ipcRenderer.invoke('git-get-status', workspacePath),
+  gitStage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke('git-stage', workspacePath, files),
+  gitCommit: (workspacePath: string, message: string) => ipcRenderer.invoke('git-commit', workspacePath, message),
+  gitIsRepo: (workspacePath: string) => ipcRenderer.invoke('git-is-repo', workspacePath),
+  gitRefresh: () => ipcRenderer.invoke('git-refresh'),
+  onGitStatusUpdate: (callback: (status: {
+    success: boolean;
+    isRepo: boolean;
+    changes: Array<{ path: string; status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed'; staged: boolean }>;
+    error?: string;
+  }) => void) => {
+    const handler = (_: any, status: any) => callback(status);
+    ipcRenderer.on('git-status-update', handler);
+    return () => ipcRenderer.removeListener('git-status-update', handler);
+  },
 });

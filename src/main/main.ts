@@ -110,6 +110,223 @@ let mainWindow: BrowserWindow | null = null;
 let browserView: WebContentsView | null = null;
 let currentBrowserUrl = 'https://github.com';
 
+// ============================================================================
+// Git Service - Handles all git operations in the main process
+// This service manages polling and can be extended for GitHub API integration
+// ============================================================================
+
+interface GitStatusEntry {
+  path: string;
+  status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed';
+  staged: boolean;
+}
+
+interface GitStatusResult {
+  success: boolean;
+  isRepo: boolean;
+  changes: GitStatusEntry[];
+  error?: string;
+}
+
+class GitService {
+  private pollingInterval: NodeJS.Timeout | null = null;
+  private currentWorkspacePath: string | null = null;
+  private pollIntervalMs = 30000; // 30 seconds
+
+  /**
+   * Parse git status --porcelain output into structured data
+   */
+  private parseGitStatus(statusOutput: string): GitStatusEntry[] {
+    const changes: GitStatusEntry[] = [];
+    const lines = statusOutput.trim().split('\n').filter(Boolean);
+
+    for (const line of lines) {
+      const indexStatus = line[0];
+      const workTreeStatus = line[1];
+      const filePath = line.slice(3).trim();
+
+      // Determine if staged (has changes in index)
+      const staged = indexStatus !== ' ' && indexStatus !== '?';
+
+      // Determine status type
+      let status: GitStatusEntry['status'] = 'modified';
+      const statusChar = staged ? indexStatus : workTreeStatus;
+
+      switch (statusChar) {
+        case 'M':
+          status = 'modified';
+          break;
+        case 'A':
+          status = 'added';
+          break;
+        case 'D':
+          status = 'deleted';
+          break;
+        case 'R':
+          status = 'renamed';
+          break;
+        case '?':
+          status = 'untracked';
+          break;
+        default:
+          status = 'modified';
+      }
+
+      changes.push({ path: filePath, status, staged });
+    }
+
+    return changes;
+  }
+
+  /**
+   * Get git status for a workspace
+   */
+  async getStatus(workspacePath: string): Promise<GitStatusResult> {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+
+    try {
+      // Check if it's a git repository
+      await execAsync('git rev-parse --git-dir', { cwd: workspacePath });
+
+      // Get porcelain status
+      const { stdout } = await execAsync('git status --porcelain', { cwd: workspacePath });
+      const changes = this.parseGitStatus(stdout);
+
+      return { success: true, isRepo: true, changes };
+    } catch {
+      // Not a git repository or git not available
+      return { success: false, isRepo: false, changes: [] };
+    }
+  }
+
+  /**
+   * Stage files in the workspace
+   */
+  async stage(workspacePath: string, files?: string[]): Promise<{ success: boolean; error?: string }> {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+
+    try {
+      if (files && files.length > 0) {
+        await execAsync(`git add ${files.map(f => `"${f}"`).join(' ')}`, { cwd: workspacePath });
+      } else {
+        await execAsync('git add -A', { cwd: workspacePath });
+      }
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Failed to stage files' };
+    }
+  }
+
+  /**
+   * Create a commit in the workspace
+   */
+  async commit(workspacePath: string, message: string): Promise<{ success: boolean; error?: string }> {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+
+    if (!message || message.trim().length === 0) {
+      return { success: false, error: "Commit message cannot be empty" };
+    }
+
+    // Sanitize message to prevent injection
+    const sanitizedMessage = message.trim().replace(/"/g, '\\"');
+
+    try {
+      await execAsync(`git commit -m "${sanitizedMessage}"`, { cwd: workspacePath });
+      return { success: true };
+    } catch (error: any) {
+      const errorMsg = error.stderr || error.message || '';
+      if (errorMsg.includes('nothing to commit')) {
+        return { success: false, error: 'Nothing to commit' };
+      }
+      return { success: false, error: errorMsg || 'Failed to create commit' };
+    }
+  }
+
+  /**
+   * Check if workspace is a git repository
+   */
+  async isRepo(workspacePath: string): Promise<boolean> {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+
+    try {
+      await execAsync('git rev-parse --git-dir', { cwd: workspacePath });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Start polling git status for a workspace
+   * Emits 'git-status-update' events to the renderer
+   */
+  startPolling(workspacePath: string): void {
+    // Stop any existing polling
+    this.stopPolling();
+
+    this.currentWorkspacePath = workspacePath;
+
+    // Emit initial status immediately
+    this.emitStatusUpdate(workspacePath);
+
+    // Then poll at interval
+    this.pollingInterval = setInterval(async () => {
+      if (this.currentWorkspacePath) {
+        await this.emitStatusUpdate(this.currentWorkspacePath);
+      }
+    }, this.pollIntervalMs);
+  }
+
+  /**
+   * Stop polling git status
+   */
+  stopPolling(): void {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
+    this.currentWorkspacePath = null;
+  }
+
+  /**
+   * Force an immediate status refresh
+   */
+  async refresh(): Promise<GitStatusResult | null> {
+    if (!this.currentWorkspacePath) {
+      return null;
+    }
+    return this.getStatus(this.currentWorkspacePath);
+  }
+
+  /**
+   * Get current workspace path
+   */
+  getCurrentWorkspace(): string | null {
+    return this.currentWorkspacePath;
+  }
+
+  /**
+   * Emit status update to renderer
+   */
+  private async emitStatusUpdate(workspacePath: string): Promise<void> {
+    if (!mainWindow) return;
+
+    const result = await this.getStatus(workspacePath);
+    mainWindow.webContents.send('git-status-update', result);
+  }
+}
+
+// Singleton instance
+const gitService = new GitService();
+
 function emitFitAllPanesShortcut() {
   mainWindow?.webContents.send('fit-all-panes');
 }
@@ -185,6 +402,7 @@ function createWindow() {
     mainWindow = null;
     terminals.forEach((term) => term.pty.kill());
     terminals.clear();
+    gitService.stopPolling();
   });
 }
 
@@ -438,6 +656,50 @@ ipcMain.handle('can-go-back', () => {
 
 ipcMain.handle('can-go-forward', () => {
   return browserView?.webContents.navigationHistory.canGoForward() ?? false;
+});
+
+// ============================================================================
+// Git IPC Handlers - Delegated to GitService
+// ============================================================================
+
+ipcMain.handle('git-start-polling', (_, workspacePath: string) => {
+  gitService.startPolling(workspacePath);
+});
+
+ipcMain.handle('git-stop-polling', () => {
+  gitService.stopPolling();
+});
+
+ipcMain.handle('git-get-status', async (_, workspacePath: string) => {
+  return gitService.getStatus(workspacePath);
+});
+
+ipcMain.handle('git-stage', async (_, workspacePath: string, files?: string[]) => {
+  const result = await gitService.stage(workspacePath, files);
+  // Refresh status after staging
+  const status = await gitService.refresh();
+  if (mainWindow && status) {
+    mainWindow.webContents.send('git-status-update', status);
+  }
+  return result;
+});
+
+ipcMain.handle('git-commit', async (_, workspacePath: string, message: string) => {
+  const result = await gitService.commit(workspacePath, message);
+  // Refresh status after commit
+  const status = await gitService.refresh();
+  if (mainWindow && status) {
+    mainWindow.webContents.send('git-status-update', status);
+  }
+  return result;
+});
+
+ipcMain.handle('git-is-repo', async (_, workspacePath: string) => {
+  return gitService.isRepo(workspacePath);
+});
+
+ipcMain.handle('git-refresh', async () => {
+  return gitService.refresh();
 });
 
 // App lifecycle

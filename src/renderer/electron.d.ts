@@ -37,6 +37,29 @@ interface ElectronAPI {
   getHarnessOptions: () => Promise<Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>>;
 
   onFitAllPanes: (callback: () => void) => () => void;
+
+  // Git operations - managed by GitService in main process
+  gitStartPolling: (workspacePath: string) => Promise<void>;
+  gitStopPolling: () => Promise<void>;
+  gitGetStatus: (workspacePath: string) => Promise<GitStatusResult>;
+  gitStage: (workspacePath: string, files?: string[]) => Promise<{ success: boolean; error?: string }>;
+  gitCommit: (workspacePath: string, message: string) => Promise<{ success: boolean; error?: string }>;
+  gitIsRepo: (workspacePath: string) => Promise<boolean>;
+  gitRefresh: () => Promise<GitStatusResult | null>;
+  onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => () => void;
+}
+
+interface GitStatusResult {
+  success: boolean;
+  isRepo: boolean;
+  changes: GitStatus[];
+  error?: string;
+}
+
+interface GitStatus {
+  path: string;
+  status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed';
+  staged: boolean;
 }
 
 declare global {
