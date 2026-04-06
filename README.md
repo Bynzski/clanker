@@ -21,7 +21,6 @@ A developer workspace tool featuring a terminal grid and integrated web browser,
 ### Installation
 
 ```bash
-cd clanker-grid
 npm install
 ```
 
@@ -40,11 +39,14 @@ npm run build
 ## Project Structure
 
 ```
-clanker-grid/
+.
 ├── src/
 │   ├── main/          # Electron main process
 │   └── renderer/      # React frontend
-├── clanker-grid/      # Project source (nested)
+├── dist/              # Built renderer
+├── build/             # Build resources
+├── node_modules/
+├── package.json
 └── ...
 ```
 
