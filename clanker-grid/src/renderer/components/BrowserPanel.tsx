@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, LocateFixed, Lock, Unlock } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { useDragHandle } from './DynamicPaneLayout';
 import './BrowserPanel.css';
 
 interface BrowserPanelProps {
@@ -18,6 +19,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { browserPane, bringBrowserIntoView, toggleBrowserLock } = useWorkspaceStore();
   const browserLocked = browserPane?.locked ?? false;
+  const dragHandleProps = useDragHandle();
 
   // Update bounds for the browser content area
   const updateBounds = useCallback(() => {
@@ -165,7 +167,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
 
   return (
     <div className="browser-panel" ref={containerRef}>
-      <div className="browser-toolbar">
+      <div className="browser-toolbar" {...dragHandleProps}>
         <button
           className="browser-nav-btn"
           onClick={handleBack}

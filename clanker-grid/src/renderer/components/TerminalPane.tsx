@@ -3,21 +3,22 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { LocateFixed, Lock, Unlock } from 'lucide-react';
+import { useDragHandle } from './DynamicPaneLayout';
 import './TerminalPane.css';
 import '@xterm/xterm/css/xterm.css';
 
 interface Props {
   paneId: string;
   compact?: boolean;
-  onSwapPane?: (a: string, b: string) => void;
 }
 
-export default function TerminalPane({ paneId, compact = false, onSwapPane }: Props) {
+export default function TerminalPane({ paneId, compact = false }: Props) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isActive, setIsActive] = useState(false);
+  const dragHandleProps = useDragHandle();
 
   const {
     setActiveTerminal,
@@ -29,8 +30,8 @@ export default function TerminalPane({ paneId, compact = false, onSwapPane }: Pr
     bringPaneIntoView,
     togglePaneLock,
   } = useWorkspaceStore();
-  const pane = panes.find((item) => item.id === paneId);
-  const terminal = terminals.find((item) => item.id === pane?.terminalId);
+  const pane = panes.find((item: typeof panes[0]) => item.id === paneId);
+  const terminal = terminals.find((item: typeof terminals[0]) => item.id === pane?.terminalId);
   const paneLocked = pane?.locked ?? false;
 
   const resizeTerminal = useCallback(() => {
@@ -83,8 +84,6 @@ export default function TerminalPane({ paneId, compact = false, onSwapPane }: Pr
       macOptionClickForcesSelection: true,
       macOptionIsMeta: true,
       scrollback: 10000,
-      // Performance optimizations
-      overviewRulerWidth: 0,
     });
 
     const fitAddon = new FitAddon();
@@ -259,28 +258,8 @@ export default function TerminalPane({ paneId, compact = false, onSwapPane }: Pr
   return (
     <div className={`terminal-pane ${compact ? 'compact' : ''} ${isActive ? 'active' : ''}`}>
       {!compact && (
-        <div className="terminal-header">
-          <span
-            className="terminal-title terminal-drag-handle"
-            draggable={!!onSwapPane && !paneLocked}
-            onDragStart={(event) => {
-              if (!onSwapPane || paneLocked) return;
-              event.dataTransfer.effectAllowed = 'move';
-              event.dataTransfer.setData('text/plain', paneId);
-            }}
-            onDragOver={(event) => {
-              if (!onSwapPane || paneLocked) return;
-              event.preventDefault();
-            }}
-            onDrop={(event) => {
-              if (!onSwapPane || paneLocked) return;
-              event.preventDefault();
-              const sourceId = event.dataTransfer.getData('text/plain');
-              if (sourceId && sourceId !== paneId) {
-                onSwapPane(sourceId, paneId);
-              }
-            }}
-          />
+        <div className="terminal-header" {...dragHandleProps}>
+          <span className="terminal-title" />
           <div className="terminal-header-actions">
             <button className="terminal-action" onClick={handleBringIntoView} title="Bring into view">
               <LocateFixed size={14} strokeWidth={2} />
