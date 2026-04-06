@@ -27,20 +27,27 @@ interface HarnessConfig {
   args: string[];
   name: string;
   icon: string;
+  env?: Record<string, string>;
 }
 
 export const HARNESS_OPTIONS: Record<string, HarnessConfig> = {
   'codex': {
     name: 'Codex',
     command: 'codex',
-    args: [],
+    args: ['--yolo'],
     icon: '🧠',
   },
   'opencode': {
     name: 'OpenCode',
-    command: 'npx',
-    args: ['-y', 'opencode'],
+    command: 'opencode',
+    args: ['--pure'],
     icon: '⚡',
+    env: {
+      OPENCODE_PERMISSION: JSON.stringify({
+        bash: { '*': 'allow' },
+        edit: 'allow',
+      }),
+    },
   },
   'pi': {
     name: 'Pi',
@@ -141,7 +148,7 @@ function initBrowserView() {
   browserView = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
-      partition: 'browser',
+      partition: 'persist:browser',
     },
   });
 
@@ -219,11 +226,14 @@ ipcMain.handle('spawn-terminal', (_, workingDir: string, harness?: string) => {
   // --login: load profile files (~/.bash_profile, ~/.zprofile)
   const shellArgs = ['-i'];
   
+  const harnessEnv = harness && HARNESS_OPTIONS[harness]?.env ? HARNESS_OPTIONS[harness].env : {};
+
   const ptyProcess = pty.spawn(userShell, shellArgs, {
     name: 'xterm-256color',
     cwd: workingDir || store.get('lastWorkspace'),
     env: {
       ...process.env as { [key: string]: string },
+      ...harnessEnv,
       // Ensure proper terminal settings
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
@@ -319,14 +329,14 @@ ipcMain.handle('browser-navigate', (_, url: string) => {
 });
 
 ipcMain.handle('browser-back', () => {
-  if (browserView && browserView.webContents.canGoBack()) {
-    browserView.webContents.goBack();
+  if (browserView && browserView.webContents.navigationHistory.canGoBack()) {
+    browserView.webContents.navigationHistory.goBack();
   }
 });
 
 ipcMain.handle('browser-forward', () => {
-  if (browserView && browserView.webContents.canGoForward()) {
-    browserView.webContents.goForward();
+  if (browserView && browserView.webContents.navigationHistory.canGoForward()) {
+    browserView.webContents.navigationHistory.goForward();
   }
 });
 
@@ -355,11 +365,11 @@ ipcMain.handle('get-browser-url', () => {
 });
 
 ipcMain.handle('can-go-back', () => {
-  return browserView?.webContents.canGoBack() ?? false;
+  return browserView?.webContents.navigationHistory.canGoBack() ?? false;
 });
 
 ipcMain.handle('can-go-forward', () => {
-  return browserView?.webContents.canGoForward() ?? false;
+  return browserView?.webContents.navigationHistory.canGoForward() ?? false;
 });
 
 // App lifecycle
