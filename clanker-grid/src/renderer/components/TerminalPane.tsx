@@ -259,6 +259,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
     <div className={`terminal-pane ${compact ? 'compact' : ''} ${isActive ? 'active' : ''}`}>
       {!compact && (
         <div className="terminal-header" {...dragHandleProps}>
+          <div className="terminal-drag-handle" aria-hidden="true" title="Drag to move pane" />
           <div className="terminal-status-indicator" data-active={isActive} />
           <span className="terminal-title" />
           <div className="terminal-header-actions">

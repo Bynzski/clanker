@@ -4,11 +4,14 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  closestCorners,
+  pointerWithin,
   useSensor,
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
+  type CollisionDetection,
 } from '@dnd-kit/core';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import type {
@@ -20,6 +23,8 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import TerminalPane from './TerminalPane';
 import BrowserPanel from './BrowserPanel';
 import './DynamicPaneLayout.css';
+
+type DockEdge = 'left' | 'right' | 'top' | 'bottom';
 
 function isLeaf(node: LayoutNode): node is LayoutLeaf {
   return node.type === 'leaf';
@@ -247,11 +252,41 @@ function renderLayout(root: LayoutNode | null, draggedPaneId: string | null, ove
   return <LayoutNodeView node={root} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />;
 }
 
+function DockEdgeTargets({ activeEdge, isDragging }: { activeEdge: DockEdge | null; isDragging: boolean }) {
+  const left = useDroppable({ id: 'dock-left', data: { edge: 'left' as DockEdge } });
+  const right = useDroppable({ id: 'dock-right', data: { edge: 'right' as DockEdge } });
+  const top = useDroppable({ id: 'dock-top', data: { edge: 'top' as DockEdge } });
+  const bottom = useDroppable({ id: 'dock-bottom', data: { edge: 'bottom' as DockEdge } });
+
+  return (
+    <div className={`dock-edge-overlay ${isDragging ? 'dragging' : ''}`} aria-hidden="true">
+      <div ref={left.setNodeRef} className={`dock-edge dock-left ${activeEdge === 'left' ? 'over' : ''}`}>
+        <span className="dock-edge-label">Dock left</span>
+      </div>
+      <div ref={right.setNodeRef} className={`dock-edge dock-right ${activeEdge === 'right' ? 'over' : ''}`}>
+        <span className="dock-edge-label">Dock right</span>
+      </div>
+      <div ref={top.setNodeRef} className={`dock-edge dock-top ${activeEdge === 'top' ? 'over' : ''}`}>
+        <span className="dock-edge-label">Dock top</span>
+      </div>
+      <div ref={bottom.setNodeRef} className={`dock-edge dock-bottom ${activeEdge === 'bottom' ? 'over' : ''}`}>
+        <span className="dock-edge-label">Dock bottom</span>
+      </div>
+    </div>
+  );
+}
+
+const edgeFriendlyCollisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  return pointerCollisions.length > 0 ? pointerCollisions : closestCorners(args);
+};
+
 export default function DynamicPaneLayout() {
-  const { layoutRoot, swapPanes } = useWorkspaceStore();
+  const { layoutRoot, swapPanes, dockPaneToEdge } = useWorkspaceStore();
   
   const [activePaneId, setActivePaneId] = useState<string | null>(null);
   const [overPaneId, setOverPaneId] = useState<string | null>(null);
+  const [overDockEdge, setOverDockEdge] = useState<DockEdge | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -263,39 +298,57 @@ export default function DynamicPaneLayout() {
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActivePaneId(event.active.id as string);
+    setOverPaneId(null);
+    setOverDockEdge(null);
   }, []);
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
     const { over } = event;
     if (over) {
-      // Extract paneId from droppable id (may have "drop-" prefix)
       const overId = over.id as string;
+      if (overId.startsWith('dock-')) {
+        setOverDockEdge(overId.slice(5) as DockEdge);
+        setOverPaneId(null);
+        return;
+      }
+
+      // Extract paneId from droppable id (may have "drop-" prefix)
       const paneId = overId.startsWith('drop-') ? overId.slice(5) : overId;
       setOverPaneId(paneId);
+      setOverDockEdge(null);
     } else {
       setOverPaneId(null);
+      setOverDockEdge(null);
     }
   }, []);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
+    const activeId = active.id as string;
     
-    if (over && active.id !== over.id) {
-      // Extract paneId from droppable id
+    if (over) {
       const overId = over.id as string;
-      const targetPaneId = overId.startsWith('drop-') ? overId.slice(5) : overId;
-      
-      // Swap the panes
-      swapPanes(active.id as string, targetPaneId);
+
+      if (overId.startsWith('dock-')) {
+        dockPaneToEdge(activeId, overId.slice(5) as DockEdge);
+      } else if (activeId !== overId) {
+        // Extract paneId from droppable id
+        const targetPaneId = overId.startsWith('drop-') ? overId.slice(5) : overId;
+        
+        // Swap the panes
+        swapPanes(activeId, targetPaneId);
+      }
     }
     
     setActivePaneId(null);
     setOverPaneId(null);
-  }, [swapPanes]);
+    setOverDockEdge(null);
+  }, [dockPaneToEdge, swapPanes]);
 
   const handleDragCancel = useCallback(() => {
     setActivePaneId(null);
     setOverPaneId(null);
+    setOverDockEdge(null);
   }, []);
 
   if (layoutRoot == null) {
@@ -312,6 +365,7 @@ export default function DynamicPaneLayout() {
   return (
     <DndContext
       sensors={sensors}
+      collisionDetection={edgeFriendlyCollisionDetection}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -321,6 +375,7 @@ export default function DynamicPaneLayout() {
         <div className="split-root">
           {renderLayout(layoutRoot, activePaneId, overPaneId)}
         </div>
+        <DockEdgeTargets activeEdge={overDockEdge} isDragging={activePaneId != null} />
       </div>
       <DragOverlay>
         {/* We could add a drag preview here if needed */}

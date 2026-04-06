@@ -17,6 +17,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const rafRef = useRef<number | null>(null);
   const { browserPane, bringBrowserIntoView, toggleBrowserLock } = useWorkspaceStore();
   const browserLocked = browserPane?.locked ?? false;
   const dragHandleProps = useDragHandle();
@@ -43,13 +44,23 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
     });
   }, []);
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
+  const scheduleBoundsUpdate = useCallback(() => {
+    if (rafRef.current != null) {
+      window.cancelAnimationFrame(rafRef.current);
+    }
+
+    rafRef.current = window.requestAnimationFrame(() => {
+      rafRef.current = null;
       updateBounds();
     });
+  }, [updateBounds]);
+
+  useEffect(() => {
+    scheduleBoundsUpdate();
+    const frame = window.requestAnimationFrame(scheduleBoundsUpdate);
 
     return () => window.cancelAnimationFrame(frame);
-  }, [layoutVersion, updateBounds]);
+  }, [layoutVersion, scheduleBoundsUpdate]);
 
   // Set up resize observer to track container size changes
   useEffect(() => {
@@ -60,13 +71,13 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
       if (resizeTimeoutRef.current) {
         clearTimeout(resizeTimeoutRef.current);
       }
-      resizeTimeoutRef.current = setTimeout(updateBounds, 16); // ~60fps
+      resizeTimeoutRef.current = setTimeout(scheduleBoundsUpdate, 16); // ~60fps
     });
 
     resizeObserver.observe(containerRef.current);
 
     // Initial bounds update
-    updateBounds();
+    scheduleBoundsUpdate();
 
     return () => {
       resizeObserver.disconnect();
@@ -74,7 +85,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
         clearTimeout(resizeTimeoutRef.current);
       }
     };
-  }, [updateBounds]);
+  }, [scheduleBoundsUpdate]);
 
   // Update bounds on window resize
   useEffect(() => {
@@ -82,12 +93,12 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
       if (resizeTimeoutRef.current) {
         clearTimeout(resizeTimeoutRef.current);
       }
-      resizeTimeoutRef.current = setTimeout(updateBounds, 16);
+      resizeTimeoutRef.current = setTimeout(scheduleBoundsUpdate, 16);
     };
 
     window.addEventListener('resize', handleWindowResize);
     return () => window.removeEventListener('resize', handleWindowResize);
-  }, [updateBounds]);
+  }, [scheduleBoundsUpdate]);
 
   // Sync URL input when prop changes
   useEffect(() => {
@@ -113,6 +124,9 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
   // Hide browser view when component unmounts
   useEffect(() => {
     return () => {
+      if (rafRef.current != null) {
+        window.cancelAnimationFrame(rafRef.current);
+      }
       window.electronAPI.browserHide();
     };
   }, []);
@@ -168,6 +182,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
   return (
     <div className="browser-panel" ref={containerRef}>
       <div className="browser-toolbar" {...dragHandleProps}>
+        <div className="browser-drag-handle" aria-hidden="true" title="Drag to move pane" />
         <button
           className="browser-nav-btn"
           onClick={handleBack}
