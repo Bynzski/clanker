@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { FolderOpen, Plus, Globe, X, Brain, Zap, Pi, Terminal, LayoutGrid, Sparkles } from 'lucide-react';
+import GitButton from './GitButton';
 import './Header.css';
 
 export const HARNESS_OPTIONS = [
@@ -149,6 +150,10 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
           <X size={15} strokeWidth={2} />
           Close Workspace
         </button>
+        
+        {workspacePath && (
+          <GitButton workspacePath={workspacePath} />
+        )}
       </div>
     </header>
   );
