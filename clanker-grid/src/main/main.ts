@@ -184,12 +184,28 @@ ipcMain.handle('read-directory', async (_, dirPath: string) => {
 
 ipcMain.handle('spawn-terminal', (_, workingDir: string, harness?: string) => {
   const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
   
-  const ptyProcess = pty.spawn(shell, [], {
+  // Use user's default shell, fallback to bash
+  const userShell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
+  
+  // Spawn with interactive flags for better shell experience
+  // -i: interactive mode (enables completion, aliases, etc.)
+  // --login: load profile files (~/.bash_profile, ~/.zprofile)
+  const shellArgs = ['-i'];
+  
+  const ptyProcess = pty.spawn(userShell, shellArgs, {
     name: 'xterm-256color',
     cwd: workingDir || store.get('lastWorkspace'),
-    env: process.env as { [key: string]: string },
+    env: {
+      ...process.env as { [key: string]: string },
+      // Ensure proper terminal settings
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      // Helpful for shells that detect terminal
+      TERM_PROGRAM: 'clanker-grid',
+      // Enable true color
+      FORCE_COLOR: '1',
+    },
   });
 
   const terminal: Terminal = { id, pid: ptyProcess.pid, pty: ptyProcess, buffer: '' };

@@ -33,6 +33,7 @@ export default function TerminalPane({ terminal, paneId, compact = false }: Prop
     if (terminalRef.current == null || xtermRef.current != null) return;
 
     const xterm = new XTerm({
+      allowTransparency: true,
       theme: {
         background: '#0d1117',
         foreground: '#e6edf3',
@@ -56,11 +57,21 @@ export default function TerminalPane({ terminal, paneId, compact = false }: Prop
         brightCyan: '#56d4dd',
         brightWhite: '#ffffff',
       },
-      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+      fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", "Fira Mono", Menlo, Consolas, monospace',
       fontSize: 13,
+      fontWeight: '400',
+      fontWeightBold: '700',
+      lineHeight: 1.2,
+      letterSpacing: 0,
       cursorBlink: true,
       cursorStyle: 'bar',
+      cursorInactiveStyle: 'underline',
+      allowProposedApi: true,
+      macOptionClickForcesSelection: true,
+      macOptionIsMeta: true,
       scrollback: 10000,
+      // Performance optimizations
+      overviewRulerWidth: 0,
     });
 
     const fitAddon = new FitAddon();
