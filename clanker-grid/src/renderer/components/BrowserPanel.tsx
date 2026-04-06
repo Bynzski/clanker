@@ -1,19 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, LocateFixed, Lock, Unlock } from 'lucide-react';
+import { useWorkspaceStore } from '../store/workspaceStore';
 import './BrowserPanel.css';
 
 interface BrowserPanelProps {
   url: string;
   onUrlChange: (url: string) => void;
+  layoutVersion: number;
 }
 
-export default function BrowserPanel({ url, onUrlChange }: BrowserPanelProps) {
+export default function BrowserPanel({ url, onUrlChange, layoutVersion }: BrowserPanelProps) {
   const [inputUrl, setInputUrl] = useState(url);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const { browserPane, bringBrowserIntoView, toggleBrowserLock } = useWorkspaceStore();
+  const browserLocked = browserPane?.locked ?? false;
 
   // Update bounds for the browser content area
   const updateBounds = useCallback(() => {
@@ -36,6 +40,14 @@ export default function BrowserPanel({ url, onUrlChange }: BrowserPanelProps) {
       height: Math.round(rect.height * scale),
     });
   }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      updateBounds();
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [layoutVersion, updateBounds]);
 
   // Set up resize observer to track container size changes
   useEffect(() => {
@@ -143,6 +155,14 @@ export default function BrowserPanel({ url, onUrlChange }: BrowserPanelProps) {
     window.electronAPI.openExternal(url);
   };
 
+  const handleBringIntoView = () => {
+    bringBrowserIntoView();
+  };
+
+  const handleToggleLock = () => {
+    toggleBrowserLock();
+  };
+
   return (
     <div className="browser-panel" ref={containerRef}>
       <div className="browser-toolbar">
@@ -199,8 +219,26 @@ export default function BrowserPanel({ url, onUrlChange }: BrowserPanelProps) {
         >
           <ExternalLink size={16} strokeWidth={2} />
         </button>
+
+        <button
+          className="browser-nav-btn"
+          onClick={handleBringIntoView}
+          title="Bring browser into view"
+        >
+          <LocateFixed size={16} strokeWidth={2} />
+        </button>
+
+        <button
+          className="browser-nav-btn"
+          onClick={handleToggleLock}
+          title={browserLocked ? 'Unlock browser pane' : 'Lock browser pane'}
+        >
+          {browserLocked ? <Unlock size={16} strokeWidth={2} /> : <Lock size={16} strokeWidth={2} />}
+        </button>
       </div>
-      <div className="browser-content" ref={contentRef} />
+      <div className="browser-content-shell">
+        <div className="browser-content" ref={contentRef} />
+      </div>
     </div>
   );
 }

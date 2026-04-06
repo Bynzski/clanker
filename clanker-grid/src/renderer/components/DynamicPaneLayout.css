@@ -27,67 +27,77 @@
   font-size: 12px;
 }
 
-.dynamic-pane-grid {
+.split-root {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.split-group {
   width: 100%;
   height: 100%;
 }
 
-/* Override react-grid-layout default styles */
-.dynamic-pane-grid .react-grid-item {
-  transition: transform 200ms ease, box-shadow 200ms ease;
-}
-
-.dynamic-pane-grid .react-grid-item.react-grid-placeholder {
-  background: var(--accent-primary);
-  opacity: 0.2;
-  border-radius: 6px;
-  transition-duration: 100ms;
-  z-index: 2;
-  box-shadow: 0 0 0 2px var(--accent-primary);
-}
-
-.dynamic-pane-grid .react-grid-item.resizing {
-  z-index: 3;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.dynamic-pane-grid .react-grid-item.react-draggable-dragging {
-  z-index: 4;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  opacity: 0.95;
-}
-
-.dynamic-pane-grid .react-grid-item > .react-resizable-handle {
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  bottom: 0;
-  right: 0;
-  cursor: se-resize;
-  background: transparent;
-}
-
-.dynamic-pane-grid .react-grid-item > .react-resizable-handle::after {
-  content: '';
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid var(--border-color, rgba(255, 255, 255, 0.2));
-  border-bottom: 2px solid var(--border-color, rgba(255, 255, 255, 0.2));
-}
-
-.dynamic-pane-cell {
-  height: 100%;
+.split-group [data-panel] {
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
-/* Drag handle cursor */
-.dynamic-pane-grid .react-grid-item:not(.react-draggable-dragging) .terminal-header {
-  cursor: grab;
+.split-empty {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary);
 }
 
-.dynamic-pane-grid .react-grid-item.react-draggable-dragging .terminal-header {
-  cursor: grabbing;
+.split-separator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.split-separator::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  background: var(--border-color);
+  border-radius: 999px;
+}
+
+.split-group.split-horizontal > .split-separator {
+  width: 14px;
+  cursor: col-resize;
+}
+
+.split-group.split-horizontal > .split-separator::before {
+  width: 3px;
+  height: 36px;
+}
+
+.split-group.split-vertical > .split-separator {
+  height: 14px;
+  cursor: row-resize;
+}
+
+.split-group.split-vertical > .split-separator::before {
+  width: 36px;
+  height: 3px;
+}
+
+.split-group > .split-separator:hover::before,
+.split-group > .split-separator[data-separator='active']::before {
+  background: var(--accent-primary);
+}
+
+.split-fit-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }

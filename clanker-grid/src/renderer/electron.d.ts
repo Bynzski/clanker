@@ -14,7 +14,7 @@ interface ElectronAPI {
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => () => void;
 
-  // Browser (BrowserView)
+  // Browser (WebContentsView)
   browserShow: (x: number, y: number, width: number, height: number) => Promise<void>;
   browserHide: () => Promise<void>;
   browserSetBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
@@ -27,6 +27,7 @@ interface ElectronAPI {
   getBrowserUrl: () => Promise<string>;
   canGoBack: () => Promise<boolean>;
   canGoForward: () => Promise<boolean>;
+  onFitAllPanes: (callback: () => void) => () => void;
 }
 
 declare global {

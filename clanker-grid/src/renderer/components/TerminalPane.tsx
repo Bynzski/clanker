@@ -1,24 +1,37 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { useWorkspaceStore, Terminal } from '../store/workspaceStore';
+import { useWorkspaceStore } from '../store/workspaceStore';
+import { LocateFixed, Lock, Unlock } from 'lucide-react';
 import './TerminalPane.css';
 import '@xterm/xterm/css/xterm.css';
 
 interface Props {
-  terminal: Terminal | undefined;
-  paneId?: string;
+  paneId: string;
   compact?: boolean;
+  onSwapPane?: (a: string, b: string) => void;
 }
 
-export default function TerminalPane({ terminal, paneId, compact = false }: Props) {
+export default function TerminalPane({ paneId, compact = false, onSwapPane }: Props) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isActive, setIsActive] = useState(false);
 
-  const { setActiveTerminal, removeTerminal, removePane, activeTerminalId } = useWorkspaceStore();
+  const {
+    setActiveTerminal,
+    removeTerminal,
+    removePane,
+    activeTerminalId,
+    panes,
+    terminals,
+    bringPaneIntoView,
+    togglePaneLock,
+  } = useWorkspaceStore();
+  const pane = panes.find((item) => item.id === paneId);
+  const terminal = terminals.find((item) => item.id === pane?.terminalId);
+  const paneLocked = pane?.locked ?? false;
 
   const resizeTerminal = useCallback(() => {
     if (terminal == null || fitAddonRef.current == null || xtermRef.current == null) return;
@@ -221,6 +234,18 @@ export default function TerminalPane({ terminal, paneId, compact = false }: Prop
     }
   }, [terminal, removeTerminal, removePane, paneId]);
 
+  const handleBringIntoView = useCallback(() => {
+    if (paneId) {
+      bringPaneIntoView(paneId);
+    }
+  }, [bringPaneIntoView, paneId]);
+
+  const handleToggleLock = useCallback(() => {
+    if (paneId) {
+      togglePaneLock(paneId);
+    }
+  }, [paneId, togglePaneLock]);
+
   if (terminal == null) {
     return (
       <div className="terminal-pane empty">
@@ -235,10 +260,38 @@ export default function TerminalPane({ terminal, paneId, compact = false }: Prop
     <div className={`terminal-pane ${compact ? 'compact' : ''} ${isActive ? 'active' : ''}`}>
       {!compact && (
         <div className="terminal-header">
-          <span className="terminal-title" />
-          <button className="terminal-close" onClick={handleClose} title="Close terminal">
-            ×
-          </button>
+          <span
+            className="terminal-title terminal-drag-handle"
+            draggable={!!onSwapPane && !paneLocked}
+            onDragStart={(event) => {
+              if (!onSwapPane || paneLocked) return;
+              event.dataTransfer.effectAllowed = 'move';
+              event.dataTransfer.setData('text/plain', paneId);
+            }}
+            onDragOver={(event) => {
+              if (!onSwapPane || paneLocked) return;
+              event.preventDefault();
+            }}
+            onDrop={(event) => {
+              if (!onSwapPane || paneLocked) return;
+              event.preventDefault();
+              const sourceId = event.dataTransfer.getData('text/plain');
+              if (sourceId && sourceId !== paneId) {
+                onSwapPane(sourceId, paneId);
+              }
+            }}
+          />
+          <div className="terminal-header-actions">
+            <button className="terminal-action" onClick={handleBringIntoView} title="Bring into view">
+              <LocateFixed size={14} strokeWidth={2} />
+            </button>
+            <button className="terminal-action" onClick={handleToggleLock} title={paneLocked ? 'Unlock pane' : 'Lock pane'}>
+              {paneLocked ? <Unlock size={14} strokeWidth={2} /> : <Lock size={14} strokeWidth={2} />}
+            </button>
+            <button className="terminal-close" onClick={handleClose} title="Close terminal">
+              ×
+            </button>
+          </div>
         </div>
       )}
       <div className="terminal-content" ref={terminalRef} />

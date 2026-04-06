@@ -1,4 +1,4 @@
-import { app, BrowserWindow, BrowserView, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, WebContentsView, ipcMain, dialog, shell } from 'electron';
 
 // Disable GPU acceleration for compatibility in some environments
 app.disableHardwareAcceleration();
@@ -58,8 +58,24 @@ const store = new Store<StoreSchema>({
 
 const terminals: Map<string, Terminal> = new Map();
 let mainWindow: BrowserWindow | null = null;
-let browserView: BrowserView | null = null;
+let browserView: WebContentsView | null = null;
 let currentBrowserUrl = 'https://example.com';
+
+function emitFitAllPanesShortcut() {
+  mainWindow?.webContents.send('fit-all-panes');
+}
+
+function attachBrowserShortcutHandlers(view: WebContentsView) {
+  view.webContents.on('before-input-event', (_event, input) => {
+    if (
+      (input.control || input.meta) &&
+      input.shift &&
+      input.key.toLowerCase() === 'f'
+    ) {
+      emitFitAllPanesShortcut();
+    }
+  });
+}
 
 function getRendererUrl(query: Record<string, string | undefined>) {
   const searchParams = new URLSearchParams();
@@ -103,6 +119,8 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => {
+    browserView?.webContents.close();
+    browserView = null;
     mainWindow = null;
     terminals.forEach((term) => term.pty.kill());
     terminals.clear();
@@ -113,7 +131,7 @@ function createWindow() {
 function initBrowserView() {
   if (browserView || !mainWindow) return;
 
-  browserView = new BrowserView({
+  browserView = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
       partition: 'browser',
@@ -121,7 +139,8 @@ function initBrowserView() {
   });
 
   browserView.webContents.loadURL(currentBrowserUrl);
-  mainWindow.addBrowserView(browserView);
+  mainWindow.contentView.addChildView(browserView);
+  attachBrowserShortcutHandlers(browserView);
   
   // Initially hide it
   browserView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
@@ -270,10 +289,8 @@ ipcMain.handle('browser-show', (_, x: number, y: number, width: number, height: 
 
 // Browser view with viewport coordinates
 ipcMain.handle('browser-set-bounds', (_, viewportBounds: { x: number; y: number; width: number; height: number }) => {
-  if (!mainWindow || !browserView) return;
-  
   // viewportBounds are already relative to window content area (from getBoundingClientRect)
-  // BrowserView.setBounds uses content coordinates, so these should work directly
+  // WebContentsView.setBounds uses content coordinates, so these should work directly
   updateBrowserView(
     viewportBounds.x,
     viewportBounds.y,

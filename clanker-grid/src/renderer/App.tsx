@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Header from './components/Header';
 import DynamicPaneLayout from './components/DynamicPaneLayout';
 import StatusBar from './components/StatusBar';
-import BrowserPanel from './components/BrowserPanel';
 import WorkspaceTabs from './components/WorkspaceTabs';
 import { WorkspaceGateFullscreen, WorkspaceGateModal } from './components/WorkspaceGate';
 import { Pane, Terminal, useWorkspaceStore } from './store/workspaceStore';
@@ -13,10 +12,27 @@ function App() {
   const { 
     workspaces,
     browserVisible,
-    browserUrl,
-    setBrowserUrl,
     addWorkspace,
+    fitAllPanes,
   } = useWorkspaceStore();
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        fitAllPanes();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [fitAllPanes]);
+
+  useEffect(() => {
+    return window.electronAPI.onFitAllPanes(() => {
+      fitAllPanes();
+    });
+  }, [fitAllPanes]);
 
   const handleWorkspaceSelect = async (path: string, terminalCount: number, harness: string) => {
     const terminals: Terminal[] = [];
@@ -44,6 +60,7 @@ function App() {
       browserVisible: false,
       browserUrl: 'https://github.com',
       activeTerminalId: terminals.length > 0 ? terminals[terminals.length - 1].id : null,
+      browserPane: null,
     });
     setShowWorkspaceGate(false);
   };
@@ -63,16 +80,7 @@ function App() {
       <Header onOpenWorkspace={() => setShowWorkspaceGate(true)} />
       <WorkspaceTabs />
       <div className="main-content">
-        <div className={`workspace-area ${browserVisible ? 'with-browser' : 'terminal-only'}`}>
-          <div className="workspace-terminal">
-            <DynamicPaneLayout />
-          </div>
-          {browserVisible && (
-            <div className="workspace-browser">
-              <BrowserPanel url={browserUrl} onUrlChange={setBrowserUrl} />
-            </div>
-          )}
-        </div>
+        <DynamicPaneLayout />
       </div>
       <StatusBar />
       

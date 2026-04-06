@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('terminal-exit', handler);
   },
 
-  // Browser (using BrowserView)
+  // Browser (using WebContentsView)
   browserShow: (x: number, y: number, width: number, height: number) => 
     ipcRenderer.invoke('browser-show', x, y, width, height),
   browserHide: () => ipcRenderer.invoke('browser-hide'),
@@ -40,6 +40,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getBrowserUrl: () => ipcRenderer.invoke('get-browser-url'),
   canGoBack: () => ipcRenderer.invoke('can-go-back'),
   canGoForward: () => ipcRenderer.invoke('can-go-forward'),
+  onFitAllPanes: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('fit-all-panes', handler);
+    return () => ipcRenderer.removeListener('fit-all-panes', handler);
+  },
 
   // Harness
   getHarnessOptions: () => ipcRenderer.invoke('get-harness-options'),
