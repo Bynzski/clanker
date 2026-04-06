@@ -6,9 +6,17 @@ export interface Terminal {
   workingDir: string;
 }
 
+export interface PanePosition {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface Pane {
   id: string;
   terminalId: string | null;
+  position?: PanePosition;
 }
 
 export interface WorkspaceTab {
@@ -40,31 +48,78 @@ interface WorkspaceState extends WorkspaceTab {
   clearTerminals: () => void;
 
   setPanes: (panes: Pane[]) => void;
-  addPane: (terminalId: string | null) => void;
+  addPane: (terminalId: string | null, position?: PanePosition) => void;
   removePane: (paneId: string) => void;
+  updatePanePosition: (paneId: string, position: PanePosition) => void;
+  updateAllPanePositions: (positions: Array<{ id: string; position: PanePosition }>) => void;
 }
 
 /**
  * Auto-calculates a grid layout for n panes.
- * Returns an array of panel sizes (percentages) for rows/columns.
+ * Returns react-grid-layout compatible layout items.
+ * Grid is 12 columns, rows are calculated based on count.
  */
-export function autoCalculateLayout(count: number): { rows: number; cols: number; heights: number[]; widths: number[] } {
-  if (count <= 0) return { rows: 1, cols: 1, heights: [100], widths: [100] };
+export function autoCalculateLayout(count: number): {
+  layout: Array<{ i: string; x: number; y: number; w: number; h: number; minW: number; minH: number }>;
+  cols: number;
+} {
+  if (count <= 0) return { layout: [], cols: 12 };
 
-  const cols = Math.ceil(Math.sqrt(count));
-  const rows = Math.ceil(count / cols);
+  const cols = 12;
+  const itemsPerRow = Math.min(count, 3);
+  const rows = Math.ceil(count / itemsPerRow);
+  const cellW = Math.floor(12 / itemsPerRow);
+  const cellH = Math.floor(12 / rows);
 
-  const heights = Array(rows).fill(100 / rows);
-
-  const widths: number[] = [];
-  for (let row = 0; row < rows; row++) {
-    const start = row * cols;
-    const end = Math.min(start + cols, count);
-    const itemsInRow = end - start;
-    widths.push(100 / itemsInRow);
+  const layout = [];
+  for (let i = 0; i < count; i++) {
+    const col = (i % itemsPerRow) * cellW;
+    const row = Math.floor(i / itemsPerRow) * cellH;
+    layout.push({
+      i: `pane-${i}`,
+      x: col,
+      y: row,
+      w: cellW,
+      h: cellH,
+      minW: 2,
+      minH: 2,
+    });
   }
 
-  return { rows, cols, heights, widths };
+  return { layout, cols };
+}
+
+/**
+ * Calculates position for a new pane in the grid
+ * Ensures the new pane stays within visible bounds
+ */
+export function calculateNewPanePosition(
+  existingPanes: Pane[],
+  maxCols: number = 12,
+  maxRows: number = 20
+): PanePosition {
+  const count = existingPanes.length;
+  
+  if (count === 0) {
+    return { x: 0, y: 0, w: 12, h: 4 };
+  }
+
+  // Find the lowest row used
+  let maxY = 0;
+  for (const pane of existingPanes) {
+    if (pane.position) {
+      const bottomY = pane.position.y + pane.position.h;
+      if (bottomY > maxY) maxY = bottomY;
+    }
+  }
+
+  // Place new pane at the bottom of the grid
+  return {
+    x: 0,
+    y: maxY,
+    w: Math.min(12, Math.max(4, Math.floor(12 / Math.min(count + 1, 4)))),
+    h: 4,
+  };
 }
 
 const generateId = (prefix: string) => {
@@ -76,9 +131,10 @@ const generateId = (prefix: string) => {
 
 const generatePaneId = () => generateId('pane');
 
-const createPane = (terminalId: string | null): Pane => ({
+const createPane = (terminalId: string | null, position?: PanePosition): Pane => ({
   id: generatePaneId(),
   terminalId,
+  position,
 });
 
 const createWorkspaceId = () => generateId('workspace');
@@ -186,7 +242,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   addTerminal: (terminal) => set((state) => {
     const paneExists = state.panes.some((pane) => pane.terminalId === terminal.id);
     const nextTerminals = [...state.terminals, terminal];
-    const nextPanes = paneExists ? state.panes : [...state.panes, createPane(terminal.id)];
+    
+    let nextPanes = state.panes;
+    if (!paneExists) {
+      const position = calculateNewPanePosition(state.panes);
+      nextPanes = [...state.panes, createPane(terminal.id, position)];
+    }
+    
     const nextActiveTerminalId = terminal.id;
 
     return {
@@ -280,19 +342,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
     )),
   })),
 
-  addPane: (terminalId) => set((state) => ({
-    ...(() => {
-      const nextPane = createPane(terminalId);
-      return {
-        panes: [...state.panes, nextPane],
-        workspaces: state.workspaces.map((workspace) => (
-          workspace.id === state.activeWorkspaceId
-            ? { ...workspace, panes: [...workspace.panes, nextPane] }
-            : workspace
-        )),
-      };
-    })(),
-  })),
+  addPane: (terminalId, position) => set((state) => {
+    const nextPane = createPane(terminalId, position);
+    return {
+      panes: [...state.panes, nextPane],
+      workspaces: state.workspaces.map((workspace) => (
+        workspace.id === state.activeWorkspaceId
+          ? { ...workspace, panes: [...workspace.panes, nextPane] }
+          : workspace
+      )),
+    };
+  }),
 
   removePane: (paneId) => set((state) => {
     const nextPanes = state.panes.filter((pane) => pane.id !== paneId);
@@ -303,6 +363,36 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
           ? { ...workspace, panes: nextPanes }
           : workspace
       )),
+    };
+  }),
+
+  updatePanePosition: (paneId, position) => set((state) => {
+    const nextPanes = state.panes.map((pane) =>
+      pane.id === paneId ? { ...pane, position } : pane
+    );
+    return {
+      panes: nextPanes,
+      workspaces: state.workspaces.map((workspace) =>
+        workspace.id === state.activeWorkspaceId
+          ? { ...workspace, panes: nextPanes }
+          : workspace
+      ),
+    };
+  }),
+
+  updateAllPanePositions: (positions) => set((state) => {
+    const posMap = new Map(positions.map(p => [p.id, p.position]));
+    const nextPanes = state.panes.map((pane) => {
+      const pos = posMap.get(pane.id);
+      return pos ? { ...pane, position: pos } : pane;
+    });
+    return {
+      panes: nextPanes,
+      workspaces: state.workspaces.map((workspace) =>
+        workspace.id === state.activeWorkspaceId
+          ? { ...workspace, panes: nextPanes }
+          : workspace
+      ),
     };
   }),
 }));
