@@ -12,7 +12,19 @@
 .header-left {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
+  gap: var(--space-sm);
+}
+
+.app-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-primary);
+  opacity: 0.9;
+}
+
+.app-logo svg {
+  filter: drop-shadow(0 0 4px rgba(88, 166, 255, 0.3));
 }
 
 .app-title {
