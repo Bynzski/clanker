@@ -1,5 +1,5 @@
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { FolderOpen, Plus, Globe, X, Brain, Zap, Pi, Terminal } from 'lucide-react';
+import { FolderOpen, Plus, Globe, X, Brain, Zap, Pi, Terminal, LayoutGrid } from 'lucide-react';
 import './Header.css';
 
 export const HARNESS_OPTIONS = [
@@ -22,11 +22,18 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
     toggleBrowser,
     addTerminal,
     closeWorkspace,
+    fitAllPanes,
     harness,
     setHarness,
+    canAddPane,
   } = useWorkspaceStore();
 
   const handleAddTerminal = async () => {
+    if (!canAddPane()) {
+      console.warn('All panes are locked. Unlock a pane before adding a new terminal.');
+      return;
+    }
+
     try {
       const info = await window.electronAPI.spawnTerminal(workspacePath || '/', harness);
       addTerminal({
@@ -90,9 +97,14 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
           ))}
         </div>
         
-        <button className="header-btn header-btn-primary" onClick={handleAddTerminal}>
+        <button className="header-btn header-btn-primary" onClick={handleAddTerminal} disabled={!canAddPane()}>
           <Plus size={15} strokeWidth={2.5} />
           New Terminal
+        </button>
+
+        <button className="header-btn" onClick={fitAllPanes} title="Fit all panes into view (Ctrl/Cmd+Shift+F)">
+          <LayoutGrid size={15} strokeWidth={2} />
+          Fit All Panes
         </button>
         
         <button className="header-btn" onClick={handleToggleBrowser}>

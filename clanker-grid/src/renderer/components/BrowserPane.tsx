@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
-import { Globe, ArrowLeft, RotateCw, ExternalLink } from 'lucide-react';
+import { Globe, ArrowLeft, RotateCw, ExternalLink, X } from 'lucide-react';
+import { useWorkspaceStore } from '../store/workspaceStore';
 import './BrowserPane.css';
 
 interface BrowserPaneProps {
@@ -11,6 +12,7 @@ export default function BrowserPane({ url, onUrlChange }: BrowserPaneProps) {
   const [inputUrl, setInputUrl] = useState(url);
   const [key, setKey] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const { toggleBrowser } = useWorkspaceStore();
 
   const handleNavigate = () => {
     let navigateUrl = inputUrl.trim();
@@ -50,11 +52,17 @@ export default function BrowserPane({ url, onUrlChange }: BrowserPaneProps) {
     window.electronAPI.openExternal(url);
   };
 
+  const handleClose = () => {
+    toggleBrowser();
+  };
+
   return (
     <div className="browser-pane">
       <div className="browser-pane-header">
-        <Globe size={14} strokeWidth={2} className="browser-pane-icon" />
-        <span className="browser-pane-title">Browser</span>
+        <div className="browser-pane-title-area">
+          <Globe size={14} strokeWidth={2} className="browser-pane-icon" />
+          <span className="browser-pane-title">Browser</span>
+        </div>
         <div className="browser-pane-nav">
           <button 
             className="browser-pane-btn" 
@@ -90,6 +98,13 @@ export default function BrowserPane({ url, onUrlChange }: BrowserPaneProps) {
           title="Open in system browser"
         >
           <ExternalLink size={14} strokeWidth={2} />
+        </button>
+        <button 
+          className="browser-pane-btn browser-pane-close" 
+          onClick={handleClose} 
+          title="Close browser"
+        >
+          <X size={14} strokeWidth={2} />
         </button>
       </div>
       <div className="browser-pane-content">

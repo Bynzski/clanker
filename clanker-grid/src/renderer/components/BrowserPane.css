@@ -1,6 +1,4 @@
 .browser-pane {
-  flex-shrink: 0;
-  width: 40%;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -21,21 +19,27 @@
   flex-shrink: 0;
 }
 
+.browser-pane-title-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .browser-pane-icon {
   color: var(--accent-primary);
-  flex-shrink: 0;
 }
 
 .browser-pane-title {
   font-size: 12px;
   color: var(--text-secondary);
   font-weight: 500;
-  margin-right: var(--space-sm);
 }
 
 .browser-pane-nav {
   display: flex;
   gap: 2px;
+  flex-shrink: 0;
 }
 
 .browser-pane-btn {
@@ -103,6 +107,11 @@
 
 .browser-pane-external:hover {
   background: var(--accent-primary);
+  color: #fff;
+}
+
+.browser-pane-close:hover {
+  background: var(--accent-error);
   color: #fff;
 }
 

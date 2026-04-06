@@ -1,81 +1,133 @@
-import { useCallback, useMemo } from 'react';
-import { ResponsiveGridLayout, Layout } from 'react-grid-layout';
-import { useContainerWidth } from 'react-grid-layout';
-import { useWorkspaceStore, PanePosition } from '../store/workspaceStore';
+import { Group, Panel, Separator } from 'react-resizable-panels';
+import type {
+  LayoutNode,
+  LayoutLeaf,
+  LayoutSplit,
+} from '../store/workspaceStore';
+import { useWorkspaceStore } from '../store/workspaceStore';
 import TerminalPane from './TerminalPane';
+import BrowserPanel from './BrowserPanel';
 import './DynamicPaneLayout.css';
-import 'react-grid-layout/css/styles.css';
 
-interface PaneLayoutItem {
-  i: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+function isLeaf(node: LayoutNode): node is LayoutLeaf {
+  return node.type === 'leaf';
 }
 
-function calculateDefaultLayout(panes: { id: string; position?: PanePosition }[]): PaneLayoutItem[] {
-  const count = panes.length;
-  if (count === 0) return [];
+function isSplit(node: LayoutNode): node is LayoutSplit {
+  return node.type === 'split';
+}
 
-  const itemsPerRow = Math.min(count, 3);
-  const rows = Math.ceil(count / itemsPerRow);
-  const cellW = Math.floor(12 / itemsPerRow);
-  const cellH = Math.floor(12 / rows);
+function isLeafLocked(
+  paneId: string,
+  state: ReturnType<typeof useWorkspaceStore.getState>
+) {
+  const { panes, browserPane, browserVisible } = state;
+  if (browserVisible && browserPane?.id === paneId) {
+    return browserPane.locked;
+  }
+  return panes.find((pane) => pane.id === paneId)?.locked ?? false;
+}
 
-  return panes.map((pane, i) => {
-    const col = (i % itemsPerRow) * cellW;
-    const row = Math.floor(i / itemsPerRow) * cellH;
-    return {
-      i: pane.id,
-      x: col,
-      y: row,
-      w: cellW,
-      h: cellH,
-    };
-  });
+function SplitView({ node }: { node: LayoutSplit }) {
+  const state = useWorkspaceStore();
+  const { setSplitRatio } = state;
+  const firstRatio = Math.max(10, Math.min(90, Math.round(node.ratio * 100)));
+  const secondRatio = 100 - firstRatio;
+
+  return (
+    <Group
+      id={node.nodeId}
+      className={`split-group split-${node.orientation}`}
+      orientation={node.orientation}
+      defaultLayout={[firstRatio, secondRatio]}
+      resizeTargetMinimumSize={{ coarse: 28, fine: 20 }}
+      onLayoutChanged={(layout) => {
+        if (!Array.isArray(layout)) {
+          return;
+        }
+        const total = layout.reduce((sum, value) => sum + value, 0);
+        if (total <= 0) {
+          return;
+        }
+
+        setSplitRatio(node.nodeId, layout[0] / total);
+      }}
+    >
+      <Panel
+        id={`${node.nodeId}-a`}
+        defaultSize={firstRatio}
+        minSize={12}
+        disabled={isSubtreeLocked(node.first, state)}
+      >
+        <LayoutNodeView node={node.first} />
+      </Panel>
+      <Separator className="split-separator" />
+      <Panel
+        id={`${node.nodeId}-b`}
+        defaultSize={secondRatio}
+        minSize={12}
+        disabled={isSubtreeLocked(node.second, state)}
+      >
+        <LayoutNodeView node={node.second} />
+      </Panel>
+    </Group>
+  );
+}
+
+function isSubtreeLocked(
+  node: LayoutNode,
+  state: ReturnType<typeof useWorkspaceStore.getState>
+): boolean {
+  if (isLeaf(node)) {
+    return isLeafLocked(node.paneId, state);
+  }
+
+  return isSubtreeLocked(node.first, state) && isSubtreeLocked(node.second, state);
+}
+
+function LeafView({ node }: { node: LayoutLeaf }) {
+  const state = useWorkspaceStore();
+  const { browserPane, browserVisible, browserUrl, setBrowserUrl, swapPanes, layoutRevision } = state;
+  const paneId = node.paneId;
+
+  if (browserVisible && browserPane?.id === paneId) {
+    return (
+      <BrowserPanel
+        url={browserUrl}
+        onUrlChange={setBrowserUrl}
+        layoutVersion={layoutRevision}
+      />
+    );
+  }
+
+  return (
+    <TerminalPane
+      paneId={paneId}
+      onSwapPane={swapPanes}
+    />
+  );
+}
+
+function LayoutNodeView({ node }: { node: LayoutNode }) {
+  if (isLeaf(node)) {
+    return <LeafView node={node} />;
+  }
+
+  return <SplitView node={node} />;
+}
+
+function renderLayout(root: LayoutNode | null): JSX.Element | null {
+  if (root == null) {
+    return null;
+  }
+
+  return <LayoutNodeView node={root} />;
 }
 
 export default function DynamicPaneLayout() {
-  const { panes, terminals, updateAllPanePositions } = useWorkspaceStore();
-  const { width, containerRef } = useContainerWidth({ measureBeforeMount: false });
+  const { layoutRoot } = useWorkspaceStore();
 
-  // Build layout from pane positions or calculate defaults
-  const layout = useMemo(() => {
-    if (panes.length === 0) return [];
-
-    // Use stored positions if available
-    const hasPositions = panes.some(p => p.position);
-    
-    if (hasPositions) {
-      return panes.map(pane => ({
-        i: pane.id,
-        x: pane.position?.x ?? 0,
-        y: pane.position?.y ?? 0,
-        w: pane.position?.w ?? 6,
-        h: pane.position?.h ?? 6,
-      }));
-    }
-
-    // Fall back to calculated layout
-    return calculateDefaultLayout(panes);
-  }, [panes]);
-
-  // Handle layout change from drag/resize
-  const handleLayoutChange = useCallback((newLayout: Layout[]) => {
-    const positions = newLayout.map(item => ({
-      id: item.i,
-      position: {
-        x: item.x,
-        y: item.y,
-        w: item.w,
-        h: item.h,
-      } as PanePosition,
-    }));
-    updateAllPanePositions(positions);
-  }, [updateAllPanePositions]);
-
-  if (panes.length === 0) {
+  if (layoutRoot == null) {
     return (
       <div className="dynamic-pane-layout empty">
         <div className="empty-state">
@@ -86,51 +138,11 @@ export default function DynamicPaneLayout() {
     );
   }
 
-  // Wait for width measurement before rendering grid
-  if (!width) {
-    return (
-      <div className="dynamic-pane-layout" ref={containerRef}>
-        <div className="dynamic-pane-grid">
-          {panes.map((pane) => {
-            const terminal = terminals.find(t => t.id === pane.terminalId);
-            return (
-              <div key={pane.id} className="dynamic-pane-cell">
-                <TerminalPane terminal={terminal} paneId={pane.id} />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="dynamic-pane-layout" ref={containerRef}>
-      <ResponsiveGridLayout
-        className="dynamic-pane-grid"
-        layouts={{ lg: layout, md: layout, sm: layout, xs: layout, xxs: layout }}
-        breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-        cols={{ lg: 12, md: 12, sm: 12, xs: 6, xxs: 4 }}
-        rowHeight={60}
-        margin={[8, 8]}
-        containerPadding={[0, 0]}
-        onLayoutChange={handleLayoutChange}
-        draggableHandle=".terminal-header"
-        resizeHandles={['se', 'sw', 'ne', 'nw', 'e', 'w', 's', 'n']}
-        useCSSTransforms={true}
-        compactType={null}
-        preventCollision={true}
-        width={width}
-      >
-        {panes.map((pane) => {
-          const terminal = terminals.find(t => t.id === pane.terminalId);
-          return (
-            <div key={pane.id} className="dynamic-pane-cell">
-              <TerminalPane terminal={terminal} paneId={pane.id} />
-            </div>
-          );
-        })}
-      </ResponsiveGridLayout>
+    <div className="dynamic-pane-layout">
+      <div className="split-root">
+        {renderLayout(layoutRoot)}
+      </div>
     </div>
   );
 }
