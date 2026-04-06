@@ -50,6 +50,7 @@ export interface LayoutSplit {
 
 export interface WorkspaceTab {
   id: string;
+  name: string;
   workspacePath: string;
   harness: string;
   terminals: Terminal[];
@@ -62,6 +63,7 @@ export interface WorkspaceTab {
 }
 
 interface WorkspaceState {
+  name: string;
   workspacePath: string;
   harness: string;
   terminals: Terminal[];
@@ -79,6 +81,7 @@ interface WorkspaceState {
   addWorkspace: (workspace: Omit<WorkspaceTab, 'id'>) => void;
   selectWorkspace: (id: string) => void;
   closeWorkspace: (id: string) => void;
+  updateWorkspaceName: (id: string, name: string) => void;
 
   setWorkspacePath: (path: string) => void;
   setHarness: (harness: string) => void;
@@ -694,6 +697,7 @@ const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
 });
 
 const defaultWorkspaceState = {
+  name: '',
   workspacePath: '',
   harness: 'codex',
   terminals: [] as Terminal[],
@@ -714,9 +718,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
 
   addWorkspace: (workspace) => set((state) => {
     const id = createWorkspaceId();
-    const nextWorkspace: WorkspaceTab = sanitizeWorkspace({ id, ...workspace });
+    const defaultName = workspace.name || workspace.workspacePath.split('/').pop() || 'Workspace';
+    const nextWorkspace: WorkspaceTab = sanitizeWorkspace({ id, ...workspace, name: defaultName });
 
     return {
+      name: defaultName,
       workspacePath: workspace.workspacePath,
       harness: workspace.harness,
       terminals: nextWorkspace.terminals,
@@ -740,6 +746,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
 
     const next = sanitizeWorkspace(workspace);
     return {
+      name: next.name,
       workspacePath: next.workspacePath,
       harness: next.harness,
       terminals: next.terminals,
@@ -769,6 +776,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
     if (state.activeWorkspaceId === id) {
       const nextActive = remaining[Math.max(0, remaining.length - 1)];
       return {
+        name: nextActive.name,
         workspacePath: nextActive.workspacePath,
         harness: nextActive.harness,
         terminals: nextActive.terminals,
@@ -789,6 +797,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       workspaces: remaining,
     };
   }),
+
+  updateWorkspaceName: (id, name) => set((state) => ({
+    name,
+    workspaces: state.workspaces.map((workspace) =>
+      workspace.id === id
+        ? { ...workspace, name }
+        : workspace
+    ),
+  })),
 
   setWorkspacePath: (path) => set((state) => ({
     workspacePath: path,

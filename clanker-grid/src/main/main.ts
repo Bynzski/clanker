@@ -94,6 +94,13 @@ function getRendererUrl(query: Record<string, string | undefined>) {
   return queryString ? `${fileUrl}?${queryString}` : fileUrl;
 }
 
+function getIconPath() {
+  if (process.env.NODE_ENV === 'development') {
+    return path.join(__dirname, '../../build/icon.png');
+  }
+  return path.join(process.resourcesPath, 'icon.png');
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -102,6 +109,7 @@ function createWindow() {
     minHeight: 600,
     title: 'Clanker Grid',
     backgroundColor: '#0d1117',
+    icon: getIconPath(),
     show: true,
     webPreferences: {
       nodeIntegration: false,
@@ -113,7 +121,6 @@ function createWindow() {
   // Load the app
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL(getRendererUrl({}));
-    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }

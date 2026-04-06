@@ -91,3 +91,68 @@
 .workspace-tab.active .workspace-tab-close {
   opacity: 1;
 }
+
+.workspace-tab-edit-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+
+.workspace-tab:hover .workspace-tab-edit-trigger {
+  opacity: 1;
+}
+
+.workspace-tab-edit-trigger:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.workspace-tab-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace-tab-edit-input {
+  flex: 1;
+  min-width: 60px;
+  padding: 4px 8px;
+  border: 1px solid var(--accent-primary);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+}
+
+.workspace-tab-edit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent-primary);
+  color: white;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.workspace-tab-edit-btn:hover {
+  background: var(--accent-secondary);
+}
