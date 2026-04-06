@@ -59,7 +59,7 @@ const store = new Store<StoreSchema>({
 const terminals: Map<string, Terminal> = new Map();
 let mainWindow: BrowserWindow | null = null;
 let browserView: WebContentsView | null = null;
-let currentBrowserUrl = 'https://example.com';
+let currentBrowserUrl = 'https://github.com';
 
 function emitFitAllPanesShortcut() {
   mainWindow?.webContents.send('fit-all-panes');

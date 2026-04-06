@@ -612,16 +612,36 @@ function findLargestUnlockedLeaf(
   return bestPaneId;
 }
 
+function findTargetPaneForInsert(
+  layoutRoot: LayoutNode | null,
+  state: Pick<WorkspaceState, 'panes' | 'browserPane' | 'browserVisible' | 'activeTerminalId'>
+): string | null {
+  // First, check if there's an active terminal and its pane is available
+  if (state.activeTerminalId != null) {
+    const activePane = state.panes.find((pane) => pane.terminalId === state.activeTerminalId);
+    if (activePane != null && !findPaneLock(state, activePane.id)) {
+      // Verify the pane still exists in the layout
+      const leafIds = collectLeafPaneIds(layoutRoot);
+      if (leafIds.includes(activePane.id)) {
+        return activePane.id;
+      }
+    }
+  }
+
+  // Fall back to largest unlocked pane
+  return findLargestUnlockedLeaf(layoutRoot, state);
+}
+
 function insertPaneIntoLayout(
   layoutRoot: LayoutNode | null,
   newPaneId: string,
-  state: Pick<WorkspaceState, 'panes' | 'browserPane' | 'browserVisible'>
+  state: Pick<WorkspaceState, 'panes' | 'browserPane' | 'browserVisible' | 'activeTerminalId'>
 ): LayoutNode | null {
   if (layoutRoot == null) {
     return createLayoutLeaf(newPaneId);
   }
 
-  const targetPaneId = findLargestUnlockedLeaf(layoutRoot, state);
+  const targetPaneId = findTargetPaneForInsert(layoutRoot, state);
   if (targetPaneId == null) {
     return layoutRoot;
   }
@@ -845,6 +865,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
           panes: state.panes,
           browserPane: state.browserPane,
           browserVisible: state.browserVisible,
+          activeTerminalId: state.activeTerminalId,
         });
 
     if (!paneExists && nextLayoutRoot === state.layoutRoot) {
@@ -932,6 +953,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
             panes: state.panes,
             browserPane: nextBrowserPane,
             browserVisible: true,
+            activeTerminalId: state.activeTerminalId,
           });
         } else {
           const currentIds = collectLeafPaneIds(state.layoutRoot);
@@ -944,6 +966,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
               panes: state.panes,
               browserPane: nextBrowserPane,
               browserVisible: true,
+              activeTerminalId: state.activeTerminalId,
             });
           }
         }
@@ -1021,6 +1044,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       panes: state.panes,
       browserPane: state.browserPane,
       browserVisible: state.browserVisible,
+      activeTerminalId: state.activeTerminalId,
     });
     return {
       panes: nextPanes,
