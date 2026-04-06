@@ -5,10 +5,75 @@
   right: 0;
   bottom: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   background: var(--bg-primary);
   z-index: 1000;
+}
+
+.workspace-gate-shell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.workspace-gate-titlebar {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  height: 36px;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.02), transparent), var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.workspace-gate-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--space-sm);
+  color: var(--accent-primary);
+  cursor: grab;
+}
+
+.workspace-gate-brand:active {
+  cursor: grabbing;
+}
+
+.workspace-gate-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.workspace-gate-window-controls {
+  display: flex;
+  align-items: stretch;
+  -webkit-app-region: no-drag;
+}
+
+.workspace-gate-window-btn {
+  width: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+
+.workspace-gate-window-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.workspace-gate-window-btn.close:hover {
+  background: var(--accent-error);
+  color: #fff;
 }
 
 .gate-content {

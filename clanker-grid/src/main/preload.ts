@@ -46,6 +46,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('fit-all-panes', handler);
   },
 
+  // Window controls
+  minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
+  toggleMaximizeWindow: () => ipcRenderer.invoke('toggle-maximize-window'),
+  closeWindow: () => ipcRenderer.invoke('close-window'),
+  isMaximizedWindow: () => ipcRenderer.invoke('is-maximized-window'),
+
   // Harness
   getHarnessOptions: () => ipcRenderer.invoke('get-harness-options'),
 });

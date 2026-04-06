@@ -27,6 +27,15 @@ interface ElectronAPI {
   getBrowserUrl: () => Promise<string>;
   canGoBack: () => Promise<boolean>;
   canGoForward: () => Promise<boolean>;
+
+  // Window controls
+  minimizeWindow: () => Promise<void>;
+  toggleMaximizeWindow: () => Promise<void>;
+  closeWindow: () => Promise<void>;
+  isMaximizedWindow: () => Promise<boolean>;
+
+  getHarnessOptions: () => Promise<Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>>;
+
   onFitAllPanes: (callback: () => void) => () => void;
 }
 

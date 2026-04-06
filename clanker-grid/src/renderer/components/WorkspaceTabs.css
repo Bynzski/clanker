@@ -3,10 +3,14 @@
   align-items: stretch;
   gap: 2px;
   padding: 6px 12px 0;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   overflow-x: auto;
   overflow-y: hidden;
+  -webkit-app-region: drag;
+}
+
+.workspace-tabs * {
   -webkit-app-region: no-drag;
 }
 
@@ -16,12 +20,12 @@
   gap: 8px;
   min-width: 0;
   max-width: 200px;
-  padding: 8px 12px;
-  background: var(--bg-secondary);
+  padding: 7px 12px 8px;
+  background: rgba(255, 255, 255, 0.02);
   border: 1px solid transparent;
   border-bottom: none;
-  border-top-left-radius: 6px;
-  border-top-right-radius: 6px;
+  border-top-left-radius: 7px;
+  border-top-right-radius: 7px;
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
@@ -39,6 +43,7 @@
   background: var(--bg-primary);
   border-color: var(--border-color);
   border-bottom-color: var(--bg-primary);
+  box-shadow: 0 -1px 0 rgba(88, 166, 255, 0.6) inset;
 }
 
 .workspace-tab-label {
