@@ -1,0 +1,111 @@
+.browser-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  position: relative;
+}
+
+.browser-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  height: 44px;
+  position: relative;
+  z-index: 10;
+}
+
+.browser-content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.browser-nav-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 150ms ease-out;
+  flex-shrink: 0;
+}
+
+.browser-nav-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.browser-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.browser-stop:hover:not(:disabled) {
+  background: var(--accent-error);
+  color: #fff;
+}
+
+.browser-url-container {
+  flex: 1;
+  min-width: 0;
+  margin: 0 6px;
+}
+
+.browser-url-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  transition: border-color var(--transition);
+}
+
+.browser-url-input:focus {
+  border-color: var(--accent-primary);
+  outline: none;
+}
+
+.browser-go-btn {
+  height: 32px;
+  padding: 0 14px;
+  background: var(--accent-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 150ms ease-out;
+  flex-shrink: 0;
+}
+
+.browser-go-btn:hover {
+  background: #79b8ff;
+}
+
+.browser-external {
+  color: var(--accent-primary);
+}
+
+.browser-external:hover:not(:disabled) {
+  background: var(--accent-primary);
+  color: #fff;
+}

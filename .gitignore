@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Local config
+.codex
+
+# Build outputs
+dist/
+build/
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Test coverage
+coverage/
+
+# Temporary files
+.tmp/
+.cache/

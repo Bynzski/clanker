@@ -1,0 +1,45 @@
+.dynamic-pane-layout {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dynamic-pane-grid {
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  gap: 4px;
+  background: var(--bg-primary);
+}
+
+.dynamic-pane-layout.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dynamic-pane-layout .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-secondary);
+}
+
+.dynamic-pane-layout .empty-state .hint {
+  font-size: 12px;
+}
+
+.dynamic-pane-cell {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
