@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import Header from './components/Header';
 import TitleBar from './components/TitleBar';
-import DynamicPaneLayout from './components/DynamicPaneLayout';
 import StatusBar from './components/StatusBar';
 import { WorkspaceGateFullscreen, WorkspaceGateModal } from './components/WorkspaceGate';
 import { Pane, Terminal, useWorkspaceStore } from './store/workspaceStore';
 import './App.css';
+
+const DynamicPaneLayout = lazy(() => import('./components/DynamicPaneLayout'));
 
 function App() {
   const [showWorkspaceGate, setShowWorkspaceGate] = useState(false);
@@ -82,7 +83,9 @@ function App() {
       <TitleBar />
       <Header onOpenWorkspace={() => setShowWorkspaceGate(true)} />
       <div className="main-content">
-        <DynamicPaneLayout />
+        <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
+          <DynamicPaneLayout />
+        </Suspense>
       </div>
       <StatusBar />
       

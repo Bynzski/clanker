@@ -14,3 +14,20 @@
   overflow: hidden;
   padding: var(--space-sm);
 }
+
+.main-content-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  color: rgba(230, 237, 243, 0.72);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  border: 1px dashed rgba(139, 148, 158, 0.18);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at top, rgba(88, 166, 255, 0.08), transparent 45%),
+    linear-gradient(180deg, rgba(13, 17, 23, 0.94), rgba(9, 12, 17, 0.98));
+}

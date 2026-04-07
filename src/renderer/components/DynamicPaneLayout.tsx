@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, createContext, useContext } from 'react';
+import { Suspense, lazy, useCallback, useRef, useState, createContext, useContext } from 'react';
 import { Group, Panel, Separator, type Layout } from 'react-resizable-panels';
 import {
   DndContext,
@@ -20,11 +20,12 @@ import type {
   LayoutSplit,
 } from '../store/workspaceStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import TerminalPane from './TerminalPane';
 import BrowserPanel from './BrowserPanel';
 import './DynamicPaneLayout.css';
 
 type DockEdge = 'left' | 'right' | 'top' | 'bottom';
+
+const TerminalPane = lazy(() => import('./TerminalPane'));
 
 function isLeaf(node: LayoutNode): node is LayoutLeaf {
   return node.type === 'leaf';
@@ -146,7 +147,9 @@ function LeafView({ node, draggedPaneId, overPaneId }: { node: LayoutLeaf; dragg
       layoutVersion={layoutRevision}
     />
   ) : (
-    <TerminalPane paneId={paneId} />
+    <Suspense fallback={<div className="layout-pane-loading">Loading terminal...</div>}>
+      <TerminalPane paneId={paneId} />
+    </Suspense>
   );
 
   // Always wrap with PanelWrapper to show drag handle
