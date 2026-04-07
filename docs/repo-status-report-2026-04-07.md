@@ -11,13 +11,13 @@ All gates are green:
 - `npm run lint`: **passed** — 0 errors
 - `npm run typecheck`: **passed** — 0 errors across tsconfig.json, tsconfig.main.json, tsconfig.test.json
 - `npm run build`: **passed**
-- `npm run test`: **passed** — 19 test files, 429 tests (+106 git section tests)
+- `npm run test`: **passed** — 20 test files, 480 tests (+51 BrowserPanel tests)
 - `npm run validate`: **passed** — all of the above in sequence
 - `npm run build:dist`: **passed** when network access available for Electron downloads
 
 ## Test Coverage Summary
 
-Overall statement coverage: **50.42%** (up from 44.85%)
+Overall statement coverage: **54.16%** (up from 44.85%)
 
 | Module | Stmts | Branch | Lines | Notes |
 |--------|-------|--------|-------|-------|
@@ -34,14 +34,14 @@ Overall statement coverage: **50.42%** (up from 44.85%)
 | workspaceLayout.ts | 92.3% | 86.61% | 94.87% | |
 | harnessOptions.ts | 100% | 100% | 100% | |
 | workspaceLifecycle.ts | 100% | 100% | 100% | |
-| **Renderer components** | 44.96% | 36.02% | 45.01% | |
+| **Renderer components** | 50.27% | 42.08% | 50.38% | |
 | StatusBar.tsx | 100% | 100% | 100% | |
 | CommitDialog.tsx | 94.62% | 85.91% | 94.11% | |
 | TitleBar.tsx | 92.3% | 50% | 91.66% | |
 | Header.tsx | 71.32% | 64.38% | 71.22% | |
 | WorkspaceGateContent.tsx | 51.11% | 31.36% | 52.35% | |
 | GitButton.tsx | 21.53% | 3.91% | 21.94% | Exercised via Header |
-| BrowserPanel.tsx | 0% | 0% | 0% | |
+| **BrowserPanel.tsx** | **91.5%** | **73.33%** | **92%** | **+51 tests added** |
 | DynamicPaneLayout.tsx | 0% | 0% | 0% | |
 | **TerminalPane.tsx** | **87.14%** | **75.29%** | **88.46%** | **+24 tests added** |
 | WorkspaceGate.tsx | 0% | 0% | 0% | |
@@ -107,6 +107,19 @@ Overall statement coverage: **50.42%** (up from 44.85%)
 - Configured TypeScript, React hooks, and per-path rules
 - `npm run lint` integrated into `validate` gate
 
+### Phase 10: BrowserPanel Coverage ✅
+
+- Added comprehensive tests for BrowserPanel component (51 new tests)
+- Tests cover:
+  - Header rendering with drag handle and lock indicator
+  - Navigation buttons (back, forward, refresh, stop) with state
+  - URL input handling with protocol normalization
+  - Action buttons (external link, bring into view, lock toggle)
+  - Browser hide/show based on overlay count
+  - Navigation state polling
+  - Cleanup of intervals and observers
+- Coverage: 0% → 91.5% (Stmts), 0% → 73.33% (Branch), 0% → 92% (Lines)
+
 ### Phase 9: Git Section Components Coverage ✅
 
 - Added comprehensive tests for TerminalPane component (24 new tests)
@@ -161,11 +174,13 @@ Overall statement coverage: **50.42%** (up from 44.85%)
    - Recommendation: Add `--coverage.threshold.lines 50` requirement
 
 3. **Renderer components still partially covered**
-   - `BrowserPanel.tsx` (0%), `DynamicPaneLayout.tsx` (0%)
+   - `DynamicPaneLayout.tsx` (0%)
    - `WorkspaceTabs.tsx` (17%), `GitButton.tsx` (21%)
    - `WorkspaceGateContent.tsx` (51%)
    - **`TerminalPane.tsx` now at 87.14%** ✅
+   - **`BrowserPanel.tsx` now at 91.5%** ✅
    - **`Git section components at 100%`** ✅ (GitBranchesSection, GitStashSection, GitMergeSection, GitHistorySection)
+   - **`BrowserPanel.tsx` now at 91.5%** ✅
 
 ### Medium Priority
 
