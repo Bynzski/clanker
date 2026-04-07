@@ -1,26 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { FolderOpen, Plus, Globe, X, Brain, Zap, Pi, Terminal, LayoutGrid, Sparkles, Settings, ChevronDown } from 'lucide-react';
+import { FolderOpen, Plus, Globe, X, LayoutGrid, Settings, ChevronDown } from 'lucide-react';
+import { AI_COMMIT_PROVIDER_IDS, HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
+import { terminateWorkspaceTerminals } from '../lib/workspaceLifecycle';
+import type { ModelOption } from '../types/shared';
 import GitButton from './GitButton';
 import './Header.css';
 
-export const HARNESS_OPTIONS = [
-  { id: '', label: 'Terminal', Icon: Terminal },
-  { id: 'codex', label: 'Codex', Icon: Brain },
-  { id: 'claude', label: 'Claude', Icon: Sparkles },
-  { id: 'opencode', label: 'OpenCode', Icon: Zap },
-  { id: 'pi', label: 'Pi', Icon: Pi },
-];
-
-const AI_COMMIT_PROVIDER_IDS = ['codex', 'opencode', 'pi'] as const;
-
 interface HeaderProps {
   onOpenWorkspace: () => void;
-}
-
-interface ModelOption {
-  id: string;
-  label: string;
 }
 
 export default function Header({ onOpenWorkspace }: HeaderProps) {
@@ -56,9 +44,7 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
         const options = await window.electronAPI.getHarnessOptions();
         if (cancelled) return;
 
-        const availableIds = HARNESS_OPTIONS
-          .map((option) => option.id)
-          .filter((id) => id === '' || Boolean(options[id]));
+        const availableIds = resolveAvailableHarnessIds(options);
 
         setAvailableHarnessIds(availableIds);
       } catch {
@@ -210,14 +196,7 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
       return;
     }
 
-    for (const terminal of workspace.terminals) {
-      try {
-        await window.electronAPI.killTerminal(terminal.id);
-      } catch (err) {
-        console.error('Failed to kill terminal:', err);
-      }
-    }
-
+    await terminateWorkspaceTerminals(workspace);
     closeWorkspace(activeWorkspaceId);
   };
 

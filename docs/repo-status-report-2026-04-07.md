@@ -57,6 +57,49 @@ Phase 1 outcome:
 - The repository has moved from “builds but is not trustworthily green” to “core validation is now reliable and passing.”
 - The biggest remaining problems are maintainability and code concentration, not broken gates.
 
+## Phase 2 Structural Cleanup Update
+
+Phase 2 focused on reducing drift and duplication in the renderer without disturbing the green validation state established in phase 1.
+
+Current phase 2 status:
+
+- `npm run validate`: passed after the structural cleanup
+
+Phase 2 changes completed:
+
+- Introduced shared renderer contract types in:
+  - `src/renderer/types/shared.ts`
+- Updated renderer bridge typing in:
+  - `src/renderer/electron.d.ts`
+  - so shared types are no longer duplicated across multiple components
+- Introduced shared harness metadata and availability resolution in:
+  - `src/renderer/lib/harnessOptions.ts`
+- Updated both major harness-selection surfaces to use the shared source:
+  - `src/renderer/components/Header.tsx`
+  - `src/renderer/components/WorkspaceGateContent.tsx`
+- Introduced shared workspace terminal shutdown logic in:
+  - `src/renderer/lib/workspaceLifecycle.ts`
+- Reused that lifecycle helper in:
+  - `src/renderer/components/Header.tsx`
+  - `src/renderer/components/WorkspaceTabs.tsx`
+
+Why this matters:
+
+- Harness metadata no longer drifts between two separate renderer components.
+- AI/model-related renderer types no longer need to be redeclared in multiple places.
+- Workspace close behavior is now implemented in one place instead of duplicated UI logic.
+
+What phase 2 still did not do:
+
+- Refactor `src/main/main.ts` into separate services
+- Collapse the duplicated active-workspace state model in `src/renderer/store/workspaceStore.ts`
+- Split `src/renderer/components/GitButton.tsx` into smaller units
+
+Phase 2 outcome:
+
+- The codebase is structurally cleaner than after phase 1, but the main architectural hotspots remain.
+- The next highest-value work is still the large-file breakup of `main.ts`, `workspaceStore.ts`, and `GitButton.tsx`.
+
 ## Executive Summary
 
 This repository is now in a materially better state than it was at the start of the audit. Phase 1 stabilization restored working validation gates and removed several confirmed dead paths, but the codebase still has concentrated maintainability risk in a few oversized modules.
@@ -66,6 +109,7 @@ The most important conclusions:
 - The repo did have several confirmed dead code paths and stale interfaces; the clearest phase 1 cases have now been removed.
 - The renderer previously lacked a trustworthy TypeScript gate in the normal workflow; that gap is now closed with explicit `typecheck` and `validate` scripts.
 - Packaging was previously broken by configuration; that issue is fixed, and packaging now succeeds when network access is available for Electron downloads.
+- Renderer contract drift has been reduced by centralizing shared types, harness metadata, and workspace shutdown behavior.
 - A small number of files carry a disproportionate amount of responsibility:
   - `src/main/main.ts` at 1888 LOC
   - `src/renderer/store/workspaceStore.ts` at 1389 LOC

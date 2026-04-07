@@ -1,3 +1,5 @@
+import type { AiCommitSettings, ModelOption } from './types/shared';
+
 interface ElectronAPI {
   // Workspace
   getLastWorkspace: () => Promise<string>;
@@ -116,17 +118,6 @@ interface GitDiffResult {
   output: string;
   title: string;
   error?: string;
-}
-
-interface ModelOption {
-  id: string;
-  label: string;
-}
-
-interface AiCommitSettings {
-  enabled: boolean;
-  provider: string;
-  model: string;
 }
 
 interface GenerateCommitMessageResult {
