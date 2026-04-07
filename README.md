@@ -1,22 +1,22 @@
 # Clanker Grid
 
-A developer workspace tool featuring a terminal grid and integrated web browser, built with Electron and React.
+A developer workspace tool featuring multi-workspace terminal layouts, AI harness launchers, git controls, and an integrated browser, built with Electron and React.
 
 ## Features
 
 - **Terminal Grid**: Multiple terminal panes with flexible layout
 - **Integrated Browser**: Web browser panel alongside your terminals
-- **Harness Support**: Choose between different AI coding harnesses (Codex, OpenCode, Pi)
+- **Harness Support**: Choose between Codex, Claude, OpenCode, Pi, or a plain shell terminal
 - **Multiple Workspaces**: Work on multiple projects simultaneously with workspace tabs
 - **Quick Launch**: Launch directly into your workspace with configurable terminal count
+- **Git Tools**: Branch, stash, merge, history, diff, and AI-assisted commit message flows
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 18+
-- npm or yarn
-- Electron
+- npm
 
 ### Installation
 
@@ -34,6 +34,12 @@ npm run dev
 
 ```bash
 npm run build
+```
+
+### Validation
+
+```bash
+npm run validate
 ```
 
 ## Project Structure

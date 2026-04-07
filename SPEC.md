@@ -1,19 +1,24 @@
-# Clanker Grid - Workspace Launcher
+# Clanker Grid
+
+## Status Note
+- This document started as the initial launcher specification and no longer fully matches the current implementation.
+- The current app supports multiple workspace tabs, per-workspace harness/model selection, git operations, AI-assisted commit messages, and a native embedded browser panel.
+- For current repository status and cleanup history, see `docs/repo-status-report-2026-04-07.md`.
 
 ## Project Overview
 - **Project Name**: Clanker Grid
 - **Type**: Desktop Application (Electron + React)
-- **Core Feature**: A developer workspace tool that displays multiple terminal instances in a configurable grid layout with an embedded native web browser using Electron's BrowserView API
-- **Target Users**: Developers who need to quickly open workspace environments with multiple CLI sessions
+- **Core Feature**: A developer workspace tool that manages multiple workspaces with terminal panes, harness launches, git controls, and an embedded native browser panel
+- **Target Users**: Developers who need to work across one or more repositories with CLI, browser, and git workflows in one desktop app
 
 ## Technical Stack
-- **Framework**: Electron 31.x (Chromium backend + Node.js)
+- **Framework**: Electron 41.x (Chromium backend + Node.js)
 - **Frontend**: React + TypeScript + Vite
 - **Terminal**: xterm.js with node-pty for PTY support
-- **Web Browser**: Electron BrowserView (native embedded browser)
-- **Grid Layout**: CSS Grid with resizable panes
+- **Web Browser**: Electron WebContentsView (native embedded browser panel)
+- **Layout**: Dockable/resizable pane layout
 - **State Management**: Zustand
-- **Settings Storage**: electron-store for localStorage persistence
+- **Settings Storage**: electron-store for persisted local settings
 
 ## UI/UX Specification
 
