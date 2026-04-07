@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star } from 'lucide-react';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
 import type { ModelOption } from '../types/shared';
 import './WorkspaceGate.css';
@@ -17,6 +17,7 @@ interface ContentProps {
 }
 
 const STORAGE_KEY = 'clanker-grid-last-path';
+const FAVORITES_STORAGE_KEY = 'clanker-grid-model-favorites';
 
 export const TERMINAL_PRESETS = [
   { count: 1, label: '1', description: 'Single terminal' },
@@ -37,9 +38,46 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   const [selectedModel, setSelectedModel] = useState('');
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [showModelMenu, setShowModelMenu] = useState(false);
+  const [favoritesMap, setFavoritesMap] = useState<Record<string, string[]>>({});
+  const [allModels, setAllModels] = useState<Record<string, ModelOption[]>>({});
+  const [modelsLoaded, setModelsLoaded] = useState(false);
   
   const inputRef = useRef<HTMLInputElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+
+  // Load favorites from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(FAVORITES_STORAGE_KEY);
+      if (stored) {
+        setFavoritesMap(JSON.parse(stored));
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }, []);
+
+  const toggleFavorite = useCallback((harnessId: string, modelId: string) => {
+    setFavoritesMap((prev) => {
+      const updated = { ...prev };
+      const currentFavorites = [...(updated[harnessId] || [])];
+      const index = currentFavorites.indexOf(modelId);
+      if (index === -1) {
+        currentFavorites.push(modelId);
+      } else {
+        currentFavorites.splice(index, 1);
+      }
+      if (currentFavorites.length === 0) {
+        delete updated[harnessId];
+      } else {
+        updated[harnessId] = currentFavorites;
+      }
+      localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const favorites = selectedHarness ? (favoritesMap[selectedHarness] || []) : [];
 
   // Load last used path
   useEffect(() => {
@@ -64,7 +102,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     loadPath();
   }, [initialPath]);
 
-  // Load only the harnesses that are available on this machine
+  // Load harnesses and pre-load models for all available harnesses
   useEffect(() => {
     let cancelled = false;
 
@@ -78,6 +116,34 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
         setAvailableHarnessIds(availableIds);
         setSelectedHarness((current) => availableIds.includes(current) ? current : (availableIds.find((id) => id !== '') ?? ''));
         setSelectedModel('');
+
+        // Pre-load models for all available harnesses
+        const harnessIds = availableIds.filter((id) => id !== '');
+        const modelsMap: Record<string, ModelOption[]> = {};
+        await Promise.all(
+          harnessIds.map(async (harnessId) => {
+            try {
+              const models = await window.electronAPI.getHarnessModels(harnessId);
+              if (!cancelled) {
+                modelsMap[harnessId] = models;
+              }
+            } catch {
+              if (!cancelled) {
+                modelsMap[harnessId] = [];
+              }
+            }
+          })
+        );
+        if (!cancelled) {
+          setAllModels(modelsMap);
+          setModelsLoaded(true);
+          // Set initial model options for the default harness
+          const defaultHarness = availableIds.includes('codex') ? 'codex' : availableIds.find((id) => id !== '') || '';
+          if (defaultHarness && modelsMap[defaultHarness]) {
+            setModelOptions(modelsMap[defaultHarness]);
+            setSelectedModel(modelsMap[defaultHarness][0]?.id ?? '');
+          }
+        }
       } catch {
         if (!cancelled) {
           setAvailableHarnessIds(['']);
@@ -94,48 +160,35 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     };
   }, []);
 
+  // Update model options when harness changes (using pre-loaded models)
   useEffect(() => {
     if (!selectedHarness) {
       setModelOptions([]);
       setSelectedModel('');
       setShowModelMenu(false);
-      setIsModelLoading(false);
       return;
     }
 
-    let cancelled = false;
-
-    const loadModels = async () => {
+    const harnessModels = allModels[selectedHarness];
+    if (harnessModels) {
+      setModelOptions(harnessModels);
+      setSelectedModel((current) => {
+        if (harnessModels.some((model) => model.id === current)) {
+          return current;
+        }
+        return harnessModels[0]?.id ?? '';
+      });
+      setIsModelLoading(false);
+    } else if (modelsLoaded) {
+      // Models were loaded but this harness has none
+      setModelOptions([]);
+      setSelectedModel('');
+      setIsModelLoading(false);
+    } else {
+      // Models still loading
       setIsModelLoading(true);
-      try {
-        const models = await window.electronAPI.getHarnessModels(selectedHarness);
-        if (cancelled) return;
-        setModelOptions(models);
-        setSelectedModel((current) => {
-          if (models.some((model) => model.id === current)) {
-            return current;
-          }
-
-          return models[0]?.id ?? '';
-        });
-      } catch {
-        if (!cancelled) {
-          setModelOptions([]);
-          setSelectedModel('');
-        }
-      } finally {
-        if (!cancelled) {
-          setIsModelLoading(false);
-        }
-      }
-    };
-
-    loadModels();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedHarness]);
+    }
+  }, [selectedHarness, allModels, modelsLoaded]);
 
   useEffect(() => {
     if (!showModelMenu) {
@@ -320,6 +373,19 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     ? 'No models available'
     : selectedModelLabel;
 
+  // Sort models: favorites first, then alphabetically
+  const sortedModelOptions = useMemo(() => {
+    if (!modelOptions.length) return [];
+    const favoritesForHarness = selectedHarness ? (favoritesMap[selectedHarness] || []) : [];
+    return [...modelOptions].sort((a, b) => {
+      const aFav = favoritesForHarness.includes(a.id);
+      const bFav = favoritesForHarness.includes(b.id);
+      if (aFav && !bFav) return -1;
+      if (!aFav && bFav) return 1;
+      return a.label.localeCompare(b.label);
+    });
+  }, [modelOptions, selectedHarness, favoritesMap]);
+
   return (
     <div className="gate-content">
       <div className="gate-icon">
@@ -476,7 +542,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
             </button>
           </div>
 
-          {showModelMenu && modelOptions.length > 0 && (
+          {showModelMenu && sortedModelOptions.length > 0 && (
             <div className="model-menu" role="listbox" aria-label="Available models">
               <button
                 type="button"
@@ -489,22 +555,47 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
                 <span className="model-menu-text">Default</span>
               </button>
 
-              {modelOptions.map((model) => (
-                <button
-                  key={model.id}
-                  type="button"
-                  className={`model-menu-item ${selectedModel === model.id ? 'selected' : ''}`}
-                  onClick={() => {
-                    setSelectedModel(model.id);
-                    setShowModelMenu(false);
-                  }}
-                >
-                  <span className="model-menu-text">{model.label}</span>
-                  {selectedModel === model.id && (
-                    <Check size={14} strokeWidth={2.5} className="model-menu-check" />
-                  )}
-                </button>
-              ))}
+              {sortedModelOptions.map((model) => {
+                const isFavorite = favorites.includes(model.id);
+                const isSelected = selectedModel === model.id;
+                const handleSelectModel = () => {
+                  setSelectedModel(model.id);
+                  setShowModelMenu(false);
+                };
+                return (
+                  <div
+                    key={model.id}
+                    role="option"
+                    aria-selected={isSelected}
+                    tabIndex={0}
+                    className={`model-menu-item ${isSelected ? 'selected' : ''}`}
+                    onClick={handleSelectModel}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleSelectModel();
+                      }
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className={`model-favorite-btn ${isFavorite ? 'favorited' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorite(selectedHarness, model.id);
+                      }}
+                      title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                      aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                    >
+                      <Star size={12} fill={isFavorite ? 'currentColor' : 'none'} />
+                    </button>
+                    <span className="model-menu-text">{model.label}</span>
+                    {isSelected && (
+                      <Check size={14} strokeWidth={2.5} className="model-menu-check" />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
           {showModelMenu && modelOptions.length === 0 && (
