@@ -11,13 +11,13 @@ All gates are green:
 - `npm run lint`: **passed** — 0 errors
 - `npm run typecheck`: **passed** — 0 errors across tsconfig.json, tsconfig.main.json, tsconfig.test.json
 - `npm run build`: **passed**
-- `npm run test`: **passed** — 14 test files, 299 tests
+- `npm run test`: **passed** — 15 test files, 323 tests (+24 TerminalPane tests)
 - `npm run validate`: **passed** — all of the above in sequence
 - `npm run build:dist`: **passed** when network access available for Electron downloads
 
 ## Test Coverage Summary
 
-Overall statement coverage: **44.85%** (up from 29.36%)
+Overall statement coverage: **49.61%** (up from 44.85%)
 
 | Module | Stmts | Branch | Lines | Notes |
 |--------|-------|--------|-------|-------|
@@ -34,7 +34,7 @@ Overall statement coverage: **44.85%** (up from 29.36%)
 | workspaceLayout.ts | 92.3% | 86.61% | 94.87% | |
 | harnessOptions.ts | 100% | 100% | 100% | |
 | workspaceLifecycle.ts | 100% | 100% | 100% | |
-| **Renderer components** | 32% | 24% | 32% | |
+| **Renderer components** | 41.76% | 32.61% | 41.87% | |
 | StatusBar.tsx | 100% | 100% | 100% | |
 | CommitDialog.tsx | 94.62% | 85.91% | 94.11% | |
 | TitleBar.tsx | 92.3% | 50% | 91.66% | |
@@ -43,7 +43,7 @@ Overall statement coverage: **44.85%** (up from 29.36%)
 | GitButton.tsx | 21.53% | 3.91% | 21.94% | Exercised via Header |
 | BrowserPanel.tsx | 0% | 0% | 0% | |
 | DynamicPaneLayout.tsx | 0% | 0% | 0% | |
-| TerminalPane.tsx | 0% | 0% | 0% | |
+| **TerminalPane.tsx** | **87.14%** | **75.29%** | **88.46%** | **+24 tests added** |
 | WorkspaceGate.tsx | 0% | 0% | 0% | |
 | WorkspaceTabs.tsx | 17.02% | 11.11% | 17.77% | |
 | git/* sections | 0% | 0% | 0% | |
@@ -107,6 +107,23 @@ Overall statement coverage: **44.85%** (up from 29.36%)
 - Configured TypeScript, React hooks, and per-path rules
 - `npm run lint` integrated into `validate` gate
 
+### Phase 8: TerminalPane Coverage ✅
+
+- Added comprehensive tests for TerminalPane component (24 new tests)
+- Mocks for @xterm/xterm and @xterm/addon-fit modules
+- Tests cover:
+  - Empty state rendering
+  - Basic rendering (header, content area, action buttons)
+  - Lock state display
+  - Action handlers (bringIntoView, toggleLock, close)
+  - Active state management
+  - Terminal initialization with xterm
+  - Buffer loading and streaming
+  - Resize handling
+  - Cleanup on unmount
+- Added ResizeObserver polyfill to test infrastructure
+- Coverage: 0% → 87.14% (Stmts), 0% → 75.29% (Branch), 0% → 88.46% (Lines)
+
 ## File Sizes (Current)
 
 | File | LOC | Status |
@@ -129,14 +146,16 @@ Overall statement coverage: **44.85%** (up from 29.36%)
    - Terminal management, browser lifecycle, settings, window management untested
    - Best approach: continue extracting testable services and test those
 
-2. **No CI pipeline**
-   - No `.github/workflows` exists
-   - Every push should run `npm run validate` + coverage
+2. **CI pipeline exists but could be enhanced**
+   - `.github/workflows/validate.yml` runs lint, typecheck, build, test
+   - Missing: coverage threshold enforcement
+   - Recommendation: Add `--coverage.threshold.lines 50` requirement
 
 3. **Renderer components still partially covered**
-   - `BrowserPanel.tsx` (0%), `DynamicPaneLayout.tsx` (0%), `TerminalPane.tsx` (0%)
+   - `BrowserPanel.tsx` (0%), `DynamicPaneLayout.tsx` (0%)
    - `WorkspaceTabs.tsx` (17%), `GitButton.tsx` (21%)
    - `WorkspaceGateContent.tsx` (51%)
+   - **`TerminalPane.tsx` now at 87.14%** ✅
 
 ### Medium Priority
 
