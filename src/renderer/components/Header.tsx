@@ -12,6 +12,8 @@ export const HARNESS_OPTIONS = [
   { id: 'pi', label: 'Pi', Icon: Pi },
 ];
 
+const AI_COMMIT_PROVIDER_IDS = ['codex', 'opencode', 'pi'] as const;
+
 interface HeaderProps {
   onOpenWorkspace: () => void;
 }
@@ -34,6 +36,12 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
   const [showFastfetch, setShowFastfetch] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [aiCommitEnabled, setAiCommitEnabled] = useState(false);
+  const [aiCommitProvider, setAiCommitProvider] = useState<string>('');
+  const [aiCommitModel, setAiCommitModel] = useState('');
+  const [aiCommitModels, setAiCommitModels] = useState<ModelOption[]>([]);
+  const [isLoadingAiCommitModels, setIsLoadingAiCommitModels] = useState(false);
+  const [hasLoadedAiCommitSettings, setHasLoadedAiCommitSettings] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,9 +84,92 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
       } catch (err) {
         console.error('Failed to load fastfetch setting:', err);
       }
+
+      try {
+        const aiCommitSettings = await window.electronAPI.getAiCommitSettings();
+        setAiCommitEnabled(aiCommitSettings.enabled);
+        setAiCommitProvider(aiCommitSettings.provider);
+        setAiCommitModel(aiCommitSettings.model);
+      } catch (err) {
+        console.error('Failed to load AI commit settings:', err);
+      } finally {
+        setHasLoadedAiCommitSettings(true);
+      }
     };
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    if (!hasLoadedAiCommitSettings) {
+      return;
+    }
+
+    const availableProviders = HARNESS_OPTIONS
+      .filter((option) => option.id !== '' && AI_COMMIT_PROVIDER_IDS.includes(option.id as typeof AI_COMMIT_PROVIDER_IDS[number]))
+      .map((option) => option.id)
+      .filter((id) => availableHarnessIds.includes(id));
+
+    if (availableProviders.length === 0) {
+      return;
+    }
+
+    if (!aiCommitProvider || !availableProviders.includes(aiCommitProvider)) {
+      const nextProvider = availableProviders[0];
+      setAiCommitProvider(nextProvider);
+      void window.electronAPI.setAiCommitProvider(nextProvider);
+      setAiCommitModel('');
+      void window.electronAPI.setAiCommitModel('');
+    }
+  }, [availableHarnessIds, aiCommitProvider, hasLoadedAiCommitSettings]);
+
+  useEffect(() => {
+    if (!hasLoadedAiCommitSettings) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadAiCommitModels = async () => {
+      if (!aiCommitProvider || !availableHarnessIds.includes(aiCommitProvider)) {
+        setAiCommitModels([]);
+        return;
+      }
+
+      setIsLoadingAiCommitModels(true);
+      try {
+        const models = await window.electronAPI.getHarnessModels(aiCommitProvider);
+        if (cancelled) return;
+
+        setAiCommitModels(models);
+        setAiCommitModel((current) => {
+          if (models.some((model) => model.id === current)) {
+            return current;
+          }
+
+          const nextModel = models[0]?.id ?? '';
+          if (nextModel !== current) {
+            void window.electronAPI.setAiCommitModel(nextModel);
+          }
+          return nextModel;
+        });
+      } catch (error) {
+        console.error('Failed to load AI commit models:', error);
+        if (!cancelled) {
+          setAiCommitModels([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingAiCommitModels(false);
+        }
+      }
+    };
+
+    loadAiCommitModels();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [aiCommitProvider, availableHarnessIds, hasLoadedAiCommitSettings]);
 
   const handleAddTerminal = async () => {
     if (!canAddPane()) {
@@ -133,6 +224,39 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
       console.error('Failed to save fastfetch setting:', err);
     }
   };
+
+  const handleToggleAiCommit = async (checked: boolean) => {
+    try {
+      await window.electronAPI.setAiCommitEnabled(checked);
+      setAiCommitEnabled(checked);
+    } catch (err) {
+      console.error('Failed to save AI commit setting:', err);
+    }
+  };
+
+  const handleAiCommitProviderChange = async (provider: string) => {
+    try {
+      await window.electronAPI.setAiCommitProvider(provider);
+      setAiCommitProvider(provider);
+      setAiCommitModel('');
+      await window.electronAPI.setAiCommitModel('');
+    } catch (err) {
+      console.error('Failed to save AI commit provider:', err);
+    }
+  };
+
+  const handleAiCommitModelChange = async (model: string) => {
+    try {
+      await window.electronAPI.setAiCommitModel(model);
+      setAiCommitModel(model);
+    } catch (err) {
+      console.error('Failed to save AI commit model:', err);
+    }
+  };
+
+  const aiCommitProviderOptions = HARNESS_OPTIONS
+    .filter((option) => option.id !== '' && AI_COMMIT_PROVIDER_IDS.includes(option.id as typeof AI_COMMIT_PROVIDER_IDS[number]))
+    .filter((option) => availableHarnessIds.includes(option.id));
 
   return (
     <header className="header">
@@ -200,6 +324,62 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
                 />
                 <span>Show fastfetch</span>
               </label>
+
+              <div className="settings-section">
+                <label className="settings-option">
+                  <input
+                    type="checkbox"
+                    checked={aiCommitEnabled}
+                    onChange={(e) => handleToggleAiCommit(e.target.checked)}
+                  />
+                  <span>AI commit messages</span>
+                </label>
+
+                <div className="settings-row">
+                  <span className="settings-row-label">Provider</span>
+                  <select
+                    className="settings-select"
+                    value={aiCommitProvider}
+                    onChange={(e) => void handleAiCommitProviderChange(e.target.value)}
+                    disabled={!aiCommitEnabled || aiCommitProviderOptions.length === 0}
+                  >
+                    {aiCommitProviderOptions.length === 0 ? (
+                      <option value="">No providers available</option>
+                    ) : (
+                      aiCommitProviderOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+
+                <div className="settings-row">
+                  <span className="settings-row-label">Model</span>
+                  <select
+                    className="settings-select"
+                    value={aiCommitModel}
+                    onChange={(e) => void handleAiCommitModelChange(e.target.value)}
+                    disabled={!aiCommitEnabled || isLoadingAiCommitModels || aiCommitModels.length === 0}
+                  >
+                    {isLoadingAiCommitModels ? (
+                      <option value="">Loading models...</option>
+                    ) : aiCommitModels.length === 0 ? (
+                      <option value="">No models available</option>
+                    ) : (
+                      <>
+                        <option value="">Default model</option>
+                        {aiCommitModels.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.label}
+                          </option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                </div>
+              </div>
             </div>
           )}
         </div>

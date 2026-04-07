@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Check, Loader2 } from 'lucide-react';
+import { X, Check, Loader2, Sparkles } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 
 interface GitStatus {
@@ -14,6 +14,7 @@ interface CommitDialogProps {
   onCommit: (message: string) => Promise<{ success: boolean; error?: string }>;
   onStageAll: () => void;
   changes: GitStatus[];
+  workspacePath: string;
 }
 
 export default function CommitDialog({
@@ -22,11 +23,14 @@ export default function CommitDialog({
   onCommit,
   onStageAll,
   changes,
+  workspacePath,
 }: CommitDialogProps) {
   const [message, setMessage] = useState('');
+  const [aiSettings, setAiSettings] = useState<AiCommitSettings | null>(null);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
   const [isCommitting, setIsCommitting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -36,9 +40,38 @@ export default function CommitDialog({
       setMessage('');
       setError(null);
       setIsCommitting(false);
+      setIsGenerating(false);
       // Focus the input after a brief delay
       setTimeout(() => inputRef.current?.focus(), 100);
     }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setAiSettings(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSettings = async () => {
+      try {
+        const settings = await window.electronAPI.getAiCommitSettings();
+        if (!cancelled) {
+          setAiSettings(settings);
+        }
+      } catch {
+        if (!cancelled) {
+          setAiSettings(null);
+        }
+      }
+    };
+
+    loadSettings();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -123,6 +156,29 @@ export default function CommitDialog({
     }
   };
 
+  const handleGenerateMessage = async () => {
+    if (!workspacePath || isGenerating) {
+      return;
+    }
+
+    setIsGenerating(true);
+    setError(null);
+
+    try {
+      const result = await window.electronAPI.generateCommitMessage(workspacePath);
+      if (result.success && result.message) {
+        setMessage(result.message);
+        window.setTimeout(() => inputRef.current?.focus(), 0);
+      } else {
+        setError(result.error || 'Failed to generate commit message');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to generate commit message');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const getStatusBadge = (status: GitStatus['status']) => {
     const badges: Record<string, string> = {
       modified: 'M',
@@ -138,6 +194,7 @@ export default function CommitDialog({
 
   const hasChanges = changes.length > 0;
   const hasUnstagedChanges = changes.some((c) => !c.staged);
+  const aiCommitEnabled = Boolean(aiSettings?.enabled);
 
   return (
     <div className="commit-dialog-overlay" onClick={handleOverlayClick}>
@@ -154,9 +211,27 @@ export default function CommitDialog({
             {error && <div className="commit-error">{error}</div>}
 
             <div>
-              <label className="commit-message-label" htmlFor="commit-message">
-                Commit Message
-              </label>
+              <div className="commit-message-header">
+                <label className="commit-message-label" htmlFor="commit-message">
+                  Commit Message
+                </label>
+                {aiCommitEnabled && hasChanges && (
+                  <button
+                    type="button"
+                    className="commit-ai-btn"
+                    onClick={() => void handleGenerateMessage()}
+                    disabled={isCommitting || isGenerating}
+                    title="Generate commit message with AI"
+                  >
+                    {isGenerating ? (
+                      <Loader2 size={12} className="spin" />
+                    ) : (
+                      <Sparkles size={12} />
+                    )}
+                    <span>Generate</span>
+                  </button>
+                )}
+              </div>
               <textarea
                 ref={inputRef}
                 id="commit-message"
