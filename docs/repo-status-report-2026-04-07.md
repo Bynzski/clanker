@@ -11,13 +11,13 @@ All gates are green:
 - `npm run lint`: **passed** — 0 errors
 - `npm run typecheck`: **passed** — 0 errors across tsconfig.json, tsconfig.main.json, tsconfig.test.json
 - `npm run build`: **passed**
-- `npm run test`: **passed** — 25 test files, 608 tests
+- `npm run test`: **passed** — 25 test files, 656 tests
 - `npm run validate`: **passed** — all of the above in sequence
 - `npm run build:dist`: **passed** when network access available for Electron downloads
 
 ## Test Coverage Summary
 
-Overall statement coverage: **62.35%** (up from 44.85%)
+Overall statement coverage: **63.43%** (up from 62.35%)
 
 ### Coverage by Module
 
@@ -40,7 +40,7 @@ Overall statement coverage: **62.35%** (up from 44.85%)
 | StatusBar.tsx | 100% | 100% | 100% | ✅ |
 | CommitDialog.tsx | 94.62% | 85.91% | 94.11% | ✅ |
 | TitleBar.tsx | 92.3% | 50% | 91.66% | ✅ |
-| Header.tsx | 71.32% | 64.38% | 71.22% | |
+| Header.tsx | 87.41% | 86.3% | 87.76% | ✅ |
 | BrowserPanel.tsx | 91.5% | 73.33% | 92% | ✅ |
 | TerminalPane.tsx | 87.14% | 75.29% | 88.46% | ✅ |
 | GitBranchesSection.tsx | 100% | 100% | 100% | ✅ |
@@ -80,7 +80,7 @@ Overall statement coverage: **62.35%** (up from 44.85%)
 | tests/renderer/unit/WorkspaceGate.test.tsx | 27 | WorkspaceGate.tsx | ✅ |
 | tests/renderer/unit/GitButton.test.tsx | 31 | GitButton.tsx | ✅ |
 
-**25 test files, 608 tests total**
+**25 test files, 656 tests total**
 
 ## Phases Completed
 
@@ -183,6 +183,12 @@ Overall statement coverage: **62.35%** (up from 44.85%)
 - WorkspaceGateModal tests: open/close, keyboard handling, browser overlay, workspace selection
 - WorkspaceGateFullscreen tests: title bar, window controls
 - Coverage: 0% → 97.5%
+
+### Phase 16: Header.tsx Coverage ✅
+
+- Added comprehensive tests for Header component (38 new tests, 62 total)
+- Tests cover: basic rendering, GitButton integration, harness pills, button actions, pane locked state, settings dropdown, fastfetch setting, AI commit settings, new terminal with harness, harness validation, empty state, multiple workspaces
+- Coverage: 71.32% → 87.41%
 
 ### Phase 15: App.tsx Coverage ✅
 
