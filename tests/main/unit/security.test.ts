@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as fs from 'fs';
-import { normalizeAppBrowserUrl, normalizeExternalUrl, resolveExistingDirectory } from './security';
+import { test } from 'vitest';
+import {
+  normalizeAppBrowserUrl,
+  normalizeExternalUrl,
+  resolveExistingDirectory,
+} from '../../../src/main/security';
 
 test('normalizeAppBrowserUrl allows only http and https URLs', () => {
   assert.equal(normalizeAppBrowserUrl('https://example.com/docs?q=1'), 'https://example.com/docs?q=1');

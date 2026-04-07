@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { buildHarnessSpawnArgs, normalizePiModelId, type HarnessConfig } from './harnessLaunch';
+import { test } from 'vitest';
+import {
+  buildHarnessSpawnArgs,
+  normalizePiModelId,
+  type HarnessConfig,
+} from '../../../src/main/harnessLaunch';
 
 const opencodeConfig: HarnessConfig = {
   name: 'OpenCode',
