@@ -2,11 +2,10 @@ import { app, BrowserWindow, Menu, WebContentsView, ipcMain, dialog, shell } fro
 
 // Disable GPU acceleration for compatibility in some environments
 app.disableHardwareAcceleration();
-app.commandLine.appendSwitch('no-sandbox');
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-dev-shm-usage');
-app.commandLine.appendSwitch('disable-setuid-sandbox');
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import * as pty from 'node-pty';
@@ -28,6 +27,11 @@ import {
   HARNESS_OPTIONS,
 } from './harnessCatalog';
 import { GitService, type GitStatusEntry } from './gitService';
+import {
+  normalizeAppBrowserUrl,
+  normalizeExternalUrl,
+  resolveExistingDirectory,
+} from './security';
 
 interface Terminal {
   id: string;
@@ -115,6 +119,21 @@ const terminals: Map<string, Terminal> = new Map();
 let mainWindow: BrowserWindow | null = null;
 let browserView: WebContentsView | null = null;
 let currentBrowserUrl = 'https://github.com';
+
+function getValidatedWorkspacePath(workspacePath: string): string | null {
+  return resolveExistingDirectory(workspacePath);
+}
+
+function getSafeWorkspacePath(workingDir: string): string {
+  return (
+    resolveExistingDirectory(workingDir, store.get('lastWorkspace'))
+    ?? app.getPath('home')
+  );
+}
+
+function getInvalidWorkspaceResult() {
+  return { success: false, error: 'Workspace path is invalid or not a directory' };
+}
 
 // ============================================================================
 // Git Service - Handles all git operations in the main process
@@ -209,6 +228,22 @@ function attachBrowserShortcutHandlers(view: WebContentsView) {
   });
 }
 
+function attachBrowserSecurityHandlers(view: WebContentsView) {
+  view.webContents.setWindowOpenHandler(({ url }) => {
+    const externalUrl = normalizeExternalUrl(url);
+    if (externalUrl) {
+      void shell.openExternal(externalUrl);
+    }
+    return { action: 'deny' };
+  });
+
+  view.webContents.on('will-navigate', (event, url) => {
+    if (!normalizeAppBrowserUrl(url)) {
+      event.preventDefault();
+    }
+  });
+}
+
 function getRendererUrl(query: Record<string, string | undefined>) {
   const searchParams = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
@@ -247,6 +282,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
@@ -279,11 +315,13 @@ function initBrowserView() {
   browserView = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
+      sandbox: true,
       partition: 'persist:browser',
     },
   });
 
-  browserView.webContents.loadURL(currentBrowserUrl);
+  attachBrowserSecurityHandlers(browserView);
+  void browserView.webContents.loadURL(currentBrowserUrl);
   mainWindow.contentView.addChildView(browserView);
   attachBrowserShortcutHandlers(browserView);
   
@@ -342,7 +380,12 @@ ipcMain.handle('set-ai-commit-model', (_, model: string) => {
 });
 
 ipcMain.handle('generate-commit-message', async (_, workspacePath: string) => {
-  return generateAiCommitMessage(workspacePath);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  return generateAiCommitMessage(safeWorkspacePath);
 });
 
 ipcMain.handle('open-directory-dialog', async () => {
@@ -360,9 +403,13 @@ ipcMain.handle('open-directory-dialog', async () => {
 });
 
 ipcMain.handle('read-directory', async (_, dirPath: string) => {
-  const fs = await import('fs');
+  const safeDirectoryPath = resolveExistingDirectory(dirPath);
+  if (!safeDirectoryPath) {
+    return [];
+  }
+
   try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const entries = fs.readdirSync(safeDirectoryPath, { withFileTypes: true });
     return entries
       .filter((e) => e.isDirectory())
       .map((e) => ({
@@ -380,6 +427,7 @@ ipcMain.handle('get-harness-models', async (_, harness: string) => {
 
 ipcMain.handle('spawn-terminal', (_, workingDir: string, harness?: string, model?: string) => {
   const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const cwd = getSafeWorkspacePath(workingDir);
   
   // Use user's default shell, fallback to bash
   const userShell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
@@ -397,7 +445,7 @@ ipcMain.handle('spawn-terminal', (_, workingDir: string, harness?: string, model
         buildHarnessSpawnArgs(HARNESS_OPTIONS[harness], model),
         {
           name: 'xterm-256color',
-          cwd: workingDir || store.get('lastWorkspace'),
+          cwd,
           env: {
             ...process.env as { [key: string]: string },
             ...harnessEnv,
@@ -411,7 +459,7 @@ ipcMain.handle('spawn-terminal', (_, workingDir: string, harness?: string, model
       )
     : pty.spawn(userShell, shellArgs, {
         name: 'xterm-256color',
-        cwd: workingDir || store.get('lastWorkspace'),
+        cwd,
         env: {
           ...process.env as { [key: string]: string },
           ...harnessEnv,
@@ -507,10 +555,16 @@ ipcMain.handle('browser-hide', () => {
 });
 
 ipcMain.handle('browser-navigate', (_, url: string) => {
-  currentBrowserUrl = url;
-  if (browserView) {
-    browserView.webContents.loadURL(url);
+  const safeUrl = normalizeAppBrowserUrl(url);
+  if (!safeUrl) {
+    return false;
   }
+
+  currentBrowserUrl = safeUrl;
+  if (browserView) {
+    void browserView.webContents.loadURL(safeUrl);
+  }
+  return true;
 });
 
 ipcMain.handle('browser-back', () => {
@@ -538,7 +592,13 @@ ipcMain.handle('browser-stop', () => {
 });
 
 ipcMain.handle('open-external', (_, url: string) => {
-  shell.openExternal(url);
+  const safeUrl = normalizeExternalUrl(url);
+  if (!safeUrl) {
+    return false;
+  }
+
+  void shell.openExternal(safeUrl);
+  return true;
 });
 
 ipcMain.handle('minimize-window', () => {
@@ -579,7 +639,12 @@ ipcMain.handle('can-go-forward', () => {
 // ============================================================================
 
 ipcMain.handle('git-start-polling', (_, workspacePath: string) => {
-  gitService.startPolling(workspacePath);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return;
+  }
+
+  gitService.startPolling(safeWorkspacePath);
 });
 
 ipcMain.handle('git-stop-polling', () => {
@@ -587,19 +652,54 @@ ipcMain.handle('git-stop-polling', () => {
 });
 
 ipcMain.handle('git-get-branch-state', async (_, workspacePath: string) => {
-  return gitService.getBranchState(workspacePath);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return {
+      success: false,
+      isRepo: false,
+      currentBranch: null,
+      isDetached: false,
+      branches: [],
+      error: getInvalidWorkspaceResult().error,
+    };
+  }
+
+  return gitService.getBranchState(safeWorkspacePath);
 });
 
 ipcMain.handle('git-get-operation-state', async (_, workspacePath: string) => {
-  return gitService.getOperationState(workspacePath);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return {
+      success: false,
+      isRepo: false,
+      inProgress: false,
+      mode: 'none',
+      conflicts: [],
+      message: 'Workspace path is invalid or not a directory',
+      error: getInvalidWorkspaceResult().error,
+    };
+  }
+
+  return gitService.getOperationState(safeWorkspacePath);
 });
 
 ipcMain.handle('git-get-stashes', async (_, workspacePath: string) => {
-  return gitService.listStashes(workspacePath);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return [];
+  }
+
+  return gitService.listStashes(safeWorkspacePath);
 });
 
 ipcMain.handle('git-get-history', async (_, workspacePath: string, limit?: number) => {
-  return gitService.getHistory(workspacePath, limit);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return [];
+  }
+
+  return gitService.getHistory(safeWorkspacePath, limit);
 });
 
 ipcMain.handle('git-get-diff', async (
@@ -608,105 +708,193 @@ ipcMain.handle('git-get-diff', async (
   mode: 'working' | 'staged' | 'commit',
   ref?: string
 ) => {
-  return gitService.getDiff(workspacePath, mode, ref);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return {
+      success: false,
+      output: '',
+      title: 'Diff',
+      error: getInvalidWorkspaceResult().error,
+    };
+  }
+
+  return gitService.getDiff(safeWorkspacePath, mode, ref);
 });
 
 ipcMain.handle('git-stage', async (_, workspacePath: string, files?: string[]) => {
-  const result = await gitService.stage(workspacePath, files);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.stage(safeWorkspacePath, files);
   // Refresh status after staging
-  await refreshGitStatus(workspacePath);
+  await refreshGitStatus(safeWorkspacePath);
   return result;
 });
 
 ipcMain.handle('git-commit', async (_, workspacePath: string, message: string) => {
-  const result = await gitService.commit(workspacePath, message);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.commit(safeWorkspacePath, message);
   // Refresh status after commit
-  await refreshGitStatus(workspacePath);
+  await refreshGitStatus(safeWorkspacePath);
   return result;
 });
 
 ipcMain.handle('git-create-branch', async (_, workspacePath: string, name: string, baseBranch?: string) => {
-  const result = await gitService.createBranch(workspacePath, name, baseBranch);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.createBranch(safeWorkspacePath, name, baseBranch);
   if (result.success) {
-    await refreshGitStatus(workspacePath);
+    await refreshGitStatus(safeWorkspacePath);
   }
   return result;
 });
 
 ipcMain.handle('git-switch-branch', async (_, workspacePath: string, name: string) => {
-  const result = await gitService.switchBranch(workspacePath, name);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.switchBranch(safeWorkspacePath, name);
   if (result.success) {
-    await refreshGitStatus(workspacePath);
+    await refreshGitStatus(safeWorkspacePath);
   }
   return result;
 });
 
 ipcMain.handle('git-delete-branch', async (_, workspacePath: string, name: string) => {
-  const result = await gitService.deleteBranch(workspacePath, name);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.deleteBranch(safeWorkspacePath, name);
   if (result.success) {
-    await refreshGitStatus(workspacePath);
+    await refreshGitStatus(safeWorkspacePath);
   }
   return result;
 });
 
 ipcMain.handle('git-merge-branch', async (_, workspacePath: string, branchName: string) => {
-  const result = await gitService.mergeBranch(workspacePath, branchName);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.mergeBranch(safeWorkspacePath, branchName);
   if (result.success) {
-    await refreshGitStatus(workspacePath);
+    await refreshGitStatus(safeWorkspacePath);
   }
   return result;
 });
 
 ipcMain.handle('git-abort-operation', async (_, workspacePath: string) => {
-  const result = await gitService.abortCurrentOperation(workspacePath);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.abortCurrentOperation(safeWorkspacePath);
   if (result.success) {
-    await refreshGitStatus(workspacePath);
+    await refreshGitStatus(safeWorkspacePath);
   }
   return result;
 });
 
 ipcMain.handle('git-stash', async (_, workspacePath: string, message?: string, includeUntracked?: boolean) => {
-  const result = await gitService.stashChanges(workspacePath, message, includeUntracked);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.stashChanges(safeWorkspacePath, message, includeUntracked);
   if (result.success) {
-    await refreshGitStatus(workspacePath);
+    await refreshGitStatus(safeWorkspacePath);
   }
   return result;
 });
 
 ipcMain.handle('git-apply-stash', async (_, workspacePath: string, stashRef: string) => {
-  const result = await gitService.applyStash(workspacePath, stashRef);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.applyStash(safeWorkspacePath, stashRef);
   if (result.success) {
-    await refreshGitStatus(workspacePath);
+    await refreshGitStatus(safeWorkspacePath);
   }
   return result;
 });
 
 ipcMain.handle('git-pop-stash', async (_, workspacePath: string, stashRef: string) => {
-  const result = await gitService.popStash(workspacePath, stashRef);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.popStash(safeWorkspacePath, stashRef);
   if (result.success) {
-    await refreshGitStatus(workspacePath);
+    await refreshGitStatus(safeWorkspacePath);
   }
   return result;
 });
 
 ipcMain.handle('git-drop-stash', async (_, workspacePath: string, stashRef: string) => {
-  const result = await gitService.dropStash(workspacePath, stashRef);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.dropStash(safeWorkspacePath, stashRef);
   if (result.success) {
-    await refreshGitStatus(workspacePath);
+    await refreshGitStatus(safeWorkspacePath);
   }
   return result;
 });
 
 ipcMain.handle('git-clear-stashes', async (_, workspacePath: string) => {
-  const result = await gitService.clearStashes(workspacePath);
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.clearStashes(safeWorkspacePath);
   if (result.success) {
-    await refreshGitStatus(workspacePath);
+    await refreshGitStatus(safeWorkspacePath);
   }
   return result;
 });
 
 ipcMain.handle('git-refresh', async () => {
-  return gitService.refresh();
+  const workspacePath = gitService.getCurrentWorkspace();
+  if (!workspacePath) {
+    return null;
+  }
+
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    gitService.stopPolling();
+    return {
+      success: false,
+      isRepo: false,
+      currentBranch: null,
+      isDetached: false,
+      changes: [],
+      error: getInvalidWorkspaceResult().error,
+    };
+  }
+
+  return gitService.getStatus(safeWorkspacePath);
 });
 
 // App lifecycle

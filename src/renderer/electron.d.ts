@@ -26,12 +26,12 @@ interface ElectronAPI {
   // Browser (WebContentsView)
   browserHide: () => Promise<void>;
   browserSetBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
-  browserNavigate: (url: string) => Promise<void>;
+  browserNavigate: (url: string) => Promise<boolean>;
   browserBack: () => Promise<void>;
   browserForward: () => Promise<void>;
   browserRefresh: () => Promise<void>;
   browserStop: () => Promise<void>;
-  openExternal: (url: string) => Promise<void>;
+  openExternal: (url: string) => Promise<boolean>;
   canGoBack: () => Promise<boolean>;
   canGoForward: () => Promise<boolean>;
 
