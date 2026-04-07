@@ -7,12 +7,15 @@ export interface GitStatusEntry {
   staged: boolean;
 }
 
+export type GitErrorCode = 'not-a-repo' | 'git-not-found' | 'unknown';
+
 export interface GitStatusResult {
   success: boolean;
   isRepo: boolean;
   currentBranch: string | null;
   isDetached: boolean;
   changes: GitStatusEntry[];
+  errorCode?: GitErrorCode;
   error?: string;
 }
 
@@ -681,6 +684,30 @@ export class GitService {
     }
   }
 
+  private classifyError(error: unknown): GitErrorCode {
+    const message = String(
+      (error as { message?: string })?.message ?? ''
+    );
+    const stderr = String(
+      (error as { stderr?: string })?.stderr ?? ''
+    );
+    const code = (error as { code?: string })?.code;
+
+    if (code === 'ENOENT') {
+      return 'git-not-found';
+    }
+
+    const combined = `${message} ${stderr}`.toLowerCase();
+    if (
+      combined.includes('not a git repository') ||
+      combined.includes('not a git repo')
+    ) {
+      return 'not-a-repo';
+    }
+
+    return 'unknown';
+  }
+
   async getStatus(workspacePath: string): Promise<GitStatusResult> {
     try {
       await this.execGit(workspacePath, ['rev-parse', '--git-dir']);
@@ -695,13 +722,16 @@ export class GitService {
         isDetached: currentBranch == null,
         changes,
       };
-    } catch {
+    } catch (error) {
+      const errorCode = this.classifyError(error);
       return {
         success: false,
         isRepo: false,
         currentBranch: null,
         isDetached: false,
         changes: [],
+        errorCode,
+        error: this.getGitErrorMessage(error, 'Failed to get git status'),
       };
     }
   }

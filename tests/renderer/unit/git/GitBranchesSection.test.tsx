@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { GitBranchesSection } from '../../../../src/renderer/components/git/GitBranchesSection';
-import type { GitBranchInfo } from '../../../../src/renderer/components/git/types';
+import type { GitBranch } from '../../../../src/renderer/components/git/types';
 
 describe('GitBranchesSection', () => {
   // Mock refs
@@ -17,7 +17,7 @@ describe('GitBranchesSection', () => {
   
   const defaultProps = {
     activeAction: null as string | null,
-    branches: [] as GitBranchInfo[],
+    branches: [] as GitBranch[],
     createBranchInputRef: mockInputRef,
     currentBranch: 'main' as string | null,
     isBusy: false,
