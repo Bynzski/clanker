@@ -19,7 +19,7 @@ export interface GitOperationState {
   error?: string;
 }
 
-export interface GitStashEntry {
+export interface GitStash {
   hash: string;
   ref: string;
   message: string;
