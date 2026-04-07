@@ -24,16 +24,17 @@ interface ElectronAPI {
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => () => void;
 
   // Browser (WebContentsView)
-  browserHide: () => Promise<void>;
-  browserSetBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
-  browserNavigate: (url: string) => Promise<boolean>;
-  browserBack: () => Promise<void>;
-  browserForward: () => Promise<void>;
-  browserRefresh: () => Promise<void>;
-  browserStop: () => Promise<void>;
+  browserHide: (workspaceId: string) => Promise<void>;
+  browserSetBounds: (workspaceId: string, bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
+  browserNavigate: (workspaceId: string, url: string) => Promise<boolean>;
+  browserBack: (workspaceId: string) => Promise<void>;
+  browserForward: (workspaceId: string) => Promise<void>;
+  browserRefresh: (workspaceId: string) => Promise<void>;
+  browserStop: (workspaceId: string) => Promise<void>;
   openExternal: (url: string) => Promise<boolean>;
-  canGoBack: () => Promise<boolean>;
-  canGoForward: () => Promise<boolean>;
+  canGoBack: (workspaceId: string) => Promise<boolean>;
+  canGoForward: (workspaceId: string) => Promise<boolean>;
+  browserDisposeWorkspace: (workspaceId: string) => Promise<void>;
 
   // Window controls
   minimizeWindow: () => Promise<void>;

@@ -197,6 +197,9 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
     }
 
     await terminateWorkspaceTerminals(workspace);
+    if (typeof window.electronAPI?.browserDisposeWorkspace === 'function') {
+      await window.electronAPI.browserDisposeWorkspace(workspace.id);
+    }
     closeWorkspace(activeWorkspaceId);
   };
 

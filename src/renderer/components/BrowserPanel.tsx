@@ -18,13 +18,13 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
   const contentRef = useRef<HTMLDivElement>(null);
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const rafRef = useRef<number | null>(null);
-  const { browserPane, browserVisible, browserOverlayCount, bringBrowserIntoView, toggleBrowserLock } = useWorkspaceStore();
+  const { browserPane, browserVisible, browserOverlayCount, bringBrowserIntoView, toggleBrowserLock, activeWorkspaceId } = useWorkspaceStore();
   const browserLocked = browserPane?.locked ?? false;
   const dragHandleProps = useDragHandle();
 
   // Update bounds for the browser content area
   const updateBounds = useCallback(() => {
-    if (!contentRef.current || !browserVisible || browserOverlayCount > 0) return;
+    if (!contentRef.current || !browserVisible || browserOverlayCount > 0 || !activeWorkspaceId) return;
 
     const rect = contentRef.current.getBoundingClientRect();
 
@@ -36,13 +36,13 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
     const left = rect.left + window.scrollX;
     const top = rect.top + window.scrollY;
 
-    window.electronAPI.browserSetBounds({
+    window.electronAPI.browserSetBounds(activeWorkspaceId, {
       x: Math.round(left * scale),
       y: Math.round(top * scale),
       width: Math.round(rect.width * scale),
       height: Math.round(rect.height * scale),
     });
-  }, [browserVisible, browserOverlayCount]);
+  }, [browserVisible, browserOverlayCount, activeWorkspaceId]);
 
   const scheduleBoundsUpdate = useCallback(() => {
     if (rafRef.current != null) {
@@ -107,10 +107,23 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
 
   // Poll for navigation state
   useEffect(() => {
+    if (!activeWorkspaceId) {
+      setCanGoBack(false);
+      setCanGoForward(false);
+      return;
+    }
+
+    let cancelled = false;
     const updateState = async () => {
       try {
-        setCanGoBack(await window.electronAPI.canGoBack());
-        setCanGoForward(await window.electronAPI.canGoForward());
+        const [back, forward] = await Promise.all([
+          window.electronAPI.canGoBack(activeWorkspaceId),
+          window.electronAPI.canGoForward(activeWorkspaceId),
+        ]);
+        if (!cancelled) {
+          setCanGoBack(back);
+          setCanGoForward(forward);
+        }
       } catch {
         // Ignore errors
       }
@@ -118,8 +131,11 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
 
     updateState();
     const interval = setInterval(updateState, 500);
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [activeWorkspaceId]);
 
   // Hide browser view when component unmounts
   useEffect(() => {
@@ -127,13 +143,15 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
       if (rafRef.current != null) {
         window.cancelAnimationFrame(rafRef.current);
       }
-      window.electronAPI.browserHide();
+      if (activeWorkspaceId) {
+        window.electronAPI.browserHide(activeWorkspaceId);
+      }
     };
-  }, []);
+  }, [activeWorkspaceId]);
 
   // Temporarily hide the native browser whenever a modal is open.
   useEffect(() => {
-    if (!browserVisible) {
+    if (!browserVisible || !activeWorkspaceId) {
       return;
     }
 
@@ -142,12 +160,12 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
         window.cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-      window.electronAPI.browserHide();
+      window.electronAPI.browserHide(activeWorkspaceId);
       return;
     }
 
     scheduleBoundsUpdate();
-  }, [browserVisible, browserOverlayCount, scheduleBoundsUpdate]);
+  }, [browserVisible, browserOverlayCount, scheduleBoundsUpdate, activeWorkspaceId]);
 
   const handleNavigate = () => {
     let navigateUrl = inputUrl.trim();
@@ -158,7 +176,8 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
       navigateUrl = 'https://' + navigateUrl;
     }
 
-    window.electronAPI.browserNavigate(navigateUrl);
+    if (!activeWorkspaceId) return;
+    window.electronAPI.browserNavigate(activeWorkspaceId, navigateUrl);
     onUrlChange(navigateUrl);
   };
 
@@ -170,19 +189,23 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
   };
 
   const handleBack = () => {
-    window.electronAPI.browserBack();
+    if (!activeWorkspaceId) return;
+    window.electronAPI.browserBack(activeWorkspaceId);
   };
 
   const handleForward = () => {
-    window.electronAPI.browserForward();
+    if (!activeWorkspaceId) return;
+    window.electronAPI.browserForward(activeWorkspaceId);
   };
 
   const handleRefresh = () => {
-    window.electronAPI.browserRefresh();
+    if (!activeWorkspaceId) return;
+    window.electronAPI.browserRefresh(activeWorkspaceId);
   };
 
   const handleStop = () => {
-    window.electronAPI.browserStop();
+    if (!activeWorkspaceId) return;
+    window.electronAPI.browserStop(activeWorkspaceId);
   };
 
   const handleOpenExternal = () => {

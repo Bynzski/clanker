@@ -18,6 +18,7 @@ const mockBrowserStop = vi.fn().mockResolvedValue(undefined);
 const mockBrowserNavigate = vi.fn().mockResolvedValue(true);
 const mockBrowserHide = vi.fn().mockResolvedValue(undefined);
 const mockBrowserSetBounds = vi.fn().mockResolvedValue(undefined);
+const mockBrowserDisposeWorkspace = vi.fn().mockResolvedValue(undefined);
 const mockOpenExternal = vi.fn().mockResolvedValue(true);
 const mockCanGoBack = vi.fn().mockResolvedValue(false);
 const mockCanGoForward = vi.fn().mockResolvedValue(false);
@@ -30,6 +31,7 @@ function setupStore(overrides = {}) {
     browserOverlayCount: 0,
     bringBrowserIntoView: vi.fn(),
     toggleBrowserLock: vi.fn(),
+    activeWorkspaceId: 'workspace-1',
   };
 
   const state = { ...defaultState, ...overrides };
@@ -40,6 +42,7 @@ function setupStore(overrides = {}) {
     browserOverlayCount: state.browserOverlayCount,
     bringBrowserIntoView: state.bringBrowserIntoView,
     toggleBrowserLock: state.toggleBrowserLock,
+    activeWorkspaceId: state.activeWorkspaceId,
   });
 
   return state;
@@ -48,15 +51,16 @@ function setupStore(overrides = {}) {
 function setupElectronAPIMocks() {
   window.electronAPI = {
     browserBack: mockBrowserBack,
+    browserDisposeWorkspace: mockBrowserDisposeWorkspace,
     browserForward: mockBrowserForward,
-    browserRefresh: mockBrowserRefresh,
-    browserStop: mockBrowserStop,
-    browserNavigate: mockBrowserNavigate,
     browserHide: mockBrowserHide,
+    browserNavigate: mockBrowserNavigate,
+    browserRefresh: mockBrowserRefresh,
     browserSetBounds: mockBrowserSetBounds,
-    openExternal: mockOpenExternal,
+    browserStop: mockBrowserStop,
     canGoBack: mockCanGoBack,
     canGoForward: mockCanGoForward,
+    openExternal: mockOpenExternal,
   } as unknown as typeof window.electronAPI;
 }
 
@@ -292,7 +296,7 @@ describe('BrowserPanel', () => {
       
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
       
-      expect(mockBrowserNavigate).toHaveBeenCalledWith('https://github.com');
+      expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', 'https://github.com');
     });
 
     it('does not navigate when input is empty', () => {
@@ -314,7 +318,7 @@ describe('BrowserPanel', () => {
       
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
       
-      expect(mockBrowserNavigate).toHaveBeenCalledWith('https://github.com');
+      expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', 'https://github.com');
     });
 
     it('calls onUrlChange when navigating', () => {
@@ -336,7 +340,7 @@ describe('BrowserPanel', () => {
       fireEvent.change(input, { target: { value: 'example.com' } });
       fireEvent.keyDown(input, { key: 'Enter' });
       
-      expect(mockBrowserNavigate).toHaveBeenCalledWith('https://example.com');
+      expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', 'https://example.com');
     });
 
     it('preserves http protocol if already specified', () => {
@@ -347,7 +351,7 @@ describe('BrowserPanel', () => {
       
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
       
-      expect(mockBrowserNavigate).toHaveBeenCalledWith('http://example.com');
+      expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', 'http://example.com');
     });
   });
 

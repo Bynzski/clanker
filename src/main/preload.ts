@@ -34,17 +34,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Browser (using WebContentsView)
-  browserHide: () => ipcRenderer.invoke('browser-hide'),
-  browserSetBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
-    ipcRenderer.invoke('browser-set-bounds', bounds),
-  browserNavigate: (url: string) => ipcRenderer.invoke('browser-navigate', url),
-  browserBack: () => ipcRenderer.invoke('browser-back'),
-  browserForward: () => ipcRenderer.invoke('browser-forward'),
-  browserRefresh: () => ipcRenderer.invoke('browser-refresh'),
-  browserStop: () => ipcRenderer.invoke('browser-stop'),
+  browserHide: (workspaceId: string) => ipcRenderer.invoke('browser-hide', workspaceId),
+  browserSetBounds: (workspaceId: string, bounds: { x: number; y: number; width: number; height: number }) =>
+    ipcRenderer.invoke('browser-set-bounds', workspaceId, bounds),
+  browserNavigate: (workspaceId: string, url: string) => ipcRenderer.invoke('browser-navigate', workspaceId, url),
+  browserBack: (workspaceId: string) => ipcRenderer.invoke('browser-back', workspaceId),
+  browserForward: (workspaceId: string) => ipcRenderer.invoke('browser-forward', workspaceId),
+  browserRefresh: (workspaceId: string) => ipcRenderer.invoke('browser-refresh', workspaceId),
+  browserStop: (workspaceId: string) => ipcRenderer.invoke('browser-stop', workspaceId),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
-  canGoBack: () => ipcRenderer.invoke('can-go-back'),
-  canGoForward: () => ipcRenderer.invoke('can-go-forward'),
+  canGoBack: (workspaceId: string) => ipcRenderer.invoke('can-go-back', workspaceId),
+  canGoForward: (workspaceId: string) => ipcRenderer.invoke('can-go-forward', workspaceId),
+  browserDisposeWorkspace: (workspaceId: string) => ipcRenderer.invoke('browser-dispose-workspace', workspaceId),
   onFitAllPanes: (callback: () => void) => {
     const handler = () => callback();
     ipcRenderer.on('fit-all-panes', handler);

@@ -30,6 +30,9 @@ export default function WorkspaceTabs() {
     }
 
     await terminateWorkspaceTerminals(workspace);
+    if (typeof window.electronAPI?.browserDisposeWorkspace === 'function') {
+      await window.electronAPI.browserDisposeWorkspace(id);
+    }
     closeWorkspace(id);
   };
 
