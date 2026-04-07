@@ -17,6 +17,12 @@ interface CommitDialogProps {
   workspacePath: string;
 }
 
+interface AiCommitSettings {
+  enabled: boolean;
+  provider: string;
+  model: string;
+}
+
 export default function CommitDialog({
   isOpen,
   onClose,
@@ -107,35 +113,10 @@ export default function CommitDialog({
     setError(null);
 
     try {
-      const result = await onCommit(message);
-      if (result.success) {
-        setMessage('');
-        onClose();
-      } else {
-        setError(result.error || 'Failed to create commit');
+      if (hasUnstagedChanges) {
+        await onStageAll();
       }
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
-    } finally {
-      setIsCommitting(false);
-    }
-  };
 
-  const handleStageAndCommit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!message.trim()) {
-      setError('Please enter a commit message');
-      return;
-    }
-
-    setIsCommitting(true);
-    setError(null);
-
-    try {
-      // Stage all changes first
-      await onStageAll();
-      // Then commit
       const result = await onCommit(message);
       if (result.success) {
         setMessage('');

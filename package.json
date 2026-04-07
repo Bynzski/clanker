@@ -12,6 +12,9 @@
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.main.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.main.json --noEmit",
+    "test": "npm run build:main && node --test dist/main/*.test.js",
+    "validate": "npm run typecheck && npm run build && npm run test",
     "build:dist": "npm run build && electron-builder",
     "start": "electron ."
   },
@@ -62,8 +65,7 @@
     ],
     "linux": {
       "target": [
-        "AppImage",
-        "png"
+        "AppImage"
       ],
       "icon": "build/icon.png"
     },

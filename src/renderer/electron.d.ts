@@ -1,7 +1,6 @@
 interface ElectronAPI {
   // Workspace
   getLastWorkspace: () => Promise<string>;
-  setLastWorkspace: (path: string) => Promise<void>;
   openDirectoryDialog: () => Promise<string | null>;
   readDirectory: (path: string) => Promise<{ name: string; isDirectory: boolean }[]>;
 
@@ -23,7 +22,6 @@ interface ElectronAPI {
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => () => void;
 
   // Browser (WebContentsView)
-  browserShow: (x: number, y: number, width: number, height: number) => Promise<void>;
   browserHide: () => Promise<void>;
   browserSetBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
   browserNavigate: (url: string) => Promise<void>;
@@ -32,7 +30,6 @@ interface ElectronAPI {
   browserRefresh: () => Promise<void>;
   browserStop: () => Promise<void>;
   openExternal: (url: string) => Promise<void>;
-  getBrowserUrl: () => Promise<string>;
   canGoBack: () => Promise<boolean>;
   canGoForward: () => Promise<boolean>;
 
@@ -50,7 +47,6 @@ interface ElectronAPI {
   // Git operations - managed by GitService in main process
   gitStartPolling: (workspacePath: string) => Promise<void>;
   gitStopPolling: () => Promise<void>;
-  gitGetStatus: (workspacePath: string) => Promise<GitStatusResult>;
   generateCommitMessage: (workspacePath: string) => Promise<GenerateCommitMessageResult>;
   gitStage: (workspacePath: string, files?: string[]) => Promise<{ success: boolean; error?: string }>;
   gitCommit: (workspacePath: string, message: string) => Promise<{ success: boolean; error?: string }>;
@@ -69,7 +65,6 @@ interface ElectronAPI {
   gitPopStash: (workspacePath: string, stashRef: string) => Promise<{ success: boolean; error?: string }>;
   gitDropStash: (workspacePath: string, stashRef: string) => Promise<{ success: boolean; error?: string }>;
   gitClearStashes: (workspacePath: string) => Promise<{ success: boolean; error?: string }>;
-  gitIsRepo: (workspacePath: string) => Promise<boolean>;
   gitRefresh: () => Promise<GitStatusResult | null>;
   onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => () => void;
 }

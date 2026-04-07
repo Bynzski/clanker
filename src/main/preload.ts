@@ -3,7 +3,6 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electronAPI', {
   // Workspace
   getLastWorkspace: () => ipcRenderer.invoke('get-last-workspace'),
-  setLastWorkspace: (path: string) => ipcRenderer.invoke('set-last-workspace', path),
   openDirectoryDialog: () => ipcRenderer.invoke('open-directory-dialog'),
   readDirectory: (path: string) => ipcRenderer.invoke('read-directory', path),
 
@@ -35,8 +34,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Browser (using WebContentsView)
-  browserShow: (x: number, y: number, width: number, height: number) => 
-    ipcRenderer.invoke('browser-show', x, y, width, height),
   browserHide: () => ipcRenderer.invoke('browser-hide'),
   browserSetBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
     ipcRenderer.invoke('browser-set-bounds', bounds),
@@ -46,7 +43,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   browserRefresh: () => ipcRenderer.invoke('browser-refresh'),
   browserStop: () => ipcRenderer.invoke('browser-stop'),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
-  getBrowserUrl: () => ipcRenderer.invoke('get-browser-url'),
   canGoBack: () => ipcRenderer.invoke('can-go-back'),
   canGoForward: () => ipcRenderer.invoke('can-go-forward'),
   onFitAllPanes: (callback: () => void) => {
@@ -68,7 +64,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Git operations - managed by GitService in main process
   gitStartPolling: (workspacePath: string) => ipcRenderer.invoke('git-start-polling', workspacePath),
   gitStopPolling: () => ipcRenderer.invoke('git-stop-polling'),
-  gitGetStatus: (workspacePath: string) => ipcRenderer.invoke('git-get-status', workspacePath),
   generateCommitMessage: (workspacePath: string) => ipcRenderer.invoke('generate-commit-message', workspacePath),
   gitStage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke('git-stage', workspacePath, files),
   gitCommit: (workspacePath: string, message: string) => ipcRenderer.invoke('git-commit', workspacePath, message),
@@ -93,7 +88,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitPopStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke('git-pop-stash', workspacePath, stashRef),
   gitDropStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke('git-drop-stash', workspacePath, stashRef),
   gitClearStashes: (workspacePath: string) => ipcRenderer.invoke('git-clear-stashes', workspacePath),
-  gitIsRepo: (workspacePath: string) => ipcRenderer.invoke('git-is-repo', workspacePath),
   gitRefresh: () => ipcRenderer.invoke('git-refresh'),
   onGitStatusUpdate: (callback: (status: {
     success: boolean;
