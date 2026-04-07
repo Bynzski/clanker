@@ -1,5 +1,6 @@
 import { Loader2 } from 'lucide-react';
 import type { GitOperationState } from './types';
+import './GitMergeSection.css';
 
 interface GitMergeSectionProps {
   activeAction: string | null;

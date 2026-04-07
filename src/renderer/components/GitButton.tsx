@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   GitBranch,
@@ -73,7 +73,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     [branches]
   );
 
-  const refreshMenuData = async () => {
+  const refreshMenuData = useCallback(async () => {
     if (!workspacePath) {
       return;
     }
@@ -173,7 +173,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       setIsLoadingHistory(false);
       setIsLoadingDiff(false);
     }
-  };
+  }, [selectedDiffMode, selectedDiffRef, workspacePath]);
 
   const loadDiff = async (mode: DiffMode, ref?: string) => {
     if (!workspacePath) {
@@ -270,11 +270,11 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [isMenuOpen]);
+  }, [isMenuOpen, refreshMenuData]);
 
-  const refreshAfterAction = async () => {
+  const refreshAfterAction = useCallback(async () => {
     await Promise.all([refreshMenuData(), window.electronAPI.gitRefresh()]);
-  };
+  }, [refreshMenuData]);
 
   const handleCommit = async (message: string) => {
     return window.electronAPI.gitCommit(workspacePath, message);

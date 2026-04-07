@@ -1,239 +1,371 @@
-# Clanker Grid
+# Clanker Grid Specification
 
-## Status Note
-- This document started as the initial launcher specification and no longer fully matches the current implementation.
-- The current app supports multiple workspace tabs, per-workspace harness/model selection, git operations, AI-assisted commit messages, and a native embedded browser panel.
-- For current repository status and cleanup history, see `docs/repo-status-report-2026-04-07.md`.
+## Document Status
 
-## Project Overview
-- **Project Name**: Clanker Grid
-- **Type**: Desktop Application (Electron + React)
-- **Core Feature**: A developer workspace tool that manages multiple workspaces with terminal panes, harness launches, git controls, and an embedded native browser panel
-- **Target Users**: Developers who need to work across one or more repositories with CLI, browser, and git workflows in one desktop app
+Date: 2026-04-07
+Repository: `clanker-grid`
+Status: Current-state product and implementation specification
 
-## Technical Stack
-- **Framework**: Electron 41.x (Chromium backend + Node.js)
-- **Frontend**: React + TypeScript + Vite
-- **Terminal**: xterm.js with node-pty for PTY support
-- **Web Browser**: Electron WebContentsView (native embedded browser panel)
-- **Layout**: Dockable/resizable pane layout
-- **State Management**: Zustand
-- **Settings Storage**: electron-store for persisted local settings
+This document describes the application as it exists in the repository today. It replaces the earlier launcher-era spec that no longer matched the current app.
 
-## UI/UX Specification
+## Product Summary
 
-### Layout Structure
+Clanker Grid is an Electron desktop workspace manager for software development. It combines:
 
-#### Workspace Gate (First Launch)
-```
-┌─────────────────────────────────────────────────────────────┐
-│                                                              │
-│                        ┌──────┐                              │
-│                        │ 📁   │                              │
-│                        └──────┘                              │
-│                     Clanker Grid                             │
-│               Developer Workspace Launcher                   │
-│                                                              │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │ /home/user/projects/                         ⚙ [Browse] │  │
-│  └────────────────────────────────────────────────────────┘  │
-│                                                              │
-│                   [ ▶ Launch Workspace ]                      │
-│                                                              │
-│           ⌨ Multiple    🌐 Browser    📐 Grid               │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
+- Multiple named workspace tabs
+- Terminal panes backed by PTY processes
+- Optional AI coding harness launches per workspace
+- An embedded native browser panel
+- Git status, history, stash, branch, merge, and commit workflows
+- Optional AI-assisted commit message generation
 
-#### Main Application
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Header: App Title + Workspace Controls                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│    Grid Area                                                │
-│    (Terminals)                                              │
-│                                                             │
-│    [Term 1] [Term 2]                                        │
-│                                                             │
-│    [Term 3] [Term 4]                                        │
-│                                                             │
-├─────────────────────────────────────────────────────────────┤
-│  Status Bar: Active terminals count | Working directory      │
-└─────────────────────────────────────────────────────────────┘
+The application is optimized around keeping repository work, CLI sessions, and browser context in one window while preserving per-workspace state.
 
-Note: Browser is embedded as a native BrowserView panel, positioned
-in the right portion of the window when toggled on.
-```
+## Primary Use Cases
 
-### Window Configuration
-- **Main Window**: Single window application
-- **Minimum Size**: 800x600
-- **Default Size**: 1200x800
-- **Resizable**: Yes
+- Open one or more local repositories in separate workspace tabs
+- Launch plain shell terminals or AI harness sessions in those workspaces
+- Rearrange terminal and browser panes into a working layout
+- Inspect and manage git state without leaving the app
+- Generate commit messages from repository state through supported AI CLIs
 
-### Visual Design
+## Current Technical Stack
 
-#### Color Palette
-- **Background Primary**: #0d1117 (deep space black)
-- **Background Secondary**: #161b22 (panel background)
-- **Background Tertiary**: #21262d (hover states)
-- **Border Color**: #30363d (subtle borders)
-- **Text Primary**: #e6edf3 (main text)
-- **Text Secondary**: #8b949e (muted text)
-- **Accent Primary**: #58a6ff (links, active states)
-- **Accent Success**: #3fb950 (success indicators)
-- **Accent Warning**: #d29922 (warning indicators)
-- **Accent Error**: #f85149 (error states)
+- Shell: Electron 41.x
+- Renderer: React 19 + TypeScript + Vite
+- State management: Zustand
+- Terminal runtime: `node-pty` + `@xterm/xterm`
+- Layout engine: custom pane tree with `react-resizable-panels` and `@dnd-kit/core`
+- Persistence: `electron-store` for app settings and last workspace defaults
 
-#### Typography
-- **Font Family**: "JetBrains Mono", "Fira Code", monospace (terminals)
-- **UI Font**: "Inter", -apple-system, BlinkMacSystemFont, sans-serif
-- **Header Size**: 16px
-- **Body Size**: 14px
-- **Terminal Size**: 13px
-- **Status Bar**: 12px
+## Application Model
 
-#### Spacing System
-- **Base Unit**: 4px
-- **Small**: 8px
-- **Medium**: 16px
-- **Large**: 24px
-- **XL**: 32px
+### Window Model
 
-## Functional Specification
+- Single frameless desktop window
+- Custom title bar with window controls
+- Native embedded browser surface via `WebContentsView`
+- Minimum window size: 800x600
+- Default window size: 1200x800
 
-### Core Features
+### Workspace Model
 
-1. **Workspace Gate**
-   - Input field for workspace path with autocomplete
-   - Cog button opens native directory picker
-   - Last used path saved via electron-store
-   - Tab/Arrow key navigation for suggestions
+Each workspace tab stores:
 
-2. **Terminal Grid Management**
-   - Default: 2x2 grid (4 terminals)
-   - Available layouts: 1x1, 1x2, 1x3, 2x1, 2x2, 2x3, 3x1, 3x2, 3x3
-   - Each cell contains one terminal
-   - Click on terminal to focus
+- Display name
+- Local workspace path
+- Selected harness
+- Selected harness model
+- Terminal list
+- Pane list
+- Browser visibility state
+- Browser URL
+- Browser pane state
+- Active terminal id
+- Layout tree
 
-3. **Terminal Emulation**
-   - Full PTY support via node-pty
-   - Supports ANSI colors
-   - Copy/paste support
-   - Scrollback buffer (10000 lines)
-   - Click to focus, auto-focus on creation
+The renderer store mirrors the active workspace at the top level for convenience while also retaining the full `workspaces[]` collection.
 
-4. **Embedded Browser (BrowserView)**
-   - Native Chromium browser embedded via Electron BrowserView API
-   - Toggle on/off via header button
-   - Full JavaScript and cookie support
-   - Back/Forward/Refresh navigation
-   - Open in external browser option
-   - URL bar with Go button
+### Terminal Model
 
-5. **Workspace Opening**
-   - User clicks "Open Workspace" or enters path
-   - Native directory picker dialog opens
-   - User selects root directory
-   - All terminals open to that directory
-   - Path displayed in status bar
+Each terminal is backed by a real PTY process created in the Electron main process. A terminal may be:
 
-### User Interactions and Flows
+- A plain interactive shell
+- A harness-specific process such as Codex, Claude, OpenCode, or Pi
 
-1. **First Launch Flow (Workspace Gate)**
-   - App opens with workspace gate screen
-   - Input field pre-filled with last used path (from electron-store)
-   - Defaults to home directory if no previous path saved
-   - User can type path directly or use autocomplete suggestions
-   - Cog button opens native directory picker
-   - Tab key autocompletes from suggestions
-   - Arrow keys navigate suggestions
-   - Enter launches workspace with selected path
-   - Path is persisted to electron-store
+Terminal output is streamed through IPC into xterm.js.
 
-2. **Open Workspace Flow**
-   - Click "Open Workspace"
-   - Native dialog → Select folder
-   - All terminals cd to that directory
-   - Status bar updates with path
+### Pane Model
 
-3. **Browser Toggle Flow**
-   - Click "Show Browser" to enable
-   - BrowserView created and positioned
-   - Click "Hide Browser" to disable
-   - BrowserView removed from window
+The visible layout is represented as a tree of:
 
-### Data Flow & Key Modules
+- Leaf nodes that point at pane ids
+- Split nodes with orientation and ratio
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Main Process (Electron)                  │
-├─────────────────────────────────────────────────────────────┤
-│  main.ts                                                    │
-│    ├── Window management                                    │
-│    ├── BrowserView management                               │
-│    ├── PTY spawn/resize/kill via node-pty                   │
-│    ├── IPC handlers for renderer communication               │
-│    └── electron-store for persistence                       │
-├─────────────────────────────────────────────────────────────┤
-│  preload.ts                                                 │
-│    └── Exposes safe IPC bridge to renderer                   │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼ IPC
-┌─────────────────────────────────────────────────────────────┐
-│                     Renderer Process                         │
-├─────────────────────────────────────────────────────────────┤
-│  App.tsx                                                    │
-│    ├── WorkspaceGate.tsx (initial path selection)           │
-│    ├── Header.tsx (workspace controls)                      │
-│    ├── TerminalGrid.tsx (grid container)                    │
-│    │     └── TerminalPane.tsx (xterm.js terminal)           │
-│    └── StatusBar.tsx                                        │
-├─────────────────────────────────────────────────────────────┤
-│  State Store (Zustand)                                      │
-│    ├── workspacePath: string                                │
-│    ├── gridLayout: { rows: number, cols: number }           │
-│    ├── terminals: Terminal[]                               │
-│    └── browserVisible: boolean                              │
-└─────────────────────────────────────────────────────────────┘
-```
+Visible panes may correspond to:
 
-### Edge Cases
+- Terminal panes
+- The browser pane when enabled
 
-1. **No workspace selected**: Terminals spawn to home directory
-2. **Invalid directory**: Show error toast, terminals use home
-3. **Terminal crash**: Show exit code in terminal pane
-4. **Browser navigation error**: BrowserView handles natively
-5. **All terminals closed**: Show empty state with "No terminal"
-6. **Very long paths**: Truncate with ellipsis in status bar
+Panes can be:
 
-## Acceptance Criteria
+- Resized
+- Swapped
+- Docked to an edge
+- Locked against insert/reflow operations
+- Brought into view by swapping with the first visible leaf
 
-### Visual Checkpoints
-- [ ] App window opens at correct default size
-- [ ] Dark theme applied consistently across all components
-- [ ] Grid displays with 4 terminal panes (2x2 default)
-- [ ] Terminal panes have visible borders and gaps
-- [ ] Header buttons are clearly labeled and distinguishable
-- [ ] Status bar shows workspace path after selection
-- [ ] Browser panel appears/hides smoothly when toggled
+## User Experience
 
-### Functional Checkpoints
-- [ ] Workspace gate requires directory selection before proceeding
-- [ ] "Open Workspace" opens native directory picker
-- [ ] Selected directory path appears in status bar
-- [ ] Terminals spawn and are interactive (accept input)
-- [ ] Terminals cd to selected workspace directory
-- [ ] "New Terminal" adds terminal to grid
-- [ ] Layout selector changes grid configuration
-- [ ] Browser panel shows native Chromium content
-- [ ] URL bar navigates to entered URLs
-- [ ] Terminal close button terminates that terminal
+### Launch Experience
 
-### Performance Criteria
-- [ ] App launches in under 3 seconds
-- [ ] Terminal input latency under 50ms
-- [ ] Memory usage under 500MB with 4 terminals
-- [ ] BrowserView loads pages smoothly
+If no workspaces exist, the app opens into a fullscreen workspace gate. The gate supports:
+
+- Typing or browsing to a local directory
+- Directory autocomplete based on filesystem reads
+- Terminal count presets: 1, 2, or 4
+- Harness selection from only the CLIs available on the machine
+- Optional model selection for harnesses that expose models
+
+The initial default harness is `codex` when available.
+
+### Main Workspace Experience
+
+Once at least one workspace exists, the application shows:
+
+- Custom title bar with workspace tabs
+- Header toolbar with workspace controls
+- Main pane layout region
+- Status bar
+
+### Workspace Tabs
+
+Tabs support:
+
+- Selecting the active workspace
+- Inline rename
+- Close with terminal shutdown
+- Per-tab terminal count badge
+
+### Header Controls
+
+The header currently includes:
+
+- Open Workspace
+- Harness selection pills
+- New Terminal
+- Fit All Panes
+- Show/Hide Browser
+- Close Workspace
+- Git button with status count and git menu
+- Settings menu
+
+### Status Bar
+
+The status bar shows:
+
+- Current terminal count
+- Current workspace path
+- Static ready indicator
+
+## Functional Areas
+
+### Workspace Creation and Persistence
+
+When the user launches a workspace:
+
+- The chosen path is normalized with a trailing slash in the renderer
+- The main process validates directory existence before using it
+- Terminal processes are spawned in that directory
+- A workspace tab is added with its own layout and terminal list
+
+Persisted settings currently include:
+
+- Last workspace path
+- Whether fastfetch suppression is enabled
+- AI commit enabled/disabled
+- AI commit provider
+- AI commit model
+
+### Harness Selection
+
+Supported harness ids in the current product:
+
+- `''` for plain terminal
+- `codex`
+- `claude`
+- `opencode`
+- `pi`
+
+Only harnesses whose CLI command is available on the local machine are shown as selectable.
+
+Model lists are resolved dynamically through the main process. Fallback model lists exist for some providers when discovery fails.
+
+### Terminal Lifecycle
+
+The main process provides IPC for:
+
+- Spawn terminal
+- Read buffered output
+- Write input
+- Resize terminal
+- Kill terminal
+- Terminal data stream subscription
+- Terminal exit subscription
+
+Renderer behavior:
+
+- xterm is lazy-loaded only when a terminal pane initializes
+- Terminal pane sizing is synchronized back to the PTY
+- Existing buffered output is replayed before live stream subscription
+
+### Pane and Layout Behavior
+
+The layout system supports:
+
+- Recursive split layouts
+- Drag and drop between panes
+- Edge docking targets
+- Fit/reset to balanced layout
+- Browser insertion/removal from the layout tree
+- Lock-aware insertion that avoids modifying locked leaves where possible
+
+If all visible leaves are locked, new pane insertion is blocked and the app logs a warning.
+
+### Browser Panel
+
+The browser panel is a native `WebContentsView` managed by the main process. Renderer responsibilities are limited to toolbar state and bounds calculation.
+
+Supported browser actions:
+
+- Navigate to URL
+- Back
+- Forward
+- Refresh
+- Stop
+- Open in external browser
+- Bring browser pane into view
+- Lock/unlock browser pane
+
+Security constraints currently enforced:
+
+- Embedded browser navigation limited to `http:` and `https:`
+- External open limited to `http:`, `https:`, and `mailto:`
+- New windows denied and redirected through the system browser when allowed
+- Electron sandbox enabled for the app window and browser view
+
+### Git Integration
+
+Git features are exposed through the main process `GitService` and surfaced in the header git menu.
+
+Current git capabilities:
+
+- Polling and live status updates
+- Branch state and detached HEAD handling
+- Working tree and staged status listing
+- Stage all or selected files through service IPC
+- Commit creation with explicit commit message
+- Branch create, switch, delete
+- Merge and abort operation
+- Operation-state reporting for merge/rebase in progress
+- Stash list, create, apply, pop, drop, clear
+- History list
+- Working, staged, and commit diff summaries
+
+The git menu is split into focused renderer sections:
+
+- Branches
+- Merge
+- Stashes
+- History
+
+### Commit Dialog
+
+The commit dialog supports:
+
+- Manual commit message entry
+- Stage All
+- Stage All & Commit when unstaged changes exist
+- File list with staged indicators
+- Error surface for failed git actions
+
+### AI Commit Message Generation
+
+The commit dialog can optionally generate a commit message from repository state if enabled in settings.
+
+Current flow:
+
+- Main process inspects git status and diff summary
+- A provider-specific prompt is built
+- A supported CLI is executed with the prompt over stdin
+- The output is normalized into a single commit message
+- The message is inserted into the dialog text area
+
+Current AI commit providers:
+
+- `codex`
+- `opencode`
+- `pi`
+
+The provider and model are configured globally in the header settings menu.
+
+## Main Process Responsibilities
+
+The Electron main process currently owns:
+
+- Window lifecycle
+- Browser `WebContentsView` lifecycle
+- PTY process management
+- Local settings persistence
+- Harness availability and model discovery
+- Git operations and polling
+- AI commit generation orchestration
+- Renderer IPC surface
+
+Notable extracted modules:
+
+- `src/main/gitService.ts`
+- `src/main/harnessCatalog.ts`
+- `src/main/harnessLaunch.ts`
+- `src/main/aiCommit.ts`
+- `src/main/security.ts`
+
+## Renderer Responsibilities
+
+The renderer currently owns:
+
+- Workspace gate and launch UX
+- Workspace tab UX
+- Pane layout rendering and drag/drop
+- Terminal pane rendering and xterm lifecycle
+- Browser toolbar UX
+- Settings UI
+- Git menu and commit dialog UX
+- Active workspace state and layout state in Zustand
+
+Notable renderer modules:
+
+- `src/renderer/store/workspaceStore.ts`
+- `src/renderer/store/workspaceLayout.ts`
+- `src/renderer/store/workspaceTypes.ts`
+- `src/renderer/components/DynamicPaneLayout.tsx`
+- `src/renderer/components/TerminalPane.tsx`
+- `src/renderer/components/GitButton.tsx`
+
+## Security and Validation Constraints
+
+Current constraints and hardening measures:
+
+- Main-process directory arguments are validated before use
+- Browser URL schemes are restricted
+- External URL schemes are restricted
+- Git commit and staging use argument-safe git invocation
+- Electron renderer sandbox is enabled
+- Context isolation is enabled
+- Renderer communicates only through the preload bridge
+
+Current validation gates:
+
+- `npm run typecheck`
+- `npm run build`
+- `npm run test`
+- `npm run validate`
+
+## Known Limitations
+
+- `workspaceStore.ts` is still a large coordination module even after extraction
+- `GitButton.css` remains oversized and concentrated
+- Browser navigation state in the renderer is still polled rather than event-driven
+- No renderer integration or end-to-end test coverage exists yet for workspace, pane, or git UI flows
+- The renderer bundle still carries a large async `xterm` chunk, though the initial bundle is much smaller than before
+
+## Acceptance Criteria For The Current Product
+
+- User can create a workspace from the gate or modal dialog
+- User can switch between multiple workspace tabs without losing per-workspace state
+- User can launch additional terminal or harness sessions inside the active workspace
+- User can resize, dock, swap, and rebalance panes
+- User can show and hide the native browser panel
+- User can inspect git status and perform branch, merge, stash, and commit actions from the UI
+- User can optionally generate commit messages through a supported AI provider
+- `npm run validate` passes on the repository

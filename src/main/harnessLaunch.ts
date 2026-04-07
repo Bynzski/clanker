@@ -28,7 +28,7 @@ export function quoteShellArg(arg: string): string {
     return "''";
   }
 
-  if (/^[A-Za-z0-9_\/=:@%+.,-]+$/.test(arg)) {
+  if (/^[A-Za-z0-9_/=:@%+.,-]+$/.test(arg)) {
     return arg;
   }
 
