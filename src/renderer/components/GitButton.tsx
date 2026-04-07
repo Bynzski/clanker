@@ -61,6 +61,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [upstream, setUpstream] = useState<string | null>(null);
   const [ahead, setAhead] = useState(0);
   const [behind, setBehind] = useState(0);
+  const [provider, setProvider] = useState<'github' | 'bitbucket' | 'gitlab' | 'unknown'>('unknown');
   const menuRef = useRef<HTMLDivElement>(null);
   const createBranchInputRef = useRef<HTMLInputElement>(null);
 
@@ -189,6 +190,12 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       if (!diff.success) {
         setDiffError(diff.error || 'Unable to load diff');
       }
+
+      // Load remotes for provider detection
+      const remotesResult = await window.electronAPI.gitGetRemotes(workspacePath);
+      if (remotesResult.success) {
+        setProvider(remotesResult.provider);
+      }
     } catch (error: any) {
       const message = error?.message || 'Unable to load git data';
       setBranchError(message);
@@ -240,6 +247,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       setUpstream(null);
       setAhead(0);
       setBehind(0);
+      setProvider('unknown');
       setBranches([]);
       setOperationState(null);
       setStashes([]);
@@ -250,6 +258,18 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     }
 
     window.electronAPI.gitStartPolling(workspacePath);
+
+    // Load remotes once per workspace (provider is stable for normal use)
+    void (async () => {
+      try {
+        const result = await window.electronAPI.gitGetRemotes(workspacePath);
+        if (result.success) {
+          setProvider(result.provider);
+        }
+      } catch {
+        // non-fatal — remotes are optional
+      }
+    })();
 
     return () => {
       window.electronAPI.gitStopPolling();
@@ -279,6 +299,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setUpstream(null);
         setAhead(0);
         setBehind(0);
+        setProvider('unknown');
       }
     });
 
@@ -610,14 +631,27 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
                 )}
               </div>
 
-              <button
-                type="button"
-                className="git-menu-close"
-                onClick={() => setIsMenuOpen(false)}
-                title="Close"
-              >
-                <X size={15} />
-              </button>
+              <div className="git-menu-header-right">
+                {provider !== 'unknown' && (
+                  <span className={`git-menu-provider provider-${provider}`}>
+                    {provider === 'github' && 'GitHub'}
+                    {provider === 'bitbucket' && 'Bitbucket'}
+                    {provider === 'gitlab' && 'GitLab'}
+                  </span>
+                )}
+                {provider === 'unknown' && (
+                  <span className="git-menu-provider provider-none">no remote</span>
+                )}
+
+                <button
+                  type="button"
+                  className="git-menu-close"
+                  onClick={() => setIsMenuOpen(false)}
+                  title="Close"
+                >
+                  <X size={15} />
+                </button>
+              </div>
             </div>
 
             <div className="git-menu-summary">

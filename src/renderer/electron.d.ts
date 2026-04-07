@@ -68,6 +68,7 @@ interface ElectronAPI {
   gitDropStash: (workspacePath: string, stashRef: string) => Promise<{ success: boolean; error?: string }>;
   gitClearStashes: (workspacePath: string) => Promise<{ success: boolean; error?: string }>;
   gitRefresh: () => Promise<GitStatusResult | null>;
+  gitGetRemotes: (workspacePath: string) => Promise<GitRemotesResult>;
   onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => () => void;
 }
 
@@ -141,6 +142,21 @@ interface GitStatus {
 interface GitBranch {
   name: string;
   isCurrent: boolean;
+}
+
+type VcsProvider = 'github' | 'bitbucket' | 'gitlab' | 'unknown';
+
+interface GitRemote {
+  name: string;
+  fetchUrl: string;
+  pushUrl: string;
+}
+
+interface GitRemotesResult {
+  success: boolean;
+  remotes: GitRemote[];
+  provider: VcsProvider;
+  error?: string;
 }
 
 declare global {

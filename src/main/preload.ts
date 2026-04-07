@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitDropStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke('git-drop-stash', workspacePath, stashRef),
   gitClearStashes: (workspacePath: string) => ipcRenderer.invoke('git-clear-stashes', workspacePath),
   gitRefresh: () => ipcRenderer.invoke('git-refresh'),
+  gitGetRemotes: (workspacePath: string) => ipcRenderer.invoke('git-get-remotes', workspacePath),
   onGitStatusUpdate: (callback: (status: {
     success: boolean;
     isRepo: boolean;

@@ -7,6 +7,21 @@ export interface GitStatusEntry {
   staged: boolean;
 }
 
+export type VcsProvider = 'github' | 'bitbucket' | 'gitlab' | 'unknown';
+
+export interface GitRemote {
+  name: string;
+  fetchUrl: string;
+  pushUrl: string;
+}
+
+export interface GitRemotesResult {
+  success: boolean;
+  remotes: GitRemote[];
+  provider: VcsProvider;
+  error?: string;
+}
+
 export type GitErrorCode = 'not-a-repo' | 'git-not-found' | 'unknown';
 
 export interface GitStatusResult {
@@ -877,5 +892,75 @@ export class GitService {
 
   private async emitStatusUpdate(workspacePath: string): Promise<void> {
     this.emitStatus(await this.getStatus(workspacePath));
+  }
+
+  detectProvider(remoteUrl: string): VcsProvider {
+    try {
+      // Handle SSH URLs: git@github.com:owner/repo.git
+      const sshMatch = remoteUrl.match(/^git@([^:]+):/);
+      if (sshMatch) {
+        const host = sshMatch[1];
+        if (host === 'github.com') return 'github';
+        if (host === 'bitbucket.org') return 'bitbucket';
+        if (host === 'gitlab.com') return 'gitlab';
+        return 'unknown';
+      }
+
+      // Handle HTTPS/HTTP URLs: https://github.com/owner/repo.git
+      const url = new URL(remoteUrl);
+      const host = url.hostname;
+      if (host === 'github.com') return 'github';
+      if (host === 'bitbucket.org') return 'bitbucket';
+      if (host === 'gitlab.com') return 'gitlab';
+      return 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  async getRemotes(workspacePath: string): Promise<GitRemotesResult> {
+    try {
+      const { stdout } = await this.execGit(workspacePath, ['remote', '-v']);
+      const lines = stdout.trim().split('\n').filter(Boolean);
+      const remoteMap = new Map<string, { fetchUrl: string; pushUrl: string }>();
+
+      for (const line of lines) {
+        // Format: <name>\t<url> (<fetch|push>)
+        const tabMatch = line.match(/^([^\t]+)\t([^\s]+)\s+\((fetch|push)\)$/);
+        if (tabMatch) {
+          const [, name, url, type] = tabMatch;
+          const entry = remoteMap.get(name) ?? { fetchUrl: '', pushUrl: '' };
+          if (type === 'fetch') {
+            entry.fetchUrl = url;
+          } else {
+            entry.pushUrl = url;
+          }
+          remoteMap.set(name, entry);
+        }
+      }
+
+      const remotes: GitRemote[] = Array.from(remoteMap.entries()).map(
+        ([name, { fetchUrl, pushUrl }]) => ({
+          name,
+          fetchUrl,
+          pushUrl,
+        })
+      );
+
+      // Provider is determined by the first remote's fetch URL
+      let provider: VcsProvider = 'unknown';
+      if (remotes.length > 0 && remotes[0].fetchUrl) {
+        provider = this.detectProvider(remotes[0].fetchUrl);
+      }
+
+      return { success: true, remotes, provider };
+    } catch (error) {
+      return {
+        success: false,
+        remotes: [],
+        provider: 'unknown',
+        error: this.getGitErrorMessage(error, 'Failed to get remotes'),
+      };
+    }
   }
 }

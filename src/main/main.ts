@@ -897,6 +897,15 @@ ipcMain.handle('git-refresh', async () => {
   return gitService.getStatus(safeWorkspacePath);
 });
 
+ipcMain.handle('git-get-remotes', async (_, workspacePath: string) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return { success: false, remotes: [], provider: 'unknown', error: 'Invalid workspace path' };
+  }
+
+  return gitService.getRemotes(safeWorkspacePath);
+});
+
 // App lifecycle
 app.whenReady().then(() => {
   createWindow();
