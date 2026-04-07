@@ -8,6 +8,10 @@ interface ElectronAPI {
   // Settings
   getShowFastfetch: () => Promise<boolean>;
   setShowFastfetch: (show: boolean) => Promise<void>;
+  getAiCommitSettings: () => Promise<AiCommitSettings>;
+  setAiCommitEnabled: (enabled: boolean) => Promise<void>;
+  setAiCommitProvider: (provider: string) => Promise<void>;
+  setAiCommitModel: (model: string) => Promise<void>;
 
   // Terminal
   spawnTerminal: (workingDir: string, harness?: string, model?: string) => Promise<{ id: string; pid: number }>;
@@ -47,6 +51,7 @@ interface ElectronAPI {
   gitStartPolling: (workspacePath: string) => Promise<void>;
   gitStopPolling: () => Promise<void>;
   gitGetStatus: (workspacePath: string) => Promise<GitStatusResult>;
+  generateCommitMessage: (workspacePath: string) => Promise<GenerateCommitMessageResult>;
   gitStage: (workspacePath: string, files?: string[]) => Promise<{ success: boolean; error?: string }>;
   gitCommit: (workspacePath: string, message: string) => Promise<{ success: boolean; error?: string }>;
   gitGetBranchState: (workspacePath: string) => Promise<GitBranchStateResult>;
@@ -121,6 +126,18 @@ interface GitDiffResult {
 interface ModelOption {
   id: string;
   label: string;
+}
+
+interface AiCommitSettings {
+  enabled: boolean;
+  provider: string;
+  model: string;
+}
+
+interface GenerateCommitMessageResult {
+  success: boolean;
+  message?: string;
+  error?: string;
 }
 
 interface GitStatus {

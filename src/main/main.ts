@@ -10,7 +10,7 @@ app.commandLine.appendSwitch('disable-setuid-sandbox');
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import * as pty from 'node-pty';
 import Store from 'electron-store';
 import {
@@ -18,6 +18,14 @@ import {
   normalizePiModelId,
   type HarnessConfig,
 } from './harnessLaunch';
+import {
+  AI_COMMIT_COMMANDS,
+  buildAiCommitArgs,
+  buildCommitPrompt,
+  getAiCommitTimeoutMs,
+  normalizeCommitMessageOutput,
+  type AiCommitProvider,
+} from './aiCommit';
 
 interface Terminal {
   id: string;
@@ -29,6 +37,9 @@ interface Terminal {
 interface StoreSchema {
   lastWorkspace: string;
   showFastfetch: boolean;
+  aiCommitEnabled: boolean;
+  aiCommitProvider: AiCommitProvider;
+  aiCommitModel: string;
 }
 
 interface ModelOption {
@@ -102,12 +113,14 @@ function runCommandOutput(
   command: string,
   args: string[],
   timeoutMs = 6000,
-  extraEnv?: Record<string, string>
+  extraEnv?: Record<string, string>,
+  cwd?: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(command, args, {
       timeout: timeoutMs,
       maxBuffer: 1024 * 1024,
+      cwd,
       env: {
         ...process.env,
         ...extraEnv,
@@ -120,6 +133,59 @@ function runCommandOutput(
 
       resolve(String(stdout ?? '') || String(stderr ?? ''));
     });
+  });
+}
+
+function runCommandWithInput(
+  command: string,
+  args: string[],
+  input: string,
+  timeoutMs = 30000,
+  extraEnv?: Record<string, string>,
+  cwd?: string
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env: {
+        ...process.env,
+        ...extraEnv,
+      } as { [key: string]: string },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`Command timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.stdout.on('data', (data) => {
+      stdout += String(data);
+    });
+
+    child.stderr.on('data', (data) => {
+      stderr += String(data);
+    });
+
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(Object.assign(error, { stdout, stderr }));
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        const error = new Error(`Command failed with exit code ${code ?? 'unknown'}`);
+        reject(Object.assign(error, { stdout, stderr, code }));
+        return;
+      }
+
+      resolve(stdout || stderr);
+    });
+
+    child.stdin.end(input.endsWith('\n') ? input : `${input}\n`);
   });
 }
 
@@ -325,8 +391,15 @@ const store = new Store<StoreSchema>({
   defaults: {
     lastWorkspace: app.getPath('home'),
     showFastfetch: false,
+    aiCommitEnabled: false,
+    aiCommitProvider: 'codex',
+    aiCommitModel: '',
   },
 });
+
+function formatCommitChangeSummary(changes: GitStatusEntry[]): string[] {
+  return changes.map((change) => `${change.staged ? 'staged' : 'unstaged'} ${change.status}: ${change.path}`);
+}
 
 const terminals: Map<string, Terminal> = new Map();
 let mainWindow: BrowserWindow | null = null;
@@ -775,6 +848,70 @@ class GitService {
     }
   }
 
+  async getCommitPromptContext(workspacePath: string): Promise<{
+    success: boolean;
+    currentBranch: string | null;
+    isDetached: boolean;
+    changes: GitStatusEntry[];
+    diffMode: 'staged' | 'working';
+    diffSummary: string;
+    error?: string;
+  }> {
+    const status = await this.getStatus(workspacePath);
+    if (!status.success || !status.isRepo) {
+      return {
+        success: false,
+        currentBranch: null,
+        isDetached: false,
+        changes: [],
+        diffMode: 'working',
+        diffSummary: '',
+        error: status.error || 'Not a git repository',
+      };
+    }
+
+    if (status.changes.length === 0) {
+      return {
+        success: false,
+        currentBranch: status.currentBranch,
+        isDetached: status.isDetached,
+        changes: [],
+        diffMode: 'working',
+        diffSummary: '',
+        error: 'No changes to summarize',
+      };
+    }
+
+    const stagedChanges = status.changes.filter((change) => change.staged);
+    const workingChanges = status.changes.filter((change) => !change.staged);
+    const diffMode: 'staged' | 'working' = stagedChanges.length > 0
+      ? 'staged'
+      : 'working';
+    const diff = await this.getDiff(workspacePath, diffMode);
+    const scopedChanges = diffMode === 'staged' ? stagedChanges : workingChanges;
+
+    if (!diff.success) {
+      return {
+        success: false,
+        currentBranch: status.currentBranch,
+        isDetached: status.isDetached,
+        changes: scopedChanges,
+        diffMode,
+        diffSummary: '',
+        error: diff.error || 'Failed to load commit context',
+      };
+    }
+
+    return {
+      success: true,
+      currentBranch: status.currentBranch,
+      isDetached: status.isDetached,
+      changes: scopedChanges,
+      diffMode,
+      diffSummary: diff.output.trim(),
+    };
+  }
+
   async getBranchState(workspacePath: string): Promise<GitBranchStateResult> {
     try {
       const isRepo = await this.isRepo(workspacePath);
@@ -1138,6 +1275,64 @@ async function refreshGitStatus(workspacePath: string) {
   return status;
 }
 
+async function resolveAiCommitModel(provider: AiCommitProvider, configuredModel: string): Promise<string | null> {
+  const models = await discoverHarnessModels(provider);
+  if (configuredModel && models.some((model) => model.id === configuredModel)) {
+    return configuredModel;
+  }
+
+  return models[0]?.id ?? null;
+}
+
+async function generateAiCommitMessage(workspacePath: string): Promise<{ success: boolean; message?: string; error?: string }> {
+  const enabled = store.get('aiCommitEnabled');
+  if (!enabled) {
+    return { success: false, error: 'AI commit message generation is disabled' };
+  }
+
+  const provider = store.get('aiCommitProvider');
+  const providerConfig = AI_COMMIT_COMMANDS[provider];
+  if (!providerConfig) {
+    return { success: false, error: 'Unsupported AI commit provider' };
+  }
+
+  const context = await gitService.getCommitPromptContext(workspacePath);
+  if (!context.success) {
+    return { success: false, error: context.error || 'Unable to build commit context' };
+  }
+
+  const model = await resolveAiCommitModel(provider, store.get('aiCommitModel'));
+  if (!model) {
+    return { success: false, error: `No models available for ${provider}` };
+  }
+
+  const prompt = buildCommitPrompt({
+    workspacePath,
+    branchName: context.currentBranch,
+    isDetached: context.isDetached,
+    changeSummary: formatCommitChangeSummary(context.changes),
+    diffMode: context.diffMode,
+    diffSummary: context.diffSummary,
+  });
+
+  const args = buildAiCommitArgs(provider, model);
+  const output = await runCommandWithInput(
+    providerConfig.command,
+    args,
+    prompt,
+    getAiCommitTimeoutMs(provider),
+    undefined,
+    workspacePath
+  );
+  const message = normalizeCommitMessageOutput(output);
+
+  if (!message) {
+    return { success: false, error: 'AI model returned an empty commit message' };
+  }
+
+  return { success: true, message };
+}
+
 function emitFitAllPanesShortcut() {
   mainWindow?.webContents.send('fit-all-panes');
 }
@@ -1268,6 +1463,30 @@ ipcMain.handle('get-show-fastfetch', () => {
 
 ipcMain.handle('set-show-fastfetch', (_, showFastfetch: boolean) => {
   store.set('showFastfetch', showFastfetch);
+});
+
+ipcMain.handle('get-ai-commit-settings', () => {
+  return {
+    enabled: store.get('aiCommitEnabled'),
+    provider: store.get('aiCommitProvider'),
+    model: store.get('aiCommitModel'),
+  };
+});
+
+ipcMain.handle('set-ai-commit-enabled', (_, enabled: boolean) => {
+  store.set('aiCommitEnabled', enabled);
+});
+
+ipcMain.handle('set-ai-commit-provider', (_, provider: AiCommitProvider) => {
+  store.set('aiCommitProvider', provider);
+});
+
+ipcMain.handle('set-ai-commit-model', (_, model: string) => {
+  store.set('aiCommitModel', model);
+});
+
+ipcMain.handle('generate-commit-message', async (_, workspacePath: string) => {
+  return generateAiCommitMessage(workspacePath);
 });
 
 ipcMain.handle('open-directory-dialog', async () => {

@@ -10,6 +10,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Settings
   getShowFastfetch: () => ipcRenderer.invoke('get-show-fastfetch'),
   setShowFastfetch: (show: boolean) => ipcRenderer.invoke('set-show-fastfetch', show),
+  getAiCommitSettings: () => ipcRenderer.invoke('get-ai-commit-settings'),
+  setAiCommitEnabled: (enabled: boolean) => ipcRenderer.invoke('set-ai-commit-enabled', enabled),
+  setAiCommitProvider: (provider: string) => ipcRenderer.invoke('set-ai-commit-provider', provider),
+  setAiCommitModel: (model: string) => ipcRenderer.invoke('set-ai-commit-model', model),
 
   // Terminal
   spawnTerminal: (workingDir: string, harness?: string, model?: string) =>
@@ -65,6 +69,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitStartPolling: (workspacePath: string) => ipcRenderer.invoke('git-start-polling', workspacePath),
   gitStopPolling: () => ipcRenderer.invoke('git-stop-polling'),
   gitGetStatus: (workspacePath: string) => ipcRenderer.invoke('git-get-status', workspacePath),
+  generateCommitMessage: (workspacePath: string) => ipcRenderer.invoke('generate-commit-message', workspacePath),
   gitStage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke('git-stage', workspacePath, files),
   gitCommit: (workspacePath: string, message: string) => ipcRenderer.invoke('git-commit', workspacePath, message),
   gitGetBranchState: (workspacePath: string) => ipcRenderer.invoke('git-get-branch-state', workspacePath),

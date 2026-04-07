@@ -961,6 +961,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         onCommit={handleCommit}
         onStageAll={handleStage}
         changes={changes}
+        workspacePath={workspacePath}
       />
     </>
   );

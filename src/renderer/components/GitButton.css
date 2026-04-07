@@ -649,6 +649,14 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
+  margin-bottom: 0;
+}
+
+.commit-message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin-bottom: var(--space-xs);
 }
 
@@ -672,6 +680,32 @@
 
 .commit-message-input::placeholder {
   color: var(--text-tertiary);
+}
+
+.commit-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.commit-ai-btn:hover:not(:disabled) {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+.commit-ai-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .commit-files-section {
