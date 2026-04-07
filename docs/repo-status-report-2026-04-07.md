@@ -11,13 +11,13 @@ All gates are green:
 - `npm run lint`: **passed** — 0 errors
 - `npm run typecheck`: **passed** — 0 errors across tsconfig.json, tsconfig.main.json, tsconfig.test.json
 - `npm run build`: **passed**
-- `npm run test`: **passed** — 15 test files, 323 tests (+24 TerminalPane tests)
+- `npm run test`: **passed** — 19 test files, 429 tests (+106 git section tests)
 - `npm run validate`: **passed** — all of the above in sequence
 - `npm run build:dist`: **passed** when network access available for Electron downloads
 
 ## Test Coverage Summary
 
-Overall statement coverage: **49.61%** (up from 44.85%)
+Overall statement coverage: **50.42%** (up from 44.85%)
 
 | Module | Stmts | Branch | Lines | Notes |
 |--------|-------|--------|-------|-------|
@@ -34,7 +34,7 @@ Overall statement coverage: **49.61%** (up from 44.85%)
 | workspaceLayout.ts | 92.3% | 86.61% | 94.87% | |
 | harnessOptions.ts | 100% | 100% | 100% | |
 | workspaceLifecycle.ts | 100% | 100% | 100% | |
-| **Renderer components** | 41.76% | 32.61% | 41.87% | |
+| **Renderer components** | 44.96% | 36.02% | 45.01% | |
 | StatusBar.tsx | 100% | 100% | 100% | |
 | CommitDialog.tsx | 94.62% | 85.91% | 94.11% | |
 | TitleBar.tsx | 92.3% | 50% | 91.66% | |
@@ -46,7 +46,7 @@ Overall statement coverage: **49.61%** (up from 44.85%)
 | **TerminalPane.tsx** | **87.14%** | **75.29%** | **88.46%** | **+24 tests added** |
 | WorkspaceGate.tsx | 0% | 0% | 0% | |
 | WorkspaceTabs.tsx | 17.02% | 11.11% | 17.77% | |
-| git/* sections | 0% | 0% | 0% | |
+| **git/* sections** | **100%** | **100%** | **100%** | **+106 tests added** |
 
 ## Phases Completed
 
@@ -107,7 +107,7 @@ Overall statement coverage: **49.61%** (up from 44.85%)
 - Configured TypeScript, React hooks, and per-path rules
 - `npm run lint` integrated into `validate` gate
 
-### Phase 8: TerminalPane Coverage ✅
+### Phase 9: Git Section Components Coverage ✅
 
 - Added comprehensive tests for TerminalPane component (24 new tests)
 - Mocks for @xterm/xterm and @xterm/addon-fit modules
@@ -123,6 +123,15 @@ Overall statement coverage: **49.61%** (up from 44.85%)
   - Cleanup on unmount
 - Added ResizeObserver polyfill to test infrastructure
 - Coverage: 0% → 87.14% (Stmts), 0% → 75.29% (Branch), 0% → 88.46% (Lines)
+
+#### Git Section Components Tests (Phase 9)
+
+- Added comprehensive tests for all 4 Git section components (106 new tests):
+  - `GitBranchesSection.test.tsx` - 24 tests (create, list, switch, delete, loading states)
+  - `GitStashSection.test.tsx` - 28 tests (stash form, stash list, apply/pop/drop/clear)
+  - `GitMergeSection.test.tsx` - 28 tests (merge form, operation in progress, conflicts)
+  - `GitHistorySection.test.tsx` - 26 tests (history list, diff panel, mode toggles)
+- Coverage: 0% → 100% (all 4 components)
 
 ## File Sizes (Current)
 
@@ -156,6 +165,7 @@ Overall statement coverage: **49.61%** (up from 44.85%)
    - `WorkspaceTabs.tsx` (17%), `GitButton.tsx` (21%)
    - `WorkspaceGateContent.tsx` (51%)
    - **`TerminalPane.tsx` now at 87.14%** ✅
+   - **`Git section components at 100%`** ✅ (GitBranchesSection, GitStashSection, GitMergeSection, GitHistorySection)
 
 ### Medium Priority
 
