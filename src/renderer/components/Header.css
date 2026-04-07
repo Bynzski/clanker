@@ -2,10 +2,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px var(--space-md);
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.01), transparent), var(--bg-secondary);
+  padding: 8px var(--space-sm);
+  background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
-  min-height: 46px;
+  min-height: 42px;
   -webkit-app-region: drag;
 }
 
@@ -38,7 +38,7 @@
 .header-center {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: 6px;
   -webkit-app-region: no-drag;
   flex-wrap: wrap;
 }
@@ -46,13 +46,13 @@
 .header-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 5px;
+  padding: 4px 10px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   transition: all var(--transition);
 }
@@ -92,18 +92,18 @@
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  padding: 3px;
-  gap: 2px;
+  padding: 2px;
+  gap: 1px;
 }
 
 .harness-pill {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 4px;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 3px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   transition: all var(--transition);
   border: 1px solid transparent;
@@ -133,7 +133,7 @@
 /* Legacy styles for compatibility */
 .layout-select,
 .harness-select {
-  padding: var(--space-xs) var(--space-sm);
+  padding: 4px 8px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);

@@ -14,9 +14,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 24px;
-  padding: 0 10px;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.02), transparent), var(--bg-secondary);
+  height: 22px;
+  padding: 0 8px;
+  background: var(--bg-secondary);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
@@ -64,11 +64,11 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
-  padding: 8px;
+  padding: 6px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
-  min-height: 44px;
+  min-height: 40px;
   height: auto;
   position: relative;
   z-index: 10;
@@ -78,7 +78,7 @@
   flex: 1;
   position: relative;
   min-height: 0;
-  padding: 12px;
+  padding: 10px;
   box-sizing: border-box;
 }
 
@@ -90,8 +90,8 @@
 }
 
 .browser-nav-btn {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -127,13 +127,13 @@
 
 .browser-url-input {
   width: 100%;
-  height: 32px;
-  padding: 0 12px;
+  height: 30px;
+  padding: 0 10px;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 3px;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 12px;
   font-family: var(--font-mono);
   transition: border-color var(--transition);
 }
@@ -144,14 +144,14 @@
 }
 
 .browser-go-btn {
-  height: 32px;
-  padding: 0 14px;
+  height: 30px;
+  padding: 0 10px;
   background: var(--accent-primary);
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   border: none;
-  border-radius: 6px;
+  border-radius: 3px;
   cursor: pointer;
   transition: all 150ms ease-out;
   flex-shrink: 0;
