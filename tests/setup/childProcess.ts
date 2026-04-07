@@ -13,11 +13,11 @@ export function mockExecFile(
   responses: Record<string, { stdout?: string; stderr?: string; exitCode?: number }>,
   defaultResponse?: { stdout: string; stderr: string }
 ) {
-  const execFileMock = vi.fn((cmd: string, args: string[], options: any, callback?: any) => {
+  const execFileMock = vi.fn((cmd: string, args: string[], options: unknown, callback?: (...args: unknown[]) => void) => {
     // Handle overloaded signatures: execFile(cmd, args, options, callback) or execFile(cmd, args, callback)
-    let cb = callback;
+    let cb = callback ?? (() => {});
     if (typeof options === 'function') {
-      cb = options;
+      cb = options as (...args: unknown[]) => void;
     }
 
     const fullCommand = `${cmd} ${args.join(' ')}`;

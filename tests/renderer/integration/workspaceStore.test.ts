@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import type { Terminal, Pane, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
-import { createWorkspaceFixture, createTerminalFixture, createPaneFixture } from '../../setup/fixtures';
+import { createWorkspaceFixture } from '../../setup/fixtures';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -40,7 +40,8 @@ function getStore() {
 function addWorkspace(overrides: Partial<WorkspaceTab> = {}) {
   const fixture = createWorkspaceFixture(overrides);
   // Omit 'id' from the parameter since addWorkspace generates its own id
-  const { id: _id, ...withoutId } = fixture;
+  const { id: _ignored, ...withoutId } = fixture;
+  void _ignored;
   getStore().addWorkspace(withoutId);
   return getStore();
 }
@@ -203,7 +204,6 @@ describe('browser', () => {
 
   it('toggleBrowser hides browser and removes browser from layout', () => {
     getStore().toggleBrowser(); // show
-    const browserId = getStore().browserPane!.id;
     getStore().toggleBrowser(); // hide
     expect(getStore().browserVisible).toBe(false);
   });
@@ -385,7 +385,6 @@ describe('layout operations', () => {
 
   it('bringBrowserIntoView swaps browser with first leaf', () => {
     getStore().toggleBrowser();
-    const browserId = getStore().browserPane!.id;
     // Make sure browser is in layout
     const revBefore = getStore().layoutRevision;
     getStore().bringBrowserIntoView();

@@ -1,5 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { parse } from 'path';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -68,7 +67,7 @@ describe('HARNESS_OPTIONS', () => {
   });
 
   it('each config has command, args, name, icon', () => {
-    for (const [key, config] of Object.entries(harnessCatalog.HARNESS_OPTIONS)) {
+    for (const config of Object.values(harnessCatalog.HARNESS_OPTIONS)) {
       expect(config.command).toBeTruthy();
       expect(Array.isArray(config.args)).toBe(true);
       expect(config.name).toBeTruthy();
@@ -110,7 +109,7 @@ describe('discoverHarnessModels — codex', () => {
 // ---------------------------------------------------------------------------
 describe('discoverHarnessModels — opencode', () => {
   it('discovers models from command output', async () => {
-    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: Record<string, unknown>, cb: (...args: unknown[]) => void) => {
       cb(null, 'anthropic/claude-sonnet-4-6\nopenai/gpt-4o\n', '');
     });
 
@@ -122,7 +121,7 @@ describe('discoverHarnessModels — opencode', () => {
   });
 
   it('creates and cleans up temp directory', async () => {
-    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: Record<string, unknown>, cb: (...args: unknown[]) => void) => {
       cb(null, 'model-1\n', '');
     });
 
@@ -133,7 +132,7 @@ describe('discoverHarnessModels — opencode', () => {
   });
 
   it('falls back when command fails', async () => {
-    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: Record<string, unknown>, cb: (...args: unknown[]) => void) => {
       cb(new Error('command not found'), '', 'error');
     });
 
@@ -144,7 +143,7 @@ describe('discoverHarnessModels — opencode', () => {
   });
 
   it('still cleans up temp dir on command failure', async () => {
-    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: Record<string, unknown>, cb: (...args: unknown[]) => void) => {
       cb(new Error('failed'), '', '');
     });
 
@@ -166,7 +165,7 @@ describe('discoverHarnessModels — pi', () => {
       'openai     gpt-4o',
     ].join('\n');
 
-    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: Record<string, unknown>, cb: (...args: unknown[]) => void) => {
       cb(null, output, '');
     });
 
@@ -179,7 +178,7 @@ describe('discoverHarnessModels — pi', () => {
   });
 
   it('returns empty when no models available', async () => {
-    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: Record<string, unknown>, cb: (...args: unknown[]) => void) => {
       cb(null, 'No models available', '');
     });
 
@@ -190,7 +189,7 @@ describe('discoverHarnessModels — pi', () => {
   });
 
   it('falls back on command error', async () => {
-    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: Record<string, unknown>, cb: (...args: unknown[]) => void) => {
       cb(new Error('pi not installed'), '', 'error');
     });
 
@@ -204,7 +203,7 @@ describe('discoverHarnessModels — pi', () => {
       'anthropic  claude-sonnet-4-6',
     ].join('\n');
 
-    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: Record<string, unknown>, cb: (...args: unknown[]) => void) => {
       cb(null, output, '');
     });
 
@@ -260,7 +259,7 @@ describe('getAvailableHarnessOptions', () => {
 
   it('returns only available harnesses', () => {
     // Make only 'codex' available
-    mockFs.accessSync.mockImplementation((p: string) => {
+    mockFs.accessSync.mockImplementation((p: unknown) => {
       if (typeof p === 'string' && p.includes('codex')) return;
       throw new Error('not found');
     });

@@ -73,7 +73,7 @@ describe('resolveAvailableHarnessIds', () => {
 
   it('uses falsy checks for option values', () => {
     const options = { codex: 0, claude: '', opencode: null, pi: undefined };
-    const result = resolveAvailableHarnessIds(options as any, false);
+    const result = resolveAvailableHarnessIds(options as unknown as Record<string, unknown>, false);
     expect(result).toEqual([]);
   });
 });
