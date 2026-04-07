@@ -20,8 +20,8 @@ function addResponse(subcommand: string, response: { stdout?: string; stderr?: s
 // Our mock is a plain function so promisify treats it as (err, result).
 // We must return { stdout, stderr } as the second callback argument.
 vi.mock('child_process', () => ({
-  execFile: vi.fn((cmd: string, args: string[], options: any, callback?: any) => {
-    let cb = typeof options === 'function' ? options : callback;
+  execFile: vi.fn((cmd: string, args: string[], options: Record<string, unknown>, callback?: (...args: unknown[]) => void) => {
+    const cb = (typeof options === 'function' ? options : callback) ?? (() => {});
     const argString = args.join(' ');
 
     if (cmd !== 'git') {
