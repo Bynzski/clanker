@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Check, Loader2 } from 'lucide-react';
+import { useWorkspaceStore } from '../store/workspaceStore';
 
 interface GitStatus {
   path: string;
@@ -23,6 +24,8 @@ export default function CommitDialog({
   changes,
 }: CommitDialogProps) {
   const [message, setMessage] = useState('');
+  const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
+  const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
   const [isCommitting, setIsCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -37,6 +40,15 @@ export default function CommitDialog({
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    pushBrowserOverlay();
+    return () => popBrowserOverlay();
+  }, [isOpen, pushBrowserOverlay, popBrowserOverlay]);
 
   // Handle escape key
   useEffect(() => {

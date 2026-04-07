@@ -56,6 +56,7 @@ export interface WorkspaceTab {
   terminals: Terminal[];
   panes: Pane[];
   browserVisible: boolean;
+  browserOverlayCount?: number;
   browserUrl: string;
   activeTerminalId: string | null;
   browserPane: BrowserPaneState | null;
@@ -69,6 +70,7 @@ interface WorkspaceState {
   terminals: Terminal[];
   panes: Pane[];
   browserVisible: boolean;
+  browserOverlayCount: number;
   browserUrl: string;
   activeTerminalId: string | null;
   browserPane: BrowserPaneState | null;
@@ -89,6 +91,8 @@ interface WorkspaceState {
   removeTerminal: (id: string) => void;
   setActiveTerminal: (id: string) => void;
   toggleBrowser: () => void;
+  pushBrowserOverlay: () => void;
+  popBrowserOverlay: () => void;
   setBrowserUrl: (url: string) => void;
   clearTerminals: () => void;
 
@@ -763,6 +767,7 @@ const defaultWorkspaceState = {
   terminals: [] as Terminal[],
   panes: [] as Pane[],
   browserVisible: false,
+  browserOverlayCount: 0,
   browserUrl: 'https://github.com',
   activeTerminalId: null as string | null,
   browserPane: null as BrowserPaneState | null,
@@ -1035,6 +1040,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       )),
     };
   }),
+
+  pushBrowserOverlay: () => set((state) => ({
+    browserOverlayCount: state.browserOverlayCount + 1,
+  })),
+
+  popBrowserOverlay: () => set((state) => ({
+    browserOverlayCount: Math.max(0, state.browserOverlayCount - 1),
+  })),
 
   setBrowserUrl: (url) => set((state) => ({
     browserUrl: url,

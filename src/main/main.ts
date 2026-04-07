@@ -422,6 +422,7 @@ function initBrowserView() {
   attachBrowserShortcutHandlers(browserView);
   
   // Initially hide it
+  browserView.setVisible(false);
   browserView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
 }
 
@@ -434,10 +435,9 @@ function updateBrowserView(x: number, y: number, width: number, height: number, 
   }
 
   if (browserView) {
+    browserView.setVisible(visible);
     if (visible && width > 0 && height > 0) {
       browserView.setBounds({ x, y, width, height });
-    } else {
-      browserView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
     }
   }
 }

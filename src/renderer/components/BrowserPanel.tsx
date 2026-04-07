@@ -18,13 +18,13 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
   const contentRef = useRef<HTMLDivElement>(null);
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const rafRef = useRef<number | null>(null);
-  const { browserPane, bringBrowserIntoView, toggleBrowserLock } = useWorkspaceStore();
+  const { browserPane, browserVisible, browserOverlayCount, bringBrowserIntoView, toggleBrowserLock } = useWorkspaceStore();
   const browserLocked = browserPane?.locked ?? false;
   const dragHandleProps = useDragHandle();
 
   // Update bounds for the browser content area
   const updateBounds = useCallback(() => {
-    if (!contentRef.current) return;
+    if (!contentRef.current || !browserVisible || browserOverlayCount > 0) return;
 
     const rect = contentRef.current.getBoundingClientRect();
 
@@ -42,7 +42,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
       width: Math.round(rect.width * scale),
       height: Math.round(rect.height * scale),
     });
-  }, []);
+  }, [browserVisible, browserOverlayCount]);
 
   const scheduleBoundsUpdate = useCallback(() => {
     if (rafRef.current != null) {
@@ -130,6 +130,24 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
       window.electronAPI.browserHide();
     };
   }, []);
+
+  // Temporarily hide the native browser whenever a modal is open.
+  useEffect(() => {
+    if (!browserVisible) {
+      return;
+    }
+
+    if (browserOverlayCount > 0) {
+      if (rafRef.current != null) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      window.electronAPI.browserHide();
+      return;
+    }
+
+    scheduleBoundsUpdate();
+  }, [browserVisible, browserOverlayCount, scheduleBoundsUpdate]);
 
   const handleNavigate = () => {
     let navigateUrl = inputUrl.trim();
