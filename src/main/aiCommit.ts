@@ -72,12 +72,12 @@ export function buildCommitPrompt(context: CommitPromptContext): string {
     : 'No diff summary available';
 
   return [
-    'Write one git commit subject line.',
+    'Write one git commit subject line with a brief description of the changes.',
     'Return only plain text.',
     'Format: feature: ..., fix: ..., restructure: ..., or chore: ...',
     'Choose feature for new capability, fix for a bug fix, restructure for refactor/plumbing/cleanup, chore for docs/tests/maintenance.',
     'Use imperative mood and keep it specific and concise.',
-    'Prefer under 72 characters.',
+    'Prefer under 72 characters per line only adding a body if the change is complex.',
     '',
     `Repository: ${context.workspacePath}`,
     `Branch: ${branchLabel}`,
