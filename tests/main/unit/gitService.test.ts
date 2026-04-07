@@ -1080,3 +1080,412 @@ describe('polling', () => {
     expect(emittedStatuses[1].currentBranch).toBe('feature');
   });
 });
+
+// ===========================================================================
+// detectProvider (GAP-3)
+// ===========================================================================
+describe('detectProvider', () => {
+  describe('SSH URLs', () => {
+    it('detects github.com from SSH URL', () => {
+      expect(service.detectProvider('git@github.com:owner/repo.git')).toBe('github');
+    });
+
+    it('detects github.com from SSH URL without .git suffix', () => {
+      expect(service.detectProvider('git@github.com:owner/repo')).toBe('github');
+    });
+
+    it('detects bitbucket.org from SSH URL', () => {
+      expect(service.detectProvider('git@bitbucket.org:team/project.git')).toBe('bitbucket');
+    });
+
+    it('detects gitlab.com from SSH URL', () => {
+      expect(service.detectProvider('git@gitlab.com:username/repository.git')).toBe('gitlab');
+    });
+
+    it('returns unknown for enterprise SSH URLs', () => {
+      expect(service.detectProvider('git@github.mycompany.com:owner/repo.git')).toBe('unknown');
+      expect(service.detectProvider('git@gitlab.internal:group/project.git')).toBe('unknown');
+      expect(service.detectProvider('git@bitbucket.corp.com:team/repo.git')).toBe('unknown');
+    });
+
+    it('returns unknown for unknown SSH hosts', () => {
+      expect(service.detectProvider('git@custom-gitlab.example.com:owner/repo.git')).toBe('unknown');
+    });
+  });
+
+  describe('HTTPS URLs', () => {
+    it('detects github.com from HTTPS URL', () => {
+      expect(service.detectProvider('https://github.com/owner/repo.git')).toBe('github');
+    });
+
+    it('detects github.com from HTTPS URL without .git suffix', () => {
+      expect(service.detectProvider('https://github.com/owner/repo')).toBe('github');
+    });
+
+    it('detects bitbucket.org from HTTPS URL', () => {
+      expect(service.detectProvider('https://bitbucket.org/team/project.git')).toBe('bitbucket');
+    });
+
+    it('detects gitlab.com from HTTPS URL', () => {
+      expect(service.detectProvider('https://gitlab.com/username/repository.git')).toBe('gitlab');
+    });
+
+    it('returns unknown for enterprise HTTPS URLs', () => {
+      expect(service.detectProvider('https://github.mycompany.com/owner/repo.git')).toBe('unknown');
+      expect(service.detectProvider('https://gitlab.internal/group/project.git')).toBe('unknown');
+    });
+
+    it('returns unknown for custom self-hosted instances', () => {
+      expect(service.detectProvider('https://git.mycompany.org/owner/repo.git')).toBe('unknown');
+    });
+  });
+
+  describe('edge cases', () => {
+    it('returns unknown for malformed URLs', () => {
+      expect(service.detectProvider('not-a-url')).toBe('unknown');
+      expect(service.detectProvider('')).toBe('unknown');
+    });
+
+    it('returns unknown for file:// URLs', () => {
+      expect(service.detectProvider('file:///home/user/repo')).toBe('unknown');
+    });
+
+    it('handles SSH URL with ssh:// scheme', () => {
+      // new URL() correctly parses ssh:// URLs and extracts the hostname
+      expect(service.detectProvider('ssh://git@github.com/owner/repo.git')).toBe('github');
+      expect(service.detectProvider('ssh://git@gitlab.com/user/repo.git')).toBe('gitlab');
+    });
+  });
+});
+
+// ===========================================================================
+// getRemotes (GAP-3)
+// ===========================================================================
+describe('getRemotes', () => {
+  it('returns empty remotes array for repo with no remotes', async () => {
+    addResponse('remote -v', { stdout: '' });
+
+    const result = await service.getRemotes('/workspace');
+
+    expect(result.success).toBe(true);
+    expect(result.remotes).toEqual([]);
+    expect(result.provider).toBe('unknown');
+  });
+
+  it('parses a single origin remote', async () => {
+    addResponse('remote -v', {
+      stdout: 'origin	https://github.com/owner/repo.git (fetch)\norigin	https://github.com/owner/repo.git (push)',
+    });
+
+    const result = await service.getRemotes('/workspace');
+
+    expect(result.success).toBe(true);
+    expect(result.remotes).toHaveLength(1);
+    expect(result.remotes[0]).toEqual({
+      name: 'origin',
+      fetchUrl: 'https://github.com/owner/repo.git',
+      pushUrl: 'https://github.com/owner/repo.git',
+    });
+    expect(result.provider).toBe('github');
+  });
+
+  it('parses multiple remotes with different URLs', async () => {
+    addResponse('remote -v', {
+      stdout:
+        'origin\thttps://github.com/owner/repo.git (fetch)\n' +
+        'origin\thttps://github.com/owner/repo.git (push)\n' +
+        'upstream\thttps://github.com/upstream/repo.git (fetch)\n' +
+        'upstream\thttps://github.com/upstream/repo.git (push)',
+    });
+
+    const result = await service.getRemotes('/workspace');
+
+    expect(result.success).toBe(true);
+    expect(result.remotes).toHaveLength(2);
+    expect(result.remotes[0].name).toBe('origin');
+    expect(result.remotes[1].name).toBe('upstream');
+    expect(result.provider).toBe('github');
+  });
+
+  it('detects Bitbucket provider from HTTPS URL', async () => {
+    addResponse('remote -v', {
+      stdout: 'origin\thttps://bitbucket.org/team/project.git (fetch)\norigin\thttps://bitbucket.org/team/project.git (push)',
+    });
+
+    const result = await service.getRemotes('/workspace');
+
+    expect(result.provider).toBe('bitbucket');
+  });
+
+  it('detects GitLab provider from HTTPS URL', async () => {
+    addResponse('remote -v', {
+      stdout: 'origin\thttps://gitlab.com/mygroup/myrepo.git (fetch)\norigin\thttps://gitlab.com/mygroup/myrepo.git (push)',
+    });
+
+    const result = await service.getRemotes('/workspace');
+
+    expect(result.provider).toBe('gitlab');
+  });
+
+  it('detects GitHub provider from SSH URL', async () => {
+    addResponse('remote -v', {
+      stdout: 'origin\tgit@github.com:owner/repo.git (fetch)\norigin\tgit@github.com:owner/repo.git (push)',
+    });
+
+    const result = await service.getRemotes('/workspace');
+
+    expect(result.provider).toBe('github');
+  });
+
+  it('returns unknown provider for self-hosted repo', async () => {
+    addResponse('remote -v', {
+      stdout: 'origin\thttps://git.mycompany.com/owner/repo.git (fetch)\norigin\thttps://git.mycompany.com/owner/repo.git (push)',
+    });
+
+    const result = await service.getRemotes('/workspace');
+
+    expect(result.provider).toBe('unknown');
+    expect(result.success).toBe(true);
+  });
+
+  it('uses first remote fetch URL for provider detection', async () => {
+    // even if origin is self-hosted, upstream is github — first remote wins
+    addResponse('remote -v', {
+      stdout:
+        'self\thttps://git.internal/owner/repo.git (fetch)\n' +
+        'self\thttps://git.internal/owner/repo.git (push)\n' +
+        'github\thttps://github.com/owner/repo.git (fetch)\n' +
+        'github\thttps://github.com/owner/repo.git (push)',
+    });
+
+    const result = await service.getRemotes('/workspace');
+
+    // First remote in alphabetical order (by insertion) — 'github' > 'self' alphabetically
+    // The implementation uses Array.from on the Map which preserves insertion order
+    // git outputs remotes in insertion order, so 'self' would come first if it was created first
+    // We just verify the first remote's provider is used
+    expect(result.provider).toBe('unknown'); // 'self' is first
+  });
+
+  it('handles remote with only fetch URL', async () => {
+    addResponse('remote -v', {
+      stdout: 'origin\thttps://github.com/owner/repo.git (fetch)',
+    });
+
+    const result = await service.getRemotes('/workspace');
+
+    expect(result.success).toBe(true);
+    expect(result.remotes).toHaveLength(1);
+    expect(result.remotes[0].fetchUrl).toBe('https://github.com/owner/repo.git');
+    expect(result.remotes[0].pushUrl).toBe('');
+    expect(result.provider).toBe('github');
+  });
+
+  it('returns error on git failure', async () => {
+    addResponse('remote -v', {
+      exitCode: 128,
+      stderr: 'fatal: not a git repository',
+    });
+
+    const result = await service.getRemotes('/workspace');
+
+    expect(result.success).toBe(false);
+    expect(result.remotes).toEqual([]);
+    expect(result.provider).toBe('unknown');
+    expect(result.error).toBeTruthy();
+  });
+
+  it('handles remote output with trailing newline', async () => {
+    addResponse('remote -v', {
+      stdout: 'origin\thttps://github.com/owner/repo.git (fetch)\norigin\thttps://github.com/owner/repo.git (push)\n',
+    });
+
+    const result = await service.getRemotes('/workspace');
+
+    expect(result.success).toBe(true);
+    expect(result.remotes).toHaveLength(1);
+    expect(result.remotes[0].name).toBe('origin');
+  });
+});
+
+// ===========================================================================
+// fetch / pull / push (GAP-4)
+// ===========================================================================
+describe('fetch', () => {
+  it('fetches from default remote with prune', async () => {
+    addResponse('fetch --prune', { stdout: '' });
+
+    const result = await service.fetch('/workspace');
+
+    expect(result.success).toBe(true);
+  });
+
+  it('fetches from a specific remote', async () => {
+    addResponse('fetch upstream --prune', { stdout: '' });
+
+    const result = await service.fetch('/workspace', 'upstream');
+
+    expect(result.success).toBe(true);
+  });
+
+  it('returns error on git failure', async () => {
+    addResponse('fetch --prune', {
+      exitCode: 128,
+      stderr: 'fatal: not a git repository',
+    });
+
+    const result = await service.fetch('/workspace');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeTruthy();
+  });
+
+  it('returns error on network failure', async () => {
+    addResponse('fetch --prune', {
+      exitCode: 128,
+      stderr: 'ssh: connect to host github.com port 22: Connection refused',
+    });
+
+    const result = await service.fetch('/workspace');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Connection refused');
+  });
+});
+
+describe('pull', () => {
+  it('pulls successfully with default settings', async () => {
+    addResponse('pull', { stdout: 'Already up to date.' });
+
+    const result = await service.pull('/workspace');
+
+    expect(result.success).toBe(true);
+  });
+
+  it('pulls with --rebase when specified', async () => {
+    addResponse('pull --rebase', { stdout: 'Successfully rebased.' });
+
+    const result = await service.pull('/workspace', true);
+
+    expect(result.success).toBe(true);
+  });
+
+  it('pulls with --no-rebase when specified', async () => {
+    addResponse('pull --no-rebase', { stdout: 'Merge made by ort.' });
+
+    const result = await service.pull('/workspace', false);
+
+    expect(result.success).toBe(true);
+  });
+
+  it('returns error on merge conflict', async () => {
+    addResponse('pull', {
+      exitCode: 1,
+      stderr: 'Merge conflict in src/main.ts. Fix conflicts and commit the result.',
+    });
+
+    const result = await service.pull('/workspace');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Merge conflict');
+  });
+
+  it('returns error on git failure', async () => {
+    addResponse('pull', {
+      exitCode: 128,
+      stderr: 'fatal: not a git repository',
+    });
+
+    const result = await service.pull('/workspace');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeTruthy();
+  });
+
+  it('returns error on authentication failure', async () => {
+    addResponse('pull', {
+      exitCode: 128,
+      stderr: 'remote: Authentication failed.',
+    });
+
+    const result = await service.pull('/workspace');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Authentication failed');
+  });
+});
+
+describe('push', () => {
+  it('pushes successfully', async () => {
+    addResponse('push', { stdout: 'Everything up-to-date.' });
+
+    const result = await service.push('/workspace');
+
+    expect(result.success).toBe(true);
+  });
+
+  it('pushes to a specific remote and branch', async () => {
+    addResponse('push origin main', { stdout: 'Total 0.' });
+
+    const result = await service.push('/workspace', 'origin', 'main');
+
+    expect(result.success).toBe(true);
+  });
+
+  it('pushes with --force-with-lease when specified', async () => {
+    addResponse('push --force-with-lease', { stdout: '+ abc1234..def5678 main -> main' });
+
+    const result = await service.push('/workspace', undefined, undefined, true);
+
+    expect(result.success).toBe(true);
+  });
+
+  it('returns rejected error with actionable hint', async () => {
+    addResponse('push', {
+      exitCode: 1,
+      stderr: '! [rejected] main -> main (fetch first)',
+    });
+
+    const result = await service.push('/workspace');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('rejected');
+    expect(result.error).toContain('Fetch');
+  });
+
+  it('returns upstream error with actionable hint', async () => {
+    addResponse('push', {
+      exitCode: 128,
+      stderr: 'fatal: The current branch main has no upstream branch.',
+    });
+
+    const result = await service.push('/workspace');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('upstream');
+  });
+
+  it('returns auth error with actionable hint', async () => {
+    addResponse('push', {
+      exitCode: 128,
+      stderr: 'remote: Permission denied. Authentication failed.',
+    });
+
+    const result = await service.push('/workspace');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Authentication failed');
+  });
+
+  it('returns generic error on git failure', async () => {
+    addResponse('push', {
+      exitCode: 128,
+      stderr: 'fatal: not a git repository',
+    });
+
+    const result = await service.push('/workspace');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeTruthy();
+  });
+});

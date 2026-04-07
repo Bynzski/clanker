@@ -851,6 +851,107 @@ export class GitService {
     }
   }
 
+  /**
+   * Execute a git command that talks to a remote. Uses a longer timeout (60s)
+   * since network operations can take significantly longer than local git ops.
+   */
+  private async execGitRemote(
+    workspacePath: string,
+    args: string[]
+  ): Promise<{ stdout: string; stderr: string }> {
+    const execFileAsync = promisify(execFile);
+    return execFileAsync('git', args, {
+      cwd: workspacePath,
+      timeout: 60000,
+      maxBuffer: 1024 * 1024,
+    }) as Promise<{ stdout: string; stderr: string }>;
+  }
+
+  async fetch(workspacePath: string, remote?: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const args = ['fetch'];
+      if (remote) {
+        args.push(remote);
+      }
+      args.push('--prune');
+      await this.execGitRemote(workspacePath, args);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: this.getGitErrorMessage(error, 'Failed to fetch') };
+    }
+  }
+
+  async pull(
+    workspacePath: string,
+    rebase?: boolean
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const args = ['pull'];
+      if (rebase !== undefined) {
+        args.push(rebase ? '--rebase' : '--no-rebase');
+      }
+      await this.execGitRemote(workspacePath, args);
+      return { success: true };
+    } catch (error) {
+      const msg = this.getGitErrorMessage(error, 'Failed to pull');
+      // Detect conflict scenarios
+      const lower = msg.toLowerCase();
+      if (
+        lower.includes('merge conflict') ||
+        lower.includes('fix conflicts') ||
+        lower.includes('not possible to merge')
+      ) {
+        return { success: false, error: `Pull failed: ${msg}` };
+      }
+      return { success: false, error: msg };
+    }
+  }
+
+  async push(
+    workspacePath: string,
+    remote?: string,
+    branch?: string,
+    forceWithLease = false
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const args = ['push'];
+      if (remote) {
+        args.push(remote);
+      }
+      if (branch) {
+        args.push(branch);
+      }
+      if (forceWithLease) {
+        args.push('--force-with-lease');
+      }
+      await this.execGitRemote(workspacePath, args);
+      return { success: true };
+    } catch (error) {
+      const msg = this.getGitErrorMessage(error, 'Failed to push');
+      // Provide actionable hints for common errors
+      const lower = msg.toLowerCase();
+      if (lower.includes('rejected')) {
+        return {
+          success: false,
+          error: `Push rejected — fetch and merge or rebase first. Run "Fetch & Pull" to update.`,
+        };
+      }
+      if (lower.includes('no upstream configured') || lower.includes('no tracking information')) {
+        return {
+          success: false,
+          error: `No upstream branch. Use "Push with upstream" to set one.`,
+        };
+      }
+      if (lower.includes('permission denied') || lower.includes('authentication failed')) {
+        return {
+          success: false,
+          error: `Authentication failed. Check your git credentials for this remote.`,
+        };
+      }
+      return { success: false, error: msg };
+    }
+  }
+
   async isRepo(workspacePath: string): Promise<boolean> {
     try {
       await this.execGit(workspacePath, ['rev-parse', '--git-dir']);
@@ -894,6 +995,7 @@ export class GitService {
     this.emitStatus(await this.getStatus(workspacePath));
   }
 
+  // Exposed for unit testing
   detectProvider(remoteUrl: string): VcsProvider {
     try {
       // Handle SSH URLs: git@github.com:owner/repo.git

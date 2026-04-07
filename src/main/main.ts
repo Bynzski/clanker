@@ -906,6 +906,30 @@ ipcMain.handle('git-get-remotes', async (_, workspacePath: string) => {
   return gitService.getRemotes(safeWorkspacePath);
 });
 
+ipcMain.handle('git-fetch', async (_, workspacePath: string, remote?: string) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return { success: false, error: 'Invalid workspace path' };
+  }
+  return gitService.fetch(safeWorkspacePath, remote);
+});
+
+ipcMain.handle('git-pull', async (_, workspacePath: string, rebase?: boolean) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return { success: false, error: 'Invalid workspace path' };
+  }
+  return gitService.pull(safeWorkspacePath, rebase);
+});
+
+ipcMain.handle('git-push', async (_, workspacePath: string, remote?: string, branch?: string, forceWithLease?: boolean) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return { success: false, error: 'Invalid workspace path' };
+  }
+  return gitService.push(safeWorkspacePath, remote, branch, forceWithLease);
+});
+
 // App lifecycle
 app.whenReady().then(() => {
   createWindow();

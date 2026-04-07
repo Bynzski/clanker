@@ -180,6 +180,16 @@
   color: var(--text-secondary);
 }
 
+.git-menu-remote-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.git-menu-remote-actions .git-menu-action {
+  flex: 1;
+  justify-content: center;
+}
+
 .git-menu-count {
   font-size: 10px;
   font-weight: 700;
