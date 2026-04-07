@@ -24,7 +24,7 @@
 }
 
 .app-logo svg {
-  filter: drop-shadow(0 0 4px rgba(88, 166, 255, 0.3));
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.18));
 }
 
 .app-title {
@@ -70,8 +70,8 @@
 }
 
 .header-btn-primary:hover {
-  background: #79b8ff;
-  border-color: #79b8ff;
+  background: #a0a0a0;
+  border-color: #a0a0a0;
   color: var(--bg-primary);
 }
 
