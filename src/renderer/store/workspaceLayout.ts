@@ -35,53 +35,6 @@ export function normalizePosition(position: PanePosition, cols: number, rows: nu
   return { x, y, w, h };
 }
 
-function collides(a: PanePosition, b: PanePosition) {
-  return !(
-    a.x + a.w <= b.x ||
-    b.x + b.w <= a.x ||
-    a.y + a.h <= b.y ||
-    b.y + b.h <= a.y
-  );
-}
-
-function findAvailablePosition(
-  existingPositions: PanePosition[],
-  cols: number,
-  rows: number,
-  preferredW: number,
-  preferredH: number
-): PanePosition | null {
-  const w = clamp(preferredW, MIN_PANE_W, cols);
-  const h = clamp(preferredH, MIN_PANE_H, rows);
-
-  for (let y = 0; y <= rows - h; y++) {
-    for (let x = 0; x <= cols - w; x++) {
-      const candidate = { x, y, w, h };
-      if (!existingPositions.some((position) => collides(candidate, position))) {
-        return candidate;
-      }
-    }
-  }
-
-  return null;
-}
-
-export function calculateNewPanePosition(
-  existingPanes: Pane[],
-  maxCols: number = GRID_COLS,
-  maxRows: number = GRID_ROWS
-): PanePosition {
-  const occupiedPositions = existingPanes
-    .filter((pane) => pane.position)
-    .map((pane) => pane.position as PanePosition);
-  const count = existingPanes.length;
-  const preferredW = clamp(Math.floor(maxCols / Math.min(count + 1, 3)) || 4, MIN_PANE_W, maxCols);
-  const preferredH = clamp(Math.floor(maxRows / Math.min(Math.max(1, Math.ceil(count / 2)), 3)) || 4, MIN_PANE_H, maxRows);
-  const position = findAvailablePosition(occupiedPositions, maxCols, maxRows, preferredW, preferredH);
-
-  return position ?? normalizePosition({ x: 0, y: 0, w: preferredW, h: preferredH }, maxCols, maxRows);
-}
-
 const generateId = (prefix: string) => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `${prefix}-${crypto.randomUUID()}`;
