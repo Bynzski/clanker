@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { FolderOpen, Folder, Loader2, Brain, Zap, Pi, Play, ChevronRight, ChevronDown, Terminal, Sparkles, Check } from 'lucide-react';
+import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check } from 'lucide-react';
+import { HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
+import type { ModelOption } from '../types/shared';
 import './WorkspaceGate.css';
 
 export interface WorkspaceFormData {
@@ -14,25 +16,12 @@ interface ContentProps {
   onSubmit: (data: WorkspaceFormData) => void;
 }
 
-interface ModelOption {
-  id: string;
-  label: string;
-}
-
 const STORAGE_KEY = 'clanker-grid-last-path';
 
 export const TERMINAL_PRESETS = [
   { count: 1, label: '1', description: 'Single terminal' },
   { count: 2, label: '2', description: 'Two terminals' },
   { count: 4, label: '4', description: 'Four terminals' },
-];
-
-export const HARNESS_OPTIONS = [
-  { id: '', label: 'Terminal', Icon: Terminal },
-  { id: 'codex', label: 'Codex', Icon: Brain },
-  { id: 'claude', label: 'Claude', Icon: Sparkles },
-  { id: 'opencode', label: 'OpenCode', Icon: Zap },
-  { id: 'pi', label: 'Pi', Icon: Pi },
 ];
 
 export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentProps) {
@@ -84,9 +73,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
         const options = await window.electronAPI.getHarnessOptions();
         if (cancelled) return;
 
-        const availableIds = HARNESS_OPTIONS
-          .map((option) => option.id)
-          .filter((id) => id === '' || Boolean(options[id]));
+        const availableIds = resolveAvailableHarnessIds(options);
 
         setAvailableHarnessIds(availableIds);
         setSelectedHarness((current) => availableIds.includes(current) ? current : (availableIds.find((id) => id !== '') ?? ''));

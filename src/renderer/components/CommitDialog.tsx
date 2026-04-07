@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Check, Loader2, Sparkles } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import type { AiCommitSettings } from '../types/shared';
 
 interface GitStatus {
   path: string;
@@ -15,12 +16,6 @@ interface CommitDialogProps {
   onStageAll: () => void;
   changes: GitStatus[];
   workspacePath: string;
-}
-
-interface AiCommitSettings {
-  enabled: boolean;
-  provider: string;
-  model: string;
 }
 
 export default function CommitDialog({

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, MouseEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { terminateWorkspaceTerminals } from '../lib/workspaceLifecycle';
 import { X, Check, Edit2 } from 'lucide-react';
 import './WorkspaceTabs.css';
 
@@ -28,14 +29,7 @@ export default function WorkspaceTabs() {
       return;
     }
 
-    for (const terminal of workspace.terminals) {
-      try {
-        await window.electronAPI.killTerminal(terminal.id);
-      } catch (err) {
-        console.error('Failed to kill terminal:', err);
-      }
-    }
-
+    await terminateWorkspaceTerminals(workspace);
     closeWorkspace(id);
   };
 
