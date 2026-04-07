@@ -27,6 +27,7 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
     closeWorkspace,
     fitAllPanes,
     harness,
+    model,
     setHarness,
     canAddPane,
   } = useWorkspaceStore();
@@ -87,7 +88,8 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
 
     try {
       const activeHarness = availableHarnessIds.includes(harness) ? harness : '';
-      const info = await window.electronAPI.spawnTerminal(workspacePath || '/', activeHarness || undefined);
+      const activeModel = activeHarness ? (model || undefined) : undefined;
+      const info = await window.electronAPI.spawnTerminal(workspacePath || '/', activeHarness || undefined, activeModel);
       addTerminal({
         id: info.id,
         pid: info.pid,

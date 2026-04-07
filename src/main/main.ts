@@ -9,8 +9,15 @@ app.commandLine.appendSwitch('disable-setuid-sandbox');
 
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
+import { execFile } from 'child_process';
 import * as pty from 'node-pty';
 import Store from 'electron-store';
+import {
+  buildHarnessSpawnArgs,
+  normalizePiModelId,
+  type HarnessConfig,
+} from './harnessLaunch';
 
 interface Terminal {
   id: string;
@@ -24,12 +31,9 @@ interface StoreSchema {
   showFastfetch: boolean;
 }
 
-interface HarnessConfig {
-  command: string;
-  args: string[];
-  name: string;
-  icon: string;
-  env?: Record<string, string>;
+interface ModelOption {
+  id: string;
+  label: string;
 }
 
 export const HARNESS_OPTIONS: Record<string, HarnessConfig> = {
@@ -38,12 +42,14 @@ export const HARNESS_OPTIONS: Record<string, HarnessConfig> = {
     command: 'codex',
     args: ['--yolo'],
     icon: '🧠',
+    modelArg: '-m',
   },
   'opencode': {
     name: 'OpenCode',
     command: 'opencode',
     args: ['--pure'],
     icon: '⚡',
+    modelArg: '-m',
     env: {
       OPENCODE_PERMISSION: JSON.stringify({
         bash: { '*': 'allow' },
@@ -56,14 +62,229 @@ export const HARNESS_OPTIONS: Record<string, HarnessConfig> = {
     command: 'pi',
     args: [],
     icon: 'π',
+    modelArg: '--model',
   },
   'claude': {
     name: 'Claude',
     command: 'claude',
     args: [],
     icon: '✨',
+    modelArg: '--model',
   },
 };
+
+const MODEL_DISCOVERY_FALLBACKS: Record<string, ModelOption[]> = {
+  codex: [
+    { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
+    { id: 'gpt-5.4', label: 'gpt-5.4' },
+    { id: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark' },
+    { id: 'gpt-5.1-codex-max', label: 'gpt-5.1-codex-max' },
+    { id: 'gpt-5.1-codex-mini', label: 'gpt-5.1-codex-mini' },
+  ],
+  opencode: [
+    { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+    { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
+    { id: 'openai/gpt-4o', label: 'GPT-4o' },
+    { id: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
+  ],
+  pi: [],
+  claude: [
+    { id: 'sonnet', label: 'Sonnet' },
+    { id: 'opus', label: 'Opus' },
+    { id: 'haiku', label: 'Haiku' },
+    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+  ],
+};
+
+const modelOptionsCache = new Map<string, ModelOption[]>();
+
+function runCommandOutput(
+  command: string,
+  args: string[],
+  timeoutMs = 6000,
+  extraEnv?: Record<string, string>
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, {
+      timeout: timeoutMs,
+      maxBuffer: 1024 * 1024,
+      env: {
+        ...process.env,
+        ...extraEnv,
+      } as { [key: string]: string },
+    }, (error, stdout, stderr) => {
+      if (error) {
+        reject(Object.assign(error, { stdout: String(stdout ?? ''), stderr: String(stderr ?? '') }));
+        return;
+      }
+
+      resolve(String(stdout ?? '') || String(stderr ?? ''));
+    });
+  });
+}
+
+function normalizeModelLine(line: string): string {
+  return line
+    .replace(/\u001B\[[0-9;]*m/g, '')
+    .replace(/^\s*[\-*•]\s*/, '')
+    .replace(/^\s*\d+[.)]\s*/, '')
+    .trim();
+}
+
+function parseModelOutput(output: string): ModelOption[] {
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => normalizeModelLine(line))
+    .filter(Boolean);
+
+  const seen = new Set<string>();
+  const models: ModelOption[] = [];
+
+  for (const line of lines) {
+    if (/^(usage:|options:|commands:|examples:|available models|models available|select a model|choose a model)/i.test(line)) {
+      continue;
+    }
+
+    const parts = line.split(/\t+|\s{2,}/).map((part) => part.trim()).filter(Boolean);
+    const id = parts[0] ?? '';
+    if (!id) {
+      continue;
+    }
+
+    const normalizedId = id.replace(/\s+\(default\)$/i, '');
+    if (!normalizedId || seen.has(normalizedId)) {
+      continue;
+    }
+
+    seen.add(normalizedId);
+    models.push({
+      id: normalizedId,
+      label: (parts[1] ?? normalizedId).replace(/\s+\(default\)$/i, '').trim() || normalizedId,
+    });
+  }
+
+  return models;
+}
+
+function parsePiModels(output: string): ModelOption[] {
+  if (/no models available/i.test(output)) {
+    return [];
+  }
+
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => normalizeModelLine(line))
+    .filter(Boolean);
+
+  const models: ModelOption[] = [];
+  const seen = new Set<string>();
+
+  for (const line of lines) {
+    if (/^(warning:|provider\s+model|─|─+|-+|=+|pi\s+-\s+ai coding assistant)/i.test(line)) {
+      continue;
+    }
+
+    const cols = line.split(/\s{2,}|\t+/).map((part) => part.trim()).filter(Boolean);
+    if (cols.length < 2) {
+      continue;
+    }
+
+    const provider = cols[0];
+    const model = cols[1];
+    if (!model || seen.has(model)) {
+      continue;
+    }
+
+    seen.add(model);
+    models.push({
+      id: normalizePiModelId(provider, model),
+      label: `${provider}/${model}`,
+    });
+  }
+
+  return models;
+}
+
+function parseOpenCodeModels(output: string): ModelOption[] {
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => normalizeModelLine(line))
+    .filter((line) => /^[-A-Za-z0-9_./:]+$/.test(line));
+
+  const seen = new Set<string>();
+  const models: ModelOption[] = [];
+
+  for (const line of lines) {
+    if (seen.has(line)) {
+      continue;
+    }
+    seen.add(line);
+    models.push({ id: line, label: line });
+  }
+
+  return models;
+}
+
+function readCodexConfiguredModel(): string | null {
+  const configPath = path.join(app.getPath('home'), '.codex', 'config.toml');
+  try {
+    const contents = fs.readFileSync(configPath, 'utf8');
+    const match = contents.match(/^\s*model\s*=\s*["']([^"']+)["']\s*$/m);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function discoverCodexModels(): Promise<ModelOption[]> {
+  const configuredModel = readCodexConfiguredModel();
+  const fallback = MODEL_DISCOVERY_FALLBACKS.codex;
+  return configuredModel
+    ? [{ id: configuredModel, label: configuredModel }, ...fallback.filter((model) => model.id !== configuredModel)]
+    : fallback;
+}
+
+async function discoverHarnessModels(harness: string): Promise<ModelOption[]> {
+  if (modelOptionsCache.has(harness)) {
+    return modelOptionsCache.get(harness)!;
+  }
+
+  const config = HARNESS_OPTIONS[harness];
+  if (!config) {
+    return [];
+  }
+
+  const fallback = MODEL_DISCOVERY_FALLBACKS[harness] ?? [];
+  let options: ModelOption[] = fallback;
+
+  try {
+    if (harness === 'codex') {
+      options = await discoverCodexModels();
+    } else if (harness === 'opencode') {
+      const tempDataHome = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-grid-opencode-'));
+      try {
+        const output = await runCommandOutput('opencode', ['models'], 6000, {
+          XDG_DATA_HOME: tempDataHome,
+        });
+        options = parseOpenCodeModels(output);
+      } finally {
+        fs.rmSync(tempDataHome, { recursive: true, force: true });
+      }
+    } else if (harness === 'pi') {
+      const output = await runCommandOutput('pi', ['--list-models'], 6000);
+      options = parsePiModels(output);
+    }
+  } catch {
+    options = fallback;
+  }
+
+  const deduped = options.filter((model, index, array) =>
+    index === array.findIndex((entry) => entry.id === model.id)
+  );
+
+  modelOptionsCache.set(harness, deduped.length > 0 ? deduped : fallback);
+  return modelOptionsCache.get(harness)!;
+}
 
 function isCommandAvailable(command: string): boolean {
   const searchPaths = new Set<string>([
@@ -1078,7 +1299,11 @@ ipcMain.handle('read-directory', async (_, dirPath: string) => {
   }
 });
 
-ipcMain.handle('spawn-terminal', (_, workingDir: string, harness?: string) => {
+ipcMain.handle('get-harness-models', async (_, harness: string) => {
+  return discoverHarnessModels(harness);
+});
+
+ipcMain.handle('spawn-terminal', (_, workingDir: string, harness?: string, model?: string) => {
   const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   // Use user's default shell, fallback to bash
@@ -1091,34 +1316,59 @@ ipcMain.handle('spawn-terminal', (_, workingDir: string, harness?: string) => {
   
   const harnessEnv = harness && HARNESS_OPTIONS[harness]?.env ? HARNESS_OPTIONS[harness].env : {};
 
-  const ptyProcess = pty.spawn(userShell, shellArgs, {
-    name: 'xterm-256color',
-    cwd: workingDir || store.get('lastWorkspace'),
-    env: {
-      ...process.env as { [key: string]: string },
-      ...harnessEnv,
-      // Ensure proper terminal settings
-      TERM: 'xterm-256color',
-      COLORTERM: 'truecolor',
-      // Helpful for shells that detect terminal
-      TERM_PROGRAM: 'clanker-grid',
-      // Enable true color
-      FORCE_COLOR: '1',
-      // Disable fastfetch in app terminals (if setting is off)
-      ...(store.get('showFastfetch') ? {} : { CLANKER_GRID: '1' }),
-    },
-  });
+  const ptyProcess = harness && HARNESS_OPTIONS[harness]
+    ? pty.spawn(
+        HARNESS_OPTIONS[harness].command,
+        buildHarnessSpawnArgs(HARNESS_OPTIONS[harness], model),
+        {
+          name: 'xterm-256color',
+          cwd: workingDir || store.get('lastWorkspace'),
+          env: {
+            ...process.env as { [key: string]: string },
+            ...harnessEnv,
+            TERM: 'xterm-256color',
+            COLORTERM: 'truecolor',
+            TERM_PROGRAM: 'clanker-grid',
+            FORCE_COLOR: '1',
+            ...(store.get('showFastfetch') ? {} : { CLANKER_GRID: '1' }),
+          },
+        }
+      )
+    : pty.spawn(userShell, shellArgs, {
+        name: 'xterm-256color',
+        cwd: workingDir || store.get('lastWorkspace'),
+        env: {
+          ...process.env as { [key: string]: string },
+          ...harnessEnv,
+          // Ensure proper terminal settings
+          TERM: 'xterm-256color',
+          COLORTERM: 'truecolor',
+          // Helpful for shells that detect terminal
+          TERM_PROGRAM: 'clanker-grid',
+          // Enable true color
+          FORCE_COLOR: '1',
+          // Disable fastfetch in app terminals (if setting is off)
+          ...(store.get('showFastfetch') ? {} : { CLANKER_GRID: '1' }),
+        },
+      });
 
   const terminal: Terminal = { id, pid: ptyProcess.pid, pty: ptyProcess, buffer: '' };
   terminals.set(id, terminal);
 
-  // If a harness is specified, write the command after a short delay
   if (harness && HARNESS_OPTIONS[harness]) {
     const config = HARNESS_OPTIONS[harness];
-    setTimeout(() => {
-      const cmd = `${config.command} ${config.args.join(' ')}\r\n`;
-      ptyProcess.write(cmd);
-    }, 500);
+    const launchArgs = buildHarnessSpawnArgs(config, model);
+    console.info('[clanker-grid] harness launch', {
+      harness,
+      command: config.command,
+      args: launchArgs,
+      model: model ?? null,
+    });
+    if (mainWindow) {
+      const visibleLaunch = `[clanker-grid] ${config.command} ${launchArgs.join(' ')}\r\n`;
+      mainWindow.webContents.send('terminal-data', { id, data: visibleLaunch });
+      terminal.buffer += visibleLaunch;
+    }
   }
 
   ptyProcess.onData((data) => {

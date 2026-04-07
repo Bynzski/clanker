@@ -1,16 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { FolderOpen, Folder, Loader2, Brain, Zap, Pi, Play, ChevronRight, Terminal, Sparkles } from 'lucide-react';
+import { FolderOpen, Folder, Loader2, Brain, Zap, Pi, Play, ChevronRight, ChevronDown, Terminal, Sparkles, Check } from 'lucide-react';
 import './WorkspaceGate.css';
 
 export interface WorkspaceFormData {
   path: string;
   terminalCount: number;
   harness: string;
+  model?: string;
 }
 
 interface ContentProps {
   initialPath?: string;
   onSubmit: (data: WorkspaceFormData) => void;
+}
+
+interface ModelOption {
+  id: string;
+  label: string;
 }
 
 const STORAGE_KEY = 'clanker-grid-last-path';
@@ -38,8 +44,13 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   const [selectedPreset, setSelectedPreset] = useState(2); // Default to 2 (index 2)
   const [selectedHarness, setSelectedHarness] = useState('codex'); // Default to codex
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  const [selectedModel, setSelectedModel] = useState('');
+  const [isModelLoading, setIsModelLoading] = useState(false);
+  const [showModelMenu, setShowModelMenu] = useState(false);
   
   const inputRef = useRef<HTMLInputElement>(null);
+  const modelMenuRef = useRef<HTMLDivElement>(null);
 
   // Load last used path
   useEffect(() => {
@@ -79,10 +90,12 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
 
         setAvailableHarnessIds(availableIds);
         setSelectedHarness((current) => availableIds.includes(current) ? current : (availableIds.find((id) => id !== '') ?? ''));
+        setSelectedModel('');
       } catch {
         if (!cancelled) {
           setAvailableHarnessIds(['']);
           setSelectedHarness('');
+          setSelectedModel('');
         }
       }
     };
@@ -93,6 +106,64 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!selectedHarness) {
+      setModelOptions([]);
+      setSelectedModel('');
+      setShowModelMenu(false);
+      setIsModelLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadModels = async () => {
+      setIsModelLoading(true);
+      try {
+        const models = await window.electronAPI.getHarnessModels(selectedHarness);
+        if (cancelled) return;
+        setModelOptions(models);
+        setSelectedModel((current) => {
+          if (models.some((model) => model.id === current)) {
+            return current;
+          }
+
+          return models[0]?.id ?? '';
+        });
+      } catch {
+        if (!cancelled) {
+          setModelOptions([]);
+          setSelectedModel('');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsModelLoading(false);
+        }
+      }
+    };
+
+    loadModels();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedHarness]);
+
+  useEffect(() => {
+    if (!showModelMenu) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (modelMenuRef.current && !modelMenuRef.current.contains(event.target as Node)) {
+        setShowModelMenu(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => window.removeEventListener('mousedown', handlePointerDown);
+  }, [showModelMenu]);
 
   // Fetch directory suggestions
   const fetchSuggestions = useCallback(async (path: string) => {
@@ -163,6 +234,13 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     }
   };
 
+  const handleHarnessChange = (harness: string) => {
+    setSelectedHarness(harness);
+    setSelectedModel('');
+    setModelOptions([]);
+    setShowModelMenu(false);
+  };
+
   const handleSubmit = () => {
     const path = inputValue.trim();
     if (!path) return;
@@ -175,10 +253,12 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
 
     localStorage.setItem(STORAGE_KEY, finalPath);
     const preset = TERMINAL_PRESETS[selectedPreset];
+    const launchModel = selectedModel || modelOptions[0]?.id || undefined;
     onSubmit({
       path: finalPath,
       terminalCount: preset.count,
       harness: selectedHarness,
+      model: selectedHarness ? launchModel : undefined,
     });
   };
 
@@ -223,16 +303,16 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       setSelectedPreset(2);
     } else if ((e.key === 'b' || e.key === 'B') && !isFocused && selectedHarness !== '') {
       e.preventDefault();
-      setSelectedHarness('');
+      handleHarnessChange('');
     } else if ((e.key === 'c' || e.key === 'C') && !isFocused && availableHarnessIds.includes('codex')) {
       e.preventDefault();
-      setSelectedHarness('codex');
+      handleHarnessChange('codex');
     } else if ((e.key === 'o' || e.key === 'O') && !isFocused && availableHarnessIds.includes('opencode')) {
       e.preventDefault();
-      setSelectedHarness('opencode');
+      handleHarnessChange('opencode');
     } else if ((e.key === 'p' || e.key === 'P') && !isFocused && !e.metaKey && !e.ctrlKey && availableHarnessIds.includes('pi')) {
       e.preventDefault();
-      setSelectedHarness('pi');
+      handleHarnessChange('pi');
     }
   };
 
@@ -245,6 +325,13 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   };
 
   const showSuggestions = isFocused && suggestions.length > 0;
+  const selectedModelLabel = selectedModel
+    ? (modelOptions.find((model) => model.id === selectedModel)?.label ?? selectedModel)
+    : 'Default model';
+  const showModelSelector = selectedHarness !== '';
+  const modelSelectorPlaceholder = selectedHarness === 'pi' && modelOptions.length === 0
+    ? 'No models available'
+    : selectedModelLabel;
 
   return (
     <div className="gate-content">
@@ -374,7 +461,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
             <button
               key={harness.id}
               className={`harness-option ${selectedHarness === harness.id ? 'selected' : ''}`}
-              onClick={() => setSelectedHarness(harness.id)}
+              onClick={() => handleHarnessChange(harness.id)}
               title={harness.id ? `Select ${harness.label}` : 'No harness (basic terminal)'}
             >
               <harness.Icon size={20} strokeWidth={2} className="harness-icon" />
@@ -383,6 +470,63 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
           ))}
         </div>
       </div>
+
+      {showModelSelector && (
+        <div className="model-selector" ref={modelMenuRef}>
+          <div className="model-selector-row">
+            <span className="model-selector-label">Model</span>
+            <button
+              type="button"
+              className={`model-selector-button ${showModelMenu ? 'open' : ''}`}
+              onClick={() => setShowModelMenu((value) => !value)}
+              disabled={isModelLoading}
+              title="Choose a model"
+            >
+              <span className="model-selector-value">
+                {isModelLoading ? 'Loading models...' : modelSelectorPlaceholder}
+              </span>
+              <ChevronDown size={14} strokeWidth={2.5} className="model-selector-caret" />
+            </button>
+          </div>
+
+          {showModelMenu && modelOptions.length > 0 && (
+            <div className="model-menu" role="listbox" aria-label="Available models">
+              <button
+                type="button"
+                className={`model-menu-item ${selectedModel === '' ? 'selected' : ''}`}
+                onClick={() => {
+                  setSelectedModel('');
+                  setShowModelMenu(false);
+                }}
+              >
+                <span className="model-menu-text">Default</span>
+              </button>
+
+              {modelOptions.map((model) => (
+                <button
+                  key={model.id}
+                  type="button"
+                  className={`model-menu-item ${selectedModel === model.id ? 'selected' : ''}`}
+                  onClick={() => {
+                    setSelectedModel(model.id);
+                    setShowModelMenu(false);
+                  }}
+                >
+                  <span className="model-menu-text">{model.label}</span>
+                  {selectedModel === model.id && (
+                    <Check size={14} strokeWidth={2.5} className="model-menu-check" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {showModelMenu && modelOptions.length === 0 && (
+            <div className="model-menu-empty">
+              No models available for this harness on this system.
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid-selector">
         <span className="grid-selector-label">Terminals</span>
