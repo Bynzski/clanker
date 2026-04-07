@@ -1,10 +1,10 @@
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import type { GitBranchInfo } from './types';
+import type { GitBranch } from './types';
 import './GitBranchesSection.css';
 
 interface GitBranchesSectionProps {
   activeAction: string | null;
-  branches: GitBranchInfo[];
+  branches: GitBranch[];
   createBranchInputRef: React.RefObject<HTMLInputElement | null>;
   currentBranch: string | null;
   isBusy: boolean;

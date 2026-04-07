@@ -10,9 +10,9 @@ import type { GitStatusResult } from '../../../src/main/gitService';
  * Response map: git subcommand prefix → response.
  * The mock matches `git <args.join(' ')>` against each prefix in insertion order.
  */
-const responses = new Map<string, { stdout?: string; stderr?: string; exitCode?: number }>();
+const responses = new Map<string, { stdout?: string; stderr?: string; exitCode?: number; nodeErrorCode?: string }>();
 
-function addResponse(subcommand: string, response: { stdout?: string; stderr?: string; exitCode?: number }) {
+function addResponse(subcommand: string, response: { stdout?: string; stderr?: string; exitCode?: number; nodeErrorCode?: string }) {
   responses.set(subcommand, response);
 }
 
@@ -35,11 +35,11 @@ vi.mock('child_process', () => ({
         if (resp.exitCode && resp.exitCode !== 0) {
           const err = new Error(`Command failed: git ${argString}`) as Error & {
             stderr?: string;
-            code?: number;
+            code?: number | string;
             stdout?: string;
           };
           err.stderr = resp.stderr ?? '';
-          err.code = resp.exitCode;
+          err.code = resp.nodeErrorCode ?? resp.exitCode;
           err.stdout = resp.stdout ?? '';
           setImmediate(() => cb(err));
           return;
@@ -129,6 +129,8 @@ describe('getStatus', () => {
     expect(result.success).toBe(false);
     expect(result.isRepo).toBe(false);
     expect(result.changes).toEqual([]);
+    expect(result.errorCode).toBe('not-a-repo');
+    expect(result.error).toBeTruthy();
   });
 
   // Gap 1: Regression test for .trim() corrupting first-line status parsing
@@ -170,6 +172,54 @@ describe('getStatus', () => {
       status: 'renamed',
       staged: true,
     });
+  });
+
+  // Error classification tests (GAP-5)
+  it('classifies ENOENT as git-not-found', async () => {
+    addResponse('rev-parse --git-dir', {
+      exitCode: 1,
+      nodeErrorCode: 'ENOENT',
+      stderr: 'spawn git ENOENT',
+    });
+
+    const result = await service.getStatus('/workspace');
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('git-not-found');
+    expect(result.error).toBeTruthy();
+  });
+
+  it('classifies "not a git repository" stderr as not-a-repo', async () => {
+    addResponse('rev-parse --git-dir', {
+      exitCode: 128,
+      stderr: 'fatal: not a git repository (or any of the parent directories): .git',
+    });
+
+    const result = await service.getStatus('/workspace');
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('not-a-repo');
+  });
+
+  it('classifies unrecognized errors as unknown', async () => {
+    addResponse('rev-parse --git-dir', {
+      exitCode: 1,
+      nodeErrorCode: 'EACCES',
+      stderr: 'EACCES: permission denied',
+    });
+
+    const result = await service.getStatus('/workspace');
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe('unknown');
+    expect(result.error).toContain('EACCES');
+  });
+
+  it('successful status has no errorCode', async () => {
+    addResponse('rev-parse --git-dir', { stdout: '.git' });
+    addResponse('status --porcelain', { stdout: '' });
+    addResponse('branch --show-current', { stdout: 'main' });
+
+    const result = await service.getStatus('/workspace');
+    expect(result.success).toBe(true);
+    expect(result.errorCode).toBeUndefined();
   });
 });
 
@@ -876,12 +926,12 @@ describe('getCommitPromptContext', () => {
   });
 
   it('returns error when not a repo', async () => {
-    addResponse('rev-parse --git-dir', { exitCode: 128, stderr: 'not a repo' });
+    addResponse('rev-parse --git-dir', { exitCode: 128, stderr: 'not a git repository' });
 
     const ctx = await service.getCommitPromptContext('/workspace');
 
     expect(ctx.success).toBe(false);
-    expect(ctx.error).toContain('Not a git repository');
+    expect(ctx.error).toContain('not a git repository');
   });
 });
 

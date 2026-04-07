@@ -71,12 +71,15 @@ interface ElectronAPI {
   onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => () => void;
 }
 
+type GitErrorCode = 'not-a-repo' | 'git-not-found' | 'unknown';
+
 interface GitStatusResult {
   success: boolean;
   isRepo: boolean;
   currentBranch: string | null;
   isDetached: boolean;
   changes: GitStatus[];
+  errorCode?: GitErrorCode;
   error?: string;
 }
 

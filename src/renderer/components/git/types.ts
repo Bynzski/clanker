@@ -4,7 +4,7 @@ export interface GitStatus {
   staged: boolean;
 }
 
-export interface GitBranchInfo {
+export interface GitBranch {
   name: string;
   isCurrent: boolean;
 }

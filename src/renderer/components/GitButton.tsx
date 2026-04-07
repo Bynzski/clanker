@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
-  GitBranch,
+  GitBranch as GitBranchIcon,
   RefreshCw,
   X,
 } from 'lucide-react';
@@ -12,7 +12,7 @@ import { GitMergeSection } from './git/GitMergeSection';
 import { GitStashSection } from './git/GitStashSection';
 import type {
   DiffMode,
-  GitBranchInfo,
+  GitBranch,
   GitDiffResult,
   GitHistoryEntry,
   GitOperationState,
@@ -33,7 +33,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [changes, setChanges] = useState<GitStatus[]>([]);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [isDetached, setIsDetached] = useState(false);
-  const [branches, setBranches] = useState<GitBranchInfo[]>([]);
+  const [branches, setBranches] = useState<GitBranch[]>([]);
   const [branchError, setBranchError] = useState<string | null>(null);
   const [newBranchName, setNewBranchName] = useState('');
   const [activeAction, setActiveAction] = useState<string | null>(null);
@@ -55,6 +55,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [diffResult, setDiffResult] = useState<GitDiffResult | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [isLoadingDiff, setIsLoadingDiff] = useState(false);
+  const [statusErrorCode, setStatusErrorCode] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const createBranchInputRef = useRef<HTMLInputElement>(null);
 
@@ -72,6 +73,17 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     () => branches.filter((branch) => !branch.isCurrent).map((branch) => branch.name),
     [branches]
   );
+
+  const statusErrorMessage = useMemo(() => {
+    switch (statusErrorCode) {
+      case 'git-not-found':
+        return 'Git is not installed or not found on PATH';
+      case 'not-a-repo':
+        return 'Not a git repository';
+      default:
+        return null;
+    }
+  }, [statusErrorCode]);
 
   const refreshMenuData = useCallback(async () => {
     if (!workspacePath) {
@@ -206,6 +218,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       setChanges([]);
       setCurrentBranch(null);
       setIsDetached(false);
+      setStatusErrorCode(null);
       setBranches([]);
       setOperationState(null);
       setStashes([]);
@@ -231,12 +244,14 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setChanges(status.changes);
         setCurrentBranch(status.currentBranch);
         setIsDetached(status.isDetached);
+        setStatusErrorCode(null);
       } else {
         setIsRepo(false);
         setChangeCount(0);
         setChanges([]);
         setCurrentBranch(null);
         setIsDetached(false);
+        setStatusErrorCode(status.errorCode ?? null);
       }
     });
 
@@ -548,7 +563,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
           onClick={handleToggleMenu}
           title={currentBranch ? `Git - ${currentBranch}` : 'Git - View changes and branches'}
         >
-          <GitBranch size={15} strokeWidth={2} />
+          <GitBranchIcon size={15} strokeWidth={2} />
           {changeCount > 0 && (
             <span className="git-badge">{changeCount > 99 ? '99+' : changeCount}</span>
           )}
@@ -581,6 +596,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
               {operationState?.inProgress && <span>{operationState.message}</span>}
             </div>
 
+            {statusErrorMessage && <div className="git-menu-error">{statusErrorMessage}</div>}
             {branchError && <div className="git-menu-error">{branchError}</div>}
             {mergeError && <div className="git-menu-error">{mergeError}</div>}
             {stashError && <div className="git-menu-error">{stashError}</div>}
