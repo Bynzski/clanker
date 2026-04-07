@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Terminal as XTerm } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { LocateFixed, Lock, Unlock } from 'lucide-react';
 import { useDragHandle } from './DynamicPaneLayout';
 import './TerminalPane.css';
 import '@xterm/xterm/css/xterm.css';
+
+type XTermInstance = import('@xterm/xterm').Terminal;
+type FitAddonInstance = import('@xterm/addon-fit').FitAddon;
 
 interface Props {
   paneId: string;
@@ -14,10 +15,11 @@ interface Props {
 
 export default function TerminalPane({ paneId, compact = false }: Props) {
   const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<XTerm | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
+  const xtermRef = useRef<XTermInstance | null>(null);
+  const fitAddonRef = useRef<FitAddonInstance | null>(null);
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isActive, setIsActive] = useState(false);
+  const [terminalRuntimeReady, setTerminalRuntimeReady] = useState(false);
   const dragHandleProps = useDragHandle();
 
   const {
@@ -46,69 +48,91 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
   useEffect(() => {
     if (terminalRef.current == null || xtermRef.current != null) return;
 
-    const xterm = new XTerm({
-      allowTransparency: true,
-      theme: {
-        background: '#121212',
-        foreground: '#e8e8e8',
-        cursor: '#8b949e',
-        cursorAccent: '#121212',
-        selectionBackground: '#2f2f2f',
-        black: '#121212',
-        red: '#f85149',
-        green: '#3fb950',
-        yellow: '#d29922',
-        blue: '#58a6ff',
-        magenta: '#bc8cff',
-        cyan: '#39c5cf',
-        white: '#e8e8e8',
-        brightBlack: '#9b9b9b',
-        brightRed: '#ffa198',
-        brightGreen: '#56d364',
-        brightYellow: '#e3b341',
-        brightBlue: '#79c0ff',
-        brightMagenta: '#d2a8ff',
-        brightCyan: '#56d4dd',
-        brightWhite: '#ffffff',
-      },
-      fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", "Fira Mono", Menlo, Consolas, monospace',
-      fontSize: 13,
-      fontWeight: '400',
-      fontWeightBold: '700',
-      lineHeight: 1.2,
-      letterSpacing: 0,
-      cursorBlink: true,
-      cursorStyle: 'bar',
-      cursorInactiveStyle: 'underline',
-      allowProposedApi: true,
-      macOptionClickForcesSelection: true,
-      macOptionIsMeta: true,
-      scrollback: 10000,
+    let cancelled = false;
+    let handleResize: (() => void) | null = null;
+    let terminalInstance: XTermInstance | null = null;
+    setTerminalRuntimeReady(false);
+
+    void Promise.all([
+      import('@xterm/xterm'),
+      import('@xterm/addon-fit'),
+    ]).then(([xtermModule, fitAddonModule]) => {
+      if (cancelled || terminalRef.current == null) {
+        return;
+      }
+
+      const xterm = new xtermModule.Terminal({
+        allowTransparency: true,
+        theme: {
+          background: '#121212',
+          foreground: '#e8e8e8',
+          cursor: '#8b949e',
+          cursorAccent: '#121212',
+          selectionBackground: '#2f2f2f',
+          black: '#121212',
+          red: '#f85149',
+          green: '#3fb950',
+          yellow: '#d29922',
+          blue: '#58a6ff',
+          magenta: '#bc8cff',
+          cyan: '#39c5cf',
+          white: '#e8e8e8',
+          brightBlack: '#9b9b9b',
+          brightRed: '#ffa198',
+          brightGreen: '#56d364',
+          brightYellow: '#e3b341',
+          brightBlue: '#79c0ff',
+          brightMagenta: '#d2a8ff',
+          brightCyan: '#56d4dd',
+          brightWhite: '#ffffff',
+        },
+        fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", "Fira Mono", Menlo, Consolas, monospace',
+        fontSize: 13,
+        fontWeight: '400',
+        fontWeightBold: '700',
+        lineHeight: 1.2,
+        letterSpacing: 0,
+        cursorBlink: true,
+        cursorStyle: 'bar',
+        cursorInactiveStyle: 'underline',
+        allowProposedApi: true,
+        macOptionClickForcesSelection: true,
+        macOptionIsMeta: true,
+        scrollback: 10000,
+      });
+
+      const fitAddon = new fitAddonModule.FitAddon();
+      xterm.loadAddon(fitAddon);
+      xterm.open(terminalRef.current);
+      fitAddon.fit();
+
+      terminalInstance = xterm;
+      xtermRef.current = xterm;
+      fitAddonRef.current = fitAddon;
+      setTerminalRuntimeReady(true);
+
+      handleResize = () => {
+        if (resizeTimeoutRef.current != null) {
+          clearTimeout(resizeTimeoutRef.current);
+        }
+        resizeTimeoutRef.current = setTimeout(resizeTerminal, 50);
+      };
+
+      window.addEventListener('resize', handleResize);
+      setTimeout(handleResize, 100);
+    }).catch((error) => {
+      console.error('Failed to initialize terminal runtime:', error);
     });
 
-    const fitAddon = new FitAddon();
-    xterm.loadAddon(fitAddon);
-    xterm.open(terminalRef.current);
-    fitAddon.fit();
-
-    xtermRef.current = xterm;
-    fitAddonRef.current = fitAddon;
-
-    const handleResize = () => {
-      if (resizeTimeoutRef.current != null) {
-        clearTimeout(resizeTimeoutRef.current);
-      }
-      resizeTimeoutRef.current = setTimeout(resizeTerminal, 50);
-    };
-
-    window.addEventListener('resize', handleResize);
-    setTimeout(handleResize, 100);
-
     return () => {
-      window.removeEventListener('resize', handleResize);
-      xterm.dispose();
+      cancelled = true;
+      if (handleResize) {
+        window.removeEventListener('resize', handleResize);
+      }
+      terminalInstance?.dispose();
       xtermRef.current = null;
       fitAddonRef.current = null;
+      setTerminalRuntimeReady(false);
       if (resizeTimeoutRef.current != null) {
         clearTimeout(resizeTimeoutRef.current);
         resizeTimeoutRef.current = null;
@@ -117,7 +141,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
   }, [resizeTerminal]);
 
   useEffect(() => {
-    if (xtermRef.current == null || terminal == null) return;
+    if (!terminalRuntimeReady || xtermRef.current == null || terminal == null) return;
 
     const xterm = xtermRef.current;
     let inputDisposable: { dispose: () => void } | null = null;
@@ -169,7 +193,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
       disposeData?.();
       disposeExit?.();
     };
-  }, [terminal?.id, resizeTerminal]);
+  }, [terminalRuntimeReady, terminal?.id, resizeTerminal]);
 
   useEffect(() => {
     if (terminalRef.current == null) return;
@@ -193,7 +217,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
   }, [resizeTerminal]);
 
   useEffect(() => {
-    if (xtermRef.current == null) return;
+    if (!terminalRuntimeReady || xtermRef.current == null) return;
 
     const handleFocus = () => {
       setIsActive(true);
@@ -208,17 +232,17 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
     return () => {
       xterm.element?.removeEventListener('click', handleFocus);
     };
-  }, [terminal?.id]);
+  }, [terminalRuntimeReady, terminal?.id]);
 
   useEffect(() => {
     setIsActive(activeTerminalId === terminal?.id);
   }, [activeTerminalId, terminal?.id]);
 
   useEffect(() => {
-    if (fitAddonRef.current != null) {
+    if (terminalRuntimeReady && fitAddonRef.current != null) {
       setTimeout(resizeTerminal, 50);
     }
-  }, [terminal?.id, resizeTerminal]);
+  }, [terminalRuntimeReady, terminal?.id, resizeTerminal]);
 
   const handleClose = useCallback(async () => {
     if (terminal == null) return;
