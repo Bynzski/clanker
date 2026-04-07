@@ -20,7 +20,7 @@ import type {
   GitDiffResult,
   GitHistoryEntry,
   GitOperationState,
-  GitStashEntry,
+  GitStash,
   GitStatus,
 } from './git/types';
 import './GitButton.css';
@@ -48,7 +48,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [mergeTargetBranch, setMergeTargetBranch] = useState('');
   const [stashMessage, setStashMessage] = useState('');
   const [includeUntracked, setIncludeUntracked] = useState(true);
-  const [stashes, setStashes] = useState<GitStashEntry[]>([]);
+  const [stashes, setStashes] = useState<GitStash[]>([]);
   const [stashError, setStashError] = useState<string | null>(null);
   const [isLoadingStashes, setIsLoadingStashes] = useState(false);
   const [history, setHistory] = useState<GitHistoryEntry[]>([]);

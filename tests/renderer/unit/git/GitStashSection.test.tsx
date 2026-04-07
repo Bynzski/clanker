@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { GitStashSection } from '../../../../src/renderer/components/git/GitStashSection';
-import type { GitStashEntry } from '../../../../src/renderer/components/git/types';
+import type { GitStash } from '../../../../src/renderer/components/git/types';
 
 describe('GitStashSection', () => {
   // Mock callbacks
@@ -28,7 +28,7 @@ describe('GitStashSection', () => {
     onSetStashMessage: mockOnSetStashMessage,
     onStash: mockOnStash,
     stashMessage: '',
-    stashes: [] as GitStashEntry[],
+    stashes: [] as GitStash[],
   };
 
   beforeEach(() => {
@@ -194,7 +194,7 @@ describe('GitStashSection', () => {
   // Stash List
   // =========================================================================
   describe('stash list', () => {
-    const mockStash: GitStashEntry = {
+    const mockStash: GitStash = {
       hash: 'abc123def456',
       ref: 'stash@{0}',
       message: 'WIP on main: abc123 initial commit',
@@ -245,7 +245,7 @@ describe('GitStashSection', () => {
     });
 
     it('renders multiple stash entries', () => {
-      const stashes: GitStashEntry[] = [
+      const stashes: GitStash[] = [
         { hash: 'aaa111', ref: 'stash@{0}', message: 'First stash' },
         { hash: 'bbb222', ref: 'stash@{1}', message: 'Second stash' },
         { hash: 'ccc333', ref: 'stash@{2}', message: 'Third stash' },

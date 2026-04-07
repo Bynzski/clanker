@@ -1,5 +1,5 @@
 import { Loader2 } from 'lucide-react';
-import type { GitStashEntry } from './types';
+import type { GitStash } from './types';
 import './GitStashSection.css';
 
 interface GitStashSectionProps {
@@ -15,7 +15,7 @@ interface GitStashSectionProps {
   onSetStashMessage: (value: string) => void;
   onStash: () => void;
   stashMessage: string;
-  stashes: GitStashEntry[];
+  stashes: GitStash[];
 }
 
 export function GitStashSection({
