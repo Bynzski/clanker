@@ -2,62 +2,28 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   GitBranch,
-  Loader2,
-  Plus,
   RefreshCw,
-  Trash2,
   X,
 } from 'lucide-react';
 import CommitDialog from './CommitDialog';
+import { GitBranchesSection } from './git/GitBranchesSection';
+import { GitHistorySection } from './git/GitHistorySection';
+import { GitMergeSection } from './git/GitMergeSection';
+import { GitStashSection } from './git/GitStashSection';
+import type {
+  DiffMode,
+  GitBranchInfo,
+  GitDiffResult,
+  GitHistoryEntry,
+  GitOperationState,
+  GitStashEntry,
+  GitStatus,
+} from './git/types';
 import './GitButton.css';
-
-interface GitStatus {
-  path: string;
-  status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed';
-  staged: boolean;
-}
-
-interface GitBranchInfo {
-  name: string;
-  isCurrent: boolean;
-}
-
-interface GitOperationState {
-  success: boolean;
-  isRepo: boolean;
-  inProgress: boolean;
-  mode: 'none' | 'merge' | 'rebase';
-  conflicts: string[];
-  message: string;
-  error?: string;
-}
-
-interface GitStashEntry {
-  hash: string;
-  ref: string;
-  message: string;
-}
-
-interface GitHistoryEntry {
-  hash: string;
-  shortHash: string;
-  author: string;
-  date: string;
-  subject: string;
-}
-
-interface GitDiffResult {
-  success: boolean;
-  output: string;
-  title: string;
-  error?: string;
-}
 
 interface GitButtonProps {
   workspacePath: string;
 }
-
-type DiffMode = 'working' | 'staged' | 'commit';
 
 export default function GitButton({ workspacePath }: GitButtonProps) {
   const [changeCount, setChangeCount] = useState(0);
@@ -640,308 +606,60 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
               </button>
             </div>
 
-            <div className="git-menu-section">
-              <div className="git-menu-section-header">Create Branch</div>
-              <form className="git-create-branch-form" onSubmit={handleCreateBranch}>
-                <input
-                  ref={createBranchInputRef}
-                  className="git-create-branch-input"
-                  value={newBranchName}
-                  onChange={(event) => setNewBranchName(event.target.value)}
-                  placeholder={currentBranch ? `From ${currentBranch}` : 'Branch name'}
-                  disabled={isBusy}
-                />
-                <button
-                  type="submit"
-                  className="header-btn git-create-branch-submit"
-                  disabled={isBusy || newBranchName.trim().length === 0}
-                >
-                  {activeAction === 'create' ? <Loader2 size={13} className="spin" /> : <Plus size={13} />}
-                  Create
-                </button>
-              </form>
-            </div>
+            <GitBranchesSection
+              activeAction={activeAction}
+              branches={branches}
+              createBranchInputRef={createBranchInputRef}
+              currentBranch={currentBranch}
+              isBusy={isBusy}
+              isLoadingBranches={isLoadingBranches}
+              newBranchName={newBranchName}
+              onCreateBranch={handleCreateBranch}
+              onDeleteBranch={(branchName) => void handleDeleteBranch(branchName)}
+              onSetNewBranchName={setNewBranchName}
+              onSwitchBranch={(branchName) => void handleSwitchBranch(branchName)}
+            />
 
-            <div className="git-menu-section">
-              <div className="git-menu-section-header">
-                Branches
-                <span className="git-menu-count">{branches.length}</span>
-              </div>
+            <GitStashSection
+              activeAction={activeAction}
+              includeUntracked={includeUntracked}
+              isBusy={isBusy}
+              isLoadingStashes={isLoadingStashes}
+              onApplyStash={(stashRef) => void handleApplyStash(stashRef)}
+              onClearStashes={() => void handleClearStashes()}
+              onDropStash={(stashRef) => void handleDropStash(stashRef)}
+              onPopStash={(stashRef) => void handlePopStash(stashRef)}
+              onSetIncludeUntracked={setIncludeUntracked}
+              onSetStashMessage={setStashMessage}
+              onStash={() => void handleStash()}
+              stashMessage={stashMessage}
+              stashes={stashes}
+            />
 
-              {isLoadingBranches ? (
-                <div className="git-menu-empty">Loading branches...</div>
-              ) : branches.length === 0 ? (
-                <div className="git-menu-empty">No local branches found</div>
-              ) : (
-                <div className="git-branch-list">
-                  {branches.map((branch) => (
-                    <div
-                      key={branch.name}
-                      className={`git-branch-item ${branch.isCurrent ? 'current' : ''}`}
-                    >
-                      <div className="git-branch-name">
-                        <span>{branch.name}</span>
-                        {branch.isCurrent && <span className="git-branch-current">Current</span>}
-                      </div>
-                      <div className="git-branch-actions">
-                        <button
-                          type="button"
-                          className="git-branch-action"
-                          onClick={() => void handleSwitchBranch(branch.name)}
-                          disabled={branch.isCurrent || isBusy}
-                        >
-                          {activeAction === `switch:${branch.name}` ? (
-                            <Loader2 size={12} className="spin" />
-                          ) : null}
-                          Switch
-                        </button>
-                        <button
-                          type="button"
-                          className="git-branch-action danger"
-                          onClick={() => void handleDeleteBranch(branch.name)}
-                          disabled={branch.isCurrent || isBusy}
-                        >
-                          {activeAction === `delete:${branch.name}` ? (
-                            <Loader2 size={12} className="spin" />
-                          ) : (
-                            <Trash2 size={12} />
-                          )}
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <GitMergeSection
+              activeAction={activeAction}
+              availableMergeTargets={availableMergeTargets}
+              isBusy={isBusy}
+              isLoadingOperation={isLoadingOperation}
+              mergeTargetBranch={mergeTargetBranch}
+              onAbortOperation={() => void handleAbortOperation()}
+              onMergeBranch={() => void handleMergeBranch()}
+              onSetMergeTargetBranch={setMergeTargetBranch}
+              operationState={operationState}
+            />
 
-            <div className="git-menu-section">
-              <div className="git-menu-section-header">
-                Stash
-                <span className="git-menu-count">{stashes.length}</span>
-              </div>
-
-              <div className="git-stash-form">
-                <input
-                  className="git-stash-input"
-                  value={stashMessage}
-                  onChange={(event) => setStashMessage(event.target.value)}
-                  placeholder="Optional stash message"
-                  disabled={isBusy}
-                />
-                <label className="git-stash-toggle">
-                  <input
-                    type="checkbox"
-                    checked={includeUntracked}
-                    onChange={(event) => setIncludeUntracked(event.target.checked)}
-                    disabled={isBusy}
-                  />
-                  <span>Untracked</span>
-                </label>
-                <button
-                  type="button"
-                  className="header-btn git-create-branch-submit"
-                  onClick={() => void handleStash()}
-                  disabled={isBusy}
-                >
-                  {activeAction === 'stash' ? <Loader2 size={13} className="spin" /> : null}
-                  Stash
-                </button>
-              </div>
-
-              <div className="git-stash-toolbar">
-                <span>{stashes.length > 0 ? 'Available stashes' : 'No stashes found'}</span>
-                {stashes.length > 0 && (
-                  <button
-                    type="button"
-                    className="git-stash-clear"
-                    onClick={() => void handleClearStashes()}
-                    disabled={isBusy}
-                  >
-                    Clear All
-                  </button>
-                )}
-              </div>
-
-              {isLoadingStashes ? (
-                <div className="git-menu-empty">Loading stashes...</div>
-              ) : stashes.length === 0 ? (
-                <div className="git-menu-empty">Nothing stashed yet</div>
-              ) : (
-                <div className="git-stash-list">
-                  {stashes.map((stash) => (
-                    <div key={stash.ref} className="git-stash-item">
-                      <div className="git-stash-meta">
-                        <span className="git-stash-ref">{stash.ref}</span>
-                        <span className="git-stash-message">{stash.message}</span>
-                      </div>
-                      <div className="git-stash-actions">
-                        <button
-                          type="button"
-                          className="git-branch-action"
-                          onClick={() => void handleApplyStash(stash.ref)}
-                          disabled={isBusy}
-                        >
-                          Apply
-                        </button>
-                        <button
-                          type="button"
-                          className="git-branch-action"
-                          onClick={() => void handlePopStash(stash.ref)}
-                          disabled={isBusy}
-                        >
-                          Pop
-                        </button>
-                        <button
-                          type="button"
-                          className="git-branch-action danger"
-                          onClick={() => void handleDropStash(stash.ref)}
-                          disabled={isBusy}
-                        >
-                          Drop
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="git-menu-section">
-              <div className="git-menu-section-header">
-                Merge
-                {operationState?.inProgress ? (
-                  <span className="git-menu-count">Active</span>
-                ) : (
-                  <span className="git-menu-count">{availableMergeTargets.length}</span>
-                )}
-              </div>
-
-              {isLoadingOperation ? (
-                <div className="git-menu-empty">Checking merge state...</div>
-              ) : operationState?.inProgress ? (
-                <div className="git-operation-panel">
-                  <div className={`git-operation-status ${operationState.mode}`}>
-                    {operationState.message}
-                  </div>
-                  {operationState.conflicts.length > 0 && (
-                    <div className="git-conflict-list">
-                      {operationState.conflicts.map((file) => (
-                        <span key={file} className="git-conflict-file">
-                          {file}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    className="git-operation-abort"
-                    onClick={() => void handleAbortOperation()}
-                    disabled={isBusy}
-                  >
-                    Abort {operationState.mode === 'rebase' ? 'Rebase' : 'Merge'}
-                  </button>
-                </div>
-              ) : (
-                <div className="git-merge-form">
-                  <select
-                    className="git-merge-select"
-                    value={mergeTargetBranch}
-                    onChange={(event) => setMergeTargetBranch(event.target.value)}
-                    disabled={isBusy || availableMergeTargets.length === 0}
-                  >
-                    {availableMergeTargets.length === 0 ? (
-                      <option value="">No branches available</option>
-                    ) : (
-                      availableMergeTargets.map((branch) => (
-                        <option key={branch} value={branch}>
-                          {branch}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                  <button
-                    type="button"
-                    className="header-btn git-create-branch-submit"
-                    onClick={() => void handleMergeBranch()}
-                    disabled={isBusy || !mergeTargetBranch}
-                  >
-                    {activeAction?.startsWith('merge:') ? <Loader2 size={13} className="spin" /> : null}
-                    Merge
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="git-menu-section">
-              <div className="git-menu-section-header">
-                History
-                <span className="git-menu-count">{history.length}</span>
-              </div>
-
-              <div className="git-history-toolbar">
-                <button
-                  type="button"
-                  className={`git-history-toggle ${selectedDiffMode === 'working' ? 'active' : ''}`}
-                  onClick={() => void handleSelectWorkingDiff('working')}
-                  disabled={isBusy}
-                >
-                  Working Tree
-                </button>
-                <button
-                  type="button"
-                  className={`git-history-toggle ${selectedDiffMode === 'staged' ? 'active' : ''}`}
-                  onClick={() => void handleSelectWorkingDiff('staged')}
-                  disabled={isBusy}
-                >
-                  Staged
-                </button>
-              </div>
-
-              {isLoadingHistory ? (
-                <div className="git-menu-empty">Loading history...</div>
-              ) : history.length === 0 ? (
-                <div className="git-menu-empty">No commits found</div>
-              ) : (
-                <div className="git-history-list">
-                  {history.map((entry) => (
-                    <button
-                      key={entry.hash}
-                      type="button"
-                      className={`git-history-item ${
-                        selectedDiffMode === 'commit' && selectedDiffRef === entry.hash ? 'active' : ''
-                      }`}
-                      onClick={() => void handleSelectCommitDiff(entry)}
-                      disabled={isBusy}
-                    >
-                      <div className="git-history-line">
-                        <span className="git-history-hash">{entry.shortHash}</span>
-                        <span className="git-history-subject">{entry.subject}</span>
-                      </div>
-                      <div className="git-history-meta">
-                        <span>{entry.author}</span>
-                        <span>{entry.date}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="git-diff-panel">
-                <div className="git-diff-header">
-                  <div className="git-diff-title">
-                    {diffResult?.title || 'Diff'}
-                    {selectedCommit ? (
-                      <span className="git-diff-subtitle">{selectedCommit.shortHash}</span>
-                    ) : null}
-                  </div>
-                  {isLoadingDiff && <Loader2 size={13} className="spin" />}
-                </div>
-                <pre className="git-diff-output">
-                  {diffResult?.output || 'No diff to display'}
-                </pre>
-              </div>
-            </div>
+            <GitHistorySection
+              diffResult={diffResult}
+              history={history}
+              isBusy={isBusy}
+              isLoadingDiff={isLoadingDiff}
+              isLoadingHistory={isLoadingHistory}
+              onSelectCommitDiff={(commit) => void handleSelectCommitDiff(commit)}
+              onSelectWorkingDiff={(mode) => void handleSelectWorkingDiff(mode)}
+              selectedCommit={selectedCommit}
+              selectedDiffMode={selectedDiffMode}
+              selectedDiffRef={selectedDiffRef}
+            />
           </div>
         )}
       </div>
