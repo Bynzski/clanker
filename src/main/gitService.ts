@@ -15,6 +15,9 @@ export interface GitStatusResult {
   currentBranch: string | null;
   isDetached: boolean;
   changes: GitStatusEntry[];
+  upstream: string | null;
+  ahead: number;
+  behind: number;
   errorCode?: GitErrorCode;
   error?: string;
 }
@@ -119,46 +122,105 @@ export class GitService {
     return lines.map((line) => mapper(line.split('\x1f')));
   }
 
-  private parseGitStatus(statusOutput: string): GitStatusEntry[] {
-    const changes: GitStatusEntry[] = [];
-    const lines = statusOutput.split('\n').filter(Boolean);
-
-    // git status --porcelain format: XY<space>PATH
-    // X = index status, Y = worktree status, position 3+ = file path
-    const INDEX_STATUS = 0;
-    const WORKTREE_STATUS = 1;
-    const PATH_START = 3;
+  private parseBranchHeaders(lines: string[]): {
+    currentBranch: string | null;
+    isDetached: boolean;
+    upstream: string | null;
+    ahead: number;
+    behind: number;
+  } {
+    let currentBranch: string | null = null;
+    let isDetached = false;
+    let upstream: string | null = null;
+    let ahead = 0;
+    let behind = 0;
 
     for (const line of lines) {
-      const indexStatus = line[INDEX_STATUS];
-      const workTreeStatus = line[WORKTREE_STATUS];
-      const filePath = line.slice(PATH_START).trim();
-      const staged = indexStatus !== ' ' && indexStatus !== '?';
-
-      let status: GitStatusEntry['status'] = 'modified';
-      const statusChar = staged ? indexStatus : workTreeStatus;
-
-      switch (statusChar) {
-        case 'M':
-          status = 'modified';
-          break;
-        case 'A':
-          status = 'added';
-          break;
-        case 'D':
-          status = 'deleted';
-          break;
-        case 'R':
-          status = 'renamed';
-          break;
-        case '?':
-          status = 'untracked';
-          break;
-        default:
-          status = 'modified';
+      if (line.startsWith('# branch.head ')) {
+        const value = line.slice('# branch.head '.length).trim();
+        if (value === '(detached)' || value.length === 0) {
+          isDetached = true;
+          currentBranch = null;
+        } else {
+          currentBranch = value;
+          isDetached = false;
+        }
+      } else if (line.startsWith('# branch.upstream ')) {
+        upstream = line.slice('# branch.upstream '.length).trim() || null;
+      } else if (line.startsWith('# branch.ab ')) {
+        const value = line.slice('# branch.ab '.length);
+        const match = value.match(/^\+(\d+) -(\d+)$/);
+        if (match) {
+          ahead = parseInt(match[1], 10);
+          behind = parseInt(match[2], 10);
+        }
       }
+    }
 
-      changes.push({ path: filePath, status, staged });
+    return { currentBranch, isDetached, upstream, ahead, behind };
+  }
+
+  private parseStatusEntry(xy: string, path: string): GitStatusEntry {
+    const indexStatus = xy[0];
+    const worktreeStatus = xy[1];
+    // In porcelain=v2, '.' means "not updated" (equivalent to ' ' in v1)
+    const staged = indexStatus !== ' ' && indexStatus !== '.' && indexStatus !== '?';
+
+    const statusChar = staged ? indexStatus : worktreeStatus;
+    let status: GitStatusEntry['status'] = 'modified';
+
+    switch (statusChar) {
+      case 'M':
+        status = 'modified';
+        break;
+      case 'A':
+        status = 'added';
+        break;
+      case 'D':
+        status = 'deleted';
+        break;
+      case 'R':
+        status = 'renamed';
+        break;
+      case 'C':
+        status = 'added';
+        break;
+      default:
+        status = 'modified';
+    }
+
+    return { path, status, staged };
+  }
+
+  private parseGitStatusV2(output: string): GitStatusEntry[] {
+    const changes: GitStatusEntry[] = [];
+    const lines = output.split('\n').filter(Boolean);
+
+    for (const line of lines) {
+      // Skip header lines (start with #)
+      if (line.startsWith('# ')) continue;
+
+      if (line.startsWith('1 ')) {
+        // Ordinary entry: 1 XY SUB MH MI MW HH HI PATH
+        const parts = line.split(' ');
+        if (parts.length < 9) continue;
+        const xy = parts[1];
+        const path = parts.slice(8).join(' ');
+        changes.push(this.parseStatusEntry(xy, path));
+      } else if (line.startsWith('2 ')) {
+        // Rename/copy entry: 2 XY SUB MH MI MW HH HI SCORE PATH<TAB>ORIG
+        const parts = line.split(' ');
+        if (parts.length < 10) continue;
+        const xy = parts[1];
+        const pathOrig = parts.slice(9).join(' ');
+        const tabIndex = pathOrig.indexOf('\t');
+        const path = tabIndex >= 0 ? pathOrig.slice(0, tabIndex) : pathOrig;
+        changes.push(this.parseStatusEntry(xy, path));
+      } else if (line.startsWith('? ')) {
+        // Untracked: ? PATH
+        changes.push({ path: line.slice(2), status: 'untracked', staged: false });
+      }
+      // Ignore '!' (ignored files) and unknown formats
     }
 
     return changes;
@@ -711,16 +773,21 @@ export class GitService {
   async getStatus(workspacePath: string): Promise<GitStatusResult> {
     try {
       await this.execGit(workspacePath, ['rev-parse', '--git-dir']);
-      const { stdout } = await this.execGit(workspacePath, ['status', '--porcelain']);
-      const changes = this.parseGitStatus(stdout);
-      const currentBranch = await this.getCurrentBranch(workspacePath);
+      const { stdout } = await this.execGit(workspacePath, ['status', '--porcelain=v2', '--branch']);
+
+      const headerLines = stdout.split('\n').filter((l) => l.startsWith('# '));
+      const { currentBranch, isDetached, upstream, ahead, behind } = this.parseBranchHeaders(headerLines);
+      const changes = this.parseGitStatusV2(stdout);
 
       return {
         success: true,
         isRepo: true,
         currentBranch,
-        isDetached: currentBranch == null,
+        isDetached,
         changes,
+        upstream,
+        ahead,
+        behind,
       };
     } catch (error) {
       const errorCode = this.classifyError(error);
@@ -730,6 +797,9 @@ export class GitService {
         currentBranch: null,
         isDetached: false,
         changes: [],
+        upstream: null,
+        ahead: 0,
+        behind: 0,
         errorCode,
         error: this.getGitErrorMessage(error, 'Failed to get git status'),
       };

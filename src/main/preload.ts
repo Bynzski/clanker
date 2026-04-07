@@ -95,6 +95,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     currentBranch: string | null;
     isDetached: boolean;
     changes: Array<{ path: string; status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed'; staged: boolean }>;
+    upstream: string | null;
+    ahead: number;
+    behind: number;
     errorCode?: 'not-a-repo' | 'git-not-found' | 'unknown';
     error?: string;
   }) => void) => {

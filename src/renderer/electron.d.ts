@@ -79,6 +79,9 @@ interface GitStatusResult {
   currentBranch: string | null;
   isDetached: boolean;
   changes: GitStatus[];
+  upstream: string | null;
+  ahead: number;
+  behind: number;
   errorCode?: GitErrorCode;
   error?: string;
 }

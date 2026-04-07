@@ -93,10 +93,9 @@ describe('isRepo', () => {
 describe('getStatus', () => {
   it('returns status with changes when in a git repo', async () => {
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', {
-      stdout: 'M  src/main.ts\nA  new-file.ts\n?? untracked.txt\nD  deleted.ts\nR  old.ts',
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head main\n1 M. N... 100644 100644 100644 s1 s2 src/main.ts\n1 A. N... 100644 100644 100644 s3 s4 new-file.ts\n? untracked.txt\n1 D. N... 100644 100644 100644 s5 s6 deleted.ts\n2 R. N... 100644 100644 100644 s7 s8 R100 old.ts\toriginal.ts',
     });
-    addResponse('branch --show-current', { stdout: 'main' });
 
     const result = await service.getStatus('/workspace');
 
@@ -110,12 +109,16 @@ describe('getStatus', () => {
     expect(result.changes[2]).toEqual({ path: 'untracked.txt', status: 'untracked', staged: false });
     expect(result.changes[3]).toEqual({ path: 'deleted.ts', status: 'deleted', staged: true });
     expect(result.changes[4]).toEqual({ path: 'old.ts', status: 'renamed', staged: true });
+    expect(result.upstream).toBeNull();
+    expect(result.ahead).toBe(0);
+    expect(result.behind).toBe(0);
   });
 
   it('returns detached head when no current branch', async () => {
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', { stdout: '' });
-    addResponse('branch --show-current', { stdout: '' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head (detached)',
+    });
 
     const result = await service.getStatus('/workspace');
     expect(result.isDetached).toBe(true);
@@ -131,15 +134,17 @@ describe('getStatus', () => {
     expect(result.changes).toEqual([]);
     expect(result.errorCode).toBe('not-a-repo');
     expect(result.error).toBeTruthy();
+    expect(result.upstream).toBeNull();
+    expect(result.ahead).toBe(0);
+    expect(result.behind).toBe(0);
   });
 
   // Gap 1: Regression test for .trim() corrupting first-line status parsing
-  it('correctly parses first-line unstaged modification without trim corruption', async () => {
+  it('correctly parses unstaged modification without trim corruption', async () => {
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', {
-      stdout: ' M file.txt\nA  staged.ts',
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head main\n1 .M N... 100644 100644 100644 s1 s2 file.txt\n1 A. N... 100644 100644 100644 s3 s4 staged.ts',
     });
-    addResponse('branch --show-current', { stdout: 'main' });
 
     const result = await service.getStatus('/workspace');
 
@@ -156,19 +161,17 @@ describe('getStatus', () => {
     });
   });
 
-  // Gap 8: Renamed file entry in porcelain format
-  it('parses renamed file entries preserving full path', async () => {
+  it('parses renamed file entries with separate new path', async () => {
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', {
-      stdout: 'R  old_path.ts -> new_path.ts',
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head main\n2 R. N... 100644 100644 100644 s1 s2 R100 new_path.ts\told_path.ts',
     });
-    addResponse('branch --show-current', { stdout: 'main' });
 
     const result = await service.getStatus('/workspace');
 
     expect(result.changes).toHaveLength(1);
     expect(result.changes[0]).toEqual({
-      path: 'old_path.ts -> new_path.ts',
+      path: 'new_path.ts',
       status: 'renamed',
       staged: true,
     });
@@ -214,12 +217,68 @@ describe('getStatus', () => {
 
   it('successful status has no errorCode', async () => {
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', { stdout: '' });
-    addResponse('branch --show-current', { stdout: 'main' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head main',
+    });
 
     const result = await service.getStatus('/workspace');
     expect(result.success).toBe(true);
     expect(result.errorCode).toBeUndefined();
+  });
+
+  // Upstream / ahead / behind tests (GAP-2)
+  it('parses upstream tracking and ahead/behind from v2 headers', async () => {
+    addResponse('rev-parse --git-dir', { stdout: '.git' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head main\n# branch.upstream origin/main\n# branch.ab +3 -1',
+    });
+
+    const result = await service.getStatus('/workspace');
+    expect(result.success).toBe(true);
+    expect(result.currentBranch).toBe('main');
+    expect(result.upstream).toBe('origin/main');
+    expect(result.ahead).toBe(3);
+    expect(result.behind).toBe(1);
+  });
+
+  it('returns null upstream when no tracking branch', async () => {
+    addResponse('rev-parse --git-dir', { stdout: '.git' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head feature',
+    });
+
+    const result = await service.getStatus('/workspace');
+    expect(result.success).toBe(true);
+    expect(result.currentBranch).toBe('feature');
+    expect(result.upstream).toBeNull();
+    expect(result.ahead).toBe(0);
+    expect(result.behind).toBe(0);
+  });
+
+  it('returns zero ahead/behind when upstream exists with no divergence', async () => {
+    addResponse('rev-parse --git-dir', { stdout: '.git' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head main\n# branch.upstream origin/main\n# branch.ab +0 -0',
+    });
+
+    const result = await service.getStatus('/workspace');
+    expect(result.upstream).toBe('origin/main');
+    expect(result.ahead).toBe(0);
+    expect(result.behind).toBe(0);
+  });
+
+  it('handles initial repo with no commits', async () => {
+    addResponse('rev-parse --git-dir', { stdout: '.git' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid (initial)\n# branch.head main\n1 A. N... 000000 100644 100644 0000 0000 new-file.txt',
+    });
+
+    const result = await service.getStatus('/workspace');
+    expect(result.success).toBe(true);
+    expect(result.currentBranch).toBe('main');
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0]).toEqual({ path: 'new-file.txt', status: 'added', staged: true });
+    expect(result.upstream).toBeNull();
   });
 });
 
@@ -885,8 +944,9 @@ describe('getCommitPromptContext', () => {
   it('returns context with staged changes and diff', async () => {
     // getStatus flow
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', { stdout: 'M  staged.ts\n M working.ts' });
-    addResponse('branch --show-current', { stdout: 'main' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head main\n1 M. N... 100644 100644 100644 s1 s2 staged.ts\n1 .M N... 100644 100644 100644 s3 s4 working.ts',
+    });
     // getDiff staged (diff --cached --stat ...)
     addResponse('diff --cached', { stdout: 'staged.ts | 3 ++\n 1 file changed' });
 
@@ -902,8 +962,9 @@ describe('getCommitPromptContext', () => {
 
   it('returns working diff when no staged changes', async () => {
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', { stdout: '?? new.ts\n M working.ts' });
-    addResponse('branch --show-current', { stdout: 'feature' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head feature\n? new.ts\n1 .M N... 100644 100644 100644 s1 s2 working.ts',
+    });
     // getDiff working (diff --stat --summary ...)
     addResponse('diff --stat', { stdout: 'working.ts | 5 ---\n 1 file changed' });
 
@@ -916,8 +977,9 @@ describe('getCommitPromptContext', () => {
 
   it('returns error when no changes', async () => {
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', { stdout: '' });
-    addResponse('branch --show-current', { stdout: 'main' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head main',
+    });
 
     const ctx = await service.getCommitPromptContext('/workspace');
 
@@ -945,8 +1007,9 @@ describe('polling', () => {
 
   it('startPolling emits initial status', async () => {
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', { stdout: '' });
-    addResponse('branch --show-current', { stdout: 'main' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head main',
+    });
 
     service.startPolling('/workspace');
     // Wait for the async emitStatusUpdate to complete
@@ -959,8 +1022,9 @@ describe('polling', () => {
 
   it('stopPolling clears the interval and workspace', async () => {
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', { stdout: '' });
-    addResponse('branch --show-current', { stdout: 'main' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head main',
+    });
 
     service.startPolling('/workspace');
     await new Promise((r) => setTimeout(r, 50));
@@ -972,8 +1036,9 @@ describe('polling', () => {
 
   it('refresh returns current status', async () => {
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', { stdout: 'M  file.ts' });
-    addResponse('branch --show-current', { stdout: 'main' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head main\n1 M. N... 100644 100644 100644 s1 s2 file.ts',
+    });
 
     service.startPolling('/workspace');
     await new Promise((r) => setTimeout(r, 50));
@@ -992,12 +1057,14 @@ describe('polling', () => {
   it('startPolling restarts polling when called with a different path', async () => {
     // First path responses
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', { stdout: '' });
-    addResponse('branch --show-current', { stdout: 'main' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid abc123\n# branch.head main',
+    });
     // Second path responses
     addResponse('rev-parse --git-dir', { stdout: '.git' });
-    addResponse('status --porcelain', { stdout: 'M  file.ts' });
-    addResponse('branch --show-current', { stdout: 'feature' });
+    addResponse('status --porcelain=v2', {
+      stdout: '# branch.oid def456\n# branch.head feature\n1 M. N... 100644 100644 100644 s1 s2 file.ts',
+    });
 
     service.startPolling('/workspace-a');
     await new Promise((r) => setTimeout(r, 50));

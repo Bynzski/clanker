@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   GitBranch as GitBranchIcon,
   RefreshCw,
@@ -56,6 +58,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [diffError, setDiffError] = useState<string | null>(null);
   const [isLoadingDiff, setIsLoadingDiff] = useState(false);
   const [statusErrorCode, setStatusErrorCode] = useState<string | null>(null);
+  const [upstream, setUpstream] = useState<string | null>(null);
+  const [ahead, setAhead] = useState(0);
+  const [behind, setBehind] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const createBranchInputRef = useRef<HTMLInputElement>(null);
 
@@ -84,6 +89,19 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         return null;
     }
   }, [statusErrorCode]);
+
+  const upstreamLabel = useMemo(() => {
+    if (!upstream) {
+      return null;
+    }
+    if (ahead === 0 && behind === 0) {
+      return 'up to date';
+    }
+    const parts: string[] = [];
+    if (ahead > 0) parts.push(`↑${ahead}`);
+    if (behind > 0) parts.push(`↓${behind}`);
+    return parts.join(' ');
+  }, [upstream, ahead, behind]);
 
   const refreshMenuData = useCallback(async () => {
     if (!workspacePath) {
@@ -219,6 +237,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       setCurrentBranch(null);
       setIsDetached(false);
       setStatusErrorCode(null);
+      setUpstream(null);
+      setAhead(0);
+      setBehind(0);
       setBranches([]);
       setOperationState(null);
       setStashes([]);
@@ -245,6 +266,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setCurrentBranch(status.currentBranch);
         setIsDetached(status.isDetached);
         setStatusErrorCode(null);
+        setUpstream(status.upstream);
+        setAhead(status.ahead);
+        setBehind(status.behind);
       } else {
         setIsRepo(false);
         setChangeCount(0);
@@ -252,6 +276,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setCurrentBranch(null);
         setIsDetached(false);
         setStatusErrorCode(status.errorCode ?? null);
+        setUpstream(null);
+        setAhead(0);
+        setBehind(0);
       }
     });
 
@@ -578,6 +605,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
                 <div className={`git-menu-branch ${isDetached ? 'detached' : ''}`}>
                   {currentBranchLabel}
                 </div>
+                {upstream && (
+                  <div className="git-menu-upstream">{upstream}</div>
+                )}
               </div>
 
               <button
@@ -592,6 +622,18 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
 
             <div className="git-menu-summary">
               <span>{changeCount} changed</span>
+              {upstreamLabel && (
+                <span className={`git-menu-sync ${ahead === 0 && behind === 0 ? 'synced' : 'diverged'}`}>
+                  {ahead === 0 && behind === 0
+                    ? upstreamLabel
+                    : `${upstreamLabel}`}
+                  {ahead > 0 && <ArrowUp size={10} />}
+                  {behind > 0 && <ArrowDown size={10} />}
+                </span>
+              )}
+              {!upstream && !isDetached && currentBranch && (
+                <span className="git-menu-sync none">no upstream</span>
+              )}
               {isDetached && <span>Detached HEAD</span>}
               {operationState?.inProgress && <span>{operationState.message}</span>}
             </div>
