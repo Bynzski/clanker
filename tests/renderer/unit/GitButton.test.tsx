@@ -890,4 +890,253 @@ describe('GitButton', () => {
       expect(screen.getByTestId('git-branches-section')).toBeTruthy();
     });
   });
+
+  // =========================================================================
+  // Upstream Tracking Display
+  // =========================================================================
+  describe('upstream tracking display', () => {
+    it('shows upstream name under branch when tracking', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [],
+          upstream: 'origin/main',
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(screen.getByText('origin/main')).toBeTruthy();
+    });
+
+    it('shows "up to date" pill when synced with upstream', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [],
+          upstream: 'origin/main',
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      const syncPill = screen.getByText('up to date');
+      expect(syncPill).toBeTruthy();
+      expect(syncPill.closest('.git-menu-sync')).toHaveClass('synced');
+    });
+
+    it('shows ahead count when commits are ahead of upstream', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [],
+          upstream: 'origin/main',
+          ahead: 3,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(screen.getByText('↑3')).toBeTruthy();
+    });
+
+    it('shows behind count when commits are behind upstream', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [],
+          upstream: 'origin/main',
+          ahead: 0,
+          behind: 2,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(screen.getByText('↓2')).toBeTruthy();
+    });
+
+    it('shows both ahead and behind when diverged', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [],
+          upstream: 'origin/main',
+          ahead: 2,
+          behind: 1,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      const syncPill = document.querySelector('.git-menu-sync.diverged');
+      expect(syncPill).toBeTruthy();
+      expect(syncPill?.textContent).toContain('↑2');
+      expect(syncPill?.textContent).toContain('↓1');
+      // Arrow icons present
+      expect(syncPill?.querySelector('.lucide-arrow-up')).toBeTruthy();
+      expect(syncPill?.querySelector('.lucide-arrow-down')).toBeTruthy();
+    });
+
+    it('shows "no upstream" pill when branch has no tracking remote', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'feature',
+          isDetached: false,
+          changes: [],
+          upstream: null,
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      const pill = screen.getByText('no upstream');
+      expect(pill).toBeTruthy();
+      expect(pill.closest('.git-menu-sync')).toHaveClass('none');
+    });
+
+    it('does not show upstream or no-upstream pill for detached HEAD', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'abc1234',
+          isDetached: true,
+          changes: [],
+          upstream: null,
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      // Also return detached from branch state so refreshMenuData doesn't override
+      mockGitGetBranchState.mockResolvedValue({
+        success: true,
+        isRepo: true,
+        currentBranch: null,
+        isDetached: true,
+        branches: [],
+      });
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(screen.queryByText('no upstream')).toBeNull();
+      expect(document.querySelector('.git-menu-upstream')).toBeNull();
+    });
+  });
 });
