@@ -42,6 +42,20 @@ npm run build
 npm run validate
 ```
 
+### Testing
+
+```bash
+npm test
+npm run test:watch
+npm run test:coverage
+```
+
+Tests now live under `tests/`:
+
+- `tests/main/unit/` for main-process unit tests
+- `tests/renderer/` for renderer unit and integration tests
+- `tests/setup/` for shared mocks, fixtures, and test setup
+
 ## Project Structure
 
 ```

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 import {
   AI_COMMIT_COMMANDS,
   buildAiCommitArgs,
   buildCommitPrompt,
   getAiCommitTimeoutMs,
   normalizeCommitMessageOutput,
-} from './aiCommit';
+} from '../../../src/main/aiCommit';
 
 test('buildAiCommitArgs keeps codex exec and prepends the selected model flag', () => {
   assert.deepEqual(
