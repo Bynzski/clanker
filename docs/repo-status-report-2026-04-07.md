@@ -181,6 +181,48 @@ Phase 4 outcome:
 - `GitButton.tsx` is materially easier to reason about.
 - The repo is better positioned for future external repository/provider features without immediate over-abstraction.
 
+## Phase 5 Main Process Refactor Update
+
+Phase 5 focused on reducing the concentration of logic inside `src/main/main.ts`.
+
+Current phase 5 status:
+
+- `npm run validate`: passed after the main-process refactor
+
+Phase 5 changes completed:
+
+- Extracted harness/model discovery into:
+  - `src/main/harnessCatalog.ts`
+- Extracted git operations and polling into:
+  - `src/main/gitService.ts`
+- Updated:
+  - `src/main/main.ts`
+  - so it now primarily coordinates window lifecycle, browser lifecycle, terminal wiring, settings, and IPC registration
+
+Additional improvement made during extraction:
+
+- Replaced shell-based git command execution in the git service with argument-safe git invocation for:
+  - staging
+  - commit creation
+
+Why this matters:
+
+- `main.ts` no longer owns every backend concern directly.
+- Harness discovery and git behavior now have explicit service/module boundaries.
+- The git extraction improves future extensibility for hosted repository providers because repository operations are no longer buried inside the Electron entrypoint.
+- The command execution change reduces avoidable command-injection exposure in the commit/stage path.
+
+What phase 5 did not do:
+
+- Extract terminal management into its own service yet
+- Extract browser view lifecycle into its own service yet
+- Split IPC registration into separate modules
+
+Phase 5 outcome:
+
+- The main process is structurally cleaner and safer than before.
+- `main.ts` remains a hotspot, but it is no longer carrying harness discovery and git internals inline.
+
 ## Executive Summary
 
 This repository is now in a materially better state than it was at the start of the audit. Phase 1 stabilization restored working validation gates and removed several confirmed dead paths, but the codebase still has concentrated maintainability risk in a few oversized modules.
@@ -193,6 +235,7 @@ The most important conclusions:
 - Renderer contract drift has been reduced by centralizing shared types, harness metadata, and workspace shutdown behavior.
 - Active-workspace synchronization inside the store has been partially normalized, reducing one of the main repetition hotspots.
 - The git workspace UI has been decomposed into section components, reducing one of the largest renderer monoliths and creating better seams for future GitHub/Bitbucket-style integrations.
+- The Electron main process has been partially decomposed into service modules, reducing entrypoint sprawl and improving future repository-integration flexibility.
 - A small number of files carry a disproportionate amount of responsibility:
   - `src/main/main.ts` at 1888 LOC
   - `src/renderer/store/workspaceStore.ts` at 1389 LOC
