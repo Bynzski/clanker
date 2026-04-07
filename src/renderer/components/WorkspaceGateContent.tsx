@@ -252,8 +252,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
         <svg width="96" height="96" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="gateLogoGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#60A5FA"/>
-              <stop offset="100%" stopColor="#3B82F6"/>
+              <stop offset="0%" stopColor="#A3A3A3"/>
+              <stop offset="100%" stopColor="#6B7280"/>
             </linearGradient>
             <linearGradient id="gateHeadGrad" x1="0%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stopColor="#6B7280"/>
@@ -295,7 +295,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
           <g opacity="0.6">
             <rect x="46" y="78" width="12" height="7" rx="1.5" fill="#10B981"/>
             <rect x="62" y="78" width="12" height="7" rx="1.5" fill="#F59E0B"/>
-            <rect x="46" y="89" width="12" height="7" rx="1.5" fill="#3B82F6"/>
+            <rect x="46" y="89" width="12" height="7" rx="1.5" fill="#8B949E"/>
             <rect x="62" y="89" width="12" height="7" rx="1.5" fill="#EF4444"/>
           </g>
           
