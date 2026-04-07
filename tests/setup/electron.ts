@@ -31,6 +31,7 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     browserForward: createAsyncMock(undefined),
     browserRefresh: createAsyncMock(undefined),
     browserStop: createAsyncMock(undefined),
+    browserDisposeWorkspace: createAsyncMock(undefined),
     openExternal: createAsyncMock(true),
     canGoBack: createAsyncMock(false),
     canGoForward: createAsyncMock(false),

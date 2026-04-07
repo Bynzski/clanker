@@ -117,8 +117,16 @@ function formatCommitChangeSummary(changes: GitStatusEntry[]): string[] {
 
 const terminals: Map<string, Terminal> = new Map();
 let mainWindow: BrowserWindow | null = null;
-let browserView: WebContentsView | null = null;
-let currentBrowserUrl = 'https://github.com';
+
+const DEFAULT_BROWSER_URL = 'https://github.com';
+
+interface BrowserViewEntry {
+  view: WebContentsView;
+  url: string;
+}
+
+const browserViews = new Map<string, BrowserViewEntry>();
+let activeBrowserWorkspaceId: string | null = null;
 
 function getValidatedWorkspacePath(workspacePath: string): string | null {
   return resolveExistingDirectory(workspacePath);
@@ -299,8 +307,11 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => {
-    browserView?.webContents.close();
-    browserView = null;
+    browserViews.forEach(({ view }) => {
+      view.webContents.close();
+    });
+    browserViews.clear();
+    activeBrowserWorkspaceId = null;
     mainWindow = null;
     terminals.forEach((term) => term.pty.kill());
     terminals.clear();
@@ -308,41 +319,92 @@ function createWindow() {
   });
 }
 
-// Initialize browser view (hidden by default)
-function initBrowserView() {
-  if (browserView || !mainWindow) return;
+function createBrowserViewForWorkspace(workspaceId: string): BrowserViewEntry | null {
+  if (!mainWindow) return null;
 
-  browserView = new WebContentsView({
+  const view = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
-      partition: 'persist:browser',
+      partition: `persist:browser-${workspaceId}`,
     },
   });
 
-  attachBrowserSecurityHandlers(browserView);
-  void browserView.webContents.loadURL(currentBrowserUrl);
-  mainWindow.contentView.addChildView(browserView);
-  attachBrowserShortcutHandlers(browserView);
-  
-  // Initially hide it
-  browserView.setVisible(false);
-  browserView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+  attachBrowserSecurityHandlers(view);
+  attachBrowserShortcutHandlers(view);
+  view.setVisible(false);
+  view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+  mainWindow.contentView.addChildView(view);
+
+  void view.webContents.loadURL(DEFAULT_BROWSER_URL);
+
+  return { view, url: DEFAULT_BROWSER_URL };
 }
 
-// Show/hide and position browser view
-function updateBrowserView(x: number, y: number, width: number, height: number, visible: boolean) {
-  if (!mainWindow) return;
-
-  if (!browserView) {
-    initBrowserView();
+function ensureBrowserViewEntry(workspaceId: string): BrowserViewEntry | null {
+  const existing = browserViews.get(workspaceId);
+  if (existing) {
+    return existing;
   }
 
-  if (browserView) {
-    browserView.setVisible(visible);
-    if (visible && width > 0 && height > 0) {
-      browserView.setBounds({ x, y, width, height });
-    }
+  const entry = createBrowserViewForWorkspace(workspaceId);
+  if (!entry) {
+    return null;
+  }
+
+  browserViews.set(workspaceId, entry);
+  return entry;
+}
+
+function setActiveBrowserWorkspace(workspaceId: string | null) {
+  if (activeBrowserWorkspaceId === workspaceId) {
+    return;
+  }
+
+  if (activeBrowserWorkspaceId) {
+    const previous = browserViews.get(activeBrowserWorkspaceId);
+    previous?.view.setVisible(false);
+  }
+
+  activeBrowserWorkspaceId = workspaceId;
+}
+
+function updateBrowserView(workspaceId: string, bounds: { x: number; y: number; width: number; height: number }) {
+  const entry = ensureBrowserViewEntry(workspaceId);
+  if (!entry) {
+    return;
+  }
+
+  setActiveBrowserWorkspace(workspaceId);
+  entry.view.setVisible(true);
+
+  if (bounds.width > 0 && bounds.height > 0) {
+    entry.view.setBounds(bounds);
+  }
+}
+
+function hideBrowserView(workspaceId: string) {
+  const entry = browserViews.get(workspaceId);
+  if (entry) {
+    entry.view.setVisible(false);
+  }
+
+  if (activeBrowserWorkspaceId === workspaceId) {
+    activeBrowserWorkspaceId = null;
+  }
+}
+
+function destroyBrowserView(workspaceId: string) {
+  const entry = browserViews.get(workspaceId);
+  if (!entry) {
+    return;
+  }
+
+  entry.view.webContents.close();
+  browserViews.delete(workspaceId);
+
+  if (activeBrowserWorkspaceId === workspaceId) {
+    activeBrowserWorkspaceId = null;
   }
 }
 
@@ -538,57 +600,97 @@ ipcMain.handle('kill-terminal', (_, id: string) => {
 });
 
 // Browser view with viewport coordinates
-ipcMain.handle('browser-set-bounds', (_, viewportBounds: { x: number; y: number; width: number; height: number }) => {
-  // viewportBounds are already relative to window content area (from getBoundingClientRect)
-  // WebContentsView.setBounds uses content coordinates, so these should work directly
-  updateBrowserView(
-    viewportBounds.x,
-    viewportBounds.y,
-    viewportBounds.width,
-    viewportBounds.height,
-    true
-  );
+ipcMain.handle('browser-set-bounds', (_, workspaceId: string, viewportBounds: { x: number; y: number; width: number; height: number }) => {
+  if (!workspaceId) {
+    return;
+  }
+
+  updateBrowserView(workspaceId, {
+    x: viewportBounds.x,
+    y: viewportBounds.y,
+    width: viewportBounds.width,
+    height: viewportBounds.height,
+  });
 });
 
-ipcMain.handle('browser-hide', () => {
-  updateBrowserView(0, 0, 0, 0, false);
+ipcMain.handle('browser-hide', (_, workspaceId: string) => {
+  if (!workspaceId) {
+    return;
+  }
+
+  hideBrowserView(workspaceId);
 });
 
-ipcMain.handle('browser-navigate', (_, url: string) => {
+ipcMain.handle('browser-navigate', (_, workspaceId: string, url: string) => {
+  if (!workspaceId) {
+    return false;
+  }
+
   const safeUrl = normalizeAppBrowserUrl(url);
   if (!safeUrl) {
     return false;
   }
 
-  currentBrowserUrl = safeUrl;
-  if (browserView) {
-    void browserView.webContents.loadURL(safeUrl);
+  const entry = ensureBrowserViewEntry(workspaceId);
+  if (!entry) {
+    return false;
   }
+
+  entry.url = safeUrl;
+  void entry.view.webContents.loadURL(safeUrl);
   return true;
 });
 
-ipcMain.handle('browser-back', () => {
-  if (browserView && browserView.webContents.navigationHistory.canGoBack()) {
-    browserView.webContents.navigationHistory.goBack();
+ipcMain.handle('browser-back', (_, workspaceId: string) => {
+  if (!workspaceId) {
+    return;
+  }
+
+  const entry = browserViews.get(workspaceId);
+  if (entry && entry.view.webContents.navigationHistory.canGoBack()) {
+    entry.view.webContents.navigationHistory.goBack();
   }
 });
 
-ipcMain.handle('browser-forward', () => {
-  if (browserView && browserView.webContents.navigationHistory.canGoForward()) {
-    browserView.webContents.navigationHistory.goForward();
+ipcMain.handle('browser-forward', (_, workspaceId: string) => {
+  if (!workspaceId) {
+    return;
+  }
+
+  const entry = browserViews.get(workspaceId);
+  if (entry && entry.view.webContents.navigationHistory.canGoForward()) {
+    entry.view.webContents.navigationHistory.goForward();
   }
 });
 
-ipcMain.handle('browser-refresh', () => {
-  if (browserView) {
-    browserView.webContents.reload();
+ipcMain.handle('browser-refresh', (_, workspaceId: string) => {
+  if (!workspaceId) {
+    return;
+  }
+
+  const entry = browserViews.get(workspaceId);
+  if (entry) {
+    entry.view.webContents.reload();
   }
 });
 
-ipcMain.handle('browser-stop', () => {
-  if (browserView) {
-    browserView.webContents.stop();
+ipcMain.handle('browser-stop', (_, workspaceId: string) => {
+  if (!workspaceId) {
+    return;
   }
+
+  const entry = browserViews.get(workspaceId);
+  if (entry) {
+    entry.view.webContents.stop();
+  }
+});
+
+ipcMain.handle('browser-dispose-workspace', (_, workspaceId: string) => {
+  if (!workspaceId) {
+    return;
+  }
+
+  destroyBrowserView(workspaceId);
 });
 
 ipcMain.handle('open-external', (_, url: string) => {
@@ -626,12 +728,22 @@ ipcMain.handle('get-harness-options', () => {
   return getAvailableHarnessOptions();
 });
 
-ipcMain.handle('can-go-back', () => {
-  return browserView?.webContents.navigationHistory.canGoBack() ?? false;
+ipcMain.handle('can-go-back', (_, workspaceId: string) => {
+  if (!workspaceId) {
+    return false;
+  }
+
+  const entry = browserViews.get(workspaceId);
+  return entry?.view.webContents.navigationHistory.canGoBack() ?? false;
 });
 
-ipcMain.handle('can-go-forward', () => {
-  return browserView?.webContents.navigationHistory.canGoForward() ?? false;
+ipcMain.handle('can-go-forward', (_, workspaceId: string) => {
+  if (!workspaceId) {
+    return false;
+  }
+
+  const entry = browserViews.get(workspaceId);
+  return entry?.view.webContents.navigationHistory.canGoForward() ?? false;
 });
 
 // ============================================================================
