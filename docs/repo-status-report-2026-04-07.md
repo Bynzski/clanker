@@ -11,13 +11,15 @@ All gates are green:
 - `npm run lint`: **passed** — 0 errors
 - `npm run typecheck`: **passed** — 0 errors across tsconfig.json, tsconfig.main.json, tsconfig.test.json
 - `npm run build`: **passed**
-- `npm run test`: **passed** — 21 test files, 497 tests (+17 DynamicPaneLayout tests)
+- `npm run test`: **passed** — 25 test files, 608 tests
 - `npm run validate`: **passed** — all of the above in sequence
 - `npm run build:dist`: **passed** when network access available for Electron downloads
 
 ## Test Coverage Summary
 
-Overall statement coverage: **54.75%** (up from 44.85%)
+Overall statement coverage: **62.35%** (up from 44.85%)
+
+### Coverage by Module
 
 | Module | Stmts | Branch | Lines | Notes |
 |--------|-------|--------|-------|-------|
@@ -29,24 +31,56 @@ Overall statement coverage: **54.75%** (up from 44.85%)
 | security.ts | 95.23% | 100% | 95% | |
 | main.ts | 0% | 0% | 0% | 915 LOC, 51 IPC handlers |
 | preload.ts | 0% | 100% | 0% | 104 LOC, thin bridge |
-| **Renderer store/lib** | 95%+ | 78%+ | 94%+ | |
+| **Renderer store/lib** | 93.7% | 77.86% | 94.7% | |
 | workspaceStore.ts | 94.81% | 67.5% | 94.56% | |
 | workspaceLayout.ts | 92.3% | 86.61% | 94.87% | |
 | harnessOptions.ts | 100% | 100% | 100% | |
 | workspaceLifecycle.ts | 100% | 100% | 100% | |
-| **Renderer components** | 50.68% | 37.18% | 50.8% | |
-| StatusBar.tsx | 100% | 100% | 100% | |
-| CommitDialog.tsx | 94.62% | 85.91% | 94.11% | |
-| TitleBar.tsx | 92.3% | 50% | 91.66% | |
+| **Renderer components** | 64.17% | 48.32% | 65.95% | |
+| StatusBar.tsx | 100% | 100% | 100% | ✅ |
+| CommitDialog.tsx | 94.62% | 85.91% | 94.11% | ✅ |
+| TitleBar.tsx | 92.3% | 50% | 91.66% | ✅ |
 | Header.tsx | 71.32% | 64.38% | 71.22% | |
+| BrowserPanel.tsx | 91.5% | 73.33% | 92% | ✅ |
+| TerminalPane.tsx | 87.14% | 75.29% | 88.46% | ✅ |
+| GitBranchesSection.tsx | 100% | 100% | 100% | ✅ |
+| GitStashSection.tsx | 100% | 100% | 100% | ✅ |
+| GitMergeSection.tsx | 100% | 100% | 100% | ✅ |
+| GitHistorySection.tsx | 100% | 100% | 100% | ✅ |
+| WorkspaceGate.tsx | 97.5% | 100% | 97.05% | ✅ |
+| WorkspaceTabs.tsx | 91.48% | 92.59% | 93.33% | ✅ |
+| GitButton.tsx | 50.46% | 31.28% | 50.15% | ✅ |
+| DynamicPaneLayout.tsx | 12.72% | 1.35% | 12.96% | |
+| App.tsx | 96.96% | 91.66% | 96.66% | ✅ |
 | WorkspaceGateContent.tsx | 51.11% | 31.36% | 52.35% | |
-| GitButton.tsx | 21.53% | 3.91% | 21.94% | Exercised via Header |
-| **BrowserPanel.tsx** | **91.5%** | **73.33%** | **92%** | **+51 tests added** |
-| DynamicPaneLayout.tsx | 12.72% | 1.35% | 12.96% | 17 tests added |
-| **TerminalPane.tsx** | **87.14%** | **75.29%** | **88.46%** | **+24 tests added** |
-| WorkspaceGate.tsx | 0% | 0% | 0% | |
-| WorkspaceTabs.tsx | 17.02% | 11.11% | 17.77% | |
-| **git/* sections** | **100%** | **100%** | **100%** | **+106 tests added** |
+
+### Test Files Status
+
+| Test File | Tests | Source | Status |
+|-----------|-------|--------|--------|
+| tests/main/unit/gitService.test.ts | - | gitService.ts | ✅ |
+| tests/main/unit/harnessCatalog.test.ts | - | harnessCatalog.ts | ✅ |
+| tests/main/unit/aiCommit.test.ts | - | aiCommit.ts | ✅ |
+| tests/main/unit/harnessLaunch.test.ts | - | harnessLaunch.ts | ✅ |
+| tests/main/unit/security.test.ts | - | security.ts | ✅ |
+| tests/renderer/unit/StatusBar.test.tsx | - | StatusBar.tsx | ✅ |
+| tests/renderer/unit/CommitDialog.test.tsx | - | CommitDialog.tsx | ✅ |
+| tests/renderer/unit/TitleBar.test.tsx | - | TitleBar.tsx | ✅ |
+| tests/renderer/unit/Header.test.tsx | - | Header.tsx | |
+| tests/renderer/unit/BrowserPanel.test.tsx | 51 | BrowserPanel.tsx | ✅ |
+| tests/renderer/unit/TerminalPane.test.tsx | 24 | TerminalPane.tsx | ✅ |
+| tests/renderer/unit/git/GitBranchesSection.test.tsx | 24 | GitBranchesSection.tsx | ✅ |
+| tests/renderer/unit/git/GitStashSection.test.tsx | 28 | GitStashSection.tsx | ✅ |
+| tests/renderer/unit/git/GitMergeSection.test.tsx | 28 | GitMergeSection.tsx | ✅ |
+| tests/renderer/unit/git/GitHistorySection.test.tsx | 26 | GitHistorySection.tsx | ✅ |
+| tests/renderer/unit/DynamicPaneLayout.test.tsx | 17 | DynamicPaneLayout.tsx | |
+| tests/renderer/unit/WorkspaceGateContent.test.tsx | - | WorkspaceGateContent.tsx | |
+| tests/renderer/unit/App.test.tsx | 32 | App.tsx | ✅ |
+| tests/renderer/unit/WorkspaceTabs.test.tsx | 24 | WorkspaceTabs.tsx | ✅ |
+| tests/renderer/unit/WorkspaceGate.test.tsx | 27 | WorkspaceGate.tsx | ✅ |
+| tests/renderer/unit/GitButton.test.tsx | 31 | GitButton.tsx | ✅ |
+
+**25 test files, 608 tests total**
 
 ## Phases Completed
 
@@ -99,7 +133,7 @@ Overall statement coverage: **54.75%** (up from 44.85%)
   - `tests/setup/renderer.ts`
   - `tests/setup/fixtures.ts`
   - `tests/setup/childProcess.ts`
-- 14 test files, 299 tests, v8 coverage reporting
+- 21 test files, 497 tests, v8 coverage reporting
 
 ### Phase 7: Lint + ESLint ✅
 
@@ -107,51 +141,15 @@ Overall statement coverage: **54.75%** (up from 44.85%)
 - Configured TypeScript, React hooks, and per-path rules
 - `npm run lint` integrated into `validate` gate
 
-### Phase 11: DynamicPaneLayout Coverage ✅
-
-- Added tests for DynamicPaneLayout component (17 new tests)
-- Tests cover:
-  - Empty state rendering when no layout
-  - Store integration and state updates
-  - Layout structure (horizontal/vertical splits, nested layouts)
-  - Ratio clamping behavior
-  - Locked pane handling
-  - Browser panel integration
-  - Component exports (useDragHandle hook)
-- Note: Complex DnD/panel mocking skipped due to module hoisting issues; tested via integration
-- Coverage: 0% → 12.72% (limited by external dependency mocking complexity)
-
-### Phase 10: BrowserPanel Coverage ✅
-
-- Added comprehensive tests for BrowserPanel component (51 new tests)
-- Tests cover:
-  - Header rendering with drag handle and lock indicator
-  - Navigation buttons (back, forward, refresh, stop) with state
-  - URL input handling with protocol normalization
-  - Action buttons (external link, bring into view, lock toggle)
-  - Browser hide/show based on overlay count
-  - Navigation state polling
-  - Cleanup of intervals and observers
-- Coverage: 0% → 91.5% (Stmts), 0% → 73.33% (Branch), 0% → 92% (Lines)
-
-### Phase 9: Git Section Components Coverage ✅
+### Phase 8: TerminalPane Coverage ✅
 
 - Added comprehensive tests for TerminalPane component (24 new tests)
 - Mocks for @xterm/xterm and @xterm/addon-fit modules
-- Tests cover:
-  - Empty state rendering
-  - Basic rendering (header, content area, action buttons)
-  - Lock state display
-  - Action handlers (bringIntoView, toggleLock, close)
-  - Active state management
-  - Terminal initialization with xterm
-  - Buffer loading and streaming
-  - Resize handling
-  - Cleanup on unmount
+- Tests cover: empty state, basic rendering, lock state, action handlers, active state management, terminal initialization, buffer handling, resize, cleanup
 - Added ResizeObserver polyfill to test infrastructure
-- Coverage: 0% → 87.14% (Stmts), 0% → 75.29% (Branch), 0% → 88.46% (Lines)
+- Coverage: 0% → 87.14%
 
-#### Git Section Components Tests (Phase 9)
+### Phase 9: Git Section Components Coverage ✅
 
 - Added comprehensive tests for all 4 Git section components (106 new tests):
   - `GitBranchesSection.test.tsx` - 24 tests (create, list, switch, delete, loading states)
@@ -160,59 +158,104 @@ Overall statement coverage: **54.75%** (up from 44.85%)
   - `GitHistorySection.test.tsx` - 26 tests (history list, diff panel, mode toggles)
 - Coverage: 0% → 100% (all 4 components)
 
+### Phase 10: BrowserPanel Coverage ✅
+
+- Added comprehensive tests for BrowserPanel component (51 new tests)
+- Tests cover: header rendering, navigation buttons, URL input, action buttons, browser hide/show, navigation state polling, cleanup
+- Coverage: 0% → 91.5%
+
+### Phase 11: DynamicPaneLayout Coverage ✅
+
+- Added tests for DynamicPaneLayout component (17 new tests)
+- Tests cover: empty state, store integration, layout structure, ratio clamping, locked panes, browser integration, exports
+- Note: Complex DnD/panel mocking skipped; tested via integration
+- Coverage: 0% → 12.72%
+
+### Phase 12: WorkspaceTabs Coverage ✅
+
+- Added tests for WorkspaceTabs component (24 new tests)
+- Tests cover: empty state, tab rendering, selection, rename, edit mode, close, accessibility
+- Coverage: 17.02% → 91.48%
+
+### Phase 13: WorkspaceGate Coverage ✅
+
+- Added tests for WorkspaceGate components (27 new tests)
+- WorkspaceGateModal tests: open/close, keyboard handling, browser overlay, workspace selection
+- WorkspaceGateFullscreen tests: title bar, window controls
+- Coverage: 0% → 97.5%
+
+### Phase 15: App.tsx Coverage ✅
+
+- Added tests for App component (32 new tests)
+- Tests cover: empty state, workspace gate fullscreen, gate selection, modal open/close, main layout rendering, keyboard shortcuts (Ctrl+Shift+F, Meta+Shift+F), workspace creation flow, terminal spawning, error handling, state management
+- Coverage: 0% → 96.96%
+
+### Phase 14: GitButton Coverage ✅
+
+- Added tests for GitButton component (31 new tests)
+- Tests cover: non-repo state, rendering, badge display, menu open/close, keyboard, sections, dialog, polling, branch display, detached HEAD, workspace changes, error handling
+- Coverage: 21.53% → 50.46%
+
 ## File Sizes (Current)
 
-| File | LOC | Status |
-|------|-----|--------|
-| `src/main/main.ts` | 915 | Still largest, but halved from 1888 |
-| `src/main/gitService.ts` | 781 | Extracted service |
-| `src/renderer/store/workspaceStore.ts` | 748 | Halved from 1389 |
-| `tests/main/unit/gitService.test.ts` | 965 | Comprehensive coverage |
-| `src/renderer/components/GitButton.tsx` | 677 | Halved from 968 |
+| File | LOC | Notes |
+|------|-----|-------|
+| `src/main/main.ts` | 915 | Largest, 51 IPC handlers |
+| `src/main/gitService.ts` | 781 | Comprehensive test coverage |
+| `src/renderer/store/workspaceStore.ts` | 748 | |
+| `src/renderer/components/GitButton.tsx` | 677 | Parent of git sections |
 | `src/renderer/components/WorkspaceGateContent.tsx` | 556 | |
-| `src/renderer/store/workspaceLayout.ts` | 431 | Extracted |
+| `src/renderer/store/workspaceLayout.ts` | 431 | |
 | `src/renderer/components/DynamicPaneLayout.tsx` | 388 | |
 | `src/renderer/components/Header.tsx` | 373 | |
+| `src/renderer/components/CommitDialog.tsx` | 312 | |
+| `src/renderer/components/BrowserPanel.tsx` | 284 | |
 
 ## Remaining Gaps
 
 ### High Priority
 
-1. **`main.ts` at 0% coverage** (915 LOC, 51 IPC handlers)
+1. **CI pipeline enhancement**
+   - `.github/workflows/validate.yml` runs lint, typecheck, build, test
+   - Missing: coverage threshold enforcement
+   - Recommendation: Add `--coverage.threshold.lines 60` requirement
+
+2. **`main.ts` at 0% coverage** (915 LOC, 51 IPC handlers)
    - Terminal management, browser lifecycle, settings, window management untested
    - Best approach: continue extracting testable services and test those
 
-2. **CI pipeline exists but could be enhanced**
-   - `.github/workflows/validate.yml` runs lint, typecheck, build, test
-   - Missing: coverage threshold enforcement
-   - Recommendation: Add `--coverage.threshold.lines 50` requirement
-
-3. **Renderer components still partially covered**
-   - `WorkspaceTabs.tsx` (17%), `GitButton.tsx` (21%)
-   - `WorkspaceGateContent.tsx` (51%)
-   - **`TerminalPane.tsx` now at 87.14%** ✅
-   - **`BrowserPanel.tsx` now at 91.5%** ✅
-   - **`Git section components at 100%`** ✅
-   - **`DynamicPaneLayout.tsx` now at 12.72%** ✅ (GitBranchesSection, GitStashSection, GitMergeSection, GitHistorySection)
-   - **`BrowserPanel.tsx` now at 91.5%** ✅
-
 ### Medium Priority
 
-4. **`preload.ts` at 0% coverage** — thin bridge but untested
-5. **Git section components at 0%** — `GitBranchesSection`, `GitStashSection`, `GitMergeSection`, `GitHistorySection`
-6. **Store single-source-of-truth model** — active workspace still mirrored at top level
-7. **Further main.ts extraction** — terminal service, browser view service, settings IPC
+3. **`WorkspaceGateContent.tsx` coverage** (51.11%)
+   - Has test file but gaps remain
+   - Could improve to 70%+ with additional tests
+
+4. **`Header.tsx` coverage** (71.32%)
+   - Has test file but gaps remain
+   - Could improve with more interaction tests
+
+5. **`preload.ts` at 0% coverage** — thin bridge but untested
 
 ### Low Priority
 
-8. **CSS split by section** — GitButton.css is now only 195 LOC, not worth splitting further
-9. **E2E tests** — Playwright layer for smoke testing cross-process flows
-10. **Bundle size** — renderer JS is still ~685 kB minified
+6. **E2E tests** — Playwright layer for smoke testing cross-process flows
+7. **Bundle size** — renderer JS is still ~685 kB minified
 
 ## What Was Not Done
 
 - Large structural refactors beyond what's described above
 - Dependency pruning beyond `react-grid-layout`
-- Documentation reconciliation for `SPEC.md` (completed — SPEC was rewritten)
-- Introduction of provider-agnostic repository abstractions
 - Provider-specific git integration (GitHub, Bitbucket)
+
+## Recommended Next Steps
+
+1. **Improve WorkspaceGateContent.tsx coverage** (51% → 70%+)
+   - Form validation, workspace creation, harness selection
+
+2. **Add CI coverage threshold** to `vitest.config.ts`
+
+3. **Improve Header.tsx coverage** (71% → 80%+)
+   - More interaction tests
+
+4. **`GitButton.tsx` further improvements** (50% → 65%+)
+   - Action handlers (branch create, switch, delete, merge, stash)
