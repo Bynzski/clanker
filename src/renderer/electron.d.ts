@@ -51,6 +51,7 @@ interface ElectronAPI {
   gitStopPolling: () => Promise<void>;
   generateCommitMessage: (workspacePath: string) => Promise<GenerateCommitMessageResult>;
   gitStage: (workspacePath: string, files?: string[]) => Promise<{ success: boolean; error?: string }>;
+  gitUnstage: (workspacePath: string, files?: string[]) => Promise<{ success: boolean; error?: string }>;
   gitCommit: (workspacePath: string, message: string) => Promise<{ success: boolean; error?: string }>;
   gitGetBranchState: (workspacePath: string) => Promise<GitBranchStateResult>;
   gitGetOperationState: (workspacePath: string) => Promise<GitOperationStateResult>;

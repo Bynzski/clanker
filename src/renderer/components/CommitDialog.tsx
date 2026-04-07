@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Check, Loader2, Sparkles } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { AiCommitSettings } from '../types/shared';
@@ -15,6 +15,8 @@ interface CommitDialogProps {
   onClose: () => void;
   onCommit: (message: string) => Promise<{ success: boolean; error?: string }>;
   onStageAll: () => void;
+  onUnstage: (path: string) => Promise<{ success: boolean; error?: string }>;
+  onUnstageAll: () => Promise<{ success: boolean; error?: string }>;
   changes: GitStatus[];
   workspacePath: string;
 }
@@ -24,6 +26,8 @@ export default function CommitDialog({
   onClose,
   onCommit,
   onStageAll,
+  onUnstage,
+  onUnstageAll,
   changes,
   workspacePath,
 }: CommitDialogProps) {
@@ -33,8 +37,10 @@ export default function CommitDialog({
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
   const [isCommitting, setIsCommitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isUnstaging, setIsUnstaging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [unstagingPaths, setUnstagingPaths] = useState<Set<string>>(new Set());
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -43,6 +49,8 @@ export default function CommitDialog({
       setError(null);
       setIsCommitting(false);
       setIsGenerating(false);
+      setIsUnstaging(false);
+      setUnstagingPaths(new Set());
       // Focus the input after a brief delay
       setTimeout(() => inputRef.current?.focus(), 100);
     }
@@ -167,11 +175,55 @@ export default function CommitDialog({
     return badges[status] || '?';
   };
 
+  const handleUnstageFile = useCallback(
+    async (path: string) => {
+      if (isUnstaging || isCommitting) return;
+
+      setUnstagingPaths((prev) => new Set(prev).add(path));
+
+      try {
+        const result = await onUnstage(path);
+        if (!result.success) {
+          setError(result.error || 'Failed to unstage file');
+        }
+      } catch (err: any) {
+        setError(err.message || 'Failed to unstage file');
+      } finally {
+        setUnstagingPaths((prev) => {
+          const next = new Set(prev);
+          next.delete(path);
+          return next;
+        });
+      }
+    },
+    [isUnstaging, isCommitting, onUnstage]
+  );
+
+  const handleUnstageAll = useCallback(async () => {
+    if (isUnstaging || isCommitting) return;
+
+    setIsUnstaging(true);
+    setError(null);
+
+    try {
+      const result = await onUnstageAll();
+      if (!result.success) {
+        setError(result.error || 'Failed to unstage files');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to unstage files');
+    } finally {
+      setIsUnstaging(false);
+    }
+  }, [isUnstaging, isCommitting, onUnstageAll]);
+
   if (!isOpen) return null;
 
   const hasChanges = changes.length > 0;
   const hasUnstagedChanges = changes.some((c) => !c.staged);
+  const hasStagedChanges = changes.some((c) => c.staged);
   const aiCommitEnabled = Boolean(aiSettings?.enabled);
+  const isBusy = isCommitting || isUnstaging;
 
   return (
     <div className="commit-dialog-overlay" onClick={handleOverlayClick}>
@@ -228,16 +280,28 @@ export default function CommitDialog({
                     ? `${changes.length} file${changes.length !== 1 ? 's' : ''} changed`
                     : 'No changes'}
                 </span>
-                {hasUnstagedChanges && (
-                  <button
-                    type="button"
-                    className="commit-stage-btn"
-                    onClick={onStageAll}
-                    disabled={isCommitting}
-                  >
-                    Stage All
-                  </button>
-                )}
+                <div className="commit-files-header-actions">
+                  {hasStagedChanges && (
+                    <button
+                      type="button"
+                      className="commit-unstage-btn"
+                      onClick={() => void handleUnstageAll()}
+                      disabled={isBusy}
+                    >
+                      {isUnstaging ? 'Unstaging...' : 'Unstage All'}
+                    </button>
+                  )}
+                  {hasUnstagedChanges && (
+                    <button
+                      type="button"
+                      className="commit-stage-btn"
+                      onClick={onStageAll}
+                      disabled={isBusy}
+                    >
+                      Stage All
+                    </button>
+                  )}
+                </div>
               </div>
 
               {hasChanges ? (
@@ -251,9 +315,20 @@ export default function CommitDialog({
                         {change.path}
                       </span>
                       {change.staged && (
-                        <span className="commit-file-staged" title="Staged">
-                          <Check size={12} />
-                        </span>
+                        <>
+                          <span className="commit-file-staged" title="Staged">
+                            <Check size={12} />
+                          </span>
+                          <button
+                            type="button"
+                            className="commit-file-unstage"
+                            onClick={() => void handleUnstageFile(change.path)}
+                            disabled={isBusy || unstagingPaths.has(change.path)}
+                            title="Unstage this file"
+                          >
+                            {unstagingPaths.has(change.path) ? '...' : 'unstage'}
+                          </button>
+                        </>
                       )}
                     </div>
                   ))}
@@ -269,7 +344,7 @@ export default function CommitDialog({
               type="button"
               className="header-btn"
               onClick={onClose}
-              disabled={isCommitting}
+              disabled={isBusy}
             >
               Cancel
             </button>
@@ -277,7 +352,7 @@ export default function CommitDialog({
               <button
                 type="submit"
                 className="header-btn header-btn-primary"
-                disabled={isCommitting || !message.trim()}
+                disabled={isBusy || !message.trim()}
               >
                 {isCommitting ? (
                   <>
@@ -292,7 +367,7 @@ export default function CommitDialog({
               <button
                 type="submit"
                 className="header-btn header-btn-primary"
-                disabled={isCommitting || !message.trim()}
+                disabled={isBusy || !message.trim()}
               >
                 {isCommitting ? (
                   <>

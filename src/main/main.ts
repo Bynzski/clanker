@@ -733,6 +733,18 @@ ipcMain.handle('git-stage', async (_, workspacePath: string, files?: string[]) =
   return result;
 });
 
+ipcMain.handle('git-unstage', async (_, workspacePath: string, files?: string[]) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.unstage(safeWorkspacePath, files);
+  // Refresh status after unstaging
+  await refreshGitStatus(safeWorkspacePath);
+  return result;
+});
+
 ipcMain.handle('git-commit', async (_, workspacePath: string, message: string) => {
   const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
   if (!safeWorkspacePath) {

@@ -9,9 +9,13 @@ describe('CommitDialog', () => {
   const mockOnClose = vi.fn();
   const mockOnCommit = vi.fn();
   const mockOnStageAll = vi.fn();
+  const mockOnUnstage = vi.fn().mockResolvedValue({ success: true });
+  const mockOnUnstageAll = vi.fn().mockResolvedValue({ success: true });
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOnUnstage.mockResolvedValue({ success: true });
+    mockOnUnstageAll.mockResolvedValue({ success: true });
     useWorkspaceStore.setState({
       browserOverlayCount: 0,
     });
@@ -27,6 +31,8 @@ describe('CommitDialog', () => {
       onClose: mockOnClose,
       onCommit: mockOnCommit,
       onStageAll: mockOnStageAll,
+      onUnstage: mockOnUnstage,
+      onUnstageAll: mockOnUnstageAll,
       changes: [],
       workspacePath: '/workspace',
       ...overrides,
@@ -334,6 +340,147 @@ describe('CommitDialog', () => {
     await waitFor(() => {
       expect(screen.getByText('API rate limit exceeded')).toBeTruthy();
     });
+  });
+
+  // =========================================================================
+  // Unstage (GAP-1)
+  // =========================================================================
+  it('shows Unstage All button when there are staged files', () => {
+    renderDialog({
+      changes: [
+        { path: 'staged.ts', status: 'modified' as const, staged: true },
+        { path: 'unstaged.ts', status: 'modified' as const, staged: false },
+      ],
+    });
+
+    expect(screen.getByText('Unstage All')).toBeTruthy();
+    expect(screen.getByText('Stage All')).toBeTruthy();
+  });
+
+  it('does not show Unstage All button when there are only unstaged files', () => {
+    renderDialog({
+      changes: [
+        { path: 'file.ts', status: 'modified' as const, staged: false },
+      ],
+    });
+
+    expect(screen.queryByText('Unstage All')).toBeNull();
+    expect(screen.getByText('Stage All')).toBeTruthy();
+  });
+
+  it('shows per-file unstage button for each staged file', () => {
+    renderDialog({
+      changes: [
+        { path: 'staged1.ts', status: 'modified' as const, staged: true },
+        { path: 'staged2.ts', status: 'added' as const, staged: true },
+      ],
+    });
+
+    expect(screen.getAllByText('unstage')).toHaveLength(2);
+  });
+
+  it('does not show per-file unstage for unstaged files', () => {
+    renderDialog({
+      changes: [
+        { path: 'unstaged.ts', status: 'modified' as const, staged: false },
+      ],
+    });
+
+    expect(screen.queryByText('unstage')).toBeNull();
+  });
+
+  it('calls onUnstageAll when Unstage All is clicked', async () => {
+    renderDialog({
+      changes: [
+        { path: 'staged.ts', status: 'modified' as const, staged: true },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Unstage All'));
+
+    await waitFor(() => {
+      expect(mockOnUnstageAll).toHaveBeenCalled();
+    });
+  });
+
+  it('calls onUnstage with the correct path when per-file unstage is clicked', async () => {
+    renderDialog({
+      changes: [
+        { path: 'staged.ts', status: 'modified' as const, staged: true },
+        { path: 'also-staged.ts', status: 'added' as const, staged: true },
+      ],
+    });
+
+    const unstageButtons = screen.getAllByText('unstage');
+    fireEvent.click(unstageButtons[0]);
+
+    await waitFor(() => {
+      expect(mockOnUnstage).toHaveBeenCalledWith('staged.ts');
+    });
+  });
+
+  it('shows error message when unstage fails', async () => {
+    mockOnUnstageAll.mockResolvedValueOnce({
+      success: false,
+      error: 'Failed to unstage: permission denied',
+    });
+
+    renderDialog({
+      changes: [
+        { path: 'staged.ts', status: 'modified' as const, staged: true },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Unstage All'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to unstage: permission denied')).toBeTruthy();
+    });
+  });
+
+  it('disables Unstage All while unstage is in progress', () => {
+    mockOnUnstageAll.mockImplementation(
+      async () => new Promise((r) => setTimeout(() => r({ success: true }), 100))
+    );
+
+    renderDialog({
+      changes: [
+        { path: 'staged.ts', status: 'modified' as const, staged: true },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Unstage All'));
+    // Button text changes to "Unstaging..." while in progress
+    expect(screen.getByText('Unstaging...')).toBeDisabled();
+  });
+
+  it('disables footer buttons while unstage is in progress', () => {
+    mockOnUnstageAll.mockImplementation(
+      async () => new Promise((r) => setTimeout(() => r({ success: true }), 100))
+    );
+
+    renderDialog({
+      changes: [
+        { path: 'staged.ts', status: 'modified' as const, staged: true },
+      ],
+    });
+
+    fireEvent.click(screen.getByText('Unstage All'));
+
+    expect(screen.getByText('Cancel')).toBeDisabled();
+    expect(screen.getByText('Commit')).toBeDisabled();
+  });
+
+  it('shows both Unstage All and Stage All when mixed staged/unstaged files', () => {
+    renderDialog({
+      changes: [
+        { path: 'staged.ts', status: 'modified' as const, staged: true },
+        { path: 'unstaged.ts', status: 'modified' as const, staged: false },
+      ],
+    });
+
+    expect(screen.getByText('Unstage All')).toBeTruthy();
+    expect(screen.getByText('Stage All')).toBeTruthy();
   });
 
   // =========================================================================

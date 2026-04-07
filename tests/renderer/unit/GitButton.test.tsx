@@ -29,6 +29,7 @@ const mockGitGetRemotes = vi.fn();
 const mockGitFetch = vi.fn();
 const mockGitPull = vi.fn();
 const mockGitPush = vi.fn();
+const mockGitUnstage = vi.fn();
 const mockOnGitStatusUpdate = vi.fn();
 const mockConfirm = vi.fn();
 const mockSetTimeout = vi.fn(((cb: () => void) => { cb(); return 0; }) as unknown as typeof setTimeout);
@@ -59,6 +60,7 @@ const mockElectronAPI = {
   gitFetch: mockGitFetch,
   gitPull: mockGitPull,
   gitPush: mockGitPush,
+  gitUnstage: mockGitUnstage,
   onGitStatusUpdate: mockOnGitStatusUpdate,
 };
 
@@ -124,6 +126,7 @@ describe('GitButton', () => {
     mockGitFetch.mockResolvedValue({ success: true });
     mockGitPull.mockResolvedValue({ success: true });
     mockGitPush.mockResolvedValue({ success: true });
+    mockGitUnstage.mockResolvedValue({ success: true });
     mockGitRefresh.mockResolvedValue({
       success: true,
       isRepo: true,

@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitStopPolling: () => ipcRenderer.invoke('git-stop-polling'),
   generateCommitMessage: (workspacePath: string) => ipcRenderer.invoke('generate-commit-message', workspacePath),
   gitStage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke('git-stage', workspacePath, files),
+  gitUnstage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke('git-unstage', workspacePath, files),
   gitCommit: (workspacePath: string, message: string) => ipcRenderer.invoke('git-commit', workspacePath, message),
   gitGetBranchState: (workspacePath: string) => ipcRenderer.invoke('git-get-branch-state', workspacePath),
   gitGetOperationState: (workspacePath: string) => ipcRenderer.invoke('git-get-operation-state', workspacePath),

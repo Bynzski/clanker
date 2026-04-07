@@ -834,6 +834,30 @@ export class GitService {
     }
   }
 
+  async unstage(workspacePath: string, files?: string[]): Promise<{ success: boolean; error?: string }> {
+    try {
+      const args = files && files.length > 0
+        ? ['restore', '--staged', '--', ...files]
+        : ['restore', '--staged', '.'];
+      await this.execGit(workspacePath, args);
+      return { success: true };
+    } catch {
+      // Try fallback with git reset HEAD for older git versions
+      try {
+        const args = files && files.length > 0
+          ? ['reset', 'HEAD', '--', ...files]
+          : ['reset', 'HEAD'];
+        await this.execGit(workspacePath, args);
+        return { success: true };
+      } catch (fallbackError) {
+        return {
+          success: false,
+          error: this.getGitErrorMessage(fallbackError, 'Failed to unstage files'),
+        };
+      }
+    }
+  }
+
   async commit(workspacePath: string, message: string): Promise<{ success: boolean; error?: string }> {
     if (!message || message.trim().length === 0) {
       return { success: false, error: 'Commit message cannot be empty' };
