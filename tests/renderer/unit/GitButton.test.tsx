@@ -25,6 +25,7 @@ const mockGitApplyStash = vi.fn();
 const mockGitPopStash = vi.fn();
 const mockGitDropStash = vi.fn();
 const mockGitClearStashes = vi.fn();
+const mockGitGetRemotes = vi.fn();
 const mockOnGitStatusUpdate = vi.fn();
 const mockConfirm = vi.fn();
 const mockSetTimeout = vi.fn(((cb: () => void) => { cb(); return 0; }) as unknown as typeof setTimeout);
@@ -51,6 +52,7 @@ const mockElectronAPI = {
   gitPopStash: mockGitPopStash,
   gitDropStash: mockGitDropStash,
   gitClearStashes: mockGitClearStashes,
+  gitGetRemotes: mockGitGetRemotes,
   onGitStatusUpdate: mockOnGitStatusUpdate,
 };
 
@@ -112,6 +114,7 @@ describe('GitButton', () => {
     mockGitGetStashes.mockResolvedValue([]);
     mockGitGetHistory.mockResolvedValue([]);
     mockGitGetDiff.mockResolvedValue({ success: true, diff: '' });
+    mockGitGetRemotes.mockResolvedValue({ success: true, remotes: [], provider: 'unknown' });
     mockGitRefresh.mockResolvedValue({
       success: true,
       isRepo: true,

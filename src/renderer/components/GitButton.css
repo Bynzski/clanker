@@ -68,6 +68,40 @@
   color: var(--text-secondary);
 }
 
+.git-menu-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.git-menu-provider {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.git-menu-provider.provider-github {
+  color: var(--accent-primary);
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.git-menu-provider.provider-bitbucket {
+  color: #0052cc;
+  background: rgba(0, 82, 204, 0.12);
+}
+
+.git-menu-provider.provider-gitlab {
+  color: #e24329;
+  background: rgba(226, 67, 41, 0.12);
+}
+
+.git-menu-provider.provider-none {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
 .git-menu-close:hover {
   background: var(--bg-tertiary);
   color: var(--text-primary);
