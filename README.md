@@ -1,32 +1,36 @@
 # Clanker Grid
 
-A developer workspace tool featuring multi-workspace terminal layouts, AI harness launchers, git controls, and an integrated browser, built with Electron and React.
+> Developer workspace with terminal grid, AI harness launchers, git controls, and integrated browser.
+
+[![Validate](https://github.com/clanker-grid/clanker-grid/actions/workflows/validate.yml/badge.svg)](https://github.com/clanker-grid/clanker-grid/actions/workflows/validate.yml)
+[![Electron](https://img.shields.io/badge/Electron-41.x-47848F?logo=electron)](https://electronjs.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Features
 
-- **Terminal Grid**: Multiple terminal panes with flexible layout
-- **Integrated Browser**: Web browser panel alongside your terminals
-- **Harness Support**: Choose between Codex, Claude, OpenCode, Pi, or a plain shell terminal
-- **Multiple Workspaces**: Work on multiple projects simultaneously with workspace tabs
-- **Quick Launch**: Launch directly into your workspace with configurable terminal count
-- **Git Tools**: Branch, stash, merge, history, diff, and AI-assisted commit message flows
+| Feature | Description |
+|---------|-------------|
+| **Terminal Grid** | Multiple terminal panes with flexible split layouts |
+| **AI Harnesses** | Launch Codex, Claude, OpenCode, or Pi directly in your workspace |
+| **Multi-Workspace** | Work on multiple projects in separate tabs |
+| **Git Tools** | Branch, stash, merge, diff, and AI-assisted commits |
+| **Browser Panel** | Embedded browser alongside your terminals |
 
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 
 - Node.js 18+
 - npm
 
-### Installation
+### Install & Run
 
 ```bash
+git clone https://github.com/clanker-grid/clanker-grid.git
+cd clanker-grid
 npm install
-```
-
-### Development
-
-```bash
 npm run dev
 ```
 
@@ -34,41 +38,26 @@ npm run dev
 
 ```bash
 npm run build
+npm run build:dist    # Creates distributable
 ```
 
-### Validation
+## Documentation
 
-```bash
-npm run validate
-```
+- [Getting Started](docs/getting-started.md) — Installation and first launch
+- [Workspaces](docs/workspaces.md) — Managing workspace tabs
+- [Terminals & Harnesses](docs/terminals.md) — Terminal panes and AI integrations
+- [Git Integration](docs/git-integration.md) — Built-in git tools
+- [Configuration](docs/configuration.md) — Settings and preferences
+- [Keyboard Shortcuts](docs/keyboard-shortcuts.md) — Quick navigation
 
-### Testing
+## Keyboard Shortcuts
 
-```bash
-npm test
-npm run test:watch
-npm run test:coverage
-```
-
-Tests now live under `tests/`:
-
-- `tests/main/unit/` for main-process unit tests
-- `tests/renderer/` for renderer unit and integration tests
-- `tests/setup/` for shared mocks, fixtures, and test setup
-
-## Project Structure
-
-```
-.
-├── src/
-│   ├── main/          # Electron main process
-│   └── renderer/      # React frontend
-├── dist/              # Built renderer
-├── build/             # Build resources
-├── node_modules/
-├── package.json
-└── ...
-```
+| Action | Shortcut |
+|--------|----------|
+| New Terminal | `Ctrl+Shift+T` |
+| Close Workspace | `Ctrl+W` |
+| Open Workspace | `Ctrl+O` |
+| Toggle Browser | `Ctrl+B` |
 
 ## License
 
