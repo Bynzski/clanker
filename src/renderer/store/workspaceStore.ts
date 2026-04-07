@@ -35,7 +35,6 @@ export type {
   Terminal,
   WorkspaceTab,
 } from './workspaceTypes';
-export { calculateNewPanePosition } from './workspaceLayout';
 
 interface WorkspaceState {
   name: string;

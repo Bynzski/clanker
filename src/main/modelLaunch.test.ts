@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildHarnessCommand, buildHarnessSpawnArgs, normalizePiModelId, type HarnessConfig } from './harnessLaunch';
+import { buildHarnessSpawnArgs, normalizePiModelId, type HarnessConfig } from './harnessLaunch';
 
 const opencodeConfig: HarnessConfig = {
   name: 'OpenCode',
@@ -40,10 +40,10 @@ test('buildHarnessSpawnArgs preserves harness-only launches', () => {
   );
 });
 
-test('buildHarnessCommand quotes shell-sensitive model values', () => {
-  assert.equal(
-    buildHarnessCommand(piConfig, 'sonnet:high thinking'),
-    "pi --model 'sonnet:high thinking'"
+test('buildHarnessSpawnArgs preserves shell-sensitive model values as a single argument', () => {
+  assert.deepEqual(
+    buildHarnessSpawnArgs(piConfig, 'sonnet:high thinking'),
+    ['--model', 'sonnet:high thinking']
   );
 });
 
