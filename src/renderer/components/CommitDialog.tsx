@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Check, Loader2, Sparkles } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { AiCommitSettings } from '../types/shared';
+import './CommitDialog.css';
 
 interface GitStatus {
   path: string;

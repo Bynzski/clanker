@@ -111,7 +111,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
       try {
         setCanGoBack(await window.electronAPI.canGoBack());
         setCanGoForward(await window.electronAPI.canGoForward());
-      } catch (e) {
+      } catch {
         // Ignore errors
       }
     };

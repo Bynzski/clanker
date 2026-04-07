@@ -1,0 +1,85 @@
+.git-create-branch-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.git-create-branch-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.git-create-branch-input:focus {
+  border-color: var(--accent-primary);
+}
+
+.git-create-branch-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.git-create-branch-submit {
+  white-space: nowrap;
+}
+
+.git-branch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.git-branch-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+.git-branch-item.current {
+  border-color: rgba(143, 180, 158, 0.5);
+  background: rgba(63, 185, 80, 0.08);
+}
+
+.git-branch-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.git-branch-name span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-branch-current {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(63, 185, 80, 0.12);
+  color: var(--accent-success);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.git-branch-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}

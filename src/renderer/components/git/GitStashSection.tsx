@@ -1,5 +1,6 @@
 import { Loader2 } from 'lucide-react';
 import type { GitStashEntry } from './types';
+import './GitStashSection.css';
 
 interface GitStashSectionProps {
   activeAction: string | null;

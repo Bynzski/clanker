@@ -34,16 +34,17 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
   } = useWorkspaceStore();
   const pane = panes.find((item: typeof panes[0]) => item.id === paneId);
   const terminal = terminals.find((item: typeof terminals[0]) => item.id === pane?.terminalId);
+  const terminalId = terminal?.id ?? null;
   const paneLocked = pane?.locked ?? false;
 
   const resizeTerminal = useCallback(() => {
-    if (terminal == null || fitAddonRef.current == null || xtermRef.current == null) return;
+    if (terminalId == null || fitAddonRef.current == null || xtermRef.current == null) return;
     fitAddonRef.current.fit();
     const dims = fitAddonRef.current.proposeDimensions();
     if (dims != null) {
-      window.electronAPI.resizeTerminal(terminal.id, dims.cols, dims.rows).catch(console.error);
+      window.electronAPI.resizeTerminal(terminalId, dims.cols, dims.rows).catch(console.error);
     }
-  }, [terminal?.id]);
+  }, [terminalId]);
 
   useEffect(() => {
     if (terminalRef.current == null || xtermRef.current != null) return;
@@ -141,7 +142,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
   }, [resizeTerminal]);
 
   useEffect(() => {
-    if (!terminalRuntimeReady || xtermRef.current == null || terminal == null) return;
+    if (!terminalRuntimeReady || xtermRef.current == null || terminalId == null) return;
 
     const xterm = xtermRef.current;
     let inputDisposable: { dispose: () => void } | null = null;
@@ -153,11 +154,11 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
       if (cancelled || xtermRef.current == null) return;
 
       inputDisposable = xterm.onData((data) => {
-        window.electronAPI.writeTerminal(terminal.id, data).catch(console.error);
+        window.electronAPI.writeTerminal(terminalId, data).catch(console.error);
       });
 
       const dataHandler = (data: { id: string; data: string }) => {
-        if (data.id === terminal.id && xtermRef.current != null) {
+        if (data.id === terminalId && xtermRef.current != null) {
           xtermRef.current.write(data.data);
         }
       };
@@ -165,7 +166,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
       disposeData = window.electronAPI.onTerminalData(dataHandler);
 
       const exitHandler = (data: { id: string; exitCode: number }) => {
-        if (data.id === terminal.id && xtermRef.current != null) {
+        if (data.id === terminalId && xtermRef.current != null) {
           xtermRef.current.write(`\r\n\x1b[33mProcess exited with code ${data.exitCode}\x1b[0m\r\n`);
         }
       };
@@ -174,7 +175,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
       setTimeout(resizeTerminal, 100);
     };
 
-    window.electronAPI.getTerminalBuffer(terminal.id)
+    window.electronAPI.getTerminalBuffer(terminalId)
       .then((buffer) => {
         if (cancelled || xtermRef.current == null) return;
         if (buffer.length > 0) {
@@ -193,7 +194,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
       disposeData?.();
       disposeExit?.();
     };
-  }, [terminalRuntimeReady, terminal?.id, resizeTerminal]);
+  }, [terminalId, terminalRuntimeReady, resizeTerminal]);
 
   useEffect(() => {
     if (terminalRef.current == null) return;
@@ -221,8 +222,8 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
 
     const handleFocus = () => {
       setIsActive(true);
-      if (terminal != null) {
-        setActiveTerminal(terminal.id);
+      if (terminalId != null) {
+        setActiveTerminal(terminalId);
       }
     };
 
@@ -232,7 +233,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
     return () => {
       xterm.element?.removeEventListener('click', handleFocus);
     };
-  }, [terminalRuntimeReady, terminal?.id]);
+  }, [setActiveTerminal, terminalId, terminalRuntimeReady]);
 
   useEffect(() => {
     setIsActive(activeTerminalId === terminal?.id);
@@ -242,7 +243,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
     if (terminalRuntimeReady && fitAddonRef.current != null) {
       setTimeout(resizeTerminal, 50);
     }
-  }, [terminalRuntimeReady, terminal?.id, resizeTerminal]);
+  }, [terminalId, terminalRuntimeReady, resizeTerminal]);
 
   const handleClose = useCallback(async () => {
     if (terminal == null) return;

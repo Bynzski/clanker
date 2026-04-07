@@ -1,0 +1,74 @@
+.git-operation-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.git-operation-status {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.git-operation-status.merge {
+  background: rgba(217, 146, 34, 0.12);
+  color: #f5d58a;
+}
+
+.git-operation-status.rebase {
+  background: rgba(139, 148, 158, 0.12);
+  color: #cdd3da;
+}
+
+.git-conflict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.git-conflict-file {
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(248, 81, 73, 0.12);
+  color: #ffb4af;
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.git-operation-abort {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(248, 81, 73, 0.12);
+  color: #ffb4af;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.git-operation-abort:hover:not(:disabled) {
+  background: rgba(248, 81, 73, 0.2);
+}
+
+.git-merge-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.git-merge-select {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+}

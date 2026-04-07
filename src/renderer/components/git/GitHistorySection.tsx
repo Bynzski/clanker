@@ -1,5 +1,6 @@
 import { Loader2 } from 'lucide-react';
 import type { DiffMode, GitDiffResult, GitHistoryEntry } from './types';
+import './GitHistorySection.css';
 
 interface GitHistorySectionProps {
   diffResult: GitDiffResult | null;
