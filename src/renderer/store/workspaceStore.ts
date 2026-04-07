@@ -123,41 +123,6 @@ const GRID_ROWS = 8;
 const MIN_PANE_W = 3;
 const MIN_PANE_H = 3;
 
-/**
- * Auto-calculates a grid layout for n panes.
- * Returns react-grid-layout compatible layout items.
- * Grid is 12 columns, rows are calculated based on count.
- */
-export function autoCalculateLayout(count: number): {
-  layout: Array<{ i: string; x: number; y: number; w: number; h: number; minW: number; minH: number }>;
-  cols: number;
-} {
-  if (count <= 0) return { layout: [], cols: 12 };
-
-  const cols = 12;
-  const itemsPerRow = Math.min(count, 3);
-  const rows = Math.ceil(count / itemsPerRow);
-  const cellW = Math.floor(12 / itemsPerRow);
-  const cellH = Math.floor(12 / rows);
-
-  const layout = [];
-  for (let i = 0; i < count; i++) {
-    const col = (i % itemsPerRow) * cellW;
-    const row = Math.floor(i / itemsPerRow) * cellH;
-    layout.push({
-      i: `pane-${i}`,
-      x: col,
-      y: row,
-      w: cellW,
-      h: cellH,
-      minW: 2,
-      minH: 2,
-    });
-  }
-
-  return { layout, cols };
-}
-
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -199,115 +164,6 @@ function findAvailablePosition(
   }
 
   return null;
-}
-
-function buildCompactPositions(count: number, cols: number, rows: number): PanePosition[] {
-  if (count <= 0) return [];
-
-  const safeCols = Math.max(1, cols);
-  const safeRows = Math.max(1, rows);
-  const itemsPerRow = Math.max(
-    1,
-    Math.min(safeCols, Math.ceil(Math.sqrt((count * safeCols) / safeRows)))
-  );
-  const rowsNeeded = Math.max(1, Math.ceil(count / itemsPerRow));
-  const cellW = Math.max(1, Math.floor(safeCols / itemsPerRow));
-  const cellH = Math.max(1, Math.floor(safeRows / rowsNeeded));
-
-  const positions: PanePosition[] = [];
-  for (let i = 0; i < count; i++) {
-    positions.push({
-      x: (i % itemsPerRow) * cellW,
-      y: Math.floor(i / itemsPerRow) * cellH,
-      w: cellW,
-      h: cellH,
-    });
-  }
-
-  return positions;
-}
-
-function normalizePaneEntry(
-  pane: Pane,
-  cols: number,
-  rows: number
-): Pane {
-  if (!pane.position) {
-    return pane;
-  }
-
-  return {
-    ...pane,
-    position: normalizePosition(pane.position, cols, rows),
-  };
-}
-
-function sortPanesForLayout(panes: Pane[]) {
-  return [...panes].sort((a, b) => {
-    const aPos = a.position;
-    const bPos = b.position;
-
-    if (aPos && bPos) {
-      if (aPos.y !== bPos.y) return aPos.y - bPos.y;
-      if (aPos.x !== bPos.x) return aPos.x - bPos.x;
-    }
-
-    if (aPos) return -1;
-    if (bPos) return 1;
-    return a.id.localeCompare(b.id);
-  });
-}
-
-function compactWorkspaceLayout(state: WorkspaceState): {
-  panes: Pane[];
-  browserPane: BrowserPaneState | null;
-} {
-  const viewport = state.gridViewport;
-  const browserVisible = state.browserVisible && state.browserPane != null;
-  const orderedPanes = sortPanesForLayout(state.panes);
-  const totalItems = orderedPanes.length + (browserVisible ? 1 : 0);
-  const positions = buildCompactPositions(totalItems, viewport.cols, viewport.rows);
-
-  let index = 0;
-  const nextPanes = orderedPanes.map((pane) => {
-    const position = positions[index++] ?? pane.position;
-    return {
-      ...pane,
-      position: position ? normalizePosition(position, viewport.cols, viewport.rows) : pane.position,
-    };
-  });
-
-  const nextBrowserPane = browserVisible && state.browserPane
-    ? {
-        ...state.browserPane,
-        position: normalizePosition(
-          positions[index] ?? state.browserPane.position,
-          viewport.cols,
-          viewport.rows
-        ),
-      }
-    : state.browserPane;
-
-  return {
-    panes: nextPanes,
-    browserPane: nextBrowserPane,
-  };
-}
-
-function findPanePositionById(state: WorkspaceState, paneId: string) {
-  return state.panes.find((pane) => pane.id === paneId)?.position ?? null;
-}
-
-function getOccupiedPositions(state: WorkspaceState, excludePaneId?: string) {
-  const positions = state.panes
-    .filter((pane) => pane.id !== excludePaneId && pane.position)
-    .map((pane) => pane.position as PanePosition);
-
-  if (state.browserVisible && state.browserPane) {
-    positions.push(state.browserPane.position);
-  }
-
-  return positions;
 }
 
 /**
@@ -439,18 +295,6 @@ function hasUnlockedLeaf(
   }
 
   return hasUnlockedLeaf(node.first, state) || hasUnlockedLeaf(node.second, state);
-}
-
-function countLeaves(node: LayoutNode | null): number {
-  if (node == null) {
-    return 0;
-  }
-
-  if (node.type === 'leaf') {
-    return 1;
-  }
-
-  return countLeaves(node.first) + countLeaves(node.second);
 }
 
 function getLeafAreaMap(
@@ -780,7 +624,7 @@ const defaultWorkspaceState = {
   layoutRevision: 0,
 };
 
-export const useWorkspaceStore = create<WorkspaceState>((set) => ({
+export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   ...defaultWorkspaceState,
   workspaces: [],
   activeWorkspaceId: null,
@@ -1382,8 +1226,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
     };
   }),
 
-  canAddPane: () => {
-    const state = useWorkspaceStore.getState();
+  canAddPane: (): boolean => {
+    const state = get();
     return hasUnlockedLeaf(state.layoutRoot, state) || state.layoutRoot == null;
   },
 }));

@@ -11,7 +11,6 @@ function App() {
   const [showWorkspaceGate, setShowWorkspaceGate] = useState(false);
   const { 
     workspaces,
-    browserVisible,
     addWorkspace,
     fitAllPanes,
   } = useWorkspaceStore();
@@ -53,6 +52,7 @@ function App() {
     }
 
     addWorkspace({
+      name: '',
       workspacePath: path,
       harness,
       model: model ?? '',
@@ -62,6 +62,7 @@ function App() {
       browserUrl: 'https://github.com',
       activeTerminalId: terminals.length > 0 ? terminals[terminals.length - 1].id : null,
       browserPane: null,
+      layoutRoot: null,
     });
     setShowWorkspaceGate(false);
   };

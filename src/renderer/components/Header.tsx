@@ -18,6 +18,11 @@ interface HeaderProps {
   onOpenWorkspace: () => void;
 }
 
+interface ModelOption {
+  id: string;
+  label: string;
+}
+
 export default function Header({ onOpenWorkspace }: HeaderProps) {
   const { 
     workspacePath, 

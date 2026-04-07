@@ -197,41 +197,6 @@ function normalizeModelLine(line: string): string {
     .trim();
 }
 
-function parseModelOutput(output: string): ModelOption[] {
-  const lines = output
-    .split(/\r?\n/)
-    .map((line) => normalizeModelLine(line))
-    .filter(Boolean);
-
-  const seen = new Set<string>();
-  const models: ModelOption[] = [];
-
-  for (const line of lines) {
-    if (/^(usage:|options:|commands:|examples:|available models|models available|select a model|choose a model)/i.test(line)) {
-      continue;
-    }
-
-    const parts = line.split(/\t+|\s{2,}/).map((part) => part.trim()).filter(Boolean);
-    const id = parts[0] ?? '';
-    if (!id) {
-      continue;
-    }
-
-    const normalizedId = id.replace(/\s+\(default\)$/i, '');
-    if (!normalizedId || seen.has(normalizedId)) {
-      continue;
-    }
-
-    seen.add(normalizedId);
-    models.push({
-      id: normalizedId,
-      label: (parts[1] ?? normalizedId).replace(/\s+\(default\)$/i, '').trim() || normalizedId,
-    });
-  }
-
-  return models;
-}
-
 function parsePiModels(output: string): ModelOption[] {
   if (/no models available/i.test(output)) {
     return [];
@@ -1453,10 +1418,6 @@ ipcMain.handle('get-last-workspace', () => {
   return store.get('lastWorkspace');
 });
 
-ipcMain.handle('set-last-workspace', (_, workspacePath: string) => {
-  store.set('lastWorkspace', workspacePath);
-});
-
 ipcMain.handle('get-show-fastfetch', () => {
   return store.get('showFastfetch');
 });
@@ -1633,11 +1594,6 @@ ipcMain.handle('kill-terminal', (_, id: string) => {
   }
 });
 
-// Browser IPC Handlers
-ipcMain.handle('browser-show', (_, x: number, y: number, width: number, height: number) => {
-  updateBrowserView(x, y, width, height, true);
-});
-
 // Browser view with viewport coordinates
 ipcMain.handle('browser-set-bounds', (_, viewportBounds: { x: number; y: number; width: number; height: number }) => {
   // viewportBounds are already relative to window content area (from getBoundingClientRect)
@@ -1715,10 +1671,6 @@ ipcMain.handle('get-harness-options', () => {
   return getAvailableHarnessOptions();
 });
 
-ipcMain.handle('get-browser-url', () => {
-  return currentBrowserUrl;
-});
-
 ipcMain.handle('can-go-back', () => {
   return browserView?.webContents.navigationHistory.canGoBack() ?? false;
 });
@@ -1737,10 +1689,6 @@ ipcMain.handle('git-start-polling', (_, workspacePath: string) => {
 
 ipcMain.handle('git-stop-polling', () => {
   gitService.stopPolling();
-});
-
-ipcMain.handle('git-get-status', async (_, workspacePath: string) => {
-  return gitService.getStatus(workspacePath);
 });
 
 ipcMain.handle('git-get-branch-state', async (_, workspacePath: string) => {
@@ -1860,10 +1808,6 @@ ipcMain.handle('git-clear-stashes', async (_, workspacePath: string) => {
     await refreshGitStatus(workspacePath);
   }
   return result;
-});
-
-ipcMain.handle('git-is-repo', async (_, workspacePath: string) => {
-  return gitService.isRepo(workspacePath);
 });
 
 ipcMain.handle('git-refresh', async () => {

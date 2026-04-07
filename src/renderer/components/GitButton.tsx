@@ -53,15 +53,6 @@ interface GitDiffResult {
   error?: string;
 }
 
-interface BranchState {
-  success: boolean;
-  isRepo: boolean;
-  currentBranch: string | null;
-  isDetached: boolean;
-  branches: GitBranchInfo[];
-  error?: string;
-}
-
 interface GitButtonProps {
   workspacePath: string;
 }
