@@ -100,6 +100,87 @@ Phase 2 outcome:
 - The codebase is structurally cleaner than after phase 1, but the main architectural hotspots remain.
 - The next highest-value work is still the large-file breakup of `main.ts`, `workspaceStore.ts`, and `GitButton.tsx`.
 
+## Phase 3 Store Cleanup Update
+
+Phase 3 focused on the largest source of repeated state synchronization in the renderer: the active-workspace mirroring inside `src/renderer/store/workspaceStore.ts`.
+
+Current phase 3 status:
+
+- `npm run validate`: passed after the store refactor
+
+Phase 3 changes completed:
+
+- Introduced shared internal helpers in `src/renderer/store/workspaceStore.ts` to centralize:
+  - active-workspace snapshot creation
+  - active-workspace synchronization back into `workspaces`
+- Replaced repeated inline `workspaces.map(...)` update patterns across the store with the shared synchronization path
+- Reduced the amount of repeated mirrored field assignment for:
+  - `name`
+  - `workspacePath`
+  - `harness`
+  - `model`
+  - `terminals`
+  - `panes`
+  - `browserVisible`
+  - `browserUrl`
+  - `activeTerminalId`
+  - `browserPane`
+  - `layoutRoot`
+
+Why this matters:
+
+- The store still uses a duplicated active-workspace model, but it no longer re-implements the synchronization logic in dozens of separate action bodies.
+- This reduces maintenance cost for future edits and lowers the chance that a new action updates some mirrored fields but forgets others.
+
+What phase 3 did not do:
+
+- Remove the duplicated active/top-level workspace state model entirely
+- Move layout algorithms into separate modules
+- Introduce selector-based derived active workspace access for components
+
+Phase 3 outcome:
+
+- The internal structure of `workspaceStore.ts` is materially safer than before.
+- The file is still too large, but the highest-frequency synchronization pattern is now centralized instead of duplicated.
+
+## Phase 4 Git UI Refactor Update
+
+Phase 4 focused on the largest remaining renderer hotspot: `src/renderer/components/GitButton.tsx`.
+
+Current phase 4 status:
+
+- `npm run validate`: passed after the Git UI refactor
+
+Phase 4 changes completed:
+
+- Extracted shared git UI types into:
+  - `src/renderer/components/git/types.ts`
+- Split the large Git menu into focused section components:
+  - `src/renderer/components/git/GitBranchesSection.tsx`
+  - `src/renderer/components/git/GitStashSection.tsx`
+  - `src/renderer/components/git/GitMergeSection.tsx`
+  - `src/renderer/components/git/GitHistorySection.tsx`
+- Updated:
+  - `src/renderer/components/GitButton.tsx`
+  - so it now acts primarily as the container/orchestrator for git workspace state and actions
+
+Why this matters:
+
+- The previous `GitButton.tsx` mixed menu shell rendering, per-section UI, section state wiring, async actions, and diff/history rendering in a single file.
+- The new structure is still git-focused today, but the section split creates cleaner seams for future extension work such as hosted-provider integration with GitHub or Bitbucket.
+- A future provider integration can now add or replace menu sections and shared types more safely, instead of growing one giant file further.
+
+What phase 4 did not do:
+
+- Introduce provider-agnostic repository abstractions yet
+- Split CSS by section
+- Move async git data fetching into dedicated hooks
+
+Phase 4 outcome:
+
+- `GitButton.tsx` is materially easier to reason about.
+- The repo is better positioned for future external repository/provider features without immediate over-abstraction.
+
 ## Executive Summary
 
 This repository is now in a materially better state than it was at the start of the audit. Phase 1 stabilization restored working validation gates and removed several confirmed dead paths, but the codebase still has concentrated maintainability risk in a few oversized modules.
@@ -110,6 +191,8 @@ The most important conclusions:
 - The renderer previously lacked a trustworthy TypeScript gate in the normal workflow; that gap is now closed with explicit `typecheck` and `validate` scripts.
 - Packaging was previously broken by configuration; that issue is fixed, and packaging now succeeds when network access is available for Electron downloads.
 - Renderer contract drift has been reduced by centralizing shared types, harness metadata, and workspace shutdown behavior.
+- Active-workspace synchronization inside the store has been partially normalized, reducing one of the main repetition hotspots.
+- The git workspace UI has been decomposed into section components, reducing one of the largest renderer monoliths and creating better seams for future GitHub/Bitbucket-style integrations.
 - A small number of files carry a disproportionate amount of responsibility:
   - `src/main/main.ts` at 1888 LOC
   - `src/renderer/store/workspaceStore.ts` at 1389 LOC

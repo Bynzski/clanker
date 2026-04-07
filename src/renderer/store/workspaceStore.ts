@@ -118,6 +118,21 @@ interface WorkspaceState {
   canAddPane: () => boolean;
 }
 
+type ActiveWorkspaceSnapshot = Pick<
+  WorkspaceState,
+  | 'name'
+  | 'workspacePath'
+  | 'harness'
+  | 'model'
+  | 'terminals'
+  | 'panes'
+  | 'browserVisible'
+  | 'browserUrl'
+  | 'activeTerminalId'
+  | 'browserPane'
+  | 'layoutRoot'
+>;
+
 const GRID_COLS = 12;
 const GRID_ROWS = 8;
 const MIN_PANE_W = 3;
@@ -607,6 +622,59 @@ function getWorkspaceNameFromPath(workspacePath: string): string {
   return baseName && baseName.length > 0 ? baseName : 'Workspace';
 }
 
+function getActiveWorkspaceSnapshot(
+  workspace: Pick<
+    WorkspaceTab,
+    | 'name'
+    | 'workspacePath'
+    | 'harness'
+    | 'model'
+    | 'terminals'
+    | 'panes'
+    | 'browserVisible'
+    | 'browserUrl'
+    | 'activeTerminalId'
+    | 'browserPane'
+    | 'layoutRoot'
+  >
+): ActiveWorkspaceSnapshot {
+  return {
+    name: workspace.name,
+    workspacePath: workspace.workspacePath,
+    harness: workspace.harness,
+    model: workspace.model,
+    terminals: workspace.terminals,
+    panes: workspace.panes,
+    browserVisible: workspace.browserVisible,
+    browserUrl: workspace.browserUrl,
+    activeTerminalId: workspace.activeTerminalId,
+    browserPane: workspace.browserPane,
+    layoutRoot: workspace.layoutRoot,
+  };
+}
+
+function syncActiveWorkspace(
+  state: WorkspaceState,
+  updateWorkspace: (workspace: WorkspaceTab) => WorkspaceTab
+): Partial<WorkspaceState> {
+  const nextWorkspaces = state.workspaces.map((workspace) =>
+    workspace.id === state.activeWorkspaceId ? updateWorkspace(workspace) : workspace
+  );
+
+  const activeWorkspace = state.activeWorkspaceId == null
+    ? null
+    : nextWorkspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ?? null;
+
+  if (activeWorkspace == null) {
+    return { workspaces: nextWorkspaces };
+  }
+
+  return {
+    ...getActiveWorkspaceSnapshot(activeWorkspace),
+    workspaces: nextWorkspaces,
+  };
+}
+
 const defaultWorkspaceState = {
   name: '',
   workspacePath: '',
@@ -635,17 +703,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const nextWorkspace: WorkspaceTab = sanitizeWorkspace({ id, ...workspace, name: defaultName });
 
     return {
-      name: defaultName,
-      workspacePath: workspace.workspacePath,
-      harness: workspace.harness,
-      model: workspace.model,
-      terminals: nextWorkspace.terminals,
-      panes: nextWorkspace.panes,
-      browserVisible: workspace.browserVisible,
-      browserUrl: workspace.browserUrl,
-      activeTerminalId: nextWorkspace.activeTerminalId,
-      browserPane: nextWorkspace.browserPane,
-      layoutRoot: nextWorkspace.layoutRoot,
+      ...getActiveWorkspaceSnapshot(nextWorkspace),
       workspaces: [...state.workspaces, nextWorkspace],
       activeWorkspaceId: id,
       layoutRevision: state.layoutRevision,
@@ -660,17 +718,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     const next = sanitizeWorkspace(workspace);
     return {
-      name: next.name,
-      workspacePath: next.workspacePath,
-      harness: next.harness,
-      model: next.model,
-      terminals: next.terminals,
-      panes: next.panes,
-      browserVisible: next.browserVisible,
-      browserUrl: next.browserUrl,
-      activeTerminalId: next.activeTerminalId,
-      browserPane: next.browserPane,
-      layoutRoot: next.layoutRoot,
+      ...getActiveWorkspaceSnapshot(next),
       gridViewport: state.gridViewport,
       layoutRevision: state.layoutRevision,
       activeWorkspaceId: id,
@@ -691,17 +739,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (state.activeWorkspaceId === id) {
       const nextActive = remaining[Math.max(0, remaining.length - 1)];
       return {
-        name: nextActive.name,
-        workspacePath: nextActive.workspacePath,
-        harness: nextActive.harness,
-        model: nextActive.model,
-        terminals: nextActive.terminals,
-        panes: nextActive.panes,
-        browserVisible: nextActive.browserVisible,
-        browserUrl: nextActive.browserUrl,
-        activeTerminalId: nextActive.activeTerminalId,
-        browserPane: nextActive.browserPane,
-        layoutRoot: nextActive.layoutRoot,
+        ...getActiveWorkspaceSnapshot(nextActive),
         gridViewport: state.gridViewport,
         layoutRevision: state.layoutRevision,
         workspaces: remaining,
@@ -715,41 +753,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   }),
 
   updateWorkspaceName: (id, name) => set((state) => ({
-    name,
-    workspaces: state.workspaces.map((workspace) =>
-      workspace.id === id
-        ? { ...workspace, name }
-        : workspace
-    ),
-  })),
-
-  setWorkspacePath: (path) => set((state) => ({
-    workspacePath: path,
+    ...(id === state.activeWorkspaceId ? { name } : {}),
     workspaces: state.workspaces.map((workspace) => (
-      workspace.id === state.activeWorkspaceId
-        ? { ...workspace, workspacePath: path }
-        : workspace
+      workspace.id === id ? { ...workspace, name } : workspace
     )),
   })),
 
-  setHarness: (harness) => set((state) => ({
+  setWorkspacePath: (path) => set((state) => syncActiveWorkspace(state, (workspace) => ({
+    ...workspace,
+    workspacePath: path,
+  }))),
+
+  setHarness: (harness) => set((state) => syncActiveWorkspace(state, (workspace) => ({
+    ...workspace,
     harness,
     model: '',
-    workspaces: state.workspaces.map((workspace) => (
-      workspace.id === state.activeWorkspaceId
-        ? { ...workspace, harness, model: '' }
-        : workspace
-    )),
-  })),
+  }))),
 
-  setModel: (model) => set((state) => ({
+  setModel: (model) => set((state) => syncActiveWorkspace(state, (workspace) => ({
+    ...workspace,
     model,
-    workspaces: state.workspaces.map((workspace) => (
-      workspace.id === state.activeWorkspaceId
-        ? { ...workspace, model }
-        : workspace
-    )),
-  })),
+  }))),
 
   addTerminal: (terminal) => set((state) => {
     const nextTerminals = [...state.terminals, terminal];
@@ -786,18 +810,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       activeTerminalId: nextActiveTerminalId,
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
-      workspaces: state.workspaces.map((workspace) => (
-        workspace.id === state.activeWorkspaceId
-          ? {
-              ...workspace,
-              terminals: nextTerminals,
-              panes: nextPanes,
-              activeTerminalId: nextActiveTerminalId,
-              layoutRoot: nextLayoutRoot,
-              model: state.model,
-            }
-          : workspace
-      )),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        terminals: nextTerminals,
+        panes: nextPanes,
+        activeTerminalId: nextActiveTerminalId,
+        layoutRoot: nextLayoutRoot,
+        model: state.model,
+      })),
     };
   }),
 
@@ -818,27 +838,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       activeTerminalId: nextActiveTerminalId,
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
-      workspaces: state.workspaces.map((workspace) => (
-        workspace.id === state.activeWorkspaceId
-          ? {
-              ...workspace,
-              terminals: nextTerminals,
-              panes: nextPanes,
-              activeTerminalId: nextActiveTerminalId,
-              layoutRoot: nextLayoutRoot,
-            }
-          : workspace
-      )),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        terminals: nextTerminals,
+        panes: nextPanes,
+        activeTerminalId: nextActiveTerminalId,
+        layoutRoot: nextLayoutRoot,
+      })),
     };
   }),
 
   setActiveTerminal: (id) => set((state) => ({
     activeTerminalId: id,
-    workspaces: state.workspaces.map((workspace) => (
-      workspace.id === state.activeWorkspaceId
-        ? { ...workspace, activeTerminalId: id }
-        : workspace
-    )),
+    ...syncActiveWorkspace(state, (workspace) => ({
+      ...workspace,
+      activeTerminalId: id,
+    })),
   })),
 
   toggleBrowser: () => set((state) => {
@@ -890,16 +905,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       browserPane: nextBrowserPane ? { ...nextBrowserPane, locked: nextBrowserPane.locked ?? false } : nextBrowserPane,
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
-      workspaces: state.workspaces.map((workspace) => (
-        workspace.id === state.activeWorkspaceId
-          ? {
-              ...workspace,
-              browserVisible: nextBrowserVisible,
-              browserPane: nextBrowserPane ? { ...nextBrowserPane, locked: nextBrowserPane.locked ?? false } : nextBrowserPane,
-              layoutRoot: nextLayoutRoot,
-            }
-          : workspace
-      )),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        browserVisible: nextBrowserVisible,
+        browserPane: nextBrowserPane ? { ...nextBrowserPane, locked: nextBrowserPane.locked ?? false } : nextBrowserPane,
+        layoutRoot: nextLayoutRoot,
+      })),
     };
   }),
 
@@ -913,11 +924,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   setBrowserUrl: (url) => set((state) => ({
     browserUrl: url,
-    workspaces: state.workspaces.map((workspace) => (
-      workspace.id === state.activeWorkspaceId
-        ? { ...workspace, browserUrl: url }
-        : workspace
-    )),
+    ...syncActiveWorkspace(state, (workspace) => ({
+      ...workspace,
+      browserUrl: url,
+    })),
   })),
 
   clearTerminals: () => set((state) => ({
@@ -925,11 +935,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     panes: [],
     activeTerminalId: null,
     layoutRoot: null,
-    workspaces: state.workspaces.map((workspace) => (
-      workspace.id === state.activeWorkspaceId
-        ? { ...workspace, terminals: [], panes: [], activeTerminalId: null, layoutRoot: null }
-        : workspace
-    )),
+    ...syncActiveWorkspace(state, (workspace) => ({
+      ...workspace,
+      terminals: [],
+      panes: [],
+      activeTerminalId: null,
+      layoutRoot: null,
+    })),
   })),
 
   setPanes: (panes) => set((state) => ({
@@ -940,16 +952,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       browserPane: state.browserPane,
       layoutRoot: state.layoutRoot,
     }),
-    workspaces: state.workspaces.map((workspace) => (
-      workspace.id === state.activeWorkspaceId
-        ? { ...workspace, panes, layoutRoot: buildWorkspaceLayout({
-          panes,
-          browserVisible: state.browserVisible,
-          browserPane: state.browserPane,
-          layoutRoot: state.layoutRoot,
-        }) }
-        : workspace
-    )),
+    ...syncActiveWorkspace(state, (workspace) => ({
+      ...workspace,
+      panes,
+      layoutRoot: buildWorkspaceLayout({
+        panes,
+        browserVisible: state.browserVisible,
+        browserPane: state.browserPane,
+        layoutRoot: state.layoutRoot,
+      }),
+    })),
   })),
 
   addPane: (terminalId, position) => set((state) => {
@@ -965,11 +977,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       panes: nextPanes,
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
-      workspaces: state.workspaces.map((workspace) => (
-        workspace.id === state.activeWorkspaceId
-          ? { ...workspace, panes: nextPanes, layoutRoot: nextLayoutRoot }
-          : workspace
-      )),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        panes: nextPanes,
+        layoutRoot: nextLayoutRoot,
+      })),
     };
   }),
 
@@ -980,11 +992,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       panes: nextPanes,
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
-      workspaces: state.workspaces.map((workspace) => (
-        workspace.id === state.activeWorkspaceId
-          ? { ...workspace, panes: nextPanes, layoutRoot: nextLayoutRoot }
-          : workspace
-      )),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        panes: nextPanes,
+        layoutRoot: nextLayoutRoot,
+      })),
     };
   }),
 
@@ -996,11 +1008,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     );
     return {
       panes: nextPanes,
-      workspaces: state.workspaces.map((workspace) =>
-        workspace.id === state.activeWorkspaceId
-          ? { ...workspace, panes: nextPanes }
-          : workspace
-      ),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        panes: nextPanes,
+      })),
     };
   }),
 
@@ -1013,11 +1024,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
     return {
       panes: nextPanes,
-      workspaces: state.workspaces.map((workspace) =>
-        workspace.id === state.activeWorkspaceId
-          ? { ...workspace, panes: nextPanes }
-          : workspace
-      ),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        panes: nextPanes,
+      })),
     };
   }),
 
@@ -1036,11 +1046,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         };
     return {
       browserPane: nextBrowserPane,
-      workspaces: state.workspaces.map((workspace) =>
-        workspace.id === state.activeWorkspaceId
-          ? { ...workspace, browserPane: nextBrowserPane }
-          : workspace
-      ),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        browserPane: nextBrowserPane,
+      })),
     };
   }),
 
@@ -1071,14 +1080,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return {
       layoutRoot: nextLayout,
       layoutRevision: state.layoutRevision + 1,
-      workspaces: state.workspaces.map((workspace) =>
-        workspace.id === state.activeWorkspaceId
-          ? {
-              ...workspace,
-              layoutRoot: nextLayout,
-            }
-          : workspace
-      ),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        layoutRoot: nextLayout,
+      })),
     };
   }),
 
@@ -1091,14 +1096,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return {
       layoutRoot: nextLayout,
       layoutRevision: state.layoutRevision + 1,
-      workspaces: state.workspaces.map((workspace) =>
-        workspace.id === state.activeWorkspaceId
-          ? {
-              ...workspace,
-              layoutRoot: nextLayout,
-            }
-          : workspace
-      ),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        layoutRoot: nextLayout,
+      })),
     };
   }),
 
@@ -1113,11 +1114,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return {
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
-      workspaces: state.workspaces.map((workspace) =>
-        workspace.id === state.activeWorkspaceId
-          ? { ...workspace, layoutRoot: nextLayoutRoot }
-          : workspace
-      ),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        layoutRoot: nextLayoutRoot,
+      })),
     };
   }),
 
@@ -1136,11 +1136,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return {
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
-      workspaces: state.workspaces.map((workspace) =>
-        workspace.id === state.activeWorkspaceId
-          ? { ...workspace, layoutRoot: nextLayoutRoot }
-          : workspace
-      ),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        layoutRoot: nextLayoutRoot,
+      })),
     };
   }),
 
@@ -1153,11 +1152,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     return {
       panes: nextPanes,
-      workspaces: state.workspaces.map((workspace) =>
-        workspace.id === state.activeWorkspaceId
-          ? { ...workspace, panes: nextPanes }
-          : workspace
-      ),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        panes: nextPanes,
+      })),
     };
   }),
 
@@ -1173,11 +1171,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     return {
       browserPane: nextBrowserPane,
-      workspaces: state.workspaces.map((workspace) =>
-        workspace.id === state.activeWorkspaceId
-          ? { ...workspace, browserPane: nextBrowserPane }
-          : workspace
-      ),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        browserPane: nextBrowserPane,
+      })),
     };
   }),
 
@@ -1188,11 +1185,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return {
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
-      workspaces: state.workspaces.map((workspace) =>
-        workspace.id === state.activeWorkspaceId
-          ? { ...workspace, layoutRoot: nextLayoutRoot }
-          : workspace
-      ),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        layoutRoot: nextLayoutRoot,
+      })),
     };
   }),
 
@@ -1205,11 +1201,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return {
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
-      workspaces: state.workspaces.map((workspace) =>
-        workspace.id === state.activeWorkspaceId
-          ? { ...workspace, layoutRoot: nextLayoutRoot }
-          : workspace
-      ),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        layoutRoot: nextLayoutRoot,
+      })),
     };
   }),
 
@@ -1218,11 +1213,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return {
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
-      workspaces: state.workspaces.map((workspace) =>
-        workspace.id === state.activeWorkspaceId
-          ? { ...workspace, layoutRoot: nextLayoutRoot }
-          : workspace
-      ),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        layoutRoot: nextLayoutRoot,
+      })),
     };
   }),
 
