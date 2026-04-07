@@ -7,6 +7,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openDirectoryDialog: () => ipcRenderer.invoke('open-directory-dialog'),
   readDirectory: (path: string) => ipcRenderer.invoke('read-directory', path),
 
+  // Settings
+  getShowFastfetch: () => ipcRenderer.invoke('get-show-fastfetch'),
+  setShowFastfetch: (show: boolean) => ipcRenderer.invoke('set-show-fastfetch', show),
+
   // Terminal
   spawnTerminal: (workingDir: string, harness?: string) => ipcRenderer.invoke('spawn-terminal', workingDir, harness),
   getTerminalBuffer: (id: string) => ipcRenderer.invoke('get-terminal-buffer', id),
@@ -61,11 +65,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitGetStatus: (workspacePath: string) => ipcRenderer.invoke('git-get-status', workspacePath),
   gitStage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke('git-stage', workspacePath, files),
   gitCommit: (workspacePath: string, message: string) => ipcRenderer.invoke('git-commit', workspacePath, message),
+  gitGetBranchState: (workspacePath: string) => ipcRenderer.invoke('git-get-branch-state', workspacePath),
+  gitGetOperationState: (workspacePath: string) => ipcRenderer.invoke('git-get-operation-state', workspacePath),
+  gitGetStashes: (workspacePath: string) => ipcRenderer.invoke('git-get-stashes', workspacePath),
+  gitGetHistory: (workspacePath: string, limit?: number) => ipcRenderer.invoke('git-get-history', workspacePath, limit),
+  gitGetDiff: (
+    workspacePath: string,
+    mode: 'working' | 'staged' | 'commit',
+    ref?: string
+  ) => ipcRenderer.invoke('git-get-diff', workspacePath, mode, ref),
+  gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string) =>
+    ipcRenderer.invoke('git-create-branch', workspacePath, name, baseBranch),
+  gitSwitchBranch: (workspacePath: string, name: string) => ipcRenderer.invoke('git-switch-branch', workspacePath, name),
+  gitDeleteBranch: (workspacePath: string, name: string) => ipcRenderer.invoke('git-delete-branch', workspacePath, name),
+  gitMergeBranch: (workspacePath: string, branchName: string) => ipcRenderer.invoke('git-merge-branch', workspacePath, branchName),
+  gitAbortOperation: (workspacePath: string) => ipcRenderer.invoke('git-abort-operation', workspacePath),
+  gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean) =>
+    ipcRenderer.invoke('git-stash', workspacePath, message, includeUntracked),
+  gitApplyStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke('git-apply-stash', workspacePath, stashRef),
+  gitPopStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke('git-pop-stash', workspacePath, stashRef),
+  gitDropStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke('git-drop-stash', workspacePath, stashRef),
+  gitClearStashes: (workspacePath: string) => ipcRenderer.invoke('git-clear-stashes', workspacePath),
   gitIsRepo: (workspacePath: string) => ipcRenderer.invoke('git-is-repo', workspacePath),
   gitRefresh: () => ipcRenderer.invoke('git-refresh'),
   onGitStatusUpdate: (callback: (status: {
     success: boolean;
     isRepo: boolean;
+    currentBranch: string | null;
+    isDetached: boolean;
     changes: Array<{ path: string; status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed'; staged: boolean }>;
     error?: string;
   }) => void) => {

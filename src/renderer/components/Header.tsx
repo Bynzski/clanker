@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { FolderOpen, Plus, Globe, X, Brain, Zap, Pi, Terminal, LayoutGrid, Sparkles } from 'lucide-react';
+import { FolderOpen, Plus, Globe, X, Brain, Zap, Pi, Terminal, LayoutGrid, Sparkles, Settings, ChevronDown } from 'lucide-react';
 import GitButton from './GitButton';
 import './Header.css';
 
@@ -31,6 +31,8 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
     canAddPane,
   } = useWorkspaceStore();
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
+  const [showFastfetch, setShowFastfetch] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +66,18 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
       setHarness('');
     }
   }, [harness, availableHarnessIds, setHarness]);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const show = await window.electronAPI.getShowFastfetch();
+        setShowFastfetch(show);
+      } catch (err) {
+        console.error('Failed to load fastfetch setting:', err);
+      }
+    };
+    loadSettings();
+  }, []);
 
   const handleAddTerminal = async () => {
     if (!canAddPane()) {
@@ -107,6 +121,15 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
     }
 
     closeWorkspace(activeWorkspaceId);
+  };
+
+  const handleToggleFastfetch = async (checked: boolean) => {
+    try {
+      await window.electronAPI.setShowFastfetch(checked);
+      setShowFastfetch(checked);
+    } catch (err) {
+      console.error('Failed to save fastfetch setting:', err);
+    }
   };
 
   return (
@@ -154,6 +177,30 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
         {workspacePath && (
           <GitButton workspacePath={workspacePath} />
         )}
+
+        <div className="settings-dropdown-container">
+          <button 
+            className="header-btn"
+            onClick={() => setShowSettings(!showSettings)}
+            title="Settings"
+          >
+            <Settings size={15} strokeWidth={2} />
+            <ChevronDown size={12} strokeWidth={2} />
+          </button>
+          
+          {showSettings && (
+            <div className="settings-dropdown">
+              <label className="settings-option">
+                <input
+                  type="checkbox"
+                  checked={showFastfetch}
+                  onChange={(e) => handleToggleFastfetch(e.target.checked)}
+                />
+                <span>Show fastfetch</span>
+              </label>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

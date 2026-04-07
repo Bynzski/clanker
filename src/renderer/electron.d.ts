@@ -5,6 +5,10 @@ interface ElectronAPI {
   openDirectoryDialog: () => Promise<string | null>;
   readDirectory: (path: string) => Promise<{ name: string; isDirectory: boolean }[]>;
 
+  // Settings
+  getShowFastfetch: () => Promise<boolean>;
+  setShowFastfetch: (show: boolean) => Promise<void>;
+
   // Terminal
   spawnTerminal: (workingDir: string, harness?: string) => Promise<{ id: string; pid: number }>;
   getTerminalBuffer: (id: string) => Promise<string>;
@@ -44,6 +48,21 @@ interface ElectronAPI {
   gitGetStatus: (workspacePath: string) => Promise<GitStatusResult>;
   gitStage: (workspacePath: string, files?: string[]) => Promise<{ success: boolean; error?: string }>;
   gitCommit: (workspacePath: string, message: string) => Promise<{ success: boolean; error?: string }>;
+  gitGetBranchState: (workspacePath: string) => Promise<GitBranchStateResult>;
+  gitGetOperationState: (workspacePath: string) => Promise<GitOperationStateResult>;
+  gitGetStashes: (workspacePath: string) => Promise<GitStash[]>;
+  gitGetHistory: (workspacePath: string, limit?: number) => Promise<GitHistoryEntry[]>;
+  gitGetDiff: (workspacePath: string, mode: 'working' | 'staged' | 'commit', ref?: string) => Promise<GitDiffResult>;
+  gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string) => Promise<{ success: boolean; error?: string }>;
+  gitSwitchBranch: (workspacePath: string, name: string) => Promise<{ success: boolean; error?: string }>;
+  gitDeleteBranch: (workspacePath: string, name: string) => Promise<{ success: boolean; error?: string }>;
+  gitMergeBranch: (workspacePath: string, branchName: string) => Promise<{ success: boolean; error?: string }>;
+  gitAbortOperation: (workspacePath: string) => Promise<{ success: boolean; error?: string }>;
+  gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean) => Promise<{ success: boolean; error?: string }>;
+  gitApplyStash: (workspacePath: string, stashRef: string) => Promise<{ success: boolean; error?: string }>;
+  gitPopStash: (workspacePath: string, stashRef: string) => Promise<{ success: boolean; error?: string }>;
+  gitDropStash: (workspacePath: string, stashRef: string) => Promise<{ success: boolean; error?: string }>;
+  gitClearStashes: (workspacePath: string) => Promise<{ success: boolean; error?: string }>;
   gitIsRepo: (workspacePath: string) => Promise<boolean>;
   gitRefresh: () => Promise<GitStatusResult | null>;
   onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => () => void;
@@ -52,7 +71,49 @@ interface ElectronAPI {
 interface GitStatusResult {
   success: boolean;
   isRepo: boolean;
+  currentBranch: string | null;
+  isDetached: boolean;
   changes: GitStatus[];
+  error?: string;
+}
+
+interface GitBranchStateResult {
+  success: boolean;
+  isRepo: boolean;
+  currentBranch: string | null;
+  isDetached: boolean;
+  branches: GitBranch[];
+  error?: string;
+}
+
+interface GitOperationStateResult {
+  success: boolean;
+  isRepo: boolean;
+  inProgress: boolean;
+  mode: 'none' | 'merge' | 'rebase';
+  conflicts: string[];
+  message: string;
+  error?: string;
+}
+
+interface GitStash {
+  hash: string;
+  ref: string;
+  message: string;
+}
+
+interface GitHistoryEntry {
+  hash: string;
+  shortHash: string;
+  author: string;
+  date: string;
+  subject: string;
+}
+
+interface GitDiffResult {
+  success: boolean;
+  output: string;
+  title: string;
   error?: string;
 }
 
@@ -60,6 +121,11 @@ interface GitStatus {
   path: string;
   status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed';
   staged: boolean;
+}
+
+interface GitBranch {
+  name: string;
+  isCurrent: boolean;
 }
 
 declare global {
