@@ -7,7 +7,7 @@ import './WorkspaceGate.css';
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onWorkspaceSelect: (path: string, terminalCount: number, harness: string) => void;
+  onWorkspaceSelect: (path: string, terminalCount: number, harness: string, model?: string) => void;
 }
 
 export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect }: Props) {
@@ -37,7 +37,7 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect }: Props
   if (!isOpen) return null;
 
   const handleSubmit = (data: WorkspaceFormData) => {
-    onWorkspaceSelect(data.path, data.terminalCount, data.harness);
+    onWorkspaceSelect(data.path, data.terminalCount, data.harness, data.model);
     onClose();
   };
 
@@ -59,7 +59,7 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect }: Props
 
 // Fullscreen gate version for initial launch
 interface FullscreenGateProps {
-  onWorkspaceSelect: (path: string, terminalCount: number, harness: string) => void;
+  onWorkspaceSelect: (path: string, terminalCount: number, harness: string, model?: string) => void;
 }
 
 function GateTitleBar() {
@@ -112,7 +112,7 @@ function GateTitleBar() {
 
 export function WorkspaceGateFullscreen({ onWorkspaceSelect }: FullscreenGateProps) {
   const handleSubmit = (data: WorkspaceFormData) => {
-    onWorkspaceSelect(data.path, data.terminalCount, data.harness);
+    onWorkspaceSelect(data.path, data.terminalCount, data.harness, data.model);
   };
 
   return (

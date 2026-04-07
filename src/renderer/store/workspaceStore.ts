@@ -53,6 +53,7 @@ export interface WorkspaceTab {
   name: string;
   workspacePath: string;
   harness: string;
+  model: string;
   terminals: Terminal[];
   panes: Pane[];
   browserVisible: boolean;
@@ -67,6 +68,7 @@ interface WorkspaceState {
   name: string;
   workspacePath: string;
   harness: string;
+  model: string;
   terminals: Terminal[];
   panes: Pane[];
   browserVisible: boolean;
@@ -87,6 +89,7 @@ interface WorkspaceState {
 
   setWorkspacePath: (path: string) => void;
   setHarness: (harness: string) => void;
+  setModel: (model: string) => void;
   addTerminal: (terminal: Terminal) => void;
   removeTerminal: (id: string) => void;
   setActiveTerminal: (id: string) => void;
@@ -764,6 +767,7 @@ const defaultWorkspaceState = {
   name: '',
   workspacePath: '',
   harness: 'codex',
+  model: '',
   terminals: [] as Terminal[],
   panes: [] as Pane[],
   browserVisible: false,
@@ -790,6 +794,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       name: defaultName,
       workspacePath: workspace.workspacePath,
       harness: workspace.harness,
+      model: workspace.model,
       terminals: nextWorkspace.terminals,
       panes: nextWorkspace.panes,
       browserVisible: workspace.browserVisible,
@@ -814,6 +819,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       name: next.name,
       workspacePath: next.workspacePath,
       harness: next.harness,
+      model: next.model,
       terminals: next.terminals,
       panes: next.panes,
       browserVisible: next.browserVisible,
@@ -844,6 +850,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
         name: nextActive.name,
         workspacePath: nextActive.workspacePath,
         harness: nextActive.harness,
+        model: nextActive.model,
         terminals: nextActive.terminals,
         panes: nextActive.panes,
         browserVisible: nextActive.browserVisible,
@@ -883,9 +890,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
 
   setHarness: (harness) => set((state) => ({
     harness,
+    model: '',
     workspaces: state.workspaces.map((workspace) => (
       workspace.id === state.activeWorkspaceId
-        ? { ...workspace, harness }
+        ? { ...workspace, harness, model: '' }
+        : workspace
+    )),
+  })),
+
+  setModel: (model) => set((state) => ({
+    model,
+    workspaces: state.workspaces.map((workspace) => (
+      workspace.id === state.activeWorkspaceId
+        ? { ...workspace, model }
         : workspace
     )),
   })),
@@ -933,6 +950,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
               panes: nextPanes,
               activeTerminalId: nextActiveTerminalId,
               layoutRoot: nextLayoutRoot,
+              model: state.model,
             }
           : workspace
       )),

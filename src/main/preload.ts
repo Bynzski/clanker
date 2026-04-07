@@ -12,7 +12,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setShowFastfetch: (show: boolean) => ipcRenderer.invoke('set-show-fastfetch', show),
 
   // Terminal
-  spawnTerminal: (workingDir: string, harness?: string) => ipcRenderer.invoke('spawn-terminal', workingDir, harness),
+  spawnTerminal: (workingDir: string, harness?: string, model?: string) =>
+    ipcRenderer.invoke('spawn-terminal', workingDir, harness, model),
   getTerminalBuffer: (id: string) => ipcRenderer.invoke('get-terminal-buffer', id),
   writeTerminal: (id: string, data: string) => ipcRenderer.invoke('write-terminal', { id, data }),
   resizeTerminal: (id: string, cols: number, rows: number) =>
@@ -58,6 +59,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Harness
   getHarnessOptions: () => ipcRenderer.invoke('get-harness-options'),
+  getHarnessModels: (harness: string) => ipcRenderer.invoke('get-harness-models', harness),
 
   // Git operations - managed by GitService in main process
   gitStartPolling: (workspacePath: string) => ipcRenderer.invoke('git-start-polling', workspacePath),

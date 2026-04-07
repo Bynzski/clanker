@@ -34,13 +34,13 @@ function App() {
     });
   }, [fitAllPanes]);
 
-  const handleWorkspaceSelect = async (path: string, terminalCount: number, harness: string) => {
+  const handleWorkspaceSelect = async (path: string, terminalCount: number, harness: string, model?: string) => {
     const terminals: Terminal[] = [];
     const panes: Pane[] = [];
 
     for (let i = 0; i < terminalCount; i++) {
       try {
-        const info = await window.electronAPI.spawnTerminal(path, harness);
+        const info = await window.electronAPI.spawnTerminal(path, harness, model);
         terminals.push({
           id: info.id,
           pid: info.pid,
@@ -55,6 +55,7 @@ function App() {
     addWorkspace({
       workspacePath: path,
       harness,
+      model: model ?? '',
       terminals,
       panes,
       browserVisible: false,

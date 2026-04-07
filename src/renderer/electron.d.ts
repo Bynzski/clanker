@@ -10,7 +10,7 @@ interface ElectronAPI {
   setShowFastfetch: (show: boolean) => Promise<void>;
 
   // Terminal
-  spawnTerminal: (workingDir: string, harness?: string) => Promise<{ id: string; pid: number }>;
+  spawnTerminal: (workingDir: string, harness?: string, model?: string) => Promise<{ id: string; pid: number }>;
   getTerminalBuffer: (id: string) => Promise<string>;
   writeTerminal: (id: string, data: string) => Promise<void>;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<void>;
@@ -39,6 +39,7 @@ interface ElectronAPI {
   isMaximizedWindow: () => Promise<boolean>;
 
   getHarnessOptions: () => Promise<Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>>;
+  getHarnessModels: (harness: string) => Promise<ModelOption[]>;
 
   onFitAllPanes: (callback: () => void) => () => void;
 
@@ -115,6 +116,11 @@ interface GitDiffResult {
   output: string;
   title: string;
   error?: string;
+}
+
+interface ModelOption {
+  id: string;
+  label: string;
 }
 
 interface GitStatus {
