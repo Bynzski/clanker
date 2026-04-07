@@ -405,6 +405,30 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     }
   };
 
+  const handleUnstageFile = async (path: string): Promise<{ success: boolean; error?: string }> => {
+    const result = await window.electronAPI.gitUnstage(workspacePath, [path]);
+    if (result.success) {
+      const status = await window.electronAPI.gitRefresh();
+      if (status) {
+        setChanges(status.changes);
+        setChangeCount(status.changes.length);
+      }
+    }
+    return result;
+  };
+
+  const handleUnstageAll = async (): Promise<{ success: boolean; error?: string }> => {
+    const result = await window.electronAPI.gitUnstage(workspacePath);
+    if (result.success) {
+      const status = await window.electronAPI.gitRefresh();
+      if (status) {
+        setChanges(status.changes);
+        setChangeCount(status.changes.length);
+      }
+    }
+    return result;
+  };
+
   const handleOpenCommitDialog = async () => {
     const status = await window.electronAPI.gitRefresh();
     if (status) {
@@ -860,6 +884,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         onClose={() => setIsDialogOpen(false)}
         onCommit={handleCommit}
         onStageAll={handleStage}
+        onUnstage={handleUnstageFile}
+        onUnstageAll={handleUnstageAll}
         changes={changes}
         workspacePath={workspacePath}
       />

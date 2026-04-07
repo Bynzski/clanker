@@ -45,6 +45,7 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     gitStopPolling: createAsyncMock(undefined),
     generateCommitMessage: createAsyncMock({ success: true, message: 'chore: test fixture' }),
     gitStage: createAsyncMock({ success: true }),
+    gitUnstage: createAsyncMock({ success: true }),
     gitCommit: createAsyncMock({ success: true }),
     gitGetBranchState: createAsyncMock({ success: true, isRepo: false, currentBranch: null, isDetached: false, branches: [] }),
     gitGetOperationState: createAsyncMock({ success: true, isRepo: false, inProgress: false, mode: 'none', conflicts: [], message: 'Not a git repository' }),

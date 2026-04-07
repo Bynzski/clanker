@@ -139,6 +139,12 @@
   margin-bottom: var(--space-sm);
 }
 
+.commit-files-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .commit-files-title {
   font-size: 13px;
   font-weight: 500;
@@ -228,6 +234,43 @@
 .commit-file-staged {
   color: var(--accent-success);
   font-size: 10px;
+}
+
+.commit-unstage-btn {
+  background: rgba(255, 183, 77, 0.12);
+  border: 1px solid rgba(255, 183, 77, 0.3);
+  color: #ffb74d;
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.commit-unstage-btn:hover:not(:disabled) {
+  background: rgba(255, 183, 77, 0.22);
+}
+
+.commit-file-unstage {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.commit-file-unstage:hover:not(:disabled) {
+  color: #ffb74d;
+  background: rgba(255, 183, 77, 0.12);
+}
+
+.commit-file-unstage:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .commit-dialog-footer {

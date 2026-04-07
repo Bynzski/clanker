@@ -515,6 +515,54 @@ describe('stage', () => {
   });
 });
 
+describe('unstage (GAP-1)', () => {
+  it('unstages specific files using git restore --staged', async () => {
+    addResponse('restore --staged --', { stdout: '' });
+    const result = await service.unstage('/workspace', ['file1.ts', 'file2.ts']);
+    expect(result.success).toBe(true);
+  });
+
+  it('unstages all files using git restore --staged when no files specified', async () => {
+    addResponse('restore --staged .', { stdout: '' });
+    const result = await service.unstage('/workspace');
+    expect(result.success).toBe(true);
+  });
+
+  it('falls back to git reset HEAD when restore --staged fails', async () => {
+    addResponse('restore --staged --', {
+      exitCode: 1,
+      stderr: "error: pathspec 'nonexistent' did not match any file(s) known to git",
+    });
+    addResponse('reset HEAD --', { stdout: '' });
+    const result = await service.unstage('/workspace', ['nonexistent']);
+    expect(result.success).toBe(true);
+  });
+
+  it('falls back to git reset HEAD (no path) when restore --staged . fails', async () => {
+    addResponse('restore --staged .', {
+      exitCode: 1,
+      stderr: "error: could not revert '",
+    });
+    addResponse('reset HEAD', { stdout: '' });
+    const result = await service.unstage('/workspace');
+    expect(result.success).toBe(true);
+  });
+
+  it('returns error when both restore --staged and reset HEAD fail', async () => {
+    addResponse('restore --staged --', {
+      exitCode: 1,
+      stderr: 'fatal: unknown error',
+    });
+    addResponse('reset HEAD --', {
+      exitCode: 1,
+      stderr: 'fatal: unknown error',
+    });
+    const result = await service.unstage('/workspace', ['file.ts']);
+    expect(result.success).toBe(false);
+    expect(result.error).toBeTruthy();
+  });
+});
+
 describe('commit', () => {
   it('commits with a message', async () => {
     addResponse('commit', { stdout: '[main abc1234] my commit' });
