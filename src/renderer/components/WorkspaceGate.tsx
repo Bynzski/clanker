@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Minus, Square, X } from 'lucide-react';
+import { useWorkspaceStore } from '../store/workspaceStore';
 import WorkspaceGateContent, { WorkspaceFormData } from './WorkspaceGateContent';
 import './WorkspaceGate.css';
 
@@ -10,6 +11,18 @@ interface Props {
 }
 
 export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect }: Props) {
+  const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
+  const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    pushBrowserOverlay();
+    return () => popBrowserOverlay();
+  }, [isOpen, pushBrowserOverlay, popBrowserOverlay]);
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
