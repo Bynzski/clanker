@@ -96,14 +96,14 @@ export class GitService {
     return stderr || message || fallback;
   }
 
-  private parseBranchList(branchOutput: string, currentBranch: string | null): GitBranchEntry[] {
+  private parseBranchList(branchOutput: string): GitBranchEntry[] {
     const lines = branchOutput.trim().split('\n').filter(Boolean);
 
     return lines.map((line) => {
       const [name, headMarker = ' '] = line.split('\t');
       return {
         name,
-        isCurrent: Boolean(currentBranch && name === currentBranch) || headMarker === '*',
+        isCurrent: headMarker === '*',
       };
     });
   }
@@ -118,12 +118,18 @@ export class GitService {
 
   private parseGitStatus(statusOutput: string): GitStatusEntry[] {
     const changes: GitStatusEntry[] = [];
-    const lines = statusOutput.trim().split('\n').filter(Boolean);
+    const lines = statusOutput.split('\n').filter(Boolean);
+
+    // git status --porcelain format: XY<space>PATH
+    // X = index status, Y = worktree status, position 3+ = file path
+    const INDEX_STATUS = 0;
+    const WORKTREE_STATUS = 1;
+    const PATH_START = 3;
 
     for (const line of lines) {
-      const indexStatus = line[0];
-      const workTreeStatus = line[1];
-      const filePath = line.slice(3).trim();
+      const indexStatus = line[INDEX_STATUS];
+      const workTreeStatus = line[WORKTREE_STATUS];
+      const filePath = line.slice(PATH_START).trim();
       const staged = indexStatus !== ' ' && indexStatus !== '?';
 
       let status: GitStatusEntry['status'] = 'modified';
@@ -162,13 +168,12 @@ export class GitService {
   }
 
   async getBranches(workspacePath: string): Promise<GitBranchEntry[]> {
-    const currentBranch = await this.getCurrentBranch(workspacePath);
     const { stdout } = await this.execGit(workspacePath, [
       'branch',
       '--format=%(refname:short)\t%(HEAD)',
     ]);
 
-    return this.parseBranchList(stdout, currentBranch);
+    return this.parseBranchList(stdout);
   }
 
   async getOperationState(workspacePath: string): Promise<GitOperationStateResult> {
@@ -201,9 +206,16 @@ export class GitService {
           inProgress = true;
           message = 'Rebase in progress';
         } catch {
-          mode = 'none';
-          inProgress = false;
-          message = 'No merge in progress';
+          try {
+            await this.execGit(workspacePath, ['rev-parse', '--verify', 'CHERRY_PICK_HEAD']);
+            mode = 'merge';
+            inProgress = true;
+            message = 'Cherry-pick in progress';
+          } catch {
+            mode = 'none';
+            inProgress = false;
+            message = 'No merge in progress';
+          }
         }
       }
 
@@ -234,12 +246,16 @@ export class GitService {
   }
 
   async getConflictingFiles(workspacePath: string): Promise<string[]> {
-    const { stdout } = await this.execGit(workspacePath, [
-      'diff',
-      '--name-only',
-      '--diff-filter=U',
-    ]);
-    return stdout.trim().split('\n').filter(Boolean);
+    try {
+      const { stdout } = await this.execGit(workspacePath, [
+        'diff',
+        '--name-only',
+        '--diff-filter=U',
+      ]);
+      return stdout.trim().split('\n').filter(Boolean);
+    } catch {
+      return [];
+    }
   }
 
   async mergeBranch(workspacePath: string, branchName: string): Promise<{ success: boolean; error?: string }> {
@@ -306,17 +322,21 @@ export class GitService {
   }
 
   async listStashes(workspacePath: string): Promise<GitStashEntry[]> {
-    const { stdout } = await this.execGit(workspacePath, [
-      'stash',
-      'list',
-      '--format=%H%x1f%gd%x1f%gs',
-    ]);
+    try {
+      const { stdout } = await this.execGit(workspacePath, [
+        'stash',
+        'list',
+        '--format=%H%x1f%gd%x1f%gs',
+      ]);
 
-    return this.parseDelimitedRows(stdout, ([hash = '', ref = '', message = '']) => ({
-      hash,
-      ref,
-      message,
-    }));
+      return this.parseDelimitedRows(stdout, ([hash = '', ref = '', message = '']) => ({
+        hash,
+        ref,
+        message,
+      }));
+    } catch {
+      return [];
+    }
   }
 
   async applyStash(workspacePath: string, stashRef: string): Promise<{ success: boolean; error?: string }> {
@@ -388,7 +408,7 @@ export class GitService {
       if (errorText.includes('does not have any commits yet') || errorText.includes('unknown revision')) {
         return [];
       }
-      throw error;
+      return [];
     }
   }
 
@@ -688,6 +708,9 @@ export class GitService {
 
   async stage(workspacePath: string, files?: string[]): Promise<{ success: boolean; error?: string }> {
     try {
+      if (Array.isArray(files) && files.length === 0) {
+        return { success: true };
+      }
       const args = files && files.length > 0 ? ['add', '--', ...files] : ['add', '-A'];
       await this.execGit(workspacePath, args);
       return { success: true };
