@@ -69,6 +69,9 @@ interface ElectronAPI {
   gitClearStashes: (workspacePath: string) => Promise<{ success: boolean; error?: string }>;
   gitRefresh: () => Promise<GitStatusResult | null>;
   gitGetRemotes: (workspacePath: string) => Promise<GitRemotesResult>;
+  gitFetch: (workspacePath: string, remote?: string) => Promise<{ success: boolean; error?: string }>;
+  gitPull: (workspacePath: string, rebase?: boolean) => Promise<{ success: boolean; error?: string }>;
+  gitPush: (workspacePath: string, remote?: string, branch?: string, forceWithLease?: boolean) => Promise<{ success: boolean; error?: string }>;
   onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => () => void;
 }
 

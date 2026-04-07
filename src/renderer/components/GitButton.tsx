@@ -3,8 +3,10 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
+  Download,
   GitBranch as GitBranchIcon,
   RefreshCw,
+  Upload,
   X,
 } from 'lucide-react';
 import CommitDialog from './CommitDialog';
@@ -62,6 +64,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [ahead, setAhead] = useState(0);
   const [behind, setBehind] = useState(0);
   const [provider, setProvider] = useState<'github' | 'bitbucket' | 'gitlab' | 'unknown'>('unknown');
+  const [remoteAction, setRemoteAction] = useState<'fetch' | 'pull' | 'push' | null>(null);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const createBranchInputRef = useRef<HTMLInputElement>(null);
 
@@ -345,6 +349,60 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
 
   const handleStage = async () => {
     await window.electronAPI.gitStage(workspacePath);
+  };
+
+  const handleFetch = async () => {
+    setRemoteAction('fetch');
+    setRemoteError(null);
+
+    try {
+      const result = await window.electronAPI.gitFetch(workspacePath);
+      if (result.success) {
+        await refreshAfterAction();
+      } else {
+        setRemoteError(result.error || 'Fetch failed');
+      }
+    } catch (error: any) {
+      setRemoteError(error?.message || 'Fetch failed');
+    } finally {
+      setRemoteAction(null);
+    }
+  };
+
+  const handlePull = async () => {
+    setRemoteAction('pull');
+    setRemoteError(null);
+
+    try {
+      const result = await window.electronAPI.gitPull(workspacePath);
+      if (result.success) {
+        await refreshAfterAction();
+      } else {
+        setRemoteError(result.error || 'Pull failed');
+      }
+    } catch (error: any) {
+      setRemoteError(error?.message || 'Pull failed');
+    } finally {
+      setRemoteAction(null);
+    }
+  };
+
+  const handlePush = async () => {
+    setRemoteAction('push');
+    setRemoteError(null);
+
+    try {
+      const result = await window.electronAPI.gitPush(workspacePath);
+      if (result.success) {
+        await refreshAfterAction();
+      } else {
+        setRemoteError(result.error || 'Push failed');
+      }
+    } catch (error: any) {
+      setRemoteError(error?.message || 'Push failed');
+    } finally {
+      setRemoteAction(null);
+    }
   };
 
   const handleOpenCommitDialog = async () => {
@@ -697,6 +755,47 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
                 Refresh
               </button>
             </div>
+
+            {remoteError && <div className="git-menu-error">{remoteError}</div>}
+
+            {!isDetached && (
+              <div className="git-menu-section">
+                <div className="git-menu-section-header">
+                  <span>Remote</span>
+                </div>
+                <div className="git-menu-remote-actions">
+                  <button
+                    type="button"
+                    className="header-btn git-menu-action"
+                    onClick={() => void handleFetch()}
+                    disabled={isBusy || remoteAction !== null}
+                  >
+                    <Download size={13} className={remoteAction === 'fetch' ? 'spin' : ''} />
+                    {remoteAction === 'fetch' ? 'Fetching...' : 'Fetch'}
+                  </button>
+                  <button
+                    type="button"
+                    className="header-btn git-menu-action"
+                    onClick={() => void handlePull()}
+                    disabled={isBusy || remoteAction !== null || !upstream}
+                    title={!upstream ? 'Set an upstream branch to enable pull' : undefined}
+                  >
+                    <Download size={13} className={remoteAction === 'pull' ? 'spin' : ''} />
+                    {remoteAction === 'pull' ? 'Pulling...' : 'Pull'}
+                  </button>
+                  <button
+                    type="button"
+                    className="header-btn git-menu-action"
+                    onClick={() => void handlePush()}
+                    disabled={isBusy || remoteAction !== null || !upstream}
+                    title={!upstream ? 'Set an upstream branch to enable push' : undefined}
+                  >
+                    <Upload size={13} className={remoteAction === 'push' ? 'spin' : ''} />
+                    {remoteAction === 'push' ? 'Pushing...' : 'Push'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <GitBranchesSection
               activeAction={activeAction}

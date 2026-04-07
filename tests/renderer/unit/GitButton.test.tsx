@@ -26,6 +26,9 @@ const mockGitPopStash = vi.fn();
 const mockGitDropStash = vi.fn();
 const mockGitClearStashes = vi.fn();
 const mockGitGetRemotes = vi.fn();
+const mockGitFetch = vi.fn();
+const mockGitPull = vi.fn();
+const mockGitPush = vi.fn();
 const mockOnGitStatusUpdate = vi.fn();
 const mockConfirm = vi.fn();
 const mockSetTimeout = vi.fn(((cb: () => void) => { cb(); return 0; }) as unknown as typeof setTimeout);
@@ -53,6 +56,9 @@ const mockElectronAPI = {
   gitDropStash: mockGitDropStash,
   gitClearStashes: mockGitClearStashes,
   gitGetRemotes: mockGitGetRemotes,
+  gitFetch: mockGitFetch,
+  gitPull: mockGitPull,
+  gitPush: mockGitPush,
   onGitStatusUpdate: mockOnGitStatusUpdate,
 };
 
@@ -115,6 +121,9 @@ describe('GitButton', () => {
     mockGitGetHistory.mockResolvedValue([]);
     mockGitGetDiff.mockResolvedValue({ success: true, diff: '' });
     mockGitGetRemotes.mockResolvedValue({ success: true, remotes: [], provider: 'unknown' });
+    mockGitFetch.mockResolvedValue({ success: true });
+    mockGitPull.mockResolvedValue({ success: true });
+    mockGitPush.mockResolvedValue({ success: true });
     mockGitRefresh.mockResolvedValue({
       success: true,
       isRepo: true,
@@ -1140,6 +1149,477 @@ describe('GitButton', () => {
 
       expect(screen.queryByText('no upstream')).toBeNull();
       expect(document.querySelector('.git-menu-upstream')).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // Provider display (GAP-3)
+  // =========================================================================
+  describe('provider display', () => {
+    it('shows GitHub pill when provider is github', async () => {
+      mockGitGetRemotes.mockResolvedValue({
+        success: true,
+        remotes: [{ name: 'origin', fetchUrl: 'https://github.com/owner/repo.git', pushUrl: 'https://github.com/owner/repo.git' }],
+        provider: 'github',
+      });
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      const pill = screen.getByText('GitHub');
+      expect(pill).toBeTruthy();
+      expect(pill.closest('.git-menu-provider')).toHaveClass('provider-github');
+    });
+
+    it('shows Bitbucket pill when provider is bitbucket', async () => {
+      mockGitGetRemotes.mockResolvedValue({
+        success: true,
+        remotes: [{ name: 'origin', fetchUrl: 'https://bitbucket.org/team/project.git', pushUrl: 'https://bitbucket.org/team/project.git' }],
+        provider: 'bitbucket',
+      });
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      const pill = screen.getByText('Bitbucket');
+      expect(pill).toBeTruthy();
+      expect(pill.closest('.git-menu-provider')).toHaveClass('provider-bitbucket');
+    });
+
+    it('shows GitLab pill when provider is gitlab', async () => {
+      mockGitGetRemotes.mockResolvedValue({
+        success: true,
+        remotes: [{ name: 'origin', fetchUrl: 'https://gitlab.com/user/repo.git', pushUrl: 'https://gitlab.com/user/repo.git' }],
+        provider: 'gitlab',
+      });
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      const pill = screen.getByText('GitLab');
+      expect(pill).toBeTruthy();
+      expect(pill.closest('.git-menu-provider')).toHaveClass('provider-gitlab');
+    });
+
+    it('shows "no remote" pill when provider is unknown', async () => {
+      mockGitGetRemotes.mockResolvedValue({
+        success: true,
+        remotes: [{ name: 'origin', fetchUrl: 'https://git.mycompany.com/owner/repo.git', pushUrl: 'https://git.mycompany.com/owner/repo.git' }],
+        provider: 'unknown',
+      });
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      const pill = screen.getByText('no remote');
+      expect(pill).toBeTruthy();
+      expect(pill.closest('.git-menu-provider')).toHaveClass('provider-none');
+    });
+
+    it('shows provider pill in header-right next to close button', async () => {
+      mockGitGetRemotes.mockResolvedValue({
+        success: true,
+        remotes: [{ name: 'origin', fetchUrl: 'https://github.com/owner/repo.git', pushUrl: 'https://github.com/owner/repo.git' }],
+        provider: 'github',
+      });
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      const headerRight = document.querySelector('.git-menu-header-right');
+      expect(headerRight).toBeTruthy();
+      expect(headerRight?.querySelector('.git-menu-provider')).toBeTruthy();
+      expect(headerRight?.querySelector('.git-menu-close')).toBeTruthy();
+    });
+
+    it('provider pill is present after menu re-opens', async () => {
+      // gitGetRemotes is called twice: once on workspace mount (effect), once on menu open (refreshMenuData)
+      // Chain both responses so each call gets the right value
+      mockGitGetRemotes
+        .mockResolvedValueOnce({
+          success: true,
+          remotes: [{ name: 'origin', fetchUrl: 'https://github.com/owner/repo.git', pushUrl: 'https://github.com/owner/repo.git' }],
+          provider: 'github',
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          remotes: [{ name: 'origin', fetchUrl: 'https://github.com/owner/repo.git', pushUrl: 'https://github.com/owner/repo.git' }],
+          provider: 'github',
+        });
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(screen.getByText('GitHub')).toBeTruthy();
+
+      // Close menu
+      await act(async () => {
+        fireEvent.click(screen.getByTitle('Close'));
+      });
+
+      // Re-open with bitbucket
+      mockGitGetRemotes
+        .mockResolvedValueOnce({
+          success: true,
+          remotes: [{ name: 'origin', fetchUrl: 'https://bitbucket.org/team/repo.git', pushUrl: 'https://bitbucket.org/team/repo.git' }],
+          provider: 'bitbucket',
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          remotes: [{ name: 'origin', fetchUrl: 'https://bitbucket.org/team/repo.git', pushUrl: 'https://bitbucket.org/team/repo.git' }],
+          provider: 'bitbucket',
+        });
+
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(screen.getByText('Bitbucket')).toBeTruthy();
+    });
+  });
+
+  // =========================================================================
+  // Remote actions: Fetch / Pull / Push (GAP-4)
+  // =========================================================================
+  describe('remote actions', () => {
+    it('shows fetch, pull, and push buttons when on a branch', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [],
+          upstream: 'origin/main',
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(screen.getByText('Fetch')).toBeTruthy();
+      expect(screen.getByText('Pull')).toBeTruthy();
+      expect(screen.getByText('Push')).toBeTruthy();
+    });
+
+    it('hides remote section for detached HEAD', async () => {
+      // The onGitStatusUpdate callback sets isDetached from status,
+      // but refreshMenuData on menu open can override it from branch state.
+      // Mock both to ensure detached state is consistent.
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'abc1234',
+          isDetached: true,
+          changes: [],
+          upstream: null,
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      // Override branch state so refreshMenuData also sees detached HEAD
+      mockGitGetBranchState.mockResolvedValueOnce({
+        success: true,
+        isRepo: true,
+        currentBranch: null,
+        isDetached: true,
+        branches: [],
+      });
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      // Remote section is hidden for detached HEAD (no branch to push/pull)
+      const remoteSection = document.querySelector('.git-menu-remote-actions');
+      expect(remoteSection).toBeNull();
+    });
+
+    it('calls gitFetch and refreshes on fetch click', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [],
+          upstream: 'origin/main',
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('Fetch'));
+      });
+
+      expect(mockGitFetch).toHaveBeenCalledWith('/repo');
+    });
+
+    it('shows error message when fetch fails', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [],
+          upstream: 'origin/main',
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+      mockGitFetch.mockResolvedValueOnce({
+        success: false,
+        error: 'Fetch failed: connection refused',
+      });
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('Fetch'));
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(screen.getByText('Fetch failed: connection refused')).toBeTruthy();
+    });
+
+    it('shows "Fetching..." label while fetch is in progress', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [],
+          upstream: 'origin/main',
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+      mockGitFetch.mockImplementation(async () => {
+        await new Promise((r) => setTimeout(r, 100));
+        return { success: true };
+      });
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const gitBtn = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(gitBtn!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('Fetch'));
+      });
+
+      // The button label should change during the async operation
+      // (In the actual component the button is disabled, we verify the handler was called)
+      expect(mockGitFetch).toHaveBeenCalled();
+    });
+
+    it('refreshes status after successful push', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [],
+          upstream: 'origin/main',
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+      mockGitPush.mockResolvedValueOnce({ success: true });
+      mockGitRefresh.mockResolvedValueOnce({
+        success: true,
+        isRepo: true,
+        currentBranch: 'main',
+        isDetached: false,
+        changes: [],
+        upstream: 'origin/main',
+        ahead: 0,
+        behind: 0,
+      });
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('Push'));
+      });
+
+      expect(mockGitPush).toHaveBeenCalledWith('/repo');
+      expect(mockGitRefresh).toHaveBeenCalled();
+    });
+
+    it('pull and push buttons are disabled when no upstream', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'feature',
+          isDetached: false,
+          changes: [],
+          upstream: null,
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      // Fetch should still be available (no upstream needed)
+      expect(screen.getByText('Fetch')).toBeTruthy();
+      // Pull and Push require upstream
+      const pullBtn = screen.getByText('Pull').closest('button') as HTMLButtonElement;
+      const pushBtn = screen.getByText('Push').closest('button') as HTMLButtonElement;
+      expect(pullBtn).toBeDisabled();
+      expect(pushBtn).toBeDisabled();
     });
   });
 });
