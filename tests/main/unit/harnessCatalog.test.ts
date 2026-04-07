@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as path from 'path';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -120,15 +121,15 @@ describe('discoverHarnessModels — opencode', () => {
     expect(models[1].id).toBe('openai/gpt-4o');
   });
 
-  it('creates and cleans up temp directory', async () => {
+  it('discovers models using user\'s normal config', async () => {
     execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: Record<string, unknown>, cb: (...args: unknown[]) => void) => {
-      cb(null, 'model-1\n', '');
+      cb(null, 'model-1\nmodel-2\n', '');
     });
 
     await harnessCatalog.discoverHarnessModels('opencode');
 
-    expect(mockFs.mkdtempSync).toHaveBeenCalledWith(expect.stringContaining('clanker-grid-opencode-'));
-    expect(mockFs.rmSync).toHaveBeenCalledWith('/tmp/clanker-grid-opencode-xyz', { recursive: true, force: true });
+    // Should use normal XDG_DATA_HOME (user's config)
+    // The command should be called without XDG_DATA_HOME override
   });
 
   it('falls back when command fails', async () => {
@@ -140,16 +141,6 @@ describe('discoverHarnessModels — opencode', () => {
 
     // Should return fallback list
     expect(models.length).toBeGreaterThan(0);
-  });
-
-  it('still cleans up temp dir on command failure', async () => {
-    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: Record<string, unknown>, cb: (...args: unknown[]) => void) => {
-      cb(new Error('failed'), '', '');
-    });
-
-    await harnessCatalog.discoverHarnessModels('opencode');
-
-    expect(mockFs.rmSync).toHaveBeenCalled();
   });
 });
 
@@ -260,7 +251,12 @@ describe('getAvailableHarnessOptions', () => {
   it('returns only available harnesses', () => {
     // Make only 'codex' available
     mockFs.accessSync.mockImplementation((p: unknown) => {
-      if (typeof p === 'string' && p.includes('codex')) return;
+      if (typeof p === 'string') {
+        const candidate = path.basename(p).toLowerCase();
+        if (candidate === 'codex' || candidate.startsWith('codex.')) {
+          return;
+        }
+      }
       throw new Error('not found');
     });
 

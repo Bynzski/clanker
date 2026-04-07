@@ -456,17 +456,25 @@ kbd {
   gap: var(--space-sm);
   width: 100%;
   padding: 10px 12px;
+  padding-left: 36px;
   border-radius: calc(var(--radius-md) - 2px);
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-secondary);
   text-align: left;
   transition: all var(--transition);
+  position: relative;
+  cursor: pointer;
 }
 
 .model-menu-item:hover {
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
+}
+
+.model-menu-item:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
 }
 
 .model-menu-item.selected {
@@ -484,6 +492,35 @@ kbd {
 .model-menu-check {
   color: var(--accent-primary);
   flex: 0 0 auto;
+}
+
+.model-favorite-btn {
+  position: absolute;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  opacity: 0.4;
+  cursor: pointer;
+  transition: all var(--transition);
+  border-radius: 4px;
+}
+
+.model-favorite-btn:hover {
+  opacity: 1;
+  color: var(--accent-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.model-favorite-btn.favorited {
+  opacity: 1;
+  color: #F59E0B;
 }
 
 .model-menu-empty {

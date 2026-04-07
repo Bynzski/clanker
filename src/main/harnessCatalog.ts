@@ -1,7 +1,6 @@
 import { app } from 'electron';
 import { execFile } from 'child_process';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { normalizePiModelId, type HarnessConfig } from './harnessLaunch';
 
@@ -202,15 +201,8 @@ export async function discoverHarnessModels(harness: string): Promise<ModelOptio
     if (harness === 'codex') {
       options = await discoverCodexModels();
     } else if (harness === 'opencode') {
-      const tempDataHome = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-grid-opencode-'));
-      try {
-        const output = await runCommandOutput('opencode', ['models'], 6000, {
-          XDG_DATA_HOME: tempDataHome,
-        });
-        options = parseOpenCodeModels(output);
-      } finally {
-        fs.rmSync(tempDataHome, { recursive: true, force: true });
-      }
+      const output = await runCommandOutput('opencode', ['models'], 6000);
+      options = parseOpenCodeModels(output);
     } else if (harness === 'pi') {
       const output = await runCommandOutput('pi', ['--list-models'], 6000);
       options = parsePiModels(output);
