@@ -349,3 +349,31 @@
   font-size: 12px;
   padding: 5px 12px;
 }
+
+/* Init state styling */
+.git-init-branch-options {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.git-init-branch-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.git-init-branch-option input {
+  accent-color: var(--accent-primary);
+}
+
+.git-init-hint {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}

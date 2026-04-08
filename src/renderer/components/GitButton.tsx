@@ -84,6 +84,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [vcsContextError, setVcsContextError] = useState<string | null>(null);
   const [remoteAction, setRemoteAction] = useState<'fetch' | 'pull' | 'push' | 'publish' | null>(null);
   const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
+  const [selectedDefaultBranch, setSelectedDefaultBranch] = useState('main');
   const [remotes, setRemotes] = useState<GitRemote[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
   const createBranchInputRef = useRef<HTMLInputElement>(null);
@@ -237,6 +240,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setBranches([]);
         setMergeTargetBranch('');
         setBranchError(branchState.error || 'Unable to load branch state');
+        // Skip diff load if not a repo - this prevents error messages in the init flow
+        setDiffResult(null);
+        setDiffError(null);
       }
 
       if (opState.success) {
@@ -399,6 +405,11 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       return;
     }
 
+    // Skip loading full git data when not a repo - init UI doesn't need it
+    if (!isRepo) {
+      return;
+    }
+
     window.setTimeout(() => createBranchInputRef.current?.focus(), 50);
     void refreshMenuData();
 
@@ -421,7 +432,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [isMenuOpen, refreshMenuData]);
+  }, [isMenuOpen, isRepo, refreshMenuData]);
 
   const refreshAfterAction = useCallback(async () => {
     await Promise.all([refreshMenuData(), window.electronAPI.gitRefresh()]);
@@ -537,6 +548,27 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       }
     }
     return result;
+  };
+
+  const handleInitRepository = async () => {
+    setIsInitializing(true);
+    setInitError(null);
+
+    try {
+      const result = await window.electronAPI.gitInit(workspacePath, selectedDefaultBranch);
+      if (result.success) {
+        // Force an immediate status refresh so UI updates right away
+        await window.electronAPI.gitRefresh();
+        // Close the menu - user will see the full git view on next open
+        setIsMenuOpen(false);
+      } else {
+        setInitError(result.error || 'Failed to initialize repository');
+      }
+    } catch (error: any) {
+      setInitError(error?.message || 'Failed to initialize repository');
+    } finally {
+      setIsInitializing(false);
+    }
   };
 
   const handleOpenCommitDialog = async () => {
@@ -817,7 +849,86 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   };
 
   if (!isRepo) {
-    return null;
+    return (
+      <div className="git-menu-container" ref={menuRef}>
+        <button
+          className="header-btn git-btn"
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          title="Initialize Git Repository"
+        >
+          <GitBranchIcon size={15} strokeWidth={2} />
+          <span>Init Git</span>
+          <ChevronDown size={12} strokeWidth={2.5} />
+        </button>
+
+        {isMenuOpen && (
+          <div className="git-menu" role="menu">
+            <div className="git-menu-header">
+              <div>
+                <div className="git-menu-label">Initialize Repository</div>
+                <div className="git-menu-branch">No git repository found</div>
+              </div>
+              <button
+                type="button"
+                className="git-menu-close"
+                onClick={() => setIsMenuOpen(false)}
+                title="Close"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div className="git-menu-section">
+              <div className="git-menu-section-header">
+                <span>Initial Branch</span>
+              </div>
+              <div className="git-init-branch-options">
+                <label className="git-init-branch-option">
+                  <input
+                    type="radio"
+                    name="defaultBranch"
+                    value="main"
+                    checked={selectedDefaultBranch === 'main'}
+                    onChange={() => setSelectedDefaultBranch('main')}
+                  />
+                  <span>main</span>
+                </label>
+                <label className="git-init-branch-option">
+                  <input
+                    type="radio"
+                    name="defaultBranch"
+                    value="master"
+                    checked={selectedDefaultBranch === 'master'}
+                    onChange={() => setSelectedDefaultBranch('master')}
+                  />
+                  <span>master</span>
+                </label>
+              </div>
+            </div>
+
+            {initError && (
+              <div className="git-menu-error">{initError}</div>
+            )}
+
+            <div className="git-menu-actions">
+              <button
+                type="button"
+                className="header-btn header-btn-primary git-menu-action"
+                onClick={() => void handleInitRepository()}
+                disabled={isInitializing}
+              >
+                {isInitializing && <Loader2 size={13} className="spin" />}
+                {isInitializing ? 'Initializing...' : 'Initialize Repository'}
+              </button>
+            </div>
+
+            <p className="git-init-hint">
+              This will create a new git repository in the current workspace.
+            </p>
+          </div>
+        )}
+      </div>
+    );
   }
 
   const isBusy = activeAction !== null;
@@ -954,11 +1065,11 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
                   {!upstream && currentBranch && (
                     <button
                       type="button"
-                    className="header-btn git-menu-action"
-                    onClick={() => void handlePublish()}
-                    disabled={remoteAction !== null}
-                    title={remotes.length === 0 ? 'Add a remote to publish this branch' : undefined}
-                  >
+                      className="header-btn git-menu-action"
+                      onClick={() => void handlePublish()}
+                      disabled={remoteAction !== null || remotes.length === 0}
+                      title={remotes.length === 0 ? 'Add a remote to publish this branch' : undefined}
+                    >
                       <Upload size={13} className={remoteAction === 'publish' ? 'spin' : ''} />
                       {remoteAction === 'publish' ? 'Publishing...' : 'Publish branch'}
                     </button>

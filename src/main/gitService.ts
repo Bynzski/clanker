@@ -1058,6 +1058,29 @@ export class GitService {
     }
   }
 
+  /**
+   * Initialize a new git repository.
+   */
+  async initRepository(
+    workspacePath: string,
+    options?: { defaultBranch?: string }
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const args = ['init'];
+      if (options?.defaultBranch) {
+        // Git 2.28+ supports --initial-branch
+        args.push('--initial-branch', options.defaultBranch);
+      }
+      await this.execGit(workspacePath, args);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: this.getGitErrorMessage(error, 'Failed to initialize repository'),
+      };
+    }
+  }
+
   startPolling(workspacePath: string): void {
     this.stopPolling();
     this.currentWorkspacePath = workspacePath;
