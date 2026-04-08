@@ -128,6 +128,22 @@ interface BrowserViewEntry {
 const browserViews = new Map<string, BrowserViewEntry>();
 let activeBrowserWorkspaceId: string | null = null;
 
+function notifyBrowserUrlUpdated(workspaceId: string, url: string) {
+  const safeUrl = normalizeAppBrowserUrl(url);
+  if (!safeUrl) {
+    return;
+  }
+
+  const entry = browserViews.get(workspaceId);
+  if (entry) {
+    entry.url = safeUrl;
+  }
+
+  if (mainWindow) {
+    mainWindow.webContents.send('browser-url-updated', { workspaceId, url: safeUrl });
+  }
+}
+
 function getValidatedWorkspacePath(workspacePath: string): string | null {
   return resolveExistingDirectory(workspacePath);
 }
@@ -335,6 +351,10 @@ function createBrowserViewForWorkspace(workspaceId: string): BrowserViewEntry | 
   view.setVisible(false);
   view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
   mainWindow.contentView.addChildView(view);
+
+  const reportUrlChange = (navigatedUrl: string) => notifyBrowserUrlUpdated(workspaceId, navigatedUrl);
+  view.webContents.on('did-navigate', (_event, url) => reportUrlChange(url));
+  view.webContents.on('did-navigate-in-page', (_event, url) => reportUrlChange(url));
 
   void view.webContents.loadURL(DEFAULT_BROWSER_URL);
 
@@ -637,6 +657,7 @@ ipcMain.handle('browser-navigate', (_, workspaceId: string, url: string) => {
   }
 
   entry.url = safeUrl;
+  notifyBrowserUrlUpdated(workspaceId, safeUrl);
   void entry.view.webContents.loadURL(safeUrl);
   return true;
 });

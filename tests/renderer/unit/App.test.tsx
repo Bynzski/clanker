@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import App from '../../../src/renderer/App';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { createWorkspaceFixture } from '../../setup/fixtures';
 
 // Mock all child components to isolate App logic
 vi.mock('../../../src/renderer/components/Header', () => ({
@@ -574,5 +575,48 @@ describe('App', () => {
       
       expect(removeListener).toHaveBeenCalled();
     });
+  });
+
+  it('updates workspace URL when the main process emits browser-url-updated', async () => {
+    const workspaceId = 'workspace-1';
+    const workspaceFixture = createWorkspaceFixture({
+      id: workspaceId,
+      name: 'workspace',
+      workspacePath: '/workspace',
+      browserUrl: 'https://github.com',
+    });
+
+    useWorkspaceStore.setState({
+      workspaces: [workspaceFixture],
+      activeWorkspaceId: workspaceId,
+      workspacePath: '/workspace',
+      name: 'workspace',
+      browserVisible: true,
+      browserUrl: 'https://github.com',
+      terminals: [],
+      panes: [],
+      browserPane: null,
+      layoutRoot: null,
+    });
+
+    let handler: ((payload: { workspaceId: string; url: string }) => void) | null = null;
+    const mockOnBrowserUrlUpdated = vi.fn().mockImplementation((cb) => {
+      handler = cb;
+      return vi.fn();
+    });
+
+    window.electronAPI.onBrowserUrlUpdated = mockOnBrowserUrlUpdated;
+
+    render(<App />);
+
+    expect(mockOnBrowserUrlUpdated).toHaveBeenCalled();
+
+    act(() => {
+      handler?.({ workspaceId, url: 'https://example.com' });
+    });
+
+    const state = useWorkspaceStore.getState();
+    expect(state.browserUrl).toBe('https://example.com');
+    expect(state.workspaces.find((workspace) => workspace.id === workspaceId)?.browserUrl).toBe('https://example.com');
   });
 });

@@ -42,6 +42,7 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     getHarnessOptions: createAsyncMock({}),
     getHarnessModels: createAsyncMock([]),
     onFitAllPanes: vi.fn(() => () => undefined),
+    onBrowserUrlUpdated: vi.fn(() => () => undefined),
     gitStartPolling: createAsyncMock(undefined),
     gitStopPolling: createAsyncMock(undefined),
     generateCommitMessage: createAsyncMock({ success: true, message: 'chore: test fixture' }),

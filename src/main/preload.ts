@@ -46,6 +46,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   canGoBack: (workspaceId: string) => ipcRenderer.invoke('can-go-back', workspaceId),
   canGoForward: (workspaceId: string) => ipcRenderer.invoke('can-go-forward', workspaceId),
   browserDisposeWorkspace: (workspaceId: string) => ipcRenderer.invoke('browser-dispose-workspace', workspaceId),
+  onBrowserUrlUpdated: (callback: (payload: { workspaceId: string; url: string }) => void) => {
+    const handler = (_: any, payload: { workspaceId: string; url: string }) => callback(payload);
+    ipcRenderer.on('browser-url-updated', handler);
+    return () => ipcRenderer.removeListener('browser-url-updated', handler);
+  },
   onFitAllPanes: (callback: () => void) => {
     const handler = () => callback();
     ipcRenderer.on('fit-all-panes', handler);

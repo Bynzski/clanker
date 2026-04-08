@@ -14,6 +14,7 @@ function App() {
     workspaces,
     addWorkspace,
     fitAllPanes,
+    updateWorkspaceBrowserUrl,
   } = useWorkspaceStore();
 
   useEffect(() => {
@@ -33,6 +34,20 @@ function App() {
       fitAllPanes();
     });
   }, [fitAllPanes]);
+
+  useEffect(() => {
+    if (typeof window.electronAPI?.onBrowserUrlUpdated !== 'function') {
+      return undefined;
+    }
+
+    const dispose = window.electronAPI.onBrowserUrlUpdated(({ workspaceId, url }) => {
+      updateWorkspaceBrowserUrl(workspaceId, url);
+    });
+
+    return () => {
+      dispose();
+    };
+  }, [updateWorkspaceBrowserUrl]);
 
   const handleWorkspaceSelect = async (path: string, terminalCount: number, harness: string, model?: string) => {
     const terminals: Terminal[] = [];
