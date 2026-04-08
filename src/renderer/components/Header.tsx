@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { FolderOpen, Plus, Globe, X, LayoutGrid, Settings, ChevronDown } from 'lucide-react';
 import { AI_COMMIT_PROVIDER_IDS, HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
@@ -26,6 +26,8 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
     model,
     setHarness,
     canAddPane,
+    pushBrowserOverlay,
+    popBrowserOverlay,
   } = useWorkspaceStore();
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
   const [showFastfetch, setShowFastfetch] = useState(true);
@@ -37,6 +39,47 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
   const [aiCommitModels, setAiCommitModels] = useState<ModelOption[]>([]);
   const [isLoadingAiCommitModels, setIsLoadingAiCommitModels] = useState(false);
   const [hasLoadedAiCommitSettings, setHasLoadedAiCommitSettings] = useState(false);
+  const settingsDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Hide the native browser whenever the settings dropdown is open.
+  useEffect(() => {
+    if (!showSettings) {
+      return;
+    }
+
+    pushBrowserOverlay();
+    return () => popBrowserOverlay();
+  }, [showSettings, pushBrowserOverlay, popBrowserOverlay]);
+
+  // Close the settings dropdown when clicking outside it.
+  useEffect(() => {
+    if (!showSettings) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (
+        settingsDropdownRef.current &&
+        !settingsDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowSettings(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowSettings(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showSettings]);
 
   useEffect(() => {
     let cancelled = false;
@@ -293,7 +336,7 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
           <GitButton workspacePath={workspacePath} />
         )}
 
-        <div className="settings-dropdown-container">
+        <div className="settings-dropdown-container" ref={settingsDropdownRef}>
           <button 
             className="header-btn"
             onClick={() => setShowSettings(!showSettings)}

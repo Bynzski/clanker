@@ -10,6 +10,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { useWorkspaceStore } from '../store/workspaceStore';
 import CommitDialog from './CommitDialog';
 import { GitBranchesSection } from './git/GitBranchesSection';
 import { GitHistorySection } from './git/GitHistorySection';
@@ -90,6 +91,18 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [remotes, setRemotes] = useState<GitRemote[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
   const createBranchInputRef = useRef<HTMLInputElement>(null);
+
+  const { pushBrowserOverlay, popBrowserOverlay } = useWorkspaceStore();
+
+  // Hide the native browser whenever the git menu is open.
+  useEffect(() => {
+    if (!isMenuOpen) {
+      return;
+    }
+
+    pushBrowserOverlay();
+    return () => popBrowserOverlay();
+  }, [isMenuOpen, pushBrowserOverlay, popBrowserOverlay]);
 
   const currentBranchLabel = useMemo(() => {
     if (currentBranch) {
