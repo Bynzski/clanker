@@ -76,6 +76,18 @@ interface ElectronAPI {
   gitPull: (workspacePath: string, rebase?: boolean) => Promise<{ success: boolean; error?: string }>;
   gitPush: (workspacePath: string, remote?: string, branch?: string, forceWithLease?: boolean) => Promise<{ success: boolean; error?: string }>;
   onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => () => void;
+
+  // Credential management
+  credentialGenerateSshKey: () => Promise<SshKeyGenerationResult>;
+  credentialGetPublicKey: () => Promise<PublicKeyResult>;
+  credentialDeleteSshKey: () => Promise<CredentialOperationResult>;
+  credentialCheckExists: () => Promise<{ exists: boolean }>;
+  credentialSavePat: (provider: string, token: string, scope?: string[]) => Promise<CredentialOperationResult>;
+  credentialGetPat: (provider: string) => Promise<PatResult>;
+  credentialDeletePat: (provider: string) => Promise<CredentialOperationResult>;
+  credentialGetStatus: (remoteName: string, remoteUrl: string, provider: string) => Promise<CredentialStatusResult>;
+  credentialGetGlobalStatus: () => Promise<GlobalCredentialStatusResult>;
+  credentialConfigureSshHost: (hostname: string) => Promise<CredentialOperationResult>;
 }
 
 type GitErrorCode = 'not-a-repo' | 'git-not-found' | 'unknown';
@@ -164,6 +176,64 @@ interface GitRemotesResult {
   provider: VcsProvider;
   error?: string;
 }
+
+// Credential types - used by renderer for type checking
+/* eslint-disable @typescript-eslint/no-unused-vars */
+interface CredentialOperationResult {
+  success: boolean;
+  error?: string;
+}
+
+interface SshKeyGenerationResult {
+  success: boolean;
+  publicKey?: string;
+  fingerprint?: string;
+  error?: string;
+}
+
+interface PublicKeyResult {
+  success: boolean;
+  publicKey?: string;
+  fingerprint?: string;
+  error?: string;
+}
+
+interface PatResult {
+  success: boolean;
+  token?: string;
+  error?: string;
+}
+
+interface SshKeyConfig {
+  privateKeyPath: string;
+  publicKeyPath: string;
+  keyType: string;
+  fingerprint: string;
+  createdAt: string;
+}
+
+interface StoredPat {
+  provider: string;
+  scope: string[];
+  storedAt: string;
+  validated: boolean;
+}
+
+interface CredentialStatusResult {
+  remoteName: string;
+  provider: VcsProvider;
+  hasSshKey: boolean;
+  hasPat: boolean;
+  credentialHelper: string | null;
+}
+
+interface GlobalCredentialStatusResult {
+  defaultSshKeyPath: string;
+  hasDefaultSshKey: boolean;
+  storedPats: StoredPat[];
+  credentialHelpers: Record<string, string>;
+}
+/* eslint-enable @typescript-eslint/no-unused-vars */
 
 declare global {
   interface Window {

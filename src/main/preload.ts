@@ -117,4 +117,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('git-status-update', handler);
     return () => ipcRenderer.removeListener('git-status-update', handler);
   },
+
+  // Credential management
+  credentialGenerateSshKey: () => ipcRenderer.invoke('credential:generate-ssh-key'),
+  credentialGetPublicKey: () => ipcRenderer.invoke('credential:get-public-key'),
+  credentialDeleteSshKey: () => ipcRenderer.invoke('credential:delete-ssh-key'),
+  credentialCheckExists: () => ipcRenderer.invoke('credential:check-exists'),
+  credentialSavePat: (provider: string, token: string, scope?: string[]) =>
+    ipcRenderer.invoke('credential:save-pat', { provider, token, scope }),
+  credentialGetPat: (provider: string) => ipcRenderer.invoke('credential:get-pat', provider),
+  credentialDeletePat: (provider: string) => ipcRenderer.invoke('credential:delete-pat', provider),
+  credentialGetStatus: (remoteName: string, remoteUrl: string, provider: string) =>
+    ipcRenderer.invoke('credential:get-status', remoteName, remoteUrl, provider),
+  credentialGetGlobalStatus: () => ipcRenderer.invoke('credential:get-global-status'),
+  credentialConfigureSshHost: (hostname: string) => ipcRenderer.invoke('credential:configure-ssh-host', hostname),
 });

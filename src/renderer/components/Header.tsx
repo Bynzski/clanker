@@ -5,6 +5,7 @@ import { AI_COMMIT_PROVIDER_IDS, HARNESS_OPTIONS, resolveAvailableHarnessIds } f
 import { terminateWorkspaceTerminals } from '../lib/workspaceLifecycle';
 import type { ModelOption } from '../types/shared';
 import GitButton from './GitButton';
+import CredentialSettings from './settings/CredentialSettings';
 import './Header.css';
 
 interface HeaderProps {
@@ -29,6 +30,7 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
   const [showFastfetch, setShowFastfetch] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [showCredentialModal, setShowCredentialModal] = useState(false);
   const [aiCommitEnabled, setAiCommitEnabled] = useState(false);
   const [aiCommitProvider, setAiCommitProvider] = useState<string>('');
   const [aiCommitModel, setAiCommitModel] = useState('');
@@ -367,10 +369,25 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
                   </select>
                 </div>
               </div>
+              <button
+                type="button"
+                className="settings-dropdown-action"
+                onClick={() => {
+                  setShowCredentialModal(true);
+                  setShowSettings(false);
+                }}
+              >
+                Manage VCS credentials
+              </button>
             </div>
           )}
         </div>
       </div>
+      <CredentialSettings
+        isOpen={showCredentialModal}
+        onClose={() => setShowCredentialModal(false)}
+        workspacePath={workspacePath ?? undefined}
+      />
     </header>
   );
 }

@@ -70,6 +70,19 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     gitPull: createAsyncMock({ success: true }),
     gitPush: createAsyncMock({ success: true }),
     onGitStatusUpdate: vi.fn(() => () => undefined),
+
+    // Credential management
+    credentialGenerateSshKey: createAsyncMock({ success: true, publicKey: 'ssh-ed25519 AAAA...', fingerprint: 'SHA256:...' }),
+    credentialGetPublicKey: createAsyncMock({ success: true, publicKey: 'ssh-ed25519 AAAA...' }),
+    credentialDeleteSshKey: createAsyncMock({ success: true }),
+    credentialCheckExists: createAsyncMock({ exists: false }),
+    credentialSavePat: createAsyncMock({ success: true }),
+    credentialGetPat: createAsyncMock({ success: false, error: 'No token stored' }),
+    credentialDeletePat: createAsyncMock({ success: true }),
+    credentialGetStatus: createAsyncMock({ remoteName: 'origin', provider: 'github', hasSshKey: false, hasPat: false, credentialHelper: null }),
+    credentialGetGlobalStatus: createAsyncMock({ defaultSshKeyPath: '', hasDefaultSshKey: false, storedPats: [], credentialHelpers: {} }),
+    credentialConfigureSshHost: createAsyncMock({ success: true }),
+
     ...overrides,
   };
 }
