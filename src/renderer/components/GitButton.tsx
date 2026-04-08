@@ -115,8 +115,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   }, [upstream, ahead, behind]);
 
   const loadVcsContext = useCallback(async () => {
-    if (!workspacePath || provider === 'unknown' || provider === 'bitbucket') {
-      // Skip VCS context for unknown provider or unsupported providers
+    if (!workspacePath || provider === 'unknown') {
+      // Skip VCS context for unknown provider
       setVcsProviderContext(null);
       setPullRequest(null);
       setDeepLinks([]);
