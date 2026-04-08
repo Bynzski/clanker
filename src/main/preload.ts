@@ -131,4 +131,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('credential:get-status', remoteName, remoteUrl, provider),
   credentialGetGlobalStatus: () => ipcRenderer.invoke('credential:get-global-status'),
   credentialConfigureSshHost: (hostname: string) => ipcRenderer.invoke('credential:configure-ssh-host', hostname),
+
+  // VCS Provider Context
+  vcsGetContext: (workspacePath: string) => ipcRenderer.invoke('vcs:get-context', workspacePath),
+  vcsGetPrInfo: (workspacePath: string) => ipcRenderer.invoke('vcs:get-pr-info', workspacePath),
+  vcsGetDeepLinks: (workspacePath: string, prNumber?: number) => ipcRenderer.invoke('vcs:get-deep-links', workspacePath, prNumber),
+  vcsGetDeepLink: (workspacePath: string, type: string) => ipcRenderer.invoke('vcs:get-deep-link', workspacePath, type),
+  vcsOpenDeepLink: (workspacePath: string, type: string) => ipcRenderer.invoke('vcs:open-deep-link', workspacePath, type),
 });

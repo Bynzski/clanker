@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { GitBranchesSection } from '../../../../src/renderer/components/git/GitBranchesSection';
 import type { GitBranch } from '../../../../src/renderer/components/git/types';
+import type { ProviderContext, PullRequestContext, DeepLink } from '../../../../src/renderer/store/vcsStore';
 
 describe('GitBranchesSection', () => {
   // Mock refs
@@ -14,6 +15,7 @@ describe('GitBranchesSection', () => {
   const mockOnDeleteBranch = vi.fn();
   const mockOnSetNewBranchName = vi.fn();
   const mockOnSwitchBranch = vi.fn();
+  const mockOnRefreshContext = vi.fn();
   
   const defaultProps = {
     activeAction: null as string | null,
@@ -27,6 +29,14 @@ describe('GitBranchesSection', () => {
     onDeleteBranch: mockOnDeleteBranch,
     onSetNewBranchName: mockOnSetNewBranchName,
     onSwitchBranch: mockOnSwitchBranch,
+    // New provider context props
+    provider: null as ProviderContext | null,
+    pullRequest: null as PullRequestContext | null,
+    deepLinks: [] as DeepLink[],
+    isLoadingContext: false,
+    contextError: null as string | null,
+    onRefreshContext: mockOnRefreshContext,
+    workspacePath: '/test/workspace',
   };
 
   beforeEach(() => {

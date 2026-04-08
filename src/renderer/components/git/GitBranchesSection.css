@@ -1,3 +1,33 @@
+/* Provider context header */
+.provider-context-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  margin: -12px -12px 12px -12px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.provider-context-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.provider-context-repo {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .git-create-branch-form {
   display: flex;
   align-items: center;

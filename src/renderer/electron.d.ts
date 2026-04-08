@@ -88,6 +88,54 @@ interface ElectronAPI {
   credentialGetStatus: (remoteName: string, remoteUrl: string, provider: string) => Promise<CredentialStatusResult>;
   credentialGetGlobalStatus: () => Promise<GlobalCredentialStatusResult>;
   credentialConfigureSshHost: (hostname: string) => Promise<CredentialOperationResult>;
+
+  // VCS Provider Context
+  vcsGetContext: (workspacePath: string) => Promise<VcsContextResult>;
+  vcsGetPrInfo: (workspacePath: string) => Promise<VcsPrInfoResult>;
+  vcsGetDeepLinks: (workspacePath: string, prNumber?: number) => Promise<DeepLink[]>;
+  vcsGetDeepLink: (workspacePath: string, type: string) => Promise<string | null>;
+  vcsOpenDeepLink: (workspacePath: string, type: string) => Promise<boolean>;
+}
+
+// VCS Context types
+export type DeepLinkType = 'repo' | 'pr' | 'create-pr' | 'issues' | 'releases' | 'actions' | 'branches';
+
+interface DeepLink {
+  type: DeepLinkType;
+  url: string;
+  label: string;
+}
+
+interface ProviderContext {
+  provider: VcsProvider;
+  baseUrl: string;
+  owner: string;
+  repo: string;
+  defaultBranch: string;
+}
+
+interface PullRequestContext {
+  exists: boolean;
+  number?: number;
+  title?: string;
+  state?: 'open' | 'closed' | 'merged';
+  url?: string;
+  checksStatus?: 'pending' | 'success' | 'failure' | 'error';
+  reviewState?: 'approved' | 'changes_requested' | 'commented' | 'pending';
+  author?: string;
+}
+
+interface VcsContextResult {
+  success: boolean;
+  provider?: ProviderContext;
+  pullRequest?: PullRequestContext;
+  error?: string;
+}
+
+interface VcsPrInfoResult {
+  success: boolean;
+  pullRequest?: PullRequestContext;
+  error?: string;
 }
 
 type GitErrorCode = 'not-a-repo' | 'git-not-found' | 'unknown';

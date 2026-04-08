@@ -23,6 +23,7 @@ import type {
   GitStash,
   GitStatus,
 } from './git/types';
+import type { PullRequestContext, DeepLink, ProviderContext } from '../store/vcsStore';
 import './GitButton.css';
 
 interface GitButtonProps {
@@ -64,6 +65,11 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [ahead, setAhead] = useState(0);
   const [behind, setBehind] = useState(0);
   const [provider, setProvider] = useState<'github' | 'bitbucket' | 'gitlab' | 'unknown'>('unknown');
+  const [vcsProviderContext, setVcsProviderContext] = useState<ProviderContext | null>(null);
+  const [pullRequest, setPullRequest] = useState<PullRequestContext | null>(null);
+  const [deepLinks, setDeepLinks] = useState<DeepLink[]>([]);
+  const [isLoadingVcsContext, setIsLoadingVcsContext] = useState(false);
+  const [vcsContextError, setVcsContextError] = useState<string | null>(null);
   const [remoteAction, setRemoteAction] = useState<'fetch' | 'pull' | 'push' | null>(null);
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -107,6 +113,41 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     if (behind > 0) parts.push(`↓${behind}`);
     return parts.join(' ');
   }, [upstream, ahead, behind]);
+
+  const loadVcsContext = useCallback(async () => {
+    if (!workspacePath || provider === 'unknown' || provider === 'bitbucket') {
+      // Skip VCS context for unknown provider or unsupported providers
+      setVcsProviderContext(null);
+      setPullRequest(null);
+      setDeepLinks([]);
+      return;
+    }
+
+    setIsLoadingVcsContext(true);
+    setVcsContextError(null);
+
+    try {
+      // Get full VCS context including PR info
+      const result = await window.electronAPI.vcsGetContext(workspacePath);
+      let prNumber: number | undefined;
+
+      if (result.success && result.provider) {
+        setVcsProviderContext(result.provider as ProviderContext);
+        setPullRequest(result.pullRequest as PullRequestContext | null);
+        prNumber = result.pullRequest?.exists ? result.pullRequest.number : undefined;
+      } else {
+        setVcsProviderContext(null);
+        setPullRequest(null);
+      }
+
+      const links = await window.electronAPI.vcsGetDeepLinks(workspacePath, prNumber);
+      setDeepLinks(links as DeepLink[]);
+    } catch (error: any) {
+      setVcsContextError(error?.message || 'Failed to load provider context');
+    } finally {
+      setIsLoadingVcsContext(false);
+    }
+  }, [workspacePath, provider]);
 
   const refreshMenuData = useCallback(async () => {
     if (!workspacePath) {
@@ -200,6 +241,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       if (remotesResult.success) {
         setProvider(remotesResult.provider);
       }
+
+      // Load VCS context after provider is detected
+      await loadVcsContext();
     } catch (error: any) {
       const message = error?.message || 'Unable to load git data';
       setBranchError(message);
@@ -214,7 +258,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       setIsLoadingHistory(false);
       setIsLoadingDiff(false);
     }
-  }, [selectedDiffMode, selectedDiffRef, workspacePath]);
+  }, [selectedDiffMode, selectedDiffRef, workspacePath, loadVcsContext]);
 
   const loadDiff = async (mode: DiffMode, ref?: string) => {
     if (!workspacePath) {
@@ -833,6 +877,13 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
               onDeleteBranch={(branchName) => void handleDeleteBranch(branchName)}
               onSetNewBranchName={setNewBranchName}
               onSwitchBranch={(branchName) => void handleSwitchBranch(branchName)}
+              provider={vcsProviderContext}
+              pullRequest={pullRequest}
+              deepLinks={deepLinks}
+              isLoadingContext={isLoadingVcsContext}
+              contextError={vcsContextError}
+              onRefreshContext={() => void loadVcsContext()}
+              workspacePath={workspacePath}
             />
 
             <GitStashSection

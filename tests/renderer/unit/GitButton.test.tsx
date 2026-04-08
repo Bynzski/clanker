@@ -34,6 +34,12 @@ const mockOnGitStatusUpdate = vi.fn();
 const mockConfirm = vi.fn();
 const mockSetTimeout = vi.fn(((cb: () => void) => { cb(); return 0; }) as unknown as typeof setTimeout);
 
+// VCS context mocks
+const mockVcsGetContext = vi.fn().mockResolvedValue({ success: false, error: 'Not configured' });
+const mockVcsGetPrInfo = vi.fn().mockResolvedValue({ success: false, error: 'Not configured' });
+const mockVcsGetDeepLinks = vi.fn().mockResolvedValue([]);
+const mockVcsOpenDeepLink = vi.fn().mockResolvedValue(false);
+
 // Mock window.electronAPI
 const mockElectronAPI = {
   gitGetBranchState: mockGitGetBranchState,
@@ -62,6 +68,11 @@ const mockElectronAPI = {
   gitPush: mockGitPush,
   gitUnstage: mockGitUnstage,
   onGitStatusUpdate: mockOnGitStatusUpdate,
+  // VCS context
+  vcsGetContext: mockVcsGetContext,
+  vcsGetPrInfo: mockVcsGetPrInfo,
+  vcsGetDeepLinks: mockVcsGetDeepLinks,
+  vcsOpenDeepLink: mockVcsOpenDeepLink,
 };
 
 // Mock child components
@@ -1278,6 +1289,7 @@ describe('GitButton', () => {
     it('provider pill is present after menu re-opens', async () => {
       // gitGetRemotes is called twice: once on workspace mount (effect), once on menu open (refreshMenuData)
       // Chain both responses so each call gets the right value
+      mockGitGetRemotes.mockReset();
       mockGitGetRemotes
         .mockResolvedValueOnce({
           success: true,
@@ -1289,6 +1301,12 @@ describe('GitButton', () => {
           remotes: [{ name: 'origin', fetchUrl: 'https://github.com/owner/repo.git', pushUrl: 'https://github.com/owner/repo.git' }],
           provider: 'github',
         });
+
+      // Reset VCS mocks and set up defaults
+      mockVcsGetContext.mockReset();
+      mockVcsGetDeepLinks.mockReset();
+      mockVcsGetContext.mockResolvedValue({ success: false, error: 'No context' });
+      mockVcsGetDeepLinks.mockResolvedValue([]);
 
       render(<GitButton workspacePath="/repo" />);
 

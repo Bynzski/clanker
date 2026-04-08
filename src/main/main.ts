@@ -46,6 +46,13 @@ import {
   type SavePatRequest,
 } from './credential';
 import type { VcsProvider } from './gitService';
+import {
+  getProviderContext,
+  getProviderDeepLinks,
+  getDeepLinkUrl,
+  type ProviderContextResult,
+  type DeepLink,
+} from './vcs';
 
 interface Terminal {
   id: string;
@@ -1128,6 +1135,159 @@ ipcMain.handle('credential:get-global-status', async () => {
 
 ipcMain.handle('credential:configure-ssh-host', async (_, hostname: string) => {
   return configureSshForHost(hostname);
+});
+
+// ============================================================================
+// VCS Context IPC Handlers - Provider API integration
+// ============================================================================
+
+ipcMain.handle('vcs:get-context', async (_, workspacePath: string) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return {
+      success: false,
+      error: 'Invalid workspace path',
+    } as ProviderContextResult;
+  }
+
+  // Get current branch and remotes
+  const [branchState, remotesResult] = await Promise.all([
+    gitService.getBranchState(safeWorkspacePath),
+    gitService.getRemotes(safeWorkspacePath),
+  ]);
+
+  if (!branchState.success || !remotesResult.success || remotesResult.remotes.length === 0) {
+    return {
+      success: false,
+      error: 'Not a git repository or no remotes configured',
+    } as ProviderContextResult;
+  }
+
+  const currentBranch = branchState.currentBranch || 'main';
+  const primaryRemote = remotesResult.remotes[0];
+
+  return getProviderContext(
+    primaryRemote.name,
+    primaryRemote.fetchUrl,
+    currentBranch
+  );
+});
+
+ipcMain.handle('vcs:get-pr-info', async (_, workspacePath: string) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return { success: false, error: 'Invalid workspace path' };
+  }
+
+  const [branchState, remotesResult] = await Promise.all([
+    gitService.getBranchState(safeWorkspacePath),
+    gitService.getRemotes(safeWorkspacePath),
+  ]);
+
+  if (!branchState.success || !remotesResult.success || remotesResult.remotes.length === 0) {
+    return { success: false, error: 'Not a git repository or no remotes' };
+  }
+
+  const currentBranch = branchState.currentBranch || 'main';
+  const primaryRemote = remotesResult.remotes[0];
+
+  const contextResult = await getProviderContext(
+    primaryRemote.name,
+    primaryRemote.fetchUrl,
+    currentBranch
+  );
+
+  return {
+    success: contextResult.success,
+    pullRequest: contextResult.pullRequest,
+    error: contextResult.error,
+  };
+});
+
+ipcMain.handle('vcs:get-deep-links', async (_, workspacePath: string, prNumber?: number) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return [] as DeepLink[];
+  }
+
+  const [branchState, remotesResult] = await Promise.all([
+    gitService.getBranchState(safeWorkspacePath),
+    gitService.getRemotes(safeWorkspacePath),
+  ]);
+
+  if (!branchState.success || !remotesResult.success || remotesResult.remotes.length === 0) {
+    return [] as DeepLink[];
+  }
+
+  const currentBranch = branchState.currentBranch || undefined;
+  const primaryRemote = remotesResult.remotes[0];
+
+  return getProviderDeepLinks(primaryRemote.fetchUrl, currentBranch, prNumber);
+});
+
+ipcMain.handle('vcs:get-deep-link', async (_, workspacePath: string, type: DeepLink['type']) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return null;
+  }
+
+  const [branchState, remotesResult] = await Promise.all([
+    gitService.getBranchState(safeWorkspacePath),
+    gitService.getRemotes(safeWorkspacePath),
+  ]);
+
+  if (!branchState.success || !remotesResult.success || remotesResult.remotes.length === 0) {
+    return null;
+  }
+
+  const currentBranch = branchState.currentBranch || undefined;
+  const primaryRemote = remotesResult.remotes[0];
+
+  // First get context to find PR number if it exists
+  const contextResult = await getProviderContext(
+    primaryRemote.name,
+    primaryRemote.fetchUrl,
+    currentBranch || 'main'
+  );
+
+  const prNumber = contextResult.pullRequest?.exists ? contextResult.pullRequest.number : undefined;
+
+  return getDeepLinkUrl(primaryRemote.fetchUrl, type, currentBranch, prNumber);
+});
+
+ipcMain.handle('vcs:open-deep-link', async (_, workspacePath: string, type: DeepLink['type']) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return false;
+  }
+
+  const [branchState, remotesResult] = await Promise.all([
+    gitService.getBranchState(safeWorkspacePath),
+    gitService.getRemotes(safeWorkspacePath),
+  ]);
+
+  if (!branchState.success || !remotesResult.success || remotesResult.remotes.length === 0) {
+    return false;
+  }
+
+  const currentBranch = branchState.currentBranch || undefined;
+  const primaryRemote = remotesResult.remotes[0];
+
+  const contextResult = await getProviderContext(
+    primaryRemote.name,
+    primaryRemote.fetchUrl,
+    currentBranch || 'main'
+  );
+
+  const prNumber = contextResult.pullRequest?.exists ? contextResult.pullRequest.number : undefined;
+
+  const url = getDeepLinkUrl(primaryRemote.fetchUrl, type, currentBranch, prNumber);
+  if (url) {
+    void shell.openExternal(url);
+    return true;
+  }
+
+  return false;
 });
 
 // App lifecycle
