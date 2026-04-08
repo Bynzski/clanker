@@ -3,7 +3,7 @@
  * Orchestrates VCS provider calls to get context about the current repository.
  */
 
-import { GitHubProvider } from './providers';
+import { GitHubProvider, GitLabProvider, BitbucketProvider } from './providers';
 import type { IVcsProvider } from './providers/baseProvider';
 import { buildProviderContext } from './providerDetector';
 import { getPat } from '../credential/credentialService';
@@ -20,8 +20,8 @@ export { getProviderDeepLinks, getDeepLinkUrl } from './providerDetector';
  */
 const providerMap: Record<VcsProvider, IVcsProvider | null> = {
   github: new GitHubProvider(),
-  gitlab: null, // Phase 4
-  bitbucket: null, // Phase 4
+  gitlab: new GitLabProvider(),
+  bitbucket: new BitbucketProvider(),
   unknown: null,
 };
 
