@@ -35,6 +35,7 @@ interface ElectronAPI {
   canGoBack: (workspaceId: string) => Promise<boolean>;
   canGoForward: (workspaceId: string) => Promise<boolean>;
   browserDisposeWorkspace: (workspaceId: string) => Promise<void>;
+  onBrowserUrlUpdated: (callback: (payload: { workspaceId: string; url: string }) => void) => () => void;
 
   // Window controls
   minimizeWindow: () => Promise<void>;

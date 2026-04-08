@@ -69,6 +69,7 @@ interface WorkspaceState {
   pushBrowserOverlay: () => void;
   popBrowserOverlay: () => void;
   setBrowserUrl: (url: string) => void;
+  updateWorkspaceBrowserUrl: (workspaceId: string, url: string) => void;
   clearTerminals: () => void;
 
   setPanes: (panes: Pane[]) => void;
@@ -190,6 +191,34 @@ function syncActiveWorkspace(
     ...getActiveWorkspaceSnapshot(activeWorkspace),
     workspaces: nextWorkspaces,
   };
+}
+
+function patchWorkspaceById(
+  state: WorkspaceState,
+  workspaceId: string,
+  updater: (workspace: WorkspaceTab) => WorkspaceTab
+): Partial<WorkspaceState> {
+  let updatedWorkspace: WorkspaceTab | null = null;
+  const nextWorkspaces = state.workspaces.map((workspace) => {
+    if (workspace.id === workspaceId) {
+      updatedWorkspace = updater(workspace);
+      return updatedWorkspace;
+    }
+    return workspace;
+  });
+
+  if (!updatedWorkspace) {
+    return { workspaces: nextWorkspaces };
+  }
+
+  if (state.activeWorkspaceId === workspaceId) {
+    return {
+      ...getActiveWorkspaceSnapshot(updatedWorkspace),
+      workspaces: nextWorkspaces,
+    };
+  }
+
+  return { workspaces: nextWorkspaces };
 }
 
 const defaultWorkspaceState = {
@@ -446,6 +475,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       browserUrl: url,
     })),
   })),
+
+  updateWorkspaceBrowserUrl: (workspaceId, url) => set((state) => (
+    patchWorkspaceById(state, workspaceId, (workspace) => ({
+      ...workspace,
+      browserUrl: url,
+    }))
+  )),
 
   clearTerminals: () => set((state) => ({
     terminals: [],

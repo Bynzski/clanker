@@ -196,6 +196,26 @@ describe('browser', () => {
     addWorkspace();
   });
 
+  it('updateWorkspaceBrowserUrl patches active workspace snapshot', () => {
+    const id = getStore().activeWorkspaceId!;
+    getStore().updateWorkspaceBrowserUrl(id, 'https://example.com');
+
+    expect(getStore().browserUrl).toBe('https://example.com');
+    expect(getStore().workspaces.find((workspace) => workspace.id === id)?.browserUrl).toBe('https://example.com');
+  });
+
+  it('updateWorkspaceBrowserUrl updates inactive workspace without changing snapshot', () => {
+    const firstId = getStore().activeWorkspaceId!;
+    addWorkspace(createWorkspaceFixture({ id: 'workspace-2', name: 'workspace-2', workspacePath: '/workspace-2', browserUrl: 'https://second.com' }));
+
+    const secondId = getStore().activeWorkspaceId!;
+    getStore().updateWorkspaceBrowserUrl(firstId, 'https://updated.com');
+
+    expect(getStore().browserUrl).toBe('https://second.com');
+    expect(getStore().workspaces.find((workspace) => workspace.id === firstId)?.browserUrl).toBe('https://updated.com');
+    expect(getStore().workspaces.find((workspace) => workspace.id === secondId)?.browserUrl).toBe('https://second.com');
+  });
+
   it('toggleBrowser shows browser and creates browser pane', () => {
     getStore().toggleBrowser();
     expect(getStore().browserVisible).toBe(true);
