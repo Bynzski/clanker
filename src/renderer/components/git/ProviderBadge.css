@@ -1,0 +1,154 @@
+.provider-badge-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.provider-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  max-width: 200px;
+}
+
+.provider-badge:hover {
+  filter: brightness(1.1);
+}
+
+.provider-badge:active {
+  transform: scale(0.98);
+}
+
+/* Create PR badge */
+.create-pr-badge {
+  background-color: var(--bg-tertiary, #21262d);
+  color: var(--text-secondary, #8b949e);
+  border: 1px dashed var(--border-color, #30363d);
+}
+
+.create-pr-badge:hover {
+  background-color: var(--bg-hover, #30363d);
+  color: var(--text-primary, #c9d1d9);
+  border-color: var(--text-secondary, #8b949e);
+}
+
+/* PR Badge */
+.pr-badge {
+  background-color: var(--bg-tertiary, #21262d);
+  color: var(--text-primary, #c9d1d9);
+}
+
+.pr-badge.open {
+  border-left: 2px solid #238636;
+}
+
+.pr-badge.closed {
+  border-left: 2px solid #da3633;
+}
+
+.pr-badge.merged {
+  border-left: 2px solid #8957e5;
+}
+
+.pr-number {
+  font-weight: 600;
+  color: var(--text-link, #58a6ff);
+}
+
+.pr-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary, #8b949e);
+  max-width: 120px;
+}
+
+.pr-state {
+  padding: 1px 4px;
+  border-radius: 10px;
+  font-size: 9px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.pr-state.open {
+  background-color: rgba(35, 134, 54, 0.2);
+  color: #3fb950;
+}
+
+.pr-state.closed {
+  background-color: rgba(218, 54, 51, 0.2);
+  color: #f85149;
+}
+
+.pr-state.merged {
+  background-color: rgba(137, 87, 229, 0.2);
+  color: #a371f7;
+}
+
+/* Status indicators */
+.pr-status-indicators {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+}
+
+.pr-status-icon {
+  display: block;
+}
+
+.pr-status-icon.success {
+  color: #3fb950;
+}
+
+.pr-status-icon.failure {
+  color: #f85149;
+}
+
+.pr-status-icon.pending {
+  color: #d29922;
+}
+
+.pr-status-icon.error {
+  color: #f85149;
+}
+
+/* Review state */
+.review-state {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 8px;
+}
+
+.review-state.approved {
+  background-color: rgba(35, 134, 54, 0.2);
+  color: #3fb950;
+}
+
+.review-state.changes_requested {
+  background-color: rgba(218, 54, 51, 0.2);
+  color: #f85149;
+}
+
+.review-state.commented {
+  background-color: rgba(88, 166, 255, 0.2);
+  color: #58a6ff;
+}
+
+.review-state.pending {
+  background-color: rgba(210, 153, 34, 0.2);
+  color: #d29922;
+}

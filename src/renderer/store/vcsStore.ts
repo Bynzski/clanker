@@ -39,6 +39,45 @@ export interface RemoteCredentialStatus {
 }
 
 /**
+ * Deep link type for provider navigation.
+ */
+export type DeepLinkType = 'repo' | 'pr' | 'create-pr' | 'issues' | 'releases' | 'actions' | 'branches';
+
+/**
+ * A deep link to a provider page.
+ */
+export interface DeepLink {
+  type: DeepLinkType;
+  url: string;
+  label: string;
+}
+
+/**
+ * Provider context from remote URL.
+ */
+export interface ProviderContext {
+  provider: VcsProvider;
+  baseUrl: string;
+  owner: string;
+  repo: string;
+  defaultBranch: string;
+}
+
+/**
+ * Pull request/merge request information.
+ */
+export interface PullRequestContext {
+  exists: boolean;
+  number?: number;
+  title?: string;
+  state?: 'open' | 'closed' | 'merged';
+  url?: string;
+  checksStatus?: 'pending' | 'success' | 'failure' | 'error';
+  reviewState?: 'approved' | 'changes_requested' | 'commented' | 'pending';
+  author?: string;
+}
+
+/**
  * Global VCS credential state.
  */
 export interface VcsCredentialState {
@@ -54,6 +93,9 @@ export interface VcsCredentialState {
   error: string | null;
 }
 
+/**
+ * Actions for credential management.
+ */
 interface VcsCredentialActions {
   /** Set SSH key status */
   setSshKey: (status: SshKeyStatus) => void;
@@ -71,9 +113,45 @@ interface VcsCredentialActions {
   clearCredentials: () => void;
 }
 
-export type VcsStore = VcsCredentialState & VcsCredentialActions;
+/**
+ * Provider context state for the current workspace.
+ */
+export interface VcsContextState {
+  /** Provider context */
+  provider: ProviderContext | null;
+  /** Pull request info */
+  pullRequest: PullRequestContext | null;
+  /** Available deep links */
+  deepLinks: DeepLink[];
+  /** Whether context is loading */
+  isLoading: boolean;
+  /** Error message */
+  error: string | null;
+}
 
-const initialState: VcsCredentialState = {
+/**
+ * Actions for provider context.
+ */
+interface VcsContextActions {
+  /** Set provider context */
+  setProviderContext: (provider: ProviderContext | null) => void;
+  /** Set pull request info */
+  setPullRequest: (pullRequest: PullRequestContext | null) => void;
+  /** Set deep links */
+  setDeepLinks: (deepLinks: DeepLink[]) => void;
+  /** Clear context state */
+  clearContext: () => void;
+}
+
+/**
+ * Combined VCS state type.
+ */
+export type VcsStore = VcsCredentialState & VcsContextState & VcsCredentialActions & VcsContextActions;
+
+/**
+ * Initial credential state.
+ */
+const initialCredentialState: VcsCredentialState = {
   sshKey: { exists: false },
   storedPats: {
     github: null,
@@ -86,16 +164,29 @@ const initialState: VcsCredentialState = {
   error: null,
 };
 
-export const useVcsStore = create<VcsStore>((set) => ({
-  ...initialState,
+/**
+ * Initial context state.
+ */
+const initialContextState: VcsContextState = {
+  provider: null,
+  pullRequest: null,
+  deepLinks: [],
+  isLoading: false,
+  error: null,
+};
 
-  setSshKey: (status) =>
+export const useVcsStore = create<VcsStore>((set) => ({
+  ...initialCredentialState,
+  ...initialContextState,
+
+  // Credential actions
+  setSshKey: (status: SshKeyStatus) =>
     set(() => ({
       sshKey: status,
       error: null,
     })),
 
-  setStoredPat: (provider, pat) =>
+  setStoredPat: (provider: VcsProvider, pat: StoredPat | null) =>
     set((state) => ({
       storedPats: {
         ...state.storedPats,
@@ -104,7 +195,7 @@ export const useVcsStore = create<VcsStore>((set) => ({
       error: null,
     })),
 
-  removeStoredPat: (provider) =>
+  removeStoredPat: (provider: VcsProvider) =>
     set((state) => ({
       storedPats: {
         ...state.storedPats,
@@ -113,7 +204,7 @@ export const useVcsStore = create<VcsStore>((set) => ({
       error: null,
     })),
 
-  setRemoteCredentialStatus: (remoteName, status) =>
+  setRemoteCredentialStatus: (remoteName: string, status: RemoteCredentialStatus) =>
     set((state) => ({
       remoteCredentials: {
         ...state.remoteCredentials,
@@ -122,12 +213,12 @@ export const useVcsStore = create<VcsStore>((set) => ({
       error: null,
     })),
 
-  setLoading: (loading) =>
+  setLoading: (loading: boolean) =>
     set(() => ({
       isLoading: loading,
     })),
 
-  setError: (error) =>
+  setError: (error: string | null) =>
     set(() => ({
       error,
       isLoading: false,
@@ -135,7 +226,30 @@ export const useVcsStore = create<VcsStore>((set) => ({
 
   clearCredentials: () =>
     set(() => ({
-      ...initialState,
+      ...initialCredentialState,
+    })),
+
+  // Context actions
+  setProviderContext: (provider: ProviderContext | null) =>
+    set(() => ({
+      provider,
+      error: null,
+    })),
+
+  setPullRequest: (pullRequest: PullRequestContext | null) =>
+    set(() => ({
+      pullRequest,
+      error: null,
+    })),
+
+  setDeepLinks: (deepLinks: DeepLink[]) =>
+    set(() => ({
+      deepLinks,
+    })),
+
+  clearContext: () =>
+    set(() => ({
+      ...initialContextState,
     })),
 }));
 
@@ -165,4 +279,17 @@ export function useCredentialsLoading() {
  */
 export function useCredentialsError() {
   return useVcsStore((state) => state.error);
+}
+
+/**
+ * Selector to get provider context.
+ */
+export function useProviderContext() {
+  return useVcsStore((state) => ({
+    provider: state.provider,
+    pullRequest: state.pullRequest,
+    deepLinks: state.deepLinks,
+    isLoading: state.isLoading,
+    error: state.error,
+  }));
 }

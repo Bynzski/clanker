@@ -83,6 +83,13 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     credentialGetGlobalStatus: createAsyncMock({ defaultSshKeyPath: '', hasDefaultSshKey: false, storedPats: [], credentialHelpers: {} }),
     credentialConfigureSshHost: createAsyncMock({ success: true }),
 
+    // VCS Provider Context
+    vcsGetContext: createAsyncMock({ success: false, error: 'Not implemented in mock' }),
+    vcsGetPrInfo: createAsyncMock({ success: false, error: 'Not implemented in mock' }),
+    vcsGetDeepLinks: createAsyncMock([]),
+    vcsGetDeepLink: createAsyncMock(null),
+    vcsOpenDeepLink: createAsyncMock(true),
+
     ...overrides,
   };
 }

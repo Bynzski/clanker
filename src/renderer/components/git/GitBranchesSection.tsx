@@ -1,5 +1,8 @@
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import type { GitBranch } from './types';
+import type { PullRequestContext, DeepLink, ProviderContext } from '../../store/vcsStore';
+import ProviderBadge from './ProviderBadge';
+import ProviderMenu from './ProviderMenu';
 import './GitBranchesSection.css';
 
 interface GitBranchesSectionProps {
@@ -14,6 +17,14 @@ interface GitBranchesSectionProps {
   onDeleteBranch: (branchName: string) => void;
   onSetNewBranchName: (value: string) => void;
   onSwitchBranch: (branchName: string) => void;
+  // Provider context
+  provider: ProviderContext | null;
+  pullRequest: PullRequestContext | null;
+  deepLinks: DeepLink[];
+  isLoadingContext: boolean;
+  contextError: string | null;
+  onRefreshContext: () => void;
+  workspacePath: string;
 }
 
 export function GitBranchesSection({
@@ -28,9 +39,62 @@ export function GitBranchesSection({
   onDeleteBranch,
   onSetNewBranchName,
   onSwitchBranch,
+  provider,
+  pullRequest,
+  deepLinks,
+  isLoadingContext,
+  contextError,
+  onRefreshContext,
+  workspacePath,
 }: GitBranchesSectionProps) {
+  // Handle opening PR in browser
+  const handleViewPr = () => {
+    if (pullRequest?.url) {
+      window.electronAPI.openExternal(pullRequest.url);
+    }
+  };
+
+  // Handle creating PR
+  const handleCreatePr = () => {
+    window.electronAPI.vcsOpenDeepLink(workspacePath, 'create-pr');
+  };
+
+  // Get provider name for badge
+  const providerName = provider?.provider === 'github'
+    ? 'GitHub'
+    : provider?.provider === 'gitlab'
+      ? 'GitLab'
+      : provider?.provider === 'bitbucket'
+        ? 'Bitbucket'
+        : 'GitHub';
+
   return (
     <>
+      {/* Provider context header with menu */}
+      {provider && (
+        <div className="git-menu-section provider-context-header">
+          <div className="provider-context-info">
+            <span className="provider-context-repo">
+              {provider.owner}/{provider.repo}
+            </span>
+            <ProviderBadge
+              pullRequest={pullRequest}
+              providerName={providerName}
+              onViewPr={handleViewPr}
+              onCreatePr={handleCreatePr}
+            />
+          </div>
+          <ProviderMenu
+            provider={provider}
+            deepLinks={deepLinks}
+            isLoading={isLoadingContext}
+            error={contextError}
+            onRefresh={onRefreshContext}
+            workspacePath={workspacePath}
+          />
+        </div>
+      )}
+
       <div className="git-menu-section">
         <div className="git-menu-section-header">Create Branch</div>
         <form className="git-create-branch-form" onSubmit={onCreateBranch}>
