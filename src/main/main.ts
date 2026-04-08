@@ -1076,6 +1076,28 @@ ipcMain.handle('git-refresh', async () => {
   return gitService.getStatus(safeWorkspacePath);
 });
 
+ipcMain.handle('git-init', async (_, workspacePath: string, defaultBranch?: string) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  // Check if already a repo
+  const isAlreadyRepo = await gitService.isRepo(safeWorkspacePath);
+  if (isAlreadyRepo) {
+    return { success: false, error: 'Already a git repository' };
+  }
+
+  const result = await gitService.initRepository(safeWorkspacePath, { defaultBranch });
+
+  // Refresh status after init so UI updates
+  if (result.success) {
+    await refreshGitStatus(safeWorkspacePath);
+  }
+
+  return result;
+});
+
 ipcMain.handle('git-get-remotes', async (_, workspacePath: string) => {
   const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
   if (!safeWorkspacePath) {

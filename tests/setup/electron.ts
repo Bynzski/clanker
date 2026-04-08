@@ -66,6 +66,7 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     gitDropStash: createAsyncMock({ success: true }),
     gitClearStashes: createAsyncMock({ success: true }),
     gitRefresh: createAsyncMock(null),
+    gitInit: createAsyncMock({ success: true }),
     gitGetRemotes: createAsyncMock({ success: true, remotes: [], provider: 'unknown' }),
     gitAddRemote: createAsyncMock({ success: true }),
     gitRemoveRemote: createAsyncMock({ success: true }),

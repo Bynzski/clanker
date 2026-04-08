@@ -157,7 +157,7 @@ describe('GitButton', () => {
   // Non-Repo State
   // =========================================================================
   describe('non-repo state', () => {
-    it('returns null when not a git repository', () => {
+    it('shows init git button when not a git repository', () => {
       mockOnGitStatusUpdate.mockImplementation(((callback: (status: { success: boolean; isRepo: boolean; changes: unknown[] }) => void) => {
         // Simulate non-repo status
         setTimeout(() => {
@@ -170,13 +170,18 @@ describe('GitButton', () => {
         return vi.fn();
       }) as unknown as typeof mockOnGitStatusUpdate);
       
-      const { container } = render(<GitButton workspacePath="/not-a-repo" />);
+      render(<GitButton workspacePath="/not-a-repo" />);
       
       act(() => {
         vi.runAllTimers();
       });
       
-      expect(container.firstChild).toBeNull();
+      expect(screen.getByText('Init Git')).toBeTruthy();
+    });
+
+    it('shows init git button when workspace path is empty', () => {
+      render(<GitButton workspacePath="" />);
+      expect(screen.getByText('Init Git')).toBeTruthy();
     });
   });
 
@@ -817,26 +822,6 @@ describe('GitButton', () => {
       expect(mockGitStartPolling).toHaveBeenCalledWith('/repo2');
     });
 
-    it('resets to empty state when workspace path is empty', () => {
-      mockOnGitStatusUpdate.mockImplementation(((callback: (status: { success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean; changes: unknown[] }) => void) => {
-        callback({
-          success: true,
-          isRepo: true,
-          currentBranch: 'main',
-          isDetached: false,
-          changes: [],
-        });
-        return vi.fn();
-      }) as unknown as typeof mockOnGitStatusUpdate);
-      
-      const { rerender } = render(<GitButton workspacePath="/repo" />);
-      
-      expect(screen.getByRole('button')).toBeTruthy();
-      
-      rerender(<GitButton workspacePath="" />);
-      
-      expect(screen.queryByRole('button')).toBeNull();
-    });
   });
 
   // =========================================================================
@@ -1651,7 +1636,8 @@ describe('GitButton', () => {
     });
 
     it('shows publish button when no upstream and sets upstream on push', async () => {
-      mockGitGetRemotes.mockResolvedValueOnce({
+      // Use mockResolvedValue so remotes are available for all calls
+      mockGitGetRemotes.mockResolvedValue({
         success: true,
         remotes: [
           { name: 'origin', fetchUrl: 'https://github.com/owner/repo.git', pushUrl: 'https://github.com/owner/repo.git' },
