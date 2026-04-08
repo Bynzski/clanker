@@ -98,7 +98,14 @@ function runCommandOutput(
   });
 }
 
-function normalizeModelLine(line: string): string {
+// ============================================================================
+// Pure Parsing Functions (exported for testability)
+// ============================================================================
+
+/**
+ * Normalize a model line by removing ANSI codes, prefixes, and trimming.
+ */
+export function normalizeModelLine(line: string): string {
   return line
     .replace(/\u001B\[[0-9;]*m/g, '')
     .replace(/^\s*[-*•]\s*/, '')
@@ -106,7 +113,11 @@ function normalizeModelLine(line: string): string {
     .trim();
 }
 
-function parsePiModels(output: string): ModelOption[] {
+/**
+ * Parse model list from pi --list-models output.
+ * Returns array of ModelOption with id in provider/model format.
+ */
+export function parsePiModels(output: string): ModelOption[] {
   if (/no models available/i.test(output)) {
     return [];
   }
@@ -145,7 +156,11 @@ function parsePiModels(output: string): ModelOption[] {
   return models;
 }
 
-function parseOpenCodeModels(output: string): ModelOption[] {
+/**
+ * Parse model list from opencode models command output.
+ * Returns array of ModelOption with id matching the command output.
+ */
+export function parseOpenCodeModels(output: string): ModelOption[] {
   const lines = output
     .split(/\r?\n/)
     .map((line) => normalizeModelLine(line))

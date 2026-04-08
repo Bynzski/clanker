@@ -12,11 +12,38 @@ import type { SshKeyGenerationResult } from './types';
 
 const execFileAsync = promisify(execFile);
 
+// ============================================================================
+// Test Hook for Path Isolation
+// ============================================================================
+
+/**
+ * Internal state for test isolation.
+ * This allows tests to override the home directory without modifying the real system.
+ */
+let _testHomeDir: string | undefined;
+
+/**
+ * Get the home directory, allowing test override.
+ * @internal - Only for testing purposes
+ */
+function _getHomeDir(): string {
+  return _testHomeDir ?? os.homedir();
+}
+
+/**
+ * Set a test home directory for isolated testing.
+ * @param homeDir - The home directory to use (e.g., a temp directory)
+ * @internal - Only for testing purposes
+ */
+export function _setTestHomeDir(homeDir: string | undefined): void {
+  _testHomeDir = homeDir;
+}
+
 /**
  * Get the default SSH key directory for the current platform.
  */
 export function getDefaultSshDir(): string {
-  return path.join(os.homedir(), '.ssh');
+  return path.join(_getHomeDir(), '.ssh');
 }
 
 /**

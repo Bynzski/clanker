@@ -149,17 +149,19 @@ export class GitService {
   }
 
   private getGitErrorMessage(error: unknown, fallback: string): string {
-    const errorRecord = error as { stderr?: string; message?: string };
+    const errorRecord = error as { stderr?: string; stdout?: string; message?: string };
     const stderr = String(errorRecord?.stderr ?? '').trim();
+    const stdout = String(errorRecord?.stdout ?? '').trim();
     const message = String(errorRecord?.message ?? '').trim();
-    return stderr || message || fallback;
+    return stderr || stdout || message || fallback;
   }
 
   private isBranchNotFullyMerged(error: unknown): boolean {
-    const errorRecord = error as { stderr?: string; message?: string };
+    const errorRecord = error as { stderr?: string; stdout?: string; message?: string };
     const stderr = String(errorRecord?.stderr ?? '').toLowerCase();
+    const stdout = String(errorRecord?.stdout ?? '').toLowerCase();
     const message = String(errorRecord?.message ?? '').toLowerCase();
-    return stderr.includes('not fully merged') || message.includes('not fully merged');
+    return stderr.includes('not fully merged') || stdout.includes('not fully merged') || message.includes('not fully merged');
   }
 
   private parseBranchList(branchOutput: string): GitBranchEntry[] {
@@ -436,7 +438,19 @@ export class GitService {
       if (stashMessage.length > 0) {
         args.push('-m', stashMessage);
       }
-      await this.execGit(workspacePath, args);
+      const { stdout } = await this.execGit(workspacePath, args);
+      
+      // Git returns exit code 0 with "No local changes to save" when nothing to stash
+      if (stdout.toLowerCase().includes('no local changes to save')) {
+        return {
+          success: false,
+          error: this.getGitErrorMessage(
+            { stdout },
+            'No local changes to save'
+          ),
+        };
+      }
+      
       return { success: true };
     } catch (error) {
       return {
