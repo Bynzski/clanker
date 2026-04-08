@@ -32,6 +32,20 @@ import {
   normalizeExternalUrl,
   resolveExistingDirectory,
 } from './security';
+import {
+  generateSshKey,
+  readPublicKey,
+  deleteSshKeyPair,
+  savePat,
+  getPat,
+  deletePat,
+  getCredentialStatus,
+  getGlobalCredentialStatus,
+  configureSshForHost,
+  checkSshKeyExists,
+  type SavePatRequest,
+} from './credential';
+import type { VcsProvider } from './gitService';
 
 interface Terminal {
   id: string;
@@ -1073,6 +1087,47 @@ ipcMain.handle('git-push', async (_, workspacePath: string, remote?: string, bra
     return { success: false, error: 'Invalid workspace path' };
   }
   return gitService.push(safeWorkspacePath, remote, branch, forceWithLease);
+});
+
+// Credential management handlers
+ipcMain.handle('credential:generate-ssh-key', async () => {
+  return generateSshKey();
+});
+
+ipcMain.handle('credential:get-public-key', async () => {
+  return readPublicKey();
+});
+
+ipcMain.handle('credential:delete-ssh-key', async () => {
+  return deleteSshKeyPair();
+});
+
+ipcMain.handle('credential:check-exists', async () => {
+  return { exists: checkSshKeyExists() };
+});
+
+ipcMain.handle('credential:save-pat', async (_, request: SavePatRequest) => {
+  return savePat(request);
+});
+
+ipcMain.handle('credential:get-pat', async (_, provider: VcsProvider) => {
+  return getPat(provider);
+});
+
+ipcMain.handle('credential:delete-pat', async (_, provider: VcsProvider) => {
+  return deletePat(provider);
+});
+
+ipcMain.handle('credential:get-status', async (_, remoteName: string, remoteUrl: string, provider: VcsProvider) => {
+  return getCredentialStatus(remoteName, remoteUrl, provider);
+});
+
+ipcMain.handle('credential:get-global-status', async () => {
+  return getGlobalCredentialStatus();
+});
+
+ipcMain.handle('credential:configure-ssh-host', async (_, hostname: string) => {
+  return configureSshForHost(hostname);
 });
 
 // App lifecycle

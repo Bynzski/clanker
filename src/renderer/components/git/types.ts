@@ -1,3 +1,8 @@
+/**
+ * VCS Provider types for Git remote services.
+ */
+export type VcsProvider = 'github' | 'gitlab' | 'bitbucket' | 'unknown';
+
 export interface GitStatus {
   path: string;
   status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed';

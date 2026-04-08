@@ -8,3 +8,17 @@ export interface AiCommitSettings {
   provider: string;
   model: string;
 }
+
+/**
+ * VCS Provider types for Git remote services.
+ */
+export type VcsProvider = 'github' | 'gitlab' | 'bitbucket' | 'unknown';
+
+/**
+ * Request to save a Personal Access Token.
+ */
+export interface SavePatRequest {
+  provider: VcsProvider;
+  token: string;
+  scope?: string[];
+}
