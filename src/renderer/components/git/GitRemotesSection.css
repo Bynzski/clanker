@@ -1,0 +1,319 @@
+/**
+ * GitRemotesSection styles
+ */
+
+.git-remotes-section {
+  padding: 8px 12px;
+}
+
+.git-remotes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.git-remotes-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary, #8b949e);
+}
+
+.git-remotes-count {
+  background: var(--bg-tertiary, #21262d);
+  color: var(--text-secondary, #8b949e);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.git-remotes-add-btn,
+.git-remotes-cancel-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #8b949e);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.git-remotes-add-btn:hover,
+.git-remotes-cancel-btn:hover {
+  background: var(--bg-tertiary, #21262d);
+  color: var(--text-primary, #c9d1d9);
+}
+
+.git-remotes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.git-remotes-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 12px;
+  color: var(--text-secondary, #8b949e);
+  text-align: center;
+}
+
+.git-remotes-empty svg {
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+
+.git-remotes-empty p {
+  margin: 0 0 12px 0;
+  font-size: 12px;
+}
+
+.git-remotes-empty-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: 1px dashed var(--border-default, #30363d);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #8b949e);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.git-remotes-empty-add-btn:hover {
+  border-color: var(--accent-primary, #58a6ff);
+  color: var(--accent-primary, #58a6ff);
+}
+
+.git-remote-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--bg-secondary, #161b22);
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.git-remote-item:hover {
+  background: var(--bg-tertiary, #21262d);
+}
+
+.git-remote-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.git-remote-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary, #c9d1d9);
+}
+
+.git-remote-url {
+  font-size: 11px;
+  color: var(--text-secondary, #8b949e);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono, monospace);
+}
+
+.git-remote-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.git-remote-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #8b949e);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.git-remote-action-btn:hover {
+  background: var(--bg-hover, #1f2428);
+  color: var(--text-primary, #c9d1d9);
+}
+
+.git-remote-action-btn-danger:hover {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+/* Form styles */
+.git-remotes-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  background: var(--bg-secondary, #161b22);
+  border-radius: 4px;
+}
+
+.git-remotes-form-info {
+  font-size: 12px;
+  color: var(--text-secondary, #8b949e);
+}
+
+.git-remotes-form-info strong {
+  color: var(--text-primary, #c9d1d9);
+  font-family: var(--font-mono, monospace);
+}
+
+.git-remotes-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.git-remotes-form-field label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary, #8b949e);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.git-remotes-input-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.git-remotes-input {
+  width: 100%;
+  padding: 8px 10px;
+  padding-right: 32px;
+  border: 1px solid var(--border-default, #30363d);
+  border-radius: 4px;
+  background: var(--bg-primary, #0d1117);
+  color: var(--text-primary, #c9d1d9);
+  font-size: 13px;
+  font-family: var(--font-mono, monospace);
+  transition: border-color 0.15s ease;
+}
+
+.git-remotes-input:focus {
+  outline: none;
+  border-color: var(--accent-primary, #58a6ff);
+}
+
+.git-remotes-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.git-remotes-input::placeholder {
+  color: var(--text-muted, #6e7681);
+  font-size: 11px;
+}
+
+.git-remotes-input-icon {
+  position: absolute;
+  right: 10px;
+  pointer-events: none;
+}
+
+.git-remotes-input-icon-success {
+  color: var(--color-success, #3fb950);
+}
+
+.git-remotes-input-icon-error {
+  color: var(--color-danger, #f85149);
+}
+
+.git-remotes-suggestions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.git-remotes-suggestion {
+  padding: 2px 8px;
+  border: 1px solid var(--border-default, #30363d);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-secondary, #8b949e);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.git-remotes-suggestion:hover {
+  border-color: var(--accent-primary, #58a6ff);
+  color: var(--accent-primary, #58a6ff);
+}
+
+.git-remotes-form-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba(248, 81, 73, 0.1);
+  border-radius: 4px;
+  color: #f85149;
+  font-size: 11px;
+}
+
+.git-remotes-submit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent-primary, #58a6ff);
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.git-remotes-submit-btn:hover:not(:disabled) {
+  background: #4393e6;
+}
+
+.git-remotes-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Spin animation for loader */
+.spin {
+  animation: git-remotes-spin 1s linear infinite;
+}
+
+@keyframes git-remotes-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

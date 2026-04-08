@@ -13,6 +13,12 @@ export interface GitBranch {
   isCurrent: boolean;
 }
 
+export interface GitRemote {
+  name: string;
+  fetchUrl: string;
+  pushUrl: string;
+}
+
 export interface GitOperationState {
   success: boolean;
   isRepo: boolean;

@@ -71,7 +71,8 @@ interface ElectronAPI {
   gitGetDiff: (workspacePath: string, mode: 'working' | 'staged' | 'commit', ref?: string) => Promise<GitDiffResult>;
   gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string) => Promise<{ success: boolean; error?: string }>;
   gitSwitchBranch: (workspacePath: string, name: string) => Promise<{ success: boolean; error?: string }>;
-  gitDeleteBranch: (workspacePath: string, name: string) => Promise<{ success: boolean; error?: string }>;
+  gitDeleteBranch: (workspacePath: string, name: string) => Promise<GitDeleteBranchResult>;
+  gitForceDeleteBranch: (workspacePath: string, name: string) => Promise<GitDeleteBranchResult>;
   gitMergeBranch: (workspacePath: string, branchName: string) => Promise<{ success: boolean; error?: string }>;
   gitAbortOperation: (workspacePath: string) => Promise<{ success: boolean; error?: string }>;
   gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean) => Promise<{ success: boolean; error?: string }>;
@@ -81,9 +82,18 @@ interface ElectronAPI {
   gitClearStashes: (workspacePath: string) => Promise<{ success: boolean; error?: string }>;
   gitRefresh: () => Promise<GitStatusResult | null>;
   gitGetRemotes: (workspacePath: string) => Promise<GitRemotesResult>;
+  gitAddRemote: (workspacePath: string, name: string, url: string) => Promise<GitRemoteOperationResult>;
+  gitRemoveRemote: (workspacePath: string, name: string) => Promise<GitRemoteOperationResult>;
+  gitRenameRemote: (workspacePath: string, oldName: string, newName: string) => Promise<GitRemoteOperationResult>;
   gitFetch: (workspacePath: string, remote?: string) => Promise<{ success: boolean; error?: string }>;
   gitPull: (workspacePath: string, rebase?: boolean) => Promise<{ success: boolean; error?: string }>;
-  gitPush: (workspacePath: string, remote?: string, branch?: string, forceWithLease?: boolean) => Promise<{ success: boolean; error?: string }>;
+  gitPush: (
+    workspacePath: string,
+    remote?: string,
+    branch?: string,
+    forceWithLease?: boolean,
+    setUpstream?: boolean
+  ) => Promise<{ success: boolean; error?: string }>;
   onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => () => void;
 
   // Credential management
@@ -144,6 +154,12 @@ interface GitBranchStateResult {
   error?: string;
 }
 
+interface GitDeleteBranchResult {
+  success: boolean;
+  error?: string;
+  blockedByUnmergedCommits?: boolean;
+}
+
 interface GitOperationStateResult {
   success: boolean;
   isRepo: boolean;
@@ -202,6 +218,11 @@ interface GitRemotesResult {
   success: boolean;
   remotes: GitRemote[];
   provider: VcsProvider;
+  error?: string;
+}
+
+interface GitRemoteOperationResult {
+  success: boolean;
   error?: string;
 }
 

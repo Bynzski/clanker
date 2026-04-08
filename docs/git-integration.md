@@ -54,6 +54,33 @@ Access via the Git menu header:
 
 Remote operations are available when connected to a VCS provider.
 
+## Remotes
+
+The **Remotes** section allows you to manage git remote connections:
+
+- **View remotes** — See all configured remotes with their URLs
+- **Add remote** — Connect to a new remote repository (SSH or HTTPS URLs)
+- **Rename remote** — Change the name of an existing remote
+- **Remove remote** — Disconnect a remote
+
+### Adding a Remote
+
+1. Open the Git menu
+2. Click the **+** button in the Remotes section
+3. Enter a name (e.g., `origin`, `upstream`)
+4. Enter the remote URL:
+   - SSH: `git@github.com:owner/repo.git`
+   - HTTPS: `https://github.com/owner/repo.git`
+5. Click **Add Remote**
+
+### Workflow Example: Connect to GitHub
+
+1. Create a new repository on GitHub (github.com)
+2. Copy the remote URL from GitHub
+3. In Clanker Grid, open the Git menu → Remotes
+4. Click **Add remote**, name it `origin`, paste the URL
+5. Your local repo is now connected to the GitHub remote
+
 ## Committing
 
 ### Commit Dialog

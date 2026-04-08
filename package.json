@@ -2,7 +2,7 @@
   "name": "clanker-grid",
   "version": "0.1.0",
   "description": "Developer workspace tool with terminal grid and web browser",
-  "main": "dist/main/main.js",
+  "main": "dist/main/main/main.js",
   "author": "you",
   "license": "MIT",
   "scripts": {

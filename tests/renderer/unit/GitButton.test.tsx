@@ -1106,6 +1106,13 @@ describe('GitButton', () => {
         });
         return vi.fn();
       }) as unknown as typeof mockOnGitStatusUpdate);
+      mockGitGetBranchState.mockResolvedValue({
+        success: true,
+        isRepo: true,
+        currentBranch: 'feature',
+        isDetached: false,
+        branches: [{ name: 'feature', isCurrent: true }],
+      });
 
       render(<GitButton workspacePath="/repo" />);
 
@@ -1641,6 +1648,56 @@ describe('GitButton', () => {
       const pushBtn = screen.getByText('Push').closest('button') as HTMLButtonElement;
       expect(pullBtn).toBeDisabled();
       expect(pushBtn).toBeDisabled();
+    });
+
+    it('shows publish button when no upstream and sets upstream on push', async () => {
+      mockGitGetRemotes.mockResolvedValueOnce({
+        success: true,
+        remotes: [
+          { name: 'origin', fetchUrl: 'https://github.com/owner/repo.git', pushUrl: 'https://github.com/owner/repo.git' },
+        ],
+        provider: 'github',
+      });
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'feature',
+          isDetached: false,
+          changes: [],
+          upstream: null,
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/repo" />);
+
+      const button = document.querySelector('.git-btn');
+      await act(async () => {
+        fireEvent.click(button!);
+      });
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      mockGitPush.mockResolvedValueOnce({ success: true });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const publishButton = screen.getByRole('button', { name: /publish branch/i });
+      expect(publishButton).toBeEnabled();
+
+      await act(async () => {
+        fireEvent.click(publishButton);
+      });
+
+      expect(mockGitPush).toHaveBeenCalledWith('/repo', 'origin', 'main', false, true);
     });
   });
 });
