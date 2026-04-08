@@ -1,3 +1,5 @@
+import type { VcsProvider } from '../../shared/types/vcs';
+
 export interface ModelOption {
   id: string;
   label: string;
@@ -9,10 +11,7 @@ export interface AiCommitSettings {
   model: string;
 }
 
-/**
- * VCS Provider types for Git remote services.
- */
-export type VcsProvider = 'github' | 'gitlab' | 'bitbucket' | 'unknown';
+export type { VcsProvider };
 
 /**
  * Request to save a Personal Access Token.

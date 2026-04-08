@@ -1,4 +1,13 @@
 import type { AiCommitSettings, ModelOption } from './types/shared';
+import type {
+  DeepLink,
+  DeepLinkType,
+  ProviderContext,
+  PullRequestContext,
+  VcsProvider,
+} from '../shared/types/vcs';
+
+export type { VcsProvider, ProviderContext, PullRequestContext, DeepLink, DeepLinkType };
 
 interface ElectronAPI {
   // Workspace
@@ -97,38 +106,11 @@ interface ElectronAPI {
   vcsOpenDeepLink: (workspacePath: string, type: string) => Promise<boolean>;
 }
 
-// VCS Context types
-export type DeepLinkType = 'repo' | 'pr' | 'create-pr' | 'issues' | 'releases' | 'actions' | 'branches';
-
-interface DeepLink {
-  type: DeepLinkType;
-  url: string;
-  label: string;
-}
-
-interface ProviderContext {
-  provider: VcsProvider;
-  baseUrl: string;
-  owner: string;
-  repo: string;
-  defaultBranch: string;
-}
-
-interface PullRequestContext {
-  exists: boolean;
-  number?: number;
-  title?: string;
-  state?: 'open' | 'closed' | 'merged';
-  url?: string;
-  checksStatus?: 'pending' | 'success' | 'failure' | 'error';
-  reviewState?: 'approved' | 'changes_requested' | 'commented' | 'pending';
-  author?: string;
-}
-
 interface VcsContextResult {
   success: boolean;
   provider?: ProviderContext;
   pullRequest?: PullRequestContext;
+  deepLinks?: DeepLink[];
   error?: string;
 }
 
@@ -209,8 +191,6 @@ interface GitBranch {
   name: string;
   isCurrent: boolean;
 }
-
-type VcsProvider = 'github' | 'bitbucket' | 'gitlab' | 'unknown';
 
 interface GitRemote {
   name: string;

@@ -44,6 +44,10 @@ interface GitLabUser {
   state: string;
 }
 
+interface GitLabProject {
+  default_branch: string;
+}
+
 /**
  * GitLab API provider implementation.
  */
@@ -315,6 +319,23 @@ export class GitLabProvider extends BaseProvider {
     return undefined;
   }
 
+  async getDefaultBranch(context: ProviderContext, token?: string): Promise<string> {
+    const projectId = this.getProjectId(context);
+    const endpoint = `/projects/${projectId}`;
+    let result;
+    if (token) {
+      result = await this.fetchWithAuth<GitLabProject>(endpoint, token, context);
+    } else {
+      result = await this.fetchPublic<GitLabProject>(endpoint, context);
+    }
+
+    if (!result.success || !result.data) {
+      return context.defaultBranch || 'main';
+    }
+
+    return result.data.default_branch;
+  }
+
   /**
    * Validate a GitLab token has required scopes.
    * GitLab uses personal access tokens with scopes.
@@ -375,7 +396,9 @@ export class GitLabProvider extends BaseProvider {
     if (branch) {
       links.push({
         type: 'create-pr',
-        url: `${baseUrl}${path}/-/merge_requests/new?merge_request[source_branch]=${encodeURIComponent(branch)}`,
+        url: `${baseUrl}${path}/-/merge_requests/new?merge_request[source_branch]=${encodeURIComponent(branch)}&merge_request[target_branch]=${encodeURIComponent(
+          context.defaultBranch || 'main'
+        )}`,
         label: 'Create Merge Request',
       });
     }

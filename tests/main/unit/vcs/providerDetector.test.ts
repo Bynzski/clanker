@@ -208,6 +208,13 @@ describe('getProviderDeepLinks', () => {
     expect(prLink?.url).toContain('/pull/123');
   });
 
+  it('uses the provided default branch for create PR links', () => {
+    const links = getProviderDeepLinks('git@github.com:owner/repo.git', 'feature-branch', undefined, 'develop');
+    const createLink = links.find((l) => l.type === 'create-pr');
+    expect(createLink).toBeDefined();
+    expect(createLink?.url).toBe('https://github.com/owner/repo/compare/develop...feature-branch');
+  });
+
   it('should return empty array for unknown provider', () => {
     const links = getProviderDeepLinks('git@custom.example.com:owner/repo.git');
     expect(links).toEqual([]);

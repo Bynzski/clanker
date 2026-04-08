@@ -3,7 +3,7 @@
  * Supports SSH keys and Personal Access Tokens for GitHub, GitLab, and Bitbucket.
  */
 
-import type { VcsProvider } from '../gitService';
+import type { VcsProvider } from '../../shared/types/vcs';
 
 export type { VcsProvider };
 
