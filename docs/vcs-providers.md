@@ -94,6 +94,29 @@ interface IVcsProvider {
 
 ## IPC Channels
 
+### Git Remote Management
+
+| Channel | Direction | Purpose |
+|---------|-----------|---------|
+| `git:get-remotes` | renderer → main | List all remotes |
+| `git:add-remote` | renderer → main | Add a new remote |
+| `git:remove-remote` | renderer → main | Remove an existing remote |
+| `git:rename-remote` | renderer → main | Rename an existing remote |
+
+### Example: Add Remote
+
+```typescript
+// Renderer
+const result = await window.electronAPI.gitAddRemote(
+  workspacePath,
+  'origin',
+  'git@github.com:owner/repo.git'
+);
+// Returns: { success: true }
+```
+
+### VCS Provider Context
+
 | Channel | Direction | Purpose |
 |---------|-----------|---------|
 | `vcs:get-context` | renderer → main | Get provider context, PR info, and deep links |

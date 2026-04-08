@@ -950,6 +950,19 @@ ipcMain.handle('git-delete-branch', async (_, workspacePath: string, name: strin
   return result;
 });
 
+ipcMain.handle('git-force-delete-branch', async (_, workspacePath: string, name: string) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return getInvalidWorkspaceResult();
+  }
+
+  const result = await gitService.forceDeleteBranch(safeWorkspacePath, name);
+  if (result.success) {
+    await refreshGitStatus(safeWorkspacePath);
+  }
+  return result;
+});
+
 ipcMain.handle('git-merge-branch', async (_, workspacePath: string, branchName: string) => {
   const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
   if (!safeWorkspacePath) {
@@ -1088,12 +1101,55 @@ ipcMain.handle('git-pull', async (_, workspacePath: string, rebase?: boolean) =>
   return gitService.pull(safeWorkspacePath, rebase);
 });
 
-ipcMain.handle('git-push', async (_, workspacePath: string, remote?: string, branch?: string, forceWithLease?: boolean) => {
+ipcMain.handle(
+  'git-push',
+  async (
+    _,
+    workspacePath: string,
+    remote?: string,
+    branch?: string,
+    forceWithLease?: boolean,
+    setUpstream?: boolean
+  ) => {
+    const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+    if (!safeWorkspacePath) {
+      return { success: false, error: 'Invalid workspace path' };
+    }
+    return gitService.push(safeWorkspacePath, remote, branch, forceWithLease, setUpstream);
+  }
+);
+
+ipcMain.handle('git-add-remote', async (_, workspacePath: string, name: string, url: string) => {
   const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
   if (!safeWorkspacePath) {
     return { success: false, error: 'Invalid workspace path' };
   }
-  return gitService.push(safeWorkspacePath, remote, branch, forceWithLease);
+  if (typeof name !== 'string' || typeof url !== 'string') {
+    return { success: false, error: 'Remote name and URL must be strings' };
+  }
+  return gitService.addRemote(safeWorkspacePath, name, url);
+});
+
+ipcMain.handle('git-remove-remote', async (_, workspacePath: string, name: string) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return { success: false, error: 'Invalid workspace path' };
+  }
+  if (typeof name !== 'string') {
+    return { success: false, error: 'Remote name must be a string' };
+  }
+  return gitService.removeRemote(safeWorkspacePath, name);
+});
+
+ipcMain.handle('git-rename-remote', async (_, workspacePath: string, oldName: string, newName: string) => {
+  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  if (!safeWorkspacePath) {
+    return { success: false, error: 'Invalid workspace path' };
+  }
+  if (typeof oldName !== 'string' || typeof newName !== 'string') {
+    return { success: false, error: 'Remote names must be strings' };
+  }
+  return gitService.renameRemote(safeWorkspacePath, oldName, newName);
 });
 
 // Credential management handlers

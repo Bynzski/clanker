@@ -88,6 +88,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('git-create-branch', workspacePath, name, baseBranch),
   gitSwitchBranch: (workspacePath: string, name: string) => ipcRenderer.invoke('git-switch-branch', workspacePath, name),
   gitDeleteBranch: (workspacePath: string, name: string) => ipcRenderer.invoke('git-delete-branch', workspacePath, name),
+  gitForceDeleteBranch: (workspacePath: string, name: string) =>
+    ipcRenderer.invoke('git-force-delete-branch', workspacePath, name),
   gitMergeBranch: (workspacePath: string, branchName: string) => ipcRenderer.invoke('git-merge-branch', workspacePath, branchName),
   gitAbortOperation: (workspacePath: string) => ipcRenderer.invoke('git-abort-operation', workspacePath),
   gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean) =>
@@ -98,10 +100,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitClearStashes: (workspacePath: string) => ipcRenderer.invoke('git-clear-stashes', workspacePath),
   gitRefresh: () => ipcRenderer.invoke('git-refresh'),
   gitGetRemotes: (workspacePath: string) => ipcRenderer.invoke('git-get-remotes', workspacePath),
+  gitAddRemote: (workspacePath: string, name: string, url: string) =>
+    ipcRenderer.invoke('git-add-remote', workspacePath, name, url),
+  gitRemoveRemote: (workspacePath: string, name: string) =>
+    ipcRenderer.invoke('git-remove-remote', workspacePath, name),
+  gitRenameRemote: (workspacePath: string, oldName: string, newName: string) =>
+    ipcRenderer.invoke('git-rename-remote', workspacePath, oldName, newName),
   gitFetch: (workspacePath: string, remote?: string) => ipcRenderer.invoke('git-fetch', workspacePath, remote),
   gitPull: (workspacePath: string, rebase?: boolean) => ipcRenderer.invoke('git-pull', workspacePath, rebase),
-  gitPush: (workspacePath: string, remote?: string, branch?: string, forceWithLease?: boolean) =>
-    ipcRenderer.invoke('git-push', workspacePath, remote, branch, forceWithLease),
+  gitPush: (
+    workspacePath: string,
+    remote?: string,
+    branch?: string,
+    forceWithLease?: boolean,
+    setUpstream?: boolean
+  ) => ipcRenderer.invoke('git-push', workspacePath, remote, branch, forceWithLease, setUpstream),
   onGitStatusUpdate: (callback: (status: {
     success: boolean;
     isRepo: boolean;

@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Download,
   GitBranch as GitBranchIcon,
+  Loader2,
   RefreshCw,
   Upload,
   X,
@@ -13,6 +14,7 @@ import CommitDialog from './CommitDialog';
 import { GitBranchesSection } from './git/GitBranchesSection';
 import { GitHistorySection } from './git/GitHistorySection';
 import { GitMergeSection } from './git/GitMergeSection';
+import GitRemotesSection from './git/GitRemotesSection';
 import { GitStashSection } from './git/GitStashSection';
 import type {
   DiffMode,
@@ -20,6 +22,7 @@ import type {
   GitDiffResult,
   GitHistoryEntry,
   GitOperationState,
+  GitRemote,
   GitStash,
   GitStatus,
 } from './git/types';
@@ -28,6 +31,14 @@ import './GitButton.css';
 
 interface GitButtonProps {
   workspacePath: string;
+}
+
+type DeleteDialogStage = 'confirm' | 'force';
+
+interface DeleteDialogState {
+  branch: string;
+  stage: DeleteDialogStage;
+  detail?: string;
 }
 
 export default function GitButton({ workspacePath }: GitButtonProps) {
@@ -40,6 +51,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [isDetached, setIsDetached] = useState(false);
   const [branches, setBranches] = useState<GitBranch[]>([]);
   const [branchError, setBranchError] = useState<string | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
   const [newBranchName, setNewBranchName] = useState('');
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [isLoadingBranches, setIsLoadingBranches] = useState(false);
@@ -70,8 +82,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [deepLinks, setDeepLinks] = useState<DeepLink[]>([]);
   const [isLoadingVcsContext, setIsLoadingVcsContext] = useState(false);
   const [vcsContextError, setVcsContextError] = useState<string | null>(null);
-  const [remoteAction, setRemoteAction] = useState<'fetch' | 'pull' | 'push' | null>(null);
+  const [remoteAction, setRemoteAction] = useState<'fetch' | 'pull' | 'push' | 'publish' | null>(null);
   const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [remotes, setRemotes] = useState<GitRemote[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
   const createBranchInputRef = useRef<HTMLInputElement>(null);
 
@@ -145,6 +158,33 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       setIsLoadingVcsContext(false);
     }
   }, [workspacePath, provider]);
+
+  const loadRemotes = useCallback(async () => {
+    if (!workspacePath) {
+      return;
+    }
+
+    try {
+      const remotesResult = await window.electronAPI.gitGetRemotes(workspacePath);
+      if (remotesResult.success) {
+        setRemotes(remotesResult.remotes);
+        setProvider(remotesResult.provider);
+      } else {
+        setRemotes([]);
+      }
+    } catch {
+      // Silently fail - remotes are not critical
+      setRemotes([]);
+    }
+  }, [workspacePath]);
+
+  useEffect(() => {
+    if (!workspacePath) {
+      setRemotes([]);
+      return;
+    }
+    void loadRemotes();
+  }, [workspacePath, loadRemotes]);
 
   const refreshMenuData = useCallback(async () => {
     if (!workspacePath) {
@@ -237,6 +277,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       const remotesResult = await window.electronAPI.gitGetRemotes(workspacePath);
       if (remotesResult.success) {
         setProvider(remotesResult.provider);
+        setRemotes(remotesResult.remotes);
+      } else {
+        setRemotes([]);
       }
 
       // Load VCS context after provider is detected
@@ -446,6 +489,32 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     }
   };
 
+  const handlePublish = async () => {
+    if (!currentBranch) {
+      return;
+    }
+
+    const targetRemote = remotes[0]?.name ?? 'origin';
+
+    setRemoteAction('publish');
+    setRemoteError(null);
+
+    try {
+      const result = await window.electronAPI.gitPush(workspacePath, targetRemote, currentBranch, false, true);
+      if (result.success) {
+        await refreshAfterAction();
+        void loadRemotes();
+        setRemoteError(null);
+      } else {
+        setRemoteError(result.error || 'Publish failed');
+      }
+    } catch (error: any) {
+      setRemoteError(error?.message || 'Publish failed');
+    } finally {
+      setRemoteAction(null);
+    }
+  };
+
   const handleUnstageFile = async (path: string): Promise<{ success: boolean; error?: string }> => {
     const result = await window.electronAPI.gitUnstage(workspacePath, [path]);
     if (result.success) {
@@ -539,23 +608,53 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     }
   };
 
-  const handleDeleteBranch = async (branchName: string) => {
-    const confirmed = window.confirm(`Delete branch "${branchName}"?`);
-    if (!confirmed) {
+  const handleDeleteBranch = (branchName: string) => {
+    setBranchError(null);
+    setDeleteDialog({ branch: branchName, stage: 'confirm' });
+  };
+
+  const closeDeleteDialog = () => {
+    if (activeAction) {
       return;
     }
 
-    setActiveAction(`delete:${branchName}`);
+    setDeleteDialog(null);
+  };
+
+  const performDeleteBranch = async (forceDelete = false) => {
+    if (!workspacePath || !deleteDialog) {
+      return;
+    }
+
+    const branchName = deleteDialog.branch;
+    const actionKey = forceDelete ? `force-delete:${branchName}` : `delete:${branchName}`;
+    setActiveAction(actionKey);
     setBranchError(null);
 
     try {
-      const result = await window.electronAPI.gitDeleteBranch(workspacePath, branchName);
+      const result = forceDelete
+        ? await window.electronAPI.gitForceDeleteBranch(workspacePath, branchName)
+        : await window.electronAPI.gitDeleteBranch(workspacePath, branchName);
+
       if (result.success) {
+        setDeleteDialog(null);
         await refreshAfterAction();
-      } else {
-        setBranchError(result.error || 'Failed to delete branch');
+        return;
       }
+
+      if (!forceDelete && result.blockedByUnmergedCommits) {
+        setDeleteDialog({
+          branch: branchName,
+          stage: 'force',
+          detail: result.error,
+        });
+        return;
+      }
+
+      setDeleteDialog(null);
+      setBranchError(result.error || 'Failed to delete branch');
     } catch (error: any) {
+      setDeleteDialog(null);
       setBranchError(error?.message || 'Failed to delete branch');
     } finally {
       setActiveAction(null);
@@ -725,6 +824,10 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const selectedCommit = selectedDiffMode === 'commit'
     ? history.find((entry) => entry.hash === selectedDiffRef) ?? null
     : null;
+  const deleteDialogBusy = Boolean(
+    deleteDialog &&
+      (activeAction === `delete:${deleteDialog.branch}` || activeAction === `force-delete:${deleteDialog.branch}`)
+  );
 
   return (
     <>
@@ -848,6 +951,18 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
                     <Download size={13} className={remoteAction === 'pull' ? 'spin' : ''} />
                     {remoteAction === 'pull' ? 'Pulling...' : 'Pull'}
                   </button>
+                  {!upstream && currentBranch && (
+                    <button
+                      type="button"
+                    className="header-btn git-menu-action"
+                    onClick={() => void handlePublish()}
+                    disabled={remoteAction !== null}
+                    title={remotes.length === 0 ? 'Add a remote to publish this branch' : undefined}
+                  >
+                      <Upload size={13} className={remoteAction === 'publish' ? 'spin' : ''} />
+                      {remoteAction === 'publish' ? 'Publishing...' : 'Publish branch'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="header-btn git-menu-action"
@@ -899,6 +1014,14 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
               stashes={stashes}
             />
 
+            <GitRemotesSection
+              workspacePath={workspacePath}
+              remotes={remotes}
+              provider={provider}
+              onRemotesChanged={() => void loadRemotes()}
+              onError={setRemoteError}
+            />
+
             <GitMergeSection
               activeAction={activeAction}
               availableMergeTargets={availableMergeTargets}
@@ -937,6 +1060,62 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         changes={changes}
         workspacePath={workspacePath}
       />
+      {deleteDialog && (
+        <div
+          className="git-delete-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={
+            deleteDialog.stage === 'force'
+              ? `Force delete branch ${deleteDialog.branch}`
+              : `Delete branch ${deleteDialog.branch}`
+          }
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deleteDialogBusy) {
+              closeDeleteDialog();
+            }
+          }}
+        >
+          <div className="git-delete-dialog">
+            <div className="git-delete-dialog-header">
+              <p className="git-delete-dialog-title">
+                {deleteDialog.stage === 'force' ? 'Force delete branch' : 'Delete branch'}
+              </p>
+              <span className="git-delete-dialog-branch">{deleteDialog.branch}</span>
+            </div>
+            <p className="git-delete-dialog-body">
+              {deleteDialog.stage === 'force'
+                ? `This branch has commits that are not merged into ${currentBranch ?? 'the current branch'}. Deleting it now may permanently discard work.`
+                : 'Removing a branch simply deletes the reference; commits remain reachable from other branches or remotes if they exist elsewhere.'}
+            </p>
+            {deleteDialog.detail && (
+              <div className="git-delete-detail">
+                <span>Git message</span>
+                <p>{deleteDialog.detail}</p>
+              </div>
+            )}
+            <div className="git-delete-actions">
+              <button
+                type="button"
+                className="header-btn git-delete-cancel"
+                onClick={closeDeleteDialog}
+                disabled={deleteDialogBusy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`header-btn ${deleteDialog.stage === 'force' ? 'header-btn-danger' : 'header-btn-primary'}`}
+                onClick={() => void performDeleteBranch(deleteDialog.stage === 'force')}
+                disabled={deleteDialogBusy}
+              >
+                {deleteDialogBusy && <Loader2 size={13} className="spin" />}
+                {deleteDialog.stage === 'force' ? 'Force Delete' : 'Delete branch'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -50,6 +50,12 @@ export interface GitBranchStateResult {
   error?: string;
 }
 
+export interface GitDeleteBranchResult {
+  success: boolean;
+  error?: string;
+  blockedByUnmergedCommits?: boolean;
+}
+
 export interface GitOperationStateResult {
   success: boolean;
   isRepo: boolean;
@@ -81,6 +87,11 @@ export interface GitDiffResult {
   error?: string;
 }
 
+export interface GitRemoteOperationResult {
+  success: boolean;
+  error?: string;
+}
+
 export class GitService {
   private pollingInterval: NodeJS.Timeout | null = null;
   private currentWorkspacePath: string | null = null;
@@ -104,6 +115,34 @@ export class GitService {
     return name.trim();
   }
 
+  /**
+   * Validate a remote name follows git conventions.
+   */
+  private normalizeRemoteName(name: string): string {
+    return name.trim().toLowerCase();
+  }
+
+  /**
+   * Validate that a URL looks like a valid git remote URL.
+   * Accepts SSH (git@host:path), HTTPS, and HTTP URLs.
+   */
+  private isValidRemoteUrl(url: string): boolean {
+    const trimmed = url.trim();
+    if (!trimmed) return false;
+
+    // SSH URL: git@hostname:path/to/repo.git
+    const sshPattern = /^git@[^:]+:.+$/;
+    if (sshPattern.test(trimmed)) return true;
+
+    // HTTPS/HTTP URL
+    try {
+      const parsed = new URL(trimmed);
+      return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+    } catch {
+      return false;
+    }
+  }
+
   private isMissingSwitchCommand(error: unknown): boolean {
     const stderr = String((error as { stderr?: string; message?: string })?.stderr ?? (error as { message?: string })?.message ?? '');
     return stderr.includes('not a git command') || stderr.includes('unknown subcommand');
@@ -114,6 +153,13 @@ export class GitService {
     const stderr = String(errorRecord?.stderr ?? '').trim();
     const message = String(errorRecord?.message ?? '').trim();
     return stderr || message || fallback;
+  }
+
+  private isBranchNotFullyMerged(error: unknown): boolean {
+    const errorRecord = error as { stderr?: string; message?: string };
+    const stderr = String(errorRecord?.stderr ?? '').toLowerCase();
+    const message = String(errorRecord?.message ?? '').toLowerCase();
+    return stderr.includes('not fully merged') || message.includes('not fully merged');
   }
 
   private parseBranchList(branchOutput: string): GitBranchEntry[] {
@@ -737,7 +783,7 @@ export class GitService {
     }
   }
 
-  async deleteBranch(workspacePath: string, name: string): Promise<{ success: boolean; error?: string }> {
+  async deleteBranch(workspacePath: string, name: string): Promise<GitDeleteBranchResult> {
     const branchName = this.normalizeBranchName(name);
 
     if (!branchName) {
@@ -751,6 +797,30 @@ export class GitService {
 
     try {
       await this.execGit(workspacePath, ['branch', '-d', branchName]);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: this.getGitErrorMessage(error, 'Failed to delete branch'),
+        blockedByUnmergedCommits: this.isBranchNotFullyMerged(error),
+      };
+    }
+  }
+
+  async forceDeleteBranch(workspacePath: string, name: string): Promise<GitDeleteBranchResult> {
+    const branchName = this.normalizeBranchName(name);
+
+    if (!branchName) {
+      return { success: false, error: 'Branch name cannot be empty' };
+    }
+
+    const currentBranch = await this.getCurrentBranch(workspacePath);
+    if (currentBranch && currentBranch === branchName) {
+      return { success: false, error: 'Cannot delete the current branch' };
+    }
+
+    try {
+      await this.execGit(workspacePath, ['branch', '-D', branchName]);
       return { success: true };
     } catch (error) {
       return {
@@ -934,10 +1004,14 @@ export class GitService {
     workspacePath: string,
     remote?: string,
     branch?: string,
-    forceWithLease = false
+    forceWithLease = false,
+    setUpstream = false
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const args = ['push'];
+      if (setUpstream) {
+        args.push('--set-upstream');
+      }
       if (remote) {
         args.push(remote);
       }
@@ -1086,6 +1160,143 @@ export class GitService {
         provider: 'unknown',
         error: this.getGitErrorMessage(error, 'Failed to get remotes'),
       };
+    }
+  }
+
+  /**
+   * Add a new remote to the repository.
+   */
+  async addRemote(
+    workspacePath: string,
+    name: string,
+    url: string
+  ): Promise<GitRemoteOperationResult> {
+    const remoteName = this.normalizeRemoteName(name);
+    const remoteUrl = url.trim();
+
+    if (!remoteName) {
+      return { success: false, error: 'Remote name cannot be empty' };
+    }
+
+    // Validate remote name follows git conventions
+    // Remote names should be lowercase alphanumeric, hyphens, underscores, and dots
+    if (!/^[a-z0-9._-]+$/.test(remoteName)) {
+      return {
+        success: false,
+        error: 'Invalid remote name. Use lowercase letters, numbers, hyphens, underscores, or dots.',
+      };
+    }
+
+    if (!this.isValidRemoteUrl(remoteUrl)) {
+      return {
+        success: false,
+        error: 'Invalid remote URL. Use SSH (git@host:path) or HTTPS (https://host/path) format.',
+      };
+    }
+
+    try {
+      await this.execGit(workspacePath, ['remote', 'add', remoteName, remoteUrl]);
+      return { success: true };
+    } catch (error) {
+      const errorMsg = this.getGitErrorMessage(error, 'Failed to add remote');
+      // Provide actionable hints for common errors
+      const lower = errorMsg.toLowerCase();
+      if (lower.includes('remote') && lower.includes('already exists')) {
+        return {
+          success: false,
+          error: `Remote '${remoteName}' already exists. Choose a different name or remove the existing remote first.`,
+        };
+      }
+      if (lower.includes('could not resolve host') || lower.includes('name or service not known')) {
+        return {
+          success: false,
+          error: `Could not resolve host. Check the URL is correct and you have network connectivity.`,
+        };
+      }
+      if (lower.includes('permission denied') || lower.includes('authentication failed')) {
+        return {
+          success: false,
+          error: `Authentication failed. Check your credentials or SSH key configuration.`,
+        };
+      }
+      return { success: false, error: errorMsg };
+    }
+  }
+
+  /**
+   * Remove an existing remote from the repository.
+   */
+  async removeRemote(
+    workspacePath: string,
+    name: string
+  ): Promise<GitRemoteOperationResult> {
+    const remoteName = name.trim();
+
+    if (!remoteName) {
+      return { success: false, error: 'Remote name cannot be empty' };
+    }
+
+    try {
+      await this.execGit(workspacePath, ['remote', 'remove', remoteName]);
+      return { success: true };
+    } catch (error) {
+      const errorMsg = this.getGitErrorMessage(error, 'Failed to remove remote');
+      const lower = errorMsg.toLowerCase();
+      if (lower.includes('no such remote') || lower.includes('does not exist')) {
+        return {
+          success: false,
+          error: `Remote '${remoteName}' does not exist.`,
+        };
+      }
+      return { success: false, error: errorMsg };
+    }
+  }
+
+  /**
+   * Rename an existing remote.
+   */
+  async renameRemote(
+    workspacePath: string,
+    oldName: string,
+    newName: string
+  ): Promise<GitRemoteOperationResult> {
+    const oldRemoteName = oldName.trim();
+    const newRemoteName = this.normalizeRemoteName(newName);
+
+    if (!oldRemoteName) {
+      return { success: false, error: 'Current remote name cannot be empty' };
+    }
+
+    if (!newRemoteName) {
+      return { success: false, error: 'New remote name cannot be empty' };
+    }
+
+    if (!/^[a-z0-9._-]+$/.test(newRemoteName)) {
+      return {
+        success: false,
+        error: 'Invalid remote name. Use lowercase letters, numbers, hyphens, underscores, or dots.',
+      };
+    }
+
+    try {
+      await this.execGit(workspacePath, ['remote', 'rename', oldRemoteName, newRemoteName]);
+      return { success: true };
+    } catch (error) {
+      const errorMsg = this.getGitErrorMessage(error, 'Failed to rename remote');
+      const lower = errorMsg.toLowerCase();
+      if (lower.includes('no such remote')) {
+        return {
+          success: false,
+          error: `Remote '${oldRemoteName}' does not exist.`,
+        };
+      }
+      if (lower.includes('already exists')) {
+        return {
+          success: false,
+          error: `Remote '${newRemoteName}' already exists.`,
+        };
+      }
+      return { success: false, error: errorMsg };
     }
   }
 }

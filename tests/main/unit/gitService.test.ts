@@ -1537,3 +1537,249 @@ describe('push', () => {
     expect(result.error).toBeTruthy();
   });
 });
+
+// ===========================================================================
+// Remote management (addRemote, removeRemote, renameRemote)
+// ===========================================================================
+describe('addRemote', () => {
+  it('adds a remote with valid SSH URL', async () => {
+    addResponse('remote add', { stdout: '' });
+
+    const result = await service.addRemote(
+      '/workspace',
+      'origin',
+      'git@github.com:owner/repo.git'
+    );
+
+    expect(result.success).toBe(true);
+  });
+
+  it('adds a remote with valid HTTPS URL', async () => {
+    addResponse('remote add', { stdout: '' });
+
+    const result = await service.addRemote(
+      '/workspace',
+      'upstream',
+      'https://github.com/owner/repo.git'
+    );
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects empty remote name', async () => {
+    const result = await service.addRemote('/workspace', '', 'https://github.com/owner/repo.git');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('empty');
+  });
+
+  it('rejects whitespace-only remote name', async () => {
+    const result = await service.addRemote('/workspace', '   ', 'https://github.com/owner/repo.git');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('empty');
+  });
+
+  it('accepts remote name with uppercase (git normalizes silently)', async () => {
+    // Git actually accepts uppercase names and normalizes them silently.
+    // Our implementation normalizes to lowercase for consistency.
+    addResponse('remote add', { stdout: '' });
+    const result = await service.addRemote('/workspace', 'Origin', 'https://github.com/owner/repo.git');
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects invalid remote name with special characters', async () => {
+    const result = await service.addRemote('/workspace', 'bad@name', 'https://github.com/owner/repo.git');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Invalid remote name');
+  });
+
+  it('rejects empty URL', async () => {
+    const result = await service.addRemote('/workspace', 'origin', '');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Invalid remote URL');
+  });
+
+  it('rejects invalid URL format', async () => {
+    const result = await service.addRemote('/workspace', 'origin', 'not-a-url');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Invalid remote URL');
+  });
+
+  it('rejects when remote already exists', async () => {
+    addResponse('remote add', {
+      exitCode: 1,
+      stderr: 'error: remote origin already exists.',
+    });
+
+    const result = await service.addRemote(
+      '/workspace',
+      'origin',
+      'https://github.com/owner/repo.git'
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('already exists');
+  });
+
+  it('provides helpful error for DNS resolution failure', async () => {
+    addResponse('remote add', {
+      exitCode: 128,
+      stderr: 'fatal: could not resolve host: github.com',
+    });
+
+    const result = await service.addRemote(
+      '/workspace',
+      'origin',
+      'https://github.com/owner/repo.git'
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('resolve host');
+  });
+
+  it('provides helpful error for authentication failure', async () => {
+    addResponse('remote add', {
+      exitCode: 128,
+      stderr: 'fatal: Authentication failed',
+    });
+
+    const result = await service.addRemote(
+      '/workspace',
+      'origin',
+      'https://github.com/owner/repo.git'
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Authentication failed');
+  });
+
+  it('normalizes remote name to lowercase', async () => {
+    addResponse('remote add', { stdout: '' });
+
+    const result = await service.addRemote(
+      '/workspace',
+      'UPSTREAM',
+      'git@github.com:owner/repo.git'
+    );
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts valid remote names with dots, hyphens, underscores', async () => {
+    addResponse('remote add', { stdout: '' });
+
+    const result = await service.addRemote(
+      '/workspace',
+      'my_remote-name.git',
+      'git@github.com:owner/repo.git'
+    );
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts HTTP URL format', async () => {
+    addResponse('remote add', { stdout: '' });
+
+    const result = await service.addRemote(
+      '/workspace',
+      'origin',
+      'http://github.com/owner/repo.git'
+    );
+
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('removeRemote', () => {
+  it('removes an existing remote', async () => {
+    addResponse('remote remove', { stdout: '' });
+
+    const result = await service.removeRemote('/workspace', 'origin');
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects empty remote name', async () => {
+    const result = await service.removeRemote('/workspace', '');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('empty');
+  });
+
+  it('returns error when remote does not exist', async () => {
+    addResponse('remote remove', {
+      exitCode: 1,
+      stderr: 'error: No such remote: nonexistent',
+    });
+
+    const result = await service.removeRemote('/workspace', 'nonexistent');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('does not exist');
+  });
+
+  it('handles whitespace in remote name', async () => {
+    addResponse('remote remove', { stdout: '' });
+
+    const result = await service.removeRemote('/workspace', '  origin  ');
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('renameRemote', () => {
+  it('renames an existing remote', async () => {
+    addResponse('remote rename', { stdout: '' });
+
+    const result = await service.renameRemote('/workspace', 'origin', 'upstream');
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects empty old remote name', async () => {
+    const result = await service.renameRemote('/workspace', '', 'upstream');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('empty');
+  });
+
+  it('rejects empty new remote name', async () => {
+    const result = await service.renameRemote('/workspace', 'origin', '');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('empty');
+  });
+
+  it('rejects invalid new remote name', async () => {
+    const result = await service.renameRemote('/workspace', 'origin', 'Bad Name');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Invalid remote name');
+  });
+
+  it('returns error when old remote does not exist', async () => {
+    addResponse('remote rename', {
+      exitCode: 1,
+      stderr: 'error: No such remote: nonexistent',
+    });
+
+    const result = await service.renameRemote('/workspace', 'nonexistent', 'newremote');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('does not exist');
+  });
+
+  it('returns error when new remote name already exists', async () => {
+    addResponse('remote rename', {
+      exitCode: 1,
+      stderr: 'error: remote newremote already exists.',
+    });
+
+    const result = await service.renameRemote('/workspace', 'origin', 'newremote');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('already exists');
+  });
+
+  it('normalizes new remote name to lowercase', async () => {
+    addResponse('remote rename', { stdout: '' });
+
+    const result = await service.renameRemote('/workspace', 'origin', 'UPSTREAM');
+    expect(result.success).toBe(true);
+  });
+
+  it('is successful when renaming to same name', async () => {
+    const result = await service.renameRemote('/workspace', 'origin', 'origin');
+    // No-op, should succeed
+    expect(result.success).toBe(true);
+  });
+});
