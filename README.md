@@ -16,6 +16,7 @@
 | **AI Harnesses** | Launch Codex, Claude, OpenCode, or Pi directly in your workspace |
 | **Multi-Workspace** | Work on multiple projects in separate tabs |
 | **Git Tools** | Branch, stash, merge, diff, and AI-assisted commits |
+| **VCS Integration** | GitHub, GitLab, Bitbucket PR status, CI checks, and quick links |
 | **Browser Panel** | Embedded browser alongside your terminals |
 
 ## Quick Start
@@ -46,8 +47,9 @@ npm run build:dist    # Creates distributable
 - [Getting Started](docs/getting-started.md) — Installation and first launch
 - [Workspaces](docs/workspaces.md) — Managing workspace tabs
 - [Terminals & Harnesses](docs/terminals.md) — Terminal panes and AI integrations
-- [Git Integration](docs/git-integration.md) — Built-in git tools
-- [Configuration](docs/configuration.md) — Settings and preferences
+- [Git Integration](docs/git-integration.md) — Built-in git tools with VCS provider support
+- [VCS Providers](docs/vcs-providers.md) — Technical documentation for GitHub, GitLab, Bitbucket
+- [Configuration](docs/configuration.md) — Settings and credentials
 - [Keyboard Shortcuts](docs/keyboard-shortcuts.md) — Quick navigation
 
 ## Keyboard Shortcuts

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { VcsProvider } from '../shared/types/vcs';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Workspace
@@ -123,11 +124,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   credentialGetPublicKey: () => ipcRenderer.invoke('credential:get-public-key'),
   credentialDeleteSshKey: () => ipcRenderer.invoke('credential:delete-ssh-key'),
   credentialCheckExists: () => ipcRenderer.invoke('credential:check-exists'),
-  credentialSavePat: (provider: string, token: string, scope?: string[]) =>
+  credentialSavePat: (provider: VcsProvider, token: string, scope?: string[]) =>
     ipcRenderer.invoke('credential:save-pat', { provider, token, scope }),
-  credentialGetPat: (provider: string) => ipcRenderer.invoke('credential:get-pat', provider),
-  credentialDeletePat: (provider: string) => ipcRenderer.invoke('credential:delete-pat', provider),
-  credentialGetStatus: (remoteName: string, remoteUrl: string, provider: string) =>
+  credentialGetPat: (provider: VcsProvider) => ipcRenderer.invoke('credential:get-pat', provider),
+  credentialDeletePat: (provider: VcsProvider) => ipcRenderer.invoke('credential:delete-pat', provider),
+  credentialGetStatus: (remoteName: string, remoteUrl: string, provider: VcsProvider) =>
     ipcRenderer.invoke('credential:get-status', remoteName, remoteUrl, provider),
   credentialGetGlobalStatus: () => ipcRenderer.invoke('credential:get-global-status'),
   credentialConfigureSshHost: (hostname: string) => ipcRenderer.invoke('credential:configure-ssh-host', hostname),

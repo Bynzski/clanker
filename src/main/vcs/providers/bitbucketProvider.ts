@@ -52,6 +52,12 @@ interface BitbucketUser {
   type: 'user';
 }
 
+interface BitbucketRepository {
+  mainbranch?: {
+    name: string;
+  };
+}
+
 /**
  * Bitbucket API provider implementation.
  */
@@ -329,6 +335,24 @@ export class BitbucketProvider extends BaseProvider {
     return 'pending';
   }
 
+  async getDefaultBranch(context: ProviderContext, token?: string): Promise<string> {
+    const workspace = this.getWorkspace(context);
+    const repoSlug = this.getRepoSlug(context);
+    const endpoint = `/repositories/${workspace}/${repoSlug}`;
+    let result;
+    if (token) {
+      result = await this.fetchWithAuth<BitbucketRepository>(endpoint, token);
+    } else {
+      result = await this.fetchPublic<BitbucketRepository>(endpoint);
+    }
+
+    if (!result.success || !result.data) {
+      return context.defaultBranch || 'main';
+    }
+
+    return result.data.mainbranch?.name || context.defaultBranch || 'main';
+  }
+
   /**
    * Validate a Bitbucket token has required scopes.
    */
@@ -349,6 +373,7 @@ export class BitbucketProvider extends BaseProvider {
     const workspace = this.getWorkspace(context);
     const repoSlug = this.getRepoSlug(context);
     const path = `/${workspace}/${repoSlug}`;
+    const baseBranch = context.defaultBranch || 'main';
 
     const links: DeepLink[] = [
       {
@@ -389,7 +414,9 @@ export class BitbucketProvider extends BaseProvider {
     if (branch) {
       links.push({
         type: 'create-pr',
-        url: `${baseUrl}${path}/pull-requests/new?source_branch=${encodeURIComponent(branch)}`,
+        url: `${baseUrl}${path}/pull-requests/new?source_branch=${encodeURIComponent(branch)}&dest_branch=${encodeURIComponent(
+          baseBranch
+        )}`,
         label: 'Create Pull Request',
       });
     }

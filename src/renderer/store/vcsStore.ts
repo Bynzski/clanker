@@ -4,9 +4,15 @@
  */
 
 import { create } from 'zustand';
-import type { VcsProvider } from '../components/git/types';
+import type {
+  DeepLink,
+  DeepLinkType,
+  ProviderContext,
+  PullRequestContext,
+  VcsProvider,
+} from '../../shared/types/vcs';
 
-export type { VcsProvider } from '../components/git/types';
+export type { VcsProvider, DeepLink, DeepLinkType, ProviderContext, PullRequestContext };
 
 /**
  * PAT configuration for a provider.
@@ -36,45 +42,6 @@ export interface RemoteCredentialStatus {
   hasSshKey: boolean;
   hasPat: boolean;
   credentialHelper: string | null;
-}
-
-/**
- * Deep link type for provider navigation.
- */
-export type DeepLinkType = 'repo' | 'pr' | 'create-pr' | 'issues' | 'releases' | 'actions' | 'branches';
-
-/**
- * A deep link to a provider page.
- */
-export interface DeepLink {
-  type: DeepLinkType;
-  url: string;
-  label: string;
-}
-
-/**
- * Provider context from remote URL.
- */
-export interface ProviderContext {
-  provider: VcsProvider;
-  baseUrl: string;
-  owner: string;
-  repo: string;
-  defaultBranch: string;
-}
-
-/**
- * Pull request/merge request information.
- */
-export interface PullRequestContext {
-  exists: boolean;
-  number?: number;
-  title?: string;
-  state?: 'open' | 'closed' | 'merged';
-  url?: string;
-  checksStatus?: 'pending' | 'success' | 'failure' | 'error';
-  reviewState?: 'approved' | 'changes_requested' | 'commented' | 'pending';
-  author?: string;
 }
 
 /**

@@ -45,7 +45,7 @@ import {
   checkSshKeyExists,
   type SavePatRequest,
 } from './credential';
-import type { VcsProvider } from './gitService';
+import type { VcsProvider } from './vcs';
 import {
   getProviderContext,
   getProviderDeepLinks,
@@ -1130,7 +1130,7 @@ ipcMain.handle('credential:get-status', async (_, remoteName: string, remoteUrl:
 });
 
 ipcMain.handle('credential:get-global-status', async () => {
-  return getGlobalCredentialStatus();
+  return await getGlobalCredentialStatus();
 });
 
 ipcMain.handle('credential:configure-ssh-host', async (_, hostname: string) => {
@@ -1199,7 +1199,9 @@ ipcMain.handle('vcs:get-pr-info', async (_, workspacePath: string) => {
 
   return {
     success: contextResult.success,
+    provider: contextResult.provider,
     pullRequest: contextResult.pullRequest,
+    deepLinks: contextResult.deepLinks,
     error: contextResult.error,
   };
 });
@@ -1222,7 +1224,15 @@ ipcMain.handle('vcs:get-deep-links', async (_, workspacePath: string, prNumber?:
   const currentBranch = branchState.currentBranch || undefined;
   const primaryRemote = remotesResult.remotes[0];
 
-  return getProviderDeepLinks(primaryRemote.fetchUrl, currentBranch, prNumber);
+  const contextResult = await getProviderContext(
+    primaryRemote.name,
+    primaryRemote.fetchUrl,
+    currentBranch || 'main'
+  );
+
+  const defaultBranch = contextResult.provider?.defaultBranch;
+
+  return getProviderDeepLinks(primaryRemote.fetchUrl, currentBranch, prNumber, defaultBranch);
 });
 
 ipcMain.handle('vcs:get-deep-link', async (_, workspacePath: string, type: DeepLink['type']) => {
@@ -1251,8 +1261,9 @@ ipcMain.handle('vcs:get-deep-link', async (_, workspacePath: string, type: DeepL
   );
 
   const prNumber = contextResult.pullRequest?.exists ? contextResult.pullRequest.number : undefined;
+  const defaultBranch = contextResult.provider?.defaultBranch;
 
-  return getDeepLinkUrl(primaryRemote.fetchUrl, type, currentBranch, prNumber);
+  return getDeepLinkUrl(primaryRemote.fetchUrl, type, currentBranch, prNumber, defaultBranch);
 });
 
 ipcMain.handle('vcs:open-deep-link', async (_, workspacePath: string, type: DeepLink['type']) => {
@@ -1280,8 +1291,9 @@ ipcMain.handle('vcs:open-deep-link', async (_, workspacePath: string, type: Deep
   );
 
   const prNumber = contextResult.pullRequest?.exists ? contextResult.pullRequest.number : undefined;
+  const defaultBranch = contextResult.provider?.defaultBranch;
 
-  const url = getDeepLinkUrl(primaryRemote.fetchUrl, type, currentBranch, prNumber);
+  const url = getDeepLinkUrl(primaryRemote.fetchUrl, type, currentBranch, prNumber, defaultBranch);
   if (url) {
     void shell.openExternal(url);
     return true;

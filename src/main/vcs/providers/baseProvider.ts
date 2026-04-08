@@ -45,6 +45,11 @@ export interface IVcsProvider {
   ): Promise<'approved' | 'changes_requested' | 'commented' | 'pending' | undefined>;
 
   /**
+   * Get the repository's default branch name.
+   */
+  getDefaultBranch(context: ProviderContext, token?: string): Promise<string>;
+
+  /**
    * Validate a token has the required scopes.
    */
   validateToken(token: string): Promise<boolean>;
@@ -83,6 +88,8 @@ export abstract class BaseProvider implements IVcsProvider {
     prNumber: number,
     token?: string
   ): Promise<'approved' | 'changes_requested' | 'commented' | 'pending' | undefined>;
+
+  abstract getDefaultBranch(context: ProviderContext, token?: string): Promise<string>;
 
   abstract validateToken(token: string): Promise<boolean>;
 

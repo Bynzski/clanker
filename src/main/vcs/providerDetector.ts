@@ -172,7 +172,8 @@ export function buildDeepLink(
   repo: string,
   type: DeepLink['type'],
   branch?: string,
-  prNumber?: number
+  prNumber?: number,
+  defaultBranch: string = 'main'
 ): string {
   const path = `/${owner}/${repo}`;
 
@@ -183,7 +184,8 @@ export function buildDeepLink(
       return prNumber ? `${baseUrl}${path}/pull/${prNumber}` : `${baseUrl}${path}/pulls`;
     case 'create-pr':
       if (branch) {
-        return `${baseUrl}${path}/compare/main...${encodeURIComponent(branch)}`;
+        const comparisonBranch = encodeURIComponent(defaultBranch || 'main');
+        return `${baseUrl}${path}/compare/${comparisonBranch}...${encodeURIComponent(branch)}`;
       }
       return `${baseUrl}${path}/compare`;
     case 'issues':
@@ -205,7 +207,8 @@ export function buildDeepLink(
 export function getProviderDeepLinks(
   remoteUrl: string,
   branch?: string,
-  prNumber?: number
+  prNumber?: number,
+  defaultBranch?: string
 ): DeepLink[] {
   let provider: VcsProvider = 'unknown';
   let baseUrl = '';
@@ -280,7 +283,7 @@ export function getProviderDeepLinks(
     if (branch) {
       links.push({
         type: 'create-pr',
-        url: `${baseUrl}${pathStr}/compare/main...${encodeURIComponent(branch)}`,
+        url: buildDeepLink(provider, baseUrl, owner, repo, 'create-pr', branch, undefined, defaultBranch),
         label: 'Create Pull Request',
       });
     }
@@ -321,9 +324,10 @@ export function getDeepLinkUrl(
   remoteUrl: string,
   type: DeepLink['type'],
   branch?: string,
-  prNumber?: number
+  prNumber?: number,
+  defaultBranch?: string
 ): string | null {
-  const links = getProviderDeepLinks(remoteUrl, branch, prNumber);
+  const links = getProviderDeepLinks(remoteUrl, branch, prNumber, defaultBranch);
   const link = links.find((l) => l.type === type);
   return link?.url ?? null;
 }

@@ -18,7 +18,8 @@ import type {
   SavePatRequest,
   SshKeyConfig,
 } from './types';
-import type { VcsProvider } from '../gitService';
+import type { VcsProvider } from '../../shared/types/vcs';
+import { getProviderInstance } from '../vcs/providerRegistry';
 import {
   deleteSshKey,
   getDefaultSshKeyPaths,
@@ -281,18 +282,40 @@ export async function getCredentialStatus(
 /**
  * Get global credential status.
  */
-export function getGlobalCredentialStatus(): GlobalCredentialStatus {
+export async function getGlobalCredentialStatus(): Promise<GlobalCredentialStatus> {
   const { privateKeyPath } = getDefaultSshKeyPaths();
 
-  // Collect stored PATs
   const storedPats: PatConfig[] = [];
   const providers: VcsProvider[] = ['github', 'gitlab', 'bitbucket'];
 
   for (const provider of providers) {
     const metadata = getPatMetadata(provider);
-    if (metadata) {
-      storedPats.push(metadata);
+    if (!metadata) {
+      continue;
     }
+
+    let validated = metadata.validated;
+
+    const tokenResult = getPat(provider);
+    const providerInstance = getProviderInstance(provider);
+
+    if (providerInstance && tokenResult.success && tokenResult.token) {
+      try {
+        validated = await providerInstance.validateToken(tokenResult.token);
+      } catch {
+        validated = false;
+      }
+
+      credentialStore.set(`patMetadata.${provider}`, {
+        ...metadata,
+        validated,
+      });
+    }
+
+    storedPats.push({
+      ...metadata,
+      validated,
+    });
   }
 
   return {

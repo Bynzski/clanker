@@ -1,13 +1,12 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import type { VcsProvider } from '../shared/types/vcs';
 
 export interface GitStatusEntry {
   path: string;
   status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed';
   staged: boolean;
 }
-
-export type VcsProvider = 'github' | 'bitbucket' | 'gitlab' | 'unknown';
 
 export interface GitRemote {
   name: string;

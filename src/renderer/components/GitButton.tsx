@@ -129,19 +129,16 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     try {
       // Get full VCS context including PR info
       const result = await window.electronAPI.vcsGetContext(workspacePath);
-      let prNumber: number | undefined;
 
       if (result.success && result.provider) {
         setVcsProviderContext(result.provider as ProviderContext);
         setPullRequest(result.pullRequest as PullRequestContext | null);
-        prNumber = result.pullRequest?.exists ? result.pullRequest.number : undefined;
+        setDeepLinks(result.deepLinks ?? []);
       } else {
         setVcsProviderContext(null);
         setPullRequest(null);
+        setDeepLinks([]);
       }
-
-      const links = await window.electronAPI.vcsGetDeepLinks(workspacePath, prNumber);
-      setDeepLinks(links as DeepLink[]);
     } catch (error: any) {
       setVcsContextError(error?.message || 'Failed to load provider context');
     } finally {

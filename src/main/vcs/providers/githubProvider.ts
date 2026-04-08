@@ -8,11 +8,34 @@ import type {
   ProviderContext,
   PullRequestContext,
   DeepLink,
-  GitHubPullRequest,
-  GitHubCommitStatus,
-  GitHubReview,
 } from '../types';
 import { getWebBaseUrl } from '../providerDetector';
+
+interface GitHubRepo {
+  default_branch: string;
+}
+
+interface GitHubPullRequest {
+  number: number;
+  title: string;
+  state: string;
+  html_url: string;
+  user: { login: string };
+  merged_at: string | null;
+}
+
+interface GitHubCommitStatus {
+  state: 'pending' | 'success' | 'failure' | 'error';
+  statuses: Array<{
+    state: string;
+    context: string;
+  }>;
+}
+
+interface GitHubReview {
+  state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING' | 'DISMISSED';
+  user: { login: string };
+}
 
 /**
  * GitHub API provider implementation.
@@ -188,6 +211,21 @@ export class GitHubProvider extends BaseProvider {
     return true;
   }
 
+  async getDefaultBranch(context: ProviderContext, token?: string): Promise<string> {
+    const endpoint = `/repos/${context.owner}/${context.repo}`;
+    let result;
+    if (token) {
+      result = await this.fetchWithAuth<GitHubRepo>(endpoint, token);
+    } else {
+      result = await this.fetchPublic<GitHubRepo>(endpoint);
+    }
+
+    if (!result.success) {
+      return context.defaultBranch || 'main';
+    }
+    return result.data.default_branch;
+  }
+
   /**
    * Get available deep links for GitHub.
    */
@@ -238,7 +276,7 @@ export class GitHubProvider extends BaseProvider {
     if (branch) {
       links.push({
         type: 'create-pr',
-        url: `${baseUrl}${path}/compare/main...${encodeURIComponent(branch)}`,
+        url: `${baseUrl}${path}/compare/${encodeURIComponent(context.defaultBranch || 'main')}...${encodeURIComponent(branch)}`,
         label: 'Create Pull Request',
       });
     }

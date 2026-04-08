@@ -3,9 +3,8 @@
  * Orchestrates VCS provider calls to get context about the current repository.
  */
 
-import { GitHubProvider, GitLabProvider, BitbucketProvider } from './providers';
-import type { IVcsProvider } from './providers/baseProvider';
 import { buildProviderContext } from './providerDetector';
+import { getProviderInstance } from './providerRegistry';
 import { getPat } from '../credential/credentialService';
 import type {
   PullRequestContext,
@@ -14,23 +13,6 @@ import type {
 } from './types';
 
 export { getProviderDeepLinks, getDeepLinkUrl } from './providerDetector';
-
-/**
- * Map of provider type to provider instance.
- */
-const providerMap: Record<VcsProvider, IVcsProvider | null> = {
-  github: new GitHubProvider(),
-  gitlab: new GitLabProvider(),
-  bitbucket: new BitbucketProvider(),
-  unknown: null,
-};
-
-/**
- * Get a provider instance for the given type.
- */
-function getProvider(type: VcsProvider): IVcsProvider | null {
-  return providerMap[type];
-}
 
 /**
  * Get the stored PAT for a provider if available.
@@ -56,7 +38,7 @@ export async function getProviderContext(
   defaultBranch: string = 'main'
 ): Promise<ProviderContextResult> {
   // Build basic context from remote URL
-  const providerContext = buildProviderContext(remoteName, remoteUrl, defaultBranch);
+  let providerContext = buildProviderContext(remoteName, remoteUrl, defaultBranch);
   if (!providerContext) {
     return {
       success: false,
@@ -64,18 +46,26 @@ export async function getProviderContext(
     };
   }
 
-  const provider = getProvider(providerContext.provider);
+  const provider = getProviderInstance(providerContext.provider);
   if (!provider) {
     // Provider not yet implemented
     return {
       success: true,
       provider: providerContext,
       pullRequest: { exists: false },
+      deepLinks: [],
     };
   }
 
   // Get token if available
   const token = getProviderToken(providerContext.provider);
+
+  // Ensure default branch reflects remote state
+  const resolvedDefaultBranch = await provider.getDefaultBranch(providerContext, token);
+  providerContext = {
+    ...providerContext,
+    defaultBranch: resolvedDefaultBranch,
+  };
 
   // Fetch PR info
   const prResult = await provider.getPullRequestForBranch(providerContext, branch, token);
@@ -103,10 +93,17 @@ export async function getProviderContext(
     reviewState,
   };
 
+  const deepLinks = provider.getDeepLinks(
+    providerContext,
+    branch,
+    fullPullRequest.number
+  );
+
   return {
     success: true,
     provider: providerContext,
     pullRequest: fullPullRequest,
+    deepLinks,
   };
 }
 
