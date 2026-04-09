@@ -16,7 +16,12 @@ vi.mock('@xterm/xterm', () => {
       open = vi.fn();
       write = vi.fn();
       dispose = vi.fn();
+      hasSelection = vi.fn().mockReturnValue(false);
+      getSelection = vi.fn().mockReturnValue('');
+      clearSelection = vi.fn();
       onData = vi.fn(() => ({ dispose: mockOnDataDispose }));
+      onSelectionChange = vi.fn(() => ({ dispose: mockOnDataDispose }));
+      attachCustomKeyEventHandler = vi.fn(() => true);
       element = {
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
@@ -43,6 +48,7 @@ vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
 const mockKillTerminal = vi.fn().mockResolvedValue(undefined);
 const mockResizeTerminal = vi.fn().mockResolvedValue(undefined);
 const mockWriteTerminal = vi.fn().mockResolvedValue(undefined);
+const mockWriteClipboard = vi.fn().mockResolvedValue(undefined);
 const mockGetTerminalBuffer = vi.fn().mockResolvedValue('');
 const mockOnTerminalData = vi.fn().mockReturnValue(vi.fn());
 const mockOnTerminalExit = vi.fn().mockReturnValue(vi.fn());
@@ -102,6 +108,7 @@ function setupElectronAPIMocks() {
     killTerminal: mockKillTerminal,
     resizeTerminal: mockResizeTerminal,
     writeTerminal: mockWriteTerminal,
+    writeClipboard: mockWriteClipboard,
     getTerminalBuffer: mockGetTerminalBuffer,
     onTerminalData: mockOnTerminalData,
     onTerminalExit: mockOnTerminalExit,

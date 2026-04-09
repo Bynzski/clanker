@@ -19,6 +19,7 @@ import {
   TERMINAL_CLEANUP_WORKSPACE,
   TERMINAL_DATA,
   TERMINAL_EXIT,
+  WRITE_CLIPBOARD,
   BROWSER_HIDE,
   BROWSER_SET_BOUNDS,
   BROWSER_NAVIGATE,
@@ -120,6 +121,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(TERMINAL_EXIT, handler);
     return () => ipcRenderer.removeListener(TERMINAL_EXIT, handler);
   },
+
+  // Clipboard
+  writeClipboard: (text: string) => ipcRenderer.invoke(WRITE_CLIPBOARD, text),
 
   // Browser (using WebContentsView)
   browserHide: (workspaceId: string) => ipcRenderer.invoke(BROWSER_HIDE, workspaceId),

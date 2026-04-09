@@ -4,7 +4,7 @@
  * Registers all terminal-related IPC handlers. Extracted from main.ts per S2.1.
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, clipboard } from 'electron';
 import * as pty from 'node-pty';
 import Store from 'electron-store';
 import { buildHarnessSpawnArgs } from '../harnessLaunch';
@@ -18,6 +18,7 @@ import {
   TERMINAL_CLEANUP_WORKSPACE,
   TERMINAL_DATA,
   TERMINAL_EXIT,
+  WRITE_CLIPBOARD,
 } from '../../shared/ipcChannels';
 
 interface Terminal {
@@ -181,6 +182,10 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       }
     }
     return killed;
+  });
+
+  ipcMain.handle(WRITE_CLIPBOARD, (_, text: string) => {
+    clipboard.writeText(text);
   });
 
   // Event channels — registered so the integration test can verify completeness.

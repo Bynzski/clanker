@@ -25,6 +25,7 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     cleanupWorkspaceTerminals: createAsyncMock(0),
     onTerminalData: vi.fn(() => () => undefined),
     onTerminalExit: vi.fn(() => () => undefined),
+    writeClipboard: createAsyncMock(undefined),
     browserHide: createAsyncMock(undefined),
     browserSetBounds: createAsyncMock(undefined),
     browserNavigate: createAsyncMock(true),

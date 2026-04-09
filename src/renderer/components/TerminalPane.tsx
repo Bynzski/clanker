@@ -148,12 +148,20 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
     let inputDisposable: { dispose: () => void } | null = null;
     let disposeData: (() => void) | null = null;
     let disposeExit: (() => void) | null = null;
+    let selectionDisposable: { dispose: () => void } | null = null;
     let cancelled = false;
 
     const startStreaming = () => {
       if (cancelled || xtermRef.current == null) return;
 
+      // Handle copy: if Ctrl+C with selection, copy and clear; otherwise pass through to PTY
       inputDisposable = xterm.onData((data) => {
+        if (data === '\x03' && xterm.hasSelection()) {
+          const selection = xterm.getSelection();
+          window.electronAPI.writeClipboard(selection).catch(console.error);
+          xterm.clearSelection();
+          return; // Don't send ^C to PTY when we have a selection
+        }
         window.electronAPI.writeTerminal(terminalId, data).catch(console.error);
       });
 
@@ -172,6 +180,30 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
       };
 
       disposeExit = window.electronAPI.onTerminalExit(exitHandler);
+
+      // Copy selected text to clipboard when selection changes (mouse selection)
+      selectionDisposable = xterm.onSelectionChange(() => {
+        if (xterm.hasSelection()) {
+          const selection = xterm.getSelection();
+          window.electronAPI.writeClipboard(selection).catch(console.error);
+        }
+      });
+
+      xterm.attachCustomKeyEventHandler((event) => {
+        if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'c') {
+          if (xterm.hasSelection()) {
+            const selection = xterm.getSelection();
+            if (selection) {
+              window.electronAPI.writeClipboard(selection).catch(console.error);
+            }
+            xterm.clearSelection();
+          }
+          event.preventDefault();
+          return false;
+        }
+        return true;
+      });
+
       setTimeout(resizeTerminal, 100);
     };
 
@@ -193,6 +225,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
       inputDisposable?.dispose();
       disposeData?.();
       disposeExit?.();
+      selectionDisposable?.dispose();
     };
   }, [terminalId, terminalRuntimeReady, resizeTerminal]);
 

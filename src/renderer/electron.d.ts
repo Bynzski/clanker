@@ -33,6 +33,9 @@ interface ElectronAPI {
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => () => void;
 
+  // Clipboard
+  writeClipboard: (text: string) => Promise<void>;
+
   // Browser (WebContentsView)
   browserHide: (workspaceId: string) => Promise<void>;
   browserSetBounds: (workspaceId: string, bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
