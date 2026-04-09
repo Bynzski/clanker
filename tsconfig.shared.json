@@ -12,7 +12,10 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "ignoreDeprecations": "6.0",
-    "composite": true
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "tsBuildInfoFile": "./dist/shared/.tsbuildinfo"
   },
   "include": ["src/shared/**/*"]
 }
