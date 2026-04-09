@@ -58,11 +58,17 @@ describe('App', () => {
   const mockSpawnTerminal = vi.fn();
   const mockOnFitAllPanes = vi.fn();
   const mockFitAllPanes = vi.fn();
+  const mockZoomInWindow = vi.fn().mockResolvedValue(undefined);
+  const mockZoomOutWindow = vi.fn().mockResolvedValue(undefined);
+  const mockResetZoomWindow = vi.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockSpawnTerminal.mockReset();
     mockOnFitAllPanes.mockReset();
+    mockZoomInWindow.mockClear();
+    mockZoomOutWindow.mockClear();
+    mockResetZoomWindow.mockClear();
     mockSpawnTerminal.mockResolvedValue({ id: 'term-1', pid: 1234 });
     mockOnFitAllPanes.mockReturnValue(vi.fn());
     
@@ -95,6 +101,9 @@ describe('App', () => {
     window.electronAPI = {
       spawnTerminal: mockSpawnTerminal,
       onFitAllPanes: mockOnFitAllPanes,
+      zoomInWindow: mockZoomInWindow,
+      zoomOutWindow: mockZoomOutWindow,
+      resetZoomWindow: mockResetZoomWindow,
       onGitStatusUpdate: vi.fn(),
       gitStartPolling: vi.fn(),
       gitStopPolling: vi.fn(),
@@ -427,6 +436,46 @@ describe('App', () => {
       });
       
       expect(mockFitAllPanes).not.toHaveBeenCalled();
+    });
+
+    it('zooms in when Ctrl+= is pressed', async () => {
+      render(<App />);
+
+      await act(async () => {
+        fireEvent.keyDown(window, { key: '=', ctrlKey: true });
+      });
+
+      expect(mockZoomInWindow).toHaveBeenCalled();
+    });
+
+    it('zooms in when Meta++ is pressed', async () => {
+      render(<App />);
+
+      await act(async () => {
+        fireEvent.keyDown(window, { key: '+', metaKey: true });
+      });
+
+      expect(mockZoomInWindow).toHaveBeenCalled();
+    });
+
+    it('zooms out when Ctrl+- is pressed', async () => {
+      render(<App />);
+
+      await act(async () => {
+        fireEvent.keyDown(window, { key: '-', ctrlKey: true });
+      });
+
+      expect(mockZoomOutWindow).toHaveBeenCalled();
+    });
+
+    it('resets zoom when Ctrl+0 is pressed', async () => {
+      render(<App />);
+
+      await act(async () => {
+        fireEvent.keyDown(window, { key: '0', ctrlKey: true });
+      });
+
+      expect(mockResetZoomWindow).toHaveBeenCalled();
     });
   });
 

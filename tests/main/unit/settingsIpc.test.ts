@@ -168,6 +168,9 @@ describe('registerSettingsIpc', () => {
       'toggle-maximize-window',
       'close-window',
       'is-maximized-window',
+      'zoom-in-window',
+      'zoom-out-window',
+      'reset-zoom-window',
     ];
 
     expectedChannels.forEach(channel => {
@@ -175,14 +178,14 @@ describe('registerSettingsIpc', () => {
     });
   });
 
-  test('registers exactly 16 settings IPC channels', () => {
+  test('registers exactly 19 settings IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerSettingsIpc(deps);
 
     // Count how many times handle was called
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(16);
+    expect(handleCalls.length).toBe(19);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -194,7 +197,7 @@ describe('registerSettingsIpc', () => {
 
     // Handlers should be registered again (may overwrite previous)
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(32);
+    expect(handleCalls.length).toBe(38);
   });
 
   test('settings channels do not overlap with terminal channels', () => {
@@ -219,6 +222,9 @@ describe('registerSettingsIpc', () => {
       'toggle-maximize-window',
       'close-window',
       'is-maximized-window',
+      'zoom-in-window',
+      'zoom-out-window',
+      'reset-zoom-window',
     ];
 
     const terminalChannels = [
@@ -257,6 +263,9 @@ describe('registerSettingsIpc', () => {
       'toggle-maximize-window',
       'close-window',
       'is-maximized-window',
+      'zoom-in-window',
+      'zoom-out-window',
+      'reset-zoom-window',
     ];
 
     const browserChannels = [
