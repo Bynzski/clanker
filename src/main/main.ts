@@ -1,37 +1,17 @@
-import { app, BrowserWindow, Menu, WebContentsView, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, Menu, WebContentsView, ipcMain, shell } from 'electron';
 
 // Disable GPU acceleration for compatibility in some environments
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-dev-shm-usage');
 
-import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
-import * as pty from 'node-pty';
 import Store from 'electron-store';
-import {
-  buildHarnessSpawnArgs,
-} from './harnessLaunch';
-import {
-  AI_COMMIT_COMMANDS,
-  buildAiCommitArgs,
-  buildCommitPrompt,
-  getAiCommitTimeoutMs,
-  normalizeCommitMessageOutput,
-  type AiCommitProvider,
-} from './aiCommit';
-import {
-  discoverHarnessModels,
-  getAvailableHarnessOptions,
-  HARNESS_OPTIONS,
-} from './harnessCatalog';
-import { GitService, type GitStatusEntry } from './gitService';
-import {
-  normalizeAppBrowserUrl,
-  normalizeExternalUrl,
-  resolveExistingDirectory,
-} from './security';
+import * as pty from 'node-pty';
+import { GitService } from './gitService';
+import { resolveExistingDirectory } from './security';
+import { type AiCommitProvider } from './aiCommit';
+import { HARNESS_OPTIONS } from './harnessCatalog';
 import {
   generateSshKey,
   readPublicKey,
@@ -53,6 +33,9 @@ import {
   type ProviderContextResult,
   type DeepLink,
 } from './vcs';
+import { registerSettingsIpc } from './ipc/settingsIpc';
+import { registerTerminalIpc } from './ipc/terminalIpc';
+import { registerBrowserIpc } from './ipc/browserIpc';
 
 interface Terminal {
   id: string;
@@ -69,59 +52,6 @@ interface StoreSchema {
   aiCommitModel: string;
 }
 
-function runCommandWithInput(
-  command: string,
-  args: string[],
-  input: string,
-  timeoutMs = 30000,
-  extraEnv?: Record<string, string>,
-  cwd?: string
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd,
-      env: {
-        ...process.env,
-        ...extraEnv,
-      } as { [key: string]: string },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error(`Command timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-
-    child.stdout.on('data', (data) => {
-      stdout += String(data);
-    });
-
-    child.stderr.on('data', (data) => {
-      stderr += String(data);
-    });
-
-    child.on('error', (error) => {
-      clearTimeout(timer);
-      reject(Object.assign(error, { stdout, stderr }));
-    });
-
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        const error = new Error(`Command failed with exit code ${code ?? 'unknown'}`);
-        reject(Object.assign(error, { stdout, stderr, code }));
-        return;
-      }
-
-      resolve(stdout || stderr);
-    });
-
-    child.stdin.end(input.endsWith('\n') ? input : `${input}\n`);
-  });
-}
-
 const store = new Store<StoreSchema>({
   defaults: {
     lastWorkspace: app.getPath('home'),
@@ -132,59 +62,28 @@ const store = new Store<StoreSchema>({
   },
 });
 
-function formatCommitChangeSummary(changes: GitStatusEntry[]): string[] {
-  return changes.map((change) => `${change.staged ? 'staged' : 'unstaged'} ${change.status}: ${change.path}`);
-}
-
+// Git service and terminal state (needed for git handlers, window creation, and IPC)
 const terminals: Map<string, Terminal> = new Map();
 let mainWindow: BrowserWindow | null = null;
 
-const DEFAULT_BROWSER_URL = 'https://github.com';
-
-interface BrowserViewEntry {
-  view: WebContentsView;
-  url: string;
-}
-
-const browserViews = new Map<string, BrowserViewEntry>();
-let activeBrowserWorkspaceId: string | null = null;
-
-function notifyBrowserUrlUpdated(workspaceId: string, url: string) {
-  const safeUrl = normalizeAppBrowserUrl(url);
-  if (!safeUrl) {
-    return;
-  }
-
-  const entry = browserViews.get(workspaceId);
-  if (entry) {
-    entry.url = safeUrl;
-  }
-
-  if (mainWindow) {
-    mainWindow.webContents.send('browser-url-updated', { workspaceId, url: safeUrl });
-  }
-}
-
 function getValidatedWorkspacePath(workspacePath: string): string | null {
   return resolveExistingDirectory(workspacePath);
-}
-
-function getSafeWorkspacePath(workingDir: string): string {
-  return (
-    resolveExistingDirectory(workingDir, store.get('lastWorkspace'))
-    ?? app.getPath('home')
-  );
 }
 
 function getInvalidWorkspaceResult() {
   return { success: false, error: 'Workspace path is invalid or not a directory' };
 }
 
+function getSafeWorkspacePath(workingDir: string, storeInstance: Store<StoreSchema>): string {
+  return (
+    resolveExistingDirectory(workingDir, storeInstance.get('lastWorkspace'))
+    ?? app.getPath('home')
+  );
+}
+
 // ============================================================================
 // Git Service - Handles all git operations in the main process
-// This service manages polling and can be extended for GitHub API integration
 // ============================================================================
-
 const gitService = new GitService((status) => {
   if (mainWindow) {
     mainWindow.webContents.send('git-status-update', status);
@@ -197,96 +96,6 @@ async function refreshGitStatus(workspacePath: string) {
     mainWindow.webContents.send('git-status-update', status);
   }
   return status;
-}
-
-async function resolveAiCommitModel(provider: AiCommitProvider, configuredModel: string): Promise<string | null> {
-  const models = await discoverHarnessModels(provider);
-  if (configuredModel && models.some((model) => model.id === configuredModel)) {
-    return configuredModel;
-  }
-
-  return models[0]?.id ?? null;
-}
-
-async function generateAiCommitMessage(workspacePath: string): Promise<{ success: boolean; message?: string; error?: string }> {
-  const enabled = store.get('aiCommitEnabled');
-  if (!enabled) {
-    return { success: false, error: 'AI commit message generation is disabled' };
-  }
-
-  const provider = store.get('aiCommitProvider');
-  const providerConfig = AI_COMMIT_COMMANDS[provider];
-  if (!providerConfig) {
-    return { success: false, error: 'Unsupported AI commit provider' };
-  }
-
-  const context = await gitService.getCommitPromptContext(workspacePath);
-  if (!context.success) {
-    return { success: false, error: context.error || 'Unable to build commit context' };
-  }
-
-  const model = await resolveAiCommitModel(provider, store.get('aiCommitModel'));
-  if (!model) {
-    return { success: false, error: `No models available for ${provider}` };
-  }
-
-  const prompt = buildCommitPrompt({
-    workspacePath,
-    branchName: context.currentBranch,
-    isDetached: context.isDetached,
-    changeSummary: formatCommitChangeSummary(context.changes),
-    diffMode: context.diffMode,
-    diffSummary: context.diffSummary,
-  });
-
-  const args = buildAiCommitArgs(provider, model);
-  const output = await runCommandWithInput(
-    providerConfig.command,
-    args,
-    prompt,
-    getAiCommitTimeoutMs(provider),
-    undefined,
-    workspacePath
-  );
-  const message = normalizeCommitMessageOutput(output);
-
-  if (!message) {
-    return { success: false, error: 'AI model returned an empty commit message' };
-  }
-
-  return { success: true, message };
-}
-
-function emitFitAllPanesShortcut() {
-  mainWindow?.webContents.send('fit-all-panes');
-}
-
-function attachBrowserShortcutHandlers(view: WebContentsView) {
-  view.webContents.on('before-input-event', (_event, input) => {
-    if (
-      (input.control || input.meta) &&
-      input.shift &&
-      input.key.toLowerCase() === 'f'
-    ) {
-      emitFitAllPanesShortcut();
-    }
-  });
-}
-
-function attachBrowserSecurityHandlers(view: WebContentsView) {
-  view.webContents.setWindowOpenHandler(({ url }) => {
-    const externalUrl = normalizeExternalUrl(url);
-    if (externalUrl) {
-      void shell.openExternal(externalUrl);
-    }
-    return { action: 'deny' };
-  });
-
-  view.webContents.on('will-navigate', (event, url) => {
-    if (!normalizeAppBrowserUrl(url)) {
-      event.preventDefault();
-    }
-  });
 }
 
 function getRendererUrl(query: Record<string, string | undefined>) {
@@ -356,444 +165,8 @@ function createWindow() {
   });
 }
 
-function createBrowserViewForWorkspace(workspaceId: string): BrowserViewEntry | null {
-  if (!mainWindow) return null;
-
-  const view = new WebContentsView({
-    webPreferences: {
-      contextIsolation: true,
-      sandbox: true,
-      partition: `persist:browser-${workspaceId}`,
-    },
-  });
-
-  attachBrowserSecurityHandlers(view);
-  attachBrowserShortcutHandlers(view);
-  view.setVisible(false);
-  view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-  mainWindow.contentView.addChildView(view);
-
-  const reportUrlChange = (navigatedUrl: string) => notifyBrowserUrlUpdated(workspaceId, navigatedUrl);
-  view.webContents.on('did-navigate', (_event, url) => reportUrlChange(url));
-  view.webContents.on('did-navigate-in-page', (_event, url) => reportUrlChange(url));
-
-  void view.webContents.loadURL(DEFAULT_BROWSER_URL);
-
-  return { view, url: DEFAULT_BROWSER_URL };
-}
-
-function ensureBrowserViewEntry(workspaceId: string): BrowserViewEntry | null {
-  const existing = browserViews.get(workspaceId);
-  if (existing) {
-    return existing;
-  }
-
-  const entry = createBrowserViewForWorkspace(workspaceId);
-  if (!entry) {
-    return null;
-  }
-
-  browserViews.set(workspaceId, entry);
-  return entry;
-}
-
-function setActiveBrowserWorkspace(workspaceId: string | null) {
-  if (activeBrowserWorkspaceId === workspaceId) {
-    return;
-  }
-
-  if (activeBrowserWorkspaceId) {
-    const previous = browserViews.get(activeBrowserWorkspaceId);
-    previous?.view.setVisible(false);
-  }
-
-  activeBrowserWorkspaceId = workspaceId;
-}
-
-function updateBrowserView(workspaceId: string, bounds: { x: number; y: number; width: number; height: number }) {
-  const entry = ensureBrowserViewEntry(workspaceId);
-  if (!entry) {
-    return;
-  }
-
-  setActiveBrowserWorkspace(workspaceId);
-  entry.view.setVisible(true);
-
-  if (bounds.width > 0 && bounds.height > 0) {
-    entry.view.setBounds(bounds);
-  }
-}
-
-function hideBrowserView(workspaceId: string) {
-  const entry = browserViews.get(workspaceId);
-  if (entry) {
-    entry.view.setVisible(false);
-  }
-
-  if (activeBrowserWorkspaceId === workspaceId) {
-    activeBrowserWorkspaceId = null;
-  }
-}
-
-function destroyBrowserView(workspaceId: string) {
-  const entry = browserViews.get(workspaceId);
-  if (!entry) {
-    return;
-  }
-
-  entry.view.webContents.close();
-  browserViews.delete(workspaceId);
-
-  if (activeBrowserWorkspaceId === workspaceId) {
-    activeBrowserWorkspaceId = null;
-  }
-}
-
-// IPC Handlers
-ipcMain.handle('get-last-workspace', () => {
-  return store.get('lastWorkspace');
-});
-
-ipcMain.handle('get-show-fastfetch', () => {
-  return store.get('showFastfetch');
-});
-
-ipcMain.handle('set-show-fastfetch', (_, showFastfetch: boolean) => {
-  store.set('showFastfetch', showFastfetch);
-});
-
-ipcMain.handle('get-ai-commit-settings', () => {
-  return {
-    enabled: store.get('aiCommitEnabled'),
-    provider: store.get('aiCommitProvider'),
-    model: store.get('aiCommitModel'),
-  };
-});
-
-ipcMain.handle('set-ai-commit-enabled', (_, enabled: boolean) => {
-  store.set('aiCommitEnabled', enabled);
-});
-
-ipcMain.handle('set-ai-commit-provider', (_, provider: AiCommitProvider) => {
-  store.set('aiCommitProvider', provider);
-});
-
-ipcMain.handle('set-ai-commit-model', (_, model: string) => {
-  store.set('aiCommitModel', model);
-});
-
-ipcMain.handle('generate-commit-message', async (_, workspacePath: string) => {
-  const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
-  if (!safeWorkspacePath) {
-    return getInvalidWorkspaceResult();
-  }
-
-  return generateAiCommitMessage(safeWorkspacePath);
-});
-
-ipcMain.handle('open-directory-dialog', async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    properties: ['openDirectory'],
-    title: 'Select Workspace Directory',
-  });
-
-  if (!result.canceled && result.filePaths.length > 0) {
-    const selectedPath = result.filePaths[0];
-    store.set('lastWorkspace', selectedPath);
-    return selectedPath;
-  }
-  return null;
-});
-
-ipcMain.handle('read-directory', async (_, dirPath: string) => {
-  const safeDirectoryPath = resolveExistingDirectory(dirPath);
-  if (!safeDirectoryPath) {
-    return [];
-  }
-
-  try {
-    const entries = fs.readdirSync(safeDirectoryPath, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isDirectory())
-      .map((e) => ({
-        name: e.name,
-        isDirectory: e.isDirectory(),
-      }));
-  } catch {
-    return [];
-  }
-});
-
-ipcMain.handle('get-harness-models', async (_, harness: string) => {
-  return discoverHarnessModels(harness);
-});
-
-ipcMain.handle('spawn-terminal', (_, workingDir: string, harness?: string, model?: string) => {
-  const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  const cwd = getSafeWorkspacePath(workingDir);
-  
-  // Use user's default shell, fallback to bash
-  const userShell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
-  
-  // Spawn with interactive flags for better shell experience
-  // -i: interactive mode (enables completion, aliases, etc.)
-  // --login: load profile files (~/.bash_profile, ~/.zprofile)
-  const shellArgs = ['-i'];
-  
-  const harnessEnv = harness && HARNESS_OPTIONS[harness]?.env ? HARNESS_OPTIONS[harness].env : {};
-
-  // Build the spawn command: wrap harnesses in user shell so users drop to shell on exit
-  const harnessConfig = harness ? HARNESS_OPTIONS[harness] : undefined;
-  const harnessArgs = harnessConfig ? buildHarnessSpawnArgs(harnessConfig, model) : [];
-
-  // Escape an argument for safe use in a single-quoted shell command string.
-  // Each argument is wrapped in single quotes, and any single quotes within
-  // the argument are escaped using the shell's standard pattern: 'z'y'z' -> 'z'\''z'
-  const shellEscape = (arg: string): string => {
-    // Escape any single quotes by replacing ' with '\''
-    const escaped = arg.replace(/'/g, "'\\''");
-    return `'${escaped}'`;
-  };
-
-  // Build the harness command string with proper escaping
-  // Use exec "$SHELL" -i to re-enter an interactive shell after harness exits,
-  // preserving the working directory and session state
-  const harnessCmdStr = harnessConfig
-    ? `${harnessConfig.command} ${harnessArgs.map(shellEscape).join(' ')}; exec "$SHELL" -i`
-    : '';
-
-  // Use user shell for harness wrapping to preserve their preferred shell experience
-  const harnessCmd = harnessConfig
-    ? { spawnCmd: userShell, spawnArgs: ['-i', '-c', harnessCmdStr] }
-    : { spawnCmd: userShell, spawnArgs: shellArgs };
-
-  const ptyProcess = pty.spawn(
-    harnessCmd.spawnCmd,
-    harnessCmd.spawnArgs,
-    {
-      name: 'xterm-256color',
-      cwd,
-      env: {
-        ...process.env as { [key: string]: string },
-        ...harnessEnv,
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-        TERM_PROGRAM: 'clanker-grid',
-        FORCE_COLOR: '1',
-        ...(store.get('showFastfetch') ? {} : { CLANKER_GRID: '1' }),
-      },
-    }
-  );
-
-  const terminal: Terminal = { id, pid: ptyProcess.pid, pty: ptyProcess, buffer: '' };
-  terminals.set(id, terminal);
-
-  if (harness && HARNESS_OPTIONS[harness]) {
-    const config = HARNESS_OPTIONS[harness];
-    const launchArgs = buildHarnessSpawnArgs(config, model);
-    console.info('[clanker-grid] harness launch', {
-      harness,
-      command: config.command,
-      args: launchArgs,
-      model: model ?? null,
-    });
-    if (mainWindow) {
-      const visibleLaunch = `[clanker-grid] ${config.command} ${launchArgs.join(' ')}\r\n`;
-      mainWindow.webContents.send('terminal-data', { id, data: visibleLaunch });
-      terminal.buffer += visibleLaunch;
-    }
-  }
-
-  ptyProcess.onData((data) => {
-    terminal.buffer += data;
-    if (mainWindow) {
-      mainWindow.webContents.send('terminal-data', { id, data });
-    }
-  });
-
-  ptyProcess.onExit(({ exitCode }) => {
-    terminals.delete(id);
-    if (mainWindow) {
-      mainWindow.webContents.send('terminal-exit', { id, exitCode });
-    }
-  });
-
-  return { id, pid: ptyProcess.pid };
-});
-
-ipcMain.handle('get-terminal-buffer', (_, id: string) => {
-  return terminals.get(id)?.buffer ?? '';
-});
-
-ipcMain.handle('write-terminal', (_, { id, data }: { id: string; data: string }) => {
-  const terminal = terminals.get(id);
-  if (terminal) {
-    terminal.pty.write(data);
-  }
-});
-
-ipcMain.handle('resize-terminal', (_, { id, cols, rows }: { id: string; cols: number; rows: number }) => {
-  const terminal = terminals.get(id);
-  if (terminal) {
-    terminal.pty.resize(cols, rows);
-  }
-});
-
-ipcMain.handle('kill-terminal', (_, id: string) => {
-  const terminal = terminals.get(id);
-  if (terminal) {
-    terminal.pty.kill();
-    terminals.delete(id);
-  }
-});
-
-// Browser view with viewport coordinates
-ipcMain.handle('browser-set-bounds', (_, workspaceId: string, viewportBounds: { x: number; y: number; width: number; height: number }) => {
-  if (!workspaceId) {
-    return;
-  }
-
-  updateBrowserView(workspaceId, {
-    x: viewportBounds.x,
-    y: viewportBounds.y,
-    width: viewportBounds.width,
-    height: viewportBounds.height,
-  });
-});
-
-ipcMain.handle('browser-hide', (_, workspaceId: string) => {
-  if (!workspaceId) {
-    return;
-  }
-
-  hideBrowserView(workspaceId);
-});
-
-ipcMain.handle('browser-navigate', (_, workspaceId: string, url: string) => {
-  if (!workspaceId) {
-    return false;
-  }
-
-  const safeUrl = normalizeAppBrowserUrl(url);
-  if (!safeUrl) {
-    return false;
-  }
-
-  const entry = ensureBrowserViewEntry(workspaceId);
-  if (!entry) {
-    return false;
-  }
-
-  entry.url = safeUrl;
-  notifyBrowserUrlUpdated(workspaceId, safeUrl);
-  void entry.view.webContents.loadURL(safeUrl);
-  return true;
-});
-
-ipcMain.handle('browser-back', (_, workspaceId: string) => {
-  if (!workspaceId) {
-    return;
-  }
-
-  const entry = browserViews.get(workspaceId);
-  if (entry && entry.view.webContents.navigationHistory.canGoBack()) {
-    entry.view.webContents.navigationHistory.goBack();
-  }
-});
-
-ipcMain.handle('browser-forward', (_, workspaceId: string) => {
-  if (!workspaceId) {
-    return;
-  }
-
-  const entry = browserViews.get(workspaceId);
-  if (entry && entry.view.webContents.navigationHistory.canGoForward()) {
-    entry.view.webContents.navigationHistory.goForward();
-  }
-});
-
-ipcMain.handle('browser-refresh', (_, workspaceId: string) => {
-  if (!workspaceId) {
-    return;
-  }
-
-  const entry = browserViews.get(workspaceId);
-  if (entry) {
-    entry.view.webContents.reload();
-  }
-});
-
-ipcMain.handle('browser-stop', (_, workspaceId: string) => {
-  if (!workspaceId) {
-    return;
-  }
-
-  const entry = browserViews.get(workspaceId);
-  if (entry) {
-    entry.view.webContents.stop();
-  }
-});
-
-ipcMain.handle('browser-dispose-workspace', (_, workspaceId: string) => {
-  if (!workspaceId) {
-    return;
-  }
-
-  destroyBrowserView(workspaceId);
-});
-
-ipcMain.handle('open-external', (_, url: string) => {
-  const safeUrl = normalizeExternalUrl(url);
-  if (!safeUrl) {
-    return false;
-  }
-
-  void shell.openExternal(safeUrl);
-  return true;
-});
-
-ipcMain.handle('minimize-window', () => {
-  mainWindow?.minimize();
-});
-
-ipcMain.handle('toggle-maximize-window', () => {
-  if (!mainWindow) return;
-  if (mainWindow.isMaximized()) {
-    mainWindow.unmaximize();
-  } else {
-    mainWindow.maximize();
-  }
-});
-
-ipcMain.handle('close-window', () => {
-  mainWindow?.close();
-});
-
-ipcMain.handle('is-maximized-window', () => {
-  return mainWindow?.isMaximized() ?? false;
-});
-
-ipcMain.handle('get-harness-options', () => {
-  return getAvailableHarnessOptions();
-});
-
-ipcMain.handle('can-go-back', (_, workspaceId: string) => {
-  if (!workspaceId) {
-    return false;
-  }
-
-  const entry = browserViews.get(workspaceId);
-  return entry?.view.webContents.navigationHistory.canGoBack() ?? false;
-});
-
-ipcMain.handle('can-go-forward', (_, workspaceId: string) => {
-  if (!workspaceId) {
-    return false;
-  }
-
-  const entry = browserViews.get(workspaceId);
-  return entry?.view.webContents.navigationHistory.canGoForward() ?? false;
-});
+// Settings IPC handlers moved to settingsIpc module (S2.3)
+// Git IPC handlers start below
 
 // ============================================================================
 // Git IPC Handlers - Delegated to GitService
@@ -1388,9 +761,32 @@ ipcMain.handle('vcs:open-deep-link', async (_, workspacePath: string, type: Deep
 });
 
 // App lifecycle
-app.whenReady().then(() => {
-  createWindow();
+const browserViews = new Map<string, { view: WebContentsView; url: string }>();
+let activeBrowserWorkspaceId: string | null = null;
 
+app.whenReady().then(() => {
+  // Register settings IPC handlers (extracted per S2.3)
+  registerSettingsIpc({
+    getStore: () => store,
+    getMainWindow: () => mainWindow,
+    getGitService: () => gitService,
+  });
+  // Register terminal IPC handlers (extracted per S2.1)
+  registerTerminalIpc({
+    getTerminals: () => terminals,
+    getMainWindow: () => mainWindow,
+    getStore: () => store,
+    getSafeWorkspacePath: (workingDir: string) => getSafeWorkspacePath(workingDir, store),
+    getHarnessOptions: () => HARNESS_OPTIONS,
+  });
+  // Register browser IPC handlers (extracted per S2.2)
+  registerBrowserIpc({
+    getMainWindow: () => mainWindow,
+    getBrowserViews: () => browserViews,
+    getActiveBrowserWorkspaceId: () => activeBrowserWorkspaceId,
+    setActiveBrowserWorkspaceId: (id) => { activeBrowserWorkspaceId = id; },
+  });
+  createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
