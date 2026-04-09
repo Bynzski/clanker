@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Check, Loader2, Sparkles } from 'lucide-react';
+import { X, Check, Loader2, Sparkles, Eye } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { AiCommitSettings } from '../types/shared';
+import DiffViewer from './DiffViewer';
+import type { DiffViewerState } from './git/diffTypes';
+import { initialDiffViewerState } from './git/diffTypes';
 import './CommitDialog.css';
 
 interface GitStatus {
@@ -41,6 +44,7 @@ export default function CommitDialog({
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [unstagingPaths, setUnstagingPaths] = useState<Set<string>>(new Set());
+  const [diffState, setDiffState] = useState<DiffViewerState>(initialDiffViewerState);
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -217,6 +221,64 @@ export default function CommitDialog({
     }
   }, [isUnstaging, isCommitting, onUnstageAll]);
 
+  const handleViewFileDiff = useCallback(
+    async (filePath: string, mode: 'working' | 'staged') => {
+      if (!workspacePath) return;
+
+      setDiffState({
+        ...initialDiffViewerState,
+        isOpen: true,
+        filePath,
+        isLoading: true,
+      });
+
+      try {
+        const result = await window.electronAPI.gitGetFileDiff(
+          workspacePath,
+          filePath,
+          mode
+        );
+
+        if (result.success) {
+          setDiffState({
+            ...initialDiffViewerState,
+            isOpen: true,
+            filePath,
+            oldContent: result.oldContent,
+            newContent: result.newContent,
+            oldPath: result.oldPath,
+            newPath: result.newPath,
+            isBinary: result.isBinary,
+            hasDiff: result.hasDiff,
+            isLoading: false,
+            error: null,
+          });
+        } else {
+          setDiffState({
+            ...initialDiffViewerState,
+            isOpen: true,
+            filePath,
+            isLoading: false,
+            error: result.error || 'Failed to load diff',
+          });
+        }
+      } catch {
+        setDiffState({
+          ...initialDiffViewerState,
+          isOpen: true,
+          filePath,
+          isLoading: false,
+          error: 'Failed to load diff',
+        });
+      }
+    },
+    [workspacePath]
+  );
+
+  const handleCloseDiff = useCallback(() => {
+    setDiffState(initialDiffViewerState);
+  }, []);
+
   if (!isOpen) return null;
 
   const hasChanges = changes.length > 0;
@@ -226,6 +288,7 @@ export default function CommitDialog({
   const isBusy = isCommitting || isUnstaging;
 
   return (
+    <>
     <div className="commit-dialog-overlay" onClick={handleOverlayClick}>
       <div className="commit-dialog">
         <div className="commit-dialog-header">
@@ -314,6 +377,15 @@ export default function CommitDialog({
                       <span className="commit-file-path" title={change.path}>
                         {change.path}
                       </span>
+                      <button
+                        type="button"
+                        className="commit-file-diff-action"
+                        onClick={() => void handleViewFileDiff(change.path, change.staged ? 'staged' : 'working')}
+                        disabled={isBusy}
+                        title="View diff"
+                      >
+                        <Eye size={12} />
+                      </button>
                       {change.staged && (
                         <>
                           <span className="commit-file-staged" title="Staged">
@@ -383,5 +455,19 @@ export default function CommitDialog({
         </form>
       </div>
     </div>
+    {diffState.isOpen && (
+      <DiffViewer
+        oldContent={diffState.oldContent}
+        newContent={diffState.newContent}
+        oldPath={diffState.oldPath}
+        newPath={diffState.newPath}
+        isBinary={diffState.isBinary}
+        hasDiff={diffState.hasDiff}
+        isLoading={diffState.isLoading}
+        error={diffState.error}
+        onClose={handleCloseDiff}
+      />
+    )}
+    </>
   );
 }

@@ -296,3 +296,26 @@
   text-align: center;
   padding: var(--space-lg);
 }
+
+.commit-file-diff-action {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+}
+
+.commit-file-diff-action:hover:not(:disabled) {
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+}
+
+.commit-file-diff-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

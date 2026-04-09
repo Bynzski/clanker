@@ -22,6 +22,15 @@ describe('CommitDialog', () => {
     window.electronAPI = {
       getAiCommitSettings: vi.fn().mockResolvedValue({ enabled: false }),
       generateCommitMessage: vi.fn(),
+      gitGetFileDiff: vi.fn().mockResolvedValue({
+        success: true,
+        oldContent: 'old',
+        newContent: 'new',
+        oldPath: 'file.ts',
+        newPath: 'file.ts',
+        isBinary: false,
+        hasDiff: true,
+      }),
     } as unknown as typeof window.electronAPI;
   });
 
@@ -491,5 +500,89 @@ describe('CommitDialog', () => {
     expect(useWorkspaceStore.getState().browserOverlayCount).toBe(1);
     unmount();
     expect(useWorkspaceStore.getState().browserOverlayCount).toBe(0);
+  });
+
+  // =========================================================================
+  // Eye icon (diff viewer) tests
+  // =========================================================================
+  it('shows eye icon for each changed file', () => {
+    renderDialog({
+      changes: [
+        { path: 'file1.ts', status: 'modified' as const, staged: true },
+        { path: 'file2.ts', status: 'modified' as const, staged: false },
+      ],
+    });
+    const eyeButtons = screen.queryAllByTitle('View diff');
+    expect(eyeButtons).toHaveLength(2);
+  });
+
+  it('shows eye icon for both staged and unstaged files', () => {
+    renderDialog({
+      changes: [
+        { path: 'staged.ts', status: 'modified' as const, staged: true },
+        { path: 'unstaged.ts', status: 'modified' as const, staged: false },
+      ],
+    });
+    const eyeButtons = screen.queryAllByTitle('View diff');
+    expect(eyeButtons).toHaveLength(2);
+  });
+
+  it('calls gitGetFileDiff with correct args when eye icon clicked for staged file', async () => {
+    renderDialog({
+      workspacePath: '/test/workspace',
+      changes: [
+        { path: 'staged.ts', status: 'modified' as const, staged: true },
+      ],
+    });
+
+    fireEvent.click(screen.getByTitle('View diff'));
+
+    await waitFor(() => {
+      expect(window.electronAPI.gitGetFileDiff).toHaveBeenCalledWith(
+        '/test/workspace',
+        'staged.ts',
+        'staged'
+      );
+    });
+  });
+
+
+  it('calls gitGetFileDiff with correct args when eye icon clicked for unstaged file', async () => {
+    renderDialog({
+      workspacePath: '/test/workspace',
+      changes: [
+        { path: 'unstaged.ts', status: 'modified' as const, staged: false },
+      ],
+    });
+
+    fireEvent.click(screen.getByTitle('View diff'));
+
+    await waitFor(() => {
+      expect(window.electronAPI.gitGetFileDiff).toHaveBeenCalledWith(
+        '/test/workspace',
+        'unstaged.ts',
+        'working'
+      );
+    });
+  });
+
+  it('eye icon is disabled while commit is in progress', async () => {
+    mockOnCommit.mockImplementation(
+      async () => new Promise((r) => setTimeout(() => r({ success: true }), 100))
+    );
+
+    renderDialog({
+      changes: [
+        { path: 'file.ts', status: 'modified' as const, staged: true },
+      ],
+    });
+
+    // Start a commit by typing a message and clicking Commit
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'test message' } });
+    fireEvent.click(screen.getByText('Commit'));
+
+    // Eye button should be disabled
+    const eyeButton = screen.getByTitle('View diff');
+    expect(eyeButton).toBeDisabled();
   });
 });
