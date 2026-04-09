@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { IpcRendererEvent } from 'electron';
 import type { VcsProvider } from '../shared/types/vcs';
 import {
   GET_LAST_WORKSPACE,
@@ -110,12 +111,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   killTerminal: (id: string) => ipcRenderer.invoke(KILL_TERMINAL, id),
   cleanupWorkspaceTerminals: (ids: string[]) => ipcRenderer.invoke(TERMINAL_CLEANUP_WORKSPACE, ids),
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => {
-    const handler = (_: any, data: { id: string; data: string }) => callback(data);
+    const handler = (_event: IpcRendererEvent, data: { id: string; data: string }) => callback(data);
     ipcRenderer.on(TERMINAL_DATA, handler);
     return () => ipcRenderer.removeListener(TERMINAL_DATA, handler);
   },
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => {
-    const handler = (_: any, data: { id: string; exitCode: number }) => callback(data);
+    const handler = (_event: IpcRendererEvent, data: { id: string; exitCode: number }) => callback(data);
     ipcRenderer.on(TERMINAL_EXIT, handler);
     return () => ipcRenderer.removeListener(TERMINAL_EXIT, handler);
   },
@@ -134,7 +135,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   canGoForward: (workspaceId: string) => ipcRenderer.invoke(CAN_GO_FORWARD, workspaceId),
   browserDisposeWorkspace: (workspaceId: string) => ipcRenderer.invoke(BROWSER_DISPOSE_WORKSPACE, workspaceId),
   onBrowserUrlUpdated: (callback: (payload: { workspaceId: string; url: string }) => void) => {
-    const handler = (_: any, payload: { workspaceId: string; url: string }) => callback(payload);
+    const handler = (_event: IpcRendererEvent, payload: { workspaceId: string; url: string }) => callback(payload);
     ipcRenderer.on(BROWSER_URL_UPDATED, handler);
     return () => ipcRenderer.removeListener(BROWSER_URL_UPDATED, handler);
   },
@@ -215,7 +216,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     errorCode?: 'not-a-repo' | 'git-not-found' | 'unknown';
     error?: string;
   }) => void) => {
-    const handler = (_: any, status: any) => callback(status);
+    const handler = (_event: IpcRendererEvent, status: {
+      success: boolean;
+      isRepo: boolean;
+      currentBranch: string | null;
+      isDetached: boolean;
+      changes: Array<{ path: string; status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed'; staged: boolean }>;
+      upstream: string | null;
+      ahead: number;
+      behind: number;
+      errorCode?: 'not-a-repo' | 'git-not-found' | 'unknown';
+      error?: string;
+    }) => callback(status);
     ipcRenderer.on(GIT_STATUS_UPDATE, handler);
     return () => ipcRenderer.removeListener(GIT_STATUS_UPDATE, handler);
   },

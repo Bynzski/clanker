@@ -28,7 +28,7 @@ export default tseslint.config(
       'no-console': 'off',
       'no-control-regex': 'off',
       'react-hooks/refs': 'off',
-      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-explicit-any': 'warn',
     },
   },
   {
