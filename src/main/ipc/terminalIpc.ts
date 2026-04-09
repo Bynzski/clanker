@@ -44,6 +44,13 @@ interface RegisterTerminalIpcDeps {
   getStore: () => Store<StoreSchema>;
   getSafeWorkspacePath: (workingDir: string) => string;
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
+  getAppShuttingDown?: () => boolean;
+}
+
+let appShuttingDown = false;
+
+export function setAppShuttingDown(shuttingDown: boolean): void {
+  appShuttingDown = shuttingDown;
 }
 
 export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
@@ -121,6 +128,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
 
     ptyProcess.onData((data: string) => {
+      if (appShuttingDown) return;
       terminal.buffer += data;
       if (terminal.buffer.length > MAX_TERMINAL_BUFFER_BYTES) {
         terminal.buffer = trimBuffer(terminal.buffer, MAX_TERMINAL_BUFFER_BYTES);
@@ -131,6 +139,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     });
 
     ptyProcess.onExit(({ exitCode }) => {
+      if (appShuttingDown) return;
       terminals.delete(id);
       if (mainWindow) {
         mainWindow.webContents.send(TERMINAL_EXIT, { id, exitCode });

@@ -19,7 +19,7 @@ import { type AiCommitProvider } from './aiCommit';
 import { HARNESS_OPTIONS } from './harnessCatalog';
 import { createMainWindow, getPreloadPath } from './windowManager';
 import { registerSettingsIpc } from './ipc/settingsIpc';
-import { registerTerminalIpc, type Terminal } from './ipc/terminalIpc';
+import { registerTerminalIpc, setAppShuttingDown, type Terminal } from './ipc/terminalIpc';
 import { registerBrowserIpc } from './ipc/browserIpc';
 import { registerGitIpc } from './ipc/gitIpc';
 import { registerCredentialIpc } from './ipc/credentialIpc';
@@ -145,6 +145,12 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// Set shutdown flag BEFORE any window teardown begins
+// This prevents late PTY callbacks from sending to dead windows
+app.on('before-quit', () => {
+  setAppShuttingDown(true);
 });
 
 // Export shared state for test access
