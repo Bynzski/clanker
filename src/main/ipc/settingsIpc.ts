@@ -26,6 +26,25 @@ import {
   type AiCommitProvider,
 } from '../aiCommit';
 import type { GitStatusEntry } from '../gitService';
+import {
+  GET_LAST_WORKSPACE,
+  GET_SHOW_FASTFETCH,
+  SET_SHOW_FASTFETCH,
+  GET_AI_COMMIT_SETTINGS,
+  SET_AI_COMMIT_ENABLED,
+  SET_AI_COMMIT_PROVIDER,
+  SET_AI_COMMIT_MODEL,
+  GENERATE_COMMIT_MESSAGE,
+  OPEN_DIRECTORY_DIALOG,
+  READ_DIRECTORY,
+  GET_HARNESS_OPTIONS,
+  GET_HARNESS_MODELS,
+  MINIMIZE_WINDOW,
+  TOGGLE_MAXIMIZE_WINDOW,
+  CLOSE_WINDOW,
+  IS_MAXIMIZED_WINDOW,
+  GIT_STATUS_UPDATE,
+} from '../../shared/ipcChannels';
 
 interface StoreSchema {
   lastWorkspace: string;
@@ -121,7 +140,7 @@ async function refreshGitStatus(
   const status = await gitService.getStatus(workspacePath);
   const mainWindow = getMainWindow();
   if (mainWindow) {
-    mainWindow.webContents.send('git-status-update', status);
+    mainWindow.webContents.send(GIT_STATUS_UPDATE, status);
   }
   return status;
 }
@@ -191,20 +210,21 @@ async function generateAiCommitMessage(
 export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
   const { getStore, getMainWindow, getGitService } = deps;
 
+
   // Store handlers
-  ipcMain.handle('get-last-workspace', () => {
+  ipcMain.handle(GET_LAST_WORKSPACE, () => {
     return getStore().get('lastWorkspace');
   });
 
-  ipcMain.handle('get-show-fastfetch', () => {
+  ipcMain.handle(GET_SHOW_FASTFETCH, () => {
     return getStore().get('showFastfetch');
   });
 
-  ipcMain.handle('set-show-fastfetch', (_, showFastfetch: boolean) => {
+  ipcMain.handle(SET_SHOW_FASTFETCH, (_, showFastfetch: boolean) => {
     getStore().set('showFastfetch', showFastfetch);
   });
 
-  ipcMain.handle('get-ai-commit-settings', () => {
+  ipcMain.handle(GET_AI_COMMIT_SETTINGS, () => {
     return {
       enabled: getStore().get('aiCommitEnabled'),
       provider: getStore().get('aiCommitProvider'),
@@ -212,19 +232,19 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
     };
   });
 
-  ipcMain.handle('set-ai-commit-enabled', (_, enabled: boolean) => {
+  ipcMain.handle(SET_AI_COMMIT_ENABLED, (_, enabled: boolean) => {
     getStore().set('aiCommitEnabled', enabled);
   });
 
-  ipcMain.handle('set-ai-commit-provider', (_, provider: AiCommitProvider) => {
+  ipcMain.handle(SET_AI_COMMIT_PROVIDER, (_, provider: AiCommitProvider) => {
     getStore().set('aiCommitProvider', provider);
   });
 
-  ipcMain.handle('set-ai-commit-model', (_, model: string) => {
+  ipcMain.handle(SET_AI_COMMIT_MODEL, (_, model: string) => {
     getStore().set('aiCommitModel', model);
   });
 
-  ipcMain.handle('generate-commit-message', async (_, workspacePath: string) => {
+  ipcMain.handle(GENERATE_COMMIT_MESSAGE, async (_, workspacePath: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
@@ -233,7 +253,7 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
     return generateAiCommitMessage(safeWorkspacePath, getStore(), getGitService());
   });
 
-  ipcMain.handle('open-directory-dialog', async () => {
+  ipcMain.handle(OPEN_DIRECTORY_DIALOG, async () => {
     const mainWindow = getMainWindow();
     const result = await dialog.showOpenDialog(mainWindow!, {
       properties: ['openDirectory'],
@@ -248,7 +268,8 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
     return null;
   });
 
-  ipcMain.handle('read-directory', async (_, dirPath: string) => {
+
+  ipcMain.handle(READ_DIRECTORY, async (_, dirPath: string) => {
     const safeDirectoryPath = resolveExistingDirectory(dirPath);
     if (!safeDirectoryPath) {
       return [];
@@ -267,20 +288,20 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
     }
   });
 
-  ipcMain.handle('get-harness-models', async (_, harness: string) => {
+  ipcMain.handle(GET_HARNESS_MODELS, async (_, harness: string) => {
     return discoverHarnessModels(harness);
   });
 
-  ipcMain.handle('get-harness-options', () => {
+  ipcMain.handle(GET_HARNESS_OPTIONS, () => {
     return getAvailableHarnessOptions();
   });
 
   // Window control handlers
-  ipcMain.handle('minimize-window', () => {
+  ipcMain.handle(MINIMIZE_WINDOW, () => {
     getMainWindow()?.minimize();
   });
 
-  ipcMain.handle('toggle-maximize-window', () => {
+  ipcMain.handle(TOGGLE_MAXIMIZE_WINDOW, () => {
     const mainWindow = getMainWindow();
     if (!mainWindow) return;
     if (mainWindow.isMaximized()) {
@@ -290,11 +311,11 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
     }
   });
 
-  ipcMain.handle('close-window', () => {
+  ipcMain.handle(CLOSE_WINDOW, () => {
     getMainWindow()?.close();
   });
 
-  ipcMain.handle('is-maximized-window', () => {
+  ipcMain.handle(IS_MAXIMIZED_WINDOW, () => {
     return getMainWindow()?.isMaximized() ?? false;
   });
 }

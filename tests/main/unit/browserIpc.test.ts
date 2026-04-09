@@ -65,6 +65,7 @@ vi.mock('electron', () => ({
   })),
   ipcMain: {
     handle: vi.fn(),
+    on: vi.fn(),
   },
   dialog: {
     showOpenDialog: vi.fn(),

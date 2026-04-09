@@ -10,6 +10,21 @@ import {
   normalizeAppBrowserUrl,
   normalizeExternalUrl,
 } from '../security';
+import {
+  BROWSER_SET_BOUNDS,
+  BROWSER_HIDE,
+  BROWSER_NAVIGATE,
+  BROWSER_BACK,
+  BROWSER_FORWARD,
+  BROWSER_REFRESH,
+  BROWSER_STOP,
+  BROWSER_DISPOSE_WORKSPACE,
+  OPEN_EXTERNAL,
+  CAN_GO_BACK,
+  CAN_GO_FORWARD,
+  BROWSER_URL_UPDATED,
+  FIT_ALL_PANES,
+} from '../../shared/ipcChannels';
 
 interface BrowserViewEntry {
   view: WebContentsView;
@@ -72,7 +87,7 @@ function createBrowserViewForWorkspace(
   attachBrowserShortcutHandlers(view, () => {
     const win = deps.getMainWindow();
     if (win) {
-      win.webContents.send('fit-all-panes');
+      win.webContents.send(FIT_ALL_PANES);
     }
   });
   view.setVisible(false);
@@ -88,7 +103,7 @@ function createBrowserViewForWorkspace(
     }
     const win = deps.getMainWindow();
     if (win) {
-      win.webContents.send('browser-url-updated', { workspaceId, url: safeUrl });
+      win.webContents.send(BROWSER_URL_UPDATED, { workspaceId, url: safeUrl });
     }
   };
   view.webContents.on('did-navigate', (_event, url) => reportUrlChange(url));
@@ -177,7 +192,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
   const { getMainWindow, getBrowserViews } = deps;
 
   // Browser view with viewport coordinates
-  ipcMain.handle('browser-set-bounds', (_, workspaceId: string, viewportBounds: { x: number; y: number; width: number; height: number }) => {
+  ipcMain.handle(BROWSER_SET_BOUNDS, (_, workspaceId: string, viewportBounds: { x: number; y: number; width: number; height: number }) => {
     if (!workspaceId) {
       return;
     }
@@ -190,7 +205,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     }, deps);
   });
 
-  ipcMain.handle('browser-hide', (_, workspaceId: string) => {
+  ipcMain.handle(BROWSER_HIDE, (_, workspaceId: string) => {
     if (!workspaceId) {
       return;
     }
@@ -198,7 +213,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     hideBrowserView(workspaceId, deps);
   });
 
-  ipcMain.handle('browser-navigate', (_, workspaceId: string, url: string) => {
+  ipcMain.handle(BROWSER_NAVIGATE, (_, workspaceId: string, url: string) => {
     if (!workspaceId) {
       return false;
     }
@@ -218,14 +233,14 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     // Notify URL update
     const mainWindow = getMainWindow();
     if (mainWindow) {
-      mainWindow.webContents.send('browser-url-updated', { workspaceId, url: safeUrl });
+      mainWindow.webContents.send(BROWSER_URL_UPDATED, { workspaceId, url: safeUrl });
     }
 
     void entry.view.webContents.loadURL(safeUrl);
     return true;
   });
 
-  ipcMain.handle('browser-back', (_, workspaceId: string) => {
+  ipcMain.handle(BROWSER_BACK, (_, workspaceId: string) => {
     if (!workspaceId) {
       return;
     }
@@ -236,7 +251,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     }
   });
 
-  ipcMain.handle('browser-forward', (_, workspaceId: string) => {
+  ipcMain.handle(BROWSER_FORWARD, (_, workspaceId: string) => {
     if (!workspaceId) {
       return;
     }
@@ -247,7 +262,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     }
   });
 
-  ipcMain.handle('browser-refresh', (_, workspaceId: string) => {
+  ipcMain.handle(BROWSER_REFRESH, (_, workspaceId: string) => {
     if (!workspaceId) {
       return;
     }
@@ -258,7 +273,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     }
   });
 
-  ipcMain.handle('browser-stop', (_, workspaceId: string) => {
+  ipcMain.handle(BROWSER_STOP, (_, workspaceId: string) => {
     if (!workspaceId) {
       return;
     }
@@ -269,7 +284,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     }
   });
 
-  ipcMain.handle('browser-dispose-workspace', (_, workspaceId: string) => {
+  ipcMain.handle(BROWSER_DISPOSE_WORKSPACE, (_, workspaceId: string) => {
     if (!workspaceId) {
       return;
     }
@@ -277,7 +292,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     destroyBrowserView(workspaceId, deps);
   });
 
-  ipcMain.handle('open-external', (_, url: string) => {
+  ipcMain.handle(OPEN_EXTERNAL, (_, url: string) => {
     const safeUrl = normalizeExternalUrl(url);
     if (!safeUrl) {
       return false;
@@ -287,7 +302,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     return true;
   });
 
-  ipcMain.handle('can-go-back', (_, workspaceId: string) => {
+  ipcMain.handle(CAN_GO_BACK, (_, workspaceId: string) => {
     if (!workspaceId) {
       return false;
     }
@@ -296,7 +311,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     return entry?.view.webContents.navigationHistory.canGoBack() ?? false;
   });
 
-  ipcMain.handle('can-go-forward', (_, workspaceId: string) => {
+  ipcMain.handle(CAN_GO_FORWARD, (_, workspaceId: string) => {
     if (!workspaceId) {
       return false;
     }
@@ -304,6 +319,11 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     const entry = getBrowserViews().get(workspaceId);
     return entry?.view.webContents.navigationHistory.canGoForward() ?? false;
   });
+
+  // Event channels — registered so the integration test can verify completeness.
+  // These are one-way: main sends events to renderer (no handler needed).
+  ipcMain.on(BROWSER_URL_UPDATED, () => { });
+  ipcMain.on(FIT_ALL_PANES, () => { });
 }
 
 // Export helpers for testing

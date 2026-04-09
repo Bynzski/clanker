@@ -1,0 +1,232 @@
+/**
+ * IPC Channel Constants — Unit Tests
+ *
+ * Verifies that every exported constant is a non-empty string and that the
+ * canonical ALL_IPC_CHANNELS list contains no duplicates.
+ */
+
+import { describe, it, expect } from 'vitest';
+import {
+  // Settings
+  GET_LAST_WORKSPACE,
+  GET_SHOW_FASTFETCH,
+  SET_SHOW_FASTFETCH,
+  GET_AI_COMMIT_SETTINGS,
+  SET_AI_COMMIT_ENABLED,
+  SET_AI_COMMIT_PROVIDER,
+  SET_AI_COMMIT_MODEL,
+  GENERATE_COMMIT_MESSAGE,
+  OPEN_DIRECTORY_DIALOG,
+  READ_DIRECTORY,
+  GET_HARNESS_OPTIONS,
+  GET_HARNESS_MODELS,
+  // Terminal
+  SPAWN_TERMINAL,
+  GET_TERMINAL_BUFFER,
+  WRITE_TERMINAL,
+  RESIZE_TERMINAL,
+  KILL_TERMINAL,
+  TERMINAL_CLEANUP_WORKSPACE,
+  TERMINAL_DATA,
+  TERMINAL_EXIT,
+  // Browser
+  BROWSER_SET_BOUNDS,
+  BROWSER_HIDE,
+  BROWSER_NAVIGATE,
+  BROWSER_BACK,
+  BROWSER_FORWARD,
+  BROWSER_REFRESH,
+  BROWSER_STOP,
+  BROWSER_DISPOSE_WORKSPACE,
+  OPEN_EXTERNAL,
+  CAN_GO_BACK,
+  CAN_GO_FORWARD,
+  BROWSER_URL_UPDATED,
+  FIT_ALL_PANES,
+  // Git
+  GIT_START_POLLING,
+  GIT_STOP_POLLING,
+  GIT_GET_BRANCH_STATE,
+  GIT_GET_OPERATION_STATE,
+  GIT_GET_STASHES,
+  GIT_GET_HISTORY,
+  GIT_GET_DIFF,
+  GIT_STAGE,
+  GIT_UNSTAGE,
+  GIT_COMMIT,
+  GIT_CREATE_BRANCH,
+  GIT_SWITCH_BRANCH,
+  GIT_DELETE_BRANCH,
+  GIT_FORCE_DELETE_BRANCH,
+  GIT_MERGE_BRANCH,
+  GIT_ABORT_OPERATION,
+  GIT_STASH,
+  GIT_APPLY_STASH,
+  GIT_POP_STASH,
+  GIT_DROP_STASH,
+  GIT_CLEAR_STASHES,
+  GIT_REFRESH,
+  GIT_INIT,
+  GIT_GET_REMOTES,
+  GIT_ADD_REMOTE,
+  GIT_REMOVE_REMOTE,
+  GIT_RENAME_REMOTE,
+  GIT_FETCH,
+  GIT_PULL,
+  GIT_PUSH,
+  GIT_STATUS_UPDATE,
+  // Window controls
+  MINIMIZE_WINDOW,
+  TOGGLE_MAXIMIZE_WINDOW,
+  CLOSE_WINDOW,
+  IS_MAXIMIZED_WINDOW,
+  // Credentials
+  CREDENTIAL_GENERATE_SSH_KEY,
+  CREDENTIAL_GET_PUBLIC_KEY,
+  CREDENTIAL_DELETE_SSH_KEY,
+  CREDENTIAL_CHECK_EXISTS,
+  CREDENTIAL_SAVE_PAT,
+  CREDENTIAL_GET_PAT,
+  CREDENTIAL_DELETE_PAT,
+  CREDENTIAL_GET_STATUS,
+  CREDENTIAL_GET_GLOBAL_STATUS,
+  CREDENTIAL_CONFIGURE_SSH_HOST,
+  // VCS
+  VCS_GET_CONTEXT,
+  VCS_GET_PR_INFO,
+  VCS_GET_DEEP_LINKS,
+  VCS_GET_DEEP_LINK,
+  VCS_OPEN_DEEP_LINK,
+  ALL_IPC_CHANNELS,
+} from '../../../src/shared/ipcChannels';
+
+const ALL_CHANNELS = [
+  // Settings
+  GET_LAST_WORKSPACE,
+  GET_SHOW_FASTFETCH,
+  SET_SHOW_FASTFETCH,
+  GET_AI_COMMIT_SETTINGS,
+  SET_AI_COMMIT_ENABLED,
+  SET_AI_COMMIT_PROVIDER,
+  SET_AI_COMMIT_MODEL,
+  GENERATE_COMMIT_MESSAGE,
+  OPEN_DIRECTORY_DIALOG,
+  READ_DIRECTORY,
+  GET_HARNESS_OPTIONS,
+  GET_HARNESS_MODELS,
+  // Terminal
+  SPAWN_TERMINAL,
+  GET_TERMINAL_BUFFER,
+  WRITE_TERMINAL,
+  RESIZE_TERMINAL,
+  KILL_TERMINAL,
+  TERMINAL_CLEANUP_WORKSPACE,
+  // Browser
+  BROWSER_SET_BOUNDS,
+  BROWSER_HIDE,
+  BROWSER_NAVIGATE,
+  BROWSER_BACK,
+  BROWSER_FORWARD,
+  BROWSER_REFRESH,
+  BROWSER_STOP,
+  BROWSER_DISPOSE_WORKSPACE,
+  OPEN_EXTERNAL,
+  CAN_GO_BACK,
+  CAN_GO_FORWARD,
+  // Window controls
+  MINIMIZE_WINDOW,
+  TOGGLE_MAXIMIZE_WINDOW,
+  CLOSE_WINDOW,
+  IS_MAXIMIZED_WINDOW,
+  // Git
+  GIT_START_POLLING,
+  GIT_STOP_POLLING,
+  GIT_GET_BRANCH_STATE,
+  GIT_GET_OPERATION_STATE,
+  GIT_GET_STASHES,
+  GIT_GET_HISTORY,
+  GIT_GET_DIFF,
+  GIT_STAGE,
+  GIT_UNSTAGE,
+  GIT_COMMIT,
+  GIT_CREATE_BRANCH,
+  GIT_SWITCH_BRANCH,
+  GIT_DELETE_BRANCH,
+  GIT_FORCE_DELETE_BRANCH,
+  GIT_MERGE_BRANCH,
+  GIT_ABORT_OPERATION,
+  GIT_STASH,
+  GIT_APPLY_STASH,
+  GIT_POP_STASH,
+  GIT_DROP_STASH,
+  GIT_CLEAR_STASHES,
+  GIT_REFRESH,
+  GIT_INIT,
+  GIT_GET_REMOTES,
+  GIT_ADD_REMOTE,
+  GIT_REMOVE_REMOTE,
+  GIT_RENAME_REMOTE,
+  GIT_FETCH,
+  GIT_PULL,
+  GIT_PUSH,
+  // Credentials
+  CREDENTIAL_GENERATE_SSH_KEY,
+  CREDENTIAL_GET_PUBLIC_KEY,
+  CREDENTIAL_DELETE_SSH_KEY,
+  CREDENTIAL_CHECK_EXISTS,
+  CREDENTIAL_SAVE_PAT,
+  CREDENTIAL_GET_PAT,
+  CREDENTIAL_DELETE_PAT,
+  CREDENTIAL_GET_STATUS,
+  CREDENTIAL_GET_GLOBAL_STATUS,
+  CREDENTIAL_CONFIGURE_SSH_HOST,
+  // Terminal events (no corresponding handle call, but part of the protocol)
+  TERMINAL_DATA,
+  TERMINAL_EXIT,
+  // Browser events
+  BROWSER_URL_UPDATED,
+  FIT_ALL_PANES,
+  // Git events
+  GIT_STATUS_UPDATE,
+  // VCS
+  VCS_GET_CONTEXT,
+  VCS_GET_PR_INFO,
+  VCS_GET_DEEP_LINKS,
+  VCS_GET_DEEP_LINK,
+  VCS_OPEN_DEEP_LINK,
+];
+
+describe('ipcChannels', () => {
+  describe('each exported constant', () => {
+    for (const channel of ALL_CHANNELS) {
+      it(`${channel} is a non-empty string`, () => {
+        expect(typeof channel).toBe('string');
+        expect(channel.length).toBeGreaterThan(0);
+      });
+    }
+  });
+
+  describe('ALL_IPC_CHANNELS', () => {
+    it('contains all individual channel constants', () => {
+      for (const channel of ALL_CHANNELS) {
+        expect(ALL_IPC_CHANNELS).toContain(channel);
+      }
+    });
+
+    it('has no duplicate channel names', () => {
+      const seen = new Set<string>();
+      const duplicates: string[] = [];
+      for (const channel of ALL_IPC_CHANNELS) {
+        if (seen.has(channel)) {
+          duplicates.push(channel);
+        }
+        seen.add(channel);
+      }
+      expect(duplicates).toHaveLength(0);
+    });
+
+    it('matches the count of individual constants', () => {
+      expect(ALL_IPC_CHANNELS.length).toBe(ALL_CHANNELS.length);
+    });
+  });
+});

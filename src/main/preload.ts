@@ -1,123 +1,208 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { VcsProvider } from '../shared/types/vcs';
+import {
+  GET_LAST_WORKSPACE,
+  OPEN_DIRECTORY_DIALOG,
+  READ_DIRECTORY,
+  GET_SHOW_FASTFETCH,
+  SET_SHOW_FASTFETCH,
+  GET_AI_COMMIT_SETTINGS,
+  SET_AI_COMMIT_ENABLED,
+  SET_AI_COMMIT_PROVIDER,
+  SET_AI_COMMIT_MODEL,
+  SPAWN_TERMINAL,
+  GET_TERMINAL_BUFFER,
+  WRITE_TERMINAL,
+  RESIZE_TERMINAL,
+  KILL_TERMINAL,
+  TERMINAL_CLEANUP_WORKSPACE,
+  TERMINAL_DATA,
+  TERMINAL_EXIT,
+  BROWSER_HIDE,
+  BROWSER_SET_BOUNDS,
+  BROWSER_NAVIGATE,
+  BROWSER_BACK,
+  BROWSER_FORWARD,
+  BROWSER_REFRESH,
+  BROWSER_STOP,
+  OPEN_EXTERNAL,
+  CAN_GO_BACK,
+  CAN_GO_FORWARD,
+  BROWSER_DISPOSE_WORKSPACE,
+  BROWSER_URL_UPDATED,
+  FIT_ALL_PANES,
+  MINIMIZE_WINDOW,
+  TOGGLE_MAXIMIZE_WINDOW,
+  CLOSE_WINDOW,
+  IS_MAXIMIZED_WINDOW,
+  GET_HARNESS_OPTIONS,
+  GET_HARNESS_MODELS,
+  GIT_START_POLLING,
+  GIT_STOP_POLLING,
+  GENERATE_COMMIT_MESSAGE,
+  GIT_STAGE,
+  GIT_UNSTAGE,
+  GIT_COMMIT,
+  GIT_GET_BRANCH_STATE,
+  GIT_GET_OPERATION_STATE,
+  GIT_GET_STASHES,
+  GIT_GET_HISTORY,
+  GIT_GET_DIFF,
+  GIT_CREATE_BRANCH,
+  GIT_SWITCH_BRANCH,
+  GIT_DELETE_BRANCH,
+  GIT_FORCE_DELETE_BRANCH,
+  GIT_MERGE_BRANCH,
+  GIT_ABORT_OPERATION,
+  GIT_STASH,
+  GIT_APPLY_STASH,
+  GIT_POP_STASH,
+  GIT_DROP_STASH,
+  GIT_CLEAR_STASHES,
+  GIT_REFRESH,
+  GIT_INIT,
+  GIT_GET_REMOTES,
+  GIT_ADD_REMOTE,
+  GIT_REMOVE_REMOTE,
+  GIT_RENAME_REMOTE,
+  GIT_FETCH,
+  GIT_PULL,
+  GIT_PUSH,
+  GIT_STATUS_UPDATE,
+  CREDENTIAL_GENERATE_SSH_KEY,
+  CREDENTIAL_GET_PUBLIC_KEY,
+  CREDENTIAL_DELETE_SSH_KEY,
+  CREDENTIAL_CHECK_EXISTS,
+  CREDENTIAL_SAVE_PAT,
+  CREDENTIAL_GET_PAT,
+  CREDENTIAL_DELETE_PAT,
+  CREDENTIAL_GET_STATUS,
+  CREDENTIAL_GET_GLOBAL_STATUS,
+  CREDENTIAL_CONFIGURE_SSH_HOST,
+  VCS_GET_CONTEXT,
+  VCS_GET_PR_INFO,
+  VCS_GET_DEEP_LINKS,
+  VCS_GET_DEEP_LINK,
+  VCS_OPEN_DEEP_LINK,
+} from '../shared/ipcChannels';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Workspace
-  getLastWorkspace: () => ipcRenderer.invoke('get-last-workspace'),
-  openDirectoryDialog: () => ipcRenderer.invoke('open-directory-dialog'),
-  readDirectory: (path: string) => ipcRenderer.invoke('read-directory', path),
+  getLastWorkspace: () => ipcRenderer.invoke(GET_LAST_WORKSPACE),
+  openDirectoryDialog: () => ipcRenderer.invoke(OPEN_DIRECTORY_DIALOG),
+  readDirectory: (path: string) => ipcRenderer.invoke(READ_DIRECTORY, path),
 
   // Settings
-  getShowFastfetch: () => ipcRenderer.invoke('get-show-fastfetch'),
-  setShowFastfetch: (show: boolean) => ipcRenderer.invoke('set-show-fastfetch', show),
-  getAiCommitSettings: () => ipcRenderer.invoke('get-ai-commit-settings'),
-  setAiCommitEnabled: (enabled: boolean) => ipcRenderer.invoke('set-ai-commit-enabled', enabled),
-  setAiCommitProvider: (provider: string) => ipcRenderer.invoke('set-ai-commit-provider', provider),
-  setAiCommitModel: (model: string) => ipcRenderer.invoke('set-ai-commit-model', model),
+  getShowFastfetch: () => ipcRenderer.invoke(GET_SHOW_FASTFETCH),
+  setShowFastfetch: (show: boolean) => ipcRenderer.invoke(SET_SHOW_FASTFETCH, show),
+  getAiCommitSettings: () => ipcRenderer.invoke(GET_AI_COMMIT_SETTINGS),
+  setAiCommitEnabled: (enabled: boolean) => ipcRenderer.invoke(SET_AI_COMMIT_ENABLED, enabled),
+  setAiCommitProvider: (provider: string) => ipcRenderer.invoke(SET_AI_COMMIT_PROVIDER, provider),
+  setAiCommitModel: (model: string) => ipcRenderer.invoke(SET_AI_COMMIT_MODEL, model),
 
   // Terminal
   spawnTerminal: (workingDir: string, harness?: string, model?: string) =>
-    ipcRenderer.invoke('spawn-terminal', workingDir, harness, model),
-  getTerminalBuffer: (id: string) => ipcRenderer.invoke('get-terminal-buffer', id),
-  writeTerminal: (id: string, data: string) => ipcRenderer.invoke('write-terminal', { id, data }),
+    ipcRenderer.invoke(SPAWN_TERMINAL, workingDir, harness, model),
+  getTerminalBuffer: (id: string) => ipcRenderer.invoke(GET_TERMINAL_BUFFER, id),
+  writeTerminal: (id: string, data: string) => ipcRenderer.invoke(WRITE_TERMINAL, { id, data }),
   resizeTerminal: (id: string, cols: number, rows: number) =>
-    ipcRenderer.invoke('resize-terminal', { id, cols, rows }),
-  killTerminal: (id: string) => ipcRenderer.invoke('kill-terminal', id),
-  cleanupWorkspaceTerminals: (ids: string[]) => ipcRenderer.invoke('terminal:cleanup-workspace', ids),
+    ipcRenderer.invoke(RESIZE_TERMINAL, { id, cols, rows }),
+  killTerminal: (id: string) => ipcRenderer.invoke(KILL_TERMINAL, id),
+  cleanupWorkspaceTerminals: (ids: string[]) => ipcRenderer.invoke(TERMINAL_CLEANUP_WORKSPACE, ids),
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => {
     const handler = (_: any, data: { id: string; data: string }) => callback(data);
-    ipcRenderer.on('terminal-data', handler);
-    return () => ipcRenderer.removeListener('terminal-data', handler);
+    ipcRenderer.on(TERMINAL_DATA, handler);
+    return () => ipcRenderer.removeListener(TERMINAL_DATA, handler);
   },
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => {
     const handler = (_: any, data: { id: string; exitCode: number }) => callback(data);
-    ipcRenderer.on('terminal-exit', handler);
-    return () => ipcRenderer.removeListener('terminal-exit', handler);
+    ipcRenderer.on(TERMINAL_EXIT, handler);
+    return () => ipcRenderer.removeListener(TERMINAL_EXIT, handler);
   },
 
   // Browser (using WebContentsView)
-  browserHide: (workspaceId: string) => ipcRenderer.invoke('browser-hide', workspaceId),
+  browserHide: (workspaceId: string) => ipcRenderer.invoke(BROWSER_HIDE, workspaceId),
   browserSetBounds: (workspaceId: string, bounds: { x: number; y: number; width: number; height: number }) =>
-    ipcRenderer.invoke('browser-set-bounds', workspaceId, bounds),
-  browserNavigate: (workspaceId: string, url: string) => ipcRenderer.invoke('browser-navigate', workspaceId, url),
-  browserBack: (workspaceId: string) => ipcRenderer.invoke('browser-back', workspaceId),
-  browserForward: (workspaceId: string) => ipcRenderer.invoke('browser-forward', workspaceId),
-  browserRefresh: (workspaceId: string) => ipcRenderer.invoke('browser-refresh', workspaceId),
-  browserStop: (workspaceId: string) => ipcRenderer.invoke('browser-stop', workspaceId),
-  openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
-  canGoBack: (workspaceId: string) => ipcRenderer.invoke('can-go-back', workspaceId),
-  canGoForward: (workspaceId: string) => ipcRenderer.invoke('can-go-forward', workspaceId),
-  browserDisposeWorkspace: (workspaceId: string) => ipcRenderer.invoke('browser-dispose-workspace', workspaceId),
+    ipcRenderer.invoke(BROWSER_SET_BOUNDS, workspaceId, bounds),
+  browserNavigate: (workspaceId: string, url: string) => ipcRenderer.invoke(BROWSER_NAVIGATE, workspaceId, url),
+  browserBack: (workspaceId: string) => ipcRenderer.invoke(BROWSER_BACK, workspaceId),
+  browserForward: (workspaceId: string) => ipcRenderer.invoke(BROWSER_FORWARD, workspaceId),
+  browserRefresh: (workspaceId: string) => ipcRenderer.invoke(BROWSER_REFRESH, workspaceId),
+  browserStop: (workspaceId: string) => ipcRenderer.invoke(BROWSER_STOP, workspaceId),
+  openExternal: (url: string) => ipcRenderer.invoke(OPEN_EXTERNAL, url),
+  canGoBack: (workspaceId: string) => ipcRenderer.invoke(CAN_GO_BACK, workspaceId),
+  canGoForward: (workspaceId: string) => ipcRenderer.invoke(CAN_GO_FORWARD, workspaceId),
+  browserDisposeWorkspace: (workspaceId: string) => ipcRenderer.invoke(BROWSER_DISPOSE_WORKSPACE, workspaceId),
   onBrowserUrlUpdated: (callback: (payload: { workspaceId: string; url: string }) => void) => {
     const handler = (_: any, payload: { workspaceId: string; url: string }) => callback(payload);
-    ipcRenderer.on('browser-url-updated', handler);
-    return () => ipcRenderer.removeListener('browser-url-updated', handler);
+    ipcRenderer.on(BROWSER_URL_UPDATED, handler);
+    return () => ipcRenderer.removeListener(BROWSER_URL_UPDATED, handler);
   },
   onFitAllPanes: (callback: () => void) => {
     const handler = () => callback();
-    ipcRenderer.on('fit-all-panes', handler);
-    return () => ipcRenderer.removeListener('fit-all-panes', handler);
+    ipcRenderer.on(FIT_ALL_PANES, handler);
+    return () => ipcRenderer.removeListener(FIT_ALL_PANES, handler);
   },
 
   // Window controls
-  minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
-  toggleMaximizeWindow: () => ipcRenderer.invoke('toggle-maximize-window'),
-  closeWindow: () => ipcRenderer.invoke('close-window'),
-  isMaximizedWindow: () => ipcRenderer.invoke('is-maximized-window'),
+  minimizeWindow: () => ipcRenderer.invoke(MINIMIZE_WINDOW),
+  toggleMaximizeWindow: () => ipcRenderer.invoke(TOGGLE_MAXIMIZE_WINDOW),
+  closeWindow: () => ipcRenderer.invoke(CLOSE_WINDOW),
+  isMaximizedWindow: () => ipcRenderer.invoke(IS_MAXIMIZED_WINDOW),
 
   // Harness
-  getHarnessOptions: () => ipcRenderer.invoke('get-harness-options'),
-  getHarnessModels: (harness: string) => ipcRenderer.invoke('get-harness-models', harness),
+  getHarnessOptions: () => ipcRenderer.invoke(GET_HARNESS_OPTIONS),
+  getHarnessModels: (harness: string) => ipcRenderer.invoke(GET_HARNESS_MODELS, harness),
 
   // Git operations - managed by GitService in main process
-  gitStartPolling: (workspacePath: string) => ipcRenderer.invoke('git-start-polling', workspacePath),
-  gitStopPolling: () => ipcRenderer.invoke('git-stop-polling'),
-  generateCommitMessage: (workspacePath: string) => ipcRenderer.invoke('generate-commit-message', workspacePath),
-  gitStage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke('git-stage', workspacePath, files),
-  gitUnstage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke('git-unstage', workspacePath, files),
-  gitCommit: (workspacePath: string, message: string) => ipcRenderer.invoke('git-commit', workspacePath, message),
-  gitGetBranchState: (workspacePath: string) => ipcRenderer.invoke('git-get-branch-state', workspacePath),
-  gitGetOperationState: (workspacePath: string) => ipcRenderer.invoke('git-get-operation-state', workspacePath),
-  gitGetStashes: (workspacePath: string) => ipcRenderer.invoke('git-get-stashes', workspacePath),
-  gitGetHistory: (workspacePath: string, limit?: number) => ipcRenderer.invoke('git-get-history', workspacePath, limit),
+  gitStartPolling: (workspacePath: string) => ipcRenderer.invoke(GIT_START_POLLING, workspacePath),
+  gitStopPolling: () => ipcRenderer.invoke(GIT_STOP_POLLING),
+  generateCommitMessage: (workspacePath: string) => ipcRenderer.invoke(GENERATE_COMMIT_MESSAGE, workspacePath),
+  gitStage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke(GIT_STAGE, workspacePath, files),
+  gitUnstage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke(GIT_UNSTAGE, workspacePath, files),
+  gitCommit: (workspacePath: string, message: string) => ipcRenderer.invoke(GIT_COMMIT, workspacePath, message),
+  gitGetBranchState: (workspacePath: string) => ipcRenderer.invoke(GIT_GET_BRANCH_STATE, workspacePath),
+  gitGetOperationState: (workspacePath: string) => ipcRenderer.invoke(GIT_GET_OPERATION_STATE, workspacePath),
+  gitGetStashes: (workspacePath: string) => ipcRenderer.invoke(GIT_GET_STASHES, workspacePath),
+  gitGetHistory: (workspacePath: string, limit?: number) => ipcRenderer.invoke(GIT_GET_HISTORY, workspacePath, limit),
   gitGetDiff: (
     workspacePath: string,
     mode: 'working' | 'staged' | 'commit',
     ref?: string
-  ) => ipcRenderer.invoke('git-get-diff', workspacePath, mode, ref),
+  ) => ipcRenderer.invoke(GIT_GET_DIFF, workspacePath, mode, ref),
   gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string) =>
-    ipcRenderer.invoke('git-create-branch', workspacePath, name, baseBranch),
-  gitSwitchBranch: (workspacePath: string, name: string) => ipcRenderer.invoke('git-switch-branch', workspacePath, name),
-  gitDeleteBranch: (workspacePath: string, name: string) => ipcRenderer.invoke('git-delete-branch', workspacePath, name),
+    ipcRenderer.invoke(GIT_CREATE_BRANCH, workspacePath, name, baseBranch),
+  gitSwitchBranch: (workspacePath: string, name: string) => ipcRenderer.invoke(GIT_SWITCH_BRANCH, workspacePath, name),
+  gitDeleteBranch: (workspacePath: string, name: string) => ipcRenderer.invoke(GIT_DELETE_BRANCH, workspacePath, name),
   gitForceDeleteBranch: (workspacePath: string, name: string) =>
-    ipcRenderer.invoke('git-force-delete-branch', workspacePath, name),
-  gitMergeBranch: (workspacePath: string, branchName: string) => ipcRenderer.invoke('git-merge-branch', workspacePath, branchName),
-  gitAbortOperation: (workspacePath: string) => ipcRenderer.invoke('git-abort-operation', workspacePath),
+    ipcRenderer.invoke(GIT_FORCE_DELETE_BRANCH, workspacePath, name),
+  gitMergeBranch: (workspacePath: string, branchName: string) => ipcRenderer.invoke(GIT_MERGE_BRANCH, workspacePath, branchName),
+  gitAbortOperation: (workspacePath: string) => ipcRenderer.invoke(GIT_ABORT_OPERATION, workspacePath),
   gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean) =>
-    ipcRenderer.invoke('git-stash', workspacePath, message, includeUntracked),
-  gitApplyStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke('git-apply-stash', workspacePath, stashRef),
-  gitPopStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke('git-pop-stash', workspacePath, stashRef),
-  gitDropStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke('git-drop-stash', workspacePath, stashRef),
-  gitClearStashes: (workspacePath: string) => ipcRenderer.invoke('git-clear-stashes', workspacePath),
-  gitRefresh: () => ipcRenderer.invoke('git-refresh'),
+    ipcRenderer.invoke(GIT_STASH, workspacePath, message, includeUntracked),
+  gitApplyStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke(GIT_APPLY_STASH, workspacePath, stashRef),
+  gitPopStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke(GIT_POP_STASH, workspacePath, stashRef),
+  gitDropStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke(GIT_DROP_STASH, workspacePath, stashRef),
+  gitClearStashes: (workspacePath: string) => ipcRenderer.invoke(GIT_CLEAR_STASHES, workspacePath),
+  gitRefresh: () => ipcRenderer.invoke(GIT_REFRESH),
   gitInit: (workspacePath: string, defaultBranch?: string) =>
-    ipcRenderer.invoke('git-init', workspacePath, defaultBranch),
-  gitGetRemotes: (workspacePath: string) => ipcRenderer.invoke('git-get-remotes', workspacePath),
+    ipcRenderer.invoke(GIT_INIT, workspacePath, defaultBranch),
+  gitGetRemotes: (workspacePath: string) => ipcRenderer.invoke(GIT_GET_REMOTES, workspacePath),
   gitAddRemote: (workspacePath: string, name: string, url: string) =>
-    ipcRenderer.invoke('git-add-remote', workspacePath, name, url),
+    ipcRenderer.invoke(GIT_ADD_REMOTE, workspacePath, name, url),
   gitRemoveRemote: (workspacePath: string, name: string) =>
-    ipcRenderer.invoke('git-remove-remote', workspacePath, name),
+    ipcRenderer.invoke(GIT_REMOVE_REMOTE, workspacePath, name),
   gitRenameRemote: (workspacePath: string, oldName: string, newName: string) =>
-    ipcRenderer.invoke('git-rename-remote', workspacePath, oldName, newName),
-  gitFetch: (workspacePath: string, remote?: string) => ipcRenderer.invoke('git-fetch', workspacePath, remote),
-  gitPull: (workspacePath: string, rebase?: boolean) => ipcRenderer.invoke('git-pull', workspacePath, rebase),
+    ipcRenderer.invoke(GIT_RENAME_REMOTE, workspacePath, oldName, newName),
+  gitFetch: (workspacePath: string, remote?: string) => ipcRenderer.invoke(GIT_FETCH, workspacePath, remote),
+  gitPull: (workspacePath: string, rebase?: boolean) => ipcRenderer.invoke(GIT_PULL, workspacePath, rebase),
   gitPush: (
     workspacePath: string,
     remote?: string,
     branch?: string,
     forceWithLease?: boolean,
     setUpstream?: boolean
-  ) => ipcRenderer.invoke('git-push', workspacePath, remote, branch, forceWithLease, setUpstream),
+  ) => ipcRenderer.invoke(GIT_PUSH, workspacePath, remote, branch, forceWithLease, setUpstream),
   onGitStatusUpdate: (callback: (status: {
     success: boolean;
     isRepo: boolean;
@@ -131,28 +216,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     error?: string;
   }) => void) => {
     const handler = (_: any, status: any) => callback(status);
-    ipcRenderer.on('git-status-update', handler);
-    return () => ipcRenderer.removeListener('git-status-update', handler);
+    ipcRenderer.on(GIT_STATUS_UPDATE, handler);
+    return () => ipcRenderer.removeListener(GIT_STATUS_UPDATE, handler);
   },
 
   // Credential management
-  credentialGenerateSshKey: () => ipcRenderer.invoke('credential:generate-ssh-key'),
-  credentialGetPublicKey: () => ipcRenderer.invoke('credential:get-public-key'),
-  credentialDeleteSshKey: () => ipcRenderer.invoke('credential:delete-ssh-key'),
-  credentialCheckExists: () => ipcRenderer.invoke('credential:check-exists'),
+  credentialGenerateSshKey: () => ipcRenderer.invoke(CREDENTIAL_GENERATE_SSH_KEY),
+  credentialGetPublicKey: () => ipcRenderer.invoke(CREDENTIAL_GET_PUBLIC_KEY),
+  credentialDeleteSshKey: () => ipcRenderer.invoke(CREDENTIAL_DELETE_SSH_KEY),
+  credentialCheckExists: () => ipcRenderer.invoke(CREDENTIAL_CHECK_EXISTS),
   credentialSavePat: (provider: VcsProvider, token: string, scope?: string[]) =>
-    ipcRenderer.invoke('credential:save-pat', { provider, token, scope }),
-  credentialGetPat: (provider: VcsProvider) => ipcRenderer.invoke('credential:get-pat', provider),
-  credentialDeletePat: (provider: VcsProvider) => ipcRenderer.invoke('credential:delete-pat', provider),
+    ipcRenderer.invoke(CREDENTIAL_SAVE_PAT, { provider, token, scope }),
+  credentialGetPat: (provider: VcsProvider) => ipcRenderer.invoke(CREDENTIAL_GET_PAT, provider),
+  credentialDeletePat: (provider: VcsProvider) => ipcRenderer.invoke(CREDENTIAL_DELETE_PAT, provider),
   credentialGetStatus: (remoteName: string, remoteUrl: string, provider: VcsProvider) =>
-    ipcRenderer.invoke('credential:get-status', remoteName, remoteUrl, provider),
-  credentialGetGlobalStatus: () => ipcRenderer.invoke('credential:get-global-status'),
-  credentialConfigureSshHost: (hostname: string) => ipcRenderer.invoke('credential:configure-ssh-host', hostname),
+    ipcRenderer.invoke(CREDENTIAL_GET_STATUS, remoteName, remoteUrl, provider),
+  credentialGetGlobalStatus: () => ipcRenderer.invoke(CREDENTIAL_GET_GLOBAL_STATUS),
+  credentialConfigureSshHost: (hostname: string) => ipcRenderer.invoke(CREDENTIAL_CONFIGURE_SSH_HOST, hostname),
 
   // VCS Provider Context
-  vcsGetContext: (workspacePath: string) => ipcRenderer.invoke('vcs:get-context', workspacePath),
-  vcsGetPrInfo: (workspacePath: string) => ipcRenderer.invoke('vcs:get-pr-info', workspacePath),
-  vcsGetDeepLinks: (workspacePath: string, prNumber?: number) => ipcRenderer.invoke('vcs:get-deep-links', workspacePath, prNumber),
-  vcsGetDeepLink: (workspacePath: string, type: string) => ipcRenderer.invoke('vcs:get-deep-link', workspacePath, type),
-  vcsOpenDeepLink: (workspacePath: string, type: string) => ipcRenderer.invoke('vcs:open-deep-link', workspacePath, type),
+  vcsGetContext: (workspacePath: string) => ipcRenderer.invoke(VCS_GET_CONTEXT, workspacePath),
+  vcsGetPrInfo: (workspacePath: string) => ipcRenderer.invoke(VCS_GET_PR_INFO, workspacePath),
+  vcsGetDeepLinks: (workspacePath: string, prNumber?: number) => ipcRenderer.invoke(VCS_GET_DEEP_LINKS, workspacePath, prNumber),
+  vcsGetDeepLink: (workspacePath: string, type: string) => ipcRenderer.invoke(VCS_GET_DEEP_LINK, workspacePath, type),
+  vcsOpenDeepLink: (workspacePath: string, type: string) => ipcRenderer.invoke(VCS_OPEN_DEEP_LINK, workspacePath, type),
 });
