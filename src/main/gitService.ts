@@ -87,6 +87,17 @@ export interface GitDiffResult {
   error?: string;
 }
 
+export interface FileDiffResult {
+  success: boolean;
+  oldContent: string;
+  newContent: string;
+  oldPath: string;
+  newPath: string;
+  isBinary: boolean;
+  hasDiff: boolean;
+  error?: string;
+}
+
 export interface GitRemoteOperationResult {
   success: boolean;
   error?: string;
@@ -616,6 +627,123 @@ export class GitService {
         output: '',
         title: 'Diff',
         error: this.getGitErrorMessage(error, 'Failed to load diff'),
+      };
+    }
+  }
+
+  async getFileDiff(
+    workspacePath: string,
+    filePath: string,
+    mode: 'working' | 'staged'
+  ): Promise<FileDiffResult> {
+    try {
+      // Validate workspace is a git repo
+      const isRepo = await this.isRepo(workspacePath);
+      if (!isRepo) {
+        return {
+          success: false,
+          oldContent: '',
+          newContent: '',
+          oldPath: '',
+          newPath: '',
+          isBinary: false,
+          hasDiff: false,
+          error: 'Not a git repository',
+        };
+      }
+
+      const safeFilePath = filePath.trim();
+      if (!safeFilePath) {
+        return {
+          success: false,
+          oldContent: '',
+          newContent: '',
+          oldPath: '',
+          newPath: '',
+          isBinary: false,
+          hasDiff: false,
+          error: 'File path is required',
+        };
+      }
+
+      // Get new content (working tree or staged)
+      let newContent = '';
+      const newPath = safeFilePath;
+      try {
+        if (mode === 'staged') {
+          // Staged version: show index content
+          const { stdout } = await this.execGit(workspacePath, [
+            'show',
+            `:${safeFilePath}`,
+          ]);
+          newContent = stdout;
+        } else {
+          // Working tree: read from disk
+          const fs = await import('fs');
+          const path = await import('path');
+          const fullPath = path.resolve(workspacePath, safeFilePath);
+          newContent = fs.readFileSync(fullPath, 'utf-8');
+        }
+      } catch {
+        // File may not exist (deleted)
+        newContent = '';
+      }
+
+      // Get old content (HEAD version)
+      let oldContent = '';
+      const oldPath = safeFilePath;
+      try {
+        const { stdout } = await this.execGit(workspacePath, [
+          'show',
+          `HEAD:${safeFilePath}`,
+        ]);
+        oldContent = stdout;
+      } catch {
+        // File may be new (not in HEAD)
+        oldContent = '';
+      }
+
+      // Check if binary by looking at diff output
+      let isBinary = false;
+      try {
+        const { stdout } = await this.execGit(workspacePath, [
+          'diff',
+          '--numstat',
+          mode === 'staged' ? '--cached' : '--',
+          safeFilePath,
+        ]);
+        // Binary files show as "-  -" in numstat
+        if (stdout.trim().startsWith('-')) {
+          const parts = stdout.trim().split('\t');
+          if (parts[0] === '-' && parts[1] === '-') {
+            isBinary = true;
+          }
+        }
+      } catch {
+        // Ignore — assume not binary
+      }
+
+      const hasDiff = oldContent !== newContent;
+
+      return {
+        success: true,
+        oldContent,
+        newContent,
+        oldPath,
+        newPath,
+        isBinary,
+        hasDiff,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        oldContent: '',
+        newContent: '',
+        oldPath: '',
+        newPath: '',
+        isBinary: false,
+        hasDiff: false,
+        error: this.getGitErrorMessage(error, 'Failed to get file diff'),
       };
     }
   }
