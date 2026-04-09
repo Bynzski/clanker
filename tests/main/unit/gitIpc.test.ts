@@ -111,6 +111,15 @@ describe('registerGitIpc', () => {
       output: '',
       title: 'Diff',
     }),
+    getFileDiff: vi.fn().mockResolvedValue({
+      success: true,
+      oldContent: '',
+      newContent: '',
+      oldPath: '',
+      newPath: '',
+      isBinary: false,
+      hasDiff: false,
+    }),
     stage: vi.fn().mockResolvedValue({ success: true }),
     unstage: vi.fn().mockResolvedValue({ success: true }),
     commit: vi.fn().mockResolvedValue({ success: true }),
@@ -174,6 +183,7 @@ describe('registerGitIpc', () => {
       'git-get-stashes',
       'git-get-history',
       'git-get-diff',
+      'git-get-file-diff',
       'git-stage',
       'git-unstage',
       'git-commit',
@@ -213,7 +223,7 @@ describe('registerGitIpc', () => {
     });
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(30);
+    expect(handleCalls.length).toBe(31);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -230,7 +240,7 @@ describe('registerGitIpc', () => {
     });
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(60);
+    expect(handleCalls.length).toBe(62);
   });
 
   test('git-stop-polling calls gitService.stopPolling', async () => {
@@ -279,6 +289,7 @@ describe('git IPC channel constants', () => {
       'git-get-stashes',
       'git-get-history',
       'git-get-diff',
+      'git-get-file-diff',
       'git-stage',
       'git-unstage',
       'git-commit',

@@ -78,6 +78,11 @@ interface ElectronAPI {
   gitGetStashes: (workspacePath: string) => Promise<GitStash[]>;
   gitGetHistory: (workspacePath: string, limit?: number) => Promise<GitHistoryEntry[]>;
   gitGetDiff: (workspacePath: string, mode: 'working' | 'staged' | 'commit', ref?: string) => Promise<GitDiffResult>;
+  gitGetFileDiff: (
+    workspacePath: string,
+    filePath: string,
+    mode: 'working' | 'staged'
+  ) => Promise<FileDiffResult>;
   gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string) => Promise<{ success: boolean; error?: string }>;
   gitSwitchBranch: (workspacePath: string, name: string) => Promise<{ success: boolean; error?: string }>;
   gitDeleteBranch: (workspacePath: string, name: string) => Promise<GitDeleteBranchResult>;
@@ -198,6 +203,17 @@ interface GitDiffResult {
   success: boolean;
   output: string;
   title: string;
+  error?: string;
+}
+
+interface FileDiffResult {
+  success: boolean;
+  oldContent: string;
+  newContent: string;
+  oldPath: string;
+  newPath: string;
+  isBinary: boolean;
+  hasDiff: boolean;
   error?: string;
 }
 

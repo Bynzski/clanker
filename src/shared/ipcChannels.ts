@@ -69,6 +69,7 @@ export const GIT_GET_OPERATION_STATE = 'git-get-operation-state';
 export const GIT_GET_STASHES = 'git-get-stashes';
 export const GIT_GET_HISTORY = 'git-get-history';
 export const GIT_GET_DIFF = 'git-get-diff';
+export const GIT_GET_FILE_DIFF = 'git-get-file-diff';
 export const GIT_STAGE = 'git-stage';
 export const GIT_UNSTAGE = 'git-unstage';
 export const GIT_COMMIT = 'git-commit';
@@ -190,6 +191,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   GIT_GET_STASHES,
   GIT_GET_HISTORY,
   GIT_GET_DIFF,
+  GIT_GET_FILE_DIFF,
   GIT_STAGE,
   GIT_UNSTAGE,
   GIT_COMMIT,

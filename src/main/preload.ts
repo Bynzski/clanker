@@ -55,6 +55,7 @@ import {
   GIT_GET_STASHES,
   GIT_GET_HISTORY,
   GIT_GET_DIFF,
+  GIT_GET_FILE_DIFF,
   GIT_CREATE_BRANCH,
   GIT_SWITCH_BRANCH,
   GIT_DELETE_BRANCH,
@@ -185,6 +186,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     mode: 'working' | 'staged' | 'commit',
     ref?: string
   ) => ipcRenderer.invoke(GIT_GET_DIFF, workspacePath, mode, ref),
+  gitGetFileDiff: (
+    workspacePath: string,
+    filePath: string,
+    mode: 'working' | 'staged'
+  ) => ipcRenderer.invoke(GIT_GET_FILE_DIFF, workspacePath, filePath, mode),
   gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string) =>
     ipcRenderer.invoke(GIT_CREATE_BRANCH, workspacePath, name, baseBranch),
   gitSwitchBranch: (workspacePath: string, name: string) => ipcRenderer.invoke(GIT_SWITCH_BRANCH, workspacePath, name),
