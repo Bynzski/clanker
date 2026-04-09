@@ -26,6 +26,13 @@ function createMockWorkspace(overrides: Partial<WorkspaceTab> = {}): WorkspaceTa
     browserUrl: '',
     activeTerminalId: null,
     layoutRoot: null,
+    explorerVisible: false,
+    explorerSidebarWidth: 280,
+    explorerExpandedPaths: [],
+    explorerSelectedPath: null,
+    explorerEntriesByPath: {},
+    explorerLoadingPaths: [],
+    explorerErrorsByPath: {},
     ...overrides,
   };
 }

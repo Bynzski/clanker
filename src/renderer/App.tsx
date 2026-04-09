@@ -7,6 +7,7 @@ import { Pane, Terminal, useWorkspaceStore } from './store/workspaceStore';
 import './App.css';
 
 const DynamicPaneLayout = lazy(() => import('./components/DynamicPaneLayout'));
+const FileExplorer = lazy(() => import('./components/FileExplorer'));
 
 function App() {
   const [showWorkspaceGate, setShowWorkspaceGate] = useState(false);
@@ -79,6 +80,13 @@ function App() {
       activeTerminalId: terminals.length > 0 ? terminals[terminals.length - 1].id : null,
       browserPane: null,
       layoutRoot: null,
+      explorerVisible: false,
+      explorerSidebarWidth: 280,
+      explorerExpandedPaths: [],
+      explorerSelectedPath: null,
+      explorerEntriesByPath: {},
+      explorerLoadingPaths: [],
+      explorerErrorsByPath: {},
     });
     setShowWorkspaceGate(false);
   };
@@ -99,6 +107,7 @@ function App() {
       <Header onOpenWorkspace={() => setShowWorkspaceGate(true)} />
       <div className="main-content">
         <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
+          <FileExplorer />
           <DynamicPaneLayout />
         </Suspense>
       </div>

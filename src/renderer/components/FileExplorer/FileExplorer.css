@@ -1,0 +1,119 @@
+.file-explorer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex-shrink: 0;
+  min-width: 0;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.file-explorer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  -webkit-app-region: drag;
+}
+
+.file-explorer-title {
+  min-width: 0;
+}
+
+.file-explorer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.file-explorer-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.file-explorer-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 0;
+}
+
+.file-tree {
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-node {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 4px;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-node:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tree-node.selected {
+  background: rgba(139, 148, 158, 0.18);
+}
+
+.tree-node-indicator,
+.tree-node-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tree-node-indicator {
+  width: 16px;
+  color: var(--text-tertiary);
+}
+
+.tree-node-icon {
+  width: 16px;
+  color: var(--text-secondary);
+}
+
+.tree-node-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-explorer-status,
+.tree-node-status {
+  padding: 4px 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.tree-node-status.error,
+.file-explorer-status.error {
+  color: var(--accent-error);
+}

@@ -118,6 +118,7 @@ const MAIN_IPC_INVOKE_CHANNELS = [
   'get-last-workspace',
   'open-directory-dialog',
   'read-directory',
+  'file-list-directory',
 
   // Settings
   'get-show-fastfetch',
@@ -458,6 +459,13 @@ describe('preload.ts IPC Bridge Coverage Tests', () => {
       assert.ok(
         extractedInvokeMethods.some(m => m.method === 'readDirectory'),
         'Should have readDirectory method'
+      );
+    });
+
+    test('has fileListDirectory method', () => {
+      assert.ok(
+        extractedInvokeMethods.some(m => m.method === 'fileListDirectory'),
+        'Should have fileListDirectory method'
       );
     });
   });

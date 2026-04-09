@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { FolderOpen, Plus, Globe, X, LayoutGrid, Settings, ChevronDown } from 'lucide-react';
+import { FolderOpen, Plus, Globe, X, LayoutGrid, Settings, ChevronDown, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { AI_COMMIT_PROVIDER_IDS, HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
 import { terminateWorkspaceTerminals } from '../lib/workspaceLifecycle';
 import type { ModelOption } from '../types/shared';
@@ -18,6 +18,8 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
     activeWorkspaceId,
     workspaces,
     browserVisible,
+    explorerVisible,
+    setExplorerVisible,
     toggleBrowser,
     addTerminal,
     closeWorkspace,
@@ -324,6 +326,15 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
         <button className="header-btn" onClick={fitAllPanes} title="Fit all panes into view (Ctrl/Cmd+Shift+F)">
           <LayoutGrid size={15} strokeWidth={2} />
           Fit All Panes
+        </button>
+
+        <button
+          className={`header-btn ${explorerVisible ? 'active' : ''}`}
+          onClick={() => setExplorerVisible(!explorerVisible)}
+          title="Toggle File Explorer"
+        >
+          {explorerVisible ? <PanelLeftClose size={15} strokeWidth={2} /> : <PanelLeft size={15} strokeWidth={2} />}
+          {explorerVisible ? 'Hide' : 'Show'} Explorer
         </button>
         
         <button className="header-btn" onClick={handleToggleBrowser}>

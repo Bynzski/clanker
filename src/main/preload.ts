@@ -1,10 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
+import type { FileListDirectoryRequest } from '../shared/types/fileExplorer';
 import type { VcsProvider } from '../shared/types/vcs';
 import {
   GET_LAST_WORKSPACE,
   OPEN_DIRECTORY_DIALOG,
   READ_DIRECTORY,
+  FILE_LIST_DIRECTORY,
   GET_SHOW_FASTFETCH,
   SET_SHOW_FASTFETCH,
   GET_AI_COMMIT_SETTINGS,
@@ -93,6 +95,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLastWorkspace: () => ipcRenderer.invoke(GET_LAST_WORKSPACE),
   openDirectoryDialog: () => ipcRenderer.invoke(OPEN_DIRECTORY_DIALOG),
   readDirectory: (path: string) => ipcRenderer.invoke(READ_DIRECTORY, path),
+  fileListDirectory: (request: FileListDirectoryRequest) =>
+    ipcRenderer.invoke(FILE_LIST_DIRECTORY, request),
 
   // Settings
   getShowFastfetch: () => ipcRenderer.invoke(GET_SHOW_FASTFETCH),

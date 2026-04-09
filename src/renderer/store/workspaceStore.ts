@@ -23,6 +23,7 @@ import type {
   Terminal,
   WorkspaceTab,
 } from './workspaceTypes';
+import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
 
 export type {
   BrowserPaneState,
@@ -49,6 +50,13 @@ interface WorkspaceState {
   activeTerminalId: string | null;
   browserPane: BrowserPaneState | null;
   layoutRoot: LayoutNode | null;
+  explorerVisible: boolean;
+  explorerSidebarWidth: number;
+  explorerExpandedPaths: string[];
+  explorerSelectedPath: string | null;
+  explorerEntriesByPath: Record<string, FileExplorerEntry[] | undefined>;
+  explorerLoadingPaths: string[];
+  explorerErrorsByPath: Record<string, string | null | undefined>;
   workspaces: WorkspaceTab[];
   activeWorkspaceId: string | null;
   gridViewport: GridViewport;
@@ -71,6 +79,14 @@ interface WorkspaceState {
   setBrowserUrl: (url: string) => void;
   updateWorkspaceBrowserUrl: (workspaceId: string, url: string) => void;
   clearTerminals: () => void;
+  setExplorerVisible: (visible: boolean) => void;
+  setExplorerSidebarWidth: (width: number) => void;
+  toggleExplorerPath: (path: string) => void;
+  setExplorerSelectedPath: (path: string | null) => void;
+  setExplorerDirectoryEntries: (directoryPath: string, entries: FileExplorerEntry[]) => void;
+  setExplorerDirectoryLoading: (directoryPath: string, loading: boolean) => void;
+  setExplorerDirectoryError: (directoryPath: string, error: string | null) => void;
+  resetExplorerState: () => void;
 
   setPanes: (panes: Pane[]) => void;
   addPane: (terminalId: string | null, position?: PanePosition) => void;
@@ -104,6 +120,13 @@ type ActiveWorkspaceSnapshot = Pick<
   | 'activeTerminalId'
   | 'browserPane'
   | 'layoutRoot'
+  | 'explorerVisible'
+  | 'explorerSidebarWidth'
+  | 'explorerExpandedPaths'
+  | 'explorerSelectedPath'
+  | 'explorerEntriesByPath'
+  | 'explorerLoadingPaths'
+  | 'explorerErrorsByPath'
 >;
 
 const generateId = (prefix: string) => {
@@ -123,10 +146,24 @@ const createPane = (terminalId: string | null, position?: PanePosition): Pane =>
 
 const createWorkspaceId = () => generateId('workspace');
 
+const createDefaultExplorerState = () => ({
+  explorerVisible: false,
+  explorerSidebarWidth: 280,
+  explorerExpandedPaths: [] as string[],
+  explorerSelectedPath: null as string | null,
+  explorerEntriesByPath: {} as Record<string, FileExplorerEntry[] | undefined>,
+  explorerLoadingPaths: [] as string[],
+  explorerErrorsByPath: {} as Record<string, string | null | undefined>,
+});
+
 const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   ...workspace,
   terminals: [...workspace.terminals],
   panes: [...workspace.panes],
+  explorerExpandedPaths: [...workspace.explorerExpandedPaths],
+  explorerEntriesByPath: { ...workspace.explorerEntriesByPath },
+  explorerLoadingPaths: [...workspace.explorerLoadingPaths],
+  explorerErrorsByPath: { ...workspace.explorerErrorsByPath },
   browserPane: workspace.browserPane
     ? { ...workspace.browserPane, locked: workspace.browserPane.locked ?? false }
     : null,
@@ -154,6 +191,13 @@ function getActiveWorkspaceSnapshot(
     | 'activeTerminalId'
     | 'browserPane'
     | 'layoutRoot'
+    | 'explorerVisible'
+    | 'explorerSidebarWidth'
+    | 'explorerExpandedPaths'
+    | 'explorerSelectedPath'
+    | 'explorerEntriesByPath'
+    | 'explorerLoadingPaths'
+    | 'explorerErrorsByPath'
   >
 ): ActiveWorkspaceSnapshot {
   return {
@@ -168,6 +212,13 @@ function getActiveWorkspaceSnapshot(
     activeTerminalId: workspace.activeTerminalId,
     browserPane: workspace.browserPane,
     layoutRoot: workspace.layoutRoot,
+    explorerVisible: workspace.explorerVisible,
+    explorerSidebarWidth: workspace.explorerSidebarWidth,
+    explorerExpandedPaths: workspace.explorerExpandedPaths,
+    explorerSelectedPath: workspace.explorerSelectedPath,
+    explorerEntriesByPath: workspace.explorerEntriesByPath,
+    explorerLoadingPaths: workspace.explorerLoadingPaths,
+    explorerErrorsByPath: workspace.explorerErrorsByPath,
   };
 }
 
@@ -234,6 +285,7 @@ const defaultWorkspaceState = {
   activeTerminalId: null as string | null,
   browserPane: null as BrowserPaneState | null,
   layoutRoot: null as LayoutNode | null,
+  ...createDefaultExplorerState(),
   gridViewport: { cols: GRID_COLS, rows: GRID_ROWS },
   layoutRevision: 0,
 };
@@ -246,7 +298,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   addWorkspace: (workspace) => set((state) => {
     const id = createWorkspaceId();
     const defaultName = workspace.name || getWorkspaceNameFromPath(workspace.workspacePath);
-    const nextWorkspace: WorkspaceTab = sanitizeWorkspace({ id, ...workspace, name: defaultName });
+    const nextWorkspace: WorkspaceTab = sanitizeWorkspace({
+      ...createDefaultExplorerState(),
+      id,
+      ...workspace,
+      name: defaultName,
+    });
 
     return {
       ...getActiveWorkspaceSnapshot(nextWorkspace),
@@ -494,6 +551,104 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       panes: [],
       activeTerminalId: null,
       layoutRoot: null,
+    })),
+  })),
+
+  setExplorerVisible: (visible) => set((state) => ({
+    explorerVisible: visible,
+    ...syncActiveWorkspace(state, (workspace) => ({
+      ...workspace,
+      explorerVisible: visible,
+    })),
+  })),
+
+  setExplorerSidebarWidth: (width) => set((state) => ({
+    explorerSidebarWidth: width,
+    ...syncActiveWorkspace(state, (workspace) => ({
+      ...workspace,
+      explorerSidebarWidth: width,
+    })),
+  })),
+
+  toggleExplorerPath: (path) => set((state) => {
+    const explorerExpandedPaths = state.explorerExpandedPaths.includes(path)
+      ? state.explorerExpandedPaths.filter((entry) => entry !== path)
+      : [...state.explorerExpandedPaths, path];
+
+    return {
+      explorerExpandedPaths,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        explorerExpandedPaths,
+      })),
+    };
+  }),
+
+  setExplorerSelectedPath: (path) => set((state) => ({
+    explorerSelectedPath: path,
+    ...syncActiveWorkspace(state, (workspace) => ({
+      ...workspace,
+      explorerSelectedPath: path,
+    })),
+  })),
+
+  setExplorerDirectoryEntries: (directoryPath, entries) => set((state) => {
+    const explorerEntriesByPath = {
+      ...state.explorerEntriesByPath,
+      [directoryPath]: entries,
+    };
+    const explorerErrorsByPath = {
+      ...state.explorerErrorsByPath,
+      [directoryPath]: null,
+    };
+
+    return {
+      explorerEntriesByPath,
+      explorerErrorsByPath,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        explorerEntriesByPath,
+        explorerErrorsByPath,
+      })),
+    };
+  }),
+
+  setExplorerDirectoryLoading: (directoryPath, loading) => set((state) => {
+    const explorerLoadingPaths = loading
+      ? state.explorerLoadingPaths.includes(directoryPath)
+        ? state.explorerLoadingPaths
+        : [...state.explorerLoadingPaths, directoryPath]
+      : state.explorerLoadingPaths.filter((entry) => entry !== directoryPath);
+
+    return {
+      explorerLoadingPaths,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        explorerLoadingPaths,
+      })),
+    };
+  }),
+
+  setExplorerDirectoryError: (directoryPath, error) => set((state) => {
+    const explorerErrorsByPath = {
+      ...state.explorerErrorsByPath,
+      [directoryPath]: error,
+    };
+
+    return {
+      explorerErrorsByPath,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        explorerErrorsByPath,
+      })),
+    };
+  }),
+
+  resetExplorerState: () => set((state) => ({
+    ...createDefaultExplorerState(),
+    ...syncActiveWorkspace(state, (workspace) => ({
+      ...workspace,
+      ...createDefaultExplorerState(),
     })),
   })),
 

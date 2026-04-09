@@ -22,6 +22,7 @@ export const SET_AI_COMMIT_MODEL = 'set-ai-commit-model';
 export const GENERATE_COMMIT_MESSAGE = 'generate-commit-message';
 export const OPEN_DIRECTORY_DIALOG = 'open-directory-dialog';
 export const READ_DIRECTORY = 'read-directory';
+export const FILE_LIST_DIRECTORY = 'file-list-directory';
 export const GET_HARNESS_OPTIONS = 'get-harness-options';
 export const GET_HARNESS_MODELS = 'get-harness-models';
 
@@ -147,6 +148,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   GENERATE_COMMIT_MESSAGE,
   OPEN_DIRECTORY_DIALOG,
   READ_DIRECTORY,
+  FILE_LIST_DIRECTORY,
   GET_HARNESS_OPTIONS,
   GET_HARNESS_MODELS,
   // Terminal
