@@ -37,6 +37,7 @@ export const KILL_TERMINAL = 'kill-terminal';
 export const TERMINAL_CLEANUP_WORKSPACE = 'terminal:cleanup-workspace';
 export const TERMINAL_DATA = 'terminal-data';
 export const TERMINAL_EXIT = 'terminal-exit';
+export const WRITE_CLIPBOARD = 'write-clipboard';
 
 /* ============================================================================
  * Browser
@@ -155,6 +156,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   RESIZE_TERMINAL,
   KILL_TERMINAL,
   TERMINAL_CLEANUP_WORKSPACE,
+  WRITE_CLIPBOARD,
   // Browser
   BROWSER_SET_BOUNDS,
   BROWSER_HIDE,

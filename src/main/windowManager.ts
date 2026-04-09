@@ -5,7 +5,7 @@
  * Extracted from main.ts per S2.6.
  */
 
-import { BrowserWindow, Menu, WebContentsView } from 'electron';
+import { BrowserWindow, Menu, WebContentsView, globalShortcut } from 'electron';
 import * as path from 'path';
 
 export interface WindowManagerDeps {
@@ -84,6 +84,27 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   mainWindow.setAutoHideMenuBar(true);
   Menu.setApplicationMenu(null);
 
+  // Register zoom shortcuts
+  const registerZoomShortcuts = () => {
+    // Zoom In: Ctrl+=
+    globalShortcut.register('CommandOrControl+=', () => {
+      const currentLevel = mainWindow?.webContents.getZoomLevel() ?? 0;
+      mainWindow?.webContents.setZoomLevel(currentLevel + 0.5);
+    });
+
+    // Zoom Out: Ctrl+-
+    globalShortcut.register('CommandOrControl+-', () => {
+      const currentLevel = mainWindow?.webContents.getZoomLevel() ?? 0;
+      mainWindow?.webContents.setZoomLevel(currentLevel - 0.5);
+    });
+  };
+
+  const unregisterZoomShortcuts = () => {
+    globalShortcut.unregisterAll();
+  };
+
+  registerZoomShortcuts();
+
   // Load the app
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL(getRendererUrl({}));
@@ -92,6 +113,7 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   }
 
   const cleanup = () => {
+    unregisterZoomShortcuts();
     browserViews.forEach(({ view }) => {
       view.webContents.close();
     });

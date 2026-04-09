@@ -145,7 +145,7 @@ describe('registerTerminalIpc', () => {
       getHarnessOptions: mockGetHarnessOptions,
     });
 
-    expect(mockHandle.mock.calls.length).toBe(6);
+    expect(mockHandle.mock.calls.length).toBe(7);
   });
 
   test('registers 2 event IPC channels (terminal-data, terminal-exit)', () => {
@@ -203,7 +203,7 @@ describe('registerTerminalIpc', () => {
       getHarnessOptions: mockGetHarnessOptions,
     });
 
-    expect(mockHandle.mock.calls.length).toBe(12);
+    expect(mockHandle.mock.calls.length).toBe(14);
   });
 });
 
