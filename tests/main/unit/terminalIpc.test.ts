@@ -4,9 +4,15 @@
  * Tests for the terminal IPC module, verifying channel registration.
  */
 
-import { vi } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 
-// Mock electron module
+// vi.hoisted() allows sharing mock references between the vi.mock factory
+// and test code without hoisting conflicts.
+const { mockHandle, mockOn } = vi.hoisted(() => ({
+  mockHandle: vi.fn(),
+  mockOn: vi.fn(),
+}));
+
 vi.mock('electron', () => ({
   app: {
     disableHardwareAcceleration: vi.fn(),
@@ -64,7 +70,8 @@ vi.mock('electron', () => ({
     },
   })),
   ipcMain: {
-    handle: vi.fn(),
+    handle: mockHandle,
+    on: mockOn,
   },
   dialog: {
     showOpenDialog: vi.fn(),
@@ -74,18 +81,12 @@ vi.mock('electron', () => ({
   },
 }));
 
-// Import after mocking
-import { describe, test, expect, beforeEach } from 'vitest';
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
-import { ipcMain } from 'electron';
 
 describe('registerTerminalIpc', () => {
-  const mockIpcMain = ipcMain as typeof ipcMain & {
-    handle: ReturnType<typeof vi.fn>;
-  };
-
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockHandle.mockClear();
+    mockOn.mockClear();
   });
 
   test('registers all expected terminal IPC channels', () => {
@@ -109,7 +110,6 @@ describe('registerTerminalIpc', () => {
       getHarnessOptions: mockGetHarnessOptions,
     });
 
-    // Verify all expected channels are registered
     const expectedChannels = [
       'spawn-terminal',
       'get-terminal-buffer',
@@ -120,11 +120,11 @@ describe('registerTerminalIpc', () => {
     ];
 
     expectedChannels.forEach(channel => {
-      expect(mockIpcMain.handle).toHaveBeenCalledWith(channel, expect.any(Function));
+      expect(mockHandle).toHaveBeenCalledWith(channel, expect.any(Function));
     });
   });
 
-  test('registers exactly 6 terminal IPC channels', () => {
+  test('registers exactly 6 terminal IPC handle channels', () => {
     const mockTerminals = new Map();
     const mockMainWindow = {
       webContents: {
@@ -145,9 +145,33 @@ describe('registerTerminalIpc', () => {
       getHarnessOptions: mockGetHarnessOptions,
     });
 
-    // Count how many times handle was called
-    const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(6);
+    expect(mockHandle.mock.calls.length).toBe(6);
+  });
+
+  test('registers 2 event IPC channels (terminal-data, terminal-exit)', () => {
+    const mockTerminals = new Map();
+    const mockMainWindow = {
+      webContents: {
+        send: vi.fn(),
+      },
+    };
+    const mockStore = {
+      get: vi.fn().mockReturnValue(false),
+    };
+    const mockGetSafeWorkspacePath = vi.fn().mockReturnValue('/test/workspace');
+    const mockGetHarnessOptions = vi.fn().mockReturnValue({});
+
+    registerTerminalIpc({
+      getTerminals: () => mockTerminals,
+      getMainWindow: () => mockMainWindow as never,
+      getStore: () => mockStore as never,
+      getSafeWorkspacePath: mockGetSafeWorkspacePath,
+      getHarnessOptions: mockGetHarnessOptions,
+    });
+
+    expect(mockOn.mock.calls.length).toBe(2);
+    expect(mockOn.mock.calls.map((c: unknown[]) => c[0])).toContain('terminal-data');
+    expect(mockOn.mock.calls.map((c: unknown[]) => c[0])).toContain('terminal-exit');
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -163,7 +187,6 @@ describe('registerTerminalIpc', () => {
     const mockGetSafeWorkspacePath = vi.fn().mockReturnValue('/test/workspace');
     const mockGetHarnessOptions = vi.fn().mockReturnValue({});
 
-    // Register twice
     registerTerminalIpc({
       getTerminals: () => mockTerminals,
       getMainWindow: () => mockMainWindow as never,
@@ -180,9 +203,7 @@ describe('registerTerminalIpc', () => {
       getHarnessOptions: mockGetHarnessOptions,
     });
 
-    // Handlers should be registered again (may overwrite previous)
-    const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(12);
+    expect(mockHandle.mock.calls.length).toBe(12);
   });
 });
 
@@ -197,13 +218,11 @@ describe('terminal IPC channel constants', () => {
       'terminal:cleanup-workspace',
     ];
 
-    // Verify all channels are non-empty strings
     expectedChannels.forEach(channel => {
       expect(typeof channel).toBe('string');
       expect(channel.length).toBeGreaterThan(0);
     });
 
-    // Verify no duplicates
     const uniqueChannels = new Set(expectedChannels);
     expect(uniqueChannels.size).toBe(expectedChannels.length);
   });

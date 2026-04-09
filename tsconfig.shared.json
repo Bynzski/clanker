@@ -1,20 +1,18 @@
 {
-  "references": [
-    { "path": "./tsconfig.shared.json" }
-  ],
   "compilerOptions": {
     "target": "ES2020",
     "module": "CommonJS",
     "lib": ["ES2020"],
-    "outDir": "./dist/main",
-    "rootDir": "./src/main",
+    "outDir": "./dist/shared",
+    "rootDir": "./src/shared",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "node",
     "resolveJsonModule": true,
-    "ignoreDeprecations": "6.0"
+    "ignoreDeprecations": "6.0",
+    "composite": true
   },
-  "include": ["src/main/**/*"]
+  "include": ["src/shared/**/*"]
 }

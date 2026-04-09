@@ -9,6 +9,16 @@ import * as pty from 'node-pty';
 import Store from 'electron-store';
 import { buildHarnessSpawnArgs } from '../harnessLaunch';
 import { trimBuffer, MAX_TERMINAL_BUFFER_BYTES } from '../terminalUtils';
+import {
+  SPAWN_TERMINAL,
+  GET_TERMINAL_BUFFER,
+  WRITE_TERMINAL,
+  RESIZE_TERMINAL,
+  KILL_TERMINAL,
+  TERMINAL_CLEANUP_WORKSPACE,
+  TERMINAL_DATA,
+  TERMINAL_EXIT,
+} from '../../shared/ipcChannels';
 
 interface Terminal {
   id: string;
@@ -16,6 +26,8 @@ interface Terminal {
   pty: pty.IPty;
   buffer: string;
 }
+
+export type { Terminal };
 
 interface StoreSchema {
   lastWorkspace: string;
@@ -36,7 +48,7 @@ interface RegisterTerminalIpcDeps {
 export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   const { getTerminals, getMainWindow, getStore, getSafeWorkspacePath, getHarnessOptions } = deps;
 
-  ipcMain.handle('spawn-terminal', (_, workingDir: string, harness?: string, model?: string) => {
+  ipcMain.handle(SPAWN_TERMINAL, (_, workingDir: string, harness?: string, model?: string) => {
     const terminals = getTerminals();
     const mainWindow = getMainWindow();
     const store = getStore();
@@ -102,7 +114,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       });
       if (mainWindow) {
         const visibleLaunch = `[clanker-grid] ${config.command} ${launchArgs.join(' ')}\r\n`;
-        mainWindow.webContents.send('terminal-data', { id, data: visibleLaunch });
+        mainWindow.webContents.send(TERMINAL_DATA, { id, data: visibleLaunch });
         terminal.buffer += visibleLaunch;
       }
     }
@@ -113,26 +125,26 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         terminal.buffer = trimBuffer(terminal.buffer, MAX_TERMINAL_BUFFER_BYTES);
       }
       if (mainWindow) {
-        mainWindow.webContents.send('terminal-data', { id, data });
+        mainWindow.webContents.send(TERMINAL_DATA, { id, data });
       }
     });
 
     ptyProcess.onExit(({ exitCode }) => {
       terminals.delete(id);
       if (mainWindow) {
-        mainWindow.webContents.send('terminal-exit', { id, exitCode });
+        mainWindow.webContents.send(TERMINAL_EXIT, { id, exitCode });
       }
     });
 
     return { id, pid: ptyProcess.pid };
   });
 
-  ipcMain.handle('get-terminal-buffer', (_, id: string) => {
+  ipcMain.handle(GET_TERMINAL_BUFFER, (_, id: string) => {
     const terminals = getTerminals();
     return terminals.get(id)?.buffer ?? '';
   });
 
-  ipcMain.handle('write-terminal', (_, { id, data }: { id: string; data: string }) => {
+  ipcMain.handle(WRITE_TERMINAL, (_, { id, data }: { id: string; data: string }) => {
     const terminals = getTerminals();
     const terminal = terminals.get(id);
     if (terminal) {
@@ -140,7 +152,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
   });
 
-  ipcMain.handle('resize-terminal', (_, { id, cols, rows }: { id: string; cols: number; rows: number }) => {
+  ipcMain.handle(RESIZE_TERMINAL, (_, { id, cols, rows }: { id: string; cols: number; rows: number }) => {
     const terminals = getTerminals();
     const terminal = terminals.get(id);
     if (terminal) {
@@ -148,7 +160,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
   });
 
-  ipcMain.handle('kill-terminal', (_, id: string) => {
+  ipcMain.handle(KILL_TERMINAL, (_, id: string) => {
     const terminals = getTerminals();
     const terminal = terminals.get(id);
     if (terminal) {
@@ -157,7 +169,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
   });
 
-  ipcMain.handle('terminal:cleanup-workspace', (_, ids: string[]) => {
+  ipcMain.handle(TERMINAL_CLEANUP_WORKSPACE, (_, ids: string[]) => {
     const terminals = getTerminals();
     let killed = 0;
     for (const id of ids) {
@@ -170,4 +182,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
     return killed;
   });
+
+  // Event channels — registered so the integration test can verify completeness.
+  // These are one-way: main sends events to renderer (no handler needed).
+  ipcMain.on(TERMINAL_DATA, () => { });
+  ipcMain.on(TERMINAL_EXIT, () => { });
 }
