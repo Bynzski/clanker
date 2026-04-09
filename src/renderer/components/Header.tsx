@@ -246,6 +246,10 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
       await window.electronAPI.browserDisposeWorkspace(workspace.id);
     }
     closeWorkspace(activeWorkspaceId);
+
+
+    // Belt-and-suspenders: stop git polling to prevent stale workspace polling
+    await window.electronAPI.gitStopPolling();
   };
 
   const handleToggleFastfetch = async (checked: boolean) => {

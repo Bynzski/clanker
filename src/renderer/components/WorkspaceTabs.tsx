@@ -34,6 +34,10 @@ export default function WorkspaceTabs() {
       await window.electronAPI.browserDisposeWorkspace(id);
     }
     closeWorkspace(id);
+    // Belt-and-suspenders: stop git polling to prevent stale workspace polling
+    if (typeof window.electronAPI?.gitStopPolling === 'function') {
+      await window.electronAPI.gitStopPolling();
+    }
   };
 
   const startEditing = (id: string, currentName: string, event: MouseEvent) => {

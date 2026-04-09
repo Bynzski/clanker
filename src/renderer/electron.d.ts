@@ -29,6 +29,7 @@ interface ElectronAPI {
   writeTerminal: (id: string, data: string) => Promise<void>;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<void>;
   killTerminal: (id: string) => Promise<void>;
+  cleanupWorkspaceTerminals: (ids: string[]) => Promise<number>;
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => () => void;
 

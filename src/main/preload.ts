@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resizeTerminal: (id: string, cols: number, rows: number) =>
     ipcRenderer.invoke('resize-terminal', { id, cols, rows }),
   killTerminal: (id: string) => ipcRenderer.invoke('kill-terminal', id),
+  cleanupWorkspaceTerminals: (ids: string[]) => ipcRenderer.invoke('terminal:cleanup-workspace', ids),
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => {
     const handler = (_: any, data: { id: string; data: string }) => callback(data);
     ipcRenderer.on('terminal-data', handler);
