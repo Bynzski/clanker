@@ -80,6 +80,7 @@ describe('IPC registration smoke test', () => {
     const { registerBrowserIpc } = await import('../../../src/main/ipc/browserIpc');
     const { registerGitIpc } = await import('../../../src/main/ipc/gitIpc');
     const { registerCredentialIpc } = await import('../../../src/main/ipc/credentialIpc');
+    const { registerFileIpc } = await import('../../../src/main/ipc/fileIpc');
     const { registerVcsIpc } = await import('../../../src/main/ipc/vcsIpc');
 
     interface MockStoreSchema {
@@ -195,6 +196,7 @@ describe('IPC registration smoke test', () => {
     });
 
     registerCredentialIpc();
+    registerFileIpc();
 
     registerVcsIpc({
       getGitService: () => mockGitService as never,

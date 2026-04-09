@@ -63,6 +63,12 @@
   border-color: var(--text-secondary);
 }
 
+.header-btn.active {
+  background: var(--border-color);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
 .header-btn-primary {
   background: var(--accent-primary);
   border-color: var(--accent-primary);

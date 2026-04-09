@@ -22,6 +22,13 @@ function resetStore() {
     activeTerminalId: null,
     browserPane: null,
     layoutRoot: null,
+    explorerVisible: false,
+    explorerSidebarWidth: 280,
+    explorerExpandedPaths: [],
+    explorerSelectedPath: null,
+    explorerEntriesByPath: {},
+    explorerLoadingPaths: [],
+    explorerErrorsByPath: {},
     workspaces: [],
     activeWorkspaceId: null,
     gridViewport: { cols: 12, rows: 8 },
@@ -261,6 +268,62 @@ describe('browser', () => {
     expect(getStore().browserPane).toBeNull();
     getStore().toggleBrowserLock();
     expect(getStore().browserPane).toBeNull();
+  });
+});
+
+describe('file explorer', () => {
+  it('preserves explorer state per workspace when switching in the same session', () => {
+    addWorkspace({ workspacePath: '/first' });
+    const firstWorkspaceId = getStore().activeWorkspaceId!;
+
+    getStore().setExplorerVisible(true);
+    getStore().toggleExplorerPath('/first/src');
+    getStore().setExplorerSelectedPath('/first/src/index.ts');
+    getStore().setExplorerDirectoryEntries('/first', [{
+      name: 'src',
+      path: '/first/src',
+      isDirectory: true,
+      size: 0,
+      modified: 1,
+    }]);
+
+    addWorkspace({ workspacePath: '/second' });
+    const secondWorkspaceId = getStore().activeWorkspaceId!;
+
+    expect(getStore().explorerVisible).toBe(false);
+    expect(getStore().explorerExpandedPaths).toEqual([]);
+    expect(getStore().explorerSelectedPath).toBeNull();
+
+    getStore().selectWorkspace(firstWorkspaceId);
+
+    expect(getStore().activeWorkspaceId).toBe(firstWorkspaceId);
+    expect(getStore().explorerVisible).toBe(true);
+    expect(getStore().explorerExpandedPaths).toEqual(['/first/src']);
+    expect(getStore().explorerSelectedPath).toBe('/first/src/index.ts');
+    expect(getStore().explorerEntriesByPath['/first']?.[0]?.path).toBe('/first/src');
+
+    getStore().selectWorkspace(secondWorkspaceId);
+    expect(getStore().explorerVisible).toBe(false);
+    expect(getStore().explorerExpandedPaths).toEqual([]);
+  });
+
+  it('resetExplorerState clears the active workspace explorer state only', () => {
+    addWorkspace({ workspacePath: '/first' });
+    const firstWorkspaceId = getStore().activeWorkspaceId!;
+    getStore().setExplorerVisible(true);
+    getStore().setExplorerSelectedPath('/first/README.md');
+
+    addWorkspace({ workspacePath: '/second', explorerVisible: true });
+    getStore().setExplorerVisible(true);
+    getStore().setExplorerSelectedPath('/second/package.json');
+    getStore().resetExplorerState();
+
+    expect(getStore().explorerVisible).toBe(false);
+    expect(getStore().explorerSelectedPath).toBeNull();
+
+    getStore().selectWorkspace(firstWorkspaceId);
+    expect(getStore().explorerVisible).toBe(true);
+    expect(getStore().explorerSelectedPath).toBe('/first/README.md');
   });
 });
 

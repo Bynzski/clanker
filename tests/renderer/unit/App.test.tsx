@@ -27,6 +27,10 @@ vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
   default: () => <div data-testid="dynamic-pane-layout">DynamicPaneLayout</div>,
 }));
 
+vi.mock('../../../src/renderer/components/FileExplorer', () => ({
+  default: () => <div data-testid="file-explorer">FileExplorer</div>,
+}));
+
 vi.mock('../../../src/renderer/components/WorkspaceGate', () => ({
   WorkspaceGateFullscreen: ({ onWorkspaceSelect }: { onWorkspaceSelect: (path: string, terminals: number, harness: string, model?: string) => void }) => (
     <div data-testid="workspace-gate-fullscreen">
@@ -76,6 +80,13 @@ describe('App', () => {
       activeTerminalId: null,
       browserPane: null,
       layoutRoot: null,
+      explorerVisible: false,
+      explorerSidebarWidth: 280,
+      explorerExpandedPaths: [],
+      explorerSelectedPath: null,
+      explorerEntriesByPath: {},
+      explorerLoadingPaths: [],
+      explorerErrorsByPath: {},
       addWorkspace: vi.fn(),
       fitAllPanes: mockFitAllPanes,
     });
@@ -200,6 +211,13 @@ describe('App', () => {
             activeTerminalId: null,
             browserPane: null,
             layoutRoot: null,
+            explorerVisible: false,
+            explorerSidebarWidth: 280,
+            explorerExpandedPaths: [],
+            explorerSelectedPath: null,
+            explorerEntriesByPath: {},
+            explorerLoadingPaths: [],
+            explorerErrorsByPath: {},
           }],
         });
       });
@@ -229,6 +247,13 @@ describe('App', () => {
             activeTerminalId: null,
             browserPane: null,
             layoutRoot: null,
+            explorerVisible: false,
+            explorerSidebarWidth: 280,
+            explorerExpandedPaths: [],
+            explorerSelectedPath: null,
+            explorerEntriesByPath: {},
+            explorerLoadingPaths: [],
+            explorerErrorsByPath: {},
           }],
         });
       });
@@ -269,6 +294,13 @@ describe('App', () => {
             activeTerminalId: null,
             browserPane: null,
             layoutRoot: null,
+            explorerVisible: false,
+            explorerSidebarWidth: 280,
+            explorerExpandedPaths: [],
+            explorerSelectedPath: null,
+            explorerEntriesByPath: {},
+            explorerLoadingPaths: [],
+            explorerErrorsByPath: {},
           }],
         });
       });
@@ -335,6 +367,13 @@ describe('App', () => {
             activeTerminalId: null,
             browserPane: null,
             layoutRoot: null,
+            explorerVisible: false,
+            explorerSidebarWidth: 280,
+            explorerExpandedPaths: [],
+            explorerSelectedPath: null,
+            explorerEntriesByPath: {},
+            explorerLoadingPaths: [],
+            explorerErrorsByPath: {},
           }],
         });
       });
@@ -556,6 +595,13 @@ describe('App', () => {
             activeTerminalId: null,
             browserPane: null,
             layoutRoot: null,
+            explorerVisible: false,
+            explorerSidebarWidth: 280,
+            explorerExpandedPaths: [],
+            explorerSelectedPath: null,
+            explorerEntriesByPath: {},
+            explorerLoadingPaths: [],
+            explorerErrorsByPath: {},
           }],
         });
       });
@@ -597,6 +643,13 @@ describe('App', () => {
       panes: [],
       browserPane: null,
       layoutRoot: null,
+      explorerVisible: false,
+      explorerSidebarWidth: 280,
+      explorerExpandedPaths: [],
+      explorerSelectedPath: null,
+      explorerEntriesByPath: {},
+      explorerLoadingPaths: [],
+      explorerErrorsByPath: {},
     });
 
     let handler: ((payload: { workspaceId: string; url: string }) => void) | null = null;

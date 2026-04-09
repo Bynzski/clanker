@@ -1,4 +1,5 @@
 import type { AiCommitSettings, ModelOption } from './types/shared';
+import type { FileListDirectoryRequest, FileListDirectoryResult } from '../shared/types/fileExplorer';
 import type {
   DeepLink,
   DeepLinkType,
@@ -14,6 +15,7 @@ interface ElectronAPI {
   getLastWorkspace: () => Promise<string>;
   openDirectoryDialog: () => Promise<string | null>;
   readDirectory: (path: string) => Promise<{ name: string; isDirectory: boolean }[]>;
+  fileListDirectory: (request: FileListDirectoryRequest) => Promise<FileListDirectoryResult>;
 
   // Settings
   getShowFastfetch: () => Promise<boolean>;

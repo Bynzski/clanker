@@ -36,6 +36,13 @@ export function createWorkspaceFixture(overrides: Partial<WorkspaceTab> = {}): W
     activeTerminalId: terminal.id,
     browserPane: null,
     layoutRoot: null,
+    explorerVisible: false,
+    explorerSidebarWidth: 280,
+    explorerExpandedPaths: [],
+    explorerSelectedPath: null,
+    explorerEntriesByPath: {},
+    explorerLoadingPaths: [],
+    explorerErrorsByPath: {},
     ...overrides,
   };
 }

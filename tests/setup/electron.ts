@@ -1,16 +1,19 @@
 import { vi } from 'vitest';
+import type { FileListDirectoryResult } from '../../src/shared/types/fileExplorer';
 
 export type ElectronApiMock = {
   [K in keyof Window['electronAPI']]: ReturnType<typeof vi.fn>;
 };
 
 const createAsyncMock = <T>(result: T) => vi.fn().mockResolvedValue(result);
+const defaultFileListDirectoryResult: FileListDirectoryResult = { success: true, entries: [] };
 
 export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): ElectronApiMock {
   return {
     getLastWorkspace: createAsyncMock(''),
     openDirectoryDialog: createAsyncMock(null),
     readDirectory: createAsyncMock([]),
+    fileListDirectory: createAsyncMock(defaultFileListDirectoryResult),
     getShowFastfetch: createAsyncMock(false),
     setShowFastfetch: createAsyncMock(undefined),
     getAiCommitSettings: createAsyncMock({ enabled: false, provider: 'codex', model: '' }),

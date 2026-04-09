@@ -23,6 +23,7 @@ import { registerTerminalIpc, setAppShuttingDown, type Terminal } from './ipc/te
 import { registerBrowserIpc } from './ipc/browserIpc';
 import { registerGitIpc } from './ipc/gitIpc';
 import { registerCredentialIpc } from './ipc/credentialIpc';
+import { registerFileIpc } from './ipc/fileIpc';
 import { registerVcsIpc } from './ipc/vcsIpc';
 
 interface StoreSchema {
@@ -116,6 +117,7 @@ app.whenReady().then(() => {
   });
 
   registerCredentialIpc();
+  registerFileIpc();
 
   registerVcsIpc({
     getGitService: () => gitService,

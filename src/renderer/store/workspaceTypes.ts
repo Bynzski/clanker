@@ -1,3 +1,5 @@
+import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
+
 export interface Terminal {
   id: string;
   pid: number;
@@ -60,4 +62,11 @@ export interface WorkspaceTab {
   activeTerminalId: string | null;
   browserPane: BrowserPaneState | null;
   layoutRoot: LayoutNode | null;
+  explorerVisible: boolean;
+  explorerSidebarWidth: number;
+  explorerExpandedPaths: string[];
+  explorerSelectedPath: string | null;
+  explorerEntriesByPath: Record<string, FileExplorerEntry[] | undefined>;
+  explorerLoadingPaths: string[];
+  explorerErrorsByPath: Record<string, string | null | undefined>;
 }

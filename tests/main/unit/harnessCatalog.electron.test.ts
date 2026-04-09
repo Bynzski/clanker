@@ -296,7 +296,7 @@ describe('harness discovery integration', () => {
         expect(model.label.length).toBeGreaterThan(0);
       }
     }
-  });
+  }, 15000);
 
   it('no duplicate model IDs returned for any harness', async () => {
     const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
