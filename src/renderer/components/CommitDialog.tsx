@@ -128,8 +128,8 @@ export default function CommitDialog({
       } else {
         setError(result.error || 'Failed to create commit');
       }
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
     } finally {
       setIsCommitting(false);
     }
@@ -157,8 +157,8 @@ export default function CommitDialog({
       } else {
         setError(result.error || 'Failed to generate commit message');
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to generate commit message');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to generate commit message');
     } finally {
       setIsGenerating(false);
     }
@@ -186,8 +186,8 @@ export default function CommitDialog({
         if (!result.success) {
           setError(result.error || 'Failed to unstage file');
         }
-      } catch (err: any) {
-        setError(err.message || 'Failed to unstage file');
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to unstage file');
       } finally {
         setUnstagingPaths((prev) => {
           const next = new Set(prev);
@@ -210,8 +210,8 @@ export default function CommitDialog({
       if (!result.success) {
         setError(result.error || 'Failed to unstage files');
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to unstage files');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to unstage files');
     } finally {
       setIsUnstaging(false);
     }

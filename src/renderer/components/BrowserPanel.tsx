@@ -62,6 +62,19 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
     return () => window.cancelAnimationFrame(frame);
   }, [layoutVersion, scheduleBoundsUpdate]);
 
+  // Health check: periodically ensure bounds are in sync (safety net for missed updates)
+  useEffect(() => {
+    if (!browserVisible || browserOverlayCount > 0 || !activeWorkspaceId) {
+      return;
+    }
+
+    const healthCheckInterval = setInterval(() => {
+      scheduleBoundsUpdate();
+    }, 2000);
+
+    return () => clearInterval(healthCheckInterval);
+  }, [browserVisible, browserOverlayCount, activeWorkspaceId, scheduleBoundsUpdate]);
+
   // Set up resize observer to track container size changes
   useEffect(() => {
     if (!containerRef.current) return;

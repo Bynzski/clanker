@@ -168,8 +168,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setPullRequest(null);
         setDeepLinks([]);
       }
-    } catch (error: any) {
-      setVcsContextError(error?.message || 'Failed to load provider context');
+    } catch (error: unknown) {
+      setVcsContextError(error instanceof Error ? error.message : 'Failed to load provider context');
     } finally {
       setIsLoadingVcsContext(false);
     }
@@ -303,8 +303,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
 
       // Load VCS context after provider is detected
       await loadVcsContext();
-    } catch (error: any) {
-      const message = error?.message || 'Unable to load git data';
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to load git data';
       setBranchError(message);
       setMergeError(message);
       setStashError(message);
@@ -335,8 +335,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       if (!diff.success) {
         setDiffError(diff.error || 'Unable to load diff');
       }
-    } catch (error: any) {
-      setDiffError(error?.message || 'Unable to load diff');
+    } catch (error: unknown) {
+      setDiffError(error instanceof Error ? error.message : 'Unable to load diff');
     } finally {
       setIsLoadingDiff(false);
     }
@@ -470,8 +470,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setRemoteError(result.error || 'Fetch failed');
       }
-    } catch (error: any) {
-      setRemoteError(error?.message || 'Fetch failed');
+    } catch (error: unknown) {
+      setRemoteError(error instanceof Error ? error.message : 'Fetch failed');
     } finally {
       setRemoteAction(null);
     }
@@ -488,8 +488,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setRemoteError(result.error || 'Pull failed');
       }
-    } catch (error: any) {
-      setRemoteError(error?.message || 'Pull failed');
+    } catch (error: unknown) {
+      setRemoteError(error instanceof Error ? error.message : 'Pull failed');
     } finally {
       setRemoteAction(null);
     }
@@ -506,8 +506,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setRemoteError(result.error || 'Push failed');
       }
-    } catch (error: any) {
-      setRemoteError(error?.message || 'Push failed');
+    } catch (error: unknown) {
+      setRemoteError(error instanceof Error ? error.message : 'Push failed');
     } finally {
       setRemoteAction(null);
     }
@@ -532,8 +532,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setRemoteError(result.error || 'Publish failed');
       }
-    } catch (error: any) {
-      setRemoteError(error?.message || 'Publish failed');
+    } catch (error: unknown) {
+      setRemoteError(error instanceof Error ? error.message : 'Publish failed');
     } finally {
       setRemoteAction(null);
     }
@@ -577,8 +577,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setInitError(result.error || 'Failed to initialize repository');
       }
-    } catch (error: any) {
-      setInitError(error?.message || 'Failed to initialize repository');
+    } catch (error: unknown) {
+      setInitError(error instanceof Error ? error.message : 'Failed to initialize repository');
     } finally {
       setIsInitializing(false);
     }
@@ -628,8 +628,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setBranchError(result.error || 'Failed to create branch');
       }
-    } catch (error: any) {
-      setBranchError(error?.message || 'Failed to create branch');
+    } catch (error: unknown) {
+      setBranchError(error instanceof Error ? error.message : 'Failed to create branch');
     } finally {
       setActiveAction(null);
     }
@@ -646,8 +646,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setBranchError(result.error || 'Failed to switch branch');
       }
-    } catch (error: any) {
-      setBranchError(error?.message || 'Failed to switch branch');
+    } catch (error: unknown) {
+      setBranchError(error instanceof Error ? error.message : 'Failed to switch branch');
     } finally {
       setActiveAction(null);
     }
@@ -698,9 +698,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
 
       setDeleteDialog(null);
       setBranchError(result.error || 'Failed to delete branch');
-    } catch (error: any) {
+    } catch (error: unknown) {
       setDeleteDialog(null);
-      setBranchError(error?.message || 'Failed to delete branch');
+      setBranchError(error instanceof Error ? error.message : 'Failed to delete branch');
     } finally {
       setActiveAction(null);
     }
@@ -722,8 +722,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setMergeError(result.error || 'Failed to merge branch');
       }
-    } catch (error: any) {
-      setMergeError(error?.message || 'Failed to merge branch');
+    } catch (error: unknown) {
+      setMergeError(error instanceof Error ? error.message : 'Failed to merge branch');
     } finally {
       setActiveAction(null);
     }
@@ -740,8 +740,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setMergeError(result.error || 'Failed to abort operation');
       }
-    } catch (error: any) {
-      setMergeError(error?.message || 'Failed to abort operation');
+    } catch (error: unknown) {
+      setMergeError(error instanceof Error ? error.message : 'Failed to abort operation');
     } finally {
       setActiveAction(null);
     }
@@ -764,8 +764,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setStashError(result.error || 'Failed to stash changes');
       }
-    } catch (error: any) {
-      setStashError(error?.message || 'Failed to stash changes');
+    } catch (error: unknown) {
+      setStashError(error instanceof Error ? error.message : 'Failed to stash changes');
     } finally {
       setActiveAction(null);
     }
@@ -782,8 +782,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setStashError(result.error || 'Failed to apply stash');
       }
-    } catch (error: any) {
-      setStashError(error?.message || 'Failed to apply stash');
+    } catch (error: unknown) {
+      setStashError(error instanceof Error ? error.message : 'Failed to apply stash');
     } finally {
       setActiveAction(null);
     }
@@ -800,8 +800,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setStashError(result.error || 'Failed to pop stash');
       }
-    } catch (error: any) {
-      setStashError(error?.message || 'Failed to pop stash');
+    } catch (error: unknown) {
+      setStashError(error instanceof Error ? error.message : 'Failed to pop stash');
     } finally {
       setActiveAction(null);
     }
@@ -823,8 +823,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setStashError(result.error || 'Failed to drop stash');
       }
-    } catch (error: any) {
-      setStashError(error?.message || 'Failed to drop stash');
+    } catch (error: unknown) {
+      setStashError(error instanceof Error ? error.message : 'Failed to drop stash');
     } finally {
       setActiveAction(null);
     }
@@ -846,8 +846,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       } else {
         setStashError(result.error || 'Failed to clear stashes');
       }
-    } catch (error: any) {
-      setStashError(error?.message || 'Failed to clear stashes');
+    } catch (error: unknown) {
+      setStashError(error instanceof Error ? error.message : 'Failed to clear stashes');
     } finally {
       setActiveAction(null);
     }
