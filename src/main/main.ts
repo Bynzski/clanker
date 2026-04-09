@@ -542,41 +542,48 @@ ipcMain.handle('spawn-terminal', (_, workingDir: string, harness?: string, model
   
   const harnessEnv = harness && HARNESS_OPTIONS[harness]?.env ? HARNESS_OPTIONS[harness].env : {};
 
-  const ptyProcess = harness && HARNESS_OPTIONS[harness]
-    ? pty.spawn(
-        HARNESS_OPTIONS[harness].command,
-        buildHarnessSpawnArgs(HARNESS_OPTIONS[harness], model),
-        {
-          name: 'xterm-256color',
-          cwd,
-          env: {
-            ...process.env as { [key: string]: string },
-            ...harnessEnv,
-            TERM: 'xterm-256color',
-            COLORTERM: 'truecolor',
-            TERM_PROGRAM: 'clanker-grid',
-            FORCE_COLOR: '1',
-            ...(store.get('showFastfetch') ? {} : { CLANKER_GRID: '1' }),
-          },
-        }
-      )
-    : pty.spawn(userShell, shellArgs, {
-        name: 'xterm-256color',
-        cwd,
-        env: {
-          ...process.env as { [key: string]: string },
-          ...harnessEnv,
-          // Ensure proper terminal settings
-          TERM: 'xterm-256color',
-          COLORTERM: 'truecolor',
-          // Helpful for shells that detect terminal
-          TERM_PROGRAM: 'clanker-grid',
-          // Enable true color
-          FORCE_COLOR: '1',
-          // Disable fastfetch in app terminals (if setting is off)
-          ...(store.get('showFastfetch') ? {} : { CLANKER_GRID: '1' }),
-        },
-      });
+  // Build the spawn command: wrap harnesses in user shell so users drop to shell on exit
+  const harnessConfig = harness ? HARNESS_OPTIONS[harness] : undefined;
+  const harnessArgs = harnessConfig ? buildHarnessSpawnArgs(harnessConfig, model) : [];
+
+  // Escape an argument for safe use in a single-quoted shell command string.
+  // Each argument is wrapped in single quotes, and any single quotes within
+  // the argument are escaped using the shell's standard pattern: 'z'y'z' -> 'z'\''z'
+  const shellEscape = (arg: string): string => {
+    // Escape any single quotes by replacing ' with '\''
+    const escaped = arg.replace(/'/g, "'\\''");
+    return `'${escaped}'`;
+  };
+
+  // Build the harness command string with proper escaping
+  // Use exec "$SHELL" -i to re-enter an interactive shell after harness exits,
+  // preserving the working directory and session state
+  const harnessCmdStr = harnessConfig
+    ? `${harnessConfig.command} ${harnessArgs.map(shellEscape).join(' ')}; exec "$SHELL" -i`
+    : '';
+
+  // Use user shell for harness wrapping to preserve their preferred shell experience
+  const harnessCmd = harnessConfig
+    ? { spawnCmd: userShell, spawnArgs: ['-i', '-c', harnessCmdStr] }
+    : { spawnCmd: userShell, spawnArgs: shellArgs };
+
+  const ptyProcess = pty.spawn(
+    harnessCmd.spawnCmd,
+    harnessCmd.spawnArgs,
+    {
+      name: 'xterm-256color',
+      cwd,
+      env: {
+        ...process.env as { [key: string]: string },
+        ...harnessEnv,
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+        TERM_PROGRAM: 'clanker-grid',
+        FORCE_COLOR: '1',
+        ...(store.get('showFastfetch') ? {} : { CLANKER_GRID: '1' }),
+      },
+    }
+  );
 
   const terminal: Terminal = { id, pid: ptyProcess.pid, pty: ptyProcess, buffer: '' };
   terminals.set(id, terminal);
