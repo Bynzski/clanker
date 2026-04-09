@@ -19,6 +19,7 @@ import {
   GIT_GET_STASHES,
   GIT_GET_HISTORY,
   GIT_GET_DIFF,
+  GIT_GET_FILE_DIFF,
   GIT_STAGE,
   GIT_UNSTAGE,
   GIT_COMMIT,
@@ -402,6 +403,23 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
       return { success: false, error: 'Remote names must be strings' };
     }
     return gitService.renameRemote(safeWorkspacePath, oldName, newName);
+  });
+
+  ipcMain.handle(GIT_GET_FILE_DIFF, async (_, workspacePath: string, filePath: string, mode: 'working' | 'staged') => {
+    const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+    if (!safeWorkspacePath) {
+      return {
+        success: false,
+        oldContent: '',
+        newContent: '',
+        oldPath: '',
+        newPath: '',
+        isBinary: false,
+        hasDiff: false,
+        error: getInvalidWorkspaceResult().error,
+      };
+    }
+    return gitService.getFileDiff(safeWorkspacePath, filePath, mode);
   });
 
   // Event channel — registered so the integration test can verify completeness.
