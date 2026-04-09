@@ -1,4 +1,4 @@
-import { useMemo, useRef, useCallback } from 'react';
+import { useMemo } from 'react';
 import { X } from 'lucide-react';
 import { diffLines, type Change } from 'diff';
 import './DiffViewer.css';
@@ -24,62 +24,107 @@ export interface DiffViewerProps {
   onClose: () => void;
 }
 
-interface DiffLine {
-  type: 'added' | 'removed' | 'context';
+type SideType = 'added' | 'removed' | 'context' | 'empty';
+
+interface DiffRow {
   oldLineNo: number | null;
   newLineNo: number | null;
-  content: string;
+  oldText: string;
+  newText: string;
+  oldType: SideType;
+  newType: SideType;
 }
 
 /**
- * Convert diff Changes to aligned DiffLine rows for side-by-side rendering.
+ * Convert diff Changes to aligned DiffRow rows for side-by-side rendering.
  *
- * Algorithm: walk through changes. For context and removed lines, emit rows
- * with both sides populated. For added lines with no corresponding removed
- * line at the same position, emit a row with an empty left side.
+ * Algorithm:
+ * - Context emits paired left+right rows.
+ * - Removed or added emits a row with the other side empty.
+ * - A removed hunk immediately followed by an added hunk is "zipped" so edits
+ *   appear on the same visual row where possible.
  */
-function buildSideBySideLines(changes: Change[]): DiffLine[] {
-  const lines: DiffLine[] = [];
+function buildSideBySideRows(changes: Change[]): DiffRow[] {
+  const rows: DiffRow[] = [];
   let oldLine = 1;
   let newLine = 1;
 
-  for (const change of changes) {
-    const count = change.count ?? 0;
+  const splitValue = (value: string): string[] => {
+    // `diff` values usually end with a trailing `\n`. Preserve intentional empty
+    // lines but drop the trailing empty chunk from `split`.
+    const parts = value.split('\n');
+    if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();
+    return parts;
+  };
+
+  for (let i = 0; i < changes.length; i++) {
+    const change = changes[i];
+
+    // Pair adjacent removed+added hunks so edits line up visually.
+    const next = i + 1 < changes.length ? changes[i + 1] : null;
+    if (change.removed && next?.added) {
+      const removedLines = splitValue(change.value);
+      const addedLines = splitValue(next.value);
+      const max = Math.max(removedLines.length, addedLines.length);
+
+      for (let j = 0; j < max; j++) {
+        const hasOld = j < removedLines.length;
+        const hasNew = j < addedLines.length;
+        rows.push({
+          oldLineNo: hasOld ? oldLine++ : null,
+          newLineNo: hasNew ? newLine++ : null,
+          oldText: hasOld ? removedLines[j] : '',
+          newText: hasNew ? addedLines[j] : '',
+          oldType: hasOld ? 'removed' : 'empty',
+          newType: hasNew ? 'added' : 'empty',
+        });
+      }
+
+      i += 1;
+      continue;
+    }
 
     if (change.removed) {
-      // Removed lines: left side has content, right side is blank
-      for (let i = 0; i < count; i++) {
-        lines.push({
-          type: 'removed',
+      for (const line of splitValue(change.value)) {
+        rows.push({
           oldLineNo: oldLine++,
           newLineNo: null,
-          content: change.value.split('\n').filter((_l: string, idx: number) => idx === i).join('') || '',
+          oldText: line,
+          newText: '',
+          oldType: 'removed',
+          newType: 'empty',
         });
       }
-    } else if (change.added) {
-      // Added lines: right side has content, left side is blank
-      for (let i = 0; i < count; i++) {
-        lines.push({
-          type: 'added',
+      continue;
+    }
+
+    if (change.added) {
+      for (const line of splitValue(change.value)) {
+        rows.push({
           oldLineNo: null,
           newLineNo: newLine++,
-          content: change.value.split('\n').filter((_l: string, idx: number) => idx === i).join('') || '',
+          oldText: '',
+          newText: line,
+          oldType: 'empty',
+          newType: 'added',
         });
       }
-    } else {
-      // Context lines: both sides have same content
-      for (let i = 0; i < count; i++) {
-        lines.push({
-          type: 'context',
-          oldLineNo: oldLine++,
-          newLineNo: newLine++,
-          content: change.value.split('\n').filter((_l: string, idx: number) => idx === i).join('') || '',
-        });
-      }
+      continue;
+    }
+
+    for (const line of splitValue(change.value)) {
+      rows.push({
+        oldLineNo: oldLine++,
+        newLineNo: newLine++,
+        oldText: line,
+        newText: line,
+        oldType: 'context',
+        newType: 'context',
+      });
     }
   }
 
-  return lines;
+  return rows;
 }
 
 export default function DiffViewer({
@@ -93,37 +138,13 @@ export default function DiffViewer({
   error,
   onClose,
 }: DiffViewerProps) {
-  const leftRef = useRef<HTMLDivElement>(null);
-  const rightRef = useRef<HTMLDivElement>(null);
-  const isScrollSyncing = useRef(false);
-
-  const diffLines_result = useMemo(() => {
+  const diffLinesResult = useMemo(() => {
     return diffLines(oldContent, newContent);
   }, [oldContent, newContent]);
 
   const rows = useMemo(() => {
-    return buildSideBySideLines(diffLines_result);
-  }, [diffLines_result]);
-
-  const handleScroll = useCallback(
-    (source: 'left' | 'right') => {
-      if (isScrollSyncing.current) return;
-      isScrollSyncing.current = true;
-
-      const src = source === 'left' ? leftRef.current : rightRef.current;
-      const target = source === 'left' ? rightRef.current : leftRef.current;
-
-      if (src && target) {
-        target.scrollTop = src.scrollTop;
-        target.scrollLeft = src.scrollLeft;
-      }
-
-      requestAnimationFrame(() => {
-        isScrollSyncing.current = false;
-      });
-    },
-    []
-  );
+    return buildSideBySideRows(diffLinesResult);
+  }, [diffLinesResult]);
 
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
@@ -218,53 +239,33 @@ export default function DiffViewer({
         </div>
         <div className="diff-viewer-body">
           <div className="diff-viewer-pane-container">
-            {/* Left pane (old) */}
-            <div className="diff-viewer-pane">
+            <div className="diff-viewer-pane-headers">
               <div className="diff-viewer-pane-header">{oldPath || '(new file)'}</div>
-              <div
-                className="diff-viewer-pane-content"
-                ref={leftRef}
-                onScroll={() => handleScroll('left')}
-              >
-                <table className="diff-viewer-table">
-                  <tbody>
-                    {rows.map((row, idx) => (
-                      <tr key={idx} className={`diff-viewer-row diff-viewer-row-${row.type}`}>
-                        <td className="diff-viewer-line-no">
-                          {row.oldLineNo ?? ''}
-                        </td>
-                        <td className={`diff-viewer-cell diff-viewer-cell-${row.type}`}>
-                          <pre>{row.content}</pre>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            {/* Right pane (new) */}
-            <div className="diff-viewer-pane">
               <div className="diff-viewer-pane-header">{newPath || '(deleted)'}</div>
-              <div
-                className="diff-viewer-pane-content"
-                ref={rightRef}
-                onScroll={() => handleScroll('right')}
-              >
-                <table className="diff-viewer-table">
-                  <tbody>
-                    {rows.map((row, idx) => (
-                      <tr key={idx} className={`diff-viewer-row diff-viewer-row-${row.type}`}>
-                        <td className="diff-viewer-line-no">
-                          {row.newLineNo ?? ''}
-                        </td>
-                        <td className={`diff-viewer-cell diff-viewer-cell-${row.type}`}>
-                          <pre>{row.content}</pre>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            </div>
+            <div className="diff-viewer-unified-content">
+              <table className="diff-viewer-table">
+                <tbody>
+                  {rows.map((row, idx) => (
+                    <tr key={idx} className="diff-viewer-row">
+                      <td className={`diff-viewer-line-no diff-viewer-line-no-${row.oldType}`}>
+                        {row.oldLineNo ?? ''}
+                      </td>
+                      <td className={`diff-viewer-cell diff-viewer-cell-${row.oldType}`}>
+                        <pre>{row.oldType === 'empty' ? '\u00A0' : row.oldText}</pre>
+                      </td>
+                      <td
+                        className={`diff-viewer-line-no diff-viewer-line-no-${row.newType} diff-viewer-line-no-right`}
+                      >
+                        {row.newLineNo ?? ''}
+                      </td>
+                      <td className={`diff-viewer-cell diff-viewer-cell-${row.newType}`}>
+                        <pre>{row.newType === 'empty' ? '\u00A0' : row.newText}</pre>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

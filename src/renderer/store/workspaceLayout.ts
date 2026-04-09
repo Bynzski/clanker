@@ -343,9 +343,9 @@ function findTargetPaneForInsert(
   layoutRoot: LayoutNode | null,
   state: LayoutInsertState
 ): string | null {
-  if (state.activeTerminalId != null) {
+  if (state.activeTerminalId !== null) {
     const activePane = state.panes.find((pane) => pane.terminalId === state.activeTerminalId);
-    if (activePane != null && !findPaneLock(state, activePane.id)) {
+    if (activePane && !findPaneLock(state, activePane.id)) {
       const leafIds = collectLeafPaneIds(layoutRoot);
       if (leafIds.includes(activePane.id)) {
         return activePane.id;
@@ -366,7 +366,7 @@ export function insertPaneIntoLayout(
   }
 
   const targetPaneId = findTargetPaneForInsert(layoutRoot, state);
-  if (targetPaneId == null) {
+  if (targetPaneId === null) {
     return layoutRoot;
   }
 
