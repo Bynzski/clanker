@@ -60,9 +60,11 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   cleanup: () => void;
 } {
   const { preloadPath, gitService, browserViews, onWindowClosed } = deps;
-  let mainWindow: BrowserWindow | null = null;
 
-  mainWindow = new BrowserWindow({
+  // Module-level reference for global shortcut callbacks
+  let windowRef: BrowserWindow | null = null;
+
+  const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
@@ -80,23 +82,28 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
     },
   });
 
+  // Store reference for global shortcut callbacks
+  windowRef = mainWindow;
+
   mainWindow.setMenuBarVisibility(false);
   mainWindow.setAutoHideMenuBar(true);
   Menu.setApplicationMenu(null);
 
   // Register zoom shortcuts
   const registerZoomShortcuts = () => {
-    // Zoom In: Ctrl+=
-    globalShortcut.register('CommandOrControl+=', () => {
-      const currentLevel = mainWindow?.webContents.getZoomLevel() ?? 0;
-      mainWindow?.webContents.setZoomLevel(currentLevel + 0.5);
-    });
+    // Zoom In: Ctrl+= (also handles Ctrl+Plus)
+    if (!globalShortcut.register('CommandOrControl+=', () => {
+      windowRef?.webContents.setZoomLevel(windowRef.webContents.getZoomLevel() + 0.5);
+    })) {
+      console.error('[windowManager] Failed to register Ctrl+= zoom shortcut');
+    }
 
-    // Zoom Out: Ctrl+-
-    globalShortcut.register('CommandOrControl+-', () => {
-      const currentLevel = mainWindow?.webContents.getZoomLevel() ?? 0;
-      mainWindow?.webContents.setZoomLevel(currentLevel - 0.5);
-    });
+    // Zoom Out: Ctrl+- (also handles Ctrl+Minus)
+    if (!globalShortcut.register('CommandOrControl+-', () => {
+      windowRef?.webContents.setZoomLevel(windowRef.webContents.getZoomLevel() - 0.5);
+    })) {
+      console.error('[windowManager] Failed to register Ctrl+- zoom shortcut');
+    }
   };
 
   const unregisterZoomShortcuts = () => {
@@ -113,6 +120,8 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   }
 
   const cleanup = () => {
+    // Clear reference so callbacks don't access closed window
+    windowRef = null;
     unregisterZoomShortcuts();
     browserViews.forEach(({ view }) => {
       view.webContents.close();
@@ -120,7 +129,6 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
     browserViews.clear();
     gitService.stopPolling();
     onWindowClosed?.();
-    mainWindow = null;
   };
 
   mainWindow.on('closed', cleanup);
