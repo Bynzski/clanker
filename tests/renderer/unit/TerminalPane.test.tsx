@@ -5,6 +5,11 @@ import { render, screen, fireEvent, act, waitFor, cleanup } from '@testing-libra
 import TerminalPane from '../../../src/renderer/components/TerminalPane';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 
+let attachedKeyHandler: ((event: KeyboardEvent) => boolean) | null = null;
+const mockHasSelection = vi.fn().mockReturnValue(false);
+const mockGetSelection = vi.fn().mockReturnValue('');
+const mockClearSelection = vi.fn();
+
 // Mock xterm modules - use actual class-like functions
 const mockOnDataDispose = vi.fn();
 
@@ -16,12 +21,15 @@ vi.mock('@xterm/xterm', () => {
       open = vi.fn();
       write = vi.fn();
       dispose = vi.fn();
-      hasSelection = vi.fn().mockReturnValue(false);
-      getSelection = vi.fn().mockReturnValue('');
-      clearSelection = vi.fn();
+      hasSelection = mockHasSelection;
+      getSelection = mockGetSelection;
+      clearSelection = mockClearSelection;
       onData = vi.fn(() => ({ dispose: mockOnDataDispose }));
       onSelectionChange = vi.fn(() => ({ dispose: mockOnDataDispose }));
-      attachCustomKeyEventHandler = vi.fn(() => true);
+      attachCustomKeyEventHandler = vi.fn((handler: (event: KeyboardEvent) => boolean) => {
+        attachedKeyHandler = handler;
+        return true;
+      });
       element = {
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
@@ -52,6 +60,9 @@ const mockWriteClipboard = vi.fn().mockResolvedValue(undefined);
 const mockGetTerminalBuffer = vi.fn().mockResolvedValue('');
 const mockOnTerminalData = vi.fn().mockReturnValue(vi.fn());
 const mockOnTerminalExit = vi.fn().mockReturnValue(vi.fn());
+const mockZoomInWindow = vi.fn().mockResolvedValue(undefined);
+const mockZoomOutWindow = vi.fn().mockResolvedValue(undefined);
+const mockResetZoomWindow = vi.fn().mockResolvedValue(undefined);
 
 // Store state helpers
 function createTerminal(id: string, pid: number, workingDir: string) {
@@ -112,6 +123,9 @@ function setupElectronAPIMocks() {
     getTerminalBuffer: mockGetTerminalBuffer,
     onTerminalData: mockOnTerminalData,
     onTerminalExit: mockOnTerminalExit,
+    zoomInWindow: mockZoomInWindow,
+    zoomOutWindow: mockZoomOutWindow,
+    resetZoomWindow: mockResetZoomWindow,
   } as unknown as typeof window.electronAPI;
 }
 
@@ -119,6 +133,9 @@ describe('TerminalPane', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    attachedKeyHandler = null;
+    mockHasSelection.mockReturnValue(false);
+    mockGetSelection.mockReturnValue('');
     setupElectronAPIMocks();
   });
 
@@ -401,6 +418,61 @@ describe('TerminalPane', () => {
       });
       
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe('keyboard shortcuts', () => {
+    it('forwards zoom in shortcut through electron API when xterm is focused', async () => {
+      setupStoreWithTerminal('t1', 'p1');
+      render(<TerminalPane paneId="p1" />);
+
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      const preventDefault = vi.fn();
+      const handled = attachedKeyHandler?.({
+        key: '=',
+        ctrlKey: true,
+        metaKey: false,
+        altKey: false,
+        shiftKey: false,
+        preventDefault,
+      } as unknown as KeyboardEvent);
+
+      expect(handled).toBe(false);
+      expect(preventDefault).toHaveBeenCalled();
+      expect(mockZoomInWindow).toHaveBeenCalled();
+    });
+
+    it('keeps copy shortcut behavior when selected text exists', async () => {
+      setupStoreWithTerminal('t1', 'p1');
+      render(<TerminalPane paneId="p1" />);
+
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      mockHasSelection.mockReturnValue(true);
+      mockGetSelection.mockReturnValue('copied text');
+
+      const preventDefault = vi.fn();
+      const handled = attachedKeyHandler?.({
+        key: 'c',
+        ctrlKey: true,
+        metaKey: false,
+        altKey: false,
+        shiftKey: true,
+        preventDefault,
+      } as unknown as KeyboardEvent);
+
+      expect(handled).toBe(false);
+      expect(preventDefault).toHaveBeenCalled();
+      expect(mockWriteClipboard).toHaveBeenCalledWith('copied text');
+      expect(mockClearSelection).toHaveBeenCalled();
+      expect(mockZoomInWindow).not.toHaveBeenCalled();
     });
   });
 

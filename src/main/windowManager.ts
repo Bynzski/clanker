@@ -5,7 +5,7 @@
  * Extracted from main.ts per S2.6.
  */
 
-import { BrowserWindow, Menu, WebContentsView, globalShortcut } from 'electron';
+import { BrowserWindow, Menu, WebContentsView } from 'electron';
 import * as path from 'path';
 
 export interface WindowManagerDeps {
@@ -61,9 +61,6 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
 } {
   const { preloadPath, gitService, browserViews, onWindowClosed } = deps;
 
-  // Module-level reference for global shortcut callbacks
-  let windowRef: BrowserWindow | null = null;
-
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -82,35 +79,9 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
     },
   });
 
-  // Store reference for global shortcut callbacks
-  windowRef = mainWindow;
-
   mainWindow.setMenuBarVisibility(false);
   mainWindow.setAutoHideMenuBar(true);
   Menu.setApplicationMenu(null);
-
-  // Register zoom shortcuts
-  const registerZoomShortcuts = () => {
-    // Zoom In: Ctrl+= (also handles Ctrl+Plus)
-    if (!globalShortcut.register('CommandOrControl+=', () => {
-      windowRef?.webContents.setZoomLevel(windowRef.webContents.getZoomLevel() + 0.5);
-    })) {
-      console.error('[windowManager] Failed to register Ctrl+= zoom shortcut');
-    }
-
-    // Zoom Out: Ctrl+- (also handles Ctrl+Minus)
-    if (!globalShortcut.register('CommandOrControl+-', () => {
-      windowRef?.webContents.setZoomLevel(windowRef.webContents.getZoomLevel() - 0.5);
-    })) {
-      console.error('[windowManager] Failed to register Ctrl+- zoom shortcut');
-    }
-  };
-
-  const unregisterZoomShortcuts = () => {
-    globalShortcut.unregisterAll();
-  };
-
-  registerZoomShortcuts();
 
   // Load the app
   if (process.env.NODE_ENV === 'development') {
@@ -120,9 +91,6 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   }
 
   const cleanup = () => {
-    // Clear reference so callbacks don't access closed window
-    windowRef = null;
-    unregisterZoomShortcuts();
     browserViews.forEach(({ view }) => {
       view.webContents.close();
     });

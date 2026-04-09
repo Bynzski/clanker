@@ -43,6 +43,9 @@ import {
   TOGGLE_MAXIMIZE_WINDOW,
   CLOSE_WINDOW,
   IS_MAXIMIZED_WINDOW,
+  ZOOM_IN_WINDOW,
+  ZOOM_OUT_WINDOW,
+  RESET_ZOOM_WINDOW,
   GIT_STATUS_UPDATE,
 } from '../../shared/ipcChannels';
 
@@ -130,6 +133,24 @@ function getSafeWorkspacePath(workingDir: string, store: Store<StoreSchema>): st
 
 function getInvalidWorkspaceResult() {
   return { success: false, error: 'Workspace path is invalid or not a directory' };
+}
+
+function clampZoomLevel(level: number): number {
+  return Math.max(-5, Math.min(5, level));
+}
+
+function adjustWindowZoom(getMainWindow: () => BrowserWindow | null, delta: number): void {
+  const mainWindow = getMainWindow();
+  if (!mainWindow) {
+    return;
+  }
+
+  const nextLevel = clampZoomLevel(mainWindow.webContents.getZoomLevel() + delta);
+  mainWindow.webContents.setZoomLevel(nextLevel);
+}
+
+function resetWindowZoom(getMainWindow: () => BrowserWindow | null): void {
+  getMainWindow()?.webContents.setZoomLevel(0);
 }
 
 async function refreshGitStatus(
@@ -318,6 +339,18 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
   ipcMain.handle(IS_MAXIMIZED_WINDOW, () => {
     return getMainWindow()?.isMaximized() ?? false;
   });
+
+  ipcMain.handle(ZOOM_IN_WINDOW, () => {
+    adjustWindowZoom(getMainWindow, 0.5);
+  });
+
+  ipcMain.handle(ZOOM_OUT_WINDOW, () => {
+    adjustWindowZoom(getMainWindow, -0.5);
+  });
+
+  ipcMain.handle(RESET_ZOOM_WINDOW, () => {
+    resetWindowZoom(getMainWindow);
+  });
 }
 
 // Export helpers for testing and reuse by other IPC modules
@@ -327,6 +360,9 @@ export {
   getValidatedWorkspacePath,
   getSafeWorkspacePath,
   getInvalidWorkspaceResult,
+  clampZoomLevel,
+  adjustWindowZoom,
+  resetWindowZoom,
   refreshGitStatus,
   resolveAiCommitModel,
   generateAiCommitMessage,

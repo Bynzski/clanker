@@ -39,6 +39,9 @@ import {
   TOGGLE_MAXIMIZE_WINDOW,
   CLOSE_WINDOW,
   IS_MAXIMIZED_WINDOW,
+  ZOOM_IN_WINDOW,
+  ZOOM_OUT_WINDOW,
+  RESET_ZOOM_WINDOW,
   GET_HARNESS_OPTIONS,
   GET_HARNESS_MODELS,
   GIT_START_POLLING,
@@ -158,6 +161,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleMaximizeWindow: () => ipcRenderer.invoke(TOGGLE_MAXIMIZE_WINDOW),
   closeWindow: () => ipcRenderer.invoke(CLOSE_WINDOW),
   isMaximizedWindow: () => ipcRenderer.invoke(IS_MAXIMIZED_WINDOW),
+  zoomInWindow: () => ipcRenderer.invoke(ZOOM_IN_WINDOW),
+  zoomOutWindow: () => ipcRenderer.invoke(ZOOM_OUT_WINDOW),
+  resetZoomWindow: () => ipcRenderer.invoke(RESET_ZOOM_WINDOW),
 
   // Harness
   getHarnessOptions: () => ipcRenderer.invoke(GET_HARNESS_OPTIONS),

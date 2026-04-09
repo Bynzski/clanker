@@ -4,6 +4,7 @@ import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
 import { WorkspaceGateFullscreen, WorkspaceGateModal } from './components/WorkspaceGate';
 import { Pane, Terminal, useWorkspaceStore } from './store/workspaceStore';
+import { getZoomShortcutAction } from './lib/keyboardShortcuts';
 import './App.css';
 
 const DynamicPaneLayout = lazy(() => import('./components/DynamicPaneLayout'));
@@ -20,6 +21,20 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const zoomAction = getZoomShortcutAction(event);
+      if (zoomAction != null) {
+        event.preventDefault();
+
+        if (zoomAction === 'in') {
+          void window.electronAPI.zoomInWindow();
+        } else if (zoomAction === 'out') {
+          void window.electronAPI.zoomOutWindow();
+        } else {
+          void window.electronAPI.resetZoomWindow();
+        }
+        return;
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
         event.preventDefault();
         fitAllPanes();

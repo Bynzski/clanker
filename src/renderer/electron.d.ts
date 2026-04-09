@@ -57,6 +57,9 @@ interface ElectronAPI {
   toggleMaximizeWindow: () => Promise<void>;
   closeWindow: () => Promise<void>;
   isMaximizedWindow: () => Promise<boolean>;
+  zoomInWindow: () => Promise<void>;
+  zoomOutWindow: () => Promise<void>;
+  resetZoomWindow: () => Promise<void>;
 
   getHarnessOptions: () => Promise<Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>>;
   getHarnessModels: (harness: string) => Promise<ModelOption[]>;
