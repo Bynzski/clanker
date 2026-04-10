@@ -1,5 +1,9 @@
 export type ZoomShortcutAction = 'in' | 'out' | 'reset';
 
+export function isSaveShortcut(event: KeyboardEvent): boolean {
+  return (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's';
+}
+
 function hasPrimaryModifier(event: KeyboardEvent): boolean {
   return event.metaKey || event.ctrlKey;
 }

@@ -103,6 +103,9 @@ import {
   VCS_GET_DEEP_LINKS,
   VCS_GET_DEEP_LINK,
   VCS_OPEN_DEEP_LINK,
+  // Editor
+  FILE_READ,
+  FILE_WRITE,
   ALL_IPC_CHANNELS,
 } from '../../../src/shared/ipcChannels';
 
@@ -206,6 +209,9 @@ const ALL_CHANNELS = [
   VCS_GET_DEEP_LINKS,
   VCS_GET_DEEP_LINK,
   VCS_OPEN_DEEP_LINK,
+  // Editor
+  FILE_READ,
+  FILE_WRITE,
 ];
 
 describe('ipcChannels', () => {

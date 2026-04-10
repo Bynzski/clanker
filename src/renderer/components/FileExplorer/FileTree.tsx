@@ -49,6 +49,12 @@ function TreeNode({ entry, depth, onLoadDirectory }: TreeNodeProps) {
     toggleExplorerPath(entry.path);
   };
 
+  const handleDoubleClick = () => {
+    if (entry.isDirectory) return;
+    const { openFileInEditor } = useWorkspaceStore.getState();
+    void openFileInEditor(entry.path);
+  };
+
   return (
     <>
       <button
@@ -56,6 +62,7 @@ function TreeNode({ entry, depth, onLoadDirectory }: TreeNodeProps) {
         className={`tree-node ${isSelected ? 'selected' : ''}`}
         style={{ paddingLeft: depth * 16 + 8 }}
         onClick={() => void handleClick()}
+        onDoubleClick={handleDoubleClick}
       >
         <span className="tree-node-indicator">
           {entry.isDirectory ? (

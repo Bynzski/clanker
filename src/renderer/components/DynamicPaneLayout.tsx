@@ -21,6 +21,7 @@ import type {
 } from '../store/workspaceStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import BrowserPanel from './BrowserPanel';
+import EditorPane from './EditorPane';
 import './DynamicPaneLayout.css';
 
 type DockEdge = 'left' | 'right' | 'top' | 'bottom';
@@ -35,9 +36,12 @@ function isLeafLocked(
   paneId: string,
   state: ReturnType<typeof useWorkspaceStore.getState>
 ) {
-  const { panes, browserPane, browserVisible } = state;
+  const { panes, browserPane, browserVisible, editorPane, editorVisible } = state;
   if (browserVisible && browserPane?.id === paneId) {
     return browserPane.locked;
+  }
+  if (editorVisible && editorPane?.id === paneId) {
+    return editorPane.locked;
   }
   return panes.find((pane: typeof panes[0]) => pane.id === paneId)?.locked ?? false;
 }
@@ -134,7 +138,7 @@ export function useDragHandle() {
 
 function LeafView({ node, draggedPaneId, overPaneId }: { node: LayoutLeaf; draggedPaneId: string | null; overPaneId: string | null }) {
   const state = useWorkspaceStore();
-  const { browserPane, browserVisible, browserUrl, setBrowserUrl, layoutRevision } = state;
+  const { browserPane, browserVisible, browserUrl, setBrowserUrl, layoutRevision, editorPane, editorVisible } = state;
   const paneId = node.paneId;
   
   const isDraggingThis = draggedPaneId === paneId;
@@ -146,6 +150,10 @@ function LeafView({ node, draggedPaneId, overPaneId }: { node: LayoutLeaf; dragg
       onUrlChange={setBrowserUrl}
       layoutVersion={layoutRevision}
     />
+  ) : editorVisible && editorPane?.id === paneId ? (
+    <Suspense fallback={<div className="layout-pane-loading">Loading editor...</div>}>
+      <EditorPane />
+    </Suspense>
   ) : (
     <Suspense fallback={<div className="layout-pane-loading">Loading terminal...</div>}>
       <TerminalPane paneId={paneId} />

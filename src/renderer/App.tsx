@@ -4,7 +4,7 @@ import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
 import { WorkspaceGateFullscreen, WorkspaceGateModal } from './components/WorkspaceGate';
 import { Pane, Terminal, useWorkspaceStore } from './store/workspaceStore';
-import { getZoomShortcutAction } from './lib/keyboardShortcuts';
+import { getZoomShortcutAction, isSaveShortcut } from './lib/keyboardShortcuts';
 import './App.css';
 
 const DynamicPaneLayout = lazy(() => import('./components/DynamicPaneLayout'));
@@ -38,6 +38,16 @@ function App() {
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
         event.preventDefault();
         fitAllPanes();
+        return;
+      }
+
+      if (isSaveShortcut(event)) {
+        event.preventDefault();
+        const { activeEditorTabId, saveEditorFile } = useWorkspaceStore.getState();
+        if (activeEditorTabId) {
+          void saveEditorFile(activeEditorTabId);
+        }
+        return;
       }
     };
 
@@ -102,6 +112,10 @@ function App() {
       explorerEntriesByPath: {},
       explorerLoadingPaths: [],
       explorerErrorsByPath: {},
+      editorPane: null,
+      editorVisible: false,
+      editorTabs: [],
+      activeEditorTabId: null,
     });
     setShowWorkspaceGate(false);
   };

@@ -1,5 +1,6 @@
 import type {
   BrowserPaneState,
+  EditorPaneState,
   LayoutLeaf,
   LayoutNode,
   LayoutSplit,
@@ -17,6 +18,8 @@ interface LayoutVisibilityState {
   panes: Pane[];
   browserPane: BrowserPaneState | null;
   browserVisible: boolean;
+  editorPane: EditorPaneState | null;
+  editorVisible: boolean;
 }
 
 interface LayoutInsertState extends LayoutVisibilityState {
@@ -120,6 +123,10 @@ export function collectLeafPaneIds(node: LayoutNode | null): string[] {
 function findPaneLock(state: LayoutVisibilityState, paneId: string) {
   if (state.browserVisible && state.browserPane?.id === paneId) {
     return state.browserPane.locked;
+  }
+
+  if (state.editorVisible && state.editorPane?.id === paneId) {
+    return state.editorPane.locked;
   }
 
   return state.panes.find((pane) => pane.id === paneId)?.locked ?? false;
@@ -382,12 +389,18 @@ export function normalizeLayoutRoot(
     if (state.browserVisible && state.browserPane) {
       paneIds.push(state.browserPane.id);
     }
+    if (state.editorVisible && state.editorPane) {
+      paneIds.push(state.editorPane.id);
+    }
     return buildBalancedLayoutFromPaneIds(paneIds);
   }
 
   const visibleIds = new Set(state.panes.map((pane) => pane.id));
   if (state.browserVisible && state.browserPane) {
     visibleIds.add(state.browserPane.id);
+  }
+  if (state.editorVisible && state.editorPane) {
+    visibleIds.add(state.editorPane.id);
   }
 
   function prune(node: LayoutNode | null): LayoutNode | null {
@@ -416,7 +429,7 @@ export function normalizeLayoutRoot(
 }
 
 export function buildWorkspaceLayout(
-  workspace: Pick<WorkspaceTab, 'panes' | 'browserVisible' | 'browserPane' | 'layoutRoot'>
+  workspace: Pick<WorkspaceTab, 'panes' | 'browserVisible' | 'browserPane' | 'editorVisible' | 'editorPane' | 'layoutRoot'>
 ): LayoutNode | null {
   const root = normalizeLayoutRoot(workspace.layoutRoot, workspace);
   if (root != null) {
@@ -426,6 +439,9 @@ export function buildWorkspaceLayout(
   const paneIds = workspace.panes.map((pane) => pane.id);
   if (workspace.browserVisible && workspace.browserPane) {
     paneIds.push(workspace.browserPane.id);
+  }
+  if (workspace.editorVisible && workspace.editorPane) {
+    paneIds.push(workspace.editorPane.id);
   }
   return buildBalancedLayoutFromPaneIds(paneIds);
 }

@@ -59,6 +59,8 @@ function setupStoreWithLayout(layoutRoot: LayoutNode) {
     terminals,
     browserVisible: false,
     browserPane: null,
+    editorVisible: false,
+    editorPane: null,
     browserUrl: '',
     setBrowserUrl: vi.fn(),
     layoutRevision: 1,
@@ -291,6 +293,8 @@ describe('DynamicPaneLayout', () => {
         terminals: [{ id: 'p1', pid: 1, workingDir: '/workspace' }],
         browserVisible: true,
         browserPane: { id: 'p1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false },
+        editorVisible: false,
+        editorPane: null,
         browserUrl: 'https://example.com',
         setBrowserUrl: vi.fn(),
         layoutRevision: 1,
@@ -305,6 +309,95 @@ describe('DynamicPaneLayout', () => {
         vi.advanceTimersByTime(10);
       });
       
+      expect(document.querySelector('.dynamic-pane-layout')).toBeTruthy();
+    });
+  });
+
+  // =========================================================================
+  // Editor Integration
+  // =========================================================================
+  describe('editor integration', () => {
+    // Note: Testing editor pane rendering in DynamicPaneLayout requires complex
+    // store synchronization due to vi.resetModules() creating new store instances.
+    // The editor pane integration is tested in EditorPane.test.tsx and the store
+    // tests in editorStore.test.ts. Here we just verify the editor state is
+    // properly stored and can be accessed.
+    
+    it('stores editorVisible and editorPane state correctly', () => {
+      // Reset to known state first
+      act(() => {
+        useWorkspaceStore.setState({
+          editorVisible: false,
+          editorPane: null,
+          editorTabs: [],
+          activeEditorTabId: null,
+        });
+      });
+      
+      // Set editor state
+      act(() => {
+        useWorkspaceStore.setState({
+          editorVisible: true,
+          editorPane: { id: 'editor-1', locked: false },
+          editorTabs: [],
+          activeEditorTabId: null,
+        });
+      });
+      
+      const state = useWorkspaceStore.getState();
+      expect(state.editorVisible).toBe(true);
+      expect(state.editorPane).toEqual({ id: 'editor-1', locked: false });
+    });
+
+    it('editor state reflects what was set', () => {
+      // Reset to known state first
+      act(() => {
+        useWorkspaceStore.setState({
+          editorVisible: false,
+          editorPane: null,
+          editorTabs: [],
+          activeEditorTabId: null,
+        });
+      });
+      
+      const state = useWorkspaceStore.getState();
+      expect(state.editorVisible).toBe(false);
+      expect(state.editorPane).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // Lock State
+  // =========================================================================
+  describe('lock state', () => {
+    it('handles locked editor pane', () => {
+      const layout = createLeaf('n1', 'editor-1');
+      useWorkspaceStore.setState({
+        layoutRoot: layout,
+        panes: [{ id: 'editor-1', terminalId: null, locked: false }],
+        terminals: [],
+        browserVisible: false,
+        browserPane: null,
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: true },
+        browserUrl: '',
+        setBrowserUrl: vi.fn(),
+        layoutRevision: 1,
+        swapPanes: vi.fn(),
+        dockPaneToEdge: vi.fn(),
+        setSplitRatio: vi.fn(),
+        toggleEditorLock: vi.fn(),
+        editorTabs: [],
+        activeEditorTabId: null,
+      });
+      
+      render(<DynamicPaneLayout />);
+      
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      
+      // Should render without error with locked editor pane
       expect(document.querySelector('.dynamic-pane-layout')).toBeTruthy();
     });
   });

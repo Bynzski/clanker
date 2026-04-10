@@ -64,7 +64,7 @@ function makeBrowser(id: string, locked = false): BrowserPaneState {
   return { id, position: { x: 0, y: 0, w: 6, h: 6 }, locked };
 }
 
-const emptyState = { panes: [] as Pane[], browserPane: null as BrowserPaneState | null, browserVisible: false };
+const emptyState = { panes: [] as Pane[], browserPane: null as BrowserPaneState | null, browserVisible: false, editorPane: null, editorVisible: false };
 
 // ===========================================================================
 // normalizePosition
@@ -323,22 +323,22 @@ describe('hasUnlockedLeaf', () => {
   });
 
   it('returns true for an unlocked pane', () => {
-    const state = { panes: [makePane('a', false)], browserPane: null, browserVisible: false };
+    const state = { panes: [makePane('a', false)], browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
     expect(hasUnlockedLeaf(leaf('a'), state)).toBe(true);
   });
 
   it('returns false for a locked pane', () => {
-    const state = { panes: [makePane('a', true)], browserPane: null, browserVisible: false };
+    const state = { panes: [makePane('a', true)], browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
     expect(hasUnlockedLeaf(leaf('a'), state)).toBe(false);
   });
 
   it('returns true when at least one leaf is unlocked in a split', () => {
-    const state = { panes: [makePane('a', true), makePane('b', false)], browserPane: null, browserVisible: false };
+    const state = { panes: [makePane('a', true), makePane('b', false)], browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
     expect(hasUnlockedLeaf(split(leaf('a'), leaf('b')), state)).toBe(true);
   });
 
   it('returns false when all leaves are locked', () => {
-    const state = { panes: [makePane('a', true), makePane('b', true)], browserPane: null, browserVisible: false };
+    const state = { panes: [makePane('a', true), makePane('b', true)], browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
     expect(hasUnlockedLeaf(split(leaf('a'), leaf('b')), state)).toBe(false);
   });
 
@@ -347,6 +347,8 @@ describe('hasUnlockedLeaf', () => {
       panes: [makePane('a', true)],
       browserPane: makeBrowser('bp', false),
       browserVisible: true,
+      editorPane: null,
+      editorVisible: false,
     };
     const tree = split(leaf('a'), leaf('bp'));
     expect(hasUnlockedLeaf(tree, state)).toBe(true);
@@ -364,7 +366,7 @@ describe('insertPaneIntoLayout', () => {
 
   it('inserts next to the active terminal pane', () => {
     const panes = [makePane('a'), makePane('b')];
-    const state = { panes, browserPane: null, browserVisible: false, activeTerminalId: 'term-a' };
+    const state = { panes, browserPane: null, browserVisible: false, editorPane: null, editorVisible: false, activeTerminalId: 'term-a' };
     const tree = split(leaf('a'), leaf('b'));
     const result = insertPaneIntoLayout(tree, 'new', state);
     const ids = collectLeafPaneIds(result!);
@@ -376,7 +378,7 @@ describe('insertPaneIntoLayout', () => {
 
   it('falls back to largest unlocked leaf when active terminal has no matching pane', () => {
     const panes = [makePane('a'), makePane('b')];
-    const state = { panes, browserPane: null, browserVisible: false, activeTerminalId: null };
+    const state = { panes, browserPane: null, browserVisible: false, editorPane: null, editorVisible: false, activeTerminalId: null };
     const tree = split(leaf('a'), leaf('b'));
     const result = insertPaneIntoLayout(tree, 'new', state);
     expect(collectLeafPaneIds(result!).length).toBe(3);
@@ -384,7 +386,7 @@ describe('insertPaneIntoLayout', () => {
 
   it('returns layout unchanged when all panes are locked', () => {
     const panes = [makePane('a', true), makePane('b', true)];
-    const state = { panes, browserPane: null, browserVisible: false, activeTerminalId: null };
+    const state = { panes, browserPane: null, browserVisible: false, editorPane: null, editorVisible: false, activeTerminalId: null };
     const tree = split(leaf('a'), leaf('b'));
     const result = insertPaneIntoLayout(tree, 'new', state);
     // All leaves locked, so the layout should be unchanged
@@ -398,7 +400,7 @@ describe('insertPaneIntoLayout', () => {
 describe('normalizeLayoutRoot', () => {
   it('builds balanced layout from pane ids when layoutRoot is null', () => {
     const panes = [makePane('a'), makePane('b')];
-    const state = { panes, browserPane: null, browserVisible: false };
+    const state = { panes, browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
     const result = normalizeLayoutRoot(null, state);
     const ids = collectLeafPaneIds(result!);
     expect(ids.sort()).toEqual(['a', 'b']);
@@ -407,7 +409,7 @@ describe('normalizeLayoutRoot', () => {
   it('prunes leaves not in the visible set', () => {
     const tree = split(leaf('a'), split(leaf('b'), leaf('c')));
     const panes = [makePane('a'), makePane('c')]; // 'b' removed
-    const state = { panes, browserPane: null, browserVisible: false };
+    const state = { panes, browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
     const result = normalizeLayoutRoot(tree, state);
     const ids = collectLeafPaneIds(result!);
     expect(ids.sort()).toEqual(['a', 'c']);
@@ -415,7 +417,7 @@ describe('normalizeLayoutRoot', () => {
 
   it('includes browser pane when visible', () => {
     const panes = [makePane('a')];
-    const state = { panes, browserPane: makeBrowser('bp'), browserVisible: true };
+    const state = { panes, browserPane: makeBrowser('bp'), browserVisible: true, editorPane: null, editorVisible: false };
     const result = normalizeLayoutRoot(null, state);
     const ids = collectLeafPaneIds(result!);
     expect(ids.sort()).toEqual(['a', 'bp']);
@@ -423,7 +425,7 @@ describe('normalizeLayoutRoot', () => {
 
   it('excludes browser pane when not visible', () => {
     const panes = [makePane('a')];
-    const state = { panes, browserPane: makeBrowser('bp'), browserVisible: false };
+    const state = { panes, browserPane: makeBrowser('bp'), browserVisible: false, editorPane: null, editorVisible: false };
     const result = normalizeLayoutRoot(null, state);
     const ids = collectLeafPaneIds(result!);
     expect(ids).toEqual(['a']);
@@ -439,6 +441,8 @@ describe('buildWorkspaceLayout', () => {
       panes: [],
       browserVisible: false,
       browserPane: null,
+      editorVisible: false,
+      editorPane: null,
       layoutRoot: null,
     });
     expect(result).toBeNull();
@@ -449,6 +453,8 @@ describe('buildWorkspaceLayout', () => {
       panes: [makePane('a'), makePane('b')],
       browserVisible: false,
       browserPane: null,
+      editorVisible: false,
+      editorPane: null,
       layoutRoot: null,
     });
     expect(collectLeafPaneIds(result!).sort()).toEqual(['a', 'b']);
@@ -460,6 +466,8 @@ describe('buildWorkspaceLayout', () => {
       panes: [makePane('a'), makePane('b')],
       browserVisible: false,
       browserPane: null,
+      editorVisible: false,
+      editorPane: null,
       layoutRoot: tree,
     });
     expect(collectLeafPaneIds(result!).sort()).toEqual(['a', 'b']);

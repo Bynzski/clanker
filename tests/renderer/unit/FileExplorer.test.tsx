@@ -33,6 +33,10 @@ function resetStore() {
     activeWorkspaceId: null,
     gridViewport: { cols: 12, rows: 8 },
     layoutRevision: 0,
+    editorVisible: false,
+    editorPane: null,
+    editorTabs: [],
+    activeEditorTabId: null,
   });
 }
 
@@ -191,5 +195,62 @@ describe('FileExplorer', () => {
     render(<FileExplorer />);
 
     expect(await screen.findByText('No handler registered for file-list-directory')).toBeInTheDocument();
+  });
+
+  it('opens a file in the editor on double-click', async () => {
+    setActiveWorkspace({ workspacePath: '/workspace' });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({
+        success: true,
+        entries: [createEntry('README.md', '/workspace/README.md', false)],
+      }),
+    });
+
+    render(<FileExplorer />);
+
+    const fileNode = await screen.findByText('README.md');
+    fireEvent.dblClick(fileNode);
+
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().editorTabs).toHaveLength(1);
+      expect(useWorkspaceStore.getState().editorTabs[0].filePath).toBe('/workspace/README.md');
+    });
+  });
+
+  it('does not open a directory in the editor on double-click', async () => {
+    setActiveWorkspace({ workspacePath: '/workspace' });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({
+        success: true,
+        entries: [createEntry('src', '/workspace/src', true)],
+      }),
+    });
+
+    render(<FileExplorer />);
+
+    const folderNode = await screen.findByText('src');
+    fireEvent.dblClick(folderNode);
+
+    // No editor tab should be created
+    expect(useWorkspaceStore.getState().editorTabs).toHaveLength(0);
+  });
+
+  it('single-click selects a file without opening the editor', async () => {
+    setActiveWorkspace({ workspacePath: '/workspace' });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({
+        success: true,
+        entries: [createEntry('index.ts', '/workspace/index.ts', false)],
+      }),
+    });
+
+    render(<FileExplorer />);
+
+    const fileNode = await screen.findByText('index.ts');
+    fireEvent.click(fileNode);
+
+    // Selection should work but no editor tab created
+    expect(useWorkspaceStore.getState().explorerSelectedPath).toBe('/workspace/index.ts');
+    expect(useWorkspaceStore.getState().editorTabs).toHaveLength(0);
   });
 });

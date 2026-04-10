@@ -26,6 +26,20 @@ export interface BrowserPaneState {
   locked: boolean;
 }
 
+export interface EditorPaneState {
+  id: string;
+  locked: boolean;
+}
+
+export interface EditorTab {
+  id: string;
+  filePath: string;
+  fileName: string;
+  isDirty: boolean;
+  content: string;
+  originalContent: string;
+}
+
 export interface GridViewport {
   cols: number;
   rows: number;
@@ -61,6 +75,10 @@ export interface WorkspaceTab {
   browserUrl: string;
   activeTerminalId: string | null;
   browserPane: BrowserPaneState | null;
+  editorPane: EditorPaneState | null;
+  editorVisible: boolean;
+  editorTabs: EditorTab[];
+  activeEditorTabId: string | null;
   layoutRoot: LayoutNode | null;
   explorerVisible: boolean;
   explorerSidebarWidth: number;

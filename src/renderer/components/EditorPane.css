@@ -1,0 +1,147 @@
+.editor-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  position: relative;
+}
+
+.editor-pane-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  cursor: grab;
+  user-select: none;
+}
+
+.editor-pane-header:active {
+  cursor: grabbing;
+}
+
+.editor-pane-drag-handle {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background:
+    radial-gradient(circle at 3px 3px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 9px 3px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 3px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 9px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px);
+  opacity: 0.55;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.editor-pane-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.editor-pane-spacer {
+  flex: 1;
+}
+
+.editor-pane-lock-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 150ms ease-out;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.editor-pane-lock-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.editor-pane-close-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 150ms ease-out;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.editor-pane-close-btn:hover {
+  background: rgba(244, 67, 54, 0.2);
+  color: var(--accent-error);
+}
+
+.editor-content-area {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+
+.editor-content {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-content .cm-editor {
+  height: 100%;
+  width: 100%;
+  background: var(--bg-primary);
+}
+
+.editor-content .cm-scroller {
+  overflow: auto;
+  height: 100%;
+  background: var(--bg-primary);
+}
+
+.editor-content .cm-gutters {
+  background: var(--bg-primary);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.editor-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.editor-empty-state .hint {
+  font-size: 11px;
+  opacity: 0.6;
+}

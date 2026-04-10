@@ -227,6 +227,10 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
+            editorPane: null,
+            editorVisible: false,
+            editorTabs: [],
+            activeEditorTabId: null,
           }],
         });
       });
@@ -263,6 +267,10 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
+            editorPane: null,
+            editorVisible: false,
+            editorTabs: [],
+            activeEditorTabId: null,
           }],
         });
       });
@@ -310,6 +318,10 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
+            editorPane: null,
+            editorVisible: false,
+            editorTabs: [],
+            activeEditorTabId: null,
           }],
         });
       });
@@ -383,6 +395,10 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
+            editorPane: null,
+            editorVisible: false,
+            editorTabs: [],
+            activeEditorTabId: null,
           }],
         });
       });
@@ -651,6 +667,10 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
+            editorPane: null,
+            editorVisible: false,
+            editorTabs: [],
+            activeEditorTabId: null,
           }],
         });
       });

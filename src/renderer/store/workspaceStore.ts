@@ -16,6 +16,8 @@ import {
 } from './workspaceLayout';
 import type {
   BrowserPaneState,
+  EditorPaneState,
+  EditorTab,
   GridViewport,
   LayoutNode,
   Pane,
@@ -27,6 +29,8 @@ import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
 
 export type {
   BrowserPaneState,
+  EditorPaneState,
+  EditorTab,
   GridViewport,
   LayoutLeaf,
   LayoutNode,
@@ -61,6 +65,11 @@ interface WorkspaceState {
   activeWorkspaceId: string | null;
   gridViewport: GridViewport;
   layoutRevision: number;
+
+  editorVisible: boolean;
+  editorPane: EditorPaneState | null;
+  editorTabs: EditorTab[];
+  activeEditorTabId: string | null;
 
   addWorkspace: (workspace: Omit<WorkspaceTab, 'id'>) => void;
   selectWorkspace: (id: string) => void;
@@ -105,6 +114,18 @@ interface WorkspaceState {
   dockPaneToEdge: (paneId: string, edge: 'left' | 'right' | 'top' | 'bottom') => void;
   setSplitRatio: (nodeId: string, ratio: number) => void;
   canAddPane: () => boolean;
+
+  openFileInEditor: (filePath: string) => Promise<void>;
+  closeEditorTab: (tabId: string) => void;
+  setActiveEditorTab: (tabId: string) => void;
+  updateEditorContent: (tabId: string, content: string) => void;
+  saveEditorFile: (tabId: string) => Promise<boolean>;
+  saveAllEditorFiles: () => Promise<void>;
+  toggleEditorPane: () => void;
+  closeEditorPane: () => void;
+  toggleEditorLock: () => void;
+  bringEditorIntoView: () => void;
+  resetEditorState: () => void;
 }
 
 type ActiveWorkspaceSnapshot = Pick<
@@ -127,6 +148,10 @@ type ActiveWorkspaceSnapshot = Pick<
   | 'explorerEntriesByPath'
   | 'explorerLoadingPaths'
   | 'explorerErrorsByPath'
+  | 'editorVisible'
+  | 'editorPane'
+  | 'editorTabs'
+  | 'activeEditorTabId'
 >;
 
 const generateId = (prefix: string) => {
@@ -156,6 +181,13 @@ const createDefaultExplorerState = () => ({
   explorerErrorsByPath: {} as Record<string, string | null | undefined>,
 });
 
+const createDefaultEditorState = () => ({
+  editorVisible: false,
+  editorPane: null as EditorPaneState | null,
+  editorTabs: [] as EditorTab[],
+  activeEditorTabId: null as string | null,
+});
+
 const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   ...workspace,
   terminals: [...workspace.terminals],
@@ -166,6 +198,10 @@ const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   explorerErrorsByPath: { ...workspace.explorerErrorsByPath },
   browserPane: workspace.browserPane
     ? { ...workspace.browserPane, locked: workspace.browserPane.locked ?? false }
+    : null,
+  editorTabs: [...workspace.editorTabs],
+  editorPane: workspace.editorPane
+    ? { ...workspace.editorPane, locked: workspace.editorPane.locked ?? false }
     : null,
   layoutRoot: buildWorkspaceLayout(workspace),
 });
@@ -198,6 +234,10 @@ function getActiveWorkspaceSnapshot(
     | 'explorerEntriesByPath'
     | 'explorerLoadingPaths'
     | 'explorerErrorsByPath'
+    | 'editorVisible'
+    | 'editorPane'
+    | 'editorTabs'
+    | 'activeEditorTabId'
   >
 ): ActiveWorkspaceSnapshot {
   return {
@@ -219,6 +259,10 @@ function getActiveWorkspaceSnapshot(
     explorerEntriesByPath: workspace.explorerEntriesByPath,
     explorerLoadingPaths: workspace.explorerLoadingPaths,
     explorerErrorsByPath: workspace.explorerErrorsByPath,
+    editorVisible: workspace.editorVisible,
+    editorPane: workspace.editorPane,
+    editorTabs: workspace.editorTabs,
+    activeEditorTabId: workspace.activeEditorTabId,
   };
 }
 
@@ -286,6 +330,7 @@ const defaultWorkspaceState = {
   browserPane: null as BrowserPaneState | null,
   layoutRoot: null as LayoutNode | null,
   ...createDefaultExplorerState(),
+  ...createDefaultEditorState(),
   gridViewport: { cols: GRID_COLS, rows: GRID_ROWS },
   layoutRevision: 0,
 };
@@ -393,11 +438,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           panes: nextPanes,
           browserPane: state.browserPane,
           browserVisible: state.browserVisible,
+          editorPane: state.editorPane,
+          editorVisible: state.editorVisible,
         })
       : insertPaneIntoLayout(state.layoutRoot, nextPane.id, {
           panes: state.panes,
           browserPane: state.browserPane,
           browserVisible: state.browserVisible,
+          editorPane: state.editorPane,
+          editorVisible: state.editorVisible,
           activeTerminalId: state.activeTerminalId,
         });
 
@@ -478,6 +527,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             panes: state.panes,
             browserPane: nextBrowserPane,
             browserVisible: true,
+            editorPane: state.editorPane,
+            editorVisible: state.editorVisible,
             activeTerminalId: state.activeTerminalId,
           });
         } else {
@@ -491,6 +542,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
               panes: state.panes,
               browserPane: nextBrowserPane,
               browserVisible: true,
+              editorPane: state.editorPane,
+              editorVisible: state.editorVisible,
               activeTerminalId: state.activeTerminalId,
             });
           }
@@ -658,6 +711,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       panes,
       browserVisible: state.browserVisible,
       browserPane: state.browserPane,
+      editorVisible: state.editorVisible,
+      editorPane: state.editorPane,
       layoutRoot: state.layoutRoot,
     }),
     ...syncActiveWorkspace(state, (workspace) => ({
@@ -667,6 +722,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         panes,
         browserVisible: state.browserVisible,
         browserPane: state.browserPane,
+        editorVisible: state.editorVisible,
+        editorPane: state.editorPane,
         layoutRoot: state.layoutRoot,
       }),
     })),
@@ -679,6 +736,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       panes: state.panes,
       browserPane: state.browserPane,
       browserVisible: state.browserVisible,
+      editorPane: state.editorPane,
+      editorVisible: state.editorVisible,
       activeTerminalId: state.activeTerminalId,
     });
     return {
@@ -784,6 +843,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       panes: state.panes,
       browserVisible: state.browserVisible,
       browserPane: state.browserPane,
+      editorVisible: state.editorVisible,
+      editorPane: state.editorPane,
       layoutRoot: null,
     });
 
@@ -802,6 +863,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       panes: state.panes,
       browserVisible: state.browserVisible,
       browserPane: state.browserPane,
+      editorVisible: state.editorVisible,
+      editorPane: state.editorPane,
       layoutRoot: null,
     });
 
@@ -936,4 +999,329 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const state = get();
     return hasUnlockedLeaf(state.layoutRoot, state) || state.layoutRoot == null;
   },
+
+  openFileInEditor: async (filePath) => {
+    const state = useWorkspaceStore.getState();
+    const existingTab = state.editorTabs.find((tab) => tab.filePath === filePath);
+    if (existingTab) {
+      useWorkspaceStore.setState((currentState) => ({
+        activeEditorTabId: existingTab.id,
+        ...syncActiveWorkspace(currentState, (workspace) => ({
+          ...workspace,
+          activeEditorTabId: existingTab.id,
+        })),
+      }));
+      return;
+    }
+
+    const readResult = await window.electronAPI.editorReadFile({
+      workspacePath: state.workspacePath,
+      filePath,
+    });
+
+    if (!readResult.success) {
+      console.warn('Failed to read file for editor:', readResult.errorCode);
+      return;
+    }
+
+    const fileName = filePath.split('/').pop() ?? filePath;
+    const newTab: EditorTab = {
+      id: generateId('editor-tab'),
+      filePath,
+      fileName,
+      isDirty: false,
+      content: readResult.content ?? '',
+      originalContent: readResult.content ?? '',
+    };
+
+    useWorkspaceStore.setState((currentState) => {
+      const latestExistingTab = currentState.editorTabs.find((tab) => tab.filePath === filePath);
+      if (latestExistingTab) {
+        return {
+          activeEditorTabId: latestExistingTab.id,
+          ...syncActiveWorkspace(currentState, (workspace) => ({
+            ...workspace,
+            activeEditorTabId: latestExistingTab.id,
+          })),
+        };
+      }
+
+      const nextEditorPane = currentState.editorPane ?? {
+        id: generateId('editor'),
+        locked: false,
+      };
+      const editorLeafExists = collectLeafPaneIds(currentState.layoutRoot).includes(nextEditorPane.id);
+      const shouldInsertEditorPane = !currentState.editorVisible || !editorLeafExists;
+      const nextLayoutRoot = shouldInsertEditorPane
+        ? insertPaneIntoLayout(currentState.layoutRoot, nextEditorPane.id, {
+            panes: currentState.panes,
+            browserPane: currentState.browserPane,
+            browserVisible: currentState.browserVisible,
+            editorPane: nextEditorPane,
+            editorVisible: true,
+            activeTerminalId: currentState.activeTerminalId,
+          })
+        : currentState.layoutRoot;
+
+      const nextEditorTabs = [...currentState.editorTabs, newTab];
+      const nextLayoutRevision = nextLayoutRoot === currentState.layoutRoot
+        ? currentState.layoutRevision
+        : currentState.layoutRevision + 1;
+
+      return {
+        editorPane: nextEditorPane,
+        editorVisible: true,
+        editorTabs: nextEditorTabs,
+        activeEditorTabId: newTab.id,
+        layoutRoot: nextLayoutRoot,
+        layoutRevision: nextLayoutRevision,
+        ...syncActiveWorkspace(currentState, (workspace) => ({
+          ...workspace,
+          editorPane: nextEditorPane,
+          editorVisible: true,
+          editorTabs: nextEditorTabs,
+          activeEditorTabId: newTab.id,
+          layoutRoot: nextLayoutRoot,
+        })),
+      };
+    });
+  },
+
+  closeEditorTab: (tabId) => set((state) => {
+    const { editorTabs, activeEditorTabId } = state;
+    const tabIndex = editorTabs.findIndex((t) => t.id === tabId);
+    if (tabIndex === -1) return state;
+
+    const nextTabs = editorTabs.filter((t) => t.id !== tabId);
+    let nextActiveId: string | null = null;
+    if (activeEditorTabId === tabId) {
+      if (nextTabs.length === 0) {
+        nextActiveId = null;
+      } else if (tabIndex > 0) {
+        nextActiveId = nextTabs[tabIndex - 1].id;
+      } else {
+        nextActiveId = nextTabs[0].id;
+      }
+    } else {
+      nextActiveId = activeEditorTabId;
+    }
+
+    const nextEditorVisible = nextTabs.length > 0 ? state.editorVisible : false;
+    const nextEditorPane = nextTabs.length > 0 ? state.editorPane : null;
+    const nextLayoutRoot = nextTabs.length === 0 && state.editorPane
+      ? removePaneFromLayout(state.layoutRoot, state.editorPane.id)
+      : state.layoutRoot;
+    const nextLayoutRevision = nextLayoutRoot === state.layoutRoot
+      ? state.layoutRevision
+      : state.layoutRevision + 1;
+
+    return {
+      editorTabs: nextTabs,
+      activeEditorTabId: nextActiveId,
+      editorVisible: nextEditorVisible,
+      editorPane: nextEditorPane,
+      layoutRoot: nextLayoutRoot,
+      layoutRevision: nextLayoutRevision,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        editorTabs: nextTabs,
+        activeEditorTabId: nextActiveId,
+        editorVisible: nextEditorVisible,
+        editorPane: nextEditorPane,
+        layoutRoot: nextLayoutRoot,
+      })),
+    };
+  }),
+
+  setActiveEditorTab: (tabId) => set((state) => ({
+    activeEditorTabId: tabId,
+    ...syncActiveWorkspace(state, (workspace) => ({
+      ...workspace,
+      activeEditorTabId: tabId,
+    })),
+  })),
+
+  updateEditorContent: (tabId, content) => set((state) => {
+    const nextTabs = state.editorTabs.map((tab) =>
+      tab.id === tabId
+        ? { ...tab, content, isDirty: content !== tab.originalContent }
+        : tab
+    );
+
+    return {
+      editorTabs: nextTabs,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        editorTabs: nextTabs,
+      })),
+    };
+  }),
+
+  saveEditorFile: async (tabId) => {
+    const stateBeforeSave = useWorkspaceStore.getState();
+    const tab = stateBeforeSave.editorTabs.find((t) => t.id === tabId);
+    if (!tab) return false;
+
+    const contentToSave = tab.content;
+
+    const result = await window.electronAPI.editorWriteFile({
+      workspacePath: stateBeforeSave.workspacePath,
+      filePath: tab.filePath,
+      content: contentToSave,
+    });
+
+    if (!result.success) {
+      console.warn('Failed to write file:', result.errorCode);
+      return false;
+    }
+
+    useWorkspaceStore.setState((latestState) => {
+      const latestTab = latestState.editorTabs.find((t) => t.id === tabId);
+      if (!latestTab || latestTab.content !== contentToSave) {
+        return {};
+      }
+
+      const nextTabs = latestState.editorTabs.map((currentTab) =>
+        currentTab.id === tabId
+          ? { ...currentTab, originalContent: contentToSave, isDirty: false }
+          : currentTab
+      );
+
+      return {
+        editorTabs: nextTabs,
+        ...syncActiveWorkspace(latestState, (workspace) => ({
+          ...workspace,
+          editorTabs: nextTabs,
+        })),
+      };
+    });
+
+    return true;
+  },
+
+  saveAllEditorFiles: async () => {
+    const state = useWorkspaceStore.getState();
+    const dirtyTabs = state.editorTabs.filter((t) => t.isDirty);
+    for (const tab of dirtyTabs) {
+      await useWorkspaceStore.getState().saveEditorFile(tab.id);
+    }
+  },
+
+  toggleEditorPane: () => set((state) => {
+    const nextEditorVisible = !state.editorVisible;
+    let nextEditorPane = state.editorPane;
+
+    if (nextEditorVisible && nextEditorPane === null) {
+      nextEditorPane = {
+        id: generateId('editor'),
+        locked: false,
+      };
+    }
+
+    let nextLayoutRoot = state.layoutRoot;
+    if (nextEditorVisible && nextEditorPane) {
+      const editorId = nextEditorPane.id;
+      if (!state.editorVisible) {
+        if (state.layoutRoot != null && !hasUnlockedLeaf(state.layoutRoot, state)) {
+          console.warn('All panes are locked. Cannot add the editor pane.');
+          return state;
+        }
+        nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, editorId, {
+          panes: state.panes,
+          browserPane: state.browserPane,
+          browserVisible: state.browserVisible,
+          editorPane: nextEditorPane,
+          editorVisible: true,
+          activeTerminalId: state.activeTerminalId,
+        });
+      }
+    } else if (!nextEditorVisible && state.editorPane) {
+      nextLayoutRoot = removePaneFromLayout(state.layoutRoot, state.editorPane.id);
+    }
+
+    return {
+      editorVisible: nextEditorVisible,
+      editorPane: nextEditorPane,
+      layoutRoot: nextLayoutRoot,
+      layoutRevision: state.layoutRevision + 1,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        editorVisible: nextEditorVisible,
+        editorPane: nextEditorPane,
+        layoutRoot: nextLayoutRoot,
+      })),
+    };
+  }),
+
+  closeEditorPane: () => set((state) => {
+    if (state.editorPane) {
+      const nextLayoutRoot = removePaneFromLayout(state.layoutRoot, state.editorPane.id);
+      return {
+        editorVisible: false,
+        editorPane: null,
+        editorTabs: [],
+        activeEditorTabId: null,
+        layoutRoot: nextLayoutRoot,
+        layoutRevision: state.layoutRevision + 1,
+        ...syncActiveWorkspace(state, (workspace) => ({
+          ...workspace,
+          editorVisible: false,
+          editorPane: null,
+          editorTabs: [],
+          activeEditorTabId: null,
+          layoutRoot: nextLayoutRoot,
+        })),
+      };
+    }
+    return state;
+  }),
+
+  toggleEditorLock: () => set((state) => {
+    if (!state.editorPane) {
+      return state;
+    }
+
+    const nextEditorPane = {
+      ...state.editorPane,
+      locked: !state.editorPane.locked,
+    };
+
+    return {
+      editorPane: nextEditorPane,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        editorPane: nextEditorPane,
+      })),
+    };
+  }),
+
+  bringEditorIntoView: () => set((state) => {
+    if (!state.editorPane || !state.editorVisible) {
+      return state;
+    }
+
+    const firstPaneId = findFirstLeafPaneId(state.layoutRoot);
+    if (firstPaneId == null || firstPaneId === state.editorPane.id) {
+      return state;
+    }
+
+    const nextLayoutRoot = swapPaneIdsInLayout(state.layoutRoot, firstPaneId, state.editorPane.id);
+
+    return {
+      layoutRoot: nextLayoutRoot,
+      layoutRevision: state.layoutRevision + 1,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        layoutRoot: nextLayoutRoot,
+      })),
+    };
+  }),
+
+  resetEditorState: () => set((state) => ({
+    ...createDefaultEditorState(),
+    ...syncActiveWorkspace(state, (workspace) => ({
+      ...workspace,
+      ...createDefaultEditorState(),
+    })),
+  })),
 }));
