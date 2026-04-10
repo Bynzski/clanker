@@ -66,6 +66,17 @@ function createEntry(name: string, entryPath: string, isDirectory: boolean): Fil
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
 describe('FileExplorer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -253,6 +264,111 @@ describe('FileExplorer', () => {
     // Selection should work but no editor tab created
     expect(useWorkspaceStore.getState().explorerSelectedPath).toBe('/workspace/index.ts');
     expect(useWorkspaceStore.getState().editorTabs).toHaveLength(0);
+  });
+
+  it('creates new files inside the selected folder', async () => {
+    const workspace = setActiveWorkspace({ workspacePath: '/workspace' });
+    const rootEntries = [createEntry('src', '/workspace/src', true)];
+    const childEntries = [createEntry('index.ts', '/workspace/src/index.ts', false)];
+    const fileCreate = vi.fn().mockResolvedValue({ success: true });
+    const fileListDirectory = vi.fn(async (request: FileListDirectoryRequest): Promise<FileListDirectoryResult> => {
+      if (request.directoryPath === '/workspace') {
+        return { success: true, entries: rootEntries };
+      }
+
+      if (request.directoryPath === '/workspace/src') {
+        return { success: true, entries: childEntries };
+      }
+
+      return { success: false, entries: [], errorCode: 'invalid-path', error: 'bad path' };
+    });
+    installElectronApiMock({ fileCreate, fileListDirectory });
+    const user = userEvent.setup();
+
+    render(<FileExplorer />);
+
+    fireEvent.click(await screen.findByText('src'));
+    fireEvent.click(await screen.findByText('index.ts'));
+    await user.click(screen.getByTitle('New File'));
+
+    const input = screen.getByRole('textbox');
+    await user.type(input, 'notes.md{enter}');
+
+    await waitFor(() => {
+      expect(fileCreate).toHaveBeenCalledWith({
+        workspacePath: workspace.workspacePath,
+        targetPath: '/workspace/src/notes.md',
+        type: 'file',
+      });
+    });
+  });
+
+  it('opens a terminal from the explorer and registers it in the workspace store', async () => {
+    setActiveWorkspace({ workspacePath: '/workspace' });
+    const initialTerminalCount = useWorkspaceStore.getState().terminals.length;
+    const fileListDirectory = vi.fn().mockResolvedValue({
+      success: true,
+      entries: [createEntry('src', '/workspace/src', true)],
+    });
+    const spawnTerminal = vi.fn().mockResolvedValue({ id: 'terminal-2', pid: 2024 });
+    installElectronApiMock({ fileListDirectory, spawnTerminal });
+    const user = userEvent.setup();
+
+    render(<FileExplorer />);
+
+    fireEvent.contextMenu(await screen.findByText('src'));
+    await user.click(screen.getByRole('menuitem', { name: 'Open in Terminal' }));
+
+    await waitFor(() => {
+      expect(spawnTerminal).toHaveBeenCalledWith('/workspace/src');
+      expect(useWorkspaceStore.getState().terminals).toHaveLength(initialTerminalCount + 1);
+      expect(useWorkspaceStore.getState().terminals).toContainEqual({
+        id: 'terminal-2',
+        pid: 2024,
+        workingDir: '/workspace/src',
+      });
+    });
+  });
+
+  it('renames files immediately in the explorer tree before refresh completes', async () => {
+    setActiveWorkspace({ workspacePath: '/workspace' });
+    const rootEntries = [createEntry('README.md', '/workspace/README.md', false)];
+    const refreshedEntries = [createEntry('docs.md', '/workspace/docs.md', false)];
+    const refreshDeferred = createDeferred<FileListDirectoryResult>();
+    const fileListDirectory = vi.fn(async (request: FileListDirectoryRequest): Promise<FileListDirectoryResult> => {
+      if (request.directoryPath === '/workspace' && fileListDirectory.mock.calls.length === 1) {
+        return { success: true, entries: rootEntries };
+      }
+
+      if (request.directoryPath === '/workspace') {
+        return refreshDeferred.promise;
+      }
+
+      return { success: false, entries: [], errorCode: 'invalid-path', error: 'bad path' };
+    });
+    installElectronApiMock({
+      fileListDirectory,
+      fileRename: vi.fn().mockResolvedValue({ success: true }),
+    });
+    const user = userEvent.setup();
+
+    render(<FileExplorer />);
+
+    fireEvent.contextMenu(await screen.findByText('README.md'));
+    await user.click(screen.getByRole('menuitem', { name: 'Rename' }));
+
+    const input = await screen.findByRole('textbox');
+    await user.clear(input);
+    await user.type(input, 'docs.md{enter}');
+
+    await waitFor(() => {
+      expect(screen.getByText('docs.md')).toBeInTheDocument();
+    });
+
+    refreshDeferred.resolve({ success: true, entries: refreshedEntries });
+    await waitFor(() => {
+      expect(fileListDirectory).toHaveBeenCalledTimes(2);
+    });
   });
 });
 
