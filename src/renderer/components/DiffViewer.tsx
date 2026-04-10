@@ -1,6 +1,10 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { X } from 'lucide-react';
-import { diffLines, type Change } from 'diff';
+import { EditorState } from '@codemirror/state';
+import { EditorView, lineNumbers } from '@codemirror/view';
+import { oneDark } from '@codemirror/theme-one-dark';
+import { MergeView } from '@codemirror/merge';
+import { getLanguageExtension } from '../lib/editorLanguage';
 import './DiffViewer.css';
 
 export interface DiffViewerProps {
@@ -24,109 +28,6 @@ export interface DiffViewerProps {
   onClose: () => void;
 }
 
-type SideType = 'added' | 'removed' | 'context' | 'empty';
-
-interface DiffRow {
-  oldLineNo: number | null;
-  newLineNo: number | null;
-  oldText: string;
-  newText: string;
-  oldType: SideType;
-  newType: SideType;
-}
-
-/**
- * Convert diff Changes to aligned DiffRow rows for side-by-side rendering.
- *
- * Algorithm:
- * - Context emits paired left+right rows.
- * - Removed or added emits a row with the other side empty.
- * - A removed hunk immediately followed by an added hunk is "zipped" so edits
- *   appear on the same visual row where possible.
- */
-function buildSideBySideRows(changes: Change[]): DiffRow[] {
-  const rows: DiffRow[] = [];
-  let oldLine = 1;
-  let newLine = 1;
-
-  const splitValue = (value: string): string[] => {
-    // `diff` values usually end with a trailing `\n`. Preserve intentional empty
-    // lines but drop the trailing empty chunk from `split`.
-    const parts = value.split('\n');
-    if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();
-    return parts;
-  };
-
-  for (let i = 0; i < changes.length; i++) {
-    const change = changes[i];
-
-    // Pair adjacent removed+added hunks so edits line up visually.
-    const next = i + 1 < changes.length ? changes[i + 1] : null;
-    if (change.removed && next?.added) {
-      const removedLines = splitValue(change.value);
-      const addedLines = splitValue(next.value);
-      const max = Math.max(removedLines.length, addedLines.length);
-
-      for (let j = 0; j < max; j++) {
-        const hasOld = j < removedLines.length;
-        const hasNew = j < addedLines.length;
-        rows.push({
-          oldLineNo: hasOld ? oldLine++ : null,
-          newLineNo: hasNew ? newLine++ : null,
-          oldText: hasOld ? removedLines[j] : '',
-          newText: hasNew ? addedLines[j] : '',
-          oldType: hasOld ? 'removed' : 'empty',
-          newType: hasNew ? 'added' : 'empty',
-        });
-      }
-
-      i += 1;
-      continue;
-    }
-
-    if (change.removed) {
-      for (const line of splitValue(change.value)) {
-        rows.push({
-          oldLineNo: oldLine++,
-          newLineNo: null,
-          oldText: line,
-          newText: '',
-          oldType: 'removed',
-          newType: 'empty',
-        });
-      }
-      continue;
-    }
-
-    if (change.added) {
-      for (const line of splitValue(change.value)) {
-        rows.push({
-          oldLineNo: null,
-          newLineNo: newLine++,
-          oldText: '',
-          newText: line,
-          oldType: 'empty',
-          newType: 'added',
-        });
-      }
-      continue;
-    }
-
-    for (const line of splitValue(change.value)) {
-      rows.push({
-        oldLineNo: oldLine++,
-        newLineNo: newLine++,
-        oldText: line,
-        newText: line,
-        oldType: 'context',
-        newType: 'context',
-      });
-    }
-  }
-
-  return rows;
-}
-
 export default function DiffViewer({
   oldContent,
   newContent,
@@ -138,13 +39,54 @@ export default function DiffViewer({
   error,
   onClose,
 }: DiffViewerProps) {
-  const diffLinesResult = useMemo(() => {
-    return diffLines(oldContent, newContent);
-  }, [oldContent, newContent]);
+  const mergeRootRef = useRef<HTMLDivElement>(null);
+  const languageExtension = useMemo(
+    () => getLanguageExtension(newPath || oldPath || ''),
+    [newPath, oldPath]
+  );
 
-  const rows = useMemo(() => {
-    return buildSideBySideRows(diffLinesResult);
-  }, [diffLinesResult]);
+  useEffect(() => {
+    const root = mergeRootRef.current;
+    if (!root || isLoading || Boolean(error) || isBinary || !hasDiff) {
+      return;
+    }
+
+    root.replaceChildren();
+    const mergeView = new MergeView({
+      parent: root,
+      orientation: 'a-b',
+      gutter: true,
+      highlightChanges: true,
+      collapseUnchanged: {
+        margin: 3,
+        minSize: 5,
+      },
+      a: {
+        doc: oldContent,
+        extensions: [
+          EditorState.readOnly.of(true),
+          EditorView.editable.of(false),
+          lineNumbers(),
+          oneDark,
+          languageExtension,
+        ],
+      },
+      b: {
+        doc: newContent,
+        extensions: [
+          EditorState.readOnly.of(true),
+          EditorView.editable.of(false),
+          lineNumbers(),
+          oneDark,
+          languageExtension,
+        ],
+      },
+    });
+
+    return () => {
+      mergeView.destroy();
+    };
+  }, [error, hasDiff, isBinary, isLoading, languageExtension, newContent, oldContent]);
 
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
@@ -244,28 +186,7 @@ export default function DiffViewer({
               <div className="diff-viewer-pane-header">{newPath || '(deleted)'}</div>
             </div>
             <div className="diff-viewer-unified-content">
-              <table className="diff-viewer-table">
-                <tbody>
-                  {rows.map((row, idx) => (
-                    <tr key={idx} className="diff-viewer-row">
-                      <td className={`diff-viewer-line-no diff-viewer-line-no-${row.oldType}`}>
-                        {row.oldLineNo ?? ''}
-                      </td>
-                      <td className={`diff-viewer-cell diff-viewer-cell-${row.oldType}`}>
-                        <pre>{row.oldType === 'empty' ? '\u00A0' : row.oldText}</pre>
-                      </td>
-                      <td
-                        className={`diff-viewer-line-no diff-viewer-line-no-${row.newType} diff-viewer-line-no-right`}
-                      >
-                        {row.newLineNo ?? ''}
-                      </td>
-                      <td className={`diff-viewer-cell diff-viewer-cell-${row.newType}`}>
-                        <pre>{row.newType === 'empty' ? '\u00A0' : row.newText}</pre>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="diff-viewer-merge-root" ref={mergeRootRef} />
             </div>
           </div>
         </div>

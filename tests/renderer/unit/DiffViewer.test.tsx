@@ -4,6 +4,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import DiffViewer from '../../../src/renderer/components/DiffViewer';
 
+vi.mock('@codemirror/merge', () => ({
+  MergeView: class MockMergeView {
+    private parent: HTMLElement;
+
+    constructor(options: { parent: HTMLElement }) {
+      this.parent = options.parent;
+      const marker = document.createElement('div');
+      marker.className = 'mock-merge-view';
+      this.parent.appendChild(marker);
+    }
+
+    destroy() {
+      this.parent.replaceChildren();
+    }
+  },
+}));
+
 describe('DiffViewer', () => {
   const mockOnClose = vi.fn();
 
@@ -80,9 +97,9 @@ describe('DiffViewer', () => {
         hasDiff: true,
         newPath: 'file.ts',
       });
-      // Check that content is rendered
-      const cells = document.querySelectorAll('.diff-viewer-cell');
-      expect(cells.length).toBeGreaterThan(0);
+      const mergeRoot = document.querySelector('.diff-viewer-merge-root');
+      expect(mergeRoot).toBeTruthy();
+      expect(mergeRoot?.querySelector('.mock-merge-view')).toBeTruthy();
     });
   });
 

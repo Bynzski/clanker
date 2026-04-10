@@ -7,32 +7,13 @@ import {
   highlightActiveLine,
   keymap,
 } from '@codemirror/view';
-import { markdown } from '@codemirror/lang-markdown';
-import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useDragHandle } from './DynamicPaneLayout';
 import EditorTabBar from './EditorTabBar';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
+import { getLanguageExtension } from '../lib/editorLanguage';
 import './EditorPane.css';
-
-function getLanguageExtension(fileName: string): Extension {
-  const lower = fileName.toLowerCase();
-  if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
-    return markdown();
-  }
-  if (
-    lower.endsWith('.js') ||
-    lower.endsWith('.jsx') ||
-    lower.endsWith('.ts') ||
-    lower.endsWith('.tsx') ||
-    lower.endsWith('.mjs') ||
-    lower.endsWith('.cjs')
-  ) {
-    return javascript({ typescript: lower.endsWith('.ts') || lower.endsWith('.tsx') });
-  }
-  return [];
-}
 
 export default function EditorPane() {
   const editorRef = useRef<HTMLDivElement>(null);

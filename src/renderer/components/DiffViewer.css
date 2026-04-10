@@ -84,7 +84,7 @@
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--text-secondary);
-  background: var(--bg-tertiary);
+  background: rgba(255, 255, 255, 0.03);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -100,80 +100,59 @@
   background: var(--bg-primary);
 }
 
-.diff-viewer-table {
-  width: max-content;
-  min-width: 100%;
-  border-collapse: collapse;
+.diff-viewer-merge-root {
+  min-height: 100%;
+}
+
+.diff-viewer-merge-root .cm-mergeView {
+  min-height: 100%;
+}
+
+.diff-viewer-merge-root .cm-mergeViewEditors {
+  min-height: 100%;
+}
+
+.diff-viewer-merge-root .cm-editor {
+  height: 100%;
+  background: var(--bg-primary) !important;
+  color: var(--text-primary);
+}
+
+.diff-viewer-merge-root .cm-scroller {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 20px;
-  table-layout: auto;
+  background: var(--bg-primary) !important;
 }
 
-.diff-viewer-row {
-  border: none;
+.diff-viewer-merge-root .cm-content,
+.diff-viewer-merge-root .cm-mergeViewEditors,
+.diff-viewer-merge-root .cm-mergeView {
+  background: var(--bg-primary) !important;
 }
 
-.diff-viewer-line-no {
-  width: 50px;
-  min-width: 50px;
-  max-width: 50px;
-  padding: 2px 8px;
-  text-align: right;
+.diff-viewer-merge-root .cm-gutters {
+  background: var(--bg-primary) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
   color: var(--text-tertiary);
-  background: var(--bg-tertiary);
-  border-right: 1px solid var(--border-color);
-  user-select: none;
-  font-size: 11px;
-  vertical-align: top;
-  white-space: nowrap;
 }
 
-.diff-viewer-line-no-right {
-  border-left: 1px solid var(--border-color);
+.diff-viewer-merge-root .cm-lineNumbers .cm-gutterElement {
+  color: var(--text-tertiary);
 }
 
-.diff-viewer-cell {
-  padding: 0 8px;
-  vertical-align: top;
+.diff-viewer-merge-root .cm-mergeGap {
+  background: var(--bg-primary) !important;
 }
 
-.diff-viewer-cell pre {
-  margin: 0;
-  white-space: pre;
-  line-height: 20px;
-  min-height: 20px;
+.diff-viewer-merge-root .cm-mergeGap .cm-mergeRevert {
+  display: none;
 }
 
-/* Per-side line types */
-.diff-viewer-cell-context {
-  background: transparent;
-}
-
-.diff-viewer-cell-removed {
-  background: rgba(244, 67, 54, 0.12);
-  color: #e57373;
-}
-
-.diff-viewer-cell-added {
-  background: rgba(76, 175, 80, 0.12);
-  color: #81c784;
-}
-
-.diff-viewer-cell-empty {
-  background: var(--bg-secondary);
-}
-
-.diff-viewer-cell-empty pre {
-  color: transparent;
-}
-
-.diff-viewer-line-no-removed {
-  color: rgba(229, 115, 115, 0.7);
-}
-
-.diff-viewer-line-no-added {
-  color: rgba(129, 199, 132, 0.7);
+.diff-viewer-merge-root .cm-changedText,
+.diff-viewer-merge-root .cm-deletedText,
+.diff-viewer-merge-root .cm-deletedChunk .cm-deletedText {
+  background: transparent !important;
 }
 
 /* State messages */
