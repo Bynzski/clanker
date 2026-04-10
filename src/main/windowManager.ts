@@ -87,7 +87,7 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL(getRendererUrl({}));
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'));
   }
 
   const cleanup = () => {
