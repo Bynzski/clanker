@@ -370,6 +370,111 @@ describe('FileExplorer', () => {
       expect(fileListDirectory).toHaveBeenCalledTimes(2);
     });
   });
+
+  it('renaming a directory clears stale subtree state while still refreshing the parent directory', async () => {
+    setActiveWorkspace({
+      workspacePath: '/workspace',
+      explorerExpandedPaths: ['/workspace/src'],
+      explorerEntriesByPath: {
+        '/workspace': [
+          createEntry('src', '/workspace/src', true),
+          createEntry('README.md', '/workspace/README.md', false),
+        ],
+        '/workspace/src': [createEntry('index.ts', '/workspace/src/index.ts', false)],
+      },
+    });
+    const refreshedEntries = [
+      createEntry('lib', '/workspace/lib', true),
+      createEntry('README.md', '/workspace/README.md', false),
+    ];
+    const refreshDeferred = createDeferred<FileListDirectoryResult>();
+    const fileListDirectory = vi.fn(async (request: FileListDirectoryRequest): Promise<FileListDirectoryResult> => {
+      if (request.directoryPath === '/workspace') {
+        return refreshDeferred.promise;
+      }
+
+      return { success: true, entries: [] };
+    });
+    installElectronApiMock({
+      fileListDirectory,
+      fileRename: vi.fn().mockResolvedValue({ success: true }),
+    });
+    const user = userEvent.setup();
+
+    render(<FileExplorer />);
+
+    fireEvent.contextMenu(await screen.findByText('src'));
+    await user.click(screen.getByRole('menuitem', { name: 'Rename' }));
+
+    const input = await screen.findByRole('textbox');
+    await user.clear(input);
+    await user.type(input, 'lib{enter}');
+
+    await waitFor(() => {
+      expect(screen.getByText('lib')).toBeInTheDocument();
+      expect(screen.getByText('README.md')).toBeInTheDocument();
+    });
+
+    expect(useWorkspaceStore.getState().explorerExpandedPaths).not.toContain('/workspace/src');
+    expect(useWorkspaceStore.getState().explorerEntriesByPath['/workspace/src']).toBeUndefined();
+
+    refreshDeferred.resolve({ success: true, entries: refreshedEntries });
+    await waitFor(() => {
+      expect(fileListDirectory).toHaveBeenCalledWith({
+        workspacePath: '/workspace',
+        directoryPath: '/workspace',
+      });
+    });
+  });
+
+  it('deleting a directory clears stale subtree state while still refreshing the parent directory', async () => {
+    setActiveWorkspace({
+      workspacePath: '/workspace',
+      explorerExpandedPaths: ['/workspace/src'],
+      explorerEntriesByPath: {
+        '/workspace': [
+          createEntry('src', '/workspace/src', true),
+          createEntry('README.md', '/workspace/README.md', false),
+        ],
+        '/workspace/src': [createEntry('index.ts', '/workspace/src/index.ts', false)],
+      },
+    });
+    const refreshedEntries = [createEntry('README.md', '/workspace/README.md', false)];
+    const refreshDeferred = createDeferred<FileListDirectoryResult>();
+    const fileListDirectory = vi.fn(async (request: FileListDirectoryRequest): Promise<FileListDirectoryResult> => {
+      if (request.directoryPath === '/workspace') {
+        return refreshDeferred.promise;
+      }
+
+      return { success: true, entries: [] };
+    });
+    installElectronApiMock({
+      fileListDirectory,
+      fileDelete: vi.fn().mockResolvedValue({ success: true }),
+    });
+
+    render(<FileExplorer />);
+
+    fireEvent.contextMenu(await screen.findByText('src'));
+    fireEvent.click(await screen.findByText('Delete'));
+    fireEvent.click(await screen.findByText('Delete'));
+
+    await waitFor(() => {
+      expect(screen.queryByText('src')).not.toBeInTheDocument();
+      expect(screen.getByText('README.md')).toBeInTheDocument();
+    });
+
+    expect(useWorkspaceStore.getState().explorerExpandedPaths).not.toContain('/workspace/src');
+    expect(useWorkspaceStore.getState().explorerEntriesByPath['/workspace/src']).toBeUndefined();
+
+    refreshDeferred.resolve({ success: true, entries: refreshedEntries });
+    await waitFor(() => {
+      expect(fileListDirectory).toHaveBeenCalledWith({
+        workspacePath: '/workspace',
+        directoryPath: '/workspace',
+      });
+    });
+  });
 });
 
 

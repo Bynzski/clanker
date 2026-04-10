@@ -94,6 +94,8 @@ interface WorkspaceState {
   setExplorerVisible: (visible: boolean) => void;
   setExplorerSidebarWidth: (width: number) => void;
   toggleExplorerPath: (path: string) => void;
+  setExplorerExpandedPaths: (paths: string[]) => void;
+  clearExplorerDirectoryState: (paths: string[]) => void;
   setExplorerSelectedPath: (path: string | null) => void;
   setExplorerDirectoryEntries: (directoryPath: string, entries: FileExplorerEntry[]) => void;
   setExplorerDirectoryLoading: (directoryPath: string, loading: boolean) => void;
@@ -665,6 +667,42 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ...syncActiveWorkspace(state, (workspace) => ({
         ...workspace,
         explorerExpandedPaths,
+      })),
+    };
+  }),
+
+  setExplorerExpandedPaths: (paths) => set((state) => ({
+    explorerExpandedPaths: paths,
+    ...syncActiveWorkspace(state, (workspace) => ({
+      ...workspace,
+      explorerExpandedPaths: paths,
+    })),
+  })),
+
+  clearExplorerDirectoryState: (paths) => set((state) => {
+    if (paths.length === 0) {
+      return state;
+    }
+
+    const pathSet = new Set(paths);
+    const explorerEntriesByPath = { ...state.explorerEntriesByPath };
+    const explorerErrorsByPath = { ...state.explorerErrorsByPath };
+    for (const path of pathSet) {
+      delete explorerEntriesByPath[path];
+      delete explorerErrorsByPath[path];
+    }
+
+    const explorerLoadingPaths = state.explorerLoadingPaths.filter((path) => !pathSet.has(path));
+
+    return {
+      explorerEntriesByPath,
+      explorerErrorsByPath,
+      explorerLoadingPaths,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        explorerEntriesByPath,
+        explorerErrorsByPath,
+        explorerLoadingPaths,
       })),
     };
   }),
