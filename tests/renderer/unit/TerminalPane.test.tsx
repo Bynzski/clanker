@@ -57,6 +57,7 @@ const mockKillTerminal = vi.fn().mockResolvedValue(undefined);
 const mockResizeTerminal = vi.fn().mockResolvedValue(undefined);
 const mockWriteTerminal = vi.fn().mockResolvedValue(undefined);
 const mockWriteClipboard = vi.fn().mockResolvedValue(undefined);
+const mockResolveDroppedFilePath = vi.fn().mockReturnValue('');
 const mockGetTerminalBuffer = vi.fn().mockResolvedValue('');
 const mockOnTerminalData = vi.fn().mockReturnValue(vi.fn());
 const mockOnTerminalExit = vi.fn().mockReturnValue(vi.fn());
@@ -120,6 +121,7 @@ function setupElectronAPIMocks() {
     resizeTerminal: mockResizeTerminal,
     writeTerminal: mockWriteTerminal,
     writeClipboard: mockWriteClipboard,
+    resolveDroppedFilePath: mockResolveDroppedFilePath,
     getTerminalBuffer: mockGetTerminalBuffer,
     onTerminalData: mockOnTerminalData,
     onTerminalExit: mockOnTerminalExit,
@@ -541,6 +543,32 @@ describe('TerminalPane', () => {
       
       const header = document.querySelector('.terminal-header');
       expect(header).toBeTruthy();
+    });
+  });
+
+  // =========================================================================
+  // Drag and Drop
+  // =========================================================================
+  describe('drag and drop', () => {
+    it('writes the resolved absolute image path to the terminal', () => {
+      setupStoreWithTerminal('t1', 'p1');
+      mockResolveDroppedFilePath.mockReturnValue('/workspace/images/photo.png');
+
+      render(<TerminalPane paneId="p1" />);
+
+      const file = new File(['image-bytes'], 'photo.png', { type: 'image/png' });
+      const content = document.querySelector('.terminal-content');
+      expect(content).toBeTruthy();
+
+      fireEvent.drop(content!, {
+        dataTransfer: {
+          files: [file],
+          getData: vi.fn().mockReturnValue('file:///workspace/images/photo.png'),
+        },
+      });
+
+      expect(mockResolveDroppedFilePath).toHaveBeenCalledWith(file, 'file:///workspace/images/photo.png');
+      expect(mockWriteTerminal).toHaveBeenCalledWith('t1', "'/workspace/images/photo.png' ");
     });
   });
 

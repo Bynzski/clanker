@@ -1,5 +1,6 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
+import { fileURLToPath } from 'node:url';
 import type { FileListDirectoryRequest } from '../shared/types/fileExplorer';
 import type { VcsProvider } from '../shared/types/vcs';
 import {
@@ -132,6 +133,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Clipboard
   writeClipboard: (text: string) => ipcRenderer.invoke(WRITE_CLIPBOARD, text),
+  resolveDroppedFilePath: (file: Parameters<typeof webUtils.getPathForFile>[0], uriList?: string) => {
+    const directPath = webUtils.getPathForFile(file);
+    if (directPath) {
+      return directPath;
+    }
+
+    if (!uriList) {
+      return '';
+    }
+
+    const lines = uriList.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const firstUri = lines.find((line) => !line.startsWith('#'));
+    if (!firstUri) {
+      return '';
+    }
+
+    try {
+      const url = new URL(firstUri);
+      if (url.protocol === 'file:') {
+        return fileURLToPath(url);
+      }
+    } catch {
+      return '';
+    }
+
+    return '';
+  },
 
   // Browser (using WebContentsView)
   browserHide: (workspaceId: string) => ipcRenderer.invoke(BROWSER_HIDE, workspaceId),
