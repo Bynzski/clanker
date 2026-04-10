@@ -1,10 +1,14 @@
 import { useState, useRef, useEffect, MouseEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { terminateWorkspaceTerminals } from '../lib/workspaceLifecycle';
-import { X, Check, Edit2 } from 'lucide-react';
+import { Plus, X, Check, Edit2 } from 'lucide-react';
 import './WorkspaceTabs.css';
 
-export default function WorkspaceTabs() {
+interface WorkspaceTabsProps {
+  onOpenWorkspace?: () => void;
+}
+
+export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
   const { workspaces, activeWorkspaceId, selectWorkspace, closeWorkspace, updateWorkspaceName } = useWorkspaceStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -131,6 +135,17 @@ export default function WorkspaceTabs() {
           </button>
         );
       })}
+      {onOpenWorkspace && (
+        <button
+          type="button"
+          className="workspace-tab workspace-tab-new"
+          onClick={onOpenWorkspace}
+          aria-label="Open Workspace"
+          title="Open Workspace"
+        >
+          <Plus size={14} strokeWidth={2.5} />
+        </button>
+      )}
     </div>
   );
 }

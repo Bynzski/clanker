@@ -8,15 +8,15 @@ import { createWorkspaceFixture } from '../../setup/fixtures';
 
 // Mock all child components to isolate App logic
 vi.mock('../../../src/renderer/components/Header', () => ({
-  default: ({ onOpenWorkspace }: { onOpenWorkspace: () => void }) => (
-    <button data-testid="header-open-workspace" onClick={onOpenWorkspace}>
-      Open Workspace
-    </button>
-  ),
+  default: () => <div data-testid="header">Header</div>,
 }));
 
 vi.mock('../../../src/renderer/components/TitleBar', () => ({
-  default: () => <div data-testid="title-bar">TitleBar</div>,
+  default: ({ onOpenWorkspace }: { onOpenWorkspace?: () => void }) => (
+    <div data-testid="title-bar">
+      <button data-testid="titlebar-open-workspace" onClick={onOpenWorkspace}>Open Workspace</button>
+    </div>
+  ),
 }));
 
 vi.mock('../../../src/renderer/components/StatusBar', () => ({
@@ -132,7 +132,7 @@ describe('App', () => {
 
     it('does not render header when there are no workspaces', () => {
       render(<App />);
-      expect(screen.queryByTestId('header-open-workspace')).toBeNull();
+      expect(screen.queryByTestId('header')).toBeNull();
     });
 
     it('does not render StatusBar when there are no workspaces', () => {
@@ -233,7 +233,7 @@ describe('App', () => {
       
       render(<App />);
       
-      fireEvent.click(screen.getByTestId('header-open-workspace'));
+      fireEvent.click(screen.getByTestId('titlebar-open-workspace'));
       
       await waitFor(() => {
         expect(screen.getByTestId('workspace-gate-modal')).toBeTruthy();
@@ -269,7 +269,7 @@ describe('App', () => {
       
       render(<App />);
       
-      fireEvent.click(screen.getByTestId('header-open-workspace'));
+      fireEvent.click(screen.getByTestId('titlebar-open-workspace'));
       
       await waitFor(() => {
         expect(screen.getByTestId('workspace-gate-modal')).toBeTruthy();
@@ -327,7 +327,7 @@ describe('App', () => {
 
     it('renders Header', () => {
       render(<App />);
-      expect(screen.getByTestId('header-open-workspace')).toBeTruthy();
+      expect(screen.getByTestId('header')).toBeTruthy();
     });
 
     it('renders StatusBar', () => {

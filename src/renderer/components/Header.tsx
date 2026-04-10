@@ -1,28 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { FolderOpen, Plus, Globe, X, LayoutGrid, Settings, ChevronDown, PanelLeft, PanelLeftClose } from 'lucide-react';
+import { Plus, Globe, LayoutGrid, Settings, ChevronDown, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { AI_COMMIT_PROVIDER_IDS, HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
-import { terminateWorkspaceTerminals } from '../lib/workspaceLifecycle';
 import type { ModelOption } from '../types/shared';
 import GitButton from './GitButton';
 import CredentialSettings from './settings/CredentialSettings';
 import './Header.css';
 
-interface HeaderProps {
-  onOpenWorkspace: () => void;
-}
-
-export default function Header({ onOpenWorkspace }: HeaderProps) {
+export default function Header() {
   const { 
     workspacePath, 
-    activeWorkspaceId,
-    workspaces,
     browserVisible,
     explorerVisible,
     setExplorerVisible,
     toggleBrowser,
     addTerminal,
-    closeWorkspace,
     fitAllPanes,
     harness,
     model,
@@ -233,27 +225,6 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
     toggleBrowser();
   };
 
-  const handleCloseWorkspace = async () => {
-    if (activeWorkspaceId == null) {
-      return;
-    }
-
-    const workspace = workspaces.find((entry) => entry.id === activeWorkspaceId);
-    if (workspace == null) {
-      return;
-    }
-
-    await terminateWorkspaceTerminals(workspace);
-    if (typeof window.electronAPI?.browserDisposeWorkspace === 'function') {
-      await window.electronAPI.browserDisposeWorkspace(workspace.id);
-    }
-    closeWorkspace(activeWorkspaceId);
-
-
-    // Belt-and-suspenders: stop git polling to prevent stale workspace polling
-    await window.electronAPI.gitStopPolling();
-  };
-
   const handleToggleFastfetch = async (checked: boolean) => {
     try {
       await window.electronAPI.setShowFastfetch(checked);
@@ -299,11 +270,16 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
   return (
     <header className="header">
       <div className="header-center">
-        <button className="header-btn" onClick={onOpenWorkspace}>
-          <FolderOpen size={15} strokeWidth={2} />
-          Open Workspace
+        <button
+          type="button"
+          className={`header-btn ${explorerVisible ? 'active' : ''}`}
+          onClick={() => setExplorerVisible(!explorerVisible)}
+          title="Toggle File Explorer"
+        >
+          {explorerVisible ? <PanelLeftClose size={15} strokeWidth={2} /> : <PanelLeft size={15} strokeWidth={2} />}
+          Explorer
         </button>
-        
+
         <div className="harness-pills">
           {HARNESS_OPTIONS.filter((opt) => availableHarnessIds.includes(opt.id)).map(opt => (
             <button
@@ -314,46 +290,39 @@ export default function Header({ onOpenWorkspace }: HeaderProps) {
             >
               <opt.Icon size={14} strokeWidth={2.5} />
               <span>{opt.label}</span>
-            </button>
-          ))}
+              </button>
+            ))}
         </div>
-        
-        <button className="header-btn header-btn-primary" onClick={handleAddTerminal} disabled={!canAddPane()}>
+
+        <button className="header-btn header-btn-primary" type="button" onClick={handleAddTerminal} disabled={!canAddPane()}>
           <Plus size={15} strokeWidth={2.5} />
           New Terminal
         </button>
 
-        <button className="header-btn" onClick={fitAllPanes} title="Fit all panes into view (Ctrl/Cmd+Shift+F)">
-          <LayoutGrid size={15} strokeWidth={2} />
-          Fit All Panes
-        </button>
-
-        <button
-          className={`header-btn ${explorerVisible ? 'active' : ''}`}
-          onClick={() => setExplorerVisible(!explorerVisible)}
-          title="Toggle File Explorer"
-        >
-          {explorerVisible ? <PanelLeftClose size={15} strokeWidth={2} /> : <PanelLeft size={15} strokeWidth={2} />}
-          {explorerVisible ? 'Hide' : 'Show'} Explorer
-        </button>
-        
-        <button className="header-btn" onClick={handleToggleBrowser}>
+        <button type="button" className={`header-btn ${browserVisible ? 'active' : ''}`} onClick={handleToggleBrowser} title="Toggle browser panel">
           <Globe size={15} strokeWidth={2} />
-          {browserVisible ? 'Hide' : 'Show'} Browser
-        </button>
-        
-        <button className="header-btn header-btn-danger" onClick={handleCloseWorkspace}>
-          <X size={15} strokeWidth={2} />
-          Close Workspace
+          Browser
         </button>
         
         {workspacePath && (
           <GitButton workspacePath={workspacePath} />
         )}
+      </div>
 
+      <div className="header-right">
+        <button
+          className="header-btn header-btn-icon"
+          type="button"
+          onClick={fitAllPanes}
+          title="Fit all panes into view (Ctrl/Cmd+Shift+F)"
+          aria-label="Fit all panes"
+        >
+          <LayoutGrid size={15} strokeWidth={2} />
+        </button>
         <div className="settings-dropdown-container" ref={settingsDropdownRef}>
           <button 
             className="header-btn"
+            type="button"
             onClick={() => setShowSettings(!showSettings)}
             title="Settings"
           >

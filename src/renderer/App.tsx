@@ -118,8 +118,8 @@ function App() {
 
   return (
     <div className="app">
-      <TitleBar />
-      <Header onOpenWorkspace={() => setShowWorkspaceGate(true)} />
+      <TitleBar onOpenWorkspace={() => setShowWorkspaceGate(true)} />
+      <Header />
       <div className="main-content">
         <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
           <FileExplorer />
