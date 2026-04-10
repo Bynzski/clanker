@@ -113,6 +113,10 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     vcsGetDeepLink: createAsyncMock(null),
     vcsOpenDeepLink: createAsyncMock(true),
 
+    // Editor
+    editorReadFile: createAsyncMock({ success: true, content: '' }),
+    editorWriteFile: createAsyncMock({ success: true }),
+
     ...overrides,
   };
 }

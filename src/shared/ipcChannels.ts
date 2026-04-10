@@ -133,6 +133,13 @@ export const VCS_GET_DEEP_LINK = 'vcs:get-deep-link';
 export const VCS_OPEN_DEEP_LINK = 'vcs:open-deep-link';
 
 /* ============================================================================
+ * Editor
+ * ============================================================================ */
+
+export const FILE_READ = 'file-read';
+export const FILE_WRITE = 'file-write';
+
+/* ============================================================================
  * Canonical list (used by integration test to verify all channels registered)
  * ============================================================================ */
 
@@ -238,4 +245,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   VCS_GET_DEEP_LINKS,
   VCS_GET_DEEP_LINK,
   VCS_OPEN_DEEP_LINK,
+  // Editor
+  FILE_READ,
+  FILE_WRITE,
 ];

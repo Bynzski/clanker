@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import type { Terminal, Pane, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import { createWorkspaceFixture } from '../../setup/fixtures';
+import { installElectronApiMock } from '../../setup/electron';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -33,6 +34,10 @@ function resetStore() {
     activeWorkspaceId: null,
     gridViewport: { cols: 12, rows: 8 },
     layoutRevision: 0,
+    editorVisible: false,
+    editorPane: null,
+    editorTabs: [],
+    activeEditorTabId: null,
   });
 }
 
@@ -592,5 +597,53 @@ describe('workspace sync', () => {
     expect(getStore().panes).toEqual(newPanes);
     const ws = getStore().workspaces.find(w => w.id === wsId)!;
     expect(ws.panes).toEqual(newPanes);
+  });
+});
+
+// ===========================================================================
+// Editor
+// ===========================================================================
+describe('editor', () => {
+  beforeEach(() => {
+    installElectronApiMock({
+      editorReadFile: vi.fn().mockResolvedValue({ success: true, content: 'test' }),
+      editorWriteFile: vi.fn().mockResolvedValue({ success: true }),
+    });
+  });
+
+  it('preserves editor state per workspace when switching', async () => {
+    addWorkspace({ workspacePath: '/first' });
+    const firstId = getStore().activeWorkspaceId!;
+
+    await getStore().openFileInEditor('/first/test.js');
+    expect(getStore().editorTabs).toHaveLength(1);
+
+    addWorkspace({ workspacePath: '/second' });
+    expect(getStore().editorTabs).toHaveLength(0);
+
+    getStore().selectWorkspace(firstId);
+    expect(getStore().activeWorkspaceId).toBe(firstId);
+    expect(getStore().editorTabs).toHaveLength(1);
+  });
+
+  it('editor state resets on workspace close', async () => {
+    addWorkspace({ workspacePath: '/workspace' });
+    await getStore().openFileInEditor('/workspace/test.js');
+    const wsId = getStore().activeWorkspaceId;
+
+    getStore().closeWorkspace(wsId!);
+    expect(getStore().editorTabs).toHaveLength(0);
+    expect(getStore().editorVisible).toBe(false);
+  });
+
+  it('editor syncs to workspaces array', async () => {
+    addWorkspace();
+    const wsId = getStore().activeWorkspaceId;
+
+    await getStore().openFileInEditor('/workspace/test.js');
+    const ws = getStore().workspaces.find(w => w.id === wsId)!;
+    expect(ws.editorTabs).toHaveLength(1);
+    expect(ws.editorVisible).toBe(true);
+    expect(ws.activeEditorTabId).not.toBeNull();
   });
 });

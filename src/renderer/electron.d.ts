@@ -130,6 +130,10 @@ interface ElectronAPI {
   vcsGetDeepLinks: (workspacePath: string, prNumber?: number) => Promise<DeepLink[]>;
   vcsGetDeepLink: (workspacePath: string, type: string) => Promise<string | null>;
   vcsOpenDeepLink: (workspacePath: string, type: string) => Promise<boolean>;
+
+  // Editor
+  editorReadFile: (request: FileReadRequest) => Promise<FileReadResult>;
+  editorWriteFile: (request: FileWriteRequest) => Promise<FileWriteResult>;
 }
 
 interface VcsContextResult {

@@ -1,0 +1,98 @@
+.editor-tab-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--bg-primary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  height: 32px;
+  min-height: 32px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-tertiary) transparent;
+}
+
+.editor-tab-bar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.editor-tab-bar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.editor-tab-bar::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+}
+
+.editor-tab {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  height: 28px;
+  min-height: 28px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 100ms ease-out, color 100ms ease-out;
+  white-space: nowrap;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.editor-tab:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.editor-tab.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--accent-color, #6366f1);
+}
+
+.editor-tab-dirty {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-color, #6366f1);
+  flex-shrink: 0;
+}
+
+.editor-tab-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  opacity: 0;
+  transition: opacity 100ms ease-out, background 100ms ease-out, color 100ms ease-out;
+  flex-shrink: 0;
+}
+
+.editor-tab:hover .editor-tab-close {
+  opacity: 1;
+}
+
+.editor-tab-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.editor-tab.active .editor-tab-close {
+  opacity: 1;
+}

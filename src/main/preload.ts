@@ -2,12 +2,15 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import { fileURLToPath } from 'node:url';
 import type { FileListDirectoryRequest } from '../shared/types/fileExplorer';
+import type { FileReadRequest, FileWriteRequest } from '../shared/types/editor';
 import type { VcsProvider } from '../shared/types/vcs';
 import {
   GET_LAST_WORKSPACE,
   OPEN_DIRECTORY_DIALOG,
   READ_DIRECTORY,
   FILE_LIST_DIRECTORY,
+  FILE_READ,
+  FILE_WRITE,
   GET_SHOW_FASTFETCH,
   SET_SHOW_FASTFETCH,
   GET_AI_COMMIT_SETTINGS,
@@ -300,4 +303,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   vcsGetDeepLinks: (workspacePath: string, prNumber?: number) => ipcRenderer.invoke(VCS_GET_DEEP_LINKS, workspacePath, prNumber),
   vcsGetDeepLink: (workspacePath: string, type: string) => ipcRenderer.invoke(VCS_GET_DEEP_LINK, workspacePath, type),
   vcsOpenDeepLink: (workspacePath: string, type: string) => ipcRenderer.invoke(VCS_OPEN_DEEP_LINK, workspacePath, type),
+
+  // Editor
+  editorReadFile: (request: FileReadRequest) => ipcRenderer.invoke(FILE_READ, request),
+  editorWriteFile: (request: FileWriteRequest) => ipcRenderer.invoke(FILE_WRITE, request),
 });
