@@ -13,6 +13,7 @@
   min-height: 0;
   overflow: hidden;
   padding: var(--space-sm);
+  gap: var(--space-sm);
 }
 
 .main-content-loading {

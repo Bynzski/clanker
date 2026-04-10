@@ -23,6 +23,30 @@ function isPathWithinBase(basePath: string, candidatePath: string): boolean {
   return nextRelativePath !== '' && nextRelativePath !== candidatePath && !nextRelativePath.startsWith('..');
 }
 
+function resolveCreateParentPath(
+  workspacePath: string,
+  selectedPath: string | null,
+  expandedPaths: string[],
+  explorerEntriesByPath: Record<string, FileExplorerEntry[] | undefined>
+): string {
+  if (!selectedPath) {
+    return workspacePath;
+  }
+
+  if (selectedPath === workspacePath) {
+    return workspacePath;
+  }
+
+  if (
+    expandedPaths.includes(selectedPath) ||
+    Object.prototype.hasOwnProperty.call(explorerEntriesByPath, selectedPath)
+  ) {
+    return selectedPath;
+  }
+
+  return dirnamePath(selectedPath);
+}
+
 export default function FileExplorer() {
   const {
     activeWorkspaceId,
@@ -35,6 +59,7 @@ export default function FileExplorer() {
     explorerErrorsByPath,
     explorerExpandedPaths,
     showHiddenFiles,
+    explorerSelectedPath,
     setExplorerSelectedPath,
     toggleExplorerPath,
     setExplorerVisible,
@@ -225,10 +250,30 @@ export default function FileExplorer() {
       }
     }
 
+    const { explorerEntriesByPath: currentEntries } = useWorkspaceStore.getState();
+    const parentEntries = currentEntries[parentDir] ?? [];
+    const updatedParentEntries = parentEntries.map((entry) =>
+      entry.path === r.path ? { ...entry, name: newName, path: newPath } : entry
+    );
+    setExplorerDirectoryEntries(parentDir, updatedParentEntries);
+
+    if (useWorkspaceStore.getState().explorerSelectedPath === r.path) {
+      setExplorerSelectedPath(newPath);
+    }
+
+    if (r.path !== newPath) {
+      const descendantPaths = Object.keys(currentEntries).filter(
+        (cachedPath) => cachedPath !== r.path && isPathWithinBase(r.path, cachedPath)
+      );
+      for (const descendantPath of descendantPaths) {
+        setExplorerDirectoryEntries(descendantPath, []);
+      }
+    }
+
     setRenaming(null);
     // Refresh the parent directory
     void loadDirectory(parentDir);
-  }, [renaming, workspacePath, loadDirectory]);
+  }, [renaming, workspacePath, loadDirectory, setExplorerDirectoryEntries, setExplorerSelectedPath]);
 
   const handleContextAction = useCallback(async (action: ContextAction, entry: FileExplorerEntry) => {
     closeContextMenu();
@@ -256,7 +301,22 @@ export default function FileExplorer() {
 
       case 'open-terminal': {
         const targetDir = entry.isDirectory ? entry.path : dirnamePath(entry.path);
-        await window.electronAPI.spawnTerminal(targetDir);
+        const { addTerminal, canAddPane } = useWorkspaceStore.getState();
+        if (!canAddPane()) {
+          console.warn('All panes are locked. Unlock a pane before opening a terminal here.');
+          return;
+        }
+
+        try {
+          const info = await window.electronAPI.spawnTerminal(targetDir);
+          addTerminal({
+            id: info.id,
+            pid: info.pid,
+            workingDir: targetDir,
+          });
+        } catch (error) {
+          console.error('Failed to open terminal:', error);
+        }
         break;
       }
 
@@ -321,24 +381,29 @@ export default function FileExplorer() {
       closeEditorTab(tab.id);
     }
 
-    // Refresh the parent directory to reflect the deletion
+    const { explorerEntriesByPath: currentEntries } = useWorkspaceStore.getState();
     const parentDir = dirnamePath(entry.path);
-    void loadDirectory(parentDir);
+    const parentEntries = currentEntries[parentDir] ?? [];
+    const updatedParentEntries = parentEntries.filter((child) => child.path !== entry.path);
+    setExplorerDirectoryEntries(parentDir, updatedParentEntries);
 
-    // Clear any cached children if this was a directory
+    const selectedPath = useWorkspaceStore.getState().explorerSelectedPath;
+    if (selectedPath && (selectedPath === entry.path || isPathWithinBase(entry.path, selectedPath))) {
+      setExplorerSelectedPath(null);
+    }
+
     if (entry.isDirectory) {
-      const { explorerEntriesByPath: currentEntries } = useWorkspaceStore.getState();
       const childPaths = Object.keys(currentEntries).filter(
-        (p) => p !== entry.path && isPathWithinBase(entry.path, p)
+        (cachedPath) => cachedPath !== entry.path && isPathWithinBase(entry.path, cachedPath)
       );
-      if (childPaths.length > 0) {
-        // Clear cached child entries — the next load of parent won't re-populate them
-        for (const childPath of childPaths) {
-          setExplorerDirectoryEntries(childPath, []);
-        }
+      for (const childPath of childPaths) {
+        setExplorerDirectoryEntries(childPath, []);
       }
     }
-  }, [deleteTarget, workspacePath, loadDirectory, setExplorerDirectoryEntries]);
+
+    // Refresh the parent directory to reflect the deletion
+    void loadDirectory(parentDir);
+  }, [deleteTarget, workspacePath, loadDirectory, setExplorerDirectoryEntries, setExplorerSelectedPath]);
 
   if (!explorerVisible || !workspacePath) {
     return null;
@@ -360,7 +425,10 @@ export default function FileExplorer() {
           <button
             type="button"
             className="file-explorer-action"
-            onClick={() => startCreating(workspacePath, 'file')}
+            onClick={() => startCreating(
+              resolveCreateParentPath(workspacePath, explorerSelectedPath, explorerExpandedPaths, explorerEntriesByPath),
+              'file'
+            )}
             title="New File"
           >
             <FilePlus size={14} strokeWidth={2} />
@@ -368,7 +436,10 @@ export default function FileExplorer() {
           <button
             type="button"
             className="file-explorer-action"
-            onClick={() => startCreating(workspacePath, 'directory')}
+            onClick={() => startCreating(
+              resolveCreateParentPath(workspacePath, explorerSelectedPath, explorerExpandedPaths, explorerEntriesByPath),
+              'directory'
+            )}
             title="New Folder"
           >
             <FolderPlus size={14} strokeWidth={2} />

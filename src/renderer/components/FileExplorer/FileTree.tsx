@@ -217,11 +217,7 @@ function TreeNode({ entry, depth, onLoadDirectory, gitStatusByRelativePath, desc
                   descendantChangePaths={descendantChangePaths}
                   workspaceRoot={workspaceRoot}
                   showHiddenFiles={showHiddenFiles}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onContextMenu(e, childEntry);
-                  }}
+                  onContextMenu={onContextMenu}
                   creating={creating}
                   renaming={renaming}
                   onStartCreating={onStartCreating}
@@ -487,11 +483,7 @@ export default function FileTree({ rootPath, workspacePath, rootError, onLoadDir
           descendantChangePaths={descendantChangePaths}
           workspaceRoot={workspacePath}
           showHiddenFiles={showHiddenFiles}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onContextMenu(e, entry);
-          }}
+          onContextMenu={onContextMenu}
           creating={creating}
           renaming={renaming}
           onStartCreating={onStartCreating}
