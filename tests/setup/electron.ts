@@ -29,6 +29,7 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     onTerminalData: vi.fn(() => () => undefined),
     onTerminalExit: vi.fn(() => () => undefined),
     writeClipboard: createAsyncMock(undefined),
+    resolveDroppedFilePath: vi.fn(() => ''),
     browserHide: createAsyncMock(undefined),
     browserSetBounds: createAsyncMock(undefined),
     browserNavigate: createAsyncMock(true),

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { LocateFixed, Lock, Unlock } from 'lucide-react';
 import { useDragHandle } from './DynamicPaneLayout';
@@ -317,6 +317,47 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
     }
   }, [paneId, togglePaneLock]);
 
+  const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+  }, []);
+
+  const handleDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+
+    if (!terminalId) return;
+
+    const dt = event.dataTransfer;
+    if (!dt) return;
+
+    const files = dt.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    if (!file) return;
+
+    // Only handle image files for now
+    const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/i.test(file.name);
+    if (!isImage) return;
+
+    const uriList = dt.getData('text/uri-list');
+    const filePath = window.electronAPI.resolveDroppedFilePath(file, uriList);
+
+    if (!filePath) {
+      // Fallback: just use the filename; agents can still use it if the file
+      // is in the current working directory.
+      const escapedName = file.name.replace(/'/g, "'\"'\"'");
+      const textToSend = `'${escapedName}' `;
+      void window.electronAPI.writeTerminal(terminalId, textToSend).catch(console.error);
+      return;
+    }
+
+    // Escape single quotes so paths with spaces/special chars work in shells
+    const escaped = filePath.replace(/'/g, "'\"'\"'");
+    const textToSend = `'${escaped}' `;
+
+    void window.electronAPI.writeTerminal(terminalId, textToSend).catch(console.error);
+  }, [terminalId]);
+
   if (terminal == null) {
     return (
       <div className="terminal-pane empty">
@@ -347,7 +388,12 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
           </div>
         </div>
       )}
-      <div className="terminal-content" ref={terminalRef} />
+      <div
+        className="terminal-content"
+        ref={terminalRef}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+      />
     </div>
   );
 }

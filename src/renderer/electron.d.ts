@@ -37,6 +37,7 @@ interface ElectronAPI {
 
   // Clipboard
   writeClipboard: (text: string) => Promise<void>;
+  resolveDroppedFilePath: (file: File, uriList?: string) => string;
 
   // Browser (WebContentsView)
   browserHide: (workspaceId: string) => Promise<void>;
