@@ -3,7 +3,11 @@ import { Minus, Square, X } from 'lucide-react';
 import WorkspaceTabs from './WorkspaceTabs';
 import './TitleBar.css';
 
-export default function TitleBar() {
+interface TitleBarProps {
+  onOpenWorkspace?: () => void;
+}
+
+export default function TitleBar({ onOpenWorkspace }: TitleBarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
@@ -39,7 +43,7 @@ export default function TitleBar() {
       </div>
 
       <div className="titlebar-center">
-        <WorkspaceTabs />
+        <WorkspaceTabs onOpenWorkspace={onOpenWorkspace} />
       </div>
 
       <div className="titlebar-controls">

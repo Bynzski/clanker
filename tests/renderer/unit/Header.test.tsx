@@ -13,8 +13,6 @@ vi.mock('../../../src/renderer/components/GitButton', () => ({
 }));
 
 describe('Header', () => {
-  const mockOnOpenWorkspace = vi.fn();
-
   beforeEach(() => {
     vi.clearAllMocks();
     useWorkspaceStore.setState({
@@ -109,16 +107,16 @@ describe('Header', () => {
   });
 
   function renderHeader() {
-    return render(<Header onOpenWorkspace={mockOnOpenWorkspace} />);
+    return render(<Header />);
   }
 
   // =========================================================================
   // Basic Rendering
   // =========================================================================
   describe('basic rendering', () => {
-    it('renders Open Workspace button', () => {
+    it('does not render Open Workspace button', () => {
       renderHeader();
-      expect(screen.getByText('Open Workspace')).toBeTruthy();
+      expect(screen.queryByText('Open Workspace')).toBeNull();
     });
 
     it('renders New Terminal button', () => {
@@ -126,19 +124,20 @@ describe('Header', () => {
       expect(screen.getByText('New Terminal')).toBeTruthy();
     });
 
-    it('renders Fit All Panes button', () => {
+    it('renders icon-only Fit All Panes button', () => {
       renderHeader();
-      expect(screen.getByText('Fit All Panes')).toBeTruthy();
+      expect(screen.getByLabelText('Fit all panes')).toBeTruthy();
+      expect(screen.queryByText('Fit All Panes')).toBeNull();
     });
 
-    it('renders browser toggle button', () => {
+    it('renders static browser toggle button', () => {
       renderHeader();
-      expect(screen.getByText('Show Browser')).toBeTruthy();
+      expect(screen.getByText('Browser')).toBeTruthy();
     });
 
-    it('renders Close Workspace button', () => {
+    it('renders static explorer toggle button', () => {
       renderHeader();
-      expect(screen.getByText('Close Workspace')).toBeTruthy();
+      expect(screen.getByText('Explorer')).toBeTruthy();
     });
 
     it('renders Settings button', () => {
@@ -154,6 +153,11 @@ describe('Header', () => {
     it('renders header-center div', () => {
       renderHeader();
       expect(document.querySelector('.header-center')).toBeTruthy();
+    });
+
+    it('renders header-right div', () => {
+      renderHeader();
+      expect(document.querySelector('.header-right')).toBeTruthy();
     });
   });
 
@@ -226,7 +230,7 @@ describe('Header', () => {
       (window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
       renderHeader();
       // Should still render without crashing
-      expect(screen.getByText('Open Workspace')).toBeTruthy();
+      expect(screen.getByText('New Terminal')).toBeTruthy();
     });
 
     it('renders harness pills container', async () => {
@@ -241,12 +245,6 @@ describe('Header', () => {
   // Button Actions
   // =========================================================================
   describe('button actions', () => {
-    it('calls onOpenWorkspace when Open Workspace is clicked', () => {
-      renderHeader();
-      fireEvent.click(screen.getByText('Open Workspace'));
-      expect(mockOnOpenWorkspace).toHaveBeenCalled();
-    });
-
     it('spawns terminal when New Terminal is clicked', async () => {
       renderHeader();
       fireEvent.click(screen.getByText('New Terminal'));
@@ -283,46 +281,21 @@ describe('Header', () => {
     it('calls fitAllPanes when Fit All Panes is clicked', () => {
       const fitAllPanes = useWorkspaceStore.getState().fitAllPanes as ReturnType<typeof vi.fn>;
       renderHeader();
-      fireEvent.click(screen.getByText('Fit All Panes'));
+      fireEvent.click(screen.getByLabelText('Fit all panes'));
       expect(fitAllPanes).toHaveBeenCalled();
     });
 
-    it('calls toggleBrowser when Show Browser is clicked', () => {
+    it('calls toggleBrowser when Browser is clicked', () => {
       const toggleBrowser = useWorkspaceStore.getState().toggleBrowser as ReturnType<typeof vi.fn>;
       renderHeader();
-      fireEvent.click(screen.getByText('Show Browser'));
+      fireEvent.click(screen.getByText('Browser'));
       expect(toggleBrowser).toHaveBeenCalled();
     });
 
-    it('shows Hide Browser when browser is visible', () => {
+    it('marks browser button active when browser is visible', () => {
       useWorkspaceStore.setState({ browserVisible: true });
       renderHeader();
-      expect(screen.getByText('Hide Browser')).toBeTruthy();
-    });
-
-    it('calls closeWorkspace when Close Workspace is clicked', async () => {
-      const closeWorkspace = useWorkspaceStore.getState().closeWorkspace as ReturnType<typeof vi.fn>;
-      renderHeader();
-      fireEvent.click(screen.getByText('Close Workspace'));
-      await waitFor(() => {
-        expect(closeWorkspace).toHaveBeenCalledWith('ws-1');
-      });
-    });
-
-    it('kills terminals when Close Workspace is clicked', async () => {
-      renderHeader();
-      fireEvent.click(screen.getByText('Close Workspace'));
-      await waitFor(() => {
-        expect(window.electronAPI.killTerminal).toHaveBeenCalled();
-      });
-    });
-
-    it('does not call closeWorkspace when no active workspace', () => {
-      useWorkspaceStore.setState({ activeWorkspaceId: null });
-      const closeWorkspace = useWorkspaceStore.getState().closeWorkspace as ReturnType<typeof vi.fn>;
-      renderHeader();
-      fireEvent.click(screen.getByText('Close Workspace'));
-      expect(closeWorkspace).not.toHaveBeenCalled();
+      expect(screen.getByText('Browser').closest('.header-btn')?.classList.contains('active')).toBe(true);
     });
 
     it('handles spawnTerminal failure gracefully', async () => {
@@ -456,7 +429,7 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       // Should still render without crashing
-      expect(screen.getByText('Open Workspace')).toBeTruthy();
+      expect(screen.getByText('New Terminal')).toBeTruthy();
     });
 
     it('handles setShowFastfetch failure gracefully', async () => {
@@ -469,7 +442,7 @@ describe('Header', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: /show fastfetch/i }));
       // Should not crash
       await waitFor(() => {
-        expect(screen.getByText('Open Workspace')).toBeTruthy();
+        expect(screen.getByText('New Terminal')).toBeTruthy();
       });
     });
   });
@@ -545,7 +518,7 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       // Should still render without crashing
-      expect(screen.getByText('Open Workspace')).toBeTruthy();
+      expect(screen.getByText('New Terminal')).toBeTruthy();
     });
 
     it('handles setAiCommitEnabled failure gracefully', async () => {
@@ -558,7 +531,7 @@ describe('Header', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       // Should not crash
       await waitFor(() => {
-        expect(screen.getByText('Open Workspace')).toBeTruthy();
+        expect(screen.getByText('New Terminal')).toBeTruthy();
       });
     });
 
@@ -608,7 +581,7 @@ describe('Header', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       // Should not crash
       await waitFor(() => {
-        expect(screen.getByText('Open Workspace')).toBeTruthy();
+        expect(screen.getByText('New Terminal')).toBeTruthy();
       });
     });
   });
@@ -702,7 +675,7 @@ describe('Header', () => {
         workspacePath: '',
       });
       renderHeader();
-      expect(screen.getByText('Open Workspace')).toBeTruthy();
+      expect(screen.getByText('New Terminal')).toBeTruthy();
     });
 
     it('does not render GitButton without workspacePath', () => {
@@ -774,7 +747,7 @@ describe('Header', () => {
         workspacePath: '/workspace2',
       });
       renderHeader();
-      expect(screen.getByText('Open Workspace')).toBeTruthy();
+      expect(screen.getByText('New Terminal')).toBeTruthy();
     });
   });
 });

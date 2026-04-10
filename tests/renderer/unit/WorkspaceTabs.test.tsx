@@ -170,6 +170,22 @@ describe('WorkspaceTabs', () => {
       expect(screen.getByText('my-project')).toBeTruthy();
     });
 
+    it('renders open workspace button when callback is provided', () => {
+      const onOpenWorkspace = vi.fn();
+      useWorkspaceStore.setState({
+        workspaces: mockWorkspaces,
+        activeWorkspaceId: 'ws1',
+      });
+
+      render(<WorkspaceTabs onOpenWorkspace={onOpenWorkspace} />);
+
+      const openButton = screen.getByLabelText('Open Workspace');
+      expect(openButton).toBeTruthy();
+
+      fireEvent.click(openButton);
+      expect(onOpenWorkspace).toHaveBeenCalled();
+    });
+
     it('uses fallback name when workspace has no name or path', () => {
       const workspacesWithNoName = [createMockWorkspace({
         name: '',

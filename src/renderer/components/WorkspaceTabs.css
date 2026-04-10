@@ -97,6 +97,20 @@
   opacity: 1;
 }
 
+.workspace-tab-new {
+  min-width: 30px;
+  justify-content: center;
+  padding-left: 8px;
+  padding-right: 8px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.workspace-tab-new:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
 .workspace-tab-edit-trigger {
   display: flex;
   align-items: center;
