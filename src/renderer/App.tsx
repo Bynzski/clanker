@@ -112,10 +112,12 @@ function App() {
       explorerEntriesByPath: {},
       explorerLoadingPaths: [],
       explorerErrorsByPath: {},
+      showHiddenFiles: true,
       editorPane: null,
       editorVisible: false,
       editorTabs: [],
       activeEditorTabId: null,
+      gitChanges: [],
     });
     setShowWorkspaceGate(false);
   };

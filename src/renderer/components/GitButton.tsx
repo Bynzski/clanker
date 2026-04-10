@@ -348,6 +348,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       setChangeCount(0);
       setIsRepo(false);
       setChanges([]);
+      useWorkspaceStore.getState().setGitChanges([]);
       setCurrentBranch(null);
       setIsDetached(false);
       setStatusErrorCode(null);
@@ -396,6 +397,10 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setUpstream(status.upstream);
         setAhead(status.ahead);
         setBehind(status.behind);
+
+        // Sync git changes to workspace store for file explorer consumption
+        const { setGitChanges } = useWorkspaceStore.getState();
+        setGitChanges(status.isRepo ? status.changes : []);
       } else {
         setIsRepo(false);
         setChangeCount(0);
@@ -407,6 +412,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setAhead(0);
         setBehind(0);
         setProvider('unknown');
+        useWorkspaceStore.getState().setGitChanges([]);
       }
     });
 

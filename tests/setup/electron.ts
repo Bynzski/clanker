@@ -39,6 +39,7 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     browserStop: createAsyncMock(undefined),
     browserDisposeWorkspace: createAsyncMock(undefined),
     openExternal: createAsyncMock(true),
+    revealInFileManager: createAsyncMock(true),
     canGoBack: createAsyncMock(false),
     canGoForward: createAsyncMock(false),
     minimizeWindow: createAsyncMock(undefined),
@@ -116,6 +117,11 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     // Editor
     editorReadFile: createAsyncMock({ success: true, content: '' }),
     editorWriteFile: createAsyncMock({ success: true }),
+
+    // File Operations
+    fileCreate: createAsyncMock({ success: true }),
+    fileDelete: createAsyncMock({ success: true }),
+    fileRename: createAsyncMock({ success: true }),
 
     ...overrides,
   };

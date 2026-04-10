@@ -37,6 +37,8 @@ function createMockWorkspace(overrides: Partial<WorkspaceTab> = {}): WorkspaceTa
     explorerEntriesByPath: {},
     explorerLoadingPaths: [],
     explorerErrorsByPath: {},
+    showHiddenFiles: true,
+    gitChanges: [],
     ...overrides,
   };
 }

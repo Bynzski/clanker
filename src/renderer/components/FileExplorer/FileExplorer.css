@@ -8,6 +8,36 @@
   border-right: 1px solid var(--border-color);
   border-radius: 12px;
   overflow: hidden;
+  position: relative;
+}
+
+.explorer-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+.explorer-resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 36px;
+  background: var(--border-color);
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 150ms ease-out, background-color 150ms ease-out;
+}
+
+.explorer-resize-handle:hover::before {
+  opacity: 1;
+  background: var(--accent-primary);
 }
 
 .file-explorer-header {
@@ -22,6 +52,7 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   -webkit-app-region: drag;
+  gap: 4px;
 }
 
 .file-explorer-title {
@@ -40,6 +71,7 @@
   color: var(--text-secondary);
   cursor: pointer;
   -webkit-app-region: no-drag;
+  flex-shrink: 0;
 }
 
 .file-explorer-close:hover {
@@ -47,11 +79,41 @@
   color: var(--text-primary);
 }
 
+.file-explorer-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.file-explorer-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+
+.file-explorer-action:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.file-explorer-action.active {
+  color: var(--accent-primary);
+}
+
 .file-explorer-content {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 6px 0;
+  padding: 6px 4px;
 }
 
 .file-tree {
@@ -104,6 +166,46 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+}
+
+.git-status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+.git-status-indicator.git-modified { background: #e2c08d; }
+.git-status-indicator.git-added { background: #73c991; }
+.git-status-indicator.git-deleted { background: #c74e39; }
+.git-status-indicator.git-untracked { background: #8b949e; }
+.git-status-indicator.git-renamed { background: #539bf5; }
+
+/* S8: Inline create/rename input */
+.tree-node-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--accent-primary);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font: inherit;
+  padding: 1px 4px;
+  outline: none;
+}
+
+.tree-node-input:focus {
+  border-color: var(--accent-primary);
+}
+
+.tree-node-creating {
+  opacity: 0.85;
+}
+
+.tree-node-status {
+  display: flex;
+  align-items: center;
 }
 
 .file-explorer-status,

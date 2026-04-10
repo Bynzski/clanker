@@ -1,4 +1,5 @@
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
+import type { GitStatus } from '../components/git/types';
 
 export interface Terminal {
   id: string;
@@ -87,4 +88,6 @@ export interface WorkspaceTab {
   explorerEntriesByPath: Record<string, FileExplorerEntry[] | undefined>;
   explorerLoadingPaths: string[];
   explorerErrorsByPath: Record<string, string | null | undefined>;
+  showHiddenFiles: boolean;
+  gitChanges: GitStatus[];
 }

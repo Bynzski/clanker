@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import GitButton from '../../../src/renderer/components/GitButton';
+import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 
 // Mock electron API
 const mockGitGetBranchState = vi.fn();
@@ -177,6 +178,48 @@ describe('GitButton', () => {
       });
       
       expect(screen.getByText('Init Git')).toBeTruthy();
+    });
+
+    it('clears stale git changes when status reports a non-repo workspace', () => {
+      useWorkspaceStore.setState({
+        gitChanges: [{ path: 'stale.ts', status: 'modified' }],
+      } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: { success: boolean; isRepo: boolean; changes: unknown[]; currentBranch: string | null; isDetached: boolean; upstream: string | null; ahead: number; behind: number }) => void) => {
+        callback({
+          success: true,
+          isRepo: false,
+          currentBranch: null,
+          isDetached: false,
+          changes: [],
+          upstream: null,
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/workspace" />);
+
+      expect(useWorkspaceStore.getState().gitChanges).toEqual([]);
+    });
+
+    it('clears stale git changes when status polling fails', () => {
+      useWorkspaceStore.setState({
+        gitChanges: [{ path: 'stale.ts', status: 'modified' }],
+      } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: { success: boolean; errorCode?: string }) => void) => {
+        callback({
+          success: false,
+          errorCode: 'unknown',
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/workspace" />);
+
+      expect(useWorkspaceStore.getState().gitChanges).toEqual([]);
     });
 
     it('shows init git button when workspace path is empty', () => {
