@@ -23,6 +23,10 @@ function isPathWithinBase(basePath: string, candidatePath: string): boolean {
   return nextRelativePath !== '' && nextRelativePath !== candidatePath && !nextRelativePath.startsWith('..');
 }
 
+function filterPathsOutsideBase(basePath: string, paths: string[]): string[] {
+  return paths.filter((path) => path !== basePath && !isPathWithinBase(basePath, path));
+}
+
 function resolveCreateParentPath(
   workspacePath: string,
   selectedPath: string | null,
@@ -68,6 +72,8 @@ export default function FileExplorer() {
     setExplorerDirectoryEntries,
     setExplorerDirectoryLoading,
     setExplorerDirectoryError,
+    setExplorerExpandedPaths,
+    clearExplorerDirectoryState,
   } = useWorkspaceStore();
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: FileExplorerEntry } | null>(null);
@@ -250,30 +256,46 @@ export default function FileExplorer() {
       }
     }
 
-    const { explorerEntriesByPath: currentEntries } = useWorkspaceStore.getState();
+    const {
+      explorerEntriesByPath: currentEntries,
+      explorerExpandedPaths: currentExpandedPaths,
+      explorerSelectedPath: selectedPath,
+    } = useWorkspaceStore.getState();
     const parentEntries = currentEntries[parentDir] ?? [];
     const updatedParentEntries = parentEntries.map((entry) =>
       entry.path === r.path ? { ...entry, name: newName, path: newPath } : entry
     );
     setExplorerDirectoryEntries(parentDir, updatedParentEntries);
 
-    if (useWorkspaceStore.getState().explorerSelectedPath === r.path) {
+    if (selectedPath === r.path) {
       setExplorerSelectedPath(newPath);
     }
 
     if (r.path !== newPath) {
-      const descendantPaths = Object.keys(currentEntries).filter(
-        (cachedPath) => cachedPath !== r.path && isPathWithinBase(r.path, cachedPath)
+      const staleDirectoryPaths = Object.keys(currentEntries).filter(
+        (cachedPath) => cachedPath === r.path || isPathWithinBase(r.path, cachedPath)
       );
-      for (const descendantPath of descendantPaths) {
-        setExplorerDirectoryEntries(descendantPath, []);
+      if (staleDirectoryPaths.length > 0) {
+        clearExplorerDirectoryState(staleDirectoryPaths);
       }
     }
 
+    const remainingExpandedPaths = filterPathsOutsideBase(r.path, currentExpandedPaths);
+    if (remainingExpandedPaths.length !== currentExpandedPaths.length) {
+      setExplorerExpandedPaths(remainingExpandedPaths);
+    }
+
     setRenaming(null);
-    // Refresh the parent directory
     void loadDirectory(parentDir);
-  }, [renaming, workspacePath, loadDirectory, setExplorerDirectoryEntries, setExplorerSelectedPath]);
+  }, [
+    renaming,
+    workspacePath,
+    clearExplorerDirectoryState,
+    loadDirectory,
+    setExplorerDirectoryEntries,
+    setExplorerSelectedPath,
+    setExplorerExpandedPaths,
+  ]);
 
   const handleContextAction = useCallback(async (action: ContextAction, entry: FileExplorerEntry) => {
     closeContextMenu();
@@ -381,11 +403,17 @@ export default function FileExplorer() {
       closeEditorTab(tab.id);
     }
 
-    const { explorerEntriesByPath: currentEntries } = useWorkspaceStore.getState();
+    const { explorerEntriesByPath: currentEntries, explorerExpandedPaths: currentExpandedPaths } = useWorkspaceStore.getState();
     const parentDir = dirnamePath(entry.path);
     const parentEntries = currentEntries[parentDir] ?? [];
     const updatedParentEntries = parentEntries.filter((child) => child.path !== entry.path);
     setExplorerDirectoryEntries(parentDir, updatedParentEntries);
+
+    // Clear expanded state for the deleted entry or any children within it
+    const remainingExpandedPaths = filterPathsOutsideBase(entry.path, currentExpandedPaths);
+    if (remainingExpandedPaths.length !== currentExpandedPaths.length) {
+      setExplorerExpandedPaths(remainingExpandedPaths);
+    }
 
     const selectedPath = useWorkspaceStore.getState().explorerSelectedPath;
     if (selectedPath && (selectedPath === entry.path || isPathWithinBase(entry.path, selectedPath))) {
@@ -393,17 +421,24 @@ export default function FileExplorer() {
     }
 
     if (entry.isDirectory) {
-      const childPaths = Object.keys(currentEntries).filter(
-        (cachedPath) => cachedPath !== entry.path && isPathWithinBase(entry.path, cachedPath)
+      const staleDirectoryPaths = Object.keys(currentEntries).filter(
+        (cachedPath) => cachedPath === entry.path || isPathWithinBase(entry.path, cachedPath)
       );
-      for (const childPath of childPaths) {
-        setExplorerDirectoryEntries(childPath, []);
+      if (staleDirectoryPaths.length > 0) {
+        clearExplorerDirectoryState(staleDirectoryPaths);
       }
     }
 
-    // Refresh the parent directory to reflect the deletion
     void loadDirectory(parentDir);
-  }, [deleteTarget, workspacePath, loadDirectory, setExplorerDirectoryEntries, setExplorerSelectedPath]);
+  }, [
+    deleteTarget,
+    workspacePath,
+    clearExplorerDirectoryState,
+    loadDirectory,
+    setExplorerDirectoryEntries,
+    setExplorerSelectedPath,
+    setExplorerExpandedPaths,
+  ]);
 
   if (!explorerVisible || !workspacePath) {
     return null;
