@@ -92,7 +92,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
         fontSize: 13,
         fontWeight: '400',
         fontWeightBold: '700',
-        lineHeight: 1.2,
+        lineHeight: 1,
         letterSpacing: 0,
         cursorBlink: true,
         cursorStyle: 'bar',
