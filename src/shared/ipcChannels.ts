@@ -53,6 +53,7 @@ export const BROWSER_REFRESH = 'browser-refresh';
 export const BROWSER_STOP = 'browser-stop';
 export const BROWSER_DISPOSE_WORKSPACE = 'browser-dispose-workspace';
 export const OPEN_EXTERNAL = 'open-external';
+export const REVEAL_IN_FILE_MANAGER = 'reveal-in-file-manager';
 export const CAN_GO_BACK = 'can-go-back';
 export const CAN_GO_FORWARD = 'can-go-forward';
 export const BROWSER_URL_UPDATED = 'browser-url-updated';
@@ -140,6 +141,14 @@ export const FILE_READ = 'file-read';
 export const FILE_WRITE = 'file-write';
 
 /* ============================================================================
+ * File Operations
+ * ============================================================================ */
+
+export const FILE_CREATE = 'file-create';
+export const FILE_DELETE = 'file-delete';
+export const FILE_RENAME = 'file-rename';
+
+/* ============================================================================
  * Canonical list (used by integration test to verify all channels registered)
  * ============================================================================ */
 
@@ -180,6 +189,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   BROWSER_STOP,
   BROWSER_DISPOSE_WORKSPACE,
   OPEN_EXTERNAL,
+  REVEAL_IN_FILE_MANAGER,
   CAN_GO_BACK,
   CAN_GO_FORWARD,
   // Window controls
@@ -248,4 +258,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   // Editor
   FILE_READ,
   FILE_WRITE,
+  // File Operations
+  FILE_CREATE,
+  FILE_DELETE,
+  FILE_RENAME,
 ];

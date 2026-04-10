@@ -93,6 +93,7 @@ describe('App', () => {
       explorerEntriesByPath: {},
       explorerLoadingPaths: [],
       explorerErrorsByPath: {},
+    showHiddenFiles: true,
       addWorkspace: vi.fn(),
       fitAllPanes: mockFitAllPanes,
     });
@@ -227,10 +228,12 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
+    showHiddenFiles: true,
             editorPane: null,
             editorVisible: false,
             editorTabs: [],
             activeEditorTabId: null,
+            gitChanges: [],
           }],
         });
       });
@@ -267,10 +270,12 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
+    showHiddenFiles: true,
             editorPane: null,
             editorVisible: false,
             editorTabs: [],
             activeEditorTabId: null,
+            gitChanges: [],
           }],
         });
       });
@@ -318,10 +323,12 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
+    showHiddenFiles: true,
             editorPane: null,
             editorVisible: false,
             editorTabs: [],
             activeEditorTabId: null,
+            gitChanges: [],
           }],
         });
       });
@@ -395,10 +402,12 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
+    showHiddenFiles: true,
             editorPane: null,
             editorVisible: false,
             editorTabs: [],
             activeEditorTabId: null,
+            gitChanges: [],
           }],
         });
       });
@@ -667,10 +676,12 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
+    showHiddenFiles: true,
             editorPane: null,
             editorVisible: false,
             editorTabs: [],
             activeEditorTabId: null,
+            gitChanges: [],
           }],
         });
       });
@@ -719,6 +730,7 @@ describe('App', () => {
       explorerEntriesByPath: {},
       explorerLoadingPaths: [],
       explorerErrorsByPath: {},
+    showHiddenFiles: true,
     });
 
     let handler: ((payload: { workspaceId: string; url: string }) => void) | null = null;

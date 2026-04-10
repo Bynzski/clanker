@@ -43,10 +43,12 @@ export function createWorkspaceFixture(overrides: Partial<WorkspaceTab> = {}): W
     explorerEntriesByPath: {},
     explorerLoadingPaths: [],
     explorerErrorsByPath: {},
+    showHiddenFiles: true,
     editorPane: null,
     editorVisible: false,
     editorTabs: [],
     activeEditorTabId: null,
+    gitChanges: [],
     ...overrides,
   };
 }

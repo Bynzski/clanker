@@ -50,6 +50,25 @@ async function resolveNearestExistingDirectoryPath(targetPath: string): Promise<
   }
 }
 
+async function resolveValidatedDestinationPath(
+  workspaceRoot: string,
+  destinationPath: string
+): Promise<string | null> {
+  const resolvedDestination = path.resolve(destinationPath);
+
+  try {
+    const resolvedReal = await fs.realpath(resolvedDestination);
+    return isPathInsideRoot(workspaceRoot, resolvedReal) ? resolvedReal : null;
+  } catch {
+    const nearestAncestor = await resolveNearestExistingDirectoryPath(path.dirname(resolvedDestination));
+    if (!nearestAncestor || !isPathInsideRoot(workspaceRoot, nearestAncestor)) {
+      return null;
+    }
+
+    return resolvedDestination;
+  }
+}
+
 function toDirectoryError(error: unknown): Pick<FileListDirectoryResult, 'errorCode' | 'error'> {
   if ((error as NodeJS.ErrnoException | undefined)?.code === 'EACCES' || (error as NodeJS.ErrnoException | undefined)?.code === 'EPERM') {
     return {
@@ -319,5 +338,189 @@ export async function writeFile(request: FileWriteRequest): Promise<FileWriteRes
     return { success: true };
   } catch {
     return { success: false, errorCode: 'write-error', error: 'Failed to write file' };
+  }
+}
+
+import type {
+  FileCreateRequest,
+  FileDeleteRequest,
+  FileRenameRequest,
+  FileOperationResult,
+} from '../shared/types/fileOperations';
+
+/**
+ * Validate that a resolved path is inside the workspace root.
+ * Uses realpath to resolve symlinks before checking containment.
+ */
+async function validatePathInsideWorkspace(
+  workspacePath: string,
+  targetPath: string
+): Promise<string | null> {
+  const safeWorkspacePath = resolveExistingDirectory(workspacePath);
+  if (!safeWorkspacePath) {
+    return null;
+  }
+
+  try {
+    const workspaceRoot = await fs.realpath(safeWorkspacePath);
+    const resolved = path.resolve(targetPath);
+
+    // Try to resolve the full path first (works for existing files/dirs)
+    const resolvedReal = await fs.realpath(resolved);
+    if (!isPathInsideRoot(workspaceRoot, resolvedReal)) {
+      return null;
+    }
+    return resolvedReal;
+  } catch {
+    // Path does not exist yet — validate by resolving the nearest existing ancestor
+    const resolved = path.resolve(targetPath);
+    const workspaceRoot = await fs.realpath(safeWorkspacePath);
+    const nearestAncestor = await resolveNearestExistingDirectoryPath(path.dirname(resolved));
+    if (!nearestAncestor || !isPathInsideRoot(workspaceRoot, nearestAncestor)) {
+      return null;
+    }
+    return resolved;
+  }
+}
+
+export async function createFile(request: FileCreateRequest): Promise<FileOperationResult> {
+  const validated = await validatePathInsideWorkspace(request.workspacePath, request.targetPath);
+  if (!validated) {
+    return { success: false, error: 'File path is outside workspace' };
+  }
+
+  try {
+    // Check if file already exists
+    try {
+      const stats = await fs.stat(validated);
+      if (stats.isFile()) {
+        return { success: false, error: 'File already exists' };
+      }
+    } catch {
+      // File does not exist — this is fine for creation
+    }
+
+    // Create parent directories recursively
+    const parentDir = path.dirname(validated);
+    await fs.mkdir(parentDir, { recursive: true });
+
+    // Write empty file
+    await fs.writeFile(validated, '', 'utf-8');
+
+    return { success: true };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException | undefined;
+    if (err?.code === 'EACCES' || err?.code === 'EPERM') {
+      return { success: false, error: 'Permission denied creating file' };
+    }
+    return { success: false, error: 'Failed to create file' };
+  }
+}
+
+export async function createDirectory(request: FileCreateRequest): Promise<FileOperationResult> {
+  const validated = await validatePathInsideWorkspace(request.workspacePath, request.targetPath);
+  if (!validated) {
+    return { success: false, error: 'Directory path is outside workspace' };
+  }
+
+  try {
+    // Check if directory already exists
+    try {
+      const stats = await fs.stat(validated);
+      if (stats.isDirectory()) {
+        return { success: false, error: 'Directory already exists' };
+      }
+    } catch {
+      // Does not exist — proceed
+    }
+
+    await fs.mkdir(validated, { recursive: true });
+
+    return { success: true };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException | undefined;
+    if (err?.code === 'EACCES' || err?.code === 'EPERM') {
+      return { success: false, error: 'Permission denied creating directory' };
+    }
+    return { success: false, error: 'Failed to create directory' };
+  }
+}
+
+export async function deleteEntry(request: FileDeleteRequest): Promise<FileOperationResult> {
+  const safeWorkspacePath = resolveExistingDirectory(request.workspacePath);
+  if (!safeWorkspacePath) {
+    return { success: false, error: 'Invalid workspace path' };
+  }
+
+  try {
+    const workspaceRoot = await fs.realpath(safeWorkspacePath);
+    const resolved = path.resolve(request.targetPath);
+    const resolvedReal = await fs.realpath(resolved);
+
+    // Security: must be inside workspace
+    if (!isPathInsideRoot(workspaceRoot, resolvedReal)) {
+      return { success: false, error: 'Path is outside workspace' };
+    }
+
+    // Security: prevent deleting the workspace root itself
+    if (resolvedReal === workspaceRoot) {
+      return { success: false, error: 'Cannot delete workspace root' };
+    }
+
+    await fs.rm(resolvedReal, { recursive: true });
+    return { success: true };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException | undefined;
+    if (err?.code === 'ENOENT') {
+      return { success: false, error: 'Path does not exist' };
+    }
+    if (err?.code === 'EACCES' || err?.code === 'EPERM') {
+      return { success: false, error: 'Permission denied deleting path' };
+    }
+    return { success: false, error: 'Failed to delete path' };
+  }
+}
+
+export async function renameEntry(request: FileRenameRequest): Promise<FileOperationResult> {
+  const safeWorkspacePath = resolveExistingDirectory(request.workspacePath);
+  if (!safeWorkspacePath) {
+    return { success: false, error: 'Invalid workspace path' };
+  }
+
+  try {
+    const workspaceRoot = await fs.realpath(safeWorkspacePath);
+
+    // Validate source path
+    const resolvedOld = path.resolve(request.oldPath);
+    const resolvedOldReal = await fs.realpath(resolvedOld);
+    if (!isPathInsideRoot(workspaceRoot, resolvedOldReal)) {
+      return { success: false, error: 'Source path is outside workspace' };
+    }
+
+    // Validate destination path
+    const resolvedNew = await resolveValidatedDestinationPath(workspaceRoot, request.newPath);
+    if (!resolvedNew) {
+      return { success: false, error: 'Destination path is outside workspace' };
+    }
+
+    // Check destination doesn't already exist
+    try {
+      await fs.stat(resolvedNew);
+      return { success: false, error: 'A file or directory already exists at the destination' };
+    } catch {
+      // Doesn't exist — good
+    }
+
+    await fs.rename(resolvedOld, resolvedNew);
+    return { success: true };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException | undefined;
+    if (err?.code === 'ENOENT') {
+      return { success: false, error: 'Source path does not exist' };
+    }
+    if (err?.code === 'EACCES' || err?.code === 'EPERM') {
+      return { success: false, error: 'Permission denied renaming path' };
+    }
+    return { success: false, error: 'Failed to rename path' };
   }
 }

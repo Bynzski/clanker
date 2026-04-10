@@ -30,6 +30,7 @@ function resetStore() {
     explorerEntriesByPath: {},
     explorerLoadingPaths: [],
     explorerErrorsByPath: {},
+    showHiddenFiles: true,
     workspaces: [],
     activeWorkspaceId: null,
     gridViewport: { cols: 12, rows: 8 },
@@ -38,6 +39,7 @@ function resetStore() {
     editorPane: null,
     editorTabs: [],
     activeEditorTabId: null,
+    gitChanges: [],
   });
 }
 
@@ -277,6 +279,40 @@ describe('browser', () => {
 });
 
 describe('file explorer', () => {
+  it('setShowHiddenFiles updates both top-level and workspace array state', () => {
+    addWorkspace();
+    const wsId = getStore().activeWorkspaceId!;
+
+    getStore().setShowHiddenFiles(false);
+
+    // Top-level state
+    expect(getStore().showHiddenFiles).toBe(false);
+
+    // Synced to workspaces array
+    const ws = getStore().workspaces.find(w => w.id === wsId)!;
+    expect(ws.showHiddenFiles).toBe(false);
+
+    // Toggle back
+    getStore().setShowHiddenFiles(true);
+    expect(getStore().showHiddenFiles).toBe(true);
+  });
+
+  it('setShowHiddenFiles persists across workspace switches', () => {
+    addWorkspace({ workspacePath: '/first', showHiddenFiles: false });
+    const firstId = getStore().activeWorkspaceId!;
+
+    addWorkspace({ workspacePath: '/second', showHiddenFiles: true });
+    const secondId = getStore().activeWorkspaceId!;
+
+    // Switch to first
+    getStore().selectWorkspace(firstId);
+    expect(getStore().showHiddenFiles).toBe(false);
+
+    // Switch to second
+    getStore().selectWorkspace(secondId);
+    expect(getStore().showHiddenFiles).toBe(true);
+  });
+
   it('preserves explorer state per workspace when switching in the same session', () => {
     addWorkspace({ workspacePath: '/first' });
     const firstWorkspaceId = getStore().activeWorkspaceId!;
@@ -645,5 +681,162 @@ describe('editor', () => {
     expect(ws.editorTabs).toHaveLength(1);
     expect(ws.editorVisible).toBe(true);
     expect(ws.activeEditorTabId).not.toBeNull();
+  });
+});
+
+// ===========================================================================
+// renameEditorTabPath (S10)
+// ===========================================================================
+describe('renameEditorTabPath', () => {
+  it('updates the editor tab filePath and fileName', () => {
+    addWorkspace();
+
+    // Set up tabs
+    useWorkspaceStore.setState({
+      editorTabs: [
+        {
+          id: 'tab-1',
+          filePath: '/workspace/src/index.ts',
+          fileName: 'index.ts',
+          isDirty: false,
+          content: 'console.log("hello")',
+          originalContent: 'console.log("hello")',
+        },
+        {
+          id: 'tab-2',
+          filePath: '/workspace/src/main.ts',
+          fileName: 'main.ts',
+          isDirty: false,
+          content: 'console.log("world")',
+          originalContent: 'console.log("world")',
+        },
+      ],
+    });
+
+    // Rename the first tab
+    getStore().renameEditorTabPath('/workspace/src/index.ts', '/workspace/src/main.ts');
+
+    const tabs = getStore().editorTabs;
+    expect(tabs.find(t => t.id === 'tab-1')?.filePath).toBe('/workspace/src/main.ts');
+    expect(tabs.find(t => t.id === 'tab-1')?.fileName).toBe('main.ts');
+    // Second tab should be unchanged
+    expect(tabs.find(t => t.id === 'tab-2')?.filePath).toBe('/workspace/src/main.ts');
+    expect(tabs.find(t => t.id === 'tab-2')?.fileName).toBe('main.ts');
+  });
+
+  it('syncs editorTabs to workspaces array after rename', () => {
+    addWorkspace();
+    const wsId = getStore().activeWorkspaceId!;
+
+    useWorkspaceStore.setState({
+      editorTabs: [
+        {
+          id: 'tab-1',
+          filePath: '/workspace/file.ts',
+          fileName: 'file.ts',
+          isDirty: false,
+          content: '',
+          originalContent: '',
+        },
+      ],
+    });
+
+    getStore().renameEditorTabPath('/workspace/file.ts', '/workspace/renamed.ts');
+
+    const ws = getStore().workspaces.find(w => w.id === wsId)!;
+    expect(ws.editorTabs[0].filePath).toBe('/workspace/renamed.ts');
+    expect(ws.editorTabs[0].fileName).toBe('renamed.ts');
+  });
+
+  it('does nothing when oldPath does not match any tab', () => {
+    addWorkspace();
+
+    useWorkspaceStore.setState({
+      editorTabs: [
+        {
+          id: 'tab-1',
+          filePath: '/workspace/file.ts',
+          fileName: 'file.ts',
+          isDirty: false,
+          content: '',
+          originalContent: '',
+        },
+      ],
+    });
+
+    getStore().renameEditorTabPath('/workspace/nonexistent.ts', '/workspace/new.ts');
+
+    const tabs = getStore().editorTabs;
+    expect(tabs[0].filePath).toBe('/workspace/file.ts');
+    expect(tabs[0].fileName).toBe('file.ts');
+  });
+});
+
+// ===========================================================================
+// Git changes (S2)
+// ===========================================================================
+describe('git changes', () => {
+  it('setGitChanges updates both top-level state and the active workspace in workspaces[]', () => {
+    addWorkspace();
+    const wsId = getStore().activeWorkspaceId!;
+
+    const changes = [
+      { path: 'src/index.ts', status: 'modified' as const, staged: false },
+      { path: 'src/new.ts', status: 'added' as const, staged: true },
+    ];
+    getStore().setGitChanges(changes);
+
+    // Top-level state
+    expect(getStore().gitChanges).toEqual(changes);
+
+    // Synced to workspaces array
+    const ws = getStore().workspaces.find(w => w.id === wsId)!;
+    expect(ws.gitChanges).toEqual(changes);
+  });
+
+  it('switching workspaces restores the correct gitChanges', () => {
+    addWorkspace({ workspacePath: '/first' });
+    const firstId = getStore().activeWorkspaceId!;
+
+    const firstChanges = [
+      { path: 'first-file.ts', status: 'modified' as const, staged: false },
+    ];
+    getStore().setGitChanges(firstChanges);
+
+    addWorkspace({ workspacePath: '/second' });
+    const secondId = getStore().activeWorkspaceId!;
+
+    const secondChanges = [
+      { path: 'second-file.ts', status: 'added' as const, staged: true },
+    ];
+    getStore().setGitChanges(secondChanges);
+
+    // Switch back to first workspace
+    getStore().selectWorkspace(firstId);
+    expect(getStore().gitChanges).toEqual(firstChanges);
+
+    // Switch to second workspace
+    getStore().selectWorkspace(secondId);
+    expect(getStore().gitChanges).toEqual(secondChanges);
+  });
+
+  it('closing the active workspace resets gitChanges to []', () => {
+    addWorkspace({ workspacePath: '/first' });
+    const firstId = getStore().activeWorkspaceId!;
+
+    const changes = [
+      { path: 'file.ts', status: 'modified' as const, staged: false },
+    ];
+    getStore().setGitChanges(changes);
+
+    addWorkspace({ workspacePath: '/second' });
+    const secondId = getStore().activeWorkspaceId!;
+
+    // Close the active workspace (second)
+    getStore().closeWorkspace(secondId);
+
+    // Switched back to first, should have first's gitChanges
+    expect(getStore().activeWorkspaceId).toBe(firstId);
+    expect(getStore().gitChanges).toEqual(changes);
   });
 });

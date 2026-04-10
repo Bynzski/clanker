@@ -1,8 +1,13 @@
-import { useCallback, useEffect } from 'react';
-import { PanelLeftClose } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw } from 'lucide-react';
+import type React from 'react';
 import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer';
+import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
+import { dirnamePath, isAbsolutePath, joinPaths, relativePath } from '../../lib/pathUtils';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import FileTree from './FileTree';
+import ContextMenu, { type ContextAction } from './ContextMenu';
+import ConfirmCloseDialog from '../ConfirmCloseDialog';
 import './FileExplorer.css';
 
 function getDirectoryLoadErrorMessage(error: unknown): string {
@@ -13,20 +18,37 @@ function getDirectoryLoadErrorMessage(error: unknown): string {
   return 'Unable to load directory';
 }
 
+function isPathWithinBase(basePath: string, candidatePath: string): boolean {
+  const nextRelativePath = relativePath(basePath, candidatePath);
+  return nextRelativePath !== '' && nextRelativePath !== candidatePath && !nextRelativePath.startsWith('..');
+}
+
 export default function FileExplorer() {
   const {
     activeWorkspaceId,
     workspacePath,
+    gitChanges,
     explorerVisible,
     explorerSidebarWidth,
     explorerEntriesByPath,
     explorerLoadingPaths,
     explorerErrorsByPath,
+    explorerExpandedPaths,
+    showHiddenFiles,
+    setExplorerSelectedPath,
+    toggleExplorerPath,
     setExplorerVisible,
+    setShowHiddenFiles,
+    setExplorerSidebarWidth,
     setExplorerDirectoryEntries,
     setExplorerDirectoryLoading,
     setExplorerDirectoryError,
   } = useWorkspaceStore();
+
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: FileExplorerEntry } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<FileExplorerEntry | null>(null);
+  const [creating, setCreating] = useState<{ parentPath: string; type: 'file' | 'directory' } | null>(null);
+  const [renaming, setRenaming] = useState<{ path: string; originalName: string } | null>(null);
 
   const loadDirectory = useCallback(async (directoryPath: string): Promise<FileListDirectoryResult> => {
     const requestWorkspaceId = activeWorkspaceId;
@@ -87,6 +109,13 @@ export default function FileExplorer() {
     }
   }, [activeWorkspaceId, setExplorerDirectoryEntries, setExplorerDirectoryError, setExplorerDirectoryLoading, workspacePath]);
 
+  const handleRefresh = useCallback(() => {
+    const pathsToReload = [workspacePath, ...explorerExpandedPaths];
+    pathsToReload.forEach((dirPath) => {
+      void loadDirectory(dirPath);
+    });
+  }, [workspacePath, explorerExpandedPaths, loadDirectory]);
+
   useEffect(() => {
     if (!explorerVisible || !workspacePath) {
       return;
@@ -99,6 +128,218 @@ export default function FileExplorer() {
     }
   }, [explorerEntriesByPath, explorerLoadingPaths, explorerVisible, loadDirectory, workspacePath]);
 
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = explorerSidebarWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX;
+      setExplorerSidebarWidth(Math.max(180, Math.min(500, startWidth + delta)));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  // This handler is passed to FileTree as the onContextMenu prop.
+  // TreeNode wraps it (already called preventDefault/stopPropagation) and
+  // passes (e, entry) so we can capture the entry in this closure.
+  const handleTreeContextMenu = useCallback((e: React.MouseEvent<HTMLButtonElement>, entry: FileExplorerEntry) => {
+    setContextMenu({ x: e.clientX, y: e.clientY, entry });
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  const startCreating = useCallback((parentPath: string, type: 'file' | 'directory') => {
+    setCreating({ parentPath, type });
+  }, []);
+
+  const cancelCreating = useCallback(() => {
+    setCreating(null);
+  }, []);
+
+  const startRenaming = useCallback((path: string, originalName: string) => {
+    setRenaming({ path, originalName });
+  }, []);
+
+  const cancelRenaming = useCallback(() => {
+    setRenaming(null);
+  }, []);
+
+  const commitCreating = useCallback(async (name: string) => {
+    const c = creating;
+    if (!c) return;
+
+    const targetPath = joinPaths(c.parentPath, name);
+
+    const result = await window.electronAPI.fileCreate({
+      workspacePath,
+      targetPath,
+      type: c.type,
+    });
+
+    if (!result.success) {
+      console.error('Failed to create entry:', result.error);
+      setCreating(null);
+      return;
+    }
+
+    setCreating(null);
+    void loadDirectory(c.parentPath);
+  }, [creating, workspacePath, loadDirectory]);
+
+  const commitRenaming = useCallback(async (newName: string) => {
+    const r = renaming;
+    if (!r) return;
+
+    const parentDir = dirnamePath(r.path);
+    const newPath = joinPaths(parentDir, newName);
+
+    const result = await window.electronAPI.fileRename({
+      workspacePath,
+      oldPath: r.path,
+      newPath,
+    });
+
+    if (!result.success) {
+      console.error('Failed to rename entry:', result.error);
+      setRenaming(null);
+      return;
+    }
+
+    // Update any open editor tabs that reference this file
+    const { editorTabs, renameEditorTabPath } = useWorkspaceStore.getState();
+    for (const tab of editorTabs) {
+      if (tab.filePath === r.path) {
+        renameEditorTabPath(r.path, newPath);
+        break;
+      }
+    }
+
+    setRenaming(null);
+    // Refresh the parent directory
+    void loadDirectory(parentDir);
+  }, [renaming, workspacePath, loadDirectory]);
+
+  const handleContextAction = useCallback(async (action: ContextAction, entry: FileExplorerEntry) => {
+    closeContextMenu();
+
+    switch (action) {
+      case 'open-editor': {
+        if (!entry.isDirectory) {
+          const { openFileInEditor } = useWorkspaceStore.getState();
+          void openFileInEditor(entry.path);
+        } else {
+          setExplorerSelectedPath(entry.path);
+          const hasChildren = Object.prototype.hasOwnProperty.call(explorerEntriesByPath, entry.path);
+          if (!explorerExpandedPaths.includes(entry.path) && !hasChildren) {
+            void loadDirectory(entry.path).then((result) => {
+              if (result.success) {
+                toggleExplorerPath(entry.path);
+              }
+            });
+          } else if (!explorerExpandedPaths.includes(entry.path)) {
+            toggleExplorerPath(entry.path);
+          }
+        }
+        break;
+      }
+
+      case 'open-terminal': {
+        const targetDir = entry.isDirectory ? entry.path : dirnamePath(entry.path);
+        await window.electronAPI.spawnTerminal(targetDir);
+        break;
+      }
+
+      case 'copy-path': {
+        await window.electronAPI.writeClipboard(entry.path);
+        break;
+      }
+
+      case 'copy-relative-path': {
+        const { workspacePath: root } = useWorkspaceStore.getState();
+        const nextRelativePath = root
+          ? (() => {
+              const resolved = relativePath(root, entry.path);
+              return resolved === '' || (resolved !== entry.path && !resolved.startsWith('..') && !isAbsolutePath(resolved))
+                ? resolved
+                : entry.path;
+            })()
+          : entry.path;
+        await window.electronAPI.writeClipboard(nextRelativePath);
+        break;
+      }
+
+      case 'reveal-in-files': {
+        await window.electronAPI.revealInFileManager(entry.path);
+        break;
+      }
+
+      case 'rename': {
+        setRenaming({ path: entry.path, originalName: entry.name });
+        break;
+      }
+
+      case 'delete': {
+        setDeleteTarget(entry);
+        break;
+      }
+    }
+  }, [closeContextMenu, explorerEntriesByPath, explorerExpandedPaths, loadDirectory, setExplorerSelectedPath, toggleExplorerPath]);
+
+  const performDelete = useCallback(async () => {
+    const entry = deleteTarget;
+    if (!entry) return;
+
+    setDeleteTarget(null);
+
+    const result = await window.electronAPI.fileDelete({
+      workspacePath,
+      targetPath: entry.path,
+    });
+
+    if (!result.success) {
+      console.error('Failed to delete entry:', result.error);
+      return;
+    }
+
+    // Close any open editor tabs for the deleted file or files inside the deleted directory
+    const { editorTabs, closeEditorTab } = useWorkspaceStore.getState();
+    const tabsToClose = editorTabs.filter((tab) =>
+      tab.filePath === entry.path || isPathWithinBase(entry.path, tab.filePath)
+    );
+    for (const tab of tabsToClose) {
+      closeEditorTab(tab.id);
+    }
+
+    // Refresh the parent directory to reflect the deletion
+    const parentDir = dirnamePath(entry.path);
+    void loadDirectory(parentDir);
+
+    // Clear any cached children if this was a directory
+    if (entry.isDirectory) {
+      const { explorerEntriesByPath: currentEntries } = useWorkspaceStore.getState();
+      const childPaths = Object.keys(currentEntries).filter(
+        (p) => p !== entry.path && isPathWithinBase(entry.path, p)
+      );
+      if (childPaths.length > 0) {
+        // Clear cached child entries — the next load of parent won't re-populate them
+        for (const childPath of childPaths) {
+          setExplorerDirectoryEntries(childPath, []);
+        }
+      }
+    }
+  }, [deleteTarget, workspacePath, loadDirectory, setExplorerDirectoryEntries]);
+
   if (!explorerVisible || !workspacePath) {
     return null;
   }
@@ -107,22 +348,86 @@ export default function FileExplorer() {
     <aside className="file-explorer" style={{ width: explorerSidebarWidth }}>
       <div className="file-explorer-header">
         <span className="file-explorer-title">Explorer</span>
-        <button
-          type="button"
-          className="file-explorer-close"
-          onClick={() => setExplorerVisible(false)}
-          title="Close Explorer"
-        >
-          <PanelLeftClose size={16} strokeWidth={2} />
-        </button>
+        <div className="file-explorer-actions">
+          <button
+            type="button"
+            className="file-explorer-action"
+            onClick={handleRefresh}
+            title="Refresh"
+          >
+            <RefreshCw size={14} strokeWidth={2} />
+          </button>
+          <button
+            type="button"
+            className="file-explorer-action"
+            onClick={() => startCreating(workspacePath, 'file')}
+            title="New File"
+          >
+            <FilePlus size={14} strokeWidth={2} />
+          </button>
+          <button
+            type="button"
+            className="file-explorer-action"
+            onClick={() => startCreating(workspacePath, 'directory')}
+            title="New Folder"
+          >
+            <FolderPlus size={14} strokeWidth={2} />
+          </button>
+          <button
+            type="button"
+            className={`file-explorer-action ${showHiddenFiles ? 'active' : ''}`}
+            onClick={() => setShowHiddenFiles(!showHiddenFiles)}
+            title={showHiddenFiles ? 'Hide dotfiles' : 'Show dotfiles'}
+          >
+            {showHiddenFiles ? <Eye size={14} strokeWidth={2} /> : <EyeOff size={14} strokeWidth={2} />}
+          </button>
+          <button
+            type="button"
+            className="file-explorer-close"
+            onClick={() => setExplorerVisible(false)}
+            title="Close Explorer"
+          >
+            <PanelLeftClose size={16} strokeWidth={2} />
+          </button>
+        </div>
       </div>
       <div className="file-explorer-content">
         <FileTree
           rootPath={workspacePath}
+          workspacePath={workspacePath}
           rootError={explorerErrorsByPath[workspacePath]}
           onLoadDirectory={loadDirectory}
+          gitChanges={gitChanges}
+          onContextMenu={handleTreeContextMenu}
+          creating={creating}
+          renaming={renaming}
+          onStartCreating={startCreating}
+          onStartRenaming={startRenaming}
+          onCancelCreating={cancelCreating}
+          onCancelRenaming={cancelRenaming}
+          onCommitCreating={commitCreating}
+          onCommitRenaming={commitRenaming}
         />
       </div>
+      <div className="explorer-resize-handle" onMouseDown={handleResizeStart} />
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          entry={contextMenu.entry}
+          onAction={(action) => handleContextAction(action, contextMenu.entry)}
+          onClose={closeContextMenu}
+        />
+      )}
+
+      <ConfirmCloseDialog
+        isOpen={deleteTarget !== null}
+        title={deleteTarget?.isDirectory ? 'Delete Folder' : 'Delete File'}
+        message={`Are you sure you want to delete "${deleteTarget?.name}"? This cannot be undone.`}
+        options={[{ label: 'Delete', variant: 'danger', action: performDelete }]}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </aside>
   );
 }

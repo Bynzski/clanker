@@ -25,6 +25,7 @@ import type {
   Terminal,
   WorkspaceTab,
 } from './workspaceTypes';
+import type { GitStatus } from '../components/git/types';
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
 
 export type {
@@ -61,6 +62,8 @@ interface WorkspaceState {
   explorerEntriesByPath: Record<string, FileExplorerEntry[] | undefined>;
   explorerLoadingPaths: string[];
   explorerErrorsByPath: Record<string, string | null | undefined>;
+  showHiddenFiles: boolean;
+  gitChanges: GitStatus[];
   workspaces: WorkspaceTab[];
   activeWorkspaceId: string | null;
   gridViewport: GridViewport;
@@ -96,6 +99,8 @@ interface WorkspaceState {
   setExplorerDirectoryLoading: (directoryPath: string, loading: boolean) => void;
   setExplorerDirectoryError: (directoryPath: string, error: string | null) => void;
   resetExplorerState: () => void;
+  setShowHiddenFiles: (show: boolean) => void;
+  setGitChanges: (changes: GitStatus[]) => void;
 
   setPanes: (panes: Pane[]) => void;
   addPane: (terminalId: string | null, position?: PanePosition) => void;
@@ -126,6 +131,7 @@ interface WorkspaceState {
   toggleEditorLock: () => void;
   bringEditorIntoView: () => void;
   resetEditorState: () => void;
+  renameEditorTabPath: (oldPath: string, newPath: string) => void;
 }
 
 type ActiveWorkspaceSnapshot = Pick<
@@ -148,6 +154,8 @@ type ActiveWorkspaceSnapshot = Pick<
   | 'explorerEntriesByPath'
   | 'explorerLoadingPaths'
   | 'explorerErrorsByPath'
+  | 'showHiddenFiles'
+  | 'gitChanges'
   | 'editorVisible'
   | 'editorPane'
   | 'editorTabs'
@@ -179,6 +187,8 @@ const createDefaultExplorerState = () => ({
   explorerEntriesByPath: {} as Record<string, FileExplorerEntry[] | undefined>,
   explorerLoadingPaths: [] as string[],
   explorerErrorsByPath: {} as Record<string, string | null | undefined>,
+  showHiddenFiles: true as boolean,
+  gitChanges: [] as GitStatus[],
 });
 
 const createDefaultEditorState = () => ({
@@ -187,6 +197,22 @@ const createDefaultEditorState = () => ({
   editorTabs: [] as EditorTab[],
   activeEditorTabId: null as string | null,
 });
+
+function areGitStatusListsEqual(a: GitStatus[], b: GitStatus[]): boolean {
+  if (a === b) {
+    return true;
+  }
+
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  return a.every((entry, index) =>
+    entry.path === b[index]?.path &&
+    entry.status === b[index]?.status &&
+    entry.staged === b[index]?.staged
+  );
+}
 
 const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   ...workspace,
@@ -200,6 +226,8 @@ const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
     ? { ...workspace.browserPane, locked: workspace.browserPane.locked ?? false }
     : null,
   editorTabs: [...workspace.editorTabs],
+  showHiddenFiles: workspace.showHiddenFiles ?? true,
+  gitChanges: [...(workspace.gitChanges ?? [])],
   editorPane: workspace.editorPane
     ? { ...workspace.editorPane, locked: workspace.editorPane.locked ?? false }
     : null,
@@ -234,6 +262,8 @@ function getActiveWorkspaceSnapshot(
     | 'explorerEntriesByPath'
     | 'explorerLoadingPaths'
     | 'explorerErrorsByPath'
+    | 'showHiddenFiles'
+    | 'gitChanges'
     | 'editorVisible'
     | 'editorPane'
     | 'editorTabs'
@@ -259,6 +289,8 @@ function getActiveWorkspaceSnapshot(
     explorerEntriesByPath: workspace.explorerEntriesByPath,
     explorerLoadingPaths: workspace.explorerLoadingPaths,
     explorerErrorsByPath: workspace.explorerErrorsByPath,
+    showHiddenFiles: workspace.showHiddenFiles ?? true,
+    gitChanges: workspace.gitChanges ?? [],
     editorVisible: workspace.editorVisible,
     editorPane: workspace.editorPane,
     editorTabs: workspace.editorTabs,
@@ -704,6 +736,34 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ...createDefaultExplorerState(),
     })),
   })),
+
+  setShowHiddenFiles: (show) => set((state) => {
+    if (state.showHiddenFiles === show) {
+      return state;
+    }
+
+    return {
+      showHiddenFiles: show,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        showHiddenFiles: show,
+      })),
+    };
+  }),
+
+  setGitChanges: (changes) => set((state) => {
+    if (areGitStatusListsEqual(state.gitChanges, changes)) {
+      return state;
+    }
+
+    return {
+      gitChanges: changes,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        gitChanges: changes,
+      })),
+    };
+  }),
 
   setPanes: (panes) => set((state) => ({
     panes,
@@ -1324,4 +1384,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ...createDefaultEditorState(),
     })),
   })),
+
+  renameEditorTabPath: (oldPath, newPath) => set((state) => {
+    const newFileName = newPath.split('/').pop() ?? newPath;
+    const nextTabs = state.editorTabs.map((tab) =>
+      tab.filePath === oldPath
+        ? { ...tab, filePath: newPath, fileName: newFileName }
+        : tab
+    );
+
+    return {
+      editorTabs: nextTabs,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        editorTabs: nextTabs,
+      })),
+    };
+  }),
 }));

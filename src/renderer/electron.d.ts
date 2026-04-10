@@ -1,5 +1,7 @@
 import type { AiCommitSettings, ModelOption } from './types/shared';
 import type { FileListDirectoryRequest, FileListDirectoryResult } from '../shared/types/fileExplorer';
+import type { FileReadRequest, FileWriteRequest } from '../shared/types/editor';
+import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest, FileOperationResult } from '../shared/types/fileOperations';
 import type {
   DeepLink,
   DeepLinkType,
@@ -48,6 +50,7 @@ interface ElectronAPI {
   browserRefresh: (workspaceId: string) => Promise<void>;
   browserStop: (workspaceId: string) => Promise<void>;
   openExternal: (url: string) => Promise<boolean>;
+  revealInFileManager: (filePath: string) => Promise<boolean>;
   canGoBack: (workspaceId: string) => Promise<boolean>;
   canGoForward: (workspaceId: string) => Promise<boolean>;
   browserDisposeWorkspace: (workspaceId: string) => Promise<void>;
@@ -134,6 +137,11 @@ interface ElectronAPI {
   // Editor
   editorReadFile: (request: FileReadRequest) => Promise<FileReadResult>;
   editorWriteFile: (request: FileWriteRequest) => Promise<FileWriteResult>;
+
+  // File Operations
+  fileCreate: (request: FileCreateRequest) => Promise<FileOperationResult>;
+  fileDelete: (request: FileDeleteRequest) => Promise<FileOperationResult>;
+  fileRename: (request: FileRenameRequest) => Promise<FileOperationResult>;
 }
 
 interface VcsContextResult {

@@ -41,6 +41,7 @@ import {
   BROWSER_STOP,
   BROWSER_DISPOSE_WORKSPACE,
   OPEN_EXTERNAL,
+  REVEAL_IN_FILE_MANAGER,
   CAN_GO_BACK,
   CAN_GO_FORWARD,
   BROWSER_URL_UPDATED,
@@ -106,6 +107,9 @@ import {
   // Editor
   FILE_READ,
   FILE_WRITE,
+  FILE_CREATE,
+  FILE_DELETE,
+  FILE_RENAME,
   ALL_IPC_CHANNELS,
 } from '../../../src/shared/ipcChannels';
 
@@ -142,6 +146,7 @@ const ALL_CHANNELS = [
   BROWSER_STOP,
   BROWSER_DISPOSE_WORKSPACE,
   OPEN_EXTERNAL,
+  REVEAL_IN_FILE_MANAGER,
   CAN_GO_BACK,
   CAN_GO_FORWARD,
   // Window controls
@@ -212,6 +217,9 @@ const ALL_CHANNELS = [
   // Editor
   FILE_READ,
   FILE_WRITE,
+  FILE_CREATE,
+  FILE_DELETE,
+  FILE_RENAME,
 ];
 
 describe('ipcChannels', () => {

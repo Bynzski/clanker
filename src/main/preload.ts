@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from 'electron';
 import { fileURLToPath } from 'node:url';
 import type { FileListDirectoryRequest } from '../shared/types/fileExplorer';
 import type { FileReadRequest, FileWriteRequest } from '../shared/types/editor';
+import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest } from '../shared/types/fileOperations';
 import type { VcsProvider } from '../shared/types/vcs';
 import {
   GET_LAST_WORKSPACE,
@@ -11,6 +12,10 @@ import {
   FILE_LIST_DIRECTORY,
   FILE_READ,
   FILE_WRITE,
+  FILE_CREATE,
+  FILE_DELETE,
+  FILE_RENAME,
+  REVEAL_IN_FILE_MANAGER,
   GET_SHOW_FASTFETCH,
   SET_SHOW_FASTFETCH,
   GET_AI_COMMIT_SETTINGS,
@@ -174,6 +179,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   browserRefresh: (workspaceId: string) => ipcRenderer.invoke(BROWSER_REFRESH, workspaceId),
   browserStop: (workspaceId: string) => ipcRenderer.invoke(BROWSER_STOP, workspaceId),
   openExternal: (url: string) => ipcRenderer.invoke(OPEN_EXTERNAL, url),
+  revealInFileManager: (filePath: string) => ipcRenderer.invoke(REVEAL_IN_FILE_MANAGER, filePath),
   canGoBack: (workspaceId: string) => ipcRenderer.invoke(CAN_GO_BACK, workspaceId),
   canGoForward: (workspaceId: string) => ipcRenderer.invoke(CAN_GO_FORWARD, workspaceId),
   browserDisposeWorkspace: (workspaceId: string) => ipcRenderer.invoke(BROWSER_DISPOSE_WORKSPACE, workspaceId),
@@ -307,4 +313,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Editor
   editorReadFile: (request: FileReadRequest) => ipcRenderer.invoke(FILE_READ, request),
   editorWriteFile: (request: FileWriteRequest) => ipcRenderer.invoke(FILE_WRITE, request),
+
+  // File Operations
+  fileCreate: (request: FileCreateRequest) => ipcRenderer.invoke(FILE_CREATE, request),
+  fileDelete: (request: FileDeleteRequest) => ipcRenderer.invoke(FILE_DELETE, request),
+  fileRename: (request: FileRenameRequest) => ipcRenderer.invoke(FILE_RENAME, request),
 });
