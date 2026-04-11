@@ -7,7 +7,7 @@
 import { ipcMain, BrowserWindow, clipboard } from 'electron';
 import * as pty from 'node-pty';
 import Store from 'electron-store';
-import { buildHarnessSpawnArgs } from '../harnessLaunch';
+import { buildHarnessSpawnArgs, ensureHarnessWrapperScript } from '../harnessLaunch';
 import {
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
@@ -52,6 +52,7 @@ interface RegisterTerminalIpcDeps {
   getStore: () => Store<StoreSchema>;
   getSafeWorkspacePath: (workingDir: string) => string;
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
+  ensureHarnessWrapperScript?: () => string;
   getAppShuttingDown?: () => boolean;
 }
 
@@ -62,7 +63,14 @@ export function setAppShuttingDown(shuttingDown: boolean): void {
 }
 
 export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
-  const { getTerminals, getMainWindow, getStore, getSafeWorkspacePath, getHarnessOptions } = deps;
+  const {
+    getTerminals,
+    getMainWindow,
+    getStore,
+    getSafeWorkspacePath,
+    getHarnessOptions,
+    ensureHarnessWrapperScript: ensureHarnessWrapperScriptPath = ensureHarnessWrapperScript,
+  } = deps;
 
   const ok = () => ({ success: true as const });
   const fail = (error: string) => ({ success: false as const, error });
@@ -92,20 +100,11 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
 
     const harnessConfig = harness ? getHarnessOptions()[harness] : undefined;
     const harnessArgs = harnessConfig ? buildHarnessSpawnArgs(harnessConfig, model) : [];
-
-    // Escape an argument for safe use in a single-quoted shell command string.
-    const shellEscape = (arg: string): string => {
-      const escaped = arg.replace(/'/g, "'\\''");
-      return `'${escaped}'`;
-    };
-
-    // Build the harness command string with proper escaping
-    const harnessCmdStr = harnessConfig
-      ? `${harnessConfig.command} ${harnessArgs.map(shellEscape).join(' ')}; exec "$SHELL" -i`
-      : '';
-
     const harnessCmd = harnessConfig
-      ? { spawnCmd: userShell, spawnArgs: ['-i', '-c', harnessCmdStr] }
+      ? {
+        spawnCmd: ensureHarnessWrapperScriptPath(),
+        spawnArgs: [harnessConfig.command, ...harnessArgs],
+      }
       : { spawnCmd: userShell, spawnArgs: shellArgs };
 
     const ptyProcess = pty.spawn(
@@ -117,6 +116,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         env: {
           ...process.env as { [key: string]: string },
           ...harnessEnv,
+          ...(harnessConfig ? { CLANKER_GRID_FALLBACK_SHELL: userShell } : {}),
           TERM: 'xterm-256color',
           COLORTERM: 'truecolor',
           TERM_PROGRAM: 'clanker-grid',

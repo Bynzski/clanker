@@ -122,6 +122,7 @@ describe('registerTerminalIpc — registration', () => {
       getStore: () => mockStore as never,
       getSafeWorkspacePath: mockGetSafeWorkspacePath,
       getHarnessOptions: mockGetHarnessOptions,
+      ensureHarnessWrapperScript: vi.fn().mockReturnValue('/home/test/.clanker-grid/harness-wrapper.sh'),
     });
 
     const expectedChannels = [
@@ -148,6 +149,7 @@ describe('registerTerminalIpc — registration', () => {
       getStore: () => mockStore as never,
       getSafeWorkspacePath: vi.fn().mockReturnValue('/test/workspace'),
       getHarnessOptions: vi.fn().mockReturnValue({}),
+      ensureHarnessWrapperScript: vi.fn().mockReturnValue('/home/test/.clanker-grid/harness-wrapper.sh'),
     });
 
     expect(mockHandle.mock.calls.length).toBe(8);
@@ -163,6 +165,7 @@ describe('registerTerminalIpc — registration', () => {
       getStore: () => mockStore as never,
       getSafeWorkspacePath: vi.fn().mockReturnValue('/test/workspace'),
       getHarnessOptions: vi.fn().mockReturnValue({}),
+      ensureHarnessWrapperScript: vi.fn().mockReturnValue('/home/test/.clanker-grid/harness-wrapper.sh'),
     });
 
     expect(mockOn.mock.calls.length).toBe(3);
@@ -181,6 +184,7 @@ describe('registerTerminalIpc — registration', () => {
       getStore: () => mockStore as never,
       getSafeWorkspacePath: vi.fn().mockReturnValue('/test/workspace'),
       getHarnessOptions: vi.fn().mockReturnValue({}),
+      ensureHarnessWrapperScript: vi.fn().mockReturnValue('/home/test/.clanker-grid/harness-wrapper.sh'),
     };
     registerTerminalIpc(opts);
     registerTerminalIpc(opts);
@@ -231,6 +235,7 @@ describe('terminalIpc — error-path: handler returns', () => {
       getStore: () => store as never,
       getSafeWorkspacePath: vi.fn().mockReturnValue('/test/workspace'),
       getHarnessOptions: vi.fn().mockReturnValue({}),
+      ensureHarnessWrapperScript: vi.fn().mockReturnValue('/home/test/.clanker-grid/harness-wrapper.sh'),
     };
     return { terminals, opts };
   };
@@ -458,6 +463,69 @@ describe('terminalIpc — error-path: handler returns', () => {
     expect(result).toHaveProperty('pid');
   });
 
+  test('SPAWN_TERMINAL uses wrapper-script execution for harness launches', async () => {
+    const { opts } = createMockDeps();
+    const ensureWrapper = vi.fn().mockReturnValue('/home/test/.clanker-grid/harness-wrapper.sh');
+    opts.ensureHarnessWrapperScript = ensureWrapper;
+    opts.getHarnessOptions = vi.fn().mockReturnValue({
+      codex: {
+        name: 'Codex',
+        command: 'codex',
+        args: ['--yolo'],
+        icon: '🧠',
+      },
+    });
+    mockPtySpawn.mockReturnValue({ pid: 456, onData: vi.fn(), onExit: vi.fn() });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'spawn-terminal'
+    )?.[1] as (_: unknown, workingDir: string, harness?: string, model?: string) => { id: string; pid: number };
+
+    const result = await handler(null, '/test/workspace', 'codex', 'gpt-5.4-mini');
+
+    expect(result).toBeDefined();
+    expect(ensureWrapper).toHaveBeenCalledTimes(1);
+    expect(mockPtySpawn).toHaveBeenCalledWith(
+      '/home/test/.clanker-grid/harness-wrapper.sh',
+      ['codex', '--model', 'gpt-5.4-mini', '--yolo'],
+      expect.objectContaining({
+        cwd: '/test/workspace',
+        env: expect.objectContaining({
+          CLANKER_GRID_FALLBACK_SHELL: expect.any(String),
+          TERM: 'xterm-256color',
+        }),
+      })
+    );
+  });
+
+  test('SPAWN_TERMINAL preserves shell-sensitive harness args as argv entries', async () => {
+    const { opts } = createMockDeps();
+    opts.ensureHarnessWrapperScript = vi.fn().mockReturnValue('/home/test/.clanker-grid/harness-wrapper.sh');
+    opts.getHarnessOptions = vi.fn().mockReturnValue({
+      pi: {
+        name: 'Pi',
+        command: 'pi',
+        args: [],
+        icon: 'π',
+      },
+    });
+    mockPtySpawn.mockReturnValue({ pid: 457, onData: vi.fn(), onExit: vi.fn() });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'spawn-terminal'
+    )?.[1] as (_: unknown, workingDir: string, harness?: string, model?: string) => { id: string; pid: number };
+
+    await handler(null, '/test/workspace', 'pi', 'sonnet:high thinking');
+
+    expect(mockPtySpawn).toHaveBeenCalledWith(
+      '/home/test/.clanker-grid/harness-wrapper.sh',
+      ['pi', '--model', 'sonnet:high thinking'],
+      expect.any(Object)
+    );
+  });
+
   test('SPAWN_TERMINAL does not throw when getHarnessOptions returns undefined', async () => {
     const { opts } = createMockDeps();
     // Return an object without the specific harness key so getHarnessOptions()[harness]
@@ -474,6 +542,25 @@ describe('terminalIpc — error-path: handler returns', () => {
     expect(result).toBeDefined();
     expect(result).toHaveProperty('id');
     expect(result).toHaveProperty('pid');
+  });
+
+  test('SPAWN_TERMINAL keeps non-harness shell terminals on the existing spawn path', async () => {
+    const { opts } = createMockDeps();
+    mockPtySpawn.mockReturnValue({ pid: 788, onData: vi.fn(), onExit: vi.fn() });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'spawn-terminal'
+    )?.[1] as (_: unknown, workingDir: string) => { id: string; pid: number };
+
+    await handler(null, '/test/workspace');
+
+    expect(opts.ensureHarnessWrapperScript).not.toHaveBeenCalled();
+    expect(mockPtySpawn).toHaveBeenCalledWith(
+      expect.any(String),
+      ['-i'],
+      expect.objectContaining({ cwd: '/test/workspace' })
+    );
   });
 
   test('SPAWN_TERMINAL does not throw when main window is null', async () => {
