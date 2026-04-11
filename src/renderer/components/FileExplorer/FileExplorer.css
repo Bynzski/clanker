@@ -44,15 +44,31 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   -webkit-app-region: drag;
-  gap: 4px;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.file-explorer-drag-handle {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background:
+    radial-gradient(circle at 3px 3px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 9px 3px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 3px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 9px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px);
+  opacity: 0.55;
+  flex-shrink: 0;
+  pointer-events: none;
 }
 
 .file-explorer-title {
