@@ -6,6 +6,8 @@ import { getZoomShortcutAction } from '../lib/keyboardShortcuts';
 import './TerminalPane.css';
 import '@xterm/xterm/css/xterm.css';
 
+import { TERMINAL_SCROLLBACK_LINES } from '../../shared/terminal';
+
 type XTermInstance = import('@xterm/xterm').Terminal;
 type FitAddonInstance = import('@xterm/addon-fit').FitAddon;
 
@@ -100,7 +102,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
         allowProposedApi: true,
         macOptionClickForcesSelection: true,
         macOptionIsMeta: true,
-        scrollback: 10000,
+        scrollback: TERMINAL_SCROLLBACK_LINES,
       });
 
       const fitAddon = new fitAddonModule.FitAddon();

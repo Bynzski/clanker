@@ -112,12 +112,13 @@ export class GitService {
 
   private async execGit(
     workspacePath: string,
-    args: string[]
+    args: string[],
+    timeoutMs = 15000
   ): Promise<{ stdout: string; stderr: string }> {
     const execFileAsync = promisify(execFile);
     return execFileAsync('git', args, {
       cwd: workspacePath,
-      timeout: 15000,
+      timeout: timeoutMs,
       maxBuffer: 1024 * 1024,
     }) as Promise<{ stdout: string; stderr: string }>;
   }
@@ -1075,9 +1076,19 @@ export class GitService {
     }
 
     try {
-      await this.execGit(workspacePath, ['commit', '-m', message.trim()]);
+      // Pre-commit hooks can run lint/typecheck/build steps and may need longer
+      // than the default git command timeout.
+      await this.execGit(workspacePath, ['commit', '-m', message.trim()], 60000);
       return { success: true };
     } catch (error) {
+      const errorRecord = error as { killed?: boolean; signal?: string };
+      if (errorRecord.killed || errorRecord.signal === 'SIGTERM') {
+        return {
+          success: false,
+          error: 'Commit timed out while running git hooks. Please try again or run the checks manually.',
+        };
+      }
+
       const errorMsg = this.getGitErrorMessage(error, 'Failed to create commit');
       if (errorMsg.includes('nothing to commit')) {
         return { success: false, error: 'Nothing to commit' };

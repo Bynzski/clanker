@@ -70,7 +70,7 @@ vi.mock('electron', () => ({
 }));
 
 // Import after mocking
-import { trimBuffer, MAX_TERMINAL_BUFFER_BYTES } from '../../../src/main/terminalUtils';
+import { trimBuffer, MAX_TERMINAL_BUFFER_BYTES } from '../../../src/shared/terminal';
 import assert from 'node:assert/strict';
 import { describe, test } from 'vitest';
 
@@ -144,9 +144,9 @@ describe('trimBuffer', () => {
 });
 
 describe('MAX_TERMINAL_BUFFER_BYTES', () => {
-  test('is defined as 1MB', () => {
-    assert.equal(MAX_TERMINAL_BUFFER_BYTES, 1024 * 1024);
-    assert.equal(MAX_TERMINAL_BUFFER_BYTES, 1_048_576);
+  test('is defined as 512KB', () => {
+    assert.equal(MAX_TERMINAL_BUFFER_BYTES, 512 * 1024);
+    assert.equal(MAX_TERMINAL_BUFFER_BYTES, 524_288);
   });
 
   test('is a positive number', () => {
@@ -157,8 +157,8 @@ describe('MAX_TERMINAL_BUFFER_BYTES', () => {
 
 describe('terminal buffer cap integration', () => {
   test('cap is reasonable for terminal usage', () => {
-    // 1MB should be enough for a full terminal screen worth of history
-    // A typical terminal is 80x24 = 1920 chars, so 1MB = ~500 screens
+    // 512KB should still cover a meaningful amount of recent terminal history
+    // A typical terminal is 80x24 = 1920 chars, so 512KB = ~270 screens
     const typicalScreenSize = 80 * 24;
     const screensWorth = MAX_TERMINAL_BUFFER_BYTES / typicalScreenSize;
 
