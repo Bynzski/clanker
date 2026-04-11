@@ -34,6 +34,7 @@ function resetStore() {
     editorPane: null,
     editorTabs: [],
     activeEditorTabId: null,
+    pendingEditorOperations: {},
   });
 }
 
@@ -409,6 +410,170 @@ describe('editor store actions', () => {
       expect(state.editorPane).toBeNull();
       expect(state.editorTabs).toEqual([]);
       expect(state.activeEditorTabId).toBeNull();
+      expect(state.pendingEditorOperations).toEqual({});
+    });
+  });
+
+  describe('async operation deduplication', () => {
+    it('deduplicates rapid double-open of the same file', async () => {
+      addWorkspace();
+      let resolveRead: (value: unknown) => void;
+      const readPromise = new Promise((resolve) => { resolveRead = resolve; });
+      mockElectronApi.editorReadFile.mockReturnValueOnce(readPromise);
+
+      const open1 = useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
+      const open2 = useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
+
+      // Both calls should return without error — second is deduplicated
+      resolveRead!({ success: true, content: 'hello' });
+      await Promise.all([open1, open2]);
+
+      // Only one IPC call was made
+      expect(mockElectronApi.editorReadFile).toHaveBeenCalledTimes(1);
+      // One tab created
+      expect(useWorkspaceStore.getState().editorTabs).toHaveLength(1);
+      // Pending is cleared
+      expect(useWorkspaceStore.getState().pendingEditorOperations).toEqual({});
+    });
+
+    it('allows concurrent opens of different files', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile.mockResolvedValue({ success: true, content: 'content' });
+
+      await Promise.all([
+        useWorkspaceStore.getState().openFileInEditor('/workspace/a.js'),
+        useWorkspaceStore.getState().openFileInEditor('/workspace/b.js'),
+      ]);
+
+      expect(mockElectronApi.editorReadFile).toHaveBeenCalledTimes(2);
+      expect(useWorkspaceStore.getState().editorTabs).toHaveLength(2);
+      expect(useWorkspaceStore.getState().pendingEditorOperations).toEqual({});
+    });
+
+    it('deduplicates rapid double-save on the same file', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({ success: true, content: 'original' });
+
+      let resolveWrite: (value: unknown) => void;
+      const writePromise = new Promise((resolve) => { resolveWrite = resolve; });
+      mockElectronApi.editorWriteFile.mockReturnValueOnce(writePromise);
+
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
+      const tabId = useWorkspaceStore.getState().editorTabs[0].id;
+      useWorkspaceStore.getState().updateEditorContent(tabId, 'modified');
+
+      // First save starts (awaits writePromise)
+      const save1 = useWorkspaceStore.getState().saveEditorFile(tabId);
+      // Second save deduplicates — returns true immediately
+      const save2 = useWorkspaceStore.getState().saveEditorFile(tabId);
+
+      const result2 = await save2;
+      expect(result2).toBe(true);
+
+      // Now resolve the write
+      resolveWrite!({ success: true });
+      const result1 = await save1;
+      expect(result1).toBe(true);
+
+      // Only one IPC write call
+      expect(mockElectronApi.editorWriteFile).toHaveBeenCalledTimes(1);
+      // Tab is clean
+      expect(useWorkspaceStore.getState().editorTabs[0].isDirty).toBe(false);
+      // Pending is cleared
+      expect(useWorkspaceStore.getState().pendingEditorOperations).toEqual({});
+    });
+
+    it('clears pending flag after failed save', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({ success: true, content: 'original' });
+      mockElectronApi.editorWriteFile.mockResolvedValueOnce({ success: false, errorCode: 'permission-denied' });
+
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
+      const tabId = useWorkspaceStore.getState().editorTabs[0].id;
+      useWorkspaceStore.getState().updateEditorContent(tabId, 'modified');
+
+      const result = await useWorkspaceStore.getState().saveEditorFile(tabId);
+      expect(result).toBe(false);
+
+      // Pending is cleared even on failure
+      expect(useWorkspaceStore.getState().pendingEditorOperations).toEqual({});
+
+      // Subsequent save should be allowed (not stuck)
+      mockElectronApi.editorWriteFile.mockResolvedValueOnce({ success: true });
+      const result2 = await useWorkspaceStore.getState().saveEditorFile(tabId);
+      expect(result2).toBe(true);
+      expect(mockElectronApi.editorWriteFile).toHaveBeenCalledTimes(2);
+    });
+
+    it('clears pending flag after failed open', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({ success: false, errorCode: 'not-found' });
+
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/missing.js');
+
+      expect(useWorkspaceStore.getState().pendingEditorOperations).toEqual({});
+      expect(useWorkspaceStore.getState().editorTabs).toHaveLength(0);
+    });
+
+    it('skips reload when save is pending for same file', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({ success: true, content: 'original' });
+
+      let resolveWrite: (value: unknown) => void;
+      const writePromise = new Promise((resolve) => { resolveWrite = resolve; });
+      mockElectronApi.editorWriteFile.mockReturnValueOnce(writePromise);
+
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
+      const tabId = useWorkspaceStore.getState().editorTabs[0].id;
+      useWorkspaceStore.getState().updateEditorContent(tabId, 'modified');
+
+      // Start a save (won't resolve yet)
+      const savePromise = useWorkspaceStore.getState().saveEditorFile(tabId);
+
+      // Attempt a reload while save is in flight — should be skipped
+      await useWorkspaceStore.getState().reloadEditorTab(tabId);
+
+      // No second readFile call (reload was skipped)
+      expect(mockElectronApi.editorReadFile).toHaveBeenCalledTimes(1);
+
+      // Resolve the save
+      resolveWrite!({ success: true });
+      await savePromise;
+
+      // Pending is cleared
+      expect(useWorkspaceStore.getState().pendingEditorOperations).toEqual({});
+    });
+
+    it('clears pending flag after failed reload', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile
+        .mockResolvedValueOnce({ success: true, content: 'original' })
+        .mockResolvedValueOnce({ success: false, errorCode: 'not-found' });
+
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
+      const tabId = useWorkspaceStore.getState().editorTabs[0].id;
+
+      await useWorkspaceStore.getState().reloadEditorTab(tabId);
+
+      expect(useWorkspaceStore.getState().pendingEditorOperations).toEqual({});
+      // Tab should be marked deleted since reload failed
+      expect(useWorkspaceStore.getState().editorTabs[0].isDeleted).toBe(true);
+    });
+
+    it('succeeds with reload when no save is pending', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile
+        .mockResolvedValueOnce({ success: true, content: 'original' })
+        .mockResolvedValueOnce({ success: true, content: 'updated content' });
+
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
+      const tabId = useWorkspaceStore.getState().editorTabs[0].id;
+
+      await useWorkspaceStore.getState().reloadEditorTab(tabId);
+
+      expect(mockElectronApi.editorReadFile).toHaveBeenCalledTimes(2);
+      expect(useWorkspaceStore.getState().editorTabs[0].content).toBe('updated content');
+      expect(useWorkspaceStore.getState().pendingEditorOperations).toEqual({});
     });
   });
 });

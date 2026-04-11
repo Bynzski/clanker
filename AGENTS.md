@@ -139,6 +139,24 @@ npm run validate      # All of the above
 | `tests/renderer/` | Renderer component/integration tests |
 | `tests/setup/` | Shared mocks and fixtures |
 
+### Test Authoring Rules
+
+- Vitest is split by project, not by ad hoc per-file setup.
+- `tests/main/**/*.test.ts` runs in `node`.
+- `tests/renderer/**/*.test.ts` and `tests/renderer/**/*.test.tsx` run in `jsdom`.
+- `tests/setup/vitest.setup.ts` is the shared entrypoint for both projects.
+- Prefer the existing test file beside the code you changed before creating a new test file.
+- Use `installElectronApiMock()` for renderer tests that need `window.electronAPI`; only hand-roll `window.electronAPI` when the test needs a very specific shape.
+- Use the lightest useful layer:
+  - pure helper tests for exported utilities,
+  - component tests for DOM behavior,
+  - integration tests only when you need store/effect interaction across modules.
+- For renderer components that depend on `useWorkspaceStore`, seed only the fields the component reads.
+- If a test target already has a fixture pattern, extend it instead of inventing a new one.
+- If a hardening report looks stale, verify the source and existing tests before following it literally.
+- Do not treat `// @vitest-environment ...` comments as the source of truth. The Vitest project config is authoritative.
+- Coverage targets in reports are guidance; the actual gate is `npm run validate` plus the specific test file(s) you add or edit.
+
 ## Reference Repositories
 
 - [node-pty](https://github.com/microsoft/node-pty) — PTY management for Node.js

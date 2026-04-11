@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import EditorTabBar from '../../../src/renderer/components/EditorTabBar';
@@ -526,6 +526,295 @@ describe('EditorTabBar', () => {
 
       const closeBtn = document.querySelector('.editor-tab-close');
       expect(closeBtn).toHaveAttribute('aria-label', 'Close test.ts');
+    });
+  });
+
+  // =========================================================================
+  // Dirty Tab Close Behavior
+  // =========================================================================
+  describe('dirty tab close behavior', () => {
+    it('opens ConfirmCloseDialog when close is clicked on a dirty tab', () => {
+      const closeEditorTab = vi.fn();
+      useWorkspaceStore.setState({
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: true,
+            content: 'const x = 1; // modified',
+            originalContent: 'const x = 1;',
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        setActiveEditorTab: vi.fn(),
+        closeEditorTab,
+        saveEditorFile: vi.fn().mockResolvedValue(true),
+      });
+
+      render(<EditorTabBar />);
+
+      const closeBtn = document.querySelector('.editor-tab-close') as HTMLSpanElement;
+      fireEvent.click(closeBtn);
+
+      // Should NOT close immediately
+      expect(closeEditorTab).not.toHaveBeenCalled();
+      // Should show the dialog
+      expect(screen.getByText('Unsaved Changes')).toBeTruthy();
+      expect(screen.getByText(/Do you want to save changes to "test.ts"/)).toBeTruthy();
+    });
+
+    it('closes tab directly when close is clicked on a clean tab', () => {
+      const closeEditorTab = vi.fn();
+      useWorkspaceStore.setState({
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: false,
+            content: 'const x = 1;',
+            originalContent: 'const x = 1;',
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        setActiveEditorTab: vi.fn(),
+        closeEditorTab,
+      });
+
+      render(<EditorTabBar />);
+
+      const closeBtn = document.querySelector('.editor-tab-close') as HTMLSpanElement;
+      fireEvent.click(closeBtn);
+
+      expect(closeEditorTab).toHaveBeenCalledWith('tab-1');
+      // Dialog should NOT appear
+      expect(document.querySelector('.confirm-close-dialog')).toBeNull();
+    });
+
+    it('"Don\'t Save" option calls closeEditorTab directly', () => {
+      const closeEditorTab = vi.fn();
+      useWorkspaceStore.setState({
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: true,
+            content: 'const x = 1;',
+            originalContent: 'const x = 1;',
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        setActiveEditorTab: vi.fn(),
+        closeEditorTab,
+        saveEditorFile: vi.fn().mockResolvedValue(true),
+      });
+
+      render(<EditorTabBar />);
+
+      const closeBtn = document.querySelector('.editor-tab-close') as HTMLSpanElement;
+      fireEvent.click(closeBtn);
+
+      // Click "Don't Save"
+      const dontSaveBtn = screen.getByText("Don't Save");
+      fireEvent.click(dontSaveBtn);
+
+      expect(closeEditorTab).toHaveBeenCalledWith('tab-1');
+    });
+
+    it('"Save" option calls saveEditorFile then closeEditorTab', async () => {
+      const closeEditorTab = vi.fn();
+      const saveEditorFile = vi.fn().mockImplementation(async (tabId: string) => {
+        // Simulate the real behavior: after save, tab becomes clean
+        const state = useWorkspaceStore.getState();
+        const updatedTabs = state.editorTabs.map((t) =>
+          t.id === tabId ? { ...t, isDirty: false } : t
+        );
+        useWorkspaceStore.setState({ editorTabs: updatedTabs });
+        return true;
+      });
+      useWorkspaceStore.setState({
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: true,
+            content: 'const x = 2;',
+            originalContent: 'const x = 1;',
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        setActiveEditorTab: vi.fn(),
+        closeEditorTab,
+        saveEditorFile,
+      });
+
+      render(<EditorTabBar />);
+
+      const closeBtn = document.querySelector('.editor-tab-close') as HTMLSpanElement;
+      fireEvent.click(closeBtn);
+
+      // Click "Save"
+      const saveBtn = screen.getByText('Save');
+      await act(async () => {
+        fireEvent.click(saveBtn);
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(saveEditorFile).toHaveBeenCalledWith('tab-1');
+      expect(closeEditorTab).toHaveBeenCalledWith('tab-1');
+    });
+
+    it('"Save" option does not close if save returns false', async () => {
+      const closeEditorTab = vi.fn();
+      const saveEditorFile = vi.fn().mockResolvedValue(false);
+      useWorkspaceStore.setState({
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: true,
+            content: 'const x = 2;',
+            originalContent: 'const x = 1;',
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        setActiveEditorTab: vi.fn(),
+        closeEditorTab,
+        saveEditorFile,
+      });
+
+      render(<EditorTabBar />);
+
+      const closeBtn = document.querySelector('.editor-tab-close') as HTMLSpanElement;
+      fireEvent.click(closeBtn);
+
+      // Click "Save"
+      const saveBtn = screen.getByText('Save');
+      await act(async () => {
+        fireEvent.click(saveBtn);
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(saveEditorFile).toHaveBeenCalledWith('tab-1');
+      expect(closeEditorTab).not.toHaveBeenCalled();
+    });
+
+    it('Cancel dismisses the dialog without closing', () => {
+      const closeEditorTab = vi.fn();
+      useWorkspaceStore.setState({
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: true,
+            content: 'const x = 1;',
+            originalContent: 'const x = 1;',
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        setActiveEditorTab: vi.fn(),
+        closeEditorTab,
+        saveEditorFile: vi.fn().mockResolvedValue(true),
+      });
+
+      render(<EditorTabBar />);
+
+      const closeBtn = document.querySelector('.editor-tab-close') as HTMLSpanElement;
+      fireEvent.click(closeBtn);
+
+      // Click "Cancel"
+      const cancelBtn = screen.getByText('Cancel');
+      fireEvent.click(cancelBtn);
+
+      expect(closeEditorTab).not.toHaveBeenCalled();
+      // Dialog should be gone
+      expect(document.querySelector('.confirm-close-dialog')).toBeNull();
+    });
+
+    it('handles multiple tabs with mixed dirty states', () => {
+      const closeEditorTab = vi.fn();
+      useWorkspaceStore.setState({
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/clean.ts',
+            fileName: 'clean.ts',
+            isDirty: false,
+            content: '',
+            originalContent: '',
+          },
+          {
+            id: 'tab-2',
+            filePath: '/workspace/dirty.ts',
+            fileName: 'dirty.ts',
+            isDirty: true,
+            content: 'modified',
+            originalContent: '',
+          },
+        ],
+        activeEditorTabId: 'tab-2',
+        setActiveEditorTab: vi.fn(),
+        closeEditorTab,
+        saveEditorFile: vi.fn().mockResolvedValue(true),
+      });
+
+      render(<EditorTabBar />);
+
+      // Close clean tab — should close immediately
+      const closeButtons = document.querySelectorAll('.editor-tab-close');
+      fireEvent.click(closeButtons[0]);
+      expect(closeEditorTab).toHaveBeenCalledWith('tab-1');
+
+      // Close dirty tab — should show dialog
+      closeEditorTab.mockClear();
+      fireEvent.click(closeButtons[1]);
+      expect(closeEditorTab).not.toHaveBeenCalled();
+      expect(screen.getByText('Unsaved Changes')).toBeTruthy();
+    });
+
+    it('renders tabs in array order', () => {
+      useWorkspaceStore.setState({
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/a.ts',
+            fileName: 'a.ts',
+            isDirty: false,
+            content: '',
+            originalContent: '',
+          },
+          {
+            id: 'tab-2',
+            filePath: '/workspace/b.ts',
+            fileName: 'b.ts',
+            isDirty: false,
+            content: '',
+            originalContent: '',
+          },
+          {
+            id: 'tab-3',
+            filePath: '/workspace/c.ts',
+            fileName: 'c.ts',
+            isDirty: false,
+            content: '',
+            originalContent: '',
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        setActiveEditorTab: vi.fn(),
+        closeEditorTab: vi.fn(),
+      });
+
+      render(<EditorTabBar />);
+
+      const tabs = document.querySelectorAll('.editor-tab');
+      const names = Array.from(tabs).map((t) => t.textContent);
+      expect(names).toEqual(['a.ts', 'b.ts', 'c.ts']);
     });
   });
 });

@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ModelOption } from '../../../src/main/harnessCatalog';
 import {
   InMemoryModelCache,
+  ElectronStoreModelCache,
   DEFAULT_MODEL_CACHE_TTL_MS,
 } from '../../../src/main/modelCache';
 
@@ -113,6 +114,147 @@ describe('InMemoryModelCache', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+});
+
+// =============================================================================
+// ElectronStoreModelCache Tests
+// =============================================================================
+
+// Mock electron-store with a controllable store instance
+const mockStoreInstance = {
+  get: vi.fn(),
+  set: vi.fn(),
+};
+
+vi.mock('electron-store', () => ({
+  default: class {
+    get = mockStoreInstance.get;
+    set = mockStoreInstance.set;
+  },
+}));
+
+describe('ElectronStoreModelCache', () => {
+  beforeEach(() => {
+    mockStoreInstance.get.mockReturnValue({});
+    mockStoreInstance.set.mockReset();
+  });
+
+  describe('get', () => {
+    it('returns null for cache miss (empty store)', () => {
+      mockStoreInstance.get.mockReturnValue({});
+      const cache = new ElectronStoreModelCache();
+      expect(cache.get('unknown', DEFAULT_MODEL_CACHE_TTL_MS)).toBeNull();
+      expect(mockStoreInstance.get).toHaveBeenCalledWith('models');
+    });
+
+    it('returns null when no entry exists for harness', () => {
+      mockStoreInstance.get.mockReturnValue({ other: { models: CODEX_MODELS, cachedAt: Date.now() } });
+      const cache = new ElectronStoreModelCache();
+      expect(cache.get('codex', DEFAULT_MODEL_CACHE_TTL_MS)).toBeNull();
+    });
+
+    it('returns null for expired entry', () => {
+      const past = Date.now() - (DEFAULT_MODEL_CACHE_TTL_MS + 1);
+      mockStoreInstance.get.mockReturnValue({ codex: { models: CODEX_MODELS, cachedAt: past } });
+      const cache = new ElectronStoreModelCache();
+      expect(cache.get('codex', DEFAULT_MODEL_CACHE_TTL_MS)).toBeNull();
+    });
+
+    it('returns cached models within TTL', () => {
+      mockStoreInstance.get.mockReturnValue({ codex: { models: CODEX_MODELS, cachedAt: Date.now() } });
+      const cache = new ElectronStoreModelCache();
+      const result = cache.get('codex', DEFAULT_MODEL_CACHE_TTL_MS);
+      expect(result).toEqual(CODEX_MODELS);
+    });
+
+    it('respects custom TTL shorter than stored age', () => {
+      const past = Date.now() - 2;
+      mockStoreInstance.get.mockReturnValue({ codex: { models: CODEX_MODELS, cachedAt: past } });
+      const cache = new ElectronStoreModelCache();
+      expect(cache.get('codex', 1)).toBeNull();
+    });
+
+    it('returns null when allEntries is undefined', () => {
+      mockStoreInstance.get.mockReturnValue(undefined);
+      const cache = new ElectronStoreModelCache();
+      expect(cache.get('codex', DEFAULT_MODEL_CACHE_TTL_MS)).toBeNull();
+    });
+  });
+
+  describe('set', () => {
+    it('stores models that can be retrieved via get', () => {
+      const entries: Record<string, unknown> = {};
+      mockStoreInstance.get.mockImplementation(() => entries);
+      mockStoreInstance.set.mockImplementation((_key: string, value: Record<string, unknown>) => {
+        Object.assign(entries, value);
+      });
+
+      const cache = new ElectronStoreModelCache();
+      cache.set('codex', CODEX_MODELS);
+      expect(mockStoreInstance.set).toHaveBeenCalledWith('models', expect.objectContaining({
+        codex: expect.objectContaining({ models: CODEX_MODELS }),
+      }));
+      const result = cache.get('codex', DEFAULT_MODEL_CACHE_TTL_MS);
+      expect(result).toEqual(CODEX_MODELS);
+    });
+
+    it('overwrites existing entry for same harness', () => {
+      const newModels: ModelOption[] = [{ id: 'gpt-5', label: 'GPT-5' }];
+      let entries: Record<string, unknown> = {
+        codex: { models: CODEX_MODELS, cachedAt: Date.now() - 1000 },
+      };
+      mockStoreInstance.get.mockImplementation(() => entries);
+      mockStoreInstance.set.mockImplementation((_key: string, value: Record<string, unknown>) => {
+        entries = value;
+      });
+
+      const cache = new ElectronStoreModelCache();
+      cache.set('codex', newModels);
+      const result = cache.get('codex', DEFAULT_MODEL_CACHE_TTL_MS);
+      expect(result).toEqual(newModels);
+    });
+
+    it('stores empty model array', () => {
+      const entries: Record<string, unknown> = {};
+      mockStoreInstance.get.mockImplementation(() => entries);
+      mockStoreInstance.set.mockImplementation((_key: string, value: Record<string, unknown>) => {
+        Object.assign(entries, value);
+      });
+
+      const cache = new ElectronStoreModelCache();
+      cache.set('empty-harness', []);
+      const result = cache.get('empty-harness', DEFAULT_MODEL_CACHE_TTL_MS);
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('multiple harnesses isolation', () => {
+    it('codex and pi entries are independent', () => {
+      let entries: Record<string, unknown> = {};
+      mockStoreInstance.get.mockImplementation(() => entries);
+      mockStoreInstance.set.mockImplementation((_key: string, value: Record<string, unknown>) => {
+        entries = value;
+      });
+
+      const cache = new ElectronStoreModelCache();
+      cache.set('codex', CODEX_MODELS);
+      cache.set('pi', PI_MODELS);
+      expect(cache.get('codex', DEFAULT_MODEL_CACHE_TTL_MS)).toEqual(CODEX_MODELS);
+      expect(cache.get('pi', DEFAULT_MODEL_CACHE_TTL_MS)).toEqual(PI_MODELS);
+    });
+
+    it('expiry of one does not affect the other', () => {
+      const past = Date.now() - (DEFAULT_MODEL_CACHE_TTL_MS + 1);
+      const entries: Record<string, unknown> = {
+        codex: { models: CODEX_MODELS, cachedAt: past },
+        pi: { models: PI_MODELS, cachedAt: Date.now() },
+      };
+      mockStoreInstance.get.mockReturnValue(entries);
+      const cache = new ElectronStoreModelCache();
+      expect(cache.get('codex', DEFAULT_MODEL_CACHE_TTL_MS)).toBeNull();
+      expect(cache.get('pi', DEFAULT_MODEL_CACHE_TTL_MS)).toEqual(PI_MODELS);
     });
   });
 });

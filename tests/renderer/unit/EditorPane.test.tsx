@@ -289,4 +289,226 @@ describe('EditorPane', () => {
       expect(document.querySelector('.editor-content')).toBeTruthy();
     });
   });
+
+  // =========================================================================
+  // External Change Banner
+  // =========================================================================
+  describe('external change banner', () => {
+    it('renders reload banner when hasExternalChange is true', () => {
+      useWorkspaceStore.setState({
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: false },
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: true,
+            content: 'const x = 1;',
+            originalContent: 'const x = 1;',
+            hasExternalChange: true,
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        toggleEditorLock: vi.fn(),
+        reloadEditorTab: vi.fn().mockResolvedValue(undefined),
+        clearEditorTabExternalFlag: vi.fn(),
+      });
+
+      render(<EditorPane />);
+
+      const banner = document.querySelector('.editor-reload-banner');
+      expect(banner).toBeTruthy();
+      expect(screen.getByText('This file has been modified externally.')).toBeTruthy();
+      expect(screen.getByText('Reload')).toBeTruthy();
+      expect(screen.getByText('Keep Mine')).toBeTruthy();
+    });
+
+    it('calls reloadEditorTab when Reload button is clicked', () => {
+      const reloadEditorTab = vi.fn().mockResolvedValue(undefined);
+      useWorkspaceStore.setState({
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: false },
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: true,
+            content: 'const x = 1;',
+            originalContent: 'const x = 1;',
+            hasExternalChange: true,
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        toggleEditorLock: vi.fn(),
+        reloadEditorTab,
+        clearEditorTabExternalFlag: vi.fn(),
+      });
+
+      render(<EditorPane />);
+
+      const reloadBtn = screen.getByText('Reload');
+      reloadBtn.click();
+
+      expect(reloadEditorTab).toHaveBeenCalledWith('tab-1');
+    });
+
+    it('calls clearEditorTabExternalFlag when Keep Mine is clicked', () => {
+      const clearEditorTabExternalFlag = vi.fn();
+      useWorkspaceStore.setState({
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: false },
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: true,
+            content: 'const x = 1;',
+            originalContent: 'const x = 1;',
+            hasExternalChange: true,
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        toggleEditorLock: vi.fn(),
+        reloadEditorTab: vi.fn().mockResolvedValue(undefined),
+        clearEditorTabExternalFlag,
+      });
+
+      render(<EditorPane />);
+
+      const keepMineBtn = screen.getByText('Keep Mine');
+      keepMineBtn.click();
+
+      expect(clearEditorTabExternalFlag).toHaveBeenCalledWith('tab-1');
+    });
+
+    it('does not show banner when hasExternalChange is false', () => {
+      useWorkspaceStore.setState({
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: false },
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: false,
+            content: 'const x = 1;',
+            originalContent: 'const x = 1;',
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        toggleEditorLock: vi.fn(),
+      });
+
+      render(<EditorPane />);
+
+      const banner = document.querySelector('.editor-reload-banner');
+      expect(banner).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // Deleted File Banner
+  // =========================================================================
+  describe('deleted file banner', () => {
+    it('renders danger banner when isDeleted is true', () => {
+      useWorkspaceStore.setState({
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: false },
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: false,
+            content: 'const x = 1;',
+            originalContent: 'const x = 1;',
+            isDeleted: true,
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        toggleEditorLock: vi.fn(),
+        closeEditorTab: vi.fn(),
+        saveEditorFile: vi.fn().mockResolvedValue(true),
+      });
+
+      render(<EditorPane />);
+
+      const banner = document.querySelector('.editor-reload-banner--danger');
+      expect(banner).toBeTruthy();
+      expect(screen.getByText('This file has been deleted.')).toBeTruthy();
+      expect(screen.getByText('Close')).toBeTruthy();
+      expect(screen.getByText('Save')).toBeTruthy();
+    });
+
+    it('calls closeEditorTab when Close button is clicked on deleted banner', () => {
+      const closeEditorTab = vi.fn();
+      useWorkspaceStore.setState({
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: false },
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: false,
+            content: 'const x = 1;',
+            originalContent: 'const x = 1;',
+            isDeleted: true,
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        toggleEditorLock: vi.fn(),
+        closeEditorTab,
+        saveEditorFile: vi.fn().mockResolvedValue(true),
+      });
+
+      render(<EditorPane />);
+
+      // There are two buttons with "Close" text — the pane close button and the banner close
+      // The banner buttons are inside .editor-reload-banner--danger
+      const banner = document.querySelector('.editor-reload-banner--danger');
+      const closeBtn = Array.from(banner!.querySelectorAll('button')).find(
+        (btn) => btn.textContent === 'Close'
+      );
+      closeBtn!.click();
+
+      expect(closeEditorTab).toHaveBeenCalledWith('tab-1');
+    });
+
+    it('calls saveEditorFile when Save button is clicked on deleted banner', () => {
+      const saveEditorFile = vi.fn().mockResolvedValue(true);
+      useWorkspaceStore.setState({
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: false },
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: false,
+            content: 'const x = 1;',
+            originalContent: 'const x = 1;',
+            isDeleted: true,
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        toggleEditorLock: vi.fn(),
+        closeEditorTab: vi.fn(),
+        saveEditorFile,
+      });
+
+      render(<EditorPane />);
+
+      const banner = document.querySelector('.editor-reload-banner--danger');
+      const saveBtn = Array.from(banner!.querySelectorAll('button')).find(
+        (btn) => btn.textContent === 'Save'
+      );
+      saveBtn!.click();
+
+      expect(saveEditorFile).toHaveBeenCalledWith('tab-1');
+    });
+  });
 });
