@@ -102,7 +102,7 @@ describe('PROOF: Nested file path copy bug', () => {
       return { success: false, entries: [], errorCode: 'invalid-path' };
     });
     
-    const writeClipboard = vi.fn().mockResolvedValue(undefined);
+    const writeClipboard = vi.fn().mockResolvedValue({ success: true });
     
     setActiveWorkspace({ workspacePath });
     installElectronApiMock({
@@ -178,7 +178,7 @@ describe('PROOF: Nested file path copy bug', () => {
   });
 
   it('PROOF: verifies root-level file copy works correctly', async () => {
-    const writeClipboard = vi.fn().mockResolvedValue(undefined);
+    const writeClipboard = vi.fn().mockResolvedValue({ success: true });
     
     const workspacePath = '/workspace';
     

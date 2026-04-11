@@ -7,11 +7,11 @@
  * Coverage areas:
  * - Registration of all terminal IPC channels
  * - GET_TERMINAL_BUFFER returns empty string for missing terminal
- * - WRITE_TERMINAL returns undefined for missing terminal (no-op, not a crash)
- * - RESIZE_TERMINAL returns undefined for missing terminal (no-op, not a crash)
- * - KILL_TERMINAL returns undefined for missing terminal (no-op, not a crash)
+ * - WRITE_TERMINAL returns a defined result for missing terminal (no-op)
+ * - RESIZE_TERMINAL returns a defined result for missing terminal (no-op)
+ * - KILL_TERMINAL returns a defined result for missing terminal (no-op)
  * - TERMINAL_CLEANUP_WORKSPACE returns killed count for missing/invalid IDs
- * - WRITE_CLIPBOARD calls clipboard.writeText and returns undefined
+ * - WRITE_CLIPBOARD calls clipboard.writeText and returns a defined result
  * - SPAWN_TERMINAL validates workspace path and tolerates null main window
  */
 
@@ -214,7 +214,7 @@ describe('terminal IPC channel constants', () => {
  * Terminal IPC — Error-Path Tests
  *
  * Verifies every non-spawn terminal handler returns a defined value (not
- * undefined or a thrown error) for missing-terminal and null-payload cases.
+ * undefined or a thrown error) for missing-terminal and malformed-payload cases.
  */
 
 describe('terminalIpc — error-path: handler returns', () => {
@@ -273,23 +273,22 @@ describe('terminalIpc — error-path: handler returns', () => {
 
     const handler = mockIpcMain.handle.mock.calls.find(
       (call) => call[0] === 'write-terminal'
-    )?.[1] as (_: unknown, payload: { id: string; data: string }) => void;
+    )?.[1] as (_: unknown, payload: { id: string; data: string }) => { success: boolean; error?: string };
 
     const result = await handler(null, { id: 'nonexistent', data: 'hello' });
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ success: true });
   });
 
-  test('WRITE_TERMINAL does not throw for null payload (no-op)', async () => {
+  test('WRITE_TERMINAL does not throw for null payload (returns error result)', async () => {
     const { opts } = createMockDeps();
     registerTerminalIpc(opts);
 
     const handler = mockIpcMain.handle.mock.calls.find(
       (call) => call[0] === 'write-terminal'
-    )?.[1] as (_: unknown, payload: { id: string; data: string } | null) => void;
+    )?.[1] as (_: unknown, payload: { id: string; data: string } | null) => { success: boolean; error?: string };
 
-    // After the production fix, null payload is handled gracefully (no throw)
     const result = await handler(null, null);
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ success: false, error: 'Invalid payload' });
   });
 
   test('WRITE_TERMINAL calls pty.write when terminal exists', async () => {
@@ -300,10 +299,10 @@ describe('terminalIpc — error-path: handler returns', () => {
 
     const handler = mockIpcMain.handle.mock.calls.find(
       (call) => call[0] === 'write-terminal'
-    )?.[1] as (_: unknown, payload: { id: string; data: string } | null) => void;
+    )?.[1] as (_: unknown, payload: { id: string; data: string } | null) => { success: boolean; error?: string };
 
     const result = await handler(null, { id: 'existing-term', data: 'hello world' });
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ success: true });
     expect(mockPty.write).toHaveBeenCalledWith('hello world');
   });
 
@@ -315,10 +314,10 @@ describe('terminalIpc — error-path: handler returns', () => {
 
     const handler = mockIpcMain.handle.mock.calls.find(
       (call) => call[0] === 'resize-terminal'
-    )?.[1] as (_: unknown, payload: { id: string; cols: number; rows: number }) => void;
+    )?.[1] as (_: unknown, payload: { id: string; cols: number; rows: number }) => { success: boolean; error?: string };
 
     const result = await handler(null, { id: 'resizable-term', cols: 120, rows: 40 });
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ success: true });
     expect(mockPty.resize).toHaveBeenCalledWith(120, 40);
   });
 
@@ -330,10 +329,10 @@ describe('terminalIpc — error-path: handler returns', () => {
 
     const handler = mockIpcMain.handle.mock.calls.find(
       (call) => call[0] === 'kill-terminal'
-    )?.[1] as (_: unknown, id: string) => void;
+    )?.[1] as (_: unknown, id: string) => { success: boolean; error?: string };
 
     const result = await handler(null, 'killable-term');
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ success: true });
     expect(mockPty.kill).toHaveBeenCalledTimes(1);
     expect(terminals.has('killable-term')).toBe(false);
   });
@@ -344,10 +343,22 @@ describe('terminalIpc — error-path: handler returns', () => {
 
     const handler = mockIpcMain.handle.mock.calls.find(
       (call) => call[0] === 'resize-terminal'
-    )?.[1] as (_: unknown, payload: { id: string; cols: number; rows: number }) => void;
+    )?.[1] as (_: unknown, payload: { id: string; cols: number; rows: number }) => { success: boolean; error?: string };
 
     const result = await handler(null, { id: 'nonexistent', cols: 80, rows: 24 });
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ success: true });
+  });
+
+  test('RESIZE_TERMINAL does not throw for null payload (returns error result)', async () => {
+    const { opts } = createMockDeps();
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'resize-terminal'
+    )?.[1] as (_: unknown, payload: unknown) => { success: boolean; error?: string };
+
+    const result = await handler(null, null);
+    expect(result).toEqual({ success: false, error: 'Invalid payload' });
   });
 
   test('KILL_TERMINAL does not throw for missing terminal (no-op)', async () => {
@@ -356,10 +367,10 @@ describe('terminalIpc — error-path: handler returns', () => {
 
     const handler = mockIpcMain.handle.mock.calls.find(
       (call) => call[0] === 'kill-terminal'
-    )?.[1] as (_: unknown, id: string) => void;
+    )?.[1] as (_: unknown, id: string) => { success: boolean; error?: string };
 
     const result = await handler(null, 'nonexistent-term');
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ success: true });
   });
 
   test('TERMINAL_CLEANUP_WORKSPACE returns killed count (0) for empty ID list', async () => {
@@ -410,11 +421,11 @@ describe('terminalIpc — error-path: handler returns', () => {
 
     const handler = mockIpcMain.handle.mock.calls.find(
       (call) => call[0] === 'write-clipboard'
-    )?.[1] as (_: unknown, text: string) => void;
+    )?.[1] as (_: unknown, text: string) => { success: boolean; error?: string };
 
     const result = await handler(null, 'clipboard text');
     expect(mockClipboardWriteText).toHaveBeenCalledWith('clipboard text');
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ success: true });
   });
 
   test('WRITE_CLIPBOARD does not throw for empty string', async () => {
@@ -423,11 +434,11 @@ describe('terminalIpc — error-path: handler returns', () => {
 
     const handler = mockIpcMain.handle.mock.calls.find(
       (call) => call[0] === 'write-clipboard'
-    )?.[1] as (_: unknown, text: string) => void;
+    )?.[1] as (_: unknown, text: string) => { success: boolean; error?: string };
 
     const result = await handler(null, '');
     expect(mockClipboardWriteText).toHaveBeenCalledWith('');
-    expect(result).toBeUndefined();
+    expect(result).toEqual({ success: true });
   });
 
   test('SPAWN_TERMINAL does not throw when getSafeWorkspacePath returns empty string', async () => {

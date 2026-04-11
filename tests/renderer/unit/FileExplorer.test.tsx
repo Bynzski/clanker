@@ -643,7 +643,7 @@ describe('S8: Inline create/rename UI', () => {
 
   it('clicking "Copy Relative Path" copies a workspace-relative path', async () => {
     setActiveWorkspace({ workspacePath: '/workspace' });
-    const writeClipboard = vi.fn().mockResolvedValue(undefined);
+    const writeClipboard = vi.fn().mockResolvedValue({ success: true });
     installElectronApiMock({
       fileListDirectory: vi.fn().mockResolvedValue({
         success: true,

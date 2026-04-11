@@ -5,6 +5,10 @@ import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import GitButton from '../../../src/renderer/components/GitButton';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 
+const componentMocks = vi.hoisted(() => ({
+  gitBranchesLastProps: null as null | Record<string, unknown>,
+}));
+
 // Mock electron API
 const mockGitGetBranchState = vi.fn();
 const mockGitGetOperationState = vi.fn();
@@ -78,24 +82,78 @@ const mockElectronAPI = {
 
 // Mock child components
 vi.mock('../../../src/renderer/components/CommitDialog', () => ({
-  default: ({ isOpen }: { isOpen: boolean }) =>
-    isOpen ? <div data-testid="commit-dialog">Commit Dialog</div> : null,
+  default: ({
+    isOpen,
+    onCommit,
+    onStageAll,
+    onUnstage,
+    onUnstageAll,
+  }: {
+    isOpen: boolean;
+    onCommit: (message: string) => Promise<unknown>;
+    onStageAll: () => Promise<unknown>;
+    onUnstage: (path: string) => Promise<unknown>;
+    onUnstageAll: () => Promise<unknown>;
+  }) =>
+    isOpen ? (
+      <div data-testid="commit-dialog">
+        <button type="button" onClick={() => void onCommit('feat: test commit')}>commit</button>
+        <button type="button" onClick={() => void onStageAll()}>stage-all</button>
+        <button type="button" onClick={() => void onUnstage('src/index.ts')}>unstage-one</button>
+        <button type="button" onClick={() => void onUnstageAll()}>unstage-all</button>
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../../src/renderer/components/git/GitBranchesSection', () => ({
-  GitBranchesSection: () => <div data-testid="git-branches-section">Branches</div>,
+  GitBranchesSection: (props: Record<string, unknown>) => {
+    componentMocks.gitBranchesLastProps = props;
+    return (
+      <div data-testid="git-branches-section">
+        Branches
+        <button type="button" onClick={() => (props.onRefreshContext as (() => void) | undefined)?.()}>refresh-context</button>
+      </div>
+    );
+  },
 }));
 
 vi.mock('../../../src/renderer/components/git/GitStashSection', () => ({
-  GitStashSection: () => <div data-testid="git-stash-section">Stashes</div>,
+  GitStashSection: (props: Record<string, unknown>) => (
+    <div data-testid="git-stash-section">
+      Stashes
+      <button type="button" onClick={() => (props.onStash as (() => void) | undefined)?.()}>stash</button>
+      <button type="button" onClick={() => (props.onApplyStash as ((ref: string) => void) | undefined)?.('stash@{0}')}>apply</button>
+      <button type="button" onClick={() => (props.onPopStash as ((ref: string) => void) | undefined)?.('stash@{0}')}>pop</button>
+      <button type="button" onClick={() => (props.onDropStash as ((ref: string) => void) | undefined)?.('stash@{0}')}>drop</button>
+      <button type="button" onClick={() => (props.onClearStashes as (() => void) | undefined)?.()}>clear</button>
+    </div>
+  ),
 }));
 
 vi.mock('../../../src/renderer/components/git/GitMergeSection', () => ({
-  GitMergeSection: () => <div data-testid="git-merge-section">Merge</div>,
+  GitMergeSection: (props: Record<string, unknown>) => (
+    <div data-testid="git-merge-section">
+      Merge
+      <button type="button" onClick={() => (props.onSetMergeTargetBranch as ((b: string) => void) | undefined)?.('develop')}>set-target</button>
+      <button type="button" onClick={() => (props.onMergeBranch as (() => void) | undefined)?.()}>merge</button>
+      <button type="button" onClick={() => (props.onAbortOperation as (() => void) | undefined)?.()}>abort</button>
+    </div>
+  ),
 }));
 
 vi.mock('../../../src/renderer/components/git/GitHistorySection', () => ({
-  GitHistorySection: () => <div data-testid="git-history-section">History</div>,
+  GitHistorySection: (props: Record<string, unknown>) => (
+    <div data-testid="git-history-section">
+      History
+      <button type="button" onClick={() => (props.onSelectWorkingDiff as ((mode: string) => void) | undefined)?.('working')}>diff-working</button>
+      <button
+        type="button"
+        onClick={() => (props.onSelectCommitDiff as ((commit: { hash: string }) => void) | undefined)?.({ hash: 'abc123' })}
+      >
+        diff-commit
+      </button>
+    </div>
+  ),
 }));
 
 describe('GitButton', () => {
@@ -1727,6 +1785,219 @@ describe('GitButton', () => {
       });
 
       expect(mockGitPush).toHaveBeenCalledWith('/repo', 'origin', 'main', false, true);
+    });
+  });
+
+  describe('coverage follow-ups', () => {
+    it('shows status error message in init menu for git-not-found', () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: { success: boolean; errorCode?: string }) => void) => {
+        callback({ success: false, errorCode: 'git-not-found' });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/workspace" />);
+
+      fireEvent.click(screen.getByText('Init Git'));
+      expect(screen.getByText('Git is not installed or not found on PATH')).toBeTruthy();
+    });
+
+    it('renders upstream divergence label (ahead/behind) in repo menu', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [{ path: 'a.ts', status: 'modified' }],
+          upstream: 'origin/main',
+          ahead: 2,
+          behind: 1,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      render(<GitButton workspacePath="/repo" />);
+
+      fireEvent.click(document.querySelector('.git-btn')!);
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(screen.getByText('origin/main')).toBeTruthy();
+      expect(screen.getByText('↑2 ↓1')).toBeTruthy();
+    });
+
+    it('loads VCS context via GitBranchesSection refresh callback', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [],
+          upstream: 'origin/main',
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      mockGitGetRemotes.mockResolvedValue({
+        success: true,
+        remotes: [{ name: 'origin', fetchUrl: 'git@github.com:o/r.git', pushUrl: 'git@github.com:o/r.git' }],
+        provider: 'github',
+      });
+
+      mockVcsGetContext.mockResolvedValueOnce({
+        success: true,
+        provider: { provider: 'github', baseUrl: 'https://github.com', owner: 'o', repo: 'r', defaultBranch: 'main' },
+        pullRequest: { exists: false },
+        deepLinks: [],
+      });
+
+      render(<GitButton workspacePath="/repo" />);
+      fireEvent.click(document.querySelector('.git-btn')!);
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('refresh-context'));
+      });
+
+      expect(componentMocks.gitBranchesLastProps).toBeTruthy();
+      expect((componentMocks.gitBranchesLastProps as Record<string, unknown>).provider).toBeTruthy();
+    });
+
+    it('executes stash/merge/diff handlers via mocked section callbacks', async () => {
+      mockConfirm.mockReturnValue(true);
+
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [],
+          upstream: 'origin/main',
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      mockGitMergeBranch.mockResolvedValueOnce({ success: false, error: 'merge failed' });
+      mockGitAbortOperation.mockResolvedValueOnce({ success: true });
+      mockGitStash.mockResolvedValueOnce({ success: false, error: 'stash failed' });
+      mockGitApplyStash.mockResolvedValueOnce({ success: true });
+      mockGitPopStash.mockRejectedValueOnce(new Error('pop failed'));
+      mockGitDropStash.mockResolvedValueOnce({ success: true });
+      mockGitClearStashes.mockResolvedValueOnce({ success: true });
+      mockGitGetDiff.mockResolvedValue({ success: true, output: '' });
+
+      render(<GitButton workspacePath="/repo" />);
+      fireEvent.click(document.querySelector('.git-btn')!);
+
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('diff-working'));
+        fireEvent.click(screen.getByText('diff-commit'));
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('set-target'));
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('merge'));
+        fireEvent.click(screen.getByText('abort'));
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('stash'));
+        fireEvent.click(screen.getByText('apply'));
+        fireEvent.click(screen.getByText('pop'));
+        fireEvent.click(screen.getByText('drop'));
+        fireEvent.click(screen.getByText('clear'));
+      });
+
+      expect(mockGitMergeBranch).toHaveBeenCalledWith('/repo', 'develop');
+      expect(mockGitAbortOperation).toHaveBeenCalledWith('/repo');
+      expect(mockGitStash).toHaveBeenCalledWith('/repo', expect.any(String), expect.any(Boolean));
+      expect(mockGitApplyStash).toHaveBeenCalledWith('/repo', 'stash@{0}');
+      expect(mockGitPopStash).toHaveBeenCalledWith('/repo', 'stash@{0}');
+      expect(mockGitDropStash).toHaveBeenCalledWith('/repo', 'stash@{0}');
+      expect(mockGitClearStashes).toHaveBeenCalledWith('/repo');
+      expect(mockGitGetDiff).toHaveBeenCalled();
+    });
+
+    it('opens CommitDialog and exercises commit/stage/unstage handlers', async () => {
+      mockOnGitStatusUpdate.mockImplementation(((callback: (status: {
+        success: boolean; isRepo: boolean; currentBranch: string; isDetached: boolean;
+        changes: unknown[]; upstream: string | null; ahead: number; behind: number;
+      }) => void) => {
+        callback({
+          success: true,
+          isRepo: true,
+          currentBranch: 'main',
+          isDetached: false,
+          changes: [{ path: 'src/index.ts', status: 'modified' }],
+          upstream: 'origin/main',
+          ahead: 0,
+          behind: 0,
+        });
+        return vi.fn();
+      }) as unknown as typeof mockOnGitStatusUpdate);
+
+      mockGitRefresh.mockResolvedValueOnce({
+        success: true,
+        isRepo: true,
+        currentBranch: 'main',
+        isDetached: false,
+        changes: [],
+        upstream: 'origin/main',
+        ahead: 0,
+        behind: 0,
+      });
+
+      render(<GitButton workspacePath="/repo" />);
+      fireEvent.click(document.querySelector('.git-btn')!);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /commit changes/i }));
+        await Promise.resolve();
+      });
+      expect(screen.getByTestId('commit-dialog')).toBeTruthy();
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('stage-all'));
+      });
+      expect(mockGitStage).toHaveBeenCalledWith('/repo');
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('commit'));
+      });
+      expect(mockGitCommit).toHaveBeenCalledWith('/repo', 'feat: test commit');
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('unstage-one'));
+      });
+      expect(mockGitUnstage).toHaveBeenCalledWith('/repo', ['src/index.ts']);
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('unstage-all'));
+      });
+      expect(mockGitUnstage).toHaveBeenCalledWith('/repo');
     });
   });
 });

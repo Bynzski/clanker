@@ -71,6 +71,58 @@ export abstract class BaseProvider implements IVcsProvider {
   abstract readonly type: VcsProvider;
   abstract readonly apiBaseUrl: string;
 
+  private static readonly DEFAULT_TIMEOUT_MS = 12_000;
+  private static readonly DEFAULT_MAX_RETRIES = 2;
+  private static readonly DEFAULT_BACKOFF_BASE_MS = 250;
+  private static readonly DEFAULT_BACKOFF_MAX_MS = 2_000;
+
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    timeoutMs: number
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  private async fetchWithRetry(
+    url: string,
+    init: RequestInit,
+    options?: { timeoutMs?: number; maxRetries?: number }
+  ): Promise<Response> {
+    const timeoutMs = options?.timeoutMs ?? BaseProvider.DEFAULT_TIMEOUT_MS;
+    const maxRetries = options?.maxRetries ?? BaseProvider.DEFAULT_MAX_RETRIES;
+
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.fetchWithTimeout(url, init, timeoutMs);
+      } catch (error: unknown) {
+        lastError = error;
+        const shouldRetry = attempt < maxRetries;
+        if (!shouldRetry) {
+          throw error;
+        }
+
+        const exponential = BaseProvider.DEFAULT_BACKOFF_BASE_MS * Math.pow(2, attempt);
+        const jitter = Math.floor(Math.random() * 100);
+        const delay = Math.min(BaseProvider.DEFAULT_BACKOFF_MAX_MS, exponential + jitter);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    // Unreachable, but TypeScript doesn't know that.
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+    throw new Error('Network error');
+  }
+
   abstract getPullRequestForBranch(
     context: ProviderContext,
     branch: string,
@@ -107,7 +159,7 @@ export abstract class BaseProvider implements IVcsProvider {
     token: string
   ): Promise<{ success: true; data: T } | { success: false; error: string }> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}${endpoint}`, {
+      const response = await this.fetchWithRetry(`${this.apiBaseUrl}${endpoint}`, {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
@@ -128,7 +180,9 @@ export abstract class BaseProvider implements IVcsProvider {
       const data = await response.json() as T;
       return { success: true, data };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Network error';
+      const message = error instanceof Error
+        ? (error.name === 'AbortError' ? 'Request timed out' : error.message)
+        : 'Network error';
       return { success: false, error: message };
     }
   }
@@ -140,7 +194,7 @@ export abstract class BaseProvider implements IVcsProvider {
     endpoint: string
   ): Promise<{ success: true; data: T } | { success: false; error: string }> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}${endpoint}`, {
+      const response = await this.fetchWithRetry(`${this.apiBaseUrl}${endpoint}`, {
         headers: {
           Accept: 'application/json',
           'X-GitHub-Api-Version': '2022-11-28',
@@ -154,7 +208,9 @@ export abstract class BaseProvider implements IVcsProvider {
       const data = await response.json() as T;
       return { success: true, data };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Network error';
+      const message = error instanceof Error
+        ? (error.name === 'AbortError' ? 'Request timed out' : error.message)
+        : 'Network error';
       return { success: false, error: message };
     }
   }

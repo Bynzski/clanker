@@ -16,7 +16,7 @@ describe('TitleBar', () => {
         getAvailableHarnessOptions: vi.fn().mockResolvedValue({}),
         getModels: vi.fn().mockResolvedValue([]),
         getSettings: vi.fn().mockResolvedValue({}),
-        killTerminal: vi.fn().mockResolvedValue(undefined),
+        killTerminal: vi.fn().mockResolvedValue({ success: true }),
       },
     });
   });
