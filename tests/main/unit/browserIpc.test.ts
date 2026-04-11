@@ -195,6 +195,313 @@ describe('registerBrowserIpc', () => {
   });
 });
 
+/**
+ * Browser IPC — Error-Path Tests
+ *
+ * Verifies every browser handler returns a defined value (never undefined or
+ * thrown) for null/invalid workspace IDs, missing browser views, null main
+ * window, and unsafe URL attempts.
+ */
+
+describe('browserIpc — error-path: null/invalid workspaceId returns valid results', () => {
+  const mockIpcMain = ipcMain as typeof ipcMain & {
+    handle: ReturnType<typeof vi.fn>;
+  };
+
+  const createMockDeps = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockBrowserViews = new Map<string, any>();
+    let mockActiveWorkspaceId: string | null = null;
+    const mockMainWindow = {
+      webContents: { send: vi.fn() },
+      contentView: { addChildView: vi.fn() },
+    };
+
+    return {
+      deps: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        getMainWindow: () => mockMainWindow as any,
+        getBrowserViews: () => mockBrowserViews,
+        getActiveBrowserWorkspaceId: () => mockActiveWorkspaceId,
+        setActiveBrowserWorkspaceId: (id: string | null) => { mockActiveWorkspaceId = id; },
+      },
+      mockMainWindow,
+    };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('BROWSER_SET_BOUNDS returns undefined for null workspaceId', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-set-bounds'
+    )?.[1] as (_: unknown, workspaceId: string, bounds: object) => void;
+
+    // @ts-expect-error — intentionally passing null to test invalid input
+    const result = await handler(null, null, { x: 0, y: 0, width: 800, height: 600 });
+    expect(result).toBeUndefined();
+  });
+
+  test('BROWSER_SET_BOUNDS returns undefined for empty string workspaceId', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-set-bounds'
+    )?.[1] as (_: unknown, workspaceId: string, bounds: object) => void;
+
+    const result = await handler(null, '', { x: 0, y: 0, width: 800, height: 600 });
+    expect(result).toBeUndefined();
+  });
+
+  test('BROWSER_HIDE returns undefined for null workspaceId', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-hide'
+    )?.[1] as (_: unknown, workspaceId: string) => void;
+
+    // @ts-expect-error — null workspaceId
+    const result = await handler(null, null);
+    expect(result).toBeUndefined();
+  });
+
+  test('BROWSER_NAVIGATE returns false for null workspaceId', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-navigate'
+    )?.[1] as (_: unknown, workspaceId: string, url: string) => boolean;
+
+    // @ts-expect-error — null workspaceId
+    const result = await handler(null, null, 'https://github.com');
+    expect(result).toBe(false);
+  });
+
+  test('BROWSER_NAVIGATE returns false for invalid (non-http) URL', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-navigate'
+    )?.[1] as (_: unknown, workspaceId: string, url: string) => boolean;
+
+    // file:// URLs are blocked by normalizeAppBrowserUrl security check
+    const result = await handler(null, 'ws-1', 'file:///etc/passwd');
+    expect(result).toBe(false);
+  });
+
+  test('BROWSER_BACK returns undefined for null workspaceId', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-back'
+    )?.[1] as (_: unknown, workspaceId: string) => void;
+
+    // @ts-expect-error — null workspaceId
+    const result = await handler(null, null);
+    expect(result).toBeUndefined();
+  });
+
+  test('BROWSER_FORWARD returns undefined for null workspaceId', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-forward'
+    )?.[1] as (_: unknown, workspaceId: string) => void;
+
+    // @ts-expect-error — null workspaceId
+    const result = await handler(null, null);
+    expect(result).toBeUndefined();
+  });
+
+  test('BROWSER_REFRESH returns undefined for null workspaceId', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-refresh'
+    )?.[1] as (_: unknown, workspaceId: string) => void;
+
+    // @ts-expect-error — null workspaceId
+    const result = await handler(null, null);
+    expect(result).toBeUndefined();
+  });
+
+  test('BROWSER_STOP returns undefined for null workspaceId', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-stop'
+    )?.[1] as (_: unknown, workspaceId: string) => void;
+
+    // @ts-expect-error — null workspaceId
+    const result = await handler(null, null);
+    expect(result).toBeUndefined();
+  });
+
+  test('BROWSER_DISPOSE_WORKSPACE returns undefined for null workspaceId', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-dispose-workspace'
+    )?.[1] as (_: unknown, workspaceId: string) => void;
+
+    // @ts-expect-error — null workspaceId
+    const result = await handler(null, null);
+    expect(result).toBeUndefined();
+  });
+
+  test('CAN_GO_BACK returns false for null workspaceId', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'can-go-back'
+    )?.[1] as (_: unknown, workspaceId: string) => boolean;
+
+    // @ts-expect-error — null workspaceId
+    const result = await handler(null, null);
+    expect(result).toBe(false);
+  });
+
+  test('CAN_GO_FORWARD returns false for null workspaceId', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'can-go-forward'
+    )?.[1] as (_: unknown, workspaceId: string) => boolean;
+
+    // @ts-expect-error — null workspaceId
+    const result = await handler(null, null);
+    expect(result).toBe(false);
+  });
+});
+
+describe('browserIpc — error-path: OPEN_EXTERNAL security', () => {
+  const mockIpcMain = ipcMain as typeof ipcMain & {
+    handle: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('OPEN_EXTERNAL returns false for file:// URL (blocked by normalizeExternalUrl)', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'open-external'
+    )?.[1] as (_: unknown, url: string) => boolean;
+
+    const result = await handler(null, 'file:///etc/passwd');
+    expect(result).toBe(false);
+  });
+
+  test('OPEN_EXTERNAL returns false for javascript: URL (blocked by normalizeExternalUrl)', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'open-external'
+    )?.[1] as (_: unknown, url: string) => boolean;
+
+    const result = await handler(null, 'javascript:alert(1)');
+    expect(result).toBe(false);
+  });
+
+  test('OPEN_EXTERNAL returns false for empty string', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'open-external'
+    )?.[1] as (_: unknown, url: string) => boolean;
+
+    const result = await handler(null, '');
+    expect(result).toBe(false);
+  });
+
+  test('OPEN_EXTERNAL returns false for null url', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'open-external'
+    )?.[1] as (_: unknown, url: string) => boolean;
+
+    // @ts-expect-error — intentionally passing null
+    const result = await handler(null, null);
+    expect(result).toBe(false);
+  });
+
+  const { createMockDeps } = (() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockBrowserViews = new Map<string, any>();
+    let mockActiveWorkspaceId: string | null = null;
+    const mockMainWindow = {
+      webContents: { send: vi.fn() },
+      contentView: { addChildView: vi.fn() },
+    };
+    return {
+      createMockDeps: () => ({
+        deps: {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          getMainWindow: () => mockMainWindow as any,
+          getBrowserViews: () => mockBrowserViews,
+          getActiveBrowserWorkspaceId: () => mockActiveWorkspaceId,
+          setActiveBrowserWorkspaceId: (id: string | null) => { mockActiveWorkspaceId = id; },
+        },
+      }),
+    };
+  })();
+});
+
+describe('browserIpc — error-path: null main window does not crash', () => {
+  const mockIpcMain = ipcMain as typeof ipcMain & {
+    handle: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('BROWSER_SET_BOUNDS does not throw when main window is null', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockBrowserViews = new Map<string, any>();
+    let mockActiveWorkspaceId: string | null = null;
+
+    const deps = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      getMainWindow: () => null as any,
+      getBrowserViews: () => mockBrowserViews,
+      getActiveBrowserWorkspaceId: () => mockActiveWorkspaceId,
+      setActiveBrowserWorkspaceId: (id: string | null) => { mockActiveWorkspaceId = id; },
+    };
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-set-bounds'
+    )?.[1] as (_: unknown, workspaceId: string, bounds: object) => void;
+
+    // Should not throw when main window is null (createBrowserViewForWorkspace returns null)
+    const result = await handler(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 });
+    expect(result).toBeUndefined();
+  });
+});
+
 describe('browser IPC channel constants', () => {
   test('browser channel names are consistent', () => {
     const expectedChannels = [

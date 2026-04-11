@@ -185,10 +185,13 @@ export class FileWatcherService {
 
   /** Internal: handle a raw change event from fs.watch. */
   private handleChange(filePath: string): void {
+    // Capture time once so the suppression check and any later time comparisons
+    // (e.g., via fake timers in tests) are consistent.
+    const now = Date.now();
     const writtenTimestamp = this.recentlyWritten.get(filePath);
     if (writtenTimestamp !== undefined) {
       this.recentlyWritten.delete(filePath);
-      if (Date.now() - writtenTimestamp < SELF_WRITE_SUPPRESSION_MS) {
+      if (now - writtenTimestamp < SELF_WRITE_SUPPRESSION_MS) {
         return;
       }
     }

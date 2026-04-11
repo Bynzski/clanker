@@ -154,7 +154,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     return terminals.get(id)?.buffer ?? '';
   });
 
-  ipcMain.handle(WRITE_TERMINAL, (_, { id, data }: { id: string; data: string }) => {
+  ipcMain.handle(WRITE_TERMINAL, (_, payload: { id: string; data: string } | null) => {
+    if (!payload) return;
+    const { id, data } = payload;
     const terminals = getTerminals();
     const terminal = terminals.get(id);
     if (terminal) {

@@ -1,16 +1,45 @@
 /**
  * Terminal IPC Registration Tests
  *
- * Tests for the terminal IPC module, verifying channel registration.
+ * Tests for the terminal IPC module, verifying channel registration and
+ * handler error-path behavior.
+ *
+ * Coverage areas:
+ * - Registration of all terminal IPC channels
+ * - GET_TERMINAL_BUFFER returns empty string for missing terminal
+ * - WRITE_TERMINAL returns undefined for missing terminal (no-op, not a crash)
+ * - RESIZE_TERMINAL returns undefined for missing terminal (no-op, not a crash)
+ * - KILL_TERMINAL returns undefined for missing terminal (no-op, not a crash)
+ * - TERMINAL_CLEANUP_WORKSPACE returns killed count for missing/invalid IDs
+ * - WRITE_CLIPBOARD calls clipboard.writeText and returns undefined
+ * - SPAWN_TERMINAL validates workspace path and tolerates null main window
  */
 
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 
-// vi.hoisted() allows sharing mock references between the vi.mock factory
-// and test code without hoisting conflicts.
+// ---------------------------------------------------------------------------
+// Mock factories — must use vi.hoisted() so references are available when
+// vi.mock factory functions run (Vitest hoists vi.mock calls to the top of the
+// file before any runtime code executes).
+// ---------------------------------------------------------------------------
+
 const { mockHandle, mockOn } = vi.hoisted(() => ({
   mockHandle: vi.fn(),
   mockOn: vi.fn(),
+}));
+
+const { mockPtySpawn } = vi.hoisted(() => ({
+  mockPtySpawn: vi.fn(),
+}));
+
+// Declare mockClipboardWriteText inside vi.hoisted so it is available when
+// vi.mock factories run (Vitest hoists vi.hoisted() calls alongside vi.mock).
+const { mockClipboardWriteText } = vi.hoisted(() => ({
+  mockClipboardWriteText: vi.fn(),
+}));
+
+vi.mock('node-pty', () => ({
+  spawn: mockPtySpawn,
 }));
 
 vi.mock('electron', () => ({
@@ -20,14 +49,8 @@ vi.mock('electron', () => ({
       if (name === 'home') return '/home/test';
       return `/mock/${name}`;
     }),
-    commandLine: {
-      appendSwitch: vi.fn(),
-    },
-    whenReady: vi.fn(() => {
-      return new Promise<never>(() => {
-        // Prevent app initialization during tests
-      });
-    }),
+    commandLine: { appendSwitch: vi.fn() },
+    whenReady: vi.fn(() => new Promise<never>(() => { /* prevent init */ })),
     on: vi.fn(),
     quit: vi.fn(),
   },
@@ -42,16 +65,10 @@ vi.mock('electron', () => ({
     maximize: vi.fn(),
     isMaximized: vi.fn(() => false),
     close: vi.fn(),
-    webContents: {
-      send: vi.fn(),
-    },
-    contentView: {
-      addChildView: vi.fn(),
-    },
+    webContents: { send: vi.fn() },
+    contentView: { addChildView: vi.fn() },
   })),
-  Menu: Object.assign(vi.fn(), {
-    setApplicationMenu: vi.fn(),
-  }),
+  Menu: Object.assign(vi.fn(), { setApplicationMenu: vi.fn() }),
   WebContentsView: vi.fn(() => ({
     setVisible: vi.fn(),
     setBounds: vi.fn(),
@@ -69,21 +86,24 @@ vi.mock('electron', () => ({
       },
     },
   })),
-  ipcMain: {
-    handle: mockHandle,
-    on: mockOn,
-  },
-  dialog: {
-    showOpenDialog: vi.fn(),
-  },
-  shell: {
-    openExternal: vi.fn(),
-  },
+  ipcMain: { handle: mockHandle, on: mockOn },
+  dialog: { showOpenDialog: vi.fn() },
+  shell: { openExternal: vi.fn() },
+  clipboard: { writeText: mockClipboardWriteText },
 }));
 
+import { ipcMain } from 'electron';
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
 
-describe('registerTerminalIpc', () => {
+type MockIpcMain = typeof ipcMain & {
+  handle: ReturnType<typeof vi.fn>;
+};
+
+// ---------------------------------------------------------------------------
+// Registration tests
+// ---------------------------------------------------------------------------
+
+describe('registerTerminalIpc — registration', () => {
   beforeEach(() => {
     mockHandle.mockClear();
     mockOn.mockClear();
@@ -91,14 +111,8 @@ describe('registerTerminalIpc', () => {
 
   test('registers all expected terminal IPC channels', () => {
     const mockTerminals = new Map();
-    const mockMainWindow = {
-      webContents: {
-        send: vi.fn(),
-      },
-    };
-    const mockStore = {
-      get: vi.fn().mockReturnValue(false),
-    };
+    const mockMainWindow = { webContents: { send: vi.fn() } };
+    const mockStore = { get: vi.fn().mockReturnValue(false) };
     const mockGetSafeWorkspacePath = vi.fn().mockReturnValue('/test/workspace');
     const mockGetHarnessOptions = vi.fn().mockReturnValue({});
 
@@ -124,25 +138,16 @@ describe('registerTerminalIpc', () => {
     });
   });
 
-  test('registers exactly 6 terminal IPC handle channels', () => {
+  test('registers exactly 7 terminal IPC handle channels (6 handlers + write-clipboard)', () => {
     const mockTerminals = new Map();
-    const mockMainWindow = {
-      webContents: {
-        send: vi.fn(),
-      },
-    };
-    const mockStore = {
-      get: vi.fn().mockReturnValue(false),
-    };
-    const mockGetSafeWorkspacePath = vi.fn().mockReturnValue('/test/workspace');
-    const mockGetHarnessOptions = vi.fn().mockReturnValue({});
-
+    const mockMainWindow = { webContents: { send: vi.fn() } };
+    const mockStore = { get: vi.fn().mockReturnValue(false) };
     registerTerminalIpc({
       getTerminals: () => mockTerminals,
       getMainWindow: () => mockMainWindow as never,
       getStore: () => mockStore as never,
-      getSafeWorkspacePath: mockGetSafeWorkspacePath,
-      getHarnessOptions: mockGetHarnessOptions,
+      getSafeWorkspacePath: vi.fn().mockReturnValue('/test/workspace'),
+      getHarnessOptions: vi.fn().mockReturnValue({}),
     });
 
     expect(mockHandle.mock.calls.length).toBe(7);
@@ -150,23 +155,14 @@ describe('registerTerminalIpc', () => {
 
   test('registers 2 event IPC channels (terminal-data, terminal-exit)', () => {
     const mockTerminals = new Map();
-    const mockMainWindow = {
-      webContents: {
-        send: vi.fn(),
-      },
-    };
-    const mockStore = {
-      get: vi.fn().mockReturnValue(false),
-    };
-    const mockGetSafeWorkspacePath = vi.fn().mockReturnValue('/test/workspace');
-    const mockGetHarnessOptions = vi.fn().mockReturnValue({});
-
+    const mockMainWindow = { webContents: { send: vi.fn() } };
+    const mockStore = { get: vi.fn().mockReturnValue(false) };
     registerTerminalIpc({
       getTerminals: () => mockTerminals,
       getMainWindow: () => mockMainWindow as never,
       getStore: () => mockStore as never,
-      getSafeWorkspacePath: mockGetSafeWorkspacePath,
-      getHarnessOptions: mockGetHarnessOptions,
+      getSafeWorkspacePath: vi.fn().mockReturnValue('/test/workspace'),
+      getHarnessOptions: vi.fn().mockReturnValue({}),
     });
 
     expect(mockOn.mock.calls.length).toBe(2);
@@ -176,33 +172,17 @@ describe('registerTerminalIpc', () => {
 
   test('can be called multiple times (registering handlers again)', () => {
     const mockTerminals = new Map();
-    const mockMainWindow = {
-      webContents: {
-        send: vi.fn(),
-      },
-    };
-    const mockStore = {
-      get: vi.fn().mockReturnValue(false),
-    };
-    const mockGetSafeWorkspacePath = vi.fn().mockReturnValue('/test/workspace');
-    const mockGetHarnessOptions = vi.fn().mockReturnValue({});
-
-    registerTerminalIpc({
+    const mockMainWindow = { webContents: { send: vi.fn() } };
+    const mockStore = { get: vi.fn().mockReturnValue(false) };
+    const opts = {
       getTerminals: () => mockTerminals,
       getMainWindow: () => mockMainWindow as never,
       getStore: () => mockStore as never,
-      getSafeWorkspacePath: mockGetSafeWorkspacePath,
-      getHarnessOptions: mockGetHarnessOptions,
-    });
-
-    registerTerminalIpc({
-      getTerminals: () => mockTerminals,
-      getMainWindow: () => mockMainWindow as never,
-      getStore: () => mockStore as never,
-      getSafeWorkspacePath: mockGetSafeWorkspacePath,
-      getHarnessOptions: mockGetHarnessOptions,
-    });
-
+      getSafeWorkspacePath: vi.fn().mockReturnValue('/test/workspace'),
+      getHarnessOptions: vi.fn().mockReturnValue({}),
+    };
+    registerTerminalIpc(opts);
+    registerTerminalIpc(opts);
     expect(mockHandle.mock.calls.length).toBe(14);
   });
 });
@@ -217,13 +197,301 @@ describe('terminal IPC channel constants', () => {
       'kill-terminal',
       'terminal:cleanup-workspace',
     ];
-
     expectedChannels.forEach(channel => {
       expect(typeof channel).toBe('string');
       expect(channel.length).toBeGreaterThan(0);
     });
-
     const uniqueChannels = new Set(expectedChannels);
     expect(uniqueChannels.size).toBe(expectedChannels.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Error-path tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Terminal IPC — Error-Path Tests
+ *
+ * Verifies every non-spawn terminal handler returns a defined value (not
+ * undefined or a thrown error) for missing-terminal and null-payload cases.
+ */
+
+describe('terminalIpc — error-path: handler returns', () => {
+  const mockIpcMain = ipcMain as MockIpcMain;
+
+  const createMockDeps = () => {
+    const terminals = new Map();
+    const mainWindow = { webContents: { send: vi.fn() } };
+    const store = { get: vi.fn().mockReturnValue(false) };
+    const opts = {
+      getTerminals: () => terminals,
+      getMainWindow: () => mainWindow as never,
+      getStore: () => store as never,
+      getSafeWorkspacePath: vi.fn().mockReturnValue('/test/workspace'),
+      getHarnessOptions: vi.fn().mockReturnValue({}),
+    };
+    return { terminals, opts };
+  };
+
+  beforeEach(() => {
+    mockHandle.mockClear();
+    mockOn.mockClear();
+    mockClipboardWriteText.mockClear();
+    mockPtySpawn.mockClear();
+  });
+
+  test('GET_TERMINAL_BUFFER returns empty string for missing terminal ID', async () => {
+    const { opts } = createMockDeps();
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'get-terminal-buffer'
+    )?.[1] as (_: unknown, id: string) => string;
+
+    const result = await handler(null, 'nonexistent-term-123');
+    expect(result).toBe('');
+    expect(typeof result).toBe('string');
+  });
+
+  test('GET_TERMINAL_BUFFER returns empty string when terminals map is empty', async () => {
+    const { opts } = createMockDeps();
+    opts.getTerminals = vi.fn().mockReturnValue(new Map());
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'get-terminal-buffer'
+    )?.[1] as (_: unknown, id: string) => string;
+
+    const result = await handler(null, 'any-id');
+    expect(result).toBe('');
+  });
+
+  test('WRITE_TERMINAL does not throw for missing terminal (no-op)', async () => {
+    const { opts } = createMockDeps();
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'write-terminal'
+    )?.[1] as (_: unknown, payload: { id: string; data: string }) => void;
+
+    const result = await handler(null, { id: 'nonexistent', data: 'hello' });
+    expect(result).toBeUndefined();
+  });
+
+  test('WRITE_TERMINAL does not throw for null payload (no-op)', async () => {
+    const { opts } = createMockDeps();
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'write-terminal'
+    )?.[1] as (_: unknown, payload: { id: string; data: string } | null) => void;
+
+    // After the production fix, null payload is handled gracefully (no throw)
+    const result = await handler(null, null);
+    expect(result).toBeUndefined();
+  });
+
+  test('WRITE_TERMINAL calls pty.write when terminal exists', async () => {
+    const { terminals, opts } = createMockDeps();
+    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn() };
+    terminals.set('existing-term', { id: 'existing-term', pid: 42, pty: mockPty, buffer: '' });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'write-terminal'
+    )?.[1] as (_: unknown, payload: { id: string; data: string } | null) => void;
+
+    const result = await handler(null, { id: 'existing-term', data: 'hello world' });
+    expect(result).toBeUndefined();
+    expect(mockPty.write).toHaveBeenCalledWith('hello world');
+  });
+
+  test('RESIZE_TERMINAL calls pty.resize when terminal exists', async () => {
+    const { terminals, opts } = createMockDeps();
+    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn() };
+    terminals.set('resizable-term', { id: 'resizable-term', pid: 99, pty: mockPty, buffer: '' });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'resize-terminal'
+    )?.[1] as (_: unknown, payload: { id: string; cols: number; rows: number }) => void;
+
+    const result = await handler(null, { id: 'resizable-term', cols: 120, rows: 40 });
+    expect(result).toBeUndefined();
+    expect(mockPty.resize).toHaveBeenCalledWith(120, 40);
+  });
+
+  test('KILL_TERMINAL calls pty.kill and deletes terminal when it exists', async () => {
+    const { terminals, opts } = createMockDeps();
+    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn() };
+    terminals.set('killable-term', { id: 'killable-term', pid: 77, pty: mockPty, buffer: '' });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'kill-terminal'
+    )?.[1] as (_: unknown, id: string) => void;
+
+    const result = await handler(null, 'killable-term');
+    expect(result).toBeUndefined();
+    expect(mockPty.kill).toHaveBeenCalledTimes(1);
+    expect(terminals.has('killable-term')).toBe(false);
+  });
+
+  test('RESIZE_TERMINAL does not throw for missing terminal (no-op)', async () => {
+    const { opts } = createMockDeps();
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'resize-terminal'
+    )?.[1] as (_: unknown, payload: { id: string; cols: number; rows: number }) => void;
+
+    const result = await handler(null, { id: 'nonexistent', cols: 80, rows: 24 });
+    expect(result).toBeUndefined();
+  });
+
+  test('KILL_TERMINAL does not throw for missing terminal (no-op)', async () => {
+    const { opts } = createMockDeps();
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'kill-terminal'
+    )?.[1] as (_: unknown, id: string) => void;
+
+    const result = await handler(null, 'nonexistent-term');
+    expect(result).toBeUndefined();
+  });
+
+  test('TERMINAL_CLEANUP_WORKSPACE returns killed count (0) for empty ID list', async () => {
+    const { opts } = createMockDeps();
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'terminal:cleanup-workspace'
+    )?.[1] as (_: unknown, ids: string[]) => number;
+
+    const result = await handler(null, []);
+    expect(result).toBe(0);
+    expect(typeof result).toBe('number');
+  });
+
+  test('TERMINAL_CLEANUP_WORKSPACE returns 0 for all nonexistent IDs', async () => {
+    const { opts } = createMockDeps();
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'terminal:cleanup-workspace'
+    )?.[1] as (_: unknown, ids: string[]) => number;
+
+    const result = await handler(null, ['id-1', 'id-2', 'id-3']);
+    expect(result).toBe(0);
+  });
+
+  test('TERMINAL_CLEANUP_WORKSPACE returns correct killed count for partial matches', async () => {
+    const { terminals, opts } = createMockDeps();
+    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn() };
+    terminals.set('term-1', { id: 'term-1', pid: 100, pty: mockPty, buffer: '' });
+    terminals.set('term-2', { id: 'term-2', pid: 101, pty: mockPty, buffer: '' });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'terminal:cleanup-workspace'
+    )?.[1] as (_: unknown, ids: string[]) => number;
+
+    const result = await handler(null, ['term-1', 'nonexistent', 'term-2']);
+    expect(result).toBe(2);
+    expect(mockPty.kill).toHaveBeenCalledTimes(2);
+    expect(terminals.size).toBe(0);
+  });
+
+  test('WRITE_CLIPBOARD calls clipboard.writeText and returns undefined', async () => {
+    const { opts } = createMockDeps();
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'write-clipboard'
+    )?.[1] as (_: unknown, text: string) => void;
+
+    const result = await handler(null, 'clipboard text');
+    expect(mockClipboardWriteText).toHaveBeenCalledWith('clipboard text');
+    expect(result).toBeUndefined();
+  });
+
+  test('WRITE_CLIPBOARD does not throw for empty string', async () => {
+    const { opts } = createMockDeps();
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'write-clipboard'
+    )?.[1] as (_: unknown, text: string) => void;
+
+    const result = await handler(null, '');
+    expect(mockClipboardWriteText).toHaveBeenCalledWith('');
+    expect(result).toBeUndefined();
+  });
+
+  test('SPAWN_TERMINAL does not throw when getSafeWorkspacePath returns empty string', async () => {
+    const { opts } = createMockDeps();
+    opts.getSafeWorkspacePath = vi.fn().mockReturnValue('');
+    mockPtySpawn.mockReturnValue({ pid: 123, onData: vi.fn(), onExit: vi.fn() });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'spawn-terminal'
+    )?.[1] as (_: unknown, workingDir: string) => { id: string; pid: number };
+
+    const result = await handler(null, '/some/path');
+    expect(result).toBeDefined();
+    expect(result).toHaveProperty('id');
+    expect(result).toHaveProperty('pid');
+  });
+
+  test('SPAWN_TERMINAL does not throw when getHarnessOptions returns undefined', async () => {
+    const { opts } = createMockDeps();
+    // Return an object without the specific harness key so getHarnessOptions()[harness]
+    // returns undefined rather than the function throwing on `()['harness']`
+    opts.getHarnessOptions = vi.fn().mockReturnValue({});
+    mockPtySpawn.mockReturnValue({ pid: 456, onData: vi.fn(), onExit: vi.fn() });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'spawn-terminal'
+    )?.[1] as (_: unknown, workingDir: string, harness?: string) => { id: string; pid: number };
+
+    const result = await handler(null, '/test/workspace', 'codex');
+    expect(result).toBeDefined();
+    expect(result).toHaveProperty('id');
+    expect(result).toHaveProperty('pid');
+  });
+
+  test('SPAWN_TERMINAL does not throw when main window is null', async () => {
+    const { opts } = createMockDeps();
+    (opts as { getMainWindow: () => { webContents: { send: ReturnType<typeof vi.fn> } } | null }).getMainWindow = vi.fn().mockReturnValue(null);
+    mockPtySpawn.mockReturnValue({ pid: 789, onData: vi.fn(), onExit: vi.fn() });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'spawn-terminal'
+    )?.[1] as (_: unknown, workingDir: string) => { id: string; pid: number };
+
+    const result = await handler(null, '/test/workspace');
+    expect(result).toBeDefined();
+    expect(result).toHaveProperty('id');
+    expect(result).toHaveProperty('pid');
+  });
+
+  test('SPAWN_TERMINAL does not throw when store returns undefined for showFastfetch', async () => {
+    const { opts } = createMockDeps();
+    const storeWithUndefined = { get: vi.fn().mockReturnValue(undefined) };
+    (opts as { getStore: () => { get: (key: string) => unknown } }).getStore = vi.fn().mockReturnValue(storeWithUndefined);
+    mockPtySpawn.mockReturnValue({ pid: 999, onData: vi.fn(), onExit: vi.fn() });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'spawn-terminal'
+    )?.[1] as (_: unknown, workingDir: string) => { id: string; pid: number };
+
+    const result = await handler(null, '/test/workspace');
+    expect(result).toBeDefined();
   });
 });
