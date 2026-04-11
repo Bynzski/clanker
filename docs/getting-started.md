@@ -31,7 +31,7 @@ From the gate or header toolbar:
 | Title Bar | Top — window controls |
 | Workspace Tabs | Below title bar |
 | Header Toolbar | Tabs → main content |
-| Main Area | Terminals and browser |
+| Main Area | Terminals, browser, editor, and file explorer |
 | Status Bar | Bottom |
 
 ## Quick Commands

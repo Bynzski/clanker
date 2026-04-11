@@ -12,6 +12,13 @@ Click the **Git** button in the header to access:
 - Commit history
 - Remote operations
 
+## File Explorer Git Integration
+
+The file explorer shows git status indicators:
+- Modified files display with an indicator
+- Untracked files are visually distinguished
+- Git changes are reflected in real-time via file watching
+
 ## Status
 
 Current status shows:

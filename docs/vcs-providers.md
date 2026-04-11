@@ -2,6 +2,8 @@
 
 Technical documentation for remote VCS provider integration.
 
+**See also:** [Configuration](configuration.md) — SSH key and PAT credential management
+
 ## Overview
 
 Clanker Grid integrates with GitHub, GitLab, and Bitbucket to provide contextual information about your repository without leaving the app.

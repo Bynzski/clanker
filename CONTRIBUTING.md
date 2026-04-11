@@ -48,10 +48,12 @@ src/
 ## Testing
 
 ```bash
-npm run test          # Run all tests
+npm run test          # Run all tests (Vitest)
 npm run test:watch    # Watch mode
 npm run test:coverage # With coverage report
 ```
+
+**Important:** Always use `npm run test`, not bare `npm test`. The validation pipeline uses `npm run validate` which runs lint → typecheck → build → test.
 
 Test directories:
 - `tests/main/unit/` — Main process unit tests
