@@ -168,6 +168,12 @@ describe('IPC registration smoke test', () => {
       contentView: { addChildView: vi.fn() },
     } as unknown as { webContents: { send: ReturnType<typeof vi.fn> }; contentView: { addChildView: ReturnType<typeof vi.fn> } };
 
+    const mockFileWatcher = {
+      watchFile: vi.fn(),
+      unwatchFile: vi.fn(),
+      markWritten: vi.fn(),
+    };
+
     // ── Register all IPC modules ────────────────────────────────────────────
     registerSettingsIpc({
       getStore: () => mockStore as never,
@@ -196,7 +202,7 @@ describe('IPC registration smoke test', () => {
     });
 
     registerCredentialIpc();
-    registerFileIpc();
+    registerFileIpc({ getFileWatcher: () => mockFileWatcher as never });
 
     registerVcsIpc({
       getGitService: () => mockGitService as never,

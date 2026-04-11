@@ -145,3 +145,47 @@
   font-size: 11px;
   opacity: 0.6;
 }
+
+.editor-reload-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: rgba(255, 152, 0, 0.15);
+  border-bottom: 1px solid rgba(255, 152, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.editor-reload-banner--danger {
+  background: rgba(244, 67, 54, 0.15);
+  border-bottom-color: rgba(244, 67, 54, 0.3);
+}
+
+.editor-reload-banner-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.editor-reload-banner-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 150ms ease-out;
+}
+
+.editor-reload-banner-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.editor-reload-banner-btn--secondary {
+  opacity: 0.7;
+}
+
+.editor-reload-banner-btn--secondary:hover {
+  opacity: 1;
+}

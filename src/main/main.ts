@@ -24,6 +24,7 @@ import { registerBrowserIpc } from './ipc/browserIpc';
 import { registerGitIpc } from './ipc/gitIpc';
 import { registerCredentialIpc } from './ipc/credentialIpc';
 import { registerFileIpc } from './ipc/fileIpc';
+import { FileWatcherService } from './fileWatcher';
 import { registerVcsIpc } from './ipc/vcsIpc';
 
 interface StoreSchema {
@@ -78,6 +79,9 @@ const gitService = new GitService((status) => {
   }
 });
 
+const fileWatcher = new FileWatcherService({ getMainWindow: () => mainWindow });
+fileWatcher.setGitService(gitService);
+
 function getSafeWorkspacePath(workingDir: string, storeInstance: Store<StoreSchema>): string {
   return (
     resolveExistingDirectory(workingDir, storeInstance.get('lastWorkspace'))
@@ -117,7 +121,7 @@ app.whenReady().then(() => {
   });
 
   registerCredentialIpc();
-  registerFileIpc();
+  registerFileIpc({ getFileWatcher: () => fileWatcher });
 
   registerVcsIpc({
     getGitService: () => gitService,
@@ -127,6 +131,7 @@ app.whenReady().then(() => {
   ({ window: mainWindow } = createMainWindow({
     preloadPath,
     gitService,
+    fileWatcher,
     browserViews,
     onWindowClosed: cleanupWindowState,
   }));
@@ -136,6 +141,7 @@ app.whenReady().then(() => {
       ({ window: mainWindow } = createMainWindow({
         preloadPath,
         gitService,
+        fileWatcher,
         browserViews,
         onWindowClosed: cleanupWindowState,
       }));

@@ -139,6 +139,9 @@ export const VCS_OPEN_DEEP_LINK = 'vcs:open-deep-link';
 
 export const FILE_READ = 'file-read';
 export const FILE_WRITE = 'file-write';
+export const FILE_CHANGED = 'file-changed';
+export const FILE_WATCH = 'file-watch';
+export const FILE_UNWATCH = 'file-unwatch';
 
 /* ============================================================================
  * File Operations
@@ -258,6 +261,9 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   // Editor
   FILE_READ,
   FILE_WRITE,
+  FILE_CHANGED,
+  FILE_WATCH,
+  FILE_UNWATCH,
   // File Operations
   FILE_CREATE,
   FILE_DELETE,

@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import { fileURLToPath } from 'node:url';
 import type { FileListDirectoryRequest } from '../shared/types/fileExplorer';
-import type { FileReadRequest, FileWriteRequest } from '../shared/types/editor';
+import type { FileReadRequest, FileWriteRequest, FileChangedEvent, FileWatchRequest } from '../shared/types/editor';
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest } from '../shared/types/fileOperations';
 import type { VcsProvider } from '../shared/types/vcs';
 import {
@@ -12,6 +12,9 @@ import {
   FILE_LIST_DIRECTORY,
   FILE_READ,
   FILE_WRITE,
+  FILE_CHANGED,
+  FILE_WATCH,
+  FILE_UNWATCH,
   FILE_CREATE,
   FILE_DELETE,
   FILE_RENAME,
@@ -313,6 +316,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Editor
   editorReadFile: (request: FileReadRequest) => ipcRenderer.invoke(FILE_READ, request),
   editorWriteFile: (request: FileWriteRequest) => ipcRenderer.invoke(FILE_WRITE, request),
+  editorWatchFile: (request: FileWatchRequest) => ipcRenderer.invoke(FILE_WATCH, request),
+  editorUnwatchFile: (request: FileWatchRequest) => ipcRenderer.invoke(FILE_UNWATCH, request),
+  onFileChanged: (callback: (event: FileChangedEvent) => void) => {
+    const handler = (_event: IpcRendererEvent, payload: FileChangedEvent) => callback(payload);
+    ipcRenderer.on(FILE_CHANGED, handler);
+    return () => ipcRenderer.removeListener(FILE_CHANGED, handler);
+  },
 
   // File Operations
   fileCreate: (request: FileCreateRequest) => ipcRenderer.invoke(FILE_CREATE, request),

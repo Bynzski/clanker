@@ -39,6 +39,8 @@ export interface EditorTab {
   isDirty: boolean;
   content: string;
   originalContent: string;
+  hasExternalChange?: boolean;
+  isDeleted?: boolean;
 }
 
 export interface GridViewport {

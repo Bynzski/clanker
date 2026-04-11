@@ -30,6 +30,10 @@ export default function EditorPane() {
     activeEditorTabId,
     toggleEditorLock,
     closeEditorPane,
+    reloadEditorTab,
+    clearEditorTabExternalFlag,
+    closeEditorTab,
+    saveEditorFile,
   } = useWorkspaceStore();
 
   const editorLocked = editorPane?.locked ?? false;
@@ -90,22 +94,21 @@ export default function EditorPane() {
     });
   }, [activeTab]);
 
-  // Sync content when the active tab changes.
+  // Sync content when the active tab changes or when content is reloaded externally.
   useEffect(() => {
     const view = viewRef.current;
     if (view == null) return;
 
-    const lastSynced = lastSyncedTabIdRef.current;
-    if (lastSynced === activeEditorTabId) return;
-
-    lastSyncedTabIdRef.current = activeEditorTabId ?? null;
-
     if (activeEditorTabId == null) {
-      const currentContent = view.state.doc.toString();
-      if (currentContent !== '') {
-        view.dispatch({
-          changes: { from: 0, to: view.state.doc.length, insert: '' },
-        });
+      const lastSynced = lastSyncedTabIdRef.current;
+      if (lastSynced != null) {
+        lastSyncedTabIdRef.current = null;
+        const currentContent = view.state.doc.toString();
+        if (currentContent !== '') {
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: '' },
+          });
+        }
       }
       return;
     }
@@ -113,12 +116,18 @@ export default function EditorPane() {
     const tab = editorTabs.find((t) => t.id === activeEditorTabId);
     if (!tab) return;
 
+    lastSyncedTabIdRef.current = activeEditorTabId;
+
     const currentContent = view.state.doc.toString();
-    if (currentContent !== tab.content) {
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: tab.content },
-      });
-    }
+    if (currentContent === tab.content) return;
+
+
+    // Only sync if the tab is clean (not mid-edit) or has an external change flag
+    if (tab.isDirty && !tab.hasExternalChange) return;
+
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: tab.content },
+    });
   }, [activeEditorTabId, editorTabs]);
 
   // Attach update listener that dispatches changes to the store.
@@ -196,6 +205,45 @@ export default function EditorPane() {
         </div>
 
         <EditorTabBar />
+
+        {activeTab?.hasExternalChange && (
+          <div className="editor-reload-banner">
+            <span className="editor-reload-banner-text">
+              This file has been modified externally.
+            </span>
+            <button
+              className="editor-reload-banner-btn"
+              onClick={() => reloadEditorTab(activeTab.id)}
+            >
+              Reload
+            </button>
+            <button
+              className="editor-reload-banner-btn editor-reload-banner-btn--secondary"
+              onClick={() => clearEditorTabExternalFlag(activeTab.id)}
+            >
+              Keep Mine
+            </button>
+          </div>
+        )}
+        {activeTab?.isDeleted && (
+          <div className="editor-reload-banner editor-reload-banner--danger">
+            <span className="editor-reload-banner-text">
+              This file has been deleted.
+            </span>
+            <button
+              className="editor-reload-banner-btn"
+              onClick={() => closeEditorTab(activeTab.id)}
+            >
+              Close
+            </button>
+            <button
+              className="editor-reload-banner-btn editor-reload-banner-btn--secondary"
+              onClick={() => saveEditorFile(activeTab.id)}
+            >
+              Save
+            </button>
+          </div>
+        )}
 
         <div className="editor-content-area">
           {editorTabs.length === 0 ? (

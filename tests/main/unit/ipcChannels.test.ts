@@ -110,6 +110,9 @@ import {
   FILE_CREATE,
   FILE_DELETE,
   FILE_RENAME,
+  FILE_CHANGED,
+  FILE_WATCH,
+  FILE_UNWATCH,
   ALL_IPC_CHANNELS,
 } from '../../../src/shared/ipcChannels';
 
@@ -220,6 +223,9 @@ const ALL_CHANNELS = [
   FILE_CREATE,
   FILE_DELETE,
   FILE_RENAME,
+  FILE_CHANGED,
+  FILE_WATCH,
+  FILE_UNWATCH,
 ];
 
 describe('ipcChannels', () => {

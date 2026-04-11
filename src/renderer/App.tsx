@@ -5,6 +5,7 @@ import StatusBar from './components/StatusBar';
 import { WorkspaceGateFullscreen, WorkspaceGateModal } from './components/WorkspaceGate';
 import { Pane, Terminal, useWorkspaceStore } from './store/workspaceStore';
 import { getZoomShortcutAction, isSaveShortcut } from './lib/keyboardShortcuts';
+import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import './App.css';
 
 const DynamicPaneLayout = lazy(() => import('./components/DynamicPaneLayout'));
@@ -74,6 +75,13 @@ function App() {
       dispose();
     };
   }, [updateWorkspaceBrowserUrl]);
+
+  useEffect(() => {
+    const unsubscribe = startEditorFileWatcher();
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const handleWorkspaceSelect = async (path: string, terminalCount: number, harness: string, model?: string) => {
     const terminals: Terminal[] = [];

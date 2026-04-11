@@ -108,6 +108,7 @@ describe('App', () => {
       onGitStatusUpdate: vi.fn(),
       gitStartPolling: vi.fn(),
       gitStopPolling: vi.fn(),
+      onFileChanged: vi.fn().mockReturnValue(vi.fn()),
     } as unknown as typeof window.electronAPI;
   });
 
