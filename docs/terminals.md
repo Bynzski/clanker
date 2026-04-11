@@ -2,10 +2,13 @@
 
 ## Terminals
 
-- Backed by real PTY processes
-- Full ANSI color support via xterm.js
-- Resize-aware (resizes with pane)
+- Backed by real PTY processes (node-pty)
+- Full ANSI color support via xterm.js; xterm.js owns scrollback (10,000 lines)
+- Resize-aware: bidirectional resize confirmation loop, coalesced via 100 ms lock
+- Session continuity across workspace/tab switches — xterm instances are cached and reused, not remounted blank
+- Startup uses a bounded 16 KB buffer + `TERMINAL_READY` renderer handshake to protect early PTY output
 - Copy/paste support
+- `handleFlowControl: false` is set on all PTY spawns (re-enabling deferred to Phase 2+)
 
 ### Terminal Actions
 
@@ -25,11 +28,15 @@ Harness terminals use a generated wrapper script in the main process so the harn
 
 | Harness | Command | Description |
 |---------|---------|-------------|
-| Plain Shell | `bash`/`zsh` | Standard terminal |
+| Plain Shell | `bash`/`zsh` | Standard terminal — no wrapper, direct PTY spawn |
 | Codex | `codex` | OpenAI Codex CLI |
 | Claude | `claude` | Anthropic Claude |
 | OpenCode | `opencode` | Open source agent |
 | Pi | `pi` | Mario Zechner agent |
+
+**Harness launch model:** Harnesses use one unified wrapper-based spawn strategy. The harness runs as the direct PTY foreground job via a generated shell script (`~/.clanker-grid/harness-wrapper.sh`), not via an inline `bash -i -c` command. When a harness exits, the wrapper script replaces itself with an interactive shell so the terminal pane stays usable. This preserves existing product behavior while fixing the shell-layer signal/TUI issues.
+
+Current flag and argument behavior is intentionally preserved. A future redesign of the harness argument system is out of scope.
 
 ### Selecting a Harness
 

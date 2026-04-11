@@ -165,10 +165,14 @@ Main ↔ Renderer communication via preload bridge (`src/main/preload.ts`):
 
 ### Terminal Architecture
 
-- PTY processes spawn in `src/main/main.ts` via `node-pty`
-- Output streams to renderer via IPC
-- Renderer renders with `@xterm/xterm`
-- Terminal pane sizing syncs back to PTY on resize
+- PTY processes spawn in main via `node-pty` (owned in `terminals` Map in `main.ts`)
+- Output streams to renderer via `TERMINAL_DATA` IPC event
+- Renderer renders with `@xterm/xterm`; xterm owns the scrollback buffer
+- Session continuity across workspace/tab switches via xterm instance caching (`xtermCache` Map in `TerminalPane.tsx`) — terminals are not remounted blank on switch-back
+- Startup uses a bounded 16 KB buffer + `TERMINAL_READY` renderer handshake to protect the PTY init window (e.g., fish DA1 responses)
+- Resize uses a bidirectional confirmation loop: `RESIZE_TERMINAL` IPC → PTY apply → `TERMINAL_RESIZED` event → renderer verifies geometry
+- `handleFlowControl: false` is set on all PTY spawns (disabled as startup variable; re-enabling requires a Phase 2+ readiness plan)
+- Terminal pane sizing syncs back to PTY on resize; rapid resize calls are coalesced via a 100 ms lock
 
 ### Browser Architecture
 
@@ -257,6 +261,7 @@ Currently over size threshold (for reference — do not refactor without a plan)
 | `src/renderer/components/WorkspaceGateContent.tsx` | 647 | Workspace onboarding UI |
 | `src/renderer/components/FileExplorer/index.tsx` | 539 | File explorer component |
 | `src/main/credential/credentialService.ts` | 502 | Credential management |
+| `src/renderer/components/TerminalPane.tsx` | 562 | xterm instance cache, resize lock, startup handshake — stability-first design |
 
 When adding new code to an already-large file, consider whether the change belongs in a new module or an existing helper file instead of growing the file further.
 
@@ -286,6 +291,10 @@ When adding new code to an already-large file, consider whether the change belon
 ## Important Notes
 
 - **Harnesses are optional** — The app works with plain shell terminals. AI harnesses enhance but aren't required.
+- **Harness spawn is wrapper-based** — Harnesses run via a generated shell wrapper script (`~/.clanker-grid/harness-wrapper.sh`) written and managed by `src/main/harnessLaunch.ts`. The old `bash -i -c '<cmd>; exec "$SHELL" -i'` inline shell command is no longer used for harness spawns. When a harness exits, the wrapper script execs an interactive shell to keep the terminal pane usable.
+- **Terminal continuity is via xterm caching** — Workspace/tab switching preserves terminal sessions by caching xterm.js instances in a `xtermCache` Map in `TerminalPane.tsx`. Terminals are NOT remounted blank on switch-back.
+- **Flow control is disabled** — `handleFlowControl: false` is set on all PTY spawns to avoid shell startup stalls. Re-enabling it requires a proper post-startup readiness plan and is out of scope for Phase 1.
+- **Flag/argument redesign is deferred** — Current flag and argument behavior is preserved. No redesign of the harness spawn argument system is planned.
 - **Browser state is polled** — Renderer browser navigation state uses polling rather than event-driven updates.
 - **Pane locking** — Users can lock panes to prevent reflow during insertions. Respect lock state in layout operations.
 - **Shared type placement** — IPC channel names belong in `src/shared/ipcChannels.ts`; shared data types used across the main/renderer boundary belong in `src/shared/types/`; terminal constants belong in `src/shared/terminal.ts`.
