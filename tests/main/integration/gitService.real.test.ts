@@ -30,10 +30,12 @@ async function createTempRepo(options: { initialCommit?: boolean } = {}): Promis
   const { initialCommit = true } = options;
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-real-test-'));
   
-  // Configure git user
-  await execFileAsync('git', ['config', '--global', 'user.email', 'test@example.com'], { cwd: tempDir });
-  await execFileAsync('git', ['config', '--global', 'user.name', 'Test User'], { cwd: tempDir });
+  // Initialize repo FIRST (git config local requires a repo)
   await execFileAsync('git', ['init'], { cwd: tempDir });
+
+  // Configure git user (use LOCAL config to avoid persisting to ~/.gitconfig)
+  await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+  await execFileAsync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
   
   if (initialCommit) {
     fs.writeFileSync(path.join(tempDir, 'initial.txt'), 'initial content');
