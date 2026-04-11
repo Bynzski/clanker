@@ -16,8 +16,10 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
   const [canGoForward, setCanGoForward] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const rafRef = useRef<number | null>(null);
+  // Tracks the last bounds sent to main process, used to suppress micro-jitter from
+  // DPR rounding noise and unstable intermediate layout measurements.
+  const lastBoundsRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const { browserPane, browserVisible, browserOverlayCount, bringBrowserIntoView, toggleBrowserLock, activeWorkspaceId } = useWorkspaceStore();
   const browserLocked = browserPane?.locked ?? false;
   const dragHandleProps = useDragHandle();
@@ -36,12 +38,30 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
     const left = rect.left + window.scrollX;
     const top = rect.top + window.scrollY;
 
-    window.electronAPI.browserSetBounds(activeWorkspaceId, {
+    const newBounds = {
       x: Math.round(left * scale),
       y: Math.round(top * scale),
       width: Math.round(rect.width * scale),
       height: Math.round(rect.height * scale),
-    });
+    };
+
+    // Suppress micro-jitter: only send IPC if bounds differ by more than 1 physical pixel.
+    // DPR rounding can produce ±0.5px noise per axis on successive frames; a 1px threshold
+    // eliminates this noise without affecting legitimate layout changes.
+    if (lastBoundsRef.current !== null) {
+      const { x, y, width, height } = lastBoundsRef.current;
+      if (
+        Math.abs(newBounds.x - x) <= 1 &&
+        Math.abs(newBounds.y - y) <= 1 &&
+        Math.abs(newBounds.width - width) <= 1 &&
+        Math.abs(newBounds.height - height) <= 1
+      ) {
+        return;
+      }
+    }
+
+    lastBoundsRef.current = newBounds;
+    window.electronAPI.browserSetBounds(activeWorkspaceId, newBounds);
   }, [browserVisible, browserOverlayCount, activeWorkspaceId]);
 
   const scheduleBoundsUpdate = useCallback(() => {
@@ -49,6 +69,9 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
       window.cancelAnimationFrame(rafRef.current);
     }
 
+    // All resize/layout triggers funnel through a single RAF so DOM reads happen
+    // through one scheduler. Later triggers replace earlier pending work so the
+    // measurement tracks the most recent settled layout state.
     rafRef.current = window.requestAnimationFrame(() => {
       rafRef.current = null;
       updateBounds();
@@ -57,9 +80,6 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
 
   useEffect(() => {
     scheduleBoundsUpdate();
-    const frame = window.requestAnimationFrame(scheduleBoundsUpdate);
-
-    return () => window.cancelAnimationFrame(frame);
   }, [layoutVersion, scheduleBoundsUpdate]);
 
   // Health check: periodically ensure bounds are in sync (safety net for missed updates)
@@ -75,16 +95,13 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
     return () => clearInterval(healthCheckInterval);
   }, [browserVisible, browserOverlayCount, activeWorkspaceId, scheduleBoundsUpdate]);
 
-  // Set up resize observer to track container size changes
+  // Observe the outer panel so pane mount/show/layout changes still trigger a follow-up
+  // bounds sync even if the inner content element has not emitted its own resize yet.
   useEffect(() => {
     if (!containerRef.current) return;
 
     const resizeObserver = new ResizeObserver(() => {
-      // Debounce to avoid excessive updates
-      if (resizeTimeoutRef.current) {
-        clearTimeout(resizeTimeoutRef.current);
-      }
-      resizeTimeoutRef.current = setTimeout(scheduleBoundsUpdate, 16); // ~60fps
+      scheduleBoundsUpdate();
     });
 
     resizeObserver.observe(containerRef.current);
@@ -94,19 +111,13 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
 
     return () => {
       resizeObserver.disconnect();
-      if (resizeTimeoutRef.current) {
-        clearTimeout(resizeTimeoutRef.current);
-      }
     };
   }, [scheduleBoundsUpdate]);
 
   // Update bounds on window resize
   useEffect(() => {
     const handleWindowResize = () => {
-      if (resizeTimeoutRef.current) {
-        clearTimeout(resizeTimeoutRef.current);
-      }
-      resizeTimeoutRef.current = setTimeout(scheduleBoundsUpdate, 16);
+      scheduleBoundsUpdate();
     };
 
     window.addEventListener('resize', handleWindowResize);
@@ -178,6 +189,13 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
     }
 
     scheduleBoundsUpdate();
+    const followUpFrame = window.requestAnimationFrame(() => {
+      scheduleBoundsUpdate();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(followUpFrame);
+    };
   }, [browserVisible, browserOverlayCount, scheduleBoundsUpdate, activeWorkspaceId]);
 
   const handleNavigate = () => {
