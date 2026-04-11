@@ -11,6 +11,26 @@ app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-dev-shm-usage');
 
+// Global exception handlers for main process
+process.on('uncaughtException', (error) => {
+  console.error('[clanker-grid] Uncaught exception:', error);
+  // Trigger graceful shutdown: PTY cleanup + window close
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+  }
+  killAllTerminals();
+  // Exit with error code to indicate abnormal termination
+  app.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[clanker-grid] Unhandled promise rejection:', reason);
+  // Log only, do not crash — keep app running for now
+  if (reason instanceof Error) {
+    console.error(reason.stack);
+  }
+});
+
 import Store from 'electron-store';
 
 import { GitService } from './gitService';
@@ -56,15 +76,58 @@ const browserViews: Map<string, BrowserViewEntry> = new Map();
 let activeBrowserWorkspaceId: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 
+const GRACEFUL_TERMINATION_TIMEOUT_MS = 1000;
+
 const killAllTerminals = () => {
-  for (const terminal of terminals.values()) {
+  // Phase 1: Send SIGTERM to all terminals for graceful shutdown
+  const terminalPids: Map<string, number> = new Map();
+  for (const [id, terminal] of terminals.entries()) {
     try {
-      terminal.pty.kill();
+      terminalPids.set(id, terminal.pty.pid);
+      terminal.pty.kill('SIGTERM');
     } catch (error) {
-      console.error('[clanker-grid] failed to kill terminal on cleanup', error);
+      console.error('[clanker-grid] failed to send SIGTERM to terminal', id, error);
+      // Remove terminal that already exited
+      terminals.delete(id);
     }
   }
-  terminals.clear();
+
+  // Phase 2: Wait for graceful termination, then send SIGKILL if still running
+  if (terminalPids.size > 0) {
+    const checkRemaining = () => {
+      for (const [id, pid] of terminalPids.entries()) {
+        if (!terminals.has(id)) continue; // Already cleaned up by onExit
+        try {
+          // Check if process is still running by trying to kill with signal 0
+          // (signal 0 doesn't kill but checks if process exists)
+          process.kill(pid, 0);
+          // Process still running - send SIGKILL
+          const terminal = terminals.get(id);
+          if (terminal) {
+            terminal.pty.kill('SIGKILL');
+          }
+        } catch {
+          // Process already terminated (ESRCH) - that's fine
+        }
+      }
+      terminals.clear();
+    };
+
+    // Use synchronous busy-wait for shutdown (no async during quit)
+    const startTime = Date.now();
+    const waitAndKill = () => {
+      while (Date.now() - startTime < GRACEFUL_TERMINATION_TIMEOUT_MS) {
+        // Brief sleep to allow signal processing
+        const sleep = (ms: number) => {
+          const end = Date.now() + ms;
+          while (Date.now() < end) { /* busy wait */ }
+        };
+        sleep(50);
+      }
+      checkRemaining();
+    };
+    waitAndKill();
+  }
 };
 
 const cleanupWindowState = () => {
@@ -158,8 +221,11 @@ app.on('window-all-closed', () => {
 // Set shutdown flag BEFORE any window teardown begins
 // This prevents late PTY callbacks from sending to dead windows
 app.on('before-quit', () => {
+  // Kill all PTY processes synchronously before quit
+  // Uses SIGTERM → SIGKILL sequence for unresponsive processes
+  killAllTerminals();
   setAppShuttingDown(true);
 });
 
 // Export shared state for test access
-export { terminals, browserViews, activeBrowserWorkspaceId, gitService, store };
+export { terminals, browserViews, activeBrowserWorkspaceId, gitService, store, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS };
