@@ -77,8 +77,8 @@
   flex: 1;
   position: relative;
   min-height: 0;
-  padding: 10px;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .browser-content {
