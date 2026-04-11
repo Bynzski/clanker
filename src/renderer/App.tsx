@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
+import ErrorBoundary from './components/ErrorBoundary';
 import Header from './components/Header';
 import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
@@ -145,10 +146,21 @@ function App() {
       <TitleBar onOpenWorkspace={() => setShowWorkspaceGate(true)} />
       <Header />
       <div className="main-content">
-        <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
-          <FileExplorer />
-          <DynamicPaneLayout />
-        </Suspense>
+        <ErrorBoundary
+          paneId="workspace-layout"
+          fallback={(error, _info, reset) => (
+            <div className="workspace-error-fallback">
+              <p>Workspace failed to render</p>
+              <p className="error-detail">{error.message}</p>
+              <button onClick={reset}>Reload</button>
+            </div>
+          )}
+        >
+          <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
+            <FileExplorer />
+            <DynamicPaneLayout />
+          </Suspense>
+        </ErrorBoundary>
       </div>
       <StatusBar />
       

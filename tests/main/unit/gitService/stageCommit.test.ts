@@ -562,6 +562,31 @@ describe('commit - failure handling with real git', () => {
     
     expect(result.success).toBe(true);
   });
+
+  it('surfaces stdout and stderr from a failing pre-commit hook', async () => {
+    repo = await createTempGitRepo({
+      initialFiles: { 'file.ts': 'content' },
+    });
+
+    await modifyFile(repo.path, 'file.ts', 'updated', true);
+
+    const fs = await import('fs');
+    const hookPath = `${repo.path}/.git/hooks/pre-commit`;
+    fs.writeFileSync(
+      hookPath,
+      '#!/bin/sh\n' +
+        'echo "hook stdout: running checks"\n' +
+        'echo "hook stderr: lint failed" 1>&2\n' +
+        'exit 1\n'
+    );
+    fs.chmodSync(hookPath, 0o755);
+
+    const result = await service.commit(repo.path, 'Normal message');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('hook stdout: running checks');
+    expect(result.error).toContain('hook stderr: lint failed');
+  });
 });
 
 // ============================================================================
