@@ -46,3 +46,17 @@ export interface VcsError {
   message: string;
   provider?: VcsProvider;
 }
+
+export interface VcsContextResult {
+  success: boolean;
+  provider?: ProviderContext;
+  pullRequest?: PullRequestContext;
+  deepLinks?: DeepLink[];
+  error?: string;
+}
+
+export interface VcsPrInfoResult {
+  success: boolean;
+  pullRequest?: PullRequestContext;
+  error?: string;
+}

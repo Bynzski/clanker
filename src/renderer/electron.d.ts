@@ -1,16 +1,66 @@
-import type { AiCommitSettings, ModelOption } from './types/shared';
-import type { FileListDirectoryRequest, FileListDirectoryResult } from '../shared/types/fileExplorer';
-import type { FileReadRequest, FileWriteRequest, FileChangedEvent, FileWatchRequest } from '../shared/types/editor';
-import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest, FileOperationResult } from '../shared/types/fileOperations';
+import type { FileListDirectoryRequest, FileListDirectoryResult } from '../../shared/types/fileExplorer';
+import type { FileReadRequest, FileWriteRequest, FileChangedEvent, FileWatchRequest, FileReadResult, FileWriteResult } from '../../shared/types/editor';
+import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest, FileOperationResult } from '../../shared/types/fileOperations';
 import type {
   DeepLink,
   DeepLinkType,
   ProviderContext,
   PullRequestContext,
   VcsProvider,
-} from '../shared/types/vcs';
+  VcsContextResult,
+  VcsPrInfoResult,
+} from '../../shared/types/vcs';
+import type {
+  GitStatusResult,
+  GitBranchStateResult,
+  GitDeleteBranchResult,
+  GitOperationStateResult,
+  GitStash,
+  GitHistoryEntry,
+  GitDiffResult,
+  FileDiffResult,
+  GenerateCommitMessageResult,
+  GitRemotesResult,
+  GitRemoteOperationResult,
+  GitInitResult,
+} from '../../shared/types/git';
+import type {
+  CredentialOperationResult,
+  SshKeyGenerationResult,
+  PublicKeyResult,
+  PatResult,
+  SshKeyConfig,
+  StoredPat,
+  CredentialStatusResult,
+  GlobalCredentialStatusResult,
+} from '../../shared/types/credentials';
+import type { AiCommitSettings, ModelOption } from '../types/shared';
 
 export type { VcsProvider, ProviderContext, PullRequestContext, DeepLink, DeepLinkType };
+export type {
+  GitStatusResult,
+  GitBranchStateResult,
+  GitDeleteBranchResult,
+  GitOperationStateResult,
+  GitStash,
+  GitHistoryEntry,
+  GitDiffResult,
+  FileDiffResult,
+  GenerateCommitMessageResult,
+  GitRemotesResult,
+  GitRemoteOperationResult,
+  GitInitResult,
+};
+export type {
+  CredentialOperationResult,
+  SshKeyGenerationResult,
+  PublicKeyResult,
+  PatResult,
+  SshKeyConfig,
+  StoredPat,
+  CredentialStatusResult,
+  GlobalCredentialStatusResult,
+};
 
 interface ElectronAPI {
   // Workspace
@@ -70,7 +120,7 @@ interface ElectronAPI {
 
   onFitAllPanes: (callback: () => void) => () => void;
 
-  // Git operations - managed by GitService in main process
+  // Git operations
   gitStartPolling: (workspacePath: string) => Promise<void>;
   gitStopPolling: () => Promise<void>;
   generateCommitMessage: (workspacePath: string) => Promise<GenerateCommitMessageResult>;
@@ -146,190 +196,6 @@ interface ElectronAPI {
   fileDelete: (request: FileDeleteRequest) => Promise<FileOperationResult>;
   fileRename: (request: FileRenameRequest) => Promise<FileOperationResult>;
 }
-
-interface VcsContextResult {
-  success: boolean;
-  provider?: ProviderContext;
-  pullRequest?: PullRequestContext;
-  deepLinks?: DeepLink[];
-  error?: string;
-}
-
-interface VcsPrInfoResult {
-  success: boolean;
-  pullRequest?: PullRequestContext;
-  error?: string;
-}
-
-type GitErrorCode = 'not-a-repo' | 'git-not-found' | 'unknown';
-
-interface GitStatusResult {
-  success: boolean;
-  isRepo: boolean;
-  currentBranch: string | null;
-  isDetached: boolean;
-  changes: GitStatus[];
-  upstream: string | null;
-  ahead: number;
-  behind: number;
-  errorCode?: GitErrorCode;
-  error?: string;
-}
-
-interface GitBranchStateResult {
-  success: boolean;
-  isRepo: boolean;
-  currentBranch: string | null;
-  isDetached: boolean;
-  branches: GitBranch[];
-  error?: string;
-}
-
-interface GitDeleteBranchResult {
-  success: boolean;
-  error?: string;
-  blockedByUnmergedCommits?: boolean;
-}
-
-interface GitOperationStateResult {
-  success: boolean;
-  isRepo: boolean;
-  inProgress: boolean;
-  mode: 'none' | 'merge' | 'rebase';
-  conflicts: string[];
-  message: string;
-  error?: string;
-}
-
-interface GitStash {
-  hash: string;
-  ref: string;
-  message: string;
-}
-
-interface GitHistoryEntry {
-  hash: string;
-  shortHash: string;
-  author: string;
-  date: string;
-  subject: string;
-}
-
-interface GitDiffResult {
-  success: boolean;
-  output: string;
-  title: string;
-  error?: string;
-}
-
-interface FileDiffResult {
-  success: boolean;
-  oldContent: string;
-  newContent: string;
-  oldPath: string;
-  newPath: string;
-  isBinary: boolean;
-  hasDiff: boolean;
-  error?: string;
-}
-
-interface GenerateCommitMessageResult {
-  success: boolean;
-  message?: string;
-  error?: string;
-}
-
-interface GitStatus {
-  path: string;
-  status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed';
-  staged: boolean;
-}
-
-interface GitBranch {
-  name: string;
-  isCurrent: boolean;
-}
-
-interface GitRemote {
-  name: string;
-  fetchUrl: string;
-  pushUrl: string;
-}
-
-interface GitRemotesResult {
-  success: boolean;
-  remotes: GitRemote[];
-  provider: VcsProvider;
-  error?: string;
-}
-
-interface GitRemoteOperationResult {
-  success: boolean;
-  error?: string;
-}
-
-interface GitInitResult {
-  success: boolean;
-  error?: string;
-}
-
-// Credential types - used by renderer for type checking
-/* eslint-disable @typescript-eslint/no-unused-vars */
-interface CredentialOperationResult {
-  success: boolean;
-  error?: string;
-}
-
-interface SshKeyGenerationResult {
-  success: boolean;
-  publicKey?: string;
-  fingerprint?: string;
-  error?: string;
-}
-
-interface PublicKeyResult {
-  success: boolean;
-  publicKey?: string;
-  fingerprint?: string;
-  error?: string;
-}
-
-interface PatResult {
-  success: boolean;
-  token?: string;
-  error?: string;
-}
-
-interface SshKeyConfig {
-  privateKeyPath: string;
-  publicKeyPath: string;
-  keyType: string;
-  fingerprint: string;
-  createdAt: string;
-}
-
-interface StoredPat {
-  provider: string;
-  scope: string[];
-  storedAt: string;
-  validated: boolean;
-}
-
-interface CredentialStatusResult {
-  remoteName: string;
-  provider: VcsProvider;
-  hasSshKey: boolean;
-  hasPat: boolean;
-  credentialHelper: string | null;
-}
-
-interface GlobalCredentialStatusResult {
-  defaultSshKeyPath: string;
-  hasDefaultSshKey: boolean;
-  storedPats: StoredPat[];
-  credentialHelpers: Record<string, string>;
-}
-/* eslint-enable @typescript-eslint/no-unused-vars */
 
 declare global {
   interface Window {
