@@ -276,13 +276,14 @@
 .commit-dialog-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-sm);
   padding: var(--space-md);
   border-top: 1px solid var(--border-color);
 }
 
 .commit-status {
+  flex: 1;
   min-height: 16px;
   display: flex;
   align-items: center;
@@ -290,6 +291,13 @@
   color: var(--text-secondary);
   font-size: 11px;
   letter-spacing: 0.01em;
+}
+
+.commit-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-left: auto;
 }
 
 .commit-error {

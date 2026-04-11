@@ -425,45 +425,47 @@ export default function CommitDialog({
                 </>
               )}
             </div>
-            <button
-              type="button"
-              className="header-btn"
-              onClick={onClose}
-              disabled={isBusy}
-            >
-              Cancel
-            </button>
-            {hasUnstagedChanges ? (
+            <div className="commit-dialog-actions">
               <button
-                type="submit"
-                className="header-btn header-btn-primary"
-                disabled={isBusy || !message.trim()}
+                type="button"
+                className="header-btn"
+                onClick={onClose}
+                disabled={isBusy}
               >
-                {isCommitting ? (
-                  <>
-                    <Loader2 size={15} className="spin" />
-                    Stage & Commit
-                  </>
-                ) : (
-                  'Stage All & Commit'
-                )}
+                Cancel
               </button>
-            ) : (
-              <button
-                type="submit"
-                className="header-btn header-btn-primary"
-                disabled={isBusy || !message.trim()}
-              >
-                {isCommitting ? (
-                  <>
-                    <Loader2 size={15} className="spin" />
-                    Commit
-                  </>
-                ) : (
-                  'Commit'
-                )}
-              </button>
-            )}
+              {hasUnstagedChanges ? (
+                <button
+                  type="submit"
+                  className="header-btn header-btn-primary"
+                  disabled={isBusy || !message.trim()}
+                >
+                  {isCommitting ? (
+                    <>
+                      <Loader2 size={15} className="spin" />
+                      Stage & Commit
+                    </>
+                  ) : (
+                    'Stage All & Commit'
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="header-btn header-btn-primary"
+                  disabled={isBusy || !message.trim()}
+                >
+                  {isCommitting ? (
+                    <>
+                      <Loader2 size={15} className="spin" />
+                      Commit
+                    </>
+                  ) : (
+                    'Commit'
+                  )}
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </div>
