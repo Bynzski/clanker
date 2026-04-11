@@ -75,7 +75,7 @@ VCS provider abstraction layer:
 | `security.ts` | `resolveExistingDirectory()` for path validation, `isUrlAllowed()` for browser URL allowlist. |
 | `gitService.ts` | GitService class — git CLI wrapper. All git operations go through this class. |
 | `aiCommit.ts` | AI commit message generation. Builds prompts and executes harness commands. |
-| `harnessLaunch.ts` | `buildHarnessSpawnArgs()` — constructs the shell command for harness spawning. |
+| `harnessLaunch.ts` | Harness launch helpers — preserves argument construction and manages the generated wrapper script used for harness PTY spawning. |
 | `harnessCatalog.ts` | `getAvailableHarnessOptions()` and `discoverHarnessModels()` — detects installed harnesses and available models. |
 | `fileService.ts` | File read/write operations. Used by `fileIpc.ts`. |
 | `fileWatcher.ts` | FileWatcherService — watches files and reports changes. Couples to GitService for external-change git status updates. |

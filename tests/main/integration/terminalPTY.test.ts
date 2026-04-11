@@ -19,7 +19,13 @@ import * as pty from 'node-pty';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { buildHarnessSpawnArgs, normalizePiModelId, type HarnessConfig } from '../../../src/main/harnessLaunch';
+import {
+  buildHarnessSpawnArgs,
+  buildHarnessWrapperScript,
+  ensureHarnessWrapperScript,
+  normalizePiModelId,
+  type HarnessConfig,
+} from '../../../src/main/harnessLaunch';
 
 // ============================================================================
 // Test Fixtures
@@ -44,6 +50,61 @@ function createTempDir(): TempDir {
       fs.rmSync(tempDir, { recursive: true, force: true });
     },
   };
+}
+
+async function runHarnessWrapperInPty(
+  wrapperPath: string,
+  command: string,
+  args: string[],
+  options: {
+    cwd?: string;
+    env?: Record<string, string>;
+    timeoutMs?: number;
+    onData?: (ptyProcess: pty.IPty, output: string) => void;
+  } = {}
+): Promise<PtyTestResult> {
+  const {
+    cwd = os.homedir(),
+    env = {},
+    timeoutMs = 5000,
+    onData,
+  } = options;
+
+  return new Promise((resolve) => {
+    let output = '';
+    let resolved = false;
+
+    const ptyProcess = pty.spawn(wrapperPath, [command, ...args], {
+      name: 'xterm-256color',
+      cwd,
+      env: {
+        ...process.env as Record<string, string>,
+        ...env,
+        TERM: 'xterm-256color',
+      },
+    });
+
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        ptyProcess.kill();
+        resolve({ pid: ptyProcess.pid, output, exitCode: null });
+      }
+    }, timeoutMs);
+
+    ptyProcess.onData((data: string) => {
+      output += data;
+      onData?.(ptyProcess, output);
+    });
+
+    ptyProcess.onExit(({ exitCode }) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve({ pid: ptyProcess.pid, output, exitCode });
+      }
+    });
+  });
 }
 
 /**
@@ -171,6 +232,44 @@ describe('Terminal PTY Integration Tests', () => {
       expect(normalizePiModelId('anthropic', 'claude-sonnet-4')).toBe('anthropic/claude-sonnet-4');
       expect(normalizePiModelId('openai', 'gpt-4o')).toBe('openai/gpt-4o');
       expect(normalizePiModelId('pi', 'sonnet')).toBe('pi/sonnet');
+    });
+
+    it('runs the harness as the foreground PTY job and then falls back to an interactive shell', async () => {
+      const tempHome = createTempDir();
+      let sentFallbackCommand = false;
+
+      try {
+        const wrapperPath = ensureHarnessWrapperScript(tempHome.path);
+        expect(fs.readFileSync(wrapperPath, 'utf8')).toBe(buildHarnessWrapperScript());
+
+        const result = await runHarnessWrapperInPty(
+          wrapperPath,
+          '/usr/bin/python3',
+          ['-c', 'import os, sys; print("tty=%s" % ("yes" if sys.stdin.isatty() else "no")); print("foreground=%s" % ("yes" if os.tcgetpgrp(sys.stdin.fileno()) == os.getpgrp() else "no"))'],
+          {
+            cwd: tempHome.path,
+            env: {
+              SHELL: '/bin/bash',
+              CLANKER_GRID_FALLBACK_SHELL: '/bin/bash',
+              HOME: tempHome.path,
+            },
+            timeoutMs: 6000,
+            onData: (ptyProcess, output) => {
+              if (!sentFallbackCommand && output.includes('foreground=yes')) {
+                sentFallbackCommand = true;
+                ptyProcess.write('echo fallback-shell-ready\nexit\n');
+              }
+            },
+          }
+        );
+
+        expect(result.output).toContain('tty=yes');
+        expect(result.output).toContain('foreground=yes');
+        expect(result.output).toContain('fallback-shell-ready');
+        expect(result.exitCode).toBe(0);
+      } finally {
+        tempHome.cleanup();
+      }
     });
   });
 

@@ -19,6 +19,8 @@
 
 Launch integrated AI coding agents directly in your workspace.
 
+Harness terminals use a generated wrapper script in the main process so the harness runs without the old inline `bash -i -c` command wrapper. When a harness exits, the terminal falls back to an interactive shell so the pane stays usable.
+
 ### Supported Harnesses
 
 | Harness | Command | Description |
