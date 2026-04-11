@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useRef, useState, createContext, useContext } from 'react';
+import ErrorBoundary from './ErrorBoundary';
 import { Group, Panel, Separator, type Layout } from 'react-resizable-panels';
 import {
   DndContext,
@@ -161,13 +162,16 @@ function LeafView({ node, draggedPaneId, overPaneId }: { node: LayoutLeaf; dragg
   );
 
   // Always wrap with PanelWrapper to show drag handle
+  // Wrap content in ErrorBoundary to isolate pane crashes
   return (
     <PanelWrapper
       paneId={paneId}
       isDragging={isDraggingThis}
       isOver={isOverThis}
     >
-      {content}
+      <ErrorBoundary paneId={paneId}>
+        {content}
+      </ErrorBoundary>
     </PanelWrapper>
   );
 }

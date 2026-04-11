@@ -277,6 +277,36 @@ describe('CommitDialog', () => {
     });
   });
 
+  it('shows commit progress while the commit is running', async () => {
+    let resolveCommit: ((value: { success: boolean; error?: string }) => void) | undefined;
+    mockOnCommit.mockImplementation(
+      () =>
+        new Promise<{ success: boolean; error?: string }>((resolve) => {
+          resolveCommit = resolve;
+        })
+    );
+
+    renderDialog({
+      changes: [
+        { path: 'file.ts', status: 'modified' as const, staged: true },
+      ],
+    });
+
+    const textarea = screen.getByPlaceholderText('Describe your changes...');
+    fireEvent.change(textarea, { target: { value: 'feat: add feature' } });
+    fireEvent.click(screen.getByText('Commit'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Running git hooks...')).toBeTruthy();
+    });
+
+    resolveCommit?.({ success: true });
+
+    await waitFor(() => {
+      expect(mockOnClose).toHaveBeenCalled();
+    });
+  });
+
   // =========================================================================
   // AI message generation
   // =========================================================================

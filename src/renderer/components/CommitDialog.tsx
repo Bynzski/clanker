@@ -42,6 +42,7 @@ export default function CommitDialog({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isUnstaging, setIsUnstaging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [commitStatus, setCommitStatus] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [unstagingPaths, setUnstagingPaths] = useState<Set<string>>(new Set());
   const [diffState, setDiffState] = useState<DiffViewerState>(initialDiffViewerState);
@@ -54,6 +55,7 @@ export default function CommitDialog({
       setIsCommitting(false);
       setIsGenerating(false);
       setIsUnstaging(false);
+      setCommitStatus(null);
       setUnstagingPaths(new Set());
       // Focus the input after a brief delay
       setTimeout(() => inputRef.current?.focus(), 100);
@@ -119,10 +121,12 @@ export default function CommitDialog({
 
     setIsCommitting(true);
     setError(null);
+    setCommitStatus(hasUnstagedChanges ? 'Staging changes...' : 'Running git hooks...');
 
     try {
       if (hasUnstagedChanges) {
         await onStageAll();
+        setCommitStatus('Running git hooks...');
       }
 
       const result = await onCommit(message);
@@ -136,6 +140,7 @@ export default function CommitDialog({
       setError(err instanceof Error ? err.message : 'An unexpected error occurred');
     } finally {
       setIsCommitting(false);
+      setCommitStatus(null);
     }
   };
 
@@ -412,6 +417,14 @@ export default function CommitDialog({
           </div>
 
           <div className="commit-dialog-footer">
+            <div className="commit-status" aria-live="polite">
+              {isCommitting && commitStatus && (
+                <>
+                  <Loader2 size={12} className="spin" />
+                  <span>{commitStatus}</span>
+                </>
+              )}
+            </div>
             <button
               type="button"
               className="header-btn"

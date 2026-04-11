@@ -165,7 +165,13 @@ export class GitService {
     const stderr = String(errorRecord?.stderr ?? '').trim();
     const stdout = String(errorRecord?.stdout ?? '').trim();
     const message = String(errorRecord?.message ?? '').trim();
-    return stderr || stdout || message || fallback;
+    const parts = [stderr, stdout, message].filter((part) => part.length > 0);
+
+    if (parts.length === 0) {
+      return fallback;
+    }
+
+    return [...new Set(parts)].join('\n');
   }
 
   private isBranchNotFullyMerged(error: unknown): boolean {
@@ -1078,7 +1084,7 @@ export class GitService {
     try {
       // Pre-commit hooks can run lint/typecheck/build steps and may need longer
       // than the default git command timeout.
-      await this.execGit(workspacePath, ['commit', '-m', message.trim()], 60000);
+      await this.execGit(workspacePath, ['commit', '-m', message.trim()], 120000);
       return { success: true };
     } catch (error) {
       const errorRecord = error as { killed?: boolean; signal?: string };
