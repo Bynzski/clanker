@@ -12,10 +12,17 @@ import {
   getActiveWorkspaceSnapshot,
   syncActiveWorkspace,
   patchWorkspaceById,
+  isEditorOperationPending,
+  setEditorOperationPending,
+  clearEditorOperationPending,
 } from '../../../src/renderer/store/workspaceStore';
 import type { WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import type { GitStatus } from '../../../src/renderer/components/git/types';
+import type { BrowserPaneState, EditorPaneState, LayoutNode, Pane } from '../../../src/renderer/store/workspaceTypes';
 import { createWorkspaceFixture } from '../../setup/fixtures';
+
+/** Minimal type matching PendingEditorOperationsHolder for editor operation helper tests. */
+type EditorPendingState = { pendingEditorOperations: Record<string, string> };
 
 // ---------------------------------------------------------------------------
 // Minimal mock workspace for syncActiveWorkspace / patchWorkspaceById tests
@@ -520,5 +527,341 @@ describe('patchWorkspaceById', () => {
     const workspaces = (result as Record<string, unknown>).workspaces as WorkspaceTab[];
     expect(workspaces.map(w => w.id)).toEqual(['ws-1', 'ws-2', 'ws-3']);
     expect(workspaces[1].name).toBe('patched');
+  });
+});
+
+// ===========================================================================
+// validateWorkspaceConsistency
+// ===========================================================================
+import { validateWorkspaceConsistency } from '../../../src/renderer/store/workspaceStore';
+
+// ---------------------------------------------------------------------------
+// Helper to build minimal test states (distinct from existing makeState)
+// ---------------------------------------------------------------------------
+function makeMinimalState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    activeWorkspaceId: null,
+    workspaces: [],
+    activeTerminalId: null,
+    terminals: [],
+    layoutRoot: null,
+    panes: [],
+    browserVisible: false,
+    browserPane: null,
+    editorVisible: false,
+    editorPane: null,
+    editorTabs: [],
+    activeEditorTabId: null,
+    ...overrides,
+  };
+}
+
+
+function makeLeaf(paneId: string): LayoutNode {
+  return { type: 'leaf', nodeId: `node-${paneId}`, paneId };
+}
+
+
+describe('validateWorkspaceConsistency', () => {
+  // [W1,W2] Workspace invariants
+  describe('W1 (activeWorkspaceId <-> workspaces)', () => {
+    it('passes when activeWorkspaceId is null and workspaces is empty', () => {
+      const state = makeMinimalState({ activeWorkspaceId: null, workspaces: [] });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('passes when activeWorkspaceId is set and workspaces is non-empty', () => {
+      const ws = makeWorkspace();
+      const state = makeMinimalState({ activeWorkspaceId: ws.id, workspaces: [ws] });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('warns when activeWorkspaceId is null but workspaces is non-empty', () => {
+      const ws = makeWorkspace();
+      const state = makeMinimalState({ activeWorkspaceId: null, workspaces: [ws] });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'W1 violated: activeWorkspaceId is null but workspaces[] is non-empty',
+      );
+    });
+  });
+
+  describe('W2 (activeWorkspaceId reference)', () => {
+    it('passes when activeWorkspaceId exists in workspaces', () => {
+      const ws = makeWorkspace();
+      const state = makeMinimalState({ activeWorkspaceId: ws.id, workspaces: [ws] });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('warns when activeWorkspaceId is not found in workspaces', () => {
+      const state = makeMinimalState({ activeWorkspaceId: 'non-existent', workspaces: [makeWorkspace()] });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'W2 violated: activeWorkspaceId "non-existent" not found in workspaces[]',
+      );
+    });
+  });
+
+
+  // [T1,T2] Terminal invariants
+  describe('T1 (activeTerminalId <-> terminals)', () => {
+    it('passes when activeTerminalId is null and terminals is empty', () => {
+      const state = makeMinimalState({ activeTerminalId: null, terminals: [] });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('passes when activeTerminalId is set and terminals is non-empty', () => {
+      const term = makeWorkspace().terminals[0];
+      const state = makeMinimalState({ activeTerminalId: term.id, terminals: [term] });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('warns when activeTerminalId is null but terminals is non-empty', () => {
+      const term = makeWorkspace().terminals[0];
+      const state = makeMinimalState({ activeTerminalId: null, terminals: [term] });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'T1 violated: activeTerminalId is null but terminals[] is non-empty',
+      );
+    });
+  });
+
+  describe('T2 (activeTerminalId reference)', () => {
+    it('passes when activeTerminalId exists in terminals', () => {
+      const term = makeWorkspace().terminals[0];
+      const state = makeMinimalState({ activeTerminalId: term.id, terminals: [term] });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('warns when activeTerminalId is not found in terminals', () => {
+      const state = makeMinimalState({ activeTerminalId: 'non-existent', terminals: [] });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'T2 violated: activeTerminalId "non-existent" not found in terminals[]',
+      );
+    });
+  });
+
+  // [L1,L2] Layout invariants
+  describe('L1 (layoutRoot nullity)', () => {
+    it('passes when layoutRoot is null and no panes/browser/editor', () => {
+      const state = makeMinimalState({ layoutRoot: null, panes: [], browserVisible: false, editorVisible: false });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('passes when layoutRoot is non-null and panes exist', () => {
+      const pane: Pane = { id: 'pane-1', terminalId: null };
+      const state = makeMinimalState({ layoutRoot: makeLeaf('pane-1'), panes: [pane], browserVisible: false, editorVisible: false });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('warns when layoutRoot is null but panes[] is non-empty', () => {
+      const pane: Pane = { id: 'pane-1', terminalId: null };
+      const state = makeMinimalState({ layoutRoot: null, panes: [pane], browserVisible: false, editorVisible: false });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'L1 violated: layoutRoot is null but panes[] is non-empty',
+      );
+    });
+
+    it('warns when layoutRoot is null but browser is visible', () => {
+      const bp: BrowserPaneState = { id: 'browser-1', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false };
+      const state = makeMinimalState({ layoutRoot: null, panes: [], browserVisible: true, browserPane: bp });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'L1 violated: layoutRoot is null but browser is visible',
+      );
+    });
+
+    it('warns when layoutRoot is null but editor is visible', () => {
+      const ep: EditorPaneState = { id: 'editor-1', locked: false };
+      const state = makeMinimalState({ layoutRoot: null, panes: [], browserVisible: false, editorVisible: true, editorPane: ep });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'L1 violated: layoutRoot is null but editor is visible',
+      );
+    });
+
+    it('warns when layoutRoot is non-null but no panes exist and browser/editor are invisible', () => {
+      const state = makeMinimalState({ layoutRoot: makeLeaf('orphan-pane'), panes: [], browserVisible: false, editorVisible: false });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'L1 violated: layoutRoot is non-null but no panes exist and browser/editor are invisible',
+      );
+    });
+  });
+
+
+  describe('L2 (layout pane ID integrity)', () => {
+    it('passes when all layout pane IDs are valid', () => {
+      const pane: Pane = { id: 'pane-1', terminalId: null };
+      const state = makeMinimalState({ layoutRoot: makeLeaf('pane-1'), panes: [pane] });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('passes when layout references browserPane', () => {
+      const bp: BrowserPaneState = { id: 'browser-1', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false };
+      const state = makeMinimalState({ layoutRoot: makeLeaf('browser-1'), panes: [], browserPane: bp, browserVisible: true });
+
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('passes when layout references editorPane', () => {
+      const ep: EditorPaneState = { id: 'editor-1', locked: false };
+      const state = makeMinimalState({ layoutRoot: makeLeaf('editor-1'), panes: [], editorPane: ep, editorVisible: true });
+
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('warns when layout references pane not in panes[], browserPane, or editorPane', () => {
+      const pane: Pane = { id: 'pane-1', terminalId: null };
+      const state = makeMinimalState({ layoutRoot: makeLeaf('ghost-pane'), panes: [pane] });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'L2 violated: layout pane "ghost-pane" not found in panes[], browserPane, or editorPane',
+      );
+    });
+  });
+
+
+  // [E1,E2] Editor invariants
+  describe('E1 (activeEditorTabId <-> editorTabs)', () => {
+    it('passes when activeEditorTabId is null and editorTabs is empty', () => {
+      const state = makeMinimalState({ activeEditorTabId: null, editorTabs: [] });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('passes when activeEditorTabId is set and editorTabs is non-empty', () => {
+      const tab = { id: 'tab-1', filePath: '/test.ts', fileName: 'test.ts', isDirty: false, content: '', originalContent: '' };
+      const state = makeMinimalState({ activeEditorTabId: 'tab-1', editorTabs: [tab] });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('warns when activeEditorTabId is null but editorTabs is non-empty', () => {
+      const tab = { id: 'tab-1', filePath: '/test.ts', fileName: 'test.ts', isDirty: false, content: '', originalContent: '' };
+      const state = makeMinimalState({ activeEditorTabId: null, editorTabs: [tab] });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'E1 violated: activeEditorTabId is null but editorTabs[] is non-empty',
+      );
+    });
+  });
+
+  describe('E2 (activeEditorTabId reference)', () => {
+    it('passes when activeEditorTabId exists in editorTabs', () => {
+      const tab = { id: 'tab-1', filePath: '/test.ts', fileName: 'test.ts', isDirty: false, content: '', originalContent: '' };
+      const state = makeMinimalState({ activeEditorTabId: 'tab-1', editorTabs: [tab] });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('warns when activeEditorTabId is not found in editorTabs', () => {
+      const state = makeMinimalState({ activeEditorTabId: 'non-existent', editorTabs: [] });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'E2 violated: activeEditorTabId "non-existent" not found in editorTabs[]',
+      );
+    });
+  });
+
+
+  describe('multiple violations', () => {
+    it('returns all violations when multiple invariants are broken', () => {
+      const state = makeMinimalState({
+        activeWorkspaceId: 'non-existent',
+        activeTerminalId: 'non-existent',
+        activeEditorTabId: 'non-existent',
+      });
+      const warnings = validateWorkspaceConsistency(state);
+      expect(warnings).toContain('W2 violated: activeWorkspaceId "non-existent" not found in workspaces[]');
+      expect(warnings).toContain('T2 violated: activeTerminalId "non-existent" not found in terminals[]');
+      expect(warnings).toContain('E2 violated: activeEditorTabId "non-existent" not found in editorTabs[]');
+    });
+  });
+
+  describe('partial snapshots', () => {
+    it('does not warn when activeWorkspaceId is omitted (undefined)', () => {
+      const ws = makeWorkspace();
+      expect(validateWorkspaceConsistency({ workspaces: [ws] })).toEqual([]);
+    });
+
+    it('does not warn when layoutRoot is omitted (undefined)', () => {
+      const pane: Pane = { id: 'pane-1', terminalId: null };
+      expect(validateWorkspaceConsistency({ panes: [pane] })).toEqual([]);
+    });
+  });
+});
+
+describe('editor operation pending helpers', () => {
+  function makeEditorState(overrides: Partial<EditorPendingState> = {}): EditorPendingState {
+    return {
+      pendingEditorOperations: {},
+      ...overrides,
+    };
+  }
+
+  describe('isEditorOperationPending', () => {
+    it('returns false when no operations are pending', () => {
+      const state = makeEditorState();
+      expect(isEditorOperationPending(state, '/foo.ts')).toBe(false);
+    });
+
+    it('returns false for a different file path', () => {
+      const state = makeEditorState({ pendingEditorOperations: { '/bar.ts': 'save' } });
+      expect(isEditorOperationPending(state, '/foo.ts')).toBe(false);
+    });
+
+    it('returns true when the file has a pending operation', () => {
+      const state = makeEditorState({ pendingEditorOperations: { '/foo.ts': 'open' } });
+      expect(isEditorOperationPending(state, '/foo.ts')).toBe(true);
+    });
+  });
+
+  describe('setEditorOperationPending', () => {
+    it('adds an operation to empty map', () => {
+      const state = makeEditorState();
+      const result = setEditorOperationPending(state, '/foo.ts', 'save');
+      expect(result).toEqual({ '/foo.ts': 'save' });
+    });
+
+    it('adds an operation alongside existing ones', () => {
+      const state = makeEditorState({ pendingEditorOperations: { '/bar.ts': 'open' } });
+      const result = setEditorOperationPending(state, '/foo.ts', 'save');
+      expect(result).toEqual({ '/bar.ts': 'open', '/foo.ts': 'save' });
+    });
+
+    it('overwrites existing operation for the same file', () => {
+      const state = makeEditorState({ pendingEditorOperations: { '/foo.ts': 'open' } });
+      const result = setEditorOperationPending(state, '/foo.ts', 'save');
+      expect(result).toEqual({ '/foo.ts': 'save' });
+    });
+
+    it('does not mutate the original map', () => {
+      const original: Record<string, string> = {};
+      const state = makeEditorState({ pendingEditorOperations: original });
+      setEditorOperationPending(state, '/foo.ts', 'save');
+      expect(original).toEqual({});
+    });
+  });
+
+  describe('clearEditorOperationPending', () => {
+    it('removes an existing operation', () => {
+      const state = makeEditorState({ pendingEditorOperations: { '/foo.ts': 'save', '/bar.ts': 'open' } });
+      const result = clearEditorOperationPending(state, '/foo.ts');
+      expect(result).toEqual({ '/bar.ts': 'open' });
+    });
+
+    it('returns empty object when removing the last operation', () => {
+      const state = makeEditorState({ pendingEditorOperations: { '/foo.ts': 'save' } });
+      const result = clearEditorOperationPending(state, '/foo.ts');
+      expect(result).toEqual({});
+    });
+
+    it('is no-op when the file has no pending operation', () => {
+      const state = makeEditorState({ pendingEditorOperations: { '/bar.ts': 'open' } });
+      const result = clearEditorOperationPending(state, '/foo.ts');
+      expect(result).toEqual({ '/bar.ts': 'open' });
+    });
+
+    it('is no-op on empty map', () => {
+      const state = makeEditorState();
+      const result = clearEditorOperationPending(state, '/foo.ts');
+      expect(result).toEqual({});
+    });
+
+    it('does not mutate the original map', () => {
+      const original: Record<string, string> = { '/foo.ts': 'save' };
+      const state = makeEditorState({ pendingEditorOperations: original });
+      clearEditorOperationPending(state, '/foo.ts');
+      expect(original).toEqual({ '/foo.ts': 'save' });
+    });
   });
 });

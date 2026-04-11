@@ -45,29 +45,29 @@ export type {
 /**
  * Workspace state for the active workspace and the collection of all workspaces.
  *
- * @invariant activeWorkspaceId === null ↔ workspaces.length === 0
+ * @invariant activeWorkspaceId === null - workspaces.length === 0
  *   When no workspaces exist, nothing can be active.
  *
- * @invariant activeWorkspaceId !== null → workspaces.some(w => w.id === activeWorkspaceId)
+ * @invariant activeWorkspaceId !== null -> workspaces.some(w => w.id === activeWorkspaceId)
  *   The active workspace ID always references an existing workspace.
  *
- * @invariant activeTerminalId === null ↔ terminals.length === 0
+ * @invariant activeTerminalId === null - terminals.length === 0
  *   When no terminals exist, no terminal can be active.
  *
- * @invariant activeTerminalId !== null → terminals.some(t => t.id === activeTerminalId)
+ * @invariant activeTerminalId !== null -> terminals.some(t => t.id === activeTerminalId)
  *   The active terminal ID always references an existing terminal.
  *
- * @invariant layoutRoot === null ↔ panes.length === 0 && !browserVisible && !editorVisible
+ * @invariant layoutRoot === null - panes.length === 0 && !browserVisible && !editorVisible
  *   The layout tree only exists when there are visible panes.
  *
- * @invariant layoutRoot !== null → all pane IDs in layoutRoot exist in
+ * @invariant layoutRoot !== null -> all pane IDs in layoutRoot exist in
  *   panes[].id ∪ {browserPane?.id} ∪ {editorPane?.id}
  *   The layout tree only references valid pane IDs.
  *
- * @invariant activeEditorTabId === null ↔ editorTabs.length === 0
+ * @invariant activeEditorTabId === null - editorTabs.length === 0
  *   When no editor tabs are open, no tab can be active.
  *
- * @invariant activeEditorTabId !== null → editorTabs.some(t => t.id === activeEditorTabId)
+ * @invariant activeEditorTabId !== null -> editorTabs.some(t => t.id === activeEditorTabId)
  *   The active editor tab ID always references an existing tab.
  */
 interface WorkspaceState {
@@ -80,10 +80,10 @@ interface WorkspaceState {
   browserVisible: boolean;
   browserOverlayCount: number;
   browserUrl: string;
-  /** @invariant null ↔ terminals.length === 0 */
+  /** @invariant null - terminals.length === 0 */
   activeTerminalId: string | null;
   browserPane: BrowserPaneState | null;
-  /** @invariant null ↔ panes.length === 0 && !browserVisible && !editorVisible */
+  /** @invariant null - panes.length === 0 && !browserVisible && !editorVisible */
   layoutRoot: LayoutNode | null;
   explorerVisible: boolean;
   explorerSidebarWidth: number;
@@ -95,7 +95,7 @@ interface WorkspaceState {
   showHiddenFiles: boolean;
   gitChanges: GitStatus[];
   workspaces: WorkspaceTab[];
-  /** @invariant null ↔ workspaces.length === 0 */
+  /** @invariant null - workspaces.length === 0 */
   activeWorkspaceId: string | null;
   gridViewport: GridViewport;
   layoutRevision: number;
@@ -103,7 +103,7 @@ interface WorkspaceState {
   editorVisible: boolean;
   editorPane: EditorPaneState | null;
   editorTabs: EditorTab[];
-  /** @invariant null ↔ editorTabs.length === 0 */
+  /** @invariant null - editorTabs.length === 0 */
   activeEditorTabId: string | null;
 
   addWorkspace: (workspace: Omit<WorkspaceTab, 'id'>) => void;
@@ -170,6 +170,9 @@ interface WorkspaceState {
   markEditorTabExternallyChanged: (tabId: string) => void;
   markEditorTabDeleted: (tabId: string) => void;
   clearEditorTabExternalFlag: (tabId: string) => void;
+
+  /** Tracks in-flight async editor operations keyed by file path to prevent races. */
+  pendingEditorOperations: Record<string, string>;
 }
 
 type ActiveWorkspaceSnapshot = Pick<
@@ -357,7 +360,6 @@ export function syncActiveWorkspace(
     workspaces: nextWorkspaces,
   };
 }
-
 export function patchWorkspaceById(
   state: WorkspaceState,
   workspaceId: string,
@@ -386,6 +388,116 @@ export function patchWorkspaceById(
   return { workspaces: nextWorkspaces };
 }
 
+interface PendingEditorOperationsHolder {
+  pendingEditorOperations: Record<string, string>;
+}
+
+export function isEditorOperationPending(state: PendingEditorOperationsHolder, filePath: string): boolean {
+  return filePath in state.pendingEditorOperations;
+}
+
+export function setEditorOperationPending(
+  state: PendingEditorOperationsHolder,
+  filePath: string,
+  opType: string
+): Record<string, string> {
+  return { ...state.pendingEditorOperations, [filePath]: opType };
+}
+
+export function clearEditorOperationPending(
+  state: PendingEditorOperationsHolder,
+  filePath: string
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(state.pendingEditorOperations).filter(([key]) => key !== filePath)
+  );
+}
+
+export function validateWorkspaceConsistency(state: Partial<WorkspaceState>): string[] {
+  const warnings: string[] = [];
+
+  // This validator is called with `Partial<WorkspaceState>` snapshots in many places.
+  // Treat `undefined` fields as "not provided" (skip checks) to avoid false positives.
+  const hasOwn = (key: keyof WorkspaceState): boolean =>
+    Object.prototype.hasOwnProperty.call(state, key);
+
+  // [W1,W2] Workspace invariants
+  if (state.activeWorkspaceId === null && (state.workspaces?.length ?? 0) > 0) {
+    warnings.push('W1 violated: activeWorkspaceId is null but workspaces[] is non-empty');
+  }
+  if (typeof state.activeWorkspaceId === 'string' && Array.isArray(state.workspaces)) {
+    if (!state.workspaces.some(w => w.id === state.activeWorkspaceId)) {
+      warnings.push(`W2 violated: activeWorkspaceId "${state.activeWorkspaceId}" not found in workspaces[]`);
+    }
+  }
+
+  // [T1,T2] Terminal invariants
+  if (state.activeTerminalId === null && (state.terminals?.length ?? 0) > 0) {
+    warnings.push('T1 violated: activeTerminalId is null but terminals[] is non-empty');
+  }
+  if (typeof state.activeTerminalId === 'string' && Array.isArray(state.terminals)) {
+    if (!state.terminals.some(t => t.id === state.activeTerminalId)) {
+      warnings.push(`T2 violated: activeTerminalId "${state.activeTerminalId}" not found in terminals[]`);
+    }
+  }
+
+  // [L1,L2] Layout invariants
+  if (hasOwn('layoutRoot')) {
+    const layoutRoot = state.layoutRoot ?? null;
+
+    if (layoutRoot === null) {
+      if (Array.isArray(state.panes) && state.panes.length > 0) {
+        warnings.push('L1 violated: layoutRoot is null but panes[] is non-empty');
+      }
+      if (state.browserVisible === true) {
+        warnings.push('L1 violated: layoutRoot is null but browser is visible');
+      }
+      if (state.editorVisible === true) {
+        warnings.push('L1 violated: layoutRoot is null but editor is visible');
+      }
+    } else {
+      // Only validate this invariant when the relevant fields are present; missing booleans
+      // should not be interpreted as "false" in partial snapshots.
+      if (
+        Array.isArray(state.panes)
+        && state.panes.length === 0
+        && state.browserVisible === false
+        && state.editorVisible === false
+      ) {
+        warnings.push('L1 violated: layoutRoot is non-null but no panes exist and browser/editor are invisible');
+      }
+
+      const panes = state.panes;
+      if (Array.isArray(panes) && hasOwn('browserPane') && hasOwn('editorPane')) {
+        const leafPaneIds = collectLeafPaneIds(layoutRoot);
+        const allValidPaneIds = new Set<string>([
+          ...panes.map(p => p.id),
+          ...(state.browserPane ? [state.browserPane.id] : []),
+          ...(state.editorPane ? [state.editorPane.id] : []),
+        ]);
+        for (const paneId of leafPaneIds) {
+          if (!allValidPaneIds.has(paneId)) {
+            warnings.push(`L2 violated: layout pane "${paneId}" not found in panes[], browserPane, or editorPane`);
+          }
+        }
+      }
+    }
+  }
+
+  // [E1,E2] Editor invariants
+  if (state.activeEditorTabId === null && (state.editorTabs?.length ?? 0) > 0) {
+    warnings.push('E1 violated: activeEditorTabId is null but editorTabs[] is non-empty');
+  }
+  if (typeof state.activeEditorTabId === 'string' && Array.isArray(state.editorTabs)) {
+    if (!state.editorTabs.some(t => t.id === state.activeEditorTabId)) {
+      warnings.push(`E2 violated: activeEditorTabId "${state.activeEditorTabId}" not found in editorTabs[]`);
+    }
+  }
+
+  return warnings;
+}
+
+
 const defaultWorkspaceState = {
   name: '',
   workspacePath: '',
@@ -403,6 +515,7 @@ const defaultWorkspaceState = {
   ...createDefaultEditorState(),
   gridViewport: { cols: GRID_COLS, rows: GRID_ROWS },
   layoutRevision: 0,
+  pendingEditorOperations: {} as Record<string, string>,
 };
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -420,12 +533,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       name: defaultName,
     });
 
-    return {
+    const nextState = {
       ...getActiveWorkspaceSnapshot(nextWorkspace),
       workspaces: [...state.workspaces, nextWorkspace],
       activeWorkspaceId: id,
       layoutRevision: state.layoutRevision,
     };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after addWorkspace:', warnings);
+      }
+    }
+    return nextState;
   }),
 
   selectWorkspace: (id) => set((state) => {
@@ -435,12 +555,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
     const next = sanitizeWorkspace(workspace);
-    return {
+    const nextState = {
       ...getActiveWorkspaceSnapshot(next),
       gridViewport: state.gridViewport,
       layoutRevision: state.layoutRevision,
       activeWorkspaceId: id,
     };
+
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after selectWorkspace:', warnings);
+      }
+    }
+
+    return nextState;
   }),
 
   closeWorkspace: (id) => set((state) => {
@@ -526,7 +655,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     const nextActiveTerminalId = terminal.id;
 
-    return {
+    const nextState = {
       terminals: nextTerminals,
       panes: nextPanes,
       activeTerminalId: nextActiveTerminalId,
@@ -541,6 +670,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         model: state.model,
       })),
     };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after addTerminal:', warnings);
+      }
+    }
+
+    return nextState;
   }),
 
   removeTerminal: (id) => set((state) => {
@@ -553,8 +690,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const nextLayoutRoot = paneToRemove
       ? removePaneFromLayout(state.layoutRoot, paneToRemove.id)
       : state.layoutRoot;
-
-    return {
+    const nextState = {
       terminals: nextTerminals,
       panes: nextPanes,
       activeTerminalId: nextActiveTerminalId,
@@ -568,15 +704,36 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayoutRoot,
       })),
     };
+
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after removeTerminal:', warnings);
+      }
+    }
+
+
+    return nextState;
   }),
 
-  setActiveTerminal: (id) => set((state) => ({
-    activeTerminalId: id,
-    ...syncActiveWorkspace(state, (workspace) => ({
-      ...workspace,
+  setActiveTerminal: (id) => set((state) => {
+    const nextState = {
       activeTerminalId: id,
-    })),
-  })),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        activeTerminalId: id,
+      })),
+    };
+
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after setActiveTerminal:', warnings);
+      }
+    }
+
+    return nextState;
+  }),
 
   toggleBrowser: () => set((state) => {
     const nextBrowserVisible = !state.browserVisible;
@@ -602,7 +759,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             activeTerminalId: state.activeTerminalId,
           });
         } else {
-          const currentIds = collectLeafPaneIds(state.layoutRoot);
+          const currentIds = collectLeafPaneIds(state.layoutRoot ?? null);
           if (!currentIds.includes(browserId)) {
             if (state.layoutRoot != null && !hasUnlockedLeaf(state.layoutRoot, state)) {
               console.warn('All panes are locked. Cannot add the browser pane.');
@@ -663,19 +820,29 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }))
   )),
 
-  clearTerminals: () => set((state) => ({
-    terminals: [],
-    panes: [],
-    activeTerminalId: null,
-    layoutRoot: null,
-    ...syncActiveWorkspace(state, (workspace) => ({
-      ...workspace,
+  clearTerminals: () => set((state) => {
+    const nextState = {
       terminals: [],
       panes: [],
       activeTerminalId: null,
       layoutRoot: null,
-    })),
-  })),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        terminals: [],
+        panes: [],
+        activeTerminalId: null,
+        layoutRoot: null,
+      })),
+    };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after clearTerminals:', warnings);
+      }
+    }
+
+    return nextState;
+  }),
 
   setExplorerVisible: (visible) => set((state) => ({
     explorerVisible: visible,
@@ -904,7 +1071,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   updatePanePosition: (paneId, position) => set((state) => {
     const viewport = state.gridViewport;
     const nextPosition = normalizePosition(position, viewport.cols, viewport.rows);
-    const nextPanes = state.panes.map((pane) =>
+    const nextPanes = (state.panes ?? []).map((pane) =>
       pane.id === paneId ? { ...pane, position: nextPosition } : pane
     );
     return {
@@ -919,7 +1086,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   updateAllPanePositions: (positions) => set((state) => {
     const viewport = state.gridViewport;
     const posMap = new Map(positions.map(p => [p.id, p.position]));
-    const nextPanes = state.panes.map((pane) => {
+    const nextPanes = (state.panes ?? []).map((pane) => {
       const pos = posMap.get(pane.id);
       return pos ? { ...pane, position: normalizePosition(pos, viewport.cols, viewport.rows) } : pane;
     });
@@ -982,7 +1149,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       layoutRoot: null,
     });
 
-    return {
+    const nextState = {
       layoutRoot: nextLayout,
       layoutRevision: state.layoutRevision + 1,
       ...syncActiveWorkspace(state, (workspace) => ({
@@ -990,6 +1157,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayout,
       })),
     };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after resetLayout:', warnings);
+      }
+    }
+
+    return nextState;
   }),
 
   fitAllPanes: () => set((state) => {
@@ -1002,7 +1177,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       layoutRoot: null,
     });
 
-    return {
+    const nextState = {
       layoutRoot: nextLayout,
       layoutRevision: state.layoutRevision + 1,
       ...syncActiveWorkspace(state, (workspace) => ({
@@ -1010,7 +1185,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayout,
       })),
     };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after fitAllPanes:', warnings);
+      }
+    }
+
+    return nextState;
   }),
+
 
   bringPaneIntoView: (paneId) => set((state) => {
     const firstPaneId = findFirstLeafPaneId(state.layoutRoot);
@@ -1020,7 +1204,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     const nextLayoutRoot = swapPaneIdsInLayout(state.layoutRoot, firstPaneId, paneId);
 
-    return {
+    const nextState = {
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
       ...syncActiveWorkspace(state, (workspace) => ({
@@ -1028,6 +1212,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayoutRoot,
       })),
     };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after bringPaneIntoView:', warnings);
+      }
+    }
+
+    return nextState;
   }),
 
   bringBrowserIntoView: () => set((state) => {
@@ -1042,7 +1234,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     const nextLayoutRoot = swapPaneIdsInLayout(state.layoutRoot, firstPaneId, state.browserPane.id);
 
-    return {
+    const nextState = {
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
       ...syncActiveWorkspace(state, (workspace) => ({
@@ -1050,10 +1242,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayoutRoot,
       })),
     };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after bringBrowserIntoView:', warnings);
+      }
+    }
+
+    return nextState;
   }),
 
   togglePaneLock: (paneId) => set((state) => {
-    const nextPanes = state.panes.map((pane) => (
+    const nextPanes = (state.panes ?? []).map((pane) => (
       pane.id === paneId
         ? { ...pane, locked: !(pane.locked ?? false) }
         : pane
@@ -1091,7 +1291,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (a === b) return state;
     const nextLayoutRoot = swapPaneIdsInLayout(state.layoutRoot, a, b);
 
-    return {
+
+    const nextState = {
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
       ...syncActiveWorkspace(state, (workspace) => ({
@@ -1099,6 +1300,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayoutRoot,
       })),
     };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after swapPanes:', warnings);
+      }
+    }
+
+    return nextState;
   }),
 
   dockPaneToEdge: (paneId, edge) => set((state) => {
@@ -1107,7 +1316,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
-    return {
+
+    const nextState = {
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
       ...syncActiveWorkspace(state, (workspace) => ({
@@ -1115,11 +1325,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayoutRoot,
       })),
     };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after dockPaneToEdge:', warnings);
+      }
+    }
+
+    return nextState;
   }),
 
   setSplitRatio: (nodeId, ratio) => set((state) => {
     const nextLayoutRoot = setSplitRatioInLayout(state.layoutRoot, nodeId, ratio);
-    return {
+
+
+    const nextState = {
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
       ...syncActiveWorkspace(state, (workspace) => ({
@@ -1127,6 +1347,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayoutRoot,
       })),
     };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after setSplitRatio:', warnings);
+      }
+    }
+    return nextState;
   }),
 
   canAddPane: (): boolean => {
@@ -1148,81 +1375,94 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return;
     }
 
-    const readResult = await window.electronAPI.editorReadFile({
-      workspacePath: state.workspacePath,
-      filePath,
-    });
-
-    if (!readResult.success) {
-      console.warn('Failed to read file for editor:', readResult.errorCode);
+    // Deduplicate concurrent opens for the same file
+    if (isEditorOperationPending(state, filePath)) {
       return;
     }
 
-    const fileName = filePath.split('/').pop() ?? filePath;
-    const newTab: EditorTab = {
-      id: generateId('editor-tab'),
-      filePath,
-      fileName,
-      isDirty: false,
-      content: readResult.content ?? '',
-      originalContent: readResult.content ?? '',
-    };
+    useWorkspaceStore.setState({ pendingEditorOperations: setEditorOperationPending(state, filePath, 'open') });
 
-    useWorkspaceStore.setState((currentState) => {
-      const latestExistingTab = currentState.editorTabs.find((tab) => tab.filePath === filePath);
-      if (latestExistingTab) {
-        return {
-          activeEditorTabId: latestExistingTab.id,
-          ...syncActiveWorkspace(currentState, (workspace) => ({
-            ...workspace,
-            activeEditorTabId: latestExistingTab.id,
-          })),
-        };
+    try {
+      const readResult = await window.electronAPI.editorReadFile({
+        workspacePath: state.workspacePath,
+        filePath,
+      });
+
+      if (!readResult.success) {
+        console.warn('Failed to read file for editor:', readResult.errorCode);
+        return;
       }
 
-      const nextEditorPane = currentState.editorPane ?? {
-        id: generateId('editor'),
-        locked: false,
+      const fileName = filePath.split('/').pop() ?? filePath;
+      const newTab: EditorTab = {
+        id: generateId('editor-tab'),
+        filePath,
+        fileName,
+        isDirty: false,
+        content: readResult.content ?? '',
+        originalContent: readResult.content ?? '',
       };
-      const editorLeafExists = collectLeafPaneIds(currentState.layoutRoot).includes(nextEditorPane.id);
-      const shouldInsertEditorPane = !currentState.editorVisible || !editorLeafExists;
-      const nextLayoutRoot = shouldInsertEditorPane
-        ? insertPaneIntoLayout(currentState.layoutRoot, nextEditorPane.id, {
-            panes: currentState.panes,
-            browserPane: currentState.browserPane,
-            browserVisible: currentState.browserVisible,
-            editorPane: nextEditorPane,
-            editorVisible: true,
-            activeTerminalId: currentState.activeTerminalId,
-          })
-        : currentState.layoutRoot;
 
-      const nextEditorTabs = [...currentState.editorTabs, newTab];
-      const nextLayoutRevision = nextLayoutRoot === currentState.layoutRoot
-        ? currentState.layoutRevision
-        : currentState.layoutRevision + 1;
+      useWorkspaceStore.setState((currentState) => {
+        const latestExistingTab = currentState.editorTabs.find((tab) => tab.filePath === filePath);
+        if (latestExistingTab) {
+          return {
+            activeEditorTabId: latestExistingTab.id,
+            ...syncActiveWorkspace(currentState, (workspace) => ({
+              ...workspace,
+              activeEditorTabId: latestExistingTab.id,
+            })),
+          };
+        }
 
-      return {
-        editorPane: nextEditorPane,
-        editorVisible: true,
-        editorTabs: nextEditorTabs,
-        activeEditorTabId: newTab.id,
-        layoutRoot: nextLayoutRoot,
-        layoutRevision: nextLayoutRevision,
-        ...syncActiveWorkspace(currentState, (workspace) => ({
-          ...workspace,
+        const nextEditorPane = currentState.editorPane ?? {
+          id: generateId('editor'),
+          locked: false,
+        };
+        const editorLeafExists = collectLeafPaneIds(currentState.layoutRoot).includes(nextEditorPane.id);
+        const shouldInsertEditorPane = !currentState.editorVisible || !editorLeafExists;
+        const nextLayoutRoot = shouldInsertEditorPane
+          ? insertPaneIntoLayout(currentState.layoutRoot, nextEditorPane.id, {
+              panes: currentState.panes,
+              browserPane: currentState.browserPane,
+              browserVisible: currentState.browserVisible,
+              editorPane: nextEditorPane,
+              editorVisible: true,
+              activeTerminalId: currentState.activeTerminalId,
+            })
+          : currentState.layoutRoot;
+
+        const nextEditorTabs = [...currentState.editorTabs, newTab];
+        const nextLayoutRevision = nextLayoutRoot === currentState.layoutRoot
+          ? currentState.layoutRevision
+          : currentState.layoutRevision + 1;
+
+        return {
           editorPane: nextEditorPane,
           editorVisible: true,
           editorTabs: nextEditorTabs,
           activeEditorTabId: newTab.id,
           layoutRoot: nextLayoutRoot,
-        })),
-      };
-    });
+          layoutRevision: nextLayoutRevision,
+          ...syncActiveWorkspace(currentState, (workspace) => ({
+            ...workspace,
+            editorPane: nextEditorPane,
+            editorVisible: true,
+            editorTabs: nextEditorTabs,
+            activeEditorTabId: newTab.id,
+            layoutRoot: nextLayoutRoot,
+          })),
+        };
+      });
 
-    // The tab was new (existingTab was null), so start watching
-    if (!existingTab) {
-      void window.electronAPI.editorWatchFile({ workspacePath: useWorkspaceStore.getState().workspacePath, filePath });
+      // The tab was new (existingTab was null), so start watching
+      if (!existingTab) {
+        void window.electronAPI.editorWatchFile({ workspacePath: useWorkspaceStore.getState().workspacePath, filePath });
+      }
+    } finally {
+      useWorkspaceStore.setState((currentState) => ({
+        pendingEditorOperations: clearEditorOperationPending(currentState, filePath),
+      }));
     }
   },
 
@@ -1258,7 +1498,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ? state.layoutRevision
       : state.layoutRevision + 1;
 
-    return {
+    const nextState = {
       editorTabs: nextTabs,
       activeEditorTabId: nextActiveId,
       editorVisible: nextEditorVisible,
@@ -1274,6 +1514,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayoutRoot,
       })),
     };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after closeEditorTab:', warnings);
+      }
+    }
+
+    return nextState;
   });
 
     // Unwatch file if no other open tab references it
@@ -1286,13 +1534,23 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
-  setActiveEditorTab: (tabId) => set((state) => ({
-    activeEditorTabId: tabId,
-    ...syncActiveWorkspace(state, (workspace) => ({
-      ...workspace,
+  setActiveEditorTab: (tabId) => set((state) => {
+    const nextState = {
       activeEditorTabId: tabId,
-    })),
-  })),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        activeEditorTabId: tabId,
+      })),
+    };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after setActiveEditorTab:', warnings);
+      }
+    }
+
+    return nextState;
+  }),
 
   updateEditorContent: (tabId, content) => set((state) => {
     const nextTabs = state.editorTabs.map((tab) =>
@@ -1315,54 +1573,67 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const tab = stateBeforeSave.editorTabs.find((t) => t.id === tabId);
     if (!tab) return false;
 
+    // Deduplicate concurrent saves for the same file
+    if (isEditorOperationPending(stateBeforeSave, tab.filePath)) {
+      return true;
+    }
+
     const contentToSave = tab.content;
     const wasDeleted = tab.isDeleted;
 
-    const result = await window.electronAPI.editorWriteFile({
-      workspacePath: stateBeforeSave.workspacePath,
-      filePath: tab.filePath,
-      content: contentToSave,
-    });
+    useWorkspaceStore.setState({ pendingEditorOperations: setEditorOperationPending(stateBeforeSave, tab.filePath, 'save') });
 
-    if (!result.success) {
-      console.warn('Failed to write file:', result.errorCode);
-      return false;
-    }
+    try {
+      const result = await window.electronAPI.editorWriteFile({
+        workspacePath: stateBeforeSave.workspacePath,
+        filePath: tab.filePath,
+        content: contentToSave,
+      });
 
-    useWorkspaceStore.setState((latestState) => {
-      const latestTab = latestState.editorTabs.find((t) => t.id === tabId);
-      if (!latestTab || latestTab.content !== contentToSave) {
-        return {};
+      if (!result.success) {
+        console.warn('Failed to write file:', result.errorCode);
+        return false;
       }
 
-      const nextTabs = latestState.editorTabs.map((currentTab) =>
-        currentTab.id === tabId
-          ? {
-              ...currentTab,
-              originalContent: contentToSave,
-              isDirty: false,
-              hasExternalChange: false,
-              isDeleted: false,
-            }
-          : currentTab
-      );
+      useWorkspaceStore.setState((latestState) => {
+        const latestTab = latestState.editorTabs.find((t) => t.id === tabId);
+        if (!latestTab || latestTab.content !== contentToSave) {
+          return {};
+        }
 
-      return {
-        editorTabs: nextTabs,
-        ...syncActiveWorkspace(latestState, (workspace) => ({
-          ...workspace,
+        const nextTabs = latestState.editorTabs.map((currentTab) =>
+          currentTab.id === tabId
+            ? {
+                ...currentTab,
+                originalContent: contentToSave,
+                isDirty: false,
+                hasExternalChange: false,
+                isDeleted: false,
+              }
+            : currentTab
+        );
+
+        return {
           editorTabs: nextTabs,
-        })),
-      };
-    });
+          ...syncActiveWorkspace(latestState, (workspace) => ({
+            ...workspace,
+            editorTabs: nextTabs,
+          })),
+        };
+      });
 
-    if (wasDeleted && typeof window !== 'undefined' && window.electronAPI) {
-      // If the file was previously deleted, the main-process fs.watch may have closed.
-      // Re-register the watch so external change detection resumes immediately.
-      void window.electronAPI.editorWatchFile({ workspacePath: stateBeforeSave.workspacePath, filePath: tab.filePath });
+      if (wasDeleted && typeof window !== 'undefined' && window.electronAPI) {
+        // If the file was previously deleted, the main-process fs.watch may have closed.
+        // Re-register the watch so external change detection resumes immediately.
+        void window.electronAPI.editorWatchFile({ workspacePath: stateBeforeSave.workspacePath, filePath: tab.filePath });
+      }
+
+      return true;
+    } finally {
+      useWorkspaceStore.setState((currentState) => ({
+        pendingEditorOperations: clearEditorOperationPending(currentState, tab.filePath),
+      }));
     }
-
-    return true;
   },
 
   saveAllEditorFiles: async () => {
@@ -1405,7 +1676,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       nextLayoutRoot = removePaneFromLayout(state.layoutRoot, state.editorPane.id);
     }
 
-    return {
+    const nextState = {
       editorVisible: nextEditorVisible,
       editorPane: nextEditorPane,
       layoutRoot: nextLayoutRoot,
@@ -1417,8 +1688,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayoutRoot,
       })),
     };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after toggleEditorPane:', warnings);
+      }
+    }
+    return nextState;
   }),
-
   closeEditorPane: () => {
     const currentState = useWorkspaceStore.getState();
     for (const tab of currentState.editorTabs) {
@@ -1427,7 +1704,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return set((state) => {
     if (state.editorPane) {
       const nextLayoutRoot = removePaneFromLayout(state.layoutRoot, state.editorPane.id);
-      return {
+      const nextState = {
         editorVisible: false,
         editorPane: null,
         editorTabs: [],
@@ -1443,6 +1720,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           layoutRoot: nextLayoutRoot,
         })),
       };
+      if (import.meta.env.DEV) {
+        const warnings = validateWorkspaceConsistency(nextState);
+        if (warnings.length > 0) {
+          console.warn('[Dev Only] Workspace consistency violation after closeEditorPane:', warnings);
+        }
+      }
+      return nextState;
     }
     return state;
     });
@@ -1479,7 +1763,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     const nextLayoutRoot = swapPaneIdsInLayout(state.layoutRoot, firstPaneId, state.editorPane.id);
 
-    return {
+    const nextState = {
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
       ...syncActiveWorkspace(state, (workspace) => ({
@@ -1487,20 +1771,35 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayoutRoot,
       })),
     };
-  }),
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after bringEditorIntoView:', warnings);
+      }
+    }
 
+    return nextState;
+  }),
   resetEditorState: () => {
     const currentState = useWorkspaceStore.getState();
     for (const tab of currentState.editorTabs) {
       void window.electronAPI.editorUnwatchFile({ workspacePath: currentState.workspacePath, filePath: tab.filePath });
     }
-    return set((state) => ({
+    const nextState = set((state) => ({
       ...createDefaultEditorState(),
+      pendingEditorOperations: {},
       ...syncActiveWorkspace(state, (workspace) => ({
         ...workspace,
         ...createDefaultEditorState(),
       })),
     }));
+    if (import.meta.env.DEV && nextState) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after resetEditorState:', warnings);
+      }
+    }
+    return nextState;
   },
 
   renameEditorTabPath: (oldPath, newPath) => {
@@ -1548,15 +1847,47 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const tab = state.editorTabs.find((t) => t.id === tabId);
     if (!tab) return;
 
-    const result = await window.electronAPI.editorReadFile({
-      workspacePath: state.workspacePath,
-      filePath: tab.filePath,
-    });
+    // Skip reload if a save is in flight for this file — save takes priority
+    if (isEditorOperationPending(state, tab.filePath)) {
+      return;
+    }
 
-    if (!result.success) {
+    useWorkspaceStore.setState({ pendingEditorOperations: setEditorOperationPending(state, tab.filePath, 'reload') });
+
+    try {
+      const result = await window.electronAPI.editorReadFile({
+        workspacePath: state.workspacePath,
+        filePath: tab.filePath,
+      });
+
+      if (!result.success) {
+        useWorkspaceStore.setState((currentState) => {
+          const nextTabs = currentState.editorTabs.map((t) =>
+            t.id === tabId ? { ...t, isDeleted: true, hasExternalChange: false } : t
+          );
+          return {
+            editorTabs: nextTabs,
+            ...syncActiveWorkspace(currentState, (workspace) => ({
+              ...workspace,
+              editorTabs: nextTabs,
+            })),
+          };
+        });
+        return;
+      }
+
       useWorkspaceStore.setState((currentState) => {
         const nextTabs = currentState.editorTabs.map((t) =>
-          t.id === tabId ? { ...t, isDeleted: true, hasExternalChange: false } : t
+          t.id === tabId
+            ? {
+                ...t,
+                content: result.content ?? '',
+                originalContent: result.content ?? '',
+                isDirty: false,
+                hasExternalChange: false,
+                isDeleted: false,
+              }
+            : t
         );
         return {
           editorTabs: nextTabs,
@@ -1566,30 +1897,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           })),
         };
       });
-      return;
+    } finally {
+      useWorkspaceStore.setState((currentState) => ({
+        pendingEditorOperations: clearEditorOperationPending(currentState, tab.filePath),
+      }));
     }
-
-    useWorkspaceStore.setState((currentState) => {
-      const nextTabs = currentState.editorTabs.map((t) =>
-        t.id === tabId
-          ? {
-              ...t,
-              content: result.content ?? '',
-              originalContent: result.content ?? '',
-              isDirty: false,
-              hasExternalChange: false,
-              isDeleted: false,
-            }
-          : t
-      );
-      return {
-        editorTabs: nextTabs,
-        ...syncActiveWorkspace(currentState, (workspace) => ({
-          ...workspace,
-          editorTabs: nextTabs,
-        })),
-      };
-    });
   },
 
   markEditorTabExternallyChanged: (tabId) => set((state) => {
