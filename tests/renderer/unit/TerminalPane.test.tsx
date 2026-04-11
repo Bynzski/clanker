@@ -30,10 +30,8 @@ vi.mock('@xterm/xterm', () => {
         attachedKeyHandler = handler;
         return true;
       });
-      element = {
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      };
+      // Use a real DOM element so appendChild works in jsdom tests
+      element = document.createElement('div');
     },
   };
 });
@@ -52,15 +50,18 @@ vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
   useDragHandle: vi.fn().mockReturnValue({}),
 }));
 
+// Import the cache clearing function for test isolation
+import { clearTerminalCache } from '../../../src/renderer/components/TerminalPane';
+
 // Mock electron API for terminal operations
 const mockKillTerminal = vi.fn().mockResolvedValue({ success: true });
 const mockResizeTerminal = vi.fn().mockResolvedValue({ success: true });
 const mockWriteTerminal = vi.fn().mockResolvedValue({ success: true });
 const mockWriteClipboard = vi.fn().mockResolvedValue({ success: true });
 const mockResolveDroppedFilePath = vi.fn().mockReturnValue('');
-const mockGetTerminalBuffer = vi.fn().mockResolvedValue('');
 const mockOnTerminalData = vi.fn().mockReturnValue(vi.fn());
 const mockOnTerminalExit = vi.fn().mockReturnValue(vi.fn());
+const mockOnTerminalResized = vi.fn().mockReturnValue(vi.fn());
 const mockZoomInWindow = vi.fn().mockResolvedValue(undefined);
 const mockZoomOutWindow = vi.fn().mockResolvedValue(undefined);
 const mockResetZoomWindow = vi.fn().mockResolvedValue(undefined);
@@ -120,11 +121,12 @@ function setupElectronAPIMocks() {
     killTerminal: mockKillTerminal,
     resizeTerminal: mockResizeTerminal,
     writeTerminal: mockWriteTerminal,
+    terminalReady: vi.fn().mockResolvedValue({ success: true }),
     writeClipboard: mockWriteClipboard,
     resolveDroppedFilePath: mockResolveDroppedFilePath,
-    getTerminalBuffer: mockGetTerminalBuffer,
     onTerminalData: mockOnTerminalData,
     onTerminalExit: mockOnTerminalExit,
+    onTerminalResized: mockOnTerminalResized,
     zoomInWindow: mockZoomInWindow,
     zoomOutWindow: mockZoomOutWindow,
     resetZoomWindow: mockResetZoomWindow,
@@ -139,6 +141,8 @@ describe('TerminalPane', () => {
     mockHasSelection.mockReturnValue(false);
     mockGetSelection.mockReturnValue('');
     setupElectronAPIMocks();
+    // Clear the xterm instance cache between tests to ensure isolation
+    clearTerminalCache();
   });
 
   afterEach(() => {
@@ -337,34 +341,16 @@ describe('TerminalPane', () => {
   // Terminal Initialization (xterm mocking)
   // =========================================================================
   describe('terminal initialization', () => {
-    it('loads terminal buffer on mount', async () => {
-      setupStoreWithTerminal('t1', 'p1');
-      mockGetTerminalBuffer.mockResolvedValue('existing buffer content');
-      
-      render(<TerminalPane paneId="p1" />);
-      
-      // Wait for the async import and setup
-      await act(async () => {
-        await Promise.resolve();
-        await vi.advanceTimersByTimeAsync(100);
-      });
-      
-      await waitFor(() => {
-        expect(mockGetTerminalBuffer).toHaveBeenCalledWith('t1');
-      });
-    });
-
     it('sets up terminal data listener', async () => {
       setupStoreWithTerminal('t1', 'p1');
-      mockGetTerminalBuffer.mockResolvedValue('');
-      
+
       render(<TerminalPane paneId="p1" />);
-      
+
       await act(async () => {
         await Promise.resolve();
         await vi.advanceTimersByTimeAsync(100);
       });
-      
+
       await waitFor(() => {
         expect(mockOnTerminalData).toHaveBeenCalled();
       });
@@ -372,15 +358,14 @@ describe('TerminalPane', () => {
 
     it('sets up terminal exit listener', async () => {
       setupStoreWithTerminal('t1', 'p1');
-      mockGetTerminalBuffer.mockResolvedValue('');
-      
+
       render(<TerminalPane paneId="p1" />);
-      
+
       await act(async () => {
         await Promise.resolve();
         await vi.advanceTimersByTimeAsync(100);
       });
-      
+
       await waitFor(() => {
         expect(mockOnTerminalExit).toHaveBeenCalled();
       });
@@ -388,38 +373,32 @@ describe('TerminalPane', () => {
 
     it('triggers resize on terminal initialization', async () => {
       setupStoreWithTerminal('t1', 'p1');
-      mockGetTerminalBuffer.mockResolvedValue('');
-      
+
       render(<TerminalPane paneId="p1" />);
-      
+
       await act(async () => {
         await Promise.resolve();
         await vi.advanceTimersByTimeAsync(100);
       });
-      
+
       await waitFor(() => {
         expect(mockResizeTerminal).toHaveBeenCalled();
       });
     });
 
-    it('handles getTerminalBuffer rejection gracefully', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    it('sets up terminal resized confirmation listener', async () => {
       setupStoreWithTerminal('t1', 'p1');
-      mockGetTerminalBuffer.mockRejectedValue(new Error('Failed to get buffer'));
-      
+
       render(<TerminalPane paneId="p1" />);
-      
+
       await act(async () => {
         await Promise.resolve();
         await vi.advanceTimersByTimeAsync(100);
       });
-      
-      // Should still set up listeners even if buffer load fails
+
       await waitFor(() => {
-        expect(mockOnTerminalData).toHaveBeenCalled();
+        expect(mockOnTerminalResized).toHaveBeenCalled();
       });
-      
-      consoleSpy.mockRestore();
     });
   });
 
@@ -484,20 +463,19 @@ describe('TerminalPane', () => {
   describe('cleanup on unmount', () => {
     it('cleans up listeners on unmount', async () => {
       setupStoreWithTerminal('t1', 'p1');
-      mockGetTerminalBuffer.mockResolvedValue('');
-      
+
       const { unmount } = render(<TerminalPane paneId="p1" />);
-      
+
       await act(async () => {
         await Promise.resolve();
         await vi.advanceTimersByTimeAsync(100);
       });
-      
+
       // Access the dispose function that was registered
       const dataDispose = mockOnTerminalData.mock.results[0]?.value;
-      
+
       unmount();
-      
+
       // Data dispose function should have been accessed (for cleanup)
       expect(dataDispose).toBeDefined();
     });
@@ -509,23 +487,22 @@ describe('TerminalPane', () => {
   describe('resize handling', () => {
     it('resizes terminal when resize is triggered', async () => {
       setupStoreWithTerminal('t1', 'p1');
-      mockGetTerminalBuffer.mockResolvedValue('');
-      
+
       render(<TerminalPane paneId="p1" />);
-      
+
       await act(async () => {
         await Promise.resolve();
         await vi.advanceTimersByTimeAsync(100);
       });
-      
+
       // Clear previous calls
       mockResizeTerminal.mockClear();
-      
+
       // Trigger resize timer
       await act(async () => {
         await vi.advanceTimersByTimeAsync(50);
       });
-      
+
       await waitFor(() => {
         expect(mockResizeTerminal).toHaveBeenCalled();
       });

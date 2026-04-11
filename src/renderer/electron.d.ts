@@ -86,6 +86,10 @@ interface ElectronAPI {
   cleanupWorkspaceTerminals: (ids: string[]) => Promise<number>;
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => () => void;
+  /** Phase 1 resize confirmation: main sends confirmed PTY geometry after resize. */
+  onTerminalResized: (callback: (data: { id: string; cols: number; rows: number }) => void) => () => void;
+  /** Phase 1 startup fix: renderer signals xterm is ready to receive data. Triggers flush of startup buffer. */
+  terminalReady: (id: string) => Promise<{ success: boolean; error?: string }>;
 
   // Clipboard
   writeClipboard: (text: string) => Promise<{ success: boolean; error?: string }>;

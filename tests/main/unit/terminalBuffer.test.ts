@@ -1,3 +1,13 @@
+/**
+ * Terminal buffer tests (Phase 1 updated)
+ *
+ * The app-level head-truncated buffer has been removed in Phase 1.
+ * MAX_TERMINAL_BUFFER_BYTES is now 0 (deprecated no-op) and trimBuffer
+ * returns '' (deprecated no-op). xterm.js is the primary buffer/scrollback
+ * owner. These tests verify the deprecated constants remain present but
+ * are no-ops.
+ */
+
 import { vi } from 'vitest';
 
 // Mock electron module to prevent top-level code from running
@@ -12,10 +22,7 @@ vi.mock('electron', () => ({
       appendSwitch: vi.fn(),
     },
     whenReady: vi.fn(() => {
-      // Return a promise that never resolves to prevent createWindow from running during module import
-      return new Promise<never>(() => {
-        // This promise never resolves, preventing app initialization during tests
-      });
+      return new Promise<never>(() => {});
     }),
     on: vi.fn(),
     quit: vi.fn(),
@@ -70,98 +77,47 @@ vi.mock('electron', () => ({
 }));
 
 // Import after mocking
-import { trimBuffer, MAX_TERMINAL_BUFFER_BYTES } from '../../../src/shared/terminal';
+import { trimBuffer, MAX_TERMINAL_BUFFER_BYTES, TERMINAL_SCROLLBACK_LINES } from '../../../src/shared/terminal';
 import assert from 'node:assert/strict';
 import { describe, test } from 'vitest';
 
-describe('trimBuffer', () => {
-  const cap = MAX_TERMINAL_BUFFER_BYTES;
-
-  test('returns unchanged buffer when under cap', () => {
-    const buffer = 'Hello, World!';
-    const result = trimBuffer(buffer, cap);
-    assert.equal(result, buffer);
-  });
-
-  test('returns unchanged buffer when exactly at cap', () => {
-    // Create a string with exactly cap characters (1 char = 1 byte in UTF-8 for ASCII)
-    const buffer = 'a'.repeat(cap);
-    const result = trimBuffer(buffer, cap);
-    assert.equal(result, buffer);
-    assert.equal(result.length, cap);
-  });
-
-  test('returns unchanged buffer when empty', () => {
-    const buffer = '';
-    const result = trimBuffer(buffer, cap);
+describe('trimBuffer (deprecated)', () => {
+  test('returns empty string (no-op)', () => {
+    const result = trimBuffer('some content', 1024);
     assert.equal(result, '');
   });
 
-  test('truncates buffer from head when over cap', () => {
-    // Create a buffer that exceeds the cap
-    const originalContent = 'This is the beginning of the buffer';
-    const padding = 'x'.repeat(cap + 100);
-    const buffer = originalContent + padding;
-
-    // Verify the original buffer is over cap
-    assert.ok(buffer.length > cap);
-
-    const result = trimBuffer(buffer, cap);
-
-    // Result should be under or equal to cap
-    assert.ok(result.length <= cap);
-
-    // Result should be truncated from the head, so the tail (padding) should be preserved
-    assert.ok(result.endsWith('x'.repeat(result.length - originalContent.length)));
+  test('returns empty string for any input', () => {
+    const result = trimBuffer('a'.repeat(10000), 512 * 1024);
+    assert.equal(result, '');
   });
 
-  test('handles unicode characters correctly', () => {
-    // Unicode characters can be multiple bytes in UTF-8
-    // Create a buffer with unicode that exceeds the byte cap
-    const unicodeChar = '\u{1F600}'; // emoji = 4 bytes in UTF-8
-    const buffer = unicodeChar.repeat(cap + 10);
-
-    const result = trimBuffer(buffer, cap);
-
-    // The result should be under the byte cap, not character cap
-    const encoder = new TextEncoder();
-    assert.ok(encoder.encode(result).length <= cap);
-  });
-
-  test('returns tail portion when significantly over cap', () => {
-    // Test with a clear marker at the beginning and end
-    const marker = '===END===';
-    const padding = 'A'.repeat(cap * 2);
-    const buffer = marker + padding;
-
-    const result = trimBuffer(buffer, cap);
-
-    // The result should not contain the marker (it was at the head)
-    assert.ok(!result.includes(marker));
-    // The result should be mostly 'A's from the tail
-    assert.ok(result.startsWith('A'));
+  test('returns empty string when empty', () => {
+    const result = trimBuffer('', 0);
+    assert.equal(result, '');
   });
 });
 
-describe('MAX_TERMINAL_BUFFER_BYTES', () => {
-  test('is defined as 512KB', () => {
-    assert.equal(MAX_TERMINAL_BUFFER_BYTES, 512 * 1024);
-    assert.equal(MAX_TERMINAL_BUFFER_BYTES, 524_288);
+describe('MAX_TERMINAL_BUFFER_BYTES (deprecated)', () => {
+  test('is defined as 0 (deprecated no-op)', () => {
+    assert.equal(MAX_TERMINAL_BUFFER_BYTES, 0);
   });
 
-  test('is a positive number', () => {
-    assert.ok(MAX_TERMINAL_BUFFER_BYTES > 0);
-    assert.ok(MAX_TERMINAL_BUFFER_BYTES < 10 * 1024 * 1024); // reasonable upper bound
+  test('is a number', () => {
+    assert.equal(typeof MAX_TERMINAL_BUFFER_BYTES, 'number');
   });
 });
 
-describe('terminal buffer cap integration', () => {
-  test('cap is reasonable for terminal usage', () => {
-    // 512KB should still cover a meaningful amount of recent terminal history
-    // A typical terminal is 80x24 = 1920 chars, so 512KB = ~270 screens
+describe('TERMINAL_SCROLLBACK_LINES (Phase 1)', () => {
+  test('is 10,000 lines', () => {
+    assert.equal(TERMINAL_SCROLLBACK_LINES, 10_000);
+  });
+
+  test('provides adequate scrollback depth', () => {
+    // 10,000 lines at 80x24 ≈ 416 screens of history
     const typicalScreenSize = 80 * 24;
-    const screensWorth = MAX_TERMINAL_BUFFER_BYTES / typicalScreenSize;
-
-    assert.ok(screensWorth >= 100, 'Should hold at least 100 screens of history');
+    const screensWorth = TERMINAL_SCROLLBACK_LINES * typicalScreenSize / typicalScreenSize;
+    // Each "screen" is 24 lines, so 10,000 / 24 ≈ 416 screens
+    assert.ok(screensWorth >= 400, 'Should hold at least 400 screens of history');
   });
 });

@@ -150,10 +150,10 @@ describe('registerTerminalIpc — registration', () => {
       getHarnessOptions: vi.fn().mockReturnValue({}),
     });
 
-    expect(mockHandle.mock.calls.length).toBe(7);
+    expect(mockHandle.mock.calls.length).toBe(8);
   });
 
-  test('registers 2 event IPC channels (terminal-data, terminal-exit)', () => {
+  test('registers 3 event IPC channels (terminal-data, terminal-exit, terminal-resized)', () => {
     const mockTerminals = new Map();
     const mockMainWindow = { webContents: { send: vi.fn() } };
     const mockStore = { get: vi.fn().mockReturnValue(false) };
@@ -165,9 +165,10 @@ describe('registerTerminalIpc — registration', () => {
       getHarnessOptions: vi.fn().mockReturnValue({}),
     });
 
-    expect(mockOn.mock.calls.length).toBe(2);
+    expect(mockOn.mock.calls.length).toBe(3);
     expect(mockOn.mock.calls.map((c: unknown[]) => c[0])).toContain('terminal-data');
     expect(mockOn.mock.calls.map((c: unknown[]) => c[0])).toContain('terminal-exit');
+    expect(mockOn.mock.calls.map((c: unknown[]) => c[0])).toContain('terminal-resized');
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -183,7 +184,7 @@ describe('registerTerminalIpc — registration', () => {
     };
     registerTerminalIpc(opts);
     registerTerminalIpc(opts);
-    expect(mockHandle.mock.calls.length).toBe(14);
+    expect(mockHandle.mock.calls.length).toBe(16);
   });
 });
 
@@ -293,8 +294,8 @@ describe('terminalIpc — error-path: handler returns', () => {
 
   test('WRITE_TERMINAL calls pty.write when terminal exists', async () => {
     const { terminals, opts } = createMockDeps();
-    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn() };
-    terminals.set('existing-term', { id: 'existing-term', pid: 42, pty: mockPty, buffer: '' });
+    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn(), pause: vi.fn(), resume: vi.fn() };
+    terminals.set('existing-term', { id: 'existing-term', pid: 42, pty: mockPty });
     registerTerminalIpc(opts);
 
     const handler = mockIpcMain.handle.mock.calls.find(
@@ -308,8 +309,8 @@ describe('terminalIpc — error-path: handler returns', () => {
 
   test('RESIZE_TERMINAL calls pty.resize when terminal exists', async () => {
     const { terminals, opts } = createMockDeps();
-    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn() };
-    terminals.set('resizable-term', { id: 'resizable-term', pid: 99, pty: mockPty, buffer: '' });
+    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn(), pause: vi.fn(), resume: vi.fn() };
+    terminals.set('resizable-term', { id: 'resizable-term', pid: 99, pty: mockPty });
     registerTerminalIpc(opts);
 
     const handler = mockIpcMain.handle.mock.calls.find(
@@ -323,8 +324,8 @@ describe('terminalIpc — error-path: handler returns', () => {
 
   test('KILL_TERMINAL calls pty.kill and deletes terminal when it exists', async () => {
     const { terminals, opts } = createMockDeps();
-    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn() };
-    terminals.set('killable-term', { id: 'killable-term', pid: 77, pty: mockPty, buffer: '' });
+    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn(), pause: vi.fn(), resume: vi.fn() };
+    terminals.set('killable-term', { id: 'killable-term', pid: 77, pty: mockPty });
     registerTerminalIpc(opts);
 
     const handler = mockIpcMain.handle.mock.calls.find(
@@ -400,9 +401,9 @@ describe('terminalIpc — error-path: handler returns', () => {
 
   test('TERMINAL_CLEANUP_WORKSPACE returns correct killed count for partial matches', async () => {
     const { terminals, opts } = createMockDeps();
-    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn() };
-    terminals.set('term-1', { id: 'term-1', pid: 100, pty: mockPty, buffer: '' });
-    terminals.set('term-2', { id: 'term-2', pid: 101, pty: mockPty, buffer: '' });
+    const mockPty = { write: vi.fn(), kill: vi.fn(), resize: vi.fn(), pause: vi.fn(), resume: vi.fn() };
+    terminals.set('term-1', { id: 'term-1', pid: 100, pty: mockPty });
+    terminals.set('term-2', { id: 'term-2', pid: 101, pty: mockPty });
     registerTerminalIpc(opts);
 
     const handler = mockIpcMain.handle.mock.calls.find(

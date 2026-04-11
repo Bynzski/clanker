@@ -1,39 +1,36 @@
 /**
  * Terminal utilities and constants shared by main and renderer.
+ *
+ * Phase 1 redesign: xterm.js is now the primary buffer/scrollback owner.
+ * The old app-level head-truncated buffer model has been removed.
+ * Session continuity across workspace/tab switches is preserved via
+ * xterm instance caching in the renderer (see TerminalPane.tsx).
  */
-
-declare const TextEncoder: {
-  new(): { encode(input: string): Uint8Array };
-};
-
-declare const TextDecoder: {
-  new(): { decode(input?: Uint8Array): string };
-};
-
-// Maximum size for terminal output buffer per terminal.
-// Keep this bounded so we do not retain an entire agent conversation in memory.
-export const MAX_TERMINAL_BUFFER_BYTES = 512 * 1024;
-
-// Match xterm's retention window to the app-side buffer policy.
-export const TERMINAL_SCROLLBACK_LINES = 1000;
 
 /**
- * Truncates a buffer string from the head if it exceeds the maximum byte cap.
- * Returns the buffer unchanged if it fits within the cap.
+ * Number of scrollback lines xterm.js retains in its internal buffer.
+ *
+ * Increased from 1000 to 10,000 in Phase 1 to compensate for removal
+ * of the app-level buffer. Provides ~400 screens of history at 80×24.
  */
-export function trimBuffer(buffer: string, maxBytes: number): string {
-  if (maxBytes <= 0 || buffer.length === 0) {
-    return '';
-  }
+export const TERMINAL_SCROLLBACK_LINES = 10_000;
 
-  const encoder = new TextEncoder();
-  const encoded = encoder.encode(buffer);
+/**
+ * @deprecated Removed in Phase 1 terminal redesign.
+ * Kept only for backward-compatible test references.
+ * Do not use in new code. xterm.js owns scrollback; no app-level buffer.
+ */
+export const MAX_TERMINAL_BUFFER_BYTES = 0;
 
-  if (encoded.length <= maxBytes) {
-    return buffer;
-  }
-
-  // Truncate from the head to keep the newest output only.
-  const trimmed = new TextDecoder().decode(encoded.slice(-maxBytes));
-  return trimmed;
+/**
+ * @deprecated Removed in Phase 1 terminal redesign.
+ * No-op kept for backward-compatible test references.
+ */
+export function trimBuffer(
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _buffer: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _maxBytes: number,
+): string {
+  return '';
 }

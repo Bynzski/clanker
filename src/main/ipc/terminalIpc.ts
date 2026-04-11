@@ -8,7 +8,6 @@ import { ipcMain, BrowserWindow, clipboard } from 'electron';
 import * as pty from 'node-pty';
 import Store from 'electron-store';
 import { buildHarnessSpawnArgs } from '../harnessLaunch';
-import { trimBuffer, MAX_TERMINAL_BUFFER_BYTES } from '../terminalUtils';
 import {
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
@@ -18,6 +17,8 @@ import {
   TERMINAL_CLEANUP_WORKSPACE,
   TERMINAL_DATA,
   TERMINAL_EXIT,
+  TERMINAL_RESIZED,
+  TERMINAL_READY,
   WRITE_CLIPBOARD,
 } from '../../shared/ipcChannels';
 
@@ -25,7 +26,14 @@ interface Terminal {
   id: string;
   pid: number;
   pty: pty.IPty;
-  buffer: string;
+  /**
+   * Bounded startup buffer — holds PTY output only during the brief window
+   * between PTY spawn and renderer confirming xterm is ready.
+   * Cleared after flush on TERMINAL_READY.
+   * Max 16 KB to prevent unbounded growth if renderer never signals ready.
+   */
+  startupBuffer: string[];
+  startupBufferReady: boolean;
 }
 
 export type { Terminal };
@@ -115,10 +123,14 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           FORCE_COLOR: '1',
           ...(store.get('showFastfetch') ? {} : { CLANKER_GRID: '1' }),
         },
+        // Phase 1 fix: disable flow control to remove it as a startup variable.
+        // The congestion-timer approach was found to stall shell startup (fish DA1 query timeout).
+        // Flow control can be re-enabled in Phase 2 with a proper readiness handshake.
+        handleFlowControl: false,
       }
     );
 
-    const terminal: Terminal = { id, pid: ptyProcess.pid, pty: ptyProcess, buffer: '' };
+    const terminal: Terminal = { id, pid: ptyProcess.pid, pty: ptyProcess, startupBuffer: [], startupBufferReady: false };
     terminals.set(id, terminal);
 
     if (harness && getHarnessOptions()[harness]) {
@@ -133,16 +145,29 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       if (mainWindow) {
         const visibleLaunch = `[clanker-grid] ${config.command} ${launchArgs.join(' ')}\r\n`;
         mainWindow.webContents.send(TERMINAL_DATA, { id, data: visibleLaunch });
-        terminal.buffer += visibleLaunch;
       }
     }
 
     ptyProcess.onData((data: string) => {
       if (appShuttingDown) return;
-      terminal.buffer += data;
-      if (terminal.buffer.length > MAX_TERMINAL_BUFFER_BYTES) {
-        terminal.buffer = trimBuffer(terminal.buffer, MAX_TERMINAL_BUFFER_BYTES);
+
+      const terminal = terminals.get(id);
+      if (!terminal) return;
+
+      // During startup window (before renderer confirms xterm is ready),
+      // buffer the data. This protects the critical DA1 query/response window.
+      if (!terminal.startupBufferReady) {
+        // Bounded buffer: max 16 KB or 100 chunks, whichever comes first.
+        // This prevents unbounded growth if renderer never signals ready.
+        const totalSize = terminal.startupBuffer.reduce((acc, chunk) => acc + chunk.length, 0);
+        if (totalSize < 16 * 1024 && terminal.startupBuffer.length < 100) {
+          terminal.startupBuffer.push(data);
+          return;
+        }
+        // Buffer full — start sending anyway to avoid data loss.
+        // This is a safety fallback; normal case should flush before hitting this limit.
       }
+
       if (mainWindow) {
         mainWindow.webContents.send(TERMINAL_DATA, { id, data });
       }
@@ -159,9 +184,40 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     return { id, pid: ptyProcess.pid };
   });
 
-  ipcMain.handle(GET_TERMINAL_BUFFER, (_, id: string) => {
+  /**
+   * @deprecated GET_TERMINAL_BUFFER is retained as a no-op returning ''.
+   * Session continuity is now handled by xterm instance caching in the renderer.
+   * The app-level buffer has been removed (Phase 1 terminal redesign).
+   */
+  ipcMain.handle(GET_TERMINAL_BUFFER, () => {
+    return '';
+  });
+
+  /**
+   * TERMINAL_READY — Renderer confirms xterm is ready to receive data.
+   * Flushes the bounded startup buffer in order, then marks the terminal as ready.
+   * This ensures early PTY output (including DA1 query responses) is not lost.
+   */
+  ipcMain.handle(TERMINAL_READY, (_, id: string) => {
     const terminals = getTerminals();
-    return terminals.get(id)?.buffer ?? '';
+    const terminal = terminals.get(id);
+    if (!terminal || terminal.startupBufferReady) {
+      return ok();
+    }
+
+    const mainWindow = getMainWindow();
+    if (mainWindow && terminal.startupBuffer.length > 0) {
+      // Flush buffered data in order — this includes any DA1 response from xterm
+      for (const chunk of terminal.startupBuffer) {
+        mainWindow.webContents.send(TERMINAL_DATA, { id, data: chunk });
+      }
+    }
+
+    // Clear buffer and mark as ready
+    terminal.startupBuffer = [];
+    terminal.startupBufferReady = true;
+
+    return ok();
   });
 
   ipcMain.handle(WRITE_TERMINAL, (_, payload: unknown) => {
@@ -191,7 +247,25 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const terminals = getTerminals();
     const terminal = terminals.get(id);
     if (terminal) {
-      terminal.pty.resize(Math.max(1, Math.floor(cols)), Math.max(1, Math.floor(rows)));
+      const safeCols = Math.max(1, Math.floor(cols));
+      const safeRows = Math.max(1, Math.floor(rows));
+      terminal.pty.resize(safeCols, safeRows);
+
+      // Phase 1: resize confirmation — notify renderer of confirmed geometry.
+      const mainWindow = getMainWindow();
+      if (mainWindow) {
+        mainWindow.webContents.send(TERMINAL_RESIZED, { id, cols: safeCols, rows: safeRows });
+      }
+
+      // Safety net: if handleFlowControl paused the PTY (e.g., via XOFF
+      // interception from user pressing Ctrl+S), resume it on resize so the
+      // terminal doesn't get stuck paused.
+      try {
+        terminal.pty.resume();
+      } catch {
+        // PTY may have exited; ignore.
+      }
+
       return ok();
     }
     return ok(); // no-op for missing terminal
@@ -237,4 +311,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   // These are one-way: main sends events to renderer (no handler needed).
   ipcMain.on(TERMINAL_DATA, () => { });
   ipcMain.on(TERMINAL_EXIT, () => { });
+  ipcMain.on(TERMINAL_RESIZED, () => { });
+
+  // TERMINAL_READY is a handler (ipcMain.handle), not an event channel.
 }
