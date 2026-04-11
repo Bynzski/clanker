@@ -556,6 +556,40 @@ describe('BrowserPanel', () => {
 
       expect(mockBrowserHide).toHaveBeenCalled();
     });
+
+    it('re-sends bounds after an overlay closes even when the measured rect is unchanged', () => {
+      setupStore({ browserVisible: true, browserOverlayCount: 0 });
+
+      render(<BrowserPanel {...defaultProps} />);
+
+      const contentEl = document.querySelector('.browser-content') as HTMLElement;
+      Object.defineProperty(contentEl, 'getBoundingClientRect', {
+        value: () => ({ left: 100, top: 100, width: 800, height: 600 }),
+        writable: true,
+      });
+
+      act(() => {
+        flushAnimationFrame();
+      });
+      expect(mockBrowserSetBounds).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        useWorkspaceStore.setState({ browserOverlayCount: 1 });
+      });
+      expect(mockBrowserHide).toHaveBeenCalledTimes(1);
+
+      mockBrowserSetBounds.mockClear();
+      act(() => {
+        useWorkspaceStore.setState({ browserOverlayCount: 0 });
+      });
+
+      act(() => {
+        flushAnimationFrame();
+        flushAnimationFrame();
+      });
+
+      expect(mockBrowserSetBounds).toHaveBeenCalledTimes(1);
+    });
   });
 
   // =========================================================================
