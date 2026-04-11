@@ -1,12 +1,18 @@
 import { ipcMain, shell } from 'electron';
 import * as path from 'node:path';
-import { FILE_LIST_DIRECTORY, FILE_READ, FILE_WRITE, FILE_CREATE, FILE_DELETE, FILE_RENAME, REVEAL_IN_FILE_MANAGER } from '../../shared/ipcChannels';
+import { FILE_LIST_DIRECTORY, FILE_READ, FILE_WRITE, FILE_CREATE, FILE_DELETE, FILE_RENAME, REVEAL_IN_FILE_MANAGER, FILE_WATCH, FILE_UNWATCH, FILE_CHANGED } from '../../shared/ipcChannels';
 import type { FileListDirectoryRequest } from '../../shared/types/fileExplorer';
-import type { FileReadRequest, FileWriteRequest } from '../../shared/types/editor';
+import type { FileReadRequest, FileWriteRequest, FileWatchRequest } from '../../shared/types/editor';
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest } from '../../shared/types/fileOperations';
-import { listDirectory, readFile, writeFile, createFile, createDirectory, deleteEntry, renameEntry } from '../fileService';
+import { listDirectory, readFile, writeFile, createFile, createDirectory, deleteEntry, renameEntry, resolveAndValidateWatchPath } from '../fileService';
+import type { FileWatcherService } from '../fileWatcher';
 
-export function registerFileIpc(): void {
+interface RegisterFileIpcDeps {
+  getFileWatcher: () => FileWatcherService;
+}
+
+export function registerFileIpc(deps: RegisterFileIpcDeps): void {
+  const fileWatcher = deps.getFileWatcher();
   ipcMain.handle(FILE_LIST_DIRECTORY, async (_, request: FileListDirectoryRequest) => {
     return listDirectory(request);
   });
@@ -16,7 +22,11 @@ export function registerFileIpc(): void {
   });
 
   ipcMain.handle(FILE_WRITE, async (_, request: FileWriteRequest) => {
-    return writeFile(request);
+    const result = await writeFile(request);
+    if (result.success) {
+      fileWatcher.markWritten(request.filePath);
+    }
+    return result;
   });
 
   ipcMain.handle(FILE_CREATE, async (_, request: FileCreateRequest) => {
@@ -42,4 +52,32 @@ export function registerFileIpc(): void {
     shell.showItemInFolder(path.resolve(filePath));
     return true;
   });
+
+  ipcMain.handle(FILE_WATCH, async (_, request: FileWatchRequest) => {
+    if (!request?.workspacePath || !request.filePath) {
+      return false;
+    }
+
+    const validated = await resolveAndValidateWatchPath(request.workspacePath, request.filePath);
+    if (!validated.success) {
+      return false;
+    }
+
+    fileWatcher.watchFile(validated.filePath);
+    return true;
+  });
+
+  ipcMain.handle(FILE_UNWATCH, (_, request: FileWatchRequest) => {
+    // Unwatching does not expose filesystem information; accept the request even if the
+    // workspace path is stale, but normalize to avoid duplicate registrations.
+    if (!request?.filePath) {
+      return false;
+    }
+    fileWatcher.unwatchFile(path.resolve(request.filePath));
+    return true;
+  });
+
+  // Event channel — registered so the integration test can verify completeness.
+  // This is one-way: main sends events to renderer (no handler needed).
+  ipcMain.on(FILE_CHANGED, () => { });
 }

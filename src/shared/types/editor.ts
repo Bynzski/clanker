@@ -23,3 +23,13 @@ export interface FileWriteResult {
   errorCode?: 'invalid-path' | 'write-error' | 'unknown';
   error?: string;
 }
+
+export interface FileChangedEvent {
+  filePath: string;
+  deleted: boolean;
+}
+
+export interface FileWatchRequest {
+  workspacePath: string;
+  filePath: string;
+}

@@ -17,6 +17,9 @@ export interface CreateMainWindowOptions {
   gitService: {
     stopPolling: () => void;
   };
+  fileWatcher: {
+    unwatchAll: () => void;
+  };
   browserViews: Map<string, { view: WebContentsView; url: string }>;
   onWindowClosed?: () => void;
 }
@@ -59,7 +62,7 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   window: BrowserWindow;
   cleanup: () => void;
 } {
-  const { preloadPath, gitService, browserViews, onWindowClosed } = deps;
+  const { preloadPath, gitService, fileWatcher, browserViews, onWindowClosed } = deps;
 
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -96,6 +99,7 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
     });
     browserViews.clear();
     gitService.stopPolling();
+    fileWatcher.unwatchAll();
     onWindowClosed?.();
   };
 

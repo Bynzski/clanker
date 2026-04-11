@@ -134,6 +134,10 @@ interface WorkspaceState {
   bringEditorIntoView: () => void;
   resetEditorState: () => void;
   renameEditorTabPath: (oldPath: string, newPath: string) => void;
+  reloadEditorTab: (tabId: string) => Promise<void>;
+  markEditorTabExternallyChanged: (tabId: string) => void;
+  markEditorTabDeleted: (tabId: string) => void;
+  clearEditorTabExternalFlag: (tabId: string) => void;
 }
 
 type ActiveWorkspaceSnapshot = Pick<
@@ -1183,9 +1187,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         })),
       };
     });
+
+    // The tab was new (existingTab was null), so start watching
+    if (!existingTab) {
+      void window.electronAPI.editorWatchFile({ workspacePath: useWorkspaceStore.getState().workspacePath, filePath });
+    }
   },
 
-  closeEditorTab: (tabId) => set((state) => {
+  closeEditorTab: (tabId) => {
+    const stateBefore = useWorkspaceStore.getState();
+    const closedTab = stateBefore.editorTabs.find((t) => t.id === tabId);
+
+    set((state) => {
     const { editorTabs, activeEditorTabId } = state;
     const tabIndex = editorTabs.findIndex((t) => t.id === tabId);
     if (tabIndex === -1) return state;
@@ -1229,7 +1242,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayoutRoot,
       })),
     };
-  }),
+  });
+
+    // Unwatch file if no other open tab references it
+    if (closedTab) {
+      const latestState = useWorkspaceStore.getState();
+      const otherTab = latestState.editorTabs.find((t) => t.filePath === closedTab.filePath);
+      if (!otherTab) {
+        void window.electronAPI.editorUnwatchFile({ workspacePath: latestState.workspacePath, filePath: closedTab.filePath });
+      }
+    }
+  },
 
   setActiveEditorTab: (tabId) => set((state) => ({
     activeEditorTabId: tabId,
@@ -1261,6 +1284,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!tab) return false;
 
     const contentToSave = tab.content;
+    const wasDeleted = tab.isDeleted;
 
     const result = await window.electronAPI.editorWriteFile({
       workspacePath: stateBeforeSave.workspacePath,
@@ -1281,7 +1305,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
       const nextTabs = latestState.editorTabs.map((currentTab) =>
         currentTab.id === tabId
-          ? { ...currentTab, originalContent: contentToSave, isDirty: false }
+          ? {
+              ...currentTab,
+              originalContent: contentToSave,
+              isDirty: false,
+              hasExternalChange: false,
+              isDeleted: false,
+            }
           : currentTab
       );
 
@@ -1293,6 +1323,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         })),
       };
     });
+
+    if (wasDeleted && typeof window !== 'undefined' && window.electronAPI) {
+      // If the file was previously deleted, the main-process fs.watch may have closed.
+      // Re-register the watch so external change detection resumes immediately.
+      void window.electronAPI.editorWatchFile({ workspacePath: stateBeforeSave.workspacePath, filePath: tab.filePath });
+    }
 
     return true;
   },
@@ -1351,7 +1387,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     };
   }),
 
-  closeEditorPane: () => set((state) => {
+  closeEditorPane: () => {
+    const currentState = useWorkspaceStore.getState();
+    for (const tab of currentState.editorTabs) {
+      void window.electronAPI.editorUnwatchFile({ workspacePath: currentState.workspacePath, filePath: tab.filePath });
+    }
+    return set((state) => {
     if (state.editorPane) {
       const nextLayoutRoot = removePaneFromLayout(state.layoutRoot, state.editorPane.id);
       return {
@@ -1372,7 +1413,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       };
     }
     return state;
-  }),
+    });
+  },
 
   toggleEditorLock: () => set((state) => {
     if (!state.editorPane) {
@@ -1415,22 +1457,139 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     };
   }),
 
-  resetEditorState: () => set((state) => ({
-    ...createDefaultEditorState(),
-    ...syncActiveWorkspace(state, (workspace) => ({
-      ...workspace,
+  resetEditorState: () => {
+    const currentState = useWorkspaceStore.getState();
+    for (const tab of currentState.editorTabs) {
+      void window.electronAPI.editorUnwatchFile({ workspacePath: currentState.workspacePath, filePath: tab.filePath });
+    }
+    return set((state) => ({
       ...createDefaultEditorState(),
-    })),
-  })),
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        ...createDefaultEditorState(),
+      })),
+    }));
+  },
 
-  renameEditorTabPath: (oldPath, newPath) => set((state) => {
-    const newFileName = newPath.split('/').pop() ?? newPath;
-    const nextTabs = state.editorTabs.map((tab) =>
-      tab.filePath === oldPath
-        ? { ...tab, filePath: newPath, fileName: newFileName }
-        : tab
+  renameEditorTabPath: (oldPath, newPath) => {
+    if (oldPath === newPath) return;
+
+    const stateBefore = useWorkspaceStore.getState();
+    const oldCountBefore = stateBefore.editorTabs.filter((t) => t.filePath === oldPath).length;
+    const newCountBefore = stateBefore.editorTabs.filter((t) => t.filePath === newPath).length;
+
+    set((state) => {
+      const newFileName = newPath.split('/').pop() ?? newPath;
+      const nextTabs = state.editorTabs.map((tab) =>
+        tab.filePath === oldPath
+          ? { ...tab, filePath: newPath, fileName: newFileName }
+          : tab
+      );
+
+      return {
+        editorTabs: nextTabs,
+        ...syncActiveWorkspace(state, (workspace) => ({
+          ...workspace,
+          editorTabs: nextTabs,
+        })),
+      };
+    });
+
+    const stateAfter = useWorkspaceStore.getState();
+    const oldCountAfter = stateAfter.editorTabs.filter((t) => t.filePath === oldPath).length;
+    const newCountAfter = stateAfter.editorTabs.filter((t) => t.filePath === newPath).length;
+
+    if (oldCountBefore > 0 && oldCountAfter === 0) {
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        void window.electronAPI.editorUnwatchFile({ workspacePath: stateAfter.workspacePath, filePath: oldPath });
+      }
+    }
+    if (newCountBefore === 0 && newCountAfter > 0) {
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        void window.electronAPI.editorWatchFile({ workspacePath: stateAfter.workspacePath, filePath: newPath });
+      }
+    }
+  },
+
+  reloadEditorTab: async (tabId) => {
+    const state = useWorkspaceStore.getState();
+    const tab = state.editorTabs.find((t) => t.id === tabId);
+    if (!tab) return;
+
+    const result = await window.electronAPI.editorReadFile({
+      workspacePath: state.workspacePath,
+      filePath: tab.filePath,
+    });
+
+    if (!result.success) {
+      useWorkspaceStore.setState((currentState) => {
+        const nextTabs = currentState.editorTabs.map((t) =>
+          t.id === tabId ? { ...t, isDeleted: true, hasExternalChange: false } : t
+        );
+        return {
+          editorTabs: nextTabs,
+          ...syncActiveWorkspace(currentState, (workspace) => ({
+            ...workspace,
+            editorTabs: nextTabs,
+          })),
+        };
+      });
+      return;
+    }
+
+    useWorkspaceStore.setState((currentState) => {
+      const nextTabs = currentState.editorTabs.map((t) =>
+        t.id === tabId
+          ? {
+              ...t,
+              content: result.content ?? '',
+              originalContent: result.content ?? '',
+              isDirty: false,
+              hasExternalChange: false,
+              isDeleted: false,
+            }
+          : t
+      );
+      return {
+        editorTabs: nextTabs,
+        ...syncActiveWorkspace(currentState, (workspace) => ({
+          ...workspace,
+          editorTabs: nextTabs,
+        })),
+      };
+    });
+  },
+
+  markEditorTabExternallyChanged: (tabId) => set((state) => {
+    const nextTabs = state.editorTabs.map((t) =>
+      t.id === tabId ? { ...t, hasExternalChange: true } : t
     );
+    return {
+      editorTabs: nextTabs,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        editorTabs: nextTabs,
+      })),
+    };
+  }),
 
+  markEditorTabDeleted: (tabId) => set((state) => {
+    const nextTabs = state.editorTabs.map((t) =>
+      t.id === tabId ? { ...t, isDeleted: true, hasExternalChange: false } : t
+    );
+    return {
+      editorTabs: nextTabs,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        editorTabs: nextTabs,
+      })),
+    };
+  }),
+
+  clearEditorTabExternalFlag: (tabId) => set((state) => {
+    const nextTabs = state.editorTabs.map((t) =>
+      t.id === tabId ? { ...t, hasExternalChange: false, isDeleted: false } : t
+    );
     return {
       editorTabs: nextTabs,
       ...syncActiveWorkspace(state, (workspace) => ({

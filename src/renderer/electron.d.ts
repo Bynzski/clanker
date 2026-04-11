@@ -1,6 +1,6 @@
 import type { AiCommitSettings, ModelOption } from './types/shared';
 import type { FileListDirectoryRequest, FileListDirectoryResult } from '../shared/types/fileExplorer';
-import type { FileReadRequest, FileWriteRequest } from '../shared/types/editor';
+import type { FileReadRequest, FileWriteRequest, FileChangedEvent, FileWatchRequest } from '../shared/types/editor';
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest, FileOperationResult } from '../shared/types/fileOperations';
 import type {
   DeepLink,
@@ -137,6 +137,9 @@ interface ElectronAPI {
   // Editor
   editorReadFile: (request: FileReadRequest) => Promise<FileReadResult>;
   editorWriteFile: (request: FileWriteRequest) => Promise<FileWriteResult>;
+  editorWatchFile: (request: FileWatchRequest) => Promise<boolean>;
+  editorUnwatchFile: (request: FileWatchRequest) => Promise<boolean>;
+  onFileChanged: (callback: (event: FileChangedEvent) => void) => () => void;
 
   // File Operations
   fileCreate: (request: FileCreateRequest) => Promise<FileOperationResult>;

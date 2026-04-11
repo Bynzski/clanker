@@ -318,6 +318,19 @@ async function resolveAndValidateWritePath(
   }
 }
 
+export async function resolveAndValidateWatchPath(
+  workspacePath: string,
+  filePath: string
+): Promise<{ success: true; filePath: string } | { success: false; error: string }> {
+  const validation = await resolveAndValidateWritePath(workspacePath, filePath);
+  if ('errorCode' in validation) {
+    return { success: false, error: validation.error };
+  }
+  // Return the requested absolute path (not realpath) so FILE_CHANGED events
+  // match renderer tab paths, while still validating against symlink escape.
+  return { success: true, filePath: path.resolve(filePath) };
+}
+
 export async function writeFile(request: FileWriteRequest): Promise<FileWriteResult> {
   const validation = await resolveAndValidateWritePath(request.workspacePath, request.filePath);
   if ('errorCode' in validation) {
