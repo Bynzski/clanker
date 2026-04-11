@@ -41,3 +41,13 @@ When creating a workspace:
 - **1** — Single terminal
 - **2** — Side-by-side split
 - **4** — 2×2 grid
+
+## Editor Pane
+
+The editor pane provides file editing with syntax highlighting:
+
+- CodeMirror-based editor
+- Support for JavaScript, TypeScript, Markdown, and more
+- Tab-based file management
+- Side-by-side diff viewing for git changes
+- File change watching with auto-reload prompts

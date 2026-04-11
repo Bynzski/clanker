@@ -40,3 +40,10 @@
 | Forward | `Alt+→` |
 | Refresh | `Ctrl+R` |
 | Open External | `Ctrl+Shift+O` |
+
+## Editor
+
+| Action | Shortcut |
+|--------|----------|
+| Save File | `Ctrl+S` |
+| Close Tab | `Ctrl+W` (when editor focused) |

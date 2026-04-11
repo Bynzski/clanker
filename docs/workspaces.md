@@ -21,6 +21,8 @@ Each workspace retains:
 - Terminal list and count
 - Pane layout arrangement
 - Browser URL (when enabled)
+- Editor tabs and active tab
+- File explorer state (expanded paths, selected path)
 - Selected harness and model
 - Active terminal selection
 

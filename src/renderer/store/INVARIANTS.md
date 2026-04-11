@@ -4,6 +4,18 @@ This document describes the state contracts that the `workspaceStore` maintains.
 
 > **Note:** These invariants are documented in code as JSDoc `@invariant` tags on the `WorkspaceState` interface in `workspaceStore.ts`. This document provides plain-language explanations for reference during code review.
 
+## Implementation Notes
+
+### gitChanges Storage Location
+
+The `gitChanges` field is stored in the explorer section of workspace state. This is an intentional implementation detail: git changes are logically git-domain state, but they are stored alongside explorer state because the file explorer displays git status indicators and the two domains are tightly coupled in the UI.
+
+### Centralized Store Design
+
+The `workspaceStore.ts` file was reviewed during a documentation alignment pass and intentionally kept centralized. While the file is large (~1532 lines), it serves as the central composition point for all UI state. The complexity lives in the invariants, not in the file organization. Helper modules (`workspaceStoreHelpers.ts`, `workspaceLayout.ts`) already extract pure functions and layout tree operations.
+
+The `workspaceLayout.ts` module now has direct unit test coverage (`tests/renderer/unit/workspaceLayout.test.ts`), providing safe refactoring surface for layout operations.
+
 ## Core Invariants
 
 ### Workspace Invariants

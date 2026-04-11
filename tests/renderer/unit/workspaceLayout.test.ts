@@ -475,6 +475,513 @@ describe('buildWorkspaceLayout', () => {
 });
 
 // ===========================================================================
+// normalizeLayoutRoot - additional edge cases
+// ===========================================================================
+describe('normalizeLayoutRoot - additional edge cases', () => {
+  it('includes editor pane when visible', () => {
+    const panes = [makePane('a')];
+    const state = {
+      panes,
+      browserPane: null,
+      browserVisible: false,
+      editorPane: { id: 'ep', locked: false },
+      editorVisible: true,
+    };
+    const result = normalizeLayoutRoot(null, state);
+    const ids = collectLeafPaneIds(result!);
+    expect(ids.sort()).toEqual(['a', 'ep']);
+  });
+
+  it('excludes editor pane when not visible', () => {
+    const panes = [makePane('a')];
+    const state = {
+      panes,
+      browserPane: null,
+      browserVisible: false,
+      editorPane: { id: 'ep', locked: false },
+      editorVisible: false,
+    };
+    const result = normalizeLayoutRoot(null, state);
+    const ids = collectLeafPaneIds(result!);
+    expect(ids).toEqual(['a']);
+  });
+
+  it('includes both browser and editor panes when both visible', () => {
+    const panes = [makePane('a')];
+    const state = {
+      panes,
+      browserPane: makeBrowser('bp'),
+      browserVisible: true,
+      editorPane: { id: 'ep', locked: false },
+      editorVisible: true,
+    };
+    const result = normalizeLayoutRoot(null, state);
+    const ids = collectLeafPaneIds(result!);
+    expect(ids.sort()).toEqual(['a', 'bp', 'ep']);
+  });
+
+  it('prunes orphaned pane references from layout tree', () => {
+    const tree = split(leaf('a'), split(leaf('b'), leaf('c')));
+    const panes = [makePane('a')];
+    const state = { panes, browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
+    const result = normalizeLayoutRoot(tree, state);
+    const ids = collectLeafPaneIds(result!);
+    expect(ids).toEqual(['a']);
+  });
+
+  it('collapses split when one child is pruned', () => {
+    const tree = split(leaf('a'), split(leaf('b'), leaf('c')));
+    const panes = [makePane('a'), makePane('c')];
+    const state = { panes, browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
+    const result = normalizeLayoutRoot(tree, state);
+    const ids = collectLeafPaneIds(result!);
+    expect(ids.sort()).toEqual(['a', 'c']);
+  });
+
+  it('returns null when all panes are pruned', () => {
+    const tree = split(leaf('a'), leaf('b'));
+    const panes: Pane[] = [];
+    const state = { panes, browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
+    const result = normalizeLayoutRoot(tree, state);
+    expect(result).toBeNull();
+  });
+});
+
+// ===========================================================================
+// buildWorkspaceLayout - additional edge cases
+// ===========================================================================
+describe('buildWorkspaceLayout - additional edge cases', () => {
+  it('includes browser pane in layout when visible', () => {
+    const result = buildWorkspaceLayout({
+      panes: [makePane('a')],
+      browserVisible: true,
+      browserPane: makeBrowser('bp'),
+      editorVisible: false,
+      editorPane: null,
+      layoutRoot: null,
+    });
+    const ids = collectLeafPaneIds(result!);
+    expect(ids.sort()).toEqual(['a', 'bp']);
+  });
+
+  it('includes editor pane in layout when visible', () => {
+    const result = buildWorkspaceLayout({
+      panes: [makePane('a')],
+      browserVisible: false,
+      browserPane: null,
+      editorVisible: true,
+      editorPane: { id: 'ep', locked: false },
+      layoutRoot: null,
+    });
+    const ids = collectLeafPaneIds(result!);
+    expect(ids.sort()).toEqual(['a', 'ep']);
+  });
+
+  it('includes both browser and editor when both visible', () => {
+    const result = buildWorkspaceLayout({
+      panes: [makePane('a')],
+      browserVisible: true,
+      browserPane: makeBrowser('bp'),
+      editorVisible: true,
+      editorPane: { id: 'ep', locked: false },
+      layoutRoot: null,
+    });
+    const ids = collectLeafPaneIds(result!);
+    expect(ids.sort()).toEqual(['a', 'bp', 'ep']);
+  });
+
+  it('normalizes existing layoutRoot before returning', () => {
+    const tree = split(leaf('a'), split(leaf('b'), leaf('c')));
+    const panes = [makePane('a'), makePane('c')];
+    const result = buildWorkspaceLayout({
+      panes,
+      browserVisible: false,
+      browserPane: null,
+      editorVisible: false,
+      editorPane: null,
+      layoutRoot: tree,
+    });
+    const ids = collectLeafPaneIds(result!);
+    expect(ids.sort()).toEqual(['a', 'c']);
+  });
+
+  it('returns null when layoutRoot normalizes to null and no panes exist', () => {
+    const result = buildWorkspaceLayout({
+      panes: [],
+      browserVisible: false,
+      browserPane: null,
+      editorVisible: false,
+      editorPane: null,
+      layoutRoot: null,
+    });
+    expect(result).toBeNull();
+  });
+});
+
+// ===========================================================================
+// insertPaneIntoLayout - additional edge cases
+// ===========================================================================
+describe('insertPaneIntoLayout - additional edge cases', () => {
+  it('uses activeTerminalId to find target pane for split', () => {
+    const panes = [makePane('a'), makePane('b')];
+    const state = {
+      panes,
+      browserPane: null,
+      browserVisible: false,
+      editorPane: null,
+      editorVisible: false,
+      activeTerminalId: 'term-b',
+    };
+    const tree = split(leaf('a'), leaf('b'));
+    const result = insertPaneIntoLayout(tree, 'new', state);
+    const ids = collectLeafPaneIds(result!);
+    expect(ids).toContain('new');
+    expect(ids).toContain('b');
+    expect(ids.length).toBe(3);
+  });
+
+  it('ignores activeTerminalId if corresponding pane is locked', () => {
+    const panes = [makePane('a', true), makePane('b', false)];
+    const state = {
+      panes,
+      browserPane: null,
+      browserVisible: false,
+      editorPane: null,
+      editorVisible: false,
+      activeTerminalId: 'term-a',
+    };
+    const tree = split(leaf('a'), leaf('b'));
+    const result = insertPaneIntoLayout(tree, 'new', state);
+    const ids = collectLeafPaneIds(result!);
+    expect(ids).toContain('new');
+    expect(ids).toContain('b');
+    expect(ids.length).toBe(3);
+  });
+
+  it('ignores activeTerminalId if pane is not in layout tree', () => {
+    const panes = [makePane('a'), makePane('b'), makePane('c')];
+    const state = {
+      panes,
+      browserPane: null,
+      browserVisible: false,
+      editorPane: null,
+      editorVisible: false,
+      activeTerminalId: 'term-c',
+    };
+    const tree = split(leaf('a'), leaf('b'));
+    const result = insertPaneIntoLayout(tree, 'new', state);
+    const ids = collectLeafPaneIds(result!);
+    expect(ids).toContain('new');
+    expect(ids.length).toBe(3);
+  });
+
+  it('respects browser pane lock status during insertion', () => {
+    const panes = [makePane('a', true)];
+    const state = {
+      panes,
+      browserPane: makeBrowser('bp', false),
+      browserVisible: true,
+      editorPane: null,
+      editorVisible: false,
+      activeTerminalId: null,
+    };
+    const tree = split(leaf('a'), leaf('bp'));
+    const result = insertPaneIntoLayout(tree, 'new', state);
+    const ids = collectLeafPaneIds(result!);
+    expect(ids).toContain('new');
+    expect(ids.length).toBe(3);
+  });
+
+  it('respects editor pane lock status during insertion', () => {
+    const panes = [makePane('a', true)];
+    const state = {
+      panes,
+      browserPane: null,
+      browserVisible: false,
+      editorPane: { id: 'ep', locked: false },
+      editorVisible: true,
+      activeTerminalId: null,
+    };
+    const tree = split(leaf('a'), leaf('ep'));
+    const result = insertPaneIntoLayout(tree, 'new', state);
+    const ids = collectLeafPaneIds(result!);
+    expect(ids).toContain('new');
+    expect(ids.length).toBe(3);
+  });
+});
+
+// ===========================================================================
+// hasUnlockedLeaf - additional edge cases
+// ===========================================================================
+describe('hasUnlockedLeaf - additional edge cases', () => {
+  it('checks editor pane lock status when editor is visible', () => {
+    const state = {
+      panes: [makePane('a', true)],
+      browserPane: null,
+      browserVisible: false,
+      editorPane: { id: 'ep', locked: false },
+      editorVisible: true,
+    };
+    const tree = split(leaf('a'), leaf('ep'));
+    expect(hasUnlockedLeaf(tree, state)).toBe(true);
+  });
+
+  it('returns false when editor pane is locked and all other panes are locked', () => {
+    const state = {
+      panes: [makePane('a', true)],
+      browserPane: null,
+      browserVisible: false,
+      editorPane: { id: 'ep', locked: true },
+      editorVisible: true,
+    };
+    const tree = split(leaf('a'), leaf('ep'));
+    expect(hasUnlockedLeaf(tree, state)).toBe(false);
+  });
+
+  it('handles nested splits with mixed lock states', () => {
+    const state = {
+      panes: [makePane('a', true), makePane('b', false), makePane('c', true)],
+      browserPane: null,
+      browserVisible: false,
+      editorPane: null,
+      editorVisible: false,
+    };
+    const tree = split(leaf('a'), split(leaf('b'), leaf('c')));
+    expect(hasUnlockedLeaf(tree, state)).toBe(true);
+  });
+});
+
+// ===========================================================================
+// dockPaneToEdgeInLayout - additional edge cases
+// ===========================================================================
+describe('dockPaneToEdgeInLayout - additional edge cases', () => {
+  it('preserves tree structure when docking to left', () => {
+    const tree = split(leaf('a'), leaf('b'));
+    const result = dockPaneToEdgeInLayout(tree, 'a', 'left');
+    const splitNode = result as LayoutSplit;
+    expect(splitNode.orientation).toBe('horizontal');
+    expect((splitNode.first as LayoutLeaf).paneId).toBe('a');
+  });
+
+  it('preserves tree structure when docking to right', () => {
+    const tree = split(leaf('a'), leaf('b'));
+    const result = dockPaneToEdgeInLayout(tree, 'b', 'right');
+    const splitNode = result as LayoutSplit;
+    expect(splitNode.orientation).toBe('horizontal');
+    expect((splitNode.second as LayoutLeaf).paneId).toBe('b');
+  });
+
+  it('preserves tree structure when docking to top', () => {
+    const tree = split(leaf('a'), leaf('b'));
+    const result = dockPaneToEdgeInLayout(tree, 'a', 'top');
+    const splitNode = result as LayoutSplit;
+    expect(splitNode.orientation).toBe('vertical');
+    expect((splitNode.first as LayoutLeaf).paneId).toBe('a');
+  });
+
+  it('preserves tree structure when docking to bottom', () => {
+    const tree = split(leaf('a'), leaf('b'));
+    const result = dockPaneToEdgeInLayout(tree, 'b', 'bottom');
+    const splitNode = result as LayoutSplit;
+    expect(splitNode.orientation).toBe('vertical');
+    expect((splitNode.second as LayoutLeaf).paneId).toBe('b');
+  });
+
+  it('handles complex nested tree when docking', () => {
+    const tree = split(split(leaf('a'), leaf('b')), split(leaf('c'), leaf('d')));
+    const result = dockPaneToEdgeInLayout(tree, 'c', 'left');
+    const ids = collectLeafPaneIds(result!);
+    expect(ids[0]).toBe('c');
+    expect(ids.length).toBe(4);
+  });
+});
+
+// ===========================================================================
+// swapPaneIdsInLayout - additional edge cases
+// ===========================================================================
+describe('swapPaneIdsInLayout - additional edge cases', () => {
+  it('preserves nodeId in cloned leaf', () => {
+    const node: LayoutLeaf = { type: 'leaf', nodeId: 'custom-id', paneId: 'a' };
+    const result = swapPaneIdsInLayout(node, 'a', 'b');
+    expect(result).toEqual({ type: 'leaf', nodeId: 'custom-id', paneId: 'b' });
+  });
+
+  it('deeply clones nested splits', () => {
+    const tree = split(leaf('a'), split(leaf('b'), leaf('c')));
+    const result = swapPaneIdsInLayout(tree, 'a', 'x');
+    expect(result).not.toBe(tree);
+    expect((result as LayoutSplit).first).not.toBe((tree as LayoutSplit).first);
+  });
+
+  it('swaps pane ids in deeply nested structure', () => {
+    const tree = split(split(leaf('a'), leaf('b')), split(leaf('c'), leaf('d')));
+    const result = swapPaneIdsInLayout(tree, 'a', 'z');
+    const ids = collectLeafPaneIds(result!);
+    expect(ids).toContain('z');
+    expect(ids).not.toContain('a');
+    expect(ids.length).toBe(4);
+  });
+});
+
+// ===========================================================================
+// removePaneFromLayout - additional edge cases
+// ===========================================================================
+describe('removePaneFromLayout - additional edge cases', () => {
+  it('preserves nodeId in cloned leaf', () => {
+    const node: LayoutLeaf = { type: 'leaf', nodeId: 'custom-id', paneId: 'a' };
+    const result = removePaneFromLayout(node, 'b');
+    expect(result).toEqual({ type: 'leaf', nodeId: 'custom-id', paneId: 'a' });
+  });
+
+  it('collapses multiple levels when removing panes', () => {
+    const tree = split(split(leaf('a'), leaf('b')), split(leaf('c'), leaf('d')));
+    const result = removePaneFromLayout(tree, 'b');
+    const ids = collectLeafPaneIds(result!);
+    expect(ids.sort()).toEqual(['a', 'c', 'd']);
+  });
+
+  it('returns null when removing last pane from complex tree', () => {
+    const tree = split(leaf('a'), leaf('b'));
+    const result1 = removePaneFromLayout(tree, 'a');
+    const result2 = removePaneFromLayout(result1!, 'b');
+    expect(result2).toBeNull();
+  });
+
+  it('preserves split orientation when collapsing', () => {
+    const tree = split(leaf('a'), leaf('b'), 'vertical');
+    const result = removePaneFromLayout(tree, 'a');
+    expect(result).toEqual(leaf('b'));
+  });
+});
+
+// ===========================================================================
+// setSplitRatioInLayout - additional edge cases
+// ===========================================================================
+describe('setSplitRatioInLayout - additional edge cases', () => {
+  it('preserves leaf nodes unchanged', () => {
+    const leaf1: LayoutLeaf = { type: 'leaf', nodeId: 'l1', paneId: 'a' };
+    const result = setSplitRatioInLayout(leaf1, 'l1', 0.7);
+    expect(result).toEqual(leaf1);
+  });
+
+  it('deeply clones the tree when updating ratio', () => {
+    const inner = split(leaf('a'), leaf('b'), 'horizontal', 0.5, 'inner');
+    const outer = split(inner, leaf('c'), 'vertical', 0.5, 'outer');
+    const result = setSplitRatioInLayout(outer, 'inner', 0.8);
+    expect(result).not.toBe(outer);
+    expect((result as LayoutSplit).first).not.toBe(inner);
+  });
+
+  it('preserves nodeIds in cloned splits', () => {
+    const inner = split(leaf('a'), leaf('b'), 'horizontal', 0.5, 'inner');
+    const outer = split(inner, leaf('c'), 'vertical', 0.5, 'outer');
+    const result = setSplitRatioInLayout(outer, 'inner', 0.8) as LayoutSplit;
+    expect(result.nodeId).toBe('outer');
+    expect((result.first as LayoutSplit).nodeId).toBe('inner');
+  });
+
+  it('does not modify tree when nodeId not found', () => {
+    const tree = split(leaf('a'), leaf('b'), 'horizontal', 0.5, 'target');
+    const result = setSplitRatioInLayout(tree, 'nonexistent', 0.8);
+    expect(result).toEqual(tree);
+    expect(result).not.toBe(tree);
+  });
+});
+
+// ===========================================================================
+// findFirstLeafPaneId - additional edge cases
+// ===========================================================================
+describe('findFirstLeafPaneId - additional edge cases', () => {
+  it('returns right branch when left is null', () => {
+    const tree = {
+      type: 'split' as const,
+      nodeId: 's1',
+      orientation: 'horizontal' as const,
+      ratio: 0.5,
+      first: null as unknown as LayoutNode,
+      second: leaf('b'),
+    };
+    expect(findFirstLeafPaneId(tree)).toBe('b');
+  });
+
+  it('handles deeply nested left-heavy tree', () => {
+    const tree = split(split(split(leaf('deep'), leaf('b')), leaf('c')), leaf('d'));
+    expect(findFirstLeafPaneId(tree)).toBe('deep');
+  });
+});
+
+// ===========================================================================
+// collectLeafPaneIds - additional edge cases
+// ===========================================================================
+describe('collectLeafPaneIds - additional edge cases', () => {
+  it('handles deeply nested tree', () => {
+    const tree = split(split(leaf('a'), split(leaf('b'), leaf('c'))), split(leaf('d'), leaf('e')));
+    const ids = collectLeafPaneIds(tree);
+    expect(ids).toEqual(['a', 'b', 'c', 'd', 'e']);
+  });
+
+  it('handles single leaf', () => {
+    expect(collectLeafPaneIds(leaf('single'))).toEqual(['single']);
+  });
+});
+
+// ===========================================================================
+// Layout tree invariant tests
+// ===========================================================================
+describe('Layout tree invariants', () => {
+  it('maintains pane ID consistency after remove operation', () => {
+    const panes = [makePane('a'), makePane('b'), makePane('c')];
+    const tree = split(leaf('a'), split(leaf('b'), leaf('c')));
+    const result = removePaneFromLayout(tree, 'b');
+    const ids = collectLeafPaneIds(result!);
+    ids.forEach(id => {
+      expect(panes.some(p => p.id === id)).toBe(true);
+    });
+  });
+
+  it('maintains pane ID consistency after swap operation', () => {
+    const panes = [makePane('a'), makePane('b'), makePane('c')];
+    const tree = split(leaf('a'), split(leaf('b'), leaf('c')));
+    const result = swapPaneIdsInLayout(tree, 'a', 'b');
+    const ids = collectLeafPaneIds(result!);
+    ids.forEach(id => {
+      expect(panes.some(p => p.id === id)).toBe(true);
+    });
+  });
+
+  it('maintains pane ID consistency after dock operation', () => {
+    const panes = [makePane('a'), makePane('b'), makePane('c')];
+    const tree = split(leaf('a'), split(leaf('b'), leaf('c')));
+    const result = dockPaneToEdgeInLayout(tree, 'c', 'left');
+    const ids = collectLeafPaneIds(result!);
+    ids.forEach(id => {
+      expect(panes.some(p => p.id === id)).toBe(true);
+    });
+  });
+
+  it('ensures all pane IDs in normalized layout exist in visible set', () => {
+    const tree = split(leaf('a'), split(leaf('b'), leaf('c')));
+    const panes = [makePane('a'), makePane('c')];
+    const state = { panes, browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
+    const result = normalizeLayoutRoot(tree, state);
+    const ids = collectLeafPaneIds(result!);
+    ids.forEach(id => {
+      expect(panes.some(p => p.id === id)).toBe(true);
+    });
+  });
+
+  it('ensures insertPaneIntoLayout only adds valid pane IDs', () => {
+    const panes = [makePane('a'), makePane('b')];
+    const state = { panes, browserPane: null, browserVisible: false, editorPane: null, editorVisible: false, activeTerminalId: null };
+    const tree = split(leaf('a'), leaf('b'));
+    const result = insertPaneIntoLayout(tree, 'new', state);
+    const ids = collectLeafPaneIds(result!);
+    expect(ids).toContain('new');
+    expect(ids.length).toBe(3);
+  });
+});
+
+// ===========================================================================
 // Constants
 // ===========================================================================
 describe('constants', () => {

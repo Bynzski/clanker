@@ -24,6 +24,14 @@ Manage authentication for remote VCS operations.
 
 #### SSH Keys
 
+SSH keys are generated as ED25519 and stored in `~/.ssh/id_ed25519_clanker`. The public key can be copied to your VCS provider for authentication.
+
+#### SSH Host Configuration
+
+The app can automatically configure your SSH config to use the generated key for specific hosts (e.g., `github.com`, `gitlab.com`, `bitbucket.org`).
+
+#### SSH Keys
+
 | Action | Description |
 |--------|-------------|
 | Generate SSH Key | Create ED25519 key pair for VCS authentication |
