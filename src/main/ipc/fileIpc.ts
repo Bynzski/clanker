@@ -7,7 +7,7 @@ import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest } from '..
 import { listDirectory, readFile, writeFile, createFile, createDirectory, deleteEntry, renameEntry, resolveAndValidateWatchPath } from '../fileService';
 import type { FileWatcherService } from '../fileWatcher';
 
-interface RegisterFileIpcDeps {
+export interface RegisterFileIpcDeps {
   getFileWatcher: () => FileWatcherService;
 }
 

@@ -20,7 +20,8 @@
     "test:coverage": "vitest run --coverage",
     "validate": "npm run lint && npm run typecheck && npm run build && npm run test",
     "build:dist": "npm run build && electron-builder",
-    "start": "electron ."
+    "start": "electron .",
+    "prepare": "husky"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.5",

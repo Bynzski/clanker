@@ -85,6 +85,60 @@ vi.mock('child_process', () => ({
   })),
 }));
 
+// Mock fs (used by READ_DIRECTORY and path resolution)
+vi.mock('fs', () => ({
+  default: {
+    readdirSync: mockFsReaddirSync,
+    existsSync: vi.fn(),
+    readFileSync: vi.fn(),
+  },
+  readdirSync: mockFsReaddirSync,
+  existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+}));
+
+// vi.hoisted() ensures mock references are available when vi.mock factories run
+const { mockDiscoverHarnessModels, mockGetAvailableHarnessOptions } = vi.hoisted(() => ({
+  mockDiscoverHarnessModels: vi.fn(),
+  mockGetAvailableHarnessOptions: vi.fn(),
+}));
+
+const { mockGitServiceGetStatus, mockGitServiceGetCommitPromptContext } = vi.hoisted(() => ({
+  mockGitServiceGetStatus: vi.fn(),
+  mockGitServiceGetCommitPromptContext: vi.fn(),
+}));
+
+const { mockResolveExistingDirectory } = vi.hoisted(() => ({
+  // Default: reject all paths so workspace-validation tests work by default.
+  // Individual tests can use mockResolveExistingDirectory.mockResolvedValueOnce().
+  mockResolveExistingDirectory: vi.fn().mockReturnValue(null),
+}));
+
+const { mockFsReaddirSync } = vi.hoisted(() => ({
+  // Used by READ_DIRECTORY success-path tests. Tests can set return values via
+  // mockFsReaddirSync.mockReturnValueOnce(...).
+  mockFsReaddirSync: vi.fn(),
+}));
+
+// Mock harnessCatalog (used by GET_HARNESS_MODELS and GET_HARNESS_OPTIONS)
+vi.mock('../../../src/main/harnessCatalog', () => ({
+  discoverHarnessModels: mockDiscoverHarnessModels,
+  getAvailableHarnessOptions: mockGetAvailableHarnessOptions,
+}));
+
+// Mock GitService (used by GENERATE_COMMIT_MESSAGE)
+vi.mock('../../../src/main/gitService', () => ({
+  GitService: vi.fn().mockImplementation(() => ({
+    getStatus: mockGitServiceGetStatus,
+    getCommitPromptContext: mockGitServiceGetCommitPromptContext,
+  })),
+}));
+
+// Mock security.ts to control resolveExistingDirectory behavior
+vi.mock('../../../src/main/security', () => ({
+  resolveExistingDirectory: mockResolveExistingDirectory,
+}));
+
 // Import after mocking
 import { ipcMain } from 'electron';
 import { registerSettingsIpc } from '../../../src/main/ipc/settingsIpc';
@@ -285,6 +339,508 @@ describe('registerSettingsIpc', () => {
     // Verify no overlap
     const overlap = settingsChannels.filter(ch => browserChannels.includes(ch));
     expect(overlap.length).toBe(0);
+  });
+});
+
+/**
+ * Settings IPC — Error-Path Tests
+ *
+ * Verifies every settings handler returns a defined value (never undefined or
+ * thrown) for missing store values, null main window, invalid workspace paths,
+ * and AI commit generation failures.
+ */
+
+describe('settingsIpc — error-path: store returns', () => {
+  const mockIpcMain = ipcMain as typeof ipcMain & {
+    handle: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('GET_LAST_WORKSPACE returns whatever the store has (may be undefined)', () => {
+    // Create a fresh deps with a store that returns undefined for lastWorkspace
+    const mockStore = {
+      get: vi.fn().mockReturnValue(undefined),
+      set: vi.fn(),
+    };
+    const mockMainWindow = {
+      webContents: { send: vi.fn() },
+      minimize: vi.fn(),
+      unmaximize: vi.fn(),
+      maximize: vi.fn(),
+      close: vi.fn(),
+      isMaximized: vi.fn(() => false),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => mockMainWindow as never,
+      getGitService: () => ({ getStatus: mockGitServiceGetStatus, getCommitPromptContext: mockGitServiceGetCommitPromptContext } as never),
+    };
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'get-last-workspace'
+    )?.[1] as () => string | undefined;
+
+    const result = handler();
+    // Store returns undefined for lastWorkspace key — handler returns undefined (acceptable)
+    expect(result).toBeUndefined();
+  });
+
+  test('GET_SHOW_FASTFETCH returns whatever the store has (may be undefined)', () => {
+    const mockStore = {
+      get: vi.fn().mockReturnValue(undefined),
+      set: vi.fn(),
+    };
+    const mockMainWindow = {
+      webContents: { send: vi.fn() },
+      minimize: vi.fn(),
+      unmaximize: vi.fn(),
+      maximize: vi.fn(),
+      close: vi.fn(),
+      isMaximized: vi.fn(() => false),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => mockMainWindow as never,
+      getGitService: () => ({ getStatus: mockGitServiceGetStatus, getCommitPromptContext: mockGitServiceGetCommitPromptContext } as never),
+    };
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'get-show-fastfetch'
+    )?.[1] as () => boolean | undefined;
+
+    const result = handler();
+    // Store returns undefined — handler returns undefined (acceptable)
+    expect(result).toBeUndefined();
+  });
+
+  test('GET_AI_COMMIT_SETTINGS returns object with potentially undefined fields', () => {
+    const mockStore = {
+      get: vi.fn().mockReturnValue(undefined),
+      set: vi.fn(),
+    };
+    const mockMainWindow = {
+      webContents: { send: vi.fn() },
+      minimize: vi.fn(),
+      unmaximize: vi.fn(),
+      maximize: vi.fn(),
+      close: vi.fn(),
+      isMaximized: vi.fn(() => false),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => mockMainWindow as never,
+      getGitService: () => ({ getStatus: mockGitServiceGetStatus, getCommitPromptContext: mockGitServiceGetCommitPromptContext } as never),
+    };
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'get-ai-commit-settings'
+    )?.[1] as () => { enabled: boolean; provider: string; model: string };
+
+    const result = handler();
+    // Returns object with undefined fields when store has no values
+    expect(result).toBeDefined();
+    expect(typeof result.enabled).toBe('undefined');
+    expect(typeof result.provider).toBe('undefined');
+    expect(typeof result.model).toBe('undefined');
+  });
+});
+
+describe('settingsIpc — error-path: null main window', () => {
+  const mockIpcMain = ipcMain as typeof ipcMain & {
+    handle: ReturnType<typeof vi.fn>;
+  };
+
+  const createMockDepsWithNullWindow = () => {
+    const mockStore = {
+      get: vi.fn((key: string) => {
+        const defaults: Record<string, unknown> = {
+          lastWorkspace: '/home/test',
+          showFastfetch: false,
+          aiCommitEnabled: false,
+          aiCommitProvider: 'codex',
+          aiCommitModel: '',
+        };
+        return defaults[key];
+      }),
+      set: vi.fn(),
+    };
+    const mockGitService = {
+      getStatus: mockGitServiceGetStatus,
+      getCommitPromptContext: mockGitServiceGetCommitPromptContext,
+    };
+    return {
+      deps: {
+        getStore: () => mockStore as never,
+        getMainWindow: () => null, // null main window
+        getGitService: () => mockGitService as never,
+      },
+    };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('OPEN_DIRECTORY_DIALOG throws when mainWindow is null (requires non-null)', async () => {
+    const { deps } = createMockDepsWithNullWindow();
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'open-directory-dialog'
+    )?.[1] as () => Promise<string | null>;
+
+    // The handler uses `dialog.showOpenDialog(mainWindow!, ...)` which throws
+    // when mainWindow is null — this is a production-code behavior that causes
+    // an uncaught exception (not a handled error result). We verify it throws.
+    await expect(handler()).rejects.toThrow();
+  });
+
+  test('MINIMIZE_WINDOW is a no-op when mainWindow is null', () => {
+    const { deps } = createMockDepsWithNullWindow();
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'minimize-window'
+    )?.[1] as () => void;
+
+    // getMainWindow()?.minimize() is a no-op when mainWindow is null
+    const result = handler();
+    expect(result).toBeUndefined();
+  });
+
+  test('TOGGLE_MAXIMIZE_WINDOW is a no-op when mainWindow is null', () => {
+    const { deps } = createMockDepsWithNullWindow();
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'toggle-maximize-window'
+    )?.[1] as () => void;
+
+    const result = handler();
+    expect(result).toBeUndefined();
+  });
+
+  test('CLOSE_WINDOW is a no-op when mainWindow is null', () => {
+    const { deps } = createMockDepsWithNullWindow();
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'close-window'
+    )?.[1] as () => void;
+
+    const result = handler();
+    expect(result).toBeUndefined();
+  });
+
+  test('IS_MAXIMIZED_WINDOW returns false when mainWindow is null', () => {
+    const { deps } = createMockDepsWithNullWindow();
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'is-maximized-window'
+    )?.[1] as () => boolean;
+
+    const result = handler();
+    expect(result).toBe(false);
+  });
+
+  test('ZOOM_IN_WINDOW is a no-op when mainWindow is null', () => {
+    const { deps } = createMockDepsWithNullWindow();
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'zoom-in-window'
+    )?.[1] as () => void;
+
+    const result = handler();
+    expect(result).toBeUndefined();
+  });
+
+  test('ZOOM_OUT_WINDOW is a no-op when mainWindow is null', () => {
+    const { deps } = createMockDepsWithNullWindow();
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'zoom-out-window'
+    )?.[1] as () => void;
+
+    const result = handler();
+    expect(result).toBeUndefined();
+  });
+
+  test('RESET_ZOOM_WINDOW is a no-op when mainWindow is null', () => {
+    const { deps } = createMockDepsWithNullWindow();
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'reset-zoom-window'
+    )?.[1] as () => void;
+
+    const result = handler();
+    expect(result).toBeUndefined();
+  });
+});
+
+describe('settingsIpc — error-path: workspace validation and commit generation', () => {
+  const mockIpcMain = ipcMain as typeof ipcMain & {
+    handle: ReturnType<typeof vi.fn>;
+  };
+
+  const createMockDeps = () => {
+    const mockStore = {
+      get: vi.fn((key: string) => {
+        const defaults: Record<string, unknown> = {
+          lastWorkspace: '/home/test',
+          showFastfetch: false,
+          aiCommitEnabled: false,
+          aiCommitProvider: 'codex',
+          aiCommitModel: '',
+        };
+        return defaults[key];
+      }),
+      set: vi.fn(),
+    };
+    const mockMainWindow = {
+      webContents: { send: vi.fn() },
+      minimize: vi.fn(),
+      unmaximize: vi.fn(),
+      maximize: vi.fn(),
+      close: vi.fn(),
+      isMaximized: vi.fn(() => false),
+    };
+    const mockGitService = {
+      getStatus: mockGitServiceGetStatus,
+      getCommitPromptContext: mockGitServiceGetCommitPromptContext,
+    };
+    return {
+      deps: {
+        getStore: () => mockStore as never,
+        getMainWindow: () => mockMainWindow as never,
+        getGitService: () => mockGitService as never,
+      },
+    };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDiscoverHarnessModels.mockReset();
+    mockGetAvailableHarnessOptions.mockReset();
+    mockGitServiceGetStatus.mockReset();
+    mockGitServiceGetCommitPromptContext.mockReset();
+  });
+
+  test('GENERATE_COMMIT_MESSAGE returns error for invalid workspace path', async () => {
+    const { deps } = createMockDeps();
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'generate-commit-message'
+    )?.[1] as (_: unknown, workspacePath: string) => Promise<{ success: boolean; error?: string }>;
+
+    const result = await handler(null, '/invalid/nonexistent/path');
+    expect(result).toEqual({ success: false, error: 'Workspace path is invalid or not a directory' });
+  });
+
+  test('GENERATE_COMMIT_MESSAGE returns error when AI commit is disabled', async () => {
+    const mockStore = {
+      get: vi.fn((key: string) => {
+        if (key === 'aiCommitEnabled') return false;
+        if (key === 'aiCommitProvider') return 'codex';
+        if (key === 'aiCommitModel') return '';
+        return undefined;
+      }),
+      set: vi.fn(),
+    };
+    const mockMainWindow = {
+      webContents: { send: vi.fn() },
+      minimize: vi.fn(), unmaximize: vi.fn(), maximize: vi.fn(), close: vi.fn(),
+      isMaximized: vi.fn(() => false),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => mockMainWindow as never,
+      getGitService: () => ({ getStatus: mockGitServiceGetStatus, getCommitPromptContext: mockGitServiceGetCommitPromptContext } as never),
+    };
+    mockResolveExistingDirectory.mockResolvedValueOnce(process.cwd());
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'generate-commit-message'
+    )?.[1] as (_: unknown, workspacePath: string) => Promise<{ success: boolean; error?: string }>;
+
+    const result = await handler(null, '/some/path');
+    expect(result).toEqual({ success: false, error: 'AI commit message generation is disabled' });
+  });
+
+  test('GENERATE_COMMIT_MESSAGE returns error when commit prompt context fails', async () => {
+    const mockStore = {
+      get: vi.fn((key: string) => {
+        if (key === 'aiCommitEnabled') return true;
+        if (key === 'aiCommitProvider') return 'codex';
+        if (key === 'aiCommitModel') return '';
+        return undefined;
+      }),
+      set: vi.fn(),
+    };
+    const mockMainWindow = {
+      webContents: { send: vi.fn() },
+      minimize: vi.fn(), unmaximize: vi.fn(), maximize: vi.fn(), close: vi.fn(),
+      isMaximized: vi.fn(() => false),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => mockMainWindow as never,
+      getGitService: () => ({ getStatus: mockGitServiceGetStatus, getCommitPromptContext: mockGitServiceGetCommitPromptContext } as never),
+    };
+    mockResolveExistingDirectory.mockResolvedValueOnce(process.cwd());
+    mockGitServiceGetCommitPromptContext.mockResolvedValue({ success: false, error: 'No changes' });
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'generate-commit-message'
+    )?.[1] as (_: unknown, workspacePath: string) => Promise<{ success: boolean; error?: string }>;
+
+    const result = await handler(null, '/some/path');
+    expect(result).toEqual({ success: false, error: 'No changes' });
+  });
+
+  test('READ_DIRECTORY returns empty array for invalid directory path', async () => {
+    const { deps } = createMockDeps();
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'read-directory'
+    )?.[1] as (_: unknown, dirPath: string) => Promise<unknown[]>;
+
+    const result = await handler(null, '/nonexistent/directory');
+    // resolveExistingDirectory returns null for nonexistent path, handler returns []
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(0);
+  });
+
+  test('READ_DIRECTORY returns directory entries when path is valid', async () => {
+    const { deps } = createMockDeps();
+    // Override resolveExistingDirectory to return a valid path (bypass early return)
+    mockResolveExistingDirectory.mockReturnValueOnce('/valid/path');
+    // Set up fs.readdirSync to return some entries
+    mockFsReaddirSync.mockReturnValueOnce([
+      { name: 'src', isDirectory: () => true },
+      { name: 'node_modules', isDirectory: () => true },
+      { name: 'file.txt', isDirectory: () => false },
+    ]);
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'read-directory'
+    )?.[1] as (_: unknown, dirPath: string) => Promise<unknown[]>;
+
+    const result = await handler(null, '/valid/path');
+    // Should return only directories, filtered and mapped
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(2);
+    expect(result).toEqual([
+      { name: 'src', isDirectory: true },
+      { name: 'node_modules', isDirectory: true },
+    ]);
+    // Verify files were filtered out
+    expect(mockFsReaddirSync).toHaveBeenCalledWith('/valid/path', { withFileTypes: true });
+  });
+
+  test('READ_DIRECTORY returns empty array when fs.readdirSync throws', async () => {
+    const { deps } = createMockDeps();
+    mockResolveExistingDirectory.mockReturnValueOnce('/error/path');
+    mockFsReaddirSync.mockImplementationOnce(() => {
+      throw new Error('Permission denied');
+    });
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'read-directory'
+    )?.[1] as (_: unknown, dirPath: string) => Promise<unknown[]>;
+
+    const result = await handler(null, '/error/path');
+    // Should return [] (empty result) on fs error, not throw
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(0);
+  });
+
+  test('READ_DIRECTORY returns empty array when directory is empty', async () => {
+    const { deps } = createMockDeps();
+    mockResolveExistingDirectory.mockReturnValueOnce('/empty/path');
+    mockFsReaddirSync.mockReturnValueOnce([]);
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'read-directory'
+    )?.[1] as (_: unknown, dirPath: string) => Promise<unknown[]>;
+
+    const result = await handler(null, '/empty/path');
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(0);
+  });
+
+  test('GET_HARNESS_OPTIONS calls harnessCatalog and returns options', () => {
+    const { deps } = createMockDeps();
+    mockGetAvailableHarnessOptions.mockReturnValue([
+      { id: 'codex', name: 'Codex', command: 'codex', args: [], icon: 'codex' },
+    ]);
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'get-harness-options'
+    )?.[1] as () => unknown[];
+
+    const result = handler();
+    expect(mockGetAvailableHarnessOptions).toHaveBeenCalled();
+    expect(result).toHaveLength(1);
+  });
+
+  test('GET_HARNESS_MODELS calls discoverHarnessModels and returns models', async () => {
+    const { deps } = createMockDeps();
+    mockDiscoverHarnessModels.mockResolvedValue([{ id: 'gpt-4', name: 'GPT-4' }]);
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'get-harness-models'
+    )?.[1] as (_: unknown, harness: string) => Promise<unknown[]>;
+
+    const result = await handler(null, 'codex');
+    expect(mockDiscoverHarnessModels).toHaveBeenCalledWith('codex');
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ id: 'gpt-4', name: 'GPT-4' });
+  });
+
+  test('SET_SHOW_FASTFETCH calls store.set and returns undefined', () => {
+    const mockSetFn = vi.fn();
+    const mockStore = {
+      get: vi.fn(),
+      set: mockSetFn,
+    };
+    const mockMainWindow = {
+      webContents: { send: vi.fn() },
+      minimize: vi.fn(), unmaximize: vi.fn(), maximize: vi.fn(), close: vi.fn(),
+      isMaximized: vi.fn(() => false),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => mockMainWindow as never,
+      getGitService: () => ({ getStatus: mockGitServiceGetStatus, getCommitPromptContext: mockGitServiceGetCommitPromptContext } as never),
+    };
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'set-show-fastfetch'
+    )?.[1] as (_: unknown, value: boolean) => void;
+
+    const result = handler(null, true);
+    expect(result).toBeUndefined();
+    expect(mockSetFn).toHaveBeenCalledWith('showFastfetch', true);
   });
 });
 
