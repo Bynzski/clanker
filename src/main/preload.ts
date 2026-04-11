@@ -5,6 +5,7 @@ import type { FileListDirectoryRequest } from '../shared/types/fileExplorer';
 import type { FileReadRequest, FileWriteRequest, FileChangedEvent, FileWatchRequest } from '../shared/types/editor';
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest } from '../shared/types/fileOperations';
 import type { VcsProvider } from '../shared/types/vcs';
+import type { GitStatusResult } from '../shared/types/git';
 import {
   GET_LAST_WORKSPACE,
   OPEN_DIRECTORY_DIALOG,
@@ -264,30 +265,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     forceWithLease?: boolean,
     setUpstream?: boolean
   ) => ipcRenderer.invoke(GIT_PUSH, workspacePath, remote, branch, forceWithLease, setUpstream),
-  onGitStatusUpdate: (callback: (status: {
-    success: boolean;
-    isRepo: boolean;
-    currentBranch: string | null;
-    isDetached: boolean;
-    changes: Array<{ path: string; status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed'; staged: boolean }>;
-    upstream: string | null;
-    ahead: number;
-    behind: number;
-    errorCode?: 'not-a-repo' | 'git-not-found' | 'unknown';
-    error?: string;
-  }) => void) => {
-    const handler = (_event: IpcRendererEvent, status: {
-      success: boolean;
-      isRepo: boolean;
-      currentBranch: string | null;
-      isDetached: boolean;
-      changes: Array<{ path: string; status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed'; staged: boolean }>;
-      upstream: string | null;
-      ahead: number;
-      behind: number;
-      errorCode?: 'not-a-repo' | 'git-not-found' | 'unknown';
-      error?: string;
-    }) => callback(status);
+  onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => {
+    const handler = (_event: IpcRendererEvent, status: GitStatusResult) => callback(status);
     ipcRenderer.on(GIT_STATUS_UPDATE, handler);
     return () => ipcRenderer.removeListener(GIT_STATUS_UPDATE, handler);
   },

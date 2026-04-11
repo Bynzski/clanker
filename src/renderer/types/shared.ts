@@ -1,5 +1,3 @@
-import type { VcsProvider } from '../../shared/types/vcs';
-
 export interface ModelOption {
   id: string;
   label: string;
@@ -11,13 +9,11 @@ export interface AiCommitSettings {
   model: string;
 }
 
-export type { VcsProvider };
-
 /**
  * Request to save a Personal Access Token.
  */
 export interface SavePatRequest {
-  provider: VcsProvider;
+  provider: import('../../shared/types/vcs').VcsProvider;
   token: string;
   scope?: string[];
 }

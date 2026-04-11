@@ -16,7 +16,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { useVcsStore } from '../../store/vcsStore';
-import type { VcsProvider } from '../../types/shared';
+import type { VcsProvider } from '../../../shared/types/vcs';
 import './CredentialSettings.css';
 
 interface CredentialSettingsProps {
