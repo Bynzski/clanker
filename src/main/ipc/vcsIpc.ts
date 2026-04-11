@@ -13,7 +13,7 @@ import {
   type DeepLink,
 } from '../vcs';
 import { GitService } from '../gitService';
-import { getValidatedWorkspacePath } from './settingsIpc';
+import { getValidatedWorkspacePath } from './aiCommitIpc';
 import {
   VCS_GET_CONTEXT,
   VCS_GET_PR_INFO,

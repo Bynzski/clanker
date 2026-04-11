@@ -26,8 +26,8 @@ vi.mock('../../../src/main/vcs', () => ({
   getDeepLinkUrl: vi.fn<() => string | null>(),
 }));
 
-// Mock the settingsIpc module for getValidatedWorkspacePath
-vi.mock('../../../src/main/ipc/settingsIpc', () => ({
+// Mock the aiCommitIpc module for getValidatedWorkspacePath
+vi.mock('../../../src/main/ipc/aiCommitIpc', () => ({
   getValidatedWorkspacePath: vi.fn<(path: string) => string | null>(),
 }));
 
@@ -48,7 +48,7 @@ import {
   getProviderDeepLinks,
 } from '../../../src/main/vcs';
 
-import { getValidatedWorkspacePath } from '../../../src/main/ipc/settingsIpc';
+import { getValidatedWorkspacePath } from '../../../src/main/ipc/aiCommitIpc';
 import { registerVcsIpc } from '../../../src/main/ipc/vcsIpc';
 import { GitService } from '../../../src/main/gitService';
 
