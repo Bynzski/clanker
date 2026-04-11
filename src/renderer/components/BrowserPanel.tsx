@@ -167,6 +167,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
       if (rafRef.current != null) {
         window.cancelAnimationFrame(rafRef.current);
       }
+      lastBoundsRef.current = null;
       if (activeWorkspaceId) {
         window.electronAPI.browserHide(activeWorkspaceId);
       }
@@ -184,6 +185,8 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
         window.cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+      // Force a fresh bounds IPC when the browser is shown again after being hidden.
+      lastBoundsRef.current = null;
       window.electronAPI.browserHide(activeWorkspaceId);
       return;
     }
