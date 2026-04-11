@@ -168,24 +168,24 @@ type ActiveWorkspaceSnapshot = Pick<
   | 'activeEditorTabId'
 >;
 
-const generateId = (prefix: string) => {
+export const generateId = (prefix: string) => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `${prefix}-${crypto.randomUUID()}`;
   }
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
-const generatePaneId = () => generateId('pane');
+export const generatePaneId = () => generateId('pane');
 
-const createPane = (terminalId: string | null, position?: PanePosition): Pane => ({
+export const createPane = (terminalId: string | null, position?: PanePosition): Pane => ({
   id: generatePaneId(),
   terminalId,
   position,
 });
 
-const createWorkspaceId = () => generateId('workspace');
+export const createWorkspaceId = () => generateId('workspace');
 
-const createDefaultExplorerState = () => ({
+export const createDefaultExplorerState = () => ({
   explorerVisible: false,
   explorerSidebarWidth: 280,
   explorerExpandedPaths: [] as string[],
@@ -197,14 +197,14 @@ const createDefaultExplorerState = () => ({
   gitChanges: [] as GitStatus[],
 });
 
-const createDefaultEditorState = () => ({
+export const createDefaultEditorState = () => ({
   editorVisible: false,
   editorPane: null as EditorPaneState | null,
   editorTabs: [] as EditorTab[],
   activeEditorTabId: null as string | null,
 });
 
-function areGitStatusListsEqual(a: GitStatus[], b: GitStatus[]): boolean {
+export function areGitStatusListsEqual(a: GitStatus[], b: GitStatus[]): boolean {
   if (a === b) {
     return true;
   }
@@ -220,7 +220,7 @@ function areGitStatusListsEqual(a: GitStatus[], b: GitStatus[]): boolean {
   );
 }
 
-const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
+export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   ...workspace,
   terminals: [...workspace.terminals],
   panes: [...workspace.panes],
@@ -240,14 +240,14 @@ const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   layoutRoot: buildWorkspaceLayout(workspace),
 });
 
-function getWorkspaceNameFromPath(workspacePath: string): string {
+export function getWorkspaceNameFromPath(workspacePath: string): string {
   const trimmed = workspacePath.replace(/\/+$/, '');
   if (!trimmed) return 'Workspace';
   const baseName = trimmed.split('/').pop();
   return baseName && baseName.length > 0 ? baseName : 'Workspace';
 }
 
-function getActiveWorkspaceSnapshot(
+export function getActiveWorkspaceSnapshot(
   workspace: Pick<
     WorkspaceTab,
     | 'name'
@@ -304,7 +304,7 @@ function getActiveWorkspaceSnapshot(
   };
 }
 
-function syncActiveWorkspace(
+export function syncActiveWorkspace(
   state: WorkspaceState,
   updateWorkspace: (workspace: WorkspaceTab) => WorkspaceTab
 ): Partial<WorkspaceState> {
@@ -326,7 +326,7 @@ function syncActiveWorkspace(
   };
 }
 
-function patchWorkspaceById(
+export function patchWorkspaceById(
   state: WorkspaceState,
   workspaceId: string,
   updater: (workspace: WorkspaceTab) => WorkspaceTab
