@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useDragHandle } from '../DynamicPaneLayout';
 import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw } from 'lucide-react';
 import type React from 'react';
 import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer';
@@ -80,6 +81,7 @@ export default function FileExplorer() {
   const [deleteTarget, setDeleteTarget] = useState<FileExplorerEntry | null>(null);
   const [creating, setCreating] = useState<{ parentPath: string; type: 'file' | 'directory' } | null>(null);
   const [renaming, setRenaming] = useState<{ path: string; originalName: string } | null>(null);
+  const dragHandleProps = useDragHandle();
 
   const loadDirectory = useCallback(async (directoryPath: string): Promise<FileListDirectoryResult> => {
     const requestWorkspaceId = activeWorkspaceId;
@@ -446,7 +448,8 @@ export default function FileExplorer() {
 
   return (
     <aside className="file-explorer" style={{ width: explorerSidebarWidth }}>
-      <div className="file-explorer-header">
+      <div className="file-explorer-header" {...dragHandleProps}>
+        <div className="file-explorer-drag-handle" aria-hidden="true" title="Drag to move pane" />
         <span className="file-explorer-title">Explorer</span>
         <div className="file-explorer-actions">
           <button
