@@ -10,7 +10,7 @@ import {
   getValidatedWorkspacePath,
   getInvalidWorkspaceResult,
   refreshGitStatus,
-} from './settingsIpc';
+} from './aiCommitIpc';
 import {
   GIT_START_POLLING,
   GIT_STOP_POLLING,

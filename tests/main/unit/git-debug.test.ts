@@ -60,7 +60,7 @@ const { mockGetValidatedWorkspacePath, mockGetInvalidWorkspaceResult, mockRefres
   mockRefreshGitStatus: vi.fn(),
 }));
 
-vi.mock('../../../src/main/ipc/settingsIpc', () => ({
+vi.mock('../../../src/main/ipc/aiCommitIpc', () => ({
   getValidatedWorkspacePath: mockGetValidatedWorkspacePath,
   getInvalidWorkspaceResult: mockGetInvalidWorkspaceResult,
   refreshGitStatus: mockRefreshGitStatus,

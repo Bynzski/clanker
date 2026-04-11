@@ -76,6 +76,8 @@ describe('IPC registration smoke test', () => {
     // ── Import modules ──────────────────────────────────────────────────────
     await import('electron');
     const { registerSettingsIpc } = await import('../../../src/main/ipc/settingsIpc');
+    const { registerWindowIpc } = await import('../../../src/main/ipc/windowIpc');
+    const { registerAiCommitIpc } = await import('../../../src/main/ipc/aiCommitIpc');
     const { registerTerminalIpc } = await import('../../../src/main/ipc/terminalIpc');
     const { registerBrowserIpc } = await import('../../../src/main/ipc/browserIpc');
     const { registerGitIpc } = await import('../../../src/main/ipc/gitIpc');
@@ -178,6 +180,14 @@ describe('IPC registration smoke test', () => {
     registerSettingsIpc({
       getStore: () => mockStore as never,
       getMainWindow: () => mockMainWindow as never,
+    });
+
+    registerWindowIpc({
+      getMainWindow: () => mockMainWindow as never,
+    });
+
+    registerAiCommitIpc({
+      getStore: () => mockStore as never,
       getGitService: () => mockGitService as never,
     });
 

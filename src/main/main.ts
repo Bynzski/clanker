@@ -39,6 +39,8 @@ import { type AiCommitProvider } from './aiCommit';
 import { HARNESS_OPTIONS } from './harnessCatalog';
 import { createMainWindow, getPreloadPath } from './windowManager';
 import { registerSettingsIpc } from './ipc/settingsIpc';
+import { registerWindowIpc } from './ipc/windowIpc';
+import { registerAiCommitIpc } from './ipc/aiCommitIpc';
 import { registerTerminalIpc, setAppShuttingDown, type Terminal } from './ipc/terminalIpc';
 import { registerBrowserIpc } from './ipc/browserIpc';
 import { registerGitIpc } from './ipc/gitIpc';
@@ -160,6 +162,14 @@ app.whenReady().then(() => {
   registerSettingsIpc({
     getStore: () => store,
     getMainWindow: () => mainWindow,
+  });
+
+  registerWindowIpc({
+    getMainWindow: () => mainWindow,
+  });
+
+  registerAiCommitIpc({
+    getStore: () => store,
     getGitService: () => gitService,
   });
 
