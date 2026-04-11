@@ -16,11 +16,64 @@ interface Props {
   compact?: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// xterm instance cache — preserves terminal state across workspace/tab switches
+// ---------------------------------------------------------------------------
+// When a TerminalPane unmounts (e.g., user switches workspace tabs), the xterm
+// instance is cached here instead of being disposed. When a new TerminalPane
+// mounts for the same terminalId, the cached instance is reused — preserving
+// scrollback, cursor position, and running PTY session state.
+//
+// Entries are removed when a terminal is killed (user closes it) or when the
+// PTY exits.
+// ---------------------------------------------------------------------------
+
+interface CachedTerminal {
+  xterm: XTermInstance;
+  fitAddon: FitAddonInstance;
+}
+
+const xtermCache = new Map<string, CachedTerminal>();
+
+/**
+ * Remove a cached xterm instance (called on terminal kill/exit).
+ * Disposes the xterm and removes it from the cache.
+ */
+export function evictCachedTerminal(terminalId: string): void {
+  const cached = xtermCache.get(terminalId);
+  if (cached) {
+    cached.xterm.dispose();
+    xtermCache.delete(terminalId);
+  }
+}
+
+/**
+ * Clear all cached xterm instances. Used in tests to ensure isolation.
+ */
+export function clearTerminalCache(): void {
+  for (const [, cached] of xtermCache) {
+    cached.xterm.dispose();
+  }
+  xtermCache.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Resize lock — coalesces rapid resize calls during pane drag
+// ---------------------------------------------------------------------------
+// Only one resize IPC call may be in-flight at a time. Intermediate resize
+// events are queued; only the latest dimensions are sent after the lock
+// expires (100 ms). This prevents IPC flooding during rapid pane drag.
+// ---------------------------------------------------------------------------
+
+const RESIZE_LOCK_MS = 100;
+
 export default function TerminalPane({ paneId, compact = false }: Props) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTermInstance | null>(null);
   const fitAddonRef = useRef<FitAddonInstance | null>(null);
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const resizeLockRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingResizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const [isActive, setIsActive] = useState(false);
   const [terminalRuntimeReady, setTerminalRuntimeReady] = useState(false);
   const dragHandleProps = useDragHandle();
@@ -40,100 +93,182 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
   const terminalId = terminal?.id ?? null;
   const paneLocked = pane?.locked ?? false;
 
-  const resizeTerminal = useCallback(() => {
-    if (terminalId == null || fitAddonRef.current == null || xtermRef.current == null) return;
+  // -------------------------------------------------------------------------
+  // Core resize logic — sends dimensions to main with lock coalescing
+  // -------------------------------------------------------------------------
+  const doResize = useCallback((cols: number, rows: number) => {
+    if (terminalId == null) return;
+    window.electronAPI.resizeTerminal(terminalId, cols, rows).catch(console.error);
+  }, [terminalId]);
+
+  const sendResize = useCallback((cols: number, rows: number) => {
+    if (resizeLockRef.current !== null) {
+      // Already in a lock window — queue latest dimensions, drop intermediates
+      pendingResizeRef.current = { cols, rows };
+      return;
+    }
+    doResize(cols, rows);
+    resizeLockRef.current = setTimeout(() => {
+      resizeLockRef.current = null;
+      if (pendingResizeRef.current) {
+        const { cols: c, rows: r } = pendingResizeRef.current;
+        pendingResizeRef.current = null;
+        doResize(c, r);
+      }
+    }, RESIZE_LOCK_MS);
+  }, [doResize]);
+
+  const fitAndResize = useCallback(() => {
+    if (fitAddonRef.current == null || xtermRef.current == null) return;
     fitAddonRef.current.fit();
     const dims = fitAddonRef.current.proposeDimensions();
     if (dims != null) {
-      window.electronAPI.resizeTerminal(terminalId, dims.cols, dims.rows).catch(console.error);
+      sendResize(dims.cols, dims.rows);
     }
-  }, [terminalId]);
+  }, [sendResize]);
 
+  // -------------------------------------------------------------------------
+  // xterm lifecycle — create or restore from cache
+  // -------------------------------------------------------------------------
   useEffect(() => {
-    if (terminalRef.current == null || xtermRef.current != null) return;
+    if (terminalRef.current == null) return;
 
     let cancelled = false;
     let handleResize: (() => void) | null = null;
-    let terminalInstance: XTermInstance | null = null;
+    let newlyCreated = false;
     setTerminalRuntimeReady(false);
 
-    void Promise.all([
-      import('@xterm/xterm'),
-      import('@xterm/addon-fit'),
-    ]).then(([xtermModule, fitAddonModule]) => {
-      if (cancelled || terminalRef.current == null) {
-        return;
+    // Check for a cached xterm instance (workspace tab switch restore)
+    const cached = terminalId != null ? xtermCache.get(terminalId) : null;
+
+    if (cached) {
+      // Reuse cached xterm — just reattach to the new DOM container
+      if (terminalRef.current && cached.xterm.element) {
+        terminalRef.current.appendChild(cached.xterm.element);
       }
-
-      const xterm = new xtermModule.Terminal({
-        allowTransparency: true,
-        theme: {
-          background: '#121212',
-          foreground: '#e8e8e8',
-          cursor: '#8b949e',
-          cursorAccent: '#121212',
-          selectionBackground: '#2f2f2f',
-          black: '#121212',
-          red: '#f85149',
-          green: '#3fb950',
-          yellow: '#d29922',
-          blue: '#58a6ff',
-          magenta: '#bc8cff',
-          cyan: '#39c5cf',
-          white: '#e8e8e8',
-          brightBlack: '#9b9b9b',
-          brightRed: '#ffa198',
-          brightGreen: '#56d364',
-          brightYellow: '#e3b341',
-          brightBlue: '#79c0ff',
-          brightMagenta: '#d2a8ff',
-          brightCyan: '#56d4dd',
-          brightWhite: '#ffffff',
-        },
-        fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", "Fira Mono", Menlo, Consolas, monospace',
-        fontSize: 13,
-        fontWeight: '400',
-        fontWeightBold: '700',
-        lineHeight: 1,
-        letterSpacing: 0,
-        cursorBlink: true,
-        cursorStyle: 'bar',
-        cursorInactiveStyle: 'underline',
-        allowProposedApi: true,
-        macOptionClickForcesSelection: true,
-        macOptionIsMeta: true,
-        scrollback: TERMINAL_SCROLLBACK_LINES,
-      });
-
-      const fitAddon = new fitAddonModule.FitAddon();
-      xterm.loadAddon(fitAddon);
-      xterm.open(terminalRef.current);
-      fitAddon.fit();
-
-      terminalInstance = xterm;
-      xtermRef.current = xterm;
-      fitAddonRef.current = fitAddon;
+      xtermRef.current = cached.xterm;
+      fitAddonRef.current = cached.fitAddon;
       setTerminalRuntimeReady(true);
 
-      handleResize = () => {
-        if (resizeTimeoutRef.current != null) {
-          clearTimeout(resizeTimeoutRef.current);
+      // Re-fit to the new container dimensions
+      setTimeout(() => {
+        if (!cancelled) {
+          cached.fitAddon.fit();
+          const dims = cached.fitAddon.proposeDimensions();
+          if (dims != null) {
+            sendResize(dims.cols, dims.rows);
+          }
         }
-        resizeTimeoutRef.current = setTimeout(resizeTerminal, 50);
-      };
+      }, 50);
+    } else {
+      // No cached instance — create a new one
+      void Promise.all([
+        import('@xterm/xterm'),
+        import('@xterm/addon-fit'),
+      ]).then(([xtermModule, fitAddonModule]) => {
+        if (cancelled || terminalRef.current == null) {
+          return;
+        }
 
+        const xterm = new xtermModule.Terminal({
+          allowTransparency: true,
+          theme: {
+            background: '#121212',
+            foreground: '#e8e8e8',
+            cursor: '#8b949e',
+            cursorAccent: '#121212',
+            selectionBackground: '#2f2f2f',
+            black: '#121212',
+            red: '#f85149',
+            green: '#3fb950',
+            yellow: '#d29922',
+            blue: '#58a6ff',
+            magenta: '#bc8cff',
+            cyan: '#39c5cf',
+            white: '#e8e8e8',
+            brightBlack: '#9b9b9b',
+            brightRed: '#ffa198',
+            brightGreen: '#56d364',
+            brightYellow: '#e3b341',
+            brightBlue: '#79c0ff',
+            brightMagenta: '#d2a8ff',
+            brightCyan: '#56d4dd',
+            brightWhite: '#ffffff',
+          },
+          fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", "Fira Mono", Menlo, Consolas, monospace',
+          fontSize: 13,
+          fontWeight: '400',
+          fontWeightBold: '700',
+          lineHeight: 1,
+          letterSpacing: 0,
+          cursorBlink: true,
+          cursorStyle: 'bar',
+          cursorInactiveStyle: 'underline',
+          allowProposedApi: true,
+          macOptionClickForcesSelection: true,
+          macOptionIsMeta: true,
+          scrollback: TERMINAL_SCROLLBACK_LINES,
+        });
+
+        const fitAddon = new fitAddonModule.FitAddon();
+        xterm.loadAddon(fitAddon);
+        xterm.open(terminalRef.current);
+        fitAddon.fit();
+
+        xtermRef.current = xterm;
+        fitAddonRef.current = fitAddon;
+        newlyCreated = true;
+        setTerminalRuntimeReady(true);
+
+        handleResize = () => {
+          if (resizeTimeoutRef.current != null) {
+            clearTimeout(resizeTimeoutRef.current);
+          }
+          resizeTimeoutRef.current = setTimeout(fitAndResize, 50);
+        };
+
+        window.addEventListener('resize', handleResize);
+        setTimeout(handleResize, 100);
+      }).catch((error) => {
+        console.error('Failed to initialize terminal runtime:', error);
+      });
+    }
+
+    // Shared resize handler for window resize events
+    handleResize = () => {
+      if (resizeTimeoutRef.current != null) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+      resizeTimeoutRef.current = setTimeout(fitAndResize, 50);
+    };
+
+    if (!cached) {
+      // For newly created terminals, handleResize is set up in the promise callback
+    } else {
       window.addEventListener('resize', handleResize);
-      setTimeout(handleResize, 100);
-    }).catch((error) => {
-      console.error('Failed to initialize terminal runtime:', error);
-    });
+    }
 
     return () => {
       cancelled = true;
       if (handleResize) {
         window.removeEventListener('resize', handleResize);
       }
-      terminalInstance?.dispose();
+
+      // On unmount: cache the xterm instance instead of disposing it.
+      // This preserves scrollback and session state across workspace tab switches.
+      const xterm = xtermRef.current;
+      const fitAddon = fitAddonRef.current;
+      if (xterm && fitAddon && terminalId != null) {
+        // Detach xterm element from the (soon-to-be-removed) DOM container
+        if (xterm.element?.parentNode) {
+          xterm.element.parentNode.removeChild(xterm.element);
+        }
+        xtermCache.set(terminalId, { xterm, fitAddon });
+      } else if (newlyCreated && xterm) {
+        // Newly created but never connected to a terminal — dispose
+        xterm.dispose();
+      }
+
       xtermRef.current = null;
       fitAddonRef.current = null;
       setTerminalRuntimeReady(false);
@@ -142,8 +277,14 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
         resizeTimeoutRef.current = null;
       }
     };
-  }, [resizeTerminal]);
+  // Deliberately NOT dependent on fitAndResize/sendResize — these are stable
+  // via useCallback. We want this effect to run on mount/unmount only.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terminalId]);
 
+  // -------------------------------------------------------------------------
+  // IPC data streaming — connects xterm to PTY data/exit channels
+  // -------------------------------------------------------------------------
   useEffect(() => {
     if (!terminalRuntimeReady || xtermRef.current == null || terminalId == null) return;
 
@@ -151,100 +292,111 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
     let inputDisposable: { dispose: () => void } | null = null;
     let disposeData: (() => void) | null = null;
     let disposeExit: (() => void) | null = null;
+    let disposeResized: (() => void) | null = null;
     let selectionDisposable: { dispose: () => void } | null = null;
-    let cancelled = false;
 
-    const startStreaming = () => {
-      if (cancelled || xtermRef.current == null) return;
+    // Handle copy: if Ctrl+C with selection, copy and clear; otherwise pass through to PTY
+    inputDisposable = xterm.onData((data) => {
+      if (data === '\x03' && xterm.hasSelection()) {
+        const selection = xterm.getSelection();
+        window.electronAPI.writeClipboard(selection).catch(console.error);
+        xterm.clearSelection();
+        return; // Don't send ^C to PTY when we have a selection
+      }
+      window.electronAPI.writeTerminal(terminalId, data).catch(console.error);
+    });
 
-      // Handle copy: if Ctrl+C with selection, copy and clear; otherwise pass through to PTY
-      inputDisposable = xterm.onData((data) => {
-        if (data === '\x03' && xterm.hasSelection()) {
-          const selection = xterm.getSelection();
-          window.electronAPI.writeClipboard(selection).catch(console.error);
-          xterm.clearSelection();
-          return; // Don't send ^C to PTY when we have a selection
-        }
-        window.electronAPI.writeTerminal(terminalId, data).catch(console.error);
-      });
-
-      const dataHandler = (data: { id: string; data: string }) => {
-        if (data.id === terminalId && xtermRef.current != null) {
-          xtermRef.current.write(data.data);
-        }
-      };
-
-      disposeData = window.electronAPI.onTerminalData(dataHandler);
-
-      const exitHandler = (data: { id: string; exitCode: number }) => {
-        if (data.id === terminalId && xtermRef.current != null) {
-          xtermRef.current.write(`\r\n\x1b[33mProcess exited with code ${data.exitCode}\x1b[0m\r\n`);
-        }
-      };
-
-      disposeExit = window.electronAPI.onTerminalExit(exitHandler);
-
-      // Copy selected text to clipboard when selection changes (mouse selection)
-      selectionDisposable = xterm.onSelectionChange(() => {
-        if (xterm.hasSelection()) {
-          const selection = xterm.getSelection();
-          window.electronAPI.writeClipboard(selection).catch(console.error);
-        }
-      });
-
-      xterm.attachCustomKeyEventHandler((event) => {
-        const zoomAction = getZoomShortcutAction(event);
-        if (zoomAction != null) {
-          if (zoomAction === 'in') {
-            void window.electronAPI.zoomInWindow();
-          } else if (zoomAction === 'out') {
-            void window.electronAPI.zoomOutWindow();
-          } else {
-            void window.electronAPI.resetZoomWindow();
-          }
-          event.preventDefault();
-          return false;
-        }
-
-        if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'c') {
-          if (xterm.hasSelection()) {
-            const selection = xterm.getSelection();
-            if (selection) {
-              window.electronAPI.writeClipboard(selection).catch(console.error);
-            }
-            xterm.clearSelection();
-          }
-          event.preventDefault();
-          return false;
-        }
-        return true;
-      });
-
-      setTimeout(resizeTerminal, 100);
+    const dataHandler = (data: { id: string; data: string }) => {
+      if (data.id === terminalId && xtermRef.current != null) {
+        xtermRef.current.write(data.data);
+      }
     };
 
-    window.electronAPI.getTerminalBuffer(terminalId)
-      .then((buffer) => {
-        if (cancelled || xtermRef.current == null) return;
-        if (buffer.length > 0) {
-          xtermRef.current.write(buffer);
+    disposeData = window.electronAPI.onTerminalData(dataHandler);
+
+    // Signal readiness to main process — this triggers flush of startup buffer.
+    // Critical for DA1 query/response: ensures xterm is ready to receive and respond
+    // to terminal capability queries before PTY output starts flowing.
+    window.electronAPI.terminalReady(terminalId).catch(console.error);
+
+    const exitHandler = (data: { id: string; exitCode: number }) => {
+      if (data.id === terminalId && xtermRef.current != null) {
+        xtermRef.current.write(`\r\n\x1b[33mProcess exited with code ${data.exitCode}\x1b[0m\r\n`);
+        // PTY exited — evict cached instance so it's not reused after exit
+        evictCachedTerminal(terminalId);
+      }
+    };
+
+    disposeExit = window.electronAPI.onTerminalExit(exitHandler);
+
+    // Phase 1: resize confirmation from main process.
+    // If confirmed dimensions differ from xterm's internal dims, re-fit once.
+    const resizedHandler = (data: { id: string; cols: number; rows: number }) => {
+      if (data.id === terminalId && xtermRef.current != null && fitAddonRef.current != null) {
+        const xtermDims = fitAddonRef.current.proposeDimensions();
+        if (xtermDims != null && (xtermDims.cols !== data.cols || xtermDims.rows !== data.rows)) {
+          // Geometry mismatch — re-fit to reconcile
+          fitAddonRef.current.fit();
         }
-        startStreaming();
-      })
-      .catch((error) => {
-        console.error('Failed to load terminal buffer:', error);
-        startStreaming();
-      });
+      }
+    };
+
+    disposeResized = window.electronAPI.onTerminalResized(resizedHandler);
+
+    // Copy selected text to clipboard when selection changes (mouse selection)
+    selectionDisposable = xterm.onSelectionChange(() => {
+      if (xterm.hasSelection()) {
+        const selection = xterm.getSelection();
+        window.electronAPI.writeClipboard(selection).catch(console.error);
+      }
+    });
+
+    xterm.attachCustomKeyEventHandler((event) => {
+      const zoomAction = getZoomShortcutAction(event);
+      if (zoomAction != null) {
+        if (zoomAction === 'in') {
+          void window.electronAPI.zoomInWindow();
+        } else if (zoomAction === 'out') {
+          void window.electronAPI.zoomOutWindow();
+        } else {
+          void window.electronAPI.resetZoomWindow();
+        }
+        event.preventDefault();
+        return false;
+      }
+
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'c') {
+        if (xterm.hasSelection()) {
+          const selection = xterm.getSelection();
+          if (selection) {
+            window.electronAPI.writeClipboard(selection).catch(console.error);
+          }
+          xterm.clearSelection();
+        }
+        event.preventDefault();
+        return false;
+      }
+      return true;
+    });
+
+    // Kick off initial resize to sync PTY dimensions
+    setTimeout(fitAndResize, 100);
 
     return () => {
-      cancelled = true;
       inputDisposable?.dispose();
       disposeData?.();
       disposeExit?.();
+      disposeResized?.();
       selectionDisposable?.dispose();
     };
-  }, [terminalId, terminalRuntimeReady, resizeTerminal]);
+  // fitAndResize is a stable callback; we want this effect to re-run when
+  // the terminal connection changes, not on every resize callback identity.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terminalId, terminalRuntimeReady]);
 
+  // -------------------------------------------------------------------------
+  // ResizeObserver — triggers resize on container size change
+  // -------------------------------------------------------------------------
   useEffect(() => {
     if (terminalRef.current == null) return;
 
@@ -252,7 +404,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
       if (resizeTimeoutRef.current != null) {
         clearTimeout(resizeTimeoutRef.current);
       }
-      resizeTimeoutRef.current = setTimeout(resizeTerminal, 50);
+      resizeTimeoutRef.current = setTimeout(fitAndResize, 50);
     });
 
     observer.observe(terminalRef.current);
@@ -264,8 +416,11 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
         resizeTimeoutRef.current = null;
       }
     };
-  }, [resizeTerminal]);
+  }, [fitAndResize]);
 
+  // -------------------------------------------------------------------------
+  // Active state — track which terminal is focused
+  // -------------------------------------------------------------------------
   useEffect(() => {
     if (!terminalRuntimeReady || xtermRef.current == null) return;
 
@@ -288,15 +443,21 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
     setIsActive(activeTerminalId === terminal?.id);
   }, [activeTerminalId, terminal?.id]);
 
+  // Trigger resize when terminalId changes (e.g., pane gets a new terminal)
   useEffect(() => {
     if (terminalRuntimeReady && fitAddonRef.current != null) {
-      setTimeout(resizeTerminal, 50);
+      setTimeout(fitAndResize, 50);
     }
-  }, [terminalId, terminalRuntimeReady, resizeTerminal]);
+  }, [terminalId, terminalRuntimeReady, fitAndResize]);
 
+  // -------------------------------------------------------------------------
+  // Action handlers
+  // -------------------------------------------------------------------------
   const handleClose = useCallback(async () => {
     if (terminal == null) return;
     try {
+      // Evict cached xterm before killing the PTY
+      evictCachedTerminal(terminal.id);
       await window.electronAPI.killTerminal(terminal.id);
       removeTerminal(terminal.id);
       if (paneId != null) {

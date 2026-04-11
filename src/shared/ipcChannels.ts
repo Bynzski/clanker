@@ -38,6 +38,8 @@ export const KILL_TERMINAL = 'kill-terminal';
 export const TERMINAL_CLEANUP_WORKSPACE = 'terminal:cleanup-workspace';
 export const TERMINAL_DATA = 'terminal-data';
 export const TERMINAL_EXIT = 'terminal-exit';
+export const TERMINAL_RESIZED = 'terminal-resized';
+export const TERMINAL_READY = 'terminal-ready';
 export const WRITE_CLIPBOARD = 'write-clipboard';
 
 /* ============================================================================
@@ -181,6 +183,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   RESIZE_TERMINAL,
   KILL_TERMINAL,
   TERMINAL_CLEANUP_WORKSPACE,
+  TERMINAL_READY,
   WRITE_CLIPBOARD,
   // Browser
   BROWSER_SET_BOUNDS,
@@ -238,6 +241,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   // Event channels (main -> renderer, registered via ipcMain.on or webContents.send)
   TERMINAL_DATA,
   TERMINAL_EXIT,
+  TERMINAL_RESIZED,
   BROWSER_URL_UPDATED,
   FIT_ALL_PANES,
   GIT_STATUS_UPDATE,

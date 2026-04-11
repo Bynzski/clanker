@@ -34,6 +34,8 @@ import {
   TERMINAL_CLEANUP_WORKSPACE,
   TERMINAL_DATA,
   TERMINAL_EXIT,
+  TERMINAL_RESIZED,
+  TERMINAL_READY,
   WRITE_CLIPBOARD,
   BROWSER_HIDE,
   BROWSER_SET_BOUNDS,
@@ -142,6 +144,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(TERMINAL_EXIT, handler);
     return () => ipcRenderer.removeListener(TERMINAL_EXIT, handler);
   },
+  onTerminalResized: (callback: (data: { id: string; cols: number; rows: number }) => void) => {
+    const handler = (_event: IpcRendererEvent, data: { id: string; cols: number; rows: number }) => callback(data);
+    ipcRenderer.on(TERMINAL_RESIZED, handler);
+    return () => ipcRenderer.removeListener(TERMINAL_RESIZED, handler);
+  },
+  terminalReady: (id: string) => ipcRenderer.invoke(TERMINAL_READY, id),
 
   // Clipboard
   writeClipboard: (text: string) => ipcRenderer.invoke(WRITE_CLIPBOARD, text),
