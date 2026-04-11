@@ -42,6 +42,34 @@ export type {
   WorkspaceTab,
 } from './workspaceTypes';
 
+/**
+ * Workspace state for the active workspace and the collection of all workspaces.
+ *
+ * @invariant activeWorkspaceId === null ↔ workspaces.length === 0
+ *   When no workspaces exist, nothing can be active.
+ *
+ * @invariant activeWorkspaceId !== null → workspaces.some(w => w.id === activeWorkspaceId)
+ *   The active workspace ID always references an existing workspace.
+ *
+ * @invariant activeTerminalId === null ↔ terminals.length === 0
+ *   When no terminals exist, no terminal can be active.
+ *
+ * @invariant activeTerminalId !== null → terminals.some(t => t.id === activeTerminalId)
+ *   The active terminal ID always references an existing terminal.
+ *
+ * @invariant layoutRoot === null ↔ panes.length === 0 && !browserVisible && !editorVisible
+ *   The layout tree only exists when there are visible panes.
+ *
+ * @invariant layoutRoot !== null → all pane IDs in layoutRoot exist in
+ *   panes[].id ∪ {browserPane?.id} ∪ {editorPane?.id}
+ *   The layout tree only references valid pane IDs.
+ *
+ * @invariant activeEditorTabId === null ↔ editorTabs.length === 0
+ *   When no editor tabs are open, no tab can be active.
+ *
+ * @invariant activeEditorTabId !== null → editorTabs.some(t => t.id === activeEditorTabId)
+ *   The active editor tab ID always references an existing tab.
+ */
 interface WorkspaceState {
   name: string;
   workspacePath: string;
@@ -52,8 +80,10 @@ interface WorkspaceState {
   browserVisible: boolean;
   browserOverlayCount: number;
   browserUrl: string;
+  /** @invariant null ↔ terminals.length === 0 */
   activeTerminalId: string | null;
   browserPane: BrowserPaneState | null;
+  /** @invariant null ↔ panes.length === 0 && !browserVisible && !editorVisible */
   layoutRoot: LayoutNode | null;
   explorerVisible: boolean;
   explorerSidebarWidth: number;
@@ -65,6 +95,7 @@ interface WorkspaceState {
   showHiddenFiles: boolean;
   gitChanges: GitStatus[];
   workspaces: WorkspaceTab[];
+  /** @invariant null ↔ workspaces.length === 0 */
   activeWorkspaceId: string | null;
   gridViewport: GridViewport;
   layoutRevision: number;
@@ -72,6 +103,7 @@ interface WorkspaceState {
   editorVisible: boolean;
   editorPane: EditorPaneState | null;
   editorTabs: EditorTab[];
+  /** @invariant null ↔ editorTabs.length === 0 */
   activeEditorTabId: string | null;
 
   addWorkspace: (workspace: Omit<WorkspaceTab, 'id'>) => void;
