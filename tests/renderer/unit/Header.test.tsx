@@ -81,7 +81,7 @@ describe('Header', () => {
         { id: 'gpt-4', label: 'GPT-4' },
       ]),
       spawnTerminal: vi.fn().mockResolvedValue({ id: 'new-t', pid: 42 }),
-      killTerminal: vi.fn().mockResolvedValue(undefined),
+      killTerminal: vi.fn().mockResolvedValue({ success: true }),
       gitStartPolling: vi.fn(),
       gitStopPolling: vi.fn(),
       gitRefresh: vi.fn().mockResolvedValue(null),

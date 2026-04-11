@@ -446,7 +446,7 @@ describe('ContextMenu integration (FileExplorer right-click)', () => {
   });
 
   it('clicking "Copy Path" calls writeClipboard with the entry path', async () => {
-    const writeClipboard = vi.fn().mockResolvedValue(undefined);
+    const writeClipboard = vi.fn().mockResolvedValue({ success: true });
     setActiveWorkspace({ workspacePath: '/workspace' });
     installElectronApiMock({
       fileListDirectory: vi.fn().mockResolvedValue({

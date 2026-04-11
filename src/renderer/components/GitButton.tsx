@@ -923,11 +923,12 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
                   <span>master</span>
                 </label>
               </div>
-            </div>
+	            </div>
 
-            {initError && (
-              <div className="git-menu-error">{initError}</div>
-            )}
+	            {statusErrorMessage && <div className="git-menu-error">{statusErrorMessage}</div>}
+	            {initError && (
+	              <div className="git-menu-error">{initError}</div>
+	            )}
 
             <div className="git-menu-actions">
               <button

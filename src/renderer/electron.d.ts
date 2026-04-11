@@ -30,15 +30,15 @@ interface ElectronAPI {
   // Terminal
   spawnTerminal: (workingDir: string, harness?: string, model?: string) => Promise<{ id: string; pid: number }>;
   getTerminalBuffer: (id: string) => Promise<string>;
-  writeTerminal: (id: string, data: string) => Promise<void>;
-  resizeTerminal: (id: string, cols: number, rows: number) => Promise<void>;
-  killTerminal: (id: string) => Promise<void>;
+  writeTerminal: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
+  resizeTerminal: (id: string, cols: number, rows: number) => Promise<{ success: boolean; error?: string }>;
+  killTerminal: (id: string) => Promise<{ success: boolean; error?: string }>;
   cleanupWorkspaceTerminals: (ids: string[]) => Promise<number>;
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => () => void;
 
   // Clipboard
-  writeClipboard: (text: string) => Promise<void>;
+  writeClipboard: (text: string) => Promise<{ success: boolean; error?: string }>;
   resolveDroppedFilePath: (file: File, uriList?: string) => string;
 
   // Browser (WebContentsView)

@@ -56,6 +56,16 @@ export function setAppShuttingDown(shuttingDown: boolean): void {
 export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   const { getTerminals, getMainWindow, getStore, getSafeWorkspacePath, getHarnessOptions } = deps;
 
+  const ok = () => ({ success: true as const });
+  const fail = (error: string) => ({ success: false as const, error });
+
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null;
+  const isNonEmptyString = (value: unknown): value is string =>
+    typeof value === 'string' && value.trim().length > 0;
+  const isFiniteNumber = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value);
+
   ipcMain.handle(SPAWN_TERMINAL, (_, workingDir: string, harness?: string, model?: string) => {
     const terminals = getTerminals();
     const mainWindow = getMainWindow();
@@ -154,31 +164,51 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     return terminals.get(id)?.buffer ?? '';
   });
 
-  ipcMain.handle(WRITE_TERMINAL, (_, payload: { id: string; data: string } | null) => {
-    if (!payload) return;
+  ipcMain.handle(WRITE_TERMINAL, (_, payload: unknown) => {
+    if (!isRecord(payload) || !isNonEmptyString(payload.id) || typeof payload.data !== 'string') {
+      return fail('Invalid payload');
+    }
     const { id, data } = payload;
     const terminals = getTerminals();
     const terminal = terminals.get(id);
     if (terminal) {
       terminal.pty.write(data);
+      return ok();
     }
+    return ok(); // no-op for missing terminal
   });
 
-  ipcMain.handle(RESIZE_TERMINAL, (_, { id, cols, rows }: { id: string; cols: number; rows: number }) => {
+  ipcMain.handle(RESIZE_TERMINAL, (_, payload: unknown) => {
+    if (
+      !isRecord(payload)
+      || !isNonEmptyString(payload.id)
+      || !isFiniteNumber(payload.cols)
+      || !isFiniteNumber(payload.rows)
+    ) {
+      return fail('Invalid payload');
+    }
+    const { id, cols, rows } = payload;
     const terminals = getTerminals();
     const terminal = terminals.get(id);
     if (terminal) {
-      terminal.pty.resize(cols, rows);
+      terminal.pty.resize(Math.max(1, Math.floor(cols)), Math.max(1, Math.floor(rows)));
+      return ok();
     }
+    return ok(); // no-op for missing terminal
   });
 
   ipcMain.handle(KILL_TERMINAL, (_, id: string) => {
     const terminals = getTerminals();
+    if (!isNonEmptyString(id)) {
+      return fail('Invalid terminal id');
+    }
     const terminal = terminals.get(id);
     if (terminal) {
       terminal.pty.kill();
       terminals.delete(id);
+      return ok();
     }
+    return ok(); // no-op for missing terminal
   });
 
   ipcMain.handle(TERMINAL_CLEANUP_WORKSPACE, (_, ids: string[]) => {
@@ -195,8 +225,12 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     return killed;
   });
 
-  ipcMain.handle(WRITE_CLIPBOARD, (_, text: string) => {
+  ipcMain.handle(WRITE_CLIPBOARD, (_, text: unknown) => {
+    if (typeof text !== 'string') {
+      return fail('Invalid text');
+    }
     clipboard.writeText(text);
+    return ok();
   });
 
   // Event channels — registered so the integration test can verify completeness.

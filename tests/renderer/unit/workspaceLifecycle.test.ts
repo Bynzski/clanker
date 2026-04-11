@@ -4,7 +4,7 @@ import { createWorkspaceFixture, createTerminalFixture } from '../../setup/fixtu
 
 describe('terminateWorkspaceTerminals', () => {
   it('calls killTerminal for each terminal in the workspace', async () => {
-    const killMock = vi.fn().mockResolvedValue(undefined);
+    const killMock = vi.fn().mockResolvedValue({ success: true });
     vi.stubGlobal('window', {
       electronAPI: { killTerminal: killMock },
     });
@@ -27,9 +27,9 @@ describe('terminateWorkspaceTerminals', () => {
 
   it('continues killing terminals even if one fails', async () => {
     const killMock = vi.fn()
-      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ success: true })
       .mockRejectedValueOnce(new Error('kill failed'))
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce({ success: true });
     vi.stubGlobal('window', {
       electronAPI: { killTerminal: killMock },
     });
@@ -53,7 +53,7 @@ describe('terminateWorkspaceTerminals', () => {
   });
 
   it('does nothing when workspace has no terminals', async () => {
-    const killMock = vi.fn().mockResolvedValue(undefined);
+    const killMock = vi.fn().mockResolvedValue({ success: true });
     vi.stubGlobal('window', {
       electronAPI: { killTerminal: killMock },
     });

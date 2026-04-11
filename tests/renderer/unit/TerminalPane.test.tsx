@@ -53,10 +53,10 @@ vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
 }));
 
 // Mock electron API for terminal operations
-const mockKillTerminal = vi.fn().mockResolvedValue(undefined);
-const mockResizeTerminal = vi.fn().mockResolvedValue(undefined);
-const mockWriteTerminal = vi.fn().mockResolvedValue(undefined);
-const mockWriteClipboard = vi.fn().mockResolvedValue(undefined);
+const mockKillTerminal = vi.fn().mockResolvedValue({ success: true });
+const mockResizeTerminal = vi.fn().mockResolvedValue({ success: true });
+const mockWriteTerminal = vi.fn().mockResolvedValue({ success: true });
+const mockWriteClipboard = vi.fn().mockResolvedValue({ success: true });
 const mockResolveDroppedFilePath = vi.fn().mockReturnValue('');
 const mockGetTerminalBuffer = vi.fn().mockResolvedValue('');
 const mockOnTerminalData = vi.fn().mockReturnValue(vi.fn());
