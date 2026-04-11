@@ -27,12 +27,13 @@ describe('getAvailableHarnessOptions', () => {
 
   beforeEach(() => {
     vi.resetModules();
-    vi.mock('electron', () => ({
+    vi.doMock('electron', () => ({
       app: mockApp,
     }));
   });
 
   afterEach(() => {
+    vi.doUnmock('electron');
     vi.restoreAllMocks();
   });
 
@@ -124,7 +125,18 @@ describe('getAvailableHarnessOptions', () => {
 // ============================================================================
 
 describe('discoverHarnessModels error paths', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock('electron', () => ({
+      app: {
+        getAppPath: vi.fn(() => '/opt/clanker-grid'),
+        getPath: vi.fn(() => '/tmp/test-home'),
+      },
+    }));
+  });
+
   afterEach(() => {
+    vi.doUnmock('electron');
     vi.restoreAllMocks();
   });
 
@@ -223,7 +235,7 @@ describe('discoverHarnessModels error paths', () => {
     fs.writeFileSync(configPath, `model = "gpt-5.4-codex-max"\n`);
 
     // Mock electron to use temp home
-    vi.mock('electron', () => ({
+    vi.doMock('electron', () => ({
       app: {
         getAppPath: vi.fn(() => '/opt/clanker-grid'),
         getPath: vi.fn(() => tempDir),
@@ -246,7 +258,7 @@ describe('discoverHarnessModels error paths', () => {
 
   it('returns fallback when codex config file is missing', async () => {
     // Use non-existent directory
-    vi.mock('electron', () => ({
+    vi.doMock('electron', () => ({
       app: {
         getAppPath: vi.fn(() => '/opt/clanker-grid'),
         getPath: vi.fn(() => '/nonexistent/path/12345'),
