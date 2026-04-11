@@ -365,6 +365,14 @@ describe('App', () => {
       expect(document.querySelector('.main-content')).toBeTruthy();
     });
 
+    it('wraps explorer and layout in a shared row container', () => {
+      render(<App />);
+      const row = document.querySelector('.workspace-layout-row');
+      expect(row).toBeTruthy();
+      expect(row?.querySelector('[data-testid="file-explorer"]')).toBeTruthy();
+      expect(row?.querySelector('[data-testid="dynamic-pane-layout"]')).toBeTruthy();
+    });
+
     it('does not render WorkspaceGateFullscreen when workspaces exist', () => {
       render(<App />);
       expect(screen.queryByTestId('workspace-gate-fullscreen')).toBeNull();

@@ -148,6 +148,7 @@ function App() {
       <div className="main-content">
         <ErrorBoundary
           paneId="workspace-layout"
+          style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}
           fallback={(error, _info, reset) => (
             <div className="workspace-error-fallback">
               <p>Workspace failed to render</p>
@@ -157,8 +158,10 @@ function App() {
           )}
         >
           <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
-            <FileExplorer />
-            <DynamicPaneLayout />
+            <div className="workspace-layout-row">
+              <FileExplorer />
+              <DynamicPaneLayout />
+            </div>
           </Suspense>
         </ErrorBoundary>
       </div>
