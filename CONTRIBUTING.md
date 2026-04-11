@@ -12,7 +12,7 @@ npm install
 npm run dev
 
 # Run tests
-npm test
+npm run test
 
 # Type checking
 npm run typecheck
@@ -48,14 +48,16 @@ src/
 ## Testing
 
 ```bash
-npm test              # Run all tests
+npm run test          # Run all tests
 npm run test:watch    # Watch mode
 npm run test:coverage # With coverage report
 ```
 
 Test directories:
 - `tests/main/unit/` — Main process unit tests
-- `tests/renderer/` — Renderer tests
+- `tests/renderer/unit/` — Renderer component tests
+- `tests/renderer/integration/` — Renderer store integration tests
+- `tests/main/integration/` — Main process integration tests
 
 ## Pull Request Checklist
 
