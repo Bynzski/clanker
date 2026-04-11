@@ -1,22 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ArrowDown,
-  ArrowUp,
-  ChevronDown,
-  Download,
-  GitBranch as GitBranchIcon,
-  Loader2,
-  RefreshCw,
-  Upload,
-  X,
-} from 'lucide-react';
+import { ChevronDown, GitBranch as GitBranchIcon } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import CommitDialog from './CommitDialog';
-import { GitBranchesSection } from './git/GitBranchesSection';
-import { GitHistorySection } from './git/GitHistorySection';
-import { GitMergeSection } from './git/GitMergeSection';
-import GitRemotesSection from './git/GitRemotesSection';
-import { GitStashSection } from './git/GitStashSection';
+import { GitDeleteBranchDialog } from './git/GitDeleteBranchDialog';
+import { GitInitMenu } from './git/GitInitMenu';
+import { GitRepoMenu } from './git/GitRepoMenu';
+import { getStatusErrorMessage, getUpstreamLabel } from './git/gitButtonViewModels';
+import { useGitBranchActions } from './git/useGitBranchActions';
+import { useGitRemoteActions } from './git/useGitRemoteActions';
+import { useGitStashActions } from './git/useGitStashActions';
 import type {
   DiffMode,
   GitBranch,
@@ -34,14 +26,6 @@ interface GitButtonProps {
   workspacePath: string;
 }
 
-type DeleteDialogStage = 'confirm' | 'force';
-
-interface DeleteDialogState {
-  branch: string;
-  stage: DeleteDialogStage;
-  detail?: string;
-}
-
 export default function GitButton({ workspacePath }: GitButtonProps) {
   const [changeCount, setChangeCount] = useState(0);
   const [isRepo, setIsRepo] = useState(false);
@@ -51,19 +35,13 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [isDetached, setIsDetached] = useState(false);
   const [branches, setBranches] = useState<GitBranch[]>([]);
-  const [branchError, setBranchError] = useState<string | null>(null);
-  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
-  const [newBranchName, setNewBranchName] = useState('');
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [isLoadingBranches, setIsLoadingBranches] = useState(false);
   const [operationState, setOperationState] = useState<GitOperationState | null>(null);
   const [isLoadingOperation, setIsLoadingOperation] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [mergeTargetBranch, setMergeTargetBranch] = useState('');
-  const [stashMessage, setStashMessage] = useState('');
-  const [includeUntracked, setIncludeUntracked] = useState(true);
   const [stashes, setStashes] = useState<GitStash[]>([]);
-  const [stashError, setStashError] = useState<string | null>(null);
   const [isLoadingStashes, setIsLoadingStashes] = useState(false);
   const [history, setHistory] = useState<GitHistoryEntry[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -83,8 +61,6 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const [deepLinks, setDeepLinks] = useState<DeepLink[]>([]);
   const [isLoadingVcsContext, setIsLoadingVcsContext] = useState(false);
   const [vcsContextError, setVcsContextError] = useState<string | null>(null);
-  const [remoteAction, setRemoteAction] = useState<'fetch' | 'pull' | 'push' | 'publish' | null>(null);
-  const [remoteError, setRemoteError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [selectedDefaultBranch, setSelectedDefaultBranch] = useState('main');
@@ -94,7 +70,6 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
 
   const { pushBrowserOverlay, popBrowserOverlay } = useWorkspaceStore();
 
-  // Hide the native browser whenever the git menu is open.
   useEffect(() => {
     if (!isMenuOpen) {
       return;
@@ -119,33 +94,18 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     [branches]
   );
 
-  const statusErrorMessage = useMemo(() => {
-    switch (statusErrorCode) {
-      case 'git-not-found':
-        return 'Git is not installed or not found on PATH';
-      case 'not-a-repo':
-        return 'Not a git repository';
-      default:
-        return null;
-    }
-  }, [statusErrorCode]);
+  const statusErrorMessage = useMemo(
+    () => getStatusErrorMessage(statusErrorCode),
+    [statusErrorCode]
+  );
 
-  const upstreamLabel = useMemo(() => {
-    if (!upstream) {
-      return null;
-    }
-    if (ahead === 0 && behind === 0) {
-      return 'up to date';
-    }
-    const parts: string[] = [];
-    if (ahead > 0) parts.push(`↑${ahead}`);
-    if (behind > 0) parts.push(`↓${behind}`);
-    return parts.join(' ');
-  }, [upstream, ahead, behind]);
+  const upstreamLabel = useMemo(
+    () => getUpstreamLabel(upstream, ahead, behind),
+    [upstream, ahead, behind]
+  );
 
   const loadVcsContext = useCallback(async () => {
     if (!workspacePath || provider === 'unknown') {
-      // Skip VCS context for unknown provider
       setVcsProviderContext(null);
       setPullRequest(null);
       setDeepLinks([]);
@@ -156,7 +116,6 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     setVcsContextError(null);
 
     try {
-      // Get full VCS context including PR info
       const result = await window.electronAPI.vcsGetContext(workspacePath);
 
       if (result.success && result.provider) {
@@ -189,7 +148,6 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setRemotes([]);
       }
     } catch {
-      // Silently fail - remotes are not critical
       setRemotes([]);
     }
   }, [workspacePath]);
@@ -199,8 +157,68 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       setRemotes([]);
       return;
     }
+
     void loadRemotes();
   }, [workspacePath, loadRemotes]);
+
+  const refreshMenuDataRef = useRef<() => Promise<void>>(async () => {});
+
+  const refreshAfterAction = useCallback(async () => {
+    await Promise.all([refreshMenuDataRef.current(), window.electronAPI.gitRefresh()]);
+  }, []);
+
+  const {
+    branchError,
+    closeDeleteDialog,
+    deleteDialog,
+    handleCreateBranch,
+    handleDeleteBranch,
+    handleSwitchBranch,
+    newBranchName,
+    performDeleteBranch,
+    setBranchError,
+    setNewBranchName,
+  } = useGitBranchActions({
+    activeAction,
+    currentBranch,
+    onSetActiveAction: setActiveAction,
+    refreshAfterAction,
+    workspacePath,
+  });
+
+  const {
+    handleFetch,
+    handlePublish,
+    handlePull,
+    handlePush,
+    remoteAction,
+    remoteError,
+    setRemoteError,
+  } = useGitRemoteActions({
+    currentBranch,
+    loadRemotes,
+    refreshAfterAction,
+    remotes,
+    workspacePath,
+  });
+
+  const {
+    handleApplyStash,
+    handleClearStashes,
+    handleDropStash,
+    handlePopStash,
+    handleStash,
+    includeUntracked,
+    setIncludeUntracked,
+    setStashError,
+    setStashMessage,
+    stashError,
+    stashMessage,
+  } = useGitStashActions({
+    onSetActiveAction: setActiveAction,
+    refreshAfterAction,
+    workspacePath,
+  });
 
   const refreshMenuData = useCallback(async () => {
     if (!workspacePath) {
@@ -253,7 +271,6 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setBranches([]);
         setMergeTargetBranch('');
         setBranchError(branchState.error || 'Unable to load branch state');
-        // Skip diff load if not a repo - this prevents error messages in the init flow
         setDiffResult(null);
         setDiffError(null);
       }
@@ -282,17 +299,12 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setSelectedDiffRef(diffRef);
       }
 
-      const diff = await window.electronAPI.gitGetDiff(
-        workspacePath,
-        selectedDiffMode,
-        diffRef
-      );
+      const diff = await window.electronAPI.gitGetDiff(workspacePath, selectedDiffMode, diffRef);
       setDiffResult(diff);
       if (!diff.success) {
         setDiffError(diff.error || 'Unable to load diff');
       }
 
-      // Load remotes for provider detection
       const remotesResult = await window.electronAPI.gitGetRemotes(workspacePath);
       if (remotesResult.success) {
         setProvider(remotesResult.provider);
@@ -301,7 +313,6 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setRemotes([]);
       }
 
-      // Load VCS context after provider is detected
       await loadVcsContext();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unable to load git data';
@@ -317,7 +328,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       setIsLoadingHistory(false);
       setIsLoadingDiff(false);
     }
-  }, [selectedDiffMode, selectedDiffRef, workspacePath, loadVcsContext]);
+  }, [selectedDiffMode, selectedDiffRef, workspacePath, loadVcsContext, setBranchError, setStashError]);
+
+  refreshMenuDataRef.current = refreshMenuData;
 
   const loadDiff = async (mode: DiffMode, ref?: string) => {
     if (!workspacePath) {
@@ -342,7 +355,6 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     }
   };
 
-  // Start/stop polling when workspace changes
   useEffect(() => {
     if (!workspacePath) {
       setChangeCount(0);
@@ -367,7 +379,6 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
 
     window.electronAPI.gitStartPolling(workspacePath);
 
-    // Load remotes once per workspace (provider is stable for normal use)
     void (async () => {
       try {
         const result = await window.electronAPI.gitGetRemotes(workspacePath);
@@ -375,7 +386,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
           setProvider(result.provider);
         }
       } catch {
-        // non-fatal — remotes are optional
+        return;
       }
     })();
 
@@ -384,7 +395,6 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     };
   }, [workspacePath]);
 
-  // Listen for status updates from the backend
   useEffect(() => {
     const unsubscribe = window.electronAPI.onGitStatusUpdate((status) => {
       if (status.success) {
@@ -398,9 +408,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setAhead(status.ahead);
         setBehind(status.behind);
 
-        // Sync git changes to workspace store for file explorer consumption
-        const { setGitChanges } = useWorkspaceStore.getState();
-        setGitChanges(status.isRepo ? status.changes : []);
+        useWorkspaceStore.getState().setGitChanges(status.isRepo ? status.changes : []);
       } else {
         setIsRepo(false);
         setChangeCount(0);
@@ -424,7 +432,6 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       return;
     }
 
-    // Skip loading full git data when not a repo - init UI doesn't need it
     if (!isRepo) {
       return;
     }
@@ -453,96 +460,10 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     };
   }, [isMenuOpen, isRepo, refreshMenuData]);
 
-  const refreshAfterAction = useCallback(async () => {
-    await Promise.all([refreshMenuData(), window.electronAPI.gitRefresh()]);
-  }, [refreshMenuData]);
-
-  const handleCommit = async (message: string) => {
-    return window.electronAPI.gitCommit(workspacePath, message);
-  };
+  const handleCommit = async (message: string) => window.electronAPI.gitCommit(workspacePath, message);
 
   const handleStage = async () => {
     await window.electronAPI.gitStage(workspacePath);
-  };
-
-  const handleFetch = async () => {
-    setRemoteAction('fetch');
-    setRemoteError(null);
-
-    try {
-      const result = await window.electronAPI.gitFetch(workspacePath);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setRemoteError(result.error || 'Fetch failed');
-      }
-    } catch (error: unknown) {
-      setRemoteError(error instanceof Error ? error.message : 'Fetch failed');
-    } finally {
-      setRemoteAction(null);
-    }
-  };
-
-  const handlePull = async () => {
-    setRemoteAction('pull');
-    setRemoteError(null);
-
-    try {
-      const result = await window.electronAPI.gitPull(workspacePath);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setRemoteError(result.error || 'Pull failed');
-      }
-    } catch (error: unknown) {
-      setRemoteError(error instanceof Error ? error.message : 'Pull failed');
-    } finally {
-      setRemoteAction(null);
-    }
-  };
-
-  const handlePush = async () => {
-    setRemoteAction('push');
-    setRemoteError(null);
-
-    try {
-      const result = await window.electronAPI.gitPush(workspacePath);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setRemoteError(result.error || 'Push failed');
-      }
-    } catch (error: unknown) {
-      setRemoteError(error instanceof Error ? error.message : 'Push failed');
-    } finally {
-      setRemoteAction(null);
-    }
-  };
-
-  const handlePublish = async () => {
-    if (!currentBranch) {
-      return;
-    }
-
-    const targetRemote = remotes[0]?.name ?? 'origin';
-
-    setRemoteAction('publish');
-    setRemoteError(null);
-
-    try {
-      const result = await window.electronAPI.gitPush(workspacePath, targetRemote, currentBranch, false, true);
-      if (result.success) {
-        await refreshAfterAction();
-        void loadRemotes();
-        setRemoteError(null);
-      } else {
-        setRemoteError(result.error || 'Publish failed');
-      }
-    } catch (error: unknown) {
-      setRemoteError(error instanceof Error ? error.message : 'Publish failed');
-    } finally {
-      setRemoteAction(null);
-    }
   };
 
   const handleUnstageFile = async (path: string): Promise<{ success: boolean; error?: string }> => {
@@ -576,9 +497,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     try {
       const result = await window.electronAPI.gitInit(workspacePath, selectedDefaultBranch);
       if (result.success) {
-        // Force an immediate status refresh so UI updates right away
         await window.electronAPI.gitRefresh();
-        // Close the menu - user will see the full git view on next open
         setIsMenuOpen(false);
       } else {
         setInitError(result.error || 'Failed to initialize repository');
@@ -608,108 +527,6 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     }
 
     setIsMenuOpen((value) => !value);
-  };
-
-  const handleCreateBranch = async (event: React.FormEvent) => {
-    event.preventDefault();
-
-    if (!newBranchName.trim()) {
-      setBranchError('Enter a branch name');
-      return;
-    }
-
-    setActiveAction('create');
-    setBranchError(null);
-
-    try {
-      const result = await window.electronAPI.gitCreateBranch(
-        workspacePath,
-        newBranchName,
-        currentBranch ?? undefined
-      );
-
-      if (result.success) {
-        setNewBranchName('');
-        await refreshAfterAction();
-      } else {
-        setBranchError(result.error || 'Failed to create branch');
-      }
-    } catch (error: unknown) {
-      setBranchError(error instanceof Error ? error.message : 'Failed to create branch');
-    } finally {
-      setActiveAction(null);
-    }
-  };
-
-  const handleSwitchBranch = async (branchName: string) => {
-    setActiveAction(`switch:${branchName}`);
-    setBranchError(null);
-
-    try {
-      const result = await window.electronAPI.gitSwitchBranch(workspacePath, branchName);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setBranchError(result.error || 'Failed to switch branch');
-      }
-    } catch (error: unknown) {
-      setBranchError(error instanceof Error ? error.message : 'Failed to switch branch');
-    } finally {
-      setActiveAction(null);
-    }
-  };
-
-  const handleDeleteBranch = (branchName: string) => {
-    setBranchError(null);
-    setDeleteDialog({ branch: branchName, stage: 'confirm' });
-  };
-
-  const closeDeleteDialog = () => {
-    if (activeAction) {
-      return;
-    }
-
-    setDeleteDialog(null);
-  };
-
-  const performDeleteBranch = async (forceDelete = false) => {
-    if (!workspacePath || !deleteDialog) {
-      return;
-    }
-
-    const branchName = deleteDialog.branch;
-    const actionKey = forceDelete ? `force-delete:${branchName}` : `delete:${branchName}`;
-    setActiveAction(actionKey);
-    setBranchError(null);
-
-    try {
-      const result = forceDelete
-        ? await window.electronAPI.gitForceDeleteBranch(workspacePath, branchName)
-        : await window.electronAPI.gitDeleteBranch(workspacePath, branchName);
-
-      if (result.success) {
-        setDeleteDialog(null);
-        await refreshAfterAction();
-        return;
-      }
-
-      if (!forceDelete && result.blockedByUnmergedCommits) {
-        setDeleteDialog({
-          branch: branchName,
-          stage: 'force',
-          detail: result.error,
-        });
-        return;
-      }
-
-      setDeleteDialog(null);
-      setBranchError(result.error || 'Failed to delete branch');
-    } catch (error: unknown) {
-      setDeleteDialog(null);
-      setBranchError(error instanceof Error ? error.message : 'Failed to delete branch');
-    } finally {
-      setActiveAction(null);
-    }
   };
 
   const handleMergeBranch = async () => {
@@ -753,112 +570,6 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     }
   };
 
-  const handleStash = async () => {
-    setActiveAction('stash');
-    setStashError(null);
-
-    try {
-      const result = await window.electronAPI.gitStash(
-        workspacePath,
-        stashMessage,
-        includeUntracked
-      );
-
-      if (result.success) {
-        setStashMessage('');
-        await refreshAfterAction();
-      } else {
-        setStashError(result.error || 'Failed to stash changes');
-      }
-    } catch (error: unknown) {
-      setStashError(error instanceof Error ? error.message : 'Failed to stash changes');
-    } finally {
-      setActiveAction(null);
-    }
-  };
-
-  const handleApplyStash = async (stashRef: string) => {
-    setActiveAction(`apply:${stashRef}`);
-    setStashError(null);
-
-    try {
-      const result = await window.electronAPI.gitApplyStash(workspacePath, stashRef);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setStashError(result.error || 'Failed to apply stash');
-      }
-    } catch (error: unknown) {
-      setStashError(error instanceof Error ? error.message : 'Failed to apply stash');
-    } finally {
-      setActiveAction(null);
-    }
-  };
-
-  const handlePopStash = async (stashRef: string) => {
-    setActiveAction(`pop:${stashRef}`);
-    setStashError(null);
-
-    try {
-      const result = await window.electronAPI.gitPopStash(workspacePath, stashRef);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setStashError(result.error || 'Failed to pop stash');
-      }
-    } catch (error: unknown) {
-      setStashError(error instanceof Error ? error.message : 'Failed to pop stash');
-    } finally {
-      setActiveAction(null);
-    }
-  };
-
-  const handleDropStash = async (stashRef: string) => {
-    const confirmed = window.confirm(`Drop ${stashRef}? This cannot be undone.`);
-    if (!confirmed) {
-      return;
-    }
-
-    setActiveAction(`drop:${stashRef}`);
-    setStashError(null);
-
-    try {
-      const result = await window.electronAPI.gitDropStash(workspacePath, stashRef);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setStashError(result.error || 'Failed to drop stash');
-      }
-    } catch (error: unknown) {
-      setStashError(error instanceof Error ? error.message : 'Failed to drop stash');
-    } finally {
-      setActiveAction(null);
-    }
-  };
-
-  const handleClearStashes = async () => {
-    const confirmed = window.confirm('Clear all stashes? This cannot be undone.');
-    if (!confirmed) {
-      return;
-    }
-
-    setActiveAction('clear-stashes');
-    setStashError(null);
-
-    try {
-      const result = await window.electronAPI.gitClearStashes(workspacePath);
-      if (result.success) {
-        await refreshAfterAction();
-      } else {
-        setStashError(result.error || 'Failed to clear stashes');
-      }
-    } catch (error: unknown) {
-      setStashError(error instanceof Error ? error.message : 'Failed to clear stashes');
-    } finally {
-      setActiveAction(null);
-    }
-  };
-
   const handleSelectWorkingDiff = async (mode: DiffMode) => {
     await loadDiff(mode, mode === 'commit' ? selectedDiffRef ?? history[0]?.hash : undefined);
   };
@@ -870,83 +581,17 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   if (!isRepo) {
     return (
       <div className="git-menu-container" ref={menuRef}>
-        <button
-          className="header-btn git-btn"
-          onClick={() => setIsMenuOpen(!isMenuOpen)}
-          title="Initialize Git Repository"
-        >
-          <GitBranchIcon size={15} strokeWidth={2} />
-          <span>Init Git</span>
-          <ChevronDown size={12} strokeWidth={2.5} />
-        </button>
-
-        {isMenuOpen && (
-          <div className="git-menu" role="menu">
-            <div className="git-menu-header">
-              <div>
-                <div className="git-menu-label">Initialize Repository</div>
-                <div className="git-menu-branch">No git repository found</div>
-              </div>
-              <button
-                type="button"
-                className="git-menu-close"
-                onClick={() => setIsMenuOpen(false)}
-                title="Close"
-              >
-                <X size={15} />
-              </button>
-            </div>
-
-            <div className="git-menu-section">
-              <div className="git-menu-section-header">
-                <span>Initial Branch</span>
-              </div>
-              <div className="git-init-branch-options">
-                <label className="git-init-branch-option">
-                  <input
-                    type="radio"
-                    name="defaultBranch"
-                    value="main"
-                    checked={selectedDefaultBranch === 'main'}
-                    onChange={() => setSelectedDefaultBranch('main')}
-                  />
-                  <span>main</span>
-                </label>
-                <label className="git-init-branch-option">
-                  <input
-                    type="radio"
-                    name="defaultBranch"
-                    value="master"
-                    checked={selectedDefaultBranch === 'master'}
-                    onChange={() => setSelectedDefaultBranch('master')}
-                  />
-                  <span>master</span>
-                </label>
-              </div>
-	            </div>
-
-	            {statusErrorMessage && <div className="git-menu-error">{statusErrorMessage}</div>}
-	            {initError && (
-	              <div className="git-menu-error">{initError}</div>
-	            )}
-
-            <div className="git-menu-actions">
-              <button
-                type="button"
-                className="header-btn header-btn-primary git-menu-action"
-                onClick={() => void handleInitRepository()}
-                disabled={isInitializing}
-              >
-                {isInitializing && <Loader2 size={13} className="spin" />}
-                {isInitializing ? 'Initializing...' : 'Initialize Repository'}
-              </button>
-            </div>
-
-            <p className="git-init-hint">
-              This will create a new git repository in the current workspace.
-            </p>
-          </div>
-        )}
+        <GitInitMenu
+          initError={initError}
+          isInitializing={isInitializing}
+          isMenuOpen={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onInitialize={() => void handleInitRepository()}
+          onSelectDefaultBranch={setSelectedDefaultBranch}
+          onToggleMenu={() => setIsMenuOpen((value) => !value)}
+          selectedDefaultBranch={selectedDefaultBranch}
+          statusErrorMessage={statusErrorMessage}
+        />
       </div>
     );
   }
@@ -957,7 +602,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     : null;
   const deleteDialogBusy = Boolean(
     deleteDialog &&
-      (activeAction === `delete:${deleteDialog.branch}` || activeAction === `force-delete:${deleteDialog.branch}`)
+      (activeAction === `delete:${deleteDialog.branch}` ||
+        activeAction === `force-delete:${deleteDialog.branch}`)
   );
 
   return (
@@ -976,208 +622,79 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         </button>
 
         {isMenuOpen && (
-          <div className="git-menu" role="menu" aria-label="Git actions">
-            <div className="git-menu-header">
-              <div>
-                <div className="git-menu-label">Current Branch</div>
-                <div className={`git-menu-branch ${isDetached ? 'detached' : ''}`}>
-                  {currentBranchLabel}
-                </div>
-                {upstream && (
-                  <div className="git-menu-upstream">{upstream}</div>
-                )}
-              </div>
-
-              <div className="git-menu-header-right">
-                {provider !== 'unknown' && (
-                  <span className={`git-menu-provider provider-${provider}`}>
-                    {provider === 'github' && 'GitHub'}
-                    {provider === 'bitbucket' && 'Bitbucket'}
-                    {provider === 'gitlab' && 'GitLab'}
-                  </span>
-                )}
-                {provider === 'unknown' && (
-                  <span className="git-menu-provider provider-none">no remote</span>
-                )}
-
-                <button
-                  type="button"
-                  className="git-menu-close"
-                  onClick={() => setIsMenuOpen(false)}
-                  title="Close"
-                >
-                  <X size={15} />
-                </button>
-              </div>
-            </div>
-
-            <div className="git-menu-summary">
-              <span>{changeCount} changed</span>
-              {upstreamLabel && (
-                <span className={`git-menu-sync ${ahead === 0 && behind === 0 ? 'synced' : 'diverged'}`}>
-                  {ahead === 0 && behind === 0
-                    ? upstreamLabel
-                    : `${upstreamLabel}`}
-                  {ahead > 0 && <ArrowUp size={10} />}
-                  {behind > 0 && <ArrowDown size={10} />}
-                </span>
-              )}
-              {!upstream && !isDetached && currentBranch && (
-                <span className="git-menu-sync none">no upstream</span>
-              )}
-              {isDetached && <span>Detached HEAD</span>}
-              {operationState?.inProgress && <span>{operationState.message}</span>}
-            </div>
-
-            {statusErrorMessage && <div className="git-menu-error">{statusErrorMessage}</div>}
-            {branchError && <div className="git-menu-error">{branchError}</div>}
-            {mergeError && <div className="git-menu-error">{mergeError}</div>}
-            {stashError && <div className="git-menu-error">{stashError}</div>}
-            {historyError && <div className="git-menu-error">{historyError}</div>}
-            {diffError && <div className="git-menu-error">{diffError}</div>}
-
-            <div className="git-menu-actions">
-              <button
-                type="button"
-                className="header-btn header-btn-primary git-menu-action"
-                onClick={handleOpenCommitDialog}
-              >
-                Commit Changes
-              </button>
-              <button
-                type="button"
-                className="header-btn git-menu-action"
-                onClick={() => void refreshMenuData()}
-                disabled={isBusy || isLoadingBranches || isLoadingOperation || isLoadingHistory}
-              >
-                <RefreshCw size={13} className={isBusy ? 'spin' : ''} />
-                Refresh
-              </button>
-            </div>
-
-            {remoteError && <div className="git-menu-error">{remoteError}</div>}
-
-            {!isDetached && (
-              <div className="git-menu-section">
-                <div className="git-menu-section-header">
-                  <span>Remote</span>
-                </div>
-                <div className="git-menu-remote-actions">
-                  <button
-                    type="button"
-                    className="header-btn git-menu-action"
-                    onClick={() => void handleFetch()}
-                    disabled={isBusy || remoteAction !== null}
-                  >
-                    <Download size={13} className={remoteAction === 'fetch' ? 'spin' : ''} />
-                    {remoteAction === 'fetch' ? 'Fetching...' : 'Fetch'}
-                  </button>
-                  <button
-                    type="button"
-                    className="header-btn git-menu-action"
-                    onClick={() => void handlePull()}
-                    disabled={isBusy || remoteAction !== null || !upstream}
-                    title={!upstream ? 'Set an upstream branch to enable pull' : undefined}
-                  >
-                    <Download size={13} className={remoteAction === 'pull' ? 'spin' : ''} />
-                    {remoteAction === 'pull' ? 'Pulling...' : 'Pull'}
-                  </button>
-                  {!upstream && currentBranch && (
-                    <button
-                      type="button"
-                      className="header-btn git-menu-action"
-                      onClick={() => void handlePublish()}
-                      disabled={remoteAction !== null || remotes.length === 0}
-                      title={remotes.length === 0 ? 'Add a remote to publish this branch' : undefined}
-                    >
-                      <Upload size={13} className={remoteAction === 'publish' ? 'spin' : ''} />
-                      {remoteAction === 'publish' ? 'Publishing...' : 'Publish branch'}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="header-btn git-menu-action"
-                    onClick={() => void handlePush()}
-                    disabled={isBusy || remoteAction !== null || !upstream}
-                    title={!upstream ? 'Set an upstream branch to enable push' : undefined}
-                  >
-                    <Upload size={13} className={remoteAction === 'push' ? 'spin' : ''} />
-                    {remoteAction === 'push' ? 'Pushing...' : 'Push'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <GitBranchesSection
-              activeAction={activeAction}
-              branches={branches}
-              createBranchInputRef={createBranchInputRef}
-              currentBranch={currentBranch}
-              isBusy={isBusy}
-              isLoadingBranches={isLoadingBranches}
-              newBranchName={newBranchName}
-              onCreateBranch={handleCreateBranch}
-              onDeleteBranch={(branchName) => void handleDeleteBranch(branchName)}
-              onSetNewBranchName={setNewBranchName}
-              onSwitchBranch={(branchName) => void handleSwitchBranch(branchName)}
-              provider={vcsProviderContext}
-              pullRequest={pullRequest}
-              deepLinks={deepLinks}
-              isLoadingContext={isLoadingVcsContext}
-              contextError={vcsContextError}
-              onRefreshContext={() => void loadVcsContext()}
-              workspacePath={workspacePath}
-            />
-
-            <GitStashSection
-              activeAction={activeAction}
-              includeUntracked={includeUntracked}
-              isBusy={isBusy}
-              isLoadingStashes={isLoadingStashes}
-              onApplyStash={(stashRef) => void handleApplyStash(stashRef)}
-              onClearStashes={() => void handleClearStashes()}
-              onDropStash={(stashRef) => void handleDropStash(stashRef)}
-              onPopStash={(stashRef) => void handlePopStash(stashRef)}
-              onSetIncludeUntracked={setIncludeUntracked}
-              onSetStashMessage={setStashMessage}
-              onStash={() => void handleStash()}
-              stashMessage={stashMessage}
-              stashes={stashes}
-            />
-
-            <GitRemotesSection
-              workspacePath={workspacePath}
-              remotes={remotes}
-              provider={provider}
-              onRemotesChanged={() => void loadRemotes()}
-              onError={setRemoteError}
-            />
-
-            <GitMergeSection
-              activeAction={activeAction}
-              availableMergeTargets={availableMergeTargets}
-              isBusy={isBusy}
-              isLoadingOperation={isLoadingOperation}
-              mergeTargetBranch={mergeTargetBranch}
-              onAbortOperation={() => void handleAbortOperation()}
-              onMergeBranch={() => void handleMergeBranch()}
-              onSetMergeTargetBranch={setMergeTargetBranch}
-              operationState={operationState}
-            />
-
-            <GitHistorySection
-              diffResult={diffResult}
-              history={history}
-              isBusy={isBusy}
-              isLoadingDiff={isLoadingDiff}
-              isLoadingHistory={isLoadingHistory}
-              onSelectCommitDiff={(commit) => void handleSelectCommitDiff(commit)}
-              onSelectWorkingDiff={(mode) => void handleSelectWorkingDiff(mode)}
-              selectedCommit={selectedCommit}
-              selectedDiffMode={selectedDiffMode}
-              selectedDiffRef={selectedDiffRef}
-            />
-          </div>
+          <GitRepoMenu
+            activeAction={activeAction}
+            ahead={ahead}
+            availableMergeTargets={availableMergeTargets}
+            behind={behind}
+            branchError={branchError}
+            branches={branches}
+            changeCount={changeCount}
+            createBranchInputRef={createBranchInputRef}
+            currentBranch={currentBranch}
+            currentBranchLabel={currentBranchLabel}
+            deepLinks={deepLinks}
+            diffError={diffError}
+            diffResult={diffResult}
+            history={history}
+            historyError={historyError}
+            includeUntracked={includeUntracked}
+            isBusy={isBusy}
+            isDetached={isDetached}
+            isLoadingBranches={isLoadingBranches}
+            isLoadingContext={isLoadingVcsContext}
+            isLoadingDiff={isLoadingDiff}
+            isLoadingHistory={isLoadingHistory}
+            isLoadingOperation={isLoadingOperation}
+            isLoadingStashes={isLoadingStashes}
+            mergeError={mergeError}
+            mergeTargetBranch={mergeTargetBranch}
+            newBranchName={newBranchName}
+            onAbortOperation={() => void handleAbortOperation()}
+            onApplyStash={(stashRef) => void handleApplyStash(stashRef)}
+            onClearStashes={() => void handleClearStashes()}
+            onClose={() => setIsMenuOpen(false)}
+            onCreateBranch={handleCreateBranch}
+            onDeleteBranch={(branchName) => void handleDeleteBranch(branchName)}
+            onDropStash={(stashRef) => void handleDropStash(stashRef)}
+            onFetch={() => void handleFetch()}
+            onMergeBranch={() => void handleMergeBranch()}
+            onOpenCommitDialog={() => void handleOpenCommitDialog()}
+            onPopStash={(stashRef) => void handlePopStash(stashRef)}
+            onPublish={() => void handlePublish()}
+            onPull={() => void handlePull()}
+            onPush={() => void handlePush()}
+            onRefresh={() => void refreshMenuData()}
+            onRefreshContext={() => void loadVcsContext()}
+            onRemotesChanged={() => void loadRemotes()}
+            onSelectCommitDiff={(commit) => void handleSelectCommitDiff(commit)}
+            onSelectWorkingDiff={(mode) => void handleSelectWorkingDiff(mode)}
+            onSetIncludeUntracked={setIncludeUntracked}
+            onSetMergeTargetBranch={setMergeTargetBranch}
+            onSetNewBranchName={setNewBranchName}
+            onSetRemoteError={setRemoteError}
+            onSetStashMessage={setStashMessage}
+            onStash={() => void handleStash()}
+            onSwitchBranch={(branchName) => void handleSwitchBranch(branchName)}
+            operationState={operationState}
+            provider={provider}
+            providerContext={vcsProviderContext}
+            pullRequest={pullRequest}
+            remoteAction={remoteAction}
+            remoteError={remoteError}
+            remotes={remotes}
+            selectedCommit={selectedCommit}
+            selectedDiffMode={selectedDiffMode}
+            selectedDiffRef={selectedDiffRef}
+            stashError={stashError}
+            stashMessage={stashMessage}
+            stashes={stashes}
+            statusErrorMessage={statusErrorMessage}
+            upstream={upstream}
+            upstreamLabel={upstreamLabel}
+            vcsContextError={vcsContextError}
+            workspacePath={workspacePath}
+          />
         )}
       </div>
 
@@ -1191,61 +708,15 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         changes={changes}
         workspacePath={workspacePath}
       />
+
       {deleteDialog && (
-        <div
-          className="git-delete-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label={
-            deleteDialog.stage === 'force'
-              ? `Force delete branch ${deleteDialog.branch}`
-              : `Delete branch ${deleteDialog.branch}`
-          }
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !deleteDialogBusy) {
-              closeDeleteDialog();
-            }
-          }}
-        >
-          <div className="git-delete-dialog">
-            <div className="git-delete-dialog-header">
-              <p className="git-delete-dialog-title">
-                {deleteDialog.stage === 'force' ? 'Force delete branch' : 'Delete branch'}
-              </p>
-              <span className="git-delete-dialog-branch">{deleteDialog.branch}</span>
-            </div>
-            <p className="git-delete-dialog-body">
-              {deleteDialog.stage === 'force'
-                ? `This branch has commits that are not merged into ${currentBranch ?? 'the current branch'}. Deleting it now may permanently discard work.`
-                : 'Removing a branch simply deletes the reference; commits remain reachable from other branches or remotes if they exist elsewhere.'}
-            </p>
-            {deleteDialog.detail && (
-              <div className="git-delete-detail">
-                <span>Git message</span>
-                <p>{deleteDialog.detail}</p>
-              </div>
-            )}
-            <div className="git-delete-actions">
-              <button
-                type="button"
-                className="header-btn git-delete-cancel"
-                onClick={closeDeleteDialog}
-                disabled={deleteDialogBusy}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className={`header-btn ${deleteDialog.stage === 'force' ? 'header-btn-danger' : 'header-btn-primary'}`}
-                onClick={() => void performDeleteBranch(deleteDialog.stage === 'force')}
-                disabled={deleteDialogBusy}
-              >
-                {deleteDialogBusy && <Loader2 size={13} className="spin" />}
-                {deleteDialog.stage === 'force' ? 'Force Delete' : 'Delete branch'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <GitDeleteBranchDialog
+          currentBranch={currentBranch}
+          deleteDialog={deleteDialog}
+          isBusy={deleteDialogBusy}
+          onCancel={closeDeleteDialog}
+          onConfirmDelete={(forceDelete) => void performDeleteBranch(forceDelete)}
+        />
       )}
     </>
   );
