@@ -94,7 +94,6 @@ describe('IPC registration smoke test', () => {
     }
 
     const mockTerminals = new Map<string, { id: string; pid: number }>();
-    const mockBrowserViews = new Map<string, { view: unknown; url: string }>();
     let mockActiveBrowserWorkspaceId: string | null = null;
 
     const mockGitService = {
@@ -201,7 +200,7 @@ describe('IPC registration smoke test', () => {
 
     registerBrowserIpc({
       getMainWindow: () => mockMainWindow as never,
-      getBrowserViews: () => mockBrowserViews as never,
+      getBrowserViews: () => new Map(),
       getActiveBrowserWorkspaceId: () => mockActiveBrowserWorkspaceId,
       setActiveBrowserWorkspaceId: (id) => { mockActiveBrowserWorkspaceId = id; },
     });
