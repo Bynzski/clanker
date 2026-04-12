@@ -5,6 +5,7 @@ import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import type { WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import WorkspaceTabs from '../../../src/renderer/components/WorkspaceTabs';
+import { installElectronApiMock } from '../../setup/electron';
 
 // Mock the workspaceLifecycle module
 vi.mock('../../../src/renderer/lib/workspaceLifecycle', () => ({
@@ -47,6 +48,7 @@ describe('WorkspaceTabs', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    installElectronApiMock();
     
     // Set up default store state
     useWorkspaceStore.setState({
@@ -116,6 +118,18 @@ describe('WorkspaceTabs', () => {
       
       const tabs = screen.getAllByRole('tab');
       expect(tabs).toHaveLength(2);
+    });
+
+    it('starts explorer watching for the active workspace on mount', async () => {
+      const electronApi = installElectronApiMock();
+      useWorkspaceStore.setState({
+        workspaces: mockWorkspaces,
+        activeWorkspaceId: 'ws1',
+      });
+
+      render(<WorkspaceTabs />);
+
+      expect(electronApi.explorerStartWatching).toHaveBeenCalledWith(mockWorkspaces[0].workspacePath);
     });
 
     it('displays workspace name in tab', () => {
@@ -479,6 +493,7 @@ describe('WorkspaceTabs', () => {
     it('calls closeWorkspace when close button is clicked', async () => {
       const closeWorkspace = vi.fn();
       const { terminateWorkspaceTerminals } = await import('../../../src/renderer/lib/workspaceLifecycle');
+      const electronApi = installElectronApiMock();
       
       useWorkspaceStore.setState({
         workspaces: mockWorkspaces,
@@ -497,6 +512,8 @@ describe('WorkspaceTabs', () => {
       
       expect(terminateWorkspaceTerminals).toHaveBeenCalled();
       expect(closeWorkspace).toHaveBeenCalledWith('ws1');
+      expect(electronApi.explorerStopWatching).not.toHaveBeenCalled();
+      expect(electronApi.gitStopPolling).not.toHaveBeenCalled();
     });
 
     it('stops propagation of close click event', async () => {

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, MouseEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { terminateWorkspaceTerminals } from '../lib/workspaceLifecycle';
 import { Plus, X, Check, Edit2 } from 'lucide-react';
+import { normalizePath } from '../lib/pathUtils';
 import './WorkspaceTabs.css';
 
 interface WorkspaceTabsProps {
@@ -13,6 +14,33 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Keep the explorer watcher aligned with the active workspace.
+   * Start watching the current workspace immediately, then react to later
+   * active workspace changes through the store subscription.
+   */
+  useEffect(() => {
+    const startWatchingWorkspace = (workspaceId: string | null, state = useWorkspaceStore.getState()) => {
+      if (workspaceId == null) {
+        return;
+      }
+
+      const workspace = state.workspaces.find((entry) => entry.id === workspaceId);
+      if (workspace && typeof window.electronAPI?.explorerStartWatching === 'function') {
+        void window.electronAPI.explorerStartWatching(normalizePath(workspace.workspacePath));
+      }
+    };
+
+    startWatchingWorkspace(useWorkspaceStore.getState().activeWorkspaceId);
+
+    const unsubscribe = useWorkspaceStore.subscribe((state, prevState) => {
+      if (state.activeWorkspaceId !== prevState.activeWorkspaceId) {
+        startWatchingWorkspace(state.activeWorkspaceId, state);
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     if (editingId && inputRef.current) {
@@ -38,10 +66,6 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
       await window.electronAPI.browserHide(id);
     }
     closeWorkspace(id);
-    // Belt-and-suspenders: stop git polling to prevent stale workspace polling
-    if (typeof window.electronAPI?.gitStopPolling === 'function') {
-      await window.electronAPI.gitStopPolling();
-    }
   };
 
   const startEditing = (id: string, currentName: string, event: MouseEvent) => {

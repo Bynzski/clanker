@@ -110,6 +110,14 @@ function getMockFileWatcher() {
   } as unknown as RegisterFileIpcDeps['getFileWatcher'] extends (...args: never[]) => infer R ? R : never;
 }
 
+/** Mock for ExplorerWatcherService — minimal shape for IPC test coverage. */
+function getMockExplorerWatcher() {
+  return {
+    watchWorkspace: vi.fn(),
+    close: vi.fn(),
+  } as unknown as RegisterFileIpcDeps['getExplorerWatcher'] extends (...args: never[]) => infer R ? R : never;
+}
+
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
@@ -125,7 +133,7 @@ describe('registerFileIpc', () => {
 
   describe('FILE_LIST_DIRECTORY', () => {
     test('returns success result from fileService', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_LIST_DIRECTORY);
 
       vi.mocked(mockListDirectory).mockResolvedValue({
@@ -141,7 +149,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result shape for invalid path', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_LIST_DIRECTORY);
 
       vi.mocked(mockListDirectory).mockResolvedValue({
@@ -161,7 +169,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result shape for permission-denied', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_LIST_DIRECTORY);
 
       vi.mocked(mockListDirectory).mockResolvedValue({
@@ -187,7 +195,7 @@ describe('registerFileIpc', () => {
 
   describe('FILE_READ', () => {
     test('returns success result from fileService', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_READ);
 
       vi.mocked(mockReadFile).mockResolvedValue({ success: true, content: 'hello world' });
@@ -197,7 +205,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for not-found path', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_READ);
 
       vi.mocked(mockReadFile).mockResolvedValue({
@@ -215,7 +223,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for permission-denied path', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_READ);
 
       vi.mocked(mockReadFile).mockResolvedValue({
@@ -233,7 +241,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for path outside workspace root', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_READ);
 
       vi.mocked(mockReadFile).mockResolvedValue({
@@ -251,7 +259,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for binary file', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_READ);
 
       vi.mocked(mockReadFile).mockResolvedValue({
@@ -275,7 +283,7 @@ describe('registerFileIpc', () => {
 
   describe('FILE_WRITE', () => {
     test('returns success result and marks file as written', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_WRITE);
 
       vi.mocked(mockWriteFile).mockResolvedValue({ success: true });
@@ -287,7 +295,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns { success: false, errorCode } for invalid path — does not throw', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_WRITE);
 
       vi.mocked(mockWriteFile).mockResolvedValue({
@@ -308,7 +316,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns { success: false, errorCode } for write error — does not throw', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_WRITE);
 
       vi.mocked(mockWriteFile).mockResolvedValue({
@@ -333,7 +341,7 @@ describe('registerFileIpc', () => {
 
   describe('FILE_CREATE', () => {
     test('returns success result for file creation', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_CREATE);
 
       vi.mocked(mockCreateFile).mockResolvedValue({ success: true });
@@ -343,7 +351,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns success result for directory creation', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_CREATE);
 
       vi.mocked(mockCreateDirectory).mockResolvedValue({ success: true });
@@ -353,7 +361,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for path outside workspace', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_CREATE);
 
       vi.mocked(mockCreateFile).mockResolvedValue({ success: false, error: 'File path is outside workspace' });
@@ -363,7 +371,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result when file already exists', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_CREATE);
 
       vi.mocked(mockCreateFile).mockResolvedValue({ success: false, error: 'File already exists' });
@@ -373,7 +381,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for permission-denied on directory creation', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_CREATE);
 
       vi.mocked(mockCreateDirectory).mockResolvedValue({ success: false, error: 'Permission denied creating directory' });
@@ -389,7 +397,7 @@ describe('registerFileIpc', () => {
 
   describe('FILE_DELETE', () => {
     test('returns success result', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_DELETE);
 
       vi.mocked(mockDeleteEntry).mockResolvedValue({ success: true });
@@ -399,7 +407,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for path outside workspace', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_DELETE);
 
       vi.mocked(mockDeleteEntry).mockResolvedValue({ success: false, error: 'Path is outside workspace' });
@@ -409,7 +417,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for path not found', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_DELETE);
 
       vi.mocked(mockDeleteEntry).mockResolvedValue({ success: false, error: 'Path does not exist' });
@@ -419,7 +427,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for permission-denied', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_DELETE);
 
       vi.mocked(mockDeleteEntry).mockResolvedValue({ success: false, error: 'Permission denied deleting path' });
@@ -429,7 +437,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for workspace root deletion attempt', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_DELETE);
 
       vi.mocked(mockDeleteEntry).mockResolvedValue({ success: false, error: 'Cannot delete workspace root' });
@@ -445,7 +453,7 @@ describe('registerFileIpc', () => {
 
   describe('FILE_RENAME', () => {
     test('returns success result', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_RENAME);
 
       vi.mocked(mockRenameEntry).mockResolvedValue({ success: true });
@@ -455,7 +463,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for source path outside workspace', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_RENAME);
 
       vi.mocked(mockRenameEntry).mockResolvedValue({ success: false, error: 'Source path is outside workspace' });
@@ -465,7 +473,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for destination path outside workspace', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_RENAME);
 
       vi.mocked(mockRenameEntry).mockResolvedValue({ success: false, error: 'Destination path is outside workspace' });
@@ -475,7 +483,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result when destination already exists', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_RENAME);
 
       vi.mocked(mockRenameEntry).mockResolvedValue({ success: false, error: 'A file or directory already exists at the destination' });
@@ -485,7 +493,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for source path not found', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_RENAME);
 
       vi.mocked(mockRenameEntry).mockResolvedValue({ success: false, error: 'Source path does not exist' });
@@ -495,7 +503,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns error result for permission-denied', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_RENAME);
 
       vi.mocked(mockRenameEntry).mockResolvedValue({ success: false, error: 'Permission denied renaming path' });
@@ -511,7 +519,7 @@ describe('registerFileIpc', () => {
 
   describe('REVEAL_IN_FILE_MANAGER', () => {
     test('returns true when filePath is valid', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(REVEAL_IN_FILE_MANAGER);
 
       const result = await handler({}, '/ws/README.md');
@@ -519,7 +527,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns false for empty string', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(REVEAL_IN_FILE_MANAGER);
 
       const result = await handler({}, '');
@@ -527,7 +535,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns false for whitespace-only string', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(REVEAL_IN_FILE_MANAGER);
 
       const result = await handler({}, '   ');
@@ -535,7 +543,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns false for null/undefined', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(REVEAL_IN_FILE_MANAGER);
 
       const result = await handler({}, null);
@@ -549,7 +557,7 @@ describe('registerFileIpc', () => {
 
   describe('FILE_WATCH', () => {
     test('returns true and delegates to fileWatcher when validation succeeds', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_WATCH);
 
       vi.mocked(mockResolveAndValidateWatchPath).mockResolvedValue({
@@ -565,7 +573,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns false when workspacePath is missing', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_WATCH);
 
       const result = await handler({}, { workspacePath: '', filePath: '/ws/file.txt' });
@@ -575,7 +583,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns false when filePath is missing', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_WATCH);
 
       const result = await handler({}, { workspacePath: '/ws', filePath: '' });
@@ -585,7 +593,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns false when workspacePath is null/undefined', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_WATCH);
 
       const result = await handler({}, { workspacePath: undefined as unknown as string, filePath: '/ws/file.txt' });
@@ -595,7 +603,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns false when path is outside workspace root', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_WATCH);
 
       vi.mocked(mockResolveAndValidateWatchPath).mockResolvedValue({
@@ -616,7 +624,7 @@ describe('registerFileIpc', () => {
 
   describe('FILE_UNWATCH', () => {
     test('returns true and delegates to fileWatcher when filePath is provided', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_UNWATCH);
 
       const result = await handler({}, { workspacePath: '/ws', filePath: '/ws/file.txt' });
@@ -626,7 +634,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns false when filePath is missing', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_UNWATCH);
 
       const result = await handler({}, { workspacePath: '/ws', filePath: '' });
@@ -636,7 +644,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns false when filePath is null/undefined', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_UNWATCH);
 
       const result = await handler({}, { workspacePath: '/ws', filePath: undefined as unknown as string });
@@ -646,7 +654,7 @@ describe('registerFileIpc', () => {
     });
 
     test('returns true for null workspacePath (unwatch tolerates stale workspace)', async () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_UNWATCH);
 
       const result = await handler({}, { workspacePath: null as unknown as string, filePath: '/ws/file.txt' });
@@ -662,7 +670,7 @@ describe('registerFileIpc', () => {
 
   describe('FILE_CHANGED event registration', () => {
     test('registers a no-op listener on FILE_CHANGED', () => {
-      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"] });
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
 
       const mockIpc = ipcMain as MockIpcMain;
       expect(mockIpc.on).toHaveBeenCalledWith('file-changed', expect.any(Function));

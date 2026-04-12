@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { FileListDirectoryRequest } from '../shared/types/fileExplorer';
 import type { FileReadRequest, FileWriteRequest, FileChangedEvent, FileWatchRequest } from '../shared/types/editor';
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest } from '../shared/types/fileOperations';
+import type { ExplorerTreeChangedEvent } from '../shared/types/fileExplorer';
 import type { VcsProvider } from '../shared/types/vcs';
 import type { GitStatusResult } from '../shared/types/git';
 import {
@@ -19,6 +20,9 @@ import {
   FILE_CREATE,
   FILE_DELETE,
   FILE_RENAME,
+  EXPLORER_TREE_CHANGED,
+  EXPLORER_START_WATCHING,
+  EXPLORER_STOP_WATCHING,
   REVEAL_IN_FILE_MANAGER,
   GET_SHOW_FASTFETCH,
   SET_SHOW_FASTFETCH,
@@ -315,4 +319,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fileCreate: (request: FileCreateRequest) => ipcRenderer.invoke(FILE_CREATE, request),
   fileDelete: (request: FileDeleteRequest) => ipcRenderer.invoke(FILE_DELETE, request),
   fileRename: (request: FileRenameRequest) => ipcRenderer.invoke(FILE_RENAME, request),
+
+  // Explorer tree auto-refresh
+  onExplorerTreeChanged: (callback: (event: ExplorerTreeChangedEvent) => void) => {
+    const handler = (_event: IpcRendererEvent, payload: ExplorerTreeChangedEvent) => callback(payload);
+    ipcRenderer.on(EXPLORER_TREE_CHANGED, handler);
+    return () => ipcRenderer.removeListener(EXPLORER_TREE_CHANGED, handler);
+  },
+  explorerStartWatching: (workspacePath: string) =>
+    ipcRenderer.invoke(EXPLORER_START_WATCHING, workspacePath),
+  explorerStopWatching: () =>
+    ipcRenderer.invoke(EXPLORER_STOP_WATCHING),
 });

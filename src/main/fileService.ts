@@ -121,6 +121,12 @@ export async function listDirectory(
     };
   }
 
+  // Important: keep explorer paths stable relative to the caller's requested directory.
+  // We validate using realpaths (to prevent symlink traversal outside the workspace),
+  // but we return entry paths rooted at the *requested* directory path so the renderer
+  // can keep a consistent cache key and match chokidar event paths.
+  const presentationDirectory = path.resolve(request.directoryPath);
+
   try {
     const directoryEntries = await fs.readdir(resolved.targetDirectory, { withFileTypes: true });
     const entries = await Promise.all(
@@ -131,7 +137,7 @@ export async function listDirectory(
           const stats = await fs.stat(fullPath);
           return {
             name: entry.name,
-            path: fullPath,
+            path: path.join(presentationDirectory, entry.name),
             isDirectory: entry.isDirectory(),
             size: stats.size,
             modified: stats.mtimeMs,

@@ -175,6 +175,11 @@ describe('IPC registration smoke test', () => {
       markWritten: vi.fn(),
     };
 
+    const mockExplorerWatcher = {
+      watchWorkspace: vi.fn(),
+      close: vi.fn(),
+    };
+
     // ── Register all IPC modules ────────────────────────────────────────────
     registerSettingsIpc({
       getStore: () => mockStore as never,
@@ -211,7 +216,7 @@ describe('IPC registration smoke test', () => {
     });
 
     registerCredentialIpc();
-    registerFileIpc({ getFileWatcher: () => mockFileWatcher as never });
+    registerFileIpc({ getFileWatcher: () => mockFileWatcher as never, getExplorerWatcher: () => mockExplorerWatcher as never });
 
     registerVcsIpc({
       getGitService: () => mockGitService as never,

@@ -47,6 +47,7 @@ import { registerGitIpc } from './ipc/gitIpc';
 import { registerCredentialIpc } from './ipc/credentialIpc';
 import { registerFileIpc } from './ipc/fileIpc';
 import { FileWatcherService } from './fileWatcher';
+import { ExplorerWatcherService } from './explorerWatcher';
 import { registerVcsIpc } from './ipc/vcsIpc';
 
 interface StoreSchema {
@@ -147,6 +148,13 @@ const gitService = new GitService((status) => {
 const fileWatcher = new FileWatcherService({ getMainWindow: () => mainWindow });
 fileWatcher.setGitService(gitService);
 
+/** Workspace tree watcher for explorer auto-refresh. Separate from FileWatcherService. */
+const explorerWatcher = new ExplorerWatcherService({
+  getMainWindow: () => mainWindow,
+  getCurrentWorkspace: () => gitService.getCurrentWorkspace(),
+});
+explorerWatcher.setGitService(gitService);
+
 function getSafeWorkspacePath(workingDir: string, storeInstance: Store<StoreSchema>): string {
   return (
     resolveExistingDirectory(workingDir, storeInstance.get('lastWorkspace'))
@@ -195,7 +203,7 @@ app.whenReady().then(() => {
   });
 
   registerCredentialIpc();
-  registerFileIpc({ getFileWatcher: () => fileWatcher });
+  registerFileIpc({ getFileWatcher: () => fileWatcher, getExplorerWatcher: () => explorerWatcher });
 
   registerVcsIpc({
     getGitService: () => gitService,
@@ -206,6 +214,7 @@ app.whenReady().then(() => {
     preloadPath,
     gitService,
     fileWatcher,
+    explorerWatcher,
     onWindowClosed: cleanupWindowState,
   }));
 
@@ -215,6 +224,7 @@ app.whenReady().then(() => {
         preloadPath,
         gitService,
         fileWatcher,
+        explorerWatcher,
         onWindowClosed: cleanupWindowState,
       }));
     }
@@ -237,4 +247,4 @@ app.on('before-quit', () => {
 });
 
 // Export shared state for test access
-export { terminals, activeBrowserWorkspaceId, gitService, store, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS };
+export { terminals, activeBrowserWorkspaceId, gitService, explorerWatcher, store, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS };

@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import FileExplorer from '../../../src/renderer/components/FileExplorer';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
 import type { FileExplorerEntry, FileListDirectoryRequest, FileListDirectoryResult } from '../../../src/shared/types/fileExplorer';
+import type { ExplorerTreeChangedEvent } from '../../../src/shared/types/fileExplorer';
 
 function resetStore() {
   useWorkspaceStore.setState({
@@ -83,6 +84,28 @@ describe('FileExplorer', () => {
     resetStore();
   });
 
+  it('normalizes workspace and directory paths (trailing slashes) for directory loads', async () => {
+    const workspace = setActiveWorkspace({ workspacePath: '/workspace/' });
+    const electronApi = installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+    });
+
+    render(<FileExplorer />);
+
+    await waitFor(() => {
+      expect(electronApi.fileListDirectory).toHaveBeenCalledWith({
+        workspacePath: '/workspace',
+        directoryPath: '/workspace',
+      });
+    });
+
+    // Ensure we don't accidentally call with the trailing slash variant.
+    expect(electronApi.fileListDirectory).not.toHaveBeenCalledWith({
+      workspacePath: workspace.workspacePath,
+      directoryPath: workspace.workspacePath,
+    });
+  });
+
   it('loads the workspace root when visible', async () => {
     const workspace = setActiveWorkspace({ workspacePath: '/workspace' });
     const electronApi = installElectronApiMock({
@@ -109,6 +132,35 @@ describe('FileExplorer', () => {
       expect(screen.queryByText('Explorer')).toBeNull();
     });
     expect(electronApi.fileListDirectory).not.toHaveBeenCalled();
+  });
+
+  it('still refreshes from explorer watcher events while hidden', async () => {
+    setActiveWorkspace({ explorerVisible: false, workspacePath: '/workspace' });
+    const fileListDirectory = vi.fn().mockResolvedValue({ success: true, entries: [] });
+    let explorerTreeChangedHandler: ((event: ExplorerTreeChangedEvent) => void) | null = null;
+    const electronApi = installElectronApiMock({
+      fileListDirectory,
+      onExplorerTreeChanged: vi.fn((callback) => {
+        explorerTreeChangedHandler = callback;
+        return () => {
+          explorerTreeChangedHandler = null;
+        };
+      }),
+    });
+
+    render(<FileExplorer />);
+
+    expect(electronApi.onExplorerTreeChanged).toHaveBeenCalledTimes(1);
+    expect(explorerTreeChangedHandler).not.toBeNull();
+
+    await act(async () => {
+      explorerTreeChangedHandler?.({ directoryPath: '/workspace/src' });
+    });
+
+    expect(fileListDirectory).toHaveBeenCalledWith({
+      workspacePath: '/workspace',
+      directoryPath: '/workspace/src',
+    });
   });
 
   it('shows hidden files and does not preload child directories on mount', async () => {

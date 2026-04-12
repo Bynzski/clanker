@@ -19,3 +19,12 @@ export interface FileListDirectoryResult {
   errorCode?: FileListDirectoryErrorCode;
   error?: string;
 }
+
+/**
+ * Payload emitted by ExplorerWatcherService when a file or directory is
+ * created, deleted, or renamed inside the workspace tree.
+ * The renderer uses this to re-fetch the affected parent directory.
+ */
+export interface ExplorerTreeChangedEvent {
+  directoryPath: string;
+}

@@ -117,6 +117,10 @@ import {
   FILE_CHANGED,
   FILE_WATCH,
   FILE_UNWATCH,
+  // Explorer
+  EXPLORER_TREE_CHANGED,
+  EXPLORER_START_WATCHING,
+  EXPLORER_STOP_WATCHING,
   ALL_IPC_CHANNELS,
 } from '../../../src/shared/ipcChannels';
 
@@ -234,6 +238,10 @@ const ALL_CHANNELS = [
   FILE_CHANGED,
   FILE_WATCH,
   FILE_UNWATCH,
+  // Explorer tree auto-refresh
+  EXPLORER_TREE_CHANGED,
+  EXPLORER_START_WATCHING,
+  EXPLORER_STOP_WATCHING,
 ];
 
 describe('ipcChannels', () => {

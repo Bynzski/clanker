@@ -16,6 +16,10 @@ export interface CreateMainWindowOptions {
   fileWatcher: {
     unwatchAll: () => void;
   };
+  /** Explorer watcher service for workspace tree auto-refresh. */
+  explorerWatcher?: {
+    close: () => void;
+  };
   onWindowClosed?: () => void;
 }
 
@@ -91,6 +95,7 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   const cleanup = () => {
     gitService.stopPolling();
     fileWatcher.unwatchAll();
+    deps.explorerWatcher?.close();
     onWindowClosed?.();
   };
 

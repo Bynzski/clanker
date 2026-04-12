@@ -128,6 +128,11 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     fileDelete: createAsyncMock({ success: true }),
     fileRename: createAsyncMock({ success: true }),
 
+    // Explorer tree auto-refresh
+    onExplorerTreeChanged: vi.fn(() => () => undefined),
+    explorerStartWatching: createAsyncMock(undefined),
+    explorerStopWatching: createAsyncMock(undefined),
+
     ...overrides,
   };
 }
