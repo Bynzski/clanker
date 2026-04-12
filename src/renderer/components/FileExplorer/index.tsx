@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDragHandle } from '../DynamicPaneLayout';
 import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw } from 'lucide-react';
 import type React from 'react';
@@ -10,6 +10,8 @@ import FileTree from './FileTree';
 import ContextMenu, { type ContextAction } from './ContextMenu';
 import ConfirmCloseDialog from '../ConfirmCloseDialog';
 import './FileExplorer.css';
+
+const EXPLORER_TREE_REFRESH_DEBOUNCE_MS = 100;
 
 function getDirectoryLoadErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) {
@@ -84,6 +86,8 @@ export default function FileExplorer() {
   const [creating, setCreating] = useState<{ parentPath: string; type: 'file' | 'directory' } | null>(null);
   const [renaming, setRenaming] = useState<{ path: string; originalName: string } | null>(null);
   const dragHandleProps = useDragHandle();
+  const explorerTreeRefreshTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const previousExplorerVisibleRef = useRef(explorerVisible);
 
   const loadDirectory = useCallback(async (directoryPath: string): Promise<FileListDirectoryResult> => {
     const normalizedDirectoryPath = normalizePath(directoryPath);
@@ -160,6 +164,85 @@ export default function FileExplorer() {
     });
   }, [normalizedWorkspacePath, explorerExpandedPaths, loadDirectory]);
 
+  const scheduleDirectoryRefresh = useCallback(function scheduleDirectoryRefreshImpl(directoryPath: string) {
+    if (!normalizedWorkspacePath) {
+      return;
+    }
+
+    const normalizedDirectoryPath = normalizePath(directoryPath);
+    const currentState = useWorkspaceStore.getState();
+    if (!currentState.explorerVisible || currentState.activeWorkspaceId !== activeWorkspaceId) {
+      return;
+    }
+
+    const currentWorkspacePath = currentState.workspacePath ? normalizePath(currentState.workspacePath) : null;
+    const isRootDirectory = currentWorkspacePath === normalizedDirectoryPath;
+    const isExpandedDirectory = currentState.explorerExpandedPaths.includes(normalizedDirectoryPath);
+    const hasCachedEntries = Object.prototype.hasOwnProperty.call(
+      currentState.explorerEntriesByPath,
+      normalizedDirectoryPath
+    );
+
+    if (!isRootDirectory && !isExpandedDirectory && !hasCachedEntries) {
+      return;
+    }
+
+    const existingTimer = explorerTreeRefreshTimersRef.current.get(normalizedDirectoryPath);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    const timer = setTimeout(() => {
+      explorerTreeRefreshTimersRef.current.delete(normalizedDirectoryPath);
+
+      const latestState = useWorkspaceStore.getState();
+      if (!latestState.explorerVisible || latestState.activeWorkspaceId !== activeWorkspaceId) {
+        return;
+      }
+
+      const latestWorkspacePath = latestState.workspacePath ? normalizePath(latestState.workspacePath) : null;
+      const stillRefreshable = latestWorkspacePath === normalizedDirectoryPath
+        || latestState.explorerExpandedPaths.includes(normalizedDirectoryPath)
+        || Object.prototype.hasOwnProperty.call(latestState.explorerEntriesByPath, normalizedDirectoryPath);
+
+      if (!stillRefreshable) {
+        return;
+      }
+
+      if (latestState.explorerLoadingPaths.includes(normalizedDirectoryPath)) {
+        scheduleDirectoryRefreshImpl(normalizedDirectoryPath);
+        return;
+      }
+
+      void loadDirectory(normalizedDirectoryPath);
+    }, EXPLORER_TREE_REFRESH_DEBOUNCE_MS);
+
+    explorerTreeRefreshTimersRef.current.set(normalizedDirectoryPath, timer);
+  }, [activeWorkspaceId, loadDirectory, normalizedWorkspacePath]);
+
+  useEffect(() => {
+    const wasVisible = previousExplorerVisibleRef.current;
+    previousExplorerVisibleRef.current = explorerVisible;
+
+    if (!wasVisible && explorerVisible) {
+      for (const timer of explorerTreeRefreshTimersRef.current.values()) {
+        clearTimeout(timer);
+      }
+      explorerTreeRefreshTimersRef.current.clear();
+      handleRefresh();
+    }
+  }, [explorerVisible, handleRefresh]);
+
+  useEffect(() => {
+    const refreshTimers = explorerTreeRefreshTimersRef.current;
+    return () => {
+      for (const timer of refreshTimers.values()) {
+        clearTimeout(timer);
+      }
+      refreshTimers.clear();
+    };
+  }, [activeWorkspaceId, normalizedWorkspacePath]);
+
   useEffect(() => {
     if (!explorerVisible || !normalizedWorkspacePath) {
       return;
@@ -176,16 +259,20 @@ export default function FileExplorer() {
    * Subscribe to filesystem change events from the explorer watcher.
    * When a file or directory is created/deleted/renamed, reload the affected
    * parent directory to update the tree automatically.
-   * Keep the subscription alive even while the explorer pane is hidden so
-   * cached tree state stays fresh for when the pane is shown again.
+   * Hidden explorers ignore live change events and refresh the visible tree
+   * when the pane is shown again.
    */
   useEffect(() => {
     const dispose = window.electronAPI.onExplorerTreeChanged((event) => {
-      void loadDirectory(event.directoryPath);
+      if (!useWorkspaceStore.getState().explorerVisible) {
+        return;
+      }
+
+      scheduleDirectoryRefresh(event.directoryPath);
     });
 
     return dispose;
-  }, [loadDirectory]);
+  }, [scheduleDirectoryRefresh]);
 
   const handleResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
