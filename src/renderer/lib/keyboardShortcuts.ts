@@ -13,17 +13,17 @@ export function getZoomShortcutAction(event: KeyboardEvent): ZoomShortcutAction 
     return null;
   }
 
-  const key = event.key.toLowerCase();
+  const code = event.code.toLowerCase();
 
-  if (key === '0') {
+  if (code === 'digit0') {
     return 'reset';
   }
 
-  if (key === '-' || key === '_') {
+  if (code === 'minus') {
     return 'out';
   }
 
-  if (key === '=' || key === '+') {
+  if (code === 'equal') {
     return 'in';
   }
 

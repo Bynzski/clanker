@@ -6,6 +6,8 @@
 
 import { vi, describe, test, expect, beforeEach } from 'vitest';
 
+let attachedBeforeInputEventHandler: ((event: { preventDefault: () => void }, input: { control?: boolean; meta?: boolean; alt?: boolean; key?: string; code?: string; type?: string }) => void) | null = null;
+
 // Mock electron module
 vi.mock('electron', () => ({
   app: {
@@ -38,6 +40,7 @@ vi.mock('electron', () => ({
     close: vi.fn(),
     webContents: {
       send: vi.fn(),
+      getZoomLevel: vi.fn(() => 0),
     },
     contentView: {
       addChildView: vi.fn(),
@@ -46,23 +49,30 @@ vi.mock('electron', () => ({
   Menu: Object.assign(vi.fn(), {
     setApplicationMenu: vi.fn(),
   }),
-  WebContentsView: vi.fn(() => ({
-    setVisible: vi.fn(),
-    setBounds: vi.fn(),
-    webContents: {
+  WebContentsView: class MockWebContentsView {
+    setVisible = vi.fn();
+    setBounds = vi.fn();
+    webContents = {
       loadURL: vi.fn(),
       close: vi.fn(),
       reload: vi.fn(),
       stop: vi.fn(),
-      on: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+      on: vi.fn((eventName: string, handler: typeof attachedBeforeInputEventHandler) => {
+        if (eventName === 'before-input-event') {
+          attachedBeforeInputEventHandler = handler;
+        }
+      }),
+      getZoomLevel: vi.fn(() => 0),
+      setZoomLevel: vi.fn(),
       navigationHistory: {
         canGoBack: vi.fn(() => false),
         canGoForward: vi.fn(() => false),
         goBack: vi.fn(),
         goForward: vi.fn(),
       },
-    },
-  })),
+    };
+  },
   ipcMain: {
     handle: vi.fn(),
     on: vi.fn(),
@@ -92,6 +102,7 @@ describe('registerBrowserIpc', () => {
     const mockMainWindow = {
       webContents: {
         send: vi.fn(),
+        getZoomLevel: vi.fn(() => 0),
       },
       contentView: {
         addChildView: vi.fn(),
@@ -112,6 +123,7 @@ describe('registerBrowserIpc', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    attachedBeforeInputEventHandler = null;
   });
 
   test('registers all expected browser IPC channels', () => {
@@ -213,7 +225,10 @@ describe('browserIpc — error-path: null/invalid workspaceId returns valid resu
     const mockBrowserViews = new Map<string, any>();
     let mockActiveWorkspaceId: string | null = null;
     const mockMainWindow = {
-      webContents: { send: vi.fn() },
+      webContents: {
+        send: vi.fn(),
+        getZoomLevel: vi.fn(() => 0),
+      },
       contentView: { addChildView: vi.fn() },
     };
 
@@ -244,6 +259,33 @@ describe('browserIpc — error-path: null/invalid workspaceId returns valid resu
     // @ts-expect-error — intentionally passing null to test invalid input
     const result = await handler(null, null, { x: 0, y: 0, width: 800, height: 600 });
     expect(result).toBeUndefined();
+  });
+
+  test('suppresses browser keyboard zoom shortcuts but not mouse wheel input', () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-set-bounds'
+    )?.[1] as (_: unknown, workspaceId: string, bounds: object) => void;
+
+    handler(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 });
+
+    expect(attachedBeforeInputEventHandler).not.toBeNull();
+
+    const preventDefault = vi.fn();
+    attachedBeforeInputEventHandler?.(
+      { preventDefault },
+      { control: true, meta: false, alt: false, key: '=', code: 'Equal', type: 'keyDown' }
+    );
+    expect(preventDefault).toHaveBeenCalled();
+
+    preventDefault.mockClear();
+    attachedBeforeInputEventHandler?.(
+      { preventDefault },
+      { control: true, meta: false, alt: false, type: 'mouseWheel' }
+    );
+    expect(preventDefault).not.toHaveBeenCalled();
   });
 
   test('BROWSER_SET_BOUNDS returns undefined for empty string workspaceId', async () => {

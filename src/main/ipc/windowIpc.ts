@@ -18,28 +18,59 @@ import {
 
 interface RegisterWindowIpcDeps {
   getMainWindow: () => BrowserWindow | null;
+  getBrowserViews?: () => Map<string, { view: { webContents: Pick<BrowserWindow['webContents'], 'getZoomLevel' | 'setZoomLevel'> } }>;
 }
 
 function clampZoomLevel(level: number): number {
   return Math.max(-5, Math.min(5, level));
 }
 
-function adjustWindowZoom(getMainWindow: () => BrowserWindow | null, delta: number): void {
+function applyBrowserViewZoomDelta(
+  getBrowserViews: (() => Map<string, { view: { webContents: Pick<BrowserWindow['webContents'], 'getZoomLevel' | 'setZoomLevel'> } }>) | undefined,
+  delta: number
+): void {
+  if (!getBrowserViews || delta === 0) {
+    return;
+  }
+
+  for (const { view } of getBrowserViews().values()) {
+    const nextLevel = view.webContents.getZoomLevel() + delta;
+    view.webContents.setZoomLevel(nextLevel);
+  }
+}
+
+function adjustWindowZoom(
+  getMainWindow: () => BrowserWindow | null,
+  getBrowserViews: (() => Map<string, { view: { webContents: Pick<BrowserWindow['webContents'], 'getZoomLevel' | 'setZoomLevel'> } }>) | undefined,
+  delta: number
+): void {
   const mainWindow = getMainWindow();
   if (!mainWindow) {
     return;
   }
 
-  const nextLevel = clampZoomLevel(mainWindow.webContents.getZoomLevel() + delta);
+  const currentLevel = mainWindow.webContents.getZoomLevel();
+  const nextLevel = clampZoomLevel(currentLevel + delta);
   mainWindow.webContents.setZoomLevel(nextLevel);
+  applyBrowserViewZoomDelta(getBrowserViews, nextLevel - currentLevel);
 }
 
-function resetWindowZoom(getMainWindow: () => BrowserWindow | null): void {
-  getMainWindow()?.webContents.setZoomLevel(0);
+function resetWindowZoom(
+  getMainWindow: () => BrowserWindow | null,
+  getBrowserViews: (() => Map<string, { view: { webContents: Pick<BrowserWindow['webContents'], 'getZoomLevel' | 'setZoomLevel'> } }>) | undefined
+): void {
+  const mainWindow = getMainWindow();
+  if (!mainWindow) {
+    return;
+  }
+
+  const currentLevel = mainWindow.webContents.getZoomLevel();
+  mainWindow.webContents.setZoomLevel(0);
+  applyBrowserViewZoomDelta(getBrowserViews, -currentLevel);
 }
 
 export function registerWindowIpc(deps: RegisterWindowIpcDeps): void {
-  const { getMainWindow } = deps;
+  const { getMainWindow, getBrowserViews } = deps;
 
   ipcMain.handle(MINIMIZE_WINDOW, () => {
     getMainWindow()?.minimize();
@@ -64,15 +95,15 @@ export function registerWindowIpc(deps: RegisterWindowIpcDeps): void {
   });
 
   ipcMain.handle(ZOOM_IN_WINDOW, () => {
-    adjustWindowZoom(getMainWindow, 0.5);
+    adjustWindowZoom(getMainWindow, getBrowserViews, 0.5);
   });
 
   ipcMain.handle(ZOOM_OUT_WINDOW, () => {
-    adjustWindowZoom(getMainWindow, -0.5);
+    adjustWindowZoom(getMainWindow, getBrowserViews, -0.5);
   });
 
   ipcMain.handle(RESET_ZOOM_WINDOW, () => {
-    resetWindowZoom(getMainWindow);
+    resetWindowZoom(getMainWindow, getBrowserViews);
   });
 }
 
