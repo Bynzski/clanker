@@ -40,6 +40,34 @@ describe('listDirectory', () => {
     }
   });
 
+  it('returns entry paths rooted at the requested directory path (symlink workspace)', async () => {
+    const parentRoot = makeTempDir('clanker-grid-file-service-symlink-root-');
+    const realRoot = path.join(parentRoot, 'real-workspace');
+    const linkRoot = path.join(parentRoot, 'link-workspace');
+    fs.mkdirSync(realRoot);
+    fs.mkdirSync(path.join(realRoot, 'src'));
+    fs.writeFileSync(path.join(realRoot, 'README.md'), '# readme');
+    fs.symlinkSync(realRoot, linkRoot);
+
+    try {
+      const result = await listDirectory({
+        workspacePath: linkRoot,
+        directoryPath: linkRoot,
+      });
+
+      expect(result.success).toBe(true);
+
+      // Ensure returned entry paths stay under the symlinked root the user opened,
+      // so renderer cache keys match chokidar event paths.
+      const srcEntry = result.entries.find((entry) => entry.name === 'src');
+      const readmeEntry = result.entries.find((entry) => entry.name === 'README.md');
+      expect(srcEntry?.path).toBe(path.join(linkRoot, 'src'));
+      expect(readmeEntry?.path).toBe(path.join(linkRoot, 'README.md'));
+    } finally {
+      fs.rmSync(parentRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects directory traversal outside the workspace root', async () => {
     const parentRoot = makeTempDir('clanker-grid-file-service-parent-');
     const workspaceRoot = path.join(parentRoot, 'workspace');

@@ -1,4 +1,4 @@
-import type { FileListDirectoryRequest, FileListDirectoryResult } from '../../shared/types/fileExplorer';
+import type { FileListDirectoryRequest, FileListDirectoryResult, ExplorerTreeChangedEvent } from '../../shared/types/fileExplorer';
 import type { FileReadRequest, FileWriteRequest, FileChangedEvent, FileWatchRequest, FileReadResult, FileWriteResult } from '../../shared/types/editor';
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest, FileOperationResult } from '../../shared/types/fileOperations';
 import type {
@@ -199,6 +199,13 @@ interface ElectronAPI {
   fileCreate: (request: FileCreateRequest) => Promise<FileOperationResult>;
   fileDelete: (request: FileDeleteRequest) => Promise<FileOperationResult>;
   fileRename: (request: FileRenameRequest) => Promise<FileOperationResult>;
+
+  // Explorer tree auto-refresh
+  onExplorerTreeChanged: (callback: (event: ExplorerTreeChangedEvent) => void) => () => void;
+  /** Start watching a workspace tree. Triggers EXPLORER_TREE_CHANGED events on file changes. */
+  explorerStartWatching: (workspacePath: string) => Promise<void>;
+  /** Stop watching the current workspace tree. */
+  explorerStopWatching: () => Promise<void>;
 }
 
 declare global {

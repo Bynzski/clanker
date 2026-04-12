@@ -1,18 +1,22 @@
 import { ipcMain, shell } from 'electron';
 import * as path from 'node:path';
-import { FILE_LIST_DIRECTORY, FILE_READ, FILE_WRITE, FILE_CREATE, FILE_DELETE, FILE_RENAME, REVEAL_IN_FILE_MANAGER, FILE_WATCH, FILE_UNWATCH, FILE_CHANGED } from '../../shared/ipcChannels';
+import { FILE_LIST_DIRECTORY, FILE_READ, FILE_WRITE, FILE_CREATE, FILE_DELETE, FILE_RENAME, REVEAL_IN_FILE_MANAGER, FILE_WATCH, FILE_UNWATCH, FILE_CHANGED, EXPLORER_TREE_CHANGED, EXPLORER_START_WATCHING, EXPLORER_STOP_WATCHING } from '../../shared/ipcChannels';
 import type { FileListDirectoryRequest } from '../../shared/types/fileExplorer';
 import type { FileReadRequest, FileWriteRequest, FileWatchRequest } from '../../shared/types/editor';
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest } from '../../shared/types/fileOperations';
 import { listDirectory, readFile, writeFile, createFile, createDirectory, deleteEntry, renameEntry, resolveAndValidateWatchPath } from '../fileService';
 import type { FileWatcherService } from '../fileWatcher';
+import type { ExplorerWatcherService } from '../explorerWatcher';
 
 export interface RegisterFileIpcDeps {
   getFileWatcher: () => FileWatcherService;
+  /** Explorer watcher service for workspace tree auto-refresh. */
+  getExplorerWatcher: () => ExplorerWatcherService;
 }
 
 export function registerFileIpc(deps: RegisterFileIpcDeps): void {
   const fileWatcher = deps.getFileWatcher();
+  const explorerWatcher = deps.getExplorerWatcher();
   ipcMain.handle(FILE_LIST_DIRECTORY, async (_, request: FileListDirectoryRequest) => {
     return listDirectory(request);
   });
@@ -80,4 +84,15 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
   // Event channel — registered so the integration test can verify completeness.
   // This is one-way: main sends events to renderer (no handler needed).
   ipcMain.on(FILE_CHANGED, () => { });
+
+  ipcMain.handle(EXPLORER_START_WATCHING, (_, workspacePath: string) => {
+    explorerWatcher.watchWorkspace(workspacePath);
+  });
+
+  ipcMain.handle(EXPLORER_STOP_WATCHING, () => {
+    explorerWatcher.close();
+  });
+
+  // Event channel — registered so the integration test can verify completeness.
+  ipcMain.on(EXPLORER_TREE_CHANGED, () => { });
 }

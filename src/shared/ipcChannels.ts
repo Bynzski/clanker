@@ -138,6 +138,14 @@ export const VCS_GET_DEEP_LINK = 'vcs:get-deep-link';
 export const VCS_OPEN_DEEP_LINK = 'vcs:open-deep-link';
 
 /* ============================================================================
+ * Explorer
+ * ============================================================================ */
+
+export const EXPLORER_TREE_CHANGED = 'explorer-tree-changed';
+export const EXPLORER_START_WATCHING = 'explorer-start-watching';
+export const EXPLORER_STOP_WATCHING = 'explorer-stop-watching';
+
+/* ============================================================================
  * Editor
  * ============================================================================ */
 
@@ -249,6 +257,9 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   BROWSER_URL_UPDATED,
   FIT_ALL_PANES,
   GIT_STATUS_UPDATE,
+  EXPLORER_TREE_CHANGED,
+  EXPLORER_START_WATCHING,
+  EXPLORER_STOP_WATCHING,
   // Credentials
   CREDENTIAL_GENERATE_SSH_KEY,
   CREDENTIAL_GET_PUBLIC_KEY,

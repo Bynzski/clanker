@@ -4,7 +4,7 @@ import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw } from 'lu
 import type React from 'react';
 import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer';
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
-import { dirnamePath, isAbsolutePath, joinPaths, relativePath } from '../../lib/pathUtils';
+import { dirnamePath, isAbsolutePath, joinPaths, relativePath, normalizePath } from '../../lib/pathUtils';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import FileTree from './FileTree';
 import ContextMenu, { type ContextAction } from './ContextMenu';
@@ -77,6 +77,8 @@ export default function FileExplorer() {
     clearExplorerDirectoryState,
   } = useWorkspaceStore();
 
+  const normalizedWorkspacePath = workspacePath ? normalizePath(workspacePath) : workspacePath;
+
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: FileExplorerEntry } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FileExplorerEntry | null>(null);
   const [creating, setCreating] = useState<{ parentPath: string; type: 'file' | 'directory' } | null>(null);
@@ -84,8 +86,9 @@ export default function FileExplorer() {
   const dragHandleProps = useDragHandle();
 
   const loadDirectory = useCallback(async (directoryPath: string): Promise<FileListDirectoryResult> => {
+    const normalizedDirectoryPath = normalizePath(directoryPath);
     const requestWorkspaceId = activeWorkspaceId;
-    if (!workspacePath || !requestWorkspaceId) {
+    if (!normalizedWorkspacePath || !requestWorkspaceId) {
       return {
         success: false,
         entries: [],
@@ -94,13 +97,13 @@ export default function FileExplorer() {
       };
     }
 
-    setExplorerDirectoryLoading(directoryPath, true);
-    setExplorerDirectoryError(directoryPath, null);
+    setExplorerDirectoryLoading(normalizedDirectoryPath, true);
+    setExplorerDirectoryError(normalizedDirectoryPath, null);
 
     try {
       const result = await window.electronAPI.fileListDirectory({
-        workspacePath,
-        directoryPath,
+        workspacePath: normalizedWorkspacePath,
+        directoryPath: normalizedDirectoryPath,
       });
 
       if (useWorkspaceStore.getState().activeWorkspaceId !== requestWorkspaceId) {
@@ -108,25 +111,25 @@ export default function FileExplorer() {
       }
 
       if (result.success) {
-        setExplorerDirectoryEntries(directoryPath, result.entries);
-        setExplorerDirectoryError(directoryPath, null);
+        setExplorerDirectoryEntries(normalizedDirectoryPath, result.entries);
+        setExplorerDirectoryError(normalizedDirectoryPath, null);
       } else {
-        setExplorerDirectoryEntries(directoryPath, []);
-        setExplorerDirectoryError(directoryPath, result.error ?? 'Unable to load directory');
+        setExplorerDirectoryEntries(normalizedDirectoryPath, []);
+        setExplorerDirectoryError(normalizedDirectoryPath, result.error ?? 'Unable to load directory');
       }
 
       return result;
     } catch (error) {
       const errorMessage = getDirectoryLoadErrorMessage(error);
       console.error('Failed to load directory', {
-        workspacePath,
-        directoryPath,
+        workspacePath: normalizedWorkspacePath,
+        directoryPath: normalizedDirectoryPath,
         error,
       });
 
       if (useWorkspaceStore.getState().activeWorkspaceId === requestWorkspaceId) {
-        setExplorerDirectoryEntries(directoryPath, []);
-        setExplorerDirectoryError(directoryPath, errorMessage);
+        setExplorerDirectoryEntries(normalizedDirectoryPath, []);
+        setExplorerDirectoryError(normalizedDirectoryPath, errorMessage);
       }
 
       return {
@@ -137,29 +140,52 @@ export default function FileExplorer() {
       };
     } finally {
       if (useWorkspaceStore.getState().activeWorkspaceId === requestWorkspaceId) {
-        setExplorerDirectoryLoading(directoryPath, false);
+        setExplorerDirectoryLoading(normalizedDirectoryPath, false);
       }
     }
-  }, [activeWorkspaceId, setExplorerDirectoryEntries, setExplorerDirectoryError, setExplorerDirectoryLoading, workspacePath]);
+  }, [
+    activeWorkspaceId,
+    normalizedWorkspacePath,
+    setExplorerDirectoryEntries,
+    setExplorerDirectoryError,
+    setExplorerDirectoryLoading,
+  ]);
 
   const handleRefresh = useCallback(() => {
-    const pathsToReload = [workspacePath, ...explorerExpandedPaths];
+    const pathsToReload = [normalizedWorkspacePath, ...explorerExpandedPaths].filter(
+      (value): value is string => typeof value === 'string' && value.length > 0
+    );
     pathsToReload.forEach((dirPath) => {
       void loadDirectory(dirPath);
     });
-  }, [workspacePath, explorerExpandedPaths, loadDirectory]);
+  }, [normalizedWorkspacePath, explorerExpandedPaths, loadDirectory]);
 
   useEffect(() => {
-    if (!explorerVisible || !workspacePath) {
+    if (!explorerVisible || !normalizedWorkspacePath) {
       return;
     }
 
-    const hasRootEntries = Object.prototype.hasOwnProperty.call(explorerEntriesByPath, workspacePath);
-    const isRootLoading = explorerLoadingPaths.includes(workspacePath);
+    const hasRootEntries = Object.prototype.hasOwnProperty.call(explorerEntriesByPath, normalizedWorkspacePath);
+    const isRootLoading = explorerLoadingPaths.includes(normalizedWorkspacePath);
     if (!hasRootEntries && !isRootLoading) {
-      void loadDirectory(workspacePath);
+      void loadDirectory(normalizedWorkspacePath);
     }
-  }, [explorerEntriesByPath, explorerLoadingPaths, explorerVisible, loadDirectory, workspacePath]);
+  }, [explorerEntriesByPath, explorerLoadingPaths, explorerVisible, loadDirectory, normalizedWorkspacePath]);
+
+  /**
+   * Subscribe to filesystem change events from the explorer watcher.
+   * When a file or directory is created/deleted/renamed, reload the affected
+   * parent directory to update the tree automatically.
+   * Keep the subscription alive even while the explorer pane is hidden so
+   * cached tree state stays fresh for when the pane is shown again.
+   */
+  useEffect(() => {
+    const dispose = window.electronAPI.onExplorerTreeChanged((event) => {
+      void loadDirectory(event.directoryPath);
+    });
+
+    return dispose;
+  }, [loadDirectory]);
 
   const handleResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -215,7 +241,7 @@ export default function FileExplorer() {
     const targetPath = joinPaths(c.parentPath, name);
 
     const result = await window.electronAPI.fileCreate({
-      workspacePath,
+      workspacePath: normalizedWorkspacePath,
       targetPath,
       type: c.type,
     });
@@ -228,7 +254,7 @@ export default function FileExplorer() {
 
     setCreating(null);
     void loadDirectory(c.parentPath);
-  }, [creating, workspacePath, loadDirectory]);
+  }, [creating, normalizedWorkspacePath, loadDirectory]);
 
   const commitRenaming = useCallback(async (newName: string) => {
     const r = renaming;
@@ -238,7 +264,7 @@ export default function FileExplorer() {
     const newPath = joinPaths(parentDir, newName);
 
     const result = await window.electronAPI.fileRename({
-      workspacePath,
+      workspacePath: normalizedWorkspacePath,
       oldPath: r.path,
       newPath,
     });
@@ -291,7 +317,7 @@ export default function FileExplorer() {
     void loadDirectory(parentDir);
   }, [
     renaming,
-    workspacePath,
+    normalizedWorkspacePath,
     clearExplorerDirectoryState,
     loadDirectory,
     setExplorerDirectoryEntries,
@@ -387,7 +413,7 @@ export default function FileExplorer() {
     setDeleteTarget(null);
 
     const result = await window.electronAPI.fileDelete({
-      workspacePath,
+      workspacePath: normalizedWorkspacePath,
       targetPath: entry.path,
     });
 
@@ -434,7 +460,7 @@ export default function FileExplorer() {
     void loadDirectory(parentDir);
   }, [
     deleteTarget,
-    workspacePath,
+    normalizedWorkspacePath,
     clearExplorerDirectoryState,
     loadDirectory,
     setExplorerDirectoryEntries,
@@ -442,7 +468,7 @@ export default function FileExplorer() {
     setExplorerExpandedPaths,
   ]);
 
-  if (!explorerVisible || !workspacePath) {
+  if (!explorerVisible || !normalizedWorkspacePath) {
     return null;
   }
 
@@ -464,7 +490,7 @@ export default function FileExplorer() {
             type="button"
             className="file-explorer-action"
             onClick={() => startCreating(
-              resolveCreateParentPath(workspacePath, explorerSelectedPath, explorerExpandedPaths, explorerEntriesByPath),
+              resolveCreateParentPath(normalizedWorkspacePath, explorerSelectedPath, explorerExpandedPaths, explorerEntriesByPath),
               'file'
             )}
             title="New File"
@@ -475,7 +501,7 @@ export default function FileExplorer() {
             type="button"
             className="file-explorer-action"
             onClick={() => startCreating(
-              resolveCreateParentPath(workspacePath, explorerSelectedPath, explorerExpandedPaths, explorerEntriesByPath),
+              resolveCreateParentPath(normalizedWorkspacePath, explorerSelectedPath, explorerExpandedPaths, explorerEntriesByPath),
               'directory'
             )}
             title="New Folder"
@@ -502,9 +528,9 @@ export default function FileExplorer() {
       </div>
       <div className="file-explorer-content">
         <FileTree
-          rootPath={workspacePath}
-          workspacePath={workspacePath}
-          rootError={explorerErrorsByPath[workspacePath]}
+          rootPath={normalizedWorkspacePath}
+          workspacePath={normalizedWorkspacePath}
+          rootError={explorerErrorsByPath[normalizedWorkspacePath]}
           onLoadDirectory={loadDirectory}
           gitChanges={gitChanges}
           onContextMenu={handleTreeContextMenu}
