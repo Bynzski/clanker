@@ -166,6 +166,7 @@ app.whenReady().then(() => {
 
   registerWindowIpc({
     getMainWindow: () => mainWindow,
+    getBrowserViews: () => browserViews,
   });
 
   registerAiCommitIpc({

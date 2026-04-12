@@ -43,16 +43,52 @@ interface RegisterBrowserIpcDeps {
 
 const DEFAULT_BROWSER_URL = 'https://github.com';
 
+function isBrowserKeyboardZoomShortcut(input: {
+  control: boolean;
+  meta: boolean;
+  alt: boolean;
+  key?: string;
+  code?: string;
+}): boolean {
+  const primaryModifier = input.control || input.meta;
+  if (!primaryModifier || input.alt) {
+    return false;
+  }
+
+  const key = input.key?.toLowerCase() ?? '';
+  const code = input.code?.toLowerCase() ?? '';
+
+  return code === 'equal'
+    || code === 'minus'
+    || code === 'digit0'
+    || key === '='
+    || key === '+'
+    || key === '-'
+    || key === '_'
+    || key === '0';
+}
+
 function attachBrowserShortcutHandlers(view: WebContentsView, sendFitAllPanes: () => void) {
-  view.webContents.on('before-input-event', (_event, input) => {
-    if (
-      (input.control || input.meta) &&
-      input.shift &&
-      input.key.toLowerCase() === 'f'
-    ) {
+  view.webContents.on('before-input-event', (event, input) => {
+    if (isBrowserKeyboardZoomShortcut(input)) {
+      event.preventDefault();
+      return;
+    }
+
+    if ((input.control || input.meta) && input.shift && input.key?.toLowerCase() === 'f') {
       sendFitAllPanes();
     }
   });
+}
+
+function syncBrowserViewZoomToApp(mainWindow: BrowserWindow, view: WebContentsView) {
+  const appZoomLevel = mainWindow.webContents.getZoomLevel();
+  if (appZoomLevel === 0) {
+    return;
+  }
+
+  const nextLevel = view.webContents.getZoomLevel() + appZoomLevel;
+  view.webContents.setZoomLevel(nextLevel);
 }
 
 function attachBrowserSecurityHandlers(view: WebContentsView) {
@@ -93,6 +129,7 @@ function createBrowserViewForWorkspace(
       win.webContents.send(FIT_ALL_PANES);
     }
   });
+  syncBrowserViewZoomToApp(mainWindow, view);
   view.setVisible(false);
   view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
   mainWindow.contentView.addChildView(view);

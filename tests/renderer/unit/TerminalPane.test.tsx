@@ -403,7 +403,7 @@ describe('TerminalPane', () => {
   });
 
   describe('keyboard shortcuts', () => {
-    it('forwards zoom in shortcut through electron API when xterm is focused', async () => {
+    it('does not own app zoom shortcuts when xterm is focused', async () => {
       setupStoreWithTerminal('t1', 'p1');
       render(<TerminalPane paneId="p1" />);
 
@@ -415,6 +415,7 @@ describe('TerminalPane', () => {
       const preventDefault = vi.fn();
       const handled = attachedKeyHandler?.({
         key: '=',
+        code: 'Equal',
         ctrlKey: true,
         metaKey: false,
         altKey: false,
@@ -422,9 +423,9 @@ describe('TerminalPane', () => {
         preventDefault,
       } as unknown as KeyboardEvent);
 
-      expect(handled).toBe(false);
-      expect(preventDefault).toHaveBeenCalled();
-      expect(mockZoomInWindow).toHaveBeenCalled();
+      expect(handled).toBe(true);
+      expect(preventDefault).not.toHaveBeenCalled();
+      expect(mockZoomInWindow).not.toHaveBeenCalled();
     });
 
     it('keeps copy shortcut behavior when selected text exists', async () => {

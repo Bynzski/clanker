@@ -95,11 +95,23 @@ describe('registerWindowIpc', () => {
       close: vi.fn(),
       isMaximized: vi.fn(() => false),
     };
+    const mockBrowserView = {
+      webContents: {
+        getZoomLevel: vi.fn(() => 1.5),
+        setZoomLevel: vi.fn(),
+      },
+    };
+    const mockBrowserViews = new Map<string, { view: typeof mockBrowserView }>([
+      ['browser-1', { view: mockBrowserView }],
+    ]);
 
     return {
       deps: {
         getMainWindow: () => mockMainWindow as never,
+        getBrowserViews: () => mockBrowserViews as never,
       },
+      mockMainWindow,
+      mockBrowserView,
     };
   };
 
@@ -189,6 +201,39 @@ describe('registerWindowIpc — error-path: null main window', () => {
     };
   };
 
+  const createMockDeps = () => {
+    const mockMainWindow = {
+      webContents: {
+        send: vi.fn(),
+        getZoomLevel: vi.fn(() => 0),
+        setZoomLevel: vi.fn(),
+      },
+      minimize: vi.fn(),
+      unmaximize: vi.fn(),
+      maximize: vi.fn(),
+      close: vi.fn(),
+      isMaximized: vi.fn(() => false),
+    };
+    const mockBrowserView = {
+      webContents: {
+        getZoomLevel: vi.fn(() => 1.5),
+        setZoomLevel: vi.fn(),
+      },
+    };
+    const mockBrowserViews = new Map<string, { view: typeof mockBrowserView }>([
+      ['browser-1', { view: mockBrowserView }],
+    ]);
+
+    return {
+      deps: {
+        getMainWindow: () => mockMainWindow as never,
+        getBrowserViews: () => mockBrowserViews as never,
+      },
+      mockMainWindow,
+      mockBrowserView,
+    };
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -275,6 +320,39 @@ describe('registerWindowIpc — error-path: null main window', () => {
 
     const result = handler();
     expect(result).toBeUndefined();
+  });
+
+  test('ZOOM_IN_WINDOW propagates zoom delta to browser views', () => {
+    const { deps, mockBrowserView, mockMainWindow } = createMockDeps();
+    registerWindowIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'zoom-in-window'
+    )?.[1] as () => void;
+
+    handler();
+
+    expect(mockMainWindow.webContents.setZoomLevel).toHaveBeenCalledWith(0.5);
+    expect(mockBrowserView.webContents.setZoomLevel).toHaveBeenCalledWith(2);
+  });
+
+  test('RESET_ZOOM_WINDOW preserves browser view page zoom offset', () => {
+    const { deps, mockBrowserView, mockMainWindow } = createMockDeps();
+    mockMainWindow.webContents.getZoomLevel = vi.fn(() => 1.5);
+    mockMainWindow.webContents.setZoomLevel = vi.fn();
+    mockBrowserView.webContents.getZoomLevel = vi.fn(() => 3);
+    mockBrowserView.webContents.setZoomLevel = vi.fn();
+
+    registerWindowIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'reset-zoom-window'
+    )?.[1] as () => void;
+
+    handler();
+
+    expect(mockMainWindow.webContents.setZoomLevel).toHaveBeenCalledWith(0);
+    expect(mockBrowserView.webContents.setZoomLevel).toHaveBeenCalledWith(1.5);
   });
 });
 

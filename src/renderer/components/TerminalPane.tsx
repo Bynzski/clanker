@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react'
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { LocateFixed, Lock, Unlock } from 'lucide-react';
 import { useDragHandle } from './DynamicPaneLayout';
-import { getZoomShortcutAction } from '../lib/keyboardShortcuts';
 import './TerminalPane.css';
 import '@xterm/xterm/css/xterm.css';
 
@@ -352,19 +351,6 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
     });
 
     xterm.attachCustomKeyEventHandler((event) => {
-      const zoomAction = getZoomShortcutAction(event);
-      if (zoomAction != null) {
-        if (zoomAction === 'in') {
-          void window.electronAPI.zoomInWindow();
-        } else if (zoomAction === 'out') {
-          void window.electronAPI.zoomOutWindow();
-        } else {
-          void window.electronAPI.resetZoomWindow();
-        }
-        event.preventDefault();
-        return false;
-      }
-
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'c') {
         if (xterm.hasSelection()) {
           const selection = xterm.getSelection();

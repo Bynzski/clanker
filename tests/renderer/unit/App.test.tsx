@@ -476,7 +476,7 @@ describe('App', () => {
       render(<App />);
 
       await act(async () => {
-        fireEvent.keyDown(window, { key: '=', ctrlKey: true });
+        fireEvent.keyDown(window, { key: '=', code: 'Equal', ctrlKey: true });
       });
 
       expect(mockZoomInWindow).toHaveBeenCalled();
@@ -486,7 +486,7 @@ describe('App', () => {
       render(<App />);
 
       await act(async () => {
-        fireEvent.keyDown(window, { key: '+', metaKey: true });
+        fireEvent.keyDown(window, { key: '+', code: 'Equal', metaKey: true, shiftKey: true });
       });
 
       expect(mockZoomInWindow).toHaveBeenCalled();
@@ -496,7 +496,7 @@ describe('App', () => {
       render(<App />);
 
       await act(async () => {
-        fireEvent.keyDown(window, { key: '-', ctrlKey: true });
+        fireEvent.keyDown(window, { key: '-', code: 'Minus', ctrlKey: true });
       });
 
       expect(mockZoomOutWindow).toHaveBeenCalled();
@@ -506,7 +506,7 @@ describe('App', () => {
       render(<App />);
 
       await act(async () => {
-        fireEvent.keyDown(window, { key: '0', ctrlKey: true });
+        fireEvent.keyDown(window, { key: '0', code: 'Digit0', ctrlKey: true });
       });
 
       expect(mockResetZoomWindow).toHaveBeenCalled();
