@@ -23,8 +23,9 @@ interface Props {
 // mounts for the same terminalId, the cached instance is reused — preserving
 // scrollback, cursor position, and running PTY session state.
 //
-// Entries are removed when a terminal is killed (user closes it) or when the
-// PTY exits.
+// Entries are removed when a terminal is intentionally closed. Natural PTY
+// exit keeps the cached xterm around so the finished session remains visible
+// when the workspace is revisited.
 // ---------------------------------------------------------------------------
 
 interface CachedTerminal {
@@ -33,9 +34,39 @@ interface CachedTerminal {
 }
 
 const xtermCache = new Map<string, CachedTerminal>();
+const disposedTerminalIds = new Set<string>();
+
+export function cacheTerminalInstance(terminalId: string, xterm: XTermInstance, fitAddon: FitAddonInstance): void {
+  if (disposedTerminalIds.has(terminalId)) {
+    xterm.dispose();
+    return;
+  }
+
+  xtermCache.set(terminalId, { xterm, fitAddon });
+}
+
+export function writeCachedTerminalData(terminalId: string, data: string): boolean {
+  const cached = xtermCache.get(terminalId);
+  if (!cached) {
+    return false;
+  }
+
+  cached.xterm.write(data);
+  return true;
+}
+
+export function writeCachedTerminalExit(terminalId: string, exitCode: number): boolean {
+  const cached = xtermCache.get(terminalId);
+  if (!cached) {
+    return false;
+  }
+
+  cached.xterm.write(`\r\n\x1b[33mProcess exited with code ${exitCode}\x1b[0m\r\n`);
+  return true;
+}
 
 /**
- * Remove a cached xterm instance (called on terminal kill/exit).
+ * Remove a cached xterm instance.
  * Disposes the xterm and removes it from the cache.
  */
 export function evictCachedTerminal(terminalId: string): void {
@@ -46,6 +77,15 @@ export function evictCachedTerminal(terminalId: string): void {
   }
 }
 
+export function markTerminalDisposed(terminalId: string): void {
+  disposedTerminalIds.add(terminalId);
+  evictCachedTerminal(terminalId);
+}
+
+export function isTerminalDisposed(terminalId: string): boolean {
+  return disposedTerminalIds.has(terminalId);
+}
+
 /**
  * Clear all cached xterm instances. Used in tests to ensure isolation.
  */
@@ -54,6 +94,7 @@ export function clearTerminalCache(): void {
     cached.xterm.dispose();
   }
   xtermCache.clear();
+  disposedTerminalIds.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +175,6 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
 
     let cancelled = false;
     let handleResize: (() => void) | null = null;
-    let newlyCreated = false;
     setTerminalRuntimeReady(false);
 
     // Check for a cached xterm instance (workspace tab switch restore)
@@ -147,6 +187,9 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
       }
       xtermRef.current = cached.xterm;
       fitAddonRef.current = cached.fitAddon;
+      if (terminalId != null) {
+        xtermCache.set(terminalId, cached);
+      }
       setTerminalRuntimeReady(true);
 
       // Re-fit to the new container dimensions
@@ -216,7 +259,9 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
 
         xtermRef.current = xterm;
         fitAddonRef.current = fitAddon;
-        newlyCreated = true;
+        if (terminalId != null) {
+          cacheTerminalInstance(terminalId, xterm, fitAddon);
+        }
         setTerminalRuntimeReady(true);
 
         handleResize = () => {
@@ -258,14 +303,22 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
       const xterm = xtermRef.current;
       const fitAddon = fitAddonRef.current;
       if (xterm && fitAddon && terminalId != null) {
+        if (isTerminalDisposed(terminalId)) {
+          xtermRef.current = null;
+          fitAddonRef.current = null;
+          setTerminalRuntimeReady(false);
+          if (resizeTimeoutRef.current != null) {
+            clearTimeout(resizeTimeoutRef.current);
+            resizeTimeoutRef.current = null;
+          }
+          return;
+        }
+
         // Detach xterm element from the (soon-to-be-removed) DOM container
         if (xterm.element?.parentNode) {
           xterm.element.parentNode.removeChild(xterm.element);
         }
         xtermCache.set(terminalId, { xterm, fitAddon });
-      } else if (newlyCreated && xterm) {
-        // Newly created but never connected to a terminal — dispose
-        xterm.dispose();
       }
 
       xtermRef.current = null;
@@ -282,15 +335,15 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
   }, [terminalId]);
 
   // -------------------------------------------------------------------------
-  // IPC data streaming — connects xterm to PTY data/exit channels
+  // IPC controls — local input/selection/resize handling only.
+  // Global output delivery is handled once at app level so hidden workspaces
+  // continue receiving terminal data and exit events.
   // -------------------------------------------------------------------------
   useEffect(() => {
     if (!terminalRuntimeReady || xtermRef.current == null || terminalId == null) return;
 
     const xterm = xtermRef.current;
     let inputDisposable: { dispose: () => void } | null = null;
-    let disposeData: (() => void) | null = null;
-    let disposeExit: (() => void) | null = null;
     let disposeResized: (() => void) | null = null;
     let selectionDisposable: { dispose: () => void } | null = null;
 
@@ -305,28 +358,10 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
       window.electronAPI.writeTerminal(terminalId, data).catch(console.error);
     });
 
-    const dataHandler = (data: { id: string; data: string }) => {
-      if (data.id === terminalId && xtermRef.current != null) {
-        xtermRef.current.write(data.data);
-      }
-    };
-
-    disposeData = window.electronAPI.onTerminalData(dataHandler);
-
     // Signal readiness to main process — this triggers flush of startup buffer.
     // Critical for DA1 query/response: ensures xterm is ready to receive and respond
     // to terminal capability queries before PTY output starts flowing.
     window.electronAPI.terminalReady(terminalId).catch(console.error);
-
-    const exitHandler = (data: { id: string; exitCode: number }) => {
-      if (data.id === terminalId && xtermRef.current != null) {
-        xtermRef.current.write(`\r\n\x1b[33mProcess exited with code ${data.exitCode}\x1b[0m\r\n`);
-        // PTY exited — evict cached instance so it's not reused after exit
-        evictCachedTerminal(terminalId);
-      }
-    };
-
-    disposeExit = window.electronAPI.onTerminalExit(exitHandler);
 
     // Phase 1: resize confirmation from main process.
     // If confirmed dimensions differ from xterm's internal dims, re-fit once.
@@ -370,8 +405,6 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
 
     return () => {
       inputDisposable?.dispose();
-      disposeData?.();
-      disposeExit?.();
       disposeResized?.();
       selectionDisposable?.dispose();
     };
@@ -443,7 +476,7 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
     if (terminal == null) return;
     try {
       // Evict cached xterm before killing the PTY
-      evictCachedTerminal(terminal.id);
+      markTerminalDisposed(terminal.id);
       await window.electronAPI.killTerminal(terminal.id);
       removeTerminal(terminal.id);
       if (paneId != null) {

@@ -7,6 +7,7 @@ import { WorkspaceGateFullscreen, WorkspaceGateModal } from './components/Worksp
 import { Pane, Terminal, useWorkspaceStore } from './store/workspaceStore';
 import { getZoomShortcutAction, isSaveShortcut } from './lib/keyboardShortcuts';
 import { startEditorFileWatcher } from './lib/editorFileWatcher';
+import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import './App.css';
 
 const DynamicPaneLayout = lazy(() => import('./components/DynamicPaneLayout'));
@@ -79,6 +80,13 @@ function App() {
 
   useEffect(() => {
     const unsubscribe = startEditorFileWatcher();
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = startTerminalSessionBridge();
     return () => {
       unsubscribe();
     };
