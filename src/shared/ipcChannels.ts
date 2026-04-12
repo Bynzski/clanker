@@ -59,6 +59,8 @@ export const REVEAL_IN_FILE_MANAGER = 'reveal-in-file-manager';
 export const CAN_GO_BACK = 'can-go-back';
 export const CAN_GO_FORWARD = 'can-go-forward';
 export const BROWSER_URL_UPDATED = 'browser-url-updated';
+export const BROWSER_GET_URL = 'browser-get-url';
+export const BROWSER_SAVE_URL = 'browser-save-url';
 export const FIT_ALL_PANES = 'fit-all-panes';
 
 /* ============================================================================
@@ -198,6 +200,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   REVEAL_IN_FILE_MANAGER,
   CAN_GO_BACK,
   CAN_GO_FORWARD,
+  BROWSER_GET_URL,
+  BROWSER_SAVE_URL,
   // Window controls
   MINIMIZE_WINDOW,
   TOGGLE_MAXIMIZE_WINDOW,

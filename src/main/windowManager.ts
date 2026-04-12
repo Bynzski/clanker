@@ -5,12 +5,8 @@
  * Extracted from main.ts per S2.6.
  */
 
-import { BrowserWindow, Menu, WebContentsView } from 'electron';
+import { BrowserWindow, Menu } from 'electron';
 import * as path from 'path';
-
-export interface WindowManagerDeps {
-  getPreloadPath: () => string;
-}
 
 export interface CreateMainWindowOptions {
   preloadPath: string;
@@ -20,7 +16,6 @@ export interface CreateMainWindowOptions {
   fileWatcher: {
     unwatchAll: () => void;
   };
-  browserViews: Map<string, { view: WebContentsView; url: string }>;
   onWindowClosed?: () => void;
 }
 
@@ -62,7 +57,7 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   window: BrowserWindow;
   cleanup: () => void;
 } {
-  const { preloadPath, gitService, fileWatcher, browserViews, onWindowClosed } = deps;
+  const { preloadPath, gitService, fileWatcher, onWindowClosed } = deps;
 
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -94,10 +89,6 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   }
 
   const cleanup = () => {
-    browserViews.forEach(({ view }) => {
-      view.webContents.close();
-    });
-    browserViews.clear();
     gitService.stopPolling();
     fileWatcher.unwatchAll();
     onWindowClosed?.();

@@ -119,22 +119,6 @@ describe('windowManager', () => {
   describe('createMainWindow behavior', () => {
     // We test the behavior patterns without actual Electron mocks
 
-    test('cleanup pattern: clears browser views', () => {
-      // Simulate the cleanup behavior
-      const mockView = { webContents: { close: vi.fn() } };
-      const browserViews = new Map<string, { view: typeof mockView; url: string }>();
-      browserViews.set('ws1', { view: mockView, url: 'https://example.com' });
-
-      // Simulate cleanup from createMainWindow
-      browserViews.forEach(({ view }) => {
-        view.webContents.close();
-      });
-      browserViews.clear();
-
-      expect(mockView.webContents.close).toHaveBeenCalled();
-      expect(browserViews.size).toBe(0);
-    });
-
     test('cleanup pattern: stops git polling', () => {
       const stopPolling = vi.fn();
 

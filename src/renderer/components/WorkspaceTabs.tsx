@@ -34,8 +34,8 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
     }
 
     await terminateWorkspaceTerminals(workspace);
-    if (typeof window.electronAPI?.browserDisposeWorkspace === 'function') {
-      await window.electronAPI.browserDisposeWorkspace(id);
+    if (typeof window.electronAPI?.browserHide === 'function') {
+      await window.electronAPI.browserHide(id);
     }
     closeWorkspace(id);
     // Belt-and-suspenders: stop git polling to prevent stale workspace polling

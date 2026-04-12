@@ -2,7 +2,8 @@
  * Browser IPC Handlers
  *
  * Registers all browser-related IPC handlers and manages WebContentsView instances.
- * Extracted from main.ts per S2.2.
+ * Each workspace gets its own WebContentsView but they all share a global partition
+ * for cookies and session data. Extracted from main.ts per S2.2.
  */
 
 import { ipcMain, BrowserWindow, WebContentsView, shell } from 'electron';
@@ -23,6 +24,8 @@ import {
   CAN_GO_BACK,
   CAN_GO_FORWARD,
   BROWSER_URL_UPDATED,
+  BROWSER_GET_URL,
+  BROWSER_SAVE_URL,
   FIT_ALL_PANES,
 } from '../../shared/ipcChannels';
 
@@ -79,7 +82,7 @@ function createBrowserViewForWorkspace(
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
-      partition: `persist:browser-${workspaceId}`,
+      partition: 'persist:browser-global',
     },
   });
 
@@ -191,7 +194,6 @@ function destroyBrowserView(workspaceId: string, deps: RegisterBrowserIpcDeps) {
 export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
   const { getMainWindow, getBrowserViews } = deps;
 
-  // Browser view with viewport coordinates
   ipcMain.handle(BROWSER_SET_BOUNDS, (_, workspaceId: string, viewportBounds: { x: number; y: number; width: number; height: number }) => {
     if (!workspaceId) {
       return;
@@ -230,7 +232,6 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
 
     entry.url = safeUrl;
 
-    // Notify URL update
     const mainWindow = getMainWindow();
     if (mainWindow) {
       mainWindow.webContents.send(BROWSER_URL_UPDATED, { workspaceId, url: safeUrl });
@@ -320,11 +321,24 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     return entry?.view.webContents.navigationHistory.canGoForward() ?? false;
   });
 
-  // Event channels — registered so the integration test can verify completeness.
-  // These are one-way: main sends events to renderer (no handler needed).
+  ipcMain.handle(BROWSER_GET_URL, (_, workspaceId: string) => {
+    const entry = getBrowserViews().get(workspaceId);
+    return entry?.url ?? null;
+  });
+
+  ipcMain.handle(BROWSER_SAVE_URL, (_, workspaceId: string, url: string) => {
+    const safeUrl = normalizeAppBrowserUrl(url);
+    if (!safeUrl) return false;
+    const entry = getBrowserViews().get(workspaceId);
+    if (entry) {
+      entry.url = safeUrl;
+      return true;
+    }
+    return false;
+  });
+
   ipcMain.on(BROWSER_URL_UPDATED, () => { });
   ipcMain.on(FIT_ALL_PANES, () => { });
 }
 
-// Export helpers for testing
 export { createBrowserViewForWorkspace, ensureBrowserViewEntry, setActiveBrowserWorkspace, updateBrowserView, hideBrowserView, destroyBrowserView };

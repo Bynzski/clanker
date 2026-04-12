@@ -139,14 +139,14 @@ describe('registerBrowserIpc', () => {
     });
   });
 
-  test('registers exactly 11 browser IPC channels', () => {
+  test('registers exactly 13 browser IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerBrowserIpc(deps);
 
     // Count how many times handle was called
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(11);
+    expect(handleCalls.length).toBe(13);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -158,7 +158,7 @@ describe('registerBrowserIpc', () => {
 
     // Handlers should be registered again
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(22);
+    expect(handleCalls.length).toBe(26);
   });
 
   test('browser channels do not overlap with terminal channels', () => {

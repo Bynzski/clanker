@@ -205,7 +205,6 @@ app.whenReady().then(() => {
     preloadPath,
     gitService,
     fileWatcher,
-    browserViews,
     onWindowClosed: cleanupWindowState,
   }));
 
@@ -215,7 +214,6 @@ app.whenReady().then(() => {
         preloadPath,
         gitService,
         fileWatcher,
-        browserViews,
         onWindowClosed: cleanupWindowState,
       }));
     }
@@ -238,4 +236,4 @@ app.on('before-quit', () => {
 });
 
 // Export shared state for test access
-export { terminals, browserViews, activeBrowserWorkspaceId, gitService, store, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS };
+export { terminals, activeBrowserWorkspaceId, gitService, store, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS };
