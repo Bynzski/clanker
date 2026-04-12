@@ -1,8 +1,10 @@
 import type { WorkspaceTab } from '../store/workspaceStore';
+import { markTerminalDisposed } from '../components/TerminalPane';
 
 export async function terminateWorkspaceTerminals(workspace: WorkspaceTab): Promise<void> {
   for (const terminal of workspace.terminals) {
     try {
+      markTerminalDisposed(terminal.id);
       await window.electronAPI.killTerminal(terminal.id);
     } catch (err) {
       console.error('Failed to kill terminal:', err);

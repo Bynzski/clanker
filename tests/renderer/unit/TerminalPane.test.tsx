@@ -341,7 +341,7 @@ describe('TerminalPane', () => {
   // Terminal Initialization (xterm mocking)
   // =========================================================================
   describe('terminal initialization', () => {
-    it('sets up terminal data listener', async () => {
+    it('does not register terminal data listener locally', async () => {
       setupStoreWithTerminal('t1', 'p1');
 
       render(<TerminalPane paneId="p1" />);
@@ -352,11 +352,11 @@ describe('TerminalPane', () => {
       });
 
       await waitFor(() => {
-        expect(mockOnTerminalData).toHaveBeenCalled();
+        expect(mockOnTerminalData).not.toHaveBeenCalled();
       });
     });
 
-    it('sets up terminal exit listener', async () => {
+    it('does not register terminal exit listener locally', async () => {
       setupStoreWithTerminal('t1', 'p1');
 
       render(<TerminalPane paneId="p1" />);
@@ -367,7 +367,7 @@ describe('TerminalPane', () => {
       });
 
       await waitFor(() => {
-        expect(mockOnTerminalExit).toHaveBeenCalled();
+        expect(mockOnTerminalExit).not.toHaveBeenCalled();
       });
     });
 
@@ -472,13 +472,7 @@ describe('TerminalPane', () => {
         await vi.advanceTimersByTimeAsync(100);
       });
 
-      // Access the dispose function that was registered
-      const dataDispose = mockOnTerminalData.mock.results[0]?.value;
-
-      unmount();
-
-      // Data dispose function should have been accessed (for cleanup)
-      expect(dataDispose).toBeDefined();
+      expect(() => unmount()).not.toThrow();
     });
   });
 
