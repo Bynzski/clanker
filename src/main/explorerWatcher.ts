@@ -5,7 +5,7 @@
  * Separate from FileWatcherService which watches individual open editor documents.
  *
  * On `add` / `addDir` / `unlink` / `unlinkDir` events inside the watched workspace:
- * - Sends EXPLORER_TREE_CHANGED to renderer (parent directory path) for explorer refresh
+ * - Batches EXPLORER_TREE_CHANGED notifications by parent directory before refreshing
  * - Schedules a debounced git status refresh via the existing GIT_STATUS_UPDATE pipeline
  *
  * Lifecycle: owned in main process, started/stopped on workspace open/close/switch.
@@ -31,6 +31,12 @@ interface ExplorerWatcherDeps {
  * Matches the existing FileWatcherService GIT_STATUS_DEBOUNCE_MS.
  */
 const GIT_STATUS_DEBOUNCE_MS = 500;
+
+/**
+ * Debounce delay for explorer tree refresh batches.
+ * Coalesces bursty filesystem events into a single renderer update pass.
+ */
+const EXPLORER_TREE_DEBOUNCE_MS = 100;
 
 /** Default patterns to ignore — these directories generate noise without useful events. */
 const DEFAULT_IGNORED = [
@@ -95,6 +101,8 @@ export class ExplorerWatcherService {
   private watcher: chokidar.FSWatcher | null = null;
   private workspacePath: string | null = null;
   private workspaceRealPath: string | null = null;
+  private pendingExplorerDirectories = new Set<string>();
+  private explorerTreeTimer: NodeJS.Timeout | null = null;
   private gitStatusTimer: NodeJS.Timeout | null = null;
   private getMainWindow: () => BrowserWindow | null;
   private getCurrentWorkspace: () => string | null;
@@ -175,6 +183,12 @@ export class ExplorerWatcherService {
 
   /** Internal close without resetting workspacePath (used by watchWorkspace for re-watch). */
   private closeInternal(): void {
+    if (this.explorerTreeTimer !== null) {
+      clearTimeout(this.explorerTreeTimer);
+      this.explorerTreeTimer = null;
+    }
+    this.pendingExplorerDirectories.clear();
+
     if (this.gitStatusTimer !== null) {
       clearTimeout(this.gitStatusTimer);
       this.gitStatusTimer = null;
@@ -210,10 +224,38 @@ export class ExplorerWatcherService {
 
     const mainWindow = this.getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(EXPLORER_TREE_CHANGED, { directoryPath: parentDir });
+      this.pendingExplorerDirectories.add(parentDir);
+      this.scheduleExplorerTreeRefresh();
     }
 
     this.scheduleGitStatusRefresh();
+  }
+
+  /**
+   * Schedule a debounced batch of explorer refresh events.
+   * Multiple filesystem events can target the same directory, so we coalesce
+   * them before notifying the renderer.
+   */
+  private scheduleExplorerTreeRefresh(): void {
+    if (this.explorerTreeTimer !== null) {
+      clearTimeout(this.explorerTreeTimer);
+    }
+
+    this.explorerTreeTimer = setTimeout(() => {
+      this.explorerTreeTimer = null;
+
+      const mainWindow = this.getMainWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        this.pendingExplorerDirectories.clear();
+        return;
+      }
+
+      const directories = Array.from(this.pendingExplorerDirectories);
+      this.pendingExplorerDirectories.clear();
+      for (const directoryPath of directories) {
+        mainWindow.webContents.send(EXPLORER_TREE_CHANGED, { directoryPath });
+      }
+    }, EXPLORER_TREE_DEBOUNCE_MS);
   }
 
   /**

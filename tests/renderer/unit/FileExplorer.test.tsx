@@ -134,7 +134,7 @@ describe('FileExplorer', () => {
     expect(electronApi.fileListDirectory).not.toHaveBeenCalled();
   });
 
-  it('still refreshes from explorer watcher events while hidden', async () => {
+  it('ignores explorer watcher events while hidden', async () => {
     setActiveWorkspace({ explorerVisible: false, workspacePath: '/workspace' });
     const fileListDirectory = vi.fn().mockResolvedValue({ success: true, entries: [] });
     let explorerTreeChangedHandler: ((event: ExplorerTreeChangedEvent) => void) | null = null;
@@ -157,6 +157,49 @@ describe('FileExplorer', () => {
       explorerTreeChangedHandler?.({ directoryPath: '/workspace/src' });
     });
 
+    expect(fileListDirectory).not.toHaveBeenCalled();
+  });
+
+  it('coalesces repeated explorer watcher events for expanded directories', async () => {
+    setActiveWorkspace({ workspacePath: '/workspace' });
+    const rootEntries = [createEntry('src', '/workspace/src', true)];
+    const childEntries = [createEntry('index.ts', '/workspace/src/index.ts', false)];
+    let explorerTreeChangedHandler: ((event: ExplorerTreeChangedEvent) => void) | null = null;
+    const fileListDirectory = vi.fn(async (request: FileListDirectoryRequest): Promise<FileListDirectoryResult> => {
+      if (request.directoryPath === '/workspace') {
+        return { success: true, entries: rootEntries };
+      }
+
+      if (request.directoryPath === '/workspace/src') {
+        return { success: true, entries: childEntries };
+      }
+
+      return { success: false, entries: [], errorCode: 'invalid-path', error: 'bad path' };
+    });
+    installElectronApiMock({
+      fileListDirectory,
+      onExplorerTreeChanged: vi.fn((callback) => {
+        explorerTreeChangedHandler = callback;
+        return () => {
+          explorerTreeChangedHandler = null;
+        };
+      }),
+    });
+
+    render(<FileExplorer />);
+
+    fireEvent.click(await screen.findByText('src'));
+    expect(await screen.findByText('index.ts')).toBeInTheDocument();
+
+    fileListDirectory.mockClear();
+
+    await act(async () => {
+      explorerTreeChangedHandler?.({ directoryPath: '/workspace/src' });
+      explorerTreeChangedHandler?.({ directoryPath: '/workspace/src' });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    });
+
+    expect(fileListDirectory).toHaveBeenCalledTimes(1);
     expect(fileListDirectory).toHaveBeenCalledWith({
       workspacePath: '/workspace',
       directoryPath: '/workspace/src',

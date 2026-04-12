@@ -79,6 +79,8 @@ describe('ExplorerWatcherService', () => {
         path.join(realSubdir, 'new.ts')
       );
 
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
       expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
         'explorer-tree-changed',
         { directoryPath: path.join(linkRoot, 'src') }
@@ -153,6 +155,41 @@ describe('ExplorerWatcherService', () => {
   });
 
   describe('filesystem events', () => {
+    test('coalesces repeated filesystem events into one explorer refresh per directory', async () => {
+      watcher.watchWorkspace(tempDir);
+      await new Promise((r) => setTimeout(r, 400));
+
+      vi.clearAllMocks();
+
+      (watcher as unknown as { handleEvent: (t: 'add', p: string) => void }).handleEvent(
+        'add',
+        path.join(tempDir, 'src', 'one.txt')
+      );
+      (watcher as unknown as { handleEvent: (t: 'add', p: string) => void }).handleEvent(
+        'add',
+        path.join(tempDir, 'src', 'two.txt')
+      );
+      (watcher as unknown as { handleEvent: (t: 'unlink', p: string) => void }).handleEvent(
+        'unlink',
+        path.join(tempDir, 'src', 'three.txt')
+      );
+
+      expect(mockMainWindow.webContents.send).not.toHaveBeenCalledWith(
+        'explorer-tree-changed',
+        expect.anything()
+      );
+
+      await new Promise((r) => setTimeout(r, 150));
+
+      const explorerEvents = (mockMainWindow.webContents.send as ReturnType<typeof vi.fn>)
+        .mock.calls.filter(([ch]) => ch === 'explorer-tree-changed');
+      expect(explorerEvents).toHaveLength(1);
+      expect(explorerEvents[0]).toEqual([
+        'explorer-tree-changed',
+        { directoryPath: path.join(tempDir, 'src') },
+      ]);
+    });
+
     test('emits EXPLORER_TREE_CHANGED on file add', async () => {
       watcher.watchWorkspace(tempDir);
       // Wait for chokidar to finish initial scan
