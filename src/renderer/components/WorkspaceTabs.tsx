@@ -22,11 +22,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
    */
   useEffect(() => {
     const startWatchingWorkspace = (workspaceId: string | null, state = useWorkspaceStore.getState()) => {
-      if (workspaceId == null) {
-        return;
-      }
-
-      const workspace = state.workspaces.find((entry) => entry.id === workspaceId);
+      const workspace = state.getWorkspaceById(workspaceId);
       if (workspace && typeof window.electronAPI?.explorerStartWatching === 'function') {
         void window.electronAPI.explorerStartWatching(normalizePath(workspace.workspacePath));
       }
@@ -56,7 +52,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
   const handleClose = async (id: string, event: MouseEvent) => {
     event.stopPropagation();
 
-    const workspace = workspaces.find((entry) => entry.id === id);
+    const workspace = useWorkspaceStore.getState().getWorkspaceById(id);
     if (workspace == null) {
       return;
     }

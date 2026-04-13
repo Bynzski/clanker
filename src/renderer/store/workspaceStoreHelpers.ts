@@ -122,6 +122,26 @@ export function getWorkspaceNameFromPath(workspacePath: string): string {
   return baseName && baseName.length > 0 ? baseName : 'Workspace';
 }
 
+export function findWorkspaceById(
+  workspaces: WorkspaceTab[],
+  workspaceId: string | null | undefined,
+): WorkspaceTab | null {
+  if (workspaceId == null) {
+    return null;
+  }
+
+  return workspaces.find((workspace) => workspace.id === workspaceId) ?? null;
+}
+
+export function findActiveWorkspace(workspaces: WorkspaceTab[]): WorkspaceTab | null {
+  return workspaces.find((workspace) => workspace.lifecycle === 'active') ?? null;
+}
+
+export function isWorkspaceActiveById(workspaces: WorkspaceTab[], workspaceId: string): boolean {
+  const workspace = findWorkspaceById(workspaces, workspaceId);
+  return workspace?.lifecycle === 'active';
+}
+
 export function getActiveWorkspaceSnapshot(
   workspace: Pick<
     WorkspaceTab,
@@ -187,9 +207,7 @@ export function syncActiveWorkspace(
     workspace.id === state.activeWorkspaceId ? updateWorkspace(workspace) : workspace
   );
 
-  const activeWorkspace = state.activeWorkspaceId == null
-    ? null
-    : nextWorkspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ?? null;
+  const activeWorkspace = findWorkspaceById(nextWorkspaces, state.activeWorkspaceId);
 
   if (activeWorkspace == null) {
     return { workspaces: nextWorkspaces };
@@ -219,7 +237,7 @@ export function patchWorkspaceById(
     return { workspaces: nextWorkspaces };
   }
 
-  if (state.activeWorkspaceId === workspaceId) {
+  if (isWorkspaceActiveById(nextWorkspaces, workspaceId)) {
     return {
       ...getActiveWorkspaceSnapshot(updatedWorkspace),
       workspaces: nextWorkspaces,

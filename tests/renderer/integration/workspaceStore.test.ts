@@ -241,6 +241,19 @@ describe('workspace lifecycle', () => {
     expect(getStore().workspaces.find(w => w.id === ws1Id)!.name).toBe('renamed-first');
   });
 
+  it('exposes workspace-scoped selector methods on the store', () => {
+    addWorkspace({ workspacePath: '/first', name: 'first' });
+    const firstId = getStore().activeWorkspaceId!;
+
+    addWorkspace({ workspacePath: '/second', name: 'second' });
+    const secondId = getStore().activeWorkspaceId!;
+
+    expect(getStore().getWorkspaceById(firstId)?.workspacePath).toBe('/first');
+    expect(getStore().getActiveWorkspace()?.id).toBe(secondId);
+    expect(getStore().isWorkspaceActive(firstId)).toBe(false);
+    expect(getStore().isWorkspaceActive(secondId)).toBe(true);
+  });
+
   it.todo('parked workspaces remain mounted and non-interactive after switching');
   it.todo('workspace lifecycle becomes explicit active -> parked -> disposed instead of inferred from the active snapshot');
 });

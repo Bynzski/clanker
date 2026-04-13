@@ -9,7 +9,10 @@ import {
   areGitStatusListsEqual,
   sanitizeWorkspace,
   getWorkspaceNameFromPath,
+  findActiveWorkspace,
+  findWorkspaceById,
   getActiveWorkspaceSnapshot,
+  isWorkspaceActiveById,
   syncActiveWorkspace,
   patchWorkspaceById,
   assignWorkspaceLifecycles,
@@ -363,6 +366,37 @@ describe('assignWorkspaceLifecycles', () => {
   });
 });
 
+describe('workspace selectors', () => {
+  it('findWorkspaceById returns matching workspace', () => {
+    const ws1 = makeWorkspace({ id: 'ws-1' });
+    const ws2 = makeWorkspace({ id: 'ws-2' });
+
+    expect(findWorkspaceById([ws1, ws2], 'ws-2')?.id).toBe('ws-2');
+  });
+
+  it('findWorkspaceById returns null for missing or null ids', () => {
+    const ws = makeWorkspace({ id: 'ws-1' });
+
+    expect(findWorkspaceById([ws], 'missing')).toBeNull();
+    expect(findWorkspaceById([ws], null)).toBeNull();
+  });
+
+  it('findActiveWorkspace returns lifecycle-active workspace', () => {
+    const ws1 = makeWorkspace({ id: 'ws-1', lifecycle: 'parked' });
+    const ws2 = makeWorkspace({ id: 'ws-2', lifecycle: 'active' });
+
+    expect(findActiveWorkspace([ws1, ws2])?.id).toBe('ws-2');
+  });
+
+  it('isWorkspaceActiveById reflects lifecycle state', () => {
+    const ws1 = makeWorkspace({ id: 'ws-1', lifecycle: 'parked' });
+    const ws2 = makeWorkspace({ id: 'ws-2', lifecycle: 'active' });
+
+    expect(isWorkspaceActiveById([ws1, ws2], 'ws-1')).toBe(false);
+    expect(isWorkspaceActiveById([ws1, ws2], 'ws-2')).toBe(true);
+  });
+});
+
 // ===========================================================================
 // getWorkspaceNameFromPath
 // ===========================================================================
@@ -509,8 +543,8 @@ describe('patchWorkspaceById', () => {
   });
 
   it('patches inactive workspace without updating snapshot', () => {
-    const ws1 = makeWorkspace({ id: 'ws-1', name: 'first', workspacePath: '/first' });
-    const ws2 = makeWorkspace({ id: 'ws-2', name: 'second', workspacePath: '/second' });
+    const ws1 = makeWorkspace({ id: 'ws-1', name: 'first', workspacePath: '/first', lifecycle: 'active' });
+    const ws2 = makeWorkspace({ id: 'ws-2', name: 'second', workspacePath: '/second', lifecycle: 'parked' });
     const state = makeState({ workspaces: [ws1, ws2], activeWorkspaceId: 'ws-1', name: 'first' });
     const result = patchWorkspaceById(
       state as never,
