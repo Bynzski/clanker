@@ -54,7 +54,7 @@ describe('WorkspaceHost', () => {
     expect(screen.getAllByTestId('file-explorer')).toHaveLength(1);
   });
 
-  it('does not render parked workspace surfaces until workspace children are workspace-scoped', async () => {
+  it('renders parked workspace surfaces in the hidden parked container', async () => {
     const first = createWorkspaceFixture({ id: 'ws-1', name: 'first', lifecycle: 'parked' });
     const second = createWorkspaceFixture({ id: 'ws-2', name: 'second', lifecycle: 'active' });
     useWorkspaceStore.setState({
@@ -67,12 +67,18 @@ describe('WorkspaceHost', () => {
     await screen.findByTestId('workspace-host');
 
     const activeSurface = document.querySelector('[data-workspace-id="ws-2"]');
+    const parkedSurface = document.querySelector('[data-workspace-id="ws-1"]');
+    const parkedContainer = document.querySelector('.workspace-parked-container');
 
     expect(activeSurface).toHaveAttribute('data-workspace-visibility', 'active');
-    expect(document.querySelector('[data-workspace-id="ws-1"]')).toBeNull();
+    expect(parkedSurface).toHaveAttribute('data-workspace-visibility', 'parked');
+    expect(parkedSurface).toHaveAttribute('hidden');
+    expect(parkedSurface).toHaveAttribute('aria-hidden', 'true');
+    expect(parkedSurface).toHaveAttribute('inert');
+    expect(parkedContainer?.contains(parkedSurface)).toBe(true);
 
-    expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(1);
-    expect(screen.getAllByTestId('file-explorer')).toHaveLength(1);
+    expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(2);
+    expect(screen.getAllByTestId('file-explorer')).toHaveLength(2);
   });
 
   it('uses the lifecycle-active workspace when activeWorkspaceId is missing', async () => {

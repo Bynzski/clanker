@@ -157,6 +157,7 @@ function LeafView({
   overPaneId: string | null;
 }) {
   const workspace = useScopedWorkspace(workspaceId);
+  const isInteractive = useScopedWorkspaceActivity(workspaceId);
   const { setBrowserUrl, layoutRevision } = useWorkspaceStore();
   const paneId = node.paneId;
   
@@ -193,7 +194,7 @@ function LeafView({
       paneId={paneId}
       isDragging={isDraggingThis}
       isOver={isOverThis}
-      interactive={useScopedWorkspaceActivity(workspaceId)}
+      interactive={isInteractive}
     >
       <ErrorBoundary paneId={paneId}>
         {content}

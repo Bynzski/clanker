@@ -79,6 +79,7 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   explorerEntriesByPath: { ...workspace.explorerEntriesByPath },
   explorerLoadingPaths: [...workspace.explorerLoadingPaths],
   explorerErrorsByPath: { ...workspace.explorerErrorsByPath },
+  browserOverlayCount: workspace.browserOverlayCount ?? 0,
   browserPane: workspace.browserPane
     ? { ...workspace.browserPane, locked: workspace.browserPane.locked ?? false }
     : null,
@@ -166,6 +167,7 @@ export function getActiveWorkspaceSnapshot(
     | 'terminals'
     | 'panes'
     | 'browserVisible'
+    | 'browserOverlayCount'
     | 'browserUrl'
     | 'activeTerminalId'
     | 'browserPane'
@@ -193,6 +195,7 @@ export function getActiveWorkspaceSnapshot(
     terminals: workspace.terminals,
     panes: workspace.panes,
     browserVisible: workspace.browserVisible,
+    browserOverlayCount: workspace.browserOverlayCount ?? 0,
     browserUrl: workspace.browserUrl,
     activeTerminalId: workspace.activeTerminalId,
     browserPane: workspace.browserPane,

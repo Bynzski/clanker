@@ -68,16 +68,20 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const createBranchInputRef = useRef<HTMLInputElement>(null);
 
-  const { pushBrowserOverlay, popBrowserOverlay } = useWorkspaceStore();
+  const { activeWorkspaceId, pushBrowserOverlay, popBrowserOverlay } = useWorkspaceStore();
 
   useEffect(() => {
     if (!isMenuOpen) {
       return;
     }
 
-    pushBrowserOverlay();
-    return () => popBrowserOverlay();
-  }, [isMenuOpen, pushBrowserOverlay, popBrowserOverlay]);
+    if (!activeWorkspaceId) {
+      return;
+    }
+
+    pushBrowserOverlay(activeWorkspaceId);
+    return () => popBrowserOverlay(activeWorkspaceId);
+  }, [activeWorkspaceId, isMenuOpen, pushBrowserOverlay, popBrowserOverlay]);
 
   const currentBranchLabel = useMemo(() => {
     if (currentBranch) {

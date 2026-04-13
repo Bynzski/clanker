@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import CommitDialog from '../../../src/renderer/components/CommitDialog';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { createWorkspaceFixture } from '../../setup/fixtures';
 
 describe('CommitDialog', () => {
   const mockOnClose = vi.fn();
@@ -16,7 +17,11 @@ describe('CommitDialog', () => {
     vi.clearAllMocks();
     mockOnUnstage.mockResolvedValue({ success: true });
     mockOnUnstageAll.mockResolvedValue({ success: true });
+    const workspace = createWorkspaceFixture({ id: 'workspace-1', lifecycle: 'active', browserOverlayCount: 0 });
     useWorkspaceStore.setState({
+      workspaces: [workspace],
+      activeWorkspaceId: workspace.id,
+      activeWorkspaceLifecycle: 'active',
       browserOverlayCount: 0,
     });
     window.electronAPI = {
@@ -528,8 +533,10 @@ describe('CommitDialog', () => {
   it('pushes browser overlay on mount and pops on unmount', () => {
     const { unmount } = renderDialog();
     expect(useWorkspaceStore.getState().browserOverlayCount).toBe(1);
+    expect(useWorkspaceStore.getState().workspaces[0]?.browserOverlayCount).toBe(1);
     unmount();
     expect(useWorkspaceStore.getState().browserOverlayCount).toBe(0);
+    expect(useWorkspaceStore.getState().workspaces[0]?.browserOverlayCount).toBe(0);
   });
 
   // =========================================================================

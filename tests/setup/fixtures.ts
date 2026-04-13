@@ -33,6 +33,7 @@ export function createWorkspaceFixture(overrides: Partial<WorkspaceTab> = {}): W
     terminals: [terminal],
     panes: [pane],
     browserVisible: false,
+    browserOverlayCount: 0,
     browserUrl: 'https://github.com',
     activeTerminalId: terminal.id,
     browserPane: null,
