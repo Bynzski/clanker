@@ -10,8 +10,7 @@ import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import './App.css';
 
-const DynamicPaneLayout = lazy(() => import('./components/DynamicPaneLayout'));
-const FileExplorer = lazy(() => import('./components/FileExplorer'));
+const WorkspaceHost = lazy(() => import('./components/WorkspaceHost'));
 
 function App() {
   const [showWorkspaceGate, setShowWorkspaceGate] = useState(false);
@@ -166,10 +165,7 @@ function App() {
           )}
         >
           <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
-            <div className="workspace-layout-row">
-              <FileExplorer />
-              <DynamicPaneLayout />
-            </div>
+            <WorkspaceHost />
           </Suspense>
         </ErrorBoundary>
       </div>

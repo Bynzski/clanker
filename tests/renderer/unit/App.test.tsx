@@ -23,12 +23,15 @@ vi.mock('../../../src/renderer/components/StatusBar', () => ({
   default: () => <div data-testid="status-bar">StatusBar</div>,
 }));
 
-vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
-  default: () => <div data-testid="dynamic-pane-layout">DynamicPaneLayout</div>,
-}));
-
-vi.mock('../../../src/renderer/components/FileExplorer', () => ({
-  default: () => <div data-testid="file-explorer">FileExplorer</div>,
+vi.mock('../../../src/renderer/components/WorkspaceHost', () => ({
+  default: () => (
+    <div data-testid="workspace-host">
+      <div className="workspace-layout-row">
+        <div data-testid="file-explorer">FileExplorer</div>
+        <div data-testid="dynamic-pane-layout">DynamicPaneLayout</div>
+      </div>
+    </div>
+  ),
 }));
 
 vi.mock('../../../src/renderer/components/WorkspaceGate', () => ({

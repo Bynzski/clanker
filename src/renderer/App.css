@@ -43,6 +43,32 @@
   gap: var(--space-sm);
 }
 
+.workspace-host {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.workspace-active-viewport {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workspace-parked-container {
+  display: none;
+}
+
+.workspace-surface {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
 .workspace-error-fallback {
   flex: 1;
   display: flex;
