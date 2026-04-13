@@ -1,0 +1,88 @@
+// @vitest-environment jsdom
+
+import { render, screen, cleanup, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import WorkspaceHost from '../../../src/renderer/components/WorkspaceHost';
+import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { createWorkspaceFixture } from '../../setup/fixtures';
+
+vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
+  default: () => <div data-testid="dynamic-pane-layout">DynamicPaneLayout</div>,
+}));
+
+vi.mock('../../../src/renderer/components/FileExplorer', () => ({
+  default: () => <div data-testid="file-explorer">FileExplorer</div>,
+}));
+
+describe('WorkspaceHost', () => {
+  beforeEach(() => {
+    useWorkspaceStore.setState({
+      workspaces: [],
+      activeWorkspaceId: null,
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('renders nothing when no workspaces exist', () => {
+    const { container } = render(<WorkspaceHost />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('renders the active workspace in the visible viewport', async () => {
+    const workspace = createWorkspaceFixture({ id: 'ws-1', lifecycle: 'active' });
+    useWorkspaceStore.setState({
+      workspaces: [workspace],
+      activeWorkspaceId: 'ws-1',
+    });
+
+    render(<WorkspaceHost />);
+
+    await screen.findByTestId('workspace-host');
+    const activeViewport = document.querySelector('.workspace-active-viewport');
+    expect(activeViewport).toBeTruthy();
+    expect(activeViewport?.querySelector('[data-workspace-id="ws-1"]')).toBeTruthy();
+    expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(1);
+    expect(screen.getAllByTestId('file-explorer')).toHaveLength(1);
+  });
+
+  it('does not render parked workspace surfaces until workspace children are workspace-scoped', async () => {
+    const first = createWorkspaceFixture({ id: 'ws-1', name: 'first', lifecycle: 'parked' });
+    const second = createWorkspaceFixture({ id: 'ws-2', name: 'second', lifecycle: 'active' });
+    useWorkspaceStore.setState({
+      workspaces: [first, second],
+      activeWorkspaceId: 'ws-2',
+    });
+
+    render(<WorkspaceHost />);
+
+    await screen.findByTestId('workspace-host');
+
+    const activeSurface = document.querySelector('[data-workspace-id="ws-2"]');
+
+    expect(activeSurface).toHaveAttribute('data-workspace-visibility', 'active');
+    expect(document.querySelector('[data-workspace-id="ws-1"]')).toBeNull();
+
+    expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(1);
+    expect(screen.getAllByTestId('file-explorer')).toHaveLength(1);
+  });
+
+  it('uses the lifecycle-active workspace when activeWorkspaceId is missing', async () => {
+    const first = createWorkspaceFixture({ id: 'ws-1', lifecycle: 'parked' });
+    const second = createWorkspaceFixture({ id: 'ws-2', lifecycle: 'active' });
+    useWorkspaceStore.setState({
+      workspaces: [first, second],
+      activeWorkspaceId: null,
+    });
+
+    render(<WorkspaceHost />);
+
+    const host = await screen.findByTestId('workspace-host');
+    expect(host).toHaveAttribute('data-active-workspace-id', 'ws-2');
+
+    const activeViewport = document.querySelector('.workspace-active-viewport');
+    expect(within(activeViewport as HTMLElement).getByTestId('dynamic-pane-layout')).toBeTruthy();
+  });
+});
