@@ -19,8 +19,10 @@ import type {
   LayoutNode,
   LayoutLeaf,
   LayoutSplit,
+  WorkspaceTab,
 } from '../store/workspaceStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { useScopedWorkspace } from './WorkspaceScope';
 import BrowserPanel from './BrowserPanel';
 import EditorPane from './EditorPane';
 import './DynamicPaneLayout.css';
@@ -35,9 +37,9 @@ function isLeaf(node: LayoutNode): node is LayoutLeaf {
 
 function isLeafLocked(
   paneId: string,
-  state: ReturnType<typeof useWorkspaceStore.getState>
+  workspace: Pick<WorkspaceTab, 'panes' | 'browserPane' | 'browserVisible' | 'editorPane' | 'editorVisible'>
 ) {
-  const { panes, browserPane, browserVisible, editorPane, editorVisible } = state;
+  const { panes, browserPane, browserVisible, editorPane, editorVisible } = workspace;
   if (browserVisible && browserPane?.id === paneId) {
     return browserPane.locked;
   }
@@ -49,13 +51,13 @@ function isLeafLocked(
 
 function isSubtreeLocked(
   node: LayoutNode,
-  state: ReturnType<typeof useWorkspaceStore.getState>
+  workspace: Pick<WorkspaceTab, 'panes' | 'browserPane' | 'browserVisible' | 'editorPane' | 'editorVisible'>
 ): boolean {
   if (isLeaf(node)) {
-    return isLeafLocked(node.paneId, state);
+    return isLeafLocked(node.paneId, workspace);
   }
 
-  return isSubtreeLocked(node.first, state) && isSubtreeLocked(node.second, state);
+  return isSubtreeLocked(node.first, workspace) && isSubtreeLocked(node.second, workspace);
 }
 
 // Wrapper that makes the pane draggable
@@ -137,27 +139,44 @@ export function useDragHandle() {
   return useContext(DragHandleContext);
 }
 
-function LeafView({ node, draggedPaneId, overPaneId }: { node: LayoutLeaf; draggedPaneId: string | null; overPaneId: string | null }) {
-  const state = useWorkspaceStore();
-  const { browserPane, browserVisible, browserUrl, setBrowserUrl, layoutRevision, editorPane, editorVisible } = state;
+function LeafView({
+  workspaceId,
+  node,
+  draggedPaneId,
+  overPaneId,
+}: {
+  workspaceId?: string;
+  node: LayoutLeaf;
+  draggedPaneId: string | null;
+  overPaneId: string | null;
+}) {
+  const workspace = useScopedWorkspace(workspaceId);
+  const { setBrowserUrl, layoutRevision } = useWorkspaceStore();
   const paneId = node.paneId;
   
   const isDraggingThis = draggedPaneId === paneId;
   const isOverThis = overPaneId === paneId && draggedPaneId !== paneId;
 
-  const content = browserVisible && browserPane?.id === paneId ? (
+  const content = workspace?.browserVisible && workspace.browserPane?.id === paneId ? (
     <BrowserPanel
-      url={browserUrl}
-      onUrlChange={setBrowserUrl}
+      workspaceId={workspaceId}
+      url={workspace.browserUrl}
+      onUrlChange={(url) => {
+        if (workspaceId) {
+          setBrowserUrl(url, workspaceId);
+        } else {
+          setBrowserUrl(url);
+        }
+      }}
       layoutVersion={layoutRevision}
     />
-  ) : editorVisible && editorPane?.id === paneId ? (
+  ) : workspace?.editorVisible && workspace.editorPane?.id === paneId ? (
     <Suspense fallback={<div className="layout-pane-loading">Loading editor...</div>}>
-      <EditorPane />
+      <EditorPane workspaceId={workspaceId} />
     </Suspense>
   ) : (
     <Suspense fallback={<div className="layout-pane-loading">Loading terminal...</div>}>
-      <TerminalPane paneId={paneId} />
+      <TerminalPane workspaceId={workspaceId} paneId={paneId} />
     </Suspense>
   );
 
@@ -176,9 +195,19 @@ function LeafView({ node, draggedPaneId, overPaneId }: { node: LayoutLeaf; dragg
   );
 }
 
-function SplitView({ node, draggedPaneId, overPaneId }: { node: LayoutSplit; draggedPaneId: string | null; overPaneId: string | null }) {
-  const state = useWorkspaceStore();
-  const { setSplitRatio } = state;
+function SplitView({
+  workspaceId,
+  node,
+  draggedPaneId,
+  overPaneId,
+}: {
+  workspaceId?: string;
+  node: LayoutSplit;
+  draggedPaneId: string | null;
+  overPaneId: string | null;
+}) {
+  const workspace = useScopedWorkspace(workspaceId);
+  const { setSplitRatio } = useWorkspaceStore();
   
   // Use local state to track layout during drag, avoiding feedback loop
   const [localLayout, setLocalLayout] = useState<Layout | null>(null);
@@ -207,11 +236,15 @@ function SplitView({ node, draggedPaneId, overPaneId }: { node: LayoutSplit; dra
         const [first, second] = values;
         const total = first + second;
         if (total > 0) {
+        if (workspaceId) {
+          setSplitRatio(node.nodeId, first / total, workspaceId);
+        } else {
           setSplitRatio(node.nodeId, first / total);
+        }
         }
       }
     }, 100);
-  }, [node.nodeId, setSplitRatio]);
+  }, [node.nodeId, setSplitRatio, workspaceId]);
   
   // Reset local layout when node ratio changes (e.g., from other store updates)
   if (localLayout !== null) {
@@ -234,37 +267,52 @@ function SplitView({ node, draggedPaneId, overPaneId }: { node: LayoutSplit; dra
         id={panelAId}
         defaultSize={firstRatio}
         minSize={12}
-        disabled={isSubtreeLocked(node.first, state)}
+        disabled={workspace ? isSubtreeLocked(node.first, workspace) : false}
       >
-        <LayoutNodeView node={node.first} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />
+        <LayoutNodeView workspaceId={workspaceId} node={node.first} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />
       </Panel>
       <Separator className="split-separator" />
       <Panel
         id={panelBId}
         defaultSize={secondRatio}
         minSize={12}
-        disabled={isSubtreeLocked(node.second, state)}
+        disabled={workspace ? isSubtreeLocked(node.second, workspace) : false}
       >
-        <LayoutNodeView node={node.second} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />
+        <LayoutNodeView workspaceId={workspaceId} node={node.second} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />
       </Panel>
     </Group>
   );
 }
 
-function LayoutNodeView({ node, draggedPaneId, overPaneId }: { node: LayoutNode; draggedPaneId: string | null; overPaneId: string | null }) {
+function LayoutNodeView({
+  workspaceId,
+  node,
+  draggedPaneId,
+  overPaneId,
+}: {
+  workspaceId?: string;
+  node: LayoutNode;
+  draggedPaneId: string | null;
+  overPaneId: string | null;
+}) {
   if (isLeaf(node)) {
-    return <LeafView node={node} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />;
+    return <LeafView workspaceId={workspaceId} node={node} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />;
   }
 
-  return <SplitView node={node} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />;
+  return <SplitView workspaceId={workspaceId} node={node} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />;
 }
 
-function renderLayout(root: LayoutNode | null, draggedPaneId: string | null, overPaneId: string | null): React.ReactNode {
+function renderLayout(
+  workspaceId: string | undefined,
+  root: LayoutNode | null,
+  draggedPaneId: string | null,
+  overPaneId: string | null,
+): React.ReactNode {
   if (root == null) {
     return null;
   }
 
-  return <LayoutNodeView node={root} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />;
+  return <LayoutNodeView workspaceId={workspaceId} node={root} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />;
 }
 
 function DockEdgeTargets({ activeEdge, isDragging }: { activeEdge: DockEdge | null; isDragging: boolean }) {
@@ -296,8 +344,9 @@ const edgeFriendlyCollisionDetection: CollisionDetection = (args) => {
   return pointerCollisions.length > 0 ? pointerCollisions : closestCorners(args);
 };
 
-export default function DynamicPaneLayout() {
-  const { layoutRoot, swapPanes, dockPaneToEdge } = useWorkspaceStore();
+export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: string }) {
+  const workspace = useScopedWorkspace(workspaceId);
+  const { swapPanes, dockPaneToEdge } = useWorkspaceStore();
   
   const [activePaneId, setActivePaneId] = useState<string | null>(null);
   const [overPaneId, setOverPaneId] = useState<string | null>(null);
@@ -345,20 +394,28 @@ export default function DynamicPaneLayout() {
       const overId = over.id as string;
 
       if (overId.startsWith('dock-')) {
-        dockPaneToEdge(activeId, overId.slice(5) as DockEdge);
+        if (workspaceId) {
+          dockPaneToEdge(activeId, overId.slice(5) as DockEdge, workspaceId);
+        } else {
+          dockPaneToEdge(activeId, overId.slice(5) as DockEdge);
+        }
       } else if (activeId !== overId) {
         // Extract paneId from droppable id
         const targetPaneId = overId.startsWith('drop-') ? overId.slice(5) : overId;
         
         // Swap the panes
-        swapPanes(activeId, targetPaneId);
+        if (workspaceId) {
+          swapPanes(activeId, targetPaneId, workspaceId);
+        } else {
+          swapPanes(activeId, targetPaneId);
+        }
       }
     }
     
     setActivePaneId(null);
     setOverPaneId(null);
     setOverDockEdge(null);
-  }, [dockPaneToEdge, swapPanes]);
+  }, [dockPaneToEdge, swapPanes, workspaceId]);
 
   const handleDragCancel = useCallback(() => {
     setActivePaneId(null);
@@ -366,7 +423,7 @@ export default function DynamicPaneLayout() {
     setOverDockEdge(null);
   }, []);
 
-  if (layoutRoot == null) {
+  if (workspace?.layoutRoot == null) {
     return (
       <div className="dynamic-pane-layout empty">
         <div className="empty-state">
@@ -388,7 +445,7 @@ export default function DynamicPaneLayout() {
     >
       <div className="dynamic-pane-layout">
         <div className="split-root">
-          {renderLayout(layoutRoot, activePaneId, overPaneId)}
+          {renderLayout(workspaceId, workspace.layoutRoot, activePaneId, overPaneId)}
         </div>
         <DockEdgeTargets activeEdge={overDockEdge} isDragging={activePaneId != null} />
       </div>

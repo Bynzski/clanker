@@ -1,16 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, LocateFixed, Lock, Unlock } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { useScopedWorkspace } from './WorkspaceScope';
 import { useDragHandle } from './DynamicPaneLayout';
 import './BrowserPanel.css';
 
 interface BrowserPanelProps {
+  workspaceId?: string;
   url: string;
   onUrlChange: (url: string) => void;
   layoutVersion: number;
 }
 
-export default function BrowserPanel({ url, onUrlChange, layoutVersion }: BrowserPanelProps) {
+export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVersion }: BrowserPanelProps) {
   const [inputUrl, setInputUrl] = useState(url);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
@@ -20,13 +22,14 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
   // Tracks the last bounds sent to main process, used to suppress micro-jitter from
   // DPR rounding noise and unstable intermediate layout measurements.
   const lastBoundsRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
-  const { browserPane, browserVisible, browserOverlayCount, bringBrowserIntoView, toggleBrowserLock, activeWorkspaceId } = useWorkspaceStore();
-  const browserLocked = browserPane?.locked ?? false;
+  const workspace = useScopedWorkspace(workspaceId);
+  const { browserOverlayCount, bringBrowserIntoView, toggleBrowserLock } = useWorkspaceStore();
+  const browserLocked = workspace?.browserPane?.locked ?? false;
   const dragHandleProps = useDragHandle();
 
   // Update bounds for the browser content area
   const updateBounds = useCallback(() => {
-    if (!contentRef.current || !browserVisible || browserOverlayCount > 0 || !activeWorkspaceId) return;
+    if (!contentRef.current || !workspace?.browserVisible || browserOverlayCount > 0 || !workspace.id) return;
 
     const rect = contentRef.current.getBoundingClientRect();
 
@@ -61,8 +64,8 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
     }
 
     lastBoundsRef.current = newBounds;
-    window.electronAPI.browserSetBounds(activeWorkspaceId, newBounds);
-  }, [browserVisible, browserOverlayCount, activeWorkspaceId]);
+    window.electronAPI.browserSetBounds(workspace.id, newBounds);
+  }, [workspace?.browserVisible, browserOverlayCount, workspace?.id]);
 
   const scheduleBoundsUpdate = useCallback(() => {
     if (rafRef.current != null) {
@@ -84,7 +87,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
 
   // Health check: periodically ensure bounds are in sync (safety net for missed updates)
   useEffect(() => {
-    if (!browserVisible || browserOverlayCount > 0 || !activeWorkspaceId) {
+    if (!workspace?.browserVisible || browserOverlayCount > 0 || !workspace.id) {
       return;
     }
 
@@ -93,7 +96,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
     }, 2000);
 
     return () => clearInterval(healthCheckInterval);
-  }, [browserVisible, browserOverlayCount, activeWorkspaceId, scheduleBoundsUpdate]);
+  }, [workspace?.browserVisible, browserOverlayCount, workspace?.id, scheduleBoundsUpdate]);
 
   // Observe the outer panel so pane mount/show/layout changes still trigger a follow-up
   // bounds sync even if the inner content element has not emitted its own resize yet.
@@ -131,7 +134,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
 
   // Poll for navigation state
   useEffect(() => {
-    if (!activeWorkspaceId) {
+    if (!workspace?.id) {
       setCanGoBack(false);
       setCanGoForward(false);
       return;
@@ -141,8 +144,8 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
     const updateState = async () => {
       try {
         const [back, forward] = await Promise.all([
-          window.electronAPI.canGoBack(activeWorkspaceId),
-          window.electronAPI.canGoForward(activeWorkspaceId),
+          window.electronAPI.canGoBack(workspace.id),
+          window.electronAPI.canGoForward(workspace.id),
         ]);
         if (!cancelled) {
           setCanGoBack(back);
@@ -159,7 +162,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
       cancelled = true;
       clearInterval(interval);
     };
-  }, [activeWorkspaceId]);
+  }, [workspace?.id]);
 
   // Hide browser view when component unmounts
   useEffect(() => {
@@ -168,15 +171,15 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
         window.cancelAnimationFrame(rafRef.current);
       }
       lastBoundsRef.current = null;
-      if (activeWorkspaceId) {
-        window.electronAPI.browserHide(activeWorkspaceId);
+      if (workspace?.id) {
+        window.electronAPI.browserHide(workspace.id);
       }
     };
-  }, [activeWorkspaceId]);
+  }, [workspace?.id]);
 
   // Temporarily hide the native browser whenever a modal is open.
   useEffect(() => {
-    if (!browserVisible || !activeWorkspaceId) {
+    if (!workspace?.browserVisible || !workspace.id) {
       return;
     }
 
@@ -187,7 +190,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
       }
       // Force a fresh bounds IPC when the browser is shown again after being hidden.
       lastBoundsRef.current = null;
-      window.electronAPI.browserHide(activeWorkspaceId);
+      window.electronAPI.browserHide(workspace.id);
       return;
     }
 
@@ -199,7 +202,7 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
     return () => {
       window.cancelAnimationFrame(followUpFrame);
     };
-  }, [browserVisible, browserOverlayCount, scheduleBoundsUpdate, activeWorkspaceId]);
+  }, [workspace?.browserVisible, browserOverlayCount, scheduleBoundsUpdate, workspace?.id]);
 
   const handleNavigate = () => {
     let navigateUrl = inputUrl.trim();
@@ -210,8 +213,8 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
       navigateUrl = 'https://' + navigateUrl;
     }
 
-    if (!activeWorkspaceId) return;
-    window.electronAPI.browserNavigate(activeWorkspaceId, navigateUrl);
+    if (!workspace?.id) return;
+    window.electronAPI.browserNavigate(workspace.id, navigateUrl);
     onUrlChange(navigateUrl);
   };
 
@@ -223,23 +226,23 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
   };
 
   const handleBack = () => {
-    if (!activeWorkspaceId) return;
-    window.electronAPI.browserBack(activeWorkspaceId);
+    if (!workspace?.id) return;
+    window.electronAPI.browserBack(workspace.id);
   };
 
   const handleForward = () => {
-    if (!activeWorkspaceId) return;
-    window.electronAPI.browserForward(activeWorkspaceId);
+    if (!workspace?.id) return;
+    window.electronAPI.browserForward(workspace.id);
   };
 
   const handleRefresh = () => {
-    if (!activeWorkspaceId) return;
-    window.electronAPI.browserRefresh(activeWorkspaceId);
+    if (!workspace?.id) return;
+    window.electronAPI.browserRefresh(workspace.id);
   };
 
   const handleStop = () => {
-    if (!activeWorkspaceId) return;
-    window.electronAPI.browserStop(activeWorkspaceId);
+    if (!workspace?.id) return;
+    window.electronAPI.browserStop(workspace.id);
   };
 
   const handleOpenExternal = () => {
@@ -247,11 +250,19 @@ export default function BrowserPanel({ url, onUrlChange, layoutVersion }: Browse
   };
 
   const handleBringIntoView = () => {
-    bringBrowserIntoView();
+    if (workspaceId) {
+      bringBrowserIntoView(workspaceId);
+    } else {
+      bringBrowserIntoView();
+    }
   };
 
   const handleToggleLock = () => {
-    toggleBrowserLock();
+    if (workspaceId) {
+      toggleBrowserLock(workspaceId);
+    } else {
+      toggleBrowserLock();
+    }
   };
 
   return (

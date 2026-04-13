@@ -819,6 +819,27 @@ describe('renameEditorTabPath', () => {
           originalContent: 'console.log("world")',
         },
       ],
+      workspaces: getStore().workspaces.map((workspace) => ({
+        ...workspace,
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/src/index.ts',
+            fileName: 'index.ts',
+            isDirty: false,
+            content: 'console.log("hello")',
+            originalContent: 'console.log("hello")',
+          },
+          {
+            id: 'tab-2',
+            filePath: '/workspace/src/main.ts',
+            fileName: 'main.ts',
+            isDirty: false,
+            content: 'console.log("world")',
+            originalContent: 'console.log("world")',
+          },
+        ],
+      })),
     });
 
     // Rename the first tab
@@ -847,6 +868,19 @@ describe('renameEditorTabPath', () => {
           originalContent: '',
         },
       ],
+      workspaces: getStore().workspaces.map((workspace) => ({
+        ...workspace,
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/file.ts',
+            fileName: 'file.ts',
+            isDirty: false,
+            content: '',
+            originalContent: '',
+          },
+        ],
+      })),
     });
 
     getStore().renameEditorTabPath('/workspace/file.ts', '/workspace/renamed.ts');
@@ -870,6 +904,19 @@ describe('renameEditorTabPath', () => {
           originalContent: '',
         },
       ],
+      workspaces: getStore().workspaces.map((workspace) => ({
+        ...workspace,
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/file.ts',
+            fileName: 'file.ts',
+            isDirty: false,
+            content: '',
+            originalContent: '',
+          },
+        ],
+      })),
     });
 
     getStore().renameEditorTabPath('/workspace/nonexistent.ts', '/workspace/new.ts');

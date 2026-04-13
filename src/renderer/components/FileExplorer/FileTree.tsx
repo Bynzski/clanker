@@ -6,8 +6,10 @@ import { isAbsolutePath, relativePath } from '../../lib/pathUtils';
 import { getFileTypeConfig } from './fileTypeConfig';
 import type { FileExplorerEntry, FileListDirectoryResult } from '../../../shared/types/fileExplorer';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { useScopedWorkspace } from '../WorkspaceScope';
 
 interface FileTreeProps {
+  workspaceId?: string;
   rootPath: string;
   workspacePath: string;
   rootError?: string | null;
@@ -25,6 +27,7 @@ interface FileTreeProps {
 }
 
 interface TreeNodeProps {
+  workspaceId?: string;
   entry: FileExplorerEntry;
   depth: number;
   onLoadDirectory: (directoryPath: string) => Promise<FileListDirectoryResult>;
@@ -66,16 +69,18 @@ export function toRelativePath(
   return absolutePath;
 }
 
-function TreeNode({ entry, depth, onLoadDirectory, gitStatusByRelativePath, descendantChangePaths, workspaceRoot, showHiddenFiles, onContextMenu, creating, renaming, onStartCreating, onStartRenaming, onCancelCreating, onCancelRenaming, onCommitCreating, onCommitRenaming }: TreeNodeProps) {
+function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelativePath, descendantChangePaths, workspaceRoot, showHiddenFiles, onContextMenu, creating, renaming, onStartCreating, onStartRenaming, onCancelCreating, onCancelRenaming, onCommitCreating, onCommitRenaming }: TreeNodeProps) {
+  const workspace = useScopedWorkspace(workspaceId);
   const {
-    explorerExpandedPaths,
-    explorerSelectedPath,
-    explorerEntriesByPath,
-    explorerLoadingPaths,
-    explorerErrorsByPath,
     toggleExplorerPath,
     setExplorerSelectedPath,
+    openFileInEditor,
   } = useWorkspaceStore();
+  const explorerExpandedPaths = workspace?.explorerExpandedPaths ?? [];
+  const explorerSelectedPath = workspace?.explorerSelectedPath ?? null;
+  const explorerEntriesByPath = workspace?.explorerEntriesByPath ?? {};
+  const explorerLoadingPaths = workspace?.explorerLoadingPaths ?? [];
+  const explorerErrorsByPath = workspace?.explorerErrorsByPath ?? {};
 
   const isExpanded = explorerExpandedPaths.includes(entry.path);
   const isSelected = explorerSelectedPath === entry.path;
@@ -86,7 +91,7 @@ function TreeNode({ entry, depth, onLoadDirectory, gitStatusByRelativePath, desc
   const error = explorerErrorsByPath[entry.path];
 
   const handleClick = async () => {
-    setExplorerSelectedPath(entry.path);
+    setExplorerSelectedPath(entry.path, workspaceId);
 
     if (!entry.isDirectory) {
       return;
@@ -100,13 +105,12 @@ function TreeNode({ entry, depth, onLoadDirectory, gitStatusByRelativePath, desc
       }
     }
 
-    toggleExplorerPath(entry.path);
+    toggleExplorerPath(entry.path, workspaceId);
   };
 
   const handleDoubleClick = () => {
     if (entry.isDirectory) return;
-    const { openFileInEditor } = useWorkspaceStore.getState();
-    void openFileInEditor(entry.path);
+    void openFileInEditor(entry.path, workspaceId);
   };
 
   const relativePath = toRelativePath(entry.path, workspaceRoot);
@@ -210,6 +214,7 @@ function TreeNode({ entry, depth, onLoadDirectory, gitStatusByRelativePath, desc
               {childEntries.map((childEntry) => (
                 <TreeNode
                   key={childEntry.path}
+                  workspaceId={workspaceId}
                   entry={childEntry}
                   depth={depth + 1}
                   onLoadDirectory={onLoadDirectory}
@@ -299,14 +304,15 @@ function CreateInput({ type, depth, onCommit, onCancel }: {
   );
 }
 
-export default function FileTree({ rootPath, workspacePath, rootError, onLoadDirectory, gitChanges, onContextMenu, creating, renaming, onStartCreating, onStartRenaming, onCancelCreating, onCancelRenaming, onCommitCreating, onCommitRenaming }: FileTreeProps) {
+export default function FileTree({ workspaceId, rootPath, workspacePath, rootError, onLoadDirectory, gitChanges, onContextMenu, creating, renaming, onStartCreating, onStartRenaming, onCancelCreating, onCancelRenaming, onCommitCreating, onCommitRenaming }: FileTreeProps) {
+  const workspace = useScopedWorkspace(workspaceId);
   const {
-    explorerEntriesByPath,
-    explorerLoadingPaths,
     toggleExplorerPath,
     setExplorerSelectedPath,
     openFileInEditor,
   } = useWorkspaceStore();
+  const explorerEntriesByPath = workspace?.explorerEntriesByPath ?? {};
+  const explorerLoadingPaths = workspace?.explorerLoadingPaths ?? [];
 
   const { gitStatusByRelativePath, descendantChangePaths } = useMemo(() => {
     const map = new Map<string, GitStatus>();
@@ -331,7 +337,7 @@ export default function FileTree({ rootPath, workspacePath, rootError, onLoadDir
     };
   }, [gitChanges]);
 
-  const showHiddenFiles = useWorkspaceStore((s) => s.showHiddenFiles);
+  const showHiddenFiles = workspace?.showHiddenFiles ?? true;
   const rootEntries = (explorerEntriesByPath[rootPath] ?? []).filter(
     (e) => showHiddenFiles || !e.name.startsWith('.')
   );
@@ -341,7 +347,11 @@ export default function FileTree({ rootPath, workspacePath, rootError, onLoadDir
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       // Read live state from the store to avoid stale closures
       const state = useWorkspaceStore.getState();
-      const { explorerEntriesByPath: liveEntries, explorerExpandedPaths: liveExpanded, explorerSelectedPath: liveSelected, showHiddenFiles: liveShowHidden } = state;
+      const liveWorkspace = workspaceId ? state.getWorkspaceById(workspaceId) : state.getActiveWorkspace();
+      const liveEntries = liveWorkspace?.explorerEntriesByPath ?? {};
+      const liveExpanded = liveWorkspace?.explorerExpandedPaths ?? [];
+      const liveSelected = liveWorkspace?.explorerSelectedPath ?? null;
+      const liveShowHidden = liveWorkspace?.showHiddenFiles ?? true;
       const liveRootEntries = (liveEntries[rootPath] ?? []).filter(
         (entry) => liveShowHidden || !entry.name.startsWith('.')
       );
@@ -372,20 +382,20 @@ export default function FileTree({ rootPath, workspacePath, rootError, onLoadDir
         case 'ArrowDown': {
           e.preventDefault();
           if (currentIndex === -1) {
-            setExplorerSelectedPath(liveNodes[0].entry.path);
+            setExplorerSelectedPath(liveNodes[0].entry.path, workspaceId);
           } else {
             const nextIndex = currentIndex < liveNodes.length - 1 ? currentIndex + 1 : currentIndex;
-            setExplorerSelectedPath(liveNodes[nextIndex].entry.path);
+            setExplorerSelectedPath(liveNodes[nextIndex].entry.path, workspaceId);
           }
           break;
         }
         case 'ArrowUp': {
           e.preventDefault();
           if (currentIndex === -1) {
-            setExplorerSelectedPath(liveNodes[liveNodes.length - 1].entry.path);
+            setExplorerSelectedPath(liveNodes[liveNodes.length - 1].entry.path, workspaceId);
           } else {
             const prevIndex = currentIndex > 0 ? currentIndex - 1 : currentIndex;
-            setExplorerSelectedPath(liveNodes[prevIndex].entry.path);
+            setExplorerSelectedPath(liveNodes[prevIndex].entry.path, workspaceId);
           }
           break;
         }
@@ -398,8 +408,8 @@ export default function FileTree({ rootPath, workspacePath, rootError, onLoadDir
               if (!Object.prototype.hasOwnProperty.call(liveEntries, node.entry.path)) {
                 await onLoadDirectory(node.entry.path);
               }
-              toggleExplorerPath(node.entry.path);
-            })();
+                toggleExplorerPath(node.entry.path, workspaceId);
+              })();
           }
           break;
         }
@@ -408,7 +418,7 @@ export default function FileTree({ rootPath, workspacePath, rootError, onLoadDir
           const targetIndex = currentIndex === -1 ? 0 : currentIndex;
           const node = liveNodes[targetIndex];
           if (node?.entry.isDirectory && liveExpanded.includes(node.entry.path)) {
-            toggleExplorerPath(node.entry.path);
+            toggleExplorerPath(node.entry.path, workspaceId);
           }
           break;
         }
@@ -421,13 +431,13 @@ export default function FileTree({ rootPath, workspacePath, rootError, onLoadDir
                 if (!Object.prototype.hasOwnProperty.call(liveEntries, node.entry.path)) {
                   await onLoadDirectory(node.entry.path);
                 }
-                toggleExplorerPath(node.entry.path);
+                toggleExplorerPath(node.entry.path, workspaceId);
               })();
             } else {
-              toggleExplorerPath(node.entry.path);
+              toggleExplorerPath(node.entry.path, workspaceId);
             }
           } else {
-            void openFileInEditor(node.entry.path);
+            void openFileInEditor(node.entry.path, workspaceId);
           }
           break;
         }
@@ -443,7 +453,7 @@ export default function FileTree({ rootPath, workspacePath, rootError, onLoadDir
         }
       }
     },
-    [rootPath, onLoadDirectory, toggleExplorerPath, setExplorerSelectedPath, openFileInEditor, onStartRenaming]
+    [rootPath, onLoadDirectory, toggleExplorerPath, setExplorerSelectedPath, openFileInEditor, onStartRenaming, workspaceId]
   );
 
   if (isRootLoading && rootEntries.length === 0) {
@@ -476,6 +486,7 @@ export default function FileTree({ rootPath, workspacePath, rootError, onLoadDir
       {rootEntries.map((entry) => (
         <TreeNode
           key={entry.path}
+          workspaceId={workspaceId}
           entry={entry}
           depth={0}
           onLoadDirectory={onLoadDirectory}
