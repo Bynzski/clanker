@@ -86,6 +86,9 @@ export interface WorkspaceState {
   selectWorkspace: (id: string) => void;
   closeWorkspace: (id: string) => void;
   updateWorkspaceName: (id: string, name: string) => void;
+  getWorkspaceById: (id: string | null) => WorkspaceTab | null;
+  getActiveWorkspace: () => WorkspaceTab | null;
+  isWorkspaceActive: (id: string) => boolean;
 
   setWorkspacePath: (path: string) => void;
   setHarness: (harness: string) => void;

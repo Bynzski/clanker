@@ -31,10 +31,13 @@ import {
   createDefaultExplorerState,
   createPane,
   createWorkspaceId,
+  findActiveWorkspace,
+  findWorkspaceById,
   generateId,
   getActiveWorkspaceSnapshot,
   getWorkspaceNameFromPath,
   isEditorOperationPending,
+  isWorkspaceActiveById,
   patchWorkspaceById,
   sanitizeWorkspace,
   setEditorOperationPending,
@@ -143,8 +146,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return nextState;
   }),
 
+  getWorkspaceById: (id) => {
+    return findWorkspaceById(get().workspaces, id);
+  },
+
+  getActiveWorkspace: () => {
+    return findActiveWorkspace(get().workspaces);
+  },
+
+  isWorkspaceActive: (id) => {
+    return isWorkspaceActiveById(get().workspaces, id);
+  },
+
   selectWorkspace: (id) => set((state) => {
-    const workspace = state.workspaces.find((entry) => entry.id === id);
+    const workspace = findWorkspaceById(state.workspaces, id);
     if (workspace == null) {
       return state;
     }

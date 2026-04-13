@@ -16,12 +16,35 @@ export function startEditorFileWatcher(): () => void {
 
   const unsubStore = useWorkspaceStore.subscribe((state, prevState) => {
     if (state.activeWorkspaceId !== prevState.activeWorkspaceId) {
+      const previousWorkspace = prevState.getWorkspaceById(prevState.activeWorkspaceId);
+      const nextWorkspace = state.getWorkspaceById(state.activeWorkspaceId);
+
       // Workspace switched — unwatch old, watch new
       for (const tab of prevState.editorTabs) {
-        void window.electronAPI.editorUnwatchFile({ workspacePath: prevState.workspacePath, filePath: tab.filePath });
+        if (previousWorkspace == null) {
+          void window.electronAPI.editorUnwatchFile({
+            workspacePath: prevState.workspacePath,
+            filePath: tab.filePath,
+          });
+          continue;
+        }
+        void window.electronAPI.editorUnwatchFile({
+          workspacePath: previousWorkspace.workspacePath,
+          filePath: tab.filePath,
+        });
       }
       for (const tab of state.editorTabs) {
-        void window.electronAPI.editorWatchFile({ workspacePath: state.workspacePath, filePath: tab.filePath });
+        if (nextWorkspace == null) {
+          void window.electronAPI.editorWatchFile({
+            workspacePath: state.workspacePath,
+            filePath: tab.filePath,
+          });
+          continue;
+        }
+        void window.electronAPI.editorWatchFile({
+          workspacePath: nextWorkspace.workspacePath,
+          filePath: tab.filePath,
+        });
       }
     }
   });
@@ -34,7 +57,9 @@ export function startEditorFileWatcher(): () => void {
 
 function handleFileChanged(filePath: string, deleted: boolean): void {
   const state = useWorkspaceStore.getState();
-  const tab = state.editorTabs.find((t) => t.filePath === filePath);
+  const activeWorkspace = state.getActiveWorkspace();
+  const editorTabs = activeWorkspace?.editorTabs ?? state.editorTabs;
+  const tab = editorTabs.find((t) => t.filePath === filePath) ?? null;
   if (!tab) return;
 
   if (deleted) {
