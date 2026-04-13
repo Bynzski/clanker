@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, LocateFixed, Lock, Unlock } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, LocateFixed, Lock, Unlock, MousePointer2 } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useScopedWorkspace } from './WorkspaceScope';
 import { useDragHandle } from './DynamicPaneLayout';
@@ -28,6 +28,7 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
   const toggleBrowserLock = useWorkspaceStore((state) => state.toggleBrowserLock);
   const browserLocked = workspace?.browserPane?.locked ?? false;
   const browserOverlayCount = workspace?.browserOverlayCount ?? 0;
+  const [annotationActive, setAnnotationActive] = useState(false);
   const dragHandleProps = useDragHandle();
   const isActiveWorkspace = workspace?.id != null
     && workspace.id === activeWorkspaceId
@@ -182,6 +183,61 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
       }
     };
   }, [workspace?.id]);
+
+  // Annotation mode state sync
+  useEffect(() => {
+    if (!workspace?.id) {
+      setAnnotationActive(false);
+      return;
+    }
+
+    // Poll for annotation state. When copyTriggered is true, immediately invoke
+    // ANNOTATION_TRIGGER_COPY to complete the capture+format+clipboard pipeline.
+    let cancelled = false;
+    const updateState = async () => {
+      try {
+        const state = await window.electronAPI.annotationGetState();
+        if (!cancelled) {
+          setAnnotationActive(state.enabled && state.workspaceId === workspace.id);
+          // Bridge: the in-page Copy button set __clankerAnnotationCopyTrigger__ in
+          // the page context. Main process read and cleared it during ANNOTATION_GET_STATE
+          // and forwarded the flag here. Invoke the capture+export pipeline now.
+          if (state.copyTriggered) {
+            await window.electronAPI.annotationTriggerCopy();
+          }
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+
+    // Also listen for escape events
+    const unsubscribeEscape = window.electronAPI.onAnnotationEscape(() => {
+      setAnnotationActive(false);
+    });
+
+    updateState();
+    const interval = setInterval(updateState, 500);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      unsubscribeEscape();
+    };
+  }, [workspace?.id]);
+
+  const handleAnnotationToggle = async () => {
+    if (!workspace?.id) return;
+
+    if (annotationActive) {
+      await window.electronAPI.annotationDisable();
+      setAnnotationActive(false);
+    } else {
+      const result = await window.electronAPI.annotationEnable(workspace.id);
+      if (result.success) {
+        setAnnotationActive(true);
+      }
+    }
+  };
 
   // Temporarily hide the native browser whenever a modal is open.
   useEffect(() => {
@@ -358,6 +414,14 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
           title={browserLocked ? 'Unlock browser pane' : 'Lock browser pane'}
         >
           {browserLocked ? <Unlock size={16} strokeWidth={2} /> : <Lock size={16} strokeWidth={2} />}
+        </button>
+
+        <button
+          className={`browser-nav-btn ${annotationActive ? 'browser-annotation-active' : ''}`}
+          onClick={handleAnnotationToggle}
+          title={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}
+        >
+          <MousePointer2 size={16} strokeWidth={2} />
         </button>
       </div>
       <div className="browser-content-shell">

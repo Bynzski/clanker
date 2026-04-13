@@ -111,6 +111,14 @@ import {
   VCS_GET_DEEP_LINKS,
   VCS_GET_DEEP_LINK,
   VCS_OPEN_DEEP_LINK,
+  ANNOTATION_ENABLE,
+  ANNOTATION_DISABLE,
+  ANNOTATION_CAPTURE,
+  ANNOTATION_GET_STATE,
+  ANNOTATION_EXPORT,
+  ANNOTATION_CHECK_ESCAPED,
+  ANNOTATION_ESCAPE,
+  ANNOTATION_TRIGGER_COPY,
 } from '../shared/ipcChannels';
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -330,4 +338,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(EXPLORER_START_WATCHING, workspacePath),
   explorerStopWatching: () =>
     ipcRenderer.invoke(EXPLORER_STOP_WATCHING),
+
+  // Browser annotation
+  annotationEnable: (workspaceId: string) => ipcRenderer.invoke(ANNOTATION_ENABLE, workspaceId),
+  annotationDisable: () => ipcRenderer.invoke(ANNOTATION_DISABLE),
+  annotationGetState: () => ipcRenderer.invoke(ANNOTATION_GET_STATE),
+  annotationCapture: () => ipcRenderer.invoke(ANNOTATION_CAPTURE),
+  annotationExport: (annotation: {
+    url: string;
+    title: string;
+    tagName: string;
+    selector: string;
+    id: string | null;
+    className: string | null;
+    text: string | null;
+    role: string | null;
+    accessibleName: string | null;
+    attributes: Record<string, string>;
+    bounds: { x: number; y: number; width: number; height: number };
+    note: string;
+    timestamp: string;
+  }) => ipcRenderer.invoke(ANNOTATION_EXPORT, annotation),
+  annotationCheckEscaped: () => ipcRenderer.invoke(ANNOTATION_CHECK_ESCAPED),
+  onAnnotationEscape: (callback: (payload: { workspaceId: string }) => void) => {
+    const handler = (_event: IpcRendererEvent, payload: { workspaceId: string }) => callback(payload);
+    ipcRenderer.on(ANNOTATION_ESCAPE, handler);
+    return () => ipcRenderer.removeListener(ANNOTATION_ESCAPE, handler);
+  },
+  // Annotation — trigger copy handles the full capture → format → clipboard pipeline
+  annotationTriggerCopy: () => ipcRenderer.invoke(ANNOTATION_TRIGGER_COPY),
 });

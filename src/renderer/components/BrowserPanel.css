@@ -168,3 +168,13 @@
   background: var(--accent-primary);
   color: #fff;
 }
+
+.browser-annotation-active {
+  background: var(--accent-primary) !important;
+  color: #fff !important;
+}
+
+.browser-annotation-active:hover:not(:disabled) {
+  background: #1d4ed8 !important;
+  color: #fff !important;
+}

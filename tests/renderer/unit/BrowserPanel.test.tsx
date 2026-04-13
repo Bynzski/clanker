@@ -67,6 +67,13 @@ const mockBrowserDisposeWorkspace = vi.fn().mockResolvedValue(undefined);
 const mockOpenExternal = vi.fn().mockResolvedValue(true);
 const mockCanGoBack = vi.fn().mockResolvedValue(false);
 const mockCanGoForward = vi.fn().mockResolvedValue(false);
+const mockAnnotationEnable = vi.fn().mockResolvedValue({ success: true });
+const mockAnnotationDisable = vi.fn().mockResolvedValue({ success: true });
+const mockAnnotationGetState = vi.fn().mockResolvedValue({ enabled: false, initialized: false, workspaceId: null });
+const mockAnnotationCapture = vi.fn().mockResolvedValue({ success: false, error: 'No annotation pending' });
+const mockAnnotationExport = vi.fn().mockResolvedValue({ success: true });
+const mockAnnotationCheckEscaped = vi.fn().mockResolvedValue(false);
+const mockOnAnnotationEscape = vi.fn(() => () => undefined);
 const originalResizeObserver = global.ResizeObserver;
 const originalRequestAnimationFrame = window.requestAnimationFrame;
 const originalCancelAnimationFrame = window.cancelAnimationFrame;
@@ -153,6 +160,13 @@ function setupElectronAPIMocks() {
     canGoBack: mockCanGoBack,
     canGoForward: mockCanGoForward,
     openExternal: mockOpenExternal,
+    annotationEnable: mockAnnotationEnable,
+    annotationDisable: mockAnnotationDisable,
+    annotationGetState: mockAnnotationGetState,
+    annotationCapture: mockAnnotationCapture,
+    annotationExport: mockAnnotationExport,
+    annotationCheckEscaped: mockAnnotationCheckEscaped,
+    onAnnotationEscape: mockOnAnnotationEscape,
   } as unknown as typeof window.electronAPI;
 }
 

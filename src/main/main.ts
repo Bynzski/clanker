@@ -49,6 +49,7 @@ import { registerFileIpc } from './ipc/fileIpc';
 import { FileWatcherService } from './fileWatcher';
 import { ExplorerWatcherService } from './explorerWatcher';
 import { registerVcsIpc } from './ipc/vcsIpc';
+import { registerAnnotationIpc } from './annotation/annotationIpc';
 
 interface StoreSchema {
   lastWorkspace: string;
@@ -78,6 +79,8 @@ const terminals: Map<string, Terminal> = new Map();
 const browserViews: Map<string, BrowserViewEntry> = new Map();
 let activeBrowserWorkspaceId: string | null = null;
 let mainWindow: BrowserWindow | null = null;
+let annotationModeEnabled = false;
+let annotationController: ReturnType<typeof import('./annotation/annotationIpc').registerAnnotationIpc> | null = null;
 
 const GRACEFUL_TERMINATION_TIMEOUT_MS = 1000;
 
@@ -209,6 +212,16 @@ app.whenReady().then(() => {
     getGitService: () => gitService,
   });
 
+  // Register annotation IPC handlers
+  annotationController = registerAnnotationIpc({
+    getBrowserViews: () => browserViews,
+    getActiveBrowserWorkspaceId: () => activeBrowserWorkspaceId,
+    getMainWindow: () => mainWindow,
+    onAnnotationModeChange: (enabled) => {
+      annotationModeEnabled = enabled;
+    },
+  });
+
   // Create window
   ({ window: mainWindow } = createMainWindow({
     preloadPath,
@@ -247,4 +260,4 @@ app.on('before-quit', () => {
 });
 
 // Export shared state for test access
-export { terminals, activeBrowserWorkspaceId, gitService, explorerWatcher, store, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS };
+export { terminals, activeBrowserWorkspaceId, gitService, explorerWatcher, store, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS, annotationModeEnabled, annotationController };
