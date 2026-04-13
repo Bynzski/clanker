@@ -9,6 +9,7 @@ import './Header.css';
 
 export default function Header() {
   const { 
+    activeWorkspaceId,
     workspacePath, 
     browserVisible,
     explorerVisible,
@@ -41,9 +42,13 @@ export default function Header() {
       return;
     }
 
-    pushBrowserOverlay();
-    return () => popBrowserOverlay();
-  }, [showSettings, pushBrowserOverlay, popBrowserOverlay]);
+    if (!activeWorkspaceId) {
+      return;
+    }
+
+    pushBrowserOverlay(activeWorkspaceId);
+    return () => popBrowserOverlay(activeWorkspaceId);
+  }, [activeWorkspaceId, showSettings, pushBrowserOverlay, popBrowserOverlay]);
 
   // Close the settings dropdown when clicking outside it.
   useEffect(() => {

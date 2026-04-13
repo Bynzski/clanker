@@ -110,6 +110,7 @@ function setupStore(overrides: BrowserPanelStoreOverrides = {}) {
     lifecycle: 'active',
     browserPane: state.browserPane,
     browserVisible: state.browserVisible,
+    browserOverlayCount: state.browserOverlayCount,
     browserUrl: 'https://github.com',
   });
   const workspaces = state.workspaces ?? [workspace];
@@ -126,6 +127,17 @@ function setupStore(overrides: BrowserPanelStoreOverrides = {}) {
   });
 
   return state;
+}
+
+function setActiveWorkspaceOverlayCount(browserOverlayCount: number) {
+  useWorkspaceStore.setState((state) => ({
+    browserOverlayCount,
+    workspaces: state.workspaces.map((workspace) => (
+      workspace.id === state.activeWorkspaceId
+        ? { ...workspace, browserOverlayCount }
+        : workspace
+    )),
+  }));
 }
 
 function setupElectronAPIMocks() {
@@ -560,7 +572,7 @@ describe('BrowserPanel', () => {
 
       render(<BrowserPanel {...defaultProps} />);
 
-      useWorkspaceStore.setState({ browserOverlayCount: 1 });
+      setActiveWorkspaceOverlayCount(1);
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(20);
@@ -596,13 +608,13 @@ describe('BrowserPanel', () => {
       expect(mockBrowserSetBounds).toHaveBeenCalledTimes(1);
 
       act(() => {
-        useWorkspaceStore.setState({ browserOverlayCount: 1 });
+        setActiveWorkspaceOverlayCount(1);
       });
       expect(mockBrowserHide).toHaveBeenCalledTimes(1);
 
       mockBrowserSetBounds.mockClear();
       act(() => {
-        useWorkspaceStore.setState({ browserOverlayCount: 0 });
+        setActiveWorkspaceOverlayCount(0);
       });
 
       act(() => {

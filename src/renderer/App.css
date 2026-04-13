@@ -69,6 +69,10 @@
   min-height: 0;
 }
 
+.workspace-surface.parked {
+  pointer-events: none;
+}
+
 .workspace-error-fallback {
   flex: 1;
   display: flex;

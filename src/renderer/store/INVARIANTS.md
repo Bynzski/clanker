@@ -18,34 +18,34 @@ The `workspaceLayout.ts` module now has direct unit test coverage (`tests/render
 
 ## Core Invariants
 
-## Workspace Lifecycle Baseline For Option B
-
-This section is intentionally forward-looking, but it documents the baseline the
-current code enforces today so Option B can be implemented without hand-waving.
+## Workspace Lifecycle Model For Option B
 
 ### Lifecycle Vocabulary
 
 - `active`: the selected workspace, whose snapshot is mirrored into the store's
-  top-level fields and rendered by the app shell today
-- `parked`: the future Option B state for a mounted-but-hidden workspace that
-  remains alive without being interactive
+  top-level fields and rendered in the visible app viewport
+- `parked`: a mounted-but-hidden workspace that remains alive without being
+  interactive
 - `disposed`: a fully closed workspace with no retained renderer or main-process
   resources
 
-### Current Baseline
+### Current Behavior
 
-Today the store and renderer only model `active` and `disposed` directly.
+The store and renderer now model `active` and `parked` explicitly.
 
 - Exactly one workspace may be active when `workspaces.length > 0`
-- Inactive workspaces remain as data in `workspaces[]`
-- Inactive workspaces are **not** mounted as live React workspace trees
-- Many background behaviors still key off the active top-level snapshot:
-  - editor file watch registration
-  - explorer watch registration
-  - browser panel interaction/bounds updates
+- Inactive workspaces remain mounted as parked React workspace trees
+- Parked workspaces are hidden and non-interactive
+- The active workspace snapshot is still mirrored into top-level store fields as
+  compatibility state for existing consumers
+- Background behavior is now split by policy:
+  - terminal sessions continue through the app-level bridge
+  - editor file watch registration spans active and parked workspaces
+  - explorer watch registration remains active-workspace only
+  - browser panel interaction and bounds updates remain active-workspace only
 
-That means the current system preserves inactive workspace data, but not a
-first-class parked lifecycle.
+That means the current system preserves inactive workspace data and mounted UI
+state, while still keeping active-only ownership for interactive resources.
 
 ### Resource Policy Baseline
 
@@ -53,24 +53,23 @@ These rules describe what should be treated as the source of truth during the
 parking migration. This list is intentionally explicit so reviewers can quickly
 spot a slice that changes behavior accidentally.
 
-| Resource / behavior | Current baseline | Option B target |
+| Resource / behavior | Current behavior | Option B target |
 |-------|-----------|-------------|
-| Workspace layout tree | Only active workspace is rendered | Parked workspaces remain mounted offscreen |
+| Workspace layout tree | Active workspace is visible, parked workspaces remain mounted in the hidden container | Parked workspaces remain mounted offscreen |
 | Terminal PTY output | Continues via app-level bridge | Continues while parked |
 | Terminal input/focus | Active workspace only | Active workspace only |
-| Editor file watchers | Active workspace tabs only | Explicit per-workspace policy |
+| Editor file watchers | All open editor tabs across active and parked workspaces | Explicit per-workspace policy |
 | Explorer watcher | Active workspace only | Explicit active vs parked policy |
-| Browser native view | Active workspace only | Retained per workspace, visible only for active |
+| Browser native view | Retained per workspace, visible only for active | Retained per workspace, visible only for active |
 | Global shortcuts | Active workspace snapshot | Active workspace only, even with parked trees |
 | Close cleanup | Active or data-only inactive workspace | Must handle active and parked workspaces |
 
 ### Review Implication
 
-Until Option B lands, any code that talks about `parked` workspaces must also
-say whether it is:
+When code talks about `parked` workspaces, it must also say whether it is:
 
-- documenting the future target behavior, or
-- describing the current active-only baseline
+- documenting the current enforced behavior, or
+- describing a remaining target that has not landed yet
 
 Mixing those two states is how lifecycle regressions get introduced.
 
@@ -80,7 +79,7 @@ Mixing those two states is how lifecycle regressions get introduced.
 |-------|-----------|-------------|
 | `activeWorkspaceId` | `null` ↔ `workspaces.length === 0` | When no workspaces exist, nothing can be active |
 | `activeWorkspaceId` | `activeWorkspaceId !== null` → `workspaces.some(w => w.id === activeWorkspaceId)` | The active workspace ID always references an existing workspace |
-| `workspaces[].lifecycle` | `workspaces.length > 0` → exactly one workspace has `lifecycle === 'active'` | Lifecycle state is explicit even though rendering is still active-snapshot based |
+| `workspaces[].lifecycle` | `workspaces.length > 0` → exactly one workspace has `lifecycle === 'active'` | Lifecycle state is explicit and drives active vs parked rendering |
 | `activeWorkspaceId` + `workspaces[].lifecycle` | `activeWorkspaceId !== null` → the referenced workspace has `lifecycle === 'active'` | The active pointer and lifecycle state must agree |
 
 **Why:** The active workspace ID is a reference pointer. If the referenced workspace doesn't exist, the UI would be in an inconsistent state with no clear behavior.

@@ -491,7 +491,7 @@ describe('browser', () => {
     expect(getStore().browserUrl).toBe('https://example.com');
   });
 
-  it('pushBrowserOverlay and popBrowserOverlay manage count', () => {
+  it('pushBrowserOverlay and popBrowserOverlay manage count for the active workspace snapshot', () => {
     expect(getStore().browserOverlayCount).toBe(0);
     getStore().pushBrowserOverlay();
     expect(getStore().browserOverlayCount).toBe(1);
@@ -499,11 +499,37 @@ describe('browser', () => {
     expect(getStore().browserOverlayCount).toBe(2);
     getStore().popBrowserOverlay();
     expect(getStore().browserOverlayCount).toBe(1);
+    const activeWorkspaceId = getStore().activeWorkspaceId!;
+    expect(getStore().workspaces.find((workspace) => workspace.id === activeWorkspaceId)?.browserOverlayCount).toBe(1);
   });
 
   it('popBrowserOverlay does not go below 0', () => {
     getStore().popBrowserOverlay();
     expect(getStore().browserOverlayCount).toBe(0);
+  });
+
+  it('tracks browser overlays per workspace across switches', () => {
+    addWorkspace({ workspacePath: '/first', name: 'first' });
+    const firstId = getStore().activeWorkspaceId!;
+    getStore().pushBrowserOverlay(firstId);
+
+    addWorkspace({ workspacePath: '/second', name: 'second' });
+    const secondId = getStore().activeWorkspaceId!;
+
+    expect(getStore().browserOverlayCount).toBe(0);
+    expect(getStore().workspaces.find((workspace) => workspace.id === firstId)?.browserOverlayCount).toBe(1);
+
+    getStore().pushBrowserOverlay(secondId);
+    expect(getStore().browserOverlayCount).toBe(1);
+    expect(getStore().workspaces.find((workspace) => workspace.id === secondId)?.browserOverlayCount).toBe(1);
+
+    getStore().selectWorkspace(firstId);
+    expect(getStore().browserOverlayCount).toBe(1);
+    expect(getStore().workspaces.find((workspace) => workspace.id === secondId)?.browserOverlayCount).toBe(1);
+
+    getStore().popBrowserOverlay(firstId);
+    expect(getStore().browserOverlayCount).toBe(0);
+    expect(getStore().workspaces.find((workspace) => workspace.id === firstId)?.browserOverlayCount).toBe(0);
   });
 
   it('toggleBrowserLock toggles browser pane locked state', () => {

@@ -97,8 +97,8 @@ export interface WorkspaceState {
   removeTerminal: (id: string) => void;
   setActiveTerminal: (id: string) => void;
   toggleBrowser: () => void;
-  pushBrowserOverlay: () => void;
-  popBrowserOverlay: () => void;
+  pushBrowserOverlay: (workspaceId?: string) => void;
+  popBrowserOverlay: (workspaceId?: string) => void;
   setBrowserUrl: (url: string, workspaceId?: string) => void;
   updateWorkspaceBrowserUrl: (workspaceId: string, url: string) => void;
   clearTerminals: () => void;
@@ -163,6 +163,7 @@ export type ActiveWorkspaceSnapshot = Pick<
   | 'terminals'
   | 'panes'
   | 'browserVisible'
+  | 'browserOverlayCount'
   | 'browserUrl'
   | 'activeTerminalId'
   | 'browserPane'

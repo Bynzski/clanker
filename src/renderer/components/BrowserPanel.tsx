@@ -23,8 +23,11 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
   // DPR rounding noise and unstable intermediate layout measurements.
   const lastBoundsRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const workspace = useScopedWorkspace(workspaceId);
-  const { activeWorkspaceId, browserOverlayCount, bringBrowserIntoView, toggleBrowserLock } = useWorkspaceStore();
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const bringBrowserIntoView = useWorkspaceStore((state) => state.bringBrowserIntoView);
+  const toggleBrowserLock = useWorkspaceStore((state) => state.toggleBrowserLock);
   const browserLocked = workspace?.browserPane?.locked ?? false;
+  const browserOverlayCount = workspace?.browserOverlayCount ?? 0;
   const dragHandleProps = useDragHandle();
   const isActiveWorkspace = workspace?.id != null
     && workspace.id === activeWorkspaceId

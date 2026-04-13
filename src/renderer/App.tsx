@@ -117,6 +117,7 @@ function App() {
       terminals,
       panes,
       browserVisible: false,
+      browserOverlayCount: 0,
       browserUrl: 'https://github.com',
       activeTerminalId: terminals.length > 0 ? terminals[terminals.length - 1].id : null,
       browserPane: null,

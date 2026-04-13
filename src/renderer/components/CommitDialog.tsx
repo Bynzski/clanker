@@ -38,6 +38,7 @@ export default function CommitDialog({
   const [aiSettings, setAiSettings] = useState<AiCommitSettings | null>(null);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const [isCommitting, setIsCommitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isUnstaging, setIsUnstaging] = useState(false);
@@ -95,9 +96,13 @@ export default function CommitDialog({
       return;
     }
 
-    pushBrowserOverlay();
-    return () => popBrowserOverlay();
-  }, [isOpen, pushBrowserOverlay, popBrowserOverlay]);
+    if (!activeWorkspaceId) {
+      return;
+    }
+
+    pushBrowserOverlay(activeWorkspaceId);
+    return () => popBrowserOverlay(activeWorkspaceId);
+  }, [activeWorkspaceId, isOpen, pushBrowserOverlay, popBrowserOverlay]);
 
   // Handle escape key
   useEffect(() => {

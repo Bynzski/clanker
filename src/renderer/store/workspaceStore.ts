@@ -423,13 +423,33 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     };
   }),
 
-  pushBrowserOverlay: () => set((state) => ({
-    browserOverlayCount: state.browserOverlayCount + 1,
-  })),
+  pushBrowserOverlay: (workspaceId) => set((state) => {
+    const scopedWorkspaceId = resolveWorkspaceIdByScope(state, workspaceId);
+    if (scopedWorkspaceId == null) {
+      return {
+        browserOverlayCount: state.browserOverlayCount + 1,
+      };
+    }
 
-  popBrowserOverlay: () => set((state) => ({
-    browserOverlayCount: Math.max(0, state.browserOverlayCount - 1),
-  })),
+    return patchWorkspaceById(state, scopedWorkspaceId, (workspace) => ({
+      ...workspace,
+      browserOverlayCount: (workspace.browserOverlayCount ?? 0) + 1,
+    }));
+  }),
+
+  popBrowserOverlay: (workspaceId) => set((state) => {
+    const scopedWorkspaceId = resolveWorkspaceIdByScope(state, workspaceId);
+    if (scopedWorkspaceId == null) {
+      return {
+        browserOverlayCount: Math.max(0, state.browserOverlayCount - 1),
+      };
+    }
+
+    return patchWorkspaceById(state, scopedWorkspaceId, (workspace) => ({
+      ...workspace,
+      browserOverlayCount: Math.max(0, (workspace.browserOverlayCount ?? 0) - 1),
+    }));
+  }),
 
   setBrowserUrl: (url, workspaceId) => set((state) => {
     const scopedWorkspaceId = resolveWorkspaceIdByScope(state, workspaceId);
