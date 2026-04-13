@@ -9,6 +9,7 @@ import type {
   EditorTab,
   Pane,
   PanePosition,
+  WorkspaceLifecycleState,
   WorkspaceTab,
 } from './workspaceTypes';
 import type {
@@ -71,6 +72,7 @@ export function areGitStatusListsEqual(a: GitStatus[], b: GitStatus[]): boolean 
 
 export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   ...workspace,
+  lifecycle: workspace.lifecycle ?? 'active',
   terminals: [...workspace.terminals],
   panes: [...workspace.panes],
   explorerExpandedPaths: [...workspace.explorerExpandedPaths],
@@ -88,6 +90,30 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
     : null,
   layoutRoot: buildWorkspaceLayout(workspace),
 });
+
+export function withWorkspaceLifecycle(
+  workspace: WorkspaceTab,
+  lifecycle: WorkspaceLifecycleState,
+): WorkspaceTab {
+  if (workspace.lifecycle === lifecycle) {
+    return workspace;
+  }
+
+  return {
+    ...workspace,
+    lifecycle,
+  };
+}
+
+export function assignWorkspaceLifecycles(
+  workspaces: WorkspaceTab[],
+  activeWorkspaceId: string | null,
+): WorkspaceTab[] {
+  return workspaces.map((workspace) => withWorkspaceLifecycle(
+    workspace,
+    workspace.id === activeWorkspaceId ? 'active' : 'parked',
+  ));
+}
 
 export function getWorkspaceNameFromPath(workspacePath: string): string {
   const trimmed = workspacePath.replace(/\/+$/, '');
@@ -239,6 +265,24 @@ export function validateWorkspaceConsistency(state: Partial<WorkspaceState>): st
   if (typeof state.activeWorkspaceId === 'string' && Array.isArray(state.workspaces)) {
     if (!state.workspaces.some(w => w.id === state.activeWorkspaceId)) {
       warnings.push(`W2 violated: activeWorkspaceId "${state.activeWorkspaceId}" not found in workspaces[]`);
+    }
+  }
+  if (hasOwn('workspaces') && hasOwn('activeWorkspaceId') && Array.isArray(state.workspaces)) {
+    const activeLifecycleWorkspaces = state.workspaces.filter((workspace) => workspace.lifecycle === 'active');
+
+    if (state.workspaces.length > 0 && activeLifecycleWorkspaces.length !== 1) {
+      warnings.push(
+        `W3 violated: expected exactly one active workspace lifecycle entry, found ${activeLifecycleWorkspaces.length}`,
+      );
+    }
+
+    if (typeof state.activeWorkspaceId === 'string') {
+      const activeWorkspace = state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
+      if (activeWorkspace != null && activeWorkspace.lifecycle !== 'active') {
+        warnings.push(
+          `W4 violated: activeWorkspaceId "${state.activeWorkspaceId}" does not reference a workspace with lifecycle "active"`,
+        );
+      }
     }
   }
 

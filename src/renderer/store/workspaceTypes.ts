@@ -48,6 +48,8 @@ export interface GridViewport {
   rows: number;
 }
 
+export type WorkspaceLifecycleState = 'active' | 'parked';
+
 export type LayoutNode = LayoutLeaf | LayoutSplit;
 
 export interface LayoutLeaf {
@@ -67,6 +69,7 @@ export interface LayoutSplit {
 
 export interface WorkspaceTab {
   id: string;
+  lifecycle: WorkspaceLifecycleState;
   name: string;
   workspacePath: string;
   harness: string;

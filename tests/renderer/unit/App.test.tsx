@@ -211,6 +211,7 @@ describe('App', () => {
         useWorkspaceStore.setState({
           workspaces: [{
             id: 'ws-1',
+            lifecycle: 'active',
             name: 'test',
             workspacePath: '/test',
             harness: 'codex',
@@ -253,6 +254,7 @@ describe('App', () => {
         useWorkspaceStore.setState({
           workspaces: [{
             id: 'ws-1',
+            lifecycle: 'active',
             name: 'test',
             workspacePath: '/test',
             harness: 'codex',
@@ -306,6 +308,7 @@ describe('App', () => {
         useWorkspaceStore.setState({
           workspaces: [{
             id: 'ws-1',
+            lifecycle: 'active',
             name: 'test',
             workspacePath: '/test',
             harness: 'codex',
@@ -393,6 +396,7 @@ describe('App', () => {
         useWorkspaceStore.setState({
           workspaces: [{
             id: 'ws-1',
+            lifecycle: 'active',
             name: 'test',
             workspacePath: '/test',
             harness: 'codex',
@@ -667,6 +671,7 @@ describe('App', () => {
         useWorkspaceStore.setState({
           workspaces: [{
             id: 'ws-1',
+            lifecycle: 'active',
             name: 'test',
             workspacePath: '/test',
             harness: 'codex',

@@ -25,6 +25,7 @@ import type {
 import type { WorkspaceState } from './workspaceStoreTypes';
 import {
   areGitStatusListsEqual,
+  assignWorkspaceLifecycles,
   clearEditorOperationPending,
   createDefaultEditorState,
   createDefaultExplorerState,
@@ -65,6 +66,9 @@ export * from './workspaceStoreHelpers';
  *
  * @invariant activeWorkspaceId !== null -> workspaces.some(w => w.id === activeWorkspaceId)
  *   The active workspace ID always references an existing workspace.
+ *
+ * @invariant workspaces.length > 0 -> workspaces.filter(w => w.lifecycle === 'active').length === 1
+ *   Exactly one workspace must be marked active in lifecycle state.
  *
  * @invariant activeTerminalId === null - terminals.length === 0
  *   When no terminals exist, no terminal can be active.
@@ -109,6 +113,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   ...defaultWorkspaceState,
   workspaces: [],
   activeWorkspaceId: null,
+  activeWorkspaceLifecycle: null,
 
   addWorkspace: (workspace) => set((state) => {
     const id = createWorkspaceId();
@@ -116,14 +121,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const nextWorkspace: WorkspaceTab = sanitizeWorkspace({
       ...createDefaultExplorerState(),
       id,
+      lifecycle: 'active',
       ...workspace,
       name: defaultName,
     });
+    const nextWorkspaces = assignWorkspaceLifecycles([...state.workspaces, nextWorkspace], id);
 
     const nextState = {
       ...getActiveWorkspaceSnapshot(nextWorkspace),
-      workspaces: [...state.workspaces, nextWorkspace],
+      workspaces: nextWorkspaces,
       activeWorkspaceId: id,
+      activeWorkspaceLifecycle: 'active' as const,
       layoutRevision: state.layoutRevision,
     };
     if (import.meta.env.DEV) {
@@ -141,12 +149,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
-    const next = sanitizeWorkspace(workspace);
+    const next = sanitizeWorkspace({
+      ...workspace,
+      lifecycle: 'active',
+    });
+    const nextWorkspaces = assignWorkspaceLifecycles(
+      state.workspaces.map((entry) => entry.id === id ? next : entry),
+      id,
+    );
     const nextState = {
       ...getActiveWorkspaceSnapshot(next),
+      workspaces: nextWorkspaces,
       gridViewport: state.gridViewport,
       layoutRevision: state.layoutRevision,
       activeWorkspaceId: id,
+      activeWorkspaceLifecycle: 'active' as const,
     };
 
     if (import.meta.env.DEV) {
@@ -167,22 +184,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         ...defaultWorkspaceState,
         workspaces: [],
         activeWorkspaceId: null,
+        activeWorkspaceLifecycle: null,
       };
     }
 
     if (state.activeWorkspaceId === id) {
       const nextActive = remaining[Math.max(0, remaining.length - 1)];
+      const nextWorkspaces = assignWorkspaceLifecycles(remaining, nextActive.id);
       return {
         ...getActiveWorkspaceSnapshot(nextActive),
         gridViewport: state.gridViewport,
         layoutRevision: state.layoutRevision,
-        workspaces: remaining,
+        workspaces: nextWorkspaces,
         activeWorkspaceId: nextActive.id,
+        activeWorkspaceLifecycle: 'active',
       };
     }
 
+    const nextWorkspaces = assignWorkspaceLifecycles(remaining, state.activeWorkspaceId);
     return {
-      workspaces: remaining,
+      workspaces: nextWorkspaces,
+      activeWorkspaceLifecycle: 'active',
     };
   }),
 

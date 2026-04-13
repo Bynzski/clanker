@@ -16,6 +16,7 @@ vi.mock('../../../src/renderer/lib/workspaceLifecycle', () => ({
 function createMockWorkspace(overrides: Partial<WorkspaceTab> = {}): WorkspaceTab {
   return {
     id: 'ws1',
+    lifecycle: 'active',
     name: 'Test Workspace',
     workspacePath: '/path/to/workspace',
     terminals: [],
