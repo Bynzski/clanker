@@ -11,7 +11,7 @@
 Clanker Grid is a desktop developer workspace combining:
 - Multi-pane terminal grid with PTY-backed shells
 - AI harness launcher (Codex, Claude, OpenCode, Pi)
-- Integrated native browser panel
+- Integrated native browser panel with element annotation
 - Built-in git tools (branch, stash, merge, commit, history)
 - AI-assisted commit message generation
 
@@ -49,6 +49,11 @@ src/
 │   ├── fileWatcher.ts        # File system watching (couples to GitService)
 │   ├── modelCache.ts         # Model availability caching
 │   ├── terminalUtils.ts     # Terminal buffer constants (shared with renderer)
+│   ├── annotation/           # Browser annotation feature
+│   │   ├── annotationController.ts   # Main process controller
+│   │   ├── annotationRuntime.ts      # Injected JS runtime (template string)
+│   │   ├── annotationIpc.ts         # IPC handlers
+│   │   └── index.ts         # Module exports
 │   ├── ipc/                  # IPC handler registrations
 │   │   ├── settingsIpc.ts    # Store, AI commit, harness, window controls
 │   │   ├── terminalIpc.ts    # PTY spawn, write, resize, kill
@@ -155,6 +160,7 @@ Main ↔ Renderer communication via preload bridge (`src/main/preload.ts`):
 | Terminal | spawn, write, resize, kill, buffer, data, exit | `terminalIpc.ts` |
 | Git | polling, status, stage, commit, branch, stash, merge, history, diff, remotes, push/pull/fetch | `gitIpc.ts` |
 | Browser | navigate, back, forward, bounds, hide, dispose, external links | `browserIpc.ts` |
+| Annotation | enable, disable, capture, get state, export, escape, trigger copy | `annotationIpc.ts` |
 | File | read, write, watch, unwatch, changed, create, delete, rename | `fileIpc.ts` |
 | Credentials | SSH keys, PAT management, SSH host configuration | `credentialIpc.ts` |
 | VCS | context, PR info, deep links | `vcsIpc.ts` |
@@ -180,6 +186,16 @@ Main ↔ Renderer communication via preload bridge (`src/main/preload.ts`):
 - Renderer only controls toolbar state and bounds
 - Security: only `http:`/`https:` URLs allowed
 - New windows denied, redirected to system browser
+
+### Browser Annotation
+
+- Annotation mode enables element selection on web pages
+- Runtime injected via `webContents.executeJavaScript()`
+- In-page popup for note entry (not a React component)
+- Selector ranking: `data-testid` → `id` → `role+aria-label` → `nth-of-type`
+- Context extraction: UI region, element role, nearby text, ancestor context
+- Two-layer escape handling: main process (`before-input-event`) + injected runtime
+- Runtime re-injected on page navigation while annotation mode is active
 
 ### Git Integration
 
@@ -228,6 +244,13 @@ Main ↔ Renderer communication via preload bridge (`src/main/preload.ts`):
 - PAT (personal access token) management per VCS provider: `src/main/credential/credentialService.ts`.
 - Types: `src/main/credential/types.ts`.
 - Public interface is via `src/main/ipc/credentialIpc.ts`.
+
+### Annotation Module
+
+- `annotationController.ts` — Main process controller for annotation lifecycle. Manages enable/disable, injection, and clipboard export.
+- `annotationRuntime.ts` — Injected JavaScript runtime as a template string. Renders crosshair cursor, hover highlights, selection popup, and note textarea. Exports structured Markdown to clipboard.
+- `annotationIpc.ts` — IPC handlers for annotation operations. Registers all annotation channels and manages escape handlers.
+- Context extraction helpers: `findNearestRegionLabel`, `inferRegionType`, `collectNearbyText`, `inferElementRoleInContext`.
 
 ## Code Standards
 
