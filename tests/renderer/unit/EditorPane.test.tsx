@@ -139,6 +139,43 @@ describe('EditorPane', () => {
       expect(document.querySelector('.editor-content')).toBeTruthy();
     });
 
+    it('marks parked workspace editor instances as non-interactive', () => {
+      const parkedWorkspace = createWorkspaceFixture({
+        id: 'ws-1',
+        lifecycle: 'parked',
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: false },
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace-a/alpha.ts',
+            fileName: 'alpha.ts',
+            isDirty: false,
+            content: 'export const alpha = 1;',
+            originalContent: 'export const alpha = 1;',
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+      });
+      const activeWorkspace = createWorkspaceFixture({
+        id: 'ws-2',
+        lifecycle: 'active',
+        editorVisible: false,
+      });
+
+      useWorkspaceStore.setState({
+        workspaces: [parkedWorkspace, activeWorkspace],
+        activeWorkspaceId: 'ws-2',
+        activeWorkspaceLifecycle: 'active',
+      });
+
+      render(<EditorPane workspaceId="ws-1" />);
+
+      expect(document.querySelector('.editor-panel')).toHaveAttribute('data-workspace-interactive', 'false');
+      expect(document.querySelector('.editor-pane-lock-btn')).toBeDisabled();
+      expect(document.querySelector('.editor-tab')).toBeDisabled();
+    });
+
     it('editor panel container', () => {
       render(<EditorPane />);
       expect(document.querySelector('.editor-panel')).toBeTruthy();

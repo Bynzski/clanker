@@ -10,20 +10,23 @@ import {
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useDragHandle } from './DynamicPaneLayout';
-import { useScopedWorkspace } from './WorkspaceScope';
+import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
 import EditorTabBar from './EditorTabBar';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
 import { getLanguageExtension } from '../lib/editorLanguage';
 import './EditorPane.css';
 
 export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
+  const panelRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const lastSyncedTabIdRef = useRef<string | null>(null);
   const langCompartmentRef = useRef<Compartment>(new Compartment());
+  const isInteractiveRef = useRef(true);
 
   const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
   const workspace = useScopedWorkspace(workspaceId);
+  const isInteractive = useScopedWorkspaceActivity(workspaceId);
 
   const {
     toggleEditorLock,
@@ -40,6 +43,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
   const activeEditorTabId = workspace?.activeEditorTabId ?? null;
   const activeTab = editorTabs.find((t) => t.id === activeEditorTabId) ?? null;
   const dragHandleProps = useDragHandle();
+  const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
 
   const hasDirtyTabs = editorTabs.some((t) => t.isDirty);
 
@@ -48,6 +52,23 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
     () => (activeTab ? getLanguageExtension(activeTab.fileName) : []),
     [activeTab],
   );
+
+  useEffect(() => {
+    isInteractiveRef.current = isInteractive;
+  }, [isInteractive]);
+
+  useEffect(() => {
+    if (panelRef.current == null) {
+      return;
+    }
+
+    panelRef.current.inert = !isInteractive;
+    panelRef.current.setAttribute('aria-hidden', isInteractive ? 'false' : 'true');
+
+    if (!isInteractive && panelRef.current.contains(document.activeElement)) {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    }
+  }, [isInteractive]);
 
   // Initialize CodeMirror editor with a compartment for language switching.
   useEffect(() => {
@@ -137,7 +158,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
     if (view == null) return;
 
     const listener = EditorView.updateListener.of((update) => {
-      if (!update.docChanged) return;
+      if (!update.docChanged || !isInteractiveRef.current) return;
       const { updateEditorContent, getWorkspaceById, getActiveWorkspace } = useWorkspaceStore.getState();
       const currentWorkspace = workspaceId ? getWorkspaceById(workspaceId) : getActiveWorkspace();
       const currentTabId = currentWorkspace?.activeEditorTabId ?? null;
@@ -160,6 +181,9 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
   }, [workspaceId]);
 
   const handleToggleLock = () => {
+    if (!isInteractive) {
+      return;
+    }
     if (workspaceId) {
       toggleEditorLock(workspaceId);
     } else {
@@ -168,6 +192,9 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
   };
 
   const handleClosePane = () => {
+    if (!isInteractive) {
+      return;
+    }
     if (hasDirtyTabs) {
       setShowCloseConfirmation(true);
     } else {
@@ -180,6 +207,9 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
   };
 
   const handleDontSaveAndClose = () => {
+    if (!isInteractive) {
+      return;
+    }
     if (workspaceId) {
       closeEditorPane(workspaceId);
     } else {
@@ -196,8 +226,8 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
 
   return (
     <>
-      <div className="editor-panel">
-        <div className="editor-pane-header" {...dragHandleProps}>
+      <div ref={panelRef} className="editor-panel" data-workspace-interactive={isInteractive ? 'true' : 'false'}>
+        <div className="editor-pane-header" {...headerDragHandleProps}>
           <div className="editor-pane-drag-handle" aria-hidden="true" title="Drag to move pane" />
           <span className="editor-pane-title">Editor</span>
           <span className="editor-pane-spacer" />
@@ -206,6 +236,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             onClick={handleClosePane}
             title="Close editor"
             aria-label="Close editor"
+            disabled={!isInteractive}
           >
             <X size={12} strokeWidth={2} />
           </button>
@@ -214,6 +245,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             onClick={handleToggleLock}
             title={editorLocked ? 'Unlock editor pane' : 'Lock editor pane'}
             aria-label={editorLocked ? 'Unlock editor pane' : 'Lock editor pane'}
+            disabled={!isInteractive}
           >
             {editorLocked ? (
               <Lock size={12} strokeWidth={2} />
@@ -232,7 +264,11 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             </span>
             <button
               className="editor-reload-banner-btn"
+              disabled={!isInteractive}
               onClick={() => {
+                if (!isInteractive) {
+                  return;
+                }
                 if (workspaceId) {
                   void reloadEditorTab(activeTab.id, workspaceId);
                 } else {
@@ -244,7 +280,11 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             </button>
             <button
               className="editor-reload-banner-btn editor-reload-banner-btn--secondary"
+              disabled={!isInteractive}
               onClick={() => {
+                if (!isInteractive) {
+                  return;
+                }
                 if (workspaceId) {
                   clearEditorTabExternalFlag(activeTab.id, workspaceId);
                 } else {
@@ -263,7 +303,11 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             </span>
             <button
               className="editor-reload-banner-btn"
+              disabled={!isInteractive}
               onClick={() => {
+                if (!isInteractive) {
+                  return;
+                }
                 if (workspaceId) {
                   closeEditorTab(activeTab.id, workspaceId);
                 } else {
@@ -275,7 +319,11 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             </button>
             <button
               className="editor-reload-banner-btn editor-reload-banner-btn--secondary"
+              disabled={!isInteractive}
               onClick={() => {
+                if (!isInteractive) {
+                  return;
+                }
                 if (workspaceId) {
                   void saveEditorFile(activeTab.id, workspaceId);
                 } else {

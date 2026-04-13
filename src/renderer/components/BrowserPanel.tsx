@@ -23,13 +23,16 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
   // DPR rounding noise and unstable intermediate layout measurements.
   const lastBoundsRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const workspace = useScopedWorkspace(workspaceId);
-  const { browserOverlayCount, bringBrowserIntoView, toggleBrowserLock } = useWorkspaceStore();
+  const { activeWorkspaceId, browserOverlayCount, bringBrowserIntoView, toggleBrowserLock } = useWorkspaceStore();
   const browserLocked = workspace?.browserPane?.locked ?? false;
   const dragHandleProps = useDragHandle();
+  const isActiveWorkspace = workspace?.id != null
+    && workspace.id === activeWorkspaceId
+    && workspace.lifecycle === 'active';
 
   // Update bounds for the browser content area
   const updateBounds = useCallback(() => {
-    if (!contentRef.current || !workspace?.browserVisible || browserOverlayCount > 0 || !workspace.id) return;
+    if (!contentRef.current || !workspace?.browserVisible || browserOverlayCount > 0 || !workspace.id || !isActiveWorkspace) return;
 
     const rect = contentRef.current.getBoundingClientRect();
 
@@ -65,7 +68,7 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
 
     lastBoundsRef.current = newBounds;
     window.electronAPI.browserSetBounds(workspace.id, newBounds);
-  }, [workspace?.browserVisible, browserOverlayCount, workspace?.id]);
+  }, [browserOverlayCount, isActiveWorkspace, workspace?.browserVisible, workspace?.id]);
 
   const scheduleBoundsUpdate = useCallback(() => {
     if (rafRef.current != null) {
@@ -87,7 +90,7 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
 
   // Health check: periodically ensure bounds are in sync (safety net for missed updates)
   useEffect(() => {
-    if (!workspace?.browserVisible || browserOverlayCount > 0 || !workspace.id) {
+    if (!workspace?.browserVisible || browserOverlayCount > 0 || !workspace.id || !isActiveWorkspace) {
       return;
     }
 
@@ -96,7 +99,7 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
     }, 2000);
 
     return () => clearInterval(healthCheckInterval);
-  }, [workspace?.browserVisible, browserOverlayCount, workspace?.id, scheduleBoundsUpdate]);
+  }, [browserOverlayCount, isActiveWorkspace, scheduleBoundsUpdate, workspace?.browserVisible, workspace?.id]);
 
   // Observe the outer panel so pane mount/show/layout changes still trigger a follow-up
   // bounds sync even if the inner content element has not emitted its own resize yet.
@@ -134,7 +137,7 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
 
   // Poll for navigation state
   useEffect(() => {
-    if (!workspace?.id) {
+    if (!workspace?.id || !isActiveWorkspace) {
       setCanGoBack(false);
       setCanGoForward(false);
       return;
@@ -162,7 +165,7 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
       cancelled = true;
       clearInterval(interval);
     };
-  }, [workspace?.id]);
+  }, [isActiveWorkspace, workspace?.id]);
 
   // Hide browser view when component unmounts
   useEffect(() => {
@@ -180,6 +183,16 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
   // Temporarily hide the native browser whenever a modal is open.
   useEffect(() => {
     if (!workspace?.browserVisible || !workspace.id) {
+      return;
+    }
+
+    if (!isActiveWorkspace) {
+      if (rafRef.current != null) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      lastBoundsRef.current = null;
+      window.electronAPI.browserHide(workspace.id);
       return;
     }
 
@@ -202,7 +215,7 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
     return () => {
       window.cancelAnimationFrame(followUpFrame);
     };
-  }, [workspace?.browserVisible, browserOverlayCount, scheduleBoundsUpdate, workspace?.id]);
+  }, [browserOverlayCount, isActiveWorkspace, scheduleBoundsUpdate, workspace?.browserVisible, workspace?.id]);
 
   const handleNavigate = () => {
     let navigateUrl = inputUrl.trim();

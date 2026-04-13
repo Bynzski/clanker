@@ -67,3 +67,17 @@ export function useScopedWorkspace(workspaceId?: string): WorkspaceTab | null {
 
   return null;
 }
+
+export function useScopedWorkspaceActivity(workspaceId?: string): boolean {
+  const resolvedWorkspaceId = useScopedWorkspaceId(workspaceId);
+  const { workspaces, activeWorkspaceId, activeWorkspaceLifecycle } = useWorkspaceStore();
+
+  const matchedWorkspace = findWorkspaceById(workspaces, resolvedWorkspaceId)
+    ?? findWorkspaceById(workspaces, activeWorkspaceId);
+
+  if (matchedWorkspace) {
+    return matchedWorkspace.id === activeWorkspaceId && matchedWorkspace.lifecycle === 'active';
+  }
+
+  return activeWorkspaceId == null && activeWorkspaceLifecycle !== 'parked';
+}

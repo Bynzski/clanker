@@ -14,8 +14,14 @@ vi.mock('../../../src/renderer/components/FileExplorer', () => ({
   default: () => <div data-testid="file-explorer">FileExplorer</div>,
 }));
 
+const mockBrowserHide = vi.fn();
+
 describe('WorkspaceHost', () => {
   beforeEach(() => {
+    window.electronAPI = {
+      browserHide: mockBrowserHide,
+    } as unknown as typeof window.electronAPI;
+    mockBrowserHide.mockReset();
     useWorkspaceStore.setState({
       workspaces: [],
       activeWorkspaceId: null,
@@ -84,5 +90,30 @@ describe('WorkspaceHost', () => {
 
     const activeViewport = document.querySelector('.workspace-active-viewport');
     expect(within(activeViewport as HTMLElement).getByTestId('dynamic-pane-layout')).toBeTruthy();
+  });
+
+  it('hides parked browser views at the host lifecycle layer', async () => {
+    const first = createWorkspaceFixture({
+      id: 'ws-1',
+      lifecycle: 'parked',
+      browserVisible: true,
+    });
+    const second = createWorkspaceFixture({
+      id: 'ws-2',
+      lifecycle: 'active',
+      browserVisible: true,
+    });
+    useWorkspaceStore.setState({
+      workspaces: [first, second],
+      activeWorkspaceId: 'ws-2',
+      activeWorkspaceLifecycle: 'active',
+    });
+
+    render(<WorkspaceHost />);
+
+    await screen.findByTestId('workspace-host');
+
+    expect(mockBrowserHide).toHaveBeenCalledWith('ws-1');
+    expect(mockBrowserHide).not.toHaveBeenCalledWith('ws-2');
   });
 });

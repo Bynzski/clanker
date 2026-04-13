@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react'
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { LocateFixed, Lock, Unlock } from 'lucide-react';
 import { useDragHandle } from './DynamicPaneLayout';
-import { useScopedWorkspace } from './WorkspaceScope';
+import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
 import './TerminalPane.css';
 import '@xterm/xterm/css/xterm.css';
 
@@ -110,6 +110,7 @@ export function clearTerminalCache(): void {
 const RESIZE_LOCK_MS = 100;
 
 export default function TerminalPane({ workspaceId, paneId, compact = false }: Props) {
+  const paneRootRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTermInstance | null>(null);
   const fitAddonRef = useRef<FitAddonInstance | null>(null);
@@ -120,6 +121,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const [terminalRuntimeReady, setTerminalRuntimeReady] = useState(false);
   const dragHandleProps = useDragHandle();
   const workspace = useScopedWorkspace(workspaceId);
+  const isInteractive = useScopedWorkspaceActivity(workspaceId);
 
   const {
     setActiveTerminal,
@@ -132,6 +134,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const terminal = workspace?.terminals.find((item) => item.id === pane?.terminalId);
   const terminalId = terminal?.id ?? null;
   const paneLocked = pane?.locked ?? false;
+  const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
 
   // -------------------------------------------------------------------------
   // Core resize logic — sends dimensions to main with lock coalescing
@@ -166,6 +169,22 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       sendResize(dims.cols, dims.rows);
     }
   }, [sendResize]);
+
+  // -------------------------------------------------------------------------
+  // Interaction boundary — parked workspaces stay mounted but non-interactive.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (paneRootRef.current == null) {
+      return;
+    }
+
+    paneRootRef.current.inert = !isInteractive;
+    paneRootRef.current.setAttribute('aria-hidden', isInteractive ? 'false' : 'true');
+
+    if (!isInteractive && paneRootRef.current.contains(document.activeElement)) {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    }
+  }, [isInteractive]);
 
   // -------------------------------------------------------------------------
   // xterm lifecycle — create or restore from cache
@@ -334,13 +353,21 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terminalId]);
 
+  useEffect(() => {
+    if (!terminalRuntimeReady || terminalId == null) {
+      return;
+    }
+
+    window.electronAPI.terminalReady(terminalId).catch(console.error);
+  }, [terminalId, terminalRuntimeReady]);
+
   // -------------------------------------------------------------------------
   // IPC controls — local input/selection/resize handling only.
   // Global output delivery is handled once at app level so hidden workspaces
   // continue receiving terminal data and exit events.
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (!terminalRuntimeReady || xtermRef.current == null || terminalId == null) return;
+    if (!terminalRuntimeReady || xtermRef.current == null || terminalId == null || !isInteractive) return;
 
     const xterm = xtermRef.current;
     let inputDisposable: { dispose: () => void } | null = null;
@@ -357,11 +384,6 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       }
       window.electronAPI.writeTerminal(terminalId, data).catch(console.error);
     });
-
-    // Signal readiness to main process — this triggers flush of startup buffer.
-    // Critical for DA1 query/response: ensures xterm is ready to receive and respond
-    // to terminal capability queries before PTY output starts flowing.
-    window.electronAPI.terminalReady(terminalId).catch(console.error);
 
     // Phase 1: resize confirmation from main process.
     // If confirmed dimensions differ from xterm's internal dims, re-fit once.
@@ -411,7 +433,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   // fitAndResize is a stable callback; we want this effect to re-run when
   // the terminal connection changes, not on every resize callback identity.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [terminalId, terminalRuntimeReady]);
+  }, [isInteractive, terminalId, terminalRuntimeReady]);
 
   // -------------------------------------------------------------------------
   // ResizeObserver — triggers resize on container size change
@@ -441,7 +463,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   // Active state — track which terminal is focused
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (!terminalRuntimeReady || xtermRef.current == null) return;
+    if (!terminalRuntimeReady || xtermRef.current == null || !isInteractive) return;
 
     const handleFocus = () => {
       setIsActive(true);
@@ -456,11 +478,11 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     return () => {
       xterm.element?.removeEventListener('click', handleFocus);
     };
-  }, [setActiveTerminal, terminalId, terminalRuntimeReady]);
+  }, [isInteractive, setActiveTerminal, terminalId, terminalRuntimeReady]);
 
   useEffect(() => {
-    setIsActive(workspace?.activeTerminalId === terminal?.id);
-  }, [workspace?.activeTerminalId, terminal?.id]);
+    setIsActive(isInteractive && workspace?.activeTerminalId === terminal?.id);
+  }, [isInteractive, workspace?.activeTerminalId, terminal?.id]);
 
   // Trigger resize when terminalId changes (e.g., pane gets a new terminal)
   useEffect(() => {
@@ -473,7 +495,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   // Action handlers
   // -------------------------------------------------------------------------
   const handleClose = useCallback(async () => {
-    if (terminal == null) return;
+    if (terminal == null || !isInteractive) return;
     try {
       // Evict cached xterm before killing the PTY
       markTerminalDisposed(terminal.id);
@@ -485,9 +507,12 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     } catch (err) {
       console.error('Failed to kill terminal:', err);
     }
-  }, [terminal, removeTerminal, removePane, paneId]);
+  }, [isInteractive, terminal, removeTerminal, removePane, paneId]);
 
   const handleBringIntoView = useCallback(() => {
+    if (!isInteractive) {
+      return;
+    }
     if (paneId) {
       if (workspaceId) {
         bringPaneIntoView(paneId, workspaceId);
@@ -495,9 +520,12 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
         bringPaneIntoView(paneId);
       }
     }
-  }, [bringPaneIntoView, paneId, workspaceId]);
+  }, [bringPaneIntoView, isInteractive, paneId, workspaceId]);
 
   const handleToggleLock = useCallback(() => {
+    if (!isInteractive) {
+      return;
+    }
     if (paneId) {
       if (workspaceId) {
         togglePaneLock(paneId, workspaceId);
@@ -505,13 +533,19 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
         togglePaneLock(paneId);
       }
     }
-  }, [paneId, togglePaneLock, workspaceId]);
+  }, [isInteractive, paneId, togglePaneLock, workspaceId]);
 
   const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!isInteractive) {
+      return;
+    }
     event.preventDefault();
-  }, []);
+  }, [isInteractive]);
 
   const handleDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!isInteractive) {
+      return;
+    }
     event.preventDefault();
 
     if (!terminalId) return;
@@ -546,7 +580,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     const textToSend = `'${escaped}' `;
 
     void window.electronAPI.writeTerminal(terminalId, textToSend).catch(console.error);
-  }, [terminalId]);
+  }, [isInteractive, terminalId]);
 
   if (terminal == null) {
     return (
@@ -559,20 +593,24 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   }
 
   return (
-    <div className={`terminal-pane ${compact ? 'compact' : ''} ${isActive ? 'active' : ''}`}>
+    <div
+      ref={paneRootRef}
+      className={`terminal-pane ${compact ? 'compact' : ''} ${isActive ? 'active' : ''}`}
+      data-workspace-interactive={isInteractive ? 'true' : 'false'}
+    >
       {!compact && (
-        <div className="terminal-header" {...dragHandleProps}>
+        <div className="terminal-header" {...headerDragHandleProps}>
           <div className="terminal-drag-handle" aria-hidden="true" title="Drag to move pane" />
           <div className="terminal-status-indicator" data-active={isActive} />
           <span className="terminal-title" />
           <div className="terminal-header-actions">
-            <button className="terminal-action" onClick={handleBringIntoView} title="Bring into view">
+            <button className="terminal-action" onClick={handleBringIntoView} title="Bring into view" disabled={!isInteractive}>
               <LocateFixed size={14} strokeWidth={2} />
             </button>
-            <button className="terminal-action" onClick={handleToggleLock} title={paneLocked ? 'Unlock pane' : 'Lock pane'}>
+            <button className="terminal-action" onClick={handleToggleLock} title={paneLocked ? 'Unlock pane' : 'Lock pane'} disabled={!isInteractive}>
               {paneLocked ? <Unlock size={14} strokeWidth={2} /> : <Lock size={14} strokeWidth={2} />}
             </button>
-            <button className="terminal-close" onClick={handleClose} title="Close terminal">
+            <button className="terminal-close" onClick={handleClose} title="Close terminal" disabled={!isInteractive}>
               ×
             </button>
           </div>
@@ -583,6 +621,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
         ref={terminalRef}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
+        aria-disabled={!isInteractive}
       />
     </div>
   );

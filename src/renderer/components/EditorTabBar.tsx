@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { useScopedWorkspace } from './WorkspaceScope';
+import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
 import './EditorTabBar.css';
 
 export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) {
   const workspace = useScopedWorkspace(workspaceId);
+  const isInteractive = useScopedWorkspaceActivity(workspaceId);
   const { setActiveEditorTab, closeEditorTab, saveEditorFile } = useWorkspaceStore();
   const editorTabs = workspace?.editorTabs ?? [];
   const activeEditorTabId = workspace?.activeEditorTabId ?? null;
@@ -19,6 +20,9 @@ export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) 
   const pendingCloseTab = pendingCloseTabId ? editorTabs.find((t) => t.id === pendingCloseTabId) : null;
 
   const handleTabClick = (tabId: string) => {
+    if (!isInteractive) {
+      return;
+    }
     if (workspaceId) {
       setActiveEditorTab(tabId, workspaceId);
     } else {
@@ -28,6 +32,9 @@ export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) 
 
   const handleCloseClick = (tabId: string, event: React.MouseEvent) => {
     event.stopPropagation();
+    if (!isInteractive) {
+      return;
+    }
     const tab = editorTabs.find((t) => t.id === tabId);
     if (tab?.isDirty) {
       setPendingCloseTabId(tabId);
@@ -41,6 +48,9 @@ export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) 
   };
 
   const handleSaveAndClose = async () => {
+    if (!isInteractive) {
+      return;
+    }
     if (pendingCloseTabId) {
       const saved = workspaceId
         ? await saveEditorFile(pendingCloseTabId, workspaceId)
@@ -66,6 +76,9 @@ export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) 
   };
 
   const handleDontSaveAndClose = () => {
+    if (!isInteractive) {
+      return;
+    }
     if (pendingCloseTabId) {
       if (workspaceId) {
         closeEditorTab(pendingCloseTabId, workspaceId);
@@ -94,6 +107,7 @@ export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) 
               aria-selected={isActive}
               onClick={() => handleTabClick(tab.id)}
               title={tab.filePath}
+              disabled={!isInteractive}
             >
               {tab.isDirty && (
                 <span className="editor-tab-dirty" aria-label="Unsaved changes" />
@@ -105,6 +119,7 @@ export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) 
                 role="button"
                 aria-label={`Close ${tab.fileName}`}
                 title={`Close ${tab.fileName}`}
+                aria-disabled={!isInteractive}
               >
                 <X size={12} strokeWidth={2} />
               </span>

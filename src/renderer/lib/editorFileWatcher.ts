@@ -1,78 +1,160 @@
-import { useWorkspaceStore } from '../store/workspaceStore';
+import { useWorkspaceStore, type WorkspaceTab } from '../store/workspaceStore';
+import type { WorkspaceState } from '../store/workspaceStoreTypes';
+
+interface EditorWatchTarget {
+  filePath: string;
+  workspaceId: string;
+  workspacePath: string;
+}
+
+function getEditorWatchWorkspaces(state: WorkspaceState): Array<Pick<WorkspaceTab, 'id' | 'workspacePath' | 'editorTabs'>> {
+  if (state.workspaces.length > 0) {
+    return state.workspaces;
+  }
+
+  if (!state.workspacePath) {
+    return [];
+  }
+
+  return [{
+    id: state.activeWorkspaceId ?? 'workspace-active',
+    workspacePath: state.workspacePath,
+    editorTabs: state.editorTabs,
+  }];
+}
+
+function getEditorWatchTargets(state: WorkspaceState): EditorWatchTarget[] {
+  return getEditorWatchWorkspaces(state).flatMap((workspace) => (
+    workspace.editorTabs.map((tab) => ({
+      filePath: tab.filePath,
+      workspaceId: workspace.id,
+      workspacePath: workspace.workspacePath,
+    }))
+  ));
+}
+
+function getOwnerKey(target: Pick<EditorWatchTarget, 'workspaceId' | 'filePath'>): string {
+  return `${target.workspaceId}:${target.filePath}`;
+}
+
+function buildTargetsByOwner(state: WorkspaceState): Map<string, EditorWatchTarget> {
+  const targetsByOwner = new Map<string, EditorWatchTarget>();
+
+  for (const target of getEditorWatchTargets(state)) {
+    targetsByOwner.set(getOwnerKey(target), target);
+  }
+
+  return targetsByOwner;
+}
+
+function handleFileChanged(filePath: string, deleted: boolean): void {
+  const state = useWorkspaceStore.getState();
+  const workspaces = getEditorWatchWorkspaces(state);
+
+  for (const workspace of workspaces) {
+    for (const tab of workspace.editorTabs) {
+      if (tab.filePath !== filePath) {
+        continue;
+      }
+
+      if (deleted) {
+        state.markEditorTabDeleted(tab.id, workspace.id);
+        continue;
+      }
+
+      if (tab.isDirty) {
+        state.markEditorTabExternallyChanged(tab.id, workspace.id);
+        continue;
+      }
+
+      void state.reloadEditorTab(tab.id, workspace.id);
+    }
+  }
+}
 
 /**
  * Start the editor file watcher listener.
  *
  * Subscribes to FILE_CHANGED events from the main process and dispatches
  * the appropriate store actions (reload, mark external change, mark deleted).
- * Also subscribes to workspace switches to update watch registrations.
+ * Also keeps main-process file watch registrations aligned with the set of all
+ * open editor tabs across active and parked workspaces.
  *
  * Call once at app mount. Returns an unsubscribe function.
  */
 export function startEditorFileWatcher(): () => void {
+  const watchedOwnersByFilePath = new Map<string, Set<string>>();
+  let targetsByOwner = new Map<string, EditorWatchTarget>();
+
+  const watchTarget = (target: EditorWatchTarget) => {
+    const existingOwners = watchedOwnersByFilePath.get(target.filePath);
+    const ownerKey = getOwnerKey(target);
+
+    if (existingOwners) {
+      existingOwners.add(ownerKey);
+      return;
+    }
+
+    watchedOwnersByFilePath.set(target.filePath, new Set([ownerKey]));
+    void window.electronAPI.editorWatchFile({
+      workspacePath: target.workspacePath,
+      filePath: target.filePath,
+    });
+  };
+
+  const unwatchTarget = (target: EditorWatchTarget) => {
+    const existingOwners = watchedOwnersByFilePath.get(target.filePath);
+    if (!existingOwners) {
+      return;
+    }
+
+    existingOwners.delete(getOwnerKey(target));
+    if (existingOwners.size > 0) {
+      return;
+    }
+
+    watchedOwnersByFilePath.delete(target.filePath);
+    void window.electronAPI.editorUnwatchFile({
+      workspacePath: target.workspacePath,
+      filePath: target.filePath,
+    });
+  };
+
+  const syncWatchTargets = (state: WorkspaceState) => {
+    const nextTargetsByOwner = buildTargetsByOwner(state);
+
+    for (const [ownerKey, target] of nextTargetsByOwner) {
+      if (!targetsByOwner.has(ownerKey)) {
+        watchTarget(target);
+      }
+    }
+
+    for (const [ownerKey, target] of targetsByOwner) {
+      if (!nextTargetsByOwner.has(ownerKey)) {
+        unwatchTarget(target);
+      }
+    }
+
+    targetsByOwner = nextTargetsByOwner;
+  };
+
+  syncWatchTargets(useWorkspaceStore.getState());
+
   const unsubFileChanged = window.electronAPI.onFileChanged((event) => {
     handleFileChanged(event.filePath, event.deleted);
   });
 
-  const unsubStore = useWorkspaceStore.subscribe((state, prevState) => {
-    if (state.activeWorkspaceId !== prevState.activeWorkspaceId) {
-      const previousWorkspace = prevState.getWorkspaceById(prevState.activeWorkspaceId);
-      const nextWorkspace = state.getWorkspaceById(state.activeWorkspaceId);
-
-      // Workspace switched — unwatch old, watch new
-      for (const tab of prevState.editorTabs) {
-        if (previousWorkspace == null) {
-          void window.electronAPI.editorUnwatchFile({
-            workspacePath: prevState.workspacePath,
-            filePath: tab.filePath,
-          });
-          continue;
-        }
-        void window.electronAPI.editorUnwatchFile({
-          workspacePath: previousWorkspace.workspacePath,
-          filePath: tab.filePath,
-        });
-      }
-      for (const tab of state.editorTabs) {
-        if (nextWorkspace == null) {
-          void window.electronAPI.editorWatchFile({
-            workspacePath: state.workspacePath,
-            filePath: tab.filePath,
-          });
-          continue;
-        }
-        void window.electronAPI.editorWatchFile({
-          workspacePath: nextWorkspace.workspacePath,
-          filePath: tab.filePath,
-        });
-      }
-    }
+  const unsubStore = useWorkspaceStore.subscribe((state) => {
+    syncWatchTargets(state);
   });
 
   return () => {
+    for (const target of targetsByOwner.values()) {
+      unwatchTarget(target);
+    }
+
+    targetsByOwner = new Map();
     unsubFileChanged();
     unsubStore();
   };
-}
-
-function handleFileChanged(filePath: string, deleted: boolean): void {
-  const state = useWorkspaceStore.getState();
-  const activeWorkspace = state.getActiveWorkspace();
-  const editorTabs = activeWorkspace?.editorTabs ?? state.editorTabs;
-  const tab = editorTabs.find((t) => t.filePath === filePath) ?? null;
-  if (!tab) return;
-
-  if (deleted) {
-    state.markEditorTabDeleted(tab.id);
-    return;
-  }
-
-  // Don't interrupt the user if they have unsaved changes
-  if (tab.isDirty) {
-    state.markEditorTabExternallyChanged(tab.id);
-    return;
-  }
-
-  // Tab is clean — auto-reload from disk
-  void state.reloadEditorTab(tab.id);
 }

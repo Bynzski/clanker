@@ -21,3 +21,39 @@ export async function terminateWorkspaceTerminals(workspace: WorkspaceTab): Prom
     }
   }
 }
+
+interface DisposeWorkspaceResourcesOptions {
+  isActiveWorkspace: boolean;
+}
+
+export async function disposeWorkspaceResources(
+  workspace: WorkspaceTab,
+  options: DisposeWorkspaceResourcesOptions,
+): Promise<void> {
+  if (options.isActiveWorkspace && typeof window.electronAPI?.explorerStopWatching === 'function') {
+    try {
+      await window.electronAPI.explorerStopWatching();
+    } catch (err) {
+      console.error('Failed to stop explorer watcher:', err);
+    }
+  }
+
+  await terminateWorkspaceTerminals(workspace);
+
+  if (typeof window.electronAPI?.browserDisposeWorkspace === 'function') {
+    try {
+      await window.electronAPI.browserDisposeWorkspace(workspace.id);
+      return;
+    } catch (err) {
+      console.error('Failed to dispose browser workspace:', err);
+    }
+  }
+
+  if (typeof window.electronAPI?.browserHide === 'function') {
+    try {
+      await window.electronAPI.browserHide(workspace.id);
+    } catch (err) {
+      console.error('Failed to hide browser workspace:', err);
+    }
+  }
+}
