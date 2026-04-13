@@ -12,6 +12,7 @@ import {
   getActiveWorkspaceSnapshot,
   syncActiveWorkspace,
   patchWorkspaceById,
+  assignWorkspaceLifecycles,
   isEditorOperationPending,
   setEditorOperationPending,
   clearEditorOperationPending,
@@ -333,10 +334,32 @@ describe('sanitizeWorkspace', () => {
   it('preserves scalar fields', () => {
     const ws = makeWorkspace({ name: 'test-ws', workspacePath: '/test', harness: 'claude', model: 'gpt-4' });
     const sanitized = sanitizeWorkspace(ws);
+    expect(sanitized.lifecycle).toBe('active');
     expect(sanitized.name).toBe('test-ws');
     expect(sanitized.workspacePath).toBe('/test');
     expect(sanitized.harness).toBe('claude');
     expect(sanitized.model).toBe('gpt-4');
+  });
+});
+
+describe('assignWorkspaceLifecycles', () => {
+  it('marks only the selected workspace as active', () => {
+    const ws1 = makeWorkspace({ id: 'ws-1', lifecycle: 'active' });
+    const ws2 = makeWorkspace({ id: 'ws-2', lifecycle: 'active' });
+
+    const result = assignWorkspaceLifecycles([ws1, ws2], 'ws-2');
+
+    expect(result.find((workspace) => workspace.id === 'ws-1')?.lifecycle).toBe('parked');
+    expect(result.find((workspace) => workspace.id === 'ws-2')?.lifecycle).toBe('active');
+  });
+
+  it('parks every workspace when activeWorkspaceId is null', () => {
+    const ws1 = makeWorkspace({ id: 'ws-1', lifecycle: 'active' });
+    const ws2 = makeWorkspace({ id: 'ws-2', lifecycle: 'active' });
+
+    const result = assignWorkspaceLifecycles([ws1, ws2], null);
+
+    expect(result.every((workspace) => workspace.lifecycle === 'parked')).toBe(true);
   });
 });
 
@@ -596,6 +619,42 @@ describe('validateWorkspaceConsistency', () => {
       const state = makeMinimalState({ activeWorkspaceId: 'non-existent', workspaces: [makeWorkspace()] });
       expect(validateWorkspaceConsistency(state)).toContain(
         'W2 violated: activeWorkspaceId "non-existent" not found in workspaces[]',
+      );
+    });
+  });
+
+  describe('W3/W4 (workspace lifecycle)', () => {
+    it('passes when exactly one workspace is active and it matches activeWorkspaceId', () => {
+      const ws1 = makeWorkspace({ id: 'ws-1', lifecycle: 'active' });
+      const ws2 = makeWorkspace({ id: 'ws-2', lifecycle: 'parked' });
+      const state = makeMinimalState({ activeWorkspaceId: 'ws-1', workspaces: [ws1, ws2] });
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('warns when no workspace lifecycle is active', () => {
+      const ws1 = makeWorkspace({ id: 'ws-1', lifecycle: 'parked' });
+      const ws2 = makeWorkspace({ id: 'ws-2', lifecycle: 'parked' });
+      const state = makeMinimalState({ activeWorkspaceId: 'ws-1', workspaces: [ws1, ws2] });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'W3 violated: expected exactly one active workspace lifecycle entry, found 0',
+      );
+    });
+
+    it('warns when more than one workspace lifecycle is active', () => {
+      const ws1 = makeWorkspace({ id: 'ws-1', lifecycle: 'active' });
+      const ws2 = makeWorkspace({ id: 'ws-2', lifecycle: 'active' });
+      const state = makeMinimalState({ activeWorkspaceId: 'ws-1', workspaces: [ws1, ws2] });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'W3 violated: expected exactly one active workspace lifecycle entry, found 2',
+      );
+    });
+
+    it('warns when activeWorkspaceId does not point to the active lifecycle entry', () => {
+      const ws1 = makeWorkspace({ id: 'ws-1', lifecycle: 'parked' });
+      const ws2 = makeWorkspace({ id: 'ws-2', lifecycle: 'active' });
+      const state = makeMinimalState({ activeWorkspaceId: 'ws-1', workspaces: [ws1, ws2] });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'W4 violated: activeWorkspaceId "ws-1" does not reference a workspace with lifecycle "active"',
       );
     });
   });

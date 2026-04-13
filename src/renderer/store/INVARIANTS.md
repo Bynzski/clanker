@@ -18,12 +18,70 @@ The `workspaceLayout.ts` module now has direct unit test coverage (`tests/render
 
 ## Core Invariants
 
+## Workspace Lifecycle Baseline For Option B
+
+This section is intentionally forward-looking, but it documents the baseline the
+current code enforces today so Option B can be implemented without hand-waving.
+
+### Lifecycle Vocabulary
+
+- `active`: the selected workspace, whose snapshot is mirrored into the store's
+  top-level fields and rendered by the app shell today
+- `parked`: the future Option B state for a mounted-but-hidden workspace that
+  remains alive without being interactive
+- `disposed`: a fully closed workspace with no retained renderer or main-process
+  resources
+
+### Current Baseline
+
+Today the store and renderer only model `active` and `disposed` directly.
+
+- Exactly one workspace may be active when `workspaces.length > 0`
+- Inactive workspaces remain as data in `workspaces[]`
+- Inactive workspaces are **not** mounted as live React workspace trees
+- Many background behaviors still key off the active top-level snapshot:
+  - editor file watch registration
+  - explorer watch registration
+  - browser panel interaction/bounds updates
+
+That means the current system preserves inactive workspace data, but not a
+first-class parked lifecycle.
+
+### Resource Policy Baseline
+
+These rules describe what should be treated as the source of truth during the
+parking migration. This list is intentionally explicit so reviewers can quickly
+spot a slice that changes behavior accidentally.
+
+| Resource / behavior | Current baseline | Option B target |
+|-------|-----------|-------------|
+| Workspace layout tree | Only active workspace is rendered | Parked workspaces remain mounted offscreen |
+| Terminal PTY output | Continues via app-level bridge | Continues while parked |
+| Terminal input/focus | Active workspace only | Active workspace only |
+| Editor file watchers | Active workspace tabs only | Explicit per-workspace policy |
+| Explorer watcher | Active workspace only | Explicit active vs parked policy |
+| Browser native view | Active workspace only | Retained per workspace, visible only for active |
+| Global shortcuts | Active workspace snapshot | Active workspace only, even with parked trees |
+| Close cleanup | Active or data-only inactive workspace | Must handle active and parked workspaces |
+
+### Review Implication
+
+Until Option B lands, any code that talks about `parked` workspaces must also
+say whether it is:
+
+- documenting the future target behavior, or
+- describing the current active-only baseline
+
+Mixing those two states is how lifecycle regressions get introduced.
+
 ### Workspace Invariants
 
 | Field | Invariant | Explanation |
 |-------|-----------|-------------|
 | `activeWorkspaceId` | `null` ↔ `workspaces.length === 0` | When no workspaces exist, nothing can be active |
 | `activeWorkspaceId` | `activeWorkspaceId !== null` → `workspaces.some(w => w.id === activeWorkspaceId)` | The active workspace ID always references an existing workspace |
+| `workspaces[].lifecycle` | `workspaces.length > 0` → exactly one workspace has `lifecycle === 'active'` | Lifecycle state is explicit even though rendering is still active-snapshot based |
+| `activeWorkspaceId` + `workspaces[].lifecycle` | `activeWorkspaceId !== null` → the referenced workspace has `lifecycle === 'active'` | The active pointer and lifecycle state must agree |
 
 **Why:** The active workspace ID is a reference pointer. If the referenced workspace doesn't exist, the UI would be in an inconsistent state with no clear behavior.
 
@@ -61,6 +119,8 @@ The `workspaceLayout.ts` module now has direct unit test coverage (`tests/render
 The store's actions maintain these invariants internally:
 
 - `addWorkspace` → sets `activeWorkspaceId` to new workspace's ID
+- `selectWorkspace` → moves the top-level snapshot to the selected workspace
+- `addWorkspace` / `selectWorkspace` / `closeWorkspace` → also normalize workspace lifecycle so exactly one workspace is `active`
 - `closeWorkspace` → clears `activeWorkspaceId` if closing the last workspace, otherwise switches to another
 - `addTerminal` → sets `activeTerminalId` to new terminal's ID
 - `removeTerminal` → updates `activeTerminalId` if removing the active terminal

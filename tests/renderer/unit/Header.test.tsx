@@ -21,6 +21,7 @@ describe('Header', () => {
       workspaces: [
         {
           id: 'ws-1',
+          lifecycle: 'active',
           name: 'test',
           workspacePath: '/workspace',
           harness: 'codex',
@@ -708,6 +709,7 @@ describe('Header', () => {
         workspaces: [
           {
             id: 'ws-1',
+            lifecycle: 'parked',
             name: 'test1',
             workspacePath: '/workspace1',
             harness: 'codex',
@@ -735,6 +737,7 @@ describe('Header', () => {
           },
           {
             id: 'ws-2',
+            lifecycle: 'active',
             name: 'test2',
             workspacePath: '/workspace2',
             harness: 'codex',

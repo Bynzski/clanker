@@ -73,7 +73,9 @@ describe('workspace lifecycle', () => {
     expect(state.name).toBe('My Project');
     expect(state.workspacePath).toBe('/home/user/project');
     expect(state.activeWorkspaceId).toBeTruthy();
+    expect(state.activeWorkspaceLifecycle).toBe('active');
     expect(state.workspaces).toHaveLength(1);
+    expect(state.workspaces[0].lifecycle).toBe('active');
   });
 
   it('addWorkspace derives name from path when name is empty', () => {
@@ -97,6 +99,69 @@ describe('workspace lifecycle', () => {
     getStore().selectWorkspace(ws1Id!);
     expect(getStore().workspacePath).toBe('/first');
     expect(getStore().activeWorkspaceId).toBe(ws1Id);
+    expect(getStore().activeWorkspaceLifecycle).toBe('active');
+    expect(getStore().workspaces.find((workspace) => workspace.id === ws1Id)?.lifecycle).toBe('active');
+    expect(getStore().workspaces.find((workspace) => workspace.id === ws2Id)?.lifecycle).toBe('parked');
+  });
+
+  it('selectWorkspace preserves inactive workspace data in workspaces[] while moving the active snapshot', () => {
+    addWorkspace({
+      workspacePath: '/first',
+      browserVisible: true,
+      browserUrl: 'https://first.example.com',
+      explorerVisible: true,
+      explorerExpandedPaths: ['/first/src'],
+      editorVisible: true,
+      editorTabs: [
+        {
+          id: 'tab-first',
+          filePath: '/first/README.md',
+          fileName: 'README.md',
+          isDirty: true,
+          content: '# first workspace',
+          originalContent: '',
+        },
+      ],
+      activeEditorTabId: 'tab-first',
+    });
+    const firstId = getStore().activeWorkspaceId!;
+
+    addWorkspace({
+      workspacePath: '/second',
+      browserVisible: false,
+      browserUrl: 'https://second.example.com',
+      explorerVisible: false,
+      editorVisible: false,
+      editorTabs: [],
+      activeEditorTabId: null,
+    });
+    const secondId = getStore().activeWorkspaceId!;
+
+    expect(getStore().activeWorkspaceId).toBe(secondId);
+    expect(getStore().workspacePath).toBe('/second');
+    expect(getStore().browserUrl).toBe('https://second.example.com');
+    expect(getStore().editorTabs).toEqual([]);
+    expect(getStore().workspaces.find((workspace) => workspace.id === secondId)?.lifecycle).toBe('active');
+
+    const firstWorkspaceWhileInactive = getStore().workspaces.find((workspace) => workspace.id === firstId)!;
+    expect(firstWorkspaceWhileInactive.lifecycle).toBe('parked');
+    expect(firstWorkspaceWhileInactive.workspacePath).toBe('/first');
+    expect(firstWorkspaceWhileInactive.browserVisible).toBe(true);
+    expect(firstWorkspaceWhileInactive.browserUrl).toBe('https://first.example.com');
+    expect(firstWorkspaceWhileInactive.explorerVisible).toBe(true);
+    expect(firstWorkspaceWhileInactive.explorerExpandedPaths).toEqual(['/first/src']);
+    expect(firstWorkspaceWhileInactive.editorVisible).toBe(true);
+    expect(firstWorkspaceWhileInactive.activeEditorTabId).toBe('tab-first');
+    expect(firstWorkspaceWhileInactive.editorTabs[0]?.filePath).toBe('/first/README.md');
+
+    getStore().selectWorkspace(firstId);
+    expect(getStore().activeWorkspaceId).toBe(firstId);
+    expect(getStore().activeWorkspaceLifecycle).toBe('active');
+    expect(getStore().workspacePath).toBe('/first');
+    expect(getStore().browserUrl).toBe('https://first.example.com');
+    expect(getStore().explorerExpandedPaths).toEqual(['/first/src']);
+    expect(getStore().activeEditorTabId).toBe('tab-first');
+    expect(getStore().editorTabs[0]?.filePath).toBe('/first/README.md');
   });
 
   it('closeWorkspace switches to last remaining workspace', () => {
@@ -107,7 +172,9 @@ describe('workspace lifecycle', () => {
 
     getStore().closeWorkspace(ws2Id!);
     expect(getStore().activeWorkspaceId).toBe(ws1Id);
+    expect(getStore().activeWorkspaceLifecycle).toBe('active');
     expect(getStore().workspaces).toHaveLength(1);
+    expect(getStore().workspaces[0].lifecycle).toBe('active');
   });
 
   it('closeWorkspace resets defaults when last workspace is closed', () => {
@@ -116,6 +183,7 @@ describe('workspace lifecycle', () => {
     getStore().closeWorkspace(id!);
     expect(getStore().workspaces).toHaveLength(0);
     expect(getStore().activeWorkspaceId).toBeNull();
+    expect(getStore().activeWorkspaceLifecycle).toBeNull();
     expect(getStore().name).toBe('');
   });
 
@@ -129,6 +197,30 @@ describe('workspace lifecycle', () => {
     getStore().closeWorkspace(ws1Id!);
     expect(getStore().activeWorkspaceId).toBe(ws2Id);
     expect(getStore().workspacePath).toBe('/second');
+    expect(getStore().activeWorkspaceLifecycle).toBe('active');
+    expect(getStore().workspaces[0].lifecycle).toBe('active');
+  });
+
+  it('keeps exactly one active lifecycle entry across add, select, and close transitions', () => {
+    addWorkspace({ workspacePath: '/first' });
+    const firstId = getStore().activeWorkspaceId!;
+
+    addWorkspace({ workspacePath: '/second' });
+    const secondId = getStore().activeWorkspaceId!;
+
+    let activeEntries = getStore().workspaces.filter((workspace) => workspace.lifecycle === 'active');
+    expect(activeEntries).toHaveLength(1);
+    expect(activeEntries[0].id).toBe(secondId);
+
+    getStore().selectWorkspace(firstId);
+    activeEntries = getStore().workspaces.filter((workspace) => workspace.lifecycle === 'active');
+    expect(activeEntries).toHaveLength(1);
+    expect(activeEntries[0].id).toBe(firstId);
+
+    getStore().closeWorkspace(secondId);
+    activeEntries = getStore().workspaces.filter((workspace) => workspace.lifecycle === 'active');
+    expect(activeEntries).toHaveLength(1);
+    expect(activeEntries[0].id).toBe(firstId);
   });
 
   it('updateWorkspaceName updates both snapshot and workspaces array', () => {
@@ -148,6 +240,9 @@ describe('workspace lifecycle', () => {
     expect(getStore().name).toBe('second'); // active workspace name unchanged
     expect(getStore().workspaces.find(w => w.id === ws1Id)!.name).toBe('renamed-first');
   });
+
+  it.todo('parked workspaces remain mounted and non-interactive after switching');
+  it.todo('workspace lifecycle becomes explicit active -> parked -> disposed instead of inferred from the active snapshot');
 });
 
 // ===========================================================================

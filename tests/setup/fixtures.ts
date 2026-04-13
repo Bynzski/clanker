@@ -25,6 +25,7 @@ export function createWorkspaceFixture(overrides: Partial<WorkspaceTab> = {}): W
 
   return {
     id: 'workspace-1',
+    lifecycle: 'active',
     name: 'workspace',
     workspacePath: '/workspace',
     harness: 'codex',

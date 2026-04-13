@@ -7,6 +7,7 @@ import type {
   Pane,
   PanePosition,
   Terminal,
+  WorkspaceLifecycleState,
   WorkspaceTab,
 } from './workspaceTypes';
 import type { GitStatus } from '../components/git/types';
@@ -20,6 +21,9 @@ import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
  *
  * @invariant activeWorkspaceId !== null -> workspaces.some(w => w.id === activeWorkspaceId)
  *   The active workspace ID always references an existing workspace.
+ *
+ * @invariant workspaces.length > 0 -> workspaces.filter(w => w.lifecycle === 'active').length === 1
+ *   Exactly one workspace must be marked active in lifecycle state.
  *
  * @invariant activeTerminalId === null - terminals.length === 0
  *   When no terminals exist, no terminal can be active.
@@ -67,6 +71,8 @@ export interface WorkspaceState {
   workspaces: WorkspaceTab[];
   /** @invariant null - workspaces.length === 0 */
   activeWorkspaceId: string | null;
+  /** @invariant workspaces.length > 0 -> exactly one workspace.lifecycle === 'active' */
+  activeWorkspaceLifecycle: WorkspaceLifecycleState | null;
   gridViewport: GridViewport;
   layoutRevision: number;
 
@@ -76,7 +82,7 @@ export interface WorkspaceState {
   /** @invariant null - editorTabs.length === 0 */
   activeEditorTabId: string | null;
 
-  addWorkspace: (workspace: Omit<WorkspaceTab, 'id'>) => void;
+  addWorkspace: (workspace: Omit<WorkspaceTab, 'id' | 'lifecycle'>) => void;
   selectWorkspace: (id: string) => void;
   closeWorkspace: (id: string) => void;
   updateWorkspaceName: (id: string, name: string) => void;
@@ -176,4 +182,3 @@ export type ActiveWorkspaceSnapshot = Pick<
 export interface PendingEditorOperationsHolder {
   pendingEditorOperations: Record<string, string>;
 }
-

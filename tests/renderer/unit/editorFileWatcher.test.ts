@@ -194,6 +194,115 @@ describe('editorFileWatcher', () => {
 
       expect(reloadEditorTab).not.toHaveBeenCalled();
     });
+
+    it('only considers the active top-level editor tab list and ignores matching inactive workspace tabs', () => {
+      const reloadEditorTab = vi.fn().mockResolvedValue(undefined);
+      const markEditorTabExternallyChanged = vi.fn();
+      const markEditorTabDeleted = vi.fn();
+
+      useWorkspaceStore.setState({
+        activeWorkspaceId: 'ws-2',
+        workspacePath: '/workspace2',
+        editorTabs: [
+          {
+            id: 'tab-active',
+            filePath: '/workspace2/active.ts',
+            fileName: 'active.ts',
+            isDirty: false,
+            content: 'active',
+            originalContent: 'active',
+          },
+        ],
+        workspaces: [
+          {
+            id: 'ws-1',
+            lifecycle: 'parked',
+            name: 'workspace1',
+            workspacePath: '/workspace1',
+            harness: 'codex',
+            model: '',
+            terminals: [],
+            panes: [],
+            browserVisible: false,
+            browserUrl: 'https://github.com',
+            activeTerminalId: null,
+            browserPane: null,
+            layoutRoot: null,
+            explorerVisible: false,
+            explorerSidebarWidth: 280,
+            explorerExpandedPaths: [],
+            explorerSelectedPath: null,
+            explorerEntriesByPath: {},
+            explorerLoadingPaths: [],
+            explorerErrorsByPath: {},
+            showHiddenFiles: true,
+            editorPane: null,
+            editorVisible: true,
+            editorTabs: [
+              {
+                id: 'tab-inactive',
+                filePath: '/workspace1/inactive.ts',
+                fileName: 'inactive.ts',
+                isDirty: false,
+                content: 'inactive',
+                originalContent: 'inactive',
+              },
+            ],
+            activeEditorTabId: 'tab-inactive',
+            gitChanges: [],
+          },
+          {
+            id: 'ws-2',
+            lifecycle: 'active',
+            name: 'workspace2',
+            workspacePath: '/workspace2',
+            harness: 'codex',
+            model: '',
+            terminals: [],
+            panes: [],
+            browserVisible: false,
+            browserUrl: 'https://github.com',
+            activeTerminalId: null,
+            browserPane: null,
+            layoutRoot: null,
+            explorerVisible: false,
+            explorerSidebarWidth: 280,
+            explorerExpandedPaths: [],
+            explorerSelectedPath: null,
+            explorerEntriesByPath: {},
+            explorerLoadingPaths: [],
+            explorerErrorsByPath: {},
+            showHiddenFiles: true,
+            editorPane: null,
+            editorVisible: true,
+            editorTabs: [
+              {
+                id: 'tab-active',
+                filePath: '/workspace2/active.ts',
+                fileName: 'active.ts',
+                isDirty: false,
+                content: 'active',
+                originalContent: 'active',
+              },
+            ],
+            activeEditorTabId: 'tab-active',
+            gitChanges: [],
+          },
+        ],
+        markEditorTabDeleted,
+        markEditorTabExternallyChanged,
+        reloadEditorTab,
+      });
+
+      activeUnsub = startEditorFileWatcher();
+
+      const fileCallback = mockOnFileChanged.mock.calls[0][0];
+      fileCallback({ filePath: '/workspace1/inactive.ts', deleted: false });
+
+      expect(reloadEditorTab).not.toHaveBeenCalled();
+      expect(markEditorTabExternallyChanged).not.toHaveBeenCalled();
+      expect(markEditorTabDeleted).not.toHaveBeenCalled();
+    });
   });
 
   // =========================================================================
@@ -308,5 +417,9 @@ describe('editorFileWatcher', () => {
 
       unsub();
     });
+  });
+
+  describe('parking migration baseline', () => {
+    it.todo('routes file change events to parked workspace tabs once workspace lifecycle is first-class');
   });
 });
