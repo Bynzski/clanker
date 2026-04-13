@@ -349,6 +349,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     title: string;
     tagName: string;
     selector: string;
+    fallbackSelectors: string[];
     id: string | null;
     className: string | null;
     text: string | null;
@@ -356,6 +357,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     accessibleName: string | null;
     attributes: Record<string, string>;
     bounds: { x: number; y: number; width: number; height: number };
+    uiRegion: string | null;
+    elementRoleInContext: string | null;
+    nearbyText: string[];
+    ancestorContext: string | null;
     note: string;
     timestamp: string;
   }) => ipcRenderer.invoke(ANNOTATION_EXPORT, annotation),

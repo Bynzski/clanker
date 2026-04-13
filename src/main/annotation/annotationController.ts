@@ -39,6 +39,7 @@ export interface AnnotationData {
   title: string;
   tagName: string;
   selector: string;
+  fallbackSelectors: string[];
   id: string | null;
   className: string | null;
   text: string | null;
@@ -46,6 +47,10 @@ export interface AnnotationData {
   accessibleName: string | null;
   attributes: Record<string, string>;
   bounds: { x: number; y: number; width: number; height: number };
+  uiRegion: string | null;
+  elementRoleInContext: string | null;
+  nearbyText: string[];
+  ancestorContext: string | null;
   note: string;
   timestamp: string;
 }
@@ -240,17 +245,22 @@ export function createAnnotationController(
         url?: string;
         title?: string;
         tagName?: string;
-        selector?: string;
-        id?: string | null;
-        className?: string | null;
-        text?: string | null;
-        role?: string | null;
-        accessibleName?: string | null;
-        attributes?: Record<string, string>;
-        bounds?: { x: number; y: number; width: number; height: number };
-        note?: string;
-        timestamp?: string;
-      }>(state.workspaceId, generateCaptureCode());
+      selector?: string;
+      fallbackSelectors?: string[];
+      id?: string | null;
+      className?: string | null;
+      text?: string | null;
+      role?: string | null;
+      accessibleName?: string | null;
+      attributes?: Record<string, string>;
+      bounds?: { x: number; y: number; width: number; height: number };
+      uiRegion?: string | null;
+      elementRoleInContext?: string | null;
+      nearbyText?: string[];
+      ancestorContext?: string | null;
+      note?: string;
+      timestamp?: string;
+    }>(state.workspaceId, generateCaptureCode());
 
       if (!result.success) {
         return { success: false, error: result.error || 'Unknown error' };
@@ -272,6 +282,7 @@ export function createAnnotationController(
           title: result.result.title || '',
           tagName: result.result.tagName || 'UNKNOWN',
           selector: result.result.selector || '',
+          fallbackSelectors: result.result.fallbackSelectors || [],
           id: result.result.id || null,
           className: result.result.className || null,
           text: result.result.text || null,
@@ -279,6 +290,10 @@ export function createAnnotationController(
           accessibleName: result.result.accessibleName || null,
           attributes: result.result.attributes || {},
           bounds: result.result.bounds || { x: 0, y: 0, width: 0, height: 0 },
+          uiRegion: result.result.uiRegion || null,
+          elementRoleInContext: result.result.elementRoleInContext || null,
+          nearbyText: result.result.nearbyText || [],
+          ancestorContext: result.result.ancestorContext || null,
           note: result.result.note || '',
           timestamp: result.result.timestamp || new Date().toISOString(),
         },
@@ -314,17 +329,24 @@ export function createAnnotationController(
  * Structured format suitable for pasting into an agent window
  */
 export function formatAnnotationMarkdown(capture: AnnotationData): string {
+  const formatInlineCodeList = (values: string[]): string => values.map(value => `\`${value}\``).join(', ');
+  const formatTextList = (values: string[]): string => values.map(value => `\`${value}\``).join('; ');
+
   const lines: string[] = [
     '## Page Annotation',
     '',
     `- URL: ${capture.url}`,
     `- Title: ${capture.title}`,
-    `- Timestamp: ${capture.timestamp}`,
+    `- Captured At: ${capture.timestamp}`,
     '',
     '### Selected Element',
-    `- Tag: ${capture.tagName}`,
-    `- Selector: \`${capture.selector}\``,
+    `- Tag: \`${capture.tagName.toLowerCase()}\``,
+    `- Primary Selector: \`${capture.selector}\``,
   ];
+
+  if (capture.fallbackSelectors.length > 0) {
+    lines.push(`- Fallback Selectors: ${formatInlineCodeList(capture.fallbackSelectors.slice(0, 4))}`);
+  }
 
   if (capture.id) {
     lines.push(`- ID: ${capture.id}`);
@@ -353,6 +375,29 @@ export function formatAnnotationMarkdown(capture: AnnotationData): string {
     `- Bounds: x=${Math.round(capture.bounds.x)} y=${Math.round(capture.bounds.y)} w=${Math.round(capture.bounds.width)} h=${Math.round(capture.bounds.height)}`
   );
 
+  const hasContext = Boolean(capture.uiRegion || capture.elementRoleInContext || capture.nearbyText.length > 0 || capture.ancestorContext);
+
+  if (hasContext) {
+    lines.push('');
+    lines.push('### Context');
+
+    if (capture.uiRegion) {
+      lines.push(`- UI Region: ${capture.uiRegion}`);
+    }
+
+    if (capture.elementRoleInContext) {
+      lines.push(`- Element Role In Context: ${capture.elementRoleInContext}`);
+    }
+
+    if (capture.nearbyText.length > 0) {
+      lines.push(`- Nearby Text: ${formatTextList(capture.nearbyText.slice(0, 4))}`);
+    }
+
+    if (capture.ancestorContext) {
+      lines.push(`- Ancestor Context: ${capture.ancestorContext}`);
+    }
+  }
+
   if (Object.keys(capture.attributes).length > 0) {
     lines.push('');
     lines.push('### Attributes');
@@ -363,13 +408,17 @@ export function formatAnnotationMarkdown(capture: AnnotationData): string {
 
   if (capture.note) {
     lines.push('');
-    lines.push('### Note');
+    lines.push('### Annotation');
     lines.push(capture.note);
+  } else {
+    lines.push('');
+    lines.push('### Annotation');
+    lines.push('No annotation note provided.');
   }
 
   lines.push('');
   lines.push('---');
-  lines.push('*Generated by Clanker Grid Browser Annotation*');
+  lines.push('Generated by Clanker Grid Browser Annotation');
 
   return lines.join('\n');
 }

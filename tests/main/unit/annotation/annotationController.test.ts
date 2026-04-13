@@ -8,7 +8,10 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { createAnnotationController } from '../../../../src/main/annotation/annotationController';
+import {
+  createAnnotationController,
+  formatAnnotationMarkdown,
+} from '../../../../src/main/annotation/annotationController';
 
 describe('annotationController', () => {
   const workspaceId = 'workspace-1';
@@ -28,6 +31,7 @@ describe('annotationController', () => {
         title: 'Example',
         tagName: 'BUTTON',
         selector: '#save',
+        fallbackSelectors: ['.primary'],
         id: 'save',
         className: 'primary',
         text: 'Save',
@@ -35,6 +39,10 @@ describe('annotationController', () => {
         accessibleName: 'Save',
         attributes: {},
         bounds: { x: 1, y: 2, width: 3, height: 4 },
+        uiRegion: 'Toolbar',
+        elementRoleInContext: 'primary action button',
+        nearbyText: ['Cancel', 'Reset'],
+        ancestorContext: 'toolbar action bar',
         note: 'hello',
         timestamp: '2024-01-01T00:00:00.000Z',
       };
@@ -66,6 +74,7 @@ describe('annotationController', () => {
         title: 'Other',
         tagName: 'A',
         selector: '#link',
+        fallbackSelectors: ['.secondary'],
         id: 'link',
         className: 'secondary',
         text: 'Link',
@@ -73,6 +82,10 @@ describe('annotationController', () => {
         accessibleName: 'Link',
         attributes: {},
         bounds: { x: 5, y: 6, width: 7, height: 8 },
+        uiRegion: 'Navigation',
+        elementRoleInContext: 'navigation item',
+        nearbyText: ['Home', 'Docs'],
+        ancestorContext: 'left sidebar navigation',
         note: 'other',
         timestamp: '2024-01-01T00:00:00.000Z',
       };
@@ -140,5 +153,39 @@ describe('annotationController', () => {
 
     expect(executeJavaScript).toHaveBeenCalled();
     expect(otherExecuteJavaScript).not.toHaveBeenCalled();
+  });
+
+  it('formats the exported markdown with context sections', () => {
+    const markdown = formatAnnotationMarkdown({
+      url: 'https://github.com/',
+      title: 'GitHub',
+      tagName: 'DIV',
+      selector: 'div:nth-of-type(1)',
+      fallbackSelectors: ['.width-full.d-flex.mt-2'],
+      id: null,
+      className: 'width-full d-flex mt-2',
+      text: 'Bynzski/clanker-built',
+      role: null,
+      accessibleName: null,
+      attributes: {},
+      bounds: { x: 24, y: 346, width: 257, height: 21 },
+      uiRegion: 'Top repositories',
+      elementRoleInContext: 'repository list entry',
+      nearbyText: ['Bynzski/base_app', 'Bynzski/LandSnag'],
+      ancestorContext: 'left sidebar repository list',
+      note: 'this is a DIV',
+      timestamp: '2026-04-13T14:51:03.803Z',
+    });
+
+    expect(markdown).toContain('Captured At: 2026-04-13T14:51:03.803Z');
+    expect(markdown).toContain('Primary Selector: `div:nth-of-type(1)`');
+    expect(markdown).toContain('Fallback Selectors: `.width-full.d-flex.mt-2`');
+    expect(markdown).toContain('### Context');
+    expect(markdown).toContain('UI Region: Top repositories');
+    expect(markdown).toContain('Element Role In Context: repository list entry');
+    expect(markdown).toContain('Nearby Text: `Bynzski/base_app`; `Bynzski/LandSnag`');
+    expect(markdown).toContain('Ancestor Context: left sidebar repository list');
+    expect(markdown).toContain('### Annotation');
+    expect(markdown).not.toContain('### Note');
   });
 });

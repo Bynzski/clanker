@@ -216,30 +216,36 @@ interface ElectronAPI {
     workspaceId: string | null;
     copyTriggered?: boolean;
   }>;
-  annotationCapture: () => Promise<{
-    success: boolean;
-    annotation?: {
-      url: string;
-      title: string;
-      tagName: string;
-      selector: string;
-      id: string | null;
-      className: string | null;
-      text: string | null;
-      role: string | null;
-      accessibleName: string | null;
-      attributes: Record<string, string>;
-      bounds: { x: number; y: number; width: number; height: number };
-      note: string;
-      timestamp: string;
-    };
-    error?: string;
-  }>;
+    annotationCapture: () => Promise<{
+      success: boolean;
+      annotation?: {
+        url: string;
+        title: string;
+        tagName: string;
+        selector: string;
+        fallbackSelectors: string[];
+        id: string | null;
+        className: string | null;
+        text: string | null;
+        role: string | null;
+        accessibleName: string | null;
+        attributes: Record<string, string>;
+        bounds: { x: number; y: number; width: number; height: number };
+        uiRegion: string | null;
+        elementRoleInContext: string | null;
+        nearbyText: string[];
+        ancestorContext: string | null;
+        note: string;
+        timestamp: string;
+      };
+      error?: string;
+    }>;
   annotationExport: (annotation: {
     url: string;
     title: string;
     tagName: string;
     selector: string;
+    fallbackSelectors: string[];
     id: string | null;
     className: string | null;
     text: string | null;
@@ -247,6 +253,10 @@ interface ElectronAPI {
     accessibleName: string | null;
     attributes: Record<string, string>;
     bounds: { x: number; y: number; width: number; height: number };
+    uiRegion: string | null;
+    elementRoleInContext: string | null;
+    nearbyText: string[];
+    ancestorContext: string | null;
     note: string;
     timestamp: string;
   }) => Promise<{ success: boolean }>;
