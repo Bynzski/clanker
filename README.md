@@ -50,6 +50,7 @@ npm run build:dist    # Creates distributable
 - [Getting Started](docs/getting-started.md) — Installation and first launch
 - [Workspaces](docs/workspaces.md) — Managing workspace tabs
 - [Terminals & Harnesses](docs/terminals.md) — Terminal panes and AI integrations
+- [Browser Annotation](docs/browser-annotation.md) — Element selection and structured export for AI agents
 - [Git Integration](docs/git-integration.md) — Built-in git tools with VCS provider support
 - [VCS Providers](docs/vcs-providers.md) — Technical documentation for GitHub, GitLab, Bitbucket
 - [File Explorer](docs/file-explorer.md) — File tree navigation and operations
