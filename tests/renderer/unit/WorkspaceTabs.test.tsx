@@ -9,7 +9,7 @@ import { installElectronApiMock } from '../../setup/electron';
 
 // Mock the workspaceLifecycle module
 vi.mock('../../../src/renderer/lib/workspaceLifecycle', () => ({
-  terminateWorkspaceTerminals: vi.fn().mockResolvedValue(undefined),
+  disposeWorkspaceResources: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Helper to create properly typed mock workspaces
@@ -133,6 +133,20 @@ describe('WorkspaceTabs', () => {
       expect(electronApi.explorerStartWatching).toHaveBeenCalledWith(mockWorkspaces[0].workspacePath);
     });
 
+    it('stops explorer watching on unmount', () => {
+      const electronApi = installElectronApiMock();
+      useWorkspaceStore.setState({
+        workspaces: mockWorkspaces,
+        activeWorkspaceId: 'ws1',
+      });
+
+      const { unmount } = render(<WorkspaceTabs />);
+
+      unmount();
+
+      expect(electronApi.explorerStopWatching).toHaveBeenCalledTimes(1);
+    });
+
     it('displays workspace name in tab', () => {
       useWorkspaceStore.setState({
         workspaces: mockWorkspaces,
@@ -251,6 +265,27 @@ describe('WorkspaceTabs', () => {
       expect(selectWorkspace).toHaveBeenCalledWith('ws2');
     });
 
+    it('switches explorer watching to the newly active workspace', async () => {
+      const electronApi = installElectronApiMock();
+      useWorkspaceStore.setState({
+        workspaces: mockWorkspaces,
+        activeWorkspaceId: 'ws1',
+      });
+
+      render(<WorkspaceTabs />);
+      electronApi.explorerStartWatching.mockClear();
+
+      useWorkspaceStore.setState({
+        activeWorkspaceId: 'ws2',
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(electronApi.explorerStartWatching).toHaveBeenCalledWith('/path/ws2');
+    });
+
     it('does not call selectWorkspace when in edit mode', async () => {
       const selectWorkspace = vi.fn();
       useWorkspaceStore.setState({
@@ -277,6 +312,27 @@ describe('WorkspaceTabs', () => {
       
       // selectWorkspace should not be called because we're in edit mode
       expect(selectWorkspace).not.toHaveBeenCalled();
+    });
+
+    it('stops explorer watching when there is no active workspace', async () => {
+      const electronApi = installElectronApiMock();
+      useWorkspaceStore.setState({
+        workspaces: mockWorkspaces,
+        activeWorkspaceId: 'ws1',
+      });
+
+      render(<WorkspaceTabs />);
+      electronApi.explorerStopWatching.mockClear();
+
+      useWorkspaceStore.setState({
+        activeWorkspaceId: null,
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(electronApi.explorerStopWatching).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -493,7 +549,7 @@ describe('WorkspaceTabs', () => {
 
     it('calls closeWorkspace when close button is clicked', async () => {
       const closeWorkspace = vi.fn();
-      const { terminateWorkspaceTerminals } = await import('../../../src/renderer/lib/workspaceLifecycle');
+      const { disposeWorkspaceResources } = await import('../../../src/renderer/lib/workspaceLifecycle');
       const electronApi = installElectronApiMock();
       
       useWorkspaceStore.setState({
@@ -511,10 +567,39 @@ describe('WorkspaceTabs', () => {
         await vi.runAllTimersAsync();
       });
       
-      expect(terminateWorkspaceTerminals).toHaveBeenCalled();
+      expect(disposeWorkspaceResources).toHaveBeenCalledWith(mockWorkspaces[0], { isActiveWorkspace: true });
       expect(closeWorkspace).toHaveBeenCalledWith('ws1');
       expect(electronApi.explorerStopWatching).not.toHaveBeenCalled();
       expect(electronApi.gitStopPolling).not.toHaveBeenCalled();
+    });
+
+    it('disposes a parked workspace without marking it active', async () => {
+      const closeWorkspace = vi.fn();
+      const { disposeWorkspaceResources } = await import('../../../src/renderer/lib/workspaceLifecycle');
+      const parkedWorkspace = createMockWorkspace({
+        id: 'ws1',
+        lifecycle: 'parked',
+        name: 'Workspace 1',
+        workspacePath: '/path/ws1',
+      });
+
+      useWorkspaceStore.setState({
+        workspaces: [parkedWorkspace, createMockWorkspace({ id: 'ws2', lifecycle: 'active' })],
+        activeWorkspaceId: 'ws2',
+        closeWorkspace,
+      });
+
+      render(<WorkspaceTabs />);
+
+      const closeButton = screen.getAllByLabelText('Close workspace')[0];
+
+      await act(async () => {
+        fireEvent.click(closeButton);
+        await vi.runAllTimersAsync();
+      });
+
+      expect(disposeWorkspaceResources).toHaveBeenCalledWith(parkedWorkspace, { isActiveWorkspace: false });
+      expect(closeWorkspace).toHaveBeenCalledWith('ws1');
     });
 
     it('stops propagation of close click event', async () => {

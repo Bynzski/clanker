@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import BrowserPanel from '../../../src/renderer/components/BrowserPanel';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import type { WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
 class MockResizeObserver {
@@ -83,7 +84,17 @@ function flushAnimationFrame(id?: number) {
 }
 
 // Store state helpers
-function setupStore(overrides = {}) {
+interface BrowserPanelStoreOverrides {
+  browserPane?: { id: string; position: { x: number; y: number; w: number; h: number }; locked: boolean } | null;
+  browserVisible?: boolean;
+  browserOverlayCount?: number;
+  bringBrowserIntoView?: (workspaceId?: string) => void;
+  toggleBrowserLock?: (workspaceId?: string) => void;
+  activeWorkspaceId?: string;
+  workspaces?: WorkspaceTab[];
+}
+
+function setupStore(overrides: BrowserPanelStoreOverrides = {}) {
   const defaultState = {
     browserPane: null as { id: string; position: { x: number; y: number; w: number; h: number }; locked: boolean } | null,
     browserVisible: true,
@@ -101,6 +112,7 @@ function setupStore(overrides = {}) {
     browserVisible: state.browserVisible,
     browserUrl: 'https://github.com',
   });
+  const workspaces = state.workspaces ?? [workspace];
 
   useWorkspaceStore.setState({
     browserPane: state.browserPane,
@@ -108,7 +120,7 @@ function setupStore(overrides = {}) {
     browserOverlayCount: state.browserOverlayCount,
     bringBrowserIntoView: state.bringBrowserIntoView,
     toggleBrowserLock: state.toggleBrowserLock,
-    workspaces: [workspace],
+    workspaces,
     activeWorkspaceId: state.activeWorkspaceId,
     activeWorkspaceLifecycle: 'active',
   });
@@ -600,6 +612,41 @@ describe('BrowserPanel', () => {
 
       expect(mockBrowserSetBounds).toHaveBeenCalledTimes(1);
     });
+
+    it('hides parked workspace browser views immediately and does not resume them', async () => {
+      const parkedWorkspace = createWorkspaceFixture({
+        id: 'workspace-1',
+        lifecycle: 'parked',
+        browserVisible: true,
+        browserUrl: 'https://parked.example',
+      });
+      const activeWorkspace = createWorkspaceFixture({
+        id: 'workspace-2',
+        lifecycle: 'active',
+        browserVisible: false,
+      });
+
+      setupStore({
+        activeWorkspaceId: 'workspace-2',
+        browserVisible: false,
+        workspaces: [parkedWorkspace, activeWorkspace],
+      });
+
+      render(<BrowserPanel {...defaultProps} workspaceId="workspace-1" />);
+
+      act(() => {
+        flushAnimationFrame();
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+
+      expect(mockBrowserHide).toHaveBeenCalledWith('workspace-1');
+      expect(mockBrowserSetBounds).not.toHaveBeenCalled();
+      expect(mockCanGoBack).not.toHaveBeenCalled();
+      expect(mockCanGoForward).not.toHaveBeenCalled();
+    });
   });
 
   // =========================================================================
@@ -858,6 +905,36 @@ describe('BrowserPanel', () => {
 
       const forwardButton = screen.getByTitle('Forward');
       expect(forwardButton).not.toBeDisabled();
+    });
+
+    it('does not poll navigation state for a parked workspace instance', async () => {
+      const parkedWorkspace = createWorkspaceFixture({
+        id: 'workspace-1',
+        lifecycle: 'parked',
+        browserVisible: true,
+      });
+      const activeWorkspace = createWorkspaceFixture({
+        id: 'workspace-2',
+        lifecycle: 'active',
+        browserVisible: false,
+      });
+
+      setupStore({
+        activeWorkspaceId: 'workspace-2',
+        browserVisible: false,
+        workspaces: [parkedWorkspace, activeWorkspace],
+      });
+
+      render(<BrowserPanel {...defaultProps} workspaceId="workspace-1" />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+
+      expect(mockCanGoBack).not.toHaveBeenCalled();
+      expect(mockCanGoForward).not.toHaveBeenCalled();
+      expect(screen.getByTitle('Back')).toBeDisabled();
+      expect(screen.getByTitle('Forward')).toBeDisabled();
     });
   });
 

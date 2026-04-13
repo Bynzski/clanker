@@ -269,6 +269,49 @@ describe('DynamicPaneLayout', () => {
       expect(screen.queryByText('Terminal: ws-2-pane')).toBeNull();
     });
 
+    it('marks parked workspace layouts as non-interactive', async () => {
+      const parkedWorkspace = createWorkspaceFixture({
+        id: 'ws-1',
+        lifecycle: 'parked',
+        panes: [{ id: 'ws-1-pane', terminalId: 'ws-1-terminal', locked: false }],
+        terminals: [{ id: 'ws-1-terminal', pid: 1, workingDir: '/workspace-a' }],
+        layoutRoot: createLeaf('ws-1-node', 'ws-1-pane'),
+      });
+      const activeWorkspace = createWorkspaceFixture({
+        id: 'ws-2',
+        lifecycle: 'active',
+        panes: [{ id: 'ws-2-pane', terminalId: 'ws-2-terminal', locked: false }],
+        terminals: [{ id: 'ws-2-terminal', pid: 1, workingDir: '/workspace-b' }],
+        layoutRoot: createLeaf('ws-2-node', 'ws-2-pane'),
+      });
+      const swapPanes = vi.fn();
+
+      useWorkspaceStore.setState({
+        workspaces: [parkedWorkspace, activeWorkspace],
+        activeWorkspaceId: 'ws-2',
+        activeWorkspaceLifecycle: 'active',
+        layoutRoot: activeWorkspace.layoutRoot,
+        panes: activeWorkspace.panes,
+        terminals: activeWorkspace.terminals,
+        swapPanes,
+      });
+
+      render(<DynamicPaneLayout workspaceId="ws-1" />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Terminal: ws-1-pane')).toBeTruthy();
+      });
+
+      expect(document.querySelector('.dynamic-pane-layout')).toHaveAttribute('data-workspace-interactive', 'false');
+
+      act(() => {
+        mocks.dndCallbacks.onDragStart({ active: { id: 'ws-1-pane' } });
+        mocks.dndCallbacks.onDragEnd({ active: { id: 'ws-1-pane' }, over: { id: 'drop-ws-1-pane' } });
+      });
+
+      expect(swapPanes).not.toHaveBeenCalled();
+    });
+
     it('renders BrowserPanel when browserVisible and paneId matches', async () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'), {
         browserVisible: true,

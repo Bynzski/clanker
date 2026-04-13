@@ -1,6 +1,7 @@
 import { Suspense, lazy } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { WorkspaceScopeProvider } from './WorkspaceScope';
+import BrowserLifecycleCoordinator from './BrowserLifecycleCoordinator';
 
 const DynamicPaneLayout = lazy(() => import('./DynamicPaneLayout'));
 const FileExplorer = lazy(() => import('./FileExplorer'));
@@ -50,6 +51,7 @@ export default function WorkspaceHost() {
         data-testid="workspace-host"
         data-active-workspace-id={resolvedActiveWorkspaceId ?? ''}
       >
+        <BrowserLifecycleCoordinator activeWorkspaceId={resolvedActiveWorkspaceId} />
         <div className="workspace-active-viewport">
           {resolvedActiveWorkspaceId ? (
             <WorkspaceSurface workspaceId={resolvedActiveWorkspaceId} isActive />

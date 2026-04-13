@@ -146,8 +146,8 @@ export interface WorkspaceState {
   resetEditorState: () => void;
   renameEditorTabPath: (oldPath: string, newPath: string, workspaceId?: string) => void;
   reloadEditorTab: (tabId: string, workspaceId?: string) => Promise<void>;
-  markEditorTabExternallyChanged: (tabId: string) => void;
-  markEditorTabDeleted: (tabId: string) => void;
+  markEditorTabExternallyChanged: (tabId: string, workspaceId?: string) => void;
+  markEditorTabDeleted: (tabId: string, workspaceId?: string) => void;
   clearEditorTabExternalFlag: (tabId: string, workspaceId?: string) => void;
 
   /** Tracks in-flight async editor operations keyed by file path to prevent races. */

@@ -22,7 +22,7 @@ import type {
   WorkspaceTab,
 } from '../store/workspaceStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { useScopedWorkspace } from './WorkspaceScope';
+import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
 import BrowserPanel from './BrowserPanel';
 import EditorPane from './EditorPane';
 import './DynamicPaneLayout.css';
@@ -67,22 +67,26 @@ function PanelWrapper({
   children, 
   isDragging,
   isOver,
-  dragHandleProps
+  dragHandleProps,
+  interactive,
 }: { 
   paneId: string; 
   children: React.ReactNode; 
   isDragging: boolean;
   isOver: boolean;
   dragHandleProps?: Record<string, unknown>;
+  interactive: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: paneId,
     data: { paneId },
+    disabled: !interactive,
   });
 
   const { setNodeRef: setDropRef } = useDroppable({
     id: `drop-${paneId}`,
     data: { paneId },
+    disabled: !interactive,
   });
 
   // Combine refs
@@ -98,9 +102,11 @@ function PanelWrapper({
   } : undefined;
 
   // Merge drag handle props
-  const mergedHandleProps = dragHandleProps 
+  const mergedHandleProps = interactive && dragHandleProps
     ? { ...dragHandleProps, ...listeners, ...attributes }
-    : { ...listeners, ...attributes };
+    : interactive
+      ? { ...listeners, ...attributes }
+      : {};
 
   return (
     <div 
@@ -187,6 +193,7 @@ function LeafView({
       paneId={paneId}
       isDragging={isDraggingThis}
       isOver={isOverThis}
+      interactive={useScopedWorkspaceActivity(workspaceId)}
     >
       <ErrorBoundary paneId={paneId}>
         {content}
@@ -207,6 +214,7 @@ function SplitView({
   overPaneId: string | null;
 }) {
   const workspace = useScopedWorkspace(workspaceId);
+  const isInteractive = useScopedWorkspaceActivity(workspaceId);
   const { setSplitRatio } = useWorkspaceStore();
   
   // Use local state to track layout during drag, avoiding feedback loop
@@ -267,7 +275,7 @@ function SplitView({
         id={panelAId}
         defaultSize={firstRatio}
         minSize={12}
-        disabled={workspace ? isSubtreeLocked(node.first, workspace) : false}
+        disabled={!isInteractive || (workspace ? isSubtreeLocked(node.first, workspace) : false)}
       >
         <LayoutNodeView workspaceId={workspaceId} node={node.first} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />
       </Panel>
@@ -276,7 +284,7 @@ function SplitView({
         id={panelBId}
         defaultSize={secondRatio}
         minSize={12}
-        disabled={workspace ? isSubtreeLocked(node.second, workspace) : false}
+        disabled={!isInteractive || (workspace ? isSubtreeLocked(node.second, workspace) : false)}
       >
         <LayoutNodeView workspaceId={workspaceId} node={node.second} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />
       </Panel>
@@ -346,6 +354,7 @@ const edgeFriendlyCollisionDetection: CollisionDetection = (args) => {
 
 export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: string }) {
   const workspace = useScopedWorkspace(workspaceId);
+  const isInteractive = useScopedWorkspaceActivity(workspaceId);
   const { swapPanes, dockPaneToEdge } = useWorkspaceStore();
   
   const [activePaneId, setActivePaneId] = useState<string | null>(null);
@@ -361,12 +370,18 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
   );
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
+    if (!isInteractive) {
+      return;
+    }
     setActivePaneId(event.active.id as string);
     setOverPaneId(null);
     setOverDockEdge(null);
-  }, []);
+  }, [isInteractive]);
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
+    if (!isInteractive) {
+      return;
+    }
     const { over } = event;
     if (over) {
       const overId = over.id as string;
@@ -384,9 +399,15 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
       setOverPaneId(null);
       setOverDockEdge(null);
     }
-  }, []);
+  }, [isInteractive]);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
+    if (!isInteractive) {
+      setActivePaneId(null);
+      setOverPaneId(null);
+      setOverDockEdge(null);
+      return;
+    }
     const { active, over } = event;
     const activeId = active.id as string;
     
@@ -415,7 +436,7 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
     setActivePaneId(null);
     setOverPaneId(null);
     setOverDockEdge(null);
-  }, [dockPaneToEdge, swapPanes, workspaceId]);
+  }, [dockPaneToEdge, isInteractive, swapPanes, workspaceId]);
 
   const handleDragCancel = useCallback(() => {
     setActivePaneId(null);
@@ -443,11 +464,11 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="dynamic-pane-layout">
+      <div className="dynamic-pane-layout" data-workspace-interactive={isInteractive ? 'true' : 'false'}>
         <div className="split-root">
           {renderLayout(workspaceId, workspace.layoutRoot, activePaneId, overPaneId)}
         </div>
-        <DockEdgeTargets activeEdge={overDockEdge} isDragging={activePaneId != null} />
+        <DockEdgeTargets activeEdge={overDockEdge} isDragging={isInteractive && activePaneId != null} />
       </div>
       <DragOverlay>
         {/* We could add a drag preview here if needed */}

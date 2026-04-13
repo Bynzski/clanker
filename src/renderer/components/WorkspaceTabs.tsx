@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, MouseEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { terminateWorkspaceTerminals } from '../lib/workspaceLifecycle';
+import { disposeWorkspaceResources } from '../lib/workspaceLifecycle';
 import { Plus, X, Check, Edit2 } from 'lucide-react';
 import { normalizePath } from '../lib/pathUtils';
 import './WorkspaceTabs.css';
@@ -17,25 +17,43 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
 
   /**
    * Keep the explorer watcher aligned with the active workspace.
-   * Start watching the current workspace immediately, then react to later
-   * active workspace changes through the store subscription.
+   * Only the active workspace explorer watcher remains live. Parked workspaces
+   * keep cached explorer state and refresh when activated again.
    */
   useEffect(() => {
-    const startWatchingWorkspace = (workspaceId: string | null, state = useWorkspaceStore.getState()) => {
-      const workspace = state.getWorkspaceById(workspaceId);
-      if (workspace && typeof window.electronAPI?.explorerStartWatching === 'function') {
-        void window.electronAPI.explorerStartWatching(normalizePath(workspace.workspacePath));
+    const syncExplorerWatcher = async (
+      workspaceId: string | null,
+      state = useWorkspaceStore.getState(),
+    ) => {
+      if (typeof window.electronAPI?.explorerStartWatching !== 'function') {
+        return;
       }
+
+      const workspace = state.getWorkspaceById(workspaceId);
+      if (!workspace) {
+        if (typeof window.electronAPI?.explorerStopWatching === 'function') {
+          await window.electronAPI.explorerStopWatching();
+        }
+        return;
+      }
+
+      await window.electronAPI.explorerStartWatching(normalizePath(workspace.workspacePath));
     };
 
-    startWatchingWorkspace(useWorkspaceStore.getState().activeWorkspaceId);
+    void syncExplorerWatcher(useWorkspaceStore.getState().activeWorkspaceId);
 
     const unsubscribe = useWorkspaceStore.subscribe((state, prevState) => {
       if (state.activeWorkspaceId !== prevState.activeWorkspaceId) {
-        startWatchingWorkspace(state.activeWorkspaceId, state);
+        void syncExplorerWatcher(state.activeWorkspaceId, state);
       }
     });
-    return unsubscribe;
+
+    return () => {
+      unsubscribe();
+      if (typeof window.electronAPI?.explorerStopWatching === 'function') {
+        void window.electronAPI.explorerStopWatching();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -52,15 +70,13 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
   const handleClose = async (id: string, event: MouseEvent) => {
     event.stopPropagation();
 
-    const workspace = useWorkspaceStore.getState().getWorkspaceById(id);
+    const state = useWorkspaceStore.getState();
+    const workspace = state.getWorkspaceById(id);
     if (workspace == null) {
       return;
     }
 
-    await terminateWorkspaceTerminals(workspace);
-    if (typeof window.electronAPI?.browserHide === 'function') {
-      await window.electronAPI.browserHide(id);
-    }
+    await disposeWorkspaceResources(workspace, { isActiveWorkspace: state.activeWorkspaceId === id });
     closeWorkspace(id);
   };
 

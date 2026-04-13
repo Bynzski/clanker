@@ -4,8 +4,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor, cleanup } from '@testing-library/react';
 import TerminalPane from '../../../src/renderer/components/TerminalPane';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { createWorkspaceFixture } from '../../setup/fixtures';
 
 let attachedKeyHandler: ((event: KeyboardEvent) => boolean) | null = null;
+let attachedDataHandler: ((data: string) => void) | null = null;
 const mockHasSelection = vi.fn().mockReturnValue(false);
 const mockGetSelection = vi.fn().mockReturnValue('');
 const mockClearSelection = vi.fn();
@@ -24,7 +26,10 @@ vi.mock('@xterm/xterm', () => {
       hasSelection = mockHasSelection;
       getSelection = mockGetSelection;
       clearSelection = mockClearSelection;
-      onData = vi.fn(() => ({ dispose: mockOnDataDispose }));
+      onData = vi.fn((handler: (data: string) => void) => {
+        attachedDataHandler = handler;
+        return { dispose: mockOnDataDispose };
+      });
       onSelectionChange = vi.fn(() => ({ dispose: mockOnDataDispose }));
       attachCustomKeyEventHandler = vi.fn((handler: (event: KeyboardEvent) => boolean) => {
         attachedKeyHandler = handler;
@@ -80,6 +85,9 @@ function setupStoreWithTerminal(terminalId: string, paneId: string, locked = fal
   const panes = [createPane(paneId, terminalId, locked)];
   
   useWorkspaceStore.setState({
+    workspaces: [],
+    activeWorkspaceId: null,
+    activeWorkspaceLifecycle: 'active',
     terminals,
     panes,
     activeTerminalId,
@@ -103,6 +111,9 @@ function setupStoreWithTerminal(terminalId: string, paneId: string, locked = fal
 
 function setupEmptyStore() {
   useWorkspaceStore.setState({
+    workspaces: [],
+    activeWorkspaceId: null,
+    activeWorkspaceLifecycle: 'active',
     terminals: [],
     panes: [],
     activeTerminalId: null,
@@ -138,6 +149,7 @@ describe('TerminalPane', () => {
     vi.clearAllMocks();
     vi.useFakeTimers({ shouldAdvanceTime: true });
     attachedKeyHandler = null;
+    attachedDataHandler = null;
     mockHasSelection.mockReturnValue(false);
     mockGetSelection.mockReturnValue('');
     setupElectronAPIMocks();
@@ -455,6 +467,45 @@ describe('TerminalPane', () => {
       expect(mockWriteClipboard).toHaveBeenCalledWith('copied text');
       expect(mockClearSelection).toHaveBeenCalled();
       expect(mockZoomInWindow).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('workspace interaction gating', () => {
+    it('does not attach terminal input handlers for a parked workspace instance', async () => {
+      const parkedWorkspace = createWorkspaceFixture({
+        id: 'ws-1',
+        lifecycle: 'parked',
+        terminals: [createTerminal('t1', 1234, '/workspace')],
+        panes: [createPane('p1', 't1', false)],
+        activeTerminalId: 't1',
+      });
+      const activeWorkspace = createWorkspaceFixture({
+        id: 'ws-2',
+        lifecycle: 'active',
+        terminals: [createTerminal('t2', 1234, '/workspace')],
+        panes: [createPane('p2', 't2', false)],
+        activeTerminalId: 't2',
+      });
+
+      useWorkspaceStore.setState({
+        workspaces: [parkedWorkspace, activeWorkspace],
+        activeWorkspaceId: 'ws-2',
+        activeWorkspaceLifecycle: 'active',
+      });
+
+      render(<TerminalPane workspaceId="ws-1" paneId="p1" />);
+
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      expect(attachedDataHandler).toBeNull();
+      expect(attachedKeyHandler).toBeNull();
+      expect(document.querySelector('.terminal-pane')).toHaveAttribute('data-workspace-interactive', 'false');
+      expect(screen.getByTitle('Bring into view')).toBeDisabled();
+      expect(screen.getByTitle('Lock pane')).toBeDisabled();
+      expect(screen.getByTitle('Close terminal')).toBeDisabled();
     });
   });
 
