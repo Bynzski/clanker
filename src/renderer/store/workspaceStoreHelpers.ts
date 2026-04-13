@@ -142,6 +142,20 @@ export function isWorkspaceActiveById(workspaces: WorkspaceTab[], workspaceId: s
   return workspace?.lifecycle === 'active';
 }
 
+export function resolveWorkspaceByScope(
+  state: Pick<WorkspaceState, 'workspaces' | 'activeWorkspaceId'>,
+  workspaceId?: string | null,
+): WorkspaceTab | null {
+  return findWorkspaceById(state.workspaces, workspaceId ?? state.activeWorkspaceId);
+}
+
+export function resolveWorkspaceIdByScope(
+  state: Pick<WorkspaceState, 'workspaces' | 'activeWorkspaceId'>,
+  workspaceId?: string | null,
+): string | null {
+  return resolveWorkspaceByScope(state, workspaceId)?.id ?? null;
+}
+
 export function getActiveWorkspaceSnapshot(
   workspace: Pick<
     WorkspaceTab,

@@ -5,6 +5,7 @@ import { render, screen, act, cleanup, waitFor } from '@testing-library/react';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import type { LayoutNode, LayoutLeaf, LayoutSplit } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
+import { createWorkspaceFixture } from '../../setup/fixtures';
 
 // ---------------------------------------------------------------------------
 // Hoisted mutable references shared with mock factories.
@@ -147,6 +148,9 @@ function createSplit(
 
 function setupStore(overrides: Record<string, unknown> = {}) {
   useWorkspaceStore.setState({
+    workspaces: [],
+    activeWorkspaceId: null,
+    activeWorkspaceLifecycle: null,
     layoutRoot: null,
     panes: [],
     terminals: [],
@@ -233,6 +237,38 @@ describe('DynamicPaneLayout', () => {
   // LeafView — content selection
   // =========================================================================
   describe('LeafView content', () => {
+    it('renders layout from the requested workspace instead of the active mirrored snapshot', async () => {
+      const parkedWorkspace = createWorkspaceFixture({
+        id: 'ws-1',
+        lifecycle: 'parked',
+        panes: [{ id: 'ws-1-pane', terminalId: 'ws-1-terminal', locked: false }],
+        terminals: [{ id: 'ws-1-terminal', pid: 1, workingDir: '/workspace-a' }],
+        layoutRoot: createLeaf('ws-1-node', 'ws-1-pane'),
+      });
+      const activeWorkspace = createWorkspaceFixture({
+        id: 'ws-2',
+        lifecycle: 'active',
+        panes: [{ id: 'ws-2-pane', terminalId: 'ws-2-terminal', locked: false }],
+        terminals: [{ id: 'ws-2-terminal', pid: 1, workingDir: '/workspace-b' }],
+        layoutRoot: createLeaf('ws-2-node', 'ws-2-pane'),
+      });
+
+      useWorkspaceStore.setState({
+        workspaces: [parkedWorkspace, activeWorkspace],
+        activeWorkspaceId: 'ws-2',
+        layoutRoot: activeWorkspace.layoutRoot,
+        panes: activeWorkspace.panes,
+        terminals: activeWorkspace.terminals,
+      });
+
+      render(<DynamicPaneLayout workspaceId="ws-1" />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Terminal: ws-1-pane')).toBeTruthy();
+      });
+      expect(screen.queryByText('Terminal: ws-2-pane')).toBeNull();
+    });
+
     it('renders BrowserPanel when browserVisible and paneId matches', async () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'), {
         browserVisible: true,

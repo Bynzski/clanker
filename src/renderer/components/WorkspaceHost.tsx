@@ -1,5 +1,6 @@
 import { Suspense, lazy } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { WorkspaceScopeProvider } from './WorkspaceScope';
 
 const DynamicPaneLayout = lazy(() => import('./DynamicPaneLayout'));
 const FileExplorer = lazy(() => import('./FileExplorer'));
@@ -22,10 +23,12 @@ function WorkspaceSurface({
       hidden={!isActive}
     >
       {mountContents ? (
-        <div className="workspace-layout-row">
-          <FileExplorer />
-          <DynamicPaneLayout />
-        </div>
+        <WorkspaceScopeProvider workspaceId={workspaceId}>
+          <div className="workspace-layout-row">
+            <FileExplorer workspaceId={workspaceId} />
+            <DynamicPaneLayout workspaceId={workspaceId} />
+          </div>
+        </WorkspaceScopeProvider>
       ) : null}
     </section>
   );

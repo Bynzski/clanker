@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
+import { createWorkspaceFixture } from '../../setup/fixtures';
 
 // Mock CodeMirror modules synchronously (vi.mock is hoisted so all references must be inline)
 vi.mock('@codemirror/state', () => ({
@@ -75,6 +76,9 @@ describe('EditorPane', () => {
 
     // Set up a minimal store state for all tests
     useWorkspaceStore.setState({
+      workspaces: [],
+      activeWorkspaceId: null,
+      activeWorkspaceLifecycle: null,
       editorVisible: true,
       editorPane: null,
       editorTabs: [],
@@ -93,6 +97,48 @@ describe('EditorPane', () => {
   // Rendering
   // =========================================================================
   describe('renders', () => {
+    it('reads editor state from the requested workspace', () => {
+      const parkedWorkspace = createWorkspaceFixture({
+        id: 'ws-1',
+        lifecycle: 'parked',
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: false },
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace-a/alpha.ts',
+            fileName: 'alpha.ts',
+            isDirty: false,
+            content: 'export const alpha = 1;',
+            originalContent: 'export const alpha = 1;',
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+      });
+      const activeWorkspace = createWorkspaceFixture({
+        id: 'ws-2',
+        lifecycle: 'active',
+        editorVisible: false,
+        editorPane: null,
+        editorTabs: [],
+        activeEditorTabId: null,
+      });
+
+      useWorkspaceStore.setState({
+        workspaces: [parkedWorkspace, activeWorkspace],
+        activeWorkspaceId: 'ws-2',
+        editorVisible: false,
+        editorPane: null,
+        editorTabs: [],
+        activeEditorTabId: null,
+      });
+
+      render(<EditorPane workspaceId="ws-1" />);
+
+      expect(screen.getByText('alpha.ts')).toBeTruthy();
+      expect(document.querySelector('.editor-content')).toBeTruthy();
+    });
+
     it('editor panel container', () => {
       render(<EditorPane />);
       expect(document.querySelector('.editor-panel')).toBeTruthy();

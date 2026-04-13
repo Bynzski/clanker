@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { useScopedWorkspace } from './WorkspaceScope';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
 import './EditorTabBar.css';
 
-export default function EditorTabBar() {
-  const { editorTabs, activeEditorTabId, setActiveEditorTab, closeEditorTab, saveEditorFile } = useWorkspaceStore();
+export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) {
+  const workspace = useScopedWorkspace(workspaceId);
+  const { setActiveEditorTab, closeEditorTab, saveEditorFile } = useWorkspaceStore();
+  const editorTabs = workspace?.editorTabs ?? [];
+  const activeEditorTabId = workspace?.activeEditorTabId ?? null;
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null);
 
   if (editorTabs.length === 0) {
@@ -15,7 +19,11 @@ export default function EditorTabBar() {
   const pendingCloseTab = pendingCloseTabId ? editorTabs.find((t) => t.id === pendingCloseTabId) : null;
 
   const handleTabClick = (tabId: string) => {
-    setActiveEditorTab(tabId);
+    if (workspaceId) {
+      setActiveEditorTab(tabId, workspaceId);
+    } else {
+      setActiveEditorTab(tabId);
+    }
   };
 
   const handleCloseClick = (tabId: string, event: React.MouseEvent) => {
@@ -24,30 +32,46 @@ export default function EditorTabBar() {
     if (tab?.isDirty) {
       setPendingCloseTabId(tabId);
     } else {
-      closeEditorTab(tabId);
+      if (workspaceId) {
+        closeEditorTab(tabId, workspaceId);
+      } else {
+        closeEditorTab(tabId);
+      }
     }
   };
 
   const handleSaveAndClose = async () => {
     if (pendingCloseTabId) {
-      const saved = await saveEditorFile(pendingCloseTabId);
+      const saved = workspaceId
+        ? await saveEditorFile(pendingCloseTabId, workspaceId)
+        : await saveEditorFile(pendingCloseTabId);
       if (!saved) {
         return;
       }
 
-      const latestTab = useWorkspaceStore.getState().editorTabs.find((tab) => tab.id === pendingCloseTabId);
+      const { getWorkspaceById: selectWorkspaceById, getActiveWorkspace: selectActiveWorkspace } = useWorkspaceStore.getState();
+      const latestWorkspace = workspaceId ? selectWorkspaceById(workspaceId) : selectActiveWorkspace();
+      const latestTab = latestWorkspace?.editorTabs.find((tab) => tab.id === pendingCloseTabId);
       if (latestTab?.isDirty) {
         return;
       }
 
-      closeEditorTab(pendingCloseTabId);
+      if (workspaceId) {
+        closeEditorTab(pendingCloseTabId, workspaceId);
+      } else {
+        closeEditorTab(pendingCloseTabId);
+      }
       setPendingCloseTabId(null);
     }
   };
 
   const handleDontSaveAndClose = () => {
     if (pendingCloseTabId) {
-      closeEditorTab(pendingCloseTabId);
+      if (workspaceId) {
+        closeEditorTab(pendingCloseTabId, workspaceId);
+      } else {
+        closeEditorTab(pendingCloseTabId);
+      }
       setPendingCloseTabId(null);
     }
   };

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react'
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { LocateFixed, Lock, Unlock } from 'lucide-react';
 import { useDragHandle } from './DynamicPaneLayout';
+import { useScopedWorkspace } from './WorkspaceScope';
 import './TerminalPane.css';
 import '@xterm/xterm/css/xterm.css';
 
@@ -11,6 +12,7 @@ type XTermInstance = import('@xterm/xterm').Terminal;
 type FitAddonInstance = import('@xterm/addon-fit').FitAddon;
 
 interface Props {
+  workspaceId?: string;
   paneId: string;
   compact?: boolean;
 }
@@ -107,7 +109,7 @@ export function clearTerminalCache(): void {
 
 const RESIZE_LOCK_MS = 100;
 
-export default function TerminalPane({ paneId, compact = false }: Props) {
+export default function TerminalPane({ workspaceId, paneId, compact = false }: Props) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTermInstance | null>(null);
   const fitAddonRef = useRef<FitAddonInstance | null>(null);
@@ -117,19 +119,17 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
   const [isActive, setIsActive] = useState(false);
   const [terminalRuntimeReady, setTerminalRuntimeReady] = useState(false);
   const dragHandleProps = useDragHandle();
+  const workspace = useScopedWorkspace(workspaceId);
 
   const {
     setActiveTerminal,
     removeTerminal,
     removePane,
-    activeTerminalId,
-    panes,
-    terminals,
     bringPaneIntoView,
     togglePaneLock,
   } = useWorkspaceStore();
-  const pane = panes.find((item: typeof panes[0]) => item.id === paneId);
-  const terminal = terminals.find((item: typeof terminals[0]) => item.id === pane?.terminalId);
+  const pane = workspace?.panes.find((item) => item.id === paneId);
+  const terminal = workspace?.terminals.find((item) => item.id === pane?.terminalId);
   const terminalId = terminal?.id ?? null;
   const paneLocked = pane?.locked ?? false;
 
@@ -459,8 +459,8 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
   }, [setActiveTerminal, terminalId, terminalRuntimeReady]);
 
   useEffect(() => {
-    setIsActive(activeTerminalId === terminal?.id);
-  }, [activeTerminalId, terminal?.id]);
+    setIsActive(workspace?.activeTerminalId === terminal?.id);
+  }, [workspace?.activeTerminalId, terminal?.id]);
 
   // Trigger resize when terminalId changes (e.g., pane gets a new terminal)
   useEffect(() => {
@@ -489,15 +489,23 @@ export default function TerminalPane({ paneId, compact = false }: Props) {
 
   const handleBringIntoView = useCallback(() => {
     if (paneId) {
-      bringPaneIntoView(paneId);
+      if (workspaceId) {
+        bringPaneIntoView(paneId, workspaceId);
+      } else {
+        bringPaneIntoView(paneId);
+      }
     }
-  }, [bringPaneIntoView, paneId]);
+  }, [bringPaneIntoView, paneId, workspaceId]);
 
   const handleToggleLock = useCallback(() => {
     if (paneId) {
-      togglePaneLock(paneId);
+      if (workspaceId) {
+        togglePaneLock(paneId, workspaceId);
+      } else {
+        togglePaneLock(paneId);
+      }
     }
-  }, [paneId, togglePaneLock]);
+  }, [paneId, togglePaneLock, workspaceId]);
 
   const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();

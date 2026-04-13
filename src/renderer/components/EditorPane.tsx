@@ -10,24 +10,22 @@ import {
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useDragHandle } from './DynamicPaneLayout';
+import { useScopedWorkspace } from './WorkspaceScope';
 import EditorTabBar from './EditorTabBar';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
 import { getLanguageExtension } from '../lib/editorLanguage';
 import './EditorPane.css';
 
-export default function EditorPane() {
+export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const lastSyncedTabIdRef = useRef<string | null>(null);
   const langCompartmentRef = useRef<Compartment>(new Compartment());
 
   const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
+  const workspace = useScopedWorkspace(workspaceId);
 
   const {
-    editorPane,
-    editorVisible,
-    editorTabs,
-    activeEditorTabId,
     toggleEditorLock,
     closeEditorPane,
     reloadEditorTab,
@@ -36,7 +34,10 @@ export default function EditorPane() {
     saveEditorFile,
   } = useWorkspaceStore();
 
-  const editorLocked = editorPane?.locked ?? false;
+  const editorLocked = workspace?.editorPane?.locked ?? false;
+  const editorVisible = workspace?.editorVisible ?? false;
+  const editorTabs = workspace?.editorTabs ?? [];
+  const activeEditorTabId = workspace?.activeEditorTabId ?? null;
   const activeTab = editorTabs.find((t) => t.id === activeEditorTabId) ?? null;
   const dragHandleProps = useDragHandle();
 
@@ -137,10 +138,16 @@ export default function EditorPane() {
 
     const listener = EditorView.updateListener.of((update) => {
       if (!update.docChanged) return;
-      const { activeEditorTabId: currentTabId, updateEditorContent } = useWorkspaceStore.getState();
+      const { updateEditorContent, getWorkspaceById, getActiveWorkspace } = useWorkspaceStore.getState();
+      const currentWorkspace = workspaceId ? getWorkspaceById(workspaceId) : getActiveWorkspace();
+      const currentTabId = currentWorkspace?.activeEditorTabId ?? null;
       if (!currentTabId) return;
       const newContent = update.state.doc.toString();
-      updateEditorContent(currentTabId, newContent);
+      if (workspaceId) {
+        updateEditorContent(currentTabId, newContent, workspaceId);
+      } else {
+        updateEditorContent(currentTabId, newContent);
+      }
     });
 
     view.dispatch({
@@ -150,22 +157,34 @@ export default function EditorPane() {
     return () => {
       // No-op: the listener persists for the editor lifetime.
     };
-  }, []);
+  }, [workspaceId]);
 
   const handleToggleLock = () => {
-    toggleEditorLock();
+    if (workspaceId) {
+      toggleEditorLock(workspaceId);
+    } else {
+      toggleEditorLock();
+    }
   };
 
   const handleClosePane = () => {
     if (hasDirtyTabs) {
       setShowCloseConfirmation(true);
     } else {
-      closeEditorPane();
+      if (workspaceId) {
+        closeEditorPane(workspaceId);
+      } else {
+        closeEditorPane();
+      }
     }
   };
 
   const handleDontSaveAndClose = () => {
-    closeEditorPane();
+    if (workspaceId) {
+      closeEditorPane(workspaceId);
+    } else {
+      closeEditorPane();
+    }
     setShowCloseConfirmation(false);
   };
 
@@ -204,7 +223,7 @@ export default function EditorPane() {
           </button>
         </div>
 
-        <EditorTabBar />
+        <EditorTabBar workspaceId={workspaceId} />
 
         {activeTab?.hasExternalChange && (
           <div className="editor-reload-banner">
@@ -213,13 +232,25 @@ export default function EditorPane() {
             </span>
             <button
               className="editor-reload-banner-btn"
-              onClick={() => reloadEditorTab(activeTab.id)}
+              onClick={() => {
+                if (workspaceId) {
+                  void reloadEditorTab(activeTab.id, workspaceId);
+                } else {
+                  void reloadEditorTab(activeTab.id);
+                }
+              }}
             >
               Reload
             </button>
             <button
               className="editor-reload-banner-btn editor-reload-banner-btn--secondary"
-              onClick={() => clearEditorTabExternalFlag(activeTab.id)}
+              onClick={() => {
+                if (workspaceId) {
+                  clearEditorTabExternalFlag(activeTab.id, workspaceId);
+                } else {
+                  clearEditorTabExternalFlag(activeTab.id);
+                }
+              }}
             >
               Keep Mine
             </button>
@@ -232,13 +263,25 @@ export default function EditorPane() {
             </span>
             <button
               className="editor-reload-banner-btn"
-              onClick={() => closeEditorTab(activeTab.id)}
+              onClick={() => {
+                if (workspaceId) {
+                  closeEditorTab(activeTab.id, workspaceId);
+                } else {
+                  closeEditorTab(activeTab.id);
+                }
+              }}
             >
               Close
             </button>
             <button
               className="editor-reload-banner-btn editor-reload-banner-btn--secondary"
-              onClick={() => saveEditorFile(activeTab.id)}
+              onClick={() => {
+                if (workspaceId) {
+                  void saveEditorFile(activeTab.id, workspaceId);
+                } else {
+                  void saveEditorFile(activeTab.id);
+                }
+              }}
             >
               Save
             </button>

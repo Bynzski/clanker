@@ -6,6 +6,7 @@ import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
 import { dirnamePath, isAbsolutePath, joinPaths, relativePath, normalizePath } from '../../lib/pathUtils';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { useScopedWorkspace } from '../WorkspaceScope';
 import FileTree from './FileTree';
 import ContextMenu, { type ContextAction } from './ContextMenu';
 import ConfirmCloseDialog from '../ConfirmCloseDialog';
@@ -54,19 +55,9 @@ function resolveCreateParentPath(
   return dirnamePath(selectedPath);
 }
 
-export default function FileExplorer() {
+export default function FileExplorer({ workspaceId }: { workspaceId?: string }) {
+  const workspace = useScopedWorkspace(workspaceId);
   const {
-    activeWorkspaceId,
-    workspacePath,
-    gitChanges,
-    explorerVisible,
-    explorerSidebarWidth,
-    explorerEntriesByPath,
-    explorerLoadingPaths,
-    explorerErrorsByPath,
-    explorerExpandedPaths,
-    showHiddenFiles,
-    explorerSelectedPath,
     setExplorerSelectedPath,
     toggleExplorerPath,
     setExplorerVisible,
@@ -78,6 +69,17 @@ export default function FileExplorer() {
     setExplorerExpandedPaths,
     clearExplorerDirectoryState,
   } = useWorkspaceStore();
+  const resolvedWorkspaceId = workspace?.id ?? null;
+  const workspacePath = workspace?.workspacePath ?? '';
+  const gitChanges = workspace?.gitChanges ?? [];
+  const explorerVisible = workspace?.explorerVisible ?? false;
+  const explorerSidebarWidth = workspace?.explorerSidebarWidth ?? 280;
+  const explorerEntriesByPath = workspace?.explorerEntriesByPath ?? {};
+  const explorerLoadingPaths = workspace?.explorerLoadingPaths ?? [];
+  const explorerErrorsByPath = workspace?.explorerErrorsByPath ?? {};
+  const explorerExpandedPaths = workspace?.explorerExpandedPaths ?? [];
+  const showHiddenFiles = workspace?.showHiddenFiles ?? true;
+  const explorerSelectedPath = workspace?.explorerSelectedPath ?? null;
 
   const normalizedWorkspacePath = workspacePath ? normalizePath(workspacePath) : workspacePath;
 
@@ -91,7 +93,7 @@ export default function FileExplorer() {
 
   const loadDirectory = useCallback(async (directoryPath: string): Promise<FileListDirectoryResult> => {
     const normalizedDirectoryPath = normalizePath(directoryPath);
-    const requestWorkspaceId = activeWorkspaceId;
+    const requestWorkspaceId = resolvedWorkspaceId;
     if (!normalizedWorkspacePath || !requestWorkspaceId) {
       return {
         success: false,
@@ -101,8 +103,8 @@ export default function FileExplorer() {
       };
     }
 
-    setExplorerDirectoryLoading(normalizedDirectoryPath, true);
-    setExplorerDirectoryError(normalizedDirectoryPath, null);
+    setExplorerDirectoryLoading(normalizedDirectoryPath, true, requestWorkspaceId);
+    setExplorerDirectoryError(normalizedDirectoryPath, null, requestWorkspaceId);
 
     try {
       const result = await window.electronAPI.fileListDirectory({
@@ -110,16 +112,17 @@ export default function FileExplorer() {
         directoryPath: normalizedDirectoryPath,
       });
 
-      if (useWorkspaceStore.getState().activeWorkspaceId !== requestWorkspaceId) {
+      const liveWorkspace = useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId);
+      if (liveWorkspace == null) {
         return result;
       }
 
       if (result.success) {
-        setExplorerDirectoryEntries(normalizedDirectoryPath, result.entries);
-        setExplorerDirectoryError(normalizedDirectoryPath, null);
+        setExplorerDirectoryEntries(normalizedDirectoryPath, result.entries, requestWorkspaceId);
+        setExplorerDirectoryError(normalizedDirectoryPath, null, requestWorkspaceId);
       } else {
-        setExplorerDirectoryEntries(normalizedDirectoryPath, []);
-        setExplorerDirectoryError(normalizedDirectoryPath, result.error ?? 'Unable to load directory');
+        setExplorerDirectoryEntries(normalizedDirectoryPath, [], requestWorkspaceId);
+        setExplorerDirectoryError(normalizedDirectoryPath, result.error ?? 'Unable to load directory', requestWorkspaceId);
       }
 
       return result;
@@ -131,9 +134,9 @@ export default function FileExplorer() {
         error,
       });
 
-      if (useWorkspaceStore.getState().activeWorkspaceId === requestWorkspaceId) {
-        setExplorerDirectoryEntries(normalizedDirectoryPath, []);
-        setExplorerDirectoryError(normalizedDirectoryPath, errorMessage);
+      if (useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId) != null) {
+        setExplorerDirectoryEntries(normalizedDirectoryPath, [], requestWorkspaceId);
+        setExplorerDirectoryError(normalizedDirectoryPath, errorMessage, requestWorkspaceId);
       }
 
       return {
@@ -143,12 +146,12 @@ export default function FileExplorer() {
         error: errorMessage,
       };
     } finally {
-      if (useWorkspaceStore.getState().activeWorkspaceId === requestWorkspaceId) {
-        setExplorerDirectoryLoading(normalizedDirectoryPath, false);
+      if (useWorkspaceStore.getState().getWorkspaceById(requestWorkspaceId) != null) {
+        setExplorerDirectoryLoading(normalizedDirectoryPath, false, requestWorkspaceId);
       }
     }
   }, [
-    activeWorkspaceId,
+    resolvedWorkspaceId,
     normalizedWorkspacePath,
     setExplorerDirectoryEntries,
     setExplorerDirectoryError,
@@ -171,15 +174,16 @@ export default function FileExplorer() {
 
     const normalizedDirectoryPath = normalizePath(directoryPath);
     const currentState = useWorkspaceStore.getState();
-    if (!currentState.explorerVisible || currentState.activeWorkspaceId !== activeWorkspaceId) {
+    const currentWorkspace = resolvedWorkspaceId ? currentState.getWorkspaceById(resolvedWorkspaceId) : null;
+    if (!currentWorkspace?.explorerVisible) {
       return;
     }
 
-    const currentWorkspacePath = currentState.workspacePath ? normalizePath(currentState.workspacePath) : null;
+    const currentWorkspacePath = currentWorkspace.workspacePath ? normalizePath(currentWorkspace.workspacePath) : null;
     const isRootDirectory = currentWorkspacePath === normalizedDirectoryPath;
-    const isExpandedDirectory = currentState.explorerExpandedPaths.includes(normalizedDirectoryPath);
+    const isExpandedDirectory = currentWorkspace.explorerExpandedPaths.includes(normalizedDirectoryPath);
     const hasCachedEntries = Object.prototype.hasOwnProperty.call(
-      currentState.explorerEntriesByPath,
+      currentWorkspace.explorerEntriesByPath,
       normalizedDirectoryPath
     );
 
@@ -196,20 +200,21 @@ export default function FileExplorer() {
       explorerTreeRefreshTimersRef.current.delete(normalizedDirectoryPath);
 
       const latestState = useWorkspaceStore.getState();
-      if (!latestState.explorerVisible || latestState.activeWorkspaceId !== activeWorkspaceId) {
+      const latestWorkspace = resolvedWorkspaceId ? latestState.getWorkspaceById(resolvedWorkspaceId) : null;
+      if (!latestWorkspace?.explorerVisible) {
         return;
       }
 
-      const latestWorkspacePath = latestState.workspacePath ? normalizePath(latestState.workspacePath) : null;
+      const latestWorkspacePath = latestWorkspace.workspacePath ? normalizePath(latestWorkspace.workspacePath) : null;
       const stillRefreshable = latestWorkspacePath === normalizedDirectoryPath
-        || latestState.explorerExpandedPaths.includes(normalizedDirectoryPath)
-        || Object.prototype.hasOwnProperty.call(latestState.explorerEntriesByPath, normalizedDirectoryPath);
+        || latestWorkspace.explorerExpandedPaths.includes(normalizedDirectoryPath)
+        || Object.prototype.hasOwnProperty.call(latestWorkspace.explorerEntriesByPath, normalizedDirectoryPath);
 
       if (!stillRefreshable) {
         return;
       }
 
-      if (latestState.explorerLoadingPaths.includes(normalizedDirectoryPath)) {
+      if (latestWorkspace.explorerLoadingPaths.includes(normalizedDirectoryPath)) {
         scheduleDirectoryRefreshImpl(normalizedDirectoryPath);
         return;
       }
@@ -218,7 +223,7 @@ export default function FileExplorer() {
     }, EXPLORER_TREE_REFRESH_DEBOUNCE_MS);
 
     explorerTreeRefreshTimersRef.current.set(normalizedDirectoryPath, timer);
-  }, [activeWorkspaceId, loadDirectory, normalizedWorkspacePath]);
+  }, [resolvedWorkspaceId, loadDirectory, normalizedWorkspacePath]);
 
   useEffect(() => {
     const wasVisible = previousExplorerVisibleRef.current;
@@ -241,7 +246,7 @@ export default function FileExplorer() {
       }
       refreshTimers.clear();
     };
-  }, [activeWorkspaceId, normalizedWorkspacePath]);
+  }, [resolvedWorkspaceId, normalizedWorkspacePath]);
 
   useEffect(() => {
     if (!explorerVisible || !normalizedWorkspacePath) {
@@ -264,7 +269,10 @@ export default function FileExplorer() {
    */
   useEffect(() => {
     const dispose = window.electronAPI.onExplorerTreeChanged((event) => {
-      if (!useWorkspaceStore.getState().explorerVisible) {
+      const liveWorkspace = resolvedWorkspaceId
+        ? useWorkspaceStore.getState().getWorkspaceById(resolvedWorkspaceId)
+        : null;
+      if (!liveWorkspace?.explorerVisible) {
         return;
       }
 
@@ -279,10 +287,10 @@ export default function FileExplorer() {
     const startX = e.clientX;
     const startWidth = explorerSidebarWidth;
     document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+      document.body.style.userSelect = 'none';
     const onMove = (ev: MouseEvent) => {
       const delta = ev.clientX - startX;
-      setExplorerSidebarWidth(Math.max(180, Math.min(500, startWidth + delta)));
+      setExplorerSidebarWidth(Math.max(180, Math.min(500, startWidth + delta)), resolvedWorkspaceId ?? undefined);
     };
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
@@ -363,27 +371,29 @@ export default function FileExplorer() {
     }
 
     // Update any open editor tabs that reference this file
-    const { editorTabs, renameEditorTabPath } = useWorkspaceStore.getState();
+    const state = useWorkspaceStore.getState();
+    const liveWorkspace = resolvedWorkspaceId ? state.getWorkspaceById(resolvedWorkspaceId) : null;
+    const editorTabs = liveWorkspace?.editorTabs ?? [];
+    const { renameEditorTabPath } = state;
     for (const tab of editorTabs) {
       if (tab.filePath === r.path) {
-        renameEditorTabPath(r.path, newPath);
+        renameEditorTabPath(r.path, newPath, resolvedWorkspaceId ?? undefined);
         break;
       }
     }
 
-    const {
-      explorerEntriesByPath: currentEntries,
-      explorerExpandedPaths: currentExpandedPaths,
-      explorerSelectedPath: selectedPath,
-    } = useWorkspaceStore.getState();
+    const latestWorkspace = resolvedWorkspaceId ? useWorkspaceStore.getState().getWorkspaceById(resolvedWorkspaceId) : null;
+    const currentEntries = latestWorkspace?.explorerEntriesByPath ?? {};
+    const currentExpandedPaths = latestWorkspace?.explorerExpandedPaths ?? [];
+    const selectedPath = latestWorkspace?.explorerSelectedPath ?? null;
     const parentEntries = currentEntries[parentDir] ?? [];
     const updatedParentEntries = parentEntries.map((entry) =>
       entry.path === r.path ? { ...entry, name: newName, path: newPath } : entry
     );
-    setExplorerDirectoryEntries(parentDir, updatedParentEntries);
+    setExplorerDirectoryEntries(parentDir, updatedParentEntries, resolvedWorkspaceId ?? undefined);
 
     if (selectedPath === r.path) {
-      setExplorerSelectedPath(newPath);
+      setExplorerSelectedPath(newPath, resolvedWorkspaceId ?? undefined);
     }
 
     if (r.path !== newPath) {
@@ -391,13 +401,13 @@ export default function FileExplorer() {
         (cachedPath) => cachedPath === r.path || isPathWithinBase(r.path, cachedPath)
       );
       if (staleDirectoryPaths.length > 0) {
-        clearExplorerDirectoryState(staleDirectoryPaths);
+        clearExplorerDirectoryState(staleDirectoryPaths, resolvedWorkspaceId ?? undefined);
       }
     }
 
     const remainingExpandedPaths = filterPathsOutsideBase(r.path, currentExpandedPaths);
     if (remainingExpandedPaths.length !== currentExpandedPaths.length) {
-      setExplorerExpandedPaths(remainingExpandedPaths);
+      setExplorerExpandedPaths(remainingExpandedPaths, resolvedWorkspaceId ?? undefined);
     }
 
     setRenaming(null);
@@ -419,18 +429,18 @@ export default function FileExplorer() {
       case 'open-editor': {
         if (!entry.isDirectory) {
           const { openFileInEditor } = useWorkspaceStore.getState();
-          void openFileInEditor(entry.path);
+          void openFileInEditor(entry.path, resolvedWorkspaceId ?? undefined);
         } else {
-          setExplorerSelectedPath(entry.path);
+          setExplorerSelectedPath(entry.path, resolvedWorkspaceId ?? undefined);
           const hasChildren = Object.prototype.hasOwnProperty.call(explorerEntriesByPath, entry.path);
           if (!explorerExpandedPaths.includes(entry.path) && !hasChildren) {
             void loadDirectory(entry.path).then((result) => {
               if (result.success) {
-                toggleExplorerPath(entry.path);
+                toggleExplorerPath(entry.path, resolvedWorkspaceId ?? undefined);
               }
             });
           } else if (!explorerExpandedPaths.includes(entry.path)) {
-            toggleExplorerPath(entry.path);
+            toggleExplorerPath(entry.path, resolvedWorkspaceId ?? undefined);
           }
         }
         break;
@@ -463,7 +473,9 @@ export default function FileExplorer() {
       }
 
       case 'copy-relative-path': {
-        const { workspacePath: root } = useWorkspaceStore.getState();
+        const root = resolvedWorkspaceId
+          ? useWorkspaceStore.getState().getWorkspaceById(resolvedWorkspaceId)?.workspacePath ?? normalizedWorkspacePath
+          : normalizedWorkspacePath;
         const nextRelativePath = root
           ? (() => {
               const resolved = relativePath(root, entry.path);
@@ -491,7 +503,7 @@ export default function FileExplorer() {
         break;
       }
     }
-  }, [closeContextMenu, explorerEntriesByPath, explorerExpandedPaths, loadDirectory, setExplorerSelectedPath, toggleExplorerPath]);
+  }, [closeContextMenu, explorerEntriesByPath, explorerExpandedPaths, loadDirectory, normalizedWorkspacePath, resolvedWorkspaceId, setExplorerSelectedPath, toggleExplorerPath]);
 
   const performDelete = useCallback(async () => {
     const entry = deleteTarget;
@@ -510,29 +522,36 @@ export default function FileExplorer() {
     }
 
     // Close any open editor tabs for the deleted file or files inside the deleted directory
-    const { editorTabs, closeEditorTab } = useWorkspaceStore.getState();
+    const state = useWorkspaceStore.getState();
+    const liveWorkspace = resolvedWorkspaceId ? state.getWorkspaceById(resolvedWorkspaceId) : null;
+    const editorTabs = liveWorkspace?.editorTabs ?? [];
+    const { closeEditorTab } = state;
     const tabsToClose = editorTabs.filter((tab) =>
       tab.filePath === entry.path || isPathWithinBase(entry.path, tab.filePath)
     );
     for (const tab of tabsToClose) {
-      closeEditorTab(tab.id);
+      closeEditorTab(tab.id, resolvedWorkspaceId ?? undefined);
     }
 
-    const { explorerEntriesByPath: currentEntries, explorerExpandedPaths: currentExpandedPaths } = useWorkspaceStore.getState();
+    const latestWorkspace = resolvedWorkspaceId ? useWorkspaceStore.getState().getWorkspaceById(resolvedWorkspaceId) : null;
+    const currentEntries = latestWorkspace?.explorerEntriesByPath ?? {};
+    const currentExpandedPaths = latestWorkspace?.explorerExpandedPaths ?? [];
     const parentDir = dirnamePath(entry.path);
     const parentEntries = currentEntries[parentDir] ?? [];
     const updatedParentEntries = parentEntries.filter((child) => child.path !== entry.path);
-    setExplorerDirectoryEntries(parentDir, updatedParentEntries);
+    setExplorerDirectoryEntries(parentDir, updatedParentEntries, resolvedWorkspaceId ?? undefined);
 
     // Clear expanded state for the deleted entry or any children within it
     const remainingExpandedPaths = filterPathsOutsideBase(entry.path, currentExpandedPaths);
     if (remainingExpandedPaths.length !== currentExpandedPaths.length) {
-      setExplorerExpandedPaths(remainingExpandedPaths);
+      setExplorerExpandedPaths(remainingExpandedPaths, resolvedWorkspaceId ?? undefined);
     }
 
-    const selectedPath = useWorkspaceStore.getState().explorerSelectedPath;
+    const selectedPath = resolvedWorkspaceId
+      ? useWorkspaceStore.getState().getWorkspaceById(resolvedWorkspaceId)?.explorerSelectedPath ?? null
+      : null;
     if (selectedPath && (selectedPath === entry.path || isPathWithinBase(entry.path, selectedPath))) {
-      setExplorerSelectedPath(null);
+      setExplorerSelectedPath(null, resolvedWorkspaceId ?? undefined);
     }
 
     if (entry.isDirectory) {
@@ -540,7 +559,7 @@ export default function FileExplorer() {
         (cachedPath) => cachedPath === entry.path || isPathWithinBase(entry.path, cachedPath)
       );
       if (staleDirectoryPaths.length > 0) {
-        clearExplorerDirectoryState(staleDirectoryPaths);
+        clearExplorerDirectoryState(staleDirectoryPaths, resolvedWorkspaceId ?? undefined);
       }
     }
 
@@ -598,7 +617,7 @@ export default function FileExplorer() {
           <button
             type="button"
             className={`file-explorer-action ${showHiddenFiles ? 'active' : ''}`}
-            onClick={() => setShowHiddenFiles(!showHiddenFiles)}
+            onClick={() => setShowHiddenFiles(!showHiddenFiles, resolvedWorkspaceId ?? undefined)}
             title={showHiddenFiles ? 'Hide dotfiles' : 'Show dotfiles'}
           >
             {showHiddenFiles ? <Eye size={14} strokeWidth={2} /> : <EyeOff size={14} strokeWidth={2} />}
@@ -606,7 +625,7 @@ export default function FileExplorer() {
           <button
             type="button"
             className="file-explorer-close"
-            onClick={() => setExplorerVisible(false)}
+            onClick={() => setExplorerVisible(false, resolvedWorkspaceId ?? undefined)}
             title="Close Explorer"
           >
             <PanelLeftClose size={16} strokeWidth={2} />
@@ -615,6 +634,7 @@ export default function FileExplorer() {
       </div>
       <div className="file-explorer-content">
         <FileTree
+          workspaceId={resolvedWorkspaceId ?? undefined}
           rootPath={normalizedWorkspacePath}
           workspacePath={normalizedWorkspacePath}
           rootError={explorerErrorsByPath[normalizedWorkspacePath]}

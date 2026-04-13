@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import BrowserPanel from '../../../src/renderer/components/BrowserPanel';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { createWorkspaceFixture } from '../../setup/fixtures';
 
 class MockResizeObserver {
   static instances: MockResizeObserver[] = [];
@@ -93,6 +94,13 @@ function setupStore(overrides = {}) {
   };
 
   const state = { ...defaultState, ...overrides };
+  const workspace = createWorkspaceFixture({
+    id: state.activeWorkspaceId,
+    lifecycle: 'active',
+    browserPane: state.browserPane,
+    browserVisible: state.browserVisible,
+    browserUrl: 'https://github.com',
+  });
 
   useWorkspaceStore.setState({
     browserPane: state.browserPane,
@@ -100,7 +108,9 @@ function setupStore(overrides = {}) {
     browserOverlayCount: state.browserOverlayCount,
     bringBrowserIntoView: state.bringBrowserIntoView,
     toggleBrowserLock: state.toggleBrowserLock,
+    workspaces: [workspace],
     activeWorkspaceId: state.activeWorkspaceId,
+    activeWorkspaceLifecycle: 'active',
   });
 
   return state;
