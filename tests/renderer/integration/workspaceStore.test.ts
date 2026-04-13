@@ -33,6 +33,7 @@ function resetStore() {
     showHiddenFiles: true,
     workspaces: [],
     activeWorkspaceId: null,
+    activeWorkspaceLifecycle: null,
     gridViewport: { cols: 12, rows: 8 },
     layoutRevision: 0,
     editorVisible: false,
@@ -223,6 +224,26 @@ describe('workspace lifecycle', () => {
     expect(activeEntries[0].id).toBe(firstId);
   });
 
+  it('opening multiple workspaces leaves exactly one active and parks the rest', () => {
+    addWorkspace({ workspacePath: '/first', name: 'first' });
+    const firstId = getStore().activeWorkspaceId!;
+
+    addWorkspace({ workspacePath: '/second', name: 'second' });
+    const secondId = getStore().activeWorkspaceId!;
+
+    addWorkspace({ workspacePath: '/third', name: 'third' });
+    const thirdId = getStore().activeWorkspaceId!;
+
+    const activeEntries = getStore().workspaces.filter((workspace) => workspace.lifecycle === 'active');
+    const parkedEntries = getStore().workspaces.filter((workspace) => workspace.lifecycle === 'parked');
+
+    expect(getStore().activeWorkspaceId).toBe(thirdId);
+    expect(getStore().activeWorkspaceLifecycle).toBe('active');
+    expect(activeEntries).toHaveLength(1);
+    expect(activeEntries[0].id).toBe(thirdId);
+    expect(parkedEntries.map((workspace) => workspace.id)).toEqual(expect.arrayContaining([firstId, secondId]));
+  });
+
   it('updateWorkspaceName updates both snapshot and workspaces array', () => {
     addWorkspace({ name: 'original' });
     const id = getStore().activeWorkspaceId;
@@ -254,8 +275,95 @@ describe('workspace lifecycle', () => {
     expect(getStore().isWorkspaceActive(secondId)).toBe(true);
   });
 
-  it.todo('parked workspaces remain mounted and non-interactive after switching');
-  it.todo('workspace lifecycle becomes explicit active -> parked -> disposed instead of inferred from the active snapshot');
+  it('removes a closed workspace from lifecycle tracking instead of leaving a disposed record behind', () => {
+    addWorkspace({ workspacePath: '/first', name: 'first' });
+    const firstId = getStore().activeWorkspaceId!;
+
+    addWorkspace({ workspacePath: '/second', name: 'second' });
+    const secondId = getStore().activeWorkspaceId!;
+
+    getStore().closeWorkspace(firstId);
+
+    expect(getStore().workspaces.find((workspace) => workspace.id === firstId)).toBeUndefined();
+    expect(getStore().workspaces.find((workspace) => workspace.id === secondId)?.lifecycle).toBe('active');
+    expect(getStore().activeWorkspaceId).toBe(secondId);
+    expect(getStore().activeWorkspaceLifecycle).toBe('active');
+  });
+
+  it('rapid workspace switching preserves a single active lifecycle entry and restores parked snapshots', () => {
+    addWorkspace({
+      workspacePath: '/first',
+      name: 'first',
+      browserVisible: true,
+      browserUrl: 'https://first.example.com',
+      activeTerminalId: 'terminal-first',
+      terminals: [{ id: 'terminal-first', pid: 1001, workingDir: '/first' }],
+      panes: [{ id: 'pane-first', terminalId: 'terminal-first', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false }],
+      editorVisible: true,
+      editorPane: { id: 'editor-first', locked: false },
+      editorTabs: [
+        {
+          id: 'tab-first',
+          filePath: '/first/index.ts',
+          fileName: 'index.ts',
+          isDirty: true,
+          content: 'export const first = 1;',
+          originalContent: 'export const first = 0;',
+        },
+      ],
+      activeEditorTabId: 'tab-first',
+    });
+    const firstId = getStore().activeWorkspaceId!;
+
+    addWorkspace({
+      workspacePath: '/second',
+      name: 'second',
+      browserVisible: false,
+      browserUrl: 'https://second.example.com',
+      activeTerminalId: 'terminal-second',
+      terminals: [{ id: 'terminal-second', pid: 1002, workingDir: '/second' }],
+      panes: [{ id: 'pane-second', terminalId: 'terminal-second', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false }],
+      editorVisible: true,
+      editorPane: { id: 'editor-second', locked: false },
+      editorTabs: [
+        {
+          id: 'tab-second',
+          filePath: '/second/index.ts',
+          fileName: 'index.ts',
+          isDirty: false,
+          content: 'export const second = 2;',
+          originalContent: 'export const second = 2;',
+        },
+      ],
+      activeEditorTabId: 'tab-second',
+    });
+    const secondId = getStore().activeWorkspaceId!;
+
+    addWorkspace({
+      workspacePath: '/third',
+      name: 'third',
+      activeTerminalId: 'terminal-third',
+      terminals: [{ id: 'terminal-third', pid: 1003, workingDir: '/third' }],
+      panes: [{ id: 'pane-third', terminalId: 'terminal-third', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false }],
+    });
+    const thirdId = getStore().activeWorkspaceId!;
+
+    getStore().selectWorkspace(firstId);
+    getStore().selectWorkspace(secondId);
+    getStore().selectWorkspace(thirdId);
+    getStore().selectWorkspace(firstId);
+
+    const activeEntries = getStore().workspaces.filter((workspace) => workspace.lifecycle === 'active');
+    expect(activeEntries).toHaveLength(1);
+    expect(activeEntries[0].id).toBe(firstId);
+    expect(getStore().activeTerminalId).toBe('terminal-first');
+    expect(getStore().browserVisible).toBe(true);
+    expect(getStore().browserUrl).toBe('https://first.example.com');
+    expect(getStore().activeEditorTabId).toBe('tab-first');
+    expect(getStore().editorTabs[0]?.content).toBe('export const first = 1;');
+    expect(getStore().workspaces.find((workspace) => workspace.id === secondId)?.lifecycle).toBe('parked');
+    expect(getStore().workspaces.find((workspace) => workspace.id === thirdId)?.lifecycle).toBe('parked');
+  });
 });
 
 // ===========================================================================
@@ -336,6 +444,34 @@ describe('browser', () => {
     expect(getStore().browserUrl).toBe('https://second.com');
     expect(getStore().workspaces.find((workspace) => workspace.id === firstId)?.browserUrl).toBe('https://updated.com');
     expect(getStore().workspaces.find((workspace) => workspace.id === secondId)?.browserUrl).toBe('https://second.com');
+  });
+
+  it('restores per-workspace browser visibility and URL after switching back from parked state', () => {
+    addWorkspace({
+      workspacePath: '/first',
+      browserVisible: true,
+      browserUrl: 'https://first.example.com',
+    });
+    const firstId = getStore().activeWorkspaceId!;
+
+    addWorkspace({
+      workspacePath: '/second',
+      browserVisible: false,
+      browserUrl: 'https://second.example.com',
+    });
+    const secondId = getStore().activeWorkspaceId!;
+
+    expect(getStore().activeWorkspaceId).toBe(secondId);
+    expect(getStore().browserVisible).toBe(false);
+    expect(getStore().browserUrl).toBe('https://second.example.com');
+
+    getStore().selectWorkspace(firstId);
+
+    expect(getStore().activeWorkspaceId).toBe(firstId);
+    expect(getStore().browserVisible).toBe(true);
+    expect(getStore().browserUrl).toBe('https://first.example.com');
+    expect(getStore().workspaces.find((workspace) => workspace.id === secondId)?.browserVisible).toBe(false);
+    expect(getStore().workspaces.find((workspace) => workspace.id === secondId)?.lifecycle).toBe('parked');
   });
 
   it('toggleBrowser shows browser and creates browser pane', () => {
