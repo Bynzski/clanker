@@ -23,6 +23,61 @@ describe('annotationRuntime', () => {
     expect(captureElement(element as Element).selector).not.toContain(':contains(');
   });
 
+  it('extracts repository list context for a GitHub-style sidebar entry', () => {
+    const dom = new JSDOM(`
+      <aside aria-label="Sidebar">
+        <section>
+          <h2>Top repositories</h2>
+          <div class="repo-list">
+            <div class="width-full d-flex mt-2">Bynzski/clanker-built</div>
+            <div class="width-full d-flex mt-2">Bynzski/base_app</div>
+            <div class="width-full d-flex mt-2">Bynzski/LandSnag</div>
+            <div class="width-full d-flex mt-2">Bynzski/clanker</div>
+            <div class="width-full d-flex mt-2">Bynzski/clanker-grid</div>
+          </div>
+        </section>
+      </aside>
+    `);
+    const element = dom.window.document.querySelector('.width-full.d-flex.mt-2');
+
+    expect(element).not.toBeNull();
+
+    const capture = captureElement(element as Element);
+    expect(capture.uiRegion).toBe('Top repositories');
+    expect(capture.elementRoleInContext).toBe('repository list entry');
+    expect(capture.ancestorContext).toContain('sidebar repository list');
+    expect(capture.fallbackSelectors).toContain('.width-full.d-flex.mt-2');
+    expect(capture.nearbyText).toEqual(
+      expect.arrayContaining([
+        'Bynzski/base_app',
+        'Bynzski/LandSnag',
+        'Bynzski/clanker',
+        'Bynzski/clanker-grid',
+      ])
+    );
+  });
+
+  it('extracts form context without relying on list-specific heuristics', () => {
+    const dom = new JSDOM(`
+      <form aria-label="Project settings">
+        <section>
+          <h2>Profile</h2>
+          <label>Display name <input type="text" value="Clanker Grid" /></label>
+          <label>Handle <input type="text" value="@clanker" /></label>
+        </section>
+      </form>
+    `);
+    const element = dom.window.document.querySelector('input');
+
+    expect(element).not.toBeNull();
+
+    const capture = captureElement(element as Element);
+    expect(capture.uiRegion).toBe('Profile');
+    expect(capture.elementRoleInContext).toBe('form field');
+    expect(capture.ancestorContext).toBe('form section');
+    expect(capture.nearbyText).toEqual(expect.arrayContaining(['Handle']));
+  });
+
   it('embeds the DOM helpers in the injected runtime', () => {
     const runtime = generateAnnotationRuntime();
 
