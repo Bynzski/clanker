@@ -133,6 +133,16 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     explorerStartWatching: createAsyncMock(undefined),
     explorerStopWatching: createAsyncMock(undefined),
 
+    // Browser annotation
+    annotationEnable: createAsyncMock({ success: true }),
+    annotationDisable: createAsyncMock({ success: true }),
+    annotationGetState: createAsyncMock({ enabled: false, initialized: false, workspaceId: null }),
+    annotationCapture: createAsyncMock({ success: false, error: 'No annotation pending' }),
+    annotationExport: createAsyncMock({ success: true }),
+    annotationTriggerCopy: createAsyncMock({ success: true }),
+    annotationCheckEscaped: createAsyncMock(false),
+    onAnnotationEscape: vi.fn(() => () => undefined),
+
     ...overrides,
   };
 }

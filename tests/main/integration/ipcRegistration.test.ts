@@ -84,6 +84,7 @@ describe('IPC registration smoke test', () => {
     const { registerCredentialIpc } = await import('../../../src/main/ipc/credentialIpc');
     const { registerFileIpc } = await import('../../../src/main/ipc/fileIpc');
     const { registerVcsIpc } = await import('../../../src/main/ipc/vcsIpc');
+    const { registerAnnotationIpc } = await import('../../../src/main/annotation/annotationIpc');
 
     interface MockStoreSchema {
       lastWorkspace: string;
@@ -220,6 +221,12 @@ describe('IPC registration smoke test', () => {
 
     registerVcsIpc({
       getGitService: () => mockGitService as never,
+    });
+
+    registerAnnotationIpc({
+      getBrowserViews: () => new Map(),
+      getActiveBrowserWorkspaceId: () => mockActiveBrowserWorkspaceId,
+      getMainWindow: () => mockMainWindow as never,
     });
 
     // ── Assert ──────────────────────────────────────────────────────────────

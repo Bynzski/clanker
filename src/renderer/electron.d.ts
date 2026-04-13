@@ -206,6 +206,53 @@ interface ElectronAPI {
   explorerStartWatching: (workspacePath: string) => Promise<void>;
   /** Stop watching the current workspace tree. */
   explorerStopWatching: () => Promise<void>;
+
+  // Browser annotation
+  annotationEnable: (workspaceId: string) => Promise<{ success: boolean; error?: string }>;
+  annotationDisable: () => Promise<{ success: boolean }>;
+  annotationGetState: () => Promise<{
+    enabled: boolean;
+    initialized: boolean;
+    workspaceId: string | null;
+    copyTriggered?: boolean;
+  }>;
+  annotationCapture: () => Promise<{
+    success: boolean;
+    annotation?: {
+      url: string;
+      title: string;
+      tagName: string;
+      selector: string;
+      id: string | null;
+      className: string | null;
+      text: string | null;
+      role: string | null;
+      accessibleName: string | null;
+      attributes: Record<string, string>;
+      bounds: { x: number; y: number; width: number; height: number };
+      note: string;
+      timestamp: string;
+    };
+    error?: string;
+  }>;
+  annotationExport: (annotation: {
+    url: string;
+    title: string;
+    tagName: string;
+    selector: string;
+    id: string | null;
+    className: string | null;
+    text: string | null;
+    role: string | null;
+    accessibleName: string | null;
+    attributes: Record<string, string>;
+    bounds: { x: number; y: number; width: number; height: number };
+    note: string;
+    timestamp: string;
+  }) => Promise<{ success: boolean }>;
+  annotationTriggerCopy: () => Promise<{ success: boolean; error?: string }>;
+  annotationCheckEscaped: () => Promise<boolean>;
+  onAnnotationEscape: (callback: (payload: { workspaceId: string }) => void) => () => void;
 }
 
 declare global {

@@ -164,6 +164,19 @@ export const FILE_DELETE = 'file-delete';
 export const FILE_RENAME = 'file-rename';
 
 /* ============================================================================
+ * Annotation
+ * ============================================================================ */
+
+export const ANNOTATION_ENABLE = 'annotation-enable';
+export const ANNOTATION_DISABLE = 'annotation-disable';
+export const ANNOTATION_CAPTURE = 'annotation-capture';
+export const ANNOTATION_GET_STATE = 'annotation-get-state';
+export const ANNOTATION_EXPORT = 'annotation-export';
+export const ANNOTATION_CHECK_ESCAPED = 'annotation-check-escaped';
+export const ANNOTATION_ESCAPE = 'annotation-escape';
+export const ANNOTATION_TRIGGER_COPY = 'annotation-trigger-copy';
+
+/* ============================================================================
  * Canonical list (used by integration test to verify all channels registered)
  * ============================================================================ */
 
@@ -287,4 +300,13 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   FILE_CREATE,
   FILE_DELETE,
   FILE_RENAME,
+  // Annotation
+  ANNOTATION_ENABLE,
+  ANNOTATION_DISABLE,
+  ANNOTATION_CAPTURE,
+  ANNOTATION_GET_STATE,
+  ANNOTATION_EXPORT,
+  ANNOTATION_CHECK_ESCAPED,
+  ANNOTATION_ESCAPE,
+  ANNOTATION_TRIGGER_COPY,
 ];
