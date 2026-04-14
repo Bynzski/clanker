@@ -182,10 +182,36 @@ describe('annotationController', () => {
     expect(markdown).toContain('Fallback Selectors: `.width-full.d-flex.mt-2`');
     expect(markdown).toContain('### Context');
     expect(markdown).toContain('UI Region: Top repositories');
-    expect(markdown).toContain('Element Role In Context: repository list entry');
+    expect(markdown).toContain('Element Role: repository list entry');
     expect(markdown).toContain('Nearby Text: `Bynzski/base_app`; `Bynzski/LandSnag`');
     expect(markdown).toContain('Ancestor Context: left sidebar repository list');
     expect(markdown).toContain('### Annotation');
     expect(markdown).not.toContain('### Note');
+  });
+
+  it('preserves the annotation section when note is empty', () => {
+    const markdown = formatAnnotationMarkdown({
+      url: 'https://example.com',
+      title: 'Example',
+      tagName: 'DIV',
+      selector: 'div:nth-of-type(1)',
+      fallbackSelectors: [],
+      id: null,
+      className: null,
+      text: null,
+      role: null,
+      accessibleName: null,
+      attributes: {},
+      bounds: { x: 0, y: 0, width: 1, height: 1 },
+      uiRegion: null,
+      elementRoleInContext: null,
+      nearbyText: [],
+      ancestorContext: null,
+      note: '',
+      timestamp: '2026-04-14T00:00:00.000Z',
+    });
+
+    expect(markdown).toContain('### Annotation');
+    expect(markdown).toContain('_No note provided._');
   });
 });

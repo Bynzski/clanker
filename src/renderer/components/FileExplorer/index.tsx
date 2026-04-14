@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDragHandle } from '../DynamicPaneLayout';
 import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw } from 'lucide-react';
 import type React from 'react';
@@ -74,10 +74,10 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   const gitChanges = workspace?.gitChanges ?? [];
   const explorerVisible = workspace?.explorerVisible ?? false;
   const explorerSidebarWidth = workspace?.explorerSidebarWidth ?? 280;
-  const explorerEntriesByPath = workspace?.explorerEntriesByPath ?? {};
-  const explorerLoadingPaths = workspace?.explorerLoadingPaths ?? [];
-  const explorerErrorsByPath = workspace?.explorerErrorsByPath ?? {};
-  const explorerExpandedPaths = workspace?.explorerExpandedPaths ?? [];
+  const explorerEntriesByPath = useMemo(() => workspace?.explorerEntriesByPath ?? {}, [workspace]);
+  const explorerLoadingPaths = useMemo(() => workspace?.explorerLoadingPaths ?? [], [workspace]);
+  const explorerErrorsByPath = useMemo(() => workspace?.explorerErrorsByPath ?? {}, [workspace]);
+  const explorerExpandedPaths = useMemo(() => workspace?.explorerExpandedPaths ?? [], [workspace]);
   const showHiddenFiles = workspace?.showHiddenFiles ?? true;
   const explorerSelectedPath = workspace?.explorerSelectedPath ?? null;
 
@@ -280,7 +280,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     });
 
     return dispose;
-  }, [scheduleDirectoryRefresh]);
+  }, [scheduleDirectoryRefresh, resolvedWorkspaceId]);
 
   const handleResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -420,6 +420,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     setExplorerDirectoryEntries,
     setExplorerSelectedPath,
     setExplorerExpandedPaths,
+    resolvedWorkspaceId,
   ]);
 
   const handleContextAction = useCallback(async (action: ContextAction, entry: FileExplorerEntry) => {
@@ -572,6 +573,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     setExplorerDirectoryEntries,
     setExplorerSelectedPath,
     setExplorerExpandedPaths,
+    resolvedWorkspaceId,
   ]);
 
   if (!explorerVisible || !normalizedWorkspacePath) {
