@@ -3,8 +3,8 @@
 ## Installation
 
 ```bash
-git clone https://github.com/clanker-grid/clanker-grid.git
-cd clanker-grid
+git clone <repo-url>
+cd <repo-directory>
 npm install
 ```
 

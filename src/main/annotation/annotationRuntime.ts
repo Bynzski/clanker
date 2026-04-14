@@ -83,7 +83,8 @@ function buildNthOfTypeSelector(el: Element): string {
  * 1. data-testid (most stable)
  * 2. id (usually stable)
  * 3. role + aria-label (semantic)
- * 4. tag + nth-of-type (last resort)
+ * 4. tag + class (descriptive, more useful than nth-of-type)
+ * 5. tag + nth-of-type (last resort)
  */
 function buildSelector(el: Element): string {
   // Priority 1: data-testid
@@ -100,7 +101,11 @@ function buildSelector(el: Element): string {
     return `[role="${escapeCssString(role)}"][aria-label="${escapeCssString(ariaLabel)}"]`;
   }
 
-  // Priority 4: tag + nth-of-type fallback
+  // Priority 4: tag + class (more descriptive than nth-of-type)
+  const tagClassSelector = buildTagClassSelector(el);
+  if (tagClassSelector) return tagClassSelector;
+
+  // Priority 5: tag + nth-of-type fallback (last resort)
   return buildNthOfTypeSelector(el);
 }
 
@@ -796,8 +801,34 @@ ${getRuntimeHelperSource()}
 
     var popup = document.createElement('div');
     popup.className = 'clanker-annotation-popup';
-    popup.style.left = Math.min(elementInfo.bounds.x, window.innerWidth - 350) + 'px';
-    popup.style.top = Math.min(elementInfo.bounds.y + elementInfo.bounds.height + 8, window.innerHeight - 200) + 'px';
+
+    // Popup dimensions (fixed min/max from CSS)
+    var popupWidth = 350; // min-width
+    var popupHeight = 200; // estimated height for safety margin
+
+    // Determine preferred horizontal position (below element, left-aligned)
+    var preferredX = elementInfo.bounds.x;
+    var preferredY = elementInfo.bounds.y + elementInfo.bounds.height + 8;
+
+    // Calculate actual position with viewport bounds checking
+    // Clamp left edge to stay within viewport
+    var left = Math.max(8, Math.min(preferredX, window.innerWidth - popupWidth - 8));
+
+    // For vertical: try below first, then above, then clamp to viewport
+    var top;
+    if (preferredY + popupHeight <= window.innerHeight - 8) {
+      // Fits below the element
+      top = preferredY;
+    } else if (elementInfo.bounds.y - popupHeight - 8 >= 8) {
+      // Fits above the element
+      top = elementInfo.bounds.y - popupHeight - 8;
+    } else {
+      // Clamp to available space at top of viewport
+      top = 8;
+    }
+
+    popup.style.left = left + 'px';
+    popup.style.top = top + 'px';
 
     // Selector info for display
     var selectorPreview = elementInfo.selector;

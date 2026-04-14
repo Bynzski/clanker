@@ -39,7 +39,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
 
   const editorLocked = workspace?.editorPane?.locked ?? false;
   const editorVisible = workspace?.editorVisible ?? false;
-  const editorTabs = workspace?.editorTabs ?? [];
+  const editorTabs = useMemo(() => workspace?.editorTabs ?? [], [workspace]);
   const activeEditorTabId = workspace?.activeEditorTabId ?? null;
   const activeTab = editorTabs.find((t) => t.id === activeEditorTabId) ?? null;
   const dragHandleProps = useDragHandle();

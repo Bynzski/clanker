@@ -2,7 +2,6 @@
 
 > Developer workspace with terminal grid, AI harness launchers, git controls, and integrated browser.
 
-[![Validate](https://github.com/clanker-grid/clanker-grid/actions/workflows/validate.yml/badge.svg)](https://github.com/clanker-grid/clanker-grid/actions/workflows/validate.yml)
 [![Electron](https://img.shields.io/badge/Electron-41.x-47848F?logo=electron)](https://electronjs.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript)](https://www.typescriptlang.org/)
@@ -32,8 +31,8 @@
 ### Install & Run
 
 ```bash
-git clone https://github.com/clanker-grid/clanker-grid.git
-cd clanker-grid
+git clone <repo-url>
+cd <repo-directory>
 npm install
 npm run dev
 ```
