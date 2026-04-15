@@ -49,28 +49,37 @@
   min-width: 0;
   min-height: 0;
   position: relative;
+  overflow: hidden;
 }
 
-.workspace-active-viewport {
+.workspace-surfaces-container {
   flex: 1;
   display: flex;
   min-width: 0;
   min-height: 0;
-}
-
-.workspace-parked-container {
-  display: none;
+  position: relative;
 }
 
 .workspace-surface {
-  flex: 1;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   min-width: 0;
   min-height: 0;
 }
 
+.workspace-surface.active {
+  visibility: visible;
+  z-index: 1;
+}
+
 .workspace-surface.parked {
+  visibility: hidden;
   pointer-events: none;
+  z-index: 0;
 }
 
 .workspace-error-fallback {
