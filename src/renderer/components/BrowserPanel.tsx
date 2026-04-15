@@ -132,7 +132,7 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
     }, 2000);
 
     return () => clearInterval(healthCheckInterval);
-  }, [browserOverlayCount, isActiveWorkspace, scheduleBoundsUpdate, workspace?.browserVisible, workspace?.id]);
+  }, [browserOverlayCount, isActiveWorkspace, scheduleBoundsUpdate, workspace?.id, workspace?.browserVisible]);
 
   // Observe the outer panel so pane mount/show/layout changes still trigger a follow-up
   // bounds sync even if the inner content element has not emitted its own resize yet.
@@ -299,9 +299,21 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
         window.cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-      lastBoundsRef.current = null;
+      // lastBoundsRef is intentionally NOT reset here — BrowserPanel stays mounted
+      // under the shared-container design. Retaining last bounds suppresses redundant
+      // first-show IPC churn when returning to this workspace.
       window.electronAPI.browserHide(workspace.id);
       return;
+    }
+
+    // Reactivating: ensure the native browser view becomes visible.
+    // scheduleBoundsUpdate() alone is not sufficient — it early-returns when
+    // lastBoundsRef is non-null and within the 1px jitter threshold, so the
+    // browserSetBounds IPC (which calls updateBrowserView → setVisible(true))
+    // never fires and the view stays hidden. Forcing one explicit IPC here
+    // guarantees the browser reappears on workspace switch-back.
+    if (lastBoundsRef.current !== null) {
+      window.electronAPI.browserSetBounds(workspace.id, lastBoundsRef.current);
     }
 
     if (browserOverlayCount > 0) {
@@ -323,7 +335,7 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
     return () => {
       window.cancelAnimationFrame(followUpFrame);
     };
-  }, [browserOverlayCount, isActiveWorkspace, scheduleBoundsUpdate, workspace?.browserVisible, workspace?.id]);
+  }, [browserOverlayCount, isActiveWorkspace, scheduleBoundsUpdate, workspace?.id, workspace?.browserVisible]);
 
   const handleNavigate = () => {
     let navigateUrl = inputUrl.trim();

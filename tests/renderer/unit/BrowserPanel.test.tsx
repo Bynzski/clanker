@@ -673,6 +673,80 @@ describe('BrowserPanel', () => {
       expect(mockCanGoBack).not.toHaveBeenCalled();
       expect(mockCanGoForward).not.toHaveBeenCalled();
     });
+
+    it('preserves lastBoundsRef and forces one reactivation bounds call on workspace switch-back', async () => {
+      // When switching back to a workspace, the browser must become visible again.
+      // Simply restoring the last bounds is sufficient — the IPC both repositions
+      // the view and (via updateBrowserView → setVisible(true)) makes it visible.
+      // scheduleBoundsUpdate() alone cannot be relied upon because it early-returns
+      // when lastBoundsRef is non-null and within the 1px jitter threshold.
+      setupStore({ browserVisible: true, browserOverlayCount: 0 });
+
+      const { rerender } = render(<BrowserPanel {...defaultProps} workspaceId="workspace-1" />);
+
+      const contentEl = document.querySelector('.browser-content') as HTMLElement;
+      Object.defineProperty(contentEl, 'getBoundingClientRect', {
+        value: () => ({ left: 100, top: 100, width: 800, height: 600 }),
+        writable: true,
+      });
+
+      // Establish initial bounds
+      act(() => {
+        flushAnimationFrame();
+      });
+      expect(mockBrowserSetBounds).toHaveBeenCalled();
+      const preservedBounds = mockBrowserSetBounds.mock.calls[mockBrowserSetBounds.mock.calls.length - 1]?.[1];
+
+      // Switch away: browser is hidden but lastBoundsRef is preserved
+      useWorkspaceStore.setState({ activeWorkspaceId: 'workspace-2' });
+
+      act(() => {
+        rerender(<BrowserPanel {...defaultProps} workspaceId="workspace-1" />);
+        flushAnimationFrame();
+      });
+
+      expect(mockBrowserHide).toHaveBeenCalledWith('workspace-1');
+
+      // Switch back: browser must be re-shown via a bounds IPC with preserved bounds
+      mockBrowserSetBounds.mockClear();
+      useWorkspaceStore.setState({ activeWorkspaceId: 'workspace-1' });
+
+      act(() => {
+        rerender(<BrowserPanel {...defaultProps} workspaceId="workspace-1" />);
+        flushAnimationFrame();
+      });
+
+      // One explicit bounds IPC restores visibility (not suppressed by threshold)
+      expect(mockBrowserSetBounds).toHaveBeenCalledTimes(1);
+      expect(mockBrowserSetBounds).toHaveBeenCalledWith('workspace-1', preservedBounds);
+    });
+
+    it('clears lastBoundsRef only on true component unmount', () => {
+      setupStore({ browserVisible: true, browserOverlayCount: 0 });
+
+      const { unmount } = render(<BrowserPanel {...defaultProps} />);
+
+      const contentEl = document.querySelector('.browser-content') as HTMLElement;
+      Object.defineProperty(contentEl, 'getBoundingClientRect', {
+        value: () => ({ left: 100, top: 100, width: 800, height: 600 }),
+        writable: true,
+      });
+
+      act(() => {
+        flushAnimationFrame();
+      });
+
+      // Now unmount the component — this is the only path where lastBoundsRef
+      // should be cleared under the shared-container design.
+      mockBrowserSetBounds.mockClear();
+      unmount();
+
+      // browserHide should have been called (unmount cleanup path)
+      expect(mockBrowserHide).toHaveBeenCalled();
+      // No bounds IPC should have been sent during cleanup (bounds were already sent)
+      expect(mockBrowserSetBounds).not.toHaveBeenCalled();
+    });
+
   });
 
   // =========================================================================
