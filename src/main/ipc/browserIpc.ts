@@ -196,11 +196,14 @@ function updateBrowserView(
   }
 
   setActiveBrowserWorkspace(workspaceId, deps);
-  entry.view.setVisible(true);
 
+  // Apply bounds BEFORE making visible to prevent the view from appearing at
+  // stale or zero-sized bounds and then jumping to the correct position.
   if (bounds.width > 0 && bounds.height > 0) {
     entry.view.setBounds(bounds);
   }
+
+  entry.view.setVisible(true);
 }
 
 function hideBrowserView(workspaceId: string, deps: RegisterBrowserIpcDeps) {
