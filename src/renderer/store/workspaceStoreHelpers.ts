@@ -60,8 +60,9 @@ export const createDefaultEditorState = () => ({
 /**
  * Default resource policy for new workspaces.
  * All subsystems warm by default: PTY processes run in main, xtermCache keeps
- * terminal state, and parked workspaces should have full surface residency
- * once Phase 2 is implemented.
+ * terminal state, and all workspace pane surfaces stay mounted in the shared
+ * container (Phase 2 — single shared-container residency). Browser is warm
+ * (bounds preserved); explorer is cached (active-workspace-only watcher).
  */
 export const DEFAULT_RESOURCE_POLICY: WorkspaceResourcePolicy = {
   terminals: 'warm',

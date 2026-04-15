@@ -18,7 +18,7 @@ The `workspaceLayout.ts` module now has direct unit test coverage (`tests/render
 
 ## Core Invariants
 
-## Workspace Lifecycle Model For Option B
+## Workspace Lifecycle Model
 
 ### Lifecycle Vocabulary
 
@@ -49,29 +49,25 @@ state, while still keeping active-only ownership for interactive resources.
 
 ### Resource Policy Baseline
 
-These rules describe what should be treated as the source of truth during the
-parking migration. This list is intentionally explicit so reviewers can quickly
-spot a slice that changes behavior accidentally.
+These rules describe the implemented workspace residency system.
 
-| Resource / behavior | Current behavior | Option B target |
-|-------|-----------|-------------|
-| Workspace layout tree | Active workspace is visible, parked workspaces remain mounted in the hidden container | Parked workspaces remain mounted offscreen |
-| Terminal PTY output | Continues via app-level bridge | Continues while parked |
-| Terminal input/focus | Active workspace only | Active workspace only |
-| Editor file watchers | All open editor tabs across active and parked workspaces | Explicit per-workspace policy |
-| Explorer watcher | Active workspace only | Explicit active vs parked policy |
-| Browser native view | Retained per workspace, visible only for active | Retained per workspace, visible only for active |
-| Global shortcuts | Active workspace snapshot | Active workspace only, even with parked trees |
-| Close cleanup | Active or data-only inactive workspace | Must handle active and parked workspaces |
+| Resource / behavior | Behavior |
+|-------|-----------|
+| Workspace layout tree | All workspaces render in a single shared container; parked workspaces are `visibility: hidden` but remain mounted — no pane component remounts on switch |
+| Terminal PTY output | Continues via `terminalSessionBridge` global listeners while parked; xterm instances cached in `xtermCache` |
+| Terminal input/focus | Active workspace only |
+| Editor file watchers | Active-workspace-only via `WorkspaceTabs.syncExplorerWatcher` |
+| Explorer watcher | Active-workspace-only; parked workspaces retain cached directory contents |
+| Browser native view | Retained per workspace; visible only for active; `lastBoundsRef` preserved across switch; `browserSetBounds` IPC sent immediately on reactivate |
+| Editor `EditorView` | Permanently resident per workspace; `useEffect` with `[]` deps means destroy only on React unmount |
+| Global shortcuts | Active workspace snapshot via `syncActiveWorkspace` (Phase 1 migration to workspace-scoped reads is deferred) |
 
 ### Review Implication
 
-When code talks about `parked` workspaces, it must also say whether it is:
-
-- documenting the current enforced behavior, or
-- describing a remaining target that has not landed yet
-
-Mixing those two states is how lifecycle regressions get introduced.
+"Parked" describes a mounted-but-hidden workspace. All the behaviors in the
+Resource Policy Baseline table are currently implemented. Remaining deferred
+work (Phase 4 task 3 bounds pre-warming, Phase 4 task 4 warmth cap, Phase 1
+migration off `syncActiveWorkspace`) is noted in `plans/workspace-residency-plan.md`.
 
 ### Workspace Invariants
 
