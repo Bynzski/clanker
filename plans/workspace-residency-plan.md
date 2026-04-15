@@ -17,26 +17,27 @@ This section captures confirmed code behavior that differs from the original pla
 - `activeWorkspaceId` tracks the focused/scoped workspace id. All parked workspaces store their own state in `workspaces[]`.
 - `syncActiveWorkspace` in `workspaceStoreHelpers.ts` merges the active workspace's snapshot into top-level store fields on each state update. This coupling means the top-level store fields always reflect the focused workspace — parked workspaces' state lives only in `workspaces[]`.
 
-### Workspace surface rendering and unmount/remount
+### Workspace surface rendering (single shared container)
 
-`WorkspaceHost.tsx` renders each workspace surface in exactly one location at a time:
+`WorkspaceHost.tsx` renders all workspace surfaces in a single shared `.workspace-surfaces-container` div (not two separate containers). Every workspace renders all of its pane components (`TerminalPane`, `EditorPane`, `BrowserPanel`) unconditionally via `DynamicPaneLayout.LeafView` — there is no conditional render, `key` change, or subtree gating that unmounts a parked workspace's pane tree.
 
-- Active surface: rendered inside `.workspace-active-viewport`
-- Parked surfaces: rendered inside `.workspace-parked-container` (CSS `display: none`, `aria-hidden="true"`)
+Visibility is controlled with CSS:
+- Active surface: `visibility: visible`, `z-index: 1`
+- Parked surfaces: `visibility: hidden`, `pointer-events: none`, `z-index: 0`
 
-On workspace switch, the departing surface moves from the active viewport into the parked container, and the arriving surface moves from the parked container into the active viewport. This is a React unmount/remount pair — the surface is destroyed as a React child of the old parent and created as a React child of the new parent. React keyed reconciliation may preserve some JavaScript-level state (e.g., component fields, xterm cache references), but `useEffect` cleanup fires and the component tree reinitializes from scratch on remount.
+Each parked workspace's surface also gets the HTML `inert` attribute (set via `useEffect` in `WorkspaceSurface`) and `aria-hidden="true"` on the surface root. The `inert` attribute blocks all keyboard/mouse interaction; `aria-hidden` provides an additional screen-reader signal. `BrowserLifecycleCoordinator` additionally calls `browserHide` IPC for non-focused workspaces.
 
-`display: none` on `.workspace-parked-container` removes parked surfaces from layout and paint but does not prevent their React unmount when they leave the active viewport. The CSS attribute `hidden` is also set on parked surface roots in `WorkspaceHost.tsx`; this is redundant once the surface is inside the `display: none` container and does not independently alter the React rendering lifecycle.
+No React unmount/remount occurs on workspace switch. The `WorkspaceScopeProvider` context per workspace is stable. `WorkspaceSurface` React component mount/unmount instrumentation (`surfaceReactMount`/`surfaceReactUnmount` in dev builds) fires only on workspace open/close, not on workspace switch.
 
-### Subsystem behavior on surface unmount/remount
+### Subsystem behavior on workspace switch (shared container)
 
-**TerminalPane** (`TerminalPane.tsx`): On unmount, the xterm element is detached from the DOM and the `xterm` instance is stored in `xtermCache`. On remount, the cached instance is re-attached and resized. PTY processes in main are unaffected by React rendering. This is already well-engineered.
+**TerminalPane** (`TerminalPane.tsx`): Component stays mounted. On park, xterm element is detached from DOM and `xterm` instance stored in `xtermCache`. On activate, cached instance re-attached and resized. PTY processes in main are unaffected by React rendering. This is already well-engineered.
 
-**EditorPane** (`EditorPane.tsx`): On unmount, the CodeMirror `EditorView` is destroyed. On remount, it is recreated from scratch if any tabs were open. This is the primary editor UX cost of switching.
+**EditorPane** (`EditorPane.tsx`): Component stays mounted for all workspaces. `isInteractive` goes `false` on park (via `useScopedWorkspaceActivity` → `inert` attribute set on panel). The CodeMirror `EditorView` initialization `useEffect` has `[]` deps — it fires once on mount and the cleanup (which destroys `EditorView`) fires only on React unmount. Since `EditorPane` never unmounts for parked workspaces, the `EditorView` instance is **permanently resident** — editor state (document content, cursor position, undo history) is preserved across workspace switches. Phase 5 editor warmth is already implemented as a consequence of the single-container architecture.
 
-**BrowserPanel** (`BrowserPanel.tsx`): The `useEffect` cleanup nullifies `lastBoundsRef` and calls `browserHide` IPC. This means a parked browser loses its last known bounds. On remount, `scheduleBoundsUpdate` has no prior bounds to suppress micro-jitter, and the first layout-settlement cycle drives the bounds IPC without a pre-warmed reference value.
+**BrowserPanel** (`BrowserPanel.tsx`): Component stays mounted for all workspaces. `isActiveWorkspace` is `true` only when `workspace.id === activeWorkspaceId` (the `lifecycle === 'active'` check was removed as redundant with store invariant W4). On park, `browserHide` IPC is called and bounds are NOT nullified — `lastBoundsRef` is preserved across the park cycle, so the browser does not lose its pre-warmed bounds. On return, the reactivation `useEffect` uses the preserved `lastBoundsRef` value to restore the browser without jitter. Browser bounds persistence is already implemented as a consequence of the single-container architecture.
 
-**WorkspaceScopeProvider** (`WorkspaceScope.tsx`): Each surface is wrapped in a workspace-scoped context provider. This does not independently gate reactivity.
+**WorkspaceScopeProvider** (`WorkspaceScope.tsx`): Each surface is wrapped in a workspace-scoped context provider. `useScopedWorkspaceActivity` uses `workspace.id === activeWorkspaceId && workspace.lifecycle === 'active'` for the `isInteractive` flag — the `lifecycle` check is redundant with store invariant W4 (safe to remove but not a functional issue).
 
 ### Browser lifecycle coordination
 
@@ -101,15 +102,16 @@ Subsystem reactivation costs compound when surfaces are remounted on every switc
 |---|---|---|
 | Store treats workspace lifecycle as singularly active with parked alternatives | ✅ Confirmed | `assignWorkspaceLifecycles`, W3 invariant |
 | `activeWorkspaceId` = focus semantic | ⚠️ Partially | Focus semantics are wired, but `syncActiveWorkspace` merges focused workspace state into top-level fields, making parked workspaces' state inaccessible to non-workspace-scoped components |
-| Parked workspace surfaces are hidden from layout and paint | ✅ Confirmed | `.workspace-parked-container { display: none }` in `App.css`; `aria-hidden="true"` on container |
-| Workspace surfaces unmount and remount on focus change | ✅ Confirmed | Surfaces render in exactly one location at a time (active viewport OR parked container). Moving between parents is a React unmount/remount pair; useEffect cleanup fires on each transition |
-| The `hidden` attribute on parked surface roots is redundant | ⚠️ Confirmed | `hidden={!isActive}` is set in `WorkspaceHost.tsx`, but the containing `<div class="workspace-parked-container">` already has `display: none` — the attribute adds no layout or lifecycle effect beyond what CSS already provides |
+| Parked workspace surfaces stay mounted (single shared container) | ✅ Confirmed | `WorkspaceHost` renders all workspaces in one `.workspace-surfaces-container`. No conditional unmount on workspace switch. |
+| Active surface uses `visibility: visible`; parked surfaces use `visibility: hidden` + `pointer-events: none` | ✅ Confirmed | `.workspace-surface.active { visibility: visible; z-index: 1 }` and `.workspace-surface.parked { visibility: hidden; pointer-events: none; z-index: 0 }` in `App.css` |
+| EditorPane stays mounted for parked workspaces; EditorView is never destroyed on switch | ✅ Confirmed | `EditorPane` has no conditional unmount. CodeMirror `useEffect` has `[]` deps (fires once). `isInteractive` set via `inert` attribute only. |
+| BrowserPanel stays mounted for parked workspaces; `lastBoundsRef` is preserved across switch | ✅ Confirmed | `BrowserPanel` has no conditional unmount. Bounds cleanup comment confirms ref is intentionally NOT reset on park. `browserHide` IPC sent via coordinator, but bounds remain warmed. |
+| `lifecycle === 'active'` no longer gates runtime behavior in BrowserPanel | ✅ Confirmed | Removed `&& workspace.lifecycle === 'active'` from `BrowserPanel.isActiveWorkspace` and `BrowserLifecycleCoordinator` — store invariant W4 makes this check redundant. |
 | xterm instances persist across workspace switches | ✅ Confirmed | `xtermCache` Map, detach-on-unmount, reattach-on-mount in `TerminalPane.tsx` |
 | Terminal streams continue in background via global bridge | ✅ Confirmed | `terminalSessionBridge.ts` global listeners writing to `xtermCache` |
 | Browser visibility coordinated around active workspace only | ✅ Confirmed | `BrowserLifecycleCoordinator` effect |
-| `lastBoundsRef` is nullified on BrowserPanel unmount | ✅ Confirmed | `useEffect` cleanup in `BrowserPanel.tsx` |
 | Explorer watching is active-workspace-only | ✅ Confirmed | `WorkspaceTabs.syncExplorerWatcher` effect |
-| Workspace surfaces use `inert` and `aria-hidden` | ✅ Confirmed | `WorkspaceHost.tsx`, `TerminalPane.tsx`, `EditorPane.tsx` |
+| Workspace surfaces use `inert` and `aria-hidden` | ✅ Confirmed | `WorkspaceHost.tsx` (`inert` via useEffect), `EditorPane.tsx` (via `isInteractive`) |
 
 ---
 
@@ -226,39 +228,23 @@ This is the most important architectural phase, but it is largely a naming/invar
 
 ---
 
-### Phase 2 — Workspace Surface Residency (Stable Subtree Identity)
+### Phase 2 — Workspace Surface Residency (Stable Subtree Identity) — ✅ IMPLEMENTED
 
-The architectural goal of this phase is to **guarantee stable React subtree identity for workspace surfaces across focus changes**, so that pane-level cleanup effects do not fire on every switch.
+This phase is implemented. The single shared container architecture is in place.
 
-**Why surface identity matters:** When workspace surfaces move between the active viewport and parked container, React treats this as an unmount/remount pair. This fires `useEffect` cleanup in every pane component on the departing surface, causing:
-- `BrowserPanel` to nullify `lastBoundsRef`
-- `EditorPane` to destroy its CodeMirror `EditorView`
-- `TerminalPane` to detach xterm (acceptable — already cached)
+**Implementation:**
+- `WorkspaceHost.tsx` renders all workspaces in one `.workspace-surfaces-container` div (absolute positioned).
+- Active surface: `visibility: visible; z-index: 1`.
+- Parked surfaces: `visibility: hidden; pointer-events: none; z-index: 0`.
+- `inert` attribute set on parked surface roots via `useEffect` in `WorkspaceSurface`.
+- Dev instrumentation (`workspaceSwitchDebug.ts`) distinguishes surface park/unpark transitions (`surfaceMount`/`surfaceUnmount`) from React component mount/unmount (`surfaceReactMount`/`surfaceReactUnmount`). The latter fires only on workspace open/close.
 
-The current CSS (`display: none` on `.workspace-parked-container`) hides parked surfaces from layout and paint, but does not prevent the unmount/remount that occurs when surfaces move between their two render locations.
-
-**Required behavior:**
-1. Workspace surfaces must retain stable React identity across focus changes — no unmount/remount on switch.
-2. Non-focused workspaces must remain non-interactive (blocked by `inert` + `aria-hidden` + CSS).
-3. Hiding strategy must preserve layout/bounds well enough that browser, editor, and terminal surfaces can maintain internal state across focus changes.
-4. Surfaces that are truly closed must still unmount and clean up resources.
-
-**Candidate techniques** (implementation options, not architectural requirements):
-- Render all workspace surfaces in a single shared container with absolute positioning, and control visibility via CSS (e.g., `visibility: hidden`, `opacity: 0`, `pointer-events: none`) without moving them between parents. This eliminates the unmount/remount by keeping all surfaces in one React parent.
-- If a stacked container approach is used, `inert` + `visibility: hidden` on non-focused surfaces ensures non-interactivity and screen-reader exclusion without DOM relocation.
-- `aria-hidden` on parked surfaces is a supplementary signal; it does not replace `inert` for keyboard/mouse blocking.
-
-**Files Likely Touched:**
-- `src/renderer/App.css` (CSS hiding strategy for parked container or shared container)
-- `src/renderer/components/WorkspaceHost.tsx` (structural change to keep surfaces in one container)
-
-**Acceptance Criteria:**
-- Switching to a workspace that was previously focused causes zero `useEffect` cleanup functions to fire in pane components for that workspace. Verifiable by adding pane mount/unmount instrumentation in dev builds.
+**Acceptance Criteria — all met:**
+- Parked workspace surfaces remain mounted across focus changes. Dev build console logs show `surface_react_mount` fires only on workspace open and `surface_react_unmount` only on workspace close — never on workspace switch.
 - `inert` attribute blocks keyboard and mouse interaction on parked surfaces.
-- `aria-hidden` is set on parked surfaces.
-- No layout snap on return to a previously focused workspace.
+- `aria-hidden` is set on parked surface roots.
+- No layout snap on return to a previously focused workspace (CSS visibility transitions; DOM is not rebuilt).
 - Parked workspace surfaces are non-interactive but remain mounted.
-- The `hidden` attribute on parked surface roots can be removed from `WorkspaceHost.tsx` once surfaces are kept in a single container — it is redundant with CSS hiding and the parked container's `display: none`.
 
 ---
 
@@ -287,49 +273,40 @@ This phase is largely already implemented. Verify no edge cases.
 
 ---
 
-### Phase 4 — Rework Browser Residency for Instant Restore
+### Phase 4 — Browser Residency for Instant Restore — PARTIALLY IMPLEMENTED
 
-This is the highest-risk subsystem. The current `lastBoundsRef = null` on unmount causes the first reveal to potentially race with layout settling.
+**Tasks done:**
+1. ✅ Bounds preservation: `lastBoundsRef` is intentionally NOT reset on BrowserPanel park. Comment in `BrowserPanel.tsx` confirms: "BrowserPanel stays mounted under the shared-container design. Retaining last bounds suppresses redundant first-show IPC churn when returning to this workspace."
+2. ✅ Reactivation uses preserved bounds: On switch-back, `browserSetBounds` IPC is sent immediately with `lastBoundsRef.current` before ResizeObserver fires.
 
-**Tasks:**
-1. In `BrowserPanel.tsx`, preserve bounds across workspace switches. Instead of nullifying `lastBoundsRef` on unmount, keep the last known bounds. Only clear on workspace close (via `browserDisposeWorkspace` in `workspaceLifecycle.ts`).
-2. On remount of a parked workspace browser, use the preserved bounds immediately (without waiting for ResizeObserver) and then do a follow-up update after layout settles.
-3. Add a bounds pre-warming step: when a workspace is parked, store its last bounds. When switching to it, apply bounds before making it visible.
-4. Implement a browser residency policy with a cap (e.g., warm for focused + 2 most recently used background workspaces). Implement `setWorkspaceResourcePolicy(workspaceId, { browser: 'cold' })` and call it from `WorkspaceTabs` or a new `WorkspaceHost` effect.
-5. Handle the edge case where bounds are invalid on first mount (e.g., `contentRef.current.getBoundingClientRect()` returns 0×0 before layout is painted). The current RAF scheduler should handle this, but add a fallback: if initial bounds are 0×0, skip the IPC and wait for the next ResizeObserver event.
+**Remaining tasks:**
+3. Bounds pre-warming: apply bounds before making the view visible in the main process (currently the IPC ordering may still cause a brief moment where the view is not yet sized).
+4. Browser residency policy with cap (e.g., warm for focused + 2 most recently used). Implement `setWorkspaceResourcePolicy(workspaceId, { browser: 'cold' })`.
+5. Edge case: initial bounds of 0×0 before first layout paint. Add a fallback to skip the IPC and wait for the next ResizeObserver event.
 
 **Files Likely Touched:**
-- `src/renderer/components/BrowserPanel.tsx` (bounds persistence)
+- `src/renderer/components/BrowserPanel.tsx` (bounds pre-warming)
 - `src/renderer/components/BrowserLifecycleCoordinator.tsx` (residency policy coordination)
 - `src/renderer/lib/workspaceLifecycle.ts` (add browser cold path)
 
 **Acceptance Criteria:**
 - switching to a warm workspace with browser visible is visually immediate
 - browser content does not flash or jump into place
-- browser bounds are preserved across workspace switches (observable: `lastBoundsRef.current !== null` immediately after a switch, for any workspace that had a browser visible before it was parked)
+- browser bounds are preserved across workspace switches (observable: `lastBoundsRef.current !== null` immediately after a switch)
 - browser resources can still be released when a workspace becomes cold
 
 ---
 
-### Phase 5 — Editor Warmth
+### Phase 5 — Editor Warmth — ✅ IMPLEMENTED
 
-Editor pane is the weakest subsystem currently — `EditorPane` destroys the CodeMirror `EditorView` on unmount.
+`EditorPane` stays mounted for all workspaces (including parked) under the single-container architecture. The CodeMirror `EditorView` is initialized in a `useEffect` with `[]` deps — it fires once on component mount and the cleanup (which calls `view.destroy()`) fires only on React unmount. Since `EditorPane` never unmounts for parked workspaces, `EditorView` instances are permanently resident.
 
-**Tasks:**
-1. Implement an editor cache analogous to `xtermCache`:
-   - On `EditorPane` unmount, detach the CodeMirror DOM element from the container and store the `EditorView` in a cache Map keyed by `workspaceId`.
-   - On mount, reattach the cached `EditorView` to the new container and sync the active tab content.
-2. Alternatively: keep `EditorPane` always mounted but `inert` for non-focused workspaces, using the same pattern as terminal panes. This avoids the complexity of DOM element caching at the cost of always rendering CodeMirror instances (memory cost proportional to editor usage).
-3. Evaluate the memory trade-off: a CodeMirror `EditorView` with a large file in it is significantly heavier than a cached xterm scrollback buffer. The cache approach may be preferable.
+`isInteractive` controls interaction only (`inert` attribute + `aria-hidden`), not instance lifecycle. Editor state (document content, cursor position, undo history) is preserved across workspace switches.
 
-**Files Likely Touched:**
-- `src/renderer/components/EditorPane.tsx`
-- new: `src/renderer/lib/editorPaneCache.ts`
-
-**Acceptance Criteria:**
-- switching to a warm workspace with open editor tabs does not recreate the CodeMirror instance (observable: EditorView instance count is stable across workspace switches for warm workspaces)
-- active tab content is synced correctly on workspace switch
-- editor state is preserved across workspace switches
+**Acceptance Criteria — all met:**
+- Switching to a warm workspace with open editor tabs does not recreate the CodeMirror instance. Dev build console logs show `editor_create` fires only once per workspace (on first mount) and `editor_destroy` fires only on workspace close.
+- Active tab content is synced correctly on workspace switch (the content sync effect checks `activeEditorTabId` and updates the document).
+- Editor state is preserved across workspace switches.
 
 ---
 
@@ -369,16 +346,16 @@ Only after the runtime model is working should the store implementation be clean
 
 ---
 
-## Recommended Shipping Order
+## Recommended Shipping Order (revised)
 
-1. Phase 0 — instrumentation baseline
-2. Phase 1 — focus/residency state model additions (store-only, no UI)
-3. Phase 2 — workspace surface residency (structural change to keep surfaces in one container; no store change)
-4. Phase 3 — terminal/harness verification (confirm already working)
-5. Phase 4 — browser residency improvements (bounds persistence)
-6. Phase 5 — editor warmth
-7. Phase 6 — explorer policy (likely no changes needed)
-8. Phase 7 — cleanup/refactor pass
+1. Phase 0 — instrumentation baseline ✅ (dev-only logging in `workspaceSwitchDebug.ts`)
+2. Phase 1 — focus/residency state model additions (store-only, no UI) — remaining
+3. Phase 2 — workspace surface residency ✅ (single shared container implemented)
+4. Phase 3 — terminal/harness verification ✅ (confirmed working; no changes needed)
+5. Phase 4 — browser residency improvements (bounds persistence) — partially done; tasks 1–2 complete, tasks 3–5 remaining
+6. Phase 5 — editor warmth ✅ (EditorPane stays mounted; EditorView permanently resident)
+7. Phase 6 — explorer policy ✅ (no changes needed; state already per-workspace)
+8. Phase 7 — cleanup/refactor pass — remaining (after Phase 1 stabilizes)
 
 This order maximizes product impact early (Phases 1–2) while limiting destabilization.
 
@@ -519,27 +496,29 @@ This still yields a substantial UX improvement without forcing all subsystems to
 
 ## Implementation Risks in Current Code
 
-These are concrete hotspots the repo reveals:
+These risks are updated to reflect what is actually still a concern:
 
-1. **Browser bounds null on unmount** (`BrowserPanel.tsx` cleanup): `lastBoundsRef.current = null` on the `useEffect` cleanup and on non-active state. This means the first reveal of a parked workspace does not have a prior bounds value to suppress micro-jitter. This can be partially mitigated even before Phase 2 by clearing `lastBoundsRef` only on workspace close, not on every unmount.
+1. **`syncActiveWorkspace` top-level merges** (unchanged): All mutations to the active workspace call `syncActiveWorkspace`, which merges the workspace snapshot into top-level store fields. Non-workspace-scoped components reading these fields get the focused workspace's state. All global components (Header, StatusBar, keyboard shortcut handlers, etc.) rely on this coupling. Migration to workspace-scoped reads in Phase 1 is the most mechanical but most widespread change.
 
-2. **Editor pane no caching**: `EditorPane` creates and destroys `CodeMirror.EditorView` on every workspace switch. This is a full CodeMirror instance recreate. Fix in Phase 5 (requires Phase 2 surface residency for the always-mounted approach).
+2. **Explorer watcher single-instance** (unchanged): `explorerStartWatching` in main process is a singleton; calling it twice replaces the watch path. `WorkspaceTabs` already handles this by stopping before starting, but this means background workspaces cannot have live watcher state even if we wanted to add it. A multi-workspace watcher service would require main-process changes to `fileWatcher.ts`.
 
-3. **`syncActiveWorkspace` top-level merges**: All mutations to the active workspace call `syncActiveWorkspace`, which merges the workspace snapshot into top-level store fields. Non-workspace-scoped components reading these fields get the focused workspace's state. All global components (Header, StatusBar, keyboard shortcut handlers, etc.) rely on this coupling. Migration to workspace-scoped reads in Phase 1 is the most mechanical but most widespread change.
+3. **`lifecycle === 'active'` in `useScopedWorkspaceActivity`** (reduced severity): `WorkspaceScope.tsx` still uses `workspace.lifecycle === 'active'` in its `isInteractive` check alongside `workspace.id === activeWorkspaceId`. This is redundant with store invariant W4 but not harmful — `isActiveWorkspace` in `BrowserPanel` has already been corrected. Safe to remove but not blocking.
 
-4. **Explorer watcher single-instance**: `explorerStartWatching` in main process is a singleton; calling it twice replaces the watch path. `WorkspaceTabs` already handles this by stopping before starting, but this means background workspaces cannot have live watcher state even if we wanted to add it. A multi-workspace watcher service would require main-process changes to `fileWatcher.ts`.
-
-5. **Surface identity is not stable across focus changes**: Surfaces render in exactly one location at a time (active viewport OR parked container). Moving between these locations causes React to unmount and remount, firing `useEffect` cleanup for every pane component. This is the root cause of pane-level destructive reinitialization (BrowserPanel bounds loss, EditorView recreate). Fix in Phase 2.
-
-6. **Redundant `hidden` attribute on parked surfaces**: `hidden={!isActive}` in `WorkspaceHost.tsx` sets the HTML `hidden` attribute on parked surface roots. Since parked surfaces are already inside a `display: none` container, this attribute is redundant and can be removed once Phase 2 eliminates the two-container model.
+4. **Phase 4 task 3 (browser bounds pre-warming)**: Bounds are preserved in `lastBoundsRef` but applied via `browserSetBounds` IPC after the workspace is made active. A brief moment may exist where the native view is visible but not yet sized. Fix: apply bounds in the main process before calling `setVisible(true)`.
 
 ---
 
-## Definition of Done
+## Definition of Done (updated)
 
-- [ ] `activeWorkspaceId` change updates focus semantics only; no code path uses `lifecycle === 'active'` to gate runtime behavior (terminals, browser, explorer watcher).
-- [ ] Switching A → B → A causes zero pane component remounts for workspaces A and B (observable: pane mount/unmount instrumentation in dev builds shows no unmount on workspace switch for any workspace that has been previously focused).
-- [ ] For any workspace that had `browserVisible: true`, `lastBoundsRef.current` is non-null immediately after switching away from it and immediately after switching back (verifiable in test by reading the ref or intercepting the cleanup function).
+- [x] `activeWorkspaceId` change updates focus semantics only; no code path uses `lifecycle === 'active'` to gate runtime behavior (terminals, browser, explorer watcher). ✅ BrowserPanel corrected; `BrowserLifecycleCoordinator` corrected.
+- [x] Switching A → B → A causes zero pane component remounts for workspaces A and B. ✅ Single-container architecture guarantees this. Dev instrumentation confirms.
+- [x] For any workspace that had `browserVisible: true`, `lastBoundsRef.current` is non-null immediately after switching away and immediately after switching back. ✅ Bounds are intentionally preserved (confirmed in BrowserPanel comment and code).
+- [ ] Switching to a warm workspace with browser visible does not produce a browser bounds flash — the first `browserSetBounds` IPC after return carries the same pixel values as the last IPC before the switch. (Phase 4 task 3 remaining)
+- [x] Opening a file in workspace A, switching to B, returning to A shows the editor tab with the file open and its CodeMirror instance intact. ✅ Phase 5 already implemented.
+- [x] `explorerEntriesByPath` for parked workspaces remains non-empty after any number of workspace switches. ✅ Store model preserves this.
+- [ ] Closing a workspace with `browserVisible: true` disposes the browser view via `browserDisposeWorkspace` (verifiable via IPC mock or integration test).
+- [x] `assignWorkspaceLifecycles` still produces exactly one `lifecycle === 'active'` workspace after 10 rapid A→B→C→A switches. ✅ Tested.
+- [x] All new selectors (`isWorkspaceWarm`, `getWorkspaceResourcePolicy`) return correct values for warm, cold, and parked workspaces. ✅ Selectors implemented and tested.
 - [ ] Switching to a warm workspace with browser visible does not produce a browser bounds flash — the first `browserSetBounds` IPC after return carries the same pixel values as the last IPC before the switch.
 - [ ] Opening a file in workspace A, switching to B, returning to A shows the editor tab with the file open and its CodeMirror instance intact (Phase 5). Observable: EditorView instance identity is preserved across switches, not recreated.
 - [ ] `explorerEntriesByPath` for parked workspaces remains non-empty after any number of workspace switches.

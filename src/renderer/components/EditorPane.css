@@ -188,3 +188,14 @@
 .editor-reload-banner-btn--secondary:hover {
   opacity: 1;
 }
+.editor-panel--hidden {
+  display: none;
+}
+
+.editor-empty-state--overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--bg-primary);
+  flex: none;
+}

@@ -144,16 +144,8 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
     if (view == null) return;
 
     if (activeEditorTabId == null) {
-      const lastSynced = lastSyncedTabIdRef.current;
-      if (lastSynced != null) {
-        lastSyncedTabIdRef.current = null;
-        const currentContent = view.state.doc.toString();
-        if (currentContent !== '') {
-          view.dispatch({
-            changes: { from: 0, to: view.state.doc.length, insert: '' },
-          });
-        }
-      }
+      // No-op: preserve the editor document so undo history and editor state
+      // are not destroyed when switching to a workspace with no active tab.
       return;
     }
 
@@ -240,15 +232,15 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
     setShowCloseConfirmation(false);
   };
 
-  if (!editorVisible) {
-    return null;
-  }
-
   const dirtyCount = editorTabs.filter((t) => t.isDirty).length;
 
   return (
     <>
-      <div ref={panelRef} className="editor-panel" data-workspace-interactive={isInteractive ? 'true' : 'false'}>
+      <div
+        ref={panelRef}
+        className={`editor-panel${editorVisible ? '' : ' editor-panel--hidden'}`}
+        data-workspace-interactive={isInteractive ? 'true' : 'false'}
+      >
         <div className="editor-pane-header" {...headerDragHandleProps}>
           <div className="editor-pane-drag-handle" aria-hidden="true" title="Drag to move pane" />
           <span className="editor-pane-title">Editor</span>
@@ -359,14 +351,17 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
         )}
 
         <div className="editor-content-area">
-          {editorTabs.length === 0 ? (
-            <div className="editor-empty-state">
+          {editorTabs.length === 0 && (
+            <div className="editor-empty-state editor-empty-state--overlay">
               <span>No file open</span>
               <span className="hint">Double-click a file in the explorer to open it</span>
             </div>
-          ) : (
-            <div className="editor-content" ref={editorRef} />
           )}
+          <div
+            className="editor-content"
+            ref={editorRef}
+            style={{ display: editorVisible && editorTabs.length > 0 ? undefined : 'none' }}
+          />
         </div>
       </div>
       <ConfirmCloseDialog
