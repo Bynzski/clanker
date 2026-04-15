@@ -50,6 +50,43 @@ export interface GridViewport {
 
 export type WorkspaceLifecycleState = 'active' | 'parked';
 
+/**
+ * Runtime residency state for a workspace.
+ *
+ * residencyState governs whether the workspace's pane surfaces are kept
+ * warm in memory. Resource policy gives fine-grained control per subsystem.
+ *
+ * @note 'closing' and 'errored' are reserved for future lifecycle phases.
+ * New workspaces default to 'warm'.
+ */
+export type WorkspaceResidencyState = 'warm' | 'cold' | 'closing' | 'errored';
+
+/**
+ * Per-subsystem resource policy for a workspace.
+ *
+ * - 'warm': keep the subsystem state/instance alive across workspace switches
+ * - 'cold': release subsystem resources when the workspace is not focused
+ * - 'cached' (explorer only): keep directory contents cached but do not watch
+ * - 'watching' (explorer only): keep directory contents cached and actively watch for changes
+ *
+ * @note Terminals default to 'warm' because PTY processes run in the main
+ * process and are independent of React rendering. xtermCache + terminalSessionBridge
+ * deliver output to cached xterm instances regardless of surface residency.
+ */
+export type ResourcePolicy = 'warm' | 'cold' | 'cached' | 'watching';
+
+export interface WorkspaceResourcePolicy {
+  terminals: 'warm' | 'cold';
+  browser: 'warm' | 'cold';
+  explorer: 'watching' | 'cached';
+  editor: 'warm' | 'cold';
+}
+
+export interface WorkspaceRuntimeState {
+  residencyState: WorkspaceResidencyState;
+  resourcePolicy: WorkspaceResourcePolicy;
+}
+
 export type LayoutNode = LayoutLeaf | LayoutSplit;
 
 export interface LayoutLeaf {
@@ -95,4 +132,6 @@ export interface WorkspaceTab {
   explorerErrorsByPath: Record<string, string | null | undefined>;
   showHiddenFiles: boolean;
   gitChanges: GitStatus[];
+  /** Runtime residency state — controls whether pane surfaces are kept warm. */
+  runtimeState: WorkspaceRuntimeState;
 }

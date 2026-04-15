@@ -1,4 +1,5 @@
 import type { Pane, Terminal, WorkspaceTab } from '../../src/renderer/store/workspaceTypes';
+import { DEFAULT_RUNTIME_STATE } from '../../src/renderer/store/workspaceStoreHelpers';
 
 export function createTerminalFixture(overrides: Partial<Terminal> = {}): Terminal {
   return {
@@ -19,6 +20,11 @@ export function createPaneFixture(overrides: Partial<Pane> = {}): Pane {
   };
 }
 
+/**
+ * Create a workspace fixture. runtimeState is always included with safe defaults.
+ * Omitting runtimeState from overrides simulates an older persisted workspace —
+ * sanitizeWorkspace will backfill it.
+ */
 export function createWorkspaceFixture(overrides: Partial<WorkspaceTab> = {}): WorkspaceTab {
   const terminal = createTerminalFixture();
   const pane = createPaneFixture({ terminalId: terminal.id });
@@ -51,6 +57,7 @@ export function createWorkspaceFixture(overrides: Partial<WorkspaceTab> = {}): W
     editorTabs: [],
     activeEditorTabId: null,
     gitChanges: [],
+    runtimeState: { ...DEFAULT_RUNTIME_STATE },
     ...overrides,
   };
 }

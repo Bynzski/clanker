@@ -41,6 +41,7 @@ function createMockWorkspace(overrides: Partial<WorkspaceTab> = {}): WorkspaceTa
     explorerErrorsByPath: {},
     showHiddenFiles: true,
     gitChanges: [],
+    runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
     ...overrides,
   };
 }

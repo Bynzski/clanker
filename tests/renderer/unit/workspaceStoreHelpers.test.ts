@@ -13,6 +13,13 @@ import {
   findWorkspaceById,
   getActiveWorkspaceSnapshot,
   isWorkspaceActiveById,
+  isWorkspaceWarm,
+  getWorkspaceResourcePolicy,
+  withWorkspaceResidency,
+  withWorkspaceResourcePolicy,
+  sanitizeRuntimeState,
+  DEFAULT_RUNTIME_STATE,
+  DEFAULT_RESOURCE_POLICY,
   syncActiveWorkspace,
   patchWorkspaceById,
   assignWorkspaceLifecycles,
@@ -956,5 +963,262 @@ describe('editor operation pending helpers', () => {
       clearEditorOperationPending(state, '/foo.ts');
       expect(original).toEqual({ '/foo.ts': 'save' });
     });
+  });
+});
+
+// ===========================================================================
+// Workspace Runtime State helpers
+// ===========================================================================
+
+describe('DEFAULT_RUNTIME_STATE', () => {
+  it('has warm residency state', () => {
+    expect(DEFAULT_RUNTIME_STATE.residencyState).toBe('warm');
+  });
+
+  it('has default resource policy', () => {
+    expect(DEFAULT_RUNTIME_STATE.resourcePolicy).toEqual({
+      terminals: 'warm',
+      browser: 'warm',
+      explorer: 'cached',
+      editor: 'warm',
+    });
+  });
+});
+
+describe('DEFAULT_RESOURCE_POLICY', () => {
+  it('has warm terminal policy', () => {
+    expect(DEFAULT_RESOURCE_POLICY.terminals).toBe('warm');
+  });
+
+  it('has warm browser policy', () => {
+    expect(DEFAULT_RESOURCE_POLICY.browser).toBe('warm');
+  });
+
+  it('has cached explorer policy', () => {
+    expect(DEFAULT_RESOURCE_POLICY.explorer).toBe('cached');
+  });
+
+  it('has warm editor policy', () => {
+    expect(DEFAULT_RESOURCE_POLICY.editor).toBe('warm');
+  });
+});
+
+describe('sanitizeRuntimeState', () => {
+  it('returns defaults when runtimeState is absent', () => {
+    const workspace = makeWorkspace();
+    const result = sanitizeRuntimeState(workspace);
+    expect(result.residencyState).toBe('warm');
+    expect(result.resourcePolicy.terminals).toBe('warm');
+    expect(result.resourcePolicy.browser).toBe('warm');
+    expect(result.resourcePolicy.explorer).toBe('cached');
+    expect(result.resourcePolicy.editor).toBe('warm');
+  });
+
+  it('preserves existing runtimeState with defaults for missing sub-fields', () => {
+    const workspace = makeWorkspace({
+      runtimeState: {
+        residencyState: 'cold',
+        resourcePolicy: {
+          terminals: 'cold',
+          browser: 'warm',
+          explorer: 'watching',
+          editor: 'warm',
+        },
+      },
+    });
+    const result = sanitizeRuntimeState(workspace);
+    expect(result.residencyState).toBe('cold');
+    expect(result.resourcePolicy.terminals).toBe('cold');
+    expect(result.resourcePolicy.browser).toBe('warm');
+  });
+
+  it('fills in missing sub-fields of resourcePolicy', () => {
+    // Cast to allow a partial runtimeState object (missing sub-fields of resourcePolicy)
+    const workspace = makeWorkspace({
+      runtimeState: {
+        residencyState: 'cold',
+        resourcePolicy: {
+          // Only browser is specified — others should default
+          browser: 'cold',
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+    });
+    const result = sanitizeRuntimeState(workspace);
+    expect(result.resourcePolicy.terminals).toBe('warm');
+    expect(result.resourcePolicy.browser).toBe('cold');
+    expect(result.resourcePolicy.explorer).toBe('cached');
+    expect(result.resourcePolicy.editor).toBe('warm');
+  });
+
+  it('fills in missing residencyState while preserving resourcePolicy', () => {
+    // Partial runtimeState to test backfill of missing residencyState.
+    // We simulate a workspace with a partial runtimeState (missing residencyState)
+    // by constructing the test case manually with as any for the runtimeState assignment.
+    const workspace = makeWorkspace();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (workspace as any).runtimeState = {
+      resourcePolicy: {
+        terminals: 'cold',
+        browser: 'cold',
+        explorer: 'cached',
+        editor: 'cold',
+      },
+    };
+    const result = sanitizeRuntimeState(workspace);
+    expect(result.residencyState).toBe('warm'); // default
+    expect(result.resourcePolicy.terminals).toBe('cold'); // preserved
+  });
+});
+
+describe('isWorkspaceWarm', () => {
+  it('returns true for warm workspace', () => {
+    const ws = makeWorkspace({
+      runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
+    });
+    expect(isWorkspaceWarm(ws)).toBe(true);
+  });
+
+  it('returns false for cold workspace', () => {
+    const ws = makeWorkspace({
+      runtimeState: { residencyState: 'cold', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
+    });
+    expect(isWorkspaceWarm(ws)).toBe(false);
+  });
+
+  it('returns false for closing workspace', () => {
+    const ws = makeWorkspace({
+      runtimeState: { residencyState: 'closing', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
+    });
+    expect(isWorkspaceWarm(ws)).toBe(false);
+  });
+
+  it('returns false for errored workspace', () => {
+    const ws = makeWorkspace({
+      runtimeState: { residencyState: 'errored', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
+    });
+    expect(isWorkspaceWarm(ws)).toBe(false);
+  });
+
+  it('returns false when runtimeState is missing (legacy workspace)', () => {
+    const ws = makeWorkspace();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (ws as any).runtimeState;
+    expect(isWorkspaceWarm(ws as WorkspaceTab)).toBe(false);
+  });
+});
+
+describe('getWorkspaceResourcePolicy', () => {
+  it('returns the resource policy from the workspace', () => {
+    const ws = makeWorkspace({
+      runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'cold', browser: 'warm', explorer: 'cached', editor: 'warm' } },
+    });
+    const policy = getWorkspaceResourcePolicy(ws);
+    expect(policy.terminals).toBe('cold');
+    expect(policy.browser).toBe('warm');
+  });
+
+  it('returns full defaults when workspace has no runtimeState', () => {
+    const ws = makeWorkspace();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (ws as any).runtimeState;
+    const policy = getWorkspaceResourcePolicy(ws as WorkspaceTab);
+    expect(policy.terminals).toBe('warm');
+    expect(policy.browser).toBe('warm');
+    expect(policy.explorer).toBe('cached');
+    expect(policy.editor).toBe('warm');
+  });
+});
+
+describe('withWorkspaceResidency', () => {
+  it('creates a new workspace with updated residencyState', () => {
+    const ws = makeWorkspace();
+    const result = withWorkspaceResidency(ws, 'cold');
+    expect(result.runtimeState.residencyState).toBe('cold');
+  });
+
+  it('preserves other runtimeState fields', () => {
+    const ws = makeWorkspace({
+      runtimeState: {
+        residencyState: 'warm',
+        resourcePolicy: { terminals: 'cold', browser: 'warm', explorer: 'cached', editor: 'warm' },
+      },
+    });
+    const result = withWorkspaceResidency(ws, 'cold');
+    expect(result.runtimeState.residencyState).toBe('cold');
+    expect(result.runtimeState.resourcePolicy.terminals).toBe('cold'); // preserved
+    expect(result.runtimeState.resourcePolicy.browser).toBe('warm'); // preserved
+  });
+
+  it('does not mutate the original workspace', () => {
+    const ws = makeWorkspace({
+      runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
+    });
+    withWorkspaceResidency(ws, 'cold');
+    expect(ws.runtimeState.residencyState).toBe('warm');
+  });
+});
+
+describe('withWorkspaceResourcePolicy', () => {
+  it('merges partial policy without clobbering other fields', () => {
+    const ws = makeWorkspace({
+      runtimeState: {
+        residencyState: 'warm',
+        resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' },
+      },
+    });
+    const result = withWorkspaceResourcePolicy(ws, { browser: 'cold' });
+    expect(result.runtimeState.resourcePolicy.browser).toBe('cold');
+    expect(result.runtimeState.resourcePolicy.terminals).toBe('warm'); // unchanged
+    expect(result.runtimeState.resourcePolicy.explorer).toBe('cached'); // unchanged
+    expect(result.runtimeState.resourcePolicy.editor).toBe('warm'); // unchanged
+  });
+
+  it('updates multiple fields at once', () => {
+    const ws = makeWorkspace();
+    const result = withWorkspaceResourcePolicy(ws, { browser: 'cold', terminals: 'cold' });
+    expect(result.runtimeState.resourcePolicy.browser).toBe('cold');
+    expect(result.runtimeState.resourcePolicy.terminals).toBe('cold');
+    expect(result.runtimeState.resourcePolicy.explorer).toBe('cached'); // unchanged
+  });
+
+  it('does not mutate the original workspace', () => {
+    const ws = makeWorkspace({
+      runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
+    });
+    withWorkspaceResourcePolicy(ws, { browser: 'cold' });
+    expect(ws.runtimeState.resourcePolicy.browser).toBe('warm');
+  });
+});
+
+describe('sanitizeWorkspace with runtimeState', () => {
+  it('adds runtimeState to a workspace that has none', () => {
+    const ws = makeWorkspace();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (ws as any).runtimeState;
+    const result = sanitizeWorkspace(ws as WorkspaceTab);
+    expect(result.runtimeState).toBeDefined();
+    expect(result.runtimeState.residencyState).toBe('warm');
+  });
+
+  it('preserves existing runtimeState during sanitize', () => {
+    const ws = makeWorkspace({
+      runtimeState: {
+        residencyState: 'cold',
+        resourcePolicy: { terminals: 'cold', browser: 'warm', explorer: 'watching', editor: 'cold' },
+      },
+    });
+    const result = sanitizeWorkspace(ws);
+    expect(result.runtimeState.residencyState).toBe('cold');
+    expect(result.runtimeState.resourcePolicy.terminals).toBe('cold');
+    expect(result.runtimeState.resourcePolicy.explorer).toBe('watching');
+  });
+
+  it('sanitizeWorkspace does not mutate the original workspace', () => {
+    const ws = makeWorkspace({
+      runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
+    });
+    sanitizeWorkspace(ws);
+    expect(ws.runtimeState.residencyState).toBe('warm');
   });
 });
