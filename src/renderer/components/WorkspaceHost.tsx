@@ -2,6 +2,13 @@ import { Suspense, lazy, useEffect, useRef } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { WorkspaceScopeProvider } from './WorkspaceScope';
 import BrowserLifecycleCoordinator from './BrowserLifecycleCoordinator';
+import {
+  startSwitch,
+  surfaceMount,
+  surfaceUnmount,
+  surfaceReactMount,
+  surfaceReactUnmount,
+} from '../lib/workspaceSwitchDebug';
 
 const DynamicPaneLayout = lazy(() => import('./DynamicPaneLayout'));
 const FileExplorer = lazy(() => import('./FileExplorer'));
@@ -16,6 +23,21 @@ function WorkspaceSurface({
   mountContents?: boolean;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
+  // Track prior isActive state to detect transitions
+  const prevIsActiveRef = useRef<boolean | null>(null);
+  // Track mount count to detect actual React mount/unmount
+  const mountCountRef = useRef(0);
+
+  // Instrument actual React mount/unmount (runs on component mount/unmount only)
+  useEffect(() => {
+    mountCountRef.current += 1;
+    surfaceReactMount(workspaceId);
+    return () => {
+      mountCountRef.current -= 1;
+      surfaceReactUnmount(workspaceId);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps = mount/unmount only
 
   useEffect(() => {
     const surface = surfaceRef.current;
@@ -31,6 +53,19 @@ function WorkspaceSurface({
     surface.setAttribute('inert', '');
   }, [isActive]);
 
+  // Instrument surface lifecycle transitions (park/unpark)
+  useEffect(() => {
+    const prev = prevIsActiveRef.current;
+    if (prev !== isActive) {
+      if (isActive) {
+        surfaceMount(workspaceId, true, prev === false && prev !== null);
+      } else if (prev === true) {
+        surfaceUnmount(workspaceId);
+      }
+      prevIsActiveRef.current = isActive;
+    }
+  }, [isActive, workspaceId]);
+
   return (
     <section
       ref={surfaceRef}
@@ -38,7 +73,6 @@ function WorkspaceSurface({
       data-workspace-id={workspaceId}
       data-workspace-visibility={isActive ? 'active' : 'parked'}
       aria-hidden={!isActive}
-      hidden={!isActive}
       tabIndex={isActive ? undefined : -1}
     >
       {mountContents ? (
@@ -56,6 +90,17 @@ function WorkspaceSurface({
 export default function WorkspaceHost() {
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  // Track prior active ID to detect switches
+  const prevActiveWorkspaceIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const prev = prevActiveWorkspaceIdRef.current;
+    const next = activeWorkspaceId ?? null;
+    if (prev !== next && next !== null) {
+      startSwitch(prev, next);
+    }
+    prevActiveWorkspaceIdRef.current = next;
+  }, [activeWorkspaceId]);
 
   if (workspaces.length === 0) {
     return null;
@@ -63,9 +108,6 @@ export default function WorkspaceHost() {
 
   const lifecycleActiveWorkspace = workspaces.find((workspace) => workspace.lifecycle === 'active') ?? null;
   const resolvedActiveWorkspaceId = activeWorkspaceId ?? lifecycleActiveWorkspace?.id ?? workspaces[0]?.id ?? null;
-  const parkedWorkspaceIds = workspaces
-    .map((workspace) => workspace.id)
-    .filter((workspaceId) => workspaceId !== resolvedActiveWorkspaceId);
   return (
     <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
       <div
@@ -74,17 +116,12 @@ export default function WorkspaceHost() {
         data-active-workspace-id={resolvedActiveWorkspaceId ?? ''}
       >
         <BrowserLifecycleCoordinator activeWorkspaceId={resolvedActiveWorkspaceId} />
-        <div className="workspace-active-viewport">
-          {resolvedActiveWorkspaceId ? (
-            <WorkspaceSurface workspaceId={resolvedActiveWorkspaceId} isActive />
-          ) : null}
-        </div>
-        <div className="workspace-parked-container" aria-hidden="true">
-          {parkedWorkspaceIds.map((workspaceId) => (
+        <div className="workspace-surfaces-container">
+          {workspaces.map((workspace) => (
             <WorkspaceSurface
-              key={workspaceId}
-              workspaceId={workspaceId}
-              isActive={false}
+              key={workspace.id}
+              workspaceId={workspace.id}
+              isActive={workspace.id === resolvedActiveWorkspaceId}
             />
           ))}
         </div>

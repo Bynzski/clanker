@@ -7,6 +7,11 @@ import './TerminalPane.css';
 import '@xterm/xterm/css/xterm.css';
 
 import { TERMINAL_SCROLLBACK_LINES } from '../../shared/terminal';
+import {
+  terminalCacheHit,
+  terminalCacheMiss,
+  terminalDetach,
+} from '../lib/workspaceSwitchDebug';
 
 type XTermInstance = import('@xterm/xterm').Terminal;
 type FitAddonInstance = import('@xterm/addon-fit').FitAddon;
@@ -209,6 +214,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       if (terminalId != null) {
         xtermCache.set(terminalId, cached);
       }
+      terminalCacheHit(terminalId, workspaceId ?? undefined);
       setTerminalRuntimeReady(true);
 
       // Re-fit to the new container dimensions
@@ -223,6 +229,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       }, 50);
     } else {
       // No cached instance — create a new one
+      terminalCacheMiss(terminalId ?? 'unknown', workspaceId ?? undefined);
       void Promise.all([
         import('@xterm/xterm'),
         import('@xterm/addon-fit'),
@@ -338,6 +345,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
           xterm.element.parentNode.removeChild(xterm.element);
         }
         xtermCache.set(terminalId, { xterm, fitAddon });
+        terminalDetach(terminalId, workspaceId ?? undefined);
       }
 
       xtermRef.current = null;

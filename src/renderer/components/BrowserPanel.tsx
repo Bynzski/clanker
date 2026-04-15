@@ -4,6 +4,13 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { useScopedWorkspace } from './WorkspaceScope';
 import { useDragHandle } from './DynamicPaneLayout';
 import './BrowserPanel.css';
+import {
+  browserMount,
+  browserUnmount,
+  browserFirstBounds,
+  browserReactMount,
+  browserReactUnmount,
+} from '../lib/workspaceSwitchDebug';
 
 interface BrowserPanelProps {
   workspaceId?: string;
@@ -22,6 +29,8 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
   // Tracks the last bounds sent to main process, used to suppress micro-jitter from
   // DPR rounding noise and unstable intermediate layout measurements.
   const lastBoundsRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  // Tracks whether the first bounds IPC after mount has been sent (for instrumentation)
+  const firstBoundsSentRef = useRef(false);
   const workspace = useScopedWorkspace(workspaceId);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const bringBrowserIntoView = useWorkspaceStore((state) => state.bringBrowserIntoView);
@@ -33,6 +42,20 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
   const isActiveWorkspace = workspace?.id != null
     && workspace.id === activeWorkspaceId
     && workspace.lifecycle === 'active';
+
+  // ── Actual React component mount/unmount (Phase 2 lifecycle separation) ──
+  // This fires ONCE on component mount and ONCE on unmount, regardless of
+  // workspace switches. Use this to determine whether BrowserPanel remounts
+  // on workspace switch (it should NOT, per the shared-container design).
+  // Contrast with browserMount/browserUnmount which fire on workspace-level
+  // show/hide, and the ResizeObserver effect which fires on pane layout changes.
+  useEffect(() => {
+    browserReactMount(workspace?.id ?? 'unknown');
+    return () => {
+      browserReactUnmount(workspace?.id ?? 'unknown');
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Update bounds for the browser content area
   const updateBounds = useCallback(() => {
@@ -72,6 +95,12 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
 
     lastBoundsRef.current = newBounds;
     window.electronAPI.browserSetBounds(workspace.id, newBounds);
+
+    // Instrument: first bounds IPC after mount
+    if (!firstBoundsSentRef.current) {
+      firstBoundsSentRef.current = true;
+      browserFirstBounds(workspace.id, newBounds.x, newBounds.y, newBounds.width, newBounds.height);
+    }
   }, [browserOverlayCount, isActiveWorkspace, workspace?.browserVisible, workspace?.id]);
 
   const scheduleBoundsUpdate = useCallback(() => {
@@ -116,13 +145,20 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
 
     resizeObserver.observe(containerRef.current);
 
-    // Initial bounds update
-    scheduleBoundsUpdate();
+    // Instrument: browser mount event. Reset first-bounds flag.
+    // Only emit browser_mount when the workspace is actually active — the
+    // ResizeObserver re-runs on deactivation too (because scheduleBoundsUpdate
+    // identity changes), but "mount" should mean "shown", not "observer reset".
+    firstBoundsSentRef.current = false;
+    if (workspace?.id && isActiveWorkspace) {
+      const wasNull = lastBoundsRef.current === null;
+      browserMount(workspace.id, wasNull);
+    }
 
     return () => {
       resizeObserver.disconnect();
     };
-  }, [scheduleBoundsUpdate]);
+  }, [isActiveWorkspace, scheduleBoundsUpdate, workspace?.id]);
 
   // Update bounds on window resize
   useEffect(() => {
@@ -177,9 +213,22 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
       if (rafRef.current != null) {
         window.cancelAnimationFrame(rafRef.current);
       }
+      // Instrument: capture lastBoundsRef values before clearing, then unmount event
+      const wsId = workspace?.id ?? null;
+      const lb = lastBoundsRef.current;
       lastBoundsRef.current = null;
-      if (workspace?.id) {
-        window.electronAPI.browserHide(workspace.id);
+      firstBoundsSentRef.current = false;
+      if (wsId) {
+        browserUnmount(
+          wsId,
+          lb?.x ?? null,
+          lb?.y ?? null,
+          lb?.width ?? null,
+          lb?.height ?? null,
+        );
+      }
+      if (wsId) {
+        window.electronAPI.browserHide(wsId);
       }
     };
   }, [workspace?.id]);

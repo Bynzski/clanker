@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WorkspaceHost from '../../../src/renderer/components/WorkspaceHost';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
@@ -37,7 +37,7 @@ describe('WorkspaceHost', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders the active workspace in the visible viewport', async () => {
+  it('renders the active workspace in the shared surfaces container', async () => {
     const workspace = createWorkspaceFixture({ id: 'ws-1', lifecycle: 'active' });
     useWorkspaceStore.setState({
       workspaces: [workspace],
@@ -47,14 +47,14 @@ describe('WorkspaceHost', () => {
     render(<WorkspaceHost />);
 
     await screen.findByTestId('workspace-host');
-    const activeViewport = document.querySelector('.workspace-active-viewport');
-    expect(activeViewport).toBeTruthy();
-    expect(activeViewport?.querySelector('[data-workspace-id="ws-1"]')).toBeTruthy();
+    const surfacesContainer = document.querySelector('.workspace-surfaces-container');
+    expect(surfacesContainer).toBeTruthy();
+    expect(surfacesContainer?.querySelector('[data-workspace-id="ws-1"]')).toBeTruthy();
     expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(1);
     expect(screen.getAllByTestId('file-explorer')).toHaveLength(1);
   });
 
-  it('renders parked workspace surfaces in the hidden parked container', async () => {
+  it('renders parked workspace surfaces in the shared container with proper CSS hiding', async () => {
     const first = createWorkspaceFixture({ id: 'ws-1', name: 'first', lifecycle: 'parked' });
     const second = createWorkspaceFixture({ id: 'ws-2', name: 'second', lifecycle: 'active' });
     useWorkspaceStore.setState({
@@ -66,16 +66,20 @@ describe('WorkspaceHost', () => {
 
     await screen.findByTestId('workspace-host');
 
-    const activeSurface = document.querySelector('[data-workspace-id="ws-2"]');
-    const parkedSurface = document.querySelector('[data-workspace-id="ws-1"]');
-    const parkedContainer = document.querySelector('.workspace-parked-container');
+    const surfacesContainer = document.querySelector('.workspace-surfaces-container');
+    const activeSurface = surfacesContainer?.querySelector('[data-workspace-id="ws-2"]');
+    const parkedSurface = surfacesContainer?.querySelector('[data-workspace-id="ws-1"]');
 
     expect(activeSurface).toHaveAttribute('data-workspace-visibility', 'active');
+    expect(activeSurface).toHaveClass('active');
     expect(parkedSurface).toHaveAttribute('data-workspace-visibility', 'parked');
-    expect(parkedSurface).toHaveAttribute('hidden');
+    expect(parkedSurface).toHaveClass('parked');
+    // Parked surfaces are no longer hidden with HTML hidden attribute - CSS handles visibility
     expect(parkedSurface).toHaveAttribute('aria-hidden', 'true');
     expect(parkedSurface).toHaveAttribute('inert');
-    expect(parkedContainer?.contains(parkedSurface)).toBe(true);
+    // Both surfaces are in the same container
+    expect(surfacesContainer?.contains(parkedSurface!)).toBe(true);
+    expect(surfacesContainer?.contains(activeSurface!)).toBe(true);
 
     expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(2);
     expect(screen.getAllByTestId('file-explorer')).toHaveLength(2);
@@ -94,8 +98,10 @@ describe('WorkspaceHost', () => {
     const host = await screen.findByTestId('workspace-host');
     expect(host).toHaveAttribute('data-active-workspace-id', 'ws-2');
 
-    const activeViewport = document.querySelector('.workspace-active-viewport');
-    expect(within(activeViewport as HTMLElement).getByTestId('dynamic-pane-layout')).toBeTruthy();
+    // With all workspaces rendered, verify the active workspace surface exists
+    const activeSurface = document.querySelector('[data-workspace-id="ws-2"]');
+    expect(activeSurface).toBeTruthy();
+    expect(activeSurface).toHaveClass('active');
   });
 
   it('hides parked browser views at the host lifecycle layer', async () => {

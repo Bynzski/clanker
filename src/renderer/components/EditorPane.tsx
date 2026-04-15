@@ -15,6 +15,7 @@ import EditorTabBar from './EditorTabBar';
 import ConfirmCloseDialog from './ConfirmCloseDialog';
 import { getLanguageExtension } from '../lib/editorLanguage';
 import './EditorPane.css';
+import { editorCreate, editorDestroy, editorReactMount, editorReactUnmount } from '../lib/workspaceSwitchDebug';
 
 export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -27,6 +28,20 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
   const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
   const workspace = useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
+
+  // ── Actual React component mount/unmount (Phase 2 lifecycle separation) ──
+  // This fires ONCE on component mount and ONCE on unmount, regardless of
+  // workspace switches. Use this to determine whether EditorPane remounts on
+  // workspace switch (it should NOT, per the shared-container design).
+  // Contrast with editorCreate/editorDestroy which fire when the CodeMirror
+  // EditorView is created/destroyed inside this component.
+  useEffect(() => {
+    editorReactMount(workspaceId, activeEditorTabId);
+    return () => {
+      editorReactUnmount(workspaceId, activeEditorTabId);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const {
     toggleEditorLock,
@@ -98,7 +113,14 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
 
     viewRef.current = view;
 
+    // Instrument: EditorView created
+    const activeTab = editorTabs.find((t) => t.id === activeEditorTabId);
+    editorCreate(workspaceId, activeEditorTabId, activeTab?.fileName ?? null);
+
     return () => {
+      // Instrument: capture tab info before destroying
+      const activeTab = editorTabs.find((t) => t.id === activeEditorTabId);
+      editorDestroy(workspaceId, activeEditorTabId, activeTab?.fileName ?? null);
       view.destroy();
       viewRef.current = null;
       lastSyncedTabIdRef.current = null;
