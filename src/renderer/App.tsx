@@ -4,7 +4,7 @@ import Header from './components/Header';
 import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
 import { WorkspaceGateFullscreen, WorkspaceGateModal } from './components/WorkspaceGate';
-import { Pane, Terminal, useWorkspaceStore } from './store/workspaceStore';
+import { Pane, Terminal, useWorkspaceStore, DEFAULT_RUNTIME_STATE } from './store/workspaceStore';
 import { getZoomShortcutAction, isSaveShortcut } from './lib/keyboardShortcuts';
 import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
@@ -135,6 +135,7 @@ function App() {
       editorTabs: [],
       activeEditorTabId: null,
       gitChanges: [],
+      runtimeState: { ...DEFAULT_RUNTIME_STATE },
     });
     setShowWorkspaceGate(false);
   };

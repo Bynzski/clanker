@@ -1,5 +1,10 @@
 import { createContext, useContext, type ReactNode } from 'react';
-import { useWorkspaceStore, findWorkspaceById, type WorkspaceTab } from '../store/workspaceStore';
+import {
+  useWorkspaceStore,
+  findWorkspaceById,
+  DEFAULT_RUNTIME_STATE,
+  type WorkspaceTab,
+} from '../store/workspaceStore';
 
 const WorkspaceScopeContext = createContext<string | null>(null);
 
@@ -62,6 +67,7 @@ export function useScopedWorkspace(workspaceId?: string): WorkspaceTab | null {
       explorerErrorsByPath: state.explorerErrorsByPath,
       showHiddenFiles: state.showHiddenFiles,
       gitChanges: state.gitChanges,
+      runtimeState: { ...DEFAULT_RUNTIME_STATE },
     };
   }
 

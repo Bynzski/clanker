@@ -9,7 +9,10 @@ import type {
   EditorTab,
   Pane,
   PanePosition,
+  WorkspaceResourcePolicy,
+  WorkspaceResidencyState,
   WorkspaceLifecycleState,
+  WorkspaceRuntimeState,
   WorkspaceTab,
 } from './workspaceTypes';
 import type {
@@ -54,6 +57,47 @@ export const createDefaultEditorState = () => ({
   activeEditorTabId: null as string | null,
 });
 
+/**
+ * Default resource policy for new workspaces.
+ * All subsystems warm by default: PTY processes run in main, xtermCache keeps
+ * terminal state, and parked workspaces should have full surface residency
+ * once Phase 2 is implemented.
+ */
+export const DEFAULT_RESOURCE_POLICY: WorkspaceResourcePolicy = {
+  terminals: 'warm',
+  browser: 'warm',
+  explorer: 'cached',
+  editor: 'warm',
+};
+
+/** Default runtime state for new workspaces. */
+export const DEFAULT_RUNTIME_STATE: WorkspaceRuntimeState = {
+  residencyState: 'warm',
+  resourcePolicy: DEFAULT_RESOURCE_POLICY,
+};
+
+/**
+ * Backfill helpers for persisted workspaces missing runtime metadata.
+ * Older saved workspace objects may not have runtimeState fields.
+ */
+export function sanitizeRuntimeState(workspace: Partial<WorkspaceTab>): WorkspaceRuntimeState {
+  if (workspace.runtimeState) {
+    // Partial existing object — fill in missing sub-fields
+    // Cast to partial resource policy to allow partial objects in test fixtures
+    const partialPolicy = workspace.runtimeState.resourcePolicy as Partial<WorkspaceResourcePolicy> | undefined;
+    return {
+      residencyState: workspace.runtimeState.residencyState ?? 'warm',
+      resourcePolicy: {
+        terminals: partialPolicy?.terminals ?? 'warm',
+        browser: partialPolicy?.browser ?? 'warm',
+        explorer: partialPolicy?.explorer ?? 'cached',
+        editor: partialPolicy?.editor ?? 'warm',
+      },
+    };
+  }
+  return { ...DEFAULT_RUNTIME_STATE };
+}
+
 export function areGitStatusListsEqual(a: GitStatus[], b: GitStatus[]): boolean {
   if (a === b) {
     return true;
@@ -90,6 +134,7 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
     ? { ...workspace.editorPane, locked: workspace.editorPane.locked ?? false }
     : null,
   layoutRoot: buildWorkspaceLayout(workspace),
+  runtimeState: sanitizeRuntimeState(workspace),
 });
 
 export function withWorkspaceLifecycle(
@@ -141,6 +186,61 @@ export function findActiveWorkspace(workspaces: WorkspaceTab[]): WorkspaceTab | 
 export function isWorkspaceActiveById(workspaces: WorkspaceTab[], workspaceId: string): boolean {
   const workspace = findWorkspaceById(workspaces, workspaceId);
   return workspace?.lifecycle === 'active';
+}
+
+/**
+ * Returns true when the workspace is warm (surface residency is active).
+ * A workspace is warm when its residencyState is 'warm'.
+ * Cold, closing, or errored workspaces are not warm.
+ */
+export function isWorkspaceWarm(workspace: WorkspaceTab): boolean {
+  return workspace.runtimeState?.residencyState === 'warm';
+}
+
+/**
+ * Returns the resource policy for a workspace.
+ * Always returns a valid policy object — missing sub-fields are filled with defaults.
+ */
+export function getWorkspaceResourcePolicy(workspace: WorkspaceTab): WorkspaceResourcePolicy {
+  return sanitizeRuntimeState(workspace).resourcePolicy;
+}
+
+/**
+ * Creates a new workspace with the given residency state, preserving
+ * all other runtime state fields.
+ */
+export function withWorkspaceResidency(
+  workspace: WorkspaceTab,
+  residencyState: WorkspaceResidencyState,
+): WorkspaceTab {
+  return {
+    ...workspace,
+    runtimeState: {
+      ...sanitizeRuntimeState(workspace),
+      residencyState,
+    },
+  };
+}
+
+/**
+ * Creates a new workspace with a merged resource policy.
+ * Only the provided fields are updated; all others are preserved.
+ */
+export function withWorkspaceResourcePolicy(
+  workspace: WorkspaceTab,
+  partialPolicy: Partial<WorkspaceResourcePolicy>,
+): WorkspaceTab {
+  const current = sanitizeRuntimeState(workspace);
+  return {
+    ...workspace,
+    runtimeState: {
+      ...current,
+      resourcePolicy: {
+        ...current.resourcePolicy,
+        ...partialPolicy,
+      },
+    },
+  };
 }
 
 export function resolveWorkspaceByScope(

@@ -20,6 +20,8 @@ import type {
   LayoutNode,
   Pane,
   Terminal,
+  WorkspaceResourcePolicy,
+  WorkspaceResidencyState,
   WorkspaceTab,
 } from './workspaceTypes';
 import type { WorkspaceState } from './workspaceStoreTypes';
@@ -38,6 +40,8 @@ import {
   getWorkspaceNameFromPath,
   isEditorOperationPending,
   isWorkspaceActiveById,
+  isWorkspaceWarm,
+  getWorkspaceResourcePolicy,
   patchWorkspaceById,
   resolveWorkspaceByScope,
   resolveWorkspaceIdByScope,
@@ -45,6 +49,8 @@ import {
   setEditorOperationPending,
   syncActiveWorkspace,
   validateWorkspaceConsistency,
+  withWorkspaceResidency,
+  withWorkspaceResourcePolicy,
 } from './workspaceStoreHelpers';
 
 export type {
@@ -247,6 +253,49 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     ...workspace,
     model,
   }))),
+
+  // -------------------------------------------------------------------------
+  // Workspace residency actions
+  // -------------------------------------------------------------------------
+
+  /**
+   * Returns true if the workspace is warm (surface residency is active).
+   * If no workspaceId is provided, operates on the active workspace.
+   */
+  isWorkspaceWarm: (workspaceId?: string) => {
+    const id = workspaceId ?? get().activeWorkspaceId;
+    const workspace = id ? findWorkspaceById(get().workspaces, id) : null;
+    return workspace ? isWorkspaceWarm(workspace) : false;
+  },
+
+  /**
+   * Gets the resource policy for a workspace by id.
+   * Returns the policy with all sub-fields filled (never partial).
+   */
+  getWorkspaceResourcePolicy: (workspaceId: string) => {
+    const workspace = findWorkspaceById(get().workspaces, workspaceId);
+    return workspace ? getWorkspaceResourcePolicy(workspace) : null;
+  },
+
+  /**
+   * Sets the residency state for a workspace by id.
+   * Does not affect other runtime state fields.
+   */
+  setWorkspaceResidency: (workspaceId: string, residencyState: WorkspaceResidencyState) => set((state) => {
+    return patchWorkspaceById(state, workspaceId, (workspace) =>
+      withWorkspaceResidency(workspace, residencyState)
+    );
+  }),
+
+  /**
+   * Merges a partial resource policy into a workspace by id.
+   * Only the provided fields are updated; all others are preserved.
+   */
+  setWorkspaceResourcePolicy: (workspaceId: string, partialPolicy: Partial<WorkspaceResourcePolicy>) => set((state) => {
+    return patchWorkspaceById(state, workspaceId, (workspace) =>
+      withWorkspaceResourcePolicy(workspace, partialPolicy)
+    );
+  }),
 
   addTerminal: (terminal) => set((state) => {
     const nextTerminals = [...state.terminals, terminal];

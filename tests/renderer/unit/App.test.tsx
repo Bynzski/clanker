@@ -239,6 +239,7 @@ describe('App', () => {
             editorTabs: [],
             activeEditorTabId: null,
             gitChanges: [],
+            runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
           }],
         });
       });
@@ -276,12 +277,13 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
-    showHiddenFiles: true,
+            showHiddenFiles: true,
             editorPane: null,
             editorVisible: false,
             editorTabs: [],
             activeEditorTabId: null,
             gitChanges: [],
+            runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
           }],
         });
       });
@@ -330,12 +332,13 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
-    showHiddenFiles: true,
+            showHiddenFiles: true,
             editorPane: null,
             editorVisible: false,
             editorTabs: [],
             activeEditorTabId: null,
             gitChanges: [],
+            runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
           }],
         });
       });
@@ -418,12 +421,13 @@ describe('App', () => {
             explorerEntriesByPath: {},
             explorerLoadingPaths: [],
             explorerErrorsByPath: {},
-    showHiddenFiles: true,
+            showHiddenFiles: true,
             editorPane: null,
             editorVisible: false,
             editorTabs: [],
             activeEditorTabId: null,
             gitChanges: [],
+            runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
           }],
         });
       });
@@ -699,6 +703,7 @@ describe('App', () => {
             editorTabs: [],
             activeEditorTabId: null,
             gitChanges: [],
+            runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
           }],
         });
       });

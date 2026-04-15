@@ -7,6 +7,8 @@ import type {
   Pane,
   PanePosition,
   Terminal,
+  WorkspaceResourcePolicy,
+  WorkspaceResidencyState,
   WorkspaceLifecycleState,
   WorkspaceTab,
 } from './workspaceTypes';
@@ -89,6 +91,14 @@ export interface WorkspaceState {
   getWorkspaceById: (id: string | null) => WorkspaceTab | null;
   getActiveWorkspace: () => WorkspaceTab | null;
   isWorkspaceActive: (id: string) => boolean;
+  /** Returns true when the active workspace is warm (surface residency is active). */
+  isWorkspaceWarm: (workspaceId?: string) => boolean;
+  /** Returns the resource policy for a workspace by id, or null if not found. */
+  getWorkspaceResourcePolicy: (workspaceId: string) => WorkspaceResourcePolicy | null;
+  /** Sets the residency state for a workspace by id. */
+  setWorkspaceResidency: (workspaceId: string, residencyState: WorkspaceResidencyState) => void;
+  /** Merges a partial resource policy into a workspace by id. */
+  setWorkspaceResourcePolicy: (workspaceId: string, partialPolicy: Partial<WorkspaceResourcePolicy>) => void;
 
   setWorkspacePath: (path: string) => void;
   setHarness: (harness: string) => void;

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { useWorkspaceStore, assignWorkspaceLifecycles } from '../../../src/renderer/store/workspaceStore';
 import type { Terminal, Pane, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
@@ -1155,5 +1155,116 @@ describe('git changes', () => {
     // Switched back to first, should have first's gitChanges
     expect(getStore().activeWorkspaceId).toBe(firstId);
     expect(getStore().gitChanges).toEqual(changes);
+  });
+});
+
+// ===========================================================================
+// Workspace Residency Metadata
+// ===========================================================================
+
+describe('workspace runtime metadata', () => {
+  it('newly added workspace has warm residency state by default', () => {
+    addWorkspace({ workspacePath: '/warm-test' });
+    const ws = getStore().workspaces.find(w => w.workspacePath === '/warm-test');
+    expect(ws?.runtimeState.residencyState).toBe('warm');
+  });
+
+  it('newly added workspace has default resource policy', () => {
+    addWorkspace({ workspacePath: '/policy-test' });
+    const ws = getStore().workspaces.find(w => w.workspacePath === '/policy-test');
+    expect(ws?.runtimeState.resourcePolicy).toEqual({
+      terminals: 'warm',
+      browser: 'warm',
+      explorer: 'cached',
+      editor: 'warm',
+    });
+  });
+
+  it('sanitizeWorkspace backfills runtimeState when workspace has none', () => {
+    // Verify that addWorkspace via sanitizeWorkspace always produces workspace objects
+    // with runtimeState present. The backfill happens in sanitizeWorkspace (called from
+    // addWorkspace and selectWorkspace), so any newly added workspace has the field.
+    addWorkspace({ workspacePath: '/sanitize-backfill-test' });
+    const wsId = getStore().activeWorkspaceId!;
+
+    // Verify the new workspace has runtimeState (not missing)
+    expect(getStore().workspaces.find(w => w.id === wsId)?.runtimeState).toBeDefined();
+  });
+
+  it('setWorkspaceResidency updates residency state for a workspace', () => {
+    addWorkspace({ workspacePath: '/switch-test' });
+    const wsId = getStore().activeWorkspaceId!;
+
+    getStore().setWorkspaceResidency(wsId, 'cold');
+
+    const ws = getStore().workspaces.find(w => w.id === wsId);
+    expect(ws?.runtimeState.residencyState).toBe('cold');
+  });
+
+  it('setWorkspaceResourcePolicy merges partial policy without clobbering other fields', () => {
+    addWorkspace({ workspacePath: '/merge-test' });
+    const wsId = getStore().activeWorkspaceId!;
+
+    // Only change browser policy
+    getStore().setWorkspaceResourcePolicy(wsId, { browser: 'cold' });
+
+    const ws = getStore().workspaces.find(w => w.id === wsId);
+    expect(ws?.runtimeState.resourcePolicy.browser).toBe('cold');
+    expect(ws?.runtimeState.resourcePolicy.terminals).toBe('warm'); // unchanged
+    expect(ws?.runtimeState.resourcePolicy.explorer).toBe('cached'); // unchanged
+    expect(ws?.runtimeState.resourcePolicy.editor).toBe('warm'); // unchanged
+  });
+
+  it('selectWorkspace does not reset runtimeState on workspace', () => {
+    addWorkspace({ workspacePath: '/first' });
+    const firstId = getStore().activeWorkspaceId!;
+
+    // Set non-default state
+    getStore().setWorkspaceResidency(firstId, 'cold');
+    getStore().setWorkspaceResourcePolicy(firstId, { browser: 'cold' });
+
+    // Add second workspace and switch back
+    addWorkspace({ workspacePath: '/second' });
+    getStore().selectWorkspace(firstId);
+
+    const ws = getStore().workspaces.find(w => w.id === firstId);
+    expect(ws?.runtimeState.residencyState).toBe('cold');
+    expect(ws?.runtimeState.resourcePolicy.browser).toBe('cold');
+  });
+
+  it('closeWorkspace removes workspace with its runtimeState', () => {
+    addWorkspace({ workspacePath: '/close-test' });
+    const wsId = getStore().activeWorkspaceId!;
+
+    getStore().setWorkspaceResidency(wsId, 'cold');
+
+    addWorkspace({ workspacePath: '/other' });
+    const otherId = getStore().activeWorkspaceId!;
+
+    getStore().closeWorkspace(wsId);
+
+    const remaining = getStore().workspaces;
+    expect(remaining.some(w => w.id === wsId)).toBe(false);
+    expect(remaining.find(w => w.id === otherId)?.runtimeState.residencyState).toBe('warm');
+  });
+
+  it('assignWorkspaceLifecycles preserves runtimeState when reassigning lifecycle', () => {
+    const ws1 = createWorkspaceFixture({ id: 'ws-1' });
+    const ws2 = createWorkspaceFixture({ id: 'ws-2' });
+
+    // Set custom state on ws1
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (ws1 as any).runtimeState = {
+      residencyState: 'cold',
+      resourcePolicy: { terminals: 'cold', browser: 'cold', explorer: 'cached', editor: 'cold' },
+    };
+
+    // Switch active — ws2 becomes active
+    const result = assignWorkspaceLifecycles([ws1, ws2], 'ws-2');
+
+    const afterWs1 = result.find(w => w.id === 'ws-1');
+    expect(afterWs1?.lifecycle).toBe('parked');
+    expect(afterWs1?.runtimeState.residencyState).toBe('cold');
+    expect(afterWs1?.runtimeState.resourcePolicy.browser).toBe('cold');
   });
 });

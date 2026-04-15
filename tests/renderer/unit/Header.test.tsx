@@ -46,6 +46,7 @@ describe('Header', () => {
           explorerErrorsByPath: {},
     showHiddenFiles: true,
           gitChanges: [],
+          runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
         },
       ],
       harness: 'codex',
@@ -734,6 +735,7 @@ describe('Header', () => {
             explorerErrorsByPath: {},
     showHiddenFiles: true,
             gitChanges: [],
+          runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
           },
           {
             id: 'ws-2',
@@ -762,6 +764,7 @@ describe('Header', () => {
             explorerErrorsByPath: {},
     showHiddenFiles: true,
             gitChanges: [],
+          runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
           },
         ],
         activeWorkspaceId: 'ws-2',
