@@ -251,6 +251,23 @@ export function resolveWorkspaceByScope(
   return findWorkspaceById(state.workspaces, workspaceId ?? state.activeWorkspaceId);
 }
 
+/**
+ * Returns the currently focused workspace (active workspace id), falling back
+ * to the workspace marked lifecycle "active" if needed.
+ *
+ * Intended for global UI that lives outside WorkspaceScopeProvider and should
+ * not read mirrored top-level fields that are maintained via syncActiveWorkspace.
+ */
+export function selectFocusedWorkspace(
+  state: Pick<WorkspaceState, 'workspaces' | 'activeWorkspaceId'>,
+): WorkspaceTab | null {
+  if (state.activeWorkspaceId != null) {
+    return findWorkspaceById(state.workspaces, state.activeWorkspaceId);
+  }
+
+  return findActiveWorkspace(state.workspaces);
+}
+
 export function resolveWorkspaceIdByScope(
   state: Pick<WorkspaceState, 'workspaces' | 'activeWorkspaceId'>,
   workspaceId?: string | null,

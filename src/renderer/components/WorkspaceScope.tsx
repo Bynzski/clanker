@@ -82,7 +82,7 @@ export function useScopedWorkspaceActivity(workspaceId?: string): boolean {
     ?? findWorkspaceById(workspaces, activeWorkspaceId);
 
   if (matchedWorkspace) {
-    return matchedWorkspace.id === activeWorkspaceId && matchedWorkspace.lifecycle === 'active';
+    return matchedWorkspace.id === activeWorkspaceId;
   }
 
   return activeWorkspaceId == null && activeWorkspaceLifecycle !== 'parked';

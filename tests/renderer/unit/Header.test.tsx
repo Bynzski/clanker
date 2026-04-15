@@ -184,7 +184,11 @@ describe('Header', () => {
     });
 
     it('does not render GitButton when workspacePath is empty', () => {
-      useWorkspaceStore.setState({ workspacePath: '' });
+      useWorkspaceStore.setState((state) => ({
+        workspaces: state.workspaces.map((workspace) => (
+          workspace.id === 'ws-1' ? { ...workspace, workspacePath: '' } : workspace
+        )),
+      }));
       renderHeader();
       expect(screen.queryByTestId('git-button')).toBeNull();
     });
@@ -301,7 +305,11 @@ describe('Header', () => {
     });
 
     it('marks browser button active when browser is visible', () => {
-      useWorkspaceStore.setState({ browserVisible: true });
+      useWorkspaceStore.setState((state) => ({
+        workspaces: state.workspaces.map((workspace) => (
+          workspace.id === 'ws-1' ? { ...workspace, browserVisible: true } : workspace
+        )),
+      }));
       renderHeader();
       expect(screen.getByText('Browser').closest('.header-btn')?.classList.contains('active')).toBe(true);
     });
@@ -687,13 +695,21 @@ describe('Header', () => {
     });
 
     it('does not render GitButton without workspacePath', () => {
-      useWorkspaceStore.setState({ workspacePath: '' });
+      useWorkspaceStore.setState({
+        workspaces: [],
+        activeWorkspaceId: null,
+        workspacePath: '',
+      });
       renderHeader();
       expect(screen.queryByTestId('git-button')).toBeNull();
     });
 
     it('can still add terminals without workspace', () => {
-      useWorkspaceStore.setState({ workspacePath: '' });
+      useWorkspaceStore.setState({
+        workspaces: [],
+        activeWorkspaceId: null,
+        workspacePath: '',
+      });
       renderHeader();
       fireEvent.click(screen.getByText('New Terminal'));
       // Should use default path '/'

@@ -17,8 +17,8 @@ The plan has been substantially executed. The following summarizes what is done,
 | Runtime metadata groundwork (Phase 1 types + helpers) | ✅ Done | `WorkspaceRuntimeState`, `WorkspaceResidencyState`, `WorkspaceResourcePolicy` defined in `workspaceTypes.ts`; `sanitizeRuntimeState`, `DEFAULT_RUNTIME_STATE`, `DEFAULT_RESOURCE_POLICY` in `workspaceStoreHelpers.ts`; `isWorkspaceWarm`, `getWorkspaceResourcePolicy`, `setWorkspaceResidency`, `setWorkspaceResourcePolicy` actions in store |
 | Instrumentation baseline (Phase 0) | ✅ Done | `workspaceSwitchDebug.ts` — dev-only structured logging distinguishes React mount/unmount from surface park/unpark; `surfaceReactMount`/`surfaceReactUnmount` fire only on workspace open/close |
 | Single shared-container surface residency (Phase 2) | ✅ Done | `WorkspaceHost` renders all workspaces in one `.workspace-surfaces-container`; surfaces never unmount on workspace switch; `inert` + `aria-hidden` on parked surfaces; CSS `visibility` + `z-index` for visibility control |
-| Terminal warmth (Phase 3) | ✅ Done | `xtermCache` + `cacheTerminalInstance`; detach on park, reattach on activate; `terminalSessionBridge.ts` global listeners deliver background output; `markTerminalDisposed` only on explicit close |
-| Browser bounds persistence (Phase 4 task 1–2) | ✅ Done | `lastBoundsRef` intentionally NOT reset on park; reactivation sends `browserSetBounds` IPC immediately with preserved value |
+| Terminal warmth (Phase 3) | ✅ Done | `xtermCache` + `cacheTerminalInstance`; `terminalSessionBridge.ts` global listeners deliver background output; `markTerminalDisposed` only on explicit close |
+| Browser bounds persistence (Phase 4 task 1–3) | ✅ Done | `lastBoundsRef` intentionally NOT reset on park; reactivation sends `browserSetBounds` IPC immediately with preserved value; main applies bounds before `setVisible(true)` |
 | Editor warmth (Phase 5) | ✅ Done | `EditorPane` stays mounted; `EditorView` `useEffect` has `[]` deps, fires once, cleanup (destroy) only on React unmount; `isInteractive` via `inert` attribute |
 | Explorer per-workspace state (Phase 6) | ✅ Done | `explorerEntriesByPath`, `explorerExpandedPaths` stored per workspace; watcher is active-workspace-only via `WorkspaceTabs.syncExplorerWatcher` |
 
@@ -26,15 +26,10 @@ The plan has been substantially executed. The following summarizes what is done,
 
 | Item | Classification | Description |
 |---|---|---|
-| Phase 4 task 3: bounds pre-warming in main | Deferred | Apply bounds in main process before calling `setVisible(true)`; currently bounds IPC fires after renderer reactivation effect |
 | Phase 4 task 4: browser warmth cap | Deferred / optional | Warm for focused + N most-recently-used background workspaces; cold for the rest |
-| Phase 4 task 5: initial 0×0 bounds fallback | Deferred / optional | Skip IPC and wait for next ResizeObserver when bounds are 0×0 |
+| Phase 4 task 5: initial 0×0 bounds fallback | Deferred / optional | Optional: explicitly defer showing the native view until non-zero bounds are observed (current code already skips sending 0×0 bounds IPC) |
 | Phase 1 alias: `focusedWorkspaceId` | Deferred / future | Rename `activeWorkspaceId` → `focusedWorkspaceId` once all consumers migrated off `syncActiveWorkspace` top-level merges |
 | Phase 7: store cleanup | Deferred / future | Remove `syncActiveWorkspace` + `getActiveWorkspaceSnapshot` as merge mechanisms once workspace-scoped reads are universal; extract named mutation helpers |
-
-### Minor / Non-blocking
-
-- `useScopedWorkspaceActivity` in `WorkspaceScope.tsx` still checks `workspace.lifecycle === 'active'` alongside `workspace.id === activeWorkspaceId`. Store invariant W4 makes this redundant. Safe to remove but not a functional issue.
 
 ---
 
@@ -64,7 +59,7 @@ Parked surfaces also get the HTML `inert` attribute (set via `useEffect` in `Wor
 
 ### Subsystem behavior on workspace switch
 
-**TerminalPane**: Stays mounted. On park, xterm element is detached from DOM and instance stored in `xtermCache`. On activate, cached instance re-attached and resized. PTY processes are unaffected.
+**TerminalPane**: Stays mounted across workspace switches (shared-container design). Parked workspaces are made non-interactive via `inert`, but PTY processes are unaffected. `xtermCache` + `terminalSessionBridge` act as a safety net when panes remount or `terminalId` changes.
 
 **EditorPane**: Stays mounted for all workspaces. `isInteractive` goes `false` on park (via `inert` attribute). CodeMirror `EditorView` initialization `useEffect` has `[]` deps — cleanup (destroy) fires only on React unmount. `EditorView` instance is permanently resident.
 
@@ -87,7 +82,7 @@ The original problem was destructive pane-level reinitialization on workspace sw
 
 **This problem is solved.** Phase 2 (single shared container) is implemented. All pane surfaces stay mounted across workspace switches. Editor `EditorView` instances are permanently resident. Browser bounds are preserved.
 
-The remaining work is incremental browser polish (bounds pre-warming, warmth cap) and the Phase 1 store migration to remove the `syncActiveWorkspace` top-level merge coupling.
+The remaining work is incremental browser polish (warmth cap, optional explicit 0×0 defer) and the Phase 1 store migration to remove the `syncActiveWorkspace` top-level merge coupling.
 
 ---
 
@@ -242,15 +237,14 @@ Output: instrumented baseline answers "how long does a switch take, and which su
 **Tasks done:**
 1. ✅ Bounds preservation: `lastBoundsRef` is intentionally NOT reset on park. Comment in `BrowserPanel.tsx` confirms this.
 2. ✅ Reactivation uses preserved bounds: On switch-back, `browserSetBounds` IPC is sent immediately with `lastBoundsRef.current` before ResizeObserver fires.
+3. ✅ Bounds pre-warming: main applies bounds before `setVisible(true)` when handling `browserSetBounds`, preventing a brief 0×0 reveal on reactivation.
 
 **Remaining tasks:**
-3. Bounds pre-warming: apply bounds in main process before calling `setVisible(true)`. Currently the renderer sends bounds IPC after its reactivation effect runs; the view may briefly appear at 0×0. Fix: move the bounds application to `browserShow` IPC in main before `setVisible`.
 4. Browser warmth cap: warm for focused + N most-recently-used background workspaces; cold otherwise. Implement via `setWorkspaceResourcePolicy(workspaceId, { browser: 'cold' })` when cap is exceeded.
-5. Initial 0×0 bounds fallback: add a fallback to skip the IPC and wait for the next ResizeObserver event when bounds are 0×0 (before first layout paint).
+5. Initial 0×0 bounds fallback (optional): add an explicit “defer show until non-zero bounds observed” path. Current renderer code already skips IPC when `getBoundingClientRect()` returns 0×0.
 
 **Files to Touch:**
-- `src/renderer/components/BrowserPanel.tsx` (task 3, 5)
-- `src/main/ipc/browserIpc.ts` (task 3 — apply bounds before `setVisible`)
+- `src/renderer/components/BrowserPanel.tsx` (task 5)
 - `src/renderer/lib/workspaceLifecycle.ts` (task 4 — cold path)
 
 **Acceptance Criteria:**
@@ -329,9 +323,7 @@ Long-lived parked surfaces can accumulate subscriptions.
 
 ### 3. Browser View Reveal Timing (Phase 4 task 3)
 
-The renderer sends `browserSetBounds` IPC after its reactivation effect runs. A brief moment may exist where the native view is visible but not yet sized.
-
-**Mitigation:** Phase 4 task 3 — apply bounds in main process before `setVisible(true)`.
+Mitigated: main applies bounds before calling `setVisible(true)` when handling bounds updates. Remaining risk is primarily “no bounds yet” (0×0), which is addressed by skipping IPC until bounds are measurable; an explicit “defer show until non-zero” path remains optional (Phase 4 task 5).
 
 ### 4. Test Assumption Breakage
 
@@ -397,7 +389,7 @@ This still yields a substantial UX improvement without forcing all subsystems to
 
 2. **Phase 1 migration scope** — the `syncActiveWorkspace` migration (Phase 1 task 7) is mechanical but touches many files. Recommend doing it as a focused refactor pass once Phase 4 is complete, rather than interleaving it with new feature work.
 
-3. **Phase 4 task 3 (bounds in main before visible)** — requires main-process change to `browserIpc.ts`. Confirm the ordering: `browserSetBounds` must apply dimensions before `setVisible(true)` in main. The current renderer-side reactivation already sends bounds IPC, but the main-process timing matters for the brief-flash window.
+3. **Phase 4 task 3 (bounds in main before visible)** — implemented. Confirmed ordering: bounds are applied before `setVisible(true)` in main when handling bounds updates.
 
 4. **Memory pressure detection** — Is it needed now, or can colding remain manual/policy-based? Recommendation: policy-based only for first version.
 
@@ -409,7 +401,7 @@ This still yields a substantial UX improvement without forcing all subsystems to
 
 | Phase | Depends On | Reason |
 |---|---|---|
-| Phase 4 (browser bounds pre-warming) | None (partial progress without Phase 2) | Bounds preservation (task 1–2) works independently. Full bounds pre-warming (task 3) requires main-process ordering. |
+| Phase 4 (browser bounds pre-warming) | None | Bounds preservation + reveal ordering (tasks 1–3) are implemented. |
 | Phase 5 (editor warmth) | Phase 2 | EditorPane must stay mounted for `EditorView` to survive switches. Phase 2 single-container is what guarantees this. |
 | Phase 6 (explorer policy) | None | Explorer state is already per-workspace; no Phase 2 dependency for the core model. |
 | Phase 7 (store cleanup) | Phase 1 migration complete | `syncActiveWorkspace` removal requires all consumers migrated first. |
@@ -418,13 +410,13 @@ This still yields a substantial UX improvement without forcing all subsystems to
 
 ## Definition of Done
 
-- [x] `activeWorkspaceId` change updates focus semantics only; no code path uses `lifecycle === 'active'` to gate runtime behavior (terminals, browser, explorer watcher). ✅ BrowserPanel corrected; `BrowserLifecycleCoordinator` corrected. Minor: `useScopedWorkspaceActivity` still has redundant check.
+- [x] `activeWorkspaceId` change updates focus semantics only; no code path uses `lifecycle === 'active'` to gate runtime behavior (terminals, browser, explorer watcher). ✅ BrowserPanel corrected; `BrowserLifecycleCoordinator` corrected.
 - [x] Switching A → B → A causes zero pane component remounts for workspaces A and B. ✅ Single-container architecture. Dev instrumentation confirms.
 - [x] For any workspace that had `browserVisible: true`, `lastBoundsRef.current` is non-null immediately after switching away and immediately after switching back. ✅ Bounds preserved in `lastBoundsRef`.
-- [ ] Switching to a warm workspace with browser visible does not produce a browser bounds flash — the first `browserSetBounds` IPC after return carries the same pixel values as the last IPC before the switch. (Phase 4 task 3 remaining — requires main-process bounds application before `setVisible`)
+- [x] Switching to a warm workspace with browser visible does not produce a browser bounds flash — renderer forces one reactivation `browserSetBounds` IPC and main applies bounds before `setVisible(true)`.
 - [x] Opening a file in workspace A, switching to B, returning to A shows the editor tab with the file open and its CodeMirror instance intact. ✅ Phase 5 implemented.
 - [x] `explorerEntriesByPath` for parked workspaces remains non-empty after any number of workspace switches. ✅ Store model preserves this.
 - [ ] Closing a workspace with `browserVisible: true` disposes the browser view via `browserDisposeWorkspace` (verifiable via IPC mock or integration test).
 - [x] `assignWorkspaceLifecycles` still produces exactly one `lifecycle === 'active'` workspace after 10 rapid A→B→C→A switches. ✅ Tested.
 - [x] All new selectors (`isWorkspaceWarm`, `getWorkspaceResourcePolicy`) return correct values for warm, cold, and parked workspaces. ✅ Tests exist.
-- [ ] All acceptance criteria above are covered by unit or integration tests. (Residency-switch stress test and bounds-flash test still needed)
+- [ ] All acceptance criteria above are covered by unit or integration tests. (Residency-switch stress test still needed)
