@@ -1,9 +1,11 @@
-import { useWorkspaceStore } from '../store/workspaceStore';
+import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
 import { Terminal, Circle } from 'lucide-react';
 import './StatusBar.css';
 
 export default function StatusBar() {
-  const { terminals, workspacePath } = useWorkspaceStore();
+  const focusedWorkspace = useWorkspaceStore((state) => selectFocusedWorkspace(state));
+  const workspacePath = focusedWorkspace?.workspacePath ?? '';
+  const terminalCount = focusedWorkspace?.terminals.length ?? 0;
 
   const displayPath = workspacePath.length > 60
     ? '...' + workspacePath.slice(-57)
@@ -14,7 +16,7 @@ export default function StatusBar() {
       <div className="status-left">
         <span className="status-item">
           <Terminal size={12} strokeWidth={2} />
-          {terminals.length} terminal{terminals.length !== 1 ? 's' : ''}
+          {terminalCount} terminal{terminalCount !== 1 ? 's' : ''}
         </span>
       </div>
       

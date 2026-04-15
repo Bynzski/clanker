@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useWorkspaceStore } from '../store/workspaceStore';
+import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
 import { Plus, Globe, LayoutGrid, Settings, ChevronDown, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { AI_COMMIT_PROVIDER_IDS, HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
 import type { ModelOption } from '../types/shared';
@@ -8,22 +8,22 @@ import CredentialSettings from './settings/CredentialSettings';
 import './Header.css';
 
 export default function Header() {
-  const { 
-    activeWorkspaceId,
-    workspacePath, 
-    browserVisible,
-    explorerVisible,
-    setExplorerVisible,
-    toggleBrowser,
-    addTerminal,
-    fitAllPanes,
-    harness,
-    model,
-    setHarness,
-    canAddPane,
-    pushBrowserOverlay,
-    popBrowserOverlay,
-  } = useWorkspaceStore();
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const focusedWorkspace = useWorkspaceStore((state) => selectFocusedWorkspace(state));
+  const setExplorerVisible = useWorkspaceStore((state) => state.setExplorerVisible);
+  const toggleBrowser = useWorkspaceStore((state) => state.toggleBrowser);
+  const addTerminal = useWorkspaceStore((state) => state.addTerminal);
+  const fitAllPanes = useWorkspaceStore((state) => state.fitAllPanes);
+  const setHarness = useWorkspaceStore((state) => state.setHarness);
+  const canAddPane = useWorkspaceStore((state) => state.canAddPane);
+  const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
+  const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
+
+  const workspacePath = focusedWorkspace?.workspacePath ?? '';
+  const browserVisible = focusedWorkspace?.browserVisible ?? false;
+  const explorerVisible = focusedWorkspace?.explorerVisible ?? false;
+  const harness = focusedWorkspace?.harness ?? '';
+  const model = focusedWorkspace?.model ?? '';
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
   const [showFastfetch, setShowFastfetch] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -418,7 +418,7 @@ export default function Header() {
       <CredentialSettings
         isOpen={showCredentialModal}
         onClose={() => setShowCredentialModal(false)}
-        workspacePath={workspacePath ?? undefined}
+        workspacePath={workspacePath || undefined}
       />
     </header>
   );
