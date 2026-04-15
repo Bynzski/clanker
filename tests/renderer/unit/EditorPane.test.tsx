@@ -215,10 +215,11 @@ describe('EditorPane', () => {
       ).toBeTruthy();
     });
 
-    it('does not render editor content div when no tabs are open', () => {
+    it('renders editor content div (hidden) even when no tabs are open', () => {
       render(<EditorPane />);
       const editorContent = document.querySelector('.editor-content');
-      expect(editorContent).toBeNull();
+      expect(editorContent).toBeTruthy();
+      expect(editorContent).toHaveStyle({ display: 'none' });
     });
 
     it('renders content div when tabs exist', () => {
@@ -304,7 +305,7 @@ describe('EditorPane', () => {
       expect(document.querySelector('.editor-panel')).toBeTruthy();
     });
 
-    it('returns null and renders nothing when editorVisible is false', () => {
+    it('renders the panel but hides it when editorVisible is false', () => {
       useWorkspaceStore.setState({
         editorVisible: false,
         editorPane: null,
@@ -314,7 +315,126 @@ describe('EditorPane', () => {
       });
 
       const { container } = render(<EditorPane />);
-      expect(container.firstChild).toBeNull();
+      const panel = container.querySelector('.editor-panel');
+      expect(panel).toBeTruthy();
+      expect(panel).toHaveClass('editor-panel--hidden');
+    });
+  });
+
+  // =========================================================================
+  // Editor Preservation
+  // =========================================================================
+  describe('editor preservation', () => {
+    it('keeps the editor panel mounted when editorVisible is false', () => {
+      useWorkspaceStore.setState({
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: false },
+        editorTabs: [
+          {
+            id: 'tab-1',
+            filePath: '/workspace/test.ts',
+            fileName: 'test.ts',
+            isDirty: false,
+            content: 'const x = 1;',
+            originalContent: 'const x = 1;',
+          },
+        ],
+        activeEditorTabId: 'tab-1',
+        toggleEditorLock: vi.fn(),
+      });
+
+      const { rerender } = render(<EditorPane />);
+      expect(document.querySelector('.editor-panel')).toBeTruthy();
+      expect(document.querySelector('.editor-panel')).not.toHaveClass('editor-panel--hidden');
+
+      // Then switch to invisible state
+      useWorkspaceStore.setState({ editorVisible: false });
+      rerender(<EditorPane />);
+
+      // Panel should still be in the DOM
+      expect(document.querySelector('.editor-panel')).toBeTruthy();
+      expect(document.querySelector('.editor-panel')).toHaveClass('editor-panel--hidden');
+      // But CodeMirror container should be hidden
+      const editorContent = document.querySelector('.editor-content');
+      expect(editorContent).toBeTruthy();
+      expect(editorContent).toHaveStyle({ display: 'none' });
+    });
+
+    it('shows empty state as overlay without destroying the editor content div', () => {
+      useWorkspaceStore.setState({
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: false },
+        editorTabs: [],
+        activeEditorTabId: null,
+        toggleEditorLock: vi.fn(),
+      });
+
+      const { rerender } = render(<EditorPane />);
+
+      // Empty state should be visible
+      expect(screen.getByText('No file open')).toBeTruthy();
+      // Editor content div should still be in the DOM (hidden)
+      const editorContent = document.querySelector('.editor-content');
+      expect(editorContent).toBeTruthy();
+      expect(editorContent).toHaveStyle({ display: 'none' });
+
+      // Then add a tab
+      useWorkspaceStore.setState({
+        editorTabs: [
+          {
+            id: 'tab-new',
+            filePath: '/workspace/new.ts',
+            fileName: 'new.ts',
+            isDirty: false,
+            content: 'const y = 2;',
+            originalContent: 'const y = 2;',
+          },
+        ],
+        activeEditorTabId: 'tab-new',
+      });
+      rerender(<EditorPane />);
+
+      // Editor content div should now be visible
+      expect(screen.getByText('new.ts')).toBeTruthy();
+      const editorContentAfter = document.querySelector('.editor-content');
+      expect(editorContentAfter).toBeTruthy();
+      expect(editorContentAfter).not.toHaveStyle({ display: 'none' });
+    });
+
+    it('preserves editor content div when switching between no-tab and tab states', () => {
+      // Start with no tabs
+      useWorkspaceStore.setState({
+        editorVisible: true,
+        editorPane: { id: 'editor-1', locked: false },
+        editorTabs: [],
+        activeEditorTabId: null,
+        toggleEditorLock: vi.fn(),
+      });
+
+      const { rerender } = render(<EditorPane />);
+      const editorContentRef = document.querySelector('.editor-content');
+      expect(editorContentRef).toBeTruthy();
+
+      // Switch to workspace with a tab
+      useWorkspaceStore.setState({
+        editorTabs: [
+          {
+            id: 'tab-a',
+            filePath: '/workspace/a.ts',
+            fileName: 'a.ts',
+            isDirty: false,
+            content: 'export const a = 1;',
+            originalContent: 'export const a = 1;',
+          },
+        ],
+        activeEditorTabId: 'tab-a',
+      });
+      rerender(<EditorPane />);
+
+      // Same editor content div should still be in the DOM (not recreated)
+      const editorContentAfter = document.querySelector('.editor-content');
+      expect(editorContentAfter).toBeTruthy();
+      expect(editorContentAfter).toBe(editorContentRef); // Same DOM node reference
     });
   });
 
@@ -348,7 +468,9 @@ describe('EditorPane', () => {
 
       const { rerender } = render(<EditorPane />);
 
-      expect(document.querySelector('.editor-content')).toBeNull();
+      // editor-content div is always mounted but hidden when no tabs
+      expect(document.querySelector('.editor-content')).toBeTruthy();
+      expect(document.querySelector('.editor-content')).toHaveStyle({ display: 'none' });
 
       useWorkspaceStore.setState({
         editorVisible: true,

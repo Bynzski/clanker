@@ -39,9 +39,11 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
   const browserOverlayCount = workspace?.browserOverlayCount ?? 0;
   const [annotationActive, setAnnotationActive] = useState(false);
   const dragHandleProps = useDragHandle();
+  // isActiveWorkspace is true when this workspace is the focused one.
+  // The store invariant W4 guarantees workspace.id === activeWorkspaceId implies
+  // workspace.lifecycle === 'active', so a separate lifecycle check is redundant.
   const isActiveWorkspace = workspace?.id != null
-    && workspace.id === activeWorkspaceId
-    && workspace.lifecycle === 'active';
+    && workspace.id === activeWorkspaceId;
 
   // ── Actual React component mount/unmount (Phase 2 lifecycle separation) ──
   // This fires ONCE on component mount and ONCE on unmount, regardless of

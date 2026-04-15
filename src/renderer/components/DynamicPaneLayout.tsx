@@ -177,7 +177,7 @@ function LeafView({
       }}
       layoutVersion={layoutRevision}
     />
-  ) : workspace?.editorVisible && workspace.editorPane?.id === paneId ? (
+  ) : workspace?.editorPane?.id === paneId ? (
     <Suspense fallback={<div className="layout-pane-loading">Loading editor...</div>}>
       <EditorPane workspaceId={workspaceId} />
     </Suspense>

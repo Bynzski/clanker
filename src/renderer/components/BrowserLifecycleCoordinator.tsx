@@ -14,7 +14,10 @@ export default function BrowserLifecycleCoordinator({ activeWorkspaceId }: Brows
         continue;
       }
 
-      if (workspace.id === activeWorkspaceId && workspace.lifecycle === 'active') {
+      // Hide non-focused workspaces. Store invariant W4 guarantees
+      // workspace.id === activeWorkspaceId implies lifecycle === 'active',
+      // so a separate lifecycle check is redundant here.
+      if (workspace.id === activeWorkspaceId) {
         continue;
       }
 
