@@ -177,7 +177,7 @@ Main ↔ Renderer communication via preload bridge (`src/main/preload.ts`):
 - Session continuity across workspace/tab switches via xterm instance caching (`xtermCache` Map in `TerminalPane.tsx`) — terminals are not remounted blank on switch-back
 - Startup uses a bounded 16 KB buffer + `TERMINAL_READY` renderer handshake to protect the PTY init window (e.g., fish DA1 responses)
 - Resize uses a bidirectional confirmation loop: `RESIZE_TERMINAL` IPC → PTY apply → `TERMINAL_RESIZED` event → renderer verifies geometry
-- `handleFlowControl: false` is set on all PTY spawns (disabled as startup variable; re-enabling requires a Phase 2+ readiness plan)
+- `handleFlowControl: false` is set on all PTY spawns (re-enabling is a separate future readiness concern, not part of the workspace residency plan)
 - Terminal pane sizing syncs back to PTY on resize; rapid resize calls are coalesced via a 100 ms lock
 
 ### Browser Architecture

@@ -8,7 +8,7 @@
 - Session continuity across workspace/tab switches — xterm instances are cached and reused, not remounted blank
 - Startup uses a bounded 16 KB buffer + `TERMINAL_READY` renderer handshake to protect early PTY output
 - Copy/paste support
-- `handleFlowControl: false` is set on all PTY spawns (re-enabling deferred to Phase 2+)
+- `handleFlowControl: false` is set on all PTY spawns (re-enabling is a separate future readiness concern, not part of the workspace residency plan)
 
 ### Terminal Actions
 
