@@ -1199,7 +1199,7 @@ describe('getGlobalCredentialStatus', () => {
 });
 
 // ============================================================================
-// safeStorage Unavailable - Fallback Path Tests
+// safeStorage Unavailable - Encryption Required
 // ============================================================================
 
 describe('safeStorage unavailable', () => {
@@ -1213,7 +1213,7 @@ describe('safeStorage unavailable', () => {
     env.cleanup();
   });
 
-  test('savePat uses base64 fallback when encryption unavailable', async () => {
+  test('savePat returns error when encryption is unavailable', async () => {
     // Set up test safeStorage that reports encryption unavailable
     _setTestSafeStorage({
       isEncryptionAvailable: () => false,
@@ -1223,57 +1223,83 @@ describe('safeStorage unavailable', () => {
 
     const result = await savePat({
       provider: 'github',
-      token: 'test_token_fallback',
+      token: 'test_token_no_encryption',
       scope: ['repo'],
     });
 
-    assert.equal(result.success, true);
-
-    // Token should be stored as base64
-    const stored = env.store.get('encryptedPats.github') as string;
-    assert.ok(stored);
-    // Should be base64 encoded
-    const decoded = Buffer.from(stored, 'base64').toString('utf-8');
-    assert.equal(decoded, 'test_token_fallback');
+    assert.equal(result.success, false);
+    assert.ok(result.error);
+    assert.ok(result.error!.includes('Secure storage is not available'));
+    // Token should NOT be stored
+    assert.strictEqual(env.store.get('encryptedPats.github'), undefined);
+    // Metadata should NOT be stored
+    assert.strictEqual(env.store.get('patMetadata.github'), undefined);
   });
 
-  test('getPat decodes base64 when encryption unavailable', async () => {
-    // Set up encryption unavailable and store a token manually
+  test('getPat still works when encryption was available on save but unavailable on retrieve', () => {
+    // Tokens are stored as base64 when encryption was available (test safeStorage returns true)
+    // So getPat must always decode base64 regardless of current encryption availability
     _setTestSafeStorage({
       isEncryptionAvailable: () => false,
       encryptString: (token: string) => Buffer.from(token),
       decryptString: (buffer: Buffer) => buffer.toString(),
     });
 
-    // Manually store a base64-encoded token (simulating savePat with unavailable encryption)
+    // Manually store a base64-encoded token (simulating a save that happened when encryption was available)
     const token = 'test_token_fallback';
     const encoded = Buffer.from(token).toString('base64');
     env.store.set('encryptedPats.github', encoded);
 
-    // Retrieve should decode correctly
+    // Retrieve should decode correctly (getPat always uses base64 fallback when encryption unavailable)
     const result = getPat('github');
 
     assert.equal(result.success, true);
     assert.equal(result.token, token);
   });
 
-  test('savePat still stores metadata even when encryption unavailable', async () => {
+  test('savePat succeeds when encryption is available', async () => {
+    // Test safeStorage reports encryption available (default in createTestEnvironment)
+    _setTestSafeStorage({
+      isEncryptionAvailable: () => true,
+      encryptString: (token: string) => Buffer.from(token),
+      decryptString: (buffer: Buffer) => buffer.toString(),
+    });
+
+    const result = await savePat({
+      provider: 'gitlab',
+      token: 'gitlab_token',
+      scope: ['api', 'read_user'],
+    });
+
+    assert.equal(result.success, true);
+    const stored = env.store.get('encryptedPats.gitlab') as string;
+    assert.ok(stored);
+    // Token should be stored (as base64 since test safeStorage encodes that way)
+    const decoded = Buffer.from(stored, 'base64').toString('utf-8');
+    assert.equal(decoded, 'gitlab_token');
+    const metadata = env.store.get('patMetadata.gitlab') as Record<string, unknown>;
+    assert.ok(metadata);
+    assert.deepEqual(metadata.scope, ['api', 'read_user']);
+    assert.equal(metadata.validated, false);
+  });
+
+  test('savePat error message is descriptive', async () => {
     _setTestSafeStorage({
       isEncryptionAvailable: () => false,
       encryptString: (token: string) => Buffer.from(token),
       decryptString: (buffer: Buffer) => buffer.toString(),
     });
 
-    await savePat({
-      provider: 'gitlab',
-      token: 'gitlab_token',
-      scope: ['api', 'read_user'],
+    const result = await savePat({
+      provider: 'bitbucket',
+      token: 'bb_token',
+      scope: ['repo'],
     });
 
-    const metadata = env.store.get('patMetadata.gitlab') as Record<string, unknown>;
-    assert.ok(metadata);
-    assert.deepEqual(metadata.scope, ['api', 'read_user']);
-    assert.equal(metadata.validated, false);
+    assert.equal(result.success, false);
+    assert.ok(result.error!.length > 0);
+    assert.ok(!result.error!.includes('undefined'));
+    assert.ok(!result.error!.includes('null'));
   });
 });
 
