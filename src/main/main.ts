@@ -36,7 +36,7 @@ import Store from 'electron-store';
 import { GitService } from './gitService';
 import { resolveExistingDirectory } from './security';
 import { type AiCommitProvider } from './aiCommit';
-import { HARNESS_OPTIONS } from './harnessCatalog';
+import { HARNESS_OPTIONS, getAvailableHarnessOptions, discoverHarnessModels } from './harnessCatalog';
 import { createMainWindow, getPreloadPath } from './windowManager';
 import { registerSettingsIpc } from './ipc/settingsIpc';
 import { registerWindowIpc } from './ipc/windowIpc';
@@ -165,6 +165,19 @@ function getSafeWorkspacePath(workingDir: string, storeInstance: Store<StoreSche
   );
 }
 
+/**
+ * Pre-warm the model cache by discovering models for all available harnesses.
+ * Runs silently in background to populate cache before renderer requests it.
+ */
+function prewarmModelCache(): void {
+  const harnesses = Object.keys(getAvailableHarnessOptions());
+  for (const harness of harnesses) {
+    discoverHarnessModels(harness).catch(() => {
+      // Ignore errors — fallback models are always available
+    });
+  }
+}
+
 // App lifecycle
 app.whenReady().then(() => {
   const preloadPath = getPreloadPath();
@@ -230,6 +243,10 @@ app.whenReady().then(() => {
     explorerWatcher,
     onWindowClosed: cleanupWindowState,
   }));
+
+  // Pre-warm model cache in background after startup
+  // Schedules after a short delay so it doesn't block window rendering
+  setTimeout(prewarmModelCache, 100);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -14,6 +14,204 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
+// =============================================================================
+// Model Cache Integration Tests
+// =============================================================================
+
+describe('discoverHarnessModels cache integration', () => {
+  const mockApp = {
+    getAppPath: vi.fn(() => '/opt/clanker-grid'),
+    getPath: vi.fn(() => '/tmp/test-home'),
+  };
+
+  // Mock electron-store to control cache
+  const mockStoreInstance = {
+    get: vi.fn(() => ({})),
+    set: vi.fn(),
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock('electron', () => ({
+      app: mockApp,
+    }));
+    vi.doMock('electron-store', () => ({
+      default: class {
+        get = mockStoreInstance.get;
+        set = mockStoreInstance.set;
+      },
+    }));
+  });
+
+  afterEach(() => {
+    vi.doUnmock('electron');
+    vi.doUnmock('electron-store');
+    vi.restoreAllMocks();
+  });
+
+  it('returns cached models immediately without CLI calls on cache hit', async () => {
+    const cachedModels = [
+      { id: 'cached-model-1', label: 'Cached Model 1' },
+      { id: 'cached-model-2', label: 'Cached Model 2' },
+    ];
+    mockStoreInstance.get.mockReturnValue({
+      pi: { models: cachedModels, cachedAt: Date.now() },
+    });
+
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    const result = await discoverHarnessModels('pi');
+
+    expect(result).toEqual(cachedModels);
+    // Store should not have been updated on cache hit
+    expect(mockStoreInstance.set).not.toHaveBeenCalled();
+  });
+
+  it('runs CLI discovery when cache is empty', async () => {
+    mockStoreInstance.get.mockReturnValue({});
+
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    // pi has empty fallback, so this will use empty array
+    const result = await discoverHarnessModels('pi');
+
+    expect(Array.isArray(result)).toBe(true);
+    // Store should have been updated with results
+    expect(mockStoreInstance.set).toHaveBeenCalled();
+  });
+
+  it('runs CLI discovery when cache is expired', async () => {
+    const oldTimestamp = Date.now() - (60 * 60 * 1000 + 1); // Past TTL
+    mockStoreInstance.get.mockReturnValue({
+      codex: { models: [{ id: 'old', label: 'Old' }], cachedAt: oldTimestamp },
+    });
+
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    const result = await discoverHarnessModels('codex');
+
+    expect(Array.isArray(result)).toBe(true);
+    // Store should have been updated with fresh results
+    expect(mockStoreInstance.set).toHaveBeenCalled();
+  });
+
+  it('persists results to cache after CLI discovery', async () => {
+    mockStoreInstance.get.mockReturnValue({});
+
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    await discoverHarnessModels('pi');
+
+    // Should persist to cache
+    expect(mockStoreInstance.set).toHaveBeenCalledWith('models', expect.objectContaining({
+      pi: expect.objectContaining({
+        models: expect.any(Array),
+        cachedAt: expect.any(Number),
+      }),
+    }));
+  });
+
+  it('returns fallback models when discovery fails', async () => {
+    mockStoreInstance.get.mockReturnValue({});
+
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    const result = await discoverHarnessModels('claude');
+
+    // Should return an array with fallback models for claude
+    // claude fallback includes sonnet, opus, haiku, claude-sonnet-4-6
+    expect(result.length).toBeGreaterThan(0);
+    expect(result[0]).toHaveProperty('id');
+    expect(result[0]).toHaveProperty('label');
+  });
+
+  it('uses fallback for empty discovery result', async () => {
+    mockStoreInstance.get.mockReturnValue({});
+
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    const result = await discoverHarnessModels('codex');
+
+    // Should return fallback models (codex has fallbacks defined)
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('handles unknown harness by returning empty array', async () => {
+    mockStoreInstance.get.mockReturnValue({});
+
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    const result = await discoverHarnessModels('non-existent-harness');
+
+    expect(result).toEqual([]);
+  });
+});
+
+// =============================================================================
+// Cache Failure Regression Tests
+// =============================================================================
+
+describe('discoverHarnessModels cache failure regressions', () => {
+  const mockApp = {
+    getAppPath: vi.fn(() => '/opt/clanker-grid'),
+    getPath: vi.fn(() => '/tmp/test-home'),
+  };
+
+  const mockStoreInstance = {
+    get: vi.fn(() => ({})),
+    set: vi.fn(),
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock('electron', () => ({
+      app: mockApp,
+    }));
+    vi.doMock('electron-store', () => ({
+      default: class {
+        get = mockStoreInstance.get;
+        set = mockStoreInstance.set;
+      },
+    }));
+    vi.doMock('child_process', () => ({
+      execFile: vi.fn((_command: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
+        callback(new Error('mock discovery failure'), '', '');
+      }),
+    }));
+  });
+
+  afterEach(() => {
+    vi.doUnmock('electron');
+    vi.doUnmock('electron-store');
+    vi.doUnmock('child_process');
+    vi.restoreAllMocks();
+  });
+
+  it('does not persist fallback models when cold-start discovery fails', async () => {
+    mockStoreInstance.get.mockReturnValue({});
+
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    const result = await discoverHarnessModels('opencode');
+
+    expect(result.length).toBeGreaterThan(0);
+    expect(mockStoreInstance.set).not.toHaveBeenCalled();
+  });
+
+  it('does not overwrite a good cache entry when background refresh fails', async () => {
+    const cachedModels = [
+      { id: 'cached-model-1', label: 'Cached Model 1' },
+      { id: 'cached-model-2', label: 'Cached Model 2' },
+    ];
+    mockStoreInstance.get.mockReturnValue({
+      pi: { models: cachedModels, cachedAt: Date.now() },
+    });
+
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    const result = await discoverHarnessModels('pi');
+
+    expect(result).toEqual(cachedModels);
+
+    await new Promise<void>((resolve) => {
+      setImmediate(() => resolve());
+    });
+
+    expect(mockStoreInstance.set).not.toHaveBeenCalled();
+  });
+});
+
 // ============================================================================
 // getAvailableHarnessOptions Tests
 // ============================================================================

@@ -3,6 +3,13 @@ import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { normalizePiModelId, type HarnessConfig } from './harnessLaunch';
+import {
+  ElectronStoreModelCache,
+  DEFAULT_MODEL_CACHE_TTL_MS,
+} from './modelCache';
+
+// Module-level singleton for persistent model cache
+const persistentModelCache = new ElectronStoreModelCache();
 
 export interface ModelOption {
   id: string;
@@ -69,7 +76,7 @@ const MODEL_DISCOVERY_FALLBACKS: Record<string, ModelOption[]> = {
   ],
 };
 
-const modelOptionsCache = new Map<string, ModelOption[]>();
+
 
 function runCommandOutput(
   command: string,
@@ -199,9 +206,57 @@ async function discoverCodexModels(): Promise<ModelOption[]> {
     : fallback;
 }
 
+function dedupeModels(models: ModelOption[]): ModelOption[] {
+  return models.filter((model, index, array) =>
+    index === array.findIndex((entry) => entry.id === model.id)
+  );
+}
+
+interface DiscoveryResult {
+  models: ModelOption[];
+  discovered: boolean;
+}
+
+async function discoverHarnessModelsAsync(harness: string): Promise<DiscoveryResult> {
+  const config = HARNESS_OPTIONS[harness];
+  if (!config) {
+    return { models: [], discovered: false };
+  }
+
+  try {
+    if (harness === 'codex') {
+      return { models: dedupeModels(await discoverCodexModels()), discovered: true };
+    }
+
+    if (harness === 'opencode') {
+      const output = await runCommandOutput('opencode', ['models'], 6000);
+      return { models: dedupeModels(parseOpenCodeModels(output)), discovered: true };
+    }
+
+    if (harness === 'pi') {
+      const output = await runCommandOutput('pi', ['--list-models'], 6000);
+      return { models: dedupeModels(parsePiModels(output)), discovered: true };
+    }
+  } catch {
+    return {
+      models: MODEL_DISCOVERY_FALLBACKS[harness] ?? [],
+      discovered: false,
+    };
+  }
+
+  return {
+    models: [],
+    discovered: false,
+  };
+}
+
 export async function discoverHarnessModels(harness: string): Promise<ModelOption[]> {
-  if (modelOptionsCache.has(harness)) {
-    return modelOptionsCache.get(harness)!;
+  // Check persistent cache first for fast startup
+  const cached = persistentModelCache.get(harness, DEFAULT_MODEL_CACHE_TTL_MS);
+  if (cached) {
+    // Fire-and-forget background refresh to keep cache fresh for next launch
+    refreshCacheSilently(harness);
+    return cached;
   }
 
   const config = HARNESS_OPTIONS[harness];
@@ -209,29 +264,37 @@ export async function discoverHarnessModels(harness: string): Promise<ModelOptio
     return [];
   }
 
-  const fallback = MODEL_DISCOVERY_FALLBACKS[harness] ?? [];
-  let options: ModelOption[] = fallback;
+  const { models, discovered } = await discoverHarnessModelsAsync(harness);
+  const result = models.length > 0 ? models : (MODEL_DISCOVERY_FALLBACKS[harness] ?? []);
 
-  try {
-    if (harness === 'codex') {
-      options = await discoverCodexModels();
-    } else if (harness === 'opencode') {
-      const output = await runCommandOutput('opencode', ['models'], 6000);
-      options = parseOpenCodeModels(output);
-    } else if (harness === 'pi') {
-      const output = await runCommandOutput('pi', ['--list-models'], 6000);
-      options = parsePiModels(output);
-    }
-  } catch {
-    options = fallback;
+  if (discovered) {
+    // Persist only successful discovery results so a transient failure cannot
+    // replace a good cache entry with fallback data.
+    persistentModelCache.set(harness, result);
   }
 
-  const deduped = options.filter((model, index, array) =>
-    index === array.findIndex((entry) => entry.id === model.id)
-  );
+  return result;
+}
 
-  modelOptionsCache.set(harness, deduped.length > 0 ? deduped : fallback);
-  return modelOptionsCache.get(harness)!;
+/**
+ * Kick off a silent background refresh of the model cache for a harness.
+ * Results are persisted to disk so the next launch gets fresh data instantly.
+ * Errors are silently ignored — fallback models are always available.
+ */
+function refreshCacheSilently(harness: string): void {
+  const config = HARNESS_OPTIONS[harness];
+  if (!config) return;
+
+  // Run discovery async without blocking
+  discoverHarnessModelsAsync(harness)
+    .then(({ models, discovered }) => {
+      if (discovered) {
+        persistentModelCache.set(harness, models);
+      }
+    })
+    .catch(() => {
+      // Silently ignore background refresh failures
+    });
 }
 
 function isCommandAvailable(command: string): boolean {
@@ -268,3 +331,7 @@ export function getAvailableHarnessOptions() {
     Object.entries(HARNESS_OPTIONS).filter(([, config]) => isCommandAvailable(config.command))
   );
 }
+
+// Re-export cache types for consumers
+export type { ModelCache } from './modelCache';
+export { InMemoryModelCache } from './modelCache';
