@@ -181,23 +181,25 @@ describe('WorkspaceGateContent', () => {
   // =========================================================================
   // Model selector
   // =========================================================================
-  it('shows model selector when a harness is selected', async () => {
+  it('shows model picker when a harness is selected', async () => {
     renderGate();
     await waitFor(() => {
       expect(screen.getByText('Codex')).toBeTruthy();
     });
     fireEvent.click(screen.getByText('Codex'));
+    // New compact picker shows a model pill instead of "Model" label
     await waitFor(() => {
-      expect(screen.getByText('Model')).toBeTruthy();
+      expect(document.querySelector('.model-pill')).toBeTruthy();
     });
   });
 
-  it('does not show model selector for terminal-only mode', async () => {
+  it('does not show model picker for terminal-only mode', async () => {
     renderGate();
     await waitFor(() => {
       expect(screen.getByText('Terminal')).toBeTruthy();
     });
     fireEvent.click(screen.getByText('Terminal'));
-    expect(screen.queryByText('Model')).toBeNull();
+    // Terminal-only mode should not show the model picker
+    expect(document.querySelector('.model-picker')).toBeNull();
   });
 });

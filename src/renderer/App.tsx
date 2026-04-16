@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
+import { migrateLegacyFavorites } from './lib/harnessDefaultsMigration';
 import Header from './components/Header';
 import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
@@ -20,6 +21,11 @@ function App() {
     fitAllPanes,
     updateWorkspaceBrowserUrl,
   } = useWorkspaceStore();
+
+  // One-time migration: localStorage favorites → electron-store
+  useEffect(() => {
+    void migrateLegacyFavorites();
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

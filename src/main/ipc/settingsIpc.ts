@@ -7,7 +7,6 @@
 
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import * as fs from 'fs';
-import { app } from 'electron';
 import Store from 'electron-store';
 import {
   discoverHarnessModels,
@@ -16,7 +15,9 @@ import {
 import {
   resolveExistingDirectory,
 } from '../security';
+import { type StoreSchema, type HarnessDefaultsMap } from '../../shared/types/store';
 import { type AiCommitProvider } from '../aiCommit';
+import { validateHarnessDefaultsMap } from '../harnessDefaultsValidation';
 import {
   GET_LAST_WORKSPACE,
   GET_SHOW_FASTFETCH,
@@ -25,30 +26,17 @@ import {
   SET_AI_COMMIT_ENABLED,
   SET_AI_COMMIT_PROVIDER,
   SET_AI_COMMIT_MODEL,
+  GET_HARNESS_DEFAULTS,
+  SET_HARNESS_DEFAULTS,
   OPEN_DIRECTORY_DIALOG,
   READ_DIRECTORY,
   GET_HARNESS_OPTIONS,
   GET_HARNESS_MODELS,
 } from '../../shared/ipcChannels';
 
-interface StoreSchema {
-  lastWorkspace: string;
-  showFastfetch: boolean;
-  aiCommitEnabled: boolean;
-  aiCommitProvider: AiCommitProvider;
-  aiCommitModel: string;
-}
-
 interface RegisterSettingsIpcDeps {
   getStore: () => Store<StoreSchema>;
   getMainWindow: () => BrowserWindow | null;
-}
-
-function getSafeWorkspacePath(workingDir: string, store: Store<StoreSchema>): string {
-  return (
-    resolveExistingDirectory(workingDir, store.get('lastWorkspace'))
-    ?? app.getPath('home')
-  );
 }
 
 function getInvalidWorkspaceResult() {
@@ -131,9 +119,21 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
   ipcMain.handle(GET_HARNESS_OPTIONS, () => {
     return getAvailableHarnessOptions();
   });
+
+  ipcMain.handle(GET_HARNESS_DEFAULTS, () => {
+    return getStore().get('harnessDefaults');
+  });
+
+  ipcMain.handle(SET_HARNESS_DEFAULTS, (_, payload: HarnessDefaultsMap) => {
+    const result = validateHarnessDefaultsMap(payload);
+    if (!result.valid) {
+      console.warn('[clanker-grid] SET_HARNESS_DEFAULTS rejected:', result.error);
+      return;
+    }
+    getStore().set('harnessDefaults', result.sanitized);
+  });
 }
 
 export {
-  getSafeWorkspacePath,
   getInvalidWorkspaceResult,
 };

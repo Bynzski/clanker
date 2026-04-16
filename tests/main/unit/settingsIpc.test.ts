@@ -122,6 +122,12 @@ describe('registerSettingsIpc', () => {
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
           aiCommitModel: '',
+          harnessDefaults: {
+            codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo' },
+            opencode: { model: 'opencode/zen/big-pickle', favorites: [], flags: '' },
+            pi: { model: '', favorites: [], flags: '' },
+            claude: { model: '', favorites: [], flags: '' },
+          },
         };
         return defaults[key];
       }),
@@ -168,6 +174,8 @@ describe('registerSettingsIpc', () => {
       'read-directory',
       'get-harness-models',
       'get-harness-options',
+      'get-harness-defaults',
+      'set-harness-defaults',
     ];
 
     expectedChannels.forEach(channel => {
@@ -175,13 +183,13 @@ describe('registerSettingsIpc', () => {
     });
   });
 
-  test('registers exactly 11 settings IPC channels', () => {
+  test('registers exactly 13 settings IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(11);
+    expect(handleCalls.length).toBe(13);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -191,7 +199,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(22);
+    expect(handleCalls.length).toBe(26);
   });
 
   test('settings channels do not overlap with terminal channels', () => {
@@ -211,6 +219,8 @@ describe('registerSettingsIpc', () => {
       'read-directory',
       'get-harness-models',
       'get-harness-options',
+      'get-harness-defaults',
+      'set-harness-defaults',
     ];
 
     const terminalChannels = [
@@ -243,6 +253,8 @@ describe('registerSettingsIpc', () => {
       'read-directory',
       'get-harness-models',
       'get-harness-options',
+      'get-harness-defaults',
+      'set-harness-defaults',
     ];
 
     const windowChannels = [
@@ -394,6 +406,144 @@ describe('settingsIpc — error-path: OPEN_DIRECTORY_DIALOG', () => {
     )?.[1] as () => Promise<string | null>;
 
     await expect(handler()).rejects.toThrow();
+  });
+});
+
+describe('settingsIpc — harness defaults IPC', () => {
+  const mockIpcMain = ipcMain as typeof ipcMain & {
+    handle: ReturnType<typeof vi.fn>;
+  };
+
+  const createMockDeps = () => {
+    const mockStore = {
+      get: vi.fn((key: string) => {
+        const defaults: Record<string, unknown> = {
+          lastWorkspace: '/home/test',
+          showFastfetch: false,
+          aiCommitEnabled: false,
+          aiCommitProvider: 'codex',
+          aiCommitModel: '',
+          harnessDefaults: {
+            codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo' },
+            opencode: { model: 'opencode/zen/big-pickle', favorites: [], flags: '' },
+            pi: { model: '', favorites: [], flags: '' },
+            claude: { model: '', favorites: [], flags: '' },
+          },
+        };
+        return defaults[key];
+      }),
+      set: vi.fn(),
+    };
+    const mockMainWindow = {
+      webContents: { send: vi.fn() },
+      minimize: vi.fn(), unmaximize: vi.fn(), maximize: vi.fn(), close: vi.fn(),
+      isMaximized: vi.fn(() => false),
+    };
+    return {
+      deps: {
+        getStore: () => mockStore as never,
+        getMainWindow: () => mockMainWindow as never,
+      },
+    };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('GET_HARNESS_DEFAULTS returns harnessDefaults from store', () => {
+    const { deps } = createMockDeps();
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'get-harness-defaults'
+    )?.[1] as () => unknown;
+
+    const result = handler();
+    expect(result).toEqual({
+      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo' },
+      opencode: { model: 'opencode/zen/big-pickle', favorites: [], flags: '' },
+      pi: { model: '', favorites: [], flags: '' },
+      claude: { model: '', favorites: [], flags: '' },
+    });
+  });
+
+  test('SET_HARNESS_DEFAULTS calls store.set with the validated payload', () => {
+    const mockSetFn = vi.fn();
+    const mockStore = {
+      get: vi.fn((key: string) => {
+        const defaults: Record<string, unknown> = {
+          lastWorkspace: '/home/test',
+          showFastfetch: false,
+          aiCommitEnabled: false,
+          aiCommitProvider: 'codex',
+          aiCommitModel: '',
+          harnessDefaults: {
+            codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo' },
+            opencode: { model: 'opencode/zen/big-pickle', favorites: [], flags: '' },
+            pi: { model: '', favorites: [], flags: '' },
+            claude: { model: '', favorites: [], flags: '' },
+          },
+        };
+        return defaults[key];
+      }),
+      set: mockSetFn,
+    };
+    const mockMainWindow = {
+      webContents: { send: vi.fn() },
+      minimize: vi.fn(), unmaximize: vi.fn(), maximize: vi.fn(), close: vi.fn(),
+      isMaximized: vi.fn(() => false),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => mockMainWindow as never,
+    };
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'set-harness-defaults'
+    )?.[1] as (_: unknown, payload: unknown) => void;
+
+    const payload = {
+      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo' },
+      opencode: { model: 'opencode/zen/big-pickle', favorites: [], flags: '' },
+      pi: { model: '', favorites: [], flags: '' },
+      claude: { model: '', favorites: [], flags: '' },
+    };
+    handler(null, payload);
+    expect(mockSetFn).toHaveBeenCalledWith('harnessDefaults', expect.objectContaining({
+      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo' },
+    }));
+  });
+
+  test('SET_HARNESS_DEFAULTS rejects non-object payloads (validation)', () => {
+    const mockSetFn = vi.fn();
+    const mockStore = {
+      get: vi.fn(),
+      set: mockSetFn,
+    };
+    const mockMainWindow = {
+      webContents: { send: vi.fn() },
+      minimize: vi.fn(), unmaximize: vi.fn(), maximize: vi.fn(), close: vi.fn(),
+      isMaximized: vi.fn(() => false),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => mockMainWindow as never,
+    };
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'set-harness-defaults'
+    )?.[1] as (_: unknown, payload: unknown) => void;
+
+    // Reject null
+    handler(null, null);
+    expect(mockSetFn).not.toHaveBeenCalled();
+
+    // Reject string
+    handler(null, 'not an object');
+    expect(mockSetFn).not.toHaveBeenCalled();
   });
 });
 
@@ -576,6 +726,8 @@ describe('settings IPC channel constants', () => {
       'read-directory',
       'get-harness-models',
       'get-harness-options',
+      'get-harness-defaults',
+      'set-harness-defaults',
     ];
 
     expectedChannels.forEach(channel => {

@@ -53,6 +53,13 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     resetZoomWindow: createAsyncMock(undefined),
     getHarnessOptions: createAsyncMock({}),
     getHarnessModels: createAsyncMock([]),
+    getHarnessDefaults: createAsyncMock({
+      codex: { model: '', favorites: [], flags: '' },
+      opencode: { model: '', favorites: [], flags: '' },
+      pi: { model: '', favorites: [], flags: '' },
+      claude: { model: '', favorites: [], flags: '' },
+    }),
+    setHarnessDefaults: createAsyncMock(undefined),
     onFitAllPanes: vi.fn(() => () => undefined),
     onBrowserUrlUpdated: vi.fn(() => () => undefined),
     gitStartPolling: createAsyncMock(undefined),

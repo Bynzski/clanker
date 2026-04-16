@@ -35,7 +35,8 @@ import Store from 'electron-store';
 
 import { GitService } from './gitService';
 import { resolveExistingDirectory } from './security';
-import { type AiCommitProvider } from './aiCommit';
+import { type StoreSchema } from '../shared/types/store';
+import { KNOWN_HARNESS_IDS } from '../shared/harnessIds';
 import { HARNESS_OPTIONS, getAvailableHarnessOptions, discoverHarnessModels } from './harnessCatalog';
 import { createMainWindow, getPreloadPath } from './windowManager';
 import { registerSettingsIpc } from './ipc/settingsIpc';
@@ -51,13 +52,7 @@ import { ExplorerWatcherService } from './explorerWatcher';
 import { registerVcsIpc } from './ipc/vcsIpc';
 import { registerAnnotationIpc } from './annotation/annotationIpc';
 
-interface StoreSchema {
-  lastWorkspace: string;
-  showFastfetch: boolean;
-  aiCommitEnabled: boolean;
-  aiCommitProvider: AiCommitProvider;
-  aiCommitModel: string;
-}
+
 
 const store = new Store<StoreSchema>({
   defaults: {
@@ -66,6 +61,9 @@ const store = new Store<StoreSchema>({
     aiCommitEnabled: false,
     aiCommitProvider: 'codex',
     aiCommitModel: '',
+    harnessDefaults: Object.fromEntries(
+      KNOWN_HARNESS_IDS.map(id => [id, { model: '', favorites: [], flags: '' }])
+    ),
   },
 });
 

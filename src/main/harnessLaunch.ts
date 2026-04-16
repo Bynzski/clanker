@@ -14,8 +14,16 @@ export interface HarnessConfig {
 const HARNESS_WRAPPER_DIRNAME = '.clanker-grid';
 const HARNESS_WRAPPER_FILENAME = 'harness-wrapper.sh';
 
-export function buildHarnessSpawnArgs(config: HarnessConfig, model?: string): string[] {
+export function buildHarnessSpawnArgs(
+  config: HarnessConfig,
+  model?: string,
+  userFlags?: string
+): string[] {
   const args = [...config.args];
+
+  if (userFlags && userFlags.trim()) {
+    args.push(...userFlags.trim().split(/\s+/));
+  }
 
   if (model) {
     const modelArg = config.modelArg ?? '--model';

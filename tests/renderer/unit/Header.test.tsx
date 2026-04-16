@@ -85,6 +85,13 @@ describe('Header', () => {
       getHarnessModels: vi.fn().mockResolvedValue([
         { id: 'gpt-4', label: 'GPT-4' },
       ]),
+      getHarnessDefaults: vi.fn().mockResolvedValue({
+        codex: { model: '', favorites: [], flags: '' },
+        opencode: { model: '', favorites: [], flags: '' },
+        pi: { model: '', favorites: [], flags: '' },
+        claude: { model: '', favorites: [], flags: '' },
+      }),
+      setHarnessDefaults: vi.fn().mockResolvedValue(undefined),
       spawnTerminal: vi.fn().mockResolvedValue({ id: 'new-t', pid: 42 }),
       killTerminal: vi.fn().mockResolvedValue({ success: true }),
       gitStartPolling: vi.fn(),
