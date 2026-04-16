@@ -67,6 +67,9 @@ export function useScopedWorkspace(workspaceId?: string): WorkspaceTab | null {
       explorerErrorsByPath: state.explorerErrorsByPath,
       showHiddenFiles: state.showHiddenFiles,
       gitChanges: state.gitChanges,
+      gitCurrentBranch: state.gitCurrentBranch,
+      gitIsRepo: state.gitIsRepo,
+      gitIsDetached: state.gitIsDetached,
       runtimeState: { ...DEFAULT_RUNTIME_STATE },
     };
   }

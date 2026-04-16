@@ -38,3 +38,20 @@
   color: var(--text-secondary);
   opacity: 0.8;
 }
+
+.status-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: var(--space-md);
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.status-branch svg {
+  opacity: 0.7;
+}

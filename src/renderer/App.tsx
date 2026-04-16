@@ -135,6 +135,9 @@ function App() {
       editorTabs: [],
       activeEditorTabId: null,
       gitChanges: [],
+      gitCurrentBranch: null,
+      gitIsRepo: false,
+      gitIsDetached: false,
       runtimeState: { ...DEFAULT_RUNTIME_STATE },
     });
     setShowWorkspaceGate(false);

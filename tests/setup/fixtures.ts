@@ -57,6 +57,9 @@ export function createWorkspaceFixture(overrides: Partial<WorkspaceTab> = {}): W
     editorTabs: [],
     activeEditorTabId: null,
     gitChanges: [],
+    gitCurrentBranch: null,
+    gitIsRepo: false,
+    gitIsDetached: false,
     runtimeState: { ...DEFAULT_RUNTIME_STATE },
     ...overrides,
   };

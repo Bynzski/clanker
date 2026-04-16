@@ -118,6 +118,9 @@ const defaultWorkspaceState = {
   gridViewport: { cols: GRID_COLS, rows: GRID_ROWS },
   layoutRevision: 0,
   pendingEditorOperations: {} as Record<string, string>,
+  gitCurrentBranch: null as string | null,
+  gitIsRepo: false,
+  gitIsDetached: false,
 };
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -722,6 +725,28 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ...syncActiveWorkspace(state, (workspace) => ({
         ...workspace,
         gitChanges: changes,
+      })),
+    };
+  }),
+
+  setGitBranchInfo: (branch, isRepo, isDetached) => set((state) => {
+    if (
+      state.gitCurrentBranch === branch &&
+      state.gitIsRepo === isRepo &&
+      state.gitIsDetached === isDetached
+    ) {
+      return state;
+    }
+
+    return {
+      gitCurrentBranch: branch,
+      gitIsRepo: isRepo,
+      gitIsDetached: isDetached,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        gitCurrentBranch: branch,
+        gitIsRepo: isRepo,
+        gitIsDetached: isDetached,
       })),
     };
   }),
