@@ -26,10 +26,20 @@ Each workspace retains:
 - Selected harness and model
 - Active terminal selection
 
+### Harness and Model Selection
+
+Workspaces store their own harness and model selection independently:
+
+- **Workspace harness + model** — highest priority at spawn time
+- **No harness set** — spawns a plain shell; global harness defaults are not inferred
+- **Flags** — read from global store defaults (not per-workspace)
+
+Global harness defaults (model, favorites, flags) are configured in the header settings dropdown and apply as defaults for new workspaces. See [Configuration](configuration.md#harness-defaults).
+
 ## Layout Controls
 
 | Action | Description |
-|--------|-------------|
+|--------|------------|
 | **Fit All** | Reset panes to balanced sizes |
 | **Drag** | Rearrange panes via drag handle |
 | **Dock** | Drop onto edge to resize |

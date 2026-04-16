@@ -13,9 +13,20 @@ npm install
 1. Run `npm run dev`
 2. The workspace gate opens if no workspaces exist
 3. Select or enter a directory path
-4. Choose terminal count (1, 2, or 4)
-5. Optionally select an AI harness
-6. Click **Launch**
+4. Optionally select an AI harness
+5. If a harness is selected, choose a model via the compact model picker
+6. Choose terminal count (1, 2, or 4)
+7. Click **Launch**
+
+### Model Selection in the Gate
+
+When a harness is selected, the gate shows a compact model pill displaying the current default model:
+
+- **Click the pill** to open the favorites picker (shows pinned models)
+- **"Browse all models"** to search the full model list
+- **Select a model** to use it for this workspace launch
+
+The default model for each harness can be configured in the header settings dropdown (gear icon).
 
 ## Creating Workspaces
 
