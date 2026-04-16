@@ -237,17 +237,15 @@ export async function savePat(request: SavePatRequest): Promise<CredentialSaveRe
       : safeStorage.isEncryptionAvailable();
     
     if (!encryptionAvailable) {
-      // Fallback: store with basic obfuscation (not secure, but functional)
-      console.warn('safeStorage not available, using basic storage');
-      const encoded = Buffer.from(token).toString('base64');
-      storeSet(`encryptedPats.${provider}`, encoded);
-    } else {
-      // Encrypt and store
-      const encrypted = _testSafeStorage 
-        ? _testSafeStorage.encryptString(token) 
-        : safeStorage.encryptString(token);
-      storeSet(`encryptedPats.${provider}`, encrypted.toString('base64'));
+      return {
+        success: false,
+        error: 'Secure storage is not available on this system. Credential storage requires OS-level encryption support.',
+      };
     }
+    const encrypted = _testSafeStorage
+      ? _testSafeStorage.encryptString(token)
+      : safeStorage.encryptString(token);
+    storeSet(`encryptedPats.${provider}`, encrypted.toString('base64'));
 
     // Store metadata
     storeSet(`patMetadata.${provider}`, {

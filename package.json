@@ -18,13 +18,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "validate": "npm run lint && npm run typecheck && npm run build && npm run test",
+    "validate": "npm run lint && npm run typecheck && npm run security-check && npm run build && npm run test",
+    "security-check": "npm audit --audit-level=high",
     "build:dist": "npm run build && electron-builder",
     "start": "electron .",
     "prepare": "husky"
   },
   "dependencies": {
-    "chokidar": "^4.0.0",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/merge": "^6.12.1",
@@ -36,6 +36,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
+    "chokidar": "^4.0.0",
     "diff": "^8.0.4",
     "electron-store": "8.2.0",
     "lucide-react": "^1.7.0",
@@ -67,7 +68,7 @@
     "jsdom": "^29.0.2",
     "typescript": "6.0.2",
     "typescript-eslint": "^8.46.1",
-    "vite": "8.0.3",
+    "vite": "^8.0.8",
     "vitest": "^4.1.3"
   },
   "build": {
