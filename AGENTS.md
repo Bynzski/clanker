@@ -45,6 +45,7 @@ src/
 │   ├── aiCommit.ts           # AI commit message generation
 │   ├── harnessLaunch.ts     # Harness spawn argument construction
 │   ├── harnessCatalog.ts     # Harness availability detection, model discovery
+│   ├── harnessDefaultsValidation.ts  # Harness defaults payload validation
 │   ├── fileService.ts        # File read/write operations
 │   ├── fileWatcher.ts        # File system watching (couples to GitService)
 │   ├── modelCache.ts         # Model availability caching
@@ -55,7 +56,7 @@ src/
 │   │   ├── annotationIpc.ts         # IPC handlers
 │   │   └── index.ts         # Module exports
 │   ├── ipc/                  # IPC handler registrations
-│   │   ├── settingsIpc.ts    # Store, AI commit, harness, window controls
+│   │   ├── settingsIpc.ts    # Store, AI commit, harness, harness defaults, window controls
 │   │   ├── terminalIpc.ts    # PTY spawn, write, resize, kill
 │   │   ├── gitIpc.ts         # Git operations dispatch
 │   │   ├── browserIpc.ts     # WebContentsView control
@@ -114,6 +115,8 @@ src/
 │   │   └── INVARIANTS.md            # State invariant documentation
 │   ├── lib/                # Utilities
 │   │   ├── harnessOptions.ts
+│   │   ├── harnessFlags.ts         # Boolean ↔ string flag translation for harness toggles
+│   │   ├── harnessDefaultsMigration.ts  # One-time localStorage → electron-store migration
 │   │   ├── workspaceLifecycle.ts
 │   │   ├── editorFileWatcher.ts
 │   │   ├── editorLanguage.ts
@@ -126,8 +129,10 @@ src/
 │
 ├── shared/                  # Types and constants shared by main and renderer
 │   ├── ipcChannels.ts       # ⚠️ Canonical IPC channel constant reference
+│   ├── harnessIds.ts        # KNOWN_HARNESS_IDS and HarnessId type
 │   ├── terminal.ts           # Buffer size limits, trimBuffer utility
 │   └── types/
+│       ├── store.ts          # StoreSchema, HarnessDefaults, HarnessDefaultsMap
 │       ├── editor.ts         # File read/write/watch request/response types
 │       ├── fileExplorer.ts   # FileExplorerEntry type
 │       ├── fileOperations.ts # File create/delete/rename types
@@ -156,7 +161,7 @@ Main ↔ Renderer communication via preload bridge (`src/main/preload.ts`):
 
 | Module | Channels | Registration file |
 |--------|----------|-------------------|
-| Settings | last workspace, fastfetch, AI commit, harness options, window controls | `settingsIpc.ts` |
+| Settings | last workspace, fastfetch, AI commit, harness options, harness defaults, window controls | `settingsIpc.ts` |
 | Terminal | spawn, write, resize, kill, buffer, data, exit | `terminalIpc.ts` |
 | Git | polling, status, stage, commit, branch, stash, merge, history, diff, remotes, push/pull/fetch | `gitIpc.ts` |
 | Browser | navigate, back, forward, bounds, hide, dispose, external links | `browserIpc.ts` |
@@ -213,7 +218,8 @@ Main ↔ Renderer communication via preload bridge (`src/main/preload.ts`):
 - **`workspaceTypes.ts`** — shared type definitions used by the store (Pane, Terminal, LayoutNode, WorkspaceTab, EditorTab, etc.).
 - **`vcsStore.ts`** — VCS provider context and PR state.
 - **`INVARIANTS.md`** (in store/) — plain-language documentation of store state contracts.
-- **electron-store** persists: last workspace path, fastfetch setting, AI commit config.
+- **electron-store** persists: last workspace path, fastfetch setting, AI commit config, harness defaults (per-harness model, favorites, flags).
+- **Store schema** is defined in `src/shared/types/store.ts` — the single canonical location for `StoreSchema`, `HarnessDefaults`, and `HarnessDefaultsMap`.
 
 ### Editor
 
@@ -317,9 +323,9 @@ When adding new code to an already-large file, consider whether the change belon
 - **Harness spawn is wrapper-based** — Harnesses run via a generated shell wrapper script (`~/.clanker-grid/harness-wrapper.sh`) written and managed by `src/main/harnessLaunch.ts`. The old `bash -i -c '<cmd>; exec "$SHELL" -i'` inline shell command is no longer used for harness spawns. When a harness exits, the wrapper script execs an interactive shell to keep the terminal pane usable.
 - **Terminal continuity is via xterm caching** — Workspace/tab switching preserves terminal sessions by caching xterm.js instances in a `xtermCache` Map in `TerminalPane.tsx`. Terminals are NOT remounted blank on switch-back.
 - **Flow control is disabled** — `handleFlowControl: false` is set on all PTY spawns to avoid shell startup stalls. Re-enabling it requires a proper post-startup readiness plan and is out of scope for Phase 1.
-- **Flag/argument redesign is deferred** — Current flag and argument behavior is preserved. No redesign of the harness spawn argument system is planned.
+- **Flag/argument redesign is complete** — Harness flags (`--yolo`, `--pure`, etc.) are no longer hardcoded in `harnessCatalog.ts`. User-configurable flags are stored in `electron-store` under `harnessDefaults[harness].flags` and applied at spawn time by `terminalIpc.ts`. The UI exposes boolean toggles per harness in the header settings dropdown.
 - **Browser state is polled** — Renderer browser navigation state uses polling rather than event-driven updates.
 - **Pane locking** — Users can lock panes to prevent reflow during insertions. Respect lock state in layout operations.
-- **Shared type placement** — IPC channel names belong in `src/shared/ipcChannels.ts`; shared data types used across the main/renderer boundary belong in `src/shared/types/`; terminal constants belong in `src/shared/terminal.ts`.
+- **Shared type placement** — IPC channel names belong in `src/shared/ipcChannels.ts`; shared data types used across the main/renderer boundary belong in `src/shared/types/`; store schema types (`StoreSchema`, `HarnessDefaults`, `HarnessDefaultsMap`) belong in `src/shared/types/store.ts`; harness ID constants belong in `src/shared/harnessIds.ts`; terminal constants belong in `src/shared/terminal.ts`.
 - **Store file ownership** — Actions go in `workspaceStore.ts`; helpers go in `workspaceStoreHelpers.ts`; layout operations go in `workspaceLayout.ts`; types go in `workspaceStoreTypes.ts` or `workspaceTypes.ts`; invariants are documented in `INVARIANTS.md`.
 - **Main process exports are internal** — `src/main/main.ts` exports `terminals`, `browserViews`, `gitService`, `store`, and `killAllTerminals` for test access. These are internal; do not build new features on them.

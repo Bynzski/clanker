@@ -18,6 +18,43 @@ Access via header toolbar gear icon or `Ctrl+,`.
 | Provider | AI service (Codex, OpenCode, Pi) | Codex |
 | Model | Model variant per provider | Varies |
 
+### Harness Defaults
+
+Per-harness global defaults for AI harnesses. Configured in the header settings dropdown under **Harness Defaults**. These apply when spawning new terminals with a harness selected.
+
+Each harness (Codex, OpenCode, Pi, Claude) has its own settings:
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Yolo/Auto Mode | Enable boolean flag (e.g., `--yolo` for Codex, `--pure` for OpenCode) | Disabled |
+| Default Model | Model ID pre-selected when launching with this harness | Empty (harness picks) |
+| Favorites | Pinned model IDs shown in the compact model picker | Empty |
+
+#### Managing Harness Defaults
+
+1. Open the settings dropdown (gear icon or `Ctrl+,`)
+2. Scroll to the **Harness Defaults** section
+3. Click a harness row to expand its settings
+4. Toggle the yolo/auto checkbox, select a default model, or manage favorites
+
+All changes persist immediately to `electron-store`.
+
+#### Flags Behavior
+
+- User flags **replace** hardcoded defaults entirely (not additive)
+- The UI exposes known boolean-style toggles per harness only
+- Supported flags: `--yolo` (Codex), `--pure` (OpenCode)
+- Pi and Claude have no boolean toggle in this pass
+
+#### Default Model Resolution
+
+When spawning a terminal with a harness:
+
+1. **Workspace harness + model** — highest priority, set per-workspace in the gate or header
+2. **Plain shell** — if no workspace harness is set, no harness is inferred from global defaults
+
+Favorites are **never** used at spawn time — they only affect the picker/discovery UI.
+
 ### VCS Credentials
 
 Manage authentication for remote VCS operations.
@@ -48,14 +85,26 @@ The app can automatically configure your SSH config to use the generated key for
 
 ## Persistence
 
-Settings are stored locally via `electron-store`:
+Settings are stored locally via `electron-store` (`clanker-grid.json`):
 - Last workspace path
 - Fastfetch preference
 - AI commit configuration
+- Harness defaults (per-harness model, favorites, flags)
+
+The store schema is defined in `src/shared/types/store.ts`.
 
 Credentials are stored separately with encryption:
 - SSH keys in `~/.ssh/id_ed25519_clanker`
 - PATs encrypted via Electron's `safeStorage` API
+
+## Migration
+
+On first launch after upgrade, the app automatically migrates legacy `localStorage` favorites to `electron-store`. This is a one-time, non-fatal migration:
+
+- **Legacy key:** `clanker-grid-model-favorites` (localStorage)
+- **Completion marker:** `clanker-grid-migration-harness-defaults` (localStorage)
+- **Merge order:** Existing store favorites preserved first, legacy-only favorites appended in order
+- **Failure:** Non-fatal, retried on next launch
 
 ## Environment
 

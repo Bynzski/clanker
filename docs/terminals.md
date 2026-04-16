@@ -36,13 +36,45 @@ Harness terminals use a generated wrapper script in the main process so the harn
 
 **Harness launch model:** Harnesses use one unified wrapper-based spawn strategy. The harness runs as the direct PTY foreground job via a generated shell script (`~/.clanker-grid/harness-wrapper.sh`), not via an inline `bash -i -c` command. When a harness exits, the wrapper script replaces itself with an interactive shell so the terminal pane stays usable. This preserves existing product behavior while fixing the shell-layer signal/TUI issues.
 
-Current flag and argument behavior is intentionally preserved. A future redesign of the harness argument system is out of scope.
+### Harness Flags
+
+Each harness supports configurable CLI flags stored in `electron-store`:
+
+| Harness | Flag | Toggle Label | Behavior |
+|---------|------|--------------|----------|
+| Codex | `--yolo` | Enable yolo mode | Auto-approve actions |
+| OpenCode | `--pure` | Enable pure mode | Skip confirmations |
+
+Flags are configured per-harness in the header settings dropdown. The UI exposes a boolean checkbox for known flags; the store field (`flags: string`) supports future extensibility for additional CLI arguments.
+
+**Flags ownership:**
+- Static harness config owns `command`, `env`, `modelArg`
+- Store (`harnessDefaults`) owns user-configurable `flags` string
+- The renderer only maps known boolean toggles to known flag strings (via `harnessFlagsFromToggle`)
+
+### Harness Default Models
+
+Each harness can have a global default model set in the header settings dropdown. This model is pre-selected when launching a workspace with that harness.
+
+- **Default model** — set in settings, used at spawn time when no workspace-level model is specified
+- **Favorites** — pinned models shown in the gate model picker; these are UX-only and never influence automatic launch behavior
 
 ### Selecting a Harness
 
 1. Click the **Harness** pill in the header
 2. Choose from available CLIs (unavailable ones are hidden)
 3. Some harnesses support model selection
+
+### Gate Model Picker
+
+When creating a workspace, the gate provides a compact model selection flow:
+
+1. **Model pill** — shows the current default model (or "Default model")
+2. **Click the pill** — opens the favorites picker showing pinned models
+3. **Browse all models** — opens a discovery popover with search across all available models
+4. **Select a model** — updates the pill and uses that model for launch
+
+Unresolved models (no longer discoverable) are shown with a warning indicator.
 
 ### Terminal Count Presets
 
