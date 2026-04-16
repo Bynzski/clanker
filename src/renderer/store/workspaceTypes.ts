@@ -132,6 +132,9 @@ export interface WorkspaceTab {
   explorerErrorsByPath: Record<string, string | null | undefined>;
   showHiddenFiles: boolean;
   gitChanges: GitStatus[];
+  gitCurrentBranch: string | null;
+  gitIsRepo: boolean;
+  gitIsDetached: boolean;
   /** Runtime residency state — controls whether pane surfaces are kept warm. */
   runtimeState: WorkspaceRuntimeState;
 }

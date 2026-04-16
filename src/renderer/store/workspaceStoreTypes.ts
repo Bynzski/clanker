@@ -70,6 +70,9 @@ export interface WorkspaceState {
   explorerErrorsByPath: Record<string, string | null | undefined>;
   showHiddenFiles: boolean;
   gitChanges: GitStatus[];
+  gitCurrentBranch: string | null;
+  gitIsRepo: boolean;
+  gitIsDetached: boolean;
   workspaces: WorkspaceTab[];
   /** @invariant null - workspaces.length === 0 */
   activeWorkspaceId: string | null;
@@ -124,6 +127,7 @@ export interface WorkspaceState {
   resetExplorerState: () => void;
   setShowHiddenFiles: (show: boolean, workspaceId?: string) => void;
   setGitChanges: (changes: GitStatus[]) => void;
+  setGitBranchInfo: (branch: string | null, isRepo: boolean, isDetached: boolean) => void;
 
   setPanes: (panes: Pane[]) => void;
   addPane: (terminalId: string | null, position?: PanePosition) => void;
@@ -187,6 +191,9 @@ export type ActiveWorkspaceSnapshot = Pick<
   | 'explorerErrorsByPath'
   | 'showHiddenFiles'
   | 'gitChanges'
+  | 'gitCurrentBranch'
+  | 'gitIsRepo'
+  | 'gitIsDetached'
   | 'editorVisible'
   | 'editorPane'
   | 'editorTabs'

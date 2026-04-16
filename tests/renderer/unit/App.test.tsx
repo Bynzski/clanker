@@ -239,6 +239,9 @@ describe('App', () => {
             editorTabs: [],
             activeEditorTabId: null,
             gitChanges: [],
+            gitCurrentBranch: null,
+            gitIsRepo: false,
+            gitIsDetached: false,
             runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
           }],
         });
@@ -283,6 +286,9 @@ describe('App', () => {
             editorTabs: [],
             activeEditorTabId: null,
             gitChanges: [],
+            gitCurrentBranch: null,
+            gitIsRepo: false,
+            gitIsDetached: false,
             runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
           }],
         });
@@ -338,6 +344,9 @@ describe('App', () => {
             editorTabs: [],
             activeEditorTabId: null,
             gitChanges: [],
+            gitCurrentBranch: null,
+            gitIsRepo: false,
+            gitIsDetached: false,
             runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
           }],
         });
@@ -427,6 +436,9 @@ describe('App', () => {
             editorTabs: [],
             activeEditorTabId: null,
             gitChanges: [],
+            gitCurrentBranch: null,
+            gitIsRepo: false,
+            gitIsDetached: false,
             runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
           }],
         });
@@ -703,6 +715,9 @@ describe('App', () => {
             editorTabs: [],
             activeEditorTabId: null,
             gitChanges: [],
+            gitCurrentBranch: null,
+            gitIsRepo: false,
+            gitIsDetached: false,
             runtimeState: { residencyState: 'warm', resourcePolicy: { terminals: 'warm', browser: 'warm', explorer: 'cached', editor: 'warm' } },
           }],
         });

@@ -131,6 +131,9 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   editorTabs: [...workspace.editorTabs],
   showHiddenFiles: workspace.showHiddenFiles ?? true,
   gitChanges: [...(workspace.gitChanges ?? [])],
+  gitCurrentBranch: workspace.gitCurrentBranch ?? null,
+  gitIsRepo: workspace.gitIsRepo ?? false,
+  gitIsDetached: workspace.gitIsDetached ?? false,
   editorPane: workspace.editorPane
     ? { ...workspace.editorPane, locked: workspace.editorPane.locked ?? false }
     : null,
@@ -299,6 +302,9 @@ export function getActiveWorkspaceSnapshot(
     | 'explorerErrorsByPath'
     | 'showHiddenFiles'
     | 'gitChanges'
+    | 'gitCurrentBranch'
+    | 'gitIsRepo'
+    | 'gitIsDetached'
     | 'editorVisible'
     | 'editorPane'
     | 'editorTabs'
@@ -327,6 +333,9 @@ export function getActiveWorkspaceSnapshot(
     explorerErrorsByPath: workspace.explorerErrorsByPath,
     showHiddenFiles: workspace.showHiddenFiles ?? true,
     gitChanges: workspace.gitChanges ?? [],
+    gitCurrentBranch: workspace.gitCurrentBranch ?? null,
+    gitIsRepo: workspace.gitIsRepo ?? false,
+    gitIsDetached: workspace.gitIsDetached ?? false,
     editorVisible: workspace.editorVisible,
     editorPane: workspace.editorPane,
     editorTabs: workspace.editorTabs,

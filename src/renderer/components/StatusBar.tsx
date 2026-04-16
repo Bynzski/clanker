@@ -1,11 +1,14 @@
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
-import { Terminal, Circle } from 'lucide-react';
+import { Terminal, Circle, GitBranch } from 'lucide-react';
 import './StatusBar.css';
 
 export default function StatusBar() {
   const focusedWorkspace = useWorkspaceStore((state) => selectFocusedWorkspace(state));
   const workspacePath = focusedWorkspace?.workspacePath ?? '';
   const terminalCount = focusedWorkspace?.terminals.length ?? 0;
+  const currentBranch = useWorkspaceStore((state) => state.gitCurrentBranch);
+  const isRepo = useWorkspaceStore((state) => state.gitIsRepo);
+  const isDetached = useWorkspaceStore((state) => state.gitIsDetached);
 
   const displayPath = workspacePath.length > 60
     ? '...' + workspacePath.slice(-57)
@@ -24,6 +27,12 @@ export default function StatusBar() {
         <span className="status-path" title={workspacePath}>
           {displayPath}
         </span>
+        {isRepo && (
+          <span className="status-branch" title={isDetached ? 'Detached HEAD' : currentBranch ?? ''}>
+            <GitBranch size={12} strokeWidth={2} />
+            {isDetached ? 'HEAD' : currentBranch}
+          </span>
+        )}
       </div>
       
       <div className="status-right">
