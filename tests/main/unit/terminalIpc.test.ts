@@ -228,7 +228,19 @@ describe('terminalIpc — error-path: handler returns', () => {
   const createMockDeps = () => {
     const terminals = new Map();
     const mainWindow = { webContents: { send: vi.fn() } };
-    const store = { get: vi.fn().mockReturnValue(false) };
+    const store = {
+      get: vi.fn().mockImplementation((key: string) => {
+        if (key === 'harnessDefaults') {
+          return {
+            codex:    { model: '', favorites: [], flags: '' },
+            opencode: { model: '', favorites: [], flags: '' },
+            pi:       { model: '', favorites: [], flags: '' },
+            claude:   { model: '', favorites: [], flags: '' },
+          };
+        }
+        return false;
+      }),
+    };
     const opts = {
       getTerminals: () => terminals,
       getMainWindow: () => mainWindow as never,
@@ -471,10 +483,18 @@ describe('terminalIpc — error-path: handler returns', () => {
       codex: {
         name: 'Codex',
         command: 'codex',
-        args: ['--yolo'],
+        args: [],
         icon: '🧠',
       },
     });
+    opts.getStore = vi.fn().mockReturnValue({
+      get: vi.fn().mockImplementation((key: string) => {
+        if (key === 'harnessDefaults') {
+          return { codex: { model: '', favorites: [], flags: '--yolo' } };
+        }
+        return false;
+      }),
+    }) as never;
     mockPtySpawn.mockReturnValue({ pid: 456, onData: vi.fn(), onExit: vi.fn() });
     registerTerminalIpc(opts);
 
@@ -510,6 +530,14 @@ describe('terminalIpc — error-path: handler returns', () => {
         icon: 'π',
       },
     });
+    opts.getStore = vi.fn().mockReturnValue({
+      get: vi.fn().mockImplementation((key: string) => {
+        if (key === 'harnessDefaults') {
+          return { pi: { model: '', favorites: [], flags: '' } };
+        }
+        return false;
+      }),
+    }) as never;
     mockPtySpawn.mockReturnValue({ pid: 457, onData: vi.fn(), onExit: vi.fn() });
     registerTerminalIpc(opts);
 

@@ -25,6 +25,8 @@ export const READ_DIRECTORY = 'read-directory';
 export const FILE_LIST_DIRECTORY = 'file-list-directory';
 export const GET_HARNESS_OPTIONS = 'get-harness-options';
 export const GET_HARNESS_MODELS = 'get-harness-models';
+export const GET_HARNESS_DEFAULTS = 'get-harness-defaults';
+export const SET_HARNESS_DEFAULTS = 'set-harness-defaults';
 
 /* ============================================================================
  * Terminal
@@ -199,6 +201,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   FILE_LIST_DIRECTORY,
   GET_HARNESS_OPTIONS,
   GET_HARNESS_MODELS,
+  GET_HARNESS_DEFAULTS,
+  SET_HARNESS_DEFAULTS,
   // Terminal
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,

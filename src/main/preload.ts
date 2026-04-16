@@ -5,6 +5,7 @@ import type { FileListDirectoryRequest } from '../shared/types/fileExplorer';
 import type { FileReadRequest, FileWriteRequest, FileChangedEvent, FileWatchRequest } from '../shared/types/editor';
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest } from '../shared/types/fileOperations';
 import type { ExplorerTreeChangedEvent } from '../shared/types/fileExplorer';
+import type { HarnessDefaultsMap } from '../shared/types/store';
 import type { VcsProvider } from '../shared/types/vcs';
 import type { GitStatusResult } from '../shared/types/git';
 import {
@@ -63,6 +64,8 @@ import {
   RESET_ZOOM_WINDOW,
   GET_HARNESS_OPTIONS,
   GET_HARNESS_MODELS,
+  GET_HARNESS_DEFAULTS,
+  SET_HARNESS_DEFAULTS,
   GIT_START_POLLING,
   GIT_STOP_POLLING,
   GENERATE_COMMIT_MESSAGE,
@@ -230,6 +233,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Harness
   getHarnessOptions: () => ipcRenderer.invoke(GET_HARNESS_OPTIONS),
   getHarnessModels: (harness: string) => ipcRenderer.invoke(GET_HARNESS_MODELS, harness),
+  getHarnessDefaults: () => ipcRenderer.invoke(GET_HARNESS_DEFAULTS),
+  setHarnessDefaults: (defaults: HarnessDefaultsMap) =>
+    ipcRenderer.invoke(SET_HARNESS_DEFAULTS, defaults),
 
   // Git operations - managed by GitService in main process
   gitStartPolling: (workspacePath: string) => ipcRenderer.invoke(GIT_START_POLLING, workspacePath),

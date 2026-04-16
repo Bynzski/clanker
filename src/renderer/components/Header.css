@@ -273,3 +273,179 @@
   background: var(--border-color);
   color: var(--text-primary);
 }
+
+/* Harness Defaults Section */
+.settings-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding-bottom: 4px;
+}
+
+.harness-defaults-row {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.harness-defaults-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: var(--bg-tertiary);
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-secondary);
+  transition: background var(--transition);
+}
+
+.harness-defaults-header:hover {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+.harness-defaults-header.expanded {
+  background: var(--border-color);
+}
+
+.harness-defaults-label {
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.harness-defaults-current {
+  flex: 1;
+  text-align: left;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+
+.harness-defaults-current.unresolved {
+  color: var(--accent-warning, #f59e0b);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.harness-defaults-current .unresolved-icon {
+  color: var(--accent-warning, #f59e0b);
+  flex-shrink: 0;
+}
+
+.harness-defaults-chevron {
+  flex-shrink: 0;
+  transition: transform var(--transition);
+}
+
+.harness-defaults-header.expanded .harness-defaults-chevron {
+  transform: rotate(90deg);
+}
+
+.harness-defaults-panel {
+  padding: 8px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.harness-defaults-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 2px 0;
+}
+
+.harness-defaults-option:hover {
+  color: var(--text-primary);
+}
+
+.harness-defaults-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.harness-defaults-field-label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.harness-defaults-favorites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.harness-defaults-favorite-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.harness-defaults-favorite-tag.unresolved {
+  color: var(--accent-warning, #f59e0b);
+  border-color: var(--accent-warning, #f59e0b);
+  opacity: 0.75;
+}
+
+.harness-defaults-favorite-tag .unresolved-icon {
+  color: var(--accent-warning, #f59e0b);
+  flex-shrink: 0;
+}
+
+.harness-defaults-remove-fav {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  padding: 0 1px;
+  line-height: 1;
+  margin-left: 2px;
+}
+
+.harness-defaults-remove-fav:hover {
+  color: var(--accent-error);
+}
+
+.harness-defaults-add-fav {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  background: none;
+  border: 1px dashed var(--border-color);
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.harness-defaults-add-fav:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--text-secondary);
+  color: var(--text-secondary);
+}

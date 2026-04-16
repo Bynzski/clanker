@@ -8,6 +8,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { spawn } from 'child_process';
 import Store from 'electron-store';
+import { type StoreSchema } from '../../shared/types/store';
 import {
   resolveExistingDirectory,
 } from '../security';
@@ -24,14 +25,6 @@ import type { GitStatusEntry } from '../gitService';
 import {
   GENERATE_COMMIT_MESSAGE,
 } from '../../shared/ipcChannels';
-
-interface StoreSchema {
-  lastWorkspace: string;
-  showFastfetch: boolean;
-  aiCommitEnabled: boolean;
-  aiCommitProvider: AiCommitProvider;
-  aiCommitModel: string;
-}
 
 interface RegisterAiCommitIpcDeps {
   getStore: () => Store<StoreSchema>;

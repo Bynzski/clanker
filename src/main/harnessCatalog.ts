@@ -20,14 +20,14 @@ export const HARNESS_OPTIONS: Record<string, HarnessConfig> = {
   codex: {
     name: 'Codex',
     command: 'codex',
-    args: ['--yolo'],
+    args: [],
     icon: '🧠',
     modelArg: '-m',
   },
   opencode: {
     name: 'OpenCode',
     command: 'opencode',
-    args: ['--pure'],
+    args: [],
     icon: '⚡',
     modelArg: '-m',
     env: {

@@ -7,6 +7,7 @@
 import { ipcMain, BrowserWindow, clipboard } from 'electron';
 import * as pty from 'node-pty';
 import Store from 'electron-store';
+import { type StoreSchema } from '../../shared/types/store';
 import { buildHarnessSpawnArgs, ensureHarnessWrapperScript } from '../harnessLaunch';
 import {
   SPAWN_TERMINAL,
@@ -37,14 +38,6 @@ interface Terminal {
 }
 
 export type { Terminal };
-
-interface StoreSchema {
-  lastWorkspace: string;
-  showFastfetch: boolean;
-  aiCommitEnabled: boolean;
-  aiCommitProvider: string;
-  aiCommitModel: string;
-}
 
 interface RegisterTerminalIpcDeps {
   getTerminals: () => Map<string, Terminal>;
@@ -99,7 +92,11 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const harnessEnv = harness && getHarnessOptions()[harness]?.env ? getHarnessOptions()[harness].env : {};
 
     const harnessConfig = harness ? getHarnessOptions()[harness] : undefined;
-    const harnessArgs = harnessConfig ? buildHarnessSpawnArgs(harnessConfig, model) : [];
+    const harnessDefaults = getStore().get('harnessDefaults');
+    const userFlags = harness ? harnessDefaults[harness]?.flags : undefined;
+    const harnessArgs = harnessConfig
+      ? buildHarnessSpawnArgs(harnessConfig, model, userFlags)
+      : [];
     const harnessCmd = harnessConfig
       ? {
         spawnCmd: ensureHarnessWrapperScriptPath(),
@@ -135,15 +132,14 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
 
     if (harness && getHarnessOptions()[harness]) {
       const config = getHarnessOptions()[harness];
-      const launchArgs = buildHarnessSpawnArgs(config, model);
       console.info('[clanker-grid] harness launch', {
         harness,
         command: config.command,
-        args: launchArgs,
+        args: harnessArgs,
         model: model ?? null,
       });
       if (mainWindow) {
-        const visibleLaunch = `[clanker-grid] ${config.command} ${launchArgs.join(' ')}\r\n`;
+        const visibleLaunch = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}\r\n`;
         mainWindow.webContents.send(TERMINAL_DATA, { id, data: visibleLaunch });
       }
     }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star } from 'lucide-react';
+import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle } from 'lucide-react';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
 import type { ModelOption } from '../types/shared';
 import './WorkspaceGate.css';
@@ -17,7 +17,6 @@ interface ContentProps {
 }
 
 const STORAGE_KEY = 'clanker-grid-last-path';
-const FAVORITES_STORAGE_KEY = 'clanker-grid-model-favorites';
 
 export const TERMINAL_PRESETS = [
   { count: 1, label: '1', description: 'Single terminal' },
@@ -35,49 +34,70 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   const [selectedHarness, setSelectedHarness] = useState('codex'); // Default to codex
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
-  const [selectedModel, setSelectedModel] = useState('');
-  const [isModelLoading, setIsModelLoading] = useState(false);
-  const [showModelMenu, setShowModelMenu] = useState(false);
-  const [favoritesMap, setFavoritesMap] = useState<Record<string, string[]>>({});
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [allModels, setAllModels] = useState<Record<string, ModelOption[]>>({});
   const [modelsLoaded, setModelsLoaded] = useState(false);
-  
-  const inputRef = useRef<HTMLInputElement>(null);
-  const modelMenuRef = useRef<HTMLDivElement>(null);
+  // Compact picker state
+  const [showFavoritesPicker, setShowFavoritesPicker] = useState(false);
+  const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
+  const [discoverySearch, setDiscoverySearch] = useState('');
+  const [defaultModel, setDefaultModel] = useState<string>('');
 
-  // Load favorites from localStorage on mount
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Load harnessDefaults from electron-store on mount
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(FAVORITES_STORAGE_KEY);
-      if (stored) {
-        setFavoritesMap(JSON.parse(stored));
+    const loadDefaults = async () => {
+      try {
+        const defaults = await window.electronAPI.getHarnessDefaults();
+        if (defaults[selectedHarness]) {
+          setFavorites(defaults[selectedHarness].favorites);
+          setDefaultModel(defaults[selectedHarness].model || '');
+        }
+      } catch {
+        // ignore load errors — defaults handle empty state
       }
-    } catch {
-      // ignore parse errors
-    }
+    };
+    void loadDefaults();
   }, []);
 
-  const toggleFavorite = useCallback((harnessId: string, modelId: string) => {
-    setFavoritesMap((prev) => {
-      const updated = { ...prev };
-      const currentFavorites = [...(updated[harnessId] || [])];
+  const toggleFavorite = useCallback(
+    async (harnessId: string, modelId: string) => {
+      const updatedDefaults = await window.electronAPI.getHarnessDefaults();
+      const currentFavorites = [...(updatedDefaults[harnessId]?.favorites || [])];
       const index = currentFavorites.indexOf(modelId);
       if (index === -1) {
         currentFavorites.push(modelId);
       } else {
         currentFavorites.splice(index, 1);
       }
-      if (currentFavorites.length === 0) {
-        delete updated[harnessId];
-      } else {
-        updated[harnessId] = currentFavorites;
-      }
-      localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
+      const updated = {
+        ...updatedDefaults,
+        [harnessId]: {
+          ...updatedDefaults[harnessId],
+          favorites: currentFavorites,
+        },
+      };
+      await window.electronAPI.setHarnessDefaults(updated);
+      setFavorites(currentFavorites);
+    },
+    []
+  );
 
-  const favorites = selectedHarness ? (favoritesMap[selectedHarness] || []) : [];
+  // Keep favorites in sync when selected harness changes
+  useEffect(() => {
+    const loadFavorites = async () => {
+      try {
+        const defaults = await window.electronAPI.getHarnessDefaults();
+        setFavorites(defaults[selectedHarness]?.favorites || []);
+        setDefaultModel(defaults[selectedHarness]?.model || '');
+      } catch {
+        setFavorites([]);
+        setDefaultModel('');
+      }
+    };
+    void loadFavorites();
+  }, [selectedHarness]);
 
   // Load last used path
   useEffect(() => {
@@ -115,7 +135,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
 
         setAvailableHarnessIds(availableIds);
         setSelectedHarness((current) => availableIds.includes(current) ? current : (availableIds.find((id) => id !== '') ?? ''));
-        setSelectedModel('');
 
         // Pre-load models for all available harnesses
         const harnessIds = availableIds.filter((id) => id !== '');
@@ -141,14 +160,12 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
           const defaultHarness = availableIds.includes('codex') ? 'codex' : availableIds.find((id) => id !== '') || '';
           if (defaultHarness && modelsMap[defaultHarness]) {
             setModelOptions(modelsMap[defaultHarness]);
-            setSelectedModel(modelsMap[defaultHarness][0]?.id ?? '');
           }
         }
       } catch {
         if (!cancelled) {
           setAvailableHarnessIds(['']);
           setSelectedHarness('');
-          setSelectedModel('');
         }
       }
     };
@@ -164,46 +181,44 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   useEffect(() => {
     if (!selectedHarness) {
       setModelOptions([]);
-      setSelectedModel('');
-      setShowModelMenu(false);
+      setShowFavoritesPicker(false);
+      setShowDiscoveryModal(false);
       return;
     }
 
     const harnessModels = allModels[selectedHarness];
     if (harnessModels) {
       setModelOptions(harnessModels);
-      setSelectedModel((current) => {
-        if (harnessModels.some((model) => model.id === current)) {
-          return current;
-        }
-        return harnessModels[0]?.id ?? '';
-      });
-      setIsModelLoading(false);
     } else if (modelsLoaded) {
       // Models were loaded but this harness has none
       setModelOptions([]);
-      setSelectedModel('');
-      setIsModelLoading(false);
-    } else {
-      // Models still loading
-      setIsModelLoading(true);
     }
   }, [selectedHarness, allModels, modelsLoaded]);
 
+  // Close favorites picker on outside click
   useEffect(() => {
-    if (!showModelMenu) {
-      return;
-    }
-
+    if (!showFavoritesPicker) return;
     const handlePointerDown = (event: MouseEvent) => {
-      if (modelMenuRef.current && !modelMenuRef.current.contains(event.target as Node)) {
-        setShowModelMenu(false);
+      const picker = document.querySelector('.model-picker');
+      if (picker && !picker.contains(event.target as Node)) {
+        setShowFavoritesPicker(false);
       }
     };
-
     window.addEventListener('mousedown', handlePointerDown);
     return () => window.removeEventListener('mousedown', handlePointerDown);
-  }, [showModelMenu]);
+  }, [showFavoritesPicker]);
+
+  // Close discovery modal on Escape
+  useEffect(() => {
+    if (!showDiscoveryModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowDiscoveryModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showDiscoveryModal]);
 
   // Fetch directory suggestions
   const fetchSuggestions = useCallback(async (path: string) => {
@@ -276,9 +291,9 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
 
   const handleHarnessChange = (harness: string) => {
     setSelectedHarness(harness);
-    setSelectedModel('');
     setModelOptions([]);
-    setShowModelMenu(false);
+    setShowFavoritesPicker(false);
+    setShowDiscoveryModal(false);
   };
 
   const handleSubmit = () => {
@@ -293,7 +308,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
 
     localStorage.setItem(STORAGE_KEY, finalPath);
     const preset = TERMINAL_PRESETS[selectedPreset];
-    const launchModel = selectedModel || modelOptions[0]?.id || undefined;
+    // Use defaultModel (from store) as the launch model, falling back to first available
+    const launchModel = defaultModel || modelOptions[0]?.id || undefined;
     onSubmit({
       path: finalPath,
       terminalCount: preset.count,
@@ -365,26 +381,33 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   };
 
   const showSuggestions = isFocused && suggestions.length > 0;
-  const selectedModelLabel = selectedModel
-    ? (modelOptions.find((model) => model.id === selectedModel)?.label ?? selectedModel)
-    : 'Default model';
   const showModelSelector = selectedHarness !== '';
-  const modelSelectorPlaceholder = selectedHarness === 'pi' && modelOptions.length === 0
-    ? 'No models available'
-    : selectedModelLabel;
+
+  // Determine if the current default model is unresolved
+  const isModelUnresolved = useCallback((modelId: string): boolean => {
+    if (!modelId) return false;
+    return !modelOptions.some((m) => m.id === modelId);
+  }, [modelOptions]);
 
   // Sort models: favorites first, then alphabetically
   const sortedModelOptions = useMemo(() => {
     if (!modelOptions.length) return [];
-    const favoritesForHarness = selectedHarness ? (favoritesMap[selectedHarness] || []) : [];
     return [...modelOptions].sort((a, b) => {
-      const aFav = favoritesForHarness.includes(a.id);
-      const bFav = favoritesForHarness.includes(b.id);
+      const aFav = favorites.includes(a.id);
+      const bFav = favorites.includes(b.id);
       if (aFav && !bFav) return -1;
       if (!aFav && bFav) return 1;
       return a.label.localeCompare(b.label);
     });
-  }, [modelOptions, selectedHarness, favoritesMap]);
+  }, [modelOptions, favorites]);
+
+  // Filtered discovery models
+  const discoveryModels = useMemo(() => {
+    const query = discoverySearch.toLowerCase();
+    return sortedModelOptions.filter((m) =>
+      m.label.toLowerCase().includes(query) || m.id.toLowerCase().includes(query)
+    );
+  }, [sortedModelOptions, discoverySearch]);
 
   return (
     <div className="gate-content">
@@ -525,82 +548,155 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       </div>
 
       {showModelSelector && (
-        <div className="model-selector" ref={modelMenuRef}>
-          <div className="model-selector-row">
-            <span className="model-selector-label">Model</span>
-            <button
-              type="button"
-              className={`model-selector-button ${showModelMenu ? 'open' : ''}`}
-              onClick={() => setShowModelMenu((value) => !value)}
-              disabled={isModelLoading}
-              title="Choose a model"
-            >
-              <span className="model-selector-value">
-                {isModelLoading ? 'Loading models...' : modelSelectorPlaceholder}
-              </span>
-              <ChevronDown size={14} strokeWidth={2.5} className="model-selector-caret" />
-            </button>
-          </div>
+        <div className="model-picker">
+          {/* Compact model pill */}
+          <button
+            type="button"
+            className="model-pill"
+            onClick={() => {
+              setShowFavoritesPicker(true);
+              setShowDiscoveryModal(false);
+            }}
+            title="Change model"
+          >
+            <span className={`model-pill-label ${isModelUnresolved(defaultModel) ? 'unresolved' : ''}`}>
+              {defaultModel
+                ? (modelOptions.find((m) => m.id === defaultModel)?.label ?? defaultModel)
+                : 'Default model'}
+            </span>
+            {isModelUnresolved(defaultModel) && (
+              <AlertTriangle size={12} className="model-pill-warning" />
+            )}
+            <ChevronDown size={12} strokeWidth={2.5} className="model-pill-caret" />
+          </button>
 
-          {showModelMenu && sortedModelOptions.length > 0 && (
-            <div className="model-menu" role="listbox" aria-label="Available models">
+          {/* Favorites picker popover */}
+          {showFavoritesPicker && (
+            <div
+              className="favorites-picker"
+              role="listbox"
+              aria-label="Favorite models"
+            >
+              {favorites.length === 0 ? (
+                <div className="favorites-empty">
+                  <span className="favorites-empty-text">
+                    {defaultModel ? modelOptions.find((m) => m.id === defaultModel)?.label ?? 'Default model' : 'No default set'}
+                  </span>
+                </div>
+              ) : (
+                favorites.map((favId) => {
+                  const model = modelOptions.find((m) => m.id === favId);
+                  const isUnresolved = isModelUnresolved(favId);
+                  return (
+                    <div
+                      key={favId}
+                      className={`favorites-item ${defaultModel === favId ? 'selected' : ''} ${isUnresolved ? 'unresolved' : ''}`}
+                      onClick={() => {
+                        setDefaultModel(favId);
+                        setShowFavoritesPicker(false);
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="favorites-star-btn favorited"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void toggleFavorite(selectedHarness, favId);
+                        }}
+                        title="Remove from favorites"
+                        aria-label="Remove from favorites"
+                      >
+                        <Star size={12} fill="currentColor" />
+                      </button>
+                      <span className="favorites-model-label">
+                        {model?.label ?? favId}
+                        {isUnresolved && (
+                          <AlertTriangle size={10} className="favorites-unresolved-icon" />
+                        )}
+                      </span>
+                      {defaultModel === favId && (
+                        <Check size={12} strokeWidth={2.5} className="favorites-check" />
+                      )}
+                    </div>
+                  );
+                })
+              )}
               <button
                 type="button"
-                className={`model-menu-item ${selectedModel === '' ? 'selected' : ''}`}
+                className="favorites-browse-link"
                 onClick={() => {
-                  setSelectedModel('');
-                  setShowModelMenu(false);
+                  setShowFavoritesPicker(false);
+                  setShowDiscoveryModal(true);
+                  setDiscoverySearch('');
                 }}
               >
-                <span className="model-menu-text">Default</span>
+                Browse all models
               </button>
-
-              {sortedModelOptions.map((model) => {
-                const isFavorite = favorites.includes(model.id);
-                const isSelected = selectedModel === model.id;
-                const handleSelectModel = () => {
-                  setSelectedModel(model.id);
-                  setShowModelMenu(false);
-                };
-                return (
-                  <div
-                    key={model.id}
-                    role="option"
-                    aria-selected={isSelected}
-                    tabIndex={0}
-                    className={`model-menu-item ${isSelected ? 'selected' : ''}`}
-                    onClick={handleSelectModel}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        handleSelectModel();
-                      }
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className={`model-favorite-btn ${isFavorite ? 'favorited' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleFavorite(selectedHarness, model.id);
-                      }}
-                      title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                      aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                    >
-                      <Star size={12} fill={isFavorite ? 'currentColor' : 'none'} />
-                    </button>
-                    <span className="model-menu-text">{model.label}</span>
-                    {isSelected && (
-                      <Check size={14} strokeWidth={2.5} className="model-menu-check" />
-                    )}
-                  </div>
-                );
-              })}
             </div>
           )}
-          {showModelMenu && modelOptions.length === 0 && (
-            <div className="model-menu-empty">
-              No models available for this harness on this system.
+
+          {/* Discovery modal */}
+          {showDiscoveryModal && (
+            <div className="discovery-modal">
+              <div className="discovery-header">
+                <span className="discovery-title">All Models</span>
+                <button
+                  type="button"
+                  className="discovery-close"
+                  onClick={() => setShowDiscoveryModal(false)}
+                  aria-label="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="discovery-search-wrap">
+                <Search size={14} className="discovery-search-icon" />
+                <input
+                  type="text"
+                  className="discovery-search-input"
+                  placeholder="Search models..."
+                  value={discoverySearch}
+                  onChange={(e) => setDiscoverySearch(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="discovery-list">
+                {discoveryModels.length === 0 ? (
+                  <div className="discovery-empty">No models found</div>
+                ) : (
+                  discoveryModels.map((model) => {
+                    const isFav = favorites.includes(model.id);
+                    const isSelected = defaultModel === model.id;
+                    return (
+                      <div
+                        key={model.id}
+                        className={`discovery-item ${isSelected ? 'selected' : ''}`}
+                        onClick={() => {
+                          setDefaultModel(model.id);
+                          setShowDiscoveryModal(false);
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className={`discovery-star-btn ${isFav ? 'favorited' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void toggleFavorite(selectedHarness, model.id);
+                          }}
+                          title={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                          aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                        >
+                          <Star size={12} fill={isFav ? 'currentColor' : 'none'} />
+                        </button>
+                        <span className="discovery-model-label">{model.label}</span>
+                        {isSelected && (
+                          <Check size={12} strokeWidth={2.5} className="discovery-check" />
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           )}
         </div>

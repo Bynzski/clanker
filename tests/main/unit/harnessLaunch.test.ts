@@ -15,7 +15,7 @@ import {
 const opencodeConfig: HarnessConfig = {
   name: 'OpenCode',
   command: 'opencode',
-  args: ['--pure'],
+  args: [],
   icon: '⚡',
   modelArg: '-m',
 };
@@ -23,7 +23,7 @@ const opencodeConfig: HarnessConfig = {
 const codexConfig: HarnessConfig = {
   name: 'Codex',
   command: 'codex',
-  args: ['--yolo'],
+  args: [],
   icon: '🧠',
   modelArg: '-m',
 };
@@ -39,14 +39,57 @@ const piConfig: HarnessConfig = {
 test('buildHarnessSpawnArgs keeps harness args and prepends the selected model flag', () => {
   assert.deepEqual(
     buildHarnessSpawnArgs(opencodeConfig, 'opencode/zen/big-pickle'),
-    ['-m', 'opencode/zen/big-pickle', '--pure']
+    ['-m', 'opencode/zen/big-pickle']
   );
 });
 
 test('buildHarnessSpawnArgs preserves harness-only launches', () => {
   assert.deepEqual(
     buildHarnessSpawnArgs(codexConfig),
+    []
+  );
+});
+
+// -------------------------------------------------------------------------
+// userFlags tests — flags come from electron-store (Slice 3)
+// -------------------------------------------------------------------------
+
+test('buildHarnessSpawnArgs with model + userFlags: model prepended, flags appended', () => {
+  assert.deepEqual(
+    buildHarnessSpawnArgs(codexConfig, 'gpt-5.4-mini', '--yolo'),
+    ['-m', 'gpt-5.4-mini', '--yolo']
+  );
+});
+
+test('buildHarnessSpawnArgs with userFlags only (no model): flags appended', () => {
+  assert.deepEqual(
+    buildHarnessSpawnArgs(codexConfig, undefined, '--yolo'),
     ['--yolo']
+  );
+});
+
+test('buildHarnessSpawnArgs with empty userFlags string: same as no flags', () => {
+  assert.deepEqual(
+    buildHarnessSpawnArgs(codexConfig, 'gpt-5.4-mini', ''),
+    ['-m', 'gpt-5.4-mini']
+  );
+  assert.deepEqual(
+    buildHarnessSpawnArgs(codexConfig, undefined, ''),
+    []
+  );
+});
+
+test('buildHarnessSpawnArgs with multi-word userFlags: split on whitespace', () => {
+  assert.deepEqual(
+    buildHarnessSpawnArgs(codexConfig, 'gpt-5.4-mini', '--yolo --verbose'),
+    ['-m', 'gpt-5.4-mini', '--yolo', '--verbose']
+  );
+});
+
+test('buildHarnessSpawnArgs with opencode userFlags', () => {
+  assert.deepEqual(
+    buildHarnessSpawnArgs(opencodeConfig, 'opencode/zen/big-pickle', '--pure'),
+    ['-m', 'opencode/zen/big-pickle', '--pure']
   );
 });
 

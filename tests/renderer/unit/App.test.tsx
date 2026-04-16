@@ -6,6 +6,20 @@ import App from '../../../src/renderer/App';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
+// Mock localStorage for migrateLegacyFavorites in App.tsx
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => { store[key] = value; },
+    removeItem: (key: string) => { delete store[key]; },
+    clear: () => { store = {}; },
+    get length() { return Object.keys(store).length; },
+    key: (i: number) => Object.keys(store)[i] ?? null,
+  };
+})();
+Object.defineProperty(window, 'localStorage', { value: localStorageMock });
+
 // Mock all child components to isolate App logic
 vi.mock('../../../src/renderer/components/Header', () => ({
   default: () => <div data-testid="header">Header</div>,
@@ -108,6 +122,13 @@ describe('App', () => {
       zoomInWindow: mockZoomInWindow,
       zoomOutWindow: mockZoomOutWindow,
       resetZoomWindow: mockResetZoomWindow,
+      getHarnessDefaults: vi.fn().mockResolvedValue({
+        codex: { model: '', favorites: [], flags: '' },
+        opencode: { model: '', favorites: [], flags: '' },
+        pi: { model: '', favorites: [], flags: '' },
+        claude: { model: '', favorites: [], flags: '' },
+      }),
+      setHarnessDefaults: vi.fn().mockResolvedValue(undefined),
       onGitStatusUpdate: vi.fn(),
       gitStartPolling: vi.fn(),
       gitStopPolling: vi.fn(),

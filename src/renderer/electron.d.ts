@@ -35,6 +35,7 @@ import type {
   GlobalCredentialStatusResult,
 } from '../../shared/types/credentials';
 import type { AiCommitSettings, ModelOption } from '../types/shared';
+import type { HarnessDefaultsMap } from '../../shared/types/store';
 
 export type { VcsProvider, ProviderContext, PullRequestContext, DeepLink, DeepLinkType };
 export type {
@@ -121,6 +122,8 @@ interface ElectronAPI {
 
   getHarnessOptions: () => Promise<Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>>;
   getHarnessModels: (harness: string) => Promise<ModelOption[]>;
+  getHarnessDefaults: () => Promise<HarnessDefaultsMap>;
+  setHarnessDefaults: (defaults: HarnessDefaultsMap) => Promise<void>;
 
   onFitAllPanes: (callback: () => void) => () => void;
 
