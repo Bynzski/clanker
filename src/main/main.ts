@@ -42,7 +42,7 @@ import { createMainWindow, getPreloadPath } from './windowManager';
 import { registerSettingsIpc } from './ipc/settingsIpc';
 import { registerWindowIpc } from './ipc/windowIpc';
 import { registerAiCommitIpc } from './ipc/aiCommitIpc';
-import { registerTerminalIpc, setAppShuttingDown, type Terminal } from './ipc/terminalIpc';
+import { registerTerminalIpc, setAppShuttingDown, getAppShuttingDown, type Terminal } from './ipc/terminalIpc';
 import { registerBrowserIpc } from './ipc/browserIpc';
 import { registerGitIpc } from './ipc/gitIpc';
 import { registerCredentialIpc } from './ipc/credentialIpc';
@@ -51,6 +51,7 @@ import { FileWatcherService } from './fileWatcher';
 import { ExplorerWatcherService } from './explorerWatcher';
 import { registerVcsIpc } from './ipc/vcsIpc';
 import { registerAnnotationIpc } from './annotation/annotationIpc';
+import { registerSessionIpc } from './ipc/sessionIpc';
 
 
 
@@ -221,6 +222,15 @@ app.whenReady().then(() => {
 
   registerVcsIpc({
     getGitService: () => gitService,
+  });
+
+  registerSessionIpc({
+    getTerminals: () => terminals,
+    getMainWindow: () => mainWindow,
+    getSafeWorkspacePath: (workingDir: string) => getSafeWorkspacePath(workingDir, store),
+    getIsShuttingDown: getAppShuttingDown,
+    getStore: () => store,
+    getHarnessOptions: () => HARNESS_OPTIONS,
   });
 
   // Register annotation IPC handlers

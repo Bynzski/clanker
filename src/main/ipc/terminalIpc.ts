@@ -5,7 +5,7 @@
  */
 
 import { ipcMain, BrowserWindow, clipboard } from 'electron';
-import * as pty from 'node-pty';
+import type * as pty from 'node-pty';
 import Store from 'electron-store';
 import { type StoreSchema } from '../../shared/types/store';
 import { buildHarnessSpawnArgs, ensureHarnessWrapperScript } from '../harnessLaunch';
@@ -22,6 +22,7 @@ import {
   TERMINAL_READY,
   WRITE_CLIPBOARD,
 } from '../../shared/ipcChannels';
+import { spawnPtyProcess } from './ptySpawn';
 
 interface Terminal {
   id: string;
@@ -53,6 +54,10 @@ let appShuttingDown = false;
 
 export function setAppShuttingDown(shuttingDown: boolean): void {
   appShuttingDown = shuttingDown;
+}
+
+export function getAppShuttingDown(): boolean {
+  return appShuttingDown;
 }
 
 export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
@@ -104,32 +109,21 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       }
       : { spawnCmd: userShell, spawnArgs: shellArgs };
 
-    const ptyProcess = pty.spawn(
-      harnessCmd.spawnCmd,
-      harnessCmd.spawnArgs,
-      {
-        name: 'xterm-256color',
-        cwd,
-        env: {
-          ...process.env as { [key: string]: string },
-          ...harnessEnv,
-          ...(harnessConfig ? { CLANKER_GRID_FALLBACK_SHELL: userShell } : {}),
-          TERM: 'xterm-256color',
-          COLORTERM: 'truecolor',
-          TERM_PROGRAM: 'clanker-grid',
-          FORCE_COLOR: '1',
-          ...(store.get('showFastfetch') ? {} : { CLANKER_GRID: '1' }),
-        },
-        // Phase 1 fix: disable flow control to remove it as a startup variable.
-        // The congestion-timer approach was found to stall shell startup (fish DA1 query timeout).
-        // Flow control can be re-enabled in Phase 2 with a proper readiness handshake.
-        handleFlowControl: false,
-      }
-    );
+    const env: { [key: string]: string } = {
+      ...process.env as { [key: string]: string },
+      ...harnessEnv,
+      ...(harnessConfig ? { CLANKER_GRID_FALLBACK_SHELL: userShell } : {}),
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      TERM_PROGRAM: 'clanker-grid',
+      FORCE_COLOR: '1',
+      // Phase 1 fix: disable flow control to remove it as a startup variable.
+      // The congestion-timer approach was found to stall shell startup (fish DA1 query timeout).
+      // Flow control can be re-enabled in Phase 2 with a proper readiness handshake.
+      ...(store.get('showFastfetch') ? {} : { CLANKER_GRID: '1' }),
+    };
 
-    const terminal: Terminal = { id, pid: ptyProcess.pid, pty: ptyProcess, startupBuffer: [], startupBufferReady: false };
-    terminals.set(id, terminal);
-
+    let launchLabel: string | undefined;
     if (harness && getHarnessOptions()[harness]) {
       const config = getHarnessOptions()[harness];
       console.info('[clanker-grid] harness launch', {
@@ -138,46 +132,20 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         args: harnessArgs,
         model: model ?? null,
       });
-      if (mainWindow) {
-        const visibleLaunch = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}\r\n`;
-        mainWindow.webContents.send(TERMINAL_DATA, { id, data: visibleLaunch });
-      }
+      launchLabel = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}`;
     }
 
-    ptyProcess.onData((data: string) => {
-      if (appShuttingDown) return;
-
-      const terminal = terminals.get(id);
-      if (!terminal) return;
-
-      // During startup window (before renderer confirms xterm is ready),
-      // buffer the data. This protects the critical DA1 query/response window.
-      if (!terminal.startupBufferReady) {
-        // Bounded buffer: max 16 KB or 100 chunks, whichever comes first.
-        // This prevents unbounded growth if renderer never signals ready.
-        const totalSize = terminal.startupBuffer.reduce((acc, chunk) => acc + chunk.length, 0);
-        if (totalSize < 16 * 1024 && terminal.startupBuffer.length < 100) {
-          terminal.startupBuffer.push(data);
-          return;
-        }
-        // Buffer full — start sending anyway to avoid data loss.
-        // This is a safety fallback; normal case should flush before hitting this limit.
-      }
-
-      if (mainWindow) {
-        mainWindow.webContents.send(TERMINAL_DATA, { id, data });
-      }
+    return spawnPtyProcess({
+      id,
+      spawnCmd: harnessCmd.spawnCmd,
+      spawnArgs: harnessCmd.spawnArgs,
+      cwd,
+      env,
+      terminals,
+      mainWindow,
+      getIsShuttingDown: () => appShuttingDown,
+      launchLabel,
     });
-
-    ptyProcess.onExit(({ exitCode }) => {
-      if (appShuttingDown) return;
-      terminals.delete(id);
-      if (mainWindow) {
-        mainWindow.webContents.send(TERMINAL_EXIT, { id, exitCode });
-      }
-    });
-
-    return { id, pid: ptyProcess.pid };
   });
 
   /**

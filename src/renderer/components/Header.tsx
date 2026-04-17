@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
-import { Plus, Globe, LayoutGrid, Settings, ChevronDown, PanelLeft, PanelLeftClose, ChevronRight, AlertTriangle, Star } from 'lucide-react';
+import { Plus, Globe, LayoutGrid, Settings, ChevronDown, PanelLeft, PanelLeftClose, ChevronRight, AlertTriangle, Star, MessageSquare } from 'lucide-react';
 import { AI_COMMIT_PROVIDER_IDS, HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
 import { harnessFlagsFromToggle, harnessToggleFromFlags } from '../lib/harnessFlags';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { KNOWN_HARNESS_IDS } from '../../shared/harnessIds';
 import type { ModelOption } from '../types/shared';
+import type { HarnessSession } from '../../shared/types/session';
 import GitButton from './GitButton';
 import CredentialSettings from './settings/CredentialSettings';
+import ChatHistoryDropdown from './ChatHistoryDropdown';
 import './Header.css';
 
 export default function Header() {
@@ -44,6 +46,10 @@ export default function Header() {
   const [harnessModelCache, setHarnessModelCache] = useState<Record<string, ModelOption[]>>({});
   // Per-harness model loading: harnessId -> boolean
   const [harnessModelLoading, setHarnessModelLoading] = useState<Record<string, boolean>>({});
+  const [showChatHistory, setShowChatHistory] = useState(false);
+  const [chatSessions, setChatSessions] = useState<HarnessSession[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const chatDropdownRef = useRef<HTMLDivElement>(null);
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
 
   // Hide the native browser whenever the settings dropdown is open.
@@ -89,6 +95,30 @@ export default function Header() {
       document.removeEventListener('keydown', handleEscape);
     };
   }, [showSettings]);
+
+  useEffect(() => {
+    if (!showChatHistory) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (
+        chatDropdownRef.current &&
+        !chatDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowChatHistory(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowChatHistory(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showChatHistory]);
 
   useEffect(() => {
     let cancelled = false;
@@ -379,6 +409,24 @@ export default function Header() {
     }
   };
 
+  const handleToggleChatHistory = async () => {
+    if (showChatHistory) {
+      setShowChatHistory(false);
+      return;
+    }
+    setShowChatHistory(true);
+    setIsLoadingSessions(true);
+    try {
+      const sessions = await window.electronAPI.discoverSessions(workspacePath || '/');
+      setChatSessions(sessions);
+    } catch (err) {
+      console.error('Failed to discover sessions:', err);
+      setChatSessions([]);
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  };
+
   const aiCommitProviderOptions = HARNESS_OPTIONS
     .filter((option) => option.id !== '' && AI_COMMIT_PROVIDER_IDS.includes(option.id as typeof AI_COMMIT_PROVIDER_IDS[number]))
     .filter((option) => availableHarnessIds.includes(option.id));
@@ -435,6 +483,25 @@ export default function Header() {
         >
           <LayoutGrid size={15} strokeWidth={2} />
         </button>
+        <div className="settings-dropdown-container" ref={chatDropdownRef}>
+          <button
+            className={`header-btn header-btn-icon ${showChatHistory ? 'active' : ''}`}
+            type="button"
+            onClick={() => void handleToggleChatHistory()}
+            title="Chat history"
+            aria-label="Chat history"
+          >
+            <MessageSquare size={15} strokeWidth={2} />
+          </button>
+          {showChatHistory && (
+            <ChatHistoryDropdown
+              sessions={chatSessions}
+              isLoading={isLoadingSessions}
+              workspacePath={workspacePath || '/'}
+              onClose={() => setShowChatHistory(false)}
+            />
+          )}
+        </div>
         <div className="settings-dropdown-container" ref={settingsDropdownRef}>
           <button 
             className="header-btn"

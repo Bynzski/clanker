@@ -8,6 +8,7 @@ import type { ExplorerTreeChangedEvent } from '../shared/types/fileExplorer';
 import type { HarnessDefaultsMap } from '../shared/types/store';
 import type { VcsProvider } from '../shared/types/vcs';
 import type { GitStatusResult } from '../shared/types/git';
+import type { HarnessSession } from '../shared/types/session';
 import {
   GET_LAST_WORKSPACE,
   OPEN_DIRECTORY_DIALOG,
@@ -122,6 +123,8 @@ import {
   ANNOTATION_CHECK_ESCAPED,
   ANNOTATION_ESCAPE,
   ANNOTATION_TRIGGER_COPY,
+  SESSION_DISCOVER,
+  SESSION_INVOKE,
 } from '../shared/ipcChannels';
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -344,6 +347,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(EXPLORER_START_WATCHING, workspacePath),
   explorerStopWatching: () =>
     ipcRenderer.invoke(EXPLORER_STOP_WATCHING),
+
+  // Session history
+  discoverSessions: (workspacePath: string) =>
+    ipcRenderer.invoke(SESSION_DISCOVER, workspacePath),
+  invokeSession: (session: HarnessSession, fork?: boolean) =>
+    ipcRenderer.invoke(SESSION_INVOKE, session, fork),
 
   // Browser annotation
   annotationEnable: (workspaceId: string) => ipcRenderer.invoke(ANNOTATION_ENABLE, workspaceId),
