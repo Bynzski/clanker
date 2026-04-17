@@ -85,6 +85,7 @@ describe('IPC registration smoke test', () => {
     const { registerFileIpc } = await import('../../../src/main/ipc/fileIpc');
     const { registerVcsIpc } = await import('../../../src/main/ipc/vcsIpc');
     const { registerAnnotationIpc } = await import('../../../src/main/annotation/annotationIpc');
+    const { registerSessionIpc } = await import('../../../src/main/ipc/sessionIpc');
 
     interface MockStoreSchema {
       lastWorkspace: string;
@@ -92,6 +93,7 @@ describe('IPC registration smoke test', () => {
       aiCommitEnabled: boolean;
       aiCommitProvider: string;
       aiCommitModel: string;
+      harnessDefaults: Record<string, { model: string; favorites: string[]; flags: string }>;
     }
 
     const mockTerminals = new Map<string, { id: string; pid: number }>();
@@ -157,6 +159,7 @@ describe('IPC registration smoke test', () => {
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
           aiCommitModel: '',
+          harnessDefaults: {},
         };
         return defaults[key];
       }),
@@ -227,6 +230,15 @@ describe('IPC registration smoke test', () => {
       getBrowserViews: () => new Map(),
       getActiveBrowserWorkspaceId: () => mockActiveBrowserWorkspaceId,
       getMainWindow: () => mockMainWindow as never,
+    });
+
+    registerSessionIpc({
+      getTerminals: () => mockTerminals as never,
+      getMainWindow: () => mockMainWindow as never,
+      getSafeWorkspacePath: () => '/tmp',
+      getIsShuttingDown: () => false,
+      getStore: () => mockStore as never,
+      getHarnessOptions: () => ({}),
     });
 
     // ── Assert ──────────────────────────────────────────────────────────────

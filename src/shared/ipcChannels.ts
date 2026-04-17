@@ -166,6 +166,13 @@ export const FILE_DELETE = 'file-delete';
 export const FILE_RENAME = 'file-rename';
 
 /* ============================================================================
+ * Session History
+ * ============================================================================ */
+
+export const SESSION_DISCOVER = 'session-discover';
+export const SESSION_INVOKE = 'session-invoke';
+
+/* ============================================================================
  * Annotation
  * ============================================================================ */
 
@@ -313,4 +320,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   ANNOTATION_CHECK_ESCAPED,
   ANNOTATION_ESCAPE,
   ANNOTATION_TRIGGER_COPY,
+  // Session history
+  SESSION_DISCOVER,
+  SESSION_INVOKE,
 ];

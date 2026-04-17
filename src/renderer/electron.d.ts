@@ -36,6 +36,7 @@ import type {
 } from '../../shared/types/credentials';
 import type { AiCommitSettings, ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
+import type { HarnessSession } from '../../shared/types/session';
 
 export type { VcsProvider, ProviderContext, PullRequestContext, DeepLink, DeepLinkType };
 export type {
@@ -209,6 +210,10 @@ interface ElectronAPI {
   explorerStartWatching: (workspacePath: string) => Promise<void>;
   /** Stop watching the current workspace tree. */
   explorerStopWatching: () => Promise<void>;
+
+  // Session history
+  discoverSessions: (workspacePath: string) => Promise<HarnessSession[]>;
+  invokeSession: (session: HarnessSession, fork?: boolean) => Promise<{ id: string; pid: number }>;
 
   // Browser annotation
   annotationEnable: (workspaceId: string) => Promise<{ success: boolean; error?: string }>;

@@ -132,6 +132,9 @@ import {
   ANNOTATION_CHECK_ESCAPED,
   ANNOTATION_ESCAPE,
   ANNOTATION_TRIGGER_COPY,
+  // Session history
+  SESSION_DISCOVER,
+  SESSION_INVOKE,
   ALL_IPC_CHANNELS,
 } from '../../../src/shared/ipcChannels';
 
@@ -264,6 +267,9 @@ const ALL_CHANNELS = [
   ANNOTATION_CHECK_ESCAPED,
   ANNOTATION_ESCAPE,
   ANNOTATION_TRIGGER_COPY,
+  // Session history
+  SESSION_DISCOVER,
+  SESSION_INVOKE,
 ];
 
 describe('ipcChannels', () => {

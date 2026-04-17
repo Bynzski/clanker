@@ -140,6 +140,10 @@ export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}):
     explorerStartWatching: createAsyncMock(undefined),
     explorerStopWatching: createAsyncMock(undefined),
 
+    // Session history
+    discoverSessions: createAsyncMock([]),
+    invokeSession: createAsyncMock({ id: 'term-session-1', pid: 2001 }),
+
     // Browser annotation
     annotationEnable: createAsyncMock({ success: true }),
     annotationDisable: createAsyncMock({ success: true }),
