@@ -411,70 +411,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
 
   return (
     <div className="gate-content">
-      <div className="gate-icon">
-        <svg width="96" height="96" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="gateLogoGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#A3A3A3"/>
-              <stop offset="100%" stopColor="#6B7280"/>
-            </linearGradient>
-            <linearGradient id="gateHeadGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#6B7280"/>
-              <stop offset="100%" stopColor="#374151"/>
-            </linearGradient>
-            <linearGradient id="gateScreenGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#10B981"/>
-              <stop offset="100%" stopColor="#059669"/>
-            </linearGradient>
-            <linearGradient id="gateBodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#4B5563"/>
-              <stop offset="100%" stopColor="#1F2937"/>
-            </linearGradient>
-            <filter id="gateGlow">
-              <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-              <feMerge>
-                <feMergeNode in="coloredBlur"/>
-                <feMergeNode in="SourceGraphic"/>
-              </feMerge>
-            </filter>
-          </defs>
-          
-          <circle cx="60" cy="60" r="56" fill="none" stroke="url(#gateLogoGrad)" strokeWidth="2" opacity="0.3"/>
-          <circle cx="60" cy="60" r="52" fill="none" stroke="url(#gateLogoGrad)" strokeWidth="1" opacity="0.2"/>
-          
-          <rect x="32" y="20" width="56" height="44" rx="8" fill="url(#gateHeadGrad)"/>
-          <rect x="57" y="8" width="6" height="14" rx="3" fill="#9CA3AF"/>
-          <circle cx="60" cy="8" r="6" fill="#EF4444" filter="url(#gateGlow)"/>
-          
-          <rect x="38" y="28" width="44" height="28" rx="4" fill="#111827"/>
-          <rect x="41" y="31" width="38" height="22" rx="3" fill="url(#gateScreenGrad)" opacity="0.9"/>
-          <text x="46" y="47" fill="#fff" fontFamily="monospace" fontSize="12" fontWeight="bold">_</text>
-          <rect x="54" y="38" width="20" height="3" rx="1.5" fill="#fff" opacity="0.8"/>
-          <rect x="54" y="44" width="14" height="2" rx="1" fill="#fff" opacity="0.5"/>
-          
-          <rect x="36" y="68" width="48" height="36" rx="6" fill="url(#gateBodyGrad)"/>
-          <rect x="42" y="74" width="36" height="24" rx="3" fill="#1F2937"/>
-          
-          <g opacity="0.6">
-            <rect x="46" y="78" width="12" height="7" rx="1.5" fill="#10B981"/>
-            <rect x="62" y="78" width="12" height="7" rx="1.5" fill="#F59E0B"/>
-            <rect x="46" y="89" width="12" height="7" rx="1.5" fill="#8B949E"/>
-            <rect x="62" y="89" width="12" height="7" rx="1.5" fill="#EF4444"/>
-          </g>
-          
-          <circle cx="58" cy="101" r="1.5" fill="#10B981"/>
-          <circle cx="62" cy="101" r="1.5" fill="#F59E0B"/>
-          
-          <path d="M42 104 L36 108 L36 110" stroke="#4B5563" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-          <path d="M78 104 L84 108 L84 110" stroke="#4B5563" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-          
-          <g transform="translate(88, 75) rotate(30)">
-            <rect x="-2" y="-12" width="4" height="18" rx="1" fill="#F59E0B"/>
-            <rect x="-5" y="-12" width="10" height="6" rx="2" fill="#F59E0B"/>
-            <rect x="-7" y="-16" width="14" height="6" rx="2" fill="#F59E0B"/>
-          </g>
-        </svg>
-      </div>
+      <img src="./robot-icon.png" alt="Clanker Grid" width="96" height="96" />
       
       <h1 className="gate-title">Clanker Grid</h1>
       <p className="gate-subtitle">Developer Workspace Launcher</p>

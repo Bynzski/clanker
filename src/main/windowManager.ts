@@ -45,10 +45,12 @@ export function getRendererUrl(query: Record<string, string | null | undefined>)
 
 /**
  * Get the path to the application icon based on environment.
+ * In dev: src/assets/icons/icon-512.png
+ * In prod: process.resourcesPath/icon.png (copied by electron-builder from extraResources)
  */
 export function getIconPath(): string {
   if (process.env.NODE_ENV === 'development') {
-    return path.join(__dirname, '../build/icon.png');
+    return path.join(__dirname, '../../assets/icons/icon_512x512.png');
   }
   return path.join(process.resourcesPath, 'icon.png');
 }
