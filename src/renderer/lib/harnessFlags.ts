@@ -13,12 +13,11 @@
  * Known boolean flag per harness.
  * Maps harness ID → the flag string to set when the toggle is ON.
  * Only harnesses with a known boolean toggle are listed.
- *
- * Note: pi and claude have no known boolean toggle in this pass.
  */
 export const HARNESS_FLAG_MAP: Record<string, string> = {
   codex:    '--yolo',
   opencode: '--pure',
+  claude:   '--dangerously-skip-permissions',
 };
 
 /**
