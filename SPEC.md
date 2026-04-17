@@ -129,6 +129,15 @@ interface GitStash {
 | `browser:back` | renderer → main | `{}` |
 | `browser:forward` | renderer → main | `{}` |
 
+### Session History
+
+| Channel | Direction | Payload |
+|---------|-----------|---------|
+| `session-discover` | renderer → main | `{ workspacePath? }` → `HarnessSession[]` |
+| `session-invoke` | renderer → main | `{ session, fork? }` → `TerminalInfo` |
+
+Session history discovers past AI harness sessions and allows resuming them. Sessions are discovered from harness-specific storage locations and filtered by workspace path.
+
 ## Security
 
 - Context isolation enabled

@@ -13,6 +13,7 @@
 |---------|-------------|
 | **Terminal Grid** | Multiple terminal panes with flexible split layouts |
 | **AI Harnesses** | Launch Codex, Claude, OpenCode, or Pi directly in your workspace |
+| **Session History** | Resume past AI harness sessions from a searchable chat history dropdown |
 | **Multi-Workspace** | Work on multiple projects in separate tabs |
 | **Git Tools** | Branch, stash, merge, diff, remotes, and AI-assisted commits |
 | **VCS Integration** | GitHub, GitLab, Bitbucket PR status, CI checks, and quick links |
