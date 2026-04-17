@@ -59,6 +59,27 @@ Each harness can have a global default model set in the header settings dropdown
 - **Default model** — set in settings, used at spawn time when no workspace-level model is specified
 - **Favorites** — pinned models shown in the gate model picker; these are UX-only and never influence automatic launch behavior
 
+### Session History
+
+The **Chat History** button (message icon) in the header opens a dropdown that discovers and displays past AI harness sessions from all supported harnesses:
+
+| Harness | Storage Location |
+|---------|------------------|
+| Claude Code | `~/.claude/projects/` (JSONL session files) |
+| Codex | `~/.codex/sessions/` (session_index.jsonl + JSONL files) |
+| OpenCode | `opencode session list --format json` |
+| Pi | `~/.pi/agent/sessions/` (JSONL session files) |
+
+**Features:**
+- Sessions are grouped by harness type with collapsible sections
+- Sessions are filtered by the current workspace path (shows only sessions from the workspace or its subdirectories)
+- Sessions display title (first user message), relative timestamp, and harness type
+- Click any session to resume it in a new terminal (respects harness default flags from settings)
+- Sessions are cached for 60 seconds to avoid repeated file system scans
+- Orphaned sessions (sessions not in the index) are automatically discovered and included
+
+**Workspace filtering:** The feature uses path-boundary matching to avoid false positives. For example, `/home/jay/dev/projects/foo` will match `/home/jay/dev/projects/foo/src` but not `/home/jay/dev/projects/foo-old`.
+
 ### Selecting a Harness
 
 1. Click the **Harness** pill in the header
