@@ -298,11 +298,13 @@ function refreshCacheSilently(harness: string): void {
 }
 
 function isCommandAvailable(command: string): boolean {
+  const homeBin = path.join(app.getPath('home'), '.local', 'bin');
   const searchPaths = new Set<string>([
     process.cwd(),
     path.join(process.cwd(), 'node_modules', '.bin'),
     app.getAppPath(),
     path.join(app.getAppPath(), 'node_modules', '.bin'),
+    homeBin,
     ...(process.env.PATH ?? '').split(path.delimiter).filter(Boolean),
   ]);
 

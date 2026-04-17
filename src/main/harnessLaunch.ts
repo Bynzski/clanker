@@ -42,6 +42,13 @@ export function buildHarnessWrapperScript(): string {
   return `#!/usr/bin/env sh
 set -eu
 
+# Add ~/.local/bin to PATH for user-installed CLI tools (e.g., Claude, pi)
+LOCAL_BIN="$HOME/.local/bin"
+case ":$PATH:" in
+  *":$LOCAL_BIN:"*) ;;
+  *) PATH="$LOCAL_BIN:$PATH" ;;
+esac
+
 if [ "$#" -eq 0 ]; then
   echo "[clanker-grid] harness wrapper requires a command" >&2
   exit 1

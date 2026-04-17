@@ -1,5 +1,13 @@
 # AGENTS.md
 
+## Versions & Requirements
+
+- **TypeScript:** 6.0.2
+- **Electron:** 41.1.1
+- **React:** 19.2.4
+- **Node.js:** 18+ (recommended 20+)
+- **npm:** 8+
+
 ## Task Completion Requirements
 
 - All `npm run lint`, `npm run typecheck`, and `npm run build` must pass before considering tasks completed.
@@ -36,296 +44,104 @@ Long-term maintainability is a core priority:
 
 ```
 src/
-├── main/                      # Electron main process (Node.js)
-│   ├── main.ts               # Entry point, window lifecycle, global state
-│   ├── preload.ts            # Context bridge — all renderer-accessible IPC bindings
-│   ├── windowManager.ts      # BrowserWindow creation and renderer URL resolution
-│   ├── security.ts           # Path and URL validation
-│   ├── gitService.ts         # Git CLI wrapper
-│   ├── aiCommit.ts           # AI commit message generation
-│   ├── harnessLaunch.ts     # Harness spawn argument construction
-│   ├── harnessCatalog.ts     # Harness availability detection, model discovery
-│   ├── harnessDefaultsValidation.ts  # Harness defaults payload validation
-│   ├── fileService.ts        # File read/write operations
-│   ├── fileWatcher.ts        # File system watching (couples to GitService)
-│   ├── modelCache.ts         # Model availability caching
-│   ├── terminalUtils.ts     # Terminal buffer constants (shared with renderer)
-│   ├── annotation/           # Browser annotation feature
-│   │   ├── annotationController.ts   # Main process controller
-│   │   ├── annotationRuntime.ts      # Injected JS runtime (template string)
-│   │   ├── annotationIpc.ts         # IPC handlers
-│   │   └── index.ts         # Module exports
-│   ├── ipc/                  # IPC handler registrations
-│   │   ├── settingsIpc.ts    # Store, AI commit, harness, harness defaults, window controls
-│   │   ├── terminalIpc.ts    # PTY spawn, write, resize, kill
-│   │   ├── gitIpc.ts         # Git operations dispatch
-│   │   ├── browserIpc.ts     # WebContentsView control
-│   │   ├── fileIpc.ts         # File read/write/watch IPC
-│   │   ├── credentialIpc.ts  # SSH key, PAT management
-│   │   └── vcsIpc.ts         # VCS provider context and PR info
-│   ├── credential/           # Credential management
-│   │   ├── credentialService.ts
-│   │   ├── sshKeyService.ts
-│   │   ├── types.ts
-│   │   └── index.ts
-│   └── vcs/                  # VCS provider integration layer
-│       ├── providerRegistry.ts
-│       ├── providerDetector.ts
-│       ├── contextService.ts
-│       ├── types.ts
-│       ├── index.ts
-│       └── providers/        # GitHub, GitLab, Bitbucket providers
-│           ├── baseProvider.ts   # Abstract base class — extend for new providers
-│           ├── githubProvider.ts
-│           ├── gitlabProvider.ts
-│           ├── bitbucketProvider.ts
-│           └── index.ts
-│
-├── renderer/                  # React frontend (browser)
-│   ├── main.tsx              # React mount point
-│   ├── App.tsx              # Root component, keyboard shortcuts
-│   ├── electron.d.ts        # Ambient types for window.electronAPI
-│   ├── components/          # UI components
-│   │   ├── git/             # Git UI (Branches, Stash, History, Merge, Remotes)
-│   │   ├── FileExplorer/    # File tree, context menu
-│   │   ├── settings/        # Credential settings UI
-│   │   ├── GitButton.tsx    # Git panel (see file size guidance)
-│   │   ├── Header.tsx       # Toolbar, harness/settings dropdowns
-│   │   ├── TerminalPane.tsx # xterm.js integration
-│   │   ├── BrowserPanel.tsx # Browser overlay
-│   │   ├── EditorPane.tsx   # CodeMirror editor pane
-│   │   ├── EditorTabBar.tsx # Tab bar for open files
-│   │   ├── CommitDialog.tsx # AI commit dialog
-│   │   ├── DiffViewer.tsx   # Git diff display
-│   │   ├── DynamicPaneLayout.tsx  # Resizable pane tree with drag-and-drop
-│   │   ├── WorkspaceGate.tsx     # First-launch directory picker
-│   │   ├── WorkspaceGateContent.tsx
-│   │   ├── WorkspaceTabs.tsx
-│   │   ├── TitleBar.tsx
-│   │   ├── StatusBar.tsx
-│   │   ├── ErrorBoundary.tsx
-│   │   └── ConfirmCloseDialog.tsx
-│   ├── store/               # Zustand state
-│   │   ├── workspaceStore.ts     # All actions — terminals, panes, editor, explorer, workspaces
-│   │   ├── workspaceStoreHelpers.ts  # Store helper functions
-│   │   ├── workspaceStoreTypes.ts    # WorkspaceState interface and invariants
-│   │   ├── workspaceLayout.ts       # Layout tree operations
-│   │   ├── workspaceTypes.ts        # Shared type definitions (Pane, Terminal, etc.)
-│   │   ├── vcsStore.ts              # VCS provider state
-│   │   └── INVARIANTS.md            # State invariant documentation
-│   ├── lib/                # Utilities
-│   │   ├── harnessOptions.ts
-│   │   ├── harnessFlags.ts         # Boolean ↔ string flag translation for harness toggles
-│   │   ├── harnessDefaultsMigration.ts  # One-time localStorage → electron-store migration
-│   │   ├── workspaceLifecycle.ts
-│   │   ├── editorFileWatcher.ts
-│   │   ├── editorLanguage.ts
-│   │   ├── pathUtils.ts
-│   │   └── keyboardShortcuts.ts
-│   ├── types/
-│   │   └── shared.ts
-│   └── styles/
-│       └── global.css
-│
-├── shared/                  # Types and constants shared by main and renderer
-│   ├── ipcChannels.ts       # ⚠️ Canonical IPC channel constant reference
-│   ├── harnessIds.ts        # KNOWN_HARNESS_IDS and HarnessId type
-│   ├── terminal.ts           # Buffer size limits, trimBuffer utility
-│   └── types/
-│       ├── store.ts          # StoreSchema, HarnessDefaults, HarnessDefaultsMap
-│       ├── editor.ts         # File read/write/watch request/response types
-│       ├── fileExplorer.ts   # FileExplorerEntry type
-│       ├── fileOperations.ts # File create/delete/rename types
-│       └── vcs.ts            # VCS context types
-│
-└── dist/                    # Build output (generated, gitignored)
-    ├── main/
-    ├── shared/
-    └── renderer/
+├── main/                    # Electron main process
+│   ├── main.ts             # Entry point, window lifecycle
+│   ├── preload.ts          # IPC context bridge
+│   ├── gitService.ts       # Git CLI wrapper (1484 lines)
+│   ├── terminalUtils.ts    # Terminal constants
+│   ├── ipc/                # IPC handler registrations by domain
+│   ├── annotation/         # Browser annotation feature
+│   ├── credential/         # SSH key and PAT management
+│   └── vcs/                # VCS provider abstraction (GitHub, GitLab, Bitbucket)
+├── renderer/               # React frontend
+│   ├── components/         # UI: Terminal, Editor, Git, Browser, FileExplorer
+│   ├── store/              # Zustand state (workspaceStore.ts: 1532 lines)
+│   ├── lib/                # Utilities: harness, editor, workspace lifecycle
+│   └── styles/             # Global CSS
+├── shared/                 # Cross-boundary types
+│   ├── ipcChannels.ts      # IPC channel constants (canonical reference)
+│   ├── harnessIds.ts       # Harness ID constants
+│   └── types/              # Shared data types
+└── dist/                   # Build output (generated)
 ```
-
-### Directory Ownership Notes
-
-- **`src/main/ipc/`** — all IPC handler registrations live here. Register new handlers in the appropriate module by domain (see IPC Communication below).
-- **`src/main/credential/`** — SSH key and PAT credential lifecycle. Public interface is through `credentialIpc.ts`.
-- **`src/main/vcs/`** — VCS provider abstraction. `baseProvider.ts` defines the contract; add new providers (GitHub, GitLab, Bitbucket) by extending `BaseVcsProvider`.
-- **`src/shared/`** — the only location for cross-boundary types used by both main and renderer.
 
 ## Key Implementation Details
 
 ### IPC Communication
 
-Main ↔ Renderer communication via preload bridge (`src/main/preload.ts`):
-
-**Canonical IPC channel reference:** All channel names are defined as named constants in `src/shared/ipcChannels.ts`. The `ALL_IPC_CHANNELS` array is used by integration tests to verify registration. Never hard-code channel name strings elsewhere.
-
-| Module | Channels | Registration file |
-|--------|----------|-------------------|
-| Settings | last workspace, fastfetch, AI commit, harness options, harness defaults, window controls | `settingsIpc.ts` |
-| Terminal | spawn, write, resize, kill, buffer, data, exit | `terminalIpc.ts` |
-| Git | polling, status, stage, commit, branch, stash, merge, history, diff, remotes, push/pull/fetch | `gitIpc.ts` |
-| Browser | navigate, back, forward, bounds, hide, dispose, external links | `browserIpc.ts` |
-| Annotation | enable, disable, capture, get state, export, escape, trigger copy | `annotationIpc.ts` |
-| File | read, write, watch, unwatch, changed, create, delete, rename | `fileIpc.ts` |
-| Credentials | SSH keys, PAT management, SSH host configuration | `credentialIpc.ts` |
-| VCS | context, PR info, deep links | `vcsIpc.ts` |
-| Window | minimize, maximize, close, zoom, maximize-state | `settingsIpc.ts` |
-| Clipboard | write | `terminalIpc.ts` |
-
-**New IPC handler placement rule:** When adding a new IPC channel, register the handler in the module that matches the domain (see table above). If the domain has no existing module, add to the closest related module or create a new `*Ipc.ts` file under `src/main/ipc/`.
+Channel names are **constants in `src/shared/ipcChannels.ts`** — never hard-code strings. Register handlers in `src/main/ipc/*Ipc.ts` files by domain (Settings, Terminal, Git, Browser, Annotation, File, Credentials, VCS). The `ALL_IPC_CHANNELS` array verifies registration in tests.
 
 ### Terminal Architecture
 
-- PTY processes spawn in main via `node-pty` (owned in `terminals` Map in `main.ts`)
-- Output streams to renderer via `TERMINAL_DATA` IPC event
-- Renderer renders with `@xterm/xterm`; xterm owns the scrollback buffer
-- Session continuity across workspace/tab switches via xterm instance caching (`xtermCache` Map in `TerminalPane.tsx`) — terminals are not remounted blank on switch-back
-- Startup uses a bounded 16 KB buffer + `TERMINAL_READY` renderer handshake to protect the PTY init window (e.g., fish DA1 responses)
-- Resize uses a bidirectional confirmation loop: `RESIZE_TERMINAL` IPC → PTY apply → `TERMINAL_RESIZED` event → renderer verifies geometry
-- `handleFlowControl: false` is set on all PTY spawns (re-enabling is a separate future readiness concern, not part of the workspace residency plan)
-- Terminal pane sizing syncs back to PTY on resize; rapid resize calls are coalesced via a 100 ms lock
+PTY processes in main via `node-pty`, stream via IPC to renderer (@xterm/xterm 6.0.0). Session continuity via xterm instance caching in `TerminalPane.tsx`. Startup handshake protects init window. Resize via bidirectional loop. Flow control disabled. Pane resizes coalesce via 100ms lock.
 
-### Browser Architecture
+### Browser & Annotation
 
-- Native `WebContentsView` managed in main process
-- Renderer only controls toolbar state and bounds
-- Security: only `http:`/`https:` URLs allowed
-- New windows denied, redirected to system browser
-
-### Browser Annotation
-
-- Annotation mode enables element selection on web pages
-- Runtime injected via `webContents.executeJavaScript()`
-- In-page popup for note entry (not a React component)
-- Selector ranking: `data-testid` → `id` → `role+aria-label` → `nth-of-type`
-- Context extraction: UI region, element role, nearby text, ancestor context
-- Two-layer escape handling: main process (`before-input-event`) + injected runtime
-- Runtime re-injected on page navigation while annotation mode is active
+Native `WebContentsView` in main, toolbar state in renderer. Only `http:`/`https:` URLs allowed. Annotation: element selection with injected JS runtime; escape handling via main process and runtime; re-inject on navigation.
 
 ### Git Integration
 
-- All git operations via `src/main/gitService.ts`
-- Uses Node.js `child_process.spawn` with argument-safe arrays
-- Polling for status changes
-- AI commit message generation in `src/main/aiCommit.ts`
+All operations via `src/main/gitService.ts` using `child_process.spawn` with argument arrays. Polling for status. AI commit in `aiCommit.ts`.
 
 ### State Management
 
-- **`workspaceStore.ts`** — owns all workspace state: active workspace, all workspaces, terminal list, pane layouts, browser, explorer, editor tabs, git changes. This file is large (~1532 lines) but well-documented with JSDoc invariants.
-- **`workspaceStoreHelpers.ts`** — pure helper functions used by the store (sanitization, snapshot extraction, consistency validation in dev mode).
-- **`workspaceLayout.ts`** — layout tree operations (insert, remove, swap, dock, normalize). Exports constants `GRID_COLS`, `GRID_ROWS`.
-- **`workspaceStoreTypes.ts`** — the `WorkspaceState` interface with invariant `@invariant` JSDoc tags.
-- **`workspaceTypes.ts`** — shared type definitions used by the store (Pane, Terminal, LayoutNode, WorkspaceTab, EditorTab, etc.).
-- **`vcsStore.ts`** — VCS provider context and PR state.
-- **`INVARIANTS.md`** (in store/) — plain-language documentation of store state contracts.
-- **electron-store** persists: last workspace path, fastfetch setting, AI commit config, harness defaults (per-harness model, favorites, flags).
-- **Store schema** is defined in `src/shared/types/store.ts` — the single canonical location for `StoreSchema`, `HarnessDefaults`, and `HarnessDefaultsMap`.
+- **`workspaceStore.ts`** (1532 lines) — owns all state: terminals, panes, editor, explorer, browser, git changes.
+- **`workspaceStoreHelpers.ts`** — helpers for store.
+- **`workspaceLayout.ts`** — layout tree operations.
+- **`workspaceStoreTypes.ts`** & **`workspaceTypes.ts`** — type definitions.
+- **`vcsStore.ts`** — VCS provider state.
+- **`INVARIANTS.md`** — state contract documentation.
+- **electron-store** persists: workspace, settings, harness defaults.
 
-### Editor
+### Editor, Explorer, VCS Providers, Credentials
 
-- `EditorPane.tsx` — CodeMirror-based file editor pane with syntax highlighting via `@codemirror/lang-javascript`, `@codemirror/lang-markdown`.
-- `EditorTabBar.tsx` — Tab bar for open editor tabs.
-- `DiffViewer.tsx` — Side-by-side git diff display.
-- File changes are watched via `editorFileWatcher.ts` which bridges `fileWatcher.ts` (main) to store actions.
-- State for editor tabs, active tab, pane visibility lives in `workspaceStore.ts`.
-
-### File Explorer
-
-- `src/renderer/components/FileExplorer/index.tsx` — main explorer component.
-- `FileTree.tsx` — recursive directory tree rendering.
-- `ContextMenu.tsx` — right-click context menu for file/directory operations.
-- `fileTypeConfig.ts` — file type icons and classification.
-- Explorer state (expanded paths, selected path, directory entries) lives in `workspaceStore.ts`.
-
-### VCS Providers
-
-- Abstract base class: `src/main/vcs/providers/baseProvider.ts`. Extend this to add a new VCS provider.
-- Concrete providers: GitHub (`githubProvider.ts`), GitLab (`gitlabProvider.ts`), Bitbucket (`bitbucketProvider.ts`).
-- Provider detection: `providerDetector.ts`; registry: `providerRegistry.ts`; context service: `contextService.ts`.
-- VCS types (provider enum, context, PR info, deep links) are in `src/shared/types/vcs.ts`.
-
-### Credentials
-
-- SSH key generation, public key retrieval, deletion: `src/main/credential/sshKeyService.ts`.
-- PAT (personal access token) management per VCS provider: `src/main/credential/credentialService.ts`.
-- Types: `src/main/credential/types.ts`.
-- Public interface is via `src/main/ipc/credentialIpc.ts`.
-
-### Annotation Module
-
-- `annotationController.ts` — Main process controller for annotation lifecycle. Manages enable/disable, injection, and clipboard export.
-- `annotationRuntime.ts` — Injected JavaScript runtime as a template string. Renders crosshair cursor, hover highlights, selection popup, and note textarea. Exports structured Markdown to clipboard.
-- `annotationIpc.ts` — IPC handlers for annotation operations. Registers all annotation channels and manages escape handlers.
-- Context extraction helpers: `findNearestRegionLabel`, `inferRegionType`, `collectNearbyText`, `inferElementRoleInContext`.
+- Editor: CodeMirror with syntax highlighting, watched file changes.
+- Explorer: File tree, context menu, type icons.
+- VCS: Extend `baseProvider.ts` for new providers (GitHub, GitLab, Bitbucket).
+- Credentials: SSH keys and PATs via `credentialService.ts` and `sshKeyService.ts`.
 
 ## Code Standards
 
-- TypeScript strict mode
-- ESLint rules enforced
+- TypeScript strict mode (6.0.2)
+- ESLint enforced (9.38.0)
 - Functional React components with hooks
-- No `any` types without justification
-- Test files colocated or in `tests/` directory
+- No `any` without justification
+- Tests in `tests/` directory
 
 ## Validation Pipeline
 
 ```bash
-npm run lint          # ESLint
-npm run typecheck     # TypeScript (main + renderer)
-npm run build         # Vite + tsc
-npm run test          # Vitest
-npm run validate      # All of the above
+npm run lint       # ESLint
+npm run typecheck  # TypeScript
+npm run build      # Vite + tsc
+npm run test       # Vitest
+npm run validate   # All of the above
 ```
 
-## File Size Guidance
+## File Size Thresholds
 
-Flag files above ~400 lines for review during code review. Files above ~800 lines require documented justification or a clear reason to remain large.
+Files over ~800 lines need justification. Currently oversized:
 
-Currently over size threshold (for reference — do not refactor without a plan):
-
-| File | Lines | Note |
-|------|-------|------|
-| `src/renderer/store/workspaceStore.ts` | 1532 | Store with 50+ actions; documented with invariants |
-| `src/main/gitService.ts` | 1484 | Git CLI wrapper; well-tested |
-| `src/renderer/components/GitButton.tsx` | 1252 | Git UI panel; highest-priority split candidate |
-| `src/renderer/components/WorkspaceGateContent.tsx` | 647 | Workspace onboarding UI |
-| `src/renderer/components/FileExplorer/index.tsx` | 539 | File explorer component |
-| `src/main/credential/credentialService.ts` | 502 | Credential management |
-| `src/renderer/components/TerminalPane.tsx` | 562 | xterm instance cache, resize lock, startup handshake — stability-first design |
-
-When adding new code to an already-large file, consider whether the change belongs in a new module or an existing helper file instead of growing the file further.
+| File | Lines | Reason |
+|------|-------|--------|
+| `workspaceStore.ts` | 1532 | 50+ state actions with invariants |
+| `gitService.ts` | 1484 | Git CLI wrapper, well-tested |
+| `GitButton.tsx` | 1252 | Split candidate (lower priority) |
 
 ## Testing
 
-| Location | Purpose |
-|----------|---------|
-| `tests/main/unit/` | Main process unit tests (run in `node` environment) |
-| `tests/main/integration/` | Main process integration tests (terminal PTY, git service, IPC registration) |
-| `tests/renderer/unit/` | Renderer component tests (run in `jsdom` environment) |
-| `tests/renderer/integration/` | Renderer store integration tests |
-| `tests/setup/` | Shared mocks, fixtures, and test helpers |
+Tests split by environment (node vs jsdom) in config:
+- `tests/main/**/*.test.ts` → node
+- `tests/renderer/**/*.test.tsx` → jsdom
 
-### Test Authoring Rules
+Use `installElectronApiMock()` for renderer tests. Renderer integration tests live in `workspaceStore.test.ts` and `appWorkspaceOpen.real.test.tsx`.
 
-- Vitest is split by project (main/renderer), configured in `vitest.config.ts`. The project environment is set by the config, not by `// @vitest-environment` comments.
-- `tests/main/**/*.test.ts` runs in `node`; `tests/renderer/**/*.test.ts[x]` runs in `jsdom`.
-- Use `installElectronApiMock()` for renderer tests that need `window.electronAPI`; only hand-roll `window.electronAPI` when a test needs a very specific shape.
-- Renderer integration tests exist for workspace store (`tests/renderer/integration/workspaceStore.test.ts`) and workspace open flow (`tests/renderer/integration/appWorkspaceOpen.real.test.tsx`). These are not TODO — they are live coverage.
+## Key Constraints
 
-## Reference Repositories
-
-- [node-pty](https://github.com/microsoft/node-pty) — PTY management for Node.js
-- [@xterm/xterm](https://github.com/xtermjs/xterm.js) — Terminal emulator for browsers
-- [electron-store](https://github.com/sindresorhus/electron-store) — Settings persistence
-
-## Important Notes
-
-- **Harnesses are optional** — The app works with plain shell terminals. AI harnesses enhance but aren't required.
-- **Harness spawn is wrapper-based** — Harnesses run via a generated shell wrapper script (`~/.clanker-grid/harness-wrapper.sh`) written and managed by `src/main/harnessLaunch.ts`. The old `bash -i -c '<cmd>; exec "$SHELL" -i'` inline shell command is no longer used for harness spawns. When a harness exits, the wrapper script execs an interactive shell to keep the terminal pane usable.
-- **Terminal continuity is via xterm caching** — Workspace/tab switching preserves terminal sessions by caching xterm.js instances in a `xtermCache` Map in `TerminalPane.tsx`. Terminals are NOT remounted blank on switch-back.
-- **Flow control is disabled** — `handleFlowControl: false` is set on all PTY spawns to avoid shell startup stalls. Re-enabling it requires a proper post-startup readiness plan and is out of scope for Phase 1.
-- **Flag/argument redesign is complete** — Harness flags (`--yolo`, `--pure`, etc.) are no longer hardcoded in `harnessCatalog.ts`. User-configurable flags are stored in `electron-store` under `harnessDefaults[harness].flags` and applied at spawn time by `terminalIpc.ts`. The UI exposes boolean toggles per harness in the header settings dropdown.
-- **Browser state is polled** — Renderer browser navigation state uses polling rather than event-driven updates.
-- **Pane locking** — Users can lock panes to prevent reflow during insertions. Respect lock state in layout operations.
-- **Shared type placement** — IPC channel names belong in `src/shared/ipcChannels.ts`; shared data types used across the main/renderer boundary belong in `src/shared/types/`; store schema types (`StoreSchema`, `HarnessDefaults`, `HarnessDefaultsMap`) belong in `src/shared/types/store.ts`; harness ID constants belong in `src/shared/harnessIds.ts`; terminal constants belong in `src/shared/terminal.ts`.
-- **Store file ownership** — Actions go in `workspaceStore.ts`; helpers go in `workspaceStoreHelpers.ts`; layout operations go in `workspaceLayout.ts`; types go in `workspaceStoreTypes.ts` or `workspaceTypes.ts`; invariants are documented in `INVARIANTS.md`.
-- **Main process exports are internal** — `src/main/main.ts` exports `terminals`, `browserViews`, `gitService`, `store`, and `killAllTerminals` for test access. These are internal; do not build new features on them.
+- **Harness wrapper** — Harnesses spawn via `~/.clanker-grid/harness-wrapper.sh` (generated by `harnessLaunch.ts`). Wrapper execs shell on exit to keep terminal usable.
+- **Terminal continuity** — xterm instances cached in `TerminalPane.tsx` across workspace/tab switches.
+- **Flow control disabled** — `handleFlowControl: false` on all PTY spawns to avoid startup stalls.
+- **Harness flags** — Stored in `electron-store` under `harnessDefaults[harness].flags`, applied at spawn time.
+- **Pane locking** — Respect lock state in layout operations.
+- **Shared types** — IPC channels in `ipcChannels.ts`, types in `src/shared/types/`, store schema in `store.ts`.
+- **Main exports internal** — `terminals`, `browserViews`, `gitService`, `store` exported for tests only.
