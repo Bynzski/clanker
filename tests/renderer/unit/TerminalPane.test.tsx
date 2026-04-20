@@ -50,6 +50,12 @@ vi.mock('@xterm/addon-fit', () => {
   };
 });
 
+vi.mock('@xterm/addon-clipboard', () => ({
+  ClipboardAddon: class MockClipboardAddon {
+    dispose = vi.fn();
+  },
+}));
+
 // Mock the drag handle context
 vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
   useDragHandle: vi.fn().mockReturnValue({}),

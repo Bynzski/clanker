@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react';
+import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { LocateFixed, Lock, Unlock } from 'lucide-react';
 import { useDragHandle } from './DynamicPaneLayout';
@@ -279,7 +280,9 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
         });
 
         const fitAddon = new fitAddonModule.FitAddon();
+        const clipboardAddon = new ClipboardAddon();
         xterm.loadAddon(fitAddon);
+        xterm.loadAddon(clipboardAddon);
         xterm.open(terminalRef.current);
         fitAddon.fit();
 
