@@ -49,13 +49,54 @@ src/
 │   ├── preload.ts          # IPC context bridge
 │   ├── gitService.ts       # Git CLI wrapper (1484 lines)
 │   ├── terminalUtils.ts    # Terminal constants
+│   ├── sessionHistory.ts   # Chat history discovery and caching
+│   ├── harnessCatalog.ts   # Harness availability and model discovery
+│   ├── harnessLaunch.ts    # Harness spawn argument construction
 │   ├── ipc/                # IPC handler registrations by domain
+│   │   ├── settingsIpc.ts  # Store schema, AI commit, harness options, window
+│   │   ├── terminalIpc.ts  # PTY spawn, write, resize, kill
+│   │   ├── gitIpc.ts       # Git operations, polling, branch, stash
+│   │   ├── browserIpc.ts   # WebContentsView navigation and bounds
+│   │   ├── fileIpc.ts      # File read, write, watch, operations
+│   │   ├── credentialIpc.ts # SSH key and PAT management
+│   │   ├── vcsIpc.ts       # VCS provider context and PR info
+│   │   ├── aiCommitIpc.ts  # AI commit message generation
+│   │   ├── sessionIpc.ts   # Session history IPC
+│   │   └── windowIpc.ts    # Window controls (zoom, minimize, maximize)
 │   ├── annotation/         # Browser annotation feature
+│   │   ├── annotationController.ts # Annotation lifecycle
+│   │   ├── annotationRuntime.ts    # Injected JS runtime
+│   │   └── annotationIpc.ts         # Annotation IPC handlers
 │   ├── credential/         # SSH key and PAT management
-│   └── vcs/                # VCS provider abstraction (GitHub, GitLab, Bitbucket)
+│   │   ├── credentialService.ts    # PAT encrypted storage
+│   │   └── sshKeyService.ts        # SSH key generation
+│   └── vcs/                # VCS provider abstraction
+│       ├── providers/      # Provider implementations
+│       │   ├── baseProvider.ts      # Abstract base class
+│       │   ├── githubProvider.ts    # GitHub REST API
+│       │   ├── gitlabProvider.ts    # GitLab REST API
+│       │   └── bitbucketProvider.ts # Bitbucket API
+│       ├── providerDetector.ts      # URL → provider detection
+│       ├── providerRegistry.ts     # Provider instance management
+│       └── contextService.ts        # API call orchestration
 ├── renderer/               # React frontend
 │   ├── components/         # UI: Terminal, Editor, Git, Browser, FileExplorer
-│   ├── store/              # Zustand state (workspaceStore.ts: 1532 lines)
+│   │   ├── git/            # Modular git UI components
+│   │   │   ├── GitButton.tsx        # Main git button/menu container
+│   │   │   ├── GitBranchesSection.tsx
+│   │   │   ├── GitStashSection.tsx
+│   │   │   ├── GitMergeSection.tsx
+│   │   │   ├── GitHistorySection.tsx
+│   │   │   ├── GitRemotesSection.tsx
+│   │   │   ├── ProviderBadge.tsx     # PR/MR status badge
+│   │   │   └── ProviderMenu.tsx      # VCS quick links
+│   │   └── FileExplorer/  # File tree explorer
+│   ├── store/              # Zustand state
+│   │   ├── workspaceStore.ts        # Main state (1688 lines)
+│   │   ├── workspaceStoreHelpers.ts # State action helpers
+│   │   ├── workspaceLayout.ts       # Layout tree operations
+│   │   ├── workspaceStoreTypes.ts   # Type definitions
+│   │   └── vcsStore.ts              # VCS provider state
 │   ├── lib/                # Utilities: harness, editor, workspace lifecycle
 │   └── styles/             # Global CSS
 ├── shared/                 # Cross-boundary types
@@ -85,7 +126,7 @@ All operations via `src/main/gitService.ts` using `child_process.spawn` with arg
 
 ### State Management
 
-- **`workspaceStore.ts`** (1532 lines) — owns all state: terminals, panes, editor, explorer, browser, git changes.
+- **`workspaceStore.ts`** (1688 lines) — owns all state: terminals, panes, editor, explorer, browser, git changes.
 - **`workspaceStoreHelpers.ts`** — helpers for store.
 - **`workspaceLayout.ts`** — layout tree operations.
 - **`workspaceStoreTypes.ts`** & **`workspaceTypes.ts`** — type definitions.
@@ -124,9 +165,9 @@ Files over ~800 lines need justification. Currently oversized:
 
 | File | Lines | Reason |
 |------|-------|--------|
-| `workspaceStore.ts` | 1532 | 50+ state actions with invariants |
+| `workspaceStore.ts` | 1688 | 50+ state actions with invariants |
 | `gitService.ts` | 1484 | Git CLI wrapper, well-tested |
-| `GitButton.tsx` | 1252 | Split candidate (lower priority) |
+| `GitButton.tsx` | — | Refactored into modular components in `src/renderer/components/git/` |
 
 ## Testing
 

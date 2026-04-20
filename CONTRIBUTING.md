@@ -11,11 +11,14 @@ npm install
 # Run in development mode
 npm run dev
 
-# Run tests
+# Run tests (always use npm run test, not bare npm test)
 npm run test
 
 # Type checking
 npm run typecheck
+
+# Validation pipeline (run before submitting PR)
+npm run validate
 ```
 
 ## Code Standards
@@ -25,24 +28,44 @@ npm run typecheck
 - Prefer functional components with hooks
 - Use Zustand for renderer state management
 - Main/renderer communication via preload bridge only
+- IPC channel names from `src/shared/ipcChannels.ts` — never hard-code strings
+- Path validation before file system access
+- Duplicate logic is a code smell — check existing modules before adding local logic
 
 ## Project Structure
 
 ```
 src/
 ├── main/                    # Electron main process
-│   ├── main.ts             # Entry point
-│   ├── preload.ts          # Context bridge
-│   ├── gitService.ts       # Git operations
-│   ├── harnessLaunch.ts    # AI harness spawning
-│   └── security.ts         # Security constraints
+│   ├── main.ts             # Entry point, window lifecycle
+│   ├── preload.ts          # Context bridge (window.electronAPI)
+│   ├── gitService.ts       # Git CLI wrapper (1484 lines)
+│   ├── harnessLaunch.ts    # Harness spawn argument construction
+│   ├── sessionHistory.ts   # Chat history discovery
+│   ├── harnessCatalog.ts   # Harness availability detection
+│   ├── fileService.ts     # File read/write operations
+│   ├── fileWatcher.ts     # File system watching
+│   ├── ipc/               # IPC handler registrations by domain
+│   │   ├── terminalIpc.ts # PTY spawn, write, resize, clipboard
+│   │   ├── gitIpc.ts       # Git operations, remotes
+│   │   ├── browserIpc.ts   # WebContentsView navigation
+│   │   └── ...
+│   ├── annotation/          # Browser annotation feature
+│   ├── credential/         # SSH key and PAT management
+│   └── vcs/                # VCS provider abstraction
+│       └── providers/      # GitHub, GitLab, Bitbucket
 ├── renderer/                # React frontend
-│   ├── components/         # UI components
-│   │   ├── git/            # Git UI components
+│   ├── components/        # UI components
+│   │   ├── git/            # Modular git components
+│   │   ├── FileExplorer/   # File tree explorer
 │   │   └── *.tsx
 │   ├── store/              # Zustand stores
+│   │   └── workspaceStore.ts # Main state (1688 lines)
 │   └── lib/                # Utilities
-└── dist/                    # Build output
+├── shared/                  # Cross-boundary types
+│   ├── ipcChannels.ts      # IPC channel constants
+│   └── types/              # Shared data types
+└── dist/                    # Build output (generated)
 ```
 
 ## Testing
@@ -61,6 +84,10 @@ Test directories:
 - `tests/renderer/integration/` — Renderer store integration tests
 - `tests/main/integration/` — Main process integration tests
 
+Tests are split by environment:
+- `tests/main/**/*.test.ts` → Node.js environment
+- `tests/renderer/**/*.test.tsx` → jsdom environment
+
 ## Pull Request Checklist
 
 - [ ] `npm run validate` passes
@@ -75,6 +102,7 @@ Test directories:
 <type>(<scope>): <description>
 
 Types: feat, fix, docs, refactor, test, chore
+Scopes: terminal, git, browser, editor, explorer, vcs, credential, annotation, session, harness, ui
 ```
 
 ## Validation Pipeline

@@ -12,6 +12,7 @@
 | Feature | Description |
 |---------|-------------|
 | **Terminal Grid** | Multiple terminal panes with flexible split layouts |
+| **Clipboard** | Copy/paste support for terminal selections and clipboard IPC |
 | **AI Harnesses** | Launch Codex, Claude, OpenCode, or Pi directly in your workspace |
 | **Session History** | Resume past AI harness sessions from a searchable chat history dropdown |
 | **Multi-Workspace** | Work on multiple projects in separate tabs |
@@ -20,7 +21,7 @@
 | **Browser Panel** | Embedded browser alongside your terminals |
 | **Editor Pane** | CodeMirror-based file editor with syntax highlighting |
 | **File Explorer** | Tree view with context menu for file operations |
-| **Credential Management** | SSH key generation and PAT storage for VCS authentication |
+| **Credential Management** | SSH key generation and PAT storage with secure encryption |
 
 ## Quick Start
 
@@ -76,13 +77,28 @@ Single-window Electron app with React renderer. State is split: main process own
 src/
 ├── main/                      # Electron main process (Node.js)
 │   ├── ipc/                   # IPC handler registrations by domain
+│   │   ├── terminalIpc.ts    # PTY spawn, write, resize, clipboard
+│   │   ├── gitIpc.ts          # Git operations, remotes
+│   │   ├── browserIpc.ts      # WebContentsView navigation
+│   │   ├── sessionIpc.ts      # Session history
+│   │   └── ...                # Other domain handlers
 │   ├── credential/            # SSH key and PAT credential management
-│   └── vcs/                   # VCS provider abstraction (GitHub, GitLab, Bitbucket)
+│   │   ├── credentialService.ts # PAT encrypted storage
+│   │   └── sshKeyService.ts     # SSH key generation
+│   ├── vcs/                   # VCS provider abstraction
+│   │   └── providers/         # GitHub, GitLab, Bitbucket
+│   └── annotation/            # Browser annotation feature
 ├── renderer/                  # React frontend (browser)
-│   ├── components/            # UI components
-│   ├── store/                 # Zustand state management
+│   ├── components/
+│   │   ├── git/            # Modular git components
+│   │   ├── FileExplorer/     # File tree explorer
+│   │   └── *.tsx             # UI components
+│   ├── store/                 # Zustand stores
+│   │   └── workspaceStore.ts  # Main state (1688 lines)
 │   └── lib/                   # Utilities
-└── shared/                    # Types and constants for main/renderer
+└── shared/                    # Types and constants
+    ├── ipcChannels.ts         # IPC channel constants
+    └── types/                 # Shared data types
 ```
 
 Main ↔ Renderer communication via preload bridge (`src/main/preload.ts`). Never import main modules from renderer.

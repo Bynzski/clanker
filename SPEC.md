@@ -11,11 +11,11 @@
 │  └────┬────┘  └────┬────┘  └────┬────┘  └────────┬────────┘  │
 │       │            │            │                 │           │
 │       └────────────┴────────────┴─────────────────┘           │
-│                           │ IPC (preload bridge)                │
+│                           │ IPC (preload bridge)              │
 └───────────────────────────┼───────────────────────────────────┘
                             │
 ┌───────────────────────────┼───────────────────────────────────┐
-│                    Renderer Process                            │
+│                    Renderer Process                           │
 │  ┌──────────────┐  ┌─────┴──────┐  ┌────────────────────────┐  │
 │  │ React App    │  │ Zustand    │  │ Components (xterm.js)  │  │
 │  │ (Vite)       │  │ Store      │  │                        │  │
@@ -80,63 +80,192 @@ interface Terminal {
 ### Git Types
 
 ```typescript
-interface GitStatus {
-  branch: string;
+interface GitStatusResult {
+  success: boolean;
+  isRepo: boolean;
+  currentBranch: string | null;
+  isDetached: boolean;
+  changes: GitStatus[];
+  upstream: string | null;
   ahead: number;
   behind: number;
-  staged: FileChange[];
-  unstaged: FileChange[];
-  conflicted: string[];
-  operation: 'merge' | 'rebase' | null;
 }
 
 interface GitStash {
-  id: string;
-  description: string;
-  branch: string;
-  date: string;
+  hash: string;
+  ref: string;
+  message: string;
 }
 ```
 
 ## IPC Channels
 
+All IPC channel names are defined as constants in `src/shared/ipcChannels.ts`. Never hard-code channel strings.
+
 ### Terminal
 
 | Channel | Direction | Payload |
 |---------|-----------|---------|
-| `terminal:spawn` | renderer → main | `{ cwd, harness, model? }` |
-| `terminal:write` | renderer → main | `{ id, data }` |
-| `terminal:resize` | renderer → main | `{ id, cols, rows }` |
-| `terminal:kill` | renderer → main | `{ id }` |
-| `terminal:data` | main → renderer | `{ id, data }` |
-| `terminal:exit` | main → renderer | `{ id, code }` |
+| `spawn-terminal` | renderer → main | `{ cwd, harness?, model? }` |
+| `write-terminal` | renderer → main | `{ id, data }` |
+| `resize-terminal` | renderer → main | `{ id, cols, rows }` |
+| `kill-terminal` | renderer → main | `id` |
+| `get-terminal-buffer` | renderer → main | `{}` → `''` (deprecated, no-op) |
+| `terminal-ready` | renderer → main | `id` |
+| `write-clipboard` | renderer → main | `text` |
+| `terminal-data` | main → renderer | `{ id, data }` |
+| `terminal-exit` | main → renderer | `{ id, code }` |
+| `terminal-resized` | main → renderer | `{ id, cols, rows }` |
+| `terminal:cleanup-workspace` | renderer → main | `ids[]` |
 
 ### Git
 
 | Channel | Direction | Payload |
 |---------|-----------|---------|
-| `git:status` | renderer → main | `{ workspacePath }` |
-| `git:commit` | renderer → main | `{ message }` |
-| `git:branch` | renderer → main | `{ action, name? }` |
-| `git:stash` | renderer → main | `{ action, name? }` |
-| `git:merge` | renderer → main | `{ branch, action }` |
+| `git-start-polling` | renderer → main | `workspacePath` |
+| `git-stop-polling` | renderer → main | `{}` |
+| `git-get-branch-state` | renderer → main | `workspacePath` |
+| `git-get-operation-state` | renderer → main | `workspacePath` |
+| `git-get-stashes` | renderer → main | `workspacePath` |
+| `git-get-history` | renderer → main | `workspacePath` |
+| `git-get-diff` | renderer → main | `workspacePath` |
+| `git-get-file-diff` | renderer → main | `{ path, oldPath?, newPath? }` |
+| `git-stage` | renderer → main | `{ workspacePath, pattern }` |
+| `git-unstage` | renderer → main | `{ workspacePath, pattern }` |
+| `git-commit` | renderer → main | `{ workspacePath, message }` |
+| `git-create-branch` | renderer → main | `{ workspacePath, name }` |
+| `git-switch-branch` | renderer → main | `{ workspacePath, name }` |
+| `git-delete-branch` | renderer → main | `{ workspacePath, name, force? }` |
+| `git-merge-branch` | renderer → main | `{ workspacePath, branch }` |
+| `git-abort-operation` | renderer → main | `workspacePath` |
+| `git-stash` | renderer → main | `{ workspacePath, message? }` |
+| `git-apply-stash` | renderer → main | `{ workspacePath, ref }` |
+| `git-pop-stash` | renderer → main | `{ workspacePath, ref }` |
+| `git-drop-stash` | renderer → main | `{ workspacePath, ref }` |
+| `git-clear-stashes` | renderer → main | `workspacePath` |
+| `git-refresh` | renderer → main | `workspacePath` |
+| `git-init` | renderer → main | `workspacePath` |
+| `git-get-remotes` | renderer → main | `workspacePath` |
+| `git-add-remote` | renderer → main | `{ workspacePath, name, url }` |
+| `git-remove-remote` | renderer → main | `{ workspacePath, name }` |
+| `git-rename-remote` | renderer → main | `{ workspacePath, oldName, newName }` |
+| `git-fetch` | renderer → main | `workspacePath` |
+| `git-pull` | renderer → main | `workspacePath` |
+| `git-push` | renderer → main | `workspacePath` |
+| `git-status-update` | main → renderer | `GitStatusResult` |
 
 ### Browser
 
 | Channel | Direction | Payload |
 |---------|-----------|---------|
-| `browser:navigate` | renderer → main | `{ url }` |
-| `browser:back` | renderer → main | `{}` |
-| `browser:forward` | renderer → main | `{}` |
+| `browser-set-bounds` | renderer → main | `{ x, y, width, height }` |
+| `browser-hide` | renderer → main | `{}` |
+| `browser-navigate` | renderer → main | `url` |
+| `browser-back` | renderer → main | `{}` |
+| `browser-forward` | renderer → main | `{}` |
+| `browser-refresh` | renderer → main | `{}` |
+| `browser-stop` | renderer → main | `{}` |
+| `browser-dispose-workspace` | renderer → main | `workspaceId` |
+| `browser-get-url` | renderer → main | `workspaceId` |
+| `browser-save-url` | renderer → main | `{ workspaceId, url }` |
+| `open-external` | renderer → main | `url` |
+| `reveal-in-file-manager` | renderer → main | `path` |
+| `can-go-back` | renderer → main | `{}` |
+| `can-go-forward` | renderer → main | `{}` |
+| `browser-url-updated` | main → renderer | `{ workspaceId, url }` |
 
 ### Session History
 
 | Channel | Direction | Payload |
 |---------|-----------|---------|
-| `session-discover` | renderer → main | `{ workspacePath? }` → `HarnessSession[]` |
-| `session-invoke` | renderer → main | `{ session, fork? }` → `TerminalInfo` |
+| `session-discover` | renderer → main | `workspacePath?` → `HarnessSession[]` |
+| `session-invoke` | renderer → main | `{ session, fork? }` → terminal info |
 
-Session history discovers past AI harness sessions and allows resuming them. Sessions are discovered from harness-specific storage locations and filtered by workspace path.
+### Annotation
+
+| Channel | Direction | Payload |
+|---------|-----------|---------|
+| `annotation-enable` | renderer → main | `workspaceId` |
+| `annotation-disable` | renderer → main | `{}` |
+| `annotation-capture` | renderer → main | `{}` |
+| `annotation-get-state` | renderer → main | `{}` |
+| `annotation-export` | renderer → main | `{ annotation }` → Markdown string |
+| `annotation-check-escaped` | renderer → main | `{}` |
+| `annotation-escape` | main → renderer | `{}` |
+| `annotation-trigger-copy` | renderer → main | `{}` |
+
+### Credentials
+
+| Channel | Direction | Payload |
+|---------|-----------|---------|
+| `credential:generate-ssh-key` | renderer → main | `{}` |
+| `credential:get-public-key` | renderer → main | `{}` |
+| `credential:delete-ssh-key` | renderer → main | `{}` |
+| `credential:check-exists` | renderer → main | `{}` |
+| `credential:save-pat` | renderer → main | `{ provider, token, scope }` |
+| `credential:get-pat` | renderer → main | `provider` |
+| `credential:delete-pat` | renderer → main | `provider` |
+| `credential:get-status` | renderer → main | `provider` |
+| `credential:get-global-status` | renderer → main | `{}` |
+| `credential:configure-ssh-host` | renderer → main | `host` |
+
+### VCS
+
+| Channel | Direction | Payload |
+|---------|-----------|---------|
+| `vcs:get-context` | renderer → main | `workspacePath` |
+| `vcs:get-pr-info` | renderer → main | `workspacePath` |
+| `vcs:get-deep-links` | renderer → main | `workspacePath` |
+| `vcs:get-deep-link` | renderer → main | `{ type, provider, context }` |
+| `vcs:open-deep-link` | renderer → main | `url` |
+
+### Settings
+
+| Channel | Direction | Payload |
+|---------|-----------|---------|
+| `get-last-workspace` | renderer → main | `{}` |
+| `get-show-fastfetch` | renderer → main | `{}` |
+| `set-show-fastfetch` | renderer → main | `boolean` |
+| `get-ai-commit-settings` | renderer → main | `{}` |
+| `set-ai-commit-enabled` | renderer → main | `boolean` |
+| `set-ai-commit-provider` | renderer → main | `provider` |
+| `set-ai-commit-model` | renderer → main | `model` |
+| `generate-commit-message` | renderer → main | `workspacePath` |
+| `get-harness-options` | renderer → main | `{}` |
+| `get-harness-models` | renderer → main | `harness` |
+| `get-harness-defaults` | renderer → main | `{}` |
+| `set-harness-defaults` | renderer → main | `{ harness, defaults }` |
+| `open-directory-dialog` | renderer → main | `{}` |
+| `read-directory` | renderer → main | `path` |
+| `file-list-directory` | renderer → main | `path` |
+
+### Editor & File Operations
+
+| Channel | Direction | Payload |
+|---------|-----------|---------|
+| `file-read` | renderer → main | `path` |
+| `file-write` | renderer → main | `{ path, content }` |
+| `file-changed` | main → renderer | `path` |
+| `file-watch` | renderer → main | `path` |
+| `file-unwatch` | renderer → main | `path` |
+| `file-create` | renderer → main | `{ path, isDirectory }` |
+| `file-delete` | renderer → main | `path` |
+| `file-rename` | renderer → main | `{ oldPath, newPath }` |
+| `explorer-tree-changed` | main → renderer | `{ workspaceId, tree }` |
+| `explorer-start-watching` | renderer → main | `workspaceId` |
+| `explorer-stop-watching` | renderer → main | `workspaceId` |
+
+### Window Controls
+
+| Channel | Direction | Payload |
+|---------|-----------|---------|
+| `minimize-window` | renderer → main | `{}` |
+| `toggle-maximize-window` | renderer → main | `{}` |
+| `close-window` | renderer → main | `{}` |
+| `is-maximized-window` | renderer → main | `{}` |
+| `zoom-in-window` | renderer → main | `{}` |
+| `zoom-out-window` | renderer → main | `{}` |
+| `reset-zoom-window` | renderer → main | `{}` |
 
 ## Security
 
@@ -153,6 +282,7 @@ Session history discovers past AI harness sessions and allows resuming them. Ses
 |-----------|----------|
 | `dist/main/` | Compiled main process |
 | `dist/renderer/` | Vite production bundle |
+| `dist/shared/` | TypeScript declarations |
 | `release/` | electron-builder output |
 | `coverage/` | Test coverage reports |
 
