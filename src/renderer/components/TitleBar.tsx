@@ -33,11 +33,12 @@ export default function TitleBar({ onOpenWorkspace }: TitleBarProps) {
     <div className="titlebar">
       <div className="titlebar-left">
         <div className="titlebar-brand">
-          <svg width="18" height="18" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect x="32" y="28" width="56" height="44" rx="8" fill="currentColor" opacity="0.8"/>
-            <rect x="57" y="16" width="6" height="14" rx="3" fill="currentColor" opacity="0.6"/>
-            <circle cx="60" cy="16" r="5" fill="#EF4444"/>
-          </svg>
+          <img
+            src="./titlebar-icon.png"
+            alt="Clanker Grid icon"
+            width={18}
+            height={18}
+          />
           <span className="titlebar-title">Clanker Grid</span>
         </div>
       </div>
