@@ -59,7 +59,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       }
     };
     void loadDefaults();
-  }, []);
+  }, [selectedHarness]);
 
   const toggleFavorite = useCallback(
     async (harnessId: string, modelId: string) => {
