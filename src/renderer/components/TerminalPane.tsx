@@ -240,7 +240,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
         }
 
         const xterm = new xtermModule.Terminal({
-          allowTransparency: true,
+          allowTransparency: false,
           theme: {
             background: '#121212',
             foreground: '#e8e8e8',
@@ -264,7 +264,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
             brightCyan: '#56d4dd',
             brightWhite: '#ffffff',
           },
-          fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", "Fira Mono", Menlo, Consolas, monospace',
+          fontFamily: '"DejaVu Sans Mono", "JetBrains Mono", "Fira Code", "Cascadia Code", "Fira Mono", Menlo, Consolas, monospace',
           fontSize: 13,
           fontWeight: '400',
           fontWeightBold: '700',
