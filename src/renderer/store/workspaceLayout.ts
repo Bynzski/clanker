@@ -422,6 +422,57 @@ export function insertPaneAtEdgeGapInLayout(
   return insertAt(trimmedLayout, gapIndex);
 }
 
+export function insertPaneAtEdgeSegmentInLayout(
+  layoutRoot: LayoutNode | null,
+  paneId: string,
+  edge: DockEdge,
+  targetPaneId: string
+): LayoutNode | null {
+  if (layoutRoot == null) {
+    return createLayoutLeaf(paneId);
+  }
+
+  if (paneId === targetPaneId) {
+    return layoutRoot;
+  }
+
+  const leaves = collectLeafPaneIds(layoutRoot);
+  if (!leaves.includes(paneId) || !leaves.includes(targetPaneId)) {
+    return layoutRoot;
+  }
+
+  const trimmedLayout = removePaneFromLayout(layoutRoot, paneId);
+  if (trimmedLayout == null) {
+    return createLayoutLeaf(paneId);
+  }
+
+  const splitOrientation: 'horizontal' | 'vertical' =
+    edge === 'left' || edge === 'right' ? 'horizontal' : 'vertical';
+  const insertBeforeTarget = edge === 'left' || edge === 'top';
+
+  function insertAtTarget(node: LayoutNode): LayoutNode {
+    if (node.type === 'leaf') {
+      if (node.paneId !== targetPaneId) {
+        return { ...node };
+      }
+
+      const insertedLeaf = createLayoutLeaf(paneId);
+      const targetLeaf = { ...node };
+      return insertBeforeTarget
+        ? createLayoutSplit(insertedLeaf, targetLeaf, splitOrientation, 0.5)
+        : createLayoutSplit(targetLeaf, insertedLeaf, splitOrientation, 0.5);
+    }
+
+    return {
+      ...node,
+      first: insertAtTarget(node.first),
+      second: insertAtTarget(node.second),
+    };
+  }
+
+  return insertAtTarget(trimmedLayout);
+}
+
 export function setSplitRatioInLayout(
   node: LayoutNode | null,
   nodeId: string,

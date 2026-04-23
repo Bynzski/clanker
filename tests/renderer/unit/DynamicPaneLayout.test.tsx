@@ -164,6 +164,7 @@ function setupStore(overrides: Record<string, unknown> = {}) {
     swapPanes: vi.fn(),
     dockPaneToEdge: vi.fn(),
     insertPaneAtEdgeGap: vi.fn(),
+    insertPaneAtEdgeSegment: vi.fn(),
     setSplitRatio: vi.fn(),
     ...overrides,
   });
@@ -755,47 +756,46 @@ describe('DynamicPaneLayout', () => {
       expect(document.querySelector('.dock-bottom')?.classList.contains('over')).toBe(true);
     });
 
-    it('renders segmented gap zones for each edge (single-leaf layout)', () => {
+    it('renders one segmented target per edge pane (single-leaf layout)', () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);
 
-      // Single terminal → 2 gaps per edge, 4 edges → 8 gap zones total
-      const gaps = document.querySelectorAll('.dock-gap');
-      expect(gaps.length).toBe(8);
+      const segments = document.querySelectorAll('.dock-segment');
+      expect(segments.length).toBe(4);
 
       for (const edge of ['left', 'right', 'top', 'bottom'] as const) {
-        const perEdge = document.querySelectorAll(`.dock-gap-${edge}`);
-        expect(perEdge.length).toBe(2);
+        const perEdge = document.querySelectorAll(`.dock-segment-${edge}`);
+        expect(perEdge.length).toBe(1);
       }
     });
 
-    it('renders gap zones with correct data-edge and data-gap-index attributes', () => {
+    it('renders segment targets with correct edge, segment, and target pane attributes', () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);
 
-      const leftGaps = Array.from(document.querySelectorAll('.dock-gap-left'));
-      const indices = leftGaps.map((el) => el.getAttribute('data-gap-index')).sort();
-      expect(indices).toEqual(['0', '1']);
-      for (const el of leftGaps) {
-        expect(el.getAttribute('data-edge')).toBe('left');
-      }
+      const leftSegment = document.querySelector('.dock-segment-left');
+      expect(leftSegment?.getAttribute('data-edge')).toBe('left');
+      expect(leftSegment?.getAttribute('data-segment-index')).toBe('0');
+      expect(leftSegment?.getAttribute('data-target-pane-id')).toBe('p1');
     });
 
-    it('gap zones carry an inline positioning style (top for left/right, left for top/bottom)', () => {
+    it('segment targets carry inline span styles (top/height for left-right, left/width for top-bottom)', () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);
 
-      const leftGap = document.querySelector('.dock-gap-left') as HTMLElement | null;
-      expect(leftGap).toBeTruthy();
-      expect(leftGap!.style.top).not.toBe('');
+      const leftSegment = document.querySelector('.dock-segment-left') as HTMLElement | null;
+      expect(leftSegment).toBeTruthy();
+      expect(leftSegment!.style.top).not.toBe('');
+      expect(leftSegment!.style.height).not.toBe('');
 
-      const topGap = document.querySelector('.dock-gap-top') as HTMLElement | null;
-      expect(topGap).toBeTruthy();
-      expect(topGap!.style.left).not.toBe('');
+      const topSegment = document.querySelector('.dock-segment-top') as HTMLElement | null;
+      expect(topSegment).toBeTruthy();
+      expect(topSegment!.style.left).not.toBe('');
+      expect(topSegment!.style.width).not.toBe('');
     });
 
-    it('renders N+1 gaps for N edge terminals', () => {
-      // Layout: vertical(p1, vertical(p2, p3)) → left edge has 3 terminals, so 4 gaps
+    it('renders one segment target for each edge terminal', () => {
+      // Layout: vertical(p1, vertical(p2, p3)) → left edge has 3 terminals.
       const layout = createSplit(
         's1',
         'vertical',
@@ -806,13 +806,13 @@ describe('DynamicPaneLayout', () => {
       setupStoreWithLayout(layout);
       render(<DynamicPaneLayout />);
 
-      const leftGaps = document.querySelectorAll('.dock-gap-left');
-      expect(leftGaps.length).toBe(4);
+      const leftSegments = document.querySelectorAll('.dock-segment-left');
+      expect(leftSegments.length).toBe(3);
     });
 
-    it('caps gap count per edge at MAX_SEGMENTS (4)', () => {
+    it('caps segment count per edge at MAX_SEGMENTS (4)', () => {
       // Layout with 5 terminals stacked on left: vertical(A, vertical(B, vertical(C, vertical(D, E))))
-      // Left edge: 5 terminals → 6 gaps, capped at 4
+      // Left edge: 5 terminals, capped at 4 rendered segment targets.
       const deepLeft = createSplit(
         's1',
         'vertical',
@@ -841,11 +841,11 @@ describe('DynamicPaneLayout', () => {
       setupStoreWithLayout(deepLeft);
       render(<DynamicPaneLayout />);
 
-      const leftGaps = document.querySelectorAll('.dock-gap-left');
-      expect(leftGaps.length).toBe(4);
+      const leftSegments = document.querySelectorAll('.dock-segment-left');
+      expect(leftSegments.length).toBe(4);
     });
 
-    it('full-edge zone lights up on full drop target; gap zones stay unlit', () => {
+    it('full-edge zone lights up on full drop target; segment targets stay unlit', () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);
 
@@ -857,7 +857,7 @@ describe('DynamicPaneLayout', () => {
       });
 
       expect(document.querySelector('.dock-left')?.classList.contains('over')).toBe(true);
-      expect(document.querySelectorAll('.dock-gap.over').length).toBe(0);
+      expect(document.querySelectorAll('.dock-segment.over').length).toBe(0);
     });
   });
 
@@ -951,7 +951,7 @@ describe('DynamicPaneLayout', () => {
       expect(document.querySelector('.dock-edge.over')).toBeNull();
     });
 
-    it('highlights the matching gap zone and not the full edge for dock-{edge}-gap-{index}', () => {
+    it('highlights the matching segment target and not the full edge for dock-{edge}-segment-{index}', () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);
 
@@ -959,40 +959,47 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-gap-1' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-segment-0' } });
       });
 
-      const activeGap = document.querySelector('.dock-gap-left[data-gap-index="1"]');
-      expect(activeGap?.classList.contains('over')).toBe(true);
+      const activeSegment = document.querySelector('.dock-segment-left[data-segment-index="0"]');
+      expect(activeSegment?.classList.contains('over')).toBe(true);
       expect(document.querySelector('.dock-left')?.classList.contains('over')).toBe(false);
     });
 
-    it('switches highlight from one gap to another on subsequent drag-over events', () => {
-      setupStoreWithLayout(createLeaf('n1', 'p1'));
+    it('switches highlight from one segment to another on subsequent drag-over events', () => {
+      const layout = createSplit(
+        's1',
+        'vertical',
+        0.5,
+        createLeaf('n1', 'p1'),
+        createLeaf('n2', 'p2'),
+      );
+      setupStoreWithLayout(layout);
       render(<DynamicPaneLayout />);
 
       act(() => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-gap-0' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-segment-0' } });
       });
       expect(
-        document.querySelector('.dock-gap-left[data-gap-index="0"]')?.classList.contains('over'),
+        document.querySelector('.dock-segment-left[data-segment-index="0"]')?.classList.contains('over'),
       ).toBe(true);
 
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-gap-1' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-segment-1' } });
       });
       expect(
-        document.querySelector('.dock-gap-left[data-gap-index="0"]')?.classList.contains('over'),
+        document.querySelector('.dock-segment-left[data-segment-index="0"]')?.classList.contains('over'),
       ).toBe(false);
       expect(
-        document.querySelector('.dock-gap-left[data-gap-index="1"]')?.classList.contains('over'),
+        document.querySelector('.dock-segment-left[data-segment-index="1"]')?.classList.contains('over'),
       ).toBe(true);
     });
 
-    it('clears gap highlight and falls back to full highlight when switching to a full target', () => {
+    it('clears segment highlight and falls back to full highlight when switching to a full target', () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);
 
@@ -1000,14 +1007,14 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-gap-0' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-segment-0' } });
       });
-      expect(document.querySelectorAll('.dock-gap.over').length).toBe(1);
+      expect(document.querySelectorAll('.dock-segment.over').length).toBe(1);
 
       act(() => {
         mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-full' } });
       });
-      expect(document.querySelectorAll('.dock-gap.over').length).toBe(0);
+      expect(document.querySelectorAll('.dock-segment.over').length).toBe(0);
       expect(document.querySelector('.dock-left')?.classList.contains('over')).toBe(true);
     });
 
@@ -1048,36 +1055,57 @@ describe('DynamicPaneLayout', () => {
       expect(mockDock).toHaveBeenCalledWith('p1', 'left');
     });
 
-    it('calls insertPaneAtEdgeGap with parsed edge + gapIndex when dropped on a gap zone', () => {
+    it('calls insertPaneAtEdgeSegment with parsed edge and target pane when dropped on a segment target', () => {
       const mockInsert = vi.fn();
       const mockDock = vi.fn();
       setupStoreWithLayout(createLeaf('n1', 'p1'), {
-        insertPaneAtEdgeGap: mockInsert,
+        insertPaneAtEdgeSegment: mockInsert,
         dockPaneToEdge: mockDock,
       });
       render(<DynamicPaneLayout />);
 
       act(() => {
-        mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: { id: 'dock-right-gap-2' } });
+        mocks.dndCallbacks.onDragEnd({
+          active: { id: 'p1' },
+          over: { id: 'dock-right-segment-0', data: { current: { targetPaneId: 'p2' } } },
+        });
       });
 
-      expect(mockInsert).toHaveBeenCalledWith('p1', 'right', 2);
+      expect(mockInsert).toHaveBeenCalledWith('p1', 'right', 'p2');
       expect(mockDock).not.toHaveBeenCalled();
     });
 
-    it('passes workspaceId through to insertPaneAtEdgeGap when scoped', () => {
+    it('passes workspaceId through to insertPaneAtEdgeSegment when scoped', () => {
       const mockInsert = vi.fn();
-      setupStoreWithLayout(createLeaf('n1', 'p1'), { insertPaneAtEdgeGap: mockInsert });
+      setupStoreWithLayout(createLeaf('n1', 'p1'), { insertPaneAtEdgeSegment: mockInsert });
       render(<DynamicPaneLayout workspaceId="ws-42" />);
 
       act(() => {
-        mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: { id: 'dock-top-gap-0' } });
+        mocks.dndCallbacks.onDragEnd({
+          active: { id: 'p1' },
+          over: { id: 'dock-top-segment-0', data: { current: { targetPaneId: 'p2' } } },
+        });
       });
 
-      expect(mockInsert).toHaveBeenCalledWith('p1', 'top', 0, 'ws-42');
+      expect(mockInsert).toHaveBeenCalledWith('p1', 'top', 'p2', 'ws-42');
     });
 
-    it('clears overGapIndex state after drag end', () => {
+    it('does not call insertPaneAtEdgeSegment without target pane data', () => {
+      const mockInsert = vi.fn();
+      setupStoreWithLayout(createLeaf('n1', 'p1'), { insertPaneAtEdgeSegment: mockInsert });
+      render(<DynamicPaneLayout />);
+
+      act(() => {
+        mocks.dndCallbacks.onDragEnd({
+          active: { id: 'p1' },
+          over: { id: 'dock-top-segment-0', data: { current: {} } },
+        });
+      });
+
+      expect(mockInsert).not.toHaveBeenCalled();
+    });
+
+    it('clears overSegmentIndex state after drag end', () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);
 
@@ -1085,14 +1113,17 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-gap-1' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-segment-0' } });
       });
-      expect(document.querySelectorAll('.dock-gap.over').length).toBe(1);
+      expect(document.querySelectorAll('.dock-segment.over').length).toBe(1);
 
       act(() => {
-        mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: { id: 'dock-left-gap-1' } });
+        mocks.dndCallbacks.onDragEnd({
+          active: { id: 'p1' },
+          over: { id: 'dock-left-segment-0', data: { current: { targetPaneId: 'p1' } } },
+        });
       });
-      expect(document.querySelectorAll('.dock-gap.over').length).toBe(0);
+      expect(document.querySelectorAll('.dock-segment.over').length).toBe(0);
     });
 
     it('calls swapPanes when dropped on a different pane (drop- prefix)', () => {
@@ -1190,7 +1221,7 @@ describe('DynamicPaneLayout', () => {
       expect(document.querySelector('.dock-edge.over')).toBeNull();
     });
 
-    it('clears overGapIndex highlight on cancel', () => {
+    it('clears overSegmentIndex highlight on cancel', () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);
 
@@ -1198,14 +1229,14 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-top-gap-1' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-top-segment-0' } });
       });
-      expect(document.querySelectorAll('.dock-gap.over').length).toBe(1);
+      expect(document.querySelectorAll('.dock-segment.over').length).toBe(1);
 
       act(() => {
         mocks.dndCallbacks.onDragCancel();
       });
-      expect(document.querySelectorAll('.dock-gap.over').length).toBe(0);
+      expect(document.querySelectorAll('.dock-segment.over').length).toBe(0);
     });
   });
 
@@ -1252,6 +1283,23 @@ describe('DynamicPaneLayout', () => {
       expect(result).toEqual([{ id: 'a' }]);
       expect(mocks.pointerWithin).toHaveBeenCalled();
       expect(mocks.closestCorners).not.toHaveBeenCalled();
+    });
+
+    it('prioritizes segment collisions over full-edge collisions', () => {
+      setupStoreWithLayout(createLeaf('n1', 'p1'));
+      render(<DynamicPaneLayout />);
+
+      const fn = mocks.dndCallbacks.collisionDetection;
+      mocks.pointerWithin.mockReturnValueOnce([
+        { id: 'dock-left-full' },
+        { id: 'dock-left-segment-0' },
+      ]);
+
+      const result = (fn as (...args: unknown[]) => unknown)({});
+      expect(result).toEqual([
+        { id: 'dock-left-segment-0' },
+        { id: 'dock-left-full' },
+      ]);
     });
 
     it('falls back to closestCorners when pointerWithin is empty', () => {

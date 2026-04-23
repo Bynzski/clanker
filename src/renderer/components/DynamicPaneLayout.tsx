@@ -326,7 +326,7 @@ function renderLayout(
 
 type ParsedDockTarget =
   | { edge: DockEdge; kind: 'full' }
-  | { edge: DockEdge; kind: 'gap'; gapIndex: number };
+  | { edge: DockEdge; kind: 'segment'; segmentIndex: number };
 
 function parseDockDropId(overId: string): ParsedDockTarget | null {
   if (!overId.startsWith('dock-')) {
@@ -346,10 +346,10 @@ function parseDockDropId(overId: string): ParsedDockTarget | null {
   if (typePart === 'full') {
     return { edge, kind: 'full' };
   }
-  if (typePart.startsWith('gap-')) {
-    const gapIndex = Number.parseInt(typePart.slice('gap-'.length), 10);
-    if (Number.isFinite(gapIndex)) {
-      return { edge, kind: 'gap', gapIndex };
+  if (typePart.startsWith('segment-')) {
+    const segmentIndex = Number.parseInt(typePart.slice('segment-'.length), 10);
+    if (Number.isFinite(segmentIndex)) {
+      return { edge, kind: 'segment', segmentIndex };
     }
   }
   return null;
@@ -357,18 +357,28 @@ function parseDockDropId(overId: string): ParsedDockTarget | null {
 
 const edgeFriendlyCollisionDetection: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(args);
-  return pointerCollisions.length > 0 ? pointerCollisions : closestCorners(args);
+  if (pointerCollisions.length > 0) {
+    return [...pointerCollisions].sort((a, b) => {
+      const aIsSegment = String(a.id).includes('-segment-');
+      const bIsSegment = String(b.id).includes('-segment-');
+      if (aIsSegment === bIsSegment) {
+        return 0;
+      }
+      return aIsSegment ? -1 : 1;
+    });
+  }
+  return closestCorners(args);
 };
 
 export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: string }) {
   const workspace = useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
-  const { swapPanes, dockPaneToEdge, insertPaneAtEdgeGap } = useWorkspaceStore();
+  const { swapPanes, dockPaneToEdge, insertPaneAtEdgeSegment } = useWorkspaceStore();
 
   const [activePaneId, setActivePaneId] = useState<string | null>(null);
   const [overPaneId, setOverPaneId] = useState<string | null>(null);
   const [overDockEdge, setOverDockEdge] = useState<DockEdge | null>(null);
-  const [overGapIndex, setOverGapIndex] = useState<number | null>(null);
+  const [overSegmentIndex, setOverSegmentIndex] = useState<number | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -385,7 +395,7 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
     setActivePaneId(event.active.id as string);
     setOverPaneId(null);
     setOverDockEdge(null);
-    setOverGapIndex(null);
+    setOverSegmentIndex(null);
   }, [isInteractive]);
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
@@ -398,7 +408,7 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
       const dock = parseDockDropId(overId);
       if (dock) {
         setOverDockEdge(dock.edge);
-        setOverGapIndex(dock.kind === 'gap' ? dock.gapIndex : null);
+        setOverSegmentIndex(dock.kind === 'segment' ? dock.segmentIndex : null);
         setOverPaneId(null);
         return;
       }
@@ -407,11 +417,11 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
       const paneId = overId.startsWith('drop-') ? overId.slice(5) : overId;
       setOverPaneId(paneId);
       setOverDockEdge(null);
-      setOverGapIndex(null);
+      setOverSegmentIndex(null);
     } else {
       setOverPaneId(null);
       setOverDockEdge(null);
-      setOverGapIndex(null);
+      setOverSegmentIndex(null);
     }
   }, [isInteractive]);
 
@@ -420,7 +430,7 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
       setActivePaneId(null);
       setOverPaneId(null);
       setOverDockEdge(null);
-      setOverGapIndex(null);
+      setOverSegmentIndex(null);
       return;
     }
     const { active, over } = event;
@@ -436,11 +446,14 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
         } else {
           dockPaneToEdge(activeId, dock.edge);
         }
-      } else if (dock?.kind === 'gap') {
-        if (workspaceId) {
-          insertPaneAtEdgeGap(activeId, dock.edge, dock.gapIndex, workspaceId);
-        } else {
-          insertPaneAtEdgeGap(activeId, dock.edge, dock.gapIndex);
+      } else if (dock?.kind === 'segment') {
+        const targetPaneId = over.data.current?.targetPaneId as string | undefined;
+        if (targetPaneId != null) {
+          if (workspaceId) {
+            insertPaneAtEdgeSegment(activeId, dock.edge, targetPaneId, workspaceId);
+          } else {
+            insertPaneAtEdgeSegment(activeId, dock.edge, targetPaneId);
+          }
         }
       } else if (activeId !== overId) {
         // Extract paneId from droppable id
@@ -458,14 +471,14 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
     setActivePaneId(null);
     setOverPaneId(null);
     setOverDockEdge(null);
-    setOverGapIndex(null);
-  }, [dockPaneToEdge, insertPaneAtEdgeGap, isInteractive, swapPanes, workspaceId]);
+    setOverSegmentIndex(null);
+  }, [dockPaneToEdge, insertPaneAtEdgeSegment, isInteractive, swapPanes, workspaceId]);
 
   const handleDragCancel = useCallback(() => {
     setActivePaneId(null);
     setOverPaneId(null);
     setOverDockEdge(null);
-    setOverGapIndex(null);
+    setOverSegmentIndex(null);
   }, []);
 
   if (workspace?.layoutRoot == null) {
@@ -495,7 +508,7 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
         <SegmentedDockEdgeTargets
           layoutRoot={workspace.layoutRoot}
           activeEdge={overDockEdge}
-          activeGapIndex={overGapIndex}
+          activeSegmentIndex={overSegmentIndex}
           isDragging={isInteractive && activePaneId != null}
         />
       </div>

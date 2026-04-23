@@ -1,10 +1,9 @@
 import { memo } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import {
-  getEdgeGaps,
   getEdgeTerminals,
   type DockEdge,
-  type EdgeGap,
+  type EdgeTerminal,
   type LayoutNode,
 } from '../store/workspaceStore';
 
@@ -14,14 +13,14 @@ const MAX_SEGMENTS = 4;
 interface SegmentedDockEdgeTargetsProps {
   layoutRoot: LayoutNode | null;
   activeEdge: DockEdge | null;
-  activeGapIndex: number | null;
+  activeSegmentIndex: number | null;
   isDragging: boolean;
 }
 
 function SegmentedDockEdgeTargetsImpl({
   layoutRoot,
   activeEdge,
-  activeGapIndex,
+  activeSegmentIndex,
   isDragging,
 }: SegmentedDockEdgeTargetsProps) {
   return (
@@ -35,7 +34,7 @@ function SegmentedDockEdgeTargetsImpl({
           edge={edge}
           layoutRoot={layoutRoot}
           activeEdge={activeEdge}
-          activeGapIndex={activeGapIndex}
+          activeSegmentIndex={activeSegmentIndex}
         />
       ))}
     </div>
@@ -49,12 +48,12 @@ function EdgeTargets({
   edge,
   layoutRoot,
   activeEdge,
-  activeGapIndex,
+  activeSegmentIndex,
 }: {
   edge: DockEdge;
   layoutRoot: LayoutNode | null;
   activeEdge: DockEdge | null;
-  activeGapIndex: number | null;
+  activeSegmentIndex: number | null;
 }) {
   const full = useDroppable({
     id: `dock-${edge}-full`,
@@ -62,10 +61,10 @@ function EdgeTargets({
   });
 
   const terminals = getEdgeTerminals(layoutRoot, edge);
-  const gaps = getEdgeGaps(terminals, MAX_SEGMENTS);
+  const segments = terminals.slice(0, MAX_SEGMENTS);
 
   const isEdgeActive = activeEdge === edge;
-  const isFullActive = isEdgeActive && activeGapIndex === null;
+  const isFullActive = isEdgeActive && activeSegmentIndex === null;
 
   return (
     <>
@@ -75,44 +74,47 @@ function EdgeTargets({
       >
         <span className="dock-edge-label">Dock {edge}</span>
       </div>
-      {gaps.map((gap) => (
-        <DockGap
-          key={gap.index}
+      {segments.map((segment, index) => (
+        <DockSegment
+          key={`${segment.paneId}-${index}`}
           edge={edge}
-          gap={gap}
-          isActive={isEdgeActive && activeGapIndex === gap.index}
+          index={index}
+          segment={segment}
+          isActive={isEdgeActive && activeSegmentIndex === index}
         />
       ))}
     </>
   );
 }
 
-function DockGap({
+function DockSegment({
   edge,
-  gap,
+  index,
+  segment,
   isActive,
 }: {
   edge: DockEdge;
-  gap: EdgeGap;
+  index: number;
+  segment: EdgeTerminal;
   isActive: boolean;
 }) {
   const droppable = useDroppable({
-    id: `dock-${edge}-gap-${gap.index}`,
-    data: { edge, gapIndex: gap.index, kind: 'gap' as const },
+    id: `dock-${edge}-segment-${index}`,
+    data: { edge, segmentIndex: index, targetPaneId: segment.paneId, kind: 'segment' as const },
   });
 
-  const midpoint = (gap.start + gap.end) / 2;
   const style: React.CSSProperties =
     edge === 'left' || edge === 'right'
-      ? { top: `${midpoint * 100}%` }
-      : { left: `${midpoint * 100}%` };
+      ? { top: `${segment.offset * 100}%`, height: `${segment.span * 100}%` }
+      : { left: `${segment.offset * 100}%`, width: `${segment.span * 100}%` };
 
   return (
     <div
       ref={droppable.setNodeRef}
-      className={`dock-gap dock-gap-${edge}${isActive ? ' over' : ''}`}
+      className={`dock-segment dock-segment-${edge}${isActive ? ' over' : ''}`}
       data-edge={edge}
-      data-gap-index={gap.index}
+      data-segment-index={index}
+      data-target-pane-id={segment.paneId}
       style={style}
     />
   );
