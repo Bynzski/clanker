@@ -105,8 +105,14 @@ function DockSegment({
 
   const style: React.CSSProperties =
     edge === 'left' || edge === 'right'
-      ? { top: `${segment.offset * 100}%`, height: `${segment.span * 100}%` }
-      : { left: `${segment.offset * 100}%`, width: `${segment.span * 100}%` };
+      ? {
+          top: `calc(${segment.offset * 100}% + 4px)`,
+          height: `calc(${segment.span * 100}% - 8px)`,
+        }
+      : {
+          left: `calc(${segment.offset * 100}% + 4px)`,
+          width: `calc(${segment.span * 100}% - 8px)`,
+        };
 
   return (
     <div
