@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <title>Pi</title>
-  <path fill="#fff" d="M20 8h24v8H20zM20 16h8v8h-8zM36 16h8v8h-8zM20 24h8v8h-8zM36 24h16v8H36zM20 32h32v8H20zM20 40h8v8h-8zM44 40h8v8h-8zM44 48h8v8h-8z"/>
-  <path fill="#050507" d="M28 16h8v8h-8z"/>
+  <path fill="#fff" fill-rule="evenodd" d="M13 13h28v19h-9v9h-9v10H13V13Zm10 10v9h9v-9h-9Z"/>
+  <path fill="#fff" d="M41 32h10v19H41V32Z"/>
 </svg>
