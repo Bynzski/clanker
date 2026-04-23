@@ -14,6 +14,22 @@ export const GRID_ROWS = 8;
 const MIN_PANE_W = 3;
 const MIN_PANE_H = 3;
 
+export type DockEdge = 'left' | 'right' | 'top' | 'bottom';
+
+export interface EdgeTerminal {
+  paneId: string;
+  offset: number;
+  span: number;
+}
+
+export interface EdgeGap {
+  index: number;
+  start: number;
+  end: number;
+  afterPaneId?: string;
+  beforePaneId?: string;
+}
+
 interface LayoutVisibilityState {
   panes: Pane[];
   browserPane: BrowserPaneState | null;
@@ -163,6 +179,70 @@ function getLeafAreaMap(
     ...getLeafAreaMap(node.first, area * node.ratio),
     ...getLeafAreaMap(node.second, area * (1 - node.ratio)),
   ];
+}
+
+export function getEdgeTerminals(
+  node: LayoutNode | null,
+  edge: DockEdge
+): EdgeTerminal[] {
+  const edgeSplitOrientation: 'horizontal' | 'vertical' =
+    edge === 'left' || edge === 'right' ? 'horizontal' : 'vertical';
+  const edgeChild: 'first' | 'second' =
+    edge === 'left' || edge === 'top' ? 'first' : 'second';
+
+  function walk(n: LayoutNode | null, offset: number, span: number): EdgeTerminal[] {
+    if (n == null) {
+      return [];
+    }
+
+    if (n.type === 'leaf') {
+      return [{ paneId: n.paneId, offset, span }];
+    }
+
+    if (n.orientation === edgeSplitOrientation) {
+      return walk(n[edgeChild], offset, span);
+    }
+
+    const firstSpan = span * n.ratio;
+    const secondSpan = span * (1 - n.ratio);
+    return [
+      ...walk(n.first, offset, firstSpan),
+      ...walk(n.second, offset + firstSpan, secondSpan),
+    ];
+  }
+
+  return walk(node, 0, 1);
+}
+
+export function getEdgeGaps(
+  edgeTerminals: EdgeTerminal[],
+  maxSegments: number
+): EdgeGap[] {
+  if (maxSegments <= 0) {
+    return [];
+  }
+
+  if (edgeTerminals.length === 0) {
+    return [{ index: 0, start: 0, end: 1 }];
+  }
+
+  const total = edgeTerminals.length + 1;
+  const gaps: EdgeGap[] = [];
+  for (let k = 0; k < total; k++) {
+    const before = edgeTerminals[k - 1];
+    const after = edgeTerminals[k];
+    const start = before ? before.offset + before.span : 0;
+    const end = after ? after.offset : 1;
+    gaps.push({
+      index: k,
+      start,
+      end,
+      afterPaneId: before?.paneId,
+      beforePaneId: after?.paneId,
+    });
+  }
+
+  return gaps.slice(0, maxSegments);
 }
 
 function splitLeafByPaneId(
