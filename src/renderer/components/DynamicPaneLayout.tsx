@@ -16,6 +16,7 @@ import {
 } from '@dnd-kit/core';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import type {
+  DockEdge,
   LayoutNode,
   LayoutLeaf,
   LayoutSplit,
@@ -25,9 +26,8 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
 import BrowserPanel from './BrowserPanel';
 import EditorPane from './EditorPane';
+import { SegmentedDockEdgeTargets } from './DockEdgeTargets';
 import './DynamicPaneLayout.css';
-
-type DockEdge = 'left' | 'right' | 'top' | 'bottom';
 
 const TerminalPane = lazy(() => import('./TerminalPane'));
 
@@ -324,30 +324,6 @@ function renderLayout(
   return <LayoutNodeView workspaceId={workspaceId} node={root} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />;
 }
 
-function DockEdgeTargets({ activeEdge, isDragging }: { activeEdge: DockEdge | null; isDragging: boolean }) {
-  const left = useDroppable({ id: 'dock-left', data: { edge: 'left' as DockEdge } });
-  const right = useDroppable({ id: 'dock-right', data: { edge: 'right' as DockEdge } });
-  const top = useDroppable({ id: 'dock-top', data: { edge: 'top' as DockEdge } });
-  const bottom = useDroppable({ id: 'dock-bottom', data: { edge: 'bottom' as DockEdge } });
-
-  return (
-    <div className={`dock-edge-overlay ${isDragging ? 'dragging' : ''}`} aria-hidden="true">
-      <div ref={left.setNodeRef} className={`dock-edge dock-left ${activeEdge === 'left' ? 'over' : ''}`}>
-        <span className="dock-edge-label">Dock left</span>
-      </div>
-      <div ref={right.setNodeRef} className={`dock-edge dock-right ${activeEdge === 'right' ? 'over' : ''}`}>
-        <span className="dock-edge-label">Dock right</span>
-      </div>
-      <div ref={top.setNodeRef} className={`dock-edge dock-top ${activeEdge === 'top' ? 'over' : ''}`}>
-        <span className="dock-edge-label">Dock top</span>
-      </div>
-      <div ref={bottom.setNodeRef} className={`dock-edge dock-bottom ${activeEdge === 'bottom' ? 'over' : ''}`}>
-        <span className="dock-edge-label">Dock bottom</span>
-      </div>
-    </div>
-  );
-}
-
 const edgeFriendlyCollisionDetection: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(args);
   return pointerCollisions.length > 0 ? pointerCollisions : closestCorners(args);
@@ -469,7 +445,12 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
         <div className="split-root">
           {renderLayout(workspaceId, workspace.layoutRoot, activePaneId, overPaneId)}
         </div>
-        <DockEdgeTargets activeEdge={overDockEdge} isDragging={isInteractive && activePaneId != null} />
+        <SegmentedDockEdgeTargets
+          layoutRoot={workspace.layoutRoot}
+          activeEdge={overDockEdge}
+          activeGapIndex={null}
+          isDragging={isInteractive && activePaneId != null}
+        />
       </div>
       <DragOverlay>
         {/* We could add a drag preview here if needed */}
