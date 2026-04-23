@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useWorkspaceStore, assignWorkspaceLifecycles } from '../../../src/renderer/store/workspaceStore';
-import type { Terminal, Pane, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
+import { useWorkspaceStore, assignWorkspaceLifecycles, getEdgeTerminals } from '../../../src/renderer/store/workspaceStore';
+import type { LayoutSplit, Terminal, Pane, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
 
@@ -738,6 +738,22 @@ describe('layout operations', () => {
     const pane2 = getStore().panes.find(p => p.terminalId === 't2')!;
     getStore().dockPaneToEdge(pane2.id, 'right');
     expect(getStore().layoutRevision).toBeGreaterThan(0);
+  });
+
+  it('insertPaneAtEdgeSegment splits the targeted edge pane', () => {
+    const t2 = terminal('t2');
+    getStore().addTerminal(t2);
+    const pane1 = getStore().panes.find(p => p.terminalId === getStore().terminals[0].id)!;
+    const pane2 = getStore().panes.find(p => p.terminalId === 't2')!;
+    const revBefore = getStore().layoutRevision;
+
+    getStore().insertPaneAtEdgeSegment(pane2.id, 'left', pane1.id);
+
+    expect(getStore().layoutRevision).toBeGreaterThan(revBefore);
+    const root = getStore().layoutRoot as LayoutSplit;
+    expect(root.orientation).toBe('horizontal');
+    expect(getEdgeTerminals(getStore().layoutRoot, 'left').map((entry) => entry.paneId)).toEqual([pane2.id]);
+    expect(getEdgeTerminals(getStore().layoutRoot, 'right').map((entry) => entry.paneId)).toEqual([pane1.id]);
   });
 
   it('setSplitRatio updates split node ratio', () => {

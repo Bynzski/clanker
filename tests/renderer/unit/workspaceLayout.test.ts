@@ -16,6 +16,7 @@ import {
   getEdgeTerminals,
   getEdgeGaps,
   insertPaneAtEdgeGapInLayout,
+  insertPaneAtEdgeSegmentInLayout,
 } from '../../../src/renderer/store/workspaceLayout';
 import type { EdgeTerminal } from '../../../src/renderer/store/workspaceLayout';
 import type {
@@ -1382,6 +1383,85 @@ describe('insertPaneAtEdgeGapInLayout', () => {
     const original = split(leaf('a'), leaf('b'), 'horizontal');
     const snapshot = JSON.parse(JSON.stringify(original));
     insertPaneAtEdgeGapInLayout(original, 'b', 'left', 0);
+    expect(original).toEqual(snapshot);
+  });
+});
+
+// ===========================================================================
+// insertPaneAtEdgeSegmentInLayout
+// ===========================================================================
+describe('insertPaneAtEdgeSegmentInLayout', () => {
+  it('returns a single-leaf layout when root is null', () => {
+    const result = insertPaneAtEdgeSegmentInLayout(null, 'x', 'left', 'a');
+    expect(result).toMatchObject({ type: 'leaf', paneId: 'x' });
+  });
+
+  it('returns the layout unchanged when paneId is not in the tree', () => {
+    const tree = split(leaf('a'), leaf('b'), 'horizontal');
+    const result = insertPaneAtEdgeSegmentInLayout(tree, 'ghost', 'left', 'a');
+    expect(result).toBe(tree);
+  });
+
+  it('returns the layout unchanged when targetPaneId is not in the tree', () => {
+    const tree = split(leaf('a'), leaf('b'), 'horizontal');
+    const result = insertPaneAtEdgeSegmentInLayout(tree, 'b', 'left', 'ghost');
+    expect(result).toBe(tree);
+  });
+
+  it('returns the layout unchanged when dragging onto its own segment', () => {
+    const tree = split(leaf('a'), leaf('b'), 'horizontal');
+    const result = insertPaneAtEdgeSegmentInLayout(tree, 'a', 'left', 'a');
+    expect(result).toBe(tree);
+  });
+
+  it('left segment splits the target pane with the moved pane on the left', () => {
+    const tree = split(leaf('a'), leaf('x'), 'horizontal');
+    const result = insertPaneAtEdgeSegmentInLayout(tree, 'x', 'left', 'a') as LayoutSplit;
+    expect(result.orientation).toBe('horizontal');
+    expect((result.first as LayoutLeaf).paneId).toBe('x');
+    expect((result.second as LayoutLeaf).paneId).toBe('a');
+  });
+
+  it('right segment splits the target pane with the moved pane on the right', () => {
+    const tree = split(leaf('x'), leaf('a'), 'horizontal');
+    const result = insertPaneAtEdgeSegmentInLayout(tree, 'x', 'right', 'a') as LayoutSplit;
+    expect(result.orientation).toBe('horizontal');
+    expect((result.first as LayoutLeaf).paneId).toBe('a');
+    expect((result.second as LayoutLeaf).paneId).toBe('x');
+  });
+
+  it('top segment splits the target pane with the moved pane above', () => {
+    const tree = split(leaf('a'), leaf('x'), 'vertical');
+    const result = insertPaneAtEdgeSegmentInLayout(tree, 'x', 'top', 'a') as LayoutSplit;
+    expect(result.orientation).toBe('vertical');
+    expect((result.first as LayoutLeaf).paneId).toBe('x');
+    expect((result.second as LayoutLeaf).paneId).toBe('a');
+  });
+
+  it('bottom segment splits the target pane with the moved pane below', () => {
+    const tree = split(leaf('x'), leaf('a'), 'vertical');
+    const result = insertPaneAtEdgeSegmentInLayout(tree, 'x', 'bottom', 'a') as LayoutSplit;
+    expect(result.orientation).toBe('vertical');
+    expect((result.first as LayoutLeaf).paneId).toBe('a');
+    expect((result.second as LayoutLeaf).paneId).toBe('x');
+  });
+
+  it('preserves off-target subtrees when inserting into an edge segment', () => {
+    const tree = split(
+      split(leaf('a'), leaf('b'), 'vertical'),
+      split(leaf('x'), leaf('c'), 'vertical'),
+      'horizontal',
+    );
+    const result = insertPaneAtEdgeSegmentInLayout(tree, 'x', 'left', 'b');
+    expect(collectLeafPaneIds(result).sort()).toEqual(['a', 'b', 'c', 'x']);
+    expect(getEdgeTerminals(result, 'left').map((t) => t.paneId)).toEqual(['a', 'x']);
+    expect(getEdgeTerminals(result, 'right').map((t) => t.paneId)).toEqual(['c']);
+  });
+
+  it('does not mutate the input tree', () => {
+    const original = split(leaf('a'), leaf('b'), 'horizontal');
+    const snapshot = JSON.parse(JSON.stringify(original));
+    insertPaneAtEdgeSegmentInLayout(original, 'b', 'left', 'a');
     expect(original).toEqual(snapshot);
   });
 });
