@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
-import { afterEach } from 'vitest';
+import { afterEach, vi } from 'vitest';
 
 // Mock ResizeObserver for components that use it (TerminalPane, BrowserPanel)
 class ResizeObserverMock {
@@ -43,3 +43,16 @@ global.ResizeObserver = ResizeObserverMock;
 afterEach(() => {
   cleanup();
 });
+
+vi.mock('../../src/renderer/assets/harness-logos/codex.svg', () => ({
+  default: 'codex-logo.svg',
+}));
+vi.mock('../../src/renderer/assets/harness-logos/claude.svg', () => ({
+  default: 'claude-logo.svg',
+}));
+vi.mock('../../src/renderer/assets/harness-logos/opencode.svg', () => ({
+  default: 'opencode-logo.svg',
+}));
+vi.mock('../../src/renderer/assets/harness-logos/pi.svg', () => ({
+  default: 'pi-logo.svg',
+}));

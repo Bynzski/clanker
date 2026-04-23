@@ -10,7 +10,7 @@ vi.mock('@xterm/addon-clipboard', () => ({
 }));
 
 if (typeof document !== 'undefined') {
-  await import('./renderer');
+  await import('./renderer.tsx');
 }
 
 afterEach(() => {
