@@ -445,17 +445,20 @@ export default function Header() {
         </button>
 
         <div className="harness-pills">
-          {HARNESS_OPTIONS.filter((opt) => availableHarnessIds.includes(opt.id)).map(opt => (
-            <button
-              key={opt.id}
-              className={`harness-pill ${harness === opt.id ? 'active' : ''}`}
-              onClick={() => setHarness(opt.id)}
-              title={opt.label}
-            >
-              <opt.Icon size={14} strokeWidth={2.5} />
-              <span>{opt.label}</span>
+          {HARNESS_OPTIONS.filter((opt) => availableHarnessIds.includes(opt.id)).map(opt => {
+            const IconComponent = opt.Icon;
+            return (
+              <button
+                key={opt.id}
+                className={`harness-pill ${harness === opt.id ? 'active' : ''}`}
+                onClick={() => setHarness(opt.id)}
+                title={opt.label}
+              >
+                <IconComponent size={14} strokeWidth={2.5} />
+                <span>{opt.label}</span>
               </button>
-            ))}
+            );
+          })}
         </div>
 
         <button className="header-btn header-btn-primary" type="button" onClick={handleAddTerminal} disabled={!canAddPane()}>
@@ -622,7 +625,10 @@ export default function Header() {
                             }
                           }}
                         >
-                          {Opt && <Opt.Icon size={13} strokeWidth={2.5} />}
+                          {Opt && (() => {
+                            const HarnessIcon = Opt.Icon;
+                            return <HarnessIcon size={13} strokeWidth={2.5} />;
+                          })()}
                           <span className="harness-defaults-label">{Opt?.label ?? harnessId}</span>
                           {currentModelId && (
                             <span

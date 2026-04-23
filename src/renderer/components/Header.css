@@ -152,6 +152,15 @@
   color: var(--text-secondary);
 }
 
+/* Harness logo SVG icons from svgl.app */
+.harness-logo-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 /* Legacy styles for compatibility */
 .layout-select,
 .harness-select {
