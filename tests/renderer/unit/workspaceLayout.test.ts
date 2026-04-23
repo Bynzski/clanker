@@ -15,6 +15,7 @@ import {
   buildWorkspaceLayout,
   getEdgeTerminals,
   getEdgeGaps,
+  insertPaneAtEdgeGapInLayout,
 } from '../../../src/renderer/store/workspaceLayout';
 import type { EdgeTerminal } from '../../../src/renderer/store/workspaceLayout';
 import type {
@@ -1191,6 +1192,197 @@ describe('getEdgeGaps', () => {
     expect(gaps[0]).toEqual({ index: 0, start: 0, end: 0, afterPaneId: undefined, beforePaneId: 'a' });
     expect(gaps[1]).toEqual({ index: 1, start: 0.4, end: 0.4, afterPaneId: 'a', beforePaneId: 'b' });
     expect(gaps[2]).toEqual({ index: 2, start: 1, end: 1, afterPaneId: 'b', beforePaneId: undefined });
+  });
+});
+
+// ===========================================================================
+// insertPaneAtEdgeGapInLayout
+// ===========================================================================
+describe('insertPaneAtEdgeGapInLayout', () => {
+  it('returns a single-leaf layout when root is null', () => {
+    const result = insertPaneAtEdgeGapInLayout(null, 'x', 'left', 0);
+    expect(result).toMatchObject({ type: 'leaf', paneId: 'x' });
+  });
+
+  it('returns the layout unchanged when paneId is not in the tree', () => {
+    const tree = split(leaf('a'), leaf('b'), 'horizontal');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'ghost', 'left', 0);
+    expect(result).toBe(tree);
+  });
+
+  it('returns a single leaf when the tree contains only the pane being inserted', () => {
+    const tree = leaf('a');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'a', 'left', 0);
+    expect(result).toMatchObject({ type: 'leaf', paneId: 'a' });
+  });
+
+  it('single terminal + left-gap-0 creates a vertical split with the new pane on top', () => {
+    // Insert a new pane (not already present) — we emulate by inserting an existing leaf
+    // at a fresh gap. Here paneId must exist: use a tree with two panes and move one.
+    const tree = split(leaf('a'), leaf('b'), 'horizontal');
+    // Move 'b' to left-gap-0: removing b leaves just 'a', then prepend b.
+    const result = insertPaneAtEdgeGapInLayout(tree, 'b', 'left', 0) as LayoutSplit;
+    expect(result.type).toBe('split');
+    expect(result.orientation).toBe('vertical');
+    expect((result.first as LayoutLeaf).paneId).toBe('b');
+    expect((result.second as LayoutLeaf).paneId).toBe('a');
+    expect(getEdgeTerminals(result, 'left').map((t) => t.paneId)).toEqual(['b', 'a']);
+  });
+
+  it('single terminal + left-gap-1 creates a vertical split with the new pane on bottom', () => {
+    const tree = split(leaf('a'), leaf('b'), 'horizontal');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'b', 'left', 1) as LayoutSplit;
+    expect(result.orientation).toBe('vertical');
+    expect((result.first as LayoutLeaf).paneId).toBe('a');
+    expect((result.second as LayoutLeaf).paneId).toBe('b');
+  });
+
+  it('uses equal ratio (0.5) for the new split', () => {
+    const tree = split(leaf('a'), leaf('b'), 'horizontal');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'b', 'left', 0) as LayoutSplit;
+    expect(result.ratio).toBe(0.5);
+  });
+
+  // ------ left edge, 3 terminals ------
+  describe('left edge with 3 existing edge terminals', () => {
+    // Tree: vertical(A, vertical(B, C)) → left edge = [A, B, C]. Insert 'x' from off-tree by
+    // adding it first to an unrelated branch, then moving it.
+    // Setup: horizontal(vertical(A, vertical(B, C)), X) → left edge terminals = [A, B, C].
+    const makeTree = () =>
+      split(
+        split(leaf('a'), split(leaf('b'), leaf('c'), 'vertical'), 'vertical'),
+        leaf('x'),
+        'horizontal',
+      );
+
+    it('left-gap-0 inserts x at the top of the left column', () => {
+      const result = insertPaneAtEdgeGapInLayout(makeTree(), 'x', 'left', 0);
+      const terminals = getEdgeTerminals(result, 'left').map((t) => t.paneId);
+      expect(terminals).toEqual(['x', 'a', 'b', 'c']);
+    });
+
+    it('left-gap-1 inserts x between a and b on the left column', () => {
+      const result = insertPaneAtEdgeGapInLayout(makeTree(), 'x', 'left', 1);
+      const terminals = getEdgeTerminals(result, 'left').map((t) => t.paneId);
+      expect(terminals).toEqual(['a', 'x', 'b', 'c']);
+    });
+
+    it('left-gap-2 inserts x between b and c on the left column', () => {
+      const result = insertPaneAtEdgeGapInLayout(makeTree(), 'x', 'left', 2);
+      const terminals = getEdgeTerminals(result, 'left').map((t) => t.paneId);
+      expect(terminals).toEqual(['a', 'b', 'x', 'c']);
+    });
+
+    it('left-gap-3 inserts x at the bottom of the left column', () => {
+      const result = insertPaneAtEdgeGapInLayout(makeTree(), 'x', 'left', 3);
+      const terminals = getEdgeTerminals(result, 'left').map((t) => t.paneId);
+      expect(terminals).toEqual(['a', 'b', 'c', 'x']);
+    });
+  });
+
+  // ------ right edge ------
+  it('right-gap-0 inserts x at the top of the right column', () => {
+    // Tree: horizontal(X, vertical(A, B)) → right edge terminals = [A, B]
+    const tree = split(leaf('x'), split(leaf('a'), leaf('b'), 'vertical'), 'horizontal');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'x', 'right', 0);
+    expect(getEdgeTerminals(result, 'right').map((t) => t.paneId)).toEqual(['x', 'a', 'b']);
+  });
+
+  it('right-gap-2 inserts x at the bottom of the right column', () => {
+    const tree = split(leaf('x'), split(leaf('a'), leaf('b'), 'vertical'), 'horizontal');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'x', 'right', 2);
+    expect(getEdgeTerminals(result, 'right').map((t) => t.paneId)).toEqual(['a', 'b', 'x']);
+  });
+
+  // ------ top edge ------
+  it('top-gap-0 inserts x at the left of the top row', () => {
+    // Tree: vertical(horizontal(A, B), X) → top edge terminals = [A, B]
+    const tree = split(split(leaf('a'), leaf('b'), 'horizontal'), leaf('x'), 'vertical');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'x', 'top', 0);
+    expect(getEdgeTerminals(result, 'top').map((t) => t.paneId)).toEqual(['x', 'a', 'b']);
+  });
+
+  it('top-gap-1 inserts x between a and b on the top row', () => {
+    const tree = split(split(leaf('a'), leaf('b'), 'horizontal'), leaf('x'), 'vertical');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'x', 'top', 1);
+    expect(getEdgeTerminals(result, 'top').map((t) => t.paneId)).toEqual(['a', 'x', 'b']);
+  });
+
+  it('top-gap-2 inserts x at the right of the top row', () => {
+    const tree = split(split(leaf('a'), leaf('b'), 'horizontal'), leaf('x'), 'vertical');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'x', 'top', 2);
+    expect(getEdgeTerminals(result, 'top').map((t) => t.paneId)).toEqual(['a', 'b', 'x']);
+  });
+
+  // ------ bottom edge ------
+  it('bottom-gap-0 inserts x at the left of the bottom row', () => {
+    const tree = split(leaf('x'), split(leaf('a'), leaf('b'), 'horizontal'), 'vertical');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'x', 'bottom', 0);
+    expect(getEdgeTerminals(result, 'bottom').map((t) => t.paneId)).toEqual(['x', 'a', 'b']);
+  });
+
+  it('bottom-gap-2 inserts x at the right of the bottom row', () => {
+    const tree = split(leaf('x'), split(leaf('a'), leaf('b'), 'horizontal'), 'vertical');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'x', 'bottom', 2);
+    expect(getEdgeTerminals(result, 'bottom').map((t) => t.paneId)).toEqual(['a', 'b', 'x']);
+  });
+
+  // ------ moving across edges ------
+  it('moves a pane from right edge to left edge', () => {
+    // Tree: horizontal(A, X) → left=[A], right=[X]. Move x to left-gap-0.
+    const tree = split(leaf('a'), leaf('x'), 'horizontal');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'x', 'left', 0);
+    expect(getEdgeTerminals(result, 'left').map((t) => t.paneId)).toEqual(['x', 'a']);
+  });
+
+  it('moves a pane from one left-gap to another', () => {
+    // Tree: vertical(X, vertical(A, B)) → left=[x, a, b]. Move x from gap 0 to gap 2 (between a and b).
+    const tree = split(leaf('x'), split(leaf('a'), leaf('b'), 'vertical'), 'vertical');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'x', 'left', 1);
+    // After removing x: vertical(A, B), terminals=[a, b], gap 1 = between → [a, x, b]
+    expect(getEdgeTerminals(result, 'left').map((t) => t.paneId)).toEqual(['a', 'x', 'b']);
+  });
+
+  // ------ clamping / out of range ------
+  it('clamps negative gapIndex to 0 (prepend)', () => {
+    const tree = split(leaf('a'), leaf('b'), 'horizontal');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'b', 'left', -5);
+    expect(getEdgeTerminals(result, 'left').map((t) => t.paneId)).toEqual(['b', 'a']);
+  });
+
+  it('clamps gapIndex beyond total to append', () => {
+    const tree = split(leaf('a'), leaf('b'), 'horizontal');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'b', 'left', 99);
+    expect(getEdgeTerminals(result, 'left').map((t) => t.paneId)).toEqual(['a', 'b']);
+  });
+
+  // ------ preserves off-edge structure ------
+  it('does not alter the off-edge subtree when inserting on the left edge', () => {
+    // Tree: horizontal(A, vertical(X, C)) → left=[A], right=[X, C]. Move x to left-gap-0.
+    // Expect right side to still have [X, C] minus x... actually x is on right originally,
+    // so after removal right side has [C] only. Let's check that C is preserved.
+    const tree = split(leaf('a'), split(leaf('x'), leaf('c'), 'vertical'), 'horizontal');
+    const result = insertPaneAtEdgeGapInLayout(tree, 'x', 'left', 0);
+    expect(collectLeafPaneIds(result).sort()).toEqual(['a', 'c', 'x']);
+    expect(getEdgeTerminals(result, 'left').map((t) => t.paneId)).toEqual(['x', 'a']);
+    expect(getEdgeTerminals(result, 'right').map((t) => t.paneId)).toEqual(['c']);
+  });
+
+  it('preserves all pane IDs after insertion', () => {
+    const tree = split(
+      split(leaf('a'), leaf('b'), 'vertical'),
+      split(leaf('c'), leaf('d'), 'vertical'),
+      'horizontal',
+    );
+    const result = insertPaneAtEdgeGapInLayout(tree, 'd', 'top', 1);
+    expect(collectLeafPaneIds(result).sort()).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('does not mutate the input tree', () => {
+    const original = split(leaf('a'), leaf('b'), 'horizontal');
+    const snapshot = JSON.parse(JSON.stringify(original));
+    insertPaneAtEdgeGapInLayout(original, 'b', 'left', 0);
+    expect(original).toEqual(snapshot);
   });
 });
 
