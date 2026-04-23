@@ -39,12 +39,30 @@ Global harness defaults (model, favorites, flags) are configured in the header s
 ## Layout Controls
 
 | Action | Description |
-|--------|------------|
+|--------|-------------|
 | **Fit All** | Reset panes to balanced sizes |
 | **Drag** | Rearrange panes via drag handle |
-| **Dock** | Drop onto edge to resize |
+| **Dock** | Drop onto edge to create a full-edge split |
+| **Dock (segmented)** | Target a specific pane on an edge to insert adjacent to it |
 | **Swap** | Drag to swap pane positions |
 | **Lock** | Right-click pane → Lock to prevent reflow |
+
+### Docking Panes
+
+When dragging a pane to an edge, Clanker Grid shows two types of drop targets:
+
+- **Full-edge zone** — A prominent target on the outer edge of the layout. Dropping here creates a split that spans the full height (left/right) or width (top/bottom) of the adjacent edge column.
+- **Segment zones** — Smaller targets aligned to each pane's position along the active edge. Dropping on a segment inserts the dragged pane directly adjacent to that pane.
+
+Segment zones appear dynamically based on the current layout. Up to 4 segments are shown per edge. They are only visible during an active drag, and highlight when the cursor hovers over them.
+
+#### Dock behavior
+
+| Drop target | Result |
+|-------------|--------|
+| Full-edge zone | Full split along the edge column |
+| Segment zone | Pane inserted adjacent to the target pane |
+| Pane | Swapped with the target pane |
 
 ## Persistence
 
