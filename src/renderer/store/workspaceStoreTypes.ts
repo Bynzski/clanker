@@ -144,6 +144,7 @@ export interface WorkspaceState {
   toggleBrowserLock: (workspaceId?: string) => void;
   swapPanes: (a: string, b: string, workspaceId?: string) => void;
   dockPaneToEdge: (paneId: string, edge: 'left' | 'right' | 'top' | 'bottom', workspaceId?: string) => void;
+  insertPaneAtEdgeGap: (paneId: string, edge: 'left' | 'right' | 'top' | 'bottom', gapIndex: number, workspaceId?: string) => void;
   setSplitRatio: (nodeId: string, ratio: number, workspaceId?: string) => void;
   canAddPane: () => boolean;
 

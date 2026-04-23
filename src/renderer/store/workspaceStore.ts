@@ -7,6 +7,7 @@ import {
   GRID_COLS,
   GRID_ROWS,
   hasUnlockedLeaf,
+  insertPaneAtEdgeGapInLayout,
   insertPaneIntoLayout,
   normalizeLayoutRoot,
   normalizePosition,
@@ -1093,6 +1094,35 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const warnings = validateWorkspaceConsistency(nextState);
       if (warnings.length > 0) {
         console.warn('[Dev Only] Workspace consistency violation after dockPaneToEdge:', warnings);
+      }
+    }
+
+    return nextState;
+  }),
+
+  insertPaneAtEdgeGap: (paneId, edge, gapIndex, workspaceId) => set((state) => {
+    const workspace = resolveWorkspaceByScope(state, workspaceId);
+    if (workspace == null) {
+      return state;
+    }
+
+    const nextLayoutRoot = insertPaneAtEdgeGapInLayout(workspace.layoutRoot, paneId, edge, gapIndex);
+    if (nextLayoutRoot === workspace.layoutRoot) {
+      return state;
+    }
+
+    const nextState = {
+      layoutRoot: nextLayoutRoot,
+      layoutRevision: state.layoutRevision + 1,
+      ...patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
+        ...currentWorkspace,
+        layoutRoot: nextLayoutRoot,
+      })),
+    };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after insertPaneAtEdgeGap:', warnings);
       }
     }
 
