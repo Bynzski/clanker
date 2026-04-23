@@ -163,6 +163,7 @@ function setupStore(overrides: Record<string, unknown> = {}) {
     layoutRevision: 1,
     swapPanes: vi.fn(),
     dockPaneToEdge: vi.fn(),
+    insertPaneAtEdgeGap: vi.fn(),
     setSplitRatio: vi.fn(),
     ...overrides,
   });
@@ -704,7 +705,7 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-full' } });
       });
 
       expect(document.querySelector('.dock-left')?.classList.contains('over')).toBe(true);
@@ -719,7 +720,7 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-right' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-right-full' } });
       });
 
       expect(document.querySelector('.dock-right')?.classList.contains('over')).toBe(true);
@@ -734,7 +735,7 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-top' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-top-full' } });
       });
 
       expect(document.querySelector('.dock-top')?.classList.contains('over')).toBe(true);
@@ -748,7 +749,7 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-bottom' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-bottom-full' } });
       });
 
       expect(document.querySelector('.dock-bottom')?.classList.contains('over')).toBe(true);
@@ -844,10 +845,7 @@ describe('DynamicPaneLayout', () => {
       expect(leftGaps.length).toBe(4);
     });
 
-    it('full-edge zone does not carry the over class while active gap is non-null', () => {
-      // This test documents that future phases can toggle full vs gap highlight
-      // via the component's activeGapIndex prop. In Phase 2 the container always
-      // passes null, so the full zone lights up when the edge is active.
+    it('full-edge zone lights up on full drop target; gap zones stay unlit', () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);
 
@@ -855,13 +853,11 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-full' } });
       });
 
-      // Full-edge zone is active (activeGapIndex is null), gaps are not.
       expect(document.querySelector('.dock-left')?.classList.contains('over')).toBe(true);
-      const activeGaps = document.querySelectorAll('.dock-gap.over');
-      expect(activeGaps.length).toBe(0);
+      expect(document.querySelectorAll('.dock-gap.over').length).toBe(0);
     });
   });
 
@@ -895,7 +891,7 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-right' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-right-full' } });
       });
 
       expect(document.querySelector('.dock-right.over')).toBeTruthy();
@@ -945,7 +941,7 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-full' } });
       });
       expect(document.querySelector('.dock-left.over')).toBeTruthy();
 
@@ -954,22 +950,149 @@ describe('DynamicPaneLayout', () => {
       });
       expect(document.querySelector('.dock-edge.over')).toBeNull();
     });
+
+    it('highlights the matching gap zone and not the full edge for dock-{edge}-gap-{index}', () => {
+      setupStoreWithLayout(createLeaf('n1', 'p1'));
+      render(<DynamicPaneLayout />);
+
+      act(() => {
+        mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
+      });
+      act(() => {
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-gap-1' } });
+      });
+
+      const activeGap = document.querySelector('.dock-gap-left[data-gap-index="1"]');
+      expect(activeGap?.classList.contains('over')).toBe(true);
+      expect(document.querySelector('.dock-left')?.classList.contains('over')).toBe(false);
+    });
+
+    it('switches highlight from one gap to another on subsequent drag-over events', () => {
+      setupStoreWithLayout(createLeaf('n1', 'p1'));
+      render(<DynamicPaneLayout />);
+
+      act(() => {
+        mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
+      });
+      act(() => {
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-gap-0' } });
+      });
+      expect(
+        document.querySelector('.dock-gap-left[data-gap-index="0"]')?.classList.contains('over'),
+      ).toBe(true);
+
+      act(() => {
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-gap-1' } });
+      });
+      expect(
+        document.querySelector('.dock-gap-left[data-gap-index="0"]')?.classList.contains('over'),
+      ).toBe(false);
+      expect(
+        document.querySelector('.dock-gap-left[data-gap-index="1"]')?.classList.contains('over'),
+      ).toBe(true);
+    });
+
+    it('clears gap highlight and falls back to full highlight when switching to a full target', () => {
+      setupStoreWithLayout(createLeaf('n1', 'p1'));
+      render(<DynamicPaneLayout />);
+
+      act(() => {
+        mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
+      });
+      act(() => {
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-gap-0' } });
+      });
+      expect(document.querySelectorAll('.dock-gap.over').length).toBe(1);
+
+      act(() => {
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-full' } });
+      });
+      expect(document.querySelectorAll('.dock-gap.over').length).toBe(0);
+      expect(document.querySelector('.dock-left')?.classList.contains('over')).toBe(true);
+    });
+
+    it('ignores a malformed dock- id and routes as a pane target', () => {
+      const layout = createSplit('s1', 'horizontal', 0.5,
+        createLeaf('n1', 'p1'),
+        createLeaf('n2', 'p2'),
+      );
+      setupStoreWithLayout(layout);
+      render(<DynamicPaneLayout />);
+
+      act(() => {
+        mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
+      });
+      // No matching edge part in parser → treated as pane id fallthrough
+      act(() => {
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-sideways-full' } });
+      });
+      // Pane id fallback: takes id as-is (no drop- prefix) — this is just a sanity
+      // check that the parser rejects unknown edges without throwing.
+      expect(document.querySelector('.dock-edge.over')).toBeNull();
+    });
   });
 
   // =========================================================================
   // DnD: handleDragEnd
   // =========================================================================
   describe('handleDragEnd', () => {
-    it('calls dockPaneToEdge when dropped on dock zone', () => {
+    it('calls dockPaneToEdge when dropped on dock-{edge}-full zone', () => {
       const mockDock = vi.fn();
       setupStoreWithLayout(createLeaf('n1', 'p1'), { dockPaneToEdge: mockDock });
       render(<DynamicPaneLayout />);
 
       act(() => {
-        mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: { id: 'dock-left' } });
+        mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: { id: 'dock-left-full' } });
       });
 
       expect(mockDock).toHaveBeenCalledWith('p1', 'left');
+    });
+
+    it('calls insertPaneAtEdgeGap with parsed edge + gapIndex when dropped on a gap zone', () => {
+      const mockInsert = vi.fn();
+      const mockDock = vi.fn();
+      setupStoreWithLayout(createLeaf('n1', 'p1'), {
+        insertPaneAtEdgeGap: mockInsert,
+        dockPaneToEdge: mockDock,
+      });
+      render(<DynamicPaneLayout />);
+
+      act(() => {
+        mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: { id: 'dock-right-gap-2' } });
+      });
+
+      expect(mockInsert).toHaveBeenCalledWith('p1', 'right', 2);
+      expect(mockDock).not.toHaveBeenCalled();
+    });
+
+    it('passes workspaceId through to insertPaneAtEdgeGap when scoped', () => {
+      const mockInsert = vi.fn();
+      setupStoreWithLayout(createLeaf('n1', 'p1'), { insertPaneAtEdgeGap: mockInsert });
+      render(<DynamicPaneLayout workspaceId="ws-42" />);
+
+      act(() => {
+        mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: { id: 'dock-top-gap-0' } });
+      });
+
+      expect(mockInsert).toHaveBeenCalledWith('p1', 'top', 0, 'ws-42');
+    });
+
+    it('clears overGapIndex state after drag end', () => {
+      setupStoreWithLayout(createLeaf('n1', 'p1'));
+      render(<DynamicPaneLayout />);
+
+      act(() => {
+        mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
+      });
+      act(() => {
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-gap-1' } });
+      });
+      expect(document.querySelectorAll('.dock-gap.over').length).toBe(1);
+
+      act(() => {
+        mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: { id: 'dock-left-gap-1' } });
+      });
+      expect(document.querySelectorAll('.dock-gap.over').length).toBe(0);
     });
 
     it('calls swapPanes when dropped on a different pane (drop- prefix)', () => {
@@ -1065,6 +1188,24 @@ describe('DynamicPaneLayout', () => {
       });
       expect(document.querySelector('.dock-edge-overlay.dragging')).toBeNull();
       expect(document.querySelector('.dock-edge.over')).toBeNull();
+    });
+
+    it('clears overGapIndex highlight on cancel', () => {
+      setupStoreWithLayout(createLeaf('n1', 'p1'));
+      render(<DynamicPaneLayout />);
+
+      act(() => {
+        mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
+      });
+      act(() => {
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-top-gap-1' } });
+      });
+      expect(document.querySelectorAll('.dock-gap.over').length).toBe(1);
+
+      act(() => {
+        mocks.dndCallbacks.onDragCancel();
+      });
+      expect(document.querySelectorAll('.dock-gap.over').length).toBe(0);
     });
   });
 
