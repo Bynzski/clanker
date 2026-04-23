@@ -365,6 +365,63 @@ export function dockPaneToEdgeInLayout(
   return createLayoutSplit(trimmedLayout, dockedLeaf, 'vertical', 0.5);
 }
 
+export function insertPaneAtEdgeGapInLayout(
+  layoutRoot: LayoutNode | null,
+  paneId: string,
+  edge: DockEdge,
+  gapIndex: number
+): LayoutNode | null {
+  if (layoutRoot == null) {
+    return createLayoutLeaf(paneId);
+  }
+
+  const leaves = collectLeafPaneIds(layoutRoot);
+  if (!leaves.includes(paneId)) {
+    return layoutRoot;
+  }
+
+  const trimmedLayout = removePaneFromLayout(layoutRoot, paneId);
+  if (trimmedLayout == null) {
+    return createLayoutLeaf(paneId);
+  }
+
+  const edgeOrientation: 'horizontal' | 'vertical' =
+    edge === 'left' || edge === 'right' ? 'horizontal' : 'vertical';
+  const perpOrientation: 'horizontal' | 'vertical' =
+    edgeOrientation === 'horizontal' ? 'vertical' : 'horizontal';
+  const edgeChild: 'first' | 'second' =
+    edge === 'left' || edge === 'top' ? 'first' : 'second';
+
+  function insertAt(node: LayoutNode, targetGap: number): LayoutNode {
+    if (node.type === 'split' && node.orientation === edgeOrientation) {
+      const newEdgeChild = insertAt(node[edgeChild], targetGap);
+      return { ...node, [edgeChild]: newEdgeChild };
+    }
+
+    const total = getEdgeTerminals(node, edge).length;
+
+    if (targetGap <= 0) {
+      return createLayoutSplit(createLayoutLeaf(paneId), node, perpOrientation, 0.5);
+    }
+
+    if (targetGap >= total) {
+      return createLayoutSplit(node, createLayoutLeaf(paneId), perpOrientation, 0.5);
+    }
+
+    if (node.type === 'split') {
+      const firstCount = getEdgeTerminals(node.first, edge).length;
+      if (targetGap <= firstCount) {
+        return { ...node, first: insertAt(node.first, targetGap) };
+      }
+      return { ...node, second: insertAt(node.second, targetGap - firstCount) };
+    }
+
+    return createLayoutSplit(node, createLayoutLeaf(paneId), perpOrientation, 0.5);
+  }
+
+  return insertAt(trimmedLayout, gapIndex);
+}
+
 export function setSplitRatioInLayout(
   node: LayoutNode | null,
   nodeId: string,
