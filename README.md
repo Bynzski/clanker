@@ -1,5 +1,7 @@
 # Clanker Grid
 
+![Clanker Grid Icon](robot_window_icon/icon_512x512.png)
+
 > Developer workspace with terminal grid, AI harness launchers, git controls, and integrated browser.
 
 [![Electron](https://img.shields.io/badge/Electron-41.x-47848F?logo=electron)](https://electronjs.org/)
