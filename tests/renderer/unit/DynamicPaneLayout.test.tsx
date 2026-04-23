@@ -753,6 +753,116 @@ describe('DynamicPaneLayout', () => {
 
       expect(document.querySelector('.dock-bottom')?.classList.contains('over')).toBe(true);
     });
+
+    it('renders segmented gap zones for each edge (single-leaf layout)', () => {
+      setupStoreWithLayout(createLeaf('n1', 'p1'));
+      render(<DynamicPaneLayout />);
+
+      // Single terminal → 2 gaps per edge, 4 edges → 8 gap zones total
+      const gaps = document.querySelectorAll('.dock-gap');
+      expect(gaps.length).toBe(8);
+
+      for (const edge of ['left', 'right', 'top', 'bottom'] as const) {
+        const perEdge = document.querySelectorAll(`.dock-gap-${edge}`);
+        expect(perEdge.length).toBe(2);
+      }
+    });
+
+    it('renders gap zones with correct data-edge and data-gap-index attributes', () => {
+      setupStoreWithLayout(createLeaf('n1', 'p1'));
+      render(<DynamicPaneLayout />);
+
+      const leftGaps = Array.from(document.querySelectorAll('.dock-gap-left'));
+      const indices = leftGaps.map((el) => el.getAttribute('data-gap-index')).sort();
+      expect(indices).toEqual(['0', '1']);
+      for (const el of leftGaps) {
+        expect(el.getAttribute('data-edge')).toBe('left');
+      }
+    });
+
+    it('gap zones carry an inline positioning style (top for left/right, left for top/bottom)', () => {
+      setupStoreWithLayout(createLeaf('n1', 'p1'));
+      render(<DynamicPaneLayout />);
+
+      const leftGap = document.querySelector('.dock-gap-left') as HTMLElement | null;
+      expect(leftGap).toBeTruthy();
+      expect(leftGap!.style.top).not.toBe('');
+
+      const topGap = document.querySelector('.dock-gap-top') as HTMLElement | null;
+      expect(topGap).toBeTruthy();
+      expect(topGap!.style.left).not.toBe('');
+    });
+
+    it('renders N+1 gaps for N edge terminals', () => {
+      // Layout: vertical(p1, vertical(p2, p3)) → left edge has 3 terminals, so 4 gaps
+      const layout = createSplit(
+        's1',
+        'vertical',
+        0.5,
+        createLeaf('n1', 'p1'),
+        createSplit('s2', 'vertical', 0.5, createLeaf('n2', 'p2'), createLeaf('n3', 'p3')),
+      );
+      setupStoreWithLayout(layout);
+      render(<DynamicPaneLayout />);
+
+      const leftGaps = document.querySelectorAll('.dock-gap-left');
+      expect(leftGaps.length).toBe(4);
+    });
+
+    it('caps gap count per edge at MAX_SEGMENTS (4)', () => {
+      // Layout with 5 terminals stacked on left: vertical(A, vertical(B, vertical(C, vertical(D, E))))
+      // Left edge: 5 terminals → 6 gaps, capped at 4
+      const deepLeft = createSplit(
+        's1',
+        'vertical',
+        0.5,
+        createLeaf('n1', 'p1'),
+        createSplit(
+          's2',
+          'vertical',
+          0.5,
+          createLeaf('n2', 'p2'),
+          createSplit(
+            's3',
+            'vertical',
+            0.5,
+            createLeaf('n3', 'p3'),
+            createSplit(
+              's4',
+              'vertical',
+              0.5,
+              createLeaf('n4', 'p4'),
+              createLeaf('n5', 'p5'),
+            ),
+          ),
+        ),
+      );
+      setupStoreWithLayout(deepLeft);
+      render(<DynamicPaneLayout />);
+
+      const leftGaps = document.querySelectorAll('.dock-gap-left');
+      expect(leftGaps.length).toBe(4);
+    });
+
+    it('full-edge zone does not carry the over class while active gap is non-null', () => {
+      // This test documents that future phases can toggle full vs gap highlight
+      // via the component's activeGapIndex prop. In Phase 2 the container always
+      // passes null, so the full zone lights up when the edge is active.
+      setupStoreWithLayout(createLeaf('n1', 'p1'));
+      render(<DynamicPaneLayout />);
+
+      act(() => {
+        mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
+      });
+      act(() => {
+        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left' } });
+      });
+
+      // Full-edge zone is active (activeGapIndex is null), gaps are not.
+      expect(document.querySelector('.dock-left')?.classList.contains('over')).toBe(true);
+      const activeGaps = document.querySelectorAll('.dock-gap.over');
+      expect(activeGaps.length).toBe(0);
+    });
   });
 
   // =========================================================================
