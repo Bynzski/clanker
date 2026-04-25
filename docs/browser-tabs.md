@@ -195,13 +195,18 @@ DevTools is scoped to each `WebContentsView` (browser tab):
 
 ### Keyboard Shortcuts
 
+When the browser has focus, these shortcuts apply to the active browser tab:
+
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+Shift+I` / `Cmd+Shift+I` | Toggle DevTools |
 | `F12` | Toggle DevTools (alternative) |
 | `Ctrl+Shift+F` / `Cmd+Shift+F` | Fit all panes |
-| `Ctrl+0` / `Cmd+0` | Reset zoom to default |
-| `Ctrl+/-` / `Cmd+/-` | Zoom in/out (blocked from browser input) |
+| `Ctrl+0` / `Cmd+0` | Reset browser zoom to default |
+| `Ctrl+=` / `Cmd+=` | Zoom browser in |
+| `Ctrl+-` / `Cmd+-` | Zoom browser out |
+
+Browser zoom is separate from application zoom. The same zoom shortcuts control the app UI only when focus is outside the embedded browser.
 
 ### Technical Details
 

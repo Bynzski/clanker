@@ -95,23 +95,12 @@ describe('registerWindowIpc', () => {
       close: vi.fn(),
       isMaximized: vi.fn(() => false),
     };
-    const mockBrowserView = {
-      webContents: {
-        getZoomLevel: vi.fn(() => 1.5),
-        setZoomLevel: vi.fn(),
-      },
-    };
-    const mockBrowserViews = new Map<string, { view: typeof mockBrowserView }>([
-      ['browser-1', { view: mockBrowserView }],
-    ]);
 
     return {
       deps: {
         getMainWindow: () => mockMainWindow as never,
-        getBrowserViews: () => mockBrowserViews as never,
       },
       mockMainWindow,
-      mockBrowserView,
     };
   };
 
@@ -214,23 +203,12 @@ describe('registerWindowIpc — error-path: null main window', () => {
       close: vi.fn(),
       isMaximized: vi.fn(() => false),
     };
-    const mockBrowserView = {
-      webContents: {
-        getZoomLevel: vi.fn(() => 1.5),
-        setZoomLevel: vi.fn(),
-      },
-    };
-    const mockBrowserViews = new Map<string, { view: typeof mockBrowserView }>([
-      ['browser-1', { view: mockBrowserView }],
-    ]);
 
     return {
       deps: {
         getMainWindow: () => mockMainWindow as never,
-        getBrowserViews: () => mockBrowserViews as never,
       },
       mockMainWindow,
-      mockBrowserView,
     };
   };
 
@@ -322,8 +300,8 @@ describe('registerWindowIpc — error-path: null main window', () => {
     expect(result).toBeUndefined();
   });
 
-  test('ZOOM_IN_WINDOW propagates zoom delta to browser views', () => {
-    const { deps, mockBrowserView, mockMainWindow } = createMockDeps();
+  test('ZOOM_IN_WINDOW only updates the application zoom', () => {
+    const { deps, mockMainWindow } = createMockDeps();
     registerWindowIpc(deps);
 
     const handler = mockIpcMain.handle.mock.calls.find(
@@ -333,15 +311,12 @@ describe('registerWindowIpc — error-path: null main window', () => {
     handler();
 
     expect(mockMainWindow.webContents.setZoomLevel).toHaveBeenCalledWith(0.5);
-    expect(mockBrowserView.webContents.setZoomLevel).toHaveBeenCalledWith(2);
   });
 
-  test('RESET_ZOOM_WINDOW preserves browser view page zoom offset', () => {
-    const { deps, mockBrowserView, mockMainWindow } = createMockDeps();
+  test('RESET_ZOOM_WINDOW resets only the application zoom', () => {
+    const { deps, mockMainWindow } = createMockDeps();
     mockMainWindow.webContents.getZoomLevel = vi.fn(() => 1.5);
     mockMainWindow.webContents.setZoomLevel = vi.fn();
-    mockBrowserView.webContents.getZoomLevel = vi.fn(() => 3);
-    mockBrowserView.webContents.setZoomLevel = vi.fn();
 
     registerWindowIpc(deps);
 
@@ -352,76 +327,6 @@ describe('registerWindowIpc — error-path: null main window', () => {
     handler();
 
     expect(mockMainWindow.webContents.setZoomLevel).toHaveBeenCalledWith(0);
-    expect(mockBrowserView.webContents.setZoomLevel).toHaveBeenCalledWith(1.5);
-  });
-
-  test('ZOOM_IN_WINDOW propagates zoom delta to nested tab views', () => {
-    const { mockMainWindow } = createMockDeps();
-    const tabA = {
-      webContents: {
-        getZoomLevel: vi.fn(() => 0),
-        setZoomLevel: vi.fn(),
-      },
-    };
-    const tabB = {
-      webContents: {
-        getZoomLevel: vi.fn(() => 1),
-        setZoomLevel: vi.fn(),
-      },
-    };
-    const nestedBrowserViews = new Map([
-      ['ws-1', new Map([
-        ['tab-a', { view: tabA }],
-        ['tab-b', { view: tabB }],
-      ])],
-    ]);
-
-    registerWindowIpc({
-      getMainWindow: () => mockMainWindow as never,
-      getBrowserViews: () => nestedBrowserViews as never,
-    });
-
-    const handler = mockIpcMain.handle.mock.calls.find(
-      (call) => call[0] === 'zoom-in-window'
-    )?.[1] as () => void;
-
-    handler();
-
-    expect(tabA.webContents.setZoomLevel).toHaveBeenCalledWith(0.5);
-    expect(tabB.webContents.setZoomLevel).toHaveBeenCalledWith(1.5);
-  });
-
-  test('zoom applies to all nested tab views across multiple workspaces', () => {
-    const { mockMainWindow } = createMockDeps();
-    const ws1TabA = { webContents: { getZoomLevel: vi.fn(() => 0), setZoomLevel: vi.fn() } };
-    const ws1TabB = { webContents: { getZoomLevel: vi.fn(() => 0), setZoomLevel: vi.fn() } };
-    const ws2TabA = { webContents: { getZoomLevel: vi.fn(() => 1), setZoomLevel: vi.fn() } };
-
-    const multiWorkspaceViews = new Map([
-      ['ws-1', new Map([
-        ['tab-a', { view: ws1TabA }],
-        ['tab-b', { view: ws1TabB }],
-      ])],
-      ['ws-2', new Map([
-        ['tab-a', { view: ws2TabA }],
-      ])],
-    ]);
-
-    registerWindowIpc({
-      getMainWindow: () => mockMainWindow as never,
-      getBrowserViews: () => multiWorkspaceViews as never,
-    });
-
-    const handler = mockIpcMain.handle.mock.calls.find(
-      (call) => call[0] === 'zoom-in-window'
-    )?.[1] as () => void;
-
-    handler();
-
-    // All tab views across both workspaces should be zoomed
-    expect(ws1TabA.webContents.setZoomLevel).toHaveBeenCalledWith(0.5);
-    expect(ws1TabB.webContents.setZoomLevel).toHaveBeenCalledWith(0.5);
-    expect(ws2TabA.webContents.setZoomLevel).toHaveBeenCalledWith(1.5);
   });
 });
 

@@ -135,26 +135,38 @@ function getActiveViewEntry(workspaceId: string, deps: RegisterBrowserIpcDeps): 
   return getExistingWorkspaceTabViews(workspaceId, deps)?.get(activeTabId) ?? null;
 }
 
-function isBrowserKeyboardZoomShortcut(input: {
+type BrowserZoomShortcutAction = 'in' | 'out' | 'reset';
+
+function clampBrowserZoomLevel(level: number): number {
+  return Math.max(-5, Math.min(5, level));
+}
+
+function getBrowserKeyboardZoomShortcutAction(input: {
   control: boolean;
   meta: boolean;
   alt: boolean;
   key?: string;
   code?: string;
-}): boolean {
+}): BrowserZoomShortcutAction | null {
   const primaryModifier = input.control || input.meta;
-  if (!primaryModifier || input.alt) return false;
+  if (!primaryModifier || input.alt) return null;
 
   const key = input.key?.toLowerCase() ?? '';
   const code = input.code?.toLowerCase() ?? '';
-  return code === 'equal'
-    || code === 'minus'
-    || code === 'digit0'
-    || key === '='
-    || key === '+'
-    || key === '-'
-    || key === '_'
-    || key === '0';
+
+  if (code === 'digit0' || key === '0') {
+    return 'reset';
+  }
+
+  if (code === 'minus' || key === '-' || key === '_') {
+    return 'out';
+  }
+
+  if (code === 'equal' || key === '=' || key === '+') {
+    return 'in';
+  }
+
+  return null;
 }
 
 function isBrowserDevToolsShortcut(input: {
@@ -169,10 +181,23 @@ function isBrowserDevToolsShortcut(input: {
   return key === 'f12' || ((input.control || input.meta) && input.shift && key === 'i');
 }
 
+function applyBrowserViewZoomAction(view: WebContentsView, action: BrowserZoomShortcutAction): void {
+  if (action === 'reset') {
+    view.webContents.setZoomLevel(0);
+    return;
+  }
+
+  const delta = action === 'in' ? 0.5 : -0.5;
+  const currentLevel = view.webContents.getZoomLevel();
+  view.webContents.setZoomLevel(clampBrowserZoomLevel(currentLevel + delta));
+}
+
 function attachBrowserShortcutHandlers(view: WebContentsView, sendFitAllPanes: () => void) {
   view.webContents.on('before-input-event', (event, input) => {
-    if (isBrowserKeyboardZoomShortcut(input)) {
+    const browserZoomAction = getBrowserKeyboardZoomShortcutAction(input);
+    if (browserZoomAction) {
       event.preventDefault();
+      applyBrowserViewZoomAction(view, browserZoomAction);
       return;
     }
 
@@ -210,12 +235,6 @@ function attachBrowserContextMenuHandlers(view: WebContentsView, mainWindow: Bro
 
     menu.popup({ window: mainWindow });
   });
-}
-
-function syncBrowserViewZoomToApp(mainWindow: BrowserWindow, view: WebContentsView) {
-  const appZoomLevel = mainWindow.webContents.getZoomLevel();
-  if (appZoomLevel === 0) return;
-  view.webContents.setZoomLevel(view.webContents.getZoomLevel() + appZoomLevel);
 }
 
 function attachBrowserSecurityHandlers(view: WebContentsView) {
@@ -258,7 +277,6 @@ function createBrowserViewForTab(
     }
   });
   attachBrowserContextMenuHandlers(view, mainWindow);
-  syncBrowserViewZoomToApp(mainWindow, view);
   view.setVisible(false);
   view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
   mainWindow.contentView.addChildView(view);
@@ -635,4 +653,7 @@ export {
   destroyTabView,
   destroyWorkspaceBrowserViews,
   createBrowserViewForTab,
+  clampBrowserZoomLevel,
+  getBrowserKeyboardZoomShortcutAction,
+  applyBrowserViewZoomAction,
 };
