@@ -13,7 +13,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 |-------|-------------|--------|--------|
 | 0 | Types, Store Migration, Tab Actions, Invariants | ✅ | e98e120 |
 | 1 | IPC Surface Compatibility Bridge | ✅ | 4fd0d10 |
-| 2 | Main Process: Multi-WebContentsView Architecture | ✅ | a73d7be |
+| 2 | Main Process: Multi-WebContentsView Architecture | ✅ | 7510427 |
 | 3 | UI: Tab Dropdown & BrowserPanel Refactor | 🔲 | — |
 | 4 | Global Navigation History: Storage & IPC | 🔲 | — |
 | 5 | URL Autocomplete UI | 🔲 | — |
@@ -93,4 +93,4 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 |-------|--------|---------|
 | 0 | e98e120 | BrowserTab type + tabs/activeTabId on BrowserPaneState; tab actions (add/remove/setActive/update) with atomic last-tab guard; sanitizer migrates legacy/malformed panes; B1..B4 invariants; updateWorkspaceBrowserUrl tab-aware signature; INVARIANTS.md updated. |
 | 1 | 4fd0d10 | Tab IPC channels + handlers (create/close/switch/get/tab-navigate) registered with ALL_IPC_CHANNELS; per-workspace tab record/order/active maps; BROWSER_URL_UPDATED payload extended with optional tabId/title/canGoBack/canGoForward; browserSetBounds/browserNavigate gain optional tabId; preload + electron.d.ts + mocks updated; App.tsx URL listener forwards tabId/title. |
-| 2 | a73d7be | Nested main-process browser view maps with per-tab `WebContentsView` creation; active tab and bounds tracking; tab-aware navigation/bounds/hide/close/dispose; nested zoom iteration; active-tab annotation resolution and disable-on-switch behavior; main tests for multi-tab visibility/disposal and zoom. |
+| 2 | 7510427 | Nested main-process browser view maps with per-tab `WebContentsView` creation; active tab and bounds tracking; tab-aware navigation/bounds/hide/close/dispose; nested zoom iteration; active-tab annotation resolution and disable-on-switch behavior; main tests for multi-tab visibility/disposal and zoom. |
