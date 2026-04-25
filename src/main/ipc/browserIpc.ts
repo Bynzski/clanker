@@ -59,7 +59,15 @@ interface RegisterBrowserIpcDeps {
 }
 
 const DEFAULT_BROWSER_URL = 'https://github.com';
-const LEGACY_COMPAT_TAB_ID = '__legacy_browser_tab__';
+
+/**
+ * Fallback tab ID used by workspace-scoped browser APIs (e.g. BROWSER_NAVIGATE
+ * without a tabId) when no active tab is known for the workspace. This is a
+ * supported backward-compatible API surface — the renderer may call
+ * browserNavigate/builderSetBounds without a tabId when the tab state is
+ * not yet initialized.
+ */
+const FALLBACK_TAB_ID = '__fallback_tab__';
 
 function getWorkspaceTabViews(workspaceId: string, deps: RegisterBrowserIpcDeps): BrowserWorkspaceViews {
   let workspaceViews = deps.getBrowserViews().get(workspaceId);
@@ -119,12 +127,7 @@ function setActiveTabId(workspaceId: string, tabId: string | null, deps?: Regist
   }
 }
 
-function setLegacyWorkspaceEntry(workspaceViews: BrowserWorkspaceViews, entry: BrowserViewEntry): void {
-  const compatibilityView = workspaceViews as BrowserWorkspaceViews & Partial<BrowserViewEntry>;
-  compatibilityView.view = entry.view;
-  compatibilityView.url = entry.url;
-  compatibilityView.title = entry.title;
-}
+
 
 function getActiveViewEntry(workspaceId: string, deps: RegisterBrowserIpcDeps): BrowserViewEntry | null {
   const activeTabId = getActiveTabId(workspaceId);
@@ -308,7 +311,6 @@ function ensureTabViewEntry(
   if (!entry) return null;
 
   workspaceViews.set(tabId, entry);
-  setLegacyWorkspaceEntry(workspaceViews, entry);
   rememberTabId(workspaceId, tabId);
   return entry;
 }
@@ -338,10 +340,6 @@ function showTabView(workspaceId: string, tabId: string, deps: RegisterBrowserIp
   hideWorkspaceTabViews(workspaceId, deps);
   if (bounds.width > 0 && bounds.height > 0) {
     entry.view.setBounds(bounds);
-  }
-  const workspaceViews = getExistingWorkspaceTabViews(workspaceId, deps);
-  if (workspaceViews) {
-    setLegacyWorkspaceEntry(workspaceViews, entry);
   }
   entry.view.setVisible(true);
   deps.setActiveBrowserWorkspaceId(workspaceId);
@@ -389,7 +387,7 @@ function resolveTabIdForWorkspace(workspaceId: string, requestedTabId: string | 
   if (requestedTabId) return requestedTabId;
   const activeTabId = getActiveTabId(workspaceId);
   if (activeTabId) return activeTabId;
-  return tabOrderByWorkspace.get(workspaceId)?.[0] ?? LEGACY_COMPAT_TAB_ID;
+  return tabOrderByWorkspace.get(workspaceId)?.[0] ?? FALLBACK_TAB_ID;
 }
 
 function selectFallbackTab(workspaceId: string, removedTabId: string): string | null {
@@ -636,10 +634,5 @@ export {
   showTabView,
   destroyTabView,
   destroyWorkspaceBrowserViews,
-  // Legacy names retained for older unit tests during this migration phase.
-  createBrowserViewForTab as createBrowserViewForWorkspace,
-  ensureTabViewEntry as ensureBrowserViewEntry,
-  showTabView as updateBrowserView,
-  hideWorkspaceTabViews as hideBrowserView,
-  destroyWorkspaceBrowserViews as destroyBrowserView,
+  createBrowserViewForTab,
 };

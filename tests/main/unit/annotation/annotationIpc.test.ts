@@ -111,4 +111,47 @@ describe('annotationIpc', () => {
 
     expect(mockWriteText).toHaveBeenCalledWith(expect.stringContaining('### Context'));
   });
+
+  it('resolves the active tab view from nested browser view map', async () => {
+    const activeTabView = {
+      webContents: {
+        executeJavaScript: vi.fn().mockResolvedValue(undefined),
+        on: vi.fn(),
+        removeListener: vi.fn(),
+      },
+    };
+    const inactiveTabView = {
+      webContents: {
+        executeJavaScript: vi.fn(),
+        on: vi.fn(),
+        removeListener: vi.fn(),
+      },
+    };
+
+    const tabViews = new Map([
+      ['tab-active', { view: activeTabView as never, url: 'https://example.com' }],
+      ['tab-inactive', { view: inactiveTabView as never, url: 'https://other.example.com' }],
+    ]);
+
+    const browserViews = new Map([
+      ['workspace-1', tabViews as never],
+    ]);
+
+    registerAnnotationIpc({
+      getBrowserViews: () => browserViews as never,
+      getActiveBrowserWorkspaceId: () => 'workspace-1',
+      getActiveBrowserTabId: () => 'tab-active',
+      getMainWindow: () => ({ webContents: { send: vi.fn() } } as never),
+    });
+
+    const enableHandler = mockHandle.mock.calls.find(([channel]) => channel === ANNOTATION_ENABLE)?.[1];
+    expect(enableHandler).toBeTypeOf('function');
+
+    await enableHandler?.({}, 'workspace-1');
+
+    // The active tab's view should have been used for attaching handlers
+    expect(activeTabView.webContents.on).toHaveBeenCalledWith('before-input-event', expect.any(Function));
+    expect(activeTabView.webContents.on).toHaveBeenCalledWith('did-finish-load', expect.any(Function));
+    expect(inactiveTabView.webContents.on).not.toHaveBeenCalled();
+  });
 });

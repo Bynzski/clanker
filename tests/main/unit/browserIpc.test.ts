@@ -247,12 +247,9 @@ describe('registerBrowserIpc', () => {
 
     const inspectElement = vi.fn();
     const openDevTools = vi.fn();
-    const view = deps.getBrowserViews().get('ws-1')?.view as unknown as {
-      webContents: {
-        inspectElement: typeof inspectElement;
-        openDevTools: typeof openDevTools;
-      };
-    };
+    // Access the view through the nested tab map
+    const workspaceViews = deps.getBrowserViews().get('ws-1') as Map<string, { view: { webContents: { inspectElement: typeof inspectElement; openDevTools: typeof openDevTools } } }>;
+    const view = workspaceViews.values().next().value!.view;
     view.webContents.inspectElement = inspectElement;
     view.webContents.openDevTools = openDevTools;
 
@@ -396,13 +393,10 @@ describe('browserIpc — error-path: null/invalid workspaceId returns valid resu
 
     handler(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 });
 
-    const view = deps.getBrowserViews().get('ws-1')?.view as unknown as {
-      webContents: {
-        openDevTools: ReturnType<typeof vi.fn>;
-        closeDevTools: ReturnType<typeof vi.fn>;
-        isDevToolsOpened: ReturnType<typeof vi.fn>;
-      };
-    };
+    // Access the view through the nested tab map
+    const workspaceViews = deps.getBrowserViews().get('ws-1') as Map<string, { view: { webContents: { openDevTools: ReturnType<typeof vi.fn>; closeDevTools: ReturnType<typeof vi.fn>; isDevToolsOpened: ReturnType<typeof vi.fn> } } }>;
+    const firstTabEntry = workspaceViews?.values().next().value;
+    const view = firstTabEntry!.view;
     view.webContents.openDevTools = vi.fn();
     view.webContents.closeDevTools = vi.fn();
     view.webContents.isDevToolsOpened = vi.fn(() => false);
@@ -1087,5 +1081,201 @@ describe('registerBrowserIpc — browser history handlers (Phase 4)', () => {
     expect(await get(null, 'github.com')).toEqual([
       expect.objectContaining({ url: 'https://github.com/clanker-grid', title: 'Navigated title' }),
     ]);
+  });
+});
+
+// ===========================================================================
+// Phase 6 — Integration hardening tests
+// ===========================================================================
+describe('registerBrowserIpc — integration hardening (Phase 6)', () => {
+  const mockIpcMain = ipcMain as typeof ipcMain & { handle: ReturnType<typeof vi.fn> };
+  type AnyHandler = (..._args: unknown[]) => unknown;
+
+  function createMockDeps() {
+    const mockBrowserViews = new Map<string, Map<string, { view: { setVisible: ReturnType<typeof vi.fn>; setBounds: ReturnType<typeof vi.fn>; webContents: { close: ReturnType<typeof vi.fn>; loadURL: ReturnType<typeof vi.fn>; getZoomLevel: ReturnType<typeof vi.fn>; setZoomLevel: ReturnType<typeof vi.fn>; getTitle: ReturnType<typeof vi.fn>; navigationHistory: { canGoBack: ReturnType<typeof vi.fn>; canGoForward: ReturnType<typeof vi.fn>; goBack: ReturnType<typeof vi.fn>; goForward: ReturnType<typeof vi.fn> }; reload: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; on: ReturnType<typeof vi.fn>; setWindowOpenHandler: ReturnType<typeof vi.fn>; openDevTools: ReturnType<typeof vi.fn>; closeDevTools: ReturnType<typeof vi.fn>; isDevToolsOpened: ReturnType<typeof vi.fn>; inspectElement: ReturnType<typeof vi.fn> } } }>>();
+    let mockActiveWorkspaceId: string | null = null;
+    const mockMainWindow = {
+      webContents: { send: vi.fn(), getZoomLevel: vi.fn(() => 0) },
+      contentView: { addChildView: vi.fn() },
+    };
+    return {
+      mockMainWindow,
+      mockBrowserViews,
+      deps: {
+        getMainWindow: () => mockMainWindow as never,
+        getBrowserViews: () => mockBrowserViews as never,
+        getActiveBrowserWorkspaceId: () => mockActiveWorkspaceId,
+        setActiveBrowserWorkspaceId: (id: string | null) => { mockActiveWorkspaceId = id; },
+      },
+    };
+  }
+
+  function findHandler(name: string): AnyHandler {
+    const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === name)?.[1] as AnyHandler | undefined;
+    if (!handler) throw new Error(`handler ${name} not registered`);
+    return handler;
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    attachedDidNavigateHandler = null;
+    const mod = await import('../../../src/main/ipc/browserIpc');
+    mod.__resetBrowserTabState();
+    __resetBrowserHistoryServiceForTests(new BrowserHistoryService(new MemoryHistoryStore()));
+  });
+
+  test('no stale views remain visible after tab switch', async () => {
+    const { deps, mockBrowserViews } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const setBounds = findHandler('browser-set-bounds');
+
+    await create(null, 'ws-1', 'tab-a');
+    await create(null, 'ws-1', 'tab-b');
+    await create(null, 'ws-1', 'tab-c');
+
+    // Show tab-a
+    await setBounds(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 }, 'tab-a');
+    // Switch to tab-c
+    await setBounds(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 }, 'tab-c');
+
+    const workspaceViews = mockBrowserViews.get('ws-1')!;
+    // Only tab-c should be visible
+    let visibleCount = 0;
+    for (const entry of workspaceViews.values()) {
+      const calls = entry.view.setVisible.mock.calls;
+      const lastVisibleCall = calls[calls.length - 1];
+      if (lastVisibleCall?.[0] === true) visibleCount++;
+    }
+    expect(visibleCount).toBe(1);
+
+    const tabC = workspaceViews.get('tab-c')!;
+    expect(tabC.view.setVisible).toHaveBeenLastCalledWith(true);
+    const tabA = workspaceViews.get('tab-a')!;
+    expect(tabA.view.setVisible).toHaveBeenLastCalledWith(false);
+  });
+
+  test('no stale views remain visible after browser hide', async () => {
+    const { deps, mockBrowserViews } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const setBounds = findHandler('browser-set-bounds');
+    const hide = findHandler('browser-hide');
+
+    await create(null, 'ws-1', 'tab-a');
+    await create(null, 'ws-1', 'tab-b');
+    await setBounds(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 }, 'tab-a');
+    await hide(null, 'ws-1');
+
+    const workspaceViews = mockBrowserViews.get('ws-1')!;
+    for (const entry of workspaceViews.values()) {
+      expect(entry.view.setVisible).toHaveBeenLastCalledWith(false);
+    }
+  });
+
+  test('workspace dispose closes all tab views and clears state', async () => {
+    const { deps, mockBrowserViews } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const dispose = findHandler('browser-dispose-workspace');
+    const getTabs = findHandler('browser-get-tabs');
+
+    await create(null, 'ws-1', 'tab-a');
+    await create(null, 'ws-1', 'tab-b');
+    await dispose(null, 'ws-1');
+
+    expect(mockBrowserViews.has('ws-1')).toBe(false);
+    const tabs = await getTabs(null, 'ws-1');
+    expect(tabs).toEqual([]);
+  });
+
+  test('closing active tab selects adjacent and shows fallback', async () => {
+    const { deps, mockBrowserViews } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const setBounds = findHandler('browser-set-bounds');
+    const close = findHandler('browser-close-tab');
+
+    await create(null, 'ws-1', 'tab-a');
+    await create(null, 'ws-1', 'tab-b');
+    await setBounds(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 }, 'tab-b');
+
+    // Close active tab-b — should fall back to tab-a
+    await close(null, 'ws-1', 'tab-b');
+
+    const workspaceViews = mockBrowserViews.get('ws-1')!;
+    expect(workspaceViews.has('tab-b')).toBe(false);
+
+    // tab-a should now be visible (it becomes the fallback)
+    const tabA = workspaceViews.get('tab-a')!;
+    expect(tabA.view.setVisible).toHaveBeenLastCalledWith(true);
+  });
+
+  test('BROWSER_NAVIGATE without tabId uses active tab (backward compat)', async () => {
+    const { deps, mockMainWindow } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const setBounds = findHandler('browser-set-bounds');
+    const navigate = findHandler('browser-navigate');
+    const getTabs = findHandler('browser-get-tabs');
+
+    await create(null, 'ws-1', 'tab-a');
+    await setBounds(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 }, 'tab-a');
+
+    // Navigate without tabId — should target the active tab
+    const result = await navigate(null, 'ws-1', 'https://example.com/');
+    expect(result).toBe(true);
+
+    const tabs = await getTabs(null, 'ws-1');
+    expect(tabs).toEqual([
+      expect.objectContaining({ tabId: 'tab-a', url: 'https://example.com/' }),
+    ]);
+
+    expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
+      'browser-url-updated',
+      expect.objectContaining({ workspaceId: 'ws-1', url: 'https://example.com/' }),
+    );
+  });
+
+  test('history persists across clear and re-query', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const add = findHandler('browser-history-add');
+    const get = findHandler('browser-history-get');
+    const clear = findHandler('browser-history-clear');
+
+    await add(null, 'https://example.com/page1', 'Page 1');
+    await add(null, 'https://example.com/page2', 'Page 2');
+    expect(await get(null, 'example')).toHaveLength(2);
+
+    await clear(null);
+    expect(await get(null, 'example')).toHaveLength(0);
+
+    // Re-add after clear
+    await add(null, 'https://example.com/page3', 'Page 3');
+    expect(await get(null, 'example')).toHaveLength(1);
+  });
+
+  test('BROWSER_GET_URL returns the active tab URL', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const setBounds = findHandler('browser-set-bounds');
+    const tabNavigate = findHandler('browser-tab-navigate');
+    const getUrl = findHandler('browser-get-url');
+
+    await create(null, 'ws-1', 'tab-a');
+    await setBounds(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 }, 'tab-a');
+    await tabNavigate(null, 'ws-1', 'tab-a', 'https://example.com/');
+
+    const url = await getUrl(null, 'ws-1');
+    expect(url).toBe('https://example.com/');
   });
 });

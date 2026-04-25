@@ -186,8 +186,6 @@ function setupElectronAPIMocks() {
 
 describe('BrowserPanel', () => {
   const defaultProps = {
-    url: 'https://github.com',
-    onUrlChange: vi.fn(),
     layoutVersion: 1,
   };
 
@@ -407,17 +405,46 @@ describe('BrowserPanel', () => {
       expect(screen.getByPlaceholderText('Enter URL...')).toBeTruthy();
     });
 
-    it('displays initial URL in input', () => {
-      render(<BrowserPanel {...defaultProps} url="https://example.com" />);
+    it('displays initial URL in input from active browser tab', () => {
+      setupStore({
+        browserPane: {
+          id: 'bp1',
+          position: { x: 0, y: 0, w: 100, h: 100 },
+          locked: false,
+          activeTabId: 'tab-1',
+          tabs: [{ id: 'tab-1', url: 'https://example.com', title: 'Example', canGoBack: false, canGoForward: false }],
+        },
+      });
+
+      render(<BrowserPanel {...defaultProps} />);
 
       const input = screen.getByPlaceholderText('Enter URL...') as HTMLInputElement;
       expect(input.value).toBe('https://example.com');
     });
 
-    it('updates input when URL prop changes', () => {
-      const { rerender } = render(<BrowserPanel {...defaultProps} url="https://example.com" />);
+    it('updates input when active tab URL changes', () => {
+      setupStore({
+        browserPane: {
+          id: 'bp1',
+          position: { x: 0, y: 0, w: 100, h: 100 },
+          locked: false,
+          activeTabId: 'tab-1',
+          tabs: [{ id: 'tab-1', url: 'https://example.com', title: 'Example', canGoBack: false, canGoForward: false }],
+        },
+      });
 
-      rerender(<BrowserPanel {...defaultProps} url="https://github.com" />);
+      const { rerender } = render(<BrowserPanel {...defaultProps} />);
+
+      setupStore({
+        browserPane: {
+          id: 'bp1',
+          position: { x: 0, y: 0, w: 100, h: 100 },
+          locked: false,
+          activeTabId: 'tab-1',
+          tabs: [{ id: 'tab-1', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false }],
+        },
+      });
+      rerender(<BrowserPanel {...defaultProps} />);
 
       const input = screen.getByPlaceholderText('Enter URL...') as HTMLInputElement;
       expect(input.value).toBe('https://github.com');
@@ -456,17 +483,27 @@ describe('BrowserPanel', () => {
       expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', 'https://github.com');
     });
 
-    it('calls onUrlChange when navigating', async () => {
-      const onUrlChange = vi.fn();
-      render(<BrowserPanel {...defaultProps} onUrlChange={onUrlChange} />);
+    it('navigation updates the store browser URL for the active tab', async () => {
+      setupStore({
+        browserPane: {
+          id: 'bp1',
+          position: { x: 0, y: 0, w: 100, h: 100 },
+          locked: false,
+          activeTabId: 'tab-1',
+          tabs: [{ id: 'tab-1', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false }],
+        },
+      });
+      render(<BrowserPanel {...defaultProps} />);
 
       const input = screen.getByPlaceholderText('Enter URL...');
-      fireEvent.change(input, { target: { value: 'github.com' } });
+      fireEvent.change(input, { target: { value: 'example.com' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
 
       await waitFor(() => {
-        expect(onUrlChange).toHaveBeenCalledWith('https://github.com');
+        const workspace = useWorkspaceStore.getState().getWorkspaceById('workspace-1');
+        const activeTab = workspace?.browserPane?.tabs.find(t => t.id === workspace.browserPane?.activeTabId);
+        expect(activeTab?.url).toBe('https://example.com');
       });
     });
 
@@ -532,8 +569,17 @@ describe('BrowserPanel', () => {
       expect(screen.getByTitle('Unlock browser pane')).toBeTruthy();
     });
 
-    it('calls openExternal when external button is clicked', () => {
-      render(<BrowserPanel {...defaultProps} url="https://github.com" />);
+    it('calls openExternal with the active tab URL', () => {
+      setupStore({
+        browserPane: {
+          id: 'bp1',
+          position: { x: 0, y: 0, w: 100, h: 100 },
+          locked: false,
+          activeTabId: 'tab-1',
+          tabs: [{ id: 'tab-1', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false }],
+        },
+      });
+      render(<BrowserPanel {...defaultProps} />);
 
       fireEvent.click(screen.getByTitle('Open in system browser'));
 
