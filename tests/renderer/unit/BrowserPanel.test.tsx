@@ -65,6 +65,9 @@ const mockBrowserCreateTab = vi.fn().mockResolvedValue({ url: 'https://github.co
 const mockBrowserCloseTab = vi.fn().mockResolvedValue(true);
 const mockBrowserSwitchTab = vi.fn().mockResolvedValue({ url: 'https://github.com', title: '' });
 const mockBrowserTabNavigate = vi.fn().mockResolvedValue(true);
+const mockBrowserHistoryGet = vi.fn().mockResolvedValue([]);
+const mockBrowserHistoryAdd = vi.fn().mockResolvedValue(true);
+const mockBrowserHistoryClear = vi.fn().mockResolvedValue(true);
 const mockBrowserHide = vi.fn().mockResolvedValue(undefined);
 const mockBrowserSetBounds = vi.fn().mockResolvedValue(undefined);
 const mockBrowserDisposeWorkspace = vi.fn().mockResolvedValue(undefined);
@@ -162,6 +165,9 @@ function setupElectronAPIMocks() {
     browserCloseTab: mockBrowserCloseTab,
     browserSwitchTab: mockBrowserSwitchTab,
     browserTabNavigate: mockBrowserTabNavigate,
+    browserHistoryGet: mockBrowserHistoryGet,
+    browserHistoryAdd: mockBrowserHistoryAdd,
+    browserHistoryClear: mockBrowserHistoryClear,
     browserRefresh: mockBrowserRefresh,
     browserSetBounds: mockBrowserSetBounds,
     browserStop: mockBrowserStop,
@@ -1235,6 +1241,147 @@ describe('BrowserPanel', () => {
       await waitFor(() => {
         expect(mockBrowserTabNavigate).toHaveBeenCalledWith('workspace-1', 'tab-a', 'https://localhost:3000');
       });
+    });
+  });
+
+  // =========================================================================
+  // URL Autocomplete
+  // =========================================================================
+  describe('URL autocomplete', () => {
+    const createTabbedPane = (): BrowserPaneState => ({
+      id: 'bp1',
+      position: { x: 0, y: 0, w: 100, h: 100 },
+      locked: false,
+      activeTabId: 'tab-a',
+      tabs: [
+        { id: 'tab-a', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false },
+        { id: 'tab-b', url: 'https://example.com/docs', title: 'Docs', canGoBack: false, canGoForward: false },
+      ],
+    });
+
+    beforeEach(() => {
+      mockBrowserHistoryGet.mockResolvedValue([
+        { url: 'http://localhost:3000/', title: 'Local App', lastVisited: 300 },
+        { url: 'https://github.com/clanker-grid', title: 'Clanker Grid', lastVisited: 200 },
+      ]);
+      setupStore({ browserPane: createTabbedPane() });
+    });
+
+    it('debounces history queries by 300ms', async () => {
+      render(<BrowserPanel layoutVersion={1} />);
+      const input = screen.getByPlaceholderText('Enter URL...');
+
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: 'lo' } });
+      fireEvent.change(input, { target: { value: 'local' } });
+
+      expect(mockBrowserHistoryGet).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      await waitFor(() => {
+        expect(mockBrowserHistoryGet).toHaveBeenCalledTimes(1);
+        expect(mockBrowserHistoryGet).toHaveBeenCalledWith('local');
+      });
+    });
+
+    it('does not query for fewer than 2 characters', async () => {
+      render(<BrowserPanel layoutVersion={1} />);
+      const input = screen.getByPlaceholderText('Enter URL...');
+
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: 'g' } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350);
+      });
+
+      expect(mockBrowserHistoryGet).not.toHaveBeenCalled();
+    });
+
+    it('renders suggestions returned by IPC', async () => {
+      render(<BrowserPanel layoutVersion={1} />);
+      const input = screen.getByPlaceholderText('Enter URL...');
+
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: 'local' } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+
+      expect(await screen.findByRole('listbox', { name: 'URL history suggestions' })).toBeTruthy();
+      expect(screen.getByText('http://localhost:3000/')).toBeTruthy();
+      expect(screen.getByText('Local App')).toBeTruthy();
+    });
+
+    it('clicking a suggestion navigates the active tab', async () => {
+      render(<BrowserPanel layoutVersion={1} />);
+      const input = screen.getByPlaceholderText('Enter URL...');
+
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: 'local' } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      fireEvent.click(await screen.findByText('http://localhost:3000/'));
+
+      await waitFor(() => {
+        expect(mockBrowserTabNavigate).toHaveBeenCalledWith('workspace-1', 'tab-a', 'http://localhost:3000/');
+      });
+    });
+
+    it('keyboard selection uses highlighted suggestion on Enter', async () => {
+      render(<BrowserPanel layoutVersion={1} />);
+      const input = screen.getByPlaceholderText('Enter URL...');
+
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: 'git' } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      await screen.findByText('http://localhost:3000/');
+
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      await waitFor(() => {
+        expect(mockBrowserTabNavigate).toHaveBeenCalledWith('workspace-1', 'tab-a', 'https://github.com/clanker-grid');
+      });
+    });
+
+    it('Escape closes suggestions', async () => {
+      render(<BrowserPanel layoutVersion={1} />);
+      const input = screen.getByPlaceholderText('Enter URL...');
+
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: 'local' } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(await screen.findByRole('listbox', { name: 'URL history suggestions' })).toBeTruthy();
+
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(screen.queryByRole('listbox', { name: 'URL history suggestions' })).toBeNull();
+    });
+
+    it('switching tabs clears stale suggestions and syncs input', async () => {
+      render(<BrowserPanel layoutVersion={1} />);
+      const input = screen.getByPlaceholderText('Enter URL...') as HTMLInputElement;
+
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: 'local' } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(await screen.findByRole('listbox', { name: 'URL history suggestions' })).toBeTruthy();
+
+      fireEvent.click(screen.getByTitle('Browser tabs'));
+      fireEvent.click(screen.getByText('Docs'));
+
+      await waitFor(() => {
+        expect(screen.queryByRole('listbox', { name: 'URL history suggestions' })).toBeNull();
+      });
+      expect(input.value).toBe('https://example.com/docs');
     });
   });
 
