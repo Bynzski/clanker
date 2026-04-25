@@ -1,72 +1,115 @@
 # Browser Tabs & History Plan
 
 **Author:** Jay
-**Date:** 2026-04-24
-**Status:** Draft
-**Version:** 2.0
+**Date:** 2026-04-25
+**Status:** Approved
+**Version:** 2.2
 
 ---
 
 ## Purpose
 
-Expand the browser panel with two capabilities:
-1. **Tab support** — Each workspace's browser panel can hold multiple tabs, switched via a dropdown with tab count. Users can open new tabs via a "+" button in the dropdown.
-2. **Global navigation history** — Persist a list of recently visited URLs globally (across workspaces). When typing in the URL bar, autocomplete suggestions appear from this history.
+Expand the browser panel with two capabilities while preserving the current browser/layout reliability guarantees:
+
+1. **Per-workspace browser tabs** — Each workspace browser pane can hold multiple tabs. Users switch tabs from a toolbar dropdown and create/close tabs from that dropdown.
+2. **Global navigation history** — Recently visited HTTP(S) URLs are persisted globally and surfaced as autocomplete suggestions in the URL bar.
+
+This is a risky feature because the browser panel is backed by native `WebContentsView` instances owned by the Electron main process. The implementation must preserve security, layout stability, workspace isolation, annotation behavior, and validation at every phase.
 
 ---
 
 ## Architecture Overview
 
-### Current State (Before This Plan)
+### Current State
 
-```
+```ts
 WorkspaceState {
-  browserUrl: string              // workspace-level URL (single browser)
-  browserPane: BrowserPaneState {  // pane metadata only
-    id, locked, position
-  }
+  browserUrl: string;              // workspace-level URL
+  browserPane: BrowserPaneState | null; // pane metadata only
 }
 
-BrowserPanel receives url as prop, manages local inputUrl state
-Map<workspaceId, BrowserViewEntry> in main process
-One WebContentsView per workspace
-```
-
-### Target State (After This Plan)
-
-```
-WorkspaceState {
-  browserPane: BrowserPaneState {
-    id, locked, position,
-    tabs: BrowserTab[],           // NEW: array of tabs
-    activeTabId: string | null     // NEW: which tab is active
-  }
-  // NOTE: browserUrl is removed - URL lives in BrowserTab.url
+BrowserPaneState {
+  id: string;
+  locked: boolean;
+  position: PanePosition;
 }
 
-Map<workspaceId, Map<tabId, BrowserViewEntry>> in main process
-Multiple WebContentsViews per workspace (one per tab)
-Active tab's WebContentsView is visible; others are hidden
+// main process
+Map<workspaceId, BrowserViewEntry>
+let activeBrowserWorkspaceId: string | null
 ```
 
-### Key Design Decisions
+The renderer owns workspace state and layout. The main process owns `WebContentsView` resources. `BrowserPanel` measures the browser content rectangle and sends bounds to main.
 
-1. **Tab URL lives in `BrowserPaneState.tabs[]`, not workspace-level `browserUrl`**
-   - Each `BrowserTab` has `url: string`
-   - `BrowserPanel` reads from `activeTab.url` (via workspace store)
-   - `browserUrl` field is removed from `WorkspaceState`
+### Target State
 
-2. **One WebContentsView per tab, only active tab visible**
-   - Main process maintains `Map<workspaceId, Map<tabId, BrowserViewEntry>>`
-   - `BROWSER_SET_BOUNDS` only updates active tab's view bounds + visibility
-   - Hidden tabs remain in memory (not destroyed)
+```ts
+WorkspaceState {
+  browserUrl: string; // compatibility mirror of the active browser tab URL
+  browserPane: BrowserPaneState | null;
+}
 
-3. **Global history (electron-store), not per-workspace**
-   - Persisted at app level, survives workspace switches
-   - Only http/https URLs stored (security)
+BrowserPaneState {
+  id: string;
+  locked: boolean;
+  position: PanePosition; // workspace browser surface bounds only
+  tabs: BrowserTab[];
+  activeTabId: string | null;
+}
 
-4. **Preload bridge updated in parallel with main process**
-   - New IPC channels must be added to: `ipcChannels.ts`, `browserIpc.ts`, `preload.ts`
+BrowserTab {
+  id: string;
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+}
+
+// main process
+Map<workspaceId, Map<tabId, BrowserViewEntry>>
+Map<workspaceId, activeTabId>
+Map<workspaceId, lastBrowserBounds>
+let activeBrowserWorkspaceId: string | null
+```
+
+Only one tab view per workspace is visible at a time. Tab switching must never mutate pane layout or pane position.
+
+---
+
+## Non-Negotiable Invariants
+
+### Security
+
+- User/browser navigation remains restricted to `http:` and `https:` via `normalizeAppBrowserUrl`.
+- `file:`, arbitrary `about:`, `javascript:`, `data:`, and other schemes must not be accepted from user input, history, or external links.
+- New tabs open to the existing HTTP(S) default page, `https://github.com`. Do not introduce `about:blank` as part of this sprint.
+- `about:blank` and other non-HTTP(S) schemes must never be stored in navigation history and must never be opened externally.
+- History persists only normalized HTTP(S) URLs.
+
+### Renderer Store
+
+- If `browserPane !== null`, `browserPane.tabs.length >= 1`.
+- If `browserPane.activeTabId !== null`, it references an existing tab in `browserPane.tabs`.
+- Tab IDs are unique within a workspace.
+- `browserPane.position` remains workspace browser-surface geometry; it is not moved into tab state.
+- `browserUrl` mirrors the active tab URL only. Updating a non-active tab must not change `browserUrl`.
+- Store operations that remove/switch tabs must be atomic and must return enough information for the UI/main IPC flow to stay aligned.
+
+### Main Process
+
+- Renderer generates tab IDs. Main process must not create independent IDs for renderer-visible tabs.
+- A `WebContentsView` is created/ensured only with a renderer-provided tab ID.
+- `BROWSER_HIDE(workspaceId)` hides all tab views for that workspace.
+- `BROWSER_SET_BOUNDS(workspaceId, tabId, bounds)` records workspace-level bounds, hides sibling views, applies bounds to the active tab view, and shows exactly one view when visible.
+- `BROWSER_SWITCH_TAB(workspaceId, tabId)` updates main's active tab map, hides sibling views, and applies the last known bounds to the target view if the workspace is active.
+- Closing/disposal must close every `WebContentsView` for the affected tab/workspace and remove map entries.
+- Annotation, app zoom, and lifecycle cleanup must target/iterate nested tab views correctly.
+
+### Phase Validation
+
+- Every implementation phase must be able to pass `npm run validate` independently.
+- New IPC channels must be added to `ALL_IPC_CHANNELS` only in the same phase that registers their handlers/listeners.
+- Preload APIs, `src/renderer/electron.d.ts`, test mocks, and IPC registration tests must be updated in the same phase as IPC surface changes.
 
 ---
 
@@ -76,70 +119,51 @@ Active tab's WebContentsView is visible; others are hidden
 
 | Item | Priority | Notes |
 |------|----------|-------|
-| Browser tab data structure (per workspace) | P0 | `tabs[]` + `activeTabId` in `BrowserPaneState` |
-| Tab UI: dropdown button showing count + "+" | P0 | In the browser toolbar |
-| Switch tabs via dropdown | P0 | Click tab in dropdown |
-| New tab (opens about:blank) | P0 | "+" button |
-| Close tab (X button in dropdown) | P0 | Must not close last tab |
-| URL autocomplete from history | P1 | Dropdown below input |
-| History persistence (electron-store) | P1 | Survive app restart |
-| History scoped to http/https only | P1 | Security: no file:// |
+| Browser tab model in workspace store | P0 | `BrowserTab[]` + `activeTabId` under `browserPane` |
+| Store migration and sanitizer hardening | P0 | Handles old/malformed persisted browser pane states |
+| Multi-`WebContentsView` main architecture | P0 | One view per workspace tab |
+| Active tab tracking in main | P0 | Needed for compatibility APIs, annotation, and lifecycle |
+| Tab dropdown UI | P0 | Count button, tab list, active indicator, +, close |
+| Close tab behavior | P0 | Cannot close last tab; active close selects adjacent tab atomically |
+| URL synchronization by tab ID | P0 | Main event payload includes `tabId` |
+| Compatibility `browserUrl` mirror | P0 | Kept during migration |
+| Global history storage | P1 | `electron-store`, max 100 entries |
+| Autocomplete UI | P1 | Debounced URL suggestions with keyboard support |
+| Tests across store/main/preload/UI | P0 | Coverage for non-happy paths |
 
 ### Out of Scope
 
-- Tab drag-to-reorder (deferred)
-- Tab close behavior beyond "can't close last tab" (deferred)
-- History max count configuration (deferred)
-- Per-tab navigation history/back-forward (deferred — complex)
-- Browser profile per tab (deferred)
-- Tab close via middle-click on tab bar (deferred — no visible tab bar)
+- Drag-to-reorder tabs.
+- Middle-click close.
+- Per-tab persistent browser session/profile partition.
+- Persisting full browser back/forward stacks.
+- Configurable history max size.
+- History deletion per entry.
+- Full browser bookmarks.
+- New visible tab strip outside the toolbar dropdown.
 
 ---
 
-## What Already Exists
+## Existing Code to Preserve and Extend
 
-| Component | Location | Status |
-|-----------|----------|--------|
-| `BrowserPaneState` | `src/renderer/store/workspaceTypes.ts` | Partial — holds `id`, `position`, `locked` only |
-| `BrowserPanel.tsx` | `src/renderer/components/BrowserPanel.tsx` | Exists — renders toolbar, url input, receives `url` prop |
-| `browserIpc.ts` | `src/main/ipc/browserIpc.ts` | Exists — `BROWSER_NAVIGATE`, `BROWSER_SET_BOUNDS` etc. |
-| `workspaceStore` | `src/renderer/store/workspaceStore.ts` | Partial — has `browserUrl` at workspace level |
-| `workspaceStoreTypes` | `src/renderer/store/workspaceStoreTypes.ts` | Partial — browser state fields exist |
-| `electron-store` | `npm install` | Present — used for settings/harness |
-| IPC channels | `src/shared/ipcChannels.ts` | Exists — `BROWSER_*` channels defined |
-| Preload bridge | `src/main/preload.ts` | Exists — `electronAPI.browserNavigate` etc. |
-
-### Existing Patterns to Follow
-
-```typescript
-// Browser IPC handler pattern (browserIpc.ts)
-ipcMain.handle(BROWSER_NAVIGATE, (_, workspaceId: string, url: string) => {
-  // ... handler body
-});
-```
-
-```typescript
-// Preload API pattern (preload.ts)
-browserNavigate: (workspaceId: string, url: string) =>
-  ipcRenderer.invoke(BROWSER_NAVIGATE, workspaceId, url),
-```
-
-```typescript
-// electron-store pattern (like settings)
-const store = new Store({ name: 'browser-navigation-history' });
-store.set('entries', []);
-store.get('entries');
-```
-
----
-
-## Dependencies
-
-| Dependency | Status | Notes |
-|------------|--------|-------|
-| electron-store | Present | Used for settings/harness |
-| IPC channels pattern | Present | Add new channels following existing pattern |
-| Preload bridge pattern | Present | Add new APIs following existing pattern |
+| Component | Location | Notes |
+|-----------|----------|-------|
+| Browser IPC | `src/main/ipc/browserIpc.ts` | Owns `WebContentsView` creation, navigation, bounds, security handlers |
+| Main shared browser state | `src/main/main.ts` | Currently `Map<workspaceId, BrowserViewEntry>` and active workspace ID |
+| Annotation IPC/controller | `src/main/annotation/annotationIpc.ts`, `src/main/annotation/annotationController.ts` | Currently looks up one browser view by workspace |
+| Window zoom IPC | `src/main/ipc/windowIpc.ts` | Iterates browser views for zoom sync |
+| Browser UI | `src/renderer/components/BrowserPanel.tsx` | Toolbar, URL input, bounds measurement, annotation controls |
+| Browser panel consumer | `src/renderer/components/DynamicPaneLayout.tsx` | Passes browser props into `BrowserPanel` |
+| URL update listener | `src/renderer/App.tsx` | Listens to `BROWSER_URL_UPDATED` and patches store |
+| Workspace store | `src/renderer/store/workspaceStore.ts` | Owns tab actions and active workspace snapshot |
+| Store helpers | `src/renderer/store/workspaceStoreHelpers.ts` | Sanitization, snapshot sync, consistency validation |
+| Store types | `src/renderer/store/workspaceTypes.ts`, `src/renderer/store/workspaceStoreTypes.ts` | Browser pane and action signatures |
+| Store invariants docs | `src/renderer/store/INVARIANTS.md` | Must document browser tab contracts |
+| Preload bridge | `src/main/preload.ts` | Renderer API surface |
+| Renderer API types | `src/renderer/electron.d.ts` | Must match preload |
+| IPC channels | `src/shared/ipcChannels.ts` | Constants and `ALL_IPC_CHANNELS` |
+| Test electron mock | `tests/setup/electron.ts` | Must include new preload methods |
+| Fixtures | `tests/setup/fixtures.ts` | Must create valid browser tab state when browser pane exists |
 
 ---
 
@@ -147,27 +171,26 @@ store.get('entries');
 
 ### Phase Order
 
-| Phase | Description | Depends On |
-|-------|-------------|------------|
-| Prereq | Types & Data Model — define `BrowserTab`, update `BrowserPaneState`, add IPC channels | — |
-| 0 | Renderer: Tab State in Store — store actions, migrate `toggleBrowser` to create tabs | Prereq |
-| 1 | Main Process: Multi-WebContentsView — manage multiple views per workspace | Prereq |
-| 2 | UI: Tab Dropdown & BrowserPanel Refactor — dropdown UI, sync with active tab | Phase 0 |
-| 3 | Global Navigation History: Storage & IPC — `browserHistory.ts`, history IPC | — |
-| 4 | URL Autocomplete UI — autocomplete dropdown | Phase 3 |
-| 5 | Integration & Validation — end-to-end test, `npm run validate` | Phase 2 + Phase 4 |
+| Phase | Description | Depends On | Validation Boundary |
+|-------|-------------|------------|---------------------|
+| 0 | Types, store migration, tab actions, invariants | — | Store and type tests pass; no new registered IPC channels |
+| 1 | IPC surface compatibility bridge | Phase 0 | Preload/types/tests pass; handlers exist for channels added to `ALL_IPC_CHANNELS` |
+| 2 | Main multi-view architecture | Phase 1 | Main IPC, annotation, zoom, lifecycle tests pass |
+| 3 | Tab dropdown UI and BrowserPanel refactor | Phase 2 | Renderer UI tests pass |
+| 4 | Global history service and IPC | Phase 2 | History handlers registered and tested |
+| 5 | URL autocomplete UI | Phase 4 | Autocomplete renderer tests pass |
+| 6 | Integration hardening, compatibility cleanup, and full validation | Phases 0-5 | unused compatibility helpers removed or documented; `npm run validate` passes |
 
 ---
 
-## Phase Details
+## Phase 0 — Types, Store Migration, Tab Actions, Invariants
 
-### Phase Prereq — Types & Data Model + IPC Channel Constants
+**Purpose:** Introduce browser tab state in the renderer store without changing the main IPC surface yet.
 
-**Purpose:** Define the type structure for browser tabs, update `BrowserPaneState`, and add all new IPC channel constants.
+### Scope
 
-**Scope:**
-- [ ] Define `BrowserTab` interface:
-  ```typescript
+- Add `BrowserTab` in `src/renderer/store/workspaceTypes.ts`:
+  ```ts
   export interface BrowserTab {
     id: string;
     url: string;
@@ -176,462 +199,614 @@ store.get('entries');
     canGoForward: boolean;
   }
   ```
-- [ ] Update `BrowserPaneState` to include:
-  ```typescript
-  export interface BrowserPaneState {
-    id: string;
-    position: PanePosition;
-    locked: boolean;
-    tabs: BrowserTab[];        // NEW
-    activeTabId: string | null; // NEW
-  }
+- Extend `BrowserPaneState`:
+  ```ts
+  tabs: BrowserTab[];
+  activeTabId: string | null;
   ```
-  - **Invariant**: `tabs.length >= 1` (at least one tab always)
-  - **Invariant**: `activeTabId !== null → tabs.some(t => t.id === activeTabId)`
-- [ ] Add IPC channel constants to `src/shared/ipcChannels.ts`:
-  - `BROWSER_CREATE_TAB` — create new tab in workspace
-  - `BROWSER_CLOSE_TAB` — close tab in workspace
-  - `BROWSER_SWITCH_TAB` — switch active tab
-  - `BROWSER_GET_TABS` — get all tabs for workspace
-  - `BROWSER_TAB_NAVIGATE` — navigate specific tab (different from current tab navigation)
-  - `BROWSER_HISTORY_ADD` — add URL to history
-  - `BROWSER_HISTORY_GET` — get history entries (with optional prefix filter)
-  - `BROWSER_HISTORY_CLEAR` — clear all history
-- [ ] Add event channel constant:
-  - `BROWSER_TAB_URL_UPDATED` — main→renderer: tab navigated (contains tabId, url, title)
-- [ ] Update `ALL_IPC_CHANNELS` array to include all new channels
-
-**Out of Scope:**
-- Store actions (Phase 0)
-- Main process implementation (Phase 1)
-- UI (Phase 2)
-
-**Files to Modify:**
-- `src/renderer/store/workspaceTypes.ts` — Add `BrowserTab` interface, update `BrowserPaneState`
-- `src/shared/ipcChannels.ts` — Add new channel constants
-
-**Context Files to Read:**
-- `src/renderer/store/workspaceTypes.ts` — existing `BrowserPaneState` (line 24)
-- `src/shared/ipcChannels.ts` — existing `BROWSER_*` constants pattern
-
----
-
-### Phase 0 — Renderer: Tab State Management + Migration
-
-**Purpose:** Add tab state to workspace store, implement tab operations, and migrate `toggleBrowser` to create initial tab.
-
-**Scope:**
-- [ ] Add store state shape:
-  - `browserPane.tabs: BrowserTab[]`
-  - `browserPane.activeTabId: string | null`
-- [ ] Add store actions:
-  - `addBrowserTab(workspaceId?)` — creates new tab with `about:blank`, sets as active
-  - `removeBrowserTab(tabId, workspaceId?)` — removes tab, ensures >= 1 remain, switches active if needed
-  - `setActiveBrowserTab(tabId, workspaceId?)` — sets active tab
-  - `updateBrowserTab(tabId, partial: Partial<BrowserTab>, workspaceId?)` — updates tab fields (url, title, canGoBack, canGoForward)
-- [ ] **Migrate `toggleBrowser`**: When first opening browser, create `BrowserPaneState` with:
-  - `id`, `locked: false`, `position`
-  - `tabs: [{ id: generateId('tab'), url: 'about:blank', title: 'New Tab', canGoBack: false, canGoForward: false }]`
-  - `activeTabId: tabs[0].id`
-- [ ] **Migrate existing workspaces** (on store load): If `browserPane` exists but `tabs` is undefined, initialize with single tab containing current `browserUrl`
-- [ ] `updateWorkspaceBrowserUrl` (triggered by `BROWSER_URL_UPDATED` event) should update active tab's URL
-
-**Out of Scope:**
-- Main process WebContentsView management (Phase 1)
-- UI dropdown (Phase 2)
-
-**Files to Modify:**
-- `src/renderer/store/workspaceStore.ts` — Add tab state and actions, migrate `toggleBrowser`
-- `src/renderer/store/workspaceStoreTypes.ts` — Add action signatures
-- `src/renderer/store/workspaceTypes.ts` — Already updated in Prereq
-
-**New Files:**
-- None
-
-**Context Files to Read:**
-- `src/renderer/store/workspaceStore.ts` — `toggleBrowser` action (line 421), `setBrowserUrl` (line 519), `updateWorkspaceBrowserUrl` (line 526)
-- `src/renderer/store/workspaceStoreTypes.ts` — existing action signatures
-
----
-
-### Phase 1 — Main Process: Multi-WebContentsView Management
-
-**Purpose:** Refactor `browserIpc.ts` to support multiple WebContentsViews per workspace (one per tab), switch between them, and wire up tab URL sync.
-
-**Scope:**
-- [ ] **Data structure**: Refactor from `Map<workspaceId, BrowserViewEntry>` to nested map:
-  ```typescript
-  // Old
-  Map<workspaceId, BrowserViewEntry>
-  // New
-  Map<workspaceId, Map<tabId, BrowserViewEntry>>
-  // where BrowserViewEntry = { view: WebContentsView, url: string }
+- Add helper functions in `src/renderer/store/workspaceStoreHelpers.ts`:
+  - `createDefaultBrowserTab(seedUrl?: string): BrowserTab`
+  - `sanitizeBrowserPane(pane, browserUrl): BrowserPaneState | null`
+  - `getActiveBrowserTab(browserPane): BrowserTab | null`
+  - `syncBrowserUrlFromActiveTab(workspace): WorkspaceTab`
+  - `ensureBrowserUrlForTab(url): string` or equivalent normalization for store defaults only
+- Harden `sanitizeWorkspace` for:
+  - missing `tabs`
+  - empty `tabs`
+  - missing/invalid `activeTabId`
+  - duplicate tab IDs
+  - missing tab URL/title/history flags
+  - `browserPane.locked` missing
+- Add workspace consistency warnings for:
+  - `browserPane.tabs.length < 1`
+  - duplicate tab IDs
+  - invalid `activeTabId`
+  - `browserUrl` not matching active tab URL
+- Add store actions in `src/renderer/store/workspaceStoreTypes.ts` and `workspaceStore.ts`:
+  ```ts
+  addBrowserTab(workspaceId?: string): string | null;
+  removeBrowserTab(tabId: string, workspaceId?: string): { removed: boolean; nextActiveTabId: string | null };
+  setActiveBrowserTab(tabId: string, workspaceId?: string): boolean;
+  updateBrowserTab(tabId: string, partial: Partial<BrowserTab>, workspaceId?: string): boolean;
+  updateWorkspaceBrowserUrl(workspaceId: string, tabId: string | null, url: string, title?: string): void;
   ```
-- [ ] **Helper functions** (add to `browserIpc.ts` or export existing):
-  - `ensureTabViewEntry(workspaceId, tabId, deps)` — gets or creates WebContentsView for tab
-  - `switchToTab(workspaceId, tabId, deps)` — hides current tab's view, shows target tab's view
-  - `destroyTabView(workspaceId, tabId, deps)` — closes WebContentsView for tab
-  - `switchActiveTabOnClose(workspaceId, closedTabId, deps)` — when closing active tab, switch to adjacent tab (prefer next, then previous)
-- [ ] **Update `BROWSER_SET_BOUNDS`**: Now operates on active tab's view only
-  - Get active tabId from renderer state (passed in IPC payload or derived)
-  - Only update and show the active tab's WebContentsView
-- [ ] **Update `BROWSER_HIDE`**: Hide active tab's view (or all views if no active)
-- [ ] **Add `BROWSER_CREATE_TAB` handler**:
-  - Creates new `BrowserViewEntry` with fresh `WebContentsView` at `about:blank`
-  - Returns `{ tabId, initialUrl: 'about:blank' }` to renderer
-  - Renderer creates store tab, then calls `setActiveBrowserTab`
-- [ ] **Add `BROWSER_CLOSE_TAB` handler**:
-  - Destroys the WebContentsView for the tab
-  - Renderer already called `removeBrowserTab` before this (or handles in store action)
-  - If closing active tab, switch to adjacent tab
-- [ ] **Add `BROWSER_SWITCH_TAB` handler**:
-  - Calls `switchToTab(workspaceId, tabId, deps)`
-  - Returns current tab URL so renderer can update URL bar
-- [ ] **Add `BROWSER_GET_TABS` handler**:
-  - Returns array of `{ tabId, url }` for workspace's tabs
-  - Used for renderer state sync
-- [ ] **Add `BROWSER_TAB_NAVIGATE` handler**:
-  - Navigate a specific tab (tabId, url)
-  - Used when switching to a tab that has a pending URL
-- [ ] **Update `BROWSER_URL_UPDATED` event**:
-  - Now includes `tabId` in payload: `{ workspaceId, tabId, url, title }`
-  - Renderer uses `tabId` to find and update the correct tab in store
-- [ ] **Add tab title sync**: On `did-navigate`, get `view.webContents.getTitle()` and include in `BROWSER_TAB_URL_UPDATED` event
-- [ ] **Update `BROWSER_DISPOSE_WORKSPACE`**: Destroy all WebContentsViews for all tabs in workspace
+- `removeBrowserTab` must be atomic:
+  - reject/no-op if it would remove the last tab
+  - if removing active tab, select adjacent tab: prefer next, then previous
+  - return selected `nextActiveTabId`
+- `updateWorkspaceBrowserUrl` rules:
+  - patch target workspace by `workspaceId`
+  - if `tabId` is provided, update that tab only
+  - if `tabId` is null, update active tab for compatibility
+  - update `browserUrl` only if the updated tab is active
+  - update top-level active workspace snapshot only when the target workspace is active
+- `setBrowserUrl` remains a compatibility path and updates the active tab plus `browserUrl`.
+- `toggleBrowser` creates a browser pane with one tab if no pane exists.
+- Update `WorkspaceScope.tsx` fallback snapshots to include valid tab state.
+- Update `tests/setup/fixtures.ts` so any fixture browser pane is valid.
+- Update `src/renderer/store/INVARIANTS.md` with the tab and mirror contracts.
 
-**Out of Scope:**
-- UI (Phase 2)
+### New Tab Default URL Policy
 
-**Files to Modify:**
-- `src/main/ipc/browserIpc.ts` — Refactor for multi-view, add tab handlers
-- `src/main/preload.ts` — Add new API bindings
+New browser tabs must use the existing HTTP(S) default page, `https://github.com`. Do not add an `about:blank` internal sentinel in this sprint. This keeps tab creation aligned with the existing browser security policy and avoids scheme exceptions in navigation/history code.
 
-**New IPC Handlers:**
-- `BROWSER_CREATE_TAB(workspaceId)` → `{ tabId: string, url: string }`
-- `BROWSER_CLOSE_TAB(workspaceId, tabId)` → `boolean`
-- `BROWSER_SWITCH_TAB(workspaceId, tabId)` → `{ url: string }`
-- `BROWSER_GET_TABS(workspaceId)` → `Array<{ tabId: string, url: string }>`
-- `BROWSER_TAB_NAVIGATE(workspaceId, tabId, url)` → `boolean`
+### Out of Scope
 
-**Context Files to Read:**
-- `src/main/ipc/browserIpc.ts` — `ensureBrowserViewEntry`, `updateBrowserView`, `setActiveBrowserWorkspace`, `createBrowserViewForWorkspace`
-- `src/main/main.ts` — `browserViews` map (line 78), `activeBrowserWorkspaceId` (line 79)
+- No new IPC channel constants in `ALL_IPC_CHANNELS`.
+- No `WebContentsView` nested map refactor.
+- No tab dropdown UI.
+- No history service.
 
----
+### Files to Modify
 
-### Phase 2 — UI: Tab Dropdown & BrowserPanel Refactor
+- `src/renderer/store/workspaceTypes.ts`
+- `src/renderer/store/workspaceStoreTypes.ts`
+- `src/renderer/store/workspaceStoreHelpers.ts`
+- `src/renderer/store/workspaceStore.ts`
+- `src/renderer/store/INVARIANTS.md`
+- `src/renderer/components/WorkspaceScope.tsx`
+- `tests/setup/fixtures.ts`
+- Store/helper tests under `tests/renderer/`
 
-**Purpose:** Render the tab dropdown UI, wire up tab operations, and refactor `BrowserPanel` to read URL from active tab.
+### Required Tests
 
-**Scope:**
-- [ ] **BrowserPanel refactor**:
-  - Remove `url` prop — URL now comes from active tab in store
-  - Add `workspace` or `activeTab` from store
-  - `inputUrl` state syncs from `activeTab.url` (on tab switch, on URL update event)
-- [ ] **Tab count button in toolbar**:
-  - Position: logical spot in toolbar (e.g., between stop/refresh and URL input)
-  - Icon: simple number or tab-stack icon with count badge showing `tabs.length`
-  - Click opens dropdown
-- [ ] **Dropdown contents**:
-  - List of tabs: show `tab.title` (truncated) or URL hostname
-  - Active tab highlighted
-  - Click to switch: call `setActiveBrowserTab(tabId)` → renderer calls `BROWSER_SWITCH_TAB` → update URL bar
-  - Close (X) button per tab — only if `tabs.length > 1`
-  - "+" button to open new tab
-- [ ] **New tab flow**:
-  1. User clicks "+"
-  2. Renderer calls `addBrowserTab(workspaceId)` → creates tab in store
-  3. Renderer calls `BROWSER_CREATE_TAB(workspaceId)` → main creates WebContentsView
-  4. Renderer calls `setActiveBrowserTab(newTabId)`
-  5. Renderer navigates to `about:blank` (or copies current URL — deferred)
-- [ ] **Close tab flow**:
-  1. User clicks X on tab in dropdown
-  2. Renderer calls `removeBrowserTab(tabId)` → removes from store
-  3. If was active: `setActiveBrowserTab(adjacentTabId)`
-  4. Renderer calls `BROWSER_CLOSE_TAB(workspaceId, tabId)` → main destroys WebContentsView
-- [ ] **URL input sync**:
-  - On tab switch: update `inputUrl` to `activeTab.url`
-  - On `BROWSER_TAB_URL_UPDATED`: update `inputUrl` for that tab
-  - On navigate: update `activeTab.url` in store
-
-**Out of Scope:**
-- History autocomplete (Phase 4)
-- Tab title fetch (basic — just show URL or placeholder)
-
-**Files to Modify:**
-- `src/renderer/components/BrowserPanel.tsx` — Refactor URL source, add tab dropdown
-- `src/renderer/components/BrowserPanel.css` — Style the dropdown
-
-**New Files:**
-- None
-
-**Context Files to Read:**
-- `src/renderer/components/BrowserPanel.tsx` — existing toolbar layout, URL input handling
-- `src/renderer/components/git/GitButton.tsx` — dropdown menu pattern
+- Migrates old browser pane without `tabs` into one valid tab.
+- Repairs empty `tabs`.
+- Repairs invalid `activeTabId`.
+- Deduplicates or replaces duplicate tab IDs.
+- Cannot remove last tab.
+- Removing active tab selects adjacent tab atomically.
+- `browserUrl` mirrors only the active tab.
+- Updating inactive workspace tab does not mutate active snapshot.
+- Browser pane `position` is unchanged by all tab actions.
 
 ---
 
-### Phase 3 — Global Navigation History: Storage & IPC
+## Phase 1 — IPC Surface Compatibility Bridge
 
-**Purpose:** Persist visited URLs globally using electron-store and expose via IPC.
+**Purpose:** Add tab-aware IPC contracts and renderer API types without yet requiring the full UI refactor. Every new channel added to `ALL_IPC_CHANNELS` in this phase must have a real handler/listener.
 
-**Scope:**
-- [ ] **Create `src/main/browserHistory.ts`**:
-  ```typescript
-  import Store from 'electron-store';
+### Scope
 
-  interface HistoryEntry {
+- Add channel constants in `src/shared/ipcChannels.ts` for tab operations:
+  - `BROWSER_CREATE_TAB`
+  - `BROWSER_CLOSE_TAB`
+  - `BROWSER_SWITCH_TAB`
+  - `BROWSER_GET_TABS`
+  - `BROWSER_TAB_NAVIGATE`
+- Add these constants to `ALL_IPC_CHANNELS` in this phase because handlers are also added in this phase.
+- Keep `BROWSER_URL_UPDATED` as the event channel. Do **not** add `BROWSER_TAB_URL_UPDATED`.
+- Extend `BROWSER_URL_UPDATED` payload additively:
+  ```ts
+  {
+    workspaceId: string;
+    tabId?: string;
     url: string;
     title?: string;
-    lastVisited: number; // timestamp
-  }
-
-  interface BrowserHistoryStore {
-    entries: HistoryEntry[];
-  }
-
-  const HISTORY_KEY = 'browserNavigationHistory';
-  const MAX_ENTRIES = 100;
-
-  export function addToHistory(url: string, title?: string): void {
-    const store = new Store<BrowserHistoryStore>({ name: HISTORY_KEY });
-    const entries = store.get('entries') ?? [];
-    // Remove existing entry with same URL (update position)
-    const filtered = entries.filter(e => e.url !== url);
-    // Add to front
-    filtered.unshift({ url, title, lastVisited: Date.now() });
-    // Trim to max
-    store.set('entries', filtered.slice(0, MAX_ENTRIES));
-  }
-
-  export function getHistory(prefix?: string): HistoryEntry[] {
-    const store = new Store<BrowserHistoryStore>({ name: HISTORY_KEY });
-    const entries = store.get('entries') ?? [];
-    if (!prefix) return entries.slice(0, 8); // default limit 8
-    const lower = prefix.toLowerCase();
-    return entries.filter(e => e.url.toLowerCase().includes(lower)).slice(0, 8);
-  }
-
-  export function clearHistory(): void {
-    const store = new Store<BrowserHistoryStore>({ name: HISTORY_KEY });
-    store.set('entries', []);
+    canGoBack?: boolean;
+    canGoForward?: boolean;
   }
   ```
-  - Only store http/https URLs (validate in `addToHistory`)
-  - Max 100 entries, return up to 8 for autocomplete
+- Add preload methods and renderer API types:
+  ```ts
+  browserCreateTab(workspaceId: string, tabId: string): Promise<{ url: string; title: string }>;
+  browserCloseTab(workspaceId: string, tabId: string): Promise<boolean>;
+  browserSwitchTab(workspaceId: string, tabId: string): Promise<{ url: string; title?: string } | null>;
+  browserGetTabs(workspaceId: string): Promise<Array<{ tabId: string; url: string; title?: string }>>;
+  browserTabNavigate(workspaceId: string, tabId: string, url: string): Promise<boolean>;
+  ```
+- Keep existing workspace-scoped APIs backward-compatible:
+  - `browserSetBounds(workspaceId, bounds)` still exists.
+  - `browserNavigate(workspaceId, url)` still exists.
+  - `browserBack/Forward/Refresh/Stop`, `canGoBack/Forward` still exist.
+- Add optional tab-aware overloads only if TypeScript/preload can support them cleanly:
+  - `browserSetBounds(workspaceId, bounds, tabId?)`
+  - `browserNavigate(workspaceId, url, tabId?)`
+- Update `src/renderer/App.tsx` URL listener to accept `tabId` and call the Phase 0 store action correctly.
+- Update `tests/setup/electron.ts`, preload tests, and IPC registration tests.
 
-- [ ] **Add IPC handlers in `browserIpc.ts`**:
-  - `BROWSER_HISTORY_ADD(url, title?)` — call `addToHistory(url, title)`
-  - `BROWSER_HISTORY_GET(prefix?)` — call `getHistory(prefix)`
-  - `BROWSER_HISTORY_CLEAR()` — call `clearHistory()`
+### Temporary Handler Behavior
 
-- [ ] **Wire up history on navigation**:
-  - In `BROWSER_NAVIGATE` handler: after URL is validated and navigation starts, call `addToHistory(url)`
-  - In `BROWSER_TAB_NAVIGATE` handler: same
+Handlers may use the current single-view implementation internally, but they must be real and safe:
 
-**Out of Scope:**
-- Autocomplete UI (Phase 4)
+- `BROWSER_CREATE_TAB` records/ensures a tab entry with the renderer-provided ID.
+- `BROWSER_SWITCH_TAB` updates active tab tracking, even before nested views are fully implemented.
+- `BROWSER_CLOSE_TAB` rejects closing unknown/last tab if main can determine that state; otherwise safely returns `true` after removing tracked metadata.
+- `BROWSER_TAB_NAVIGATE` validates URL using browser security rules and behaves like `BROWSER_NAVIGATE` for the target/active tab.
 
-**Files to Modify:**
-- `src/main/ipc/browserIpc.ts` — Add history IPC handlers
+### Out of Scope
 
-**New Files:**
-- `src/main/browserHistory.ts` — History service
+- Full nested `WebContentsView` map behavior.
+- Tab dropdown UI.
+- History IPC.
 
-**Context Files to Read:**
-- `src/main/credential/credentialService.ts` — electron-store usage pattern
-- `src/main/ipc/browserIpc.ts` — `BROWSER_NAVIGATE` handler
+### Files to Modify
 
----
+- `src/shared/ipcChannels.ts`
+- `src/main/ipc/browserIpc.ts`
+- `src/main/preload.ts`
+- `src/renderer/electron.d.ts`
+- `src/renderer/App.tsx`
+- `tests/setup/electron.ts`
+- `tests/main/unit/preload.test.ts`
+- `tests/main/integration/ipcRegistration.test.ts`
+- Relevant browser IPC tests
 
-### Phase 4 — URL Autocomplete UI
+### Required Tests
 
-**Purpose:** Show autocomplete dropdown when typing in URL bar, powered by global history.
-
-**Scope:**
-- [ ] **In `BrowserPanel.tsx` URL input handling**:
-  - Detect typing: on `onChange`, if `inputUrl.length >= 2`, query history
-  - Debounce: 300ms before calling `BROWSER_HISTORY_GET`
-  - Call `window.electronAPI.browserHistoryGet(inputUrl)`
-- [ ] **Render autocomplete dropdown**:
-  - Position below URL input
-  - Show up to 8 entries: URL (primary) + title (secondary, if available)
-  - Max height with scroll for overflow
-- [ ] **Interaction**:
-  - Click entry: navigate to that URL
-  - Keyboard: Arrow keys to navigate list, Enter to select, Escape to close
-  - Selection: navigate + add to history (history add is already in `BROWSER_NAVIGATE`)
-- [ ] **Styling**: differentiate from regular dropdown, subtle appearance
-
-**Out of Scope:**
-- History persistence (Phase 3)
-
-**Files to Modify:**
-- `src/renderer/components/BrowserPanel.tsx` — Add autocomplete
-- `src/renderer/components/BrowserPanel.css` — Style autocomplete dropdown
-
-**Context Files to Read:**
-- `src/renderer/components/BrowserPanel.tsx` — existing URL input and `handleNavigate`
+- Every new tab IPC channel is registered.
+- Preload exposes all new methods.
+- `onBrowserUrlUpdated` accepts payloads with and without `tabId`.
+- Existing workspace-scoped browser APIs still work.
+- Invalid navigation URLs are rejected.
 
 ---
 
-### Phase 5 — Integration & Validation
+## Phase 2 — Main Multi-`WebContentsView` Architecture
 
-**Purpose:** Ensure the feature works end-to-end and passes validation.
+**Purpose:** Replace one browser view per workspace with one browser view per workspace tab while preserving annotation, app zoom, and lifecycle behavior.
 
-**Scope:**
-- [ ] **Migration test**: Existing workspace (no tabs) opens browser → gets single tab
-- [ ] **Tab operations**: Open tab → switch → close → verify state
-- [ ] **URL sync**: Navigate → tab URL updates → URL bar updates → switch tab → URL bar shows correct URL
-- [ ] **History**: Navigate to URL → type partial → autocomplete appears → select → navigate
-- [ ] **Persistence**: Navigate → close app → reopen → type → history autocomplete works
-- [ ] **Constraint**: Cannot close last tab (close button hidden when `tabs.length === 1`)
-- [ ] **Run `npm run validate`** (lint, typecheck, build, test)
-- [ ] **Add smoke tests** for new IPC handlers in `tests/main/`
+### Scope
 
-**Out of Scope:**
-- None (validation only)
+- Update shared main browser types in `src/main/main.ts` and related IPC deps:
+  ```ts
+  Map<string, Map<string, BrowserViewEntry>>
+  Map<string, string> activeBrowserTabIdsByWorkspace
+  Map<string, Electron.Rectangle> lastBrowserBoundsByWorkspace
+  ```
+- Refactor `src/main/ipc/browserIpc.ts` helpers:
+  - `getWorkspaceTabViews(workspaceId)`
+  - `getActiveTabId(workspaceId)`
+  - `setActiveTabId(workspaceId, tabId)`
+  - `ensureTabViewEntry(workspaceId, tabId, deps)`
+  - `hideWorkspaceTabViews(workspaceId, deps)`
+  - `showTabView(workspaceId, tabId, deps)`
+  - `destroyTabView(workspaceId, tabId, deps)`
+  - `destroyWorkspaceBrowserViews(workspaceId, deps)`
+- `ensureTabViewEntry` must create views only for renderer-provided tab IDs.
+- View creation must attach existing handlers:
+  - security handlers
+  - shortcut handlers
+  - context menu handlers
+  - zoom sync
+  - navigation URL reporting
+- Navigation URL reporting must send `BROWSER_URL_UPDATED` with `workspaceId`, `tabId`, normalized URL, title, and navigation flags.
+- `BROWSER_SET_BOUNDS` behavior:
+  - supports legacy call without `tabId` by using main's active tab for the workspace
+  - supports tab-aware call with `tabId`
+  - stores latest bounds per workspace
+  - hides all sibling views
+  - applies bounds before showing target view
+- `BROWSER_HIDE(workspaceId)` hides all tab views for that workspace.
+- `BROWSER_SWITCH_TAB`:
+  - validates tab exists or creates it only if invoked with renderer-provided tab ID
+  - updates main active tab map
+  - hides siblings
+  - applies last known bounds if workspace is active
+- `BROWSER_CLOSE_TAB`:
+  - closes the tab view
+  - removes tab map entry
+  - if closing active tab, selects adjacent using main's known order when available; otherwise clears active and waits for renderer switch
+  - never leaves a closed view visible
+- `BROWSER_DISPOSE_WORKSPACE` closes all tab views for a workspace and clears active/bounds maps.
+- Back/forward/refresh/stop/canGoBack/canGoForward target the active tab view.
+- `BROWSER_GET_TABS` returns current main-known tab metadata.
+- Update `src/main/annotation/annotationIpc.ts` and `annotationController.ts`:
+  - annotation resolves active workspace + active tab view
+  - switching/closing tabs while annotation is active must not leave injected runtime targeting a stale view
+  - safest acceptable behavior: disable annotation on active tab switch/close and require user to re-enable
+- Update `src/main/ipc/windowIpc.ts` so app zoom applies to every nested tab view.
+- Update lifecycle cleanup and tests that assume a flat browser view map.
 
-**Files to Modify:**
-- None
+### Out of Scope
 
-**New Files:**
-- `tests/main/browserHistory.test.ts` — Test history service
-- `tests/main/browserTabs.test.ts` — Test tab IPC handlers (if applicable)
+- Renderer tab dropdown UI.
+- History persistence.
+- Autocomplete.
+
+### Files to Modify
+
+- `src/main/main.ts`
+- `src/main/ipc/browserIpc.ts`
+- `src/main/ipc/windowIpc.ts`
+- `src/main/annotation/annotationIpc.ts`
+- `src/main/annotation/annotationController.ts`
+- Main tests under `tests/main/unit/`
+
+### Required Tests
+
+- Creating two tabs creates two distinct views under one workspace.
+- Bounds shows exactly one active tab and hides siblings.
+- Switching tabs hides previous view and applies last bounds to target.
+- Hiding workspace hides all its tab views.
+- Closing active tab closes the view and does not leave stale active view visible.
+- Disposing workspace closes all tab views.
+- Back/forward/canGoBack/canGoForward target active tab.
+- App zoom iterates all nested tab views.
+- Annotation targets active tab or safely disables on tab switch/close.
+- Invalid/non-HTTP(S) user navigation remains rejected.
+- New tabs load `https://github.com`; `about:blank` is not introduced or special-cased in this sprint.
+
+---
+
+## Phase 3 — Tab Dropdown UI and BrowserPanel Refactor
+
+**Purpose:** Expose tabs in the browser toolbar and wire UI actions to the tab-aware store and IPC APIs.
+
+### Scope
+
+- Refactor `BrowserPanel` to derive active tab state from scoped workspace/store instead of a `url` prop.
+- Update `DynamicPaneLayout.tsx` to stop passing `url`/`onUrlChange` if no longer needed.
+- Active tab URL drives:
+  - URL input sync
+  - open external
+  - navigation target
+  - displayed tab title/hostname fallback
+- Bounds calls must pass the active tab ID when available:
+  ```ts
+  window.electronAPI.browserSetBounds(workspace.id, bounds, activeTab.id)
+  ```
+  while preserving compatibility with Phase 1 signatures.
+- Navigation flow:
+  1. normalize user input in renderer as today by adding `https://` when missing
+  2. call `browserTabNavigate(workspace.id, activeTab.id, navigateUrl)`
+  3. optimistically update active tab URL only if IPC returns true, or rely on `BROWSER_URL_UPDATED` for committed update
+- New tab flow:
+  1. `const tabId = addBrowserTab(workspaceId)`
+  2. `browserCreateTab(workspaceId, tabId)`
+  3. `setActiveBrowserTab(tabId, workspaceId)`
+  4. `browserSwitchTab(workspaceId, tabId)`
+  5. schedule/force bounds update for the new active tab
+- Close tab flow:
+  1. prevent row-click propagation from the X button
+  2. call `removeBrowserTab(tabId, workspaceId)` and capture `nextActiveTabId`
+  3. call `browserCloseTab(workspaceId, tabId)`
+  4. if active changed, call `browserSwitchTab(workspaceId, nextActiveTabId)`
+  5. schedule/force bounds update
+- Switch tab flow:
+  1. `setActiveBrowserTab(tabId, workspaceId)`
+  2. `browserSwitchTab(workspaceId, tabId)`
+  3. input URL updates from active tab state
+  4. schedule/force bounds update
+- Add toolbar dropdown:
+  - button shows tab count
+  - active tab highlighted
+  - title fallback order: `tab.title`, hostname, URL, `New Tab`
+  - close button hidden/disabled when only one tab
+  - plus button creates tab
+- Back/forward button enabled state should use active tab state when available. Existing polling may remain as a safety net, but must update active tab fields.
+
+### Out of Scope
+
+- Autocomplete/history UI.
+- Drag/reorder tabs.
+- Middle-click close.
+
+### Files to Modify
+
+- `src/renderer/components/BrowserPanel.tsx`
+- `src/renderer/components/BrowserPanel.css`
+- `src/renderer/components/DynamicPaneLayout.tsx`
+- `src/renderer/store/workspaceStore.ts` if UI exposes action edge cases
+- Renderer tests for `BrowserPanel`, `DynamicPaneLayout`, and `App`
+
+### Required Tests
+
+- Tab count renders correctly.
+- Dropdown opens/closes.
+- Plus creates store tab and calls IPC with the same tab ID.
+- Switching tabs calls store + IPC and updates URL input.
+- Close button does not propagate to row switch.
+- Last tab cannot be closed.
+- Closing active tab selects adjacent tab.
+- Browser bounds are resent on tab switch/new tab.
+- Open external uses active tab URL.
+- Back/forward state follows active tab.
+
+---
+
+## Phase 4 — Global Navigation History Service and IPC
+
+**Purpose:** Persist committed HTTP(S) navigations globally and expose history queries through IPC.
+
+### Scope
+
+- Create `src/main/browserHistory.ts`.
+- Define:
+  ```ts
+  export interface BrowserHistoryEntry {
+    url: string;
+    title?: string;
+    lastVisited: number;
+  }
+  ```
+- Use `electron-store` with a stable store name, e.g. `browser-navigation-history`.
+- Enforce:
+  - only normalized HTTP(S) URLs are stored
+  - `about:blank` and all other non-HTTP(S) URLs are ignored
+  - duplicates are moved to the front with updated `lastVisited`/title
+  - max 100 entries
+  - queries return max 8 entries
+- Prefix/search behavior should match user expectations:
+  - normalized full URL lowercased
+  - hostname lowercased
+  - hostname + pathname lowercased
+  - optional stripped `www.` variant
+- Add IPC constants and handlers in the same phase:
+  - `BROWSER_HISTORY_ADD`
+  - `BROWSER_HISTORY_GET`
+  - `BROWSER_HISTORY_CLEAR`
+- Add constants to `ALL_IPC_CHANNELS` only after handlers are registered.
+- Add preload methods and renderer API types:
+  ```ts
+  browserHistoryGet(prefix?: string): Promise<BrowserHistoryEntry[]>;
+  browserHistoryAdd(url: string, title?: string): Promise<boolean>;
+  browserHistoryClear(): Promise<boolean>;
+  ```
+- Wire history writes from successful `did-navigate` / `did-navigate-in-page` browser events after URL/title normalization.
+- Keep explicit `browserHistoryAdd` IPC for future use/tests, but normal app history should be committed from successful navigation events.
+
+### Out of Scope
+
+- Autocomplete UI.
+- Per-entry delete.
+- Configurable max history count.
+
+### Files to Modify
+
+- `src/main/browserHistory.ts` new
+- `src/main/ipc/browserIpc.ts`
+- `src/shared/ipcChannels.ts`
+- `src/main/preload.ts`
+- `src/renderer/electron.d.ts`
+- `tests/setup/electron.ts`
+- `tests/main/unit/preload.test.ts`
+- `tests/main/integration/ipcRegistration.test.ts`
+- `tests/main/browserHistory.test.ts` new
+
+### Required Tests
+
+- Rejects `file:`, `data:`, `javascript:`, arbitrary `about:`, and empty URLs.
+- Does not store `about:blank` or any other non-HTTP(S) URL.
+- Dedupes and updates `lastVisited`.
+- Caps stored entries at 100.
+- Query caps results at 8.
+- Prefix matching works for `git`, `github.com`, `https://github`, `localhost`, and hostname/path forms.
+- History IPC channels are registered and preload exposes methods.
+
+---
+
+## Phase 5 — URL Autocomplete UI
+
+**Purpose:** Show history suggestions below the URL input while typing.
+
+### Scope
+
+- In `BrowserPanel.tsx`, query history when:
+  - URL input is focused
+  - user input length is at least 2 after trimming
+  - input is user-edited, not merely synced from active tab switch
+- Debounce history queries by 300ms.
+- Render up to 8 suggestions below the URL input.
+- Suggestion display:
+  - URL primary
+  - title secondary if present
+- Interactions:
+  - click suggestion navigates active tab to that URL
+  - ArrowDown/ArrowUp move highlighted suggestion
+  - Enter selects highlighted suggestion if dropdown open; otherwise normal navigate
+  - Escape closes suggestions
+  - blur closes suggestions after allowing click selection
+- Selecting a suggestion should navigate through the same `browserTabNavigate` path as manual entry. History is updated by successful navigation events, not by selection.
+- Styling must not conflict with tab dropdown styling.
+
+### Out of Scope
+
+- History management screen.
+- Per-entry deletion.
+- Fuzzy matching beyond the Phase 4 prefix/search behavior.
+
+### Files to Modify
+
+- `src/renderer/components/BrowserPanel.tsx`
+- `src/renderer/components/BrowserPanel.css`
+- `tests/renderer/unit/BrowserPanel.test.tsx`
+
+### Required Tests
+
+- Debounces calls by 300ms.
+- Does not query for fewer than 2 characters.
+- Renders suggestions returned by IPC.
+- Click suggestion navigates active tab.
+- Keyboard selection works.
+- Escape closes suggestions.
+- Switching tabs clears stale suggestions and syncs input to active tab URL.
+
+---
+
+## Phase 6 — Integration Hardening, Compatibility Cleanup, and Full Validation
+
+**Purpose:** Exercise the complete feature across renderer store, main browser resources, UI, history, and workspace switching, then clean up any sprint-only compatibility bridge code that is no longer needed.
+
+### Scope
+
+- Add or update integration coverage for:
+  - old persisted workspace migration
+  - malformed browser tab migration
+  - open tab → navigate → open second tab → switch → close active/inactive tab
+  - workspace switch with multiple tabs in both workspaces
+  - browser pane bounds stable across tab operations
+  - annotation behavior with tab switch/close
+  - app zoom with multiple hidden tab views
+  - history persists across app restart/store re-instantiation
+  - autocomplete selects and navigates
+- Verify no stale views remain visible after:
+  - tab switch
+  - browser hide
+  - workspace switch
+  - workspace dispose
+  - close active tab
+- Run:
+  ```bash
+  npm run validate
+  ```
+- Fix only regressions related to this plan.
+- Cleanup sprint-only bridge code:
+  - remove unused compatibility helpers/wrappers after renderer callers are migrated, or
+  - document retained wrappers as supported backwards-compatible API in code comments/tests
+  - remove temporary test-only scaffolding that is no longer needed
+  - ensure no duplicate tab/navigation paths remain where one canonical path should be used
+
+### Out of Scope
+
+- New features beyond the planned browser tabs/history behavior.
+
+### Files Likely to Modify
+
+- `tests/main/unit/browserIpc.test.ts`
+- `tests/main/unit/windowIpc.test.ts`
+- `tests/main/unit/annotation/annotationIpc.test.ts`
+- `tests/renderer/integration/workspaceStore.test.ts`
+- `tests/renderer/unit/BrowserPanel.test.tsx`
+- `tests/renderer/unit/App.test.tsx`
+- `tests/renderer/unit/DynamicPaneLayout.test.tsx`
+- `tests/setup/fixtures.ts`
 
 ---
 
 ## File Structure
 
-Legend: `E` = exists, `M` = modify, `N` = new
+Legend: `M` = modify, `N` = new
 
-```
+```text
 src/
 ├── main/
-│   ├── browserHistory.ts          N — global navigation history service
-│   ├── preload.ts                 M — add new browser tab/history APIs
-│   └── ipc/
-│       └── browserIpc.ts         M — multi-view management, tab IPC, history IPC
+│   ├── main.ts                         M — nested browser maps and active tab/bounds state
+│   ├── browserHistory.ts               N — global navigation history service
+│   ├── preload.ts                      M — tab/history preload APIs
+│   ├── ipc/
+│   │   ├── browserIpc.ts               M — tabbed WebContentsView management and history IPC
+│   │   └── windowIpc.ts                M — zoom iteration over nested browser views
+│   └── annotation/
+│       ├── annotationIpc.ts            M — active tab view lookup / safe disable behavior
+│       └── annotationController.ts     M — nested browser view lookup support
 ├── renderer/
-│   └── store/
-│       ├── workspaceTypes.ts      M — BrowserTab interface, BrowserPaneState.tabs
-│       └── workspaceStore.ts      M — tab actions, migrate toggleBrowser
-│       └── workspaceStoreTypes.ts M — add tab action signatures
+│   ├── App.tsx                         M — URL update event payload with tabId
+│   ├── electron.d.ts                   M — tab/history API types
+│   ├── store/
+│   │   ├── workspaceTypes.ts           M — BrowserTab, BrowserPaneState tabs
+│   │   ├── workspaceStoreTypes.ts      M — tab action signatures
+│   │   ├── workspaceStoreHelpers.ts    M — migration/sanitization/invariant helpers
+│   │   ├── workspaceStore.ts           M — tab actions and browserUrl mirror
+│   │   ├── workspaceLayout.ts          M — only if type or invariant adjustments require it
+│   │   └── INVARIANTS.md               M — browser tab contracts
 │   └── components/
-│       └── BrowserPanel.tsx       M — tab dropdown, URL from activeTab, autocomplete
-│       └── BrowserPanel.css       M — tab dropdown styles, autocomplete styles
+│       ├── WorkspaceScope.tsx          M — fallback snapshot tab compatibility
+│       ├── DynamicPaneLayout.tsx       M — BrowserPanel props
+│       ├── BrowserPanel.tsx            M — tab dropdown and autocomplete
+│       └── BrowserPanel.css            M — dropdown/autocomplete styling
 └── shared/
-    └── ipcChannels.ts            M — add BROWSER_CREATE_TAB, BROWSER_CLOSE_TAB, etc.
+    └── ipcChannels.ts                  M — add channels only with handlers
+
+tests/
+├── setup/
+│   ├── electron.ts                     M — preload mock methods
+│   └── fixtures.ts                     M — valid browser tab fixtures
+├── main/
+│   ├── browserHistory.test.ts          N — history service tests
+│   ├── unit/browserIpc.test.ts         M — tabbed browser IPC tests
+│   ├── unit/windowIpc.test.ts          M — nested zoom tests
+│   ├── unit/preload.test.ts            M — preload API tests
+│   └── integration/ipcRegistration.test.ts M — channel registration
+└── renderer/
+    ├── integration/workspaceStore.test.ts M — store tab/migration tests
+    └── unit/BrowserPanel.test.tsx      M — tab/autocomplete UI tests
 ```
 
 ---
 
-## New Dependencies
+## Testing Strategy Summary
 
-| Package | Version | Purpose | Status |
-|---------|---------|---------|--------|
-| electron-store | 10.x | Browser history persistence | Already present |
+### Store Tests
+
+- Migration from old browser pane.
+- Malformed tab state repair.
+- Active tab and `browserUrl` mirror invariants.
+- Last-tab close rejection.
+- Active close adjacent selection.
+- Bounds/position stability.
+
+### Main Tests
+
+- Renderer-provided tab IDs are preserved.
+- One visible view per workspace.
+- Hide/dispose close all relevant views.
+- Navigation security remains enforced.
+- Annotation and zoom work with nested maps.
+- History records only committed HTTP(S) navigations.
+
+### Renderer UI Tests
+
+- Dropdown behavior.
+- New/switch/close tab flows.
+- URL input sync across tab switches.
+- Active tab navigation.
+- Autocomplete debounce and keyboard/mouse selection.
+
+### Validation
+
+Every phase must run at least targeted tests for touched areas. Final phase must run:
+
+```bash
+npm run validate
+```
 
 ---
 
-## Testing Strategy
+## Rollout / Execution Rules
 
-### Unit Tests
-- [ ] `BrowserPaneState.tabs.length >= 1` invariant: cannot drop below 1 tab
-- [ ] History add: ignores non-http/https URLs
-- [ ] History get: returns entries matching prefix
-- [ ] History get: returns empty for no matches
-
-### Integration Tests
-- [ ] Open tab → switch → close → verify store state
-- [ ] Type URL → history add → refresh → autocomplete appears
-- [ ] Migrate workspace without tabs → gets single tab
-
-### Smoke Tests
-- [ ] App launches with browser (creates 1 tab by default)
-- [ ] `npm run validate` passes
-
----
-
-## Rollout Plan
-
-| Phase | Scope | Verification |
-|-------|-------|--------------|
-| Prereq | Type definitions + IPC constants | TypeScript compiles |
-| 0 | Store tab actions + toggleBrowser migration | Store actions dispatch without error |
-| 1 | Multi-WebContentsView | Can open/close/switch tabs in browser |
-| 2 | Tab dropdown + BrowserPanel refactor | Count shows, dropdown opens, tabs switch |
-| 3 | History service + IPC | History survives app restart |
-| 4 | Autocomplete dropdown | Typing shows suggestions |
-| 5 | Full integration | All flows work end-to-end |
+- New tabs open to `https://github.com`; do not add an internal `about:blank` exception in this sprint.
+- Do not add channels to `ALL_IPC_CHANNELS` before handlers/listeners exist.
+- Do not break existing workspace-scoped browser APIs until all renderer callers are migrated; bounded compatibility wrappers are allowed as phase bridges.
+- Do not bypass `normalizeAppBrowserUrl` for user navigation.
+- Do not import main modules from renderer.
+- Do not create a browser view in main without a renderer-provided tab ID after Phase 2.
+- Do not leave hidden/stale `WebContentsView` instances visible across tab/workspace switches.
+- If a phase cannot pass validation independently, stop and adjust the plan rather than pushing broken intermediate state.
 
 ---
 
 ## Success Story
 
-> A user opens the app, creates a workspace, and clicks on the browser panel. The browser shows 1 tab labeled "New Tab" (default). The user navigates to `localhost:3000`, the URL bar shows the page and the tab title updates. The user clicks the tab count button (showing "1") and sees the dropdown with one entry. They click "+" to open a new blank tab. The count now shows "2". They navigate to `github.com` in the new tab. They switch back to the first tab — the URL bar shows `localhost:3000`. They close the second tab from the dropdown. The count goes back to "1". Later, in a different workspace, they type "local" in the URL bar and see `localhost:3000` autocomplete from history. They press Enter and navigate there.
-
----
-
-## Related Documents
-
-- `src/main/ipc/browserIpc.ts` — Main process browser management
-- `src/renderer/components/BrowserPanel.tsx` — Browser UI
-- `src/renderer/store/workspaceStore.ts` — State management
-- `src/renderer/store/workspaceTypes.ts` — Type definitions
-- `src/main/preload.ts` — Preload bridge
-- `src/shared/ipcChannels.ts` — IPC channel constants
-
----
-
-## Checklist
-
-### Phase Prereq
-- [ ] Define `BrowserTab` interface in `workspaceTypes.ts`
-- [ ] Update `BrowserPaneState` to include `tabs` and `activeTabId`
-- [ ] Add IPC channel constants to `ipcChannels.ts`
-- [ ] Update `ALL_IPC_CHANNELS` array
-
-### Phase 0
-- [ ] Add tab state to workspace store
-- [ ] Implement `addBrowserTab`, `removeBrowserTab`, `setActiveBrowserTab`, `updateBrowserTab`
-- [ ] Migrate `toggleBrowser` to create initial tab
-- [ ] Ensure invariant: at least 1 tab always exists
-
-### Phase 1
-- [ ] Refactor `browserIpc.ts` for multi-view (Map of Maps)
-- [ ] Add tab IPC handlers: `BROWSER_CREATE_TAB`, `BROWSER_CLOSE_TAB`, `BROWSER_SWITCH_TAB`, `BROWSER_GET_TABS`, `BROWSER_TAB_NAVIGATE`
-- [ ] Update `BROWSER_URL_UPDATED` to include `tabId`
-- [ ] Update `BROWSER_DISPOSE_WORKSPACE` to destroy all tabs
-- [ ] Add preload bindings for new APIs
-
-### Phase 2
-- [ ] Refactor `BrowserPanel` to read URL from `activeTab.url`
-- [ ] Tab count button in toolbar
-- [ ] Dropdown with tab list
-- [ ] "+" to add new tab
-- [ ] Close (X) per tab in dropdown (hidden when only 1 tab)
-
-### Phase 3
-- [ ] Create `browserHistory.ts` service
-- [ ] Add history IPC handlers: `BROWSER_HISTORY_ADD`, `BROWSER_HISTORY_GET`, `BROWSER_HISTORY_CLEAR`
-- [ ] Call `addToHistory` on `BROWSER_NAVIGATE` and `BROWSER_TAB_NAVIGATE`
-
-### Phase 4
-- [ ] Autocomplete dropdown below URL input
-- [ ] Debounce 300ms
-- [ ] Keyboard navigation
-- [ ] Limit 8 entries
-
-### Phase 5
-- [ ] End-to-end test all flows
-- [ ] `npm run validate` passes
+A user opens a workspace and enables the browser. The browser pane has one tab loaded to `https://github.com`. They navigate to `localhost:3000`; the active tab URL and workspace `browserUrl` mirror update after committed navigation. They open a second tab from the dropdown, which also starts at `https://github.com`, navigate it elsewhere, switch back to the first tab, and the URL input returns to `localhost:3000`. Closing the second tab destroys its native view and leaves the first tab visible at the same pane bounds. In another workspace, typing `local` in the URL bar shows `localhost:3000` from global history. Selecting it navigates the active tab. Throughout this flow, only HTTP(S) user URLs are accepted, annotation never targets a stale view, workspace switching never leaves a stale browser view visible, and temporary compatibility bridge code has been removed or documented by the end of the sprint.
 
 ---
 
 ## Change Log
 
 | Version | Date | Author | Changes |
-|---------|------|---------|---------|
+|---------|------|--------|---------|
 | 1.0 | 2026-04-24 | Jay | Initial draft |
-| 2.0 | 2026-04-24 | Jay | Complete rewrite addressing gaps: URL flow architecture, toggleBrowser migration, preload bridge, IPC channels, main process data structure, BrowserPanel refactor, migration path, history add timing, tab close behavior, event channel spec |
+| 2.0 | 2026-04-24 | Jay | Rewrite covering tab model, IPC, migration, history, and UI |
+| 2.1 | 2026-04-25 | Jay + review | Hardened phase boundaries, validation rules, security policy, nested main-process impacts, annotation/zoom/lifecycle coverage, store invariants, and non-happy-path tests |
+| 2.2 | 2026-04-25 | Jay + review | Approved default new-tab URL as `https://github.com`, accepted bounded compatibility wrappers for sprint execution, and added Phase 6 cleanup requirements |
