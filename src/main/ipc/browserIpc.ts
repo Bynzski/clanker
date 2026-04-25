@@ -26,12 +26,62 @@ import {
   BROWSER_URL_UPDATED,
   BROWSER_GET_URL,
   BROWSER_SAVE_URL,
+  BROWSER_CREATE_TAB,
+  BROWSER_CLOSE_TAB,
+  BROWSER_SWITCH_TAB,
+  BROWSER_GET_TABS,
+  BROWSER_TAB_NAVIGATE,
   FIT_ALL_PANES,
 } from '../../shared/ipcChannels';
 
 interface BrowserViewEntry {
   view: WebContentsView;
   url: string;
+}
+
+/**
+ * Phase 1 tab tracking metadata.
+ *
+ * Stored independently of `WebContentsView` ownership: in Phase 1 main still
+ * uses a single view per workspace, so all tabs in a workspace currently
+ * share that view. Phase 2 will replace the single-view map with one view
+ * per `tabId`. Until then, this map only tracks renderer-provided tab ids
+ * so tab IPC handlers can answer create/switch/close/get without inventing
+ * their own ids and so `BROWSER_URL_UPDATED` can include a tab id.
+ */
+interface TabRecord {
+  id: string;
+  url: string;
+  title: string;
+}
+
+const tabRecordsByWorkspace = new Map<string, Map<string, TabRecord>>();
+const tabOrderByWorkspace = new Map<string, string[]>();
+const activeTabIdByWorkspace = new Map<string, string>();
+
+function getOrCreateTabMap(workspaceId: string): Map<string, TabRecord> {
+  let tabs = tabRecordsByWorkspace.get(workspaceId);
+  if (!tabs) {
+    tabs = new Map();
+    tabRecordsByWorkspace.set(workspaceId, tabs);
+    tabOrderByWorkspace.set(workspaceId, []);
+  }
+  return tabs;
+}
+
+function getTabOrder(workspaceId: string): string[] {
+  let order = tabOrderByWorkspace.get(workspaceId);
+  if (!order) {
+    order = [];
+    tabOrderByWorkspace.set(workspaceId, order);
+  }
+  return order;
+}
+
+function clearWorkspaceTabRecords(workspaceId: string): void {
+  tabRecordsByWorkspace.delete(workspaceId);
+  tabOrderByWorkspace.delete(workspaceId);
+  activeTabIdByWorkspace.delete(workspaceId);
 }
 
 interface RegisterBrowserIpcDeps {
@@ -189,9 +239,34 @@ function createBrowserViewForWorkspace(
     if (entry) {
       entry.url = safeUrl;
     }
+    const tabId = activeTabIdByWorkspace.get(workspaceId);
+    if (tabId) {
+      const tabs = tabRecordsByWorkspace.get(workspaceId);
+      const record = tabs?.get(tabId);
+      if (record) {
+        record.url = safeUrl;
+      }
+    }
     const win = deps.getMainWindow();
     if (win) {
-      win.webContents.send(BROWSER_URL_UPDATED, { workspaceId, url: safeUrl });
+      const title = view.webContents.getTitle();
+      const canGoBack = view.webContents.navigationHistory.canGoBack();
+      const canGoForward = view.webContents.navigationHistory.canGoForward();
+      if (tabId) {
+        const tabs = tabRecordsByWorkspace.get(workspaceId);
+        const record = tabs?.get(tabId);
+        if (record && typeof title === 'string') {
+          record.title = title;
+        }
+      }
+      win.webContents.send(BROWSER_URL_UPDATED, {
+        workspaceId,
+        ...(tabId ? { tabId } : {}),
+        url: safeUrl,
+        title,
+        canGoBack,
+        canGoForward,
+      });
     }
   };
   view.webContents.on('did-navigate', (_event, url) => reportUrlChange(url));
@@ -268,11 +343,13 @@ function hideBrowserView(workspaceId: string, deps: RegisterBrowserIpcDeps) {
 function destroyBrowserView(workspaceId: string, deps: RegisterBrowserIpcDeps) {
   const entry = deps.getBrowserViews().get(workspaceId);
   if (!entry) {
+    clearWorkspaceTabRecords(workspaceId);
     return;
   }
 
   entry.view.webContents.close();
   deps.getBrowserViews().delete(workspaceId);
+  clearWorkspaceTabRecords(workspaceId);
 
   if (deps.getActiveBrowserWorkspaceId() === workspaceId) {
     deps.setActiveBrowserWorkspaceId(null);
@@ -282,9 +359,23 @@ function destroyBrowserView(workspaceId: string, deps: RegisterBrowserIpcDeps) {
 export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
   const { getMainWindow, getBrowserViews } = deps;
 
-  ipcMain.handle(BROWSER_SET_BOUNDS, (_, workspaceId: string, viewportBounds: { x: number; y: number; width: number; height: number }) => {
+  ipcMain.handle(BROWSER_SET_BOUNDS, (
+    _,
+    workspaceId: string,
+    viewportBounds: { x: number; y: number; width: number; height: number },
+    tabId?: string,
+  ) => {
     if (!workspaceId) {
       return;
+    }
+
+    // Phase 1: tabId is accepted but the underlying single view is shared.
+    // Phase 2 will route bounds to the tab view identified by tabId.
+    if (tabId) {
+      const tabs = tabRecordsByWorkspace.get(workspaceId);
+      if (tabs?.has(tabId)) {
+        activeTabIdByWorkspace.set(workspaceId, tabId);
+      }
     }
 
     updateBrowserView(workspaceId, {
@@ -303,7 +394,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     hideBrowserView(workspaceId, deps);
   });
 
-  ipcMain.handle(BROWSER_NAVIGATE, (_, workspaceId: string, url: string) => {
+  ipcMain.handle(BROWSER_NAVIGATE, (_, workspaceId: string, url: string, tabId?: string) => {
     if (!workspaceId) {
       return false;
     }
@@ -320,9 +411,24 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
 
     entry.url = safeUrl;
 
+    // Track per-tab url. Phase 1: navigation is only applied to the underlying
+    // single view; Phase 2 will route navigation to the specific tab view.
+    if (tabId) {
+      const tabs = getOrCreateTabMap(workspaceId);
+      const record = tabs.get(tabId);
+      if (record) {
+        record.url = safeUrl;
+      }
+    }
+    const reportedTabId = tabId ?? activeTabIdByWorkspace.get(workspaceId);
+
     const mainWindow = getMainWindow();
     if (mainWindow) {
-      mainWindow.webContents.send(BROWSER_URL_UPDATED, { workspaceId, url: safeUrl });
+      mainWindow.webContents.send(BROWSER_URL_UPDATED, {
+        workspaceId,
+        ...(reportedTabId ? { tabId: reportedTabId } : {}),
+        url: safeUrl,
+      });
     }
 
     void entry.view.webContents.loadURL(safeUrl);
@@ -425,8 +531,140 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
     return false;
   });
 
+  ipcMain.handle(BROWSER_CREATE_TAB, (_, workspaceId: string, tabId: string) => {
+    if (!workspaceId || !tabId) {
+      return { url: '', title: '' };
+    }
+
+    const tabs = getOrCreateTabMap(workspaceId);
+    const order = getTabOrder(workspaceId);
+    let record = tabs.get(tabId);
+    if (!record) {
+      record = { id: tabId, url: DEFAULT_BROWSER_URL, title: '' };
+      tabs.set(tabId, record);
+      order.push(tabId);
+    }
+
+    if (!activeTabIdByWorkspace.get(workspaceId)) {
+      activeTabIdByWorkspace.set(workspaceId, tabId);
+    }
+
+    return { url: record.url, title: record.title };
+  });
+
+  ipcMain.handle(BROWSER_CLOSE_TAB, (_, workspaceId: string, tabId: string) => {
+    if (!workspaceId || !tabId) {
+      return false;
+    }
+
+    const tabs = tabRecordsByWorkspace.get(workspaceId);
+    const order = tabOrderByWorkspace.get(workspaceId);
+    if (!tabs || !order || !tabs.has(tabId)) {
+      return false;
+    }
+
+    if (tabs.size <= 1) {
+      // Refuse to remove the last tracked tab — last-tab close must come from
+      // dispose/hide flow, not from the tab close UI.
+      return false;
+    }
+
+    const removedIndex = order.indexOf(tabId);
+    tabs.delete(tabId);
+    if (removedIndex !== -1) {
+      order.splice(removedIndex, 1);
+    }
+
+    if (activeTabIdByWorkspace.get(workspaceId) === tabId) {
+      const fallback = order[Math.min(removedIndex, order.length - 1)] ?? order[0] ?? null;
+      if (fallback) {
+        activeTabIdByWorkspace.set(workspaceId, fallback);
+      } else {
+        activeTabIdByWorkspace.delete(workspaceId);
+      }
+    }
+
+    return true;
+  });
+
+  ipcMain.handle(BROWSER_SWITCH_TAB, (_, workspaceId: string, tabId: string) => {
+    if (!workspaceId || !tabId) {
+      return null;
+    }
+
+    const tabs = tabRecordsByWorkspace.get(workspaceId);
+    const record = tabs?.get(tabId);
+    if (!record) {
+      return null;
+    }
+
+    activeTabIdByWorkspace.set(workspaceId, tabId);
+    return { url: record.url, title: record.title };
+  });
+
+  ipcMain.handle(BROWSER_GET_TABS, (_, workspaceId: string) => {
+    if (!workspaceId) {
+      return [];
+    }
+
+    const tabs = tabRecordsByWorkspace.get(workspaceId);
+    const order = tabOrderByWorkspace.get(workspaceId);
+    if (!tabs || !order) {
+      return [];
+    }
+
+    return order
+      .map((id) => tabs.get(id))
+      .filter((record): record is TabRecord => record != null)
+      .map((record) => ({ tabId: record.id, url: record.url, title: record.title }));
+  });
+
+  ipcMain.handle(BROWSER_TAB_NAVIGATE, (_, workspaceId: string, tabId: string, url: string) => {
+    if (!workspaceId || !tabId) {
+      return false;
+    }
+
+    const safeUrl = normalizeAppBrowserUrl(url);
+    if (!safeUrl) {
+      return false;
+    }
+
+    const tabs = getOrCreateTabMap(workspaceId);
+    const record = tabs.get(tabId);
+    if (!record) {
+      return false;
+    }
+    record.url = safeUrl;
+
+    // Phase 1: apply navigation to the underlying single view if this tab is
+    // active for the workspace. Otherwise just record the url; Phase 2 will
+    // route navigation to the tab's own WebContentsView.
+    const activeTabId = activeTabIdByWorkspace.get(workspaceId);
+    if (activeTabId === tabId) {
+      const entry = ensureBrowserViewEntry(workspaceId, deps);
+      if (entry) {
+        entry.url = safeUrl;
+        void entry.view.webContents.loadURL(safeUrl);
+      }
+    }
+
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send(BROWSER_URL_UPDATED, { workspaceId, tabId, url: safeUrl });
+    }
+
+    return true;
+  });
+
   ipcMain.on(BROWSER_URL_UPDATED, () => { });
   ipcMain.on(FIT_ALL_PANES, () => { });
+}
+
+/** Test-only: clear all in-memory tab tracking state. */
+export function __resetBrowserTabState(): void {
+  tabRecordsByWorkspace.clear();
+  tabOrderByWorkspace.clear();
+  activeTabIdByWorkspace.clear();
 }
 
 export { createBrowserViewForWorkspace, ensureBrowserViewEntry, setActiveBrowserWorkspace, updateBrowserView, hideBrowserView, destroyBrowserView };

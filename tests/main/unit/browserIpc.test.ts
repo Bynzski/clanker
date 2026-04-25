@@ -172,6 +172,11 @@ describe('registerBrowserIpc', () => {
       'open-external',
       'can-go-back',
       'can-go-forward',
+      'browser-create-tab',
+      'browser-close-tab',
+      'browser-switch-tab',
+      'browser-get-tabs',
+      'browser-tab-navigate',
     ];
 
     expectedChannels.forEach(channel => {
@@ -179,14 +184,14 @@ describe('registerBrowserIpc', () => {
     });
   });
 
-  test('registers exactly 13 browser IPC channels', () => {
+  test('registers exactly 18 browser IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerBrowserIpc(deps);
 
     // Count how many times handle was called
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(13);
+    expect(handleCalls.length).toBe(18);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -198,7 +203,7 @@ describe('registerBrowserIpc', () => {
 
     // Handlers should be registered again
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(26);
+    expect(handleCalls.length).toBe(36);
   });
 
   test('browser context menu can open devtools and inspect the clicked element', () => {
@@ -701,5 +706,227 @@ describe('browser IPC channel constants', () => {
       const hasExpectedPrefix = browserPrefixes.some(prefix => channel.startsWith(prefix));
       expect(hasExpectedPrefix).toBe(true);
     });
+  });
+});
+
+// ===========================================================================
+// Phase 1 — Tab IPC handlers
+// ===========================================================================
+describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
+  const mockIpcMain = ipcMain as typeof ipcMain & {
+    handle: ReturnType<typeof vi.fn>;
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type AnyHandler = (..._args: any[]) => any;
+
+  function createMockDeps() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockBrowserViews = new Map<string, any>();
+    let mockActiveWorkspaceId: string | null = null;
+    const mockMainWindow = {
+      webContents: {
+        send: vi.fn(),
+        getZoomLevel: vi.fn(() => 0),
+      },
+      contentView: { addChildView: vi.fn() },
+    };
+    return {
+      mockMainWindow,
+      deps: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        getMainWindow: () => mockMainWindow as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        getBrowserViews: () => mockBrowserViews as any,
+        getActiveBrowserWorkspaceId: () => mockActiveWorkspaceId,
+        setActiveBrowserWorkspaceId: (id: string | null) => { mockActiveWorkspaceId = id; },
+      },
+    };
+  }
+
+  function findHandler(name: string): AnyHandler {
+    const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === name)?.[1] as AnyHandler | undefined;
+    if (!handler) {
+      throw new Error(`handler ${name} not registered`);
+    }
+    return handler;
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const mod = await import('../../../src/main/ipc/browserIpc');
+    mod.__resetBrowserTabState();
+  });
+
+  test('BROWSER_CREATE_TAB records the renderer-provided id and returns default url', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const getTabs = findHandler('browser-get-tabs');
+
+    const result = await create(null, 'ws-1', 'tab-a');
+    expect(result).toEqual({ url: 'https://github.com', title: '' });
+
+    const tabs = await getTabs(null, 'ws-1');
+    expect(tabs).toEqual([{ tabId: 'tab-a', url: 'https://github.com', title: '' }]);
+  });
+
+  test('BROWSER_CREATE_TAB is idempotent for the same id', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const getTabs = findHandler('browser-get-tabs');
+
+    await create(null, 'ws-1', 'tab-a');
+    await create(null, 'ws-1', 'tab-a');
+
+    const tabs = await getTabs(null, 'ws-1');
+    expect(tabs).toHaveLength(1);
+  });
+
+  test('BROWSER_SWITCH_TAB returns null for unknown tab and does not change state', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const switchTab = findHandler('browser-switch-tab');
+
+    await create(null, 'ws-1', 'tab-a');
+    const result = await switchTab(null, 'ws-1', 'tab-missing');
+    expect(result).toBeNull();
+  });
+
+  test('BROWSER_SWITCH_TAB returns the tab record for a known tab', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const switchTab = findHandler('browser-switch-tab');
+
+    await create(null, 'ws-1', 'tab-a');
+    await create(null, 'ws-1', 'tab-b');
+    const result = await switchTab(null, 'ws-1', 'tab-b');
+    expect(result).toEqual({ url: 'https://github.com', title: '' });
+  });
+
+  test('BROWSER_CLOSE_TAB refuses to close the last tab and returns false', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const close = findHandler('browser-close-tab');
+    const getTabs = findHandler('browser-get-tabs');
+
+    await create(null, 'ws-1', 'tab-a');
+    const result = await close(null, 'ws-1', 'tab-a');
+    expect(result).toBe(false);
+
+    const tabs = await getTabs(null, 'ws-1');
+    expect(tabs).toHaveLength(1);
+  });
+
+  test('BROWSER_CLOSE_TAB returns false for unknown tab id', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const close = findHandler('browser-close-tab');
+
+    await create(null, 'ws-1', 'tab-a');
+    await create(null, 'ws-1', 'tab-b');
+    const result = await close(null, 'ws-1', 'tab-unknown');
+    expect(result).toBe(false);
+  });
+
+  test('BROWSER_CLOSE_TAB removes the tab and updates active when closing the active tab', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const switchTab = findHandler('browser-switch-tab');
+    const close = findHandler('browser-close-tab');
+    const getTabs = findHandler('browser-get-tabs');
+
+    await create(null, 'ws-1', 'tab-a');
+    await create(null, 'ws-1', 'tab-b');
+    await create(null, 'ws-1', 'tab-c');
+    await switchTab(null, 'ws-1', 'tab-b');
+
+    const result = await close(null, 'ws-1', 'tab-b');
+    expect(result).toBe(true);
+
+    const tabs = await getTabs(null, 'ws-1');
+    expect(tabs.map((t: { tabId: string }) => t.tabId)).toEqual(['tab-a', 'tab-c']);
+  });
+
+  test('BROWSER_TAB_NAVIGATE rejects non-HTTP(S) URLs', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const tabNavigate = findHandler('browser-tab-navigate');
+
+    await create(null, 'ws-1', 'tab-a');
+    const result = await tabNavigate(null, 'ws-1', 'tab-a', 'file:///etc/passwd');
+    expect(result).toBe(false);
+  });
+
+  test('BROWSER_TAB_NAVIGATE updates per-tab url for inactive tabs without navigating the view', async () => {
+    const { deps, mockMainWindow } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const switchTab = findHandler('browser-switch-tab');
+    const tabNavigate = findHandler('browser-tab-navigate');
+    const getTabs = findHandler('browser-get-tabs');
+
+    await create(null, 'ws-1', 'tab-a');
+    await create(null, 'ws-1', 'tab-b');
+    await switchTab(null, 'ws-1', 'tab-a');
+
+    mockMainWindow.webContents.send.mockClear();
+    const result = await tabNavigate(null, 'ws-1', 'tab-b', 'https://other.example/');
+    expect(result).toBe(true);
+
+    const tabs = await getTabs(null, 'ws-1');
+    const recordB = tabs.find((t: { tabId: string }) => t.tabId === 'tab-b');
+    expect(recordB?.url).toBe('https://other.example/');
+
+    expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
+      'browser-url-updated',
+      expect.objectContaining({ workspaceId: 'ws-1', tabId: 'tab-b', url: 'https://other.example/' }),
+    );
+  });
+
+  test('BROWSER_GET_TABS returns empty array for unknown workspace', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const getTabs = findHandler('browser-get-tabs');
+    const tabs = await getTabs(null, 'ws-unknown');
+    expect(tabs).toEqual([]);
+  });
+
+  test('BROWSER_NAVIGATE keeps working without a tabId (compatibility)', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const navigate = findHandler('browser-navigate');
+    const result = await navigate(null, 'ws-1', 'https://github.com/');
+    expect(result).toBe(true);
+  });
+
+  test('BROWSER_SET_BOUNDS accepts optional tabId for tab-aware callers', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const setBounds = findHandler('browser-set-bounds');
+
+    await create(null, 'ws-1', 'tab-a');
+    const result = await setBounds(null, 'ws-1', { x: 0, y: 0, width: 100, height: 100 }, 'tab-a');
+    expect(result).toBeUndefined();
   });
 });

@@ -63,6 +63,11 @@ export const CAN_GO_FORWARD = 'can-go-forward';
 export const BROWSER_URL_UPDATED = 'browser-url-updated';
 export const BROWSER_GET_URL = 'browser-get-url';
 export const BROWSER_SAVE_URL = 'browser-save-url';
+export const BROWSER_CREATE_TAB = 'browser-create-tab';
+export const BROWSER_CLOSE_TAB = 'browser-close-tab';
+export const BROWSER_SWITCH_TAB = 'browser-switch-tab';
+export const BROWSER_GET_TABS = 'browser-get-tabs';
+export const BROWSER_TAB_NAVIGATE = 'browser-tab-navigate';
 export const FIT_ALL_PANES = 'fit-all-panes';
 
 /* ============================================================================
@@ -234,6 +239,11 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   CAN_GO_FORWARD,
   BROWSER_GET_URL,
   BROWSER_SAVE_URL,
+  BROWSER_CREATE_TAB,
+  BROWSER_CLOSE_TAB,
+  BROWSER_SWITCH_TAB,
+  BROWSER_GET_TABS,
+  BROWSER_TAB_NAVIGATE,
   // Window controls
   MINIMIZE_WINDOW,
   TOGGLE_MAXIMIZE_WINDOW,

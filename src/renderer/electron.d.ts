@@ -99,18 +99,50 @@ interface ElectronAPI {
 
   // Browser (WebContentsView)
   browserHide: (workspaceId: string) => Promise<void>;
-  browserSetBounds: (workspaceId: string, bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
-  browserNavigate: (workspaceId: string, url: string) => Promise<boolean>;
+  /**
+   * Phase 1: optional `tabId` is recorded as the active tab for the workspace
+   * before bounds are applied. Phase 2 will route bounds to the named tab view.
+   */
+  browserSetBounds: (
+    workspaceId: string,
+    bounds: { x: number; y: number; width: number; height: number },
+    tabId?: string,
+  ) => Promise<void>;
+  /**
+   * Phase 1: optional `tabId` updates the per-tab url record; navigation is
+   * applied to the underlying single view. Phase 2 will route navigation to
+   * the named tab view.
+   */
+  browserNavigate: (workspaceId: string, url: string, tabId?: string) => Promise<boolean>;
   browserBack: (workspaceId: string) => Promise<void>;
   browserForward: (workspaceId: string) => Promise<void>;
   browserRefresh: (workspaceId: string) => Promise<void>;
   browserStop: (workspaceId: string) => Promise<void>;
+  browserCreateTab: (workspaceId: string, tabId: string) => Promise<{ url: string; title: string }>;
+  browserCloseTab: (workspaceId: string, tabId: string) => Promise<boolean>;
+  browserSwitchTab: (
+    workspaceId: string,
+    tabId: string,
+  ) => Promise<{ url: string; title?: string } | null>;
+  browserGetTabs: (
+    workspaceId: string,
+  ) => Promise<Array<{ tabId: string; url: string; title?: string }>>;
+  browserTabNavigate: (workspaceId: string, tabId: string, url: string) => Promise<boolean>;
   openExternal: (url: string) => Promise<boolean>;
   revealInFileManager: (filePath: string) => Promise<boolean>;
   canGoBack: (workspaceId: string) => Promise<boolean>;
   canGoForward: (workspaceId: string) => Promise<boolean>;
   browserDisposeWorkspace: (workspaceId: string) => Promise<void>;
-  onBrowserUrlUpdated: (callback: (payload: { workspaceId: string; url: string }) => void) => () => void;
+  onBrowserUrlUpdated: (
+    callback: (payload: {
+      workspaceId: string;
+      tabId?: string;
+      url: string;
+      title?: string;
+      canGoBack?: boolean;
+      canGoForward?: boolean;
+    }) => void,
+  ) => () => void;
 
   // Window controls
   minimizeWindow: () => Promise<void>;
