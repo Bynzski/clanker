@@ -4,7 +4,7 @@
  * Thin orchestrator: imports → store init → register IPC calls → create window → lifecycle
  */
 
-import { app, BrowserWindow, WebContentsView } from 'electron';
+import { app, BrowserWindow, type Rectangle } from 'electron';
 
 // Disable GPU acceleration for compatibility in some environments
 app.disableHardwareAcceleration();
@@ -43,7 +43,7 @@ import { registerSettingsIpc } from './ipc/settingsIpc';
 import { registerWindowIpc } from './ipc/windowIpc';
 import { registerAiCommitIpc } from './ipc/aiCommitIpc';
 import { registerTerminalIpc, setAppShuttingDown, getAppShuttingDown, type Terminal } from './ipc/terminalIpc';
-import { registerBrowserIpc } from './ipc/browserIpc';
+import { registerBrowserIpc, type BrowserViewsByWorkspace } from './ipc/browserIpc';
 import { registerGitIpc } from './ipc/gitIpc';
 import { registerCredentialIpc } from './ipc/credentialIpc';
 import { registerFileIpc } from './ipc/fileIpc';
@@ -69,13 +69,10 @@ const store = new Store<StoreSchema>({
 });
 
 // Shared state for IPC modules (exported for test access)
-interface BrowserViewEntry {
-  view: WebContentsView;
-  url: string;
-}
-
 const terminals: Map<string, Terminal> = new Map();
-const browserViews: Map<string, BrowserViewEntry> = new Map();
+const browserViews: BrowserViewsByWorkspace = new Map();
+const activeBrowserTabIdsByWorkspace: Map<string, string> = new Map();
+const lastBrowserBoundsByWorkspace: Map<string, Rectangle> = new Map();
 let activeBrowserWorkspaceId: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 let annotationModeEnabled = false;
@@ -210,6 +207,19 @@ app.whenReady().then(() => {
     getBrowserViews: () => browserViews,
     getActiveBrowserWorkspaceId: () => activeBrowserWorkspaceId,
     setActiveBrowserWorkspaceId: (id) => { activeBrowserWorkspaceId = id; },
+    onActiveBrowserTabChanged: (workspaceId, tabId) => {
+      if (tabId) {
+        activeBrowserTabIdsByWorkspace.set(workspaceId, tabId);
+      } else {
+        activeBrowserTabIdsByWorkspace.delete(workspaceId);
+      }
+
+      if (annotationModeEnabled && annotationController?.getState().workspaceId === workspaceId) {
+        void annotationController.disable().finally(() => {
+          annotationModeEnabled = false;
+        });
+      }
+    },
   });
 
   registerGitIpc({
@@ -238,6 +248,7 @@ app.whenReady().then(() => {
     getBrowserViews: () => browserViews,
     getActiveBrowserWorkspaceId: () => activeBrowserWorkspaceId,
     getMainWindow: () => mainWindow,
+    getActiveBrowserTabId: (workspaceId) => activeBrowserTabIdsByWorkspace.get(workspaceId) ?? null,
     onAnnotationModeChange: (enabled) => {
       annotationModeEnabled = enabled;
     },
@@ -285,4 +296,4 @@ app.on('before-quit', () => {
 });
 
 // Export shared state for test access
-export { terminals, activeBrowserWorkspaceId, gitService, explorerWatcher, store, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS, annotationModeEnabled, annotationController };
+export { terminals, browserViews, activeBrowserWorkspaceId, activeBrowserTabIdsByWorkspace, lastBrowserBoundsByWorkspace, gitService, explorerWatcher, store, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS, annotationModeEnabled, annotationController };

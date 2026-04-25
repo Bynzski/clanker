@@ -733,6 +733,7 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     };
     return {
       mockMainWindow,
+      mockBrowserViews,
       deps: {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         getMainWindow: () => mockMainWindow as any,
@@ -928,5 +929,59 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     await create(null, 'ws-1', 'tab-a');
     const result = await setBounds(null, 'ws-1', { x: 0, y: 0, width: 100, height: 100 }, 'tab-a');
     expect(result).toBeUndefined();
+  });
+
+  test('creates distinct WebContentsView entries for two tabs in one workspace', async () => {
+    const { deps, mockBrowserViews } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    await create(null, 'ws-1', 'tab-a');
+    await create(null, 'ws-1', 'tab-b');
+
+    const workspaceViews = mockBrowserViews.get('ws-1') as Map<string, { view: unknown }>;
+    expect(workspaceViews.get('tab-a')?.view).toBeDefined();
+    expect(workspaceViews.get('tab-b')?.view).toBeDefined();
+    expect(workspaceViews.get('tab-a')?.view).not.toBe(workspaceViews.get('tab-b')?.view);
+  });
+
+  test('bounds show exactly one active tab and hide sibling views', async () => {
+    const { deps, mockBrowserViews } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const setBounds = findHandler('browser-set-bounds');
+    await create(null, 'ws-1', 'tab-a');
+    await create(null, 'ws-1', 'tab-b');
+
+    await setBounds(null, 'ws-1', { x: 1, y: 2, width: 300, height: 200 }, 'tab-b');
+
+    const workspaceViews = mockBrowserViews.get('ws-1') as Map<string, { view: { setVisible: ReturnType<typeof vi.fn>; setBounds: ReturnType<typeof vi.fn> } }>;
+    expect(workspaceViews.get('tab-a')?.view.setVisible).toHaveBeenLastCalledWith(false);
+    expect(workspaceViews.get('tab-b')?.view.setBounds).toHaveBeenCalledWith({ x: 1, y: 2, width: 300, height: 200 });
+    expect(workspaceViews.get('tab-b')?.view.setVisible).toHaveBeenLastCalledWith(true);
+  });
+
+  test('hiding and disposing a workspace affects all tab views', async () => {
+    const { deps, mockBrowserViews } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const hide = findHandler('browser-hide');
+    const dispose = findHandler('browser-dispose-workspace');
+    await create(null, 'ws-1', 'tab-a');
+    await create(null, 'ws-1', 'tab-b');
+
+    const workspaceViews = mockBrowserViews.get('ws-1') as Map<string, { view: { setVisible: ReturnType<typeof vi.fn>; webContents: { close: ReturnType<typeof vi.fn> } } }>;
+    const tabA = workspaceViews.get('tab-a');
+    const tabB = workspaceViews.get('tab-b');
+    await hide(null, 'ws-1');
+    expect(tabA?.view.setVisible).toHaveBeenLastCalledWith(false);
+    expect(tabB?.view.setVisible).toHaveBeenLastCalledWith(false);
+
+    await dispose(null, 'ws-1');
+    expect(tabA?.view.webContents.close).toHaveBeenCalled();
+    expect(tabB?.view.webContents.close).toHaveBeenCalled();
+    expect(mockBrowserViews.has('ws-1')).toBe(false);
   });
 });

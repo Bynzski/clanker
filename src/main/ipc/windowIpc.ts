@@ -16,32 +16,64 @@ import {
   RESET_ZOOM_WINDOW,
 } from '../../shared/ipcChannels';
 
+type ZoomableBrowserEntry = {
+  view: { webContents: Pick<BrowserWindow['webContents'], 'getZoomLevel' | 'setZoomLevel'> };
+};
+type FlatBrowserViewMap = Map<string, ZoomableBrowserEntry>;
+type NestedBrowserViewMap = Map<string, FlatBrowserViewMap>;
+type BrowserViewMap = FlatBrowserViewMap | NestedBrowserViewMap;
+
 interface RegisterWindowIpcDeps {
   getMainWindow: () => BrowserWindow | null;
-  getBrowserViews?: () => Map<string, { view: { webContents: Pick<BrowserWindow['webContents'], 'getZoomLevel' | 'setZoomLevel'> } }>;
+  getBrowserViews?: () => BrowserViewMap;
 }
 
 function clampZoomLevel(level: number): number {
   return Math.max(-5, Math.min(5, level));
 }
 
+function isZoomableBrowserEntry(value: unknown): value is ZoomableBrowserEntry {
+  return typeof value === 'object'
+    && value !== null
+    && 'view' in value
+    && typeof (value as ZoomableBrowserEntry).view?.webContents?.getZoomLevel === 'function'
+    && typeof (value as ZoomableBrowserEntry).view?.webContents?.setZoomLevel === 'function';
+}
+
+function forEachBrowserViewEntry(browserViews: BrowserViewMap, callback: (entry: ZoomableBrowserEntry) => void): void {
+  for (const value of browserViews.values()) {
+    if (isZoomableBrowserEntry(value)) {
+      callback(value);
+      continue;
+    }
+
+    if (value instanceof Map) {
+      for (const nestedValue of value.values()) {
+        if (isZoomableBrowserEntry(nestedValue)) {
+          callback(nestedValue);
+        }
+      }
+    }
+  }
+}
+
 function applyBrowserViewZoomDelta(
-  getBrowserViews: (() => Map<string, { view: { webContents: Pick<BrowserWindow['webContents'], 'getZoomLevel' | 'setZoomLevel'> } }>) | undefined,
+  getBrowserViews: (() => BrowserViewMap) | undefined,
   delta: number
 ): void {
   if (!getBrowserViews || delta === 0) {
     return;
   }
 
-  for (const { view } of getBrowserViews().values()) {
+  forEachBrowserViewEntry(getBrowserViews(), ({ view }) => {
     const nextLevel = view.webContents.getZoomLevel() + delta;
     view.webContents.setZoomLevel(nextLevel);
-  }
+  });
 }
 
 function adjustWindowZoom(
   getMainWindow: () => BrowserWindow | null,
-  getBrowserViews: (() => Map<string, { view: { webContents: Pick<BrowserWindow['webContents'], 'getZoomLevel' | 'setZoomLevel'> } }>) | undefined,
+  getBrowserViews: (() => BrowserViewMap) | undefined,
   delta: number
 ): void {
   const mainWindow = getMainWindow();
@@ -57,7 +89,7 @@ function adjustWindowZoom(
 
 function resetWindowZoom(
   getMainWindow: () => BrowserWindow | null,
-  getBrowserViews: (() => Map<string, { view: { webContents: Pick<BrowserWindow['webContents'], 'getZoomLevel' | 'setZoomLevel'> } }>) | undefined
+  getBrowserViews: (() => BrowserViewMap) | undefined
 ): void {
   const mainWindow = getMainWindow();
   if (!mainWindow) {
@@ -111,4 +143,5 @@ export {
   clampZoomLevel,
   adjustWindowZoom,
   resetWindowZoom,
+  forEachBrowserViewEntry,
 };

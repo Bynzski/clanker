@@ -354,6 +354,42 @@ describe('registerWindowIpc — error-path: null main window', () => {
     expect(mockMainWindow.webContents.setZoomLevel).toHaveBeenCalledWith(0);
     expect(mockBrowserView.webContents.setZoomLevel).toHaveBeenCalledWith(1.5);
   });
+
+  test('ZOOM_IN_WINDOW propagates zoom delta to nested tab views', () => {
+    const { mockMainWindow } = createMockDeps();
+    const tabA = {
+      webContents: {
+        getZoomLevel: vi.fn(() => 0),
+        setZoomLevel: vi.fn(),
+      },
+    };
+    const tabB = {
+      webContents: {
+        getZoomLevel: vi.fn(() => 1),
+        setZoomLevel: vi.fn(),
+      },
+    };
+    const nestedBrowserViews = new Map([
+      ['ws-1', new Map([
+        ['tab-a', { view: tabA }],
+        ['tab-b', { view: tabB }],
+      ])],
+    ]);
+
+    registerWindowIpc({
+      getMainWindow: () => mockMainWindow as never,
+      getBrowserViews: () => nestedBrowserViews as never,
+    });
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'zoom-in-window'
+    )?.[1] as () => void;
+
+    handler();
+
+    expect(tabA.webContents.setZoomLevel).toHaveBeenCalledWith(0.5);
+    expect(tabB.webContents.setZoomLevel).toHaveBeenCalledWith(1.5);
+  });
 });
 
 describe('window IPC helpers', () => {
