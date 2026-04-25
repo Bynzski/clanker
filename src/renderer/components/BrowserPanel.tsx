@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, LocateFixed, Lock, Unlock, MousePointer2, ChevronDown, Plus } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { BrowserTab } from '../store/workspaceTypes';
 import { useScopedWorkspace } from './WorkspaceScope';
 import { useDragHandle } from './DynamicPaneLayout';
@@ -52,10 +53,15 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
   const [canGoBack, setCanGoBack] = useState(activeTab?.canGoBack ?? false);
   const [canGoForward, setCanGoForward] = useState(activeTab?.canGoForward ?? false);
   const [tabsOpen, setTabsOpen] = useState(false);
+  const [urlInputFocused, setUrlInputFocused] = useState(false);
+  const [historySuggestions, setHistorySuggestions] = useState<BrowserHistoryEntry[]>([]);
+  const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
   const tabsMenuRef = useRef<HTMLDivElement>(null);
+  const urlUserEditedRef = useRef(false);
+  const blurSuggestionsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastBoundsRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const firstBoundsSentRef = useRef(false);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
@@ -187,7 +193,40 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
   useEffect(() => {
     setInputUrl(displayedUrl);
     setTabsOpen(false);
+    setHistorySuggestions([]);
+    setHighlightedSuggestionIndex(0);
+    urlUserEditedRef.current = false;
   }, [activeTabId, displayedUrl]);
+
+  useEffect(() => {
+    const query = inputUrl.trim();
+    if (!urlInputFocused || !urlUserEditedRef.current || query.length < 2) {
+      setHistorySuggestions([]);
+      setHighlightedSuggestionIndex(0);
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = setTimeout(() => {
+      window.electronAPI.browserHistoryGet(query)
+        .then((entries) => {
+          if (cancelled) return;
+          setHistorySuggestions(entries);
+          setHighlightedSuggestionIndex(0);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setHistorySuggestions([]);
+            setHighlightedSuggestionIndex(0);
+          }
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [inputUrl, urlInputFocused, activeTabId]);
 
   useEffect(() => {
     if (!tabsOpen) return;
@@ -238,6 +277,9 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
     return () => {
       if (rafRef.current != null) {
         window.cancelAnimationFrame(rafRef.current);
+      }
+      if (blurSuggestionsTimerRef.current != null) {
+        clearTimeout(blurSuggestionsTimerRef.current);
       }
       const wsId = workspace?.id ?? null;
       const lb = lastBoundsRef.current;
@@ -334,8 +376,8 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
     };
   }, [browserOverlayCount, callBrowserSetBounds, isActiveWorkspace, scheduleBoundsUpdate, workspace?.id, workspace?.browserVisible]);
 
-  const handleNavigate = async () => {
-    let navigateUrl = inputUrl.trim();
+  const handleNavigate = async (overrideUrl?: string) => {
+    let navigateUrl = (overrideUrl ?? inputUrl).trim();
     if (!navigateUrl || !workspace?.id) return;
 
     if (!navigateUrl.startsWith('http://') && !navigateUrl.startsWith('https://')) {
@@ -347,6 +389,10 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
       : await window.electronAPI.browserNavigate(workspace.id, navigateUrl);
 
     if (success) {
+      setHistorySuggestions([]);
+      setHighlightedSuggestionIndex(0);
+      urlUserEditedRef.current = false;
+      setInputUrl(navigateUrl);
       if (activeTabId) {
         updateBrowserTab(activeTabId, { url: navigateUrl }, workspace.id);
       }
@@ -354,9 +400,40 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
     }
   };
 
+  const selectHistorySuggestion = (entry: BrowserHistoryEntry) => {
+    setHistorySuggestions([]);
+    setHighlightedSuggestionIndex(0);
+    setInputUrl(entry.url);
+    urlUserEditedRef.current = false;
+    void handleNavigate(entry.url);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (historySuggestions.length > 0 && e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedSuggestionIndex((index) => (index + 1) % historySuggestions.length);
+      return;
+    }
+
+    if (historySuggestions.length > 0 && e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedSuggestionIndex((index) => (index - 1 + historySuggestions.length) % historySuggestions.length);
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      setHistorySuggestions([]);
+      setHighlightedSuggestionIndex(0);
+      return;
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
+      const highlighted = historySuggestions[highlightedSuggestionIndex];
+      if (highlighted) {
+        selectHistorySuggestion(highlighted);
+        return;
+      }
       void handleNavigate();
     }
   };
@@ -528,10 +605,54 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
             type="text"
             className="browser-url-input"
             value={inputUrl}
-            onChange={(e) => setInputUrl(e.target.value)}
+            onChange={(e) => {
+              urlUserEditedRef.current = true;
+              setInputUrl(e.target.value);
+            }}
+            onFocus={() => {
+              if (blurSuggestionsTimerRef.current != null) {
+                clearTimeout(blurSuggestionsTimerRef.current);
+                blurSuggestionsTimerRef.current = null;
+              }
+              setUrlInputFocused(true);
+            }}
+            onBlur={() => {
+              blurSuggestionsTimerRef.current = setTimeout(() => {
+                setUrlInputFocused(false);
+                setHistorySuggestions([]);
+                setHighlightedSuggestionIndex(0);
+              }, 120);
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Enter URL..."
+            aria-autocomplete="list"
+            aria-expanded={historySuggestions.length > 0}
+            aria-controls="browser-url-history-suggestions"
           />
+          {historySuggestions.length > 0 ? (
+            <div
+              id="browser-url-history-suggestions"
+              className="browser-history-suggestions"
+              role="listbox"
+              aria-label="URL history suggestions"
+            >
+              {historySuggestions.map((entry, index) => (
+                <button
+                  key={`${entry.url}-${entry.lastVisited}`}
+                  type="button"
+                  className={`browser-history-suggestion ${index === highlightedSuggestionIndex ? 'highlighted' : ''}`}
+                  role="option"
+                  aria-selected={index === highlightedSuggestionIndex}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setHighlightedSuggestionIndex(index)}
+                  onClick={() => selectHistorySuggestion(entry)}
+                >
+                  <span className="browser-history-suggestion-url">{entry.url}</span>
+                  {entry.title ? <span className="browser-history-suggestion-title">{entry.title}</span> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <button className="browser-go-btn" onClick={() => void handleNavigate()}>
