@@ -5,19 +5,19 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase Prereq** — Types & Data Model + IPC Channel Constants
+**Phase 0** — Types, Store Migration, Tab Actions, Invariants
 
 ## Phase Status
 
 | Phase | Description | Status | Commit |
 |-------|-------------|--------|--------|
-| Prereq | Types & Data Model + IPC channels | 🔲 | — |
-| 0 | Renderer: Tab State Management + Migration | 🔲 | — |
-| 1 | Main Process: Multi-WebContentsView | 🔲 | — |
-| 2 | UI: Tab Dropdown & BrowserPanel Refactor | 🔲 | — |
-| 3 | Global Navigation History: Storage & IPC | 🔲 | — |
-| 4 | URL Autocomplete UI | 🔲 | — |
-| 5 | Integration & Validation | 🔲 | — |
+| 0 | Types, Store Migration, Tab Actions, Invariants | 🔲 | — |
+| 1 | IPC Surface Compatibility Bridge | 🔲 | — |
+| 2 | Main Process: Multi-WebContentsView Architecture | 🔲 | — |
+| 3 | UI: Tab Dropdown & BrowserPanel Refactor | 🔲 | — |
+| 4 | Global Navigation History: Storage & IPC | 🔲 | — |
+| 5 | URL Autocomplete UI | 🔲 | — |
+| 6 | Integration Hardening, Compatibility Cleanup & Full Validation | 🔲 | — |
 
 ## Status Legend
 
@@ -30,82 +30,62 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Notes
 
-- Plan document: `plans/browser-tabs-history/PLAN.md` (v2.0, Draft)
-- All phases must pass `npm run validate` (lint, typecheck, build, test)
-- Each phase gets one commit
-- Read `plans/browser-tabs-history/PLAN.md` for detailed phase instructions
+- Plan document: `plans/browser-tabs-history/PLAN.md` (v2.2, Approved)
+- Every phase must be independently validateable.
+- New IPC channels must be added to `ALL_IPC_CHANNELS` only in the same phase that registers handlers/listeners.
+- All phases must preserve browser security constraints: user navigation is HTTP(S)-only; new tabs open to `https://github.com`; `about:blank` is not introduced or special-cased in this sprint.
+- Bounded compatibility wrappers are allowed as phase bridges, but Phase 6 must remove unused wrappers or document retained wrappers as supported API.
+- Final phase must run `npm run validate` (lint, typecheck, build, test).
+- Each phase gets one commit.
 
-## Blocking Issues
+## Blocking Issues / Decisions Before Approval
 
-- None currently
+- None. Default new-tab URL is `https://github.com`.
+- Compatibility wrappers are approved for sprint execution and must be cleaned up or documented in Phase 6.
 
 ## Phase Details
 
-### Phase Prereq
+### Phase 0 — Types, Store Migration, Tab Actions, Invariants
 
-**Scope:** Define `BrowserTab` interface and update `BrowserPaneState` in `workspaceTypes.ts`. Add all new IPC channel constants to `ipcChannels.ts`. Update `ALL_IPC_CHANNELS` array.
+**Scope:** Add `BrowserTab`, extend `BrowserPaneState`, implement store tab actions, harden workspace sanitization/migration, document invariants, and update fixtures/tests. No new IPC channels are added to `ALL_IPC_CHANNELS` in this phase.
 
-**Key actions:**
-- Define `BrowserTab { id, url, title, canGoBack, canGoForward }`
-- Add `tabs: BrowserTab[]` and `activeTabId: string | null` to `BrowserPaneState`
-- Add constants: `BROWSER_CREATE_TAB`, `BROWSER_CLOSE_TAB`, `BROWSER_SWITCH_TAB`, `BROWSER_GET_TABS`, `BROWSER_TAB_NAVIGATE`, `BROWSER_HISTORY_ADD`, `BROWSER_HISTORY_GET`, `BROWSER_HISTORY_CLEAR`, `BROWSER_TAB_URL_UPDATED`
+**Key checks:** old/malformed browser panes migrate to valid tabs; cannot close last tab; active tab URL mirrors `browserUrl`; inactive tab updates do not mutate `browserUrl`; pane position remains stable.
 
-### Phase 0
+### Phase 1 — IPC Surface Compatibility Bridge
 
-**Scope:** Add tab state to workspace store, implement `addBrowserTab`, `removeBrowserTab`, `setActiveBrowserTab`, `updateBrowserTab`. Migrate `toggleBrowser` to create initial tab with `about:blank`. Migrate existing workspaces (no tabs) on store load.
+**Scope:** Add tab IPC constants, handlers, preload APIs, `electron.d.ts` types, mocks, and registration/preload tests. Keep existing workspace-scoped browser APIs compatible while adding tab-aware APIs. Reuse `BROWSER_URL_UPDATED` with additive `tabId` payload.
 
-**Key migration:** `toggleBrowser` → creates `BrowserPaneState` with `tabs: [BrowserTab { id, url: 'about:blank', title: 'New Tab', canGoBack: false, canGoForward: false }]` and `activeTabId`.
+**Key checks:** every channel in `ALL_IPC_CHANNELS` is registered; preload exposes new methods; existing browser calls still work.
 
-### Phase 1
+### Phase 2 — Main Process: Multi-WebContentsView Architecture
 
-**Scope:** Refactor `browserIpc.ts` to use `Map<workspaceId, Map<tabId, BrowserViewEntry>>`. Add tab IPC handlers. Update `BROWSER_URL_UPDATED` to include `tabId`. Update preload bridge.
+**Scope:** Refactor main browser state to nested workspace/tab maps, add active-tab and last-bounds maps, update browser IPC helpers, hide/dispose all tab views correctly, and update annotation/window zoom/lifecycle behavior for nested views.
 
-**Key changes:**
-- `BROWSER_SET_BOUNDS` now operates on active tab only
-- Add `switchToTab`, `destroyTabView`, `switchActiveTabOnClose` helpers
-- Add `BROWSER_CREATE_TAB` → returns `{ tabId, url }`
-- Add `BROWSER_CLOSE_TAB` → destroys view, switches active tab
-- Add `BROWSER_SWITCH_TAB` → hides current, shows target, returns URL
-- Add `BROWSER_GET_TABS`, `BROWSER_TAB_NAVIGATE`
+**Key checks:** exactly one tab view visible per workspace; switching applies last bounds; hide hides all tab views; dispose closes all tab views; annotation and zoom target nested views correctly.
 
-### Phase 2
+### Phase 3 — UI: Tab Dropdown & BrowserPanel Refactor
 
-**Scope:** Refactor `BrowserPanel` to read URL from `activeTab.url` (not `url` prop). Add tab count button + dropdown.
+**Scope:** Refactor `BrowserPanel` to use active tab state, add tab dropdown UI, wire new/switch/close flows through store + IPC, pass active tab ID with bounds/navigation, and keep URL input synced.
 
-**Key changes:**
-- `BrowserPanel` no longer receives `url` prop — derives from `activeTab.url`
-- Tab count button in toolbar (shows `tabs.length`)
-- Dropdown: list of tabs, click to switch, X to close (hidden if 1 tab), + for new tab
+**Key checks:** new tab uses same renderer-generated ID in store and IPC; close does not propagate to row switch; last tab cannot close; bounds are resent on tab switch.
 
-### Phase 3
+### Phase 4 — Global Navigation History: Storage & IPC
 
-**Scope:** Create `browserHistory.ts` using electron-store. Add history IPC handlers. Call `addToHistory` on `BROWSER_NAVIGATE`.
+**Scope:** Create `browserHistory.ts`, add history IPC channels/handlers/preload/types/mocks, record committed HTTP(S) navigations from browser events, and test normalization/dedupe/caps.
 
-**Key constraints:**
-- Only http/https URLs stored
-- Max 100 entries
-- `getHistory` returns up to 8 entries
+**Key checks:** non-HTTP(S), including `about:blank`, is rejected from history; max 100 stored; max 8 returned; prefix matching works for URL and hostname inputs.
 
-### Phase 4
+### Phase 5 — URL Autocomplete UI
 
-**Scope:** Autocomplete dropdown below URL input.
+**Scope:** Add debounced history suggestions below the URL input, keyboard/mouse interactions, and tests. Suggestions navigate through the active tab navigation path.
 
-**Key details:**
-- Trigger: `inputUrl.length >= 2`
-- Debounce: 300ms
-- Max 8 entries
-- Keyboard nav: arrows + Enter + Escape
+**Key checks:** debounce works; no query below 2 chars; Enter/Arrow/Escape behavior works; switching tabs clears stale suggestions.
 
-### Phase 5
+### Phase 6 — Integration Hardening, Compatibility Cleanup & Full Validation
 
-**Scope:** End-to-end verification.
+**Scope:** End-to-end hardening across store/main/UI/history/workspace switching, clean up or document sprint compatibility wrappers, then run `npm run validate`.
 
-**Key tests:**
-- Migration: existing workspace without tabs
-- Tab operations: open, switch, close
-- URL sync across tab switches
-- History autocomplete
-- App restart: history persists
+**Key checks:** workspace switches with multiple tabs do not leak visible views; history persists; annotation/zoom remain safe; all validation passes.
 
 ## Completed Phases
 
