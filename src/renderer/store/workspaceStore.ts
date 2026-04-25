@@ -18,6 +18,7 @@ import {
 } from './workspaceLayout';
 import type {
   BrowserPaneState,
+  BrowserTab,
   EditorTab,
   LayoutNode,
   Pane,
@@ -31,6 +32,8 @@ import {
   areGitStatusListsEqual,
   assignWorkspaceLifecycles,
   clearEditorOperationPending,
+  createDefaultBrowserPane,
+  createDefaultBrowserTab,
   createDefaultEditorState,
   createDefaultExplorerState,
   createPane,
@@ -421,11 +424,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   toggleBrowser: () => set((state) => {
     const nextBrowserVisible = !state.browserVisible;
     const nextBrowserPane = nextBrowserVisible
-      ? state.browserPane ?? {
-          id: generateId('browser'),
-          locked: false,
-          position: { x: 0, y: 0, w: 6, h: 6 },
-        }
+      ? state.browserPane ?? createDefaultBrowserPane(
+          generateId('browser'),
+          { x: 0, y: 0, w: 6, h: 6 },
+          state.browserUrl,
+        )
       : state.browserPane;
 
     let nextLayoutRoot = state.layoutRoot;
@@ -514,18 +517,208 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
-    return patchWorkspaceById(state, scopedWorkspaceId, (workspace) => ({
-      ...workspace,
-      browserUrl: url,
-    }));
+    return patchWorkspaceById(state, scopedWorkspaceId, (workspace) => {
+      const browserPane = workspace.browserPane;
+      if (browserPane == null) {
+        return { ...workspace, browserUrl: url };
+      }
+      const activeTabId = browserPane.activeTabId;
+      const nextTabs = browserPane.tabs.map((tab) =>
+        tab.id === activeTabId ? { ...tab, url } : tab,
+      );
+      return {
+        ...workspace,
+        browserUrl: url,
+        browserPane: { ...browserPane, tabs: nextTabs },
+      };
+    });
   }),
 
-  updateWorkspaceBrowserUrl: (workspaceId, url) => set((state) => (
-    patchWorkspaceById(state, workspaceId, (workspace) => ({
-      ...workspace,
-      browserUrl: url,
-    }))
+  updateWorkspaceBrowserUrl: (workspaceId, tabId, url, title) => set((state) => (
+    patchWorkspaceById(state, workspaceId, (workspace) => {
+      const browserPane = workspace.browserPane;
+      if (browserPane == null) {
+        // No pane: still mirror the URL for compatibility.
+        return { ...workspace, browserUrl: url };
+      }
+
+      const targetTabId = tabId ?? browserPane.activeTabId;
+      if (targetTabId == null) {
+        return { ...workspace, browserUrl: url };
+      }
+
+      const targetExists = browserPane.tabs.some((tab) => tab.id === targetTabId);
+      if (!targetExists) {
+        return workspace;
+      }
+
+      const nextTabs = browserPane.tabs.map((tab) => {
+        if (tab.id !== targetTabId) {
+          return tab;
+        }
+        const nextTab: BrowserTab = { ...tab, url };
+        if (typeof title === 'string') {
+          nextTab.title = title;
+        }
+        return nextTab;
+      });
+
+      const isActive = targetTabId === browserPane.activeTabId;
+      return {
+        ...workspace,
+        browserUrl: isActive ? url : workspace.browserUrl,
+        browserPane: { ...browserPane, tabs: nextTabs },
+      };
+    })
   )),
+
+  addBrowserTab: (workspaceId) => {
+    const state = get();
+    const scopedWorkspace = resolveWorkspaceByScope(state, workspaceId);
+    if (scopedWorkspace == null || scopedWorkspace.browserPane == null) {
+      return null;
+    }
+
+    const newTab = createDefaultBrowserTab();
+    const newTabId = newTab.id;
+
+    set((current) => patchWorkspaceById(current, scopedWorkspace.id, (workspace) => {
+      const browserPane = workspace.browserPane;
+      if (browserPane == null) {
+        return workspace;
+      }
+      const nextTabs = [...browserPane.tabs, newTab];
+      return {
+        ...workspace,
+        browserUrl: newTab.url,
+        browserPane: {
+          ...browserPane,
+          tabs: nextTabs,
+          activeTabId: newTabId,
+        },
+      };
+    }));
+
+    return newTabId;
+  },
+
+  removeBrowserTab: (tabId, workspaceId) => {
+    const state = get();
+    const scopedWorkspace = resolveWorkspaceByScope(state, workspaceId);
+    if (scopedWorkspace == null || scopedWorkspace.browserPane == null) {
+      return { removed: false, nextActiveTabId: null };
+    }
+
+    const browserPane = scopedWorkspace.browserPane;
+    const tabIndex = browserPane.tabs.findIndex((tab) => tab.id === tabId);
+    if (tabIndex === -1) {
+      return { removed: false, nextActiveTabId: browserPane.activeTabId };
+    }
+    if (browserPane.tabs.length <= 1) {
+      // Cannot close the last tab.
+      return { removed: false, nextActiveTabId: browserPane.activeTabId };
+    }
+
+    const nextTabs = browserPane.tabs.filter((tab) => tab.id !== tabId);
+
+    let nextActiveTabId = browserPane.activeTabId;
+    if (browserPane.activeTabId === tabId) {
+      // Prefer next tab; fall back to previous.
+      const fallback = browserPane.tabs[tabIndex + 1] ?? browserPane.tabs[tabIndex - 1] ?? null;
+      nextActiveTabId = fallback?.id ?? null;
+    }
+
+    set((current) => patchWorkspaceById(current, scopedWorkspace.id, (workspace) => {
+      const pane = workspace.browserPane;
+      if (pane == null) {
+        return workspace;
+      }
+      const newActiveTab = nextActiveTabId
+        ? nextTabs.find((tab) => tab.id === nextActiveTabId) ?? null
+        : null;
+      const nextBrowserUrl = newActiveTab ? newActiveTab.url : workspace.browserUrl;
+      return {
+        ...workspace,
+        browserUrl: nextBrowserUrl,
+        browserPane: {
+          ...pane,
+          tabs: nextTabs,
+          activeTabId: nextActiveTabId,
+        },
+      };
+    }));
+
+    return { removed: true, nextActiveTabId };
+  },
+
+  setActiveBrowserTab: (tabId, workspaceId) => {
+    const state = get();
+    const scopedWorkspace = resolveWorkspaceByScope(state, workspaceId);
+    if (scopedWorkspace == null || scopedWorkspace.browserPane == null) {
+      return false;
+    }
+    const target = scopedWorkspace.browserPane.tabs.find((tab) => tab.id === tabId);
+    if (target == null) {
+      return false;
+    }
+
+    set((current) => patchWorkspaceById(current, scopedWorkspace.id, (workspace) => {
+      const pane = workspace.browserPane;
+      if (pane == null) {
+        return workspace;
+      }
+      const activeTab = pane.tabs.find((tab) => tab.id === tabId);
+      if (activeTab == null) {
+        return workspace;
+      }
+      return {
+        ...workspace,
+        browserUrl: activeTab.url,
+        browserPane: { ...pane, activeTabId: tabId },
+      };
+    }));
+
+    return true;
+  },
+
+  updateBrowserTab: (tabId, partial, workspaceId) => {
+    const state = get();
+    const scopedWorkspace = resolveWorkspaceByScope(state, workspaceId);
+    if (scopedWorkspace == null || scopedWorkspace.browserPane == null) {
+      return false;
+    }
+    const exists = scopedWorkspace.browserPane.tabs.some((tab) => tab.id === tabId);
+    if (!exists) {
+      return false;
+    }
+
+    set((current) => patchWorkspaceById(current, scopedWorkspace.id, (workspace) => {
+      const pane = workspace.browserPane;
+      if (pane == null) {
+        return workspace;
+      }
+      const nextTabs = pane.tabs.map((tab) => {
+        if (tab.id !== tabId) {
+          return tab;
+        }
+        const next: BrowserTab = { ...tab };
+        if (typeof partial.url === 'string') next.url = partial.url;
+        if (typeof partial.title === 'string') next.title = partial.title;
+        if (typeof partial.canGoBack === 'boolean') next.canGoBack = partial.canGoBack;
+        if (typeof partial.canGoForward === 'boolean') next.canGoForward = partial.canGoForward;
+        return next;
+      });
+      const isActive = pane.activeTabId === tabId;
+      const nextActiveTab = nextTabs.find((tab) => tab.id === tabId);
+      return {
+        ...workspace,
+        browserUrl: isActive && nextActiveTab ? nextActiveTab.url : workspace.browserUrl,
+        browserPane: { ...pane, tabs: nextTabs },
+      };
+    }));
+
+    return true;
+  },
 
   clearTerminals: () => set((state) => {
     const nextState = {
@@ -851,17 +1044,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   updateBrowserPosition: (position) => set((state) => {
     const viewport = state.gridViewport;
+    const normalizedPosition = normalizePosition(position, viewport.cols, viewport.rows);
     const nextBrowserPane = state.browserPane
       ? {
           ...state.browserPane,
           locked: state.browserPane.locked ?? false,
-          position: normalizePosition(position, viewport.cols, viewport.rows),
+          position: normalizedPosition,
         }
-      : {
-          id: generateId('browser'),
-          locked: false,
-          position: normalizePosition(position, viewport.cols, viewport.rows),
-        };
+      : createDefaultBrowserPane(generateId('browser'), normalizedPosition, state.browserUrl);
     return {
       browserPane: nextBrowserPane,
       ...syncActiveWorkspace(state, (workspace) => ({

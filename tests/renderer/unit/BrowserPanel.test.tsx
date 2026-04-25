@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import BrowserPanel from '../../../src/renderer/components/BrowserPanel';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
-import type { WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
+import type { BrowserPaneState, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
 class MockResizeObserver {
@@ -92,7 +92,7 @@ function flushAnimationFrame(id?: number) {
 
 // Store state helpers
 interface BrowserPanelStoreOverrides {
-  browserPane?: { id: string; position: { x: number; y: number; w: number; h: number }; locked: boolean } | null;
+  browserPane?: BrowserPaneState | null;
   browserVisible?: boolean;
   browserOverlayCount?: number;
   bringBrowserIntoView?: (workspaceId?: string) => void;
@@ -103,7 +103,7 @@ interface BrowserPanelStoreOverrides {
 
 function setupStore(overrides: BrowserPanelStoreOverrides = {}) {
   const defaultState = {
-    browserPane: null as { id: string; position: { x: number; y: number; w: number; h: number }; locked: boolean } | null,
+    browserPane: null as BrowserPaneState | null,
     browserVisible: true,
     browserOverlayCount: 0,
     bringBrowserIntoView: vi.fn(),
@@ -226,7 +226,7 @@ describe('BrowserPanel', () => {
 
     it('shows lock icon when browser pane is locked', () => {
       setupStore({
-        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: true },
+        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: true, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
       });
 
       render(<BrowserPanel {...defaultProps} />);
@@ -237,7 +237,7 @@ describe('BrowserPanel', () => {
 
     it('hides lock icon when browser pane is not locked', () => {
       setupStore({
-        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false },
+        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
       });
 
       render(<BrowserPanel {...defaultProps} />);
@@ -498,7 +498,7 @@ describe('BrowserPanel', () => {
 
     it('renders lock button with Lock icon when not locked', () => {
       setupStore({
-        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false },
+        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
       });
 
       render(<BrowserPanel {...defaultProps} />);
@@ -508,7 +508,7 @@ describe('BrowserPanel', () => {
 
     it('renders lock button with Unlock icon when locked', () => {
       setupStore({
-        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: true },
+        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: true, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
       });
 
       render(<BrowserPanel {...defaultProps} />);

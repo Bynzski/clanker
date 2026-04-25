@@ -5,6 +5,8 @@ import {
 import type { GitStatus } from '../components/git/types';
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
 import type {
+  BrowserPaneState,
+  BrowserTab,
   EditorPaneState,
   EditorTab,
   Pane,
@@ -29,6 +31,128 @@ export const generateId = (prefix: string) => {
 };
 
 export const generatePaneId = () => generateId('pane');
+
+export const generateBrowserTabId = () => generateId('browser-tab');
+
+/**
+ * Default URL for new browser tabs and freshly-created browser panes.
+ * Plan policy (browser-tabs-history v2.2): new tabs use the existing HTTP(S)
+ * default page; do not introduce `about:blank` as a sentinel.
+ */
+export const DEFAULT_NEW_TAB_URL = 'https://github.com';
+
+export function createDefaultBrowserTab(seedUrl?: string): BrowserTab {
+  const url = typeof seedUrl === 'string' && seedUrl.length > 0 ? seedUrl : DEFAULT_NEW_TAB_URL;
+  return {
+    id: generateBrowserTabId(),
+    url,
+    title: '',
+    canGoBack: false,
+    canGoForward: false,
+  };
+}
+
+function sanitizeBrowserTab(raw: unknown, fallbackUrl: string): BrowserTab | null {
+  if (raw == null || typeof raw !== 'object') {
+    return null;
+  }
+  const candidate = raw as Partial<BrowserTab>;
+  if (typeof candidate.id !== 'string' || candidate.id.length === 0) {
+    return null;
+  }
+  return {
+    id: candidate.id,
+    url: typeof candidate.url === 'string' && candidate.url.length > 0 ? candidate.url : fallbackUrl,
+    title: typeof candidate.title === 'string' ? candidate.title : '',
+    canGoBack: candidate.canGoBack === true,
+    canGoForward: candidate.canGoForward === true,
+  };
+}
+
+/**
+ * Repairs and normalizes a persisted/runtime browser pane:
+ * - Ensures at least one valid tab exists; rebuilds with a default tab if missing/empty.
+ * - Drops malformed tab entries; deduplicates by id (first occurrence wins).
+ * - Coerces `activeTabId` to a valid tab; falls back to the first tab.
+ * - Defaults `locked` to false.
+ */
+export function sanitizeBrowserPane(
+  pane: BrowserPaneState | null | undefined,
+  browserUrl: string,
+): BrowserPaneState | null {
+  if (pane == null) {
+    return null;
+  }
+
+  const fallbackUrl = typeof browserUrl === 'string' && browserUrl.length > 0
+    ? browserUrl
+    : DEFAULT_NEW_TAB_URL;
+
+  const rawTabs = Array.isArray(pane.tabs) ? pane.tabs : [];
+  const seenIds = new Set<string>();
+  const sanitizedTabs: BrowserTab[] = [];
+  for (const rawTab of rawTabs) {
+    const tab = sanitizeBrowserTab(rawTab, fallbackUrl);
+    if (tab && !seenIds.has(tab.id)) {
+      seenIds.add(tab.id);
+      sanitizedTabs.push(tab);
+    }
+  }
+
+  if (sanitizedTabs.length === 0) {
+    sanitizedTabs.push(createDefaultBrowserTab(fallbackUrl));
+  }
+
+  const activeTabId = sanitizedTabs.some((tab) => tab.id === pane.activeTabId)
+    ? pane.activeTabId
+    : sanitizedTabs[0].id;
+
+  return {
+    id: pane.id,
+    locked: pane.locked ?? false,
+    position: pane.position,
+    tabs: sanitizedTabs,
+    activeTabId,
+  };
+}
+
+/**
+ * Creates a fresh browser pane with one default tab.
+ * Used by `toggleBrowser` and `updateBrowserPosition` when no pane exists yet.
+ */
+export function createDefaultBrowserPane(
+  paneId: string,
+  position: PanePosition,
+  seedUrl?: string,
+): BrowserPaneState {
+  const tab = createDefaultBrowserTab(seedUrl);
+  return {
+    id: paneId,
+    locked: false,
+    position,
+    tabs: [tab],
+    activeTabId: tab.id,
+  };
+}
+
+export function getActiveBrowserTab(browserPane: BrowserPaneState | null): BrowserTab | null {
+  if (browserPane == null || browserPane.activeTabId == null) {
+    return null;
+  }
+  return browserPane.tabs.find((tab) => tab.id === browserPane.activeTabId) ?? null;
+}
+
+/**
+ * Mirrors the active tab URL into the workspace-level `browserUrl`.
+ * No-op when there is no active tab or when the URL already matches.
+ */
+export function syncBrowserUrlFromActiveTab(workspace: WorkspaceTab): WorkspaceTab {
+  const activeTab = getActiveBrowserTab(workspace.browserPane);
+  if (activeTab == null || workspace.browserUrl === activeTab.url) {
+    return workspace;
+  }
+  return { ...workspace, browserUrl: activeTab.url };
+}
 
 export const createPane = (terminalId: string | null, position?: PanePosition): Pane => ({
   id: generatePaneId(),
@@ -125,9 +249,7 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   explorerLoadingPaths: [...workspace.explorerLoadingPaths],
   explorerErrorsByPath: { ...workspace.explorerErrorsByPath },
   browserOverlayCount: workspace.browserOverlayCount ?? 0,
-  browserPane: workspace.browserPane
-    ? { ...workspace.browserPane, locked: workspace.browserPane.locked ?? false }
-    : null,
+  browserPane: sanitizeBrowserPane(workspace.browserPane, workspace.browserUrl),
   editorTabs: [...workspace.editorTabs],
   showHiddenFiles: workspace.showHiddenFiles ?? true,
   gitChanges: [...(workspace.gitChanges ?? [])],
@@ -496,6 +618,36 @@ export function validateWorkspaceConsistency(state: Partial<WorkspaceState>): st
           if (!allValidPaneIds.has(paneId)) {
             warnings.push(`L2 violated: layout pane "${paneId}" not found in panes[], browserPane, or editorPane`);
           }
+        }
+      }
+    }
+  }
+
+  // [B1..B4] Browser pane / tab invariants
+  if (hasOwn('browserPane') && state.browserPane != null) {
+    const tabs = state.browserPane.tabs;
+    if (!Array.isArray(tabs) || tabs.length === 0) {
+      warnings.push('B1 violated: browserPane.tabs must contain at least one tab');
+    } else {
+      const seen = new Set<string>();
+      for (const tab of tabs) {
+        if (seen.has(tab.id)) {
+          warnings.push(`B2 violated: duplicate browser tab id "${tab.id}"`);
+        }
+        seen.add(tab.id);
+      }
+
+      const activeTabId = state.browserPane.activeTabId;
+      if (activeTabId == null) {
+        warnings.push('B3 violated: browserPane.activeTabId is null but tabs[] is non-empty');
+      } else if (!tabs.some((tab) => tab.id === activeTabId)) {
+        warnings.push(`B3 violated: browserPane.activeTabId "${activeTabId}" not found in browserPane.tabs[]`);
+      } else if (typeof state.browserUrl === 'string') {
+        const activeTab = tabs.find((tab) => tab.id === activeTabId);
+        if (activeTab && activeTab.url !== state.browserUrl) {
+          warnings.push(
+            `B4 violated: browserUrl "${state.browserUrl}" does not match active tab url "${activeTab.url}"`,
+          );
         }
       }
     }
