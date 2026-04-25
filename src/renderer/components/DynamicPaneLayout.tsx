@@ -158,7 +158,7 @@ function LeafView({
 }) {
   const workspace = useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
-  const { setBrowserUrl, layoutRevision } = useWorkspaceStore();
+  const { layoutRevision } = useWorkspaceStore();
   const paneId = node.paneId;
   
   const isDraggingThis = draggedPaneId === paneId;
@@ -167,14 +167,6 @@ function LeafView({
   const content = workspace?.browserVisible && workspace.browserPane?.id === paneId ? (
     <BrowserPanel
       workspaceId={workspaceId}
-      url={workspace.browserUrl}
-      onUrlChange={(url) => {
-        if (workspaceId) {
-          setBrowserUrl(url, workspaceId);
-        } else {
-          setBrowserUrl(url);
-        }
-      }}
       layoutVersion={layoutRevision}
     />
   ) : workspace?.editorPane?.id === paneId ? (

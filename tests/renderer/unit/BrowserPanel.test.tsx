@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, act, cleanup, waitFor } from '@testing-library/react';
 import BrowserPanel from '../../../src/renderer/components/BrowserPanel';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import type { BrowserPaneState, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
@@ -61,6 +61,10 @@ const mockBrowserForward = vi.fn().mockResolvedValue(undefined);
 const mockBrowserRefresh = vi.fn().mockResolvedValue(undefined);
 const mockBrowserStop = vi.fn().mockResolvedValue(undefined);
 const mockBrowserNavigate = vi.fn().mockResolvedValue(true);
+const mockBrowserCreateTab = vi.fn().mockResolvedValue({ url: 'https://github.com', title: '' });
+const mockBrowserCloseTab = vi.fn().mockResolvedValue(true);
+const mockBrowserSwitchTab = vi.fn().mockResolvedValue({ url: 'https://github.com', title: '' });
+const mockBrowserTabNavigate = vi.fn().mockResolvedValue(true);
 const mockBrowserHide = vi.fn().mockResolvedValue(undefined);
 const mockBrowserSetBounds = vi.fn().mockResolvedValue(undefined);
 const mockBrowserDisposeWorkspace = vi.fn().mockResolvedValue(undefined);
@@ -154,6 +158,10 @@ function setupElectronAPIMocks() {
     browserForward: mockBrowserForward,
     browserHide: mockBrowserHide,
     browserNavigate: mockBrowserNavigate,
+    browserCreateTab: mockBrowserCreateTab,
+    browserCloseTab: mockBrowserCloseTab,
+    browserSwitchTab: mockBrowserSwitchTab,
+    browserTabNavigate: mockBrowserTabNavigate,
     browserRefresh: mockBrowserRefresh,
     browserSetBounds: mockBrowserSetBounds,
     browserStop: mockBrowserStop,
@@ -442,7 +450,7 @@ describe('BrowserPanel', () => {
       expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', 'https://github.com');
     });
 
-    it('calls onUrlChange when navigating', () => {
+    it('calls onUrlChange when navigating', async () => {
       const onUrlChange = vi.fn();
       render(<BrowserPanel {...defaultProps} onUrlChange={onUrlChange} />);
 
@@ -451,7 +459,9 @@ describe('BrowserPanel', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
 
-      expect(onUrlChange).toHaveBeenCalledWith('https://github.com');
+      await waitFor(() => {
+        expect(onUrlChange).toHaveBeenCalledWith('https://github.com');
+      });
     });
 
     it('calls browserNavigate on Enter key press', () => {
@@ -1080,6 +1090,151 @@ describe('BrowserPanel', () => {
       unmount();
 
       expect(mockBrowserHide).toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // Browser Tabs
+  // =========================================================================
+  describe('browser tabs', () => {
+    const createTabbedPane = (): BrowserPaneState => ({
+      id: 'bp1',
+      position: { x: 0, y: 0, w: 100, h: 100 },
+      locked: false,
+      activeTabId: 'tab-a',
+      tabs: [
+        { id: 'tab-a', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false },
+        { id: 'tab-b', url: 'https://example.com/docs', title: '', canGoBack: true, canGoForward: false },
+      ],
+    });
+
+    it('renders tab count and opens the dropdown', () => {
+      setupStore({ browserPane: createTabbedPane() });
+      render(<BrowserPanel layoutVersion={1} />);
+
+      expect(screen.getByTitle('Browser tabs').textContent).toContain('2');
+      fireEvent.click(screen.getByTitle('Browser tabs'));
+
+      expect(screen.getByRole('menu', { name: 'Browser tabs' })).toBeTruthy();
+      expect(screen.getAllByText('GitHub').length).toBeGreaterThan(0);
+      expect(screen.getByText('example.com/docs')).toBeTruthy();
+    });
+
+    it('plus creates a store tab and calls IPC with the same tab ID', async () => {
+      setupStore({ browserPane: createTabbedPane() });
+      render(<BrowserPanel layoutVersion={1} />);
+
+      fireEvent.click(screen.getByTitle('Browser tabs'));
+      fireEvent.click(screen.getByTitle('New tab'));
+
+      await waitFor(() => {
+        expect(mockBrowserCreateTab).toHaveBeenCalled();
+      });
+
+      const workspace = useWorkspaceStore.getState().getWorkspaceById('workspace-1');
+      const activeTabId = workspace?.browserPane?.activeTabId;
+      expect(activeTabId).toBeTruthy();
+      expect(activeTabId).not.toBe('tab-a');
+      expect(activeTabId).not.toBe('tab-b');
+      expect(mockBrowserCreateTab).toHaveBeenCalledWith('workspace-1', activeTabId);
+      expect(mockBrowserSwitchTab).toHaveBeenCalledWith('workspace-1', activeTabId);
+    });
+
+    it('switching tabs calls store and IPC and syncs the URL input', async () => {
+      setupStore({ browserPane: createTabbedPane() });
+      render(<BrowserPanel layoutVersion={1} />);
+
+      fireEvent.click(screen.getByTitle('Browser tabs'));
+      fireEvent.click(screen.getByText('example.com/docs'));
+
+      await waitFor(() => {
+        expect(mockBrowserSwitchTab).toHaveBeenCalledWith('workspace-1', 'tab-b');
+      });
+      expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserPane?.activeTabId).toBe('tab-b');
+      expect((screen.getByPlaceholderText('Enter URL...') as HTMLInputElement).value).toBe('https://example.com/docs');
+    });
+
+    it('close button does not propagate to row switch and closing active selects adjacent tab', async () => {
+      setupStore({ browserPane: createTabbedPane() });
+      render(<BrowserPanel layoutVersion={1} />);
+
+      fireEvent.click(screen.getByTitle('Browser tabs'));
+      fireEvent.click(screen.getAllByTitle('Close tab')[0]);
+
+      await waitFor(() => {
+        expect(mockBrowserCloseTab).toHaveBeenCalledWith('workspace-1', 'tab-a');
+      });
+      expect(mockBrowserSwitchTab).toHaveBeenCalledWith('workspace-1', 'tab-b');
+      expect(mockBrowserSwitchTab).not.toHaveBeenCalledWith('workspace-1', 'tab-a');
+      expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserPane?.activeTabId).toBe('tab-b');
+    });
+
+    it('last tab cannot be closed', () => {
+      setupStore({
+        browserPane: {
+          id: 'bp1',
+          position: { x: 0, y: 0, w: 100, h: 100 },
+          locked: false,
+          activeTabId: 'tab-a',
+          tabs: [{ id: 'tab-a', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false }],
+        },
+      });
+      render(<BrowserPanel layoutVersion={1} />);
+
+      fireEvent.click(screen.getByTitle('Browser tabs'));
+      const closeButton = screen.getByTitle('Cannot close the last tab') as HTMLButtonElement;
+      expect(closeButton.disabled).toBe(true);
+      fireEvent.click(closeButton);
+
+      expect(mockBrowserCloseTab).not.toHaveBeenCalled();
+    });
+
+    it('bounds are resent on tab switch', async () => {
+      setupStore({ browserPane: createTabbedPane() });
+      render(<BrowserPanel layoutVersion={1} />);
+
+      const content = document.querySelector('.browser-content') as HTMLElement;
+      Object.defineProperty(content, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({ left: 10, top: 20, width: 500, height: 400, right: 510, bottom: 420, x: 10, y: 20, toJSON: () => ({}) }),
+      });
+
+      act(() => {
+        flushAnimationFrame();
+      });
+      mockBrowserSetBounds.mockClear();
+
+      fireEvent.click(screen.getByTitle('Browser tabs'));
+      fireEvent.click(screen.getByText('example.com/docs'));
+      act(() => {
+        flushAnimationFrame();
+      });
+
+      await waitFor(() => {
+        expect(mockBrowserSetBounds).toHaveBeenCalledWith('workspace-1', { x: 10, y: 20, width: 500, height: 400 }, 'tab-b');
+      });
+    });
+
+    it('open external uses the active tab URL', () => {
+      setupStore({ browserPane: createTabbedPane() });
+      render(<BrowserPanel layoutVersion={1} />);
+
+      fireEvent.click(screen.getByTitle('Open in system browser'));
+
+      expect(mockOpenExternal).toHaveBeenCalledWith('https://github.com');
+    });
+
+    it('manual navigation uses browserTabNavigate for the active tab', async () => {
+      setupStore({ browserPane: createTabbedPane() });
+      render(<BrowserPanel layoutVersion={1} />);
+
+      const input = screen.getByPlaceholderText('Enter URL...');
+      fireEvent.change(input, { target: { value: 'localhost:3000' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+
+      await waitFor(() => {
+        expect(mockBrowserTabNavigate).toHaveBeenCalledWith('workspace-1', 'tab-a', 'https://localhost:3000');
+      });
     });
   });
 
