@@ -5,14 +5,14 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 1** — IPC Surface Compatibility Bridge
+**Phase 2** — Main Process: Multi-WebContentsView Architecture
 
 ## Phase Status
 
 | Phase | Description | Status | Commit |
 |-------|-------------|--------|--------|
 | 0 | Types, Store Migration, Tab Actions, Invariants | ✅ | e98e120 |
-| 1 | IPC Surface Compatibility Bridge | 🔲 | — |
+| 1 | IPC Surface Compatibility Bridge | ✅ | 4fd0d10 |
 | 2 | Main Process: Multi-WebContentsView Architecture | 🔲 | — |
 | 3 | UI: Tab Dropdown & BrowserPanel Refactor | 🔲 | — |
 | 4 | Global Navigation History: Storage & IPC | 🔲 | — |
@@ -92,3 +92,4 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | Phase | Commit | Summary |
 |-------|--------|---------|
 | 0 | e98e120 | BrowserTab type + tabs/activeTabId on BrowserPaneState; tab actions (add/remove/setActive/update) with atomic last-tab guard; sanitizer migrates legacy/malformed panes; B1..B4 invariants; updateWorkspaceBrowserUrl tab-aware signature; INVARIANTS.md updated. |
+| 1 | 4fd0d10 | Tab IPC channels + handlers (create/close/switch/get/tab-navigate) registered with ALL_IPC_CHANNELS; per-workspace tab record/order/active maps; BROWSER_URL_UPDATED payload extended with optional tabId/title/canGoBack/canGoForward; browserSetBounds/browserNavigate gain optional tabId; preload + electron.d.ts + mocks updated; App.tsx URL listener forwards tabId/title. |
