@@ -1,5 +1,6 @@
 import type {
   BrowserPaneState,
+  BrowserTab,
   EditorPaneState,
   EditorTab,
   GridViewport,
@@ -113,7 +114,23 @@ export interface WorkspaceState {
   pushBrowserOverlay: (workspaceId?: string) => void;
   popBrowserOverlay: (workspaceId?: string) => void;
   setBrowserUrl: (url: string, workspaceId?: string) => void;
-  updateWorkspaceBrowserUrl: (workspaceId: string, url: string) => void;
+  updateWorkspaceBrowserUrl: (
+    workspaceId: string,
+    tabId: string | null,
+    url: string,
+    title?: string,
+  ) => void;
+  addBrowserTab: (workspaceId?: string) => string | null;
+  removeBrowserTab: (
+    tabId: string,
+    workspaceId?: string,
+  ) => { removed: boolean; nextActiveTabId: string | null };
+  setActiveBrowserTab: (tabId: string, workspaceId?: string) => boolean;
+  updateBrowserTab: (
+    tabId: string,
+    partial: Partial<BrowserTab>,
+    workspaceId?: string,
+  ) => boolean;
   clearTerminals: () => void;
   setExplorerVisible: (visible: boolean, workspaceId?: string) => void;
   setExplorerSidebarWidth: (width: number, workspaceId?: string) => void;

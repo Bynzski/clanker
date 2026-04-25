@@ -66,7 +66,13 @@ function makePane(id: string, locked = false): Pane {
 }
 
 function makeBrowser(id: string, locked = false): BrowserPaneState {
-  return { id, position: { x: 0, y: 0, w: 6, h: 6 }, locked };
+  return {
+    id,
+    position: { x: 0, y: 0, w: 6, h: 6 },
+    locked,
+    tabs: [{ id: `${id}-tab`, url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }],
+    activeTabId: `${id}-tab`,
+  };
 }
 
 const emptyState = { panes: [] as Pane[], browserPane: null as BrowserPaneState | null, browserVisible: false, editorPane: null, editorVisible: false };

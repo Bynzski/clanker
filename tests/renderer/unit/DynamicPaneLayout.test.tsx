@@ -317,7 +317,7 @@ describe('DynamicPaneLayout', () => {
     it('renders BrowserPanel when browserVisible and paneId matches', async () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'), {
         browserVisible: true,
-        browserPane: { id: 'p1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false },
+        browserPane: { id: 'p1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
         browserUrl: 'https://example.com',
       });
 
@@ -354,7 +354,7 @@ describe('DynamicPaneLayout', () => {
     it('browser takes priority over editor when both match', async () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'), {
         browserVisible: true,
-        browserPane: { id: 'p1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false },
+        browserPane: { id: 'p1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
         browserUrl: 'https://example.com',
         editorVisible: true,
         editorPane: { id: 'p1', locked: false },
@@ -371,7 +371,7 @@ describe('DynamicPaneLayout', () => {
     it('does not render BrowserPanel when paneId does not match', async () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'), {
         browserVisible: true,
-        browserPane: { id: 'other', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false },
+        browserPane: { id: 'other', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
         browserUrl: 'https://example.com',
       });
 
@@ -517,7 +517,7 @@ describe('DynamicPaneLayout', () => {
       );
       setupStoreWithLayout(layout, {
         browserVisible: true,
-        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: true },
+        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: true, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
       });
       render(<DynamicPaneLayout />);
 
@@ -1410,7 +1410,7 @@ describe('DynamicPaneLayout', () => {
       );
       setupStoreWithLayout(layout, {
         browserVisible: true,
-        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false },
+        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
       });
       render(<DynamicPaneLayout />);
 

@@ -308,7 +308,13 @@ describe('sanitizeWorkspace', () => {
 
   it('sets browserPane.locked to false when undefined', () => {
     const ws = makeWorkspace({
-      browserPane: { id: 'bp-1', position: { x: 0, y: 0, w: 6, h: 6 }, locked: undefined as unknown as boolean },
+      browserPane: {
+        id: 'bp-1',
+        position: { x: 0, y: 0, w: 6, h: 6 },
+        locked: undefined as unknown as boolean,
+        tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }],
+        activeTabId: 'bt-1',
+      },
     });
     const sanitized = sanitizeWorkspace(ws);
     expect(sanitized.browserPane!.locked).toBe(false);
@@ -349,6 +355,89 @@ describe('sanitizeWorkspace', () => {
     expect(sanitized.workspacePath).toBe('/test');
     expect(sanitized.harness).toBe('claude');
     expect(sanitized.model).toBe('gpt-4');
+  });
+
+  it('migrates a legacy browser pane (missing tabs) into one valid tab', () => {
+    const legacy = {
+      id: 'bp-legacy',
+      position: { x: 0, y: 0, w: 6, h: 6 },
+      locked: false,
+    } as unknown as BrowserPaneState;
+    const ws = makeWorkspace({ browserPane: legacy, browserUrl: 'https://legacy.example.com' });
+    const sanitized = sanitizeWorkspace(ws);
+    const pane = sanitized.browserPane!;
+    expect(pane.tabs.length).toBe(1);
+    expect(pane.tabs[0].url).toBe('https://legacy.example.com');
+    expect(pane.activeTabId).toBe(pane.tabs[0].id);
+  });
+
+  it('repairs an empty tabs array by inserting a default tab', () => {
+    const broken: BrowserPaneState = {
+      id: 'bp-empty',
+      position: { x: 0, y: 0, w: 6, h: 6 },
+      locked: false,
+      tabs: [],
+      activeTabId: null,
+    };
+    const ws = makeWorkspace({ browserPane: broken });
+    const sanitized = sanitizeWorkspace(ws);
+    const pane = sanitized.browserPane!;
+    expect(pane.tabs.length).toBe(1);
+    expect(pane.activeTabId).toBe(pane.tabs[0].id);
+  });
+
+  it('repairs an invalid activeTabId to the first tab', () => {
+    const broken: BrowserPaneState = {
+      id: 'bp-bad-active',
+      position: { x: 0, y: 0, w: 6, h: 6 },
+      locked: false,
+      tabs: [
+        { id: 'a', url: 'https://a.example', title: '', canGoBack: false, canGoForward: false },
+        { id: 'b', url: 'https://b.example', title: '', canGoBack: false, canGoForward: false },
+      ],
+      activeTabId: 'does-not-exist',
+    };
+    const ws = makeWorkspace({ browserPane: broken });
+    const sanitized = sanitizeWorkspace(ws);
+    expect(sanitized.browserPane!.activeTabId).toBe('a');
+  });
+
+  it('deduplicates duplicate tab IDs (first occurrence wins)', () => {
+    const broken: BrowserPaneState = {
+      id: 'bp-dupes',
+      position: { x: 0, y: 0, w: 6, h: 6 },
+      locked: false,
+      tabs: [
+        { id: 'dup', url: 'https://first.example', title: 'first', canGoBack: false, canGoForward: false },
+        { id: 'dup', url: 'https://second.example', title: 'second', canGoBack: false, canGoForward: false },
+        { id: 'unique', url: 'https://unique.example', title: '', canGoBack: false, canGoForward: false },
+      ],
+      activeTabId: 'dup',
+    };
+    const ws = makeWorkspace({ browserPane: broken });
+    const sanitized = sanitizeWorkspace(ws);
+    const pane = sanitized.browserPane!;
+    expect(pane.tabs.length).toBe(2);
+    expect(pane.tabs[0].url).toBe('https://first.example');
+    expect(pane.tabs[1].id).toBe('unique');
+  });
+
+  it('drops malformed tab entries with missing ids', () => {
+    const broken = {
+      id: 'bp-malformed',
+      position: { x: 0, y: 0, w: 6, h: 6 },
+      locked: false,
+      tabs: [
+        { url: 'https://no-id.example' },
+        { id: 'good', url: 'https://good.example', title: '', canGoBack: false, canGoForward: false },
+      ],
+      activeTabId: 'good',
+    } as unknown as BrowserPaneState;
+    const ws = makeWorkspace({ browserPane: broken });
+    const sanitized = sanitizeWorkspace(ws);
+    const pane = sanitized.browserPane!;
+    expect(pane.tabs.length).toBe(1);
+    expect(pane.tabs[0].id).toBe('good');
   });
 });
 
@@ -760,7 +849,13 @@ describe('validateWorkspaceConsistency', () => {
     });
 
     it('warns when layoutRoot is null but browser is visible', () => {
-      const bp: BrowserPaneState = { id: 'browser-1', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false };
+      const bp: BrowserPaneState = {
+        id: 'browser-1',
+        position: { x: 0, y: 0, w: 6, h: 6 },
+        locked: false,
+        tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }],
+        activeTabId: 'bt-1',
+      };
       const state = makeMinimalState({ layoutRoot: null, panes: [], browserVisible: true, browserPane: bp });
       expect(validateWorkspaceConsistency(state)).toContain(
         'L1 violated: layoutRoot is null but browser is visible',
@@ -792,7 +887,13 @@ describe('validateWorkspaceConsistency', () => {
     });
 
     it('passes when layout references browserPane', () => {
-      const bp: BrowserPaneState = { id: 'browser-1', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false };
+      const bp: BrowserPaneState = {
+        id: 'browser-1',
+        position: { x: 0, y: 0, w: 6, h: 6 },
+        locked: false,
+        tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }],
+        activeTabId: 'bt-1',
+      };
       const state = makeMinimalState({ layoutRoot: makeLeaf('browser-1'), panes: [], browserPane: bp, browserVisible: true });
 
       expect(validateWorkspaceConsistency(state)).toEqual([]);
@@ -876,6 +977,55 @@ describe('validateWorkspaceConsistency', () => {
     it('does not warn when layoutRoot is omitted (undefined)', () => {
       const pane: Pane = { id: 'pane-1', terminalId: null };
       expect(validateWorkspaceConsistency({ panes: [pane] })).toEqual([]);
+    });
+  });
+
+  describe('B1..B4 (browser tab invariants)', () => {
+    it('warns when browserPane has an empty tabs array', () => {
+      const bp: BrowserPaneState = {
+        id: 'bp', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false, tabs: [], activeTabId: null,
+      };
+      const warnings = validateWorkspaceConsistency({ browserPane: bp, browserUrl: '' });
+      expect(warnings).toContain('B1 violated: browserPane.tabs must contain at least one tab');
+    });
+
+    it('warns when browserPane has duplicate tab ids', () => {
+      const bp: BrowserPaneState = {
+        id: 'bp', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false,
+        tabs: [
+          { id: 'dup', url: 'https://a', title: '', canGoBack: false, canGoForward: false },
+          { id: 'dup', url: 'https://b', title: '', canGoBack: false, canGoForward: false },
+        ],
+        activeTabId: 'dup',
+      };
+      const warnings = validateWorkspaceConsistency({ browserPane: bp, browserUrl: 'https://a' });
+      expect(warnings).toContain('B2 violated: duplicate browser tab id "dup"');
+    });
+
+    it('warns when activeTabId does not reference an existing tab', () => {
+      const bp: BrowserPaneState = {
+        id: 'bp', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false,
+        tabs: [{ id: 'a', url: 'https://a', title: '', canGoBack: false, canGoForward: false }],
+        activeTabId: 'missing',
+      };
+      const warnings = validateWorkspaceConsistency({ browserPane: bp, browserUrl: 'https://a' });
+      expect(warnings).toContain('B3 violated: browserPane.activeTabId "missing" not found in browserPane.tabs[]');
+    });
+
+    it('warns when browserUrl does not match active tab url', () => {
+      const bp: BrowserPaneState = {
+        id: 'bp', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false,
+        tabs: [{ id: 'a', url: 'https://a.example', title: '', canGoBack: false, canGoForward: false }],
+        activeTabId: 'a',
+      };
+      const warnings = validateWorkspaceConsistency({ browserPane: bp, browserUrl: 'https://different.example' });
+      expect(warnings).toContain(
+        'B4 violated: browserUrl "https://different.example" does not match active tab url "https://a.example"',
+      );
+    });
+
+    it('does not warn when browserPane is null', () => {
+      expect(validateWorkspaceConsistency({ browserPane: null })).toEqual([]);
     });
   });
 });

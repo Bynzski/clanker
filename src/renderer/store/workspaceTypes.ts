@@ -21,10 +21,20 @@ export interface Pane {
   locked?: boolean;
 }
 
+export interface BrowserTab {
+  id: string;
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+}
+
 export interface BrowserPaneState {
   id: string;
   position: PanePosition;
   locked: boolean;
+  tabs: BrowserTab[];
+  activeTabId: string | null;
 }
 
 export interface EditorPaneState {

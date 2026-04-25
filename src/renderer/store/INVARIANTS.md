@@ -98,6 +98,23 @@ migration off `syncActiveWorkspace`) is noted in `plans/workspace-residency-plan
 
 **Why:** The `layoutRoot` is a tree of pane references. If a pane is referenced in the tree but doesn't exist in the panes array, rendering will fail. Conversely, orphaned panes (existing but not in the tree) would be invisible and waste resources.
 
+### Browser Pane / Tab Invariants
+
+| Field | Invariant | Explanation |
+|-------|-----------|-------------|
+| `browserPane.tabs` | `browserPane !== null` → `browserPane.tabs.length >= 1` | Once a browser pane exists, it always has at least one tab. The last tab cannot be closed. |
+| `browserPane.tabs[].id` | unique within a workspace | Tab IDs identify a `WebContentsView` in main; duplicates would alias native views. |
+| `browserPane.activeTabId` | `null` ↔ `browserPane === null` | When a pane exists the active tab id always references one of its tabs; when no pane exists, no tab is active. |
+| `browserPane.activeTabId` | `activeTabId !== null` → `tabs.some(tab => tab.id === activeTabId)` | The active tab id always references an existing tab. |
+| `browserUrl` | mirrors active tab's `url` for the active workspace | `browserUrl` is a compatibility mirror of the active tab url. Updating an inactive tab must NOT mutate `browserUrl`. |
+| `browserPane.position` | unchanged by tab actions | Tab create/close/switch/update actions never touch pane geometry. |
+
+**Why:**
+- The "at least one tab" rule guarantees that the browser pane always has a renderable target view; UI never has to handle a tabless pane.
+- Tab IDs are renderer-generated and must be passed unchanged to main, so duplicates would corrupt the workspace → tab → `WebContentsView` map.
+- `browserUrl` predates the tab model; existing consumers (URL input, external links) read it directly. Treating it as the active-tab mirror keeps these consumers correct without forcing all of them to learn about tabs.
+- Inactive tab updates (e.g., a background load completing) must not redraw the URL bar or visible browser surface.
+
 ### Editor Invariants
 
 | Field | Invariant | Explanation |
@@ -152,6 +169,10 @@ editorPane?.id ──────────┘
 
 editorTabs[]
   └── activeEditorTabId (points into editorTabs[])
+
+browserPane?.tabs[]
+  ├── activeTabId (points into tabs[])
+  └── tabs[active].url ──→ workspace.browserUrl (compatibility mirror)
 ```
 
 ## Glossary

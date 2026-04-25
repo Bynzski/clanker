@@ -428,7 +428,7 @@ describe('browser', () => {
 
   it('updateWorkspaceBrowserUrl patches active workspace snapshot', () => {
     const id = getStore().activeWorkspaceId!;
-    getStore().updateWorkspaceBrowserUrl(id, 'https://example.com');
+    getStore().updateWorkspaceBrowserUrl(id, null, 'https://example.com');
 
     expect(getStore().browserUrl).toBe('https://example.com');
     expect(getStore().workspaces.find((workspace) => workspace.id === id)?.browserUrl).toBe('https://example.com');
@@ -439,7 +439,7 @@ describe('browser', () => {
     addWorkspace(createWorkspaceFixture({ id: 'workspace-2', name: 'workspace-2', workspacePath: '/workspace-2', browserUrl: 'https://second.com' }));
 
     const secondId = getStore().activeWorkspaceId!;
-    getStore().updateWorkspaceBrowserUrl(firstId, 'https://updated.com');
+    getStore().updateWorkspaceBrowserUrl(firstId, null, 'https://updated.com');
 
     expect(getStore().browserUrl).toBe('https://second.com');
     expect(getStore().workspaces.find((workspace) => workspace.id === firstId)?.browserUrl).toBe('https://updated.com');
@@ -545,6 +545,164 @@ describe('browser', () => {
     expect(getStore().browserPane).toBeNull();
     getStore().toggleBrowserLock();
     expect(getStore().browserPane).toBeNull();
+  });
+});
+
+// ===========================================================================
+// Browser tabs (Phase 0)
+// ===========================================================================
+describe('browser tabs', () => {
+  beforeEach(() => {
+    addWorkspace();
+    getStore().toggleBrowser();
+  });
+
+  it('toggleBrowser creates a browser pane with one default tab', () => {
+    const pane = getStore().browserPane;
+    expect(pane).not.toBeNull();
+    expect(pane!.tabs.length).toBe(1);
+    expect(pane!.activeTabId).toBe(pane!.tabs[0].id);
+    expect(pane!.tabs[0].url).toBe('https://github.com');
+  });
+
+  it('addBrowserTab appends a new tab and makes it active', () => {
+    const wsId = getStore().activeWorkspaceId!;
+    const initialTabId = getStore().browserPane!.tabs[0].id;
+    const newTabId = getStore().addBrowserTab(wsId);
+    expect(newTabId).not.toBeNull();
+
+    const pane = getStore().browserPane!;
+    expect(pane.tabs.length).toBe(2);
+    expect(pane.activeTabId).toBe(newTabId);
+    expect(pane.tabs.find((tab) => tab.id === initialTabId)).toBeTruthy();
+    expect(getStore().browserUrl).toBe('https://github.com');
+  });
+
+  it('removeBrowserTab refuses to remove the last remaining tab', () => {
+    const wsId = getStore().activeWorkspaceId!;
+    const onlyTabId = getStore().browserPane!.tabs[0].id;
+    const result = getStore().removeBrowserTab(onlyTabId, wsId);
+    expect(result.removed).toBe(false);
+    expect(result.nextActiveTabId).toBe(onlyTabId);
+    expect(getStore().browserPane!.tabs.length).toBe(1);
+  });
+
+  it('removeBrowserTab on the active tab atomically selects the next tab', () => {
+    const wsId = getStore().activeWorkspaceId!;
+    const firstTabId = getStore().browserPane!.tabs[0].id;
+    const secondId = getStore().addBrowserTab(wsId)!;
+    const thirdId = getStore().addBrowserTab(wsId)!;
+
+    // Make the middle tab active and remove it.
+    getStore().setActiveBrowserTab(secondId, wsId);
+    const result = getStore().removeBrowserTab(secondId, wsId);
+
+    expect(result.removed).toBe(true);
+    // Prefer the next sibling.
+    expect(result.nextActiveTabId).toBe(thirdId);
+    const pane = getStore().browserPane!;
+    expect(pane.tabs.map((tab) => tab.id)).toEqual([firstTabId, thirdId]);
+    expect(pane.activeTabId).toBe(thirdId);
+  });
+
+  it('removeBrowserTab on the last (active, rightmost) tab falls back to previous', () => {
+    const wsId = getStore().activeWorkspaceId!;
+    const firstTabId = getStore().browserPane!.tabs[0].id;
+    const secondId = getStore().addBrowserTab(wsId)!;
+    // secondId is now active by default.
+    const result = getStore().removeBrowserTab(secondId, wsId);
+    expect(result.removed).toBe(true);
+    expect(result.nextActiveTabId).toBe(firstTabId);
+    expect(getStore().browserPane!.tabs.map((tab) => tab.id)).toEqual([firstTabId]);
+    expect(getStore().browserPane!.activeTabId).toBe(firstTabId);
+  });
+
+  it('updateBrowserTab on the active tab mirrors url into browserUrl', () => {
+    const wsId = getStore().activeWorkspaceId!;
+    const activeId = getStore().browserPane!.activeTabId!;
+    getStore().updateBrowserTab(activeId, { url: 'https://example.com', title: 'Example' }, wsId);
+    expect(getStore().browserUrl).toBe('https://example.com');
+    const pane = getStore().browserPane!;
+    expect(pane.tabs[0].url).toBe('https://example.com');
+    expect(pane.tabs[0].title).toBe('Example');
+  });
+
+  it('updateBrowserTab on an inactive tab does NOT mutate browserUrl', () => {
+    const wsId = getStore().activeWorkspaceId!;
+    const initialUrl = getStore().browserUrl;
+    const activeId = getStore().browserPane!.activeTabId!;
+    const newTabId = getStore().addBrowserTab(wsId)!;
+    // Switch back so newTabId becomes inactive.
+    getStore().setActiveBrowserTab(activeId, wsId);
+    expect(getStore().browserPane!.activeTabId).toBe(activeId);
+
+    getStore().updateBrowserTab(newTabId, { url: 'https://background.example.com' }, wsId);
+
+    expect(getStore().browserUrl).toBe(initialUrl);
+    const inactiveTab = getStore().browserPane!.tabs.find((tab) => tab.id === newTabId)!;
+    expect(inactiveTab.url).toBe('https://background.example.com');
+  });
+
+  it('setActiveBrowserTab syncs browserUrl to the newly active tab url', () => {
+    const wsId = getStore().activeWorkspaceId!;
+    const firstTabId = getStore().browserPane!.tabs[0].id;
+    const secondId = getStore().addBrowserTab(wsId)!;
+    getStore().updateBrowserTab(secondId, { url: 'https://second.example.com' }, wsId);
+
+    getStore().setActiveBrowserTab(firstTabId, wsId);
+    expect(getStore().browserUrl).toBe('https://github.com');
+    getStore().setActiveBrowserTab(secondId, wsId);
+    expect(getStore().browserUrl).toBe('https://second.example.com');
+  });
+
+  it('updateWorkspaceBrowserUrl with explicit tabId updates only that tab', () => {
+    const wsId = getStore().activeWorkspaceId!;
+    const activeId = getStore().browserPane!.activeTabId!;
+    const otherId = getStore().addBrowserTab(wsId)!;
+    getStore().setActiveBrowserTab(activeId, wsId);
+
+    getStore().updateWorkspaceBrowserUrl(wsId, otherId, 'https://other.example.com');
+
+    expect(getStore().browserUrl).toBe('https://github.com');
+    expect(getStore().browserPane!.tabs.find((tab) => tab.id === otherId)!.url).toBe('https://other.example.com');
+  });
+
+  it('updateWorkspaceBrowserUrl with null tabId updates active tab', () => {
+    const wsId = getStore().activeWorkspaceId!;
+    getStore().updateWorkspaceBrowserUrl(wsId, null, 'https://active.example.com');
+    expect(getStore().browserUrl).toBe('https://active.example.com');
+    const pane = getStore().browserPane!;
+    expect(pane.tabs.find((tab) => tab.id === pane.activeTabId)!.url).toBe('https://active.example.com');
+  });
+
+  it('updateWorkspaceBrowserUrl on an inactive workspace does NOT mutate active snapshot', () => {
+    const firstId = getStore().activeWorkspaceId!;
+    addWorkspace(createWorkspaceFixture({
+      id: 'workspace-2',
+      name: 'workspace-2',
+      workspacePath: '/workspace-2',
+      browserUrl: 'https://second.example.com',
+    }));
+    const secondId = getStore().activeWorkspaceId!;
+    expect(secondId).not.toBe(firstId);
+
+    getStore().updateWorkspaceBrowserUrl(firstId, null, 'https://updated.example.com');
+
+    expect(getStore().browserUrl).toBe('https://second.example.com');
+    const firstWorkspace = getStore().workspaces.find((ws) => ws.id === firstId)!;
+    // Active tab url and mirror were updated on the inactive workspace's own state.
+    expect(firstWorkspace.browserUrl).toBe('https://updated.example.com');
+  });
+
+  it('tab actions do not mutate browser pane position', () => {
+    const wsId = getStore().activeWorkspaceId!;
+    const originalPosition = { ...getStore().browserPane!.position };
+    const newId = getStore().addBrowserTab(wsId)!;
+    getStore().updateBrowserTab(newId, { url: 'https://x.example.com' }, wsId);
+    getStore().setActiveBrowserTab(newId, wsId);
+    getStore().removeBrowserTab(newId, wsId);
+
+    expect(getStore().browserPane!.position).toEqual(originalPosition);
   });
 });
 
