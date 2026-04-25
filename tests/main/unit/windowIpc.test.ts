@@ -390,6 +390,39 @@ describe('registerWindowIpc — error-path: null main window', () => {
     expect(tabA.webContents.setZoomLevel).toHaveBeenCalledWith(0.5);
     expect(tabB.webContents.setZoomLevel).toHaveBeenCalledWith(1.5);
   });
+
+  test('zoom applies to all nested tab views across multiple workspaces', () => {
+    const { mockMainWindow } = createMockDeps();
+    const ws1TabA = { webContents: { getZoomLevel: vi.fn(() => 0), setZoomLevel: vi.fn() } };
+    const ws1TabB = { webContents: { getZoomLevel: vi.fn(() => 0), setZoomLevel: vi.fn() } };
+    const ws2TabA = { webContents: { getZoomLevel: vi.fn(() => 1), setZoomLevel: vi.fn() } };
+
+    const multiWorkspaceViews = new Map([
+      ['ws-1', new Map([
+        ['tab-a', { view: ws1TabA }],
+        ['tab-b', { view: ws1TabB }],
+      ])],
+      ['ws-2', new Map([
+        ['tab-a', { view: ws2TabA }],
+      ])],
+    ]);
+
+    registerWindowIpc({
+      getMainWindow: () => mockMainWindow as never,
+      getBrowserViews: () => multiWorkspaceViews as never,
+    });
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'zoom-in-window'
+    )?.[1] as () => void;
+
+    handler();
+
+    // All tab views across both workspaces should be zoomed
+    expect(ws1TabA.webContents.setZoomLevel).toHaveBeenCalledWith(0.5);
+    expect(ws1TabB.webContents.setZoomLevel).toHaveBeenCalledWith(0.5);
+    expect(ws2TabA.webContents.setZoomLevel).toHaveBeenCalledWith(1.5);
+  });
 });
 
 describe('window IPC helpers', () => {

@@ -16,10 +16,6 @@ import {
 
 interface BrowserPanelProps {
   workspaceId?: string;
-  /** Compatibility prop retained for existing callers/tests. BrowserPanel now derives URL from the active browser tab. */
-  url?: string;
-  /** Compatibility callback retained for legacy tests; tab-aware store updates are canonical. */
-  onUrlChange?: (url: string) => void;
   layoutVersion: number;
 }
 
@@ -43,11 +39,11 @@ function getTabSubtitle(tab: BrowserTab): string {
   }
 }
 
-export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVersion }: BrowserPanelProps) {
+export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPanelProps) {
   const workspace = useScopedWorkspace(workspaceId);
   const activeTab = workspace?.browserPane?.tabs.find((tab) => tab.id === workspace.browserPane?.activeTabId) ?? null;
   const activeTabId = activeTab?.id ?? null;
-  const displayedUrl = url ?? activeTab?.url ?? workspace?.browserUrl ?? '';
+  const displayedUrl = activeTab?.url ?? workspace?.browserUrl ?? '';
 
   const [inputUrl, setInputUrl] = useState(displayedUrl);
   const [canGoBack, setCanGoBack] = useState(activeTab?.canGoBack ?? false);
@@ -408,7 +404,6 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
       if (activeTabId) {
         updateBrowserTab(activeTabId, { url: navigateUrl }, workspace.id);
       }
-      onUrlChange?.(navigateUrl);
     }
   };
 
