@@ -67,6 +67,8 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const bringBrowserIntoView = useWorkspaceStore((state) => state.bringBrowserIntoView);
   const toggleBrowserLock = useWorkspaceStore((state) => state.toggleBrowserLock);
+  const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
+  const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
   const addBrowserTab = useWorkspaceStore((state) => state.addBrowserTab);
   const removeBrowserTab = useWorkspaceStore((state) => state.removeBrowserTab);
   const setActiveBrowserTab = useWorkspaceStore((state) => state.setActiveBrowserTab);
@@ -227,6 +229,16 @@ export default function BrowserPanel({ workspaceId, url, onUrlChange, layoutVers
       clearTimeout(timeoutId);
     };
   }, [inputUrl, urlInputFocused, activeTabId]);
+
+  useEffect(() => {
+    const overlayOpen = tabsOpen || historySuggestions.length > 0;
+    if (!overlayOpen || !workspace?.id) {
+      return;
+    }
+
+    pushBrowserOverlay(workspace.id);
+    return () => popBrowserOverlay(workspace.id);
+  }, [historySuggestions.length, popBrowserOverlay, pushBrowserOverlay, tabsOpen, workspace?.id]);
 
   useEffect(() => {
     if (!tabsOpen) return;

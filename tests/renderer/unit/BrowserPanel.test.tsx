@@ -1126,6 +1126,21 @@ describe('BrowserPanel', () => {
       expect(screen.getByText('example.com/docs')).toBeTruthy();
     });
 
+    it('hides the native browser while the tab dropdown is open', async () => {
+      setupStore({ browserPane: createTabbedPane() });
+      render(<BrowserPanel layoutVersion={1} />);
+
+      fireEvent.click(screen.getByTitle('Browser tabs'));
+      await waitFor(() => {
+        expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserOverlayCount).toBe(1);
+      });
+
+      fireEvent.click(screen.getByTitle('Browser tabs'));
+      await waitFor(() => {
+        expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserOverlayCount).toBe(0);
+      });
+    });
+
     it('plus creates a store tab and calls IPC with the same tab ID', async () => {
       setupStore({ browserPane: createTabbedPane() });
       render(<BrowserPanel layoutVersion={1} />);
@@ -1312,6 +1327,25 @@ describe('BrowserPanel', () => {
       expect(await screen.findByRole('listbox', { name: 'URL history suggestions' })).toBeTruthy();
       expect(screen.getByText('http://localhost:3000/')).toBeTruthy();
       expect(screen.getByText('Local App')).toBeTruthy();
+    });
+
+    it('hides the native browser while URL suggestions are visible', async () => {
+      render(<BrowserPanel layoutVersion={1} />);
+      const input = screen.getByPlaceholderText('Enter URL...');
+
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: 'local' } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+
+      await screen.findByRole('listbox', { name: 'URL history suggestions' });
+      expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserOverlayCount).toBe(1);
+
+      fireEvent.keyDown(input, { key: 'Escape' });
+      await waitFor(() => {
+        expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserOverlayCount).toBe(0);
+      });
     });
 
     it('clicking a suggestion navigates the active tab', async () => {
