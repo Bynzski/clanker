@@ -313,6 +313,9 @@ export function createAnnotationController(
     },
 
     async checkCopyTrigger(): Promise<boolean> {
+      if (!state.enabled || !state.workspaceId) {
+        return false;
+      }
       const result = await executeAndCapture<boolean>(state.workspaceId, generateCheckCopyTriggerCode());
       return result.success && result.result === true;
     },

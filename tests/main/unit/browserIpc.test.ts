@@ -6,7 +6,8 @@
 
 import { vi, describe, test, expect, beforeEach } from 'vitest';
 
-let attachedBeforeInputEventHandler: ((event: { preventDefault: () => void }, input: { control?: boolean; meta?: boolean; alt?: boolean; key?: string; code?: string; type?: string }) => void) | null = null;
+let attachedBeforeInputEventHandler: ((event: { preventDefault: () => void }, input: { control?: boolean; meta?: boolean; alt?: boolean; shift?: boolean; key?: string; code?: string; type?: string }) => void) | null = null;
+let attachedContextMenuHandler: ((event: unknown, params: { x: number; y: number }) => void) | null = null;
 
 // Mock electron module
 vi.mock('electron', () => ({
@@ -47,6 +48,10 @@ vi.mock('electron', () => ({
     },
   })),
   Menu: Object.assign(vi.fn(), {
+    buildFromTemplate: vi.fn((template: unknown[]) => ({
+      popup: vi.fn(),
+      template,
+    })),
     setApplicationMenu: vi.fn(),
   }),
   WebContentsView: class MockWebContentsView {
@@ -62,9 +67,16 @@ vi.mock('electron', () => ({
         if (eventName === 'before-input-event') {
           attachedBeforeInputEventHandler = handler;
         }
+        if (eventName === 'context-menu') {
+          attachedContextMenuHandler = handler as typeof attachedContextMenuHandler;
+        }
       }),
       getZoomLevel: vi.fn(() => 0),
       setZoomLevel: vi.fn(),
+      openDevTools: vi.fn(),
+      closeDevTools: vi.fn(),
+      isDevToolsOpened: vi.fn(() => false),
+      inspectElement: vi.fn(),
       navigationHistory: {
         canGoBack: vi.fn(() => false),
         canGoForward: vi.fn(() => false),
@@ -86,7 +98,7 @@ vi.mock('electron', () => ({
 }));
 
 // Import after mocking
-import { ipcMain } from 'electron';
+import { ipcMain, Menu } from 'electron';
 import { registerBrowserIpc } from '../../../src/main/ipc/browserIpc';
 
 describe('registerBrowserIpc', () => {
@@ -124,6 +136,22 @@ describe('registerBrowserIpc', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     attachedBeforeInputEventHandler = null;
+    attachedContextMenuHandler = null;
+  });
+
+  test('registers browser context-menu and keyboard shortcut handlers', () => {
+    const { deps } = createMockDeps();
+
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-set-bounds'
+    )?.[1] as (_: unknown, workspaceId: string, bounds: object) => void;
+
+    handler(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 });
+
+    expect(attachedBeforeInputEventHandler).not.toBeNull();
+    expect(attachedContextMenuHandler).not.toBeNull();
   });
 
   test('registers all expected browser IPC channels', () => {
@@ -171,6 +199,47 @@ describe('registerBrowserIpc', () => {
     // Handlers should be registered again
     const handleCalls = mockIpcMain.handle.mock.calls;
     expect(handleCalls.length).toBe(26);
+  });
+
+  test('browser context menu can open devtools and inspect the clicked element', () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-set-bounds'
+    )?.[1] as (_: unknown, workspaceId: string, bounds: object) => void;
+
+    handler(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 });
+
+    expect(attachedContextMenuHandler).not.toBeNull();
+    const mockMenuInstance = { popup: vi.fn() };
+    const buildFromTemplate = vi.mocked(Menu.buildFromTemplate);
+    buildFromTemplate.mockReturnValueOnce(mockMenuInstance as never);
+
+    const inspectElement = vi.fn();
+    const openDevTools = vi.fn();
+    const view = deps.getBrowserViews().get('ws-1')?.view as unknown as {
+      webContents: {
+        inspectElement: typeof inspectElement;
+        openDevTools: typeof openDevTools;
+      };
+    };
+    view.webContents.inspectElement = inspectElement;
+    view.webContents.openDevTools = openDevTools;
+
+    attachedContextMenuHandler?.({}, { x: 12, y: 34 });
+    expect(buildFromTemplate).toHaveBeenCalled();
+    expect(mockMenuInstance.popup).toHaveBeenCalled();
+
+    const template = buildFromTemplate.mock.calls[buildFromTemplate.mock.calls.length - 1]?.[0] as Array<{ label?: string; click?: () => void }>;
+    expect(template.map(item => item.label)).toEqual(['Open DevTools', 'Inspect Element']);
+
+    template[0]?.click?.();
+    expect(openDevTools).toHaveBeenCalledWith({ mode: 'detach' });
+
+    template[1]?.click?.();
+    expect(inspectElement).toHaveBeenCalledWith(12, 34);
+    expect(openDevTools).toHaveBeenCalledTimes(2);
   });
 
   test('browser channels do not overlap with terminal channels', () => {
@@ -286,6 +355,46 @@ describe('browserIpc — error-path: null/invalid workspaceId returns valid resu
       { control: true, meta: false, alt: false, type: 'mouseWheel' }
     );
     expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  test('browser devtools shortcuts toggle the browser DevTools window', () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-set-bounds'
+    )?.[1] as (_: unknown, workspaceId: string, bounds: object) => void;
+
+    handler(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 });
+
+    const view = deps.getBrowserViews().get('ws-1')?.view as unknown as {
+      webContents: {
+        openDevTools: ReturnType<typeof vi.fn>;
+        closeDevTools: ReturnType<typeof vi.fn>;
+        isDevToolsOpened: ReturnType<typeof vi.fn>;
+      };
+    };
+    view.webContents.openDevTools = vi.fn();
+    view.webContents.closeDevTools = vi.fn();
+    view.webContents.isDevToolsOpened = vi.fn(() => false);
+
+    const preventDefault = vi.fn();
+    attachedBeforeInputEventHandler?.(
+      { preventDefault },
+      { control: true, meta: false, alt: false, shift: true, key: 'i', type: 'keyDown' }
+    );
+
+    expect(preventDefault).toHaveBeenCalled();
+    expect(view.webContents.openDevTools).toHaveBeenCalledWith({ mode: 'detach' });
+    expect(view.webContents.closeDevTools).not.toHaveBeenCalled();
+
+    view.webContents.isDevToolsOpened = vi.fn(() => true);
+    attachedBeforeInputEventHandler?.(
+      { preventDefault },
+      { control: false, meta: false, alt: false, shift: false, key: 'F12', type: 'keyDown' }
+    );
+
+    expect(view.webContents.closeDevTools).toHaveBeenCalled();
   });
 
   test('BROWSER_SET_BOUNDS returns undefined for empty string workspaceId', async () => {
