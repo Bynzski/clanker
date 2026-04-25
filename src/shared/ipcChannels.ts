@@ -68,6 +68,9 @@ export const BROWSER_CLOSE_TAB = 'browser-close-tab';
 export const BROWSER_SWITCH_TAB = 'browser-switch-tab';
 export const BROWSER_GET_TABS = 'browser-get-tabs';
 export const BROWSER_TAB_NAVIGATE = 'browser-tab-navigate';
+export const BROWSER_HISTORY_ADD = 'browser-history-add';
+export const BROWSER_HISTORY_GET = 'browser-history-get';
+export const BROWSER_HISTORY_CLEAR = 'browser-history-clear';
 export const FIT_ALL_PANES = 'fit-all-panes';
 
 /* ============================================================================
@@ -244,6 +247,9 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   BROWSER_SWITCH_TAB,
   BROWSER_GET_TABS,
   BROWSER_TAB_NAVIGATE,
+  BROWSER_HISTORY_ADD,
+  BROWSER_HISTORY_GET,
+  BROWSER_HISTORY_CLEAR,
   // Window controls
   MINIMIZE_WINDOW,
   TOGGLE_MAXIMIZE_WINDOW,

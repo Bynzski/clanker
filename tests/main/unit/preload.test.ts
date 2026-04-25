@@ -541,6 +541,9 @@ describe('preload.ts IPC Bridge Coverage Tests', () => {
         'browserRefresh',
         'browserStop',
         'browserHide',
+        'browserHistoryGet',
+        'browserHistoryAdd',
+        'browserHistoryClear',
       ];
 
       for (const method of browserMethods) {

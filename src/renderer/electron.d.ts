@@ -37,6 +37,7 @@ import type {
 import type { AiCommitSettings, ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import type { HarnessSession } from '../../shared/types/session';
+import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 
 export type { VcsProvider, ProviderContext, PullRequestContext, DeepLink, DeepLinkType };
 export type {
@@ -128,6 +129,9 @@ interface ElectronAPI {
     workspaceId: string,
   ) => Promise<Array<{ tabId: string; url: string; title?: string }>>;
   browserTabNavigate: (workspaceId: string, tabId: string, url: string) => Promise<boolean>;
+  browserHistoryGet: (prefix?: string) => Promise<BrowserHistoryEntry[]>;
+  browserHistoryAdd: (url: string, title?: string) => Promise<boolean>;
+  browserHistoryClear: () => Promise<boolean>;
   openExternal: (url: string) => Promise<boolean>;
   revealInFileManager: (filePath: string) => Promise<boolean>;
   canGoBack: (workspaceId: string) => Promise<boolean>;
