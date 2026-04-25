@@ -5,13 +5,13 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 0** — Types, Store Migration, Tab Actions, Invariants
+**Phase 1** — IPC Surface Compatibility Bridge
 
 ## Phase Status
 
 | Phase | Description | Status | Commit |
 |-------|-------------|--------|--------|
-| 0 | Types, Store Migration, Tab Actions, Invariants | 🔲 | — |
+| 0 | Types, Store Migration, Tab Actions, Invariants | ✅ | e98e120 |
 | 1 | IPC Surface Compatibility Bridge | 🔲 | — |
 | 2 | Main Process: Multi-WebContentsView Architecture | 🔲 | — |
 | 3 | UI: Tab Dropdown & BrowserPanel Refactor | 🔲 | — |
@@ -91,4 +91,4 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 | Phase | Commit | Summary |
 |-------|--------|---------|
-| — | — | — |
+| 0 | e98e120 | BrowserTab type + tabs/activeTabId on BrowserPaneState; tab actions (add/remove/setActive/update) with atomic last-tab guard; sanitizer migrates legacy/malformed panes; B1..B4 invariants; updateWorkspaceBrowserUrl tab-aware signature; INVARIANTS.md updated. |
