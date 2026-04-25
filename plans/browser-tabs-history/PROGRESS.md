@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 5** — URL Autocomplete UI
+**Phase 6** — Integration Hardening, Compatibility Cleanup & Full Validation
 
 ## Phase Status
 
@@ -16,7 +16,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 2 | Main Process: Multi-WebContentsView Architecture | ✅ | 7510427 |
 | 3 | UI: Tab Dropdown & BrowserPanel Refactor | ✅ | 2ff6070 |
 | 4 | Global Navigation History: Storage & IPC | ✅ | 33c679b |
-| 5 | URL Autocomplete UI | 🔲 | — |
+| 5 | URL Autocomplete UI | ✅ | 5bc713d |
 | 6 | Integration Hardening, Compatibility Cleanup & Full Validation | 🔲 | — |
 
 ## Status Legend
@@ -96,3 +96,4 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 2 | 7510427 | Nested main-process browser view maps with per-tab `WebContentsView` creation; active tab and bounds tracking; tab-aware navigation/bounds/hide/close/dispose; nested zoom iteration; active-tab annotation resolution and disable-on-switch behavior; main tests for multi-tab visibility/disposal and zoom. |
 | 3 | 2ff6070 | BrowserPanel now derives URL/navigation state from the active browser tab; tab dropdown supports count, create, switch, close, and last-tab guard flows; bounds/navigation IPC includes active tab ID; DynamicPaneLayout uses tab-aware BrowserPanel; renderer tests cover dropdown, same-ID create IPC, switch, close propagation, bounds resend, external URL, and active-tab navigation. |
 | 4 | 33c679b | Added persistent browser history service backed by `browser-navigation-history`; HTTP(S)-only normalization, dedupe, max-100 storage, max-8 queries, hostname/path prefix matching; history IPC/preload/types/mocks; committed navigation event recording; service, IPC, channel, registration, and preload tests. |
+| 5 | 5bc713d | Added debounced URL history autocomplete below the browser URL input; suggestions query only for focused user-edited input of at least 2 chars; mouse and keyboard selection navigate through active-tab IPC; Escape/blur/navigation/tab switches clear stale suggestions; renderer tests cover debounce, min length, rendering, click, keyboard, escape, and tab-switch sync. |
