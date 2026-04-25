@@ -71,11 +71,14 @@ interface BrowserViewEntry {
   url: string;
 }
 
+type BrowserViewCollection = Map<string, BrowserViewEntry> | Map<string, Map<string, BrowserViewEntry>>;
+
 /**
  * Create an annotation controller for managing browser annotation lifecycle
  */
 export function createAnnotationController(
-  getBrowserViews: () => Map<string, BrowserViewEntry>
+  getBrowserViews: () => BrowserViewCollection,
+  getActiveBrowserView?: (workspaceId: string) => BrowserViewEntry | null
 ): AnnotationController {
   // State for this controller instance
   const state: AnnotationState = {
@@ -90,8 +93,21 @@ export function createAnnotationController(
       return null;
     }
 
-    const entry = getBrowserViews().get(workspaceId);
-    return entry?.view || null;
+    const activeEntry = getActiveBrowserView?.(workspaceId);
+    if (activeEntry) {
+      return activeEntry.view;
+    }
+
+    const workspaceEntry = getBrowserViews().get(workspaceId);
+    if (!workspaceEntry) {
+      return null;
+    }
+
+    if (workspaceEntry instanceof Map) {
+      return workspaceEntry.values().next().value?.view ?? null;
+    }
+
+    return workspaceEntry.view ?? null;
   }
 
   /**
