@@ -6,7 +6,7 @@
  * for cookies and session data. Extracted from main.ts per S2.2.
  */
 
-import { ipcMain, BrowserWindow, WebContentsView, shell } from 'electron';
+import { ipcMain, BrowserWindow, Menu, WebContentsView, shell } from 'electron';
 import {
   normalizeAppBrowserUrl,
   normalizeExternalUrl,
@@ -68,6 +68,21 @@ function isBrowserKeyboardZoomShortcut(input: {
     || key === '0';
 }
 
+function isBrowserDevToolsShortcut(input: {
+  control: boolean;
+  meta: boolean;
+  alt: boolean;
+  shift: boolean;
+  key?: string;
+}): boolean {
+  if (input.alt) {
+    return false;
+  }
+
+  const key = input.key?.toLowerCase() ?? '';
+  return key === 'f12' || ((input.control || input.meta) && input.shift && key === 'i');
+}
+
 function attachBrowserShortcutHandlers(view: WebContentsView, sendFitAllPanes: () => void) {
   view.webContents.on('before-input-event', (event, input) => {
     if (isBrowserKeyboardZoomShortcut(input)) {
@@ -75,9 +90,41 @@ function attachBrowserShortcutHandlers(view: WebContentsView, sendFitAllPanes: (
       return;
     }
 
+    if (isBrowserDevToolsShortcut(input)) {
+      event.preventDefault();
+      if (view.webContents.isDevToolsOpened()) {
+        view.webContents.closeDevTools();
+      } else {
+        view.webContents.openDevTools({ mode: 'detach' });
+      }
+      return;
+    }
+
     if ((input.control || input.meta) && input.shift && input.key?.toLowerCase() === 'f') {
       sendFitAllPanes();
     }
+  });
+}
+
+function attachBrowserContextMenuHandlers(view: WebContentsView, mainWindow: BrowserWindow) {
+  view.webContents.on('context-menu', (_event, params) => {
+    const menu = Menu.buildFromTemplate([
+      {
+        label: 'Open DevTools',
+        click: () => {
+          view.webContents.openDevTools({ mode: 'detach' });
+        },
+      },
+      {
+        label: 'Inspect Element',
+        click: () => {
+          view.webContents.inspectElement(params.x, params.y);
+          view.webContents.openDevTools({ mode: 'detach' });
+        },
+      },
+    ]);
+
+    menu.popup({ window: mainWindow });
   });
 }
 
@@ -129,6 +176,7 @@ function createBrowserViewForWorkspace(
       win.webContents.send(FIT_ALL_PANES);
     }
   });
+  attachBrowserContextMenuHandlers(view, mainWindow);
   syncBrowserViewZoomToApp(mainWindow, view);
   view.setVisible(false);
   view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
