@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 4** — Global Navigation History: Storage & IPC
+**Phase 5** — URL Autocomplete UI
 
 ## Phase Status
 
@@ -15,7 +15,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 1 | IPC Surface Compatibility Bridge | ✅ | 4fd0d10 |
 | 2 | Main Process: Multi-WebContentsView Architecture | ✅ | 7510427 |
 | 3 | UI: Tab Dropdown & BrowserPanel Refactor | ✅ | 2ff6070 |
-| 4 | Global Navigation History: Storage & IPC | 🔲 | — |
+| 4 | Global Navigation History: Storage & IPC | ✅ | 33c679b |
 | 5 | URL Autocomplete UI | 🔲 | — |
 | 6 | Integration Hardening, Compatibility Cleanup & Full Validation | 🔲 | — |
 
@@ -95,3 +95,4 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 1 | 4fd0d10 | Tab IPC channels + handlers (create/close/switch/get/tab-navigate) registered with ALL_IPC_CHANNELS; per-workspace tab record/order/active maps; BROWSER_URL_UPDATED payload extended with optional tabId/title/canGoBack/canGoForward; browserSetBounds/browserNavigate gain optional tabId; preload + electron.d.ts + mocks updated; App.tsx URL listener forwards tabId/title. |
 | 2 | 7510427 | Nested main-process browser view maps with per-tab `WebContentsView` creation; active tab and bounds tracking; tab-aware navigation/bounds/hide/close/dispose; nested zoom iteration; active-tab annotation resolution and disable-on-switch behavior; main tests for multi-tab visibility/disposal and zoom. |
 | 3 | 2ff6070 | BrowserPanel now derives URL/navigation state from the active browser tab; tab dropdown supports count, create, switch, close, and last-tab guard flows; bounds/navigation IPC includes active tab ID; DynamicPaneLayout uses tab-aware BrowserPanel; renderer tests cover dropdown, same-ID create IPC, switch, close propagation, bounds resend, external URL, and active-tab navigation. |
+| 4 | 33c679b | Added persistent browser history service backed by `browser-navigation-history`; HTTP(S)-only normalization, dedupe, max-100 storage, max-8 queries, hostname/path prefix matching; history IPC/preload/types/mocks; committed navigation event recording; service, IPC, channel, registration, and preload tests. |
