@@ -64,12 +64,16 @@ npm run build:dist    # Creates distributable
 
 ## Keyboard Shortcuts
 
+Use `Cmd` on macOS and `Ctrl` on Windows/Linux.
+
 | Action | Shortcut |
 |--------|----------|
-| New Terminal | `Ctrl+Shift+T` |
-| Close Workspace | `Ctrl+W` |
-| Open Workspace | `Ctrl+O` |
-| Toggle Browser | `Ctrl+B` |
+| App zoom in/out/reset | `Cmd/Ctrl+=`, `Cmd/Ctrl+-`, `Cmd/Ctrl+0` |
+| Browser zoom in/out/reset | `Cmd/Ctrl+=`, `Cmd/Ctrl+-`, `Cmd/Ctrl+0` (when browser focused) |
+| Fit all panes | `Cmd/Ctrl+Shift+F` |
+| Save file | `Cmd/Ctrl+S` |
+
+See [Keyboard Shortcuts](docs/keyboard-shortcuts.md) for the full verified list.
 
 ## Architecture
 

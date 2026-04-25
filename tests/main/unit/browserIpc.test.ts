@@ -104,7 +104,12 @@ vi.mock('electron', () => ({
 
 // Import after mocking
 import { ipcMain, Menu } from 'electron';
-import { registerBrowserIpc } from '../../../src/main/ipc/browserIpc';
+import {
+  registerBrowserIpc,
+  applyBrowserViewZoomAction,
+  clampBrowserZoomLevel,
+  getBrowserKeyboardZoomShortcutAction,
+} from '../../../src/main/ipc/browserIpc';
 import { BrowserHistoryService, __resetBrowserHistoryServiceForTests } from '../../../src/main/browserHistory';
 import type { BrowserHistoryEntry } from '../../../src/shared/types/browserHistory';
 
@@ -356,7 +361,7 @@ describe('browserIpc — error-path: null/invalid workspaceId returns valid resu
     expect(result).toBeUndefined();
   });
 
-  test('suppresses browser keyboard zoom shortcuts but not mouse wheel input', () => {
+  test('browser keyboard zoom shortcuts zoom the focused browser tab without affecting app zoom', () => {
     const { deps } = createMockDeps();
     registerBrowserIpc(deps);
 
@@ -368,19 +373,78 @@ describe('browserIpc — error-path: null/invalid workspaceId returns valid resu
 
     expect(attachedBeforeInputEventHandler).not.toBeNull();
 
+    const workspaceViews = deps.getBrowserViews().get('ws-1') as Map<string, {
+      view: { webContents: { getZoomLevel: ReturnType<typeof vi.fn>; setZoomLevel: ReturnType<typeof vi.fn> } };
+    }>;
+    const firstTabEntry = workspaceViews.values().next().value;
+    const view = firstTabEntry!.view;
+    view.webContents.getZoomLevel = vi.fn(() => 0);
+    view.webContents.setZoomLevel = vi.fn();
+
     const preventDefault = vi.fn();
     attachedBeforeInputEventHandler?.(
       { preventDefault },
       { control: true, meta: false, alt: false, key: '=', code: 'Equal', type: 'keyDown' }
     );
     expect(preventDefault).toHaveBeenCalled();
+    expect(view.webContents.setZoomLevel).toHaveBeenCalledWith(0.5);
+    expect(deps.getMainWindow().webContents.getZoomLevel).not.toHaveBeenCalled();
 
     preventDefault.mockClear();
+    view.webContents.setZoomLevel.mockClear();
     attachedBeforeInputEventHandler?.(
       { preventDefault },
       { control: true, meta: false, alt: false, type: 'mouseWheel' }
     );
     expect(preventDefault).not.toHaveBeenCalled();
+    expect(view.webContents.setZoomLevel).not.toHaveBeenCalled();
+  });
+
+  test('new browser tabs do not inherit application zoom', () => {
+    const { deps } = createMockDeps();
+    deps.getMainWindow().webContents.getZoomLevel = vi.fn(() => 2);
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-set-bounds'
+    )?.[1] as (_: unknown, workspaceId: string, bounds: object) => void;
+
+    handler(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 });
+
+    const workspaceViews = deps.getBrowserViews().get('ws-1') as Map<string, {
+      view: { webContents: { setZoomLevel: ReturnType<typeof vi.fn> } };
+    }>;
+    const firstTabEntry = workspaceViews.values().next().value;
+
+    expect(firstTabEntry?.view.webContents.setZoomLevel).not.toHaveBeenCalled();
+  });
+
+  test('browser zoom helper actions are parsed and clamped correctly', () => {
+    expect(getBrowserKeyboardZoomShortcutAction({ control: true, meta: false, alt: false, code: 'Equal' })).toBe('in');
+    expect(getBrowserKeyboardZoomShortcutAction({ control: true, meta: false, alt: false, code: 'Minus' })).toBe('out');
+    expect(getBrowserKeyboardZoomShortcutAction({ control: true, meta: false, alt: false, code: 'Digit0' })).toBe('reset');
+    expect(getBrowserKeyboardZoomShortcutAction({ control: true, meta: false, alt: true, code: 'Equal' })).toBeNull();
+    expect(clampBrowserZoomLevel(-10)).toBe(-5);
+    expect(clampBrowserZoomLevel(10)).toBe(5);
+
+    const view = {
+      webContents: {
+        getZoomLevel: vi.fn(() => 5),
+        setZoomLevel: vi.fn(),
+      },
+    };
+
+    applyBrowserViewZoomAction(view as never, 'in');
+    expect(view.webContents.setZoomLevel).toHaveBeenCalledWith(5);
+
+    view.webContents.getZoomLevel = vi.fn(() => -5);
+    view.webContents.setZoomLevel.mockClear();
+    applyBrowserViewZoomAction(view as never, 'out');
+    expect(view.webContents.setZoomLevel).toHaveBeenCalledWith(-5);
+
+    view.webContents.setZoomLevel.mockClear();
+    applyBrowserViewZoomAction(view as never, 'reset');
+    expect(view.webContents.setZoomLevel).toHaveBeenCalledWith(0);
   });
 
   test('browser devtools shortcuts toggle the browser DevTools window', () => {

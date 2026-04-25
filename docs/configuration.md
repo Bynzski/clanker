@@ -2,7 +2,7 @@
 
 ## Settings Menu
 
-Access via header toolbar gear icon or `Ctrl+,`.
+Access via the header toolbar gear icon.
 
 ### General
 
@@ -32,7 +32,7 @@ Each harness (Codex, OpenCode, Pi, Claude) has its own settings:
 
 #### Managing Harness Defaults
 
-1. Open the settings dropdown (gear icon or `Ctrl+,`)
+1. Open the settings dropdown from the gear icon
 2. Scroll to the **Harness Defaults** section
 3. Click a harness row to expand its settings
 4. Toggle the yolo/auto checkbox, select a default model, or manage favorites

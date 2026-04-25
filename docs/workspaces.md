@@ -12,7 +12,7 @@ Workspaces provide isolated development environments within a single window.
 
 - **Switch workspaces**: Click a workspace tab
 - **Rename**: Double-click a tab name
-- **Close**: Click the × on a tab or press `Ctrl+W`
+- **Close**: Click the × on a tab
 - **Badge**: Tab shows terminal count
 
 ## Per-Workspace State
