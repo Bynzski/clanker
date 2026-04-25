@@ -55,6 +55,11 @@ import {
   CAN_GO_FORWARD,
   BROWSER_DISPOSE_WORKSPACE,
   BROWSER_URL_UPDATED,
+  BROWSER_CREATE_TAB,
+  BROWSER_CLOSE_TAB,
+  BROWSER_SWITCH_TAB,
+  BROWSER_GET_TABS,
+  BROWSER_TAB_NAVIGATE,
   FIT_ALL_PANES,
   MINIMIZE_WINDOW,
   TOGGLE_MAXIMIZE_WINDOW,
@@ -201,20 +206,53 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Browser (using WebContentsView)
   browserHide: (workspaceId: string) => ipcRenderer.invoke(BROWSER_HIDE, workspaceId),
-  browserSetBounds: (workspaceId: string, bounds: { x: number; y: number; width: number; height: number }) =>
-    ipcRenderer.invoke(BROWSER_SET_BOUNDS, workspaceId, bounds),
-  browserNavigate: (workspaceId: string, url: string) => ipcRenderer.invoke(BROWSER_NAVIGATE, workspaceId, url),
+  browserSetBounds: (
+    workspaceId: string,
+    bounds: { x: number; y: number; width: number; height: number },
+    tabId?: string,
+  ) => ipcRenderer.invoke(BROWSER_SET_BOUNDS, workspaceId, bounds, tabId),
+  browserNavigate: (workspaceId: string, url: string, tabId?: string) =>
+    ipcRenderer.invoke(BROWSER_NAVIGATE, workspaceId, url, tabId),
   browserBack: (workspaceId: string) => ipcRenderer.invoke(BROWSER_BACK, workspaceId),
   browserForward: (workspaceId: string) => ipcRenderer.invoke(BROWSER_FORWARD, workspaceId),
   browserRefresh: (workspaceId: string) => ipcRenderer.invoke(BROWSER_REFRESH, workspaceId),
   browserStop: (workspaceId: string) => ipcRenderer.invoke(BROWSER_STOP, workspaceId),
+  browserCreateTab: (workspaceId: string, tabId: string) =>
+    ipcRenderer.invoke(BROWSER_CREATE_TAB, workspaceId, tabId),
+  browserCloseTab: (workspaceId: string, tabId: string) =>
+    ipcRenderer.invoke(BROWSER_CLOSE_TAB, workspaceId, tabId),
+  browserSwitchTab: (workspaceId: string, tabId: string) =>
+    ipcRenderer.invoke(BROWSER_SWITCH_TAB, workspaceId, tabId),
+  browserGetTabs: (workspaceId: string) =>
+    ipcRenderer.invoke(BROWSER_GET_TABS, workspaceId),
+  browserTabNavigate: (workspaceId: string, tabId: string, url: string) =>
+    ipcRenderer.invoke(BROWSER_TAB_NAVIGATE, workspaceId, tabId, url),
   openExternal: (url: string) => ipcRenderer.invoke(OPEN_EXTERNAL, url),
   revealInFileManager: (filePath: string) => ipcRenderer.invoke(REVEAL_IN_FILE_MANAGER, filePath),
   canGoBack: (workspaceId: string) => ipcRenderer.invoke(CAN_GO_BACK, workspaceId),
   canGoForward: (workspaceId: string) => ipcRenderer.invoke(CAN_GO_FORWARD, workspaceId),
   browserDisposeWorkspace: (workspaceId: string) => ipcRenderer.invoke(BROWSER_DISPOSE_WORKSPACE, workspaceId),
-  onBrowserUrlUpdated: (callback: (payload: { workspaceId: string; url: string }) => void) => {
-    const handler = (_event: IpcRendererEvent, payload: { workspaceId: string; url: string }) => callback(payload);
+  onBrowserUrlUpdated: (
+    callback: (payload: {
+      workspaceId: string;
+      tabId?: string;
+      url: string;
+      title?: string;
+      canGoBack?: boolean;
+      canGoForward?: boolean;
+    }) => void,
+  ) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload: {
+        workspaceId: string;
+        tabId?: string;
+        url: string;
+        title?: string;
+        canGoBack?: boolean;
+        canGoForward?: boolean;
+      },
+    ) => callback(payload);
     ipcRenderer.on(BROWSER_URL_UPDATED, handler);
     return () => ipcRenderer.removeListener(BROWSER_URL_UPDATED, handler);
   },

@@ -74,8 +74,8 @@ function App() {
       return undefined;
     }
 
-    const dispose = window.electronAPI.onBrowserUrlUpdated(({ workspaceId, url }) => {
-      updateWorkspaceBrowserUrl(workspaceId, null, url);
+    const dispose = window.electronAPI.onBrowserUrlUpdated(({ workspaceId, tabId, url, title }) => {
+      updateWorkspaceBrowserUrl(workspaceId, tabId ?? null, url, title);
     });
 
     return () => {
