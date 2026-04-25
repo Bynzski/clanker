@@ -30,8 +30,12 @@ import {
   BROWSER_SWITCH_TAB,
   BROWSER_GET_TABS,
   BROWSER_TAB_NAVIGATE,
+  BROWSER_HISTORY_ADD,
+  BROWSER_HISTORY_GET,
+  BROWSER_HISTORY_CLEAR,
   FIT_ALL_PANES,
 } from '../../shared/ipcChannels';
+import { getBrowserHistoryService } from '../browserHistory';
 
 export interface BrowserViewEntry {
   view: WebContentsView;
@@ -276,6 +280,7 @@ function createBrowserViewForTab(
       canGoBack: view.webContents.navigationHistory.canGoBack(),
       canGoForward: view.webContents.navigationHistory.canGoForward(),
     });
+    getBrowserHistoryService().add(safeUrl, title);
   };
 
   view.webContents.on('did-navigate', (_event, url) => reportUrlChange(url));
@@ -579,6 +584,18 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
         return entry ? { tabId: id, url: entry.url, title: entry.title } : null;
       })
       .filter((entry): entry is { tabId: string; url: string; title: string } => entry != null);
+  });
+
+  ipcMain.handle(BROWSER_HISTORY_ADD, (_, url: string, title?: string) => {
+    return getBrowserHistoryService().add(url, title);
+  });
+
+  ipcMain.handle(BROWSER_HISTORY_GET, (_, prefix?: string) => {
+    return getBrowserHistoryService().query(prefix);
+  });
+
+  ipcMain.handle(BROWSER_HISTORY_CLEAR, () => {
+    return getBrowserHistoryService().clear();
   });
 
   ipcMain.handle(BROWSER_TAB_NAVIGATE, (_, workspaceId: string, tabId: string, url: string) => {

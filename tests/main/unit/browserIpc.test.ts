@@ -8,6 +8,7 @@ import { vi, describe, test, expect, beforeEach } from 'vitest';
 
 let attachedBeforeInputEventHandler: ((event: { preventDefault: () => void }, input: { control?: boolean; meta?: boolean; alt?: boolean; shift?: boolean; key?: string; code?: string; type?: string }) => void) | null = null;
 let attachedContextMenuHandler: ((event: unknown, params: { x: number; y: number }) => void) | null = null;
+let attachedDidNavigateHandler: ((event: unknown, url: string) => void) | null = null;
 
 // Mock electron module
 vi.mock('electron', () => ({
@@ -70,7 +71,11 @@ vi.mock('electron', () => ({
         if (eventName === 'context-menu') {
           attachedContextMenuHandler = handler as typeof attachedContextMenuHandler;
         }
+        if (eventName === 'did-navigate') {
+          attachedDidNavigateHandler = handler as unknown as typeof attachedDidNavigateHandler;
+        }
       }),
+      getTitle: vi.fn(() => 'Navigated title'),
       getZoomLevel: vi.fn(() => 0),
       setZoomLevel: vi.fn(),
       openDevTools: vi.fn(),
@@ -100,6 +105,20 @@ vi.mock('electron', () => ({
 // Import after mocking
 import { ipcMain, Menu } from 'electron';
 import { registerBrowserIpc } from '../../../src/main/ipc/browserIpc';
+import { BrowserHistoryService, __resetBrowserHistoryServiceForTests } from '../../../src/main/browserHistory';
+import type { BrowserHistoryEntry } from '../../../src/shared/types/browserHistory';
+
+class MemoryHistoryStore {
+  entries: BrowserHistoryEntry[] = [];
+
+  get(key: 'entries') {
+    return this[key];
+  }
+
+  set(key: 'entries', value: BrowserHistoryEntry[]) {
+    this[key] = value;
+  }
+}
 
 describe('registerBrowserIpc', () => {
   const mockIpcMain = ipcMain as typeof ipcMain & {
@@ -137,6 +156,8 @@ describe('registerBrowserIpc', () => {
     vi.clearAllMocks();
     attachedBeforeInputEventHandler = null;
     attachedContextMenuHandler = null;
+    attachedDidNavigateHandler = null;
+    __resetBrowserHistoryServiceForTests(new BrowserHistoryService(new MemoryHistoryStore()));
   });
 
   test('registers browser context-menu and keyboard shortcut handlers', () => {
@@ -177,6 +198,9 @@ describe('registerBrowserIpc', () => {
       'browser-switch-tab',
       'browser-get-tabs',
       'browser-tab-navigate',
+      'browser-history-add',
+      'browser-history-get',
+      'browser-history-clear',
     ];
 
     expectedChannels.forEach(channel => {
@@ -184,14 +208,14 @@ describe('registerBrowserIpc', () => {
     });
   });
 
-  test('registers exactly 18 browser IPC channels', () => {
+  test('registers exactly 21 browser IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerBrowserIpc(deps);
 
     // Count how many times handle was called
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(18);
+    expect(handleCalls.length).toBe(21);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -203,7 +227,7 @@ describe('registerBrowserIpc', () => {
 
     // Handlers should be registered again
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(36);
+    expect(handleCalls.length).toBe(42);
   });
 
   test('browser context menu can open devtools and inspect the clicked element', () => {
@@ -672,6 +696,14 @@ describe('browser IPC channel constants', () => {
       'open-external',
       'can-go-back',
       'can-go-forward',
+      'browser-create-tab',
+      'browser-close-tab',
+      'browser-switch-tab',
+      'browser-get-tabs',
+      'browser-tab-navigate',
+      'browser-history-add',
+      'browser-history-get',
+      'browser-history-clear',
     ];
 
     // Verify all channels are non-empty strings
@@ -757,6 +789,7 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     vi.clearAllMocks();
     const mod = await import('../../../src/main/ipc/browserIpc');
     mod.__resetBrowserTabState();
+    __resetBrowserHistoryServiceForTests(new BrowserHistoryService(new MemoryHistoryStore()));
   });
 
   test('BROWSER_CREATE_TAB records the renderer-provided id and returns default url', async () => {
@@ -983,5 +1016,76 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     expect(tabA?.view.webContents.close).toHaveBeenCalled();
     expect(tabB?.view.webContents.close).toHaveBeenCalled();
     expect(mockBrowserViews.has('ws-1')).toBe(false);
+  });
+});
+
+describe('registerBrowserIpc — browser history handlers (Phase 4)', () => {
+  const mockIpcMain = ipcMain as typeof ipcMain & { handle: ReturnType<typeof vi.fn> };
+  type AnyHandler = (..._args: unknown[]) => unknown;
+
+  function createMockDeps() {
+    const mockBrowserViews = new Map<string, never>();
+    let mockActiveWorkspaceId: string | null = null;
+    const mockMainWindow = {
+      webContents: { send: vi.fn(), getZoomLevel: vi.fn(() => 0) },
+      contentView: { addChildView: vi.fn() },
+    };
+    return {
+      mockBrowserViews,
+      deps: {
+        getMainWindow: () => mockMainWindow as never,
+        getBrowserViews: () => mockBrowserViews as never,
+        getActiveBrowserWorkspaceId: () => mockActiveWorkspaceId,
+        setActiveBrowserWorkspaceId: (id: string | null) => { mockActiveWorkspaceId = id; },
+      },
+    };
+  }
+
+  function findHandler(name: string): AnyHandler {
+    const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === name)?.[1] as AnyHandler | undefined;
+    if (!handler) throw new Error(`handler ${name} not registered`);
+    return handler;
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    attachedDidNavigateHandler = null;
+    const mod = await import('../../../src/main/ipc/browserIpc');
+    mod.__resetBrowserTabState();
+    __resetBrowserHistoryServiceForTests(new BrowserHistoryService(new MemoryHistoryStore()));
+  });
+
+  test('history IPC add/get/clear handlers are registered and enforce HTTP(S)', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const add = findHandler('browser-history-add');
+    const get = findHandler('browser-history-get');
+    const clear = findHandler('browser-history-clear');
+
+    expect(await add(null, 'about:blank', 'Blank')).toBe(false);
+    expect(await add(null, 'https://github.com/clanker-grid', 'Grid')).toBe(true);
+    expect(await get(null, 'git')).toEqual([
+      expect.objectContaining({ url: 'https://github.com/clanker-grid', title: 'Grid' }),
+    ]);
+    expect(await clear(null)).toBe(true);
+    expect(await get(null, 'git')).toEqual([]);
+  });
+
+  test('committed navigation events record HTTP(S) URLs in history', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const get = findHandler('browser-history-get');
+    await create(null, 'ws-1', 'tab-a');
+
+    expect(attachedDidNavigateHandler).not.toBeNull();
+    attachedDidNavigateHandler?.(null, 'https://github.com/clanker-grid');
+    attachedDidNavigateHandler?.(null, 'about:blank');
+
+    expect(await get(null, 'github.com')).toEqual([
+      expect.objectContaining({ url: 'https://github.com/clanker-grid', title: 'Navigated title' }),
+    ]);
   });
 });
