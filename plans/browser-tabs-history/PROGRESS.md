@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 6** — Integration Hardening, Compatibility Cleanup & Full Validation
+**Complete** — All phases finished.
 
 ## Phase Status
 
@@ -17,7 +17,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 3 | UI: Tab Dropdown & BrowserPanel Refactor | ✅ | 2ff6070 |
 | 4 | Global Navigation History: Storage & IPC | ✅ | 33c679b |
 | 5 | URL Autocomplete UI | ✅ | 5bc713d |
-| 6 | Integration Hardening, Compatibility Cleanup & Full Validation | 🔲 | — |
+| 6 | Integration Hardening, Compatibility Cleanup & Full Validation | ✅ | 188bad9 |
 
 ## Status Legend
 
@@ -97,3 +97,4 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 3 | 2ff6070 | BrowserPanel now derives URL/navigation state from the active browser tab; tab dropdown supports count, create, switch, close, and last-tab guard flows; bounds/navigation IPC includes active tab ID; DynamicPaneLayout uses tab-aware BrowserPanel; renderer tests cover dropdown, same-ID create IPC, switch, close propagation, bounds resend, external URL, and active-tab navigation. |
 | 4 | 33c679b | Added persistent browser history service backed by `browser-navigation-history`; HTTP(S)-only normalization, dedupe, max-100 storage, max-8 queries, hostname/path prefix matching; history IPC/preload/types/mocks; committed navigation event recording; service, IPC, channel, registration, and preload tests. |
 | 5 | 5bc713d | Added debounced URL history autocomplete below the browser URL input; suggestions query only for focused user-edited input of at least 2 chars; mouse and keyboard selection navigate through active-tab IPC; Escape/blur/navigation/tab switches clear stale suggestions; renderer tests cover debounce, min length, rendering, click, keyboard, escape, and tab-switch sync. |
+| 6 | 188bad9 | Removed setLegacyWorkspaceEntry compatibility bridge and legacy export aliases (no callers). Documented FALLBACK_TAB_ID as supported backward-compatible API. Removed compatibility url/onUrlChange props from BrowserPanel. Updated tests to access views through nested tab map and derive URL from active tab state. Added integration tests: workspace switch with multiple tabs, navigate→new→switch→close flow, bounds stability, malformed migration, BROWSER_URL_UPDATED tab routing, no stale views after tab switch/hide/dispose, closing active tab shows fallback, BROWSER_NAVIGATE backward compat, history persistence, BROWSER_GET_URL returns active tab URL, annotation resolves active tab from nested map, zoom applies across multiple workspaces. npm run validate passes (108 test files, 3188 tests). |

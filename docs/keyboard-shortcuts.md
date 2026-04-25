@@ -40,6 +40,9 @@
 | Forward | `Alt+→` |
 | Refresh | `Ctrl+R` |
 | Open External | `Ctrl+Shift+O` |
+| DevTools | `Ctrl+Shift+I` |
+| DevTools (alt) | `F12` |
+| Fit Panes | `Ctrl+Shift+F` |
 
 ## Editor
 
