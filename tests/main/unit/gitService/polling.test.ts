@@ -44,6 +44,18 @@ function resetService() {
   });
 }
 
+async function waitForStatusEmission(expectedCount = 1, timeoutMs = 1000): Promise<void> {
+  const start = Date.now();
+
+  while (emittedStatuses.length < expectedCount && Date.now() - start < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  if (emittedStatuses.length < expectedCount) {
+    throw new Error(`Expected ${expectedCount} status emission(s), received ${emittedStatuses.length}`);
+  }
+}
+
 beforeEach(() => {
   resetService();
 });
@@ -68,8 +80,7 @@ describe('startPolling - happy path with real git', () => {
 
     service.startPolling(repo.path);
 
-    // Wait for async emitStatusUpdate
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForStatusEmission();
 
     expect(emittedStatuses.length).toBeGreaterThanOrEqual(1);
     expect(emittedStatuses[0].success).toBe(true);
@@ -102,8 +113,7 @@ describe('startPolling - happy path with real git', () => {
     // Now test polling
     service.startPolling(repo.path);
     
-    // Wait for initial status emission
-    await new Promise((r) => setTimeout(r, 200));
+    await waitForStatusEmission();
 
     expect(emittedStatuses.length).toBeGreaterThanOrEqual(1);
     const status = emittedStatuses[0];
@@ -124,7 +134,7 @@ describe('startPolling - happy path with real git', () => {
     await git(repo.path, ['add', 'file.ts']);
 
     service.startPolling(repo.path);
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForStatusEmission();
 
     expect(emittedStatuses[0].success).toBe(true);
     expect(emittedStatuses[0].changes.length).toBeGreaterThanOrEqual(1);
@@ -141,7 +151,7 @@ describe('startPolling - edge cases with real git', () => {
 
     // Should not throw
     service.startPolling(nonExistent);
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForStatusEmission();
 
     expect(service.getCurrentWorkspace()).toBe(nonExistent);
     // Status should indicate failure
@@ -153,7 +163,7 @@ describe('startPolling - edge cases with real git', () => {
 
     try {
       service.startPolling(emptyDir);
-      await new Promise((r) => setTimeout(r, 100));
+      await waitForStatusEmission();
 
       expect(service.getCurrentWorkspace()).toBe(emptyDir);
       expect(emittedStatuses[0].success).toBe(false);
@@ -169,7 +179,7 @@ describe('startPolling - edge cases with real git', () => {
     });
 
     service.startPolling(repo.path);
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForStatusEmission();
 
     expect(emittedStatuses[0].success).toBe(true);
     expect(emittedStatuses[0].isRepo).toBe(true);
@@ -199,7 +209,7 @@ describe('stopPolling - with real git', () => {
     });
 
     service.startPolling(repo.path);
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForStatusEmission();
     const initialStatusCount = emittedStatuses.length;
 
     service.stopPolling();
@@ -207,7 +217,7 @@ describe('stopPolling - with real git', () => {
 
     // Start polling with same repo again
     service.startPolling(repo.path);
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForStatusEmission(initialStatusCount + 1);
 
     expect(service.getCurrentWorkspace()).toBe(repo.path);
     expect(emittedStatuses.length).toBeGreaterThan(initialStatusCount);
@@ -359,14 +369,12 @@ describe('polling lifecycle - integration with real git', () => {
     (service as unknown as { pollIntervalMs: number }).pollIntervalMs = 100;
 
     service.startPolling(repo.path);
-    await new Promise((r) => setTimeout(r, 50)); // Initial status
+    await waitForStatusEmission();
 
     const countAfterInitial = emittedStatuses.length;
 
-    // Wait for at least one interval
-    await new Promise((r) => setTimeout(r, 200));
+    await waitForStatusEmission(countAfterInitial + 1);
 
-    // Should have received at least one more status update
     expect(emittedStatuses.length).toBeGreaterThan(countAfterInitial);
 
     // Restore default
@@ -430,7 +438,7 @@ describe('polling lifecycle - integration with real git', () => {
     await git(repo.path, ['checkout', result.stdout.trim()]);
 
     service.startPolling(repo.path);
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForStatusEmission();
 
     expect(emittedStatuses[0].isDetached).toBe(true);
     expect(emittedStatuses[0].currentBranch).toBeNull();
