@@ -32,6 +32,9 @@ describe('discoverHarnessModels cache integration', () => {
 
   beforeEach(() => {
     vi.resetModules();
+    mockStoreInstance.get.mockReset();
+    mockStoreInstance.set.mockReset();
+    mockStoreInstance.get.mockReturnValue({});
     vi.doMock('electron', () => ({
       app: mockApp,
     }));
@@ -66,15 +69,12 @@ describe('discoverHarnessModels cache integration', () => {
     expect(mockStoreInstance.set).not.toHaveBeenCalled();
   });
 
-  it('runs CLI discovery when cache is empty', async () => {
-    mockStoreInstance.get.mockReturnValue({});
-
+  it('runs discovery when cache is empty', async () => {
     const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
-    // pi has empty fallback, so this will use empty array
-    const result = await discoverHarnessModels('pi');
+    const result = await discoverHarnessModels('codex');
 
     expect(Array.isArray(result)).toBe(true);
-    // Store should have been updated with results
+    // Store should have been updated with deterministic codex fallback results.
     expect(mockStoreInstance.set).toHaveBeenCalled();
   });
 
@@ -92,15 +92,13 @@ describe('discoverHarnessModels cache integration', () => {
     expect(mockStoreInstance.set).toHaveBeenCalled();
   });
 
-  it('persists results to cache after CLI discovery', async () => {
-    mockStoreInstance.get.mockReturnValue({});
-
+  it('persists results to cache after discovery', async () => {
     const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
-    await discoverHarnessModels('pi');
+    await discoverHarnessModels('codex');
 
     // Should persist to cache
     expect(mockStoreInstance.set).toHaveBeenCalledWith('models', expect.objectContaining({
-      pi: expect.objectContaining({
+      codex: expect.objectContaining({
         models: expect.any(Array),
         cachedAt: expect.any(Number),
       }),
