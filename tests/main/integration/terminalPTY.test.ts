@@ -420,14 +420,13 @@ describe('Terminal PTY Integration Tests', () => {
     });
 
     it('handles long output without truncation', async () => {
-      const longString = 'x'.repeat(10000);
       const result = await runCommandInPty(
-        `echo "${longString}"`,
+        `node -e "process.stdout.write('x'.repeat(10000) + '\\n')"`,
         { shell: '/bin/bash' }
       );
 
       expect(result.pid).toBeGreaterThan(0);
-      expect(result.output).toHaveLength(10000 + 2); // +2 for 'x\n'
+      expect(result.output).toHaveLength(10000 + 2); // +2 for PTY line ending conversion (\r\n)
     });
 
     it('handles special shell characters in input', async () => {
