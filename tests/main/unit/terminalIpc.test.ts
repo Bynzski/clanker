@@ -554,6 +554,76 @@ describe('terminalIpc — error-path: handler returns', () => {
     );
   });
 
+  test('SPAWN_TERMINAL falls back to harnessDefaults model when renderer omits one', async () => {
+    const { opts } = createMockDeps();
+    opts.ensureHarnessWrapperScript = vi.fn().mockReturnValue('/home/test/.clanker-grid/harness-wrapper.sh');
+    opts.getHarnessOptions = vi.fn().mockReturnValue({
+      claude: {
+        name: 'Claude',
+        command: 'claude',
+        args: [],
+        icon: '✨',
+      },
+    });
+    opts.getStore = vi.fn().mockReturnValue({
+      get: vi.fn().mockImplementation((key: string) => {
+        if (key === 'harnessDefaults') {
+          return { claude: { model: 'sonnet', favorites: [], flags: '' } };
+        }
+        return false;
+      }),
+    }) as never;
+    mockPtySpawn.mockReturnValue({ pid: 460, onData: vi.fn(), onExit: vi.fn() });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'spawn-terminal'
+    )?.[1] as (_: unknown, workingDir: string, harness?: string, model?: string) => { id: string; pid: number };
+
+    await handler(null, '/test/workspace', 'claude');
+
+    expect(mockPtySpawn).toHaveBeenCalledWith(
+      '/home/test/.clanker-grid/harness-wrapper.sh',
+      ['claude', '--model', 'sonnet'],
+      expect.any(Object)
+    );
+  });
+
+  test('SPAWN_TERMINAL prefers explicit model over harnessDefaults model', async () => {
+    const { opts } = createMockDeps();
+    opts.ensureHarnessWrapperScript = vi.fn().mockReturnValue('/home/test/.clanker-grid/harness-wrapper.sh');
+    opts.getHarnessOptions = vi.fn().mockReturnValue({
+      claude: {
+        name: 'Claude',
+        command: 'claude',
+        args: [],
+        icon: '✨',
+      },
+    });
+    opts.getStore = vi.fn().mockReturnValue({
+      get: vi.fn().mockImplementation((key: string) => {
+        if (key === 'harnessDefaults') {
+          return { claude: { model: 'sonnet', favorites: [], flags: '' } };
+        }
+        return false;
+      }),
+    }) as never;
+    mockPtySpawn.mockReturnValue({ pid: 461, onData: vi.fn(), onExit: vi.fn() });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'spawn-terminal'
+    )?.[1] as (_: unknown, workingDir: string, harness?: string, model?: string) => { id: string; pid: number };
+
+    await handler(null, '/test/workspace', 'claude', 'opus');
+
+    expect(mockPtySpawn).toHaveBeenCalledWith(
+      '/home/test/.clanker-grid/harness-wrapper.sh',
+      ['claude', '--model', 'opus'],
+      expect.any(Object)
+    );
+  });
+
   test('SPAWN_TERMINAL does not throw when getHarnessOptions returns undefined', async () => {
     const { opts } = createMockDeps();
     // Return an object without the specific harness key so getHarnessOptions()[harness]
