@@ -29,8 +29,8 @@
 
 ### Prerequisites
 
-- Node.js 18+
-- npm
+- Node.js 22.12+
+- npm 10+
 
 ### Install & Run
 
