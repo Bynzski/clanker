@@ -99,8 +99,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const harnessConfig = harness ? getHarnessOptions()[harness] : undefined;
     const harnessDefaults = getStore().get('harnessDefaults');
     const userFlags = harness ? harnessDefaults[harness]?.flags : undefined;
+    const effectiveModel = model || (harness ? harnessDefaults[harness]?.model || undefined : undefined);
     const harnessArgs = harnessConfig
-      ? buildHarnessSpawnArgs(harnessConfig, model, userFlags)
+      ? buildHarnessSpawnArgs(harnessConfig, effectiveModel, userFlags)
       : [];
     const harnessCmd = harnessConfig
       ? {
@@ -130,7 +131,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         harness,
         command: config.command,
         args: harnessArgs,
-        model: model ?? null,
+        model: effectiveModel ?? null,
       });
       launchLabel = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}`;
     }
