@@ -30,8 +30,9 @@ async function createTempRepo(options: { initialCommit?: boolean } = {}): Promis
   const { initialCommit = true } = options;
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-real-test-'));
   
-  // Initialize repo FIRST (git config local requires a repo)
-  await execFileAsync('git', ['init'], { cwd: tempDir });
+  // Initialize repo with an explicit branch name so tests do not depend on the
+  // runner's global init.defaultBranch setting.
+  await execFileAsync('git', ['init', '--initial-branch', 'main'], { cwd: tempDir });
 
   // Configure git user (use LOCAL config to avoid persisting to ~/.gitconfig)
   await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
@@ -203,7 +204,7 @@ describe('GitService Real Behavior - Direct Git Commands', () => {
       const repo = await createTempRepo({ initialCommit: false });
       const bareRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'git-bare-'));
       try {
-        await git(bareRepo, ['init', '--bare']);
+        await git(bareRepo, ['init', '--bare', '--initial-branch', 'main']);
         
         // Add remote
         const addResult = await git(repo.path, ['remote', 'add', 'origin', bareRepo]);

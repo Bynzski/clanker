@@ -35,11 +35,11 @@ export async function createTempGitRepo(options: {
   // Create temp directory
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-test-'));
 
-  // Initialize repository first
-  await execFileAsync('git', ['init'], { cwd: tempDir });
+  // Initialize repository with an explicit branch name. Do not rely on the
+  // runner's global init.defaultBranch, which varies across environments.
+  await execFileAsync('git', ['init', '--initial-branch', initialBranch], { cwd: tempDir });
 
   // Configure git for test environment using LOCAL config (avoids --global lock contention)
-  await execFileAsync('git', ['config', 'init.defaultBranch', initialBranch], { cwd: tempDir });
   await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
   await execFileAsync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
 
@@ -83,7 +83,7 @@ export async function createTempGitRepoWithRemote(options: {
 } = {}): Promise<{ local: TempGitRepo; remote: TempGitRepo }> {
   // Create bare remote repo
   const remoteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-remote-'));
-  await execFileAsync('git', ['init', '--bare'], { cwd: remoteDir });
+  await execFileAsync('git', ['init', '--bare', '--initial-branch', options.initialBranch ?? 'main'], { cwd: remoteDir });
 
   // Create local repo with remote
   const local = await createTempGitRepo(options);

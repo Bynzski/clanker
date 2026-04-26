@@ -148,7 +148,7 @@ describe('getHistory - edge cases with real git', () => {
     
     try {
       // Init repo but no commits
-      await git(tempDir, ['init']);
+      await git(tempDir, ['init', '--initial-branch', 'main']);
       await git(tempDir, ['config', 'user.email', 'test@test.com']);
       await git(tempDir, ['config', 'user.name', 'Test']);
       
