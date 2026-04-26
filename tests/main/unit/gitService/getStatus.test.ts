@@ -161,11 +161,11 @@ describe('getStatus - edge cases with real git', () => {
   it('handles initial repo with no commits', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-empty-test-'));
     try {
-      // Initialize repo but don't commit
-      await execFileAsync('git', ['init'], { cwd: tempDir });
+      // Initialize repo but don't commit. Use an explicit branch name so the
+      // test does not depend on the runner's global init.defaultBranch setting.
+      await execFileAsync('git', ['init', '--initial-branch', 'main'], { cwd: tempDir });
       await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
       await execFileAsync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
-      await execFileAsync('git', ['config', 'init.defaultBranch', 'main'], { cwd: tempDir });
       
       // Create a file and add it but don't commit
       fs.writeFileSync(path.join(tempDir, 'uncommitted.txt'), 'content');

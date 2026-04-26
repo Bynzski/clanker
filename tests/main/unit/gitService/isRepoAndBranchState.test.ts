@@ -73,7 +73,7 @@ describe('isRepo - happy path with real git', () => {
   it('returns true for a bare repository', async () => {
     // Create a bare repository
     const bareDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-bare-'));
-    await git(bareDir, ['init', '--bare']);
+    await git(bareDir, ['init', '--bare', '--initial-branch', 'main']);
 
     const result = await service.isRepo(bareDir);
 
