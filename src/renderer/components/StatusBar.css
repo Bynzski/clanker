@@ -19,7 +19,11 @@
 
 .status-center {
   flex: 1;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  min-width: 0;
 }
 
 .status-item {
@@ -33,25 +37,36 @@
 }
 
 .status-path {
+  display: inline-flex;
+  align-items: center;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
-  opacity: 0.8;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-branch {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-left: var(--space-md);
-  padding: 2px 6px;
-  background: var(--bg-tertiary);
-  border-radius: 4px;
+  gap: 5px;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
+  opacity: 0.85;
+}
+
+.status-branch::before {
+  content: '';
+  width: 1px;
+  height: 11px;
+  background: var(--border-color);
+  margin-right: var(--space-xs);
 }
 
 .status-branch svg {
-  opacity: 0.7;
+  opacity: 0.75;
+  color: var(--accent-primary);
 }

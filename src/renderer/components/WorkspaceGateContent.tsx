@@ -411,12 +411,14 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
 
   return (
     <div className="gate-content">
-      <img src="./robot-icon.png" alt="Clanker Grid" width="96" height="96" />
-      
-      <h1 className="gate-title">Clanker Grid</h1>
-      <p className="gate-subtitle">Developer Workspace Launcher</p>
-      
+      <div className="gate-header">
+        <img src="./robot-icon.png" alt="Clanker Grid" width="64" height="64" className="gate-brand-icon" />
+        <h1 className="gate-title">Clanker Grid</h1>
+        <p className="gate-subtitle">Developer Workspace Launcher</p>
+      </div>
+
       <div className="gate-input-container">
+        <span className="gate-section-label">Workspace</span>
         <div className="input-wrapper">
           <input
             ref={inputRef}
@@ -468,7 +470,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       </div>
 
       <div className="harness-selector">
-        <span className="harness-selector-label">Harness</span>
+        <span className="gate-section-label">Harness</span>
         <div className="harness-options">
           {HARNESS_OPTIONS.filter((harness) => availableHarnessIds.includes(harness.id)).map((harness) => (
             <button
@@ -477,7 +479,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
               onClick={() => handleHarnessChange(harness.id)}
               title={harness.id ? `Select ${harness.label}` : 'No harness (basic terminal)'}
             >
-              <harness.Icon size={20} strokeWidth={2} className="harness-icon" />
+              <harness.Icon size={16} strokeWidth={2} className="harness-icon" />
               <span className="harness-label">{harness.label}</span>
             </button>
           ))}
@@ -486,6 +488,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
 
       {showModelSelector && (
         <div className="model-picker">
+          <span className="gate-section-label">Model</span>
           {/* Compact model pill */}
           <button
             type="button"
@@ -640,7 +643,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       )}
 
       <div className="grid-selector">
-        <span className="grid-selector-label">Terminals</span>
+        <span className="gate-section-label">Terminals</span>
         <div className="grid-options">
           {TERMINAL_PRESETS.map((preset, index) => (
             <button
@@ -649,32 +652,19 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
               onClick={() => setSelectedPreset(index)}
               title={`Press ${preset.label} to select`}
             >
-              <span className="preset-count">{preset.count}</span>
               <span className="grid-label">{preset.label} terminal{preset.count > 1 ? 's' : ''}</span>
             </button>
           ))}
         </div>
       </div>
 
-      <button 
+      <button
         className="gate-button"
         onClick={handleSubmit}
       >
-        <Play size={16} strokeWidth={2.5} fill="currentColor" />
+        <Play size={14} strokeWidth={2.5} fill="currentColor" />
         Launch Workspace
       </button>
-
-      <div className="gate-shortcuts">
-        <span className="shortcut">
-          <kbd>Tab</kbd> autocomplete
-        </span>
-        <span className="shortcut">
-          Use buttons or shortcuts to choose a harness
-        </span>
-        <span className="shortcut">
-          <kbd>↵</kbd> launch
-        </span>
-      </div>
     </div>
   );
 }
