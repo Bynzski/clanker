@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle } from 'lucide-react';
+import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog } from 'lucide-react';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
 import type { ModelOption } from '../types/shared';
 import './WorkspaceGate.css';
@@ -16,7 +16,9 @@ interface ContentProps {
   onSubmit: (data: WorkspaceFormData) => void;
 }
 
-const STORAGE_KEY = 'clanker-grid-last-path';
+function withTrailingSlash(path: string): string {
+  return path.endsWith('/') ? path : path + '/';
+}
 
 export const TERMINAL_PRESETS = [
   { count: 1, label: '1', description: 'Single terminal' },
@@ -26,9 +28,11 @@ export const TERMINAL_PRESETS = [
 
 export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentProps) {
   const [inputValue, setInputValue] = useState(initialPath || '');
+  const [baseDirectory, setBaseDirectory] = useState<string>('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [isLoading, setIsLoading] = useState(false);
+  const [isBaseLoading, setIsBaseLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState(2); // Default to 2 (index 2)
   const [selectedHarness, setSelectedHarness] = useState('codex'); // Default to codex
@@ -99,27 +103,27 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     void loadFavorites();
   }, [selectedHarness]);
 
-  // Load last used path
+  // Load base directory. The input itself stays empty unless an explicit
+  // initialPath is passed in — base is the visible context, the input holds
+  // a project name relative to it.
   useEffect(() => {
     if (initialPath) {
       setInputValue(initialPath);
-      return;
     }
-    
-    const loadPath = async () => {
+    let cancelled = false;
+    const loadBase = async () => {
       try {
-        const lastPath = localStorage.getItem(STORAGE_KEY);
-        if (lastPath) {
-          setInputValue(lastPath);
-        } else {
-          const defaultPath = await window.electronAPI.getLastWorkspace();
-          setInputValue(defaultPath || '/home/');
-        }
+        const stored = await window.electronAPI.getBaseDirectory();
+        if (cancelled) return;
+        if (stored) setBaseDirectory(withTrailingSlash(stored));
       } catch {
-        setInputValue('/home/');
+        // base remains empty; submit guards on it
       }
     };
-    loadPath();
+    void loadBase();
+    return () => {
+      cancelled = true;
+    };
   }, [initialPath]);
 
   // Load harnesses and pre-load models for all available harnesses
@@ -220,42 +224,55 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showDiscoveryModal]);
 
-  // Fetch directory suggestions
-  const fetchSuggestions = useCallback(async (path: string) => {
-    if (!path || path === '/') {
-      setSuggestions([]);
-      return;
-    }
+  // Fetch directory suggestions. Returns suggestions in the same form as the
+  // input value: relative when the input is relative (typed under base),
+  // absolute when the input starts with `/`.
+  const fetchSuggestions = useCallback(async (input: string, base: string) => {
+    const isAbsolute = input.startsWith('/');
 
-    const basePath = path.endsWith('/') ? path.slice(0, -1) : path;
-    const lastSlash = basePath.lastIndexOf('/');
-    
-    if (lastSlash <= 0) {
-      setSuggestions([]);
-      return;
-    }
+    let dirPath: string;
+    let nameFilter: string;
+    let suggestionPrefix: string;
 
-    const dirPath = basePath.substring(0, lastSlash + 1);
-    const prefix = basePath.substring(lastSlash + 1).toLowerCase();
+    if (isAbsolute) {
+      if (input === '/') {
+        setSuggestions([]);
+        return;
+      }
+      const trimmed = input.endsWith('/') ? input.slice(0, -1) : input;
+      const lastSlash = trimmed.lastIndexOf('/');
+      if (lastSlash < 0) {
+        setSuggestions([]);
+        return;
+      }
+      dirPath = trimmed.substring(0, lastSlash + 1);
+      nameFilter = trimmed.substring(lastSlash + 1).toLowerCase();
+      suggestionPrefix = dirPath;
+    } else {
+      if (!base) {
+        setSuggestions([]);
+        return;
+      }
+      const trimmed = input.endsWith('/') ? input.slice(0, -1) : input;
+      const lastSlash = trimmed.lastIndexOf('/');
+      const relDir = lastSlash < 0 ? '' : trimmed.substring(0, lastSlash + 1);
+      nameFilter = (lastSlash < 0 ? trimmed : trimmed.substring(lastSlash + 1)).toLowerCase();
+      dirPath = base + relDir;
+      suggestionPrefix = relDir;
+    }
 
     try {
       const entries = await window.electronAPI.readDirectory(dirPath);
-      
+
       const dirs = entries
-        .filter(entry => entry.isDirectory)
-        .map(entry => dirPath + entry.name + '/')
-        .filter(name => {
-          const nameWithoutSlash = name.slice(0, -1);
-          const lastPart = nameWithoutSlash.substring(nameWithoutSlash.lastIndexOf('/') + 1);
-          return lastPart.toLowerCase().includes(prefix);
-        })
+        .filter((entry) => entry.isDirectory)
+        .filter((entry) => entry.name.toLowerCase().includes(nameFilter))
         .sort((a, b) => {
-          const aName = a.slice(0, -1).split('/').pop() || '';
-          const bName = b.slice(0, -1).split('/').pop() || '';
-          if (aName.length !== bName.length) return aName.length - bName.length;
-          return aName.localeCompare(bName);
+          if (a.name.length !== b.name.length) return a.name.length - b.name.length;
+          return a.name.localeCompare(b.name);
         })
-        .slice(0, 8);
+        .slice(0, 8)
+        .map((entry) => suggestionPrefix + entry.name + '/');
 
       setSuggestions(dirs);
     } catch {
@@ -263,13 +280,13 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     }
   }, []);
 
-  // Debounced fetch on input change
+  // Debounced fetch on input or base change
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchSuggestions(inputValue);
+      fetchSuggestions(inputValue, baseDirectory);
     }, 150);
     return () => clearTimeout(timer);
-  }, [inputValue, fetchSuggestions]);
+  }, [inputValue, baseDirectory, fetchSuggestions]);
 
   const handleOpenDirectory = async () => {
     setIsLoading(true);
@@ -277,15 +294,28 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     try {
       const selected = await window.electronAPI.openDirectoryDialog();
       if (selected) {
-        const path = selected.endsWith('/') ? selected : selected + '/';
-        setInputValue(path);
+        setInputValue(withTrailingSlash(selected));
         setSuggestions([]);
-        localStorage.setItem(STORAGE_KEY, path);
       }
     } catch (err) {
       console.error('Failed to open directory:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleOpenBaseDirectory = async () => {
+    setIsBaseLoading(true);
+    try {
+      const selected = await window.electronAPI.openBaseDirectoryDialog();
+      if (selected) {
+        setBaseDirectory(withTrailingSlash(selected));
+        setSuggestions([]);
+      }
+    } catch (err) {
+      console.error('Failed to open base directory:', err);
+    } finally {
+      setIsBaseLoading(false);
     }
   };
 
@@ -297,16 +327,18 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   };
 
   const handleSubmit = () => {
-    const path = inputValue.trim();
-    if (!path) return;
+    const trimmed = inputValue.trim();
+    if (!trimmed) return;
 
-    const finalPath = path.endsWith('/') ? path : path + '/';
-    
-    if (!finalPath.startsWith('/')) {
-      return;
+    let resolved: string;
+    if (trimmed.startsWith('/')) {
+      resolved = trimmed;
+    } else {
+      if (!baseDirectory) return;
+      resolved = baseDirectory + trimmed;
     }
+    const finalPath = resolved.endsWith('/') ? resolved : resolved + '/';
 
-    localStorage.setItem(STORAGE_KEY, finalPath);
     const preset = TERMINAL_PRESETS[selectedPreset];
     // Use defaultModel (from store) as the launch model, falling back to first available
     const launchModel = defaultModel || modelOptions[0]?.id || undefined;
@@ -325,7 +357,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
         setInputValue(suggestions[selectedIndex]);
         setSuggestions([]);
         setSelectedIndex(-1);
-        localStorage.setItem(STORAGE_KEY, suggestions[selectedIndex]);
       } else {
         handleSubmit();
       }
@@ -376,7 +407,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     setInputValue(suggestion);
     setSuggestions([]);
     setSelectedIndex(-1);
-    localStorage.setItem(STORAGE_KEY, suggestion);
     inputRef.current?.focus();
   };
 
@@ -418,8 +448,28 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       </div>
 
       <div className="gate-input-container">
-        <span className="gate-section-label">Workspace</span>
+        <div className="gate-section-header">
+          <span className="gate-section-label">Workspace</span>
+          {baseDirectory && (
+            <span className="gate-base-path" title={`Base: ${baseDirectory}`}>
+              {baseDirectory}
+            </span>
+          )}
+        </div>
         <div className="input-wrapper">
+          <button
+            className="cog-button cog-button-left"
+            onClick={handleOpenBaseDirectory}
+            disabled={isBaseLoading}
+            title="Set base directory"
+            aria-label="Set base directory"
+          >
+            {isBaseLoading ? (
+              <Loader2 size={18} className="spin" />
+            ) : (
+              <Cog size={18} strokeWidth={2} />
+            )}
+          </button>
           <input
             ref={inputRef}
             type="text"
@@ -432,16 +482,17 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
             onKeyDown={handleKeyDown}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-            placeholder="/home/username/projects/"
+            placeholder="project name"
             spellCheck={false}
             autoComplete="off"
             autoCapitalize="off"
           />
-          <button 
+          <button
             className="cog-button"
             onClick={handleOpenDirectory}
             disabled={isLoading}
             title="Browse directories"
+            aria-label="Browse directories"
           >
             {isLoading ? (
               <Loader2 size={18} className="spin" />

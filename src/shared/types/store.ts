@@ -38,6 +38,7 @@ export type HarnessDefaultsMap = Record<string, HarnessDefaults>;
 /** Top-level store schema. */
 export interface StoreSchema {
   lastWorkspace: string;
+  baseDirectory: string;
   showFastfetch: boolean;
   aiCommitEnabled: boolean;
   aiCommitProvider: AiCommitProvider;

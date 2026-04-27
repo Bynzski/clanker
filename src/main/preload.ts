@@ -11,6 +11,8 @@ import type { GitStatusResult } from '../shared/types/git';
 import type { HarnessSession } from '../shared/types/session';
 import {
   GET_LAST_WORKSPACE,
+  GET_BASE_DIRECTORY,
+  OPEN_BASE_DIRECTORY_DIALOG,
   OPEN_DIRECTORY_DIALOG,
   READ_DIRECTORY,
   FILE_LIST_DIRECTORY,
@@ -138,6 +140,8 @@ import {
 contextBridge.exposeInMainWorld('electronAPI', {
   // Workspace
   getLastWorkspace: () => ipcRenderer.invoke(GET_LAST_WORKSPACE),
+  getBaseDirectory: () => ipcRenderer.invoke(GET_BASE_DIRECTORY),
+  openBaseDirectoryDialog: () => ipcRenderer.invoke(OPEN_BASE_DIRECTORY_DIALOG),
   openDirectoryDialog: () => ipcRenderer.invoke(OPEN_DIRECTORY_DIALOG),
   readDirectory: (path: string) => ipcRenderer.invoke(READ_DIRECTORY, path),
   fileListDirectory: (request: FileListDirectoryRequest) =>

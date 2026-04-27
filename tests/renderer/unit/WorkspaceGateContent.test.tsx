@@ -18,6 +18,8 @@ describe('WorkspaceGateContent', () => {
     });
     window.electronAPI = {
       getLastWorkspace: vi.fn().mockResolvedValue('/home/user/'),
+      getBaseDirectory: vi.fn().mockResolvedValue('/home/user/projects/'),
+      openBaseDirectoryDialog: vi.fn().mockResolvedValue(null),
       getHarnessOptions: vi.fn().mockResolvedValue({
         codex: true,
         claude: false,
@@ -60,7 +62,7 @@ describe('WorkspaceGateContent', () => {
 
   it('uses initialPath when provided', () => {
     renderGate({ initialPath: '/home/user/project/' });
-    const input = screen.getByPlaceholderText('/home/username/projects/') as HTMLInputElement;
+    const input = screen.getByPlaceholderText('project name') as HTMLInputElement;
     expect(input.value).toBe('/home/user/project/');
   });
 
@@ -104,7 +106,7 @@ describe('WorkspaceGateContent', () => {
   it('calls onSubmit with correct data', async () => {
     renderGate({ initialPath: '/workspace/' });
     await waitFor(() => {
-      const input = screen.getByPlaceholderText('/home/username/projects/') as HTMLInputElement;
+      const input = screen.getByPlaceholderText('project name') as HTMLInputElement;
       expect(input.value).toBe('/workspace/');
     });
     fireEvent.click(screen.getByText('Launch Workspace'));
@@ -120,7 +122,7 @@ describe('WorkspaceGateContent', () => {
   it('appends trailing slash to path on submit', async () => {
     renderGate({ initialPath: '/workspace' });
     await waitFor(() => {
-      const input = screen.getByPlaceholderText('/home/username/projects/') as HTMLInputElement;
+      const input = screen.getByPlaceholderText('project name') as HTMLInputElement;
       expect(input.value).toBe('/workspace');
     });
     fireEvent.click(screen.getByText('Launch Workspace'));
@@ -132,16 +134,24 @@ describe('WorkspaceGateContent', () => {
   it('does not submit when path is empty', () => {
     renderGate({ initialPath: '' });
     // Override input to be empty
-    const input = screen.getByPlaceholderText('/home/username/projects/');
+    const input = screen.getByPlaceholderText('project name');
     fireEvent.change(input, { target: { value: '' } });
     fireEvent.click(screen.getByText('Launch Workspace'));
     expect(mockOnSubmit).not.toHaveBeenCalled();
   });
 
-  it('does not submit when path does not start with /', () => {
-    renderGate({ initialPath: 'relative/path' });
+  it('resolves relative input against the base directory on submit', async () => {
+    renderGate({ initialPath: 'my-project' });
+    // Wait for base to load before submitting
+    await waitFor(() => {
+      expect(window.electronAPI.getBaseDirectory).toHaveBeenCalled();
+    });
     fireEvent.click(screen.getByText('Launch Workspace'));
-    expect(mockOnSubmit).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockOnSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ path: '/home/user/projects/my-project/' })
+      );
+    });
   });
 
   // =========================================================================
@@ -159,7 +169,7 @@ describe('WorkspaceGateContent', () => {
     renderGate({ initialPath: '/workspace/' });
     fireEvent.click(screen.getByTitle('Browse directories'));
     await waitFor(() => {
-      const input = screen.getByPlaceholderText('/home/username/projects/') as HTMLInputElement;
+      const input = screen.getByPlaceholderText('project name') as HTMLInputElement;
       expect(input.value).toBe('/selected/dir/');
     });
   });
@@ -170,10 +180,10 @@ describe('WorkspaceGateContent', () => {
   it('submits on Enter key', async () => {
     renderGate({ initialPath: '/workspace/' });
     await waitFor(() => {
-      const input = screen.getByPlaceholderText('/home/username/projects/') as HTMLInputElement;
+      const input = screen.getByPlaceholderText('project name') as HTMLInputElement;
       expect(input.value).toBe('/workspace/');
     });
-    const input = screen.getByPlaceholderText('/home/username/projects/');
+    const input = screen.getByPlaceholderText('project name');
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(mockOnSubmit).toHaveBeenCalled();
   });
