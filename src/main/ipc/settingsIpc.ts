@@ -20,6 +20,8 @@ import { type AiCommitProvider } from '../aiCommit';
 import { validateHarnessDefaultsMap } from '../harnessDefaultsValidation';
 import {
   GET_LAST_WORKSPACE,
+  GET_BASE_DIRECTORY,
+  OPEN_BASE_DIRECTORY_DIALOG,
   GET_SHOW_FASTFETCH,
   SET_SHOW_FASTFETCH,
   GET_AI_COMMIT_SETTINGS,
@@ -48,6 +50,28 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
 
   ipcMain.handle(GET_LAST_WORKSPACE, () => {
     return getStore().get('lastWorkspace');
+  });
+
+  ipcMain.handle(GET_BASE_DIRECTORY, () => {
+    return getStore().get('baseDirectory');
+  });
+
+  ipcMain.handle(OPEN_BASE_DIRECTORY_DIALOG, async () => {
+    const mainWindow = getMainWindow();
+    const currentBase = getStore().get('baseDirectory');
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openDirectory'],
+      title: 'Select Base Directory',
+      defaultPath: currentBase,
+    });
+
+    if (!result.canceled && result.filePaths.length > 0) {
+      const selectedPath = result.filePaths[0];
+      const normalized = selectedPath.endsWith('/') ? selectedPath : selectedPath + '/';
+      getStore().set('baseDirectory', normalized);
+      return normalized;
+    }
+    return null;
   });
 
   ipcMain.handle(GET_SHOW_FASTFETCH, () => {
@@ -83,6 +107,7 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
     const result = await dialog.showOpenDialog(mainWindow!, {
       properties: ['openDirectory'],
       title: 'Select Workspace Directory',
+      defaultPath: getStore().get('baseDirectory'),
     });
 
     if (!result.canceled && result.filePaths.length > 0) {

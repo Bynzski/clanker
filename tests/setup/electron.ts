@@ -11,6 +11,8 @@ const defaultFileListDirectoryResult: FileListDirectoryResult = { success: true,
 export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): ElectronApiMock {
   return {
     getLastWorkspace: createAsyncMock(''),
+    getBaseDirectory: createAsyncMock(''),
+    openBaseDirectoryDialog: createAsyncMock(null),
     openDirectoryDialog: createAsyncMock(null),
     readDirectory: createAsyncMock([]),
     fileListDirectory: createAsyncMock(defaultFileListDirectoryResult),

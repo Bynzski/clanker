@@ -153,6 +153,27 @@
   text-align: left;
 }
 
+.gate-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.gate-base-path {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  text-align: right;
+  direction: rtl;
+}
+
 /* Workspace path input */
 .input-wrapper {
   display: flex;
@@ -195,6 +216,11 @@
   border-left: 1px solid var(--border-color);
   cursor: pointer;
   transition: background var(--transition), color var(--transition);
+}
+
+.cog-button-left {
+  border-left: none;
+  border-right: 1px solid var(--border-color);
 }
 
 .cog-button:hover:not(:disabled) {

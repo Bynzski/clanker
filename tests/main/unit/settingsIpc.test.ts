@@ -164,6 +164,8 @@ describe('registerSettingsIpc', () => {
 
     const expectedChannels = [
       'get-last-workspace',
+      'get-base-directory',
+      'open-base-directory-dialog',
       'get-show-fastfetch',
       'set-show-fastfetch',
       'get-ai-commit-settings',
@@ -183,13 +185,13 @@ describe('registerSettingsIpc', () => {
     });
   });
 
-  test('registers exactly 13 settings IPC channels', () => {
+  test('registers exactly 15 settings IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(13);
+    expect(handleCalls.length).toBe(15);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -199,7 +201,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(26);
+    expect(handleCalls.length).toBe(30);
   });
 
   test('settings channels do not overlap with terminal channels', () => {
@@ -209,6 +211,8 @@ describe('registerSettingsIpc', () => {
 
     const settingsChannels = [
       'get-last-workspace',
+      'get-base-directory',
+      'open-base-directory-dialog',
       'get-show-fastfetch',
       'set-show-fastfetch',
       'get-ai-commit-settings',
@@ -243,6 +247,8 @@ describe('registerSettingsIpc', () => {
 
     const settingsChannels = [
       'get-last-workspace',
+      'get-base-directory',
+      'open-base-directory-dialog',
       'get-show-fastfetch',
       'set-show-fastfetch',
       'get-ai-commit-settings',
@@ -716,6 +722,8 @@ describe('settings IPC channel constants', () => {
   test('settings channel names are consistent', () => {
     const expectedChannels = [
       'get-last-workspace',
+      'get-base-directory',
+      'open-base-directory-dialog',
       'get-show-fastfetch',
       'set-show-fastfetch',
       'get-ai-commit-settings',
@@ -742,6 +750,8 @@ describe('settings IPC channel constants', () => {
   test('all settings channels start with expected prefixes', () => {
     const settingsChannels = [
       'get-last-workspace',
+      'get-base-directory',
+      'open-base-directory-dialog',
       'get-show-fastfetch',
       'set-show-fastfetch',
       'get-ai-commit-settings',

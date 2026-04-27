@@ -68,6 +68,8 @@ export type {
 interface ElectronAPI {
   // Workspace
   getLastWorkspace: () => Promise<string>;
+  getBaseDirectory: () => Promise<string>;
+  openBaseDirectoryDialog: () => Promise<string | null>;
   openDirectoryDialog: () => Promise<string | null>;
   readDirectory: (path: string) => Promise<{ name: string; isDirectory: boolean }[]>;
   fileListDirectory: (request: FileListDirectoryRequest) => Promise<FileListDirectoryResult>;
