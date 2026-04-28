@@ -127,7 +127,14 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
       }
 
       if (result.success) {
-        setExplorerDirectoryEntries(normalizedDirectoryPath, result.entries, requestWorkspaceId);
+        // Normalize entry paths from main process to forward slashes.
+        // On Windows, path.join() in the main process produces backslash
+        // separators, but the renderer stores keys with forward slashes.
+        const normalizedEntries = result.entries.map((entry: FileExplorerEntry) => ({
+          ...entry,
+          path: normalizePath(entry.path),
+        }));
+        setExplorerDirectoryEntries(normalizedDirectoryPath, normalizedEntries, requestWorkspaceId);
         setExplorerDirectoryError(normalizedDirectoryPath, null, requestWorkspaceId);
       } else {
         setExplorerDirectoryEntries(normalizedDirectoryPath, [], requestWorkspaceId);
