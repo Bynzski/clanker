@@ -68,6 +68,8 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     setExplorerDirectoryError,
     setExplorerExpandedPaths,
     clearExplorerDirectoryState,
+    pushBrowserOverlay,
+    popBrowserOverlay,
   } = useWorkspaceStore();
   const resolvedWorkspaceId = workspace?.id ?? null;
   const workspacePath = workspace?.workspacePath ?? '';
@@ -90,6 +92,13 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   const dragHandleProps = useDragHandle();
   const explorerTreeRefreshTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const previousExplorerVisibleRef = useRef(explorerVisible);
+
+  // Hide the native browser whenever the delete confirmation modal is open.
+  useEffect(() => {
+    if (!deleteTarget || !resolvedWorkspaceId) return;
+    pushBrowserOverlay(resolvedWorkspaceId);
+    return () => popBrowserOverlay(resolvedWorkspaceId);
+  }, [deleteTarget, resolvedWorkspaceId, pushBrowserOverlay, popBrowserOverlay]);
 
   const loadDirectory = useCallback(async (directoryPath: string): Promise<FileListDirectoryResult> => {
     const normalizedDirectoryPath = normalizePath(directoryPath);
