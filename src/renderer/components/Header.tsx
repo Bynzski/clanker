@@ -96,6 +96,13 @@ export default function Header() {
     };
   }, [showSettings]);
 
+  // Hide the native browser whenever the chat history dropdown is open.
+  useEffect(() => {
+    if (!showChatHistory || !activeWorkspaceId) return;
+    pushBrowserOverlay(activeWorkspaceId);
+    return () => popBrowserOverlay(activeWorkspaceId);
+  }, [activeWorkspaceId, showChatHistory, pushBrowserOverlay, popBrowserOverlay]);
+
   useEffect(() => {
     if (!showChatHistory) return;
 
