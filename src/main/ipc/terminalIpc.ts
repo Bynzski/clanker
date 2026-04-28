@@ -92,8 +92,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     // Use user's default shell, fallback to bash
     const userShell = defaultShell();
 
-    // Spawn with interactive flags for better shell experience
-    const shellArgs = ['-i'];
+    // Spawn with interactive flags for better shell experience.
+    // PowerShell is interactive by default (no flag needed); bash needs -i.
+    const shellArgs = process.platform === 'win32' ? [] : ['-i'];
 
     const harnessEnv = harness && getHarnessOptions()[harness]?.env ? getHarnessOptions()[harness].env : {};
 

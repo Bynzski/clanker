@@ -7,6 +7,7 @@
 
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import * as fs from 'fs';
+import * as path from 'path';
 import Store from 'electron-store';
 import {
   discoverHarnessModels,
@@ -67,7 +68,8 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
 
     if (!result.canceled && result.filePaths.length > 0) {
       const selectedPath = result.filePaths[0];
-      const normalized = selectedPath.endsWith('/') ? selectedPath : selectedPath + '/';
+      const sep = path.sep;
+      const normalized = selectedPath.endsWith(sep) ? selectedPath : selectedPath + sep;
       getStore().set('baseDirectory', normalized);
       return normalized;
     }

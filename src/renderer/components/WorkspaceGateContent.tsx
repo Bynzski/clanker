@@ -17,7 +17,11 @@ interface ContentProps {
 }
 
 function withTrailingSlash(path: string): string {
-  return path.endsWith('/') ? path : path + '/';
+  // Normalize backslashes to forward slashes for cross-platform consistency.
+  // On Windows, paths from the main process use backslashes; the renderer
+  // works with forward slashes internally.
+  const normalized = path.replace(/\\/g, '/');
+  return normalized.endsWith('/') ? normalized : normalized + '/';
 }
 
 export const TERMINAL_PRESETS = [
@@ -228,7 +232,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   // input value: relative when the input is relative (typed under base),
   // absolute when the input starts with `/`.
   const fetchSuggestions = useCallback(async (input: string, base: string) => {
-    const isAbsolute = input.startsWith('/');
+    // Detect absolute paths: POSIX (/...) or Windows drive letter (C:/...)
+    const isAbsolute = input.startsWith('/') || /^[A-Za-z]:\//.test(input);
 
     let dirPath: string;
     let nameFilter: string;
@@ -330,8 +335,11 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     const trimmed = inputValue.trim();
     if (!trimmed) return;
 
+    // Detect absolute paths: POSIX (/...) or Windows drive letter (C:/...)
+    const isAbsolute = trimmed.startsWith('/') || /^[A-Za-z]:\//.test(trimmed);
+
     let resolved: string;
-    if (trimmed.startsWith('/')) {
+    if (isAbsolute) {
       resolved = trimmed;
     } else {
       if (!baseDirectory) return;
