@@ -5,6 +5,7 @@
  */
 
 import { vi } from 'vitest';
+import { testHome } from '../../_helpers/tempPaths';
 import assert from 'node:assert/strict';
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 
@@ -13,7 +14,7 @@ vi.mock('electron', () => ({
   app: {
     disableHardwareAcceleration: vi.fn(),
     getPath: vi.fn((name: string) => {
-      if (name === 'home') return '/home/test';
+      if (name === 'home') return testHome();
       return `/mock/${name}`;
     }),
     commandLine: {

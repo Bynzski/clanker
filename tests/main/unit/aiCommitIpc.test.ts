@@ -5,12 +5,13 @@
  */
 
 import { vi, describe, test, expect, beforeEach } from 'vitest';
+import { testHome } from '../../_helpers/tempPaths';
 
 vi.mock('electron', () => ({
   app: {
     disableHardwareAcceleration: vi.fn(),
     getPath: vi.fn((name: string) => {
-      if (name === 'home') return '/home/test';
+      if (name === 'home') return testHome();
       return `/mock/${name}`;
     }),
     commandLine: {
@@ -123,7 +124,7 @@ describe('registerAiCommitIpc', () => {
     const mockStore = {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
-          lastWorkspace: '/home/test',
+          lastWorkspace: testHome(),
           showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
@@ -185,7 +186,7 @@ describe('registerAiCommitIpc — error-path: workspace validation and commit ge
     const mockStore = {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
-          lastWorkspace: '/home/test',
+          lastWorkspace: testHome(),
           showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',

@@ -268,7 +268,7 @@ describe('GitService Real Behavior - Direct Git Commands', () => {
     });
 
     it('handles non-existent repository', async () => {
-      const result = await git('/tmp/does-not-exist-12345', ['status']);
+      const result = await git(path.join(os.tmpdir(), 'does-not-exist-12345'), ['status']);
       expect(result.exitCode).not.toBe(0);
     });
 

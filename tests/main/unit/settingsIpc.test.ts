@@ -5,12 +5,13 @@
  */
 
 import { vi, describe, test, expect, beforeEach } from 'vitest';
+import { testHome } from '../../_helpers/tempPaths';
 
 vi.mock('electron', () => ({
   app: {
     disableHardwareAcceleration: vi.fn(),
     getPath: vi.fn((name: string) => {
-      if (name === 'home') return '/home/test';
+      if (name === 'home') return testHome();
       return `/mock/${name}`;
     }),
     commandLine: {
@@ -117,7 +118,7 @@ describe('registerSettingsIpc', () => {
     const mockStore = {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
-          lastWorkspace: '/home/test',
+          lastWorkspace: testHome(),
           showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
@@ -381,7 +382,7 @@ describe('settingsIpc — error-path: OPEN_DIRECTORY_DIALOG', () => {
     const mockStore = {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
-          lastWorkspace: '/home/test',
+          lastWorkspace: testHome(),
           showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
@@ -424,7 +425,7 @@ describe('settingsIpc — harness defaults IPC', () => {
     const mockStore = {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
-          lastWorkspace: '/home/test',
+          lastWorkspace: testHome(),
           showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
@@ -479,7 +480,7 @@ describe('settingsIpc — harness defaults IPC', () => {
     const mockStore = {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
-          lastWorkspace: '/home/test',
+          lastWorkspace: testHome(),
           showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
@@ -562,7 +563,7 @@ describe('settingsIpc — error-path: workspace validation', () => {
     const mockStore = {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
-          lastWorkspace: '/home/test',
+          lastWorkspace: testHome(),
           showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',

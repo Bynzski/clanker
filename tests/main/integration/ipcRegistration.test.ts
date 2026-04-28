@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { testHome } from '../../_helpers/tempPaths';
 import { ALL_IPC_CHANNELS } from '../../../src/shared/ipcChannels';
 
 // ---------------------------------------------------------------------------
@@ -37,7 +38,7 @@ describe('IPC registration smoke test', () => {
         whenReady: vi.fn().mockResolvedValue(undefined),
         on: vi.fn(),
         quit: vi.fn(),
-        getPath: vi.fn(() => '/tmp'),
+        getPath: vi.fn(() => testHome()),
         activate: vi.fn(),
       },
       ipcMain: {
@@ -154,7 +155,7 @@ describe('IPC registration smoke test', () => {
     const mockStore = {
       get: vi.fn((key: keyof MockStoreSchema) => {
         const defaults: MockStoreSchema = {
-          lastWorkspace: '/tmp',
+          lastWorkspace: testHome(),
           showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
@@ -203,7 +204,7 @@ describe('IPC registration smoke test', () => {
       getTerminals: () => mockTerminals as never,
       getMainWindow: () => mockMainWindow as never,
       getStore: () => mockStore as never,
-      getSafeWorkspacePath: () => '/tmp',
+      getSafeWorkspacePath: () => testHome(),
       getHarnessOptions: () => ({}),
     });
 
@@ -235,7 +236,7 @@ describe('IPC registration smoke test', () => {
     registerSessionIpc({
       getTerminals: () => mockTerminals as never,
       getMainWindow: () => mockMainWindow as never,
-      getSafeWorkspacePath: () => '/tmp',
+      getSafeWorkspacePath: () => testHome(),
       getIsShuttingDown: () => false,
       getStore: () => mockStore as never,
       getHarnessOptions: () => ({}),

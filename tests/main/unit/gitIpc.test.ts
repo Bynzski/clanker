@@ -5,13 +5,14 @@
  */
 
 import { vi } from 'vitest';
+import { testHome } from '../../_helpers/tempPaths';
 
 // Mock electron module
 vi.mock('electron', () => ({
   app: {
     disableHardwareAcceleration: vi.fn(),
     getPath: vi.fn((name: string) => {
-      if (name === 'home') return '/home/test';
+      if (name === 'home') return testHome();
       return `/mock/${name}`;
     }),
     commandLine: {

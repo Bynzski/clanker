@@ -25,7 +25,25 @@ import { Readable } from 'stream';
 // ============================================================================
 
 const { mockExecFile } = vi.hoisted(() => ({ mockExecFile: vi.fn() }));
-const { mockHomedir } = vi.hoisted(() => ({ mockHomedir: vi.fn(() => '/home/testuser') }));
+const { mockHomedir } = vi.hoisted(() => ({ mockHomedir: vi.fn() }));
+
+import * as path from 'node:path';
+const TEST_HOME = path.join(process.platform === 'win32' ? 'C:\\Users\\testuser' : '/tmp', 'testuser');
+const TEST_WORKSPACE = path.join(TEST_HOME, 'project');
+const TEST_OTHER = path.join(TEST_HOME, 'other');
+const TEST_HARNESS_WRAPPER = path.join(TEST_HOME, '.clanker-grid', 'harness-wrapper.sh');
+const TEST_PI_SESSIONS_DIR = path.join(TEST_HOME, '.pi', 'agent', 'sessions', 'dir');
+
+// Additional platform-neutral path constants for sessionMatchesWorkspace tests
+const TEST_JAY_FOO = path.join(TEST_HOME, 'jay', 'dev', 'projects', 'foo');
+const TEST_JAY_FOO_SRC = path.join(TEST_JAY_FOO, 'src');
+const TEST_JAY_FOO_SRC_LIB = path.join(TEST_JAY_FOO_SRC, 'lib');
+const TEST_JAY_FOO_OLD = path.join(TEST_HOME, 'jay', 'dev', 'projects', 'foo-old');
+const TEST_JAY_FOO_OLD_BAR = path.join(TEST_JAY_FOO_OLD, 'bar');
+const TEST_JAY_BAR = path.join(TEST_HOME, 'jay', 'dev', 'projects', 'bar');
+const TEST_JAY_OTHER = path.join(TEST_HOME, 'jay', 'dev', 'other');
+
+mockHomedir.mockReturnValue(TEST_HOME);
 
 vi.mock('child_process', () => ({ execFile: mockExecFile }));
 vi.mock('os', () => ({ homedir: mockHomedir, default: { homedir: mockHomedir } }));
@@ -50,9 +68,9 @@ vi.mock('fs', async (importOriginal) => {
 });
 
 vi.mock('../../../src/main/harnessLaunch', () => ({
-  ensureHarnessWrapperScript: () => '/home/testuser/.clanker-grid/harness-wrapper.sh',
+  ensureHarnessWrapperScript: () => TEST_HARNESS_WRAPPER,
   buildHarnessWrapperScript: () => '#!/bin/sh\nexec "$@"',
-  getHarnessWrapperScriptPath: () => '/home/testuser/.clanker-grid/harness-wrapper.sh',
+  getHarnessWrapperScriptPath: () => TEST_HARNESS_WRAPPER,
   buildHarnessSpawnArgs: vi.fn(),
 }));
 
@@ -82,35 +100,35 @@ import type { HarnessSession } from '../../../src/shared/types/session';
 
 describe('sessionMatchesWorkspace', () => {
   it('returns true for exact match', () => {
-    expect(sessionMatchesWorkspace('/home/jay/dev/projects/foo', '/home/jay/dev/projects/foo')).toBe(true);
+    expect(sessionMatchesWorkspace(TEST_JAY_FOO, TEST_JAY_FOO)).toBe(true);
   });
 
   it('returns true for child path', () => {
-    expect(sessionMatchesWorkspace('/home/jay/dev/projects/foo', '/home/jay/dev/projects/foo/src')).toBe(true);
-    expect(sessionMatchesWorkspace('/home/jay/dev/projects/foo', '/home/jay/dev/projects/foo/src/lib')).toBe(true);
+    expect(sessionMatchesWorkspace(TEST_JAY_FOO, TEST_JAY_FOO_SRC)).toBe(true);
+    expect(sessionMatchesWorkspace(TEST_JAY_FOO, TEST_JAY_FOO_SRC_LIB)).toBe(true);
   });
 
   it('returns false for sibling with same prefix (different dirname)', () => {
     // The bug: raw .startsWith would return true here incorrectly
-    expect(sessionMatchesWorkspace('/home/jay/dev/projects/foo', '/home/jay/dev/projects/foo-old')).toBe(false);
+    expect(sessionMatchesWorkspace(TEST_JAY_FOO, TEST_JAY_FOO_OLD)).toBe(false);
   });
 
   it('returns false for unrelated path', () => {
-    expect(sessionMatchesWorkspace('/home/jay/dev/projects/foo', '/home/jay/dev/projects/bar')).toBe(false);
-    expect(sessionMatchesWorkspace('/home/jay/dev/projects/foo', '/home/jay/dev/other')).toBe(false);
+    expect(sessionMatchesWorkspace(TEST_JAY_FOO, TEST_JAY_BAR)).toBe(false);
+    expect(sessionMatchesWorkspace(TEST_JAY_FOO, TEST_JAY_OTHER)).toBe(false);
   });
 
   it('returns true when workspacePath is empty/undefined (global listing)', () => {
-    expect(sessionMatchesWorkspace('', '/home/jay/dev/projects/foo')).toBe(true);
+    expect(sessionMatchesWorkspace('', TEST_JAY_FOO)).toBe(true);
     expect(sessionMatchesWorkspace('', '/any/path')).toBe(true);
   });
 
   it('returns false when candidatePath is empty but workspacePath is set', () => {
-    expect(sessionMatchesWorkspace('/home/jay/dev/projects/foo', '')).toBe(false);
+    expect(sessionMatchesWorkspace(TEST_JAY_FOO, '')).toBe(false);
   });
 
   it('returns true for nested child paths', () => {
-    expect(sessionMatchesWorkspace('/home/jay/dev/projects/foo', '/home/jay/dev/projects/foo/a/b/c')).toBe(true);
+    expect(sessionMatchesWorkspace(TEST_JAY_FOO, path.join(TEST_JAY_FOO, 'a', 'b', 'c'))).toBe(true);
   });
 
   it('handles paths without trailing sep as exact match boundary', () => {
@@ -139,7 +157,7 @@ describe('buildSessionInvokeArgs — harness default flag parity', () => {
         id: 'ses_abc123',
         harness: 'opencode',
         title: 'Test',
-        cwd: '/home/testuser/project',
+        cwd: TEST_WORKSPACE,
         timestamp: Date.now(),
       };
       const result = buildSessionInvokeArgs(session, false, '--yolo --skip-confirm');
@@ -153,7 +171,7 @@ describe('buildSessionInvokeArgs — harness default flag parity', () => {
         id: '019d9661-a4d3-7e93-a413-229086109874',
         harness: 'codex',
         title: 'Fix the bug',
-        cwd: '/home/testuser/project',
+        cwd: TEST_WORKSPACE,
         timestamp: Date.now(),
       };
       const result = buildSessionInvokeArgs(session, false, '--verbose');
@@ -167,7 +185,7 @@ describe('buildSessionInvokeArgs — harness default flag parity', () => {
         id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
         harness: 'claude',
         title: 'Claude session',
-        cwd: '/home/testuser/project',
+        cwd: TEST_WORKSPACE,
         timestamp: Date.now(),
       };
       const result = buildSessionInvokeArgs(session, true, '--dangerously-skip-permissions');
@@ -182,15 +200,15 @@ describe('buildSessionInvokeArgs — harness default flag parity', () => {
         id: '019d998e-221f-7114-b69c-b4d5c3fd546f',
         harness: 'pi',
         title: 'Pi session',
-        cwd: '/home/testuser/project',
+        cwd: TEST_WORKSPACE,
         timestamp: Date.now(),
         modelId: 'MiniMax-M2.7',
         provider: 'minimax',
-        filePath: '/home/testuser/.pi/agent/sessions/dir/1234_uuid.jsonl',
+        filePath: path.join(TEST_PI_SESSIONS_DIR, '1234_uuid.jsonl'),
       };
       const result = buildSessionInvokeArgs(session, false, '--verbose');
       expect(result.spawnArgs).toEqual([
-        'pi', '--session', '/home/testuser/.pi/agent/sessions/dir/1234_uuid.jsonl',
+        'pi', '--session', path.join(TEST_PI_SESSIONS_DIR, '1234_uuid.jsonl'),
         '--model', 'minimax/MiniMax-M2.7', '--verbose',
       ]);
     });
@@ -200,7 +218,7 @@ describe('buildSessionInvokeArgs — harness default flag parity', () => {
         id: 'ses_abc123',
         harness: 'opencode',
         title: 'Test',
-        cwd: '/home/testuser/project',
+        cwd: TEST_WORKSPACE,
         timestamp: Date.now(),
       };
       const result = buildSessionInvokeArgs(session, false, '  --flag1  --flag2=value  ');
@@ -214,7 +232,7 @@ describe('buildSessionInvokeArgs — harness default flag parity', () => {
         id: 'ses_abc123',
         harness: 'opencode',
         title: 'Test',
-        cwd: '/home/testuser/project',
+        cwd: TEST_WORKSPACE,
         timestamp: Date.now(),
       };
       const result = buildSessionInvokeArgs(session);
@@ -255,7 +273,7 @@ describe('discoverSessions — pi', () => {
   afterEach(() => clearSessionCache());
 
   it('discovers a pi session with correct cwd filtering', async () => {
-    const sessionLine = JSON.stringify({ type: 'session', id: 'pi_001', timestamp: '2026-04-17T00:00:00Z', cwd: '/home/testuser/project' });
+    const sessionLine = JSON.stringify({ type: 'session', id: 'pi_001', timestamp: '2026-04-17T00:00:00Z', cwd: TEST_WORKSPACE });
     const modelChangeLine = JSON.stringify({ type: 'model_change', modelId: 'MiniMax-M2.7', provider: 'minimax' });
     mockCreateReadStream.mockImplementation((fp: string) => {
       if (String(fp).includes('abc123')) {
@@ -265,15 +283,15 @@ describe('discoverSessions — pi', () => {
       return new Readable({ read() { this.destroy(err); } });
     });
 
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const piSessions = sessions.filter((s) => s.harness === 'pi');
     expect(piSessions).toHaveLength(1);
     expect(piSessions[0].id).toBe('pi_001');
-    expect(piSessions[0].cwd).toBe('/home/testuser/project');
+    expect(piSessions[0].cwd).toBe(TEST_WORKSPACE);
   });
 
   it('filters out pi sessions outside workspace', async () => {
-    const sessionLine = JSON.stringify({ type: 'session', id: 'pi_002', timestamp: '2026-04-17T00:00:00Z', cwd: '/home/other/project' });
+    const sessionLine = JSON.stringify({ type: 'session', id: 'pi_002', timestamp: '2026-04-17T00:00:00Z', cwd: TEST_OTHER });
     mockCreateReadStream.mockImplementation((fp: string) => {
       if (String(fp).includes('abc123')) {
         return makeReadableLines([sessionLine]);
@@ -282,13 +300,17 @@ describe('discoverSessions — pi', () => {
       return new Readable({ read() { this.destroy(err); } });
     });
 
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const piSessions = sessions.filter((s) => s.harness === 'pi');
     expect(piSessions).toHaveLength(0);
   });
 });
 
 describe('discoverSessions — claude', () => {
+  // Encode workspace path the same way discoverClaudeSessions does:
+  // /home/user/project → -home-user-project
+  const encodedWorkspace = `-${TEST_WORKSPACE.replace(/^\//, '').replace(/\//g, '-')}`;
+
   beforeEach(() => {
     clearSessionCache();
     vi.clearAllMocks();
@@ -300,11 +322,11 @@ describe('discoverSessions — claude', () => {
     mockReaddir.mockImplementation((dir: string) => {
       const s = String(dir);
       if (s.endsWith('.claude/projects')) {
-        // Encoded workspace: /home/testuser/project → -home-testuser-project
-        const d = { name: '-home-testuser-project', isDirectory: () => true, isFile: () => false } as import('fs').Dirent;
+        // Encoded workspace: derived from TEST_WORKSPACE
+        const d = { name: encodedWorkspace, isDirectory: () => true, isFile: () => false } as import('fs').Dirent;
         return Promise.resolve([d]);
       }
-      if (s.includes('-home-testuser-project')) {
+      if (s.includes(encodedWorkspace)) {
         const d = { name: 'sess_abc123.jsonl', isDirectory: () => false, isFile: () => true } as import('fs').Dirent;
         return Promise.resolve([d]);
       }
@@ -315,7 +337,7 @@ describe('discoverSessions — claude', () => {
   afterEach(() => clearSessionCache());
 
   it('discovers a claude session matching the workspace', async () => {
-    const sessionLine = JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hello world' }, timestamp: '2026-04-17T00:00:00Z', cwd: '/home/testuser/project' });
+    const sessionLine = JSON.stringify({ type: 'user', message: { role: 'user', content: 'Hello world' }, timestamp: '2026-04-17T00:00:00Z', cwd: TEST_WORKSPACE });
     const assistantLine = JSON.stringify({ type: 'assistant', message: { role: 'assistant', model: 'claude-haiku-4-5-20251001' } });
     mockCreateReadStream.mockImplementation((fp: string) => {
       if (String(fp).includes('sess_abc123')) {
@@ -325,7 +347,7 @@ describe('discoverSessions — claude', () => {
       return new Readable({ read() { this.destroy(err); } });
     });
 
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const claudeSessions = sessions.filter((s) => s.harness === 'claude');
     expect(claudeSessions).toHaveLength(1);
     expect(claudeSessions[0].id).toBe('sess_abc123');
@@ -355,7 +377,7 @@ describe('discoverSessions — claude', () => {
       return new Readable({ read() { this.destroy(err); } });
     });
 
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const claudeSessions = sessions.filter((s) => s.harness === 'claude');
     expect(claudeSessions).toHaveLength(0);
   });
@@ -371,8 +393,8 @@ describe('discoverSessions — global listing (workspacePath undefined/empty)', 
     vi.clearAllMocks();
     mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, JSON.stringify([
-        { id: 'ses_001', title: 'Project session', directory: '/home/testuser/project', updated: 1700000000000 },
-        { id: 'ses_002', title: 'Other session', directory: '/home/testuser/other', updated: 1700000001000 },
+        { id: 'ses_001', title: 'Project session', directory: TEST_WORKSPACE, updated: 1700000000000 },
+        { id: 'ses_002', title: 'Other session', directory: TEST_OTHER, updated: 1700000001000 },
       ]), '');
     });
     mockReadFile.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
@@ -394,7 +416,7 @@ describe('discoverSessions — global listing (workspacePath undefined/empty)', 
   });
 
   it('filters correctly when workspacePath has trailing slash', async () => {
-    const sessions = await discoverSessions('/home/testuser/project/');
+    const sessions = await discoverSessions(TEST_WORKSPACE + path.sep);
     const opencodeSessions = sessions.filter((s) => s.harness === 'opencode');
     expect(opencodeSessions).toHaveLength(1);
     expect(opencodeSessions[0].id).toBe('ses_001');
@@ -413,15 +435,15 @@ describe('discoverSessions — path-boundary workspace filtering', () => {
     mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, JSON.stringify([
         // Exact match
-        { id: 'ses_exact', title: 'Exact workspace', directory: '/home/jay/dev/projects/foo', updated: 1700000000001 },
+        { id: 'ses_exact', title: 'Exact workspace', directory: TEST_JAY_FOO, updated: 1700000000001 },
         // Child path
-        { id: 'ses_child', title: 'Subdirectory', directory: '/home/jay/dev/projects/foo/src', updated: 1700000000002 },
+        { id: 'ses_child', title: 'Subdirectory', directory: TEST_JAY_FOO_SRC, updated: 1700000000002 },
         // Sibling: foo-old — raw prefix matching would INCORRECTLY include this
-        { id: 'ses_sibling', title: 'Sibling dir (BUG)', directory: '/home/jay/dev/projects/foo-old', updated: 1700000000003 },
+        { id: 'ses_sibling', title: 'Sibling dir (BUG)', directory: TEST_JAY_FOO_OLD, updated: 1700000000003 },
         // Another sibling
-        { id: 'ses_sibling2', title: 'Another sibling (BUG)', directory: '/home/jay/dev/projects/foo-old/bar', updated: 1700000000004 },
+        { id: 'ses_sibling2', title: 'Another sibling (BUG)', directory: TEST_JAY_FOO_OLD_BAR, updated: 1700000000004 },
         // Unrelated
-        { id: 'ses_unrelated', title: 'Other project', directory: '/home/jay/dev/projects/bar', updated: 1700000000005 },
+        { id: 'ses_unrelated', title: 'Other project', directory: TEST_JAY_BAR, updated: 1700000000005 },
       ]), '');
     });
     mockReadFile.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
@@ -431,31 +453,31 @@ describe('discoverSessions — path-boundary workspace filtering', () => {
   afterEach(() => clearSessionCache());
 
   it('includes exact workspace session', async () => {
-    const sessions = await discoverSessions('/home/jay/dev/projects/foo');
+    const sessions = await discoverSessions(TEST_JAY_FOO);
     const ids = sessions.filter((s) => s.harness === 'opencode').map((s) => s.id);
     expect(ids).toContain('ses_exact');
   });
 
   it('includes child path session', async () => {
-    const sessions = await discoverSessions('/home/jay/dev/projects/foo');
+    const sessions = await discoverSessions(TEST_JAY_FOO);
     const ids = sessions.filter((s) => s.harness === 'opencode').map((s) => s.id);
     expect(ids).toContain('ses_child');
   });
 
   it('excludes sibling foo-old', async () => {
-    const sessions = await discoverSessions('/home/jay/dev/projects/foo');
+    const sessions = await discoverSessions(TEST_JAY_FOO);
     const ids = sessions.filter((s) => s.harness === 'opencode').map((s) => s.id);
     expect(ids).not.toContain('ses_sibling');
   });
 
   it('excludes sibling foo-old/bar', async () => {
-    const sessions = await discoverSessions('/home/jay/dev/projects/foo');
+    const sessions = await discoverSessions(TEST_JAY_FOO);
     const ids = sessions.filter((s) => s.harness === 'opencode').map((s) => s.id);
     expect(ids).not.toContain('ses_sibling2');
   });
 
   it('excludes unrelated project', async () => {
-    const sessions = await discoverSessions('/home/jay/dev/projects/foo');
+    const sessions = await discoverSessions(TEST_JAY_FOO);
     const ids = sessions.filter((s) => s.harness === 'opencode').map((s) => s.id);
     expect(ids).not.toContain('ses_unrelated');
   });

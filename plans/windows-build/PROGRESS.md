@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 0** — Next to start.
+**Phase 1** — Next to start.
 
 ## Phase Status
 
@@ -55,11 +55,11 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 **Done:** Restructured matrix to `os × node-version` with `os: [ubuntu-latest, windows-latest]`. `continue-on-error` set conditionally for Windows. Gated dependency review, npm audit, and coverage upload to `ubuntu-latest` only. All other steps (lint, typecheck, build, test) run on both platforms. `npm run validate` passes on Linux.
 
-### Phase 0
+### Phase 0 ✅
 
 **Scope:** Replace hardcoded POSIX path literals in `tests/` with `os.tmpdir()` / `os.homedir()` + `path.join`. Linux test suite must stay green.
 
-**Context:** Start with `rg -n "(/home|/tmp|/Users|~/)" tests` and classify every hit as filesystem/mock path, pure string-shape fixture, or Linux-only semantic test. The known list in PLAN.md is intentionally not exhaustive.
+**Done:** Created `tests/_helpers/tempPaths.ts` with platform-neutral helpers. Fixed 21 test files: replaced `/home/test` mock returns with `testHome()`, replaced `/tmp/test-home` with `path.join(os.tmpdir(), ...)`, replaced `/home/testuser` and `/home/user` fixtures with `path.join`-derived constants, fixed Claude session encoded-path mock to derive from workspace constant. Left pure string fixtures (`getWorkspaceNameFromPath` POSIX split tests, `file:///tmp/test.txt` URL rejection tests, SSH config data) as-is. All 3192 tests pass. `npm run validate` green.
 
 ### Phase 1
 
@@ -137,4 +137,5 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 | Phase | Commit | Summary |
 |-------|--------|---------|
-| Prereq | phase-prereq-windows-ci | Added `windows-latest` to CI matrix with `continue-on-error: true`. Gated Linux-only steps (dependency review, npm audit, coverage upload). `npm run validate` green on Linux. |
+| Prereq | phase-prereq-windows-ci | Added `windows-latest` to CI matrix with `continue-on-error: true`. Gated Linux-only steps. `npm run validate` green on Linux. |
+| 0 | phase-0-platform-neutral-tests | Replaced hardcoded Unix path literals in 21 test files. Created `tests/_helpers/tempPaths.ts`. All 3192 tests pass on Linux. |
