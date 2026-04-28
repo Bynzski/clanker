@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 2** — Next to start.
+**Phase 2** — In progress (manual Windows smoke required).
 
 ## Phase Status
 
@@ -14,7 +14,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | Prereq | Stand up `windows-latest` CI matrix entry (continue-on-error) | ✅ | phase-prereq-windows-ci |
 | 0 | Make tests platform-neutral (remove hardcoded Unix paths) | 🔲 | — |
 | 1 | Cross-platform harness wrapper + shell/PATH defaults | ✅ | phase-1-cross-platform-shell |
-| 2 | node-pty / ConPTY end-to-end validation on real Windows | 🔲 | — |
+| 2 | node-pty / ConPTY end-to-end validation on real Windows | 🔧 | phase-2-shell-args-and-paths (partial) |
 | 3 | Canonical path normalization at IPC boundary | 🔲 | — |
 | 4 | Cross-drive rename + open-file mutation handling | 🔲 | — |
 | 5 | Reserved-name validation + atomic-save watcher tuning | 🔲 | — |
@@ -45,7 +45,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Blocking Issues
 
-- (none yet)
+- **Phase 2:** Round 1 bugs fixed (shell args + path separators). Awaiting Windows re-test to confirm terminals open and paths display correctly. See `docs/windows-smoke-test.md` for the full checklist.
 
 ## Phase Details
 
@@ -67,11 +67,32 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 **Done:** Created `src/main/platformShell.ts` with `defaultShell()`, `userLocalBinPath()`, `prependUserLocalBinToPath()`. Updated `sessionIpc.ts` and `terminalIpc.ts` to use shared `defaultShell()`. Fixed `sessionHistory.ts:175` to use `path.delimiter`. Updated `harnessLaunch.ts` to skip wrapper generation on Windows (`WINDOWS_SKIP_WRAPPER` flag); `ensureHarnessWrapperScript` returns `null` on Windows. Updated `buildSessionInvokeArgs` in `sessionHistory.ts` to invoke harness directly on Windows via `wrapOrDirect` helper. Updated `terminalIpc.ts` to handle `null` wrapper path. Verified no `/home/` literals in renderer. All 3192 tests pass. `npm run validate` green.
 
-### Phase 2
+### Phase 2 🔧
 
 **Scope:** Manual smoke on a real Windows host: PowerShell terminal via ConPTY + harness launch end-to-end.
 
 **Context:** No code changes unless the smoke surfaces real bugs. See PLAN.md "Phase 2" section.
+
+**Status:** First smoke pass revealed two bugs — fixed. Awaiting re-test.
+
+**Smoke Results (Round 1):**
+- Installs ✅
+- Folder pickers work ✅
+- Harnesses detected ✅
+- Terminals crash or won't open ❌
+- Status bar shows mixed slashes (`C:\Users\Jay\Projects/clanker/`) ❌
+
+**Root Causes Found & Fixed:**
+1. `terminalIpc.ts`: `shellArgs = ['-i']` is a bash-only flag. PowerShell rejects it → terminal fails to start. Fixed: args are now `[]` on `win32`, `['-i']` elsewhere.
+2. `settingsIpc.ts`: `OPEN_BASE_DIRECTORY_DIALOG` appended `/` to native Windows paths. Fixed: uses `path.sep`.
+3. `WorkspaceGateContent.tsx`: `withTrailingSlash` appended `/` without normalizing backslashes. Fixed: normalizes `\\` → `/` first.
+4. `WorkspaceGateContent.tsx`: `handleSubmit` and `fetchSuggestions` only detected POSIX absolute paths (`/...`). Fixed: also detects Windows drive-letter paths (`C:/...`).
+
+**What to do:**
+1. Rebuild on Windows: `npm ci && npm run build && npm run start`.
+2. Verify terminal opens with PowerShell (no crash).
+3. Verify status bar shows consistent path separators.
+4. Follow the full checklist in `docs/windows-smoke-test.md`.
 
 ### Phase 3
 
