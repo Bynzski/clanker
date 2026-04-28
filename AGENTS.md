@@ -40,6 +40,17 @@ Long-term maintainability is a core priority:
 - **IPC bridge only** — Renderer communicates with main via preload bridge. No direct Node.js access in renderer.
 - **Extract shared logic** — When adding features, first check if shared utilities belong in a separate module under `src/renderer/lib/`.
 
+## Windows Support
+
+Windows 10 1809+ is a supported platform. Key patterns:
+
+- **Default shell:** `powershell.exe` (via `src/main/platformShell.ts:defaultShell()`). Never pass `-i` — PowerShell is interactive by default.
+- **Harness spawn:** npm-installed CLI tools are `.cmd` wrappers on Windows. Use `resolveHarnessSpawn()` from `harnessLaunch.ts` which wraps commands in `cmd.exe /c` for extension resolution. Never spawn harness commands directly on Windows.
+- **Path separators:** Main process uses native `path.sep` (`\` on Windows). Renderer normalizes to forward slashes (`/`). Paths crossing IPC must be normalized at the boundary.
+- **Path-keyed maps:** All `Map`/`Set` keys in the renderer must use forward-slash paths. Normalize entry paths from IPC responses before storing.
+- **No wrapper script:** `ensureHarnessWrapperScript()` returns `null` on Windows. The POSIX wrapper only applies to Linux/macOS.
+- **Process kill:** `node-pty.kill()` may emit a SIGTERM warning on Windows before falling back to `TerminateProcess`. Wrap in try-catch.
+
 ## Package Structure
 
 ```
