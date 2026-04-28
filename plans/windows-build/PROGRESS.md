@@ -5,13 +5,13 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase Prereq** — Not yet started.
+**Phase 0** — Next to start.
 
 ## Phase Status
 
 | Phase | Description | Status | Commit |
 |-------|-------------|--------|--------|
-| Prereq | Stand up `windows-latest` CI matrix entry (continue-on-error) | 🔲 | — |
+| Prereq | Stand up `windows-latest` CI matrix entry (continue-on-error) | ✅ | phase-prereq-windows-ci |
 | 0 | Make tests platform-neutral (remove hardcoded Unix paths) | 🔲 | — |
 | 1 | Cross-platform harness wrapper + shell/PATH defaults | 🔲 | — |
 | 2 | node-pty / ConPTY end-to-end validation on real Windows | 🔲 | — |
@@ -49,11 +49,11 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Phase Details
 
-### Phase Prereq
+### Phase Prereq ✅
 
 **Scope:** Add `windows-latest` to the CI matrix in `.github/workflows/validate.yml`. Allow-failure for now.
 
-**Context:** Workflow-only change. No source edits. See PLAN.md "Phase Prereq" section.
+**Done:** Restructured matrix to `os × node-version` with `os: [ubuntu-latest, windows-latest]`. `continue-on-error` set conditionally for Windows. Gated dependency review, npm audit, and coverage upload to `ubuntu-latest` only. All other steps (lint, typecheck, build, test) run on both platforms. `npm run validate` passes on Linux.
 
 ### Phase 0
 
@@ -137,4 +137,4 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 | Phase | Commit | Summary |
 |-------|--------|---------|
-| — | — | — |
+| Prereq | phase-prereq-windows-ci | Added `windows-latest` to CI matrix with `continue-on-error: true`. Gated Linux-only steps (dependency review, npm audit, coverage upload). `npm run validate` green on Linux. |
