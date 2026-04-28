@@ -21,6 +21,31 @@ const HARNESS_WRAPPER_FILENAME = 'harness-wrapper.sh';
  */
 export const WINDOWS_SKIP_WRAPPER = process.platform === 'win32';
 
+/**
+ * Resolve a harness command to a spawnable form.
+ *
+ * On Linux/macOS, the wrapper script handles PATH prepend and fallback shell.
+ * On Windows, npm-installed CLI tools are `.cmd` wrappers that `node-pty`
+ * cannot resolve directly — we wrap in `cmd.exe /c` so the command processor
+ * handles `.cmd`/`.exe`/`.bat` extension resolution via PATHEXT.
+ */
+export function resolveHarnessSpawn(
+  command: string,
+  args: string[],
+  wrapperPath: string | null
+): { spawnCmd: string; spawnArgs: string[] } {
+  if (wrapperPath) {
+    // Linux/macOS: use the POSIX wrapper script
+    return { spawnCmd: wrapperPath, spawnArgs: [command, ...args] };
+  }
+  if (process.platform === 'win32') {
+    // Windows: wrap in cmd.exe /c so .cmd/.exe/.bat extensions resolve
+    return { spawnCmd: 'cmd.exe', spawnArgs: ['/c', command, ...args] };
+  }
+  // Fallback (shouldn't reach here — wrapperPath is always set on POSIX)
+  return { spawnCmd: command, spawnArgs: args };
+}
+
 export function buildHarnessSpawnArgs(
   config: HarnessConfig,
   model?: string,

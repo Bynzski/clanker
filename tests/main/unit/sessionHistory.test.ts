@@ -61,6 +61,10 @@ vi.mock('../../../src/main/harnessLaunch', () => ({
   buildHarnessWrapperScript: () => '#!/bin/sh\nexec "$@"',
   getHarnessWrapperScriptPath: () => TEST_HARNESS_WRAPPER,
   buildHarnessSpawnArgs: vi.fn(),
+  resolveHarnessSpawn: (command: string, args: string[], wrapperPath: string | null) =>
+    wrapperPath
+      ? { spawnCmd: wrapperPath, spawnArgs: [command, ...args] }
+      : { spawnCmd: command, spawnArgs: args },
 }));
 
 // ============================================================================
