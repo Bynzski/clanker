@@ -14,7 +14,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as readline from 'readline';
 import type { HarnessSession } from '../shared/types/session';
-import { ensureHarnessWrapperScript } from './harnessLaunch';
+import { ensureHarnessWrapperScript, resolveHarnessSpawn } from './harnessLaunch';
 
 // ============================================================================
 // Path-boundary matching (replaces raw startsWith for workspace filtering)
@@ -102,13 +102,9 @@ export function buildSessionInvokeArgs(
 ): { spawnCmd: string; spawnArgs: string[] } {
   const wrapperPath = ensureHarnessWrapperScript();
 
-  /** Helper: wrap harness args with the wrapper script, or invoke directly on Windows. */
+  /** Helper: wrap harness args with the wrapper script, or invoke via cmd.exe on Windows. */
   const wrapOrDirect = (harnessCmd: string, harnessArgs: string[]): { spawnCmd: string; spawnArgs: string[] } => {
-    if (wrapperPath) {
-      return { spawnCmd: wrapperPath, spawnArgs: [harnessCmd, ...harnessArgs] };
-    }
-    // Windows: invoke the harness binary directly without the wrapper
-    return { spawnCmd: harnessCmd, spawnArgs: harnessArgs };
+    return resolveHarnessSpawn(harnessCmd, harnessArgs, wrapperPath);
   };
 
   let modelStr: string | undefined;

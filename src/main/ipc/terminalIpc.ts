@@ -8,7 +8,7 @@ import { ipcMain, BrowserWindow, clipboard } from 'electron';
 import type * as pty from 'node-pty';
 import Store from 'electron-store';
 import { type StoreSchema } from '../../shared/types/store';
-import { buildHarnessSpawnArgs, ensureHarnessWrapperScript } from '../harnessLaunch';
+import { buildHarnessSpawnArgs, ensureHarnessWrapperScript, resolveHarnessSpawn } from '../harnessLaunch';
 import { defaultShell } from '../platformShell';
 import {
   SPAWN_TERMINAL,
@@ -107,9 +107,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       : [];
     const wrapperPath = harnessConfig ? ensureHarnessWrapperScriptPath() : null;
     const harnessCmd = harnessConfig
-      ? wrapperPath
-        ? { spawnCmd: wrapperPath, spawnArgs: [harnessConfig.command, ...harnessArgs] }
-        : { spawnCmd: harnessConfig.command, spawnArgs: harnessArgs }
+      ? resolveHarnessSpawn(harnessConfig.command, harnessArgs, wrapperPath)
       : { spawnCmd: userShell, spawnArgs: shellArgs };
 
     const env: { [key: string]: string } = {
@@ -245,7 +243,12 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
     const terminal = terminals.get(id);
     if (terminal) {
-      terminal.pty.kill();
+      try {
+        terminal.pty.kill();
+      } catch {
+        // On Windows, node-pty may warn about SIGTERM before falling back
+        // to TerminateProcess. Suppress the noise — the process is gone.
+      }
       terminals.delete(id);
       return ok();
     }
@@ -258,7 +261,11 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     for (const id of ids) {
       const terminal = terminals.get(id);
       if (terminal) {
-        terminal.pty.kill();
+        try {
+          terminal.pty.kill();
+        } catch {
+          // On Windows, node-pty may warn about SIGTERM — suppress.
+        }
         terminals.delete(id);
         killed++;
       }

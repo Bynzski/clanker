@@ -14,7 +14,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | Prereq | Stand up `windows-latest` CI matrix entry (continue-on-error) | ✅ | phase-prereq-windows-ci |
 | 0 | Make tests platform-neutral (remove hardcoded Unix paths) | 🔲 | — |
 | 1 | Cross-platform harness wrapper + shell/PATH defaults | ✅ | phase-1-cross-platform-shell |
-| 2 | node-pty / ConPTY end-to-end validation on real Windows | 🔧 | phase-2-shell-args-and-paths (partial) |
+| 2 | node-pty / ConPTY end-to-end validation on real Windows | 🔧 | phase-2-shell-args-and-paths + phase-2-harness-cmd-wrap |
 | 3 | Canonical path normalization at IPC boundary | 🔲 | — |
 | 4 | Cross-drive rename + open-file mutation handling | 🔲 | — |
 | 5 | Reserved-name validation + atomic-save watcher tuning | 🔲 | — |
@@ -82,17 +82,22 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 - Terminals crash or won't open ❌
 - Status bar shows mixed slashes (`C:\Users\Jay\Projects/clanker/`) ❌
 
-**Root Causes Found & Fixed:**
+**Root Causes Found & Fixed (Round 1):**
 1. `terminalIpc.ts`: `shellArgs = ['-i']` is a bash-only flag. PowerShell rejects it → terminal fails to start. Fixed: args are now `[]` on `win32`, `['-i']` elsewhere.
 2. `settingsIpc.ts`: `OPEN_BASE_DIRECTORY_DIALOG` appended `/` to native Windows paths. Fixed: uses `path.sep`.
 3. `WorkspaceGateContent.tsx`: `withTrailingSlash` appended `/` without normalizing backslashes. Fixed: normalizes `\\` → `/` first.
 4. `WorkspaceGateContent.tsx`: `handleSubmit` and `fetchSuggestions` only detected POSIX absolute paths (`/...`). Fixed: also detects Windows drive-letter paths (`C:/...`).
 
+**Root Causes Found & Fixed (Round 2):**
+5. `harnessLaunch.ts` / `terminalIpc.ts` / `sessionHistory.ts`: On Windows, npm-installed CLI tools (opencode, pi, etc.) are `.cmd` wrapper scripts. `node-pty.spawn('opencode', ...)` fails with "file not found" because `.cmd` resolution is a shell feature, not a kernel feature. Fixed: new `resolveHarnessSpawn()` helper wraps harness commands in `cmd.exe /c` on Windows.
+6. `terminalIpc.ts`: `pty.kill()` throws on Windows (node-pty SIGTERM warning before TerminateProcess fallback). Fixed: wrapped kill calls in try-catch.
+
 **What to do:**
 1. Rebuild on Windows: `npm ci && npm run build && npm run start`.
 2. Verify terminal opens with PowerShell (no crash).
-3. Verify status bar shows consistent path separators.
-4. Follow the full checklist in `docs/windows-smoke-test.md`.
+3. Verify harness launch works (select Pi or OpenCode, click Launch).
+4. Verify status bar shows consistent path separators.
+5. Follow the full checklist in `docs/windows-smoke-test.md`.
 
 ### Phase 3
 
