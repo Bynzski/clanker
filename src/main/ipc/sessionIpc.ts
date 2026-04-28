@@ -12,6 +12,7 @@ import { SESSION_DISCOVER, SESSION_INVOKE } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
 import type { Terminal } from './terminalIpc';
 import type { HarnessSession } from '../../shared/types/session';
+import { defaultShell } from '../platformShell';
 
 interface RegisterSessionIpcDeps {
   getTerminals: () => Map<string, Terminal>;
@@ -41,7 +42,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
 
     const { spawnCmd, spawnArgs } = buildSessionInvokeArgs(session, fork ?? false, userFlags);
     const cwd = getSafeWorkspacePath(session.cwd);
-    const userShell = process.env.SHELL ?? 'bash';
+    const userShell = defaultShell();
 
     const harnessEnv = harnessOptions[session.harness]?.env ?? {};
 

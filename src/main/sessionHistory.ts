@@ -102,6 +102,15 @@ export function buildSessionInvokeArgs(
 ): { spawnCmd: string; spawnArgs: string[] } {
   const wrapperPath = ensureHarnessWrapperScript();
 
+  /** Helper: wrap harness args with the wrapper script, or invoke directly on Windows. */
+  const wrapOrDirect = (harnessCmd: string, harnessArgs: string[]): { spawnCmd: string; spawnArgs: string[] } => {
+    if (wrapperPath) {
+      return { spawnCmd: wrapperPath, spawnArgs: [harnessCmd, ...harnessArgs] };
+    }
+    // Windows: invoke the harness binary directly without the wrapper
+    return { spawnCmd: harnessCmd, spawnArgs: harnessArgs };
+  };
+
   let modelStr: string | undefined;
   if (session.modelId) {
     if (session.harness === 'pi' && session.provider) {
@@ -115,46 +124,31 @@ export function buildSessionInvokeArgs(
 
   switch (session.harness) {
     case 'opencode':
-      return {
-        spawnCmd: wrapperPath,
-        spawnArgs: ['opencode', '--session', session.id, ...(fork ? ['--fork'] : []), ...flagArgs],
-      };
+      return wrapOrDirect('opencode', [
+        '--session', session.id, ...(fork ? ['--fork'] : []), ...flagArgs,
+      ]);
 
     case 'pi': {
       const target = session.filePath ?? session.id;
-      return {
-        spawnCmd: wrapperPath,
-        spawnArgs: fork
-          ? ['pi', '--fork', target, ...(modelStr ? ['--model', modelStr] : []), ...flagArgs]
-          : ['pi', '--session', target, ...(modelStr ? ['--model', modelStr] : []), ...flagArgs],
-      };
+      return wrapOrDirect('pi', [
+        fork ? '--fork' : '--session', target,
+        ...(modelStr ? ['--model', modelStr] : []), ...flagArgs,
+      ]);
     }
 
     case 'codex':
-      return {
-        spawnCmd: wrapperPath,
-        spawnArgs: [
-          'codex',
-          fork ? 'fork' : 'resume',
-          session.id,
-          ...(modelStr ? ['-m', modelStr] : []),
-          ...flagArgs,
-        ],
-      };
+      return wrapOrDirect('codex', [
+        fork ? 'fork' : 'resume', session.id,
+        ...(modelStr ? ['-m', modelStr] : []), ...flagArgs,
+      ]);
 
     case 'claude':
     default:
-      return {
-        spawnCmd: wrapperPath,
-        spawnArgs: [
-          'claude',
-          '--resume',
-          session.id,
-          ...(fork ? ['--fork-session'] : []),
-          ...(modelStr ? ['--model', modelStr] : []),
-          ...flagArgs,
-        ],
-      };
+      return wrapOrDirect('claude', [
+        '--resume', session.id,
+        ...(fork ? ['--fork-session'] : []),
+        ...(modelStr ? ['--model', modelStr] : []), ...flagArgs,
+      ]);
   }
 }
 
@@ -172,7 +166,7 @@ function runCommandOutput(command: string, args: string[]): Promise<string> {
         maxBuffer: 2 * 1024 * 1024,
         env: {
           ...process.env,
-          PATH: `${os.homedir()}/.local/bin:${process.env.PATH ?? ''}`,
+          PATH: [path.join(os.homedir(), '.local', 'bin'), process.env.PATH ?? ''].join(path.delimiter),
         } as { [key: string]: string },
       },
       (error, stdout, stderr) => {

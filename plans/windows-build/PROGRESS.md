@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 1** — Next to start.
+**Phase 2** — Next to start.
 
 ## Phase Status
 
@@ -13,7 +13,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 |-------|-------------|--------|--------|
 | Prereq | Stand up `windows-latest` CI matrix entry (continue-on-error) | ✅ | phase-prereq-windows-ci |
 | 0 | Make tests platform-neutral (remove hardcoded Unix paths) | 🔲 | — |
-| 1 | Cross-platform harness wrapper + shell/PATH defaults | 🔲 | — |
+| 1 | Cross-platform harness wrapper + shell/PATH defaults | ✅ | phase-1-cross-platform-shell |
 | 2 | node-pty / ConPTY end-to-end validation on real Windows | 🔲 | — |
 | 3 | Canonical path normalization at IPC boundary | 🔲 | — |
 | 4 | Cross-drive rename + open-file mutation handling | 🔲 | — |
@@ -61,11 +61,11 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 **Done:** Created `tests/_helpers/tempPaths.ts` with platform-neutral helpers. Fixed 21 test files: replaced `/home/test` mock returns with `testHome()`, replaced `/tmp/test-home` with `path.join(os.tmpdir(), ...)`, replaced `/home/testuser` and `/home/user` fixtures with `path.join`-derived constants, fixed Claude session encoded-path mock to derive from workspace constant. Left pure string fixtures (`getWorkspaceNameFromPath` POSIX split tests, `file:///tmp/test.txt` URL rejection tests, SSH config data) as-is. All 3192 tests pass. `npm run validate` green.
 
-### Phase 1
+### Phase 1 ✅
 
 **Scope:** Cross-platform harness wrapper + shared default-shell helper + `path.delimiter` PATH-join fix.
 
-**Context:** Mirror `src/main/ipc/terminalIpc.ts:92` shell branch and `src/main/harnessCatalog.ts:308` `path.delimiter` usage. The renderer has **no `/home/...` literals** (verified) — Phase 1 includes a verify-only re-grep. See PLAN.md "Phase 1" section.
+**Done:** Created `src/main/platformShell.ts` with `defaultShell()`, `userLocalBinPath()`, `prependUserLocalBinToPath()`. Updated `sessionIpc.ts` and `terminalIpc.ts` to use shared `defaultShell()`. Fixed `sessionHistory.ts:175` to use `path.delimiter`. Updated `harnessLaunch.ts` to skip wrapper generation on Windows (`WINDOWS_SKIP_WRAPPER` flag); `ensureHarnessWrapperScript` returns `null` on Windows. Updated `buildSessionInvokeArgs` in `sessionHistory.ts` to invoke harness directly on Windows via `wrapOrDirect` helper. Updated `terminalIpc.ts` to handle `null` wrapper path. Verified no `/home/` literals in renderer. All 3192 tests pass. `npm run validate` green.
 
 ### Phase 2
 
@@ -139,3 +139,4 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 |-------|--------|---------|
 | Prereq | phase-prereq-windows-ci | Added `windows-latest` to CI matrix with `continue-on-error: true`. Gated Linux-only steps. `npm run validate` green on Linux. |
 | 0 | phase-0-platform-neutral-tests | Replaced hardcoded Unix path literals in 21 test files. Created `tests/_helpers/tempPaths.ts`. All 3192 tests pass on Linux. |
+| 1 | phase-1-cross-platform-shell | Created `platformShell.ts` shared helper. Fixed shell defaults and PATH delimiter. Wrapper skipped on Windows. All 3192 tests pass. |
