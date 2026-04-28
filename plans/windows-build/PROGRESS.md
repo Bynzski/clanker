@@ -91,6 +91,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 **Root Causes Found & Fixed (Round 2):**
 5. `harnessLaunch.ts` / `terminalIpc.ts` / `sessionHistory.ts`: On Windows, npm-installed CLI tools (opencode, pi, etc.) are `.cmd` wrapper scripts. `node-pty.spawn('opencode', ...)` fails with "file not found" because `.cmd` resolution is a shell feature, not a kernel feature. Fixed: new `resolveHarnessSpawn()` helper wraps harness commands in `cmd.exe /c` on Windows.
 6. `terminalIpc.ts`: `pty.kill()` throws on Windows (node-pty SIGTERM warning before TerminateProcess fallback). Fixed: wrapped kill calls in try-catch.
+7. `FileExplorer/index.tsx`: `listDirectory` IPC returns entry paths with native backslash separators on Windows, but renderer stores `explorerEntriesByPath` keys with forward slashes. FileTree lookup `explorerEntriesByPath[entry.path]` missed the cache. Fixed: normalize entry paths to forward slashes after IPC response.
 
 **What to do:**
 1. Rebuild on Windows: `npm ci && npm run build && npm run start`.
