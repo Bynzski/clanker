@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import * as path from 'node:path';
 import { render, screen } from '@testing-library/react';
 import StatusBar from '../../../src/renderer/components/StatusBar';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createTerminalFixture, createWorkspaceFixture } from '../../setup/fixtures';
+
+// Platform-neutral path constant for test fixtures
+const TEST_PROJECT = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user', 'my-project');
 
 describe('StatusBar', () => {
   beforeEach(() => {
@@ -21,14 +25,14 @@ describe('StatusBar', () => {
   });
 
   it('shows workspace path when set', () => {
-    const ws = createWorkspaceFixture({ workspacePath: '/home/user/my-project', terminals: [] });
+    const ws = createWorkspaceFixture({ workspacePath: TEST_PROJECT, terminals: [] });
     useWorkspaceStore.setState({
       workspaces: [ws],
       activeWorkspaceId: ws.id,
       activeWorkspaceLifecycle: 'active',
     });
     render(<StatusBar />);
-    expect(screen.getByText('/home/user/my-project')).toBeTruthy();
+    expect(screen.getByText(TEST_PROJECT)).toBeTruthy();
   });
 
   it('truncates long paths', () => {

@@ -21,7 +21,7 @@ import * as os from 'node:os';
 describe('discoverHarnessModels cache integration', () => {
   const mockApp = {
     getAppPath: vi.fn(() => '/opt/clanker-grid'),
-    getPath: vi.fn(() => '/tmp/test-home'),
+    getPath: vi.fn(() => path.join(os.tmpdir(), 'test-home')),
   };
 
   // Mock electron-store to control cache
@@ -145,7 +145,7 @@ describe('discoverHarnessModels cache integration', () => {
 describe('discoverHarnessModels cache failure regressions', () => {
   const mockApp = {
     getAppPath: vi.fn(() => '/opt/clanker-grid'),
-    getPath: vi.fn(() => '/tmp/test-home'),
+    getPath: vi.fn(() => path.join(os.tmpdir(), 'test-home')),
   };
 
   const mockStoreInstance = {
@@ -218,7 +218,7 @@ describe('getAvailableHarnessOptions', () => {
   // We need to mock Electron at the top level
   const mockApp = {
     getAppPath: vi.fn(() => '/opt/clanker-grid'),
-    getPath: vi.fn(() => '/tmp/test-home'),
+    getPath: vi.fn(() => path.join(os.tmpdir(), 'test-home')),
   };
 
   beforeEach(() => {
@@ -326,7 +326,7 @@ describe('discoverHarnessModels error paths', () => {
     vi.doMock('electron', () => ({
       app: {
         getAppPath: vi.fn(() => '/opt/clanker-grid'),
-        getPath: vi.fn(() => '/tmp/test-home'),
+        getPath: vi.fn(() => path.join(os.tmpdir(), 'test-home')),
       },
     }));
   });

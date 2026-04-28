@@ -20,7 +20,18 @@ import { Readable } from 'stream';
 // ============================================================================
 
 const { mockExecFile } = vi.hoisted(() => ({ mockExecFile: vi.fn() }));
-const { mockHomedir } = vi.hoisted(() => ({ mockHomedir: vi.fn(() => '/home/testuser') }));
+const { mockHomedir } = vi.hoisted(() => ({ mockHomedir: vi.fn() }));
+
+// Platform-neutral path constants — built from path.join so tests run on
+// Linux, macOS, and Windows with native separators.
+import * as path from 'node:path';
+const TEST_HOME = path.join(process.platform === 'win32' ? 'C:\\Users\\testuser' : '/tmp', 'testuser');
+const TEST_WORKSPACE = path.join(TEST_HOME, 'project');
+const TEST_OTHER = path.join(TEST_HOME, 'other');
+const TEST_HARNESS_WRAPPER = path.join(TEST_HOME, '.clanker-grid', 'harness-wrapper.sh');
+const TEST_PI_SESSIONS_DIR = path.join(TEST_HOME, '.pi', 'agent', 'sessions', 'dir');
+
+mockHomedir.mockReturnValue(TEST_HOME);
 
 vi.mock('child_process', () => ({ execFile: mockExecFile }));
 vi.mock('os', () => ({ homedir: mockHomedir, default: { homedir: mockHomedir } }));
@@ -46,9 +57,9 @@ vi.mock('fs', async (importOriginal) => {
 });
 
 vi.mock('../../../src/main/harnessLaunch', () => ({
-  ensureHarnessWrapperScript: () => '/home/testuser/.clanker-grid/harness-wrapper.sh',
+  ensureHarnessWrapperScript: () => TEST_HARNESS_WRAPPER,
   buildHarnessWrapperScript: () => '#!/bin/sh\nexec "$@"',
-  getHarnessWrapperScriptPath: () => '/home/testuser/.clanker-grid/harness-wrapper.sh',
+  getHarnessWrapperScriptPath: () => TEST_HARNESS_WRAPPER,
   buildHarnessSpawnArgs: vi.fn(),
 }));
 
@@ -72,14 +83,14 @@ import type { HarnessSession } from '../../../src/shared/types/session';
 // ============================================================================
 
 describe('buildSessionInvokeArgs', () => {
-  const wrapper = '/home/testuser/.clanker-grid/harness-wrapper.sh';
+  const wrapper = TEST_HARNESS_WRAPPER;
 
   it('builds opencode resume args', () => {
     const session: HarnessSession = {
       id: 'ses_abc123',
       harness: 'opencode',
       title: 'Test session',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
     };
     const result = buildSessionInvokeArgs(session);
@@ -92,7 +103,7 @@ describe('buildSessionInvokeArgs', () => {
       id: 'ses_abc123',
       harness: 'opencode',
       title: 'Test session',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
     };
     const result = buildSessionInvokeArgs(session, true);
@@ -104,7 +115,7 @@ describe('buildSessionInvokeArgs', () => {
       id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
       harness: 'claude',
       title: 'Claude session',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
     };
     const result = buildSessionInvokeArgs(session);
@@ -116,7 +127,7 @@ describe('buildSessionInvokeArgs', () => {
       id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
       harness: 'claude',
       title: 'Claude session',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
       modelId: 'claude-haiku-4-5-20251001',
       provider: 'anthropic',
@@ -134,7 +145,7 @@ describe('buildSessionInvokeArgs', () => {
       id: '019d9661-a4d3-7e93-a413-229086109874',
       harness: 'codex',
       title: 'Fix the bug',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
     };
     const result = buildSessionInvokeArgs(session);
@@ -146,7 +157,7 @@ describe('buildSessionInvokeArgs', () => {
       id: '019d9661-a4d3-7e93-a413-229086109874',
       harness: 'codex',
       title: 'Fix the bug',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
       modelId: 'gpt-5.1-codex-mini',
     };
@@ -159,15 +170,15 @@ describe('buildSessionInvokeArgs', () => {
       id: '019d998e-221f-7114-b69c-b4d5c3fd546f',
       harness: 'pi',
       title: 'minimax/MiniMax-M2.7',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
       modelId: 'MiniMax-M2.7',
       provider: 'minimax',
-      filePath: '/home/testuser/.pi/agent/sessions/dir/1234_uuid.jsonl',
+      filePath: path.join(TEST_PI_SESSIONS_DIR, '1234_uuid.jsonl'),
     };
     const result = buildSessionInvokeArgs(session);
     expect(result.spawnArgs).toEqual([
-      'pi', '--session', '/home/testuser/.pi/agent/sessions/dir/1234_uuid.jsonl',
+      'pi', '--session', path.join(TEST_PI_SESSIONS_DIR, '1234_uuid.jsonl'),
       '--model', 'minimax/MiniMax-M2.7',
     ]);
   });
@@ -177,13 +188,13 @@ describe('buildSessionInvokeArgs', () => {
       id: '019d998e-221f-7114-b69c-b4d5c3fd546f',
       harness: 'pi',
       title: 'Pi session',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
-      filePath: '/home/testuser/.pi/agent/sessions/dir/1234_uuid.jsonl',
+      filePath: path.join(TEST_PI_SESSIONS_DIR, '1234_uuid.jsonl'),
     };
     const result = buildSessionInvokeArgs(session, true);
     expect(result.spawnArgs).toEqual([
-      'pi', '--fork', '/home/testuser/.pi/agent/sessions/dir/1234_uuid.jsonl',
+      'pi', '--fork', path.join(TEST_PI_SESSIONS_DIR, '1234_uuid.jsonl'),
     ]);
   });
 
@@ -192,7 +203,7 @@ describe('buildSessionInvokeArgs', () => {
       id: 'ses_abc123',
       harness: 'opencode',
       title: 'Test session',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
     };
     const { spawnArgs } = buildSessionInvokeArgs(session);
@@ -204,7 +215,7 @@ describe('buildSessionInvokeArgs', () => {
       id: 'ses_abc123',
       harness: 'opencode',
       title: 'Test session',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
     };
     const result = buildSessionInvokeArgs(session, false, '--yolo --skip-confirm');
@@ -216,7 +227,7 @@ describe('buildSessionInvokeArgs', () => {
       id: '019d9661-a4d3-7e93-a413-229086109874',
       harness: 'codex',
       title: 'Fix the bug',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
     };
     const result = buildSessionInvokeArgs(session, false, '--verbose');
@@ -228,7 +239,7 @@ describe('buildSessionInvokeArgs', () => {
       id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
       harness: 'claude',
       title: 'Claude session',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
       modelId: 'claude-haiku-4-5-20251001',
       provider: 'anthropic',
@@ -246,15 +257,15 @@ describe('buildSessionInvokeArgs', () => {
       id: '019d998e-221f-7114-b69c-b4d5c3fd546f',
       harness: 'pi',
       title: 'minimax/MiniMax-M2.7',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
       modelId: 'MiniMax-M2.7',
       provider: 'minimax',
-      filePath: '/home/testuser/.pi/agent/sessions/dir/1234_uuid.jsonl',
+      filePath: path.join(TEST_PI_SESSIONS_DIR, '1234_uuid.jsonl'),
     };
     const result = buildSessionInvokeArgs(session, false, '--verbose');
     expect(result.spawnArgs).toEqual([
-      'pi', '--session', '/home/testuser/.pi/agent/sessions/dir/1234_uuid.jsonl',
+      'pi', '--session', path.join(TEST_PI_SESSIONS_DIR, '1234_uuid.jsonl'),
       '--model', 'minimax/MiniMax-M2.7',
       '--verbose',
     ]);
@@ -265,7 +276,7 @@ describe('buildSessionInvokeArgs', () => {
       id: '019d9661-a4d3-7e93-a413-229086109874',
       harness: 'codex',
       title: 'Fix the bug',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       timestamp: Date.now(),
       modelId: 'gpt-5.1-codex-mini',
     };
@@ -293,30 +304,30 @@ describe('discoverSessions — opencode', () => {
 
   it('returns sessions matching workspace path from JSON array output', async () => {
     const raw = [
-      { id: 'ses_001', title: 'Image fix', directory: '/home/testuser/project', updated: 1700000000000 },
-      { id: 'ses_002', title: 'Other project', directory: '/home/testuser/other', updated: 1700000001000 },
+      { id: 'ses_001', title: 'Image fix', directory: TEST_WORKSPACE, updated: 1700000000000 },
+      { id: 'ses_002', title: 'Other project', directory: TEST_OTHER, updated: 1700000001000 },
     ];
     mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, JSON.stringify(raw), '');
     });
 
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const opencodeSessions = sessions.filter((s) => s.harness === 'opencode');
 
     expect(opencodeSessions).toHaveLength(1);
     expect(opencodeSessions[0].id).toBe('ses_001');
     expect(opencodeSessions[0].title).toBe('Image fix');
-    expect(opencodeSessions[0].cwd).toBe('/home/testuser/project');
+    expect(opencodeSessions[0].cwd).toBe(TEST_WORKSPACE);
     expect(opencodeSessions[0].timestamp).toBe(1700000000000);
   });
 
   it('handles JSONL output format', async () => {
-    const line1 = { id: 'ses_001', title: 'Session 1', directory: '/home/testuser/project', updated: 1700000000000 };
+    const line1 = { id: 'ses_001', title: 'Session 1', directory: TEST_WORKSPACE, updated: 1700000000000 };
     mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, JSON.stringify(line1) + '\n', '');
     });
 
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const opencodeSessions = sessions.filter((s) => s.harness === 'opencode');
     expect(opencodeSessions).toHaveLength(1);
     expect(opencodeSessions[0].id).toBe('ses_001');
@@ -327,21 +338,21 @@ describe('discoverSessions — opencode', () => {
       cb(new Error('ENOENT: opencode not found'), '', '');
     });
 
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const opencodeSessions = sessions.filter((s) => s.harness === 'opencode');
     expect(opencodeSessions).toHaveLength(0);
   });
 
   it('filters out sessions not matching workspace', async () => {
     const raw = [
-      { id: 'ses_001', title: 'Match', directory: '/home/testuser/project', updated: 1700000000000 },
-      { id: 'ses_002', title: 'No match', directory: '/home/testuser/other', updated: 1700000001000 },
+      { id: 'ses_001', title: 'Match', directory: TEST_WORKSPACE, updated: 1700000000000 },
+      { id: 'ses_002', title: 'No match', directory: TEST_OTHER, updated: 1700000001000 },
     ];
     mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
       cb(null, JSON.stringify(raw), '');
     });
 
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const ids = sessions.filter((s) => s.harness === 'opencode').map((s) => s.id);
     expect(ids).toContain('ses_001');
     expect(ids).not.toContain('ses_002');
@@ -364,7 +375,7 @@ describe('discoverSessions — codex', () => {
     timestamp: '2026-04-16T13:03:37.381Z',
     payload: {
       id: '019d9661-a4d3-7e93-a413-229086109874',
-      cwd: '/home/testuser/project',
+      cwd: TEST_WORKSPACE,
       originator: 'codex-tui',
       model_provider: 'openai',
       model: null,
@@ -433,19 +444,19 @@ describe('discoverSessions — codex', () => {
   });
 
   it('discovers codex sessions matching workspace', async () => {
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const codexSessions = sessions.filter((s) => s.harness === 'codex');
 
     expect(codexSessions).toHaveLength(1);
     expect(codexSessions[0].id).toBe('019d9661-a4d3-7e93-a413-229086109874');
     expect(codexSessions[0].title).toBe('Fix the bug');
-    expect(codexSessions[0].cwd).toBe('/home/testuser/project');
+    expect(codexSessions[0].cwd).toBe(TEST_WORKSPACE);
   });
 
   it('returns empty when session_index.jsonl is missing', async () => {
     mockReadFile.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
 
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const codexSessions = sessions.filter((s) => s.harness === 'codex');
     expect(codexSessions).toHaveLength(0);
   });
@@ -504,7 +515,7 @@ describe('discoverSessions — codex title precedence', () => {
       return Promise.reject(Object.assign(new Error('not found'), { code: 'ENOENT' }));
     });
 
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const codexSessions = sessions.filter((s) => s.harness === 'codex');
     expect(codexSessions).toHaveLength(1);
     expect(codexSessions[0].title).toBe('Fix the bug');
@@ -521,7 +532,7 @@ describe('discoverSessions — codex title precedence', () => {
       return Promise.reject(Object.assign(new Error('not found'), { code: 'ENOENT' }));
     });
 
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const codexSessions = sessions.filter((s) => s.harness === 'codex');
     expect(codexSessions).toHaveLength(1);
     expect(codexSessions[0].title).toBe('Codex session');
@@ -539,7 +550,7 @@ describe('discoverSessions — codex title precedence', () => {
       return Promise.reject(Object.assign(new Error('not found'), { code: 'ENOENT' }));
     });
 
-    const sessions = await discoverSessions('/home/testuser/project');
+    const sessions = await discoverSessions(TEST_WORKSPACE);
     const codexSessions = sessions.filter((s) => s.harness === 'codex');
     expect(codexSessions).toHaveLength(1);
     expect(codexSessions[0].title).toBe('Codex session');
@@ -566,17 +577,17 @@ describe('discoverSessions — caching', () => {
   });
 
   it('returns cached results on second call within TTL', async () => {
-    await discoverSessions('/home/testuser/project');
-    await discoverSessions('/home/testuser/project');
+    await discoverSessions(TEST_WORKSPACE);
+    await discoverSessions(TEST_WORKSPACE);
 
     // execFile should only have been called once (opencode attempt)
     expect(mockExecFile).toHaveBeenCalledTimes(1);
   });
 
   it('clears cache when clearSessionCache is called', async () => {
-    await discoverSessions('/home/testuser/project');
+    await discoverSessions(TEST_WORKSPACE);
     clearSessionCache();
-    await discoverSessions('/home/testuser/project');
+    await discoverSessions(TEST_WORKSPACE);
 
     // execFile called twice (once per discover call)
     expect(mockExecFile).toHaveBeenCalledTimes(2);

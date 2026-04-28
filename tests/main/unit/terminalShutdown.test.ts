@@ -6,6 +6,7 @@
  */
 
 import { describe, test, expect, beforeEach, vi } from 'vitest';
+import { testHome } from '../../_helpers/tempPaths';
 
 const { mockHandle, mockOn } = vi.hoisted(() => ({
   mockHandle: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock('electron', () => ({
   app: {
     disableHardwareAcceleration: vi.fn(),
     getPath: vi.fn((name: string) => {
-      if (name === 'home') return '/home/test';
+      if (name === 'home') return testHome();
       return `/mock/${name}`;
     }),
     commandLine: {

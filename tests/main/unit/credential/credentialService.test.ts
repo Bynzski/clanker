@@ -903,7 +903,7 @@ describe('edge cases', () => {
 
   test('handles path with Windows-style separators', async () => {
     const originalHome = process.env.HOME;
-    process.env.HOME = '/tmp/test-home';
+    process.env.HOME = path.join(os.tmpdir(), 'test-home');
 
     try {
       const result = await configureSshForHost('test-host');

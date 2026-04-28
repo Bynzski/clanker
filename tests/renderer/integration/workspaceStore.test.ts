@@ -1,8 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as path from 'node:path';
 import { useWorkspaceStore, assignWorkspaceLifecycles, getEdgeTerminals } from '../../../src/renderer/store/workspaceStore';
 import type { LayoutSplit, Terminal, Pane, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
+
+// Platform-neutral path constants for test fixtures
+const TEST_HOME_USER = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user');
+const TEST_PROJECT = path.join(TEST_HOME_USER, 'project');
+const TEST_MY_APP = path.join(TEST_HOME_USER, 'my-app');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -70,9 +76,9 @@ function terminal(id: string, workingDir = '/workspace'): Terminal {
 // ===========================================================================
 describe('workspace lifecycle', () => {
   it('addWorkspace sets active workspace and populates snapshot fields', () => {
-    const state = addWorkspace({ workspacePath: '/home/user/project', name: 'My Project' });
+    const state = addWorkspace({ workspacePath: TEST_PROJECT, name: 'My Project' });
     expect(state.name).toBe('My Project');
-    expect(state.workspacePath).toBe('/home/user/project');
+    expect(state.workspacePath).toBe(TEST_PROJECT);
     expect(state.activeWorkspaceId).toBeTruthy();
     expect(state.activeWorkspaceLifecycle).toBe('active');
     expect(state.workspaces).toHaveLength(1);
@@ -80,7 +86,7 @@ describe('workspace lifecycle', () => {
   });
 
   it('addWorkspace derives name from path when name is empty', () => {
-    const state = addWorkspace({ workspacePath: '/home/user/my-app', name: '' });
+    const state = addWorkspace({ workspacePath: TEST_MY_APP, name: '' });
     expect(state.name).toBe('my-app');
   });
 

@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as path from 'node:path';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import WorkspaceGateContent, { TERMINAL_PRESETS } from '../../../src/renderer/components/WorkspaceGateContent';
+
+// Platform-neutral path constants for test fixtures
+const TEST_HOME_USER = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user');
+const TEST_PROJECTS = path.join(TEST_HOME_USER, 'projects');
+const TEST_PROJECT = path.join(TEST_HOME_USER, 'project');
 
 describe('WorkspaceGateContent', () => {
   const mockOnSubmit = vi.fn();
@@ -17,8 +23,8 @@ describe('WorkspaceGateContent', () => {
       clear: vi.fn(() => { Object.keys(store).forEach(k => delete store[k]); }),
     });
     window.electronAPI = {
-      getLastWorkspace: vi.fn().mockResolvedValue('/home/user/'),
-      getBaseDirectory: vi.fn().mockResolvedValue('/home/user/projects/'),
+      getLastWorkspace: vi.fn().mockResolvedValue(TEST_HOME_USER + path.sep),
+      getBaseDirectory: vi.fn().mockResolvedValue(TEST_PROJECTS + path.sep),
       openBaseDirectoryDialog: vi.fn().mockResolvedValue(null),
       getHarnessOptions: vi.fn().mockResolvedValue({
         codex: true,
@@ -61,9 +67,9 @@ describe('WorkspaceGateContent', () => {
   });
 
   it('uses initialPath when provided', () => {
-    renderGate({ initialPath: '/home/user/project/' });
+    renderGate({ initialPath: TEST_PROJECT + path.sep });
     const input = screen.getByPlaceholderText('project name') as HTMLInputElement;
-    expect(input.value).toBe('/home/user/project/');
+    expect(input.value).toBe(TEST_PROJECT + path.sep);
   });
 
   // =========================================================================
@@ -149,7 +155,7 @@ describe('WorkspaceGateContent', () => {
     fireEvent.click(screen.getByText('Launch Workspace'));
     await waitFor(() => {
       expect(mockOnSubmit).toHaveBeenCalledWith(
-        expect.objectContaining({ path: '/home/user/projects/my-project/' })
+        expect.objectContaining({ path: path.join(TEST_PROJECTS, 'my-project') + path.sep })
       );
     });
   });

@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import * as path from 'node:path';
 import {
   AI_COMMIT_COMMANDS,
   buildAiCommitArgs,
@@ -314,8 +315,9 @@ describe('buildCommitPrompt', () => {
     });
 
     it('handles path with special characters', () => {
-      const prompt = buildCommitPrompt({ ...baseContext, workspacePath: '/home/user/project-name_v2' });
-      expect(prompt).toContain('Repository: /home/user/project-name_v2');
+      const wsPath = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user', 'project-name_v2');
+      const prompt = buildCommitPrompt({ ...baseContext, workspacePath: wsPath });
+      expect(prompt).toContain(`Repository: ${wsPath}`);
     });
   });
 

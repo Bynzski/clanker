@@ -2,6 +2,7 @@
  * Debug test - check what gitIpc.ts actually returns
  */
 import { vi, describe, test, expect, beforeEach } from 'vitest';
+import { testHome } from '../../_helpers/tempPaths';
 import { ipcMain } from 'electron';
 import { registerGitIpc } from '../../../src/main/ipc/gitIpc';
 
@@ -9,7 +10,7 @@ vi.mock('electron', () => ({
   app: {
     disableHardwareAcceleration: vi.fn(),
     getPath: vi.fn((name: string) => {
-      if (name === 'home') return '/home/test';
+      if (name === 'home') return testHome();
       return `/mock/${name}`;
     }),
     commandLine: { appendSwitch: vi.fn() },

@@ -5,6 +5,7 @@
  */
 
 import { vi, describe, test, expect, beforeEach } from 'vitest';
+import { testHome } from '../../_helpers/tempPaths';
 
 let attachedBeforeInputEventHandler: ((event: { preventDefault: () => void }, input: { control?: boolean; meta?: boolean; alt?: boolean; shift?: boolean; key?: string; code?: string; type?: string }) => void) | null = null;
 let attachedContextMenuHandler: ((event: unknown, params: { x: number; y: number }) => void) | null = null;
@@ -15,7 +16,7 @@ vi.mock('electron', () => ({
   app: {
     disableHardwareAcceleration: vi.fn(),
     getPath: vi.fn((name: string) => {
-      if (name === 'home') return '/home/test';
+      if (name === 'home') return testHome();
       return `/mock/${name}`;
     }),
     commandLine: {

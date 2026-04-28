@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as path from 'node:path';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import type { WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import WorkspaceTabs from '../../../src/renderer/components/WorkspaceTabs';
 import { installElectronApiMock } from '../../setup/electron';
+
+// Platform-neutral path constants for test fixtures
+const TEST_MY_PROJECT = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user', 'my-project');
+const TEST_ANOTHER_PROJECT = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user', 'another-project');
 
 // Mock the workspaceLifecycle module
 vi.mock('../../../src/renderer/lib/workspaceLifecycle', () => ({
@@ -99,13 +104,13 @@ describe('WorkspaceTabs', () => {
       createMockWorkspace({
         id: 'ws1',
         name: 'My Project',
-        workspacePath: '/home/user/my-project',
+        workspacePath: TEST_MY_PROJECT,
         terminals: [{ id: 't1', pid: 123, workingDir: '/workspace' }],
       }),
       createMockWorkspace({
         id: 'ws2',
         name: 'Another Project',
-        workspacePath: '/home/user/another-project',
+        workspacePath: TEST_ANOTHER_PROJECT,
         terminals: [
           { id: 't2', pid: 456, workingDir: '/workspace' },
           { id: 't3', pid: 789, workingDir: '/workspace' },
@@ -195,7 +200,7 @@ describe('WorkspaceTabs', () => {
     it('uses fallback name when workspace name is empty', () => {
       const workspacesWithEmptyName = [createMockWorkspace({
         name: '',
-        workspacePath: '/home/user/my-project',
+        workspacePath: TEST_MY_PROJECT,
       })];
       
       useWorkspaceStore.setState({
