@@ -240,10 +240,11 @@ describe('Terminal PTY Integration Tests', () => {
 
       try {
         const wrapperPath = ensureHarnessWrapperScript(tempHome.path);
-        expect(fs.readFileSync(wrapperPath, 'utf8')).toBe(buildHarnessWrapperScript());
+        expect(wrapperPath).not.toBeNull();
+        expect(fs.readFileSync(wrapperPath!, 'utf8')).toBe(buildHarnessWrapperScript());
 
         const result = await runHarnessWrapperInPty(
-          wrapperPath,
+          wrapperPath!,
           '/usr/bin/python3',
           ['-c', 'import os, sys; print("tty=%s" % ("yes" if sys.stdin.isatty() else "no")); print("foreground=%s" % ("yes" if os.tcgetpgrp(sys.stdin.fileno()) == os.getpgrp() else "no"))'],
           {

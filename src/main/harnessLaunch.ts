@@ -14,6 +14,13 @@ export interface HarnessConfig {
 const HARNESS_WRAPPER_DIRNAME = '.clanker-grid';
 const HARNESS_WRAPPER_FILENAME = 'harness-wrapper.sh';
 
+/**
+ * On Windows, harness binaries run directly without a wrapper script.
+ * The POSIX shell wrapper handles PATH prepend (~/.local/bin) and fallback
+ * shell exec, neither of which applies to Windows/PowerShell.
+ */
+export const WINDOWS_SKIP_WRAPPER = process.platform === 'win32';
+
 export function buildHarnessSpawnArgs(
   config: HarnessConfig,
   model?: string,
@@ -75,7 +82,16 @@ exec "$fallback_shell" -i
 `;
 }
 
-export function ensureHarnessWrapperScript(homeDir = os.homedir()): string {
+/**
+ * Ensure the harness wrapper script exists on disk and is up to date.
+ * Returns the wrapper script path on Linux/macOS, or `null` on Windows
+ * where harnesses are invoked directly without a wrapper.
+ */
+export function ensureHarnessWrapperScript(homeDir = os.homedir()): string | null {
+  if (WINDOWS_SKIP_WRAPPER) {
+    return null;
+  }
+
   const wrapperPath = getHarnessWrapperScriptPath(homeDir);
   const wrapperDir = path.dirname(wrapperPath);
   const wrapperScript = buildHarnessWrapperScript();

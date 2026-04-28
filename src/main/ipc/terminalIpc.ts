@@ -9,6 +9,7 @@ import type * as pty from 'node-pty';
 import Store from 'electron-store';
 import { type StoreSchema } from '../../shared/types/store';
 import { buildHarnessSpawnArgs, ensureHarnessWrapperScript } from '../harnessLaunch';
+import { defaultShell } from '../platformShell';
 import {
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
@@ -46,7 +47,7 @@ interface RegisterTerminalIpcDeps {
   getStore: () => Store<StoreSchema>;
   getSafeWorkspacePath: (workingDir: string) => string;
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
-  ensureHarnessWrapperScript?: () => string;
+  ensureHarnessWrapperScript?: () => string | null;
   getAppShuttingDown?: () => boolean;
 }
 
@@ -89,7 +90,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const cwd = getSafeWorkspacePath(workingDir);
 
     // Use user's default shell, fallback to bash
-    const userShell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : 'bash');
+    const userShell = defaultShell();
 
     // Spawn with interactive flags for better shell experience
     const shellArgs = ['-i'];
@@ -103,11 +104,11 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const harnessArgs = harnessConfig
       ? buildHarnessSpawnArgs(harnessConfig, effectiveModel, userFlags)
       : [];
+    const wrapperPath = harnessConfig ? ensureHarnessWrapperScriptPath() : null;
     const harnessCmd = harnessConfig
-      ? {
-        spawnCmd: ensureHarnessWrapperScriptPath(),
-        spawnArgs: [harnessConfig.command, ...harnessArgs],
-      }
+      ? wrapperPath
+        ? { spawnCmd: wrapperPath, spawnArgs: [harnessConfig.command, ...harnessArgs] }
+        : { spawnCmd: harnessConfig.command, spawnArgs: harnessArgs }
       : { spawnCmd: userShell, spawnArgs: shellArgs };
 
     const env: { [key: string]: string } = {
