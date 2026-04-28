@@ -5,16 +5,16 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 2** — In progress (manual Windows smoke required).
+**Phase 3** — Next to start.
 
 ## Phase Status
 
 | Phase | Description | Status | Commit |
 |-------|-------------|--------|--------|
 | Prereq | Stand up `windows-latest` CI matrix entry (continue-on-error) | ✅ | phase-prereq-windows-ci |
-| 0 | Make tests platform-neutral (remove hardcoded Unix paths) | 🔲 | — |
+| 0 | Make tests platform-neutral (remove hardcoded Unix paths) | ✅ | phase-0-platform-neutral-tests |
 | 1 | Cross-platform harness wrapper + shell/PATH defaults | ✅ | phase-1-cross-platform-shell |
-| 2 | node-pty / ConPTY end-to-end validation on real Windows | 🔧 | phase-2-shell-args-and-paths + phase-2-harness-cmd-wrap |
+| 2 | node-pty / ConPTY end-to-end validation on real Windows | ✅ | phase-2-smoke-fixes |
 | 3 | Canonical path normalization at IPC boundary | 🔲 | — |
 | 4 | Cross-drive rename + open-file mutation handling | 🔲 | — |
 | 5 | Reserved-name validation + atomic-save watcher tuning | 🔲 | — |
@@ -45,7 +45,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Blocking Issues
 
-- **Phase 2:** Round 1 bugs fixed (shell args + path separators). Awaiting Windows re-test to confirm terminals open and paths display correctly. See `docs/windows-smoke-test.md` for the full checklist.
+- (none)
 
 ## Phase Details
 
@@ -67,38 +67,22 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 **Done:** Created `src/main/platformShell.ts` with `defaultShell()`, `userLocalBinPath()`, `prependUserLocalBinToPath()`. Updated `sessionIpc.ts` and `terminalIpc.ts` to use shared `defaultShell()`. Fixed `sessionHistory.ts:175` to use `path.delimiter`. Updated `harnessLaunch.ts` to skip wrapper generation on Windows (`WINDOWS_SKIP_WRAPPER` flag); `ensureHarnessWrapperScript` returns `null` on Windows. Updated `buildSessionInvokeArgs` in `sessionHistory.ts` to invoke harness directly on Windows via `wrapOrDirect` helper. Updated `terminalIpc.ts` to handle `null` wrapper path. Verified no `/home/` literals in renderer. All 3192 tests pass. `npm run validate` green.
 
-### Phase 2 🔧
+### Phase 2 ✅
 
 **Scope:** Manual smoke on a real Windows host: PowerShell terminal via ConPTY + harness launch end-to-end.
 
 **Context:** No code changes unless the smoke surfaces real bugs. See PLAN.md "Phase 2" section.
 
-**Status:** First smoke pass revealed two bugs — fixed. Awaiting re-test.
-
-**Smoke Results (Round 1):**
-- Installs ✅
-- Folder pickers work ✅
-- Harnesses detected ✅
-- Terminals crash or won't open ❌
-- Status bar shows mixed slashes (`C:\Users\Jay\Projects/clanker/`) ❌
-
-**Root Causes Found & Fixed (Round 1):**
+**Done:** Three rounds of smoke testing revealed seven bugs — all fixed:
 1. `terminalIpc.ts`: `shellArgs = ['-i']` is a bash-only flag. PowerShell rejects it → terminal fails to start. Fixed: args are now `[]` on `win32`, `['-i']` elsewhere.
 2. `settingsIpc.ts`: `OPEN_BASE_DIRECTORY_DIALOG` appended `/` to native Windows paths. Fixed: uses `path.sep`.
 3. `WorkspaceGateContent.tsx`: `withTrailingSlash` appended `/` without normalizing backslashes. Fixed: normalizes `\\` → `/` first.
 4. `WorkspaceGateContent.tsx`: `handleSubmit` and `fetchSuggestions` only detected POSIX absolute paths (`/...`). Fixed: also detects Windows drive-letter paths (`C:/...`).
+5. `harnessLaunch.ts` / `terminalIpc.ts` / `sessionHistory.ts`: On Windows, npm-installed CLI tools are `.cmd` wrapper scripts. `node-pty.spawn('opencode', ...)` fails with "file not found". Fixed: new `resolveHarnessSpawn()` helper wraps harness commands in `cmd.exe /c` on Windows.
+6. `terminalIpc.ts`: `pty.kill()` throws on Windows (node-pty SIGTERM warning). Fixed: wrapped kill calls in try-catch.
+7. `FileExplorer/index.tsx`: `listDirectory` IPC returns entry paths with backslash separators on Windows, but renderer stores keys with forward slashes. Fixed: normalize entry paths after IPC response.
 
-**Root Causes Found & Fixed (Round 2):**
-5. `harnessLaunch.ts` / `terminalIpc.ts` / `sessionHistory.ts`: On Windows, npm-installed CLI tools (opencode, pi, etc.) are `.cmd` wrapper scripts. `node-pty.spawn('opencode', ...)` fails with "file not found" because `.cmd` resolution is a shell feature, not a kernel feature. Fixed: new `resolveHarnessSpawn()` helper wraps harness commands in `cmd.exe /c` on Windows.
-6. `terminalIpc.ts`: `pty.kill()` throws on Windows (node-pty SIGTERM warning before TerminateProcess fallback). Fixed: wrapped kill calls in try-catch.
-7. `FileExplorer/index.tsx`: `listDirectory` IPC returns entry paths with native backslash separators on Windows, but renderer stores `explorerEntriesByPath` keys with forward slashes. FileTree lookup `explorerEntriesByPath[entry.path]` missed the cache. Fixed: normalize entry paths to forward slashes after IPC response.
-
-**What to do:**
-1. Rebuild on Windows: `npm ci && npm run build && npm run start`.
-2. Verify terminal opens with PowerShell (no crash).
-3. Verify harness launch works (select Pi or OpenCode, click Launch).
-4. Verify status bar shows consistent path separators.
-5. Follow the full checklist in `docs/windows-smoke-test.md`.
+Created `src/main/harnessLaunch.ts:resolveHarnessSpawn()` — shared helper for cross-platform command resolution. Created `docs/windows-smoke-test.md` — Phase 2 verification checklist. All 3192 tests pass. `npm run validate` green.
 
 ### Phase 3
 
@@ -167,3 +151,4 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | Prereq | phase-prereq-windows-ci | Added `windows-latest` to CI matrix with `continue-on-error: true`. Gated Linux-only steps. `npm run validate` green on Linux. |
 | 0 | phase-0-platform-neutral-tests | Replaced hardcoded Unix path literals in 21 test files. Created `tests/_helpers/tempPaths.ts`. All 3192 tests pass on Linux. |
 | 1 | phase-1-cross-platform-shell | Created `platformShell.ts` shared helper. Fixed shell defaults and PATH delimiter. Wrapper skipped on Windows. All 3192 tests pass. |
+| 2 | phase-2-smoke-fixes | Fixed 7 bugs from Windows smoke: shell args, path separators, harness cmd.exe wrapping, SIGTERM suppression, explorer path normalization. Created `resolveHarnessSpawn()` helper. All 3192 tests pass. |
