@@ -139,7 +139,7 @@ describe('WorkspaceTabs', () => {
 
       render(<WorkspaceTabs />);
 
-      expect(electronApi.explorerStartWatching).toHaveBeenCalledWith(mockWorkspaces[0].workspacePath);
+      expect(electronApi.explorerStartWatching).toHaveBeenCalledWith(mockWorkspaces[0].workspacePath.replace(/\\/g, '/'));
     });
 
     it('stops explorer watching on unmount', () => {

@@ -167,7 +167,7 @@ describe('WorkspaceGateContent', () => {
     fireEvent.click(screen.getByText('Launch Workspace'));
     await waitFor(() => {
       expect(mockOnSubmit).toHaveBeenCalledWith(
-        expect.objectContaining({ path: path.join(TEST_PROJECTS, 'my-project') + path.sep })
+        expect.objectContaining({ path: TEST_PROJECTS.replace(/\\/g, '/') + '/my-project/' })
       );
     });
   });

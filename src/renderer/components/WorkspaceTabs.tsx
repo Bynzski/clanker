@@ -147,7 +147,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                   title={workspace.name || workspace.workspacePath}
                   onDoubleClick={(e) => startEditing(workspace.id, workspace.name, e)}
                 >
-                  {workspace.name || workspace.workspacePath.split('/').pop() || 'Workspace'}
+                  {workspace.name || workspace.workspacePath.split(/[/\\]/).pop() || 'Workspace'}
                 </span>
                 <button
                   className="workspace-tab-edit-trigger"

@@ -298,7 +298,7 @@ describe('registerFileIpc', () => {
       const result = await handler({}, { workspacePath: '/ws', filePath: '/ws/file.txt', content: 'new content' });
 
       expect(result).toEqual({ success: true });
-      expect(mockMarkWritten).toHaveBeenCalledWith('/ws/file.txt');
+      expect(mockMarkWritten).toHaveBeenCalledWith(nativeTestPath('/ws/file.txt'));
     });
 
     test('returns { success: false, errorCode } for invalid path — does not throw', async () => {
@@ -591,7 +591,7 @@ describe('registerFileIpc', () => {
 
       vi.mocked(mockResolveAndValidateWatchPath).mockResolvedValue({
         success: true,
-        filePath: '/ws/file.txt',
+        filePath: nativeTestPath('/ws/file.txt'),
       });
 
       const result = await handler({}, { workspacePath: '/ws', filePath: '/ws/file.txt' });

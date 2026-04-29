@@ -234,7 +234,7 @@ describe('Terminal PTY Integration Tests', () => {
       expect(normalizePiModelId('pi', 'sonnet')).toBe('pi/sonnet');
     });
 
-    it('runs the harness as the foreground PTY job and then falls back to an interactive shell', async () => {
+    it.skipIf(process.platform === 'win32')('runs the harness as the foreground PTY job and then falls back to an interactive shell', async () => {
       const tempHome = createTempDir();
       let sentFallbackCommand = false;
 
@@ -278,7 +278,7 @@ describe('Terminal PTY Integration Tests', () => {
   // Tests - Real PTY Shell Spawning
   // =========================================================================
 
-  describe('Real PTY Shell Spawning', () => {
+  describe.skipIf(process.platform === 'win32')('Real PTY Shell Spawning', () => {
     it('spawns a PTY with bash successfully', async () => {
       const result = await runCommandInPty('echo "hello world"', {
         shell: '/bin/bash',
@@ -397,7 +397,7 @@ describe('Terminal PTY Integration Tests', () => {
   // Tests - PTY Data Handling
   // =========================================================================
 
-  describe('PTY Data Handling', () => {
+  describe.skipIf(process.platform === 'win32')('PTY Data Handling', () => {
     it('handles binary data output', async () => {
       const result = await runCommandInPty(
         'printf "\\x00\\x01\\x02\\x03" | cat',
@@ -446,7 +446,7 @@ describe('Terminal PTY Integration Tests', () => {
   // Tests - PTY Exit and Cleanup
   // =========================================================================
 
-  describe('PTY Exit and Cleanup', () => {
+  describe.skipIf(process.platform === 'win32')('PTY Exit and Cleanup', () => {
     it('exits cleanly with exit code 0', async () => {
       const result = await runCommandInPty('exit 0', {
         shell: '/bin/bash',
@@ -521,7 +521,7 @@ describe('Terminal PTY Integration Tests', () => {
   // Tests - PTY Resize Behavior
   // =========================================================================
 
-  describe('PTY Resize Behavior', () => {
+  describe.skipIf(process.platform === 'win32')('PTY Resize Behavior', () => {
     it('resizes PTY without crashing', async () => {
       const shell = process.env.SHELL || '/bin/bash';
 
@@ -572,7 +572,7 @@ describe('Terminal PTY Integration Tests', () => {
   // Tests - Interactive Shell Behavior
   // =========================================================================
 
-  describe('Interactive Shell Behavior', () => {
+  describe.skipIf(process.platform === 'win32')('Interactive Shell Behavior', () => {
     it('loads shell profile in interactive mode', async () => {
       // Create a temp directory with a custom prompt
       const tempDir = createTempDir();
@@ -609,7 +609,7 @@ describe('Terminal PTY Integration Tests', () => {
   // Tests - Platform-Specific Behavior
   // =========================================================================
 
-  describe('Platform-Specific Behavior', () => {
+  describe.skipIf(process.platform === 'win32')('Platform-Specific Behavior', () => {
     it('works on Linux with bash', async () => {
       const result = await runCommandInPty('uname -s', {
         shell: '/bin/bash',
@@ -643,7 +643,7 @@ describe('Terminal PTY Integration Tests', () => {
   // Tests - Error Handling
   // =========================================================================
 
-  describe('Error Handling', () => {
+  describe.skipIf(process.platform === 'win32')('Error Handling', () => {
     it('handles non-existent shell gracefully', async () => {
       // This tests that we handle shell spawning failures
       // We can't easily test a truly non-existent shell without mocking
@@ -694,7 +694,7 @@ describe('Terminal PTY Integration Tests', () => {
   // Tests - Environment Variable Passing
   // =========================================================================
 
-  describe('Environment Variable Passing', () => {
+  describe.skipIf(process.platform === 'win32')('Environment Variable Passing', () => {
     it('passes CLANKER_GRID environment variable', async () => {
       const result = await runCommandInPty('echo "CLANKER=$CLANKER_GRID"', {
         shell: '/bin/bash',
@@ -759,7 +759,7 @@ describe('Terminal PTY Integration Tests', () => {
   // Tests - Harness Environment Variables
   // =========================================================================
 
-  describe('Harness Environment Variables', () => {
+  describe.skipIf(process.platform === 'win32')('Harness Environment Variables', () => {
     it('passes harness-specific environment variables', async () => {
       // Test with OPENCODE_PERMISSION env var which is used for opencode harness
       const result = await runCommandInPty(
@@ -806,7 +806,7 @@ describe('Terminal PTY Integration Tests', () => {
 // Tests - PTY Performance Characteristics
 // ============================================================================
 
-describe('PTY Performance Characteristics', () => {
+describe.skipIf(process.platform === 'win32')('PTY Performance Characteristics', () => {
   it('spawns PTY within acceptable time', async () => {
     const shell = process.env.SHELL || '/bin/bash';
 
@@ -871,7 +871,7 @@ describe('PTY Performance Characteristics', () => {
 // Tests - PTY with Different Shell Types
 // ============================================================================
 
-describe('PTY with Different Shell Types', () => {
+describe.skipIf(process.platform === 'win32')('PTY with Different Shell Types', () => {
   const availableShells = ['/bin/bash', '/bin/sh'];
   
   for (const shellPath of availableShells) {
