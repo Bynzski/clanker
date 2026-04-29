@@ -17,6 +17,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import type { BrowserWindow } from 'electron';
 import { EXPLORER_TREE_CHANGED, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
+import { toPosixPath } from '../shared/pathNormalize';
 import type { GitService } from './gitService';
 
 interface ExplorerWatcherDeps {
@@ -221,10 +222,11 @@ export class ExplorerWatcherService {
           candidatePath: rawParentDir,
         }) ?? rawParentDir
       : rawParentDir;
+    const posixParentDir = toPosixPath(parentDir);
 
     const mainWindow = this.getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
-      this.pendingExplorerDirectories.add(parentDir);
+      this.pendingExplorerDirectories.add(posixParentDir);
       this.scheduleExplorerTreeRefresh();
     }
 

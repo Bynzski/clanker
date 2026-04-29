@@ -2,6 +2,7 @@ import { watch, type FSWatcher } from 'fs';
 import { access } from 'fs/promises';
 import type { BrowserWindow } from 'electron';
 import { FILE_CHANGED, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
+import { toPosixPath } from '../shared/pathNormalize';
 import type { GitService } from './gitService';
 
 interface FileWatcherDeps {
@@ -220,7 +221,7 @@ export class FileWatcherService {
       deleted = true;
     }
 
-    const payload = { filePath, deleted };
+    const payload = { filePath: toPosixPath(filePath), deleted };
     const mainWindow = this.getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(FILE_CHANGED, payload);

@@ -39,6 +39,7 @@ Long-term maintainability is a core priority:
 - **Main/renderer separation** — System resources (PTY, git, browser) live in `src/main/`. UI lives in `src/renderer/`. Never import main modules from renderer.
 - **IPC bridge only** — Renderer communicates with main via preload bridge. No direct Node.js access in renderer.
 - **Extract shared logic** — When adding features, first check if shared utilities belong in a separate module under `src/renderer/lib/`.
+- **Canonical IPC path form** — All paths crossing IPC use POSIX separators. Main converts to native on entry and back to POSIX on return. Renderer assumes POSIX everywhere.
 
 ## Windows Support
 

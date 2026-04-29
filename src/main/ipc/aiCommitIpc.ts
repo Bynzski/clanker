@@ -12,6 +12,7 @@ import { type StoreSchema } from '../../shared/types/store';
 import {
   resolveExistingDirectory,
 } from '../security';
+import { toNativePath } from '../../shared/pathNormalize';
 import { GitService } from '../gitService';
 import {
   AI_COMMIT_COMMANDS,
@@ -89,7 +90,7 @@ function formatCommitChangeSummary(changes: GitStatusEntry[]): string[] {
 }
 
 function getValidatedWorkspacePath(workspacePath: string): string | null {
-  return resolveExistingDirectory(workspacePath);
+  return resolveExistingDirectory(toNativePath(workspacePath, process.platform));
 }
 
 function getInvalidWorkspaceResult() {

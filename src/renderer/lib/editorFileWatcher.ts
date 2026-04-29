@@ -1,5 +1,6 @@
 import { useWorkspaceStore, type WorkspaceTab } from '../store/workspaceStore';
 import type { WorkspaceState } from '../store/workspaceStoreTypes';
+import { toPosixPath } from '../../shared/pathNormalize';
 
 interface EditorWatchTarget {
   filePath: string;
@@ -34,7 +35,7 @@ function getEditorWatchTargets(state: WorkspaceState): EditorWatchTarget[] {
 }
 
 function getOwnerKey(target: Pick<EditorWatchTarget, 'workspaceId' | 'filePath'>): string {
-  return `${target.workspaceId}:${target.filePath}`;
+  return `${target.workspaceId}:${toPosixPath(target.filePath)}`;
 }
 
 function buildTargetsByOwner(state: WorkspaceState): Map<string, EditorWatchTarget> {
@@ -87,7 +88,8 @@ export function startEditorFileWatcher(): () => void {
   let targetsByOwner = new Map<string, EditorWatchTarget>();
 
   const watchTarget = (target: EditorWatchTarget) => {
-    const existingOwners = watchedOwnersByFilePath.get(target.filePath);
+    const normalizedFilePath = toPosixPath(target.filePath);
+    const existingOwners = watchedOwnersByFilePath.get(normalizedFilePath);
     const ownerKey = getOwnerKey(target);
 
     if (existingOwners) {
@@ -95,7 +97,7 @@ export function startEditorFileWatcher(): () => void {
       return;
     }
 
-    watchedOwnersByFilePath.set(target.filePath, new Set([ownerKey]));
+    watchedOwnersByFilePath.set(normalizedFilePath, new Set([ownerKey]));
     void window.electronAPI.editorWatchFile({
       workspacePath: target.workspacePath,
       filePath: target.filePath,
@@ -103,7 +105,8 @@ export function startEditorFileWatcher(): () => void {
   };
 
   const unwatchTarget = (target: EditorWatchTarget) => {
-    const existingOwners = watchedOwnersByFilePath.get(target.filePath);
+    const normalizedFilePath = toPosixPath(target.filePath);
+    const existingOwners = watchedOwnersByFilePath.get(normalizedFilePath);
     if (!existingOwners) {
       return;
     }
@@ -113,7 +116,7 @@ export function startEditorFileWatcher(): () => void {
       return;
     }
 
-    watchedOwnersByFilePath.delete(target.filePath);
+    watchedOwnersByFilePath.delete(normalizedFilePath);
     void window.electronAPI.editorUnwatchFile({
       workspacePath: target.workspacePath,
       filePath: target.filePath,

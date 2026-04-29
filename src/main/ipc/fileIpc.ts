@@ -5,6 +5,7 @@ import type { FileListDirectoryRequest } from '../../shared/types/fileExplorer';
 import type { FileReadRequest, FileWriteRequest, FileWatchRequest } from '../../shared/types/editor';
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest } from '../../shared/types/fileOperations';
 import { listDirectory, readFile, writeFile, createFile, createDirectory, deleteEntry, renameEntry, resolveAndValidateWatchPath } from '../fileService';
+import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import type { FileWatcherService } from '../fileWatcher';
 import type { ExplorerWatcherService } from '../explorerWatcher';
 
@@ -18,34 +19,75 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
   const fileWatcher = deps.getFileWatcher();
   const explorerWatcher = deps.getExplorerWatcher();
   ipcMain.handle(FILE_LIST_DIRECTORY, async (_, request: FileListDirectoryRequest) => {
-    return listDirectory(request);
+    const nativeRequest: FileListDirectoryRequest = {
+      ...request,
+      workspacePath: toNativePath(request.workspacePath, process.platform),
+      directoryPath: toNativePath(request.directoryPath, process.platform),
+    };
+    const result = await listDirectory(nativeRequest);
+    if (!result.success) {
+      return result;
+    }
+    return {
+      ...result,
+      entries: result.entries.map((entry) => ({
+        ...entry,
+        path: toPosixPath(entry.path),
+      })),
+    };
   });
 
   ipcMain.handle(FILE_READ, async (_, request: FileReadRequest) => {
-    return readFile(request);
+    const nativeRequest: FileReadRequest = {
+      ...request,
+      workspacePath: toNativePath(request.workspacePath, process.platform),
+      filePath: toNativePath(request.filePath, process.platform),
+    };
+    return readFile(nativeRequest);
   });
 
   ipcMain.handle(FILE_WRITE, async (_, request: FileWriteRequest) => {
-    const result = await writeFile(request);
+    const nativeRequest: FileWriteRequest = {
+      ...request,
+      workspacePath: toNativePath(request.workspacePath, process.platform),
+      filePath: toNativePath(request.filePath, process.platform),
+    };
+    const result = await writeFile(nativeRequest);
     if (result.success) {
-      fileWatcher.markWritten(request.filePath);
+      fileWatcher.markWritten(nativeRequest.filePath);
     }
     return result;
   });
 
   ipcMain.handle(FILE_CREATE, async (_, request: FileCreateRequest) => {
-    if (request.type === 'directory') {
-      return createDirectory(request);
+    const nativeRequest: FileCreateRequest = {
+      ...request,
+      workspacePath: toNativePath(request.workspacePath, process.platform),
+      targetPath: toNativePath(request.targetPath, process.platform),
+    };
+    if (nativeRequest.type === 'directory') {
+      return createDirectory(nativeRequest);
     }
-    return createFile(request);
+    return createFile(nativeRequest);
   });
 
   ipcMain.handle(FILE_DELETE, async (_, request: FileDeleteRequest) => {
-    return deleteEntry(request);
+    const nativeRequest: FileDeleteRequest = {
+      ...request,
+      workspacePath: toNativePath(request.workspacePath, process.platform),
+      targetPath: toNativePath(request.targetPath, process.platform),
+    };
+    return deleteEntry(nativeRequest);
   });
 
   ipcMain.handle(FILE_RENAME, async (_, request: FileRenameRequest) => {
-    return renameEntry(request);
+    const nativeRequest: FileRenameRequest = {
+      ...request,
+      workspacePath: toNativePath(request.workspacePath, process.platform),
+      oldPath: toNativePath(request.oldPath, process.platform),
+      newPath: toNativePath(request.newPath, process.platform),
+    };
+    return renameEntry(nativeRequest);
   });
 
   ipcMain.handle(REVEAL_IN_FILE_MANAGER, async (_, filePath: string) => {
@@ -53,7 +95,7 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
       return false;
     }
 
-    shell.showItemInFolder(path.resolve(filePath));
+    shell.showItemInFolder(path.resolve(toNativePath(filePath, process.platform)));
     return true;
   });
 
@@ -62,7 +104,13 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
       return false;
     }
 
-    const validated = await resolveAndValidateWatchPath(request.workspacePath, request.filePath);
+    const nativeRequest: FileWatchRequest = {
+      ...request,
+      workspacePath: toNativePath(request.workspacePath, process.platform),
+      filePath: toNativePath(request.filePath, process.platform),
+    };
+
+    const validated = await resolveAndValidateWatchPath(nativeRequest.workspacePath, nativeRequest.filePath);
     if (!validated.success) {
       return false;
     }
@@ -77,7 +125,7 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
     if (!request?.filePath) {
       return false;
     }
-    fileWatcher.unwatchFile(path.resolve(request.filePath));
+    fileWatcher.unwatchFile(path.resolve(toNativePath(request.filePath, process.platform)));
     return true;
   });
 
@@ -86,7 +134,7 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
   ipcMain.on(FILE_CHANGED, () => { });
 
   ipcMain.handle(EXPLORER_START_WATCHING, (_, workspacePath: string) => {
-    explorerWatcher.watchWorkspace(workspacePath);
+    explorerWatcher.watchWorkspace(toNativePath(workspacePath, process.platform));
   });
 
   ipcMain.handle(EXPLORER_STOP_WATCHING, () => {

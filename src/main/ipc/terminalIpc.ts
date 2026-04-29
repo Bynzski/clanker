@@ -24,6 +24,7 @@ import {
   WRITE_CLIPBOARD,
 } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
+import { toNativePath } from '../../shared/pathNormalize';
 
 interface Terminal {
   id: string;
@@ -87,7 +88,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const store = getStore();
 
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const cwd = getSafeWorkspacePath(workingDir);
+    const cwd = getSafeWorkspacePath(toNativePath(workingDir, process.platform));
 
     // Use user's default shell, fallback to bash
     const userShell = defaultShell();
