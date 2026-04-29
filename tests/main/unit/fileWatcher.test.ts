@@ -369,6 +369,19 @@ describe('rename handling', () => {
     expect(infra.watchers.get('/test/file.txt')).not.toBe(oldWatcher);
   });
 
+  test('windows-style atomic-save rename events trigger rewatch + change emission', async () => {
+    const service = makeService();
+    service.watchFile('/test/file.txt');
+    const oldWatcher = infra.watchers.get('/test/file.txt')!;
+
+    oldWatcher.fireRename();
+    tick(300);
+    await flush();
+
+    expect(mockWebContents.send).toHaveBeenCalled();
+    expect(infra.watchers.get('/test/file.txt')).not.toBe(oldWatcher);
+  });
+
   test('rename queues a change event via handleChange', async () => {
     const service = makeService();
     service.watchFile('/test/file.txt');
