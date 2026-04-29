@@ -93,8 +93,6 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
   }
 
   ipcMain.handle(ANNOTATION_ENABLE, async (_, workspaceId: string) => {
-    console.log('[Annotation IPC] Enable:', workspaceId);
-
     const mainWindow = deps.getMainWindow();
     const entry = getBrowserViewEntryForWorkspace(deps, workspaceId);
 
@@ -103,7 +101,6 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
 
       const escapeHandler = (_event: Electron.Event, input: Electron.Input) => {
         if (input.key !== 'Escape' || input.type !== 'keyDown') return;
-        console.log('[Annotation IPC] Escape captured in main process');
 
         mainWindow.webContents.send(ANNOTATION_ESCAPE, { workspaceId });
 
@@ -126,7 +123,6 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
         const controllerState = controller.getState();
         if (!controllerState.enabled) return;
 
-        console.log('[Annotation IPC] Page navigated — re-injecting annotation runtime');
         void controller.reinitialize().catch((err: unknown) => {
           console.error('[Annotation IPC] Re-injection failed:', err);
         });
@@ -159,7 +155,6 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
   });
 
   ipcMain.handle(ANNOTATION_DISABLE, async () => {
-    console.log('[Annotation IPC] Disable');
     const workspaceId = controller.getState().workspaceId ?? deps.getActiveBrowserWorkspaceId();
     if (workspaceId) {
       return await disableAnnotationForWorkspace(workspaceId);
@@ -178,12 +173,10 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
   });
 
   ipcMain.handle(ANNOTATION_CAPTURE, async () => {
-    console.log('[Annotation IPC] Capture');
     return await controller.capture();
   });
 
   ipcMain.handle(ANNOTATION_EXPORT, async (_, capture: AnnotationData) => {
-    console.log('[Annotation IPC] Export');
     const markdown = formatAnnotationMarkdown(capture);
     clipboard.writeText(markdown);
     return { success: true };
@@ -196,16 +189,13 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
   ipcMain.on(ANNOTATION_ESCAPE, () => { });
 
   ipcMain.handle(ANNOTATION_TRIGGER_COPY, async () => {
-    console.log('[Annotation IPC] Trigger copy');
     const result = await controller.capture();
     if (!result.success || !result.annotation) {
-      console.log('[Annotation IPC] Capture failed:', result.error);
       return { success: false, error: result.error || 'Capture failed' };
     }
     try {
       const markdown = formatAnnotationMarkdown(result.annotation);
       clipboard.writeText(markdown);
-      console.log('[Annotation IPC] Annotation written to clipboard');
       return { success: true };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);

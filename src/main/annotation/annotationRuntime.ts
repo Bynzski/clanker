@@ -1012,8 +1012,6 @@ ${getRuntimeHelperSource()}
     }
     return false;
   };
-
-  console.log('[Clanker Annotation] Runtime injected');
 })();
   `.trim();
 }

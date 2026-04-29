@@ -128,12 +128,6 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     let launchLabel: string | undefined;
     if (harness && getHarnessOptions()[harness]) {
       const config = getHarnessOptions()[harness];
-      console.info('[clanker-grid] harness launch', {
-        harness,
-        command: config.command,
-        args: harnessArgs,
-        model: effectiveModel ?? null,
-      });
       launchLabel = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}`;
     }
 

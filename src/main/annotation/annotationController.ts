@@ -89,7 +89,6 @@ export function createAnnotationController(
 
   function getViewForWorkspace(workspaceId: string | null): WebContentsView | null {
     if (!workspaceId) {
-      console.log('[Annotation] No annotation workspace');
       return null;
     }
 
@@ -147,7 +146,6 @@ export function createAnnotationController(
       const runtimeCode = generateAnnotationRuntime();
       await view.webContents.executeJavaScript(runtimeCode);
       state.initialized = true;
-      console.log('[Annotation] Runtime injected');
       return { success: true };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
@@ -193,8 +191,6 @@ export function createAnnotationController(
     },
 
     async enable(workspaceId: string): Promise<{ success: boolean; error?: string }> {
-      console.log('[Annotation] Enable called for workspace:', workspaceId);
-
       // Always attempt to verify the runtime is present in the current page.
       // After navigation/reload, the page-context runtime is destroyed but
       // state.initialized may still be true from the previous document.
@@ -203,7 +199,6 @@ export function createAnnotationController(
       // Optimization: if already initialized and enabled for the same workspace,
       // skip re-injection (the runtime is still present in the current document).
       if (state.initialized && state.enabled && state.workspaceId === workspaceId) {
-        console.log('[Annotation] Already initialized and enabled — skipping injection');
         return { success: true };
       }
 
@@ -233,13 +228,10 @@ export function createAnnotationController(
 
       state.enabled = true;
       state.workspaceId = workspaceId;
-      console.log('[Annotation] Enabled successfully');
       return { success: true };
     },
 
     async disable(): Promise<{ success: boolean }> {
-      console.log('[Annotation] Disable called');
-
       if (!state.enabled) {
         return { success: true };
       }
@@ -249,13 +241,10 @@ export function createAnnotationController(
       state.enabled = false;
       state.initialized = false;
       state.workspaceId = null;
-      console.log('[Annotation] Disabled');
       return { success: true };
     },
 
     async capture(): Promise<AnnotationCaptureResult> {
-      console.log('[Annotation] Capture called');
-
       const result = await executeAndCapture<{
         error?: string;
         url?: string;
@@ -337,7 +326,6 @@ export function createAnnotationController(
     },
 
     async reinitialize(): Promise<{ success: boolean; error?: string }> {
-      console.log('[Annotation] Reinitialize called');
       return reinitializeRuntime();
     },
   };
