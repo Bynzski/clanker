@@ -60,8 +60,11 @@ beforeEach(() => {
   resetService();
 });
 
-afterEach(() => {
+afterEach(async () => {
   service.stopPolling();
+  // Wait for any in-flight git subprocess to finish and release file handles
+  // before attempting to remove the temp directory (avoids EBUSY on Windows).
+  await service.drain();
   if (repo) {
     repo.cleanup();
     repo = null;
@@ -350,7 +353,8 @@ describe('getCurrentWorkspace - with real git', () => {
 
     expect(service.getCurrentWorkspace()).toBe(repo2.path);
 
-    // Cleanup repo2
+    // Drain before cleanup so git.exe releases the directory handle on Windows.
+    await service.drain();
     repo2.cleanup();
   });
 });
@@ -423,7 +427,8 @@ describe('polling lifecycle - integration with real git', () => {
     const secondRepoStatus = await service.refresh();
     expect(secondRepoStatus!.changes.some(c => c.path === 'other.ts')).toBe(true);
 
-    // Cleanup
+    // Drain before cleanup so git.exe releases the directory handle on Windows.
+    await service.drain();
     repo2.cleanup();
   });
 
