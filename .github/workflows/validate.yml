@@ -9,7 +9,6 @@ on:
 jobs:
   validate:
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
 
     strategy:
       matrix:

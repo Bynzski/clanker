@@ -24,7 +24,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 8b | UNC / drive-letter / polling / long-path handling | ✅ | uncommitted |
 | 8c | Case-insensitive path keying + case-only rename | ✅ | uncommitted |
 | 8d | Verify-only Windows polish sweep | ✅ | uncommitted |
-| 9 | Linux AppImage + unsigned NSIS/portable release smoke and v0.1 prep | 🔲 | — |
+| 9 | Linux AppImage + unsigned NSIS/portable release smoke and v0.1 prep | 🔧 | uncommitted |
 
 ## Status Legend
 
@@ -45,7 +45,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Blocking Issues
 
-- (none)
+- Phase 9 requires a real Windows host/VM for artifact build and smoke tests; not available in current Linux-only execution environment.
 
 ## Phase Details
 
@@ -154,9 +154,20 @@ Created `src/main/harnessLaunch.ts:resolveHarnessSpawn()` — shared helper for 
 
 **Context:** Verify-only sweep for remaining low-risk items. See PLAN.md "Phase 8d" section.
 
-### Phase 9
+### Phase 9 🔧
 
 **Scope:** `npm run build:dist` on Linux and Windows; smoke Linux AppImage and Windows installer/portable on clean hosts; flip CI gate to required in workflow configuration; prepare release notes/checksums. Publish/tag only with explicit maintainer authorization.
+
+**Progress:** Completed Linux-side work and in-repo CI gate flip:
+- Ran `npm run build:dist` on Linux successfully; produced `release/Clanker Grid-0.1.0.AppImage`.
+- Updated `.github/workflows/validate.yml` to remove Windows `continue-on-error`, so Windows now fails the workflow when broken.
+- Added unsigned Windows SmartScreen warning note to `README.md`.
+
+**Remaining manual tasks (requires Windows host/VM and release authority):**
+- Run `npm run build:dist` on Windows and confirm NSIS + portable artifacts.
+- Smoke-test NSIS install/launch/uninstall on clean Win10/Win11 VMs.
+- Verify credentials persistence and `%APPDATA%\\Clanker Grid` upgrade behavior.
+- Prepare checksums/release notes and publish/tag only if explicitly authorized.
 
 **Context:** See PLAN.md "Phase 9" section.
 
