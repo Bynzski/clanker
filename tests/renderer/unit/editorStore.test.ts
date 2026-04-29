@@ -283,6 +283,48 @@ describe('editor store actions', () => {
         content: 'modified',
       });
     });
+
+    it('preserves CRLF when saving a CRLF-origin file', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({
+        success: true,
+        content: 'line1\r\nline2\r\n',
+      });
+      mockElectronApi.editorWriteFile.mockResolvedValueOnce({ success: true });
+
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/crlf.txt');
+      const tabId = useWorkspaceStore.getState().editorTabs[0].id;
+      useWorkspaceStore.getState().updateEditorContent(tabId, 'line1\nline2\nline3\n');
+
+      await useWorkspaceStore.getState().saveEditorFile(tabId);
+
+      expect(mockElectronApi.editorWriteFile).toHaveBeenCalledWith({
+        workspacePath: '/workspace',
+        filePath: '/workspace/crlf.txt',
+        content: 'line1\r\nline2\r\nline3\r\n',
+      });
+    });
+
+    it('preserves LF when saving an LF-origin file', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({
+        success: true,
+        content: 'line1\nline2\n',
+      });
+      mockElectronApi.editorWriteFile.mockResolvedValueOnce({ success: true });
+
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/lf.txt');
+      const tabId = useWorkspaceStore.getState().editorTabs[0].id;
+      useWorkspaceStore.getState().updateEditorContent(tabId, 'line1\nline2\nline3\n');
+
+      await useWorkspaceStore.getState().saveEditorFile(tabId);
+
+      expect(mockElectronApi.editorWriteFile).toHaveBeenCalledWith({
+        workspacePath: '/workspace',
+        filePath: '/workspace/lf.txt',
+        content: 'line1\nline2\nline3\n',
+      });
+    });
   });
 
   describe('saveAllEditorFiles', () => {

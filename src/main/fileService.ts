@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { shell } from 'electron';
 import type {
   FileExplorerEntry,
   FileListDirectoryRequest,
@@ -551,6 +552,16 @@ export async function createDirectory(request: FileCreateRequest): Promise<FileO
   }
 }
 
+async function deletePathWithTrashFallback(targetPath: string): Promise<void> {
+  try {
+    await shell.trashItem(targetPath);
+    return;
+  } catch {
+    // Fallback when native trash integration is unavailable.
+    await fs.rm(targetPath, { recursive: true });
+  }
+}
+
 export async function deleteEntry(request: FileDeleteRequest): Promise<FileOperationResult> {
   const safeWorkspacePath = resolveExistingDirectory(request.workspacePath);
   if (!safeWorkspacePath) {
@@ -572,7 +583,7 @@ export async function deleteEntry(request: FileDeleteRequest): Promise<FileOpera
       return { success: false, error: 'Cannot delete workspace root' };
     }
 
-    await fs.rm(resolvedReal, { recursive: true });
+    await deletePathWithTrashFallback(resolvedReal);
     return { success: true };
   } catch (error) {
     if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {

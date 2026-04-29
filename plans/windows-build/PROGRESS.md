@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 8a** — Next to start.
+**Phase 8b** — Next to start.
 
 ## Phase Status
 
@@ -20,7 +20,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 5 | Reserved-name validation + atomic-save watcher tuning | ✅ | uncommitted |
 | 6 | Credential / SSH permission policy on Windows | ✅ | uncommitted |
 | 7 | Husky on Windows — document or replace shim | ✅ | uncommitted |
-| 8a | Delete safety + CRLF preservation | 🔲 | — |
+| 8a | Delete safety + CRLF preservation | ✅ | uncommitted |
 | 8b | UNC / drive-letter / polling / long-path handling | 🔲 | — |
 | 8c | Case-insensitive path keying + case-only rename | 🔲 | — |
 | 8d | Verify-only Windows polish sweep | 🔲 | — |
@@ -122,9 +122,11 @@ Created `src/main/harnessLaunch.ts:resolveHarnessSpawn()` — shared helper for 
 
 **Context:** See PLAN.md "Phase 7" section.
 
-### Phase 8a
+### Phase 8a ✅
 
 **Scope:** Route delete through `shell.trashItem` where possible and preserve CRLF/LF line endings on save.
+
+**Done:** Updated `fileService.deleteEntry` to route deletes through `shell.trashItem` first with a documented fallback to `fs.rm` when native trash integration is unavailable. Added renderer line-ending preservation helper (`preserveOriginalLineEndings`) and wired `workspaceStore.saveEditorFile` to preserve the original file line-ending style on save. Added editor-store tests verifying CRLF-origin files save as CRLF and LF-origin files save as LF. `npm run validate` green.
 
 **Context:** Bounded implementation phase for F8 and F13. See PLAN.md "Phase 8a" section.
 

@@ -57,6 +57,7 @@ import {
   withWorkspaceResidency,
   withWorkspaceResourcePolicy,
 } from './workspaceStoreHelpers';
+import { preserveOriginalLineEndings } from '../lib/lineEndings';
 
 export type {
   BrowserPaneState,
@@ -1596,7 +1597,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return true;
     }
 
-    const contentToSave = tab.content;
+    const contentToSave = preserveOriginalLineEndings(tab.content, tab.originalContent);
     useWorkspaceStore.setState({ pendingEditorOperations: setEditorOperationPending(stateBeforeSave, tab.filePath, 'save') });
 
     try {
