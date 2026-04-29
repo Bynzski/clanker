@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 8d** — Next to start.
+**Phase 9** — Next to start.
 
 ## Phase Status
 
@@ -23,7 +23,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 8a | Delete safety + CRLF preservation | ✅ | uncommitted |
 | 8b | UNC / drive-letter / polling / long-path handling | ✅ | uncommitted |
 | 8c | Case-insensitive path keying + case-only rename | ✅ | uncommitted |
-| 8d | Verify-only Windows polish sweep | 🔲 | — |
+| 8d | Verify-only Windows polish sweep | ✅ | uncommitted |
 | 9 | Linux AppImage + unsigned NSIS/portable release smoke and v0.1 prep | 🔲 | — |
 
 ## Status Legend
@@ -146,9 +146,11 @@ Created `src/main/harnessLaunch.ts:resolveHarnessSpawn()` — shared helper for 
 
 **Context:** Bounded implementation phase for F3. See PLAN.md "Phase 8c" section.
 
-### Phase 8d
+### Phase 8d ✅
 
 **Scope:** Verify and document Git autocrlf, `.ssh` lookup, app-data/electron-store, and raw `fs.watch` findings.
+
+**Done:** Completed verify-and-document sweep in `docs/windows.md`: added Windows contributor recommendation for `core.autocrlf=input`; documented `.ssh` lookup behavior (prefer `%USERPROFILE%`, fallback to `HOME`/`os.homedir()`); documented Windows app-data/electron-store location under `%APPDATA%\Clanker Grid`; and recorded the raw `fs.watch` editor-watcher status with Phase 5 verification reference. No code-path changes were required. `npm run validate` green.
 
 **Context:** Verify-only sweep for remaining low-risk items. See PLAN.md "Phase 8d" section.
 
