@@ -24,28 +24,65 @@ While the project is pre-1.0, MINOR releases may break compatibility. When they 
 
 Releases are cut from `main`. The working tree must be clean before starting.
 
-1. Confirm `main` is green: `npm run validate` (lint, typecheck, security audit, build, tests).
-2. Edit `CHANGELOG.md`: rename the `## [Unreleased]` heading to `## [X.Y.Z] - YYYY-MM-DD`. Add a fresh empty `## [Unreleased]` section above it. Update the link references at the bottom.
-3. Bump `version` in `package.json` to `X.Y.Z`.
-4. Run `npm run validate` again.
-5. Run `npm run build:dist`. The AppImage lands in `release/Clanker Grid-X.Y.Z.AppImage`.
-6. Smoke-test the AppImage: launch it, open a workspace, spawn a terminal, run a git operation. If it does not launch, do not release.
-7. Commit the changelog and version bump together: `chore(release): v0.1.0`.
-8. Tag the commit: `git tag -a vX.Y.Z -m "Clanker Grid X.Y.Z"`.
-9. Push: `git push origin main && git push origin vX.Y.Z`.
-10. Create the GitHub release and attach the AppImage:
+A full release produces both the Linux AppImage and the Windows NSIS installer + portable executable. Each platform must be built on its own host: the AppImage on Linux, the NSIS/portable on Windows. There is no cross-compilation step.
 
-    ```
-    gh release create vX.Y.Z 'release/Clanker Grid-X.Y.Z.AppImage' \
-      --title "vX.Y.Z" \
-      --notes "$(awk '/^## \[X.Y.Z\]/{flag=1;next} /^## \[/{flag=0} flag' CHANGELOG.md)"
-    ```
+### 1. Prepare the release commit (Linux host)
+
+1. Confirm `main` is green: `npm run validate` (lint, typecheck, security audit, build, tests). CI must be green for both `ubuntu-latest` and `windows-latest`.
+2. Edit `CHANGELOG.md`: rename the `## [Unreleased]` heading to `## [X.Y.Z] - YYYY-MM-DD`. Add a fresh empty `## [Unreleased]` section above it. Update the link references at the bottom.
+3. Bump `version` in `package.json` to `X.Y.Z`. Update `package-lock.json` to match (the top-level `version` and the root package entry).
+4. Run `npm run validate` again.
+5. Commit the changelog and version bump together: `chore(release): vX.Y.Z`.
+6. Tag the commit: `git tag -a vX.Y.Z -m "Clanker Grid X.Y.Z"`.
+7. Push: `git push origin main && git push origin vX.Y.Z`.
+
+### 2. Build the Linux artifact (Linux host)
+
+1. Run `npm run build:dist`. The AppImage lands in `release/Clanker Grid-X.Y.Z.AppImage`.
+2. Smoke-test the AppImage on a clean/current Linux desktop: launch it, open a workspace, spawn a terminal, run a git operation, open the file explorer. If it does not launch, do not release.
+
+### 3. Build the Windows artifacts (Windows host)
+
+1. Check out the same `vX.Y.Z` tag on a Windows 10/11 machine with Git for Windows, Node.js 22+, and npm 10+ installed.
+2. Run `npm ci`. `electron-builder` triggers `@electron/rebuild` for `node-pty` against the Electron ABI on first install.
+3. Run `npm run build:dist`. Two artifacts land in `release/`:
+   - `Clanker Grid Setup X.Y.Z.exe` — NSIS installer
+   - `Clanker Grid X.Y.Z.exe` — portable executable
+4. Smoke-test the NSIS installer on a clean Windows 10 or 11 VM: install, launch (accept the SmartScreen "Run anyway" prompt — the build is unsigned), open a workspace, spawn a PowerShell terminal, run a git operation, generate or load a credential, then uninstall and confirm `%APPDATA%\Clanker Grid` either persists or is cleared as intended.
+5. Smoke-test the portable executable on a clean Windows VM: launch directly without installing, repeat the workspace + terminal + git smoke.
+
+### 4. Publish the release
+
+Once all artifacts are built and smoke-tested, attach them to a single GitHub release.
+
+```
+gh release create vX.Y.Z \
+  'release/Clanker Grid-X.Y.Z.AppImage' \
+  'release/Clanker Grid Setup X.Y.Z.exe' \
+  'release/Clanker Grid X.Y.Z.exe' \
+  --title "vX.Y.Z" \
+  --notes "$(awk '/^## \[X.Y.Z\]/{flag=1;next} /^## \[/{flag=0} flag' CHANGELOG.md)"
+```
+
+If the Linux and Windows hosts are different machines, copy the Windows artifacts back to the Linux host before running `gh release create`, or run `gh release upload vX.Y.Z` from each host in turn.
+
+Mention the SmartScreen warning explicitly in the GitHub release notes so first-time Windows users know to expect it.
 
 ## Platform targets
 
-This release ships **Linux AppImage (x64) only**.
+This release ships:
 
-The `build` block in `package.json` carries macOS (`dmg`, `zip`) and Windows (`nsis`, `portable`) target definitions, but those targets are not produced or tested as part of the release flow and require building on the respective platform. Adding a platform to the supported set means producing it, smoke-testing it, attaching it to the release, and updating this document.
+- **Linux AppImage** (x64) — produced on Linux.
+- **Windows NSIS installer** (x64, unsigned) — produced on Windows 10/11.
+- **Windows portable executable** (x64, unsigned) — produced on Windows 10/11.
+
+Not currently produced or supported:
+
+- macOS (`dmg`, `zip`) — target definitions exist in `package.json` `build` but are not built or tested.
+- ARM64 (Windows or Linux) — not built.
+- WSL — not a target. WSL users should run the Linux AppImage.
+
+Code signing for the Windows artifacts is planned for a follow-up release; the current NSIS and portable builds are unsigned and will trigger SmartScreen on first launch.
 
 ## Hotfix releases
 

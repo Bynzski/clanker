@@ -1,12 +1,44 @@
 # Getting Started
 
-## Installation
+## Supported platforms
+
+| Platform | Builds shipped |
+|----------|---------------|
+| Linux (x64) | AppImage |
+| Windows 10 1809+ / Windows 11 (x64) | NSIS installer + portable executable (unsigned) |
+
+macOS, ARM64, and WSL are not supported in this release. WSL users should run the Linux AppImage. See [Windows Notes](windows.md) for Windows-specific setup (long paths, line endings, UNC workspaces, SmartScreen).
+
+## Installing a release build
+
+Download the artifact for your platform from [GitHub releases](https://github.com/Bynzski/clanker/releases):
+
+### Linux
+
+```bash
+chmod +x 'Clanker Grid-X.Y.Z.AppImage'
+./'Clanker Grid-X.Y.Z.AppImage'
+```
+
+### Windows — installer
+
+1. Run `Clanker Grid Setup X.Y.Z.exe`.
+2. Windows SmartScreen will display "Windows protected your PC" because the installer is unsigned. Click **More info → Run anyway**.
+3. Complete the installer; Clanker Grid is added to the Start Menu.
+
+### Windows — portable
+
+Run `Clanker Grid X.Y.Z.exe` directly. No installation step. SmartScreen will still warn on first launch.
+
+## Building from source
 
 ```bash
 git clone <repo-url>
 cd <repo-directory>
 npm install
 ```
+
+Requires Node.js 22.12+ and npm 10+. On Windows, also install **Git for Windows** so husky pre-commit hooks can execute.
 
 ## First Launch
 

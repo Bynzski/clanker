@@ -126,7 +126,8 @@ Browser annotation feature for capturing structured element descriptions:
 | `security.ts` | `resolveExistingDirectory()` for path validation, `isUrlAllowed()` for browser URL allowlist. |
 | `gitService.ts` | GitService class — git CLI wrapper. All git operations go through this class. |
 | `aiCommit.ts` | AI commit message generation. Builds prompts and executes harness commands. |
-| `harnessLaunch.ts` | Harness launch helpers — preserves argument construction and manages the generated wrapper script used for harness PTY spawning. |
+| `harnessLaunch.ts` | Harness launch helpers. On Linux/macOS, manages the generated `~/.clanker-grid/harness-wrapper.sh` used for PTY spawning. On Windows, skips wrapper generation and uses `resolveHarnessSpawn()` to wrap commands in `cmd.exe /c` so npm-installed `.cmd` shims resolve correctly. |
+| `platformShell.ts` | Single source of truth for default shell (`powershell.exe` on Windows, `$SHELL`/`bash` elsewhere) and `~/.local/bin` PATH prepending. |
 | `harnessCatalog.ts` | `getAvailableHarnessOptions()` and `discoverHarnessModels()` — detects installed harnesses and available models. |
 | `sessionHistory.ts` | Chat history discovery from Claude, Codex, OpenCode, and Pi session stores. Caches results for 60 seconds. |
 | `fileService.ts` | File read/write operations. Used by `fileIpc.ts`. |
@@ -142,3 +143,5 @@ Browser annotation feature for capturing structured element descriptions:
 - **IPC channel names from `src/shared/ipcChannels.ts`.** Never hard-code channel strings.
 - **Path validation before use.** Use `security.ts` `resolveExistingDirectory()` before any file system access.
 - **Test exports are internal.** `main.ts` exports `terminals`, `browserViews`, `gitService`, `store`, `killAllTerminals` for test access only. Do not build new features on these exports.
+- **Canonical IPC paths are POSIX.** Convert incoming paths to native (`path.sep`) at IPC entry, convert outgoing paths back to forward slashes at the boundary. Use the helpers in `src/shared/pathNormalize.ts`. See `AGENTS.md` Maintainability section.
+- **Platform branching.** Use `src/main/platformShell.ts` for default-shell selection and `harnessLaunch.resolveHarnessSpawn()` for harness command resolution. Do not add ad-hoc `process.platform === 'win32'` branches; centralize them in these helpers.
