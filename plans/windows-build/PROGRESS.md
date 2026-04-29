@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 7** — Next to start.
+**Phase 8a** — Next to start.
 
 ## Phase Status
 
@@ -19,7 +19,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 4 | Cross-drive rename + open-file mutation handling | ✅ | uncommitted |
 | 5 | Reserved-name validation + atomic-save watcher tuning | ✅ | uncommitted |
 | 6 | Credential / SSH permission policy on Windows | ✅ | uncommitted |
-| 7 | Husky on Windows — document or replace shim | 🔲 | — |
+| 7 | Husky on Windows — document or replace shim | ✅ | uncommitted |
 | 8a | Delete safety + CRLF preservation | 🔲 | — |
 | 8b | UNC / drive-letter / polling / long-path handling | 🔲 | — |
 | 8c | Case-insensitive path keying + case-only rename | 🔲 | — |
@@ -114,9 +114,11 @@ Created `src/main/harnessLaunch.ts:resolveHarnessSpawn()` — shared helper for 
 
 **Context:** `src/main/credential/sshKeyService.ts`, `src/main/credential/credentialService.ts`. See PLAN.md "Phase 6" section.
 
-### Phase 7
+### Phase 7 ✅
 
 **Scope:** Document Git-for-Windows requirement, OR replace `.husky/pre-commit` with a Node entrypoint.
+
+**Done:** Kept the existing minimal `.husky/pre-commit` hook (`npm run lint`, `npm run typecheck`) and documented the Windows requirement that Git hooks run through the `sh` bundled with Git for Windows. Added explicit notes to `README.md` and `AGENTS.md` so Windows contributors know Git for Windows is required for pre-commit execution. `npm run validate` green.
 
 **Context:** See PLAN.md "Phase 7" section.
 
