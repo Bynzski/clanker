@@ -69,13 +69,6 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
 
     const launchLabel = `[clanker-grid] ${spawnArgs.join(' ')}`;
 
-    console.info('[clanker-grid] session invoke', {
-      harness: session.harness,
-      id: session.id,
-      fork: fork ?? false,
-      userFlags: userFlags ?? null,
-    });
-
     return spawnPtyProcess({
       id: `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       spawnCmd,

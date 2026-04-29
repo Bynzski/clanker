@@ -372,7 +372,6 @@ async function discoverOpenCodeSessions(workspacePath: string): Promise<HarnessS
     }
     return sessions;
   } catch {
-    console.debug('[session-history] opencode session list failed or not available');
     return [];
   }
 }
@@ -547,7 +546,6 @@ async function discoverCodexSessions(workspacePath: string): Promise<HarnessSess
   try {
     indexContent = await fs.promises.readFile(indexPath, 'utf8');
   } catch {
-    console.debug('[session-history] codex session_index.jsonl not found');
     return [];
   }
 
@@ -706,7 +704,6 @@ async function discoverPiSessions(workspacePath: string): Promise<HarnessSession
   try {
     subdirEntries = await fs.promises.readdir(piSessionsDir, { withFileTypes: true });
   } catch {
-    console.debug('[session-history] pi sessions dir not found');
     return [];
   }
 
@@ -806,7 +803,6 @@ async function discoverClaudeSessions(workspacePath: string): Promise<HarnessSes
   try {
     dirEntries = await fs.promises.readdir(claudeProjectsDir, { withFileTypes: true });
   } catch {
-    console.debug('[session-history] claude projects dir not found');
     return [];
   }
 
