@@ -50,6 +50,7 @@ Windows 10 1809+ is a supported platform. Key patterns:
 - **Path separators:** Main process uses native `path.sep` (`\` on Windows). Renderer normalizes to forward slashes (`/`). Paths crossing IPC must be normalized at the boundary.
 - **Path-keyed maps:** All `Map`/`Set` keys in the renderer must use forward-slash paths. Normalize entry paths from IPC responses before storing.
 - **No wrapper script:** `ensureHarnessWrapperScript()` returns `null` on Windows. The POSIX wrapper only applies to Linux/macOS.
+- **SSH permissions policy:** On Windows, rely on inherited NTFS ACLs under `%USERPROFILE%\.ssh`; do not treat POSIX `mode/chmod` as effective. Keep explicit POSIX modes only on non-Windows.
 - **Process kill:** `node-pty.kill()` may emit a SIGTERM warning on Windows before falling back to `TerminateProcess`. Wrap in try-catch.
 
 ## Package Structure

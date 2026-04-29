@@ -6,6 +6,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { safeStorage } from 'electron';
 import Store from 'electron-store';
 import { execFile } from 'child_process';
@@ -163,8 +164,26 @@ function storeDelete(key: string): void {
 /**
  * Get the global SSH config file path.
  */
+function resolveSshHomeDir(): string {
+  if (process.platform === 'win32') {
+    const userProfile = process.env.USERPROFILE?.trim();
+    if (userProfile) {
+      return userProfile;
+    }
+
+    const home = process.env.HOME?.trim();
+    if (home) {
+      return home;
+    }
+
+    return os.homedir();
+  }
+
+  return process.env.HOME?.trim() || os.homedir();
+}
+
 function getSshConfigPath(): string {
-  return path.join(process.env.HOME || process.env.USERPROFILE || '', '.ssh', 'config');
+  return path.join(resolveSshHomeDir(), '.ssh', 'config');
 }
 
 // ============================================================================
@@ -488,7 +507,12 @@ Host ${hostname}
     // Ensure .ssh directory exists
     const sshDir = path.dirname(sshConfigPath);
     if (!fs.existsSync(sshDir)) {
-      fs.mkdirSync(sshDir, { mode: 0o700 });
+      if (process.platform === 'win32') {
+        // Windows policy: rely on inherited NTFS ACLs from the user profile.
+        fs.mkdirSync(sshDir);
+      } else {
+        fs.mkdirSync(sshDir, { mode: 0o700 });
+      }
     }
 
     fs.appendFileSync(sshConfigPath, newConfig);
