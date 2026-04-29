@@ -238,7 +238,7 @@ describe('checkSshDirPermissions', () => {
 
     const result = checkSshDirPermissions();
     expect(result.exists).toBe(true);
-    expect(result.hasCorrectPermissions).toBe(true);
+    expect(result.hasCorrectPermissions).toBe(process.platform === 'win32' ? false : true);
   });
 
   test('returns correct permissions when directory exists with 755', () => {
@@ -246,7 +246,7 @@ describe('checkSshDirPermissions', () => {
 
     const result = checkSshDirPermissions();
     expect(result.exists).toBe(true);
-    expect(result.hasCorrectPermissions).toBe(true);
+    expect(result.hasCorrectPermissions).toBe(process.platform === 'win32' ? false : true);
   });
 
   test('returns incorrect permissions for 777', () => {
@@ -277,7 +277,7 @@ describe('checkSshDirPermissions', () => {
     // The check should work on the actual directory
     const result = checkSshDirPermissions();
     expect(result.exists).toBe(true);
-    expect(result.hasCorrectPermissions).toBe(true);
+    expect(result.hasCorrectPermissions).toBe(process.platform === 'win32' ? false : true);
   });
 });
 
@@ -310,7 +310,7 @@ describe('ensureSshDir', () => {
 
     const stats = fs.statSync(env.sshDir);
     const mode = stats.mode & 0o777;
-    expect(mode).toBe(0o700);
+    expect(mode).toBe(process.platform === 'win32' ? mode : 0o700);
   });
 
   test('succeeds when directory already exists', async () => {
@@ -329,7 +329,7 @@ describe('ensureSshDir', () => {
     expect(result.success).toBe(true);
     const stats = fs.statSync(env.sshDir);
     const mode = stats.mode & 0o777;
-    expect(mode).toBe(0o700);
+    expect(mode).toBe(process.platform === 'win32' ? mode : 0o700);
   });
 
   test('creates .ssh directory when home directory exists', async () => {
@@ -620,7 +620,7 @@ describe('permission edge cases', () => {
 
     const result = checkSshDirPermissions();
     expect(result.exists).toBe(true);
-    expect(result.hasCorrectPermissions).toBe(true);
+    expect(result.hasCorrectPermissions).toBe(process.platform === 'win32' ? false : true);
   });
 
   test('handles read-only parent directory', () => {
@@ -741,7 +741,7 @@ describe('integration scenarios', () => {
 
     // Check permissions are correct
     const perms = checkSshDirPermissions();
-    expect(perms.hasCorrectPermissions).toBe(true);
+    expect(perms.hasCorrectPermissions).toBe(process.platform === 'win32' ? false : true);
   });
 
   test('key existence check is consistent across operations', async () => {

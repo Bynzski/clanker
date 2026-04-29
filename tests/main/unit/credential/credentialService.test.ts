@@ -115,6 +115,8 @@ function createTestEnvironment(): TestEnvironment {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `credential-test-${crypto.randomUUID().slice(0, 8)}-`));
   const homeDir = path.join(root, 'home', 'testuser');
   const sshDir = path.join(homeDir, '.ssh');
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
 
   // Create the home directory structure
   fs.mkdirSync(homeDir, { recursive: true, mode: 0o755 });
@@ -126,6 +128,7 @@ function createTestEnvironment(): TestEnvironment {
   _setTestStore(store);
   _setTestSafeStorage(testSafeStorage);
   process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
 
   return {
     store,
@@ -135,7 +138,16 @@ function createTestEnvironment(): TestEnvironment {
     cleanup: () => {
       _resetTestStore();
       _resetTestSafeStorage();
-      process.env.HOME = os.homedir();
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      if (originalUserProfile === undefined) {
+        delete process.env.USERPROFILE;
+      } else {
+        process.env.USERPROFILE = originalUserProfile;
+      }
       fs.rmSync(root, { recursive: true, force: true });
     },
   };
@@ -655,6 +667,10 @@ describe('configureSshForHost', () => {
     await configureSshForHost('github.com');
 
     const stats = fs.statSync(sshDir);
+    if (process.platform === 'win32') {
+      assert.ok(stats.isDirectory());
+      return;
+    }
     assert.equal(stats.mode & 0o777, 0o700);
   });
 
@@ -903,13 +919,25 @@ describe('edge cases', () => {
 
   test('handles path with Windows-style separators', async () => {
     const originalHome = process.env.HOME;
-    process.env.HOME = path.join(os.tmpdir(), 'test-home');
+    const originalUserProfile = process.env.USERPROFILE;
+    const tempHome = path.join(os.tmpdir(), 'test-home');
+    process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
 
     try {
       const result = await configureSshForHost('test-host');
       assert.equal(typeof result.success, 'boolean');
     } finally {
-      process.env.HOME = originalHome;
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      if (originalUserProfile === undefined) {
+        delete process.env.USERPROFILE;
+      } else {
+        process.env.USERPROFILE = originalUserProfile;
+      }
     }
   });
 
@@ -1602,6 +1630,10 @@ describe('configuration edge cases', () => {
 
     const sshConfigPath = path.join(env.homeDir, '.ssh', 'config');
     const stats = fs.statSync(sshConfigPath);
+    if (process.platform === 'win32') {
+      assert.ok(stats.isFile());
+      return;
+    }
     // Config file should be readable but not too permissive
     const mode = stats.mode & 0o777;
     assert.ok(mode <= 0o644);

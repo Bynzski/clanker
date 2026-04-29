@@ -119,13 +119,18 @@ test('buildHarnessWrapperScript runs the harness in the foreground and falls bac
   assert.match(script, /CLANKER_GRID_FALLBACK_SHELL/);
 });
 
-test('ensureHarnessWrapperScript writes the wrapper to a user-local path', () => {
+test('ensureHarnessWrapperScript uses the platform-appropriate wrapper behavior', () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-grid-harness-wrapper-'));
 
   try {
     const wrapperPath = ensureHarnessWrapperScript(tempHome);
-    const expectedPath = getHarnessWrapperScriptPath(tempHome);
 
+    if (process.platform === 'win32') {
+      assert.equal(wrapperPath, null);
+      return;
+    }
+
+    const expectedPath = getHarnessWrapperScriptPath(tempHome);
     assert.equal(wrapperPath, expectedPath);
     assert.equal(fs.existsSync(wrapperPath), true);
     assert.equal(fs.readFileSync(wrapperPath, 'utf8'), buildHarnessWrapperScript());

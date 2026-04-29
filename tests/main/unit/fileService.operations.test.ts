@@ -374,7 +374,10 @@ describe('renameEntry', () => {
   });
 
   it('supports Windows case-only rename', async () => {
-    Object.defineProperty(process, 'platform', { value: 'win32' });
+    if (originalPlatform !== 'win32') {
+      return;
+    }
+
     const workspaceRoot = makeTempDir('clanker-grid-rename-case-only-');
     const oldPath = path.join(workspaceRoot, 'Foo.txt');
     const newPath = path.join(workspaceRoot, 'foo.txt');

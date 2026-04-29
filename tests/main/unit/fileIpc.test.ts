@@ -15,6 +15,10 @@
 
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 
+function nativeTestPath(p: string): string {
+  return process.platform === 'win32' ? p.replace(/\//g, '\\') : p;
+}
+
 // ---------------------------------------------------------------------------
 // Electron mock — provides the ipcMain that fileIpc registers against
 // ---------------------------------------------------------------------------
@@ -407,7 +411,7 @@ describe('registerFileIpc', () => {
 
       await handler({}, { workspacePath: '/ws', targetPath: '/ws/todelete.txt' });
 
-      expect(mockReleaseHandle).toHaveBeenCalledWith('/ws/todelete.txt');
+      expect(mockReleaseHandle).toHaveBeenCalledWith(nativeTestPath('/ws/todelete.txt'));
     });
 
     test('returns success result', async () => {
@@ -474,7 +478,7 @@ describe('registerFileIpc', () => {
 
       await handler({}, { workspacePath: '/ws', oldPath: '/ws/old.txt', newPath: '/ws/new.txt' });
 
-      expect(mockReleaseHandle).toHaveBeenCalledWith('/ws/old.txt');
+      expect(mockReleaseHandle).toHaveBeenCalledWith(nativeTestPath('/ws/old.txt'));
     });
 
     test('returns success result', async () => {
@@ -593,8 +597,11 @@ describe('registerFileIpc', () => {
       const result = await handler({}, { workspacePath: '/ws', filePath: '/ws/file.txt' });
 
       expect(result).toBe(true);
-      expect(mockResolveAndValidateWatchPath).toHaveBeenCalledWith('/ws', '/ws/file.txt');
-      expect(mockWatchFile).toHaveBeenCalledWith('/ws/file.txt');
+      expect(mockResolveAndValidateWatchPath).toHaveBeenCalledWith(
+        nativeTestPath('/ws'),
+        nativeTestPath('/ws/file.txt')
+      );
+      expect(mockWatchFile).toHaveBeenCalledWith(nativeTestPath('/ws/file.txt'));
     });
 
     test('returns false when workspacePath is missing', async () => {

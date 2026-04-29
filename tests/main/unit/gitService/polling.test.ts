@@ -61,11 +61,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  service.stopPolling();
   if (repo) {
     repo.cleanup();
     repo = null;
   }
-  service.stopPolling();
 });
 
 // ============================================================================

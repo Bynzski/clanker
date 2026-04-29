@@ -15,7 +15,7 @@ import * as os from 'os';
 import * as readline from 'readline';
 import type { HarnessSession } from '../shared/types/session';
 import { ensureHarnessWrapperScript, resolveHarnessSpawn } from './harnessLaunch';
-import { toPosixPath } from '../shared/pathNormalize';
+import { toNativePath, toPosixPath } from '../shared/pathNormalize';
 
 // ============================================================================
 // Path-boundary matching (replaces raw startsWith for workspace filtering)
@@ -69,7 +69,7 @@ export function clearSessionCache(): void {
 // ============================================================================
 
 export async function discoverSessions(workspacePath?: string): Promise<HarnessSession[]> {
-  const normalizedPath = (workspacePath ?? '').replace(/[\\/]+$/, '');
+  const normalizedPath = toNativePath((workspacePath ?? '').replace(/[\\/]+$/, ''), process.platform);
 
   const cached = sessionCache.get(normalizedPath);
   if (cached && Date.now() - cached.cachedAt < SESSION_CACHE_TTL_MS) {
@@ -797,8 +797,9 @@ async function discoverClaudeSessions(workspacePath: string): Promise<HarnessSes
   const claudeProjectsDir = path.join(homeDir, '.claude', 'projects');
 
   // Encode: /home/jay/dev/projects/foo → -home-jay-dev-projects-foo
-  const encodedPrefix = workspacePath
-    ? `-${workspacePath.replace(/^\//, '').replace(/\//g, '-')}`
+  const encodedWorkspacePath = toPosixPath(workspacePath);
+  const encodedPrefix = encodedWorkspacePath
+    ? `-${encodedWorkspacePath.replace(/^\//, '').replace(/\//g, '-')}`
     : '';
 
   let dirEntries: fs.Dirent[];

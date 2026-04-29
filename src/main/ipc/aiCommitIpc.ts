@@ -89,7 +89,11 @@ function formatCommitChangeSummary(changes: GitStatusEntry[]): string[] {
   return changes.map((change) => `${change.staged ? 'staged' : 'unstaged'} ${change.status}: ${change.path}`);
 }
 
-function getValidatedWorkspacePath(workspacePath: string): string | null {
+function getValidatedWorkspacePath(workspacePath: string | null | undefined): string | null {
+  if (typeof workspacePath !== 'string' || workspacePath.trim().length === 0) {
+    return null;
+  }
+
   return resolveExistingDirectory(toNativePath(workspacePath, process.platform));
 }
 
