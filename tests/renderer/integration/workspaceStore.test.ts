@@ -304,9 +304,9 @@ describe('workspace lifecycle', () => {
       browserUrl: 'https://first.example.com',
       activeTerminalId: 'terminal-first',
       terminals: [{ id: 'terminal-first', pid: 1001, workingDir: '/first' }],
-      panes: [{ id: 'pane-first', terminalId: 'terminal-first', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false }],
+      panes: [{ id: 'pane-first', terminalId: 'terminal-first', position: { x: 0, y: 0, w: 6, h: 6 } }],
       editorVisible: true,
-      editorPane: { id: 'editor-first', locked: false },
+      editorPane: { id: 'editor-first' },
       editorTabs: [
         {
           id: 'tab-first',
@@ -328,9 +328,9 @@ describe('workspace lifecycle', () => {
       browserUrl: 'https://second.example.com',
       activeTerminalId: 'terminal-second',
       terminals: [{ id: 'terminal-second', pid: 1002, workingDir: '/second' }],
-      panes: [{ id: 'pane-second', terminalId: 'terminal-second', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false }],
+      panes: [{ id: 'pane-second', terminalId: 'terminal-second', position: { x: 0, y: 0, w: 6, h: 6 } }],
       editorVisible: true,
-      editorPane: { id: 'editor-second', locked: false },
+      editorPane: { id: 'editor-second' },
       editorTabs: [
         {
           id: 'tab-second',
@@ -350,7 +350,7 @@ describe('workspace lifecycle', () => {
       name: 'third',
       activeTerminalId: 'terminal-third',
       terminals: [{ id: 'terminal-third', pid: 1003, workingDir: '/third' }],
-      panes: [{ id: 'pane-third', terminalId: 'terminal-third', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false }],
+      panes: [{ id: 'pane-third', terminalId: 'terminal-third', position: { x: 0, y: 0, w: 6, h: 6 } }],
     });
     const thirdId = getStore().activeWorkspaceId!;
 
@@ -537,22 +537,6 @@ describe('browser', () => {
     expect(getStore().browserOverlayCount).toBe(0);
     expect(getStore().workspaces.find((workspace) => workspace.id === firstId)?.browserOverlayCount).toBe(0);
   });
-
-  it('toggleBrowserLock toggles browser pane locked state', () => {
-    getStore().toggleBrowser(); // create browser pane
-    expect(getStore().browserPane!.locked).toBe(false);
-    getStore().toggleBrowserLock();
-    expect(getStore().browserPane!.locked).toBe(true);
-    getStore().toggleBrowserLock();
-    expect(getStore().browserPane!.locked).toBe(false);
-  });
-
-  it('toggleBrowserLock is no-op when no browser pane exists', () => {
-    expect(getStore().browserPane).toBeNull();
-    getStore().toggleBrowserLock();
-    expect(getStore().browserPane).toBeNull();
-  });
-});
 
 // ===========================================================================
 // Browser tabs (Phase 0)
@@ -1000,14 +984,6 @@ describe('pane management', () => {
     expect(getStore().browserPane!.position).toEqual({ x: 1, y: 1, w: 4, h: 3 });
   });
 
-  it('togglePaneLock toggles locked state', () => {
-    const paneId = getStore().panes[0].id;
-    expect(getStore().panes[0].locked).toBeFalsy();
-    getStore().togglePaneLock(paneId);
-    expect(getStore().panes.find(p => p.id === paneId)!.locked).toBe(true);
-    getStore().togglePaneLock(paneId);
-    expect(getStore().panes.find(p => p.id === paneId)!.locked).toBe(false);
-  });
 });
 
 // ===========================================================================
@@ -1080,37 +1056,6 @@ describe('layout operations', () => {
     getStore().fitAllPanes();
     expect(getStore().layoutRoot).not.toBeNull();
   });
-
-  it('bringPaneIntoView swaps target with first leaf', () => {
-    const t2 = terminal('t2');
-    getStore().addTerminal(t2);
-    const pane2 = getStore().panes.find(p => p.terminalId === 't2')!;
-    const revBefore = getStore().layoutRevision;
-    getStore().bringPaneIntoView(pane2.id);
-    expect(getStore().layoutRevision).toBeGreaterThan(revBefore);
-  });
-
-  it('bringPaneIntoView is no-op when pane is already first', () => {
-    const firstPaneId = getStore().panes[0].id;
-    const revBefore = getStore().layoutRevision;
-    getStore().bringPaneIntoView(firstPaneId);
-    expect(getStore().layoutRevision).toBe(revBefore);
-  });
-
-  it('bringBrowserIntoView swaps browser with first leaf', () => {
-    getStore().toggleBrowser();
-    // Make sure browser is in layout
-    const revBefore = getStore().layoutRevision;
-    getStore().bringBrowserIntoView();
-    // Should have bumped revision if browser wasn't already first
-    expect(getStore().layoutRevision).toBeGreaterThanOrEqual(revBefore);
-  });
-
-  it('bringBrowserIntoView is no-op when browser is not visible', () => {
-    const revBefore = getStore().layoutRevision;
-    getStore().bringBrowserIntoView();
-    expect(getStore().layoutRevision).toBe(revBefore);
-  });
 });
 
 // ===========================================================================
@@ -1160,27 +1105,6 @@ describe('gridViewport', () => {
 });
 
 // ===========================================================================
-// canAddPane
-// ===========================================================================
-describe('canAddPane', () => {
-  it('returns true when layoutRoot is null', () => {
-    // No workspace loaded yet → layoutRoot is null
-    expect(getStore().canAddPane()).toBe(true);
-  });
-
-  it('returns true when there are unlocked panes', () => {
-    addWorkspace();
-    expect(getStore().canAddPane()).toBe(true);
-  });
-
-  it('returns false when all panes are locked', () => {
-    addWorkspace();
-    const paneId = getStore().panes[0].id;
-    getStore().togglePaneLock(paneId);
-    expect(getStore().canAddPane()).toBe(false);
-  });
-});
-
 // ===========================================================================
 // Workspace sync (integration)
 // ===========================================================================
@@ -1587,4 +1511,6 @@ describe('workspace runtime metadata', () => {
     expect(afterWs1?.runtimeState.residencyState).toBe('cold');
     expect(afterWs1?.runtimeState.resourcePolicy.browser).toBe('cold');
   });
+});
+
 });

@@ -383,58 +383,6 @@ describe('editor store actions', () => {
     });
   });
 
-  describe('toggleEditorLock', () => {
-    it('toggles editor pane lock state', async () => {
-      addWorkspace();
-      mockElectronApi.editorReadFile.mockResolvedValueOnce({
-        success: true,
-        content: 'test',
-      });
-
-      await useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
-      expect(useWorkspaceStore.getState().editorPane?.locked).toBe(false);
-
-      useWorkspaceStore.getState().toggleEditorLock();
-      expect(useWorkspaceStore.getState().editorPane?.locked).toBe(true);
-
-      useWorkspaceStore.getState().toggleEditorLock();
-      expect(useWorkspaceStore.getState().editorPane?.locked).toBe(false);
-    });
-
-    it('is no-op when no editor pane exists', () => {
-      addWorkspace();
-
-      useWorkspaceStore.getState().toggleEditorLock();
-
-      expect(useWorkspaceStore.getState().editorPane).toBeNull();
-    });
-  });
-
-  describe('bringEditorIntoView', () => {
-    it('swaps editor pane with first leaf', async () => {
-      addWorkspace();
-      mockElectronApi.editorReadFile.mockResolvedValueOnce({
-        success: true,
-        content: 'test',
-      });
-
-      await useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
-
-      useWorkspaceStore.getState().bringEditorIntoView();
-
-      expect(useWorkspaceStore.getState().layoutRevision).toBeGreaterThan(0);
-    });
-
-    it('is no-op when editor is not visible', () => {
-      addWorkspace();
-      const revBefore = useWorkspaceStore.getState().layoutRevision;
-
-      useWorkspaceStore.getState().bringEditorIntoView();
-
-      expect(useWorkspaceStore.getState().layoutRevision).toBe(revBefore);
-    });
-  });
-
   describe('resetEditorState', () => {
     it('clears editor state', async () => {
       addWorkspace();

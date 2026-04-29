@@ -91,6 +91,8 @@ migration off `syncActiveWorkspace`) is noted in `plans/workspace-residency-plan
 
 ### Layout Invariants
 
+> Pane locking has been removed. Layout decisions no longer gate on per-pane `locked` flags.
+
 | Field | Invariant | Explanation |
 |-------|-----------|-------------|
 | `layoutRoot` | `null` ↔ `panes.length === 0 && !browserVisible && !editorVisible` | Layout only exists when there are visible panes |

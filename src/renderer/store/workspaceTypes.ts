@@ -18,7 +18,6 @@ export interface Pane {
   id: string;
   terminalId: string | null;
   position?: PanePosition;
-  locked?: boolean;
 }
 
 export interface BrowserTab {
@@ -32,14 +31,12 @@ export interface BrowserTab {
 export interface BrowserPaneState {
   id: string;
   position: PanePosition;
-  locked: boolean;
   tabs: BrowserTab[];
   activeTabId: string | null;
 }
 
 export interface EditorPaneState {
   id: string;
-  locked: boolean;
 }
 
 export interface EditorTab {

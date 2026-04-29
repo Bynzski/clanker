@@ -32,7 +32,6 @@ export function createBrowserPaneFixture(overrides: Partial<BrowserPaneState> = 
   const tab = createBrowserTabFixture();
   return {
     id: 'browser-pane-1',
-    locked: false,
     position: { x: 0, y: 0, w: 6, h: 6 },
     tabs: [tab],
     activeTabId: tab.id,
@@ -45,7 +44,6 @@ export function createPaneFixture(overrides: Partial<Pane> = {}): Pane {
     id: 'pane-1',
     terminalId: 'terminal-1',
     position: { x: 0, y: 0, w: 6, h: 6 },
-    locked: false,
     ...overrides,
   };
 }

@@ -99,16 +99,12 @@ function setupStoreWithTerminal(terminalId: string, paneId: string, locked = fal
     activeTerminalId,
     browserVisible: false,
     browserPane: null,
-    bringPaneIntoView: vi.fn(),
-    togglePaneLock: vi.fn(),
     removeTerminal: vi.fn(),
     removePane: vi.fn(),
     setActiveTerminal: vi.fn(),
   });
   
   return {
-    bringPaneIntoView: useWorkspaceStore.getState().bringPaneIntoView as ReturnType<typeof useWorkspaceStore.getState>['bringPaneIntoView'],
-    togglePaneLock: useWorkspaceStore.getState().togglePaneLock as ReturnType<typeof useWorkspaceStore.getState>['togglePaneLock'],
     removeTerminal: useWorkspaceStore.getState().removeTerminal as ReturnType<typeof useWorkspaceStore.getState>['removeTerminal'],
     removePane: useWorkspaceStore.getState().removePane as ReturnType<typeof useWorkspaceStore.getState>['removePane'],
     setActiveTerminal: useWorkspaceStore.getState().setActiveTerminal as ReturnType<typeof useWorkspaceStore.getState>['setActiveTerminal'],
@@ -125,8 +121,6 @@ function setupEmptyStore() {
     activeTerminalId: null,
     browserVisible: false,
     browserPane: null,
-    bringPaneIntoView: vi.fn(),
-    togglePaneLock: vi.fn(),
     removeTerminal: vi.fn(),
     removePane: vi.fn(),
     setActiveTerminal: vi.fn(),
@@ -218,37 +212,8 @@ describe('TerminalPane', () => {
       
       render(<TerminalPane paneId="p1" />);
       
-      // Should have bring into view, lock, and close buttons
-      const bringButton = screen.getByTitle('Bring into view');
-      const lockButton = screen.getByTitle('Lock pane');
       const closeButton = screen.getByTitle('Close terminal');
-      
-      expect(bringButton).toBeTruthy();
-      expect(lockButton).toBeTruthy();
       expect(closeButton).toBeTruthy();
-    });
-  });
-
-  // =========================================================================
-  // Lock State
-  // =========================================================================
-  describe('lock state', () => {
-    it('shows lock icon when pane is locked', () => {
-      setupStoreWithTerminal('t1', 'p1', true);
-      
-      render(<TerminalPane paneId="p1" />);
-      
-      const lockButton = screen.getByTitle('Unlock pane');
-      expect(lockButton).toBeTruthy();
-    });
-
-    it('shows unlock icon when pane is unlocked', () => {
-      setupStoreWithTerminal('t1', 'p1', false);
-      
-      render(<TerminalPane paneId="p1" />);
-      
-      const lockButton = screen.getByTitle('Lock pane');
-      expect(lockButton).toBeTruthy();
     });
   });
 
@@ -256,32 +221,6 @@ describe('TerminalPane', () => {
   // Action Handlers
   // =========================================================================
   describe('action handlers', () => {
-    it('calls bringPaneIntoView when bring into view button is clicked', async () => {
-      const mocks = setupStoreWithTerminal('t1', 'p1');
-      
-      render(<TerminalPane paneId="p1" />);
-      
-      const bringButton = screen.getByTitle('Bring into view');
-      fireEvent.click(bringButton);
-      
-      await waitFor(() => {
-        expect(mocks.bringPaneIntoView).toHaveBeenCalledWith('p1');
-      });
-    });
-
-    it('calls togglePaneLock when lock button is clicked', async () => {
-      const mocks = setupStoreWithTerminal('t1', 'p1', false);
-      
-      render(<TerminalPane paneId="p1" />);
-      
-      const lockButton = screen.getByTitle('Lock pane');
-      fireEvent.click(lockButton);
-      
-      await waitFor(() => {
-        expect(mocks.togglePaneLock).toHaveBeenCalledWith('p1');
-      });
-    });
-
     it('kills terminal, removes terminal and pane when close is clicked', async () => {
       const mocks = setupStoreWithTerminal('t1', 'p1');
       mockKillTerminal.mockResolvedValue(undefined);
@@ -509,8 +448,6 @@ describe('TerminalPane', () => {
       expect(attachedDataHandler).toBeNull();
       expect(attachedKeyHandler).toBeNull();
       expect(document.querySelector('.terminal-pane')).toHaveAttribute('data-workspace-interactive', 'false');
-      expect(screen.getByTitle('Bring into view')).toBeDisabled();
-      expect(screen.getByTitle('Lock pane')).toBeDisabled();
       expect(screen.getByTitle('Close terminal')).toBeDisabled();
     });
   });

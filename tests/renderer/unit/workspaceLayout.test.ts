@@ -9,7 +9,6 @@ import {
   dockPaneToEdgeInLayout,
   setSplitRatioInLayout,
   findFirstLeafPaneId,
-  hasUnlockedLeaf,
   insertPaneIntoLayout,
   normalizeLayoutRoot,
   buildWorkspaceLayout,
@@ -61,15 +60,16 @@ function split(
   };
 }
 
-function makePane(id: string, locked = false): Pane {
-  return { id, terminalId: `term-${id}`, locked };
+function makePane(id: string, _locked = false): Pane {
+  void _locked;
+  return { id, terminalId: `term-${id}` };
 }
 
-function makeBrowser(id: string, locked = false): BrowserPaneState {
+function makeBrowser(id: string, _locked = false): BrowserPaneState {
+  void _locked;
   return {
     id,
     position: { x: 0, y: 0, w: 6, h: 6 },
-    locked,
     tabs: [{ id: `${id}-tab`, url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }],
     activeTabId: `${id}-tab`,
   };
@@ -326,47 +326,6 @@ describe('findFirstLeafPaneId', () => {
 });
 
 // ===========================================================================
-// hasUnlockedLeaf
-// ===========================================================================
-describe('hasUnlockedLeaf', () => {
-  it('returns false for null layout', () => {
-    expect(hasUnlockedLeaf(null, emptyState)).toBe(false);
-  });
-
-  it('returns true for an unlocked pane', () => {
-    const state = { panes: [makePane('a', false)], browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
-    expect(hasUnlockedLeaf(leaf('a'), state)).toBe(true);
-  });
-
-  it('returns false for a locked pane', () => {
-    const state = { panes: [makePane('a', true)], browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
-    expect(hasUnlockedLeaf(leaf('a'), state)).toBe(false);
-  });
-
-  it('returns true when at least one leaf is unlocked in a split', () => {
-    const state = { panes: [makePane('a', true), makePane('b', false)], browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
-    expect(hasUnlockedLeaf(split(leaf('a'), leaf('b')), state)).toBe(true);
-  });
-
-  it('returns false when all leaves are locked', () => {
-    const state = { panes: [makePane('a', true), makePane('b', true)], browserPane: null, browserVisible: false, editorPane: null, editorVisible: false };
-    expect(hasUnlockedLeaf(split(leaf('a'), leaf('b')), state)).toBe(false);
-  });
-
-  it('checks browser pane lock status when browser is visible', () => {
-    const state = {
-      panes: [makePane('a', true)],
-      browserPane: makeBrowser('bp', false),
-      browserVisible: true,
-      editorPane: null,
-      editorVisible: false,
-    };
-    const tree = split(leaf('a'), leaf('bp'));
-    expect(hasUnlockedLeaf(tree, state)).toBe(true);
-  });
-});
-
-// ===========================================================================
 // insertPaneIntoLayout
 // ===========================================================================
 describe('insertPaneIntoLayout', () => {
@@ -395,13 +354,12 @@ describe('insertPaneIntoLayout', () => {
     expect(collectLeafPaneIds(result!).length).toBe(3);
   });
 
-  it('returns layout unchanged when all panes are locked', () => {
-    const panes = [makePane('a', true), makePane('b', true)];
+  it('falls back to largest leaf when active terminal is missing', () => {
+    const panes = [makePane('a'), makePane('b')];
     const state = { panes, browserPane: null, browserVisible: false, editorPane: null, editorVisible: false, activeTerminalId: null };
     const tree = split(leaf('a'), leaf('b'));
     const result = insertPaneIntoLayout(tree, 'new', state);
-    // All leaves locked, so the layout should be unchanged
-    expect(collectLeafPaneIds(result!)).toEqual(['a', 'b']);
+    expect(collectLeafPaneIds(result!)).toContain('new');
   });
 });
 
@@ -495,7 +453,7 @@ describe('normalizeLayoutRoot - additional edge cases', () => {
       panes,
       browserPane: null,
       browserVisible: false,
-      editorPane: { id: 'ep', locked: false },
+      editorPane: { id: 'ep' },
       editorVisible: true,
     };
     const result = normalizeLayoutRoot(null, state);
@@ -509,7 +467,7 @@ describe('normalizeLayoutRoot - additional edge cases', () => {
       panes,
       browserPane: null,
       browserVisible: false,
-      editorPane: { id: 'ep', locked: false },
+      editorPane: { id: 'ep' },
       editorVisible: false,
     };
     const result = normalizeLayoutRoot(null, state);
@@ -523,7 +481,7 @@ describe('normalizeLayoutRoot - additional edge cases', () => {
       panes,
       browserPane: makeBrowser('bp'),
       browserVisible: true,
-      editorPane: { id: 'ep', locked: false },
+      editorPane: { id: 'ep' },
       editorVisible: true,
     };
     const result = normalizeLayoutRoot(null, state);
@@ -581,7 +539,7 @@ describe('buildWorkspaceLayout - additional edge cases', () => {
       browserVisible: false,
       browserPane: null,
       editorVisible: true,
-      editorPane: { id: 'ep', locked: false },
+      editorPane: { id: 'ep' },
       layoutRoot: null,
     });
     const ids = collectLeafPaneIds(result!);
@@ -594,7 +552,7 @@ describe('buildWorkspaceLayout - additional edge cases', () => {
       browserVisible: true,
       browserPane: makeBrowser('bp'),
       editorVisible: true,
-      editorPane: { id: 'ep', locked: false },
+      editorPane: { id: 'ep' },
       layoutRoot: null,
     });
     const ids = collectLeafPaneIds(result!);
@@ -709,7 +667,7 @@ describe('insertPaneIntoLayout - additional edge cases', () => {
       panes,
       browserPane: null,
       browserVisible: false,
-      editorPane: { id: 'ep', locked: false },
+      editorPane: { id: 'ep' },
       editorVisible: true,
       activeTerminalId: null,
     };
@@ -718,47 +676,6 @@ describe('insertPaneIntoLayout - additional edge cases', () => {
     const ids = collectLeafPaneIds(result!);
     expect(ids).toContain('new');
     expect(ids.length).toBe(3);
-  });
-});
-
-// ===========================================================================
-// hasUnlockedLeaf - additional edge cases
-// ===========================================================================
-describe('hasUnlockedLeaf - additional edge cases', () => {
-  it('checks editor pane lock status when editor is visible', () => {
-    const state = {
-      panes: [makePane('a', true)],
-      browserPane: null,
-      browserVisible: false,
-      editorPane: { id: 'ep', locked: false },
-      editorVisible: true,
-    };
-    const tree = split(leaf('a'), leaf('ep'));
-    expect(hasUnlockedLeaf(tree, state)).toBe(true);
-  });
-
-  it('returns false when editor pane is locked and all other panes are locked', () => {
-    const state = {
-      panes: [makePane('a', true)],
-      browserPane: null,
-      browserVisible: false,
-      editorPane: { id: 'ep', locked: true },
-      editorVisible: true,
-    };
-    const tree = split(leaf('a'), leaf('ep'));
-    expect(hasUnlockedLeaf(tree, state)).toBe(false);
-  });
-
-  it('handles nested splits with mixed lock states', () => {
-    const state = {
-      panes: [makePane('a', true), makePane('b', false), makePane('c', true)],
-      browserPane: null,
-      browserVisible: false,
-      editorPane: null,
-      editorVisible: false,
-    };
-    const tree = split(leaf('a'), split(leaf('b'), leaf('c')));
-    expect(hasUnlockedLeaf(tree, state)).toBe(true);
   });
 });
 

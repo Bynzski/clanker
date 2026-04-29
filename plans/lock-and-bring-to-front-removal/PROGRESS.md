@@ -12,16 +12,16 @@
 | Phase | Description | Status |
 |-------|-------------|--------|
 | Phase 0 | Audit & Verification | ✅ Complete |
-| Phase 1a | Remove `locked` from types (`workspaceTypes.ts`) | 🔲 Not Started |
-| Phase 1b | Remove bring-to-front and `canAddPane` types (`workspaceStoreTypes.ts`) | 🔲 Not Started |
-| Phase 1c | Remove lock helpers from `workspaceLayout.ts` | 🔲 Not Started |
-| Phase 1d | Remove lock actions, guards, `locked` spreads (`workspaceStore.ts`) | 🔲 Not Started |
-| Phase 1e | Clean `locked` assignments (`workspaceStoreHelpers.ts`) | 🔲 Not Started |
-| Phase 2 | UI Component Lock & Bring-to-Front Removal | 🔲 Not Started |
-| Phase 3 | Layout Helper Removal | 🔲 Not Started |
-| Phase 4 | Test Cleanup | 🔲 Not Started |
-| Phase 5 | Documentation & Invariants Update | 🔲 Not Started |
-| Phase 6 | Validation | 🔲 Not Started |
+| Phase 1a | Remove `locked` from types (`workspaceTypes.ts`) | ✅ Complete |
+| Phase 1b | Remove bring-to-front and `canAddPane` types (`workspaceStoreTypes.ts`) | ✅ Complete |
+| Phase 1c | Remove lock helpers from `workspaceLayout.ts` | ✅ Complete |
+| Phase 1d | Remove lock actions, guards, `locked` spreads (`workspaceStore.ts`) | ✅ Complete |
+| Phase 1e | Clean `locked` assignments (`workspaceStoreHelpers.ts`) | ✅ Complete |
+| Phase 2 | UI Component Lock & Bring-to-Front Removal | ✅ Complete |
+| Phase 3 | Layout Helper Removal | ✅ Complete |
+| Phase 4 | Test Cleanup | ✅ Complete |
+| Phase 5 | Documentation & Invariants Update | ✅ Complete |
+| Phase 6 | Validation | ✅ Complete |
 
 ---
 

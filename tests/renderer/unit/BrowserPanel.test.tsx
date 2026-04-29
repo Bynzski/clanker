@@ -102,8 +102,6 @@ interface BrowserPanelStoreOverrides {
   browserPane?: BrowserPaneState | null;
   browserVisible?: boolean;
   browserOverlayCount?: number;
-  bringBrowserIntoView?: (workspaceId?: string) => void;
-  toggleBrowserLock?: (workspaceId?: string) => void;
   activeWorkspaceId?: string;
   workspaces?: WorkspaceTab[];
 }
@@ -113,8 +111,6 @@ function setupStore(overrides: BrowserPanelStoreOverrides = {}) {
     browserPane: null as BrowserPaneState | null,
     browserVisible: true,
     browserOverlayCount: 0,
-    bringBrowserIntoView: vi.fn(),
-    toggleBrowserLock: vi.fn(),
     activeWorkspaceId: 'workspace-1',
   };
 
@@ -133,8 +129,6 @@ function setupStore(overrides: BrowserPanelStoreOverrides = {}) {
     browserPane: state.browserPane,
     browserVisible: state.browserVisible,
     browserOverlayCount: state.browserOverlayCount,
-    bringBrowserIntoView: state.bringBrowserIntoView,
-    toggleBrowserLock: state.toggleBrowserLock,
     workspaces,
     activeWorkspaceId: state.activeWorkspaceId,
     activeWorkspaceLifecycle: 'active',
@@ -236,20 +230,10 @@ describe('BrowserPanel', () => {
       expect(dragHandle).toBeTruthy();
     });
 
-    it('shows lock icon when browser pane is locked', () => {
-      setupStore({
-        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: true, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
-      });
-
-      render(<BrowserPanel {...defaultProps} />);
-
-      const lockIcon = document.querySelector('.browser-pane-lock');
-      expect(lockIcon).toBeTruthy();
-    });
 
     it('hides lock icon when browser pane is not locked', () => {
       setupStore({
-        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
+        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
       });
 
       render(<BrowserPanel {...defaultProps} />);
@@ -410,7 +394,6 @@ describe('BrowserPanel', () => {
         browserPane: {
           id: 'bp1',
           position: { x: 0, y: 0, w: 100, h: 100 },
-          locked: false,
           activeTabId: 'tab-1',
           tabs: [{ id: 'tab-1', url: 'https://example.com', title: 'Example', canGoBack: false, canGoForward: false }],
         },
@@ -427,7 +410,6 @@ describe('BrowserPanel', () => {
         browserPane: {
           id: 'bp1',
           position: { x: 0, y: 0, w: 100, h: 100 },
-          locked: false,
           activeTabId: 'tab-1',
           tabs: [{ id: 'tab-1', url: 'https://example.com', title: 'Example', canGoBack: false, canGoForward: false }],
         },
@@ -439,7 +421,6 @@ describe('BrowserPanel', () => {
         browserPane: {
           id: 'bp1',
           position: { x: 0, y: 0, w: 100, h: 100 },
-          locked: false,
           activeTabId: 'tab-1',
           tabs: [{ id: 'tab-1', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false }],
         },
@@ -488,7 +469,6 @@ describe('BrowserPanel', () => {
         browserPane: {
           id: 'bp1',
           position: { x: 0, y: 0, w: 100, h: 100 },
-          locked: false,
           activeTabId: 'tab-1',
           tabs: [{ id: 'tab-1', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false }],
         },
@@ -543,38 +523,12 @@ describe('BrowserPanel', () => {
       expect(screen.getByTitle('Open in system browser')).toBeTruthy();
     });
 
-    it('renders bring into view button', () => {
-      render(<BrowserPanel {...defaultProps} />);
-
-      expect(screen.getByTitle('Bring browser into view')).toBeTruthy();
-    });
-
-    it('renders lock button with Lock icon when not locked', () => {
-      setupStore({
-        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
-      });
-
-      render(<BrowserPanel {...defaultProps} />);
-
-      expect(screen.getByTitle('Lock browser pane')).toBeTruthy();
-    });
-
-    it('renders lock button with Unlock icon when locked', () => {
-      setupStore({
-        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: true, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
-      });
-
-      render(<BrowserPanel {...defaultProps} />);
-
-      expect(screen.getByTitle('Unlock browser pane')).toBeTruthy();
-    });
 
     it('calls openExternal with the active tab URL', () => {
       setupStore({
         browserPane: {
           id: 'bp1',
           position: { x: 0, y: 0, w: 100, h: 100 },
-          locked: false,
           activeTabId: 'tab-1',
           tabs: [{ id: 'tab-1', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false }],
         },
@@ -584,28 +538,6 @@ describe('BrowserPanel', () => {
       fireEvent.click(screen.getByTitle('Open in system browser'));
 
       expect(mockOpenExternal).toHaveBeenCalledWith('https://github.com');
-    });
-
-    it('calls bringBrowserIntoView when bring into view button is clicked', () => {
-      const bringBrowserIntoView = vi.fn();
-      setupStore({ bringBrowserIntoView });
-
-      render(<BrowserPanel {...defaultProps} />);
-
-      fireEvent.click(screen.getByTitle('Bring browser into view'));
-
-      expect(bringBrowserIntoView).toHaveBeenCalled();
-    });
-
-    it('calls toggleBrowserLock when lock button is clicked', () => {
-      const toggleBrowserLock = vi.fn();
-      setupStore({ toggleBrowserLock });
-
-      render(<BrowserPanel {...defaultProps} />);
-
-      fireEvent.click(screen.getByTitle('Lock browser pane'));
-
-      expect(toggleBrowserLock).toHaveBeenCalled();
     });
   });
 
@@ -1152,7 +1084,6 @@ describe('BrowserPanel', () => {
     const createTabbedPane = (): BrowserPaneState => ({
       id: 'bp1',
       position: { x: 0, y: 0, w: 100, h: 100 },
-      locked: false,
       activeTabId: 'tab-a',
       tabs: [
         { id: 'tab-a', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false },
@@ -1241,7 +1172,6 @@ describe('BrowserPanel', () => {
         browserPane: {
           id: 'bp1',
           position: { x: 0, y: 0, w: 100, h: 100 },
-          locked: false,
           activeTabId: 'tab-a',
           tabs: [{ id: 'tab-a', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false }],
         },
@@ -1312,7 +1242,6 @@ describe('BrowserPanel', () => {
     const createTabbedPane = (): BrowserPaneState => ({
       id: 'bp1',
       position: { x: 0, y: 0, w: 100, h: 100 },
-      locked: false,
       activeTabId: 'tab-a',
       tabs: [
         { id: 'tab-a', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false },

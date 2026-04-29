@@ -491,11 +491,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
 
       case 'open-terminal': {
         const targetDir = entry.isDirectory ? entry.path : dirnamePath(entry.path);
-        const { addTerminal, canAddPane } = useWorkspaceStore.getState();
-        if (!canAddPane()) {
-          console.warn('All panes are locked. Unlock a pane before opening a terminal here.');
-          return;
-        }
+        const { addTerminal } = useWorkspaceStore.getState();
 
         try {
           const info = await window.electronAPI.spawnTerminal(targetDir);

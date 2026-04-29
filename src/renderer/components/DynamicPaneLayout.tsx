@@ -20,7 +20,6 @@ import type {
   LayoutNode,
   LayoutLeaf,
   LayoutSplit,
-  WorkspaceTab,
 } from '../store/workspaceStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
@@ -33,31 +32,6 @@ const TerminalPane = lazy(() => import('./TerminalPane'));
 
 function isLeaf(node: LayoutNode): node is LayoutLeaf {
   return node.type === 'leaf';
-}
-
-function isLeafLocked(
-  paneId: string,
-  workspace: Pick<WorkspaceTab, 'panes' | 'browserPane' | 'browserVisible' | 'editorPane' | 'editorVisible'>
-) {
-  const { panes, browserPane, browserVisible, editorPane, editorVisible } = workspace;
-  if (browserVisible && browserPane?.id === paneId) {
-    return browserPane.locked;
-  }
-  if (editorVisible && editorPane?.id === paneId) {
-    return editorPane.locked;
-  }
-  return panes.find((pane: typeof panes[0]) => pane.id === paneId)?.locked ?? false;
-}
-
-function isSubtreeLocked(
-  node: LayoutNode,
-  workspace: Pick<WorkspaceTab, 'panes' | 'browserPane' | 'browserVisible' | 'editorPane' | 'editorVisible'>
-): boolean {
-  if (isLeaf(node)) {
-    return isLeafLocked(node.paneId, workspace);
-  }
-
-  return isSubtreeLocked(node.first, workspace) && isSubtreeLocked(node.second, workspace);
 }
 
 // Wrapper that makes the pane draggable
@@ -206,7 +180,7 @@ function SplitView({
   draggedPaneId: string | null;
   overPaneId: string | null;
 }) {
-  const workspace = useScopedWorkspace(workspaceId);
+  useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
   const { setSplitRatio } = useWorkspaceStore();
   
@@ -268,7 +242,7 @@ function SplitView({
         id={panelAId}
         defaultSize={firstRatio}
         minSize={12}
-        disabled={!isInteractive || (workspace ? isSubtreeLocked(node.first, workspace) : false)}
+        disabled={!isInteractive}
       >
         <LayoutNodeView workspaceId={workspaceId} node={node.first} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />
       </Panel>
@@ -277,7 +251,7 @@ function SplitView({
         id={panelBId}
         defaultSize={secondRatio}
         minSize={12}
-        disabled={!isInteractive || (workspace ? isSubtreeLocked(node.second, workspace) : false)}
+        disabled={!isInteractive}
       >
         <LayoutNodeView workspaceId={workspaceId} node={node.second} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />
       </Panel>

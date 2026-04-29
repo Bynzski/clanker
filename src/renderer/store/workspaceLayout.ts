@@ -136,32 +136,6 @@ export function collectLeafPaneIds(node: LayoutNode | null): string[] {
   return [...collectLeafPaneIds(node.first), ...collectLeafPaneIds(node.second)];
 }
 
-function findPaneLock(state: LayoutVisibilityState, paneId: string) {
-  if (state.browserVisible && state.browserPane?.id === paneId) {
-    return state.browserPane.locked;
-  }
-
-  if (state.editorVisible && state.editorPane?.id === paneId) {
-    return state.editorPane.locked;
-  }
-
-  return state.panes.find((pane) => pane.id === paneId)?.locked ?? false;
-}
-
-export function hasUnlockedLeaf(
-  node: LayoutNode | null,
-  state: LayoutVisibilityState
-): boolean {
-  if (node == null) {
-    return false;
-  }
-
-  if (node.type === 'leaf') {
-    return !findPaneLock(state, node.paneId);
-  }
-
-  return hasUnlockedLeaf(node.first, state) || hasUnlockedLeaf(node.second, state);
-}
 
 function getLeafAreaMap(
   node: LayoutNode | null,
@@ -512,27 +486,6 @@ export function findFirstLeafPaneId(node: LayoutNode | null): string | null {
   return findFirstLeafPaneId(node.first) ?? findFirstLeafPaneId(node.second);
 }
 
-function findLargestUnlockedLeaf(
-  node: LayoutNode | null,
-  state: LayoutVisibilityState
-): string | null {
-  const leaves = getLeafAreaMap(node);
-  let bestPaneId: string | null = null;
-  let bestArea = -1;
-
-  for (const leaf of leaves) {
-    if (findPaneLock(state, leaf.paneId)) {
-      continue;
-    }
-
-    if (leaf.area > bestArea) {
-      bestArea = leaf.area;
-      bestPaneId = leaf.paneId;
-    }
-  }
-
-  return bestPaneId;
-}
 
 function findTargetPaneForInsert(
   layoutRoot: LayoutNode | null,
@@ -540,7 +493,7 @@ function findTargetPaneForInsert(
 ): string | null {
   if (state.activeTerminalId !== null) {
     const activePane = state.panes.find((pane) => pane.terminalId === state.activeTerminalId);
-    if (activePane && !findPaneLock(state, activePane.id)) {
+    if (activePane) {
       const leafIds = collectLeafPaneIds(layoutRoot);
       if (leafIds.includes(activePane.id)) {
         return activePane.id;
@@ -548,7 +501,15 @@ function findTargetPaneForInsert(
     }
   }
 
-  return findLargestUnlockedLeaf(layoutRoot, state);
+  const leaves = getLeafAreaMap(layoutRoot);
+  if (leaves.length === 0) {
+    return null;
+  }
+
+  return leaves.reduce(
+    (best, leaf) => (leaf.area > (best?.area ?? -1) ? leaf : best),
+    null as { paneId: string; area: number } | null,
+  )?.paneId ?? null;
 }
 
 export function insertPaneIntoLayout(
