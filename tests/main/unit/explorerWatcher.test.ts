@@ -347,7 +347,7 @@ describe('ExplorerWatcherService', () => {
       const explorerEvents = (mockMainWindow.webContents.send as ReturnType<typeof vi.fn>)
         .mock.calls.filter(([ch]) => ch === 'explorer-tree-changed');
       // At minimum we expect one event for allowed.txt
-      expect(explorerEvents.some(([, payload]) => (payload as { directoryPath: string }).directoryPath === tempDir)).toBe(true);
+      expect(explorerEvents.some(([, payload]) => (payload as { directoryPath: string }).directoryPath === toPosixPath(tempDir))).toBe(true);
     });
   });
 

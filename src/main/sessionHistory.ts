@@ -132,7 +132,7 @@ export function buildSessionInvokeArgs(
       ]);
 
     case 'pi': {
-      const target = session.filePath ?? session.id;
+      const target = session.filePath ? toPosixPath(session.filePath) : session.id;
       return wrapOrDirect('pi', [
         fork ? '--fork' : '--session', target,
         ...(modelStr ? ['--model', modelStr] : []), ...flagArgs,
