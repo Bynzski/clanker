@@ -155,8 +155,6 @@ For example, typing `local` matches `localhost:3000`, `http://localhost:8080/api
 | URL input | Text field | Enter or edit URL |
 | Go | Go button | Navigate to URL |
 | External | ↗ | Open URL in system browser |
-| Bring into view | ⊡ | Show browser pane |
-| Lock | 🔒 | Toggle pane lock |
 | Annotate | ⊕ | Toggle annotation mode |
 
 ## Browser DevTools
@@ -289,7 +287,6 @@ Map<workspaceId, lastBrowserBounds>
 ```ts
 BrowserPaneState {
   id: string;
-  locked: boolean;
   position: PanePosition;
   tabs: BrowserTab[];
   activeTabId: string | null;

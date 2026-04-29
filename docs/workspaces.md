@@ -45,7 +45,6 @@ Global harness defaults (model, favorites, flags) are configured in the header s
 | **Dock** | Drop onto edge to create a full-edge split |
 | **Dock (segmented)** | Target a specific pane on an edge to insert adjacent to it |
 | **Swap** | Drag to swap pane positions |
-| **Lock** | Right-click pane → Lock to prevent reflow |
 
 ### Docking Panes
 
