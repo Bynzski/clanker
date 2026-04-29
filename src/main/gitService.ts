@@ -107,6 +107,7 @@ export class GitService {
   private pollingInterval: NodeJS.Timeout | null = null;
   private currentWorkspacePath: string | null = null;
   private pollIntervalMs = 30000;
+  private _drainPromise: Promise<void> = Promise.resolve();
 
   constructor(private readonly emitStatus: (status: GitStatusResult) => void) {}
 
@@ -1243,12 +1244,19 @@ export class GitService {
   startPolling(workspacePath: string): void {
     this.stopPolling();
     this.currentWorkspacePath = workspacePath;
-    void this.emitStatusUpdate(workspacePath);
+    this._drainPromise = this.emitStatusUpdate(workspacePath);
     this.pollingInterval = setInterval(async () => {
       if (this.currentWorkspacePath) {
-        await this.emitStatusUpdate(this.currentWorkspacePath);
+        this._drainPromise = this.emitStatusUpdate(this.currentWorkspacePath);
+        await this._drainPromise;
       }
     }, this.pollIntervalMs);
+  }
+
+  /** Resolves when any in-flight status update has finished. Used in tests to
+   *  ensure git subprocesses have released file handles before cleanup. */
+  drain(): Promise<void> {
+    return this._drainPromise;
   }
 
   stopPolling(): void {
