@@ -42,6 +42,8 @@ npm run build
 npm run build:dist
 ```
 
+Windows installers are currently unsigned. On first launch, Windows SmartScreen may show a warning. Use **More info → Run anyway** to continue.
+
 ## Documentation
 
 The full docs are in [`docs/`](docs/):
