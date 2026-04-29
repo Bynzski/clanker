@@ -88,10 +88,13 @@ export async function ensureSshDir(): Promise<{ success: boolean; error?: string
 
   try {
     if (!fs.existsSync(sshDir)) {
-      // Create directory with 700 permissions
-      fs.mkdirSync(sshDir, { mode: 0o700 });
-    } else {
-      // Ensure correct permissions
+      if (process.platform === 'win32') {
+        // Windows policy: rely on inherited NTFS ACLs from the user profile.
+        fs.mkdirSync(sshDir);
+      } else {
+        fs.mkdirSync(sshDir, { mode: 0o700 });
+      }
+    } else if (process.platform !== 'win32') {
       fs.chmodSync(sshDir, 0o700);
     }
     return { success: true };
@@ -136,8 +139,10 @@ export async function generateSshKey(
       { timeout: 30000 }
     );
 
-    // Set correct permissions on private key (600)
-    fs.chmodSync(privateKeyPath, 0o600);
+    // POSIX policy: private key must be 600. Windows relies on profile ACL inheritance.
+    if (process.platform !== 'win32') {
+      fs.chmodSync(privateKeyPath, 0o600);
+    }
 
     // Read the public key for return value
     const publicKey = fs.readFileSync(publicKeyPath, 'utf-8').trim();

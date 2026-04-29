@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 6** — Next to start.
+**Phase 7** — Next to start.
 
 ## Phase Status
 
@@ -18,7 +18,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 3 | Canonical path normalization at IPC boundary | ✅ | phase-3-path-normalization |
 | 4 | Cross-drive rename + open-file mutation handling | ✅ | uncommitted |
 | 5 | Reserved-name validation + atomic-save watcher tuning | ✅ | uncommitted |
-| 6 | Credential / SSH permission policy on Windows | 🔲 | — |
+| 6 | Credential / SSH permission policy on Windows | ✅ | uncommitted |
 | 7 | Husky on Windows — document or replace shim | 🔲 | — |
 | 8a | Delete safety + CRLF preservation | 🔲 | — |
 | 8b | UNC / drive-letter / polling / long-path handling | 🔲 | — |
@@ -106,9 +106,11 @@ Created `src/main/harnessLaunch.ts:resolveHarnessSpawn()` — shared helper for 
 
 **Context:** `awaitWriteFinish` is **already enabled** in `explorerWatcher.ts:156` — Phase 5 tunes it. The renderer `editorFileWatcher.ts` has no chokidar; the real watcher is `src/main/fileWatcher.ts` using raw `fs.watch`. See PLAN.md "Phase 5" section.
 
-### Phase 6
+### Phase 6 ✅
 
 **Scope:** Decide and apply the Windows policy for SSH-key file permissions. Gate POSIX-mode calls on non-Windows.
+
+**Done:** Chose policy (b): on Windows, rely on inherited NTFS ACLs under `%USERPROFILE%\.ssh`; keep explicit POSIX permission enforcement on non-Windows only. Updated `sshKeyService.ts` to gate `mkdirSync({ mode })` and `chmodSync` behind `process.platform !== 'win32'`. Updated `credentialService.ts` `.ssh` config path resolution to prefer `%USERPROFILE%` on Windows with fallback to `HOME`/`os.homedir()`, and gated `.ssh` directory mode-setting in `configureSshForHost` to non-Windows. Documented policy in `AGENTS.md` Windows Support section. `npm run validate` green.
 
 **Context:** `src/main/credential/sshKeyService.ts`, `src/main/credential/credentialService.ts`. See PLAN.md "Phase 6" section.
 
