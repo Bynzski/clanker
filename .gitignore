@@ -3,6 +3,7 @@ node_modules/
 
 # Local config
 .codex
+.claude/
 
 # Build outputs
 dist/
