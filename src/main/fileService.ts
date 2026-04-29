@@ -24,8 +24,18 @@ function compareEntries(a: FileExplorerEntry, b: FileExplorerEntry): number {
   return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
 }
 
+function normalizePathForComparison(targetPath: string): string {
+  const resolved = path.resolve(targetPath);
+  return process.platform === 'win32'
+    ? resolved.replace(/\//g, '\\').toLowerCase()
+    : resolved;
+}
+
 function isPathInsideRoot(rootPath: string, candidatePath: string): boolean {
-  const relativePath = path.relative(rootPath, candidatePath);
+  const relativePath = path.relative(
+    normalizePathForComparison(rootPath),
+    normalizePathForComparison(candidatePath)
+  );
   return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
 }
 
@@ -276,10 +286,15 @@ async function resolveAndValidateWritePath(
 
   try {
     const workspaceRoot = await fs.realpath(safeWorkspacePath);
+    const requestedWorkspacePath = path.resolve(safeWorkspacePath);
     const requestedPath = path.resolve(filePath);
 
-    // Security check: ensure the path is inside the workspace
-    if (!isPathInsideRoot(workspaceRoot, requestedPath)) {
+    // Security check: ensure the requested lexical path stays inside the workspace.
+    // Use the resolved workspace path here instead of realpath(workspace) because on
+    // Windows realpath can canonicalize to a short-name form (e.g. RUNNER~1), while
+    // the requested path still uses the long form. Existing-file and ancestor checks
+    // below still use realpath to prevent symlink escape.
+    if (!isPathInsideRoot(requestedWorkspacePath, requestedPath)) {
       return { errorCode: 'invalid-path', error: 'File path is outside workspace' };
     }
 
@@ -438,7 +453,7 @@ async function validatePathSegmentsInsideWorkspace(
     return null;
   }
 
-  const workspaceRoot = await fs.realpath(safeWorkspacePath);
+  const workspaceRoot = path.resolve(safeWorkspacePath);
   const resolvedTargetPath = path.resolve(targetPath);
   const relativeToWorkspace = path.relative(workspaceRoot, resolvedTargetPath);
 

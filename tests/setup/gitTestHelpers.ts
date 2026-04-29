@@ -11,6 +11,32 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(execFile);
 
+const GIT_TEST_ENV = {
+  ...process.env,
+  GIT_PAGER: 'cat',
+  GIT_EDITOR: 'true',
+  GIT_MERGE_AUTOEDIT: 'no',
+  GIT_TERMINAL_PROMPT: '0',
+};
+
+function gitExecOptions(cwd: string) {
+  return {
+    cwd,
+    env: GIT_TEST_ENV,
+    timeout: 15000,
+    windowsHide: true,
+  } as const;
+}
+
+function removeTempDir(dirPath: string): void {
+  fs.rmSync(dirPath, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 50,
+  });
+}
+
 export interface TempGitRepo {
   /** Path to the temporary repository */
   path: string;
@@ -37,11 +63,12 @@ export async function createTempGitRepo(options: {
 
   // Initialize repository with an explicit branch name. Do not rely on the
   // runner's global init.defaultBranch, which varies across environments.
-  await execFileAsync('git', ['init', '--initial-branch', initialBranch], { cwd: tempDir });
+  await execFileAsync('git', ['init', '--initial-branch', initialBranch], gitExecOptions(tempDir));
 
   // Configure git for test environment using LOCAL config (avoids --global lock contention)
-  await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
-  await execFileAsync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+  await execFileAsync('git', ['config', 'user.email', 'test@example.com'], gitExecOptions(tempDir));
+  await execFileAsync('git', ['config', 'user.name', 'Test User'], gitExecOptions(tempDir));
+  await execFileAsync('git', ['config', 'core.autocrlf', 'false'], gitExecOptions(tempDir));
 
   // Create initial files - ensure at least one file exists for initial commit
   const filesToCreate = { ...initialFiles };
@@ -60,14 +87,14 @@ export async function createTempGitRepo(options: {
 
   // Stage and commit if requested
   if (initialCommit) {
-    await execFileAsync('git', ['add', '.'], { cwd: tempDir });
-    await execFileAsync('git', ['commit', '-m', 'Initial commit'], { cwd: tempDir });
+    await execFileAsync('git', ['add', '.'], gitExecOptions(tempDir));
+    await execFileAsync('git', ['commit', '-m', 'Initial commit'], gitExecOptions(tempDir));
   }
 
   return {
     path: tempDir,
     cleanup: () => {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      removeTempDir(tempDir);
     },
   };
 }
@@ -83,19 +110,19 @@ export async function createTempGitRepoWithRemote(options: {
 } = {}): Promise<{ local: TempGitRepo; remote: TempGitRepo }> {
   // Create bare remote repo
   const remoteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-remote-'));
-  await execFileAsync('git', ['init', '--bare', '--initial-branch', options.initialBranch ?? 'main'], { cwd: remoteDir });
+  await execFileAsync('git', ['init', '--bare', '--initial-branch', options.initialBranch ?? 'main'], gitExecOptions(remoteDir));
 
   // Create local repo with remote
   const local = await createTempGitRepo(options);
 
   // Add remote
-  await execFileAsync('git', ['remote', 'add', 'origin', remoteDir], { cwd: local.path });
+  await execFileAsync('git', ['remote', 'add', 'origin', remoteDir], gitExecOptions(local.path));
 
   return {
     local,
     remote: {
       path: remoteDir,
-      cleanup: () => fs.rmSync(remoteDir, { recursive: true, force: true }),
+      cleanup: () => removeTempDir(remoteDir),
     },
   };
 }
@@ -105,7 +132,7 @@ export async function createTempGitRepoWithRemote(options: {
  */
 export async function git(repoPath: string, args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   try {
-    const { stdout, stderr } = await execFileAsync('git', args, { cwd: repoPath });
+    const { stdout, stderr } = await execFileAsync('git', args, gitExecOptions(repoPath));
     return { stdout, stderr, exitCode: 0 };
   } catch (error: unknown) {
     const execError = error as { code?: number; stderr?: string; stdout?: string };

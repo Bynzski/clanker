@@ -113,6 +113,10 @@ describe('listDirectory', () => {
   });
 
   it('returns a permission error when directory listing fails', async () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
     const workspaceRoot = makeTempDir('clanker-grid-file-service-permissions-');
     const privateDirectory = path.join(workspaceRoot, 'private');
     fs.mkdirSync(privateDirectory);

@@ -19,6 +19,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Readable } from 'stream';
+import { toPosixPath } from '../../../src/shared/pathNormalize';
 
 // ============================================================================
 // Hoisted mocks (same pattern as sessionHistory.test.ts)
@@ -33,6 +34,8 @@ const TEST_WORKSPACE = path.join(TEST_HOME, 'project');
 const TEST_OTHER = path.join(TEST_HOME, 'other');
 const TEST_HARNESS_WRAPPER = path.join(TEST_HOME, '.clanker-grid', 'harness-wrapper.sh');
 const TEST_PI_SESSIONS_DIR = path.join(TEST_HOME, '.pi', 'agent', 'sessions', 'dir');
+const TEST_WORKSPACE_POSIX = toPosixPath(TEST_WORKSPACE);
+const TEST_PI_SESSIONS_DIR_POSIX = toPosixPath(TEST_PI_SESSIONS_DIR);
 
 // Additional platform-neutral path constants for sessionMatchesWorkspace tests
 const TEST_JAY_FOO = path.join(TEST_HOME, 'jay', 'dev', 'projects', 'foo');
@@ -124,7 +127,7 @@ describe('sessionMatchesWorkspace', () => {
 
   it('returns true when workspacePath is empty/undefined (global listing)', () => {
     expect(sessionMatchesWorkspace('', TEST_JAY_FOO)).toBe(true);
-    expect(sessionMatchesWorkspace('', '/any/path')).toBe(true);
+    expect(sessionMatchesWorkspace('', path.join(path.sep, 'any', 'path'))).toBe(true);
   });
 
   it('returns false when candidatePath is empty but workspacePath is set', () => {
@@ -137,14 +140,16 @@ describe('sessionMatchesWorkspace', () => {
 
   it('handles paths without trailing sep as exact match boundary', () => {
     // Without the fix, /foo-old would incorrectly match /foo's prefix
-    expect(sessionMatchesWorkspace('/foo', '/foo-old')).toBe(false);
-    expect(sessionMatchesWorkspace('/foo', '/foo')).toBe(true);
+    const foo = path.join(path.sep, 'foo');
+    expect(sessionMatchesWorkspace(foo, `${foo}-old`)).toBe(false);
+    expect(sessionMatchesWorkspace(foo, foo)).toBe(true);
   });
 
   it('handles workspacePath with trailing sep', () => {
-    expect(sessionMatchesWorkspace('/foo/', '/foo')).toBe(true);
-    expect(sessionMatchesWorkspace('/foo/', '/foo/bar')).toBe(true);
-    expect(sessionMatchesWorkspace('/foo/', '/foo-old')).toBe(false);
+    const foo = path.join(path.sep, 'foo');
+    expect(sessionMatchesWorkspace(`${foo}${path.sep}`, foo)).toBe(true);
+    expect(sessionMatchesWorkspace(`${foo}${path.sep}`, path.join(foo, 'bar'))).toBe(true);
+    expect(sessionMatchesWorkspace(`${foo}${path.sep}`, `${foo}-old`)).toBe(false);
   });
 });
 
@@ -212,7 +217,7 @@ describe('buildSessionInvokeArgs — harness default flag parity', () => {
       };
       const result = buildSessionInvokeArgs(session, false, '--verbose');
       expect(result.spawnArgs).toEqual([
-        'pi', '--session', path.join(TEST_PI_SESSIONS_DIR, '1234_uuid.jsonl'),
+        'pi', '--session', `${TEST_PI_SESSIONS_DIR_POSIX}/1234_uuid.jsonl`,
         '--model', 'minimax/MiniMax-M2.7', '--verbose',
       ]);
     });
@@ -291,7 +296,7 @@ describe('discoverSessions — pi', () => {
     const piSessions = sessions.filter((s) => s.harness === 'pi');
     expect(piSessions).toHaveLength(1);
     expect(piSessions[0].id).toBe('pi_001');
-    expect(piSessions[0].cwd).toBe(TEST_WORKSPACE);
+    expect(piSessions[0].cwd).toBe(TEST_WORKSPACE_POSIX);
   });
 
   it('filters out pi sessions outside workspace', async () => {
@@ -313,7 +318,7 @@ describe('discoverSessions — pi', () => {
 describe('discoverSessions — claude', () => {
   // Encode workspace path the same way discoverClaudeSessions does:
   // /home/user/project → -home-user-project
-  const encodedWorkspace = `-${TEST_WORKSPACE.replace(/^\//, '').replace(/\//g, '-')}`;
+  const encodedWorkspace = `-${toPosixPath(TEST_WORKSPACE).replace(/^\//, '').replace(/\//g, '-')}`;
 
   beforeEach(() => {
     clearSessionCache();

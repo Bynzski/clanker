@@ -14,6 +14,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Readable } from 'stream';
+import { toPosixPath } from '../../../src/shared/pathNormalize';
 
 // ============================================================================
 // Hoisted mocks
@@ -30,6 +31,8 @@ const TEST_WORKSPACE = path.join(TEST_HOME, 'project');
 const TEST_OTHER = path.join(TEST_HOME, 'other');
 const TEST_HARNESS_WRAPPER = path.join(TEST_HOME, '.clanker-grid', 'harness-wrapper.sh');
 const TEST_PI_SESSIONS_DIR = path.join(TEST_HOME, '.pi', 'agent', 'sessions', 'dir');
+const TEST_WORKSPACE_POSIX = toPosixPath(TEST_WORKSPACE);
+const TEST_PI_SESSIONS_DIR_POSIX = toPosixPath(TEST_PI_SESSIONS_DIR);
 
 mockHomedir.mockReturnValue(TEST_HOME);
 
@@ -182,7 +185,7 @@ describe('buildSessionInvokeArgs', () => {
     };
     const result = buildSessionInvokeArgs(session);
     expect(result.spawnArgs).toEqual([
-      'pi', '--session', path.join(TEST_PI_SESSIONS_DIR, '1234_uuid.jsonl'),
+      'pi', '--session', `${TEST_PI_SESSIONS_DIR_POSIX}/1234_uuid.jsonl`,
       '--model', 'minimax/MiniMax-M2.7',
     ]);
   });
@@ -198,7 +201,7 @@ describe('buildSessionInvokeArgs', () => {
     };
     const result = buildSessionInvokeArgs(session, true);
     expect(result.spawnArgs).toEqual([
-      'pi', '--fork', path.join(TEST_PI_SESSIONS_DIR, '1234_uuid.jsonl'),
+      'pi', '--fork', `${TEST_PI_SESSIONS_DIR_POSIX}/1234_uuid.jsonl`,
     ]);
   });
 
@@ -321,7 +324,7 @@ describe('discoverSessions — opencode', () => {
     expect(opencodeSessions).toHaveLength(1);
     expect(opencodeSessions[0].id).toBe('ses_001');
     expect(opencodeSessions[0].title).toBe('Image fix');
-    expect(opencodeSessions[0].cwd).toBe(TEST_WORKSPACE);
+    expect(opencodeSessions[0].cwd).toBe(TEST_WORKSPACE_POSIX);
     expect(opencodeSessions[0].timestamp).toBe(1700000000000);
   });
 
@@ -454,7 +457,7 @@ describe('discoverSessions — codex', () => {
     expect(codexSessions).toHaveLength(1);
     expect(codexSessions[0].id).toBe('019d9661-a4d3-7e93-a413-229086109874');
     expect(codexSessions[0].title).toBe('Fix the bug');
-    expect(codexSessions[0].cwd).toBe(TEST_WORKSPACE);
+    expect(codexSessions[0].cwd).toBe(TEST_WORKSPACE_POSIX);
   });
 
   it('returns empty when session_index.jsonl is missing', async () => {

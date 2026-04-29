@@ -2,10 +2,19 @@
 
 **Author:** Jay
 **Date:** 2026-04-28
-**Status:** Approved
+**Status:** In Progress
 **Version:** 1.2
 
 ---
+
+## Progress Notes
+
+- **2026-04-28 / Phase 9 verification follow-up:** Updated Windows CI/test alignment after the first required `windows-latest` gate failed in GitHub Actions.
+  - Fixed null workspace-path guarding in `src/main/ipc/aiCommitIpc.ts`.
+  - Hardened Windows path comparisons in `src/main/fileService.ts` to avoid `realpath()` short-path drift during workspace validation.
+  - Normalized session discovery workspace handling in `src/main/sessionHistory.ts` and fixed Claude workspace encoding for Windows paths.
+  - Updated Windows-sensitive unit tests (path-shape, shell args, wrapper expectations, SSH home/env handling, permission assertions, CRLF-safe git assertions, polling cleanup order, and git test helper cleanup/env behavior).
+  - `npm run validate` passes locally after these updates. Next step is push-only verification in GitHub Actions; local smoke tests remain pending.
 
 ## Purpose
 
@@ -836,6 +845,7 @@ If Phase 6 takes ACL approach (a), it will shell out to `icacls.exe` (built-in) 
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.4 | 2026-04-28 | Pi | Added Phase 9 verification follow-up progress note documenting the Windows CI/test-alignment pass and local `npm run validate` success. |
 | 1.3 | 2026-04-28 | Pi | Incorporated review clarifications: explicit CI matrix restructure note, concrete Phase 1 wrapper selection criterion including `ensureHarnessWrapperScript`, CRLF test fixture guidance, CI gate-flip timing clarification, and minor wording cleanup. |
 | 1.2 | 2026-04-28 | Pi | Final polish: made Linux AppImage preservation/release verification explicit alongside Windows NSIS + portable output. |
 | 1.1 | 2026-04-28 | Pi | Addressed readiness review gaps: expanded test/path audits, completed IPC path scope, split oversized polish phase, clarified release authority and CI/build boundaries. |

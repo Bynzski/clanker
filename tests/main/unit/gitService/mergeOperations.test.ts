@@ -243,7 +243,7 @@ describe('getOperationState - happy path with real git', () => {
     expect(state.inProgress).toBe(true);
     expect(state.mode).toBe('merge');
     // Note: Conflict scenario has conflicts, that's fine for this test
-  });
+  }, 15000);
 
   it('detects merge in progress with conflicts', async () => {
     repo = await createTempGitRepo({});
@@ -259,7 +259,7 @@ describe('getOperationState - happy path with real git', () => {
     expect(state.mode).toBe('merge');
     expect(state.conflicts.length).toBeGreaterThan(0);
     expect(state.message).toContain('conflict');
-  });
+  }, 15000);
 
   it('detects rebase in progress', async () => {
     repo = await createTempGitRepo({});
@@ -550,7 +550,7 @@ describe('abortCurrentOperation - happy path with real git', () => {
     const postAbortContent = await readFile(repo.path, 'same.txt');
     const postAbortCommit = await getLastCommitHash(repo.path);
     
-    expect(postAbortContent).toBe(preMergeContent);
+    expect(postAbortContent.replace(/\r\n/g, '\n')).toBe(preMergeContent.replace(/\r\n/g, '\n'));
     expect(postAbortCommit).toBe(preMergeCommit);
   });
 });

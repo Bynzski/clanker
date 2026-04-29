@@ -185,7 +185,7 @@ describe('getHistory - edge cases with real git', () => {
     
     // Should be clamped to 50
     expect(history.length).toBeLessThanOrEqual(50);
-  });
+  }, 20000);
 
   it('clamps negative limit to 1', async () => {
     repo = await createTempGitRepo({

@@ -656,8 +656,8 @@ describe('terminalIpc — error-path: handler returns', () => {
 
     expect(opts.ensureHarnessWrapperScript).not.toHaveBeenCalled();
     expect(mockPtySpawn).toHaveBeenCalledWith(
-      expect.any(String),
-      ['-i'],
+      process.platform === 'win32' ? 'powershell.exe' : expect.any(String),
+      process.platform === 'win32' ? [] : ['-i'],
       expect.objectContaining({ cwd: '/test/workspace' })
     );
   });
