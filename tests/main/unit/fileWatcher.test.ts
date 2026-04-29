@@ -190,6 +190,27 @@ describe('watchFile', () => {
   });
 });
 
+describe('releaseHandle', () => {
+  test('closes an active watcher and returns a rewatch callback', () => {
+    const service = makeService();
+    service.watchFile('/test/file.txt');
+    const watcher = infra.watchers.get('/test/file.txt')!;
+
+    const reacquire = service.releaseHandle('/test/file.txt');
+
+    expect(watcher.close).toHaveBeenCalled();
+    expect(reacquire).not.toBeNull();
+
+    reacquire?.();
+    expect(infra.watchers.has('/test/file.txt')).toBe(true);
+  });
+
+  test('returns null when path is not watched', () => {
+    const service = makeService();
+    expect(service.releaseHandle('/test/missing.txt')).toBeNull();
+  });
+});
+
 describe('unwatchFile', () => {
   test('calls close on the watcher', () => {
     const service = makeService();

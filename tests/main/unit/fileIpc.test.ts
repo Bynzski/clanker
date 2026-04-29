@@ -55,10 +55,11 @@ const { mockListDirectory, mockReadFile, mockWriteFile, mockCreateFile,
   mockResolveAndValidateWatchPath: vi.fn(),
 }));
 
-const { mockWatchFile, mockUnwatchFile, mockMarkWritten } = vi.hoisted(() => ({
+const { mockWatchFile, mockUnwatchFile, mockMarkWritten, mockReleaseHandle } = vi.hoisted(() => ({
   mockWatchFile: vi.fn(),
   mockUnwatchFile: vi.fn(),
   mockMarkWritten: vi.fn(),
+  mockReleaseHandle: vi.fn(),
 }));
 
 vi.mock('../../../src/main/fileService', () => ({
@@ -77,6 +78,7 @@ vi.mock('../../../src/main/fileWatcher', () => ({
     watchFile: mockWatchFile,
     unwatchFile: mockUnwatchFile,
     markWritten: mockMarkWritten,
+    releaseHandle: mockReleaseHandle,
   })),
 }));
 
@@ -101,12 +103,13 @@ function extractHandler(channel: string): (...args: unknown[]) => unknown {
 
 // The FileWatcherService mock returned here must satisfy the RegisterFileIpcDeps
 // interface. The cast is safe because the IPC handler only calls watchFile,
-// unwatchFile, and markWritten — none of which require the full service shape.
+// unwatchFile, markWritten, and releaseHandle.
 function getMockFileWatcher() {
   return {
     watchFile: mockWatchFile,
     unwatchFile: mockUnwatchFile,
     markWritten: mockMarkWritten,
+    releaseHandle: mockReleaseHandle,
   } as unknown as RegisterFileIpcDeps['getFileWatcher'] extends (...args: never[]) => infer R ? R : never;
 }
 
@@ -396,6 +399,17 @@ describe('registerFileIpc', () => {
   // -------------------------------------------------------------------------
 
   describe('FILE_DELETE', () => {
+    test('releases watcher handle before delete', async () => {
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
+      const handler = extractHandler(FILE_DELETE);
+
+      vi.mocked(mockDeleteEntry).mockResolvedValue({ success: true });
+
+      await handler({}, { workspacePath: '/ws', targetPath: '/ws/todelete.txt' });
+
+      expect(mockReleaseHandle).toHaveBeenCalledWith('/ws/todelete.txt');
+    });
+
     test('returns success result', async () => {
       registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_DELETE);
@@ -452,6 +466,17 @@ describe('registerFileIpc', () => {
   // -------------------------------------------------------------------------
 
   describe('FILE_RENAME', () => {
+    test('releases watcher handle before rename', async () => {
+      registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
+      const handler = extractHandler(FILE_RENAME);
+
+      vi.mocked(mockRenameEntry).mockResolvedValue({ success: true });
+
+      await handler({}, { workspacePath: '/ws', oldPath: '/ws/old.txt', newPath: '/ws/new.txt' });
+
+      expect(mockReleaseHandle).toHaveBeenCalledWith('/ws/old.txt');
+    });
+
     test('returns success result', async () => {
       registerFileIpc({ getFileWatcher: getMockFileWatcher as RegisterFileIpcDeps["getFileWatcher"], getExplorerWatcher: getMockExplorerWatcher });
       const handler = extractHandler(FILE_RENAME);

@@ -367,6 +367,50 @@ import type {
   FileOperationResult,
 } from '../shared/types/fileOperations';
 
+function toFileOperationError(error: unknown, fallbackMessage: string): FileOperationResult {
+  const err = error as NodeJS.ErrnoException | undefined;
+
+  if (err?.code === 'ENOENT') {
+    return { success: false, error: 'Source path does not exist' };
+  }
+
+  if (err?.code === 'EBUSY' || err?.code === 'EPERM') {
+    return {
+      success: false,
+      errorCode: 'FILE_IN_USE',
+      error: 'File is in use by another process. Close the file and try again.',
+    };
+  }
+
+  if (err?.code === 'EACCES') {
+    return { success: false, error: fallbackMessage };
+  }
+
+  return { success: false, error: fallbackMessage };
+}
+
+async function renameWithCrossDeviceFallback(oldPath: string, newPath: string): Promise<void> {
+  try {
+    await fs.rename(oldPath, newPath);
+    return;
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException | undefined;
+    if (err?.code !== 'EXDEV') {
+      throw error;
+    }
+  }
+
+  const sourceStats = await fs.stat(oldPath);
+  if (sourceStats.isDirectory()) {
+    await fs.cp(oldPath, newPath, { recursive: true, force: false, errorOnExist: true });
+    await fs.rm(oldPath, { recursive: true });
+    return;
+  }
+
+  await fs.copyFile(oldPath, newPath);
+  await fs.unlink(oldPath);
+}
+
 /**
  * Validate that a resolved path is inside the workspace root.
  * Uses realpath to resolve symlinks before checking containment.
@@ -489,14 +533,10 @@ export async function deleteEntry(request: FileDeleteRequest): Promise<FileOpera
     await fs.rm(resolvedReal, { recursive: true });
     return { success: true };
   } catch (error) {
-    const err = error as NodeJS.ErrnoException | undefined;
-    if (err?.code === 'ENOENT') {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
       return { success: false, error: 'Path does not exist' };
     }
-    if (err?.code === 'EACCES' || err?.code === 'EPERM') {
-      return { success: false, error: 'Permission denied deleting path' };
-    }
-    return { success: false, error: 'Failed to delete path' };
+    return toFileOperationError(error, 'Permission denied deleting path');
   }
 }
 
@@ -530,16 +570,12 @@ export async function renameEntry(request: FileRenameRequest): Promise<FileOpera
       // Doesn't exist — good
     }
 
-    await fs.rename(resolvedOld, resolvedNew);
+    await renameWithCrossDeviceFallback(resolvedOld, resolvedNew);
     return { success: true };
   } catch (error) {
-    const err = error as NodeJS.ErrnoException | undefined;
-    if (err?.code === 'ENOENT') {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
       return { success: false, error: 'Source path does not exist' };
     }
-    if (err?.code === 'EACCES' || err?.code === 'EPERM') {
-      return { success: false, error: 'Permission denied renaming path' };
-    }
-    return { success: false, error: 'Failed to rename path' };
+    return toFileOperationError(error, 'Permission denied renaming path');
   }
 }

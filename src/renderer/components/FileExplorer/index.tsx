@@ -4,6 +4,7 @@ import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw } from 'lu
 import type React from 'react';
 import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer';
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
+import type { FileOperationResult } from '../../../shared/types/fileOperations';
 import { dirnamePath, isAbsolutePath, joinPaths, relativePath, normalizePath } from '../../lib/pathUtils';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useScopedWorkspace } from '../WorkspaceScope';
@@ -29,6 +30,22 @@ function isPathWithinBase(basePath: string, candidatePath: string): boolean {
 
 function filterPathsOutsideBase(basePath: string, paths: string[]): string[] {
   return paths.filter((path) => path !== basePath && !isPathWithinBase(basePath, path));
+}
+
+function getFileInUseMessage(result: FileOperationResult): string {
+  if (result.errorCode === 'FILE_IN_USE') {
+    return 'File is open in an editor or another app. Close it and retry.';
+  }
+
+  return result.error ?? 'File operation failed';
+}
+
+async function releaseEditorWatchForPath(workspacePath: string, filePath: string): Promise<void> {
+  await window.electronAPI.editorUnwatchFile({ workspacePath, filePath });
+}
+
+async function rewatchEditorPath(workspacePath: string, filePath: string): Promise<void> {
+  await window.electronAPI.editorWatchFile({ workspacePath, filePath });
 }
 
 function resolveCreateParentPath(
@@ -374,6 +391,8 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     const parentDir = dirnamePath(r.path);
     const newPath = joinPaths(parentDir, newName);
 
+    await releaseEditorWatchForPath(normalizedWorkspacePath, r.path);
+
     const result = await window.electronAPI.fileRename({
       workspacePath: normalizedWorkspacePath,
       oldPath: r.path,
@@ -381,7 +400,12 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     });
 
     if (!result.success) {
-      console.error('Failed to rename entry:', result.error);
+      void rewatchEditorPath(normalizedWorkspacePath, r.path);
+      const message = getFileInUseMessage(result);
+      if (result.errorCode === 'FILE_IN_USE') {
+        window.alert(message);
+      }
+      console.error('Failed to rename entry:', message);
       setRenaming(null);
       return;
     }
@@ -528,16 +552,6 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
 
     setDeleteTarget(null);
 
-    const result = await window.electronAPI.fileDelete({
-      workspacePath: normalizedWorkspacePath,
-      targetPath: entry.path,
-    });
-
-    if (!result.success) {
-      console.error('Failed to delete entry:', result.error);
-      return;
-    }
-
     // Close any open editor tabs for the deleted file or files inside the deleted directory
     const state = useWorkspaceStore.getState();
     const liveWorkspace = resolvedWorkspaceId ? state.getWorkspaceById(resolvedWorkspaceId) : null;
@@ -546,6 +560,23 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     const tabsToClose = editorTabs.filter((tab) =>
       tab.filePath === entry.path || isPathWithinBase(entry.path, tab.filePath)
     );
+
+    await Promise.all(tabsToClose.map((tab) => releaseEditorWatchForPath(normalizedWorkspacePath, tab.filePath)));
+
+    const result = await window.electronAPI.fileDelete({
+      workspacePath: normalizedWorkspacePath,
+      targetPath: entry.path,
+    });
+
+    if (!result.success) {
+      await Promise.all(tabsToClose.map((tab) => rewatchEditorPath(normalizedWorkspacePath, tab.filePath)));
+      const message = getFileInUseMessage(result);
+      if (result.errorCode === 'FILE_IN_USE') {
+        window.alert(message);
+      }
+      console.error('Failed to delete entry:', message);
+      return;
+    }
     for (const tab of tabsToClose) {
       closeEditorTab(tab.id, resolvedWorkspaceId ?? undefined);
     }

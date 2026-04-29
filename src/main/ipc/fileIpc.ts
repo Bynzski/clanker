@@ -77,7 +77,13 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
       workspacePath: toNativePath(request.workspacePath, process.platform),
       targetPath: toNativePath(request.targetPath, process.platform),
     };
-    return deleteEntry(nativeRequest);
+
+    const rewatch = fileWatcher.releaseHandle(path.resolve(nativeRequest.targetPath));
+    const result = await deleteEntry(nativeRequest);
+    if (!result.success) {
+      rewatch?.();
+    }
+    return result;
   });
 
   ipcMain.handle(FILE_RENAME, async (_, request: FileRenameRequest) => {
@@ -87,7 +93,13 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
       oldPath: toNativePath(request.oldPath, process.platform),
       newPath: toNativePath(request.newPath, process.platform),
     };
-    return renameEntry(nativeRequest);
+
+    const rewatch = fileWatcher.releaseHandle(path.resolve(nativeRequest.oldPath));
+    const result = await renameEntry(nativeRequest);
+    if (!result.success) {
+      rewatch?.();
+    }
+    return result;
   });
 
   ipcMain.handle(REVEAL_IN_FILE_MANAGER, async (_, filePath: string) => {
