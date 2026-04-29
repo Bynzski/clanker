@@ -19,6 +19,7 @@ import {
 import { type StoreSchema, type HarnessDefaultsMap } from '../../shared/types/store';
 import { type AiCommitProvider } from '../aiCommit';
 import { validateHarnessDefaultsMap } from '../harnessDefaultsValidation';
+import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import {
   GET_LAST_WORKSPACE,
   GET_BASE_DIRECTORY,
@@ -59,7 +60,10 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
 
   ipcMain.handle(OPEN_BASE_DIRECTORY_DIALOG, async () => {
     const mainWindow = getMainWindow();
-    const currentBase = getStore().get('baseDirectory');
+    const currentBaseRaw = getStore().get('baseDirectory');
+    const currentBase = currentBaseRaw
+      ? toNativePath(currentBaseRaw, process.platform)
+      : currentBaseRaw;
     const result = await dialog.showOpenDialog(mainWindow!, {
       properties: ['openDirectory'],
       title: 'Select Base Directory',
@@ -70,8 +74,9 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
       const selectedPath = result.filePaths[0];
       const sep = path.sep;
       const normalized = selectedPath.endsWith(sep) ? selectedPath : selectedPath + sep;
-      getStore().set('baseDirectory', normalized);
-      return normalized;
+      const posixPath = toPosixPath(normalized);
+      getStore().set('baseDirectory', posixPath);
+      return posixPath;
     }
     return null;
   });
@@ -109,19 +114,21 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
     const result = await dialog.showOpenDialog(mainWindow!, {
       properties: ['openDirectory'],
       title: 'Select Workspace Directory',
-      defaultPath: getStore().get('baseDirectory'),
+      defaultPath: toNativePath(getStore().get('baseDirectory') || '', process.platform) || undefined,
     });
 
     if (!result.canceled && result.filePaths.length > 0) {
       const selectedPath = result.filePaths[0];
-      getStore().set('lastWorkspace', selectedPath);
-      return selectedPath;
+      const posixPath = toPosixPath(selectedPath);
+      getStore().set('lastWorkspace', posixPath);
+      return posixPath;
     }
     return null;
   });
 
   ipcMain.handle(READ_DIRECTORY, async (_, dirPath: string) => {
-    const safeDirectoryPath = resolveExistingDirectory(dirPath);
+    const nativeDirPath = toNativePath(dirPath, process.platform);
+    const safeDirectoryPath = resolveExistingDirectory(nativeDirPath);
     if (!safeDirectoryPath) {
       return [];
     }

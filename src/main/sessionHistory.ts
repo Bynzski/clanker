@@ -15,6 +15,7 @@ import * as os from 'os';
 import * as readline from 'readline';
 import type { HarnessSession } from '../shared/types/session';
 import { ensureHarnessWrapperScript, resolveHarnessSpawn } from './harnessLaunch';
+import { toPosixPath } from '../shared/pathNormalize';
 
 // ============================================================================
 // Path-boundary matching (replaces raw startsWith for workspace filtering)
@@ -68,7 +69,7 @@ export function clearSessionCache(): void {
 // ============================================================================
 
 export async function discoverSessions(workspacePath?: string): Promise<HarnessSession[]> {
-  const normalizedPath = (workspacePath ?? '').replace(/\/+$/, '');
+  const normalizedPath = (workspacePath ?? '').replace(/[\\/]+$/, '');
 
   const cached = sessionCache.get(normalizedPath);
   if (cached && Date.now() - cached.cachedAt < SESSION_CACHE_TTL_MS) {
@@ -91,8 +92,14 @@ export async function discoverSessions(workspacePath?: string): Promise<HarnessS
 
   sessions.sort((a, b) => b.timestamp - a.timestamp);
 
-  sessionCache.set(normalizedPath, { sessions, cachedAt: Date.now() });
-  return sessions;
+  const posixSessions = sessions.map((session) => ({
+    ...session,
+    cwd: toPosixPath(session.cwd),
+    ...(session.filePath ? { filePath: toPosixPath(session.filePath) } : {}),
+  }));
+
+  sessionCache.set(normalizedPath, { sessions: posixSessions, cachedAt: Date.now() });
+  return posixSessions;
 }
 
 export function buildSessionInvokeArgs(

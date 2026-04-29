@@ -13,6 +13,7 @@ import { spawnPtyProcess } from './ptySpawn';
 import type { Terminal } from './terminalIpc';
 import type { HarnessSession } from '../../shared/types/session';
 import { defaultShell } from '../platformShell';
+import { toNativePath } from '../../shared/pathNormalize';
 
 interface RegisterSessionIpcDeps {
   getTerminals: () => Map<string, Terminal>;
@@ -27,7 +28,10 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
   const { getTerminals, getMainWindow, getSafeWorkspacePath, getIsShuttingDown, getStore, getHarnessOptions } = deps;
 
   ipcMain.handle(SESSION_DISCOVER, async (_, workspacePath?: string) => {
-    return discoverSessions(workspacePath);
+    const nativeWorkspacePath = workspacePath
+      ? toNativePath(workspacePath, process.platform)
+      : undefined;
+    return discoverSessions(nativeWorkspacePath);
   });
 
   ipcMain.handle(SESSION_INVOKE, async (_, session: HarnessSession, fork?: boolean) => {
@@ -40,8 +44,14 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     const harnessDefaults = store.get('harnessDefaults');
     const userFlags = harnessDefaults[session.harness]?.flags?.trim();
 
-    const { spawnCmd, spawnArgs } = buildSessionInvokeArgs(session, fork ?? false, userFlags);
-    const cwd = getSafeWorkspacePath(session.cwd);
+    const nativeSession = {
+      ...session,
+      cwd: toNativePath(session.cwd, process.platform),
+      ...(session.filePath ? { filePath: toNativePath(session.filePath, process.platform) } : {}),
+    };
+
+    const { spawnCmd, spawnArgs } = buildSessionInvokeArgs(nativeSession, fork ?? false, userFlags);
+    const cwd = getSafeWorkspacePath(nativeSession.cwd);
     const userShell = defaultShell();
 
     const harnessEnv = harnessOptions[session.harness]?.env ?? {};

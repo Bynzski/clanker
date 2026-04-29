@@ -1,3 +1,8 @@
+// Re-export the canonical normalizers from the shared module.
+// The renderer uses toPosixPath internally; toNativePath is available
+// for any renderer code that needs to send native paths to main.
+export { toPosixPath, toNativePath } from '../../shared/pathNormalize';
+
 function normalizeSeparators(value: string): string {
   return value.replace(/\\/g, '/');
 }

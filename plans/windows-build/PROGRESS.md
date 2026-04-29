@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 3** — Next to start.
+**Phase 4** — Next to start.
 
 ## Phase Status
 
@@ -15,7 +15,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 0 | Make tests platform-neutral (remove hardcoded Unix paths) | ✅ | phase-0-platform-neutral-tests |
 | 1 | Cross-platform harness wrapper + shell/PATH defaults | ✅ | phase-1-cross-platform-shell |
 | 2 | node-pty / ConPTY end-to-end validation on real Windows | ✅ | phase-2-smoke-fixes |
-| 3 | Canonical path normalization at IPC boundary | 🔲 | — |
+| 3 | Canonical path normalization at IPC boundary | ✅ | phase-3-path-normalization |
 | 4 | Cross-drive rename + open-file mutation handling | 🔲 | — |
 | 5 | Reserved-name validation + atomic-save watcher tuning | 🔲 | — |
 | 6 | Credential / SSH permission policy on Windows | 🔲 | — |
@@ -84,11 +84,11 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 Created `src/main/harnessLaunch.ts:resolveHarnessSpawn()` — shared helper for cross-platform command resolution. Created `docs/windows-smoke-test.md` — Phase 2 verification checklist. All 3192 tests pass. `npm run validate` green.
 
-### Phase 3
+### Phase 3 ✅
 
 **Scope:** POSIX paths at the IPC boundary. New renderer-safe `src/shared/pathNormalize.ts` exporting `toPosixPath` / `toNativePath`. Audit every path-bearing IPC handler, including file/session/terminal/settings/git/vcs/aiCommit, and every Map/Set keyed by path.
 
-**Context:** Foundational for Phases 4, 5, 8. `getSafeWorkspacePath` lives in `src/main/main.ts:158` (not sessionIpc). See PLAN.md "Phase 3" section.
+**Done:** Added `src/shared/pathNormalize.ts` with renderer-safe `toPosixPath` / `toNativePath` helpers and unit tests (`tests/main/unit/pathNormalize.test.ts`) including Windows drive-letter/UNC round-trip cases. Normalized IPC boundaries in `fileIpc.ts`, `settingsIpc.ts`, `sessionIpc.ts`, `terminalIpc.ts`, and shared workspace-path validation in `aiCommitIpc.ts` (used by git/vcs IPC). Normalized outgoing path events in `explorerWatcher.ts` and `fileWatcher.ts`. Normalized renderer path-keying in `editorFileWatcher.ts`. Added canonical IPC path-form rule to `AGENTS.md` Maintainability section. All 3207 tests pass. `npm run validate` green.
 
 ### Phase 4
 
@@ -152,3 +152,4 @@ Created `src/main/harnessLaunch.ts:resolveHarnessSpawn()` — shared helper for 
 | 0 | phase-0-platform-neutral-tests | Replaced hardcoded Unix path literals in 21 test files. Created `tests/_helpers/tempPaths.ts`. All 3192 tests pass on Linux. |
 | 1 | phase-1-cross-platform-shell | Created `platformShell.ts` shared helper. Fixed shell defaults and PATH delimiter. Wrapper skipped on Windows. All 3192 tests pass. |
 | 2 | phase-2-smoke-fixes | Fixed 7 bugs from Windows smoke: shell args, path separators, harness cmd.exe wrapping, SIGTERM suppression, explorer path normalization. Created `resolveHarnessSpawn()` helper. All 3192 tests pass. |
+| 3 | phase-3-path-normalization | Added shared path normalizers and tests, normalized IPC path boundaries and path-keyed maps, and added canonical IPC path rule to AGENTS.md. All 3207 tests pass. |
