@@ -78,7 +78,7 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
       targetPath: toNativePath(request.targetPath, process.platform),
     };
 
-    const rewatch = fileWatcher.releaseHandle(path.resolve(nativeRequest.targetPath));
+    const rewatch = fileWatcher.releaseHandle(nativeRequest.targetPath);
     const result = await deleteEntry(nativeRequest);
     if (!result.success) {
       rewatch?.();
@@ -94,7 +94,7 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
       newPath: toNativePath(request.newPath, process.platform),
     };
 
-    const rewatch = fileWatcher.releaseHandle(path.resolve(nativeRequest.oldPath));
+    const rewatch = fileWatcher.releaseHandle(nativeRequest.oldPath);
     const result = await renameEntry(nativeRequest);
     if (!result.success) {
       rewatch?.();

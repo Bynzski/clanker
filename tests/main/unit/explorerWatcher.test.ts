@@ -12,6 +12,7 @@ import * as os from 'os';
 
 // The module under test
 import { ExplorerWatcherService, shouldUsePollingForWorkspace } from '../../../src/main/explorerWatcher';
+import { toPosixPath } from '../../../src/shared/pathNormalize';
 
 describe('ExplorerWatcherService', () => {
   let tempDir: string;
@@ -53,7 +54,7 @@ describe('ExplorerWatcherService', () => {
     await fsPromises.rm(tempDir, { force: true, recursive: true });
   });
 
-  test('maps realpath event parent dirs back to the presentation workspace path (symlink workspace)', async () => {
+  test.skipIf(process.platform === 'win32')('maps realpath event parent dirs back to the presentation workspace path (symlink workspace)', async () => {
     const parentRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'clanker-explorer-symlink-'));
     const realRoot = path.join(parentRoot, 'real');
     const linkRoot = path.join(parentRoot, 'link');
@@ -83,7 +84,7 @@ describe('ExplorerWatcherService', () => {
 
       expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
         'explorer-tree-changed',
-        { directoryPath: path.join(linkRoot, 'src') }
+        { directoryPath: toPosixPath(path.join(linkRoot, 'src')) }
       );
     } finally {
       localWatcher.close();
@@ -196,7 +197,7 @@ describe('ExplorerWatcherService', () => {
       expect(explorerEvents).toHaveLength(1);
       expect(explorerEvents[0]).toEqual([
         'explorer-tree-changed',
-        { directoryPath: path.join(tempDir, 'src') },
+        { directoryPath: toPosixPath(path.join(tempDir, 'src')) },
       ]);
     });
 
@@ -217,7 +218,7 @@ describe('ExplorerWatcherService', () => {
       expect(explorerEvents).toHaveLength(1);
       expect(explorerEvents[0]).toEqual([
         'explorer-tree-changed',
-        { directoryPath: tempDir },
+        { directoryPath: toPosixPath(tempDir) },
       ]);
     });
 
@@ -232,7 +233,7 @@ describe('ExplorerWatcherService', () => {
 
       expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
         'explorer-tree-changed',
-        { directoryPath: tempDir }
+        { directoryPath: toPosixPath(tempDir) }
       );
     });
 
@@ -246,7 +247,7 @@ describe('ExplorerWatcherService', () => {
 
       expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
         'explorer-tree-changed',
-        { directoryPath: tempDir }
+        { directoryPath: toPosixPath(tempDir) }
       );
     });
 
@@ -264,7 +265,7 @@ describe('ExplorerWatcherService', () => {
 
       expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
         'explorer-tree-changed',
-        { directoryPath: tempDir }
+        { directoryPath: toPosixPath(tempDir) }
       );
     });
 
@@ -282,7 +283,7 @@ describe('ExplorerWatcherService', () => {
 
       expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
         'explorer-tree-changed',
-        { directoryPath: tempDir }
+        { directoryPath: toPosixPath(tempDir) }
       );
     });
 
@@ -301,7 +302,7 @@ describe('ExplorerWatcherService', () => {
 
       expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
         'explorer-tree-changed',
-        { directoryPath: subDir }
+        { directoryPath: toPosixPath(subDir) }
       );
     });
   });
