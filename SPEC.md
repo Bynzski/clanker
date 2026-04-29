@@ -283,8 +283,17 @@ All IPC channel names are defined as constants in `src/shared/ipcChannels.ts`. N
 | `dist/main/` | Compiled main process |
 | `dist/renderer/` | Vite production bundle |
 | `dist/shared/` | TypeScript declarations |
-| `release/` | electron-builder output |
+| `release/` | electron-builder output (AppImage on Linux; NSIS installer + portable executable on Windows) |
 | `coverage/` | Test coverage reports |
+
+## Supported platforms
+
+| Platform | Target |
+|----------|--------|
+| Linux x64 | AppImage |
+| Windows 10 1809+ / Windows 11 x64 | NSIS installer + portable executable (unsigned) |
+
+macOS, ARM64, and WSL are not produced. Each platform must be built on its own host — there is no cross-compilation.
 
 ## CLI Commands
 

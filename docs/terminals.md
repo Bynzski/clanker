@@ -22,19 +22,21 @@
 
 Launch integrated AI coding agents directly in your workspace.
 
-Harness terminals use a generated wrapper script in the main process so the harness runs without the old inline `bash -i -c` command wrapper. When a harness exits, the terminal falls back to an interactive shell so the pane stays usable.
+When a harness exits, the terminal falls back to an interactive shell so the pane stays usable.
 
 ### Supported Harnesses
 
 | Harness | Command | Description |
 |---------|---------|-------------|
-| Plain Shell | `bash`/`zsh` | Standard terminal — no wrapper, direct PTY spawn |
+| Plain Shell | `bash`/`zsh` (Linux/macOS) or `powershell.exe` (Windows) | Standard terminal — direct PTY spawn |
 | Codex | `codex` | OpenAI Codex CLI |
 | Claude | `claude` | Anthropic Claude |
 | OpenCode | `opencode` | Open source agent |
 | Pi | `pi` | Mario Zechner agent |
 
-**Harness launch model:** Harnesses use one unified wrapper-based spawn strategy. The harness runs as the direct PTY foreground job via a generated shell script (`~/.clanker-grid/harness-wrapper.sh`), not via an inline `bash -i -c` command. When a harness exits, the wrapper script replaces itself with an interactive shell so the terminal pane stays usable. This preserves existing product behavior while fixing the shell-layer signal/TUI issues.
+**Harness launch model — Linux / macOS:** Harnesses run as the direct PTY foreground job via a generated shell script (`~/.clanker-grid/harness-wrapper.sh`). When the harness exits, the wrapper script replaces itself with an interactive shell so the pane stays usable.
+
+**Harness launch model — Windows:** No wrapper script is generated. Harnesses are spawned through `cmd.exe /c <harness>` so npm-installed `.cmd` shims resolve correctly. When the harness exits, the pane is replaced by a fresh PowerShell session.
 
 ### Harness Flags
 

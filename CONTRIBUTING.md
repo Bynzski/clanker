@@ -21,6 +21,24 @@ npm run typecheck
 npm run validate
 ```
 
+### Platform support
+
+Clanker Grid is developed and validated on **Linux (x64)** and **Windows 10 1809+ / Windows 11 (x64)**. CI runs the full validation pipeline on both `ubuntu-latest` and `windows-latest`; PRs must pass on both.
+
+When adding code that touches the filesystem, terminals, harness launch, credentials, or paths, follow the platform patterns in [AGENTS.md](AGENTS.md#windows-support) and [docs/windows.md](docs/windows.md). Key rules:
+
+- All paths crossing IPC use POSIX separators (`src/shared/pathNormalize.ts`).
+- Default shell selection lives in `src/main/platformShell.ts` — never branch on `process.platform` ad hoc.
+- Harness commands spawn through `resolveHarnessSpawn()` so `.cmd` shims resolve on Windows.
+- Filesystem-mutating tests must use `os.tmpdir()` / `os.homedir()` via `tests/_helpers/tempPaths.ts` — no hardcoded `/home`, `/tmp`, or `/Users`.
+
+### Windows development
+
+- **Install Git for Windows.** Husky pre-commit hooks (`.husky/pre-commit`) execute through the `sh` bundled with Git for Windows. Without it, hooks silently skip and lint/typecheck are not enforced locally.
+- **Recommended:** `git config --global core.autocrlf input` so working trees stay LF on disk while Windows tooling sees what it expects.
+- **Native modules:** `node-pty` is rebuilt against the Electron ABI on `npm install` via `electron-builder` / `@electron/rebuild`. If `npm run dev` errors with a node-pty load failure, run `npx electron-rebuild -f -w node-pty` and retry.
+- **Polling watchers:** to test the UNC polling fallback locally (or to debug watcher issues on any path), set `CLANKER_GRID_WATCHER_POLLING=1` before launching.
+
 ## Code Standards
 
 - TypeScript strict mode enabled
@@ -90,11 +108,13 @@ Tests are split by environment:
 
 ## Pull Request Checklist
 
-- [ ] `npm run validate` passes
+- [ ] `npm run validate` passes locally
+- [ ] CI is green on both `ubuntu-latest` and `windows-latest`
 - [ ] Tests added/updated for new features
 - [ ] No TypeScript errors
 - [ ] No ESLint warnings
 - [ ] Commit messages follow conventional format
+- [ ] CHANGELOG entry added under `## [Unreleased]` if user-visible behavior changed
 
 ## Commit Format
 

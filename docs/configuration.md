@@ -61,7 +61,14 @@ Manage authentication for remote VCS operations.
 
 #### SSH Keys
 
-SSH keys are generated as ED25519 and stored in `~/.ssh/id_ed25519_clanker`. The public key can be copied to your VCS provider for authentication.
+SSH keys are generated as ED25519 and stored in:
+
+- **Linux / macOS:** `~/.ssh/id_ed25519_clanker`
+- **Windows:** `%USERPROFILE%\.ssh\id_ed25519_clanker`
+
+On Windows, key file permissions rely on inherited NTFS ACLs under `%USERPROFILE%\.ssh` rather than POSIX `chmod`. See [Windows Notes](windows.md#ssh-key-permissions).
+
+The public key can be copied to your VCS provider for authentication.
 
 #### SSH Host Configuration
 
@@ -94,8 +101,8 @@ Settings are stored locally via `electron-store` (`clanker-grid.json`):
 The store schema is defined in `src/shared/types/store.ts`.
 
 Credentials are stored separately with encryption:
-- SSH keys in `~/.ssh/id_ed25519_clanker`
-- PATs encrypted via Electron's `safeStorage` API
+- SSH keys in `~/.ssh/id_ed25519_clanker` (Linux/macOS) or `%USERPROFILE%\.ssh\id_ed25519_clanker` (Windows)
+- PATs encrypted via Electron's `safeStorage` API (DPAPI on Windows, libsecret/Keychain on Linux/macOS)
 
 ## Migration
 
@@ -111,4 +118,5 @@ On first launch after upgrade, the app automatically migrates legacy `localStora
 | Variable | Description |
 |----------|-------------|
 | `NODE_ENV` | `development` or `production` |
-| `SHELL` | User's default shell (fallback: `bash`) |
+| `SHELL` | User's default shell (fallback: `bash` on Linux/macOS, `powershell.exe` on Windows) |
+| `CLANKER_GRID_WATCHER_POLLING` | Set to `1` to force polling-based file watching (auto-enabled for UNC paths on Windows). |

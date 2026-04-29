@@ -1,46 +1,119 @@
 # Windows Notes
 
-This project supports **Windows 10 1809+**.
+Reference for running and developing Clanker Grid on Windows.
+
+**Supported:** Windows 10 1809+ and Windows 11, x64.
+**Not supported:** ARM64, WSL (use the Linux AppImage instead).
+
+## Installing a release build
+
+Two artifacts are produced for each release:
+
+| File | Purpose |
+|------|---------|
+| `Clanker Grid Setup X.Y.Z.exe` | NSIS installer — adds Start Menu and uninstaller entries. |
+| `Clanker Grid X.Y.Z.exe` | Portable executable — runs without installing. |
+
+Both are **unsigned** in the current release. On first launch, Windows SmartScreen displays:
+
+> Windows protected your PC. Microsoft Defender SmartScreen prevented an unrecognized app from starting.
+
+Choose **More info → Run anyway** to continue. Code signing is planned for a follow-up release.
+
+## App data location
+
+App settings and persisted state live under:
+
+```
+%APPDATA%\Clanker Grid\
+```
+
+This resolves via Electron's `app.getPath('userData')` and is preserved across upgrades. Uninstalling the NSIS build does not by default clear this directory.
 
 ## Git for Windows
 
-Install Git for Windows for local development. Husky hooks rely on the `sh` bundled with Git for Windows.
+Install [Git for Windows](https://gitforwindows.org/) for any local development. The husky pre-commit hook (`.husky/pre-commit`) runs through the `sh` bundled with Git for Windows; without it, commits skip the hook silently.
 
-## UNC workspaces and file watching
-
-Explorer file watching automatically enables polling mode for UNC workspaces (`\\server\share\...`) on Windows. You can also force polling with:
+After install, confirm:
 
 ```bash
-CLANKER_GRID_WATCHER_POLLING=1
+git --version
+sh --version
 ```
 
-## Long path support
-
-Some toolchains and nested dependency trees can exceed the legacy Windows path limit. Enable long paths in Windows:
-
-- Group Policy: **Enable Win32 long paths**
-- Or registry: `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled=1`
-
-After enabling, restart the machine.
-
-## Git line endings (`core.autocrlf`)
-
-Recommended contributor setting on Windows:
+## Recommended Git settings
 
 ```bash
 git config --global core.autocrlf input
 ```
 
-This keeps working trees predictable for mixed-platform collaboration while still preserving explicit CRLF/LF behavior in files where it matters.
+Keeps the working tree LF-on-disk while still letting Windows tooling render CRLF where it expects it. Clanker Grid's editor preserves whatever line ending a file already has on save (CRLF stays CRLF, LF stays LF), so `core.autocrlf=input` avoids accidental rewrites in mixed-platform repos.
 
-## SSH home/config lookup on Windows
+## Long path support
 
-Credential code now prefers `%USERPROFILE%` for `.ssh` resolution on Windows, with fallback to `HOME` and then `os.homedir()`. This avoids common toolchain cases where `HOME` is set to a non-user-profile location.
+Some toolchains and nested dependency trees can exceed the legacy 260-character Windows path limit. Enable long paths via either:
 
-## App data / electron-store location
+- **Group Policy:** Computer Configuration → Administrative Templates → System → Filesystem → **Enable Win32 long paths**.
+- **Registry:** set `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled` to `1`.
 
-App settings and persisted state use Electron `app.getPath('userData')` + `electron-store`, which resolve under `%APPDATA%\Clanker Grid` on Windows.
+Restart the machine after enabling.
 
-## Raw `fs.watch` status (editor file watcher)
+## UNC workspaces and file watching
 
-The editor watcher uses raw `fs.watch` (not chokidar) with rewatch-on-rename behavior for Windows atomic-save semantics. This was verified in unit coverage during Phase 5 (`tests/main/unit/fileWatcher.test.ts`) and remains the intended implementation.
+Clanker Grid accepts UNC-style workspace paths (`\\server\share\project`) and Windows drive-letter paths (`C:\projects\foo`) in the workspace gate. Backslashes are normalized to forward slashes at the IPC boundary; you do not need to convert them by hand.
+
+For UNC paths, the explorer file watcher automatically falls back to **polling** because native `fs.watch` events are unreliable across SMB. To force polling on any workspace (for example when debugging watcher issues on a local path):
+
+```bash
+set CLANKER_GRID_WATCHER_POLLING=1
+```
+
+Or, for PowerShell:
+
+```powershell
+$env:CLANKER_GRID_WATCHER_POLLING = "1"
+```
+
+## SSH home / `.ssh` lookup
+
+Credential code resolves the SSH parent directory in this order on Windows:
+
+1. `%USERPROFILE%\.ssh` (preferred — matches the OpenSSH default)
+2. `$HOME\.ssh` (fallback — only if `%USERPROFILE%` is unavailable)
+3. `os.homedir()\.ssh` (final fallback)
+
+This avoids common toolchain cases (Git Bash, MSYS) that set `HOME` to a non-user-profile location.
+
+## SSH key permissions
+
+POSIX file modes (`mode 0600`, `chmod`) are no-ops on Windows NTFS. Clanker Grid relies on **inherited NTFS ACLs** under `%USERPROFILE%\.ssh`: as long as the parent `.ssh` directory has the standard "current-user-only" ACLs that OpenSSH for Windows applies, generated keys inherit safe permissions automatically.
+
+If you have customized `.ssh` ACLs and need to lock them down, run `icacls` manually after key generation — Clanker Grid does not modify ACLs on Windows.
+
+## Default shell
+
+PowerShell (`powershell.exe`) is the default session shell on Windows. Clanker Grid does not pass `-i` (a bash-only flag) on Windows; PowerShell launches in interactive mode by default.
+
+You can override by setting the `SHELL` environment variable before launching Clanker Grid (for example, to `pwsh.exe` or to the Git for Windows `sh.exe`).
+
+## Harness launch on Windows
+
+npm-installed CLI tools (Codex, Claude, OpenCode, Pi) are installed as `.cmd` shim scripts on Windows. Clanker Grid spawns these through `cmd.exe /c <harness>` so the `.cmd` extension resolves correctly under `node-pty`. No manual configuration is required.
+
+The POSIX wrapper script that Clanker Grid generates on Linux/macOS (`~/.clanker-grid/harness-wrapper.sh`) is **not** generated on Windows — harnesses run directly.
+
+## File watcher implementation
+
+The editor's file watcher uses raw `fs.watch` (not chokidar) with rewatch-on-rename so atomic-save flows on Windows survive temp→target renames without flapping. The explorer watcher uses chokidar with platform-tuned `awaitWriteFinish` and an unlink+add collapse window so atomic saves do not produce visible flicker.
+
+These are implementation details, not user-facing settings — they are documented here so contributors auditing watcher behavior on Windows know what is intentional.
+
+## Reporting Windows-only issues
+
+When filing a Windows-specific bug, please include:
+
+- Windows edition and build (`winver`).
+- PowerShell version (`$PSVersionTable`).
+- Whether the workspace path is local, drive-letter, or UNC.
+- Whether long-path support is enabled.
+- DevTools console output if the issue affects the renderer.

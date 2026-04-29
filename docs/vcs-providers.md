@@ -247,7 +247,7 @@ npm test -- tests/main/unit/vcs/providerDetector.test.ts
 
 ## Security Considerations
 
-1. **Token Storage** — PATs encrypted with `safeStorage` API
-2. **SSH Keys** — Private keys stored with 600 permissions
-3. **API Calls** — HTTPS only, no credential logging
-4. **Minimal Scopes** — Request only `repo` scope by default
+1. **Token Storage** — PATs encrypted with Electron's `safeStorage` (DPAPI on Windows, libsecret/Keychain on Linux/macOS).
+2. **SSH Keys** — Private keys stored with `0600` permissions on Linux/macOS. On Windows, files inherit NTFS ACLs from `%USERPROFILE%\.ssh`; POSIX modes are no-ops and are skipped. See [Windows Notes](windows.md#ssh-key-permissions).
+3. **API Calls** — HTTPS only, no credential logging.
+4. **Minimal Scopes** — Request only `repo` scope by default.

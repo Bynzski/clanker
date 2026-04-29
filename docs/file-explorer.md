@@ -38,6 +38,21 @@ Right-click on any file or directory to access:
 
 ## File Operations
 
+File and folder names are validated before submission. The validator rejects:
+
+- Empty names, names longer than 255 UTF-8 bytes
+- Trailing dots or spaces
+- Characters illegal on Windows: `< > : " / \ | ? *`
+- Windows reserved device names with or without extensions: `CON`, `PRN`, `AUX`, `NUL`, `COM1–9`, `LPT1–9` (e.g. `CON.txt` is rejected)
+
+These rules are enforced on every platform so a workspace authored on Linux still opens cleanly on Windows.
+
+### Deletion
+
+Deleting a file or folder routes through the OS recycle bin (`shell.trashItem`) where supported, so deletes are recoverable. If the OS trash integration is unavailable, the app falls back to permanent deletion and surfaces the error.
+
+If a file is held open by an editor or another process, the app surfaces a `File is in use` prompt instead of a generic permission error — close the file and retry.
+
 ### Creating Files
 
 1. Right-click a directory in the explorer
