@@ -15,7 +15,10 @@ export interface FileRenameRequest {
   newPath: string;
 }
 
+export type FileOperationErrorCode = 'FILE_IN_USE';
+
 export interface FileOperationResult {
   success: boolean;
   error?: string;
+  errorCode?: FileOperationErrorCode;
 }

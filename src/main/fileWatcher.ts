@@ -65,6 +65,22 @@ export class FileWatcherService {
     }
   }
 
+  /**
+   * Temporarily release an active watch handle for a file before a mutation.
+   * Returns a re-acquire callback if a watcher existed.
+   */
+  releaseHandle(filePath: string): (() => void) | null {
+    const watcher = this.watchers.get(filePath);
+    if (!watcher) {
+      return null;
+    }
+
+    this.unwatchFile(filePath);
+    return () => {
+      this.watchFile(filePath);
+    };
+  }
+
   /** Stop all watchers. Called on window close / workspace switch. */
   unwatchAll(): void {
     for (const timer of this.rewatchTimers.values()) {
