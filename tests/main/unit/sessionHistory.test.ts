@@ -272,7 +272,7 @@ describe('buildSessionInvokeArgs', () => {
     };
     const result = buildSessionInvokeArgs(session, false, '--verbose');
     expect(result.spawnArgs).toEqual([
-      'pi', '--session', path.join(TEST_PI_SESSIONS_DIR, '1234_uuid.jsonl'),
+      'pi', '--session', `${TEST_PI_SESSIONS_DIR_POSIX}/1234_uuid.jsonl`,
       '--model', 'minimax/MiniMax-M2.7',
       '--verbose',
     ]);

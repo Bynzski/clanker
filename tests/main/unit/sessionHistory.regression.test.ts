@@ -265,7 +265,7 @@ describe('discoverSessions — pi', () => {
     mockReadFile.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
     // Mock .pi/agent/sessions/{subdir}/ dir listings
     mockReaddir.mockImplementation((dir: string) => {
-      const s = String(dir);
+      const s = String(dir).replace(/\\/g, '/');
       if (s.endsWith('.pi/agent/sessions')) {
         const d = { name: 'session-subdir', isDirectory: () => true, isFile: () => false } as import('fs').Dirent;
         return Promise.resolve([d]);
@@ -329,7 +329,7 @@ describe('discoverSessions — claude', () => {
     mockReadFile.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
     // .claude/projects dir — uses includes since path normalization may vary
     mockReaddir.mockImplementation((dir: string) => {
-      const s = String(dir);
+      const s = String(dir).replace(/\\/g, '/');
       if (s.endsWith('.claude/projects')) {
         // Encoded workspace: derived from TEST_WORKSPACE
         const d = { name: encodedWorkspace, isDirectory: () => true, isFile: () => false } as import('fs').Dirent;

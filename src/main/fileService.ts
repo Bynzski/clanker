@@ -649,23 +649,31 @@ export async function renameEntry(request: FileRenameRequest): Promise<FileOpera
       return segmentValidation;
     }
 
-    // Validate destination path
+    // Detect case-only rename using the pre-realpath resolved paths so that
+    // Windows fs.realpath normalisation (foo.txt → Foo.txt) doesn't make old
+    // and new appear identical before we get to the existence check.
+    const resolvedNewRequested = path.resolve(request.newPath);
+    const caseOnly = isCaseOnlyRename(resolvedOld, resolvedNewRequested);
+
+    // Validate destination path (may realpath-normalise the case on Windows).
     const resolvedNew = await resolveValidatedDestinationPath(workspaceRoot, request.newPath);
     if (!resolvedNew) {
       return { success: false, error: 'Destination path is outside workspace' };
     }
 
     // Check destination doesn't already exist, except Windows case-only renames.
-    try {
-      await fs.stat(resolvedNew);
-      if (!isCaseOnlyRename(resolvedOld, resolvedNew)) {
+    if (!caseOnly) {
+      try {
+        await fs.stat(resolvedNew);
         return { success: false, error: 'A file or directory already exists at the destination' };
+      } catch {
+        // Doesn't exist — good
       }
-    } catch {
-      // Doesn't exist — good
     }
 
-    await renameWithCaseOnlySupport(resolvedOld, resolvedNew);
+    // Use the originally requested (non-realpath) destination for case-only renames
+    // so the new casing is actually written to disk.
+    await renameWithCaseOnlySupport(resolvedOld, caseOnly ? resolvedNewRequested : resolvedNew);
     return { success: true };
   } catch (error) {
     if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
