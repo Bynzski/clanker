@@ -7,6 +7,7 @@ import { getFileTypeConfig } from './fileTypeConfig';
 import type { FileExplorerEntry, FileListDirectoryResult } from '../../../shared/types/fileExplorer';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useScopedWorkspace } from '../WorkspaceScope';
+import { validateFilename } from '../../../shared/filenameValidation';
 
 interface FileTreeProps {
   workspaceId?: string;
@@ -248,6 +249,7 @@ function CreateInput({ type, depth, onCommit, onCancel }: {
   onCancel: () => void;
 }) {
   const [name, setName] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -256,15 +258,27 @@ function CreateInput({ type, depth, onCommit, onCancel }: {
     }
   }, []);
 
+  const handleSubmit = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      onCancel();
+      return;
+    }
+
+    const validation = validateFilename(trimmed);
+    if (!validation.valid) {
+      setError(validation.error ?? 'Invalid name');
+      return;
+    }
+
+    setError(null);
+    await onCommit(trimmed);
+  };
+
   const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const trimmed = name.trim();
-      if (trimmed) {
-        await onCommit(trimmed);
-      } else {
-        onCancel();
-      }
+      await handleSubmit();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       onCancel();
@@ -272,12 +286,7 @@ function CreateInput({ type, depth, onCommit, onCancel }: {
   };
 
   const handleBlur = async () => {
-    const trimmed = name.trim();
-    if (trimmed) {
-      await onCommit(trimmed);
-    } else {
-      onCancel();
-    }
+    await handleSubmit();
   };
 
   return (
@@ -291,15 +300,23 @@ function CreateInput({ type, depth, onCommit, onCancel }: {
           return <Icon size={16} strokeWidth={2} style={{ color }} />;
         })()}
       </span>
-      <input
-        ref={inputRef}
-        className="tree-node-input"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={handleBlur}
-        placeholder={type === 'directory' ? 'folder-name/' : 'file-name.ext'}
-      />
+      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <input
+          ref={inputRef}
+          className="tree-node-input"
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            if (error) {
+              setError(null);
+            }
+          }}
+          onKeyDown={handleKeyDown}
+          onBlur={handleBlur}
+          placeholder={type === 'directory' ? 'folder-name/' : 'file-name.ext'}
+        />
+        {error ? <span className="tree-node-status error">{error}</span> : null}
+      </div>
     </div>
   );
 }

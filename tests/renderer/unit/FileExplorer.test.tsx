@@ -844,6 +844,28 @@ describe('S8: Inline create/rename UI', () => {
     });
   });
 
+  it('shows inline validation and does not create reserved Windows names', async () => {
+    setActiveWorkspace({ workspacePath: '/workspace' });
+    const fileCreate = vi.fn().mockResolvedValue({ success: true });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({
+        success: true,
+        entries: [createEntry('README.md', '/workspace/README.md', false)],
+      }),
+      fileCreate,
+    });
+
+    render(<FileExplorer />);
+
+    fireEvent.click(screen.getByTitle('New File'));
+
+    const input = await screen.findByRole('textbox');
+    await userEvent.type(input, 'CON{enter}');
+
+    expect(fileCreate).not.toHaveBeenCalled();
+    expect(screen.getByText('Name is reserved by Windows')).toBeInTheDocument();
+  });
+
   it('does not create file when name is empty on Enter', async () => {
     // This test verifies the empty-name guard by directly checking the fileCreate
     // IPC is not called when Enter is pressed with an empty name.

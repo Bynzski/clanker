@@ -190,6 +190,27 @@ describe('ExplorerWatcherService', () => {
       ]);
     });
 
+    test('collapses unlink+add bursts into a single refresh event', async () => {
+      watcher.watchWorkspace(tempDir);
+      await new Promise((r) => setTimeout(r, 400));
+      vi.clearAllMocks();
+
+      const targetPath = path.join(tempDir, 'atomic-save.txt');
+
+      (watcher as unknown as { handleEvent: (t: 'unlink', p: string) => void }).handleEvent('unlink', targetPath);
+      await new Promise((r) => setTimeout(r, 100));
+      (watcher as unknown as { handleEvent: (t: 'add', p: string) => void }).handleEvent('add', targetPath);
+      await new Promise((r) => setTimeout(r, 450));
+
+      const explorerEvents = (mockMainWindow.webContents.send as ReturnType<typeof vi.fn>)
+        .mock.calls.filter(([ch]) => ch === 'explorer-tree-changed');
+      expect(explorerEvents).toHaveLength(1);
+      expect(explorerEvents[0]).toEqual([
+        'explorer-tree-changed',
+        { directoryPath: tempDir },
+      ]);
+    });
+
     test('emits EXPLORER_TREE_CHANGED on file add', async () => {
       watcher.watchWorkspace(tempDir);
       // Wait for chokidar to finish initial scan
@@ -229,7 +250,7 @@ describe('ExplorerWatcherService', () => {
       vi.clearAllMocks();
 
       await fsPromises.unlink(filePath);
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 900));
 
       expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
         'explorer-tree-changed',

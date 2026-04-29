@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 5** — Next to start.
+**Phase 6** — Next to start.
 
 ## Phase Status
 
@@ -17,7 +17,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 2 | node-pty / ConPTY end-to-end validation on real Windows | ✅ | phase-2-smoke-fixes |
 | 3 | Canonical path normalization at IPC boundary | ✅ | phase-3-path-normalization |
 | 4 | Cross-drive rename + open-file mutation handling | ✅ | uncommitted |
-| 5 | Reserved-name validation + atomic-save watcher tuning | 🔲 | — |
+| 5 | Reserved-name validation + atomic-save watcher tuning | ✅ | uncommitted |
 | 6 | Credential / SSH permission policy on Windows | 🔲 | — |
 | 7 | Husky on Windows — document or replace shim | 🔲 | — |
 | 8a | Delete safety + CRLF preservation | 🔲 | — |
@@ -98,9 +98,11 @@ Created `src/main/harnessLaunch.ts:resolveHarnessSpawn()` — shared helper for 
 
 **Context:** `src/main/fileService.ts` lines 489 (delete), 533 (rename). `src/main/fileWatcher.ts` holds raw `FSWatcher` per file. See PLAN.md "Phase 4" section.
 
-### Phase 5
+### Phase 5 ✅
 
 **Scope:** Reserved-name validator (shared module) wired into FileTree `CreateInput` + main `fileService` defense-in-depth. Tune existing `awaitWriteFinish` in `explorerWatcher.ts` for Windows. Verify `fileWatcher.ts` rewatch-on-rename behavior on Windows.
+
+**Done:** Added shared `src/shared/filenameValidation.ts` (`validateFilename`) with reserved-name, trailing dot/space, invalid-character, empty-name, and UTF-8 byte-length checks. Wired validation into renderer create UI (`FileTree` `CreateInput`) with inline errors, and enforced defense-in-depth in `fileService` create/rename paths. Tuned `explorerWatcher.ts` `awaitWriteFinish` to `{ stabilityThreshold: 200, pollInterval: 100 }` on Windows (100 on Linux/macOS). Implemented unlink+add collapse window (300ms) so atomic-save bursts coalesce to a single explorer refresh event. Added unit coverage for filename validation, file-service reserved-name rejection, explorer unlink+add collapse, and fileWatcher rename/rewatch verification for Windows-style atomic save semantics. `npm run validate` green.
 
 **Context:** `awaitWriteFinish` is **already enabled** in `explorerWatcher.ts:156` — Phase 5 tunes it. The renderer `editorFileWatcher.ts` has no chokidar; the real watcher is `src/main/fileWatcher.ts` using raw `fs.watch`. See PLAN.md "Phase 5" section.
 
@@ -155,4 +157,5 @@ Created `src/main/harnessLaunch.ts:resolveHarnessSpawn()` — shared helper for 
 | 1 | phase-1-cross-platform-shell | Created `platformShell.ts` shared helper. Fixed shell defaults and PATH delimiter. Wrapper skipped on Windows. All 3192 tests pass. |
 | 2 | phase-2-smoke-fixes | Fixed 7 bugs from Windows smoke: shell args, path separators, harness cmd.exe wrapping, SIGTERM suppression, explorer path normalization. Created `resolveHarnessSpawn()` helper. All 3192 tests pass. |
 | 3 | phase-3-path-normalization | Added shared path normalizers and tests, normalized IPC path boundaries and path-keyed maps, and added canonical IPC path rule to AGENTS.md. All 3207 tests pass. |
-| 4 | uncommitted | Added EXDEV rename fallback, FILE_IN_USE mapping for EPERM/EBUSY, file watcher releaseHandle integration, renderer unwatch/rewatch flow, and phase tests. All 3211 tests pass. |
+| 4 | ef9a4c0 | Added EXDEV rename fallback, FILE_IN_USE mapping for EPERM/EBUSY, file watcher releaseHandle integration, renderer unwatch/rewatch flow, and phase tests. All 3211 tests pass. |
+| 5 | uncommitted | Added shared filename validation, renderer/main create+rename enforcement, explorer watcher awaitWriteFinish tuning, unlink+add collapse, and phase tests. All 3222 tests pass. |

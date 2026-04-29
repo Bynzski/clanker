@@ -13,6 +13,7 @@ import type {
   FileReadErrorCode,
 } from '../shared/types/editor';
 import { resolveExistingDirectory } from './security';
+import { validateFilename } from '../shared/filenameValidation';
 
 function compareEntries(a: FileExplorerEntry, b: FileExplorerEntry): number {
   if (a.isDirectory !== b.isDirectory) {
@@ -415,6 +416,37 @@ async function renameWithCrossDeviceFallback(oldPath: string, newPath: string): 
  * Validate that a resolved path is inside the workspace root.
  * Uses realpath to resolve symlinks before checking containment.
  */
+function splitPathSegments(relativePath: string): string[] {
+  return relativePath.split(path.sep).filter((segment) => segment.length > 0 && segment !== '.');
+}
+
+async function validatePathSegmentsInsideWorkspace(
+  workspacePath: string,
+  targetPath: string
+): Promise<FileOperationResult | null> {
+  const safeWorkspacePath = resolveExistingDirectory(workspacePath);
+  if (!safeWorkspacePath) {
+    return null;
+  }
+
+  const workspaceRoot = await fs.realpath(safeWorkspacePath);
+  const resolvedTargetPath = path.resolve(targetPath);
+  const relativeToWorkspace = path.relative(workspaceRoot, resolvedTargetPath);
+
+  if (relativeToWorkspace === '' || relativeToWorkspace.startsWith('..') || path.isAbsolute(relativeToWorkspace)) {
+    return null;
+  }
+
+  for (const segment of splitPathSegments(relativeToWorkspace)) {
+    const validation = validateFilename(segment);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+  }
+
+  return null;
+}
+
 async function validatePathInsideWorkspace(
   workspacePath: string,
   targetPath: string
@@ -447,6 +479,11 @@ async function validatePathInsideWorkspace(
 }
 
 export async function createFile(request: FileCreateRequest): Promise<FileOperationResult> {
+  const segmentValidation = await validatePathSegmentsInsideWorkspace(request.workspacePath, request.targetPath);
+  if (segmentValidation) {
+    return segmentValidation;
+  }
+
   const validated = await validatePathInsideWorkspace(request.workspacePath, request.targetPath);
   if (!validated) {
     return { success: false, error: 'File path is outside workspace' };
@@ -481,6 +518,11 @@ export async function createFile(request: FileCreateRequest): Promise<FileOperat
 }
 
 export async function createDirectory(request: FileCreateRequest): Promise<FileOperationResult> {
+  const segmentValidation = await validatePathSegmentsInsideWorkspace(request.workspacePath, request.targetPath);
+  if (segmentValidation) {
+    return segmentValidation;
+  }
+
   const validated = await validatePathInsideWorkspace(request.workspacePath, request.targetPath);
   if (!validated) {
     return { success: false, error: 'Directory path is outside workspace' };
@@ -554,6 +596,11 @@ export async function renameEntry(request: FileRenameRequest): Promise<FileOpera
     const resolvedOldReal = await fs.realpath(resolvedOld);
     if (!isPathInsideRoot(workspaceRoot, resolvedOldReal)) {
       return { success: false, error: 'Source path is outside workspace' };
+    }
+
+    const segmentValidation = await validatePathSegmentsInsideWorkspace(request.workspacePath, request.newPath);
+    if (segmentValidation) {
+      return segmentValidation;
     }
 
     // Validate destination path

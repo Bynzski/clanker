@@ -94,6 +94,42 @@ describe('createFile', () => {
     }
   });
 
+  it('rejects reserved filenames on create', async () => {
+    const workspaceRoot = makeTempDir('clanker-grid-create-reserved-');
+    const targetPath = path.join(workspaceRoot, 'CON.txt');
+
+    try {
+      const result = await createFile({
+        workspacePath: workspaceRoot,
+        targetPath,
+        type: 'file',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('reserved');
+    } finally {
+      fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects nested reserved path components on create', async () => {
+    const workspaceRoot = makeTempDir('clanker-grid-create-reserved-nested-');
+    const targetPath = path.join(workspaceRoot, 'src', 'AUX', 'file.txt');
+
+    try {
+      const result = await createFile({
+        workspacePath: workspaceRoot,
+        targetPath,
+        type: 'file',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('reserved');
+    } finally {
+      fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects creating a file that already exists', async () => {
     const workspaceRoot = makeTempDir('clanker-grid-create-exists-');
     const targetPath = path.join(workspaceRoot, 'existing.txt');
@@ -450,6 +486,48 @@ describe('renameEntry', () => {
       expect(fs.existsSync(path.join(outsideDir, 'stolen.txt'))).toBe(false);
     } finally {
       fs.rmSync(parentRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects reserved filenames on rename', async () => {
+    const workspaceRoot = makeTempDir('clanker-grid-rename-reserved-');
+    const oldPath = path.join(workspaceRoot, 'old.txt');
+    const newPath = path.join(workspaceRoot, 'NUL.txt');
+    fs.writeFileSync(oldPath, 'content');
+
+    try {
+      const result = await renameEntry({
+        workspacePath: workspaceRoot,
+        oldPath,
+        newPath,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('reserved');
+      expect(fs.existsSync(oldPath)).toBe(true);
+    } finally {
+      fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects nested reserved path components on rename destination', async () => {
+    const workspaceRoot = makeTempDir('clanker-grid-rename-reserved-nested-');
+    const oldPath = path.join(workspaceRoot, 'old.txt');
+    const newPath = path.join(workspaceRoot, 'src', 'CON', 'new.txt');
+    fs.writeFileSync(oldPath, 'content');
+
+    try {
+      const result = await renameEntry({
+        workspacePath: workspaceRoot,
+        oldPath,
+        newPath,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('reserved');
+      expect(fs.existsSync(oldPath)).toBe(true);
+    } finally {
+      fs.rmSync(workspaceRoot, { recursive: true, force: true });
     }
   });
 

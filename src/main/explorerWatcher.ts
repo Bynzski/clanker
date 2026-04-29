@@ -38,6 +38,7 @@ const GIT_STATUS_DEBOUNCE_MS = 500;
  * Coalesces bursty filesystem events into a single renderer update pass.
  */
 const EXPLORER_TREE_DEBOUNCE_MS = 100;
+const UNLINK_ADD_COLLAPSE_MS = 300;
 
 /** Default patterns to ignore — these directories generate noise without useful events. */
 const DEFAULT_IGNORED = [
@@ -105,6 +106,7 @@ export class ExplorerWatcherService {
   private pendingExplorerDirectories = new Set<string>();
   private explorerTreeTimer: NodeJS.Timeout | null = null;
   private gitStatusTimer: NodeJS.Timeout | null = null;
+  private pendingUnlinkPaths = new Map<string, NodeJS.Timeout>();
   private getMainWindow: () => BrowserWindow | null;
   private getCurrentWorkspace: () => string | null;
   private gitService: GitService | null = null;
@@ -155,7 +157,8 @@ export class ExplorerWatcherService {
       // Suppress unlink events for directories whose children are ignored
       // This prevents stale unlinkDir events when node_modules is deleted
       awaitWriteFinish: {
-        stabilityThreshold: 100,
+        stabilityThreshold: process.platform === 'win32' ? 200 : 100,
+        pollInterval: 100,
       },
     });
 
@@ -195,6 +198,11 @@ export class ExplorerWatcherService {
       this.gitStatusTimer = null;
     }
 
+    for (const timer of this.pendingUnlinkPaths.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingUnlinkPaths.clear();
+
     if (this.watcher !== null) {
       this.watcher.close();
       this.watcher = null;
@@ -209,9 +217,36 @@ export class ExplorerWatcherService {
    * the EXPLORER_TREE_CHANGED event to the renderer.
    */
   private handleEvent(
-    _eventType: 'add' | 'addDir' | 'unlink' | 'unlinkDir',
+    eventType: 'add' | 'addDir' | 'unlink' | 'unlinkDir',
     targetPath: string
   ): void {
+    if (eventType === 'unlink') {
+      const existing = this.pendingUnlinkPaths.get(targetPath);
+      if (existing) {
+        clearTimeout(existing);
+      }
+
+      const timer = setTimeout(() => {
+        this.pendingUnlinkPaths.delete(targetPath);
+        this.queuePathChange(targetPath);
+      }, UNLINK_ADD_COLLAPSE_MS);
+
+      this.pendingUnlinkPaths.set(targetPath, timer);
+      return;
+    }
+
+    if (eventType === 'add') {
+      const pendingUnlink = this.pendingUnlinkPaths.get(targetPath);
+      if (pendingUnlink) {
+        clearTimeout(pendingUnlink);
+        this.pendingUnlinkPaths.delete(targetPath);
+      }
+    }
+
+    this.queuePathChange(targetPath);
+  }
+
+  private queuePathChange(targetPath: string): void {
     const rawParentDir = path.dirname(targetPath);
     const workspacePath = this.workspacePath;
     const workspaceRealPath = this.workspaceRealPath;
