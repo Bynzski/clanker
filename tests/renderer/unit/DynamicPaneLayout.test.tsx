@@ -171,12 +171,12 @@ function setupStore(overrides: Record<string, unknown> = {}) {
 }
 
 function setupStoreWithLayout(layoutRoot: LayoutNode, overrides: Record<string, unknown> = {}) {
-  const panes: Array<{ id: string; terminalId: string | null; locked: boolean }> = [];
+  const panes: Array<{ id: string; terminalId: string | null }> = [];
   const terminals: Array<{ id: string; pid: number; workingDir: string }> = [];
 
   function extract(node: LayoutNode) {
     if (node.type === 'leaf') {
-      panes.push({ id: node.paneId, terminalId: node.paneId, locked: false });
+      panes.push({ id: node.paneId, terminalId: node.paneId });
       terminals.push({ id: node.paneId, pid: 1, workingDir: '/workspace' });
     } else {
       extract(node.first);
@@ -243,14 +243,14 @@ describe('DynamicPaneLayout', () => {
       const parkedWorkspace = createWorkspaceFixture({
         id: 'ws-1',
         lifecycle: 'parked',
-        panes: [{ id: 'ws-1-pane', terminalId: 'ws-1-terminal', locked: false }],
+        panes: [{ id: 'ws-1-pane', terminalId: 'ws-1-terminal' }],
         terminals: [{ id: 'ws-1-terminal', pid: 1, workingDir: '/workspace-a' }],
         layoutRoot: createLeaf('ws-1-node', 'ws-1-pane'),
       });
       const activeWorkspace = createWorkspaceFixture({
         id: 'ws-2',
         lifecycle: 'active',
-        panes: [{ id: 'ws-2-pane', terminalId: 'ws-2-terminal', locked: false }],
+        panes: [{ id: 'ws-2-pane', terminalId: 'ws-2-terminal' }],
         terminals: [{ id: 'ws-2-terminal', pid: 1, workingDir: '/workspace-b' }],
         layoutRoot: createLeaf('ws-2-node', 'ws-2-pane'),
       });
@@ -275,14 +275,14 @@ describe('DynamicPaneLayout', () => {
       const parkedWorkspace = createWorkspaceFixture({
         id: 'ws-1',
         lifecycle: 'parked',
-        panes: [{ id: 'ws-1-pane', terminalId: 'ws-1-terminal', locked: false }],
+        panes: [{ id: 'ws-1-pane', terminalId: 'ws-1-terminal' }],
         terminals: [{ id: 'ws-1-terminal', pid: 1, workingDir: '/workspace-a' }],
         layoutRoot: createLeaf('ws-1-node', 'ws-1-pane'),
       });
       const activeWorkspace = createWorkspaceFixture({
         id: 'ws-2',
         lifecycle: 'active',
-        panes: [{ id: 'ws-2-pane', terminalId: 'ws-2-terminal', locked: false }],
+        panes: [{ id: 'ws-2-pane', terminalId: 'ws-2-terminal' }],
         terminals: [{ id: 'ws-2-terminal', pid: 1, workingDir: '/workspace-b' }],
         layoutRoot: createLeaf('ws-2-node', 'ws-2-pane'),
       });
@@ -317,7 +317,7 @@ describe('DynamicPaneLayout', () => {
     it('renders BrowserPanel when browserVisible and paneId matches', async () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'), {
         browserVisible: true,
-        browserPane: { id: 'p1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
+        browserPane: { id: 'p1', position: { x: 0, y: 0, w: 100, h: 100 }, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
         browserUrl: 'https://example.com',
       });
 
@@ -331,7 +331,7 @@ describe('DynamicPaneLayout', () => {
     it('renders EditorPane when editorVisible and paneId matches', async () => {
       setupStoreWithLayout(createLeaf('n1', 'editor-1'), {
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
       });
 
       render(<DynamicPaneLayout />);
@@ -354,10 +354,10 @@ describe('DynamicPaneLayout', () => {
     it('browser takes priority over editor when both match', async () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'), {
         browserVisible: true,
-        browserPane: { id: 'p1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
+        browserPane: { id: 'p1', position: { x: 0, y: 0, w: 100, h: 100 }, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
         browserUrl: 'https://example.com',
         editorVisible: true,
-        editorPane: { id: 'p1', locked: false },
+        editorPane: { id: 'p1' },
       });
 
       render(<DynamicPaneLayout />);
@@ -371,7 +371,7 @@ describe('DynamicPaneLayout', () => {
     it('does not render BrowserPanel when paneId does not match', async () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'), {
         browserVisible: true,
-        browserPane: { id: 'other', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
+        browserPane: { id: 'other', position: { x: 0, y: 0, w: 100, h: 100 }, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
         browserUrl: 'https://example.com',
       });
 
@@ -510,57 +510,8 @@ describe('DynamicPaneLayout', () => {
       expect(sep.className).toContain('split-separator');
     });
 
-    it('disables first panel when first subtree is locked (browser pane)', () => {
-      const layout = createSplit('s1', 'horizontal', 0.5,
-        createLeaf('n1', 'bp1'),
-        createLeaf('n2', 'p2'),
-      );
-      setupStoreWithLayout(layout, {
-        browserVisible: true,
-        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: true, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
-      });
-      render(<DynamicPaneLayout />);
 
-      const panels = screen.getAllByTestId('panel');
-      const panelA = panels.find(p => p.getAttribute('data-panel-id') === 's1-a');
-      expect(panelA?.getAttribute('data-disabled')).toBe('true');
-    });
 
-    it('disables first panel when first subtree is locked (editor pane)', () => {
-      const layout = createSplit('s1', 'horizontal', 0.5,
-        createLeaf('n1', 'ep1'),
-        createLeaf('n2', 'p2'),
-      );
-      setupStoreWithLayout(layout, {
-        editorVisible: true,
-        editorPane: { id: 'ep1', locked: true },
-      });
-      render(<DynamicPaneLayout />);
-
-      const panels = screen.getAllByTestId('panel');
-      const panelA = panels.find(p => p.getAttribute('data-panel-id') === 's1-a');
-      expect(panelA?.getAttribute('data-disabled')).toBe('true');
-    });
-
-    it('disables panel when terminal pane is locked', () => {
-      const layout = createSplit('s1', 'horizontal', 0.5,
-        createLeaf('n1', 'p1'),
-        createLeaf('n2', 'p2'),
-      );
-      setupStoreWithLayout(layout, {
-        panes: [
-          { id: 'p1', terminalId: 'p1', locked: true },
-          { id: 'p2', terminalId: 'p2', locked: false },
-        ],
-      });
-      render(<DynamicPaneLayout />);
-
-      const panels = screen.getAllByTestId('panel');
-      const panelA = panels.find(p => p.getAttribute('data-panel-id') === 's1-a');
-      expect(panelA?.getAttribute('data-disabled')).toBe('true');
-      const panelB = panels.find(p => p.getAttribute('data-panel-id') === 's1-b');
-      expect(panelB?.getAttribute('data-disabled')).toBeFalsy();
-    });
 
     it('does not disable panels when nothing is locked', () => {
       const layout = createSplit('s1', 'horizontal', 0.5,
@@ -598,9 +549,9 @@ describe('DynamicPaneLayout', () => {
       );
       setupStoreWithLayout(layout, {
         panes: [
-          { id: 'p1', terminalId: 'p1', locked: false },
-          { id: 'p2', terminalId: 'p2', locked: false },
-          { id: 'p3', terminalId: 'p3', locked: false },
+          { id: 'p1', terminalId: 'p1' },
+          { id: 'p2', terminalId: 'p2' },
+          { id: 'p3', terminalId: 'p3' },
         ],
         terminals: [
           { id: 'p1', pid: 1, workingDir: '/workspace' },
@@ -1386,100 +1337,10 @@ describe('DynamicPaneLayout', () => {
   // =========================================================================
   // isLeafLocked (tested indirectly via disabled prop on Panel)
   // =========================================================================
-  describe('isLeafLocked', () => {
-    it('returns false when pane not found in panes list', () => {
-      const layout = createSplit('s1', 'horizontal', 0.5,
-        createLeaf('n1', 'unknown-pane'),
-        createLeaf('n2', 'p2'),
-      );
-      setupStoreWithLayout(layout, {
-        panes: [{ id: 'p2', terminalId: 'p2', locked: false }],
-      });
-      render(<DynamicPaneLayout />);
-
-      const panels = screen.getAllByTestId('panel');
-      const panelA = panels.find(p => p.getAttribute('data-panel-id') === 's1-a');
-      // unknown-pane not found → locked defaults to false
-      expect(panelA?.getAttribute('data-disabled')).toBeFalsy();
-    });
-
-    it('returns false for unlocked browser pane', () => {
-      const layout = createSplit('s1', 'horizontal', 0.5,
-        createLeaf('n1', 'bp1'),
-        createLeaf('n2', 'p2'),
-      );
-      setupStoreWithLayout(layout, {
-        browserVisible: true,
-        browserPane: { id: 'bp1', position: { x: 0, y: 0, w: 100, h: 100 }, locked: false, tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }], activeTabId: 'bt-1' },
-      });
-      render(<DynamicPaneLayout />);
-
-      const panels = screen.getAllByTestId('panel');
-      const panelA = panels.find(p => p.getAttribute('data-panel-id') === 's1-a');
-      expect(panelA?.getAttribute('data-disabled')).toBeFalsy();
-    });
-
-    it('returns false for unlocked editor pane', () => {
-      const layout = createSplit('s1', 'horizontal', 0.5,
-        createLeaf('n1', 'ep1'),
-        createLeaf('n2', 'p2'),
-      );
-      setupStoreWithLayout(layout, {
-        editorVisible: true,
-        editorPane: { id: 'ep1', locked: false },
-      });
-      render(<DynamicPaneLayout />);
-
-      const panels = screen.getAllByTestId('panel');
-      const panelA = panels.find(p => p.getAttribute('data-panel-id') === 's1-a');
-      expect(panelA?.getAttribute('data-disabled')).toBeFalsy();
-    });
-  });
 
   // =========================================================================
   // isSubtreeLocked (tested indirectly via disabled prop on Panel)
   // =========================================================================
-  describe('isSubtreeLocked', () => {
-    it('disables panel when single locked leaf in subtree', () => {
-      const layout = createSplit('s1', 'horizontal', 0.5,
-        createLeaf('n1', 'p1'),
-        createLeaf('n2', 'p2'),
-      );
-      setupStoreWithLayout(layout, {
-        panes: [
-          { id: 'p1', terminalId: 'p1', locked: true },
-          { id: 'p2', terminalId: 'p2', locked: false },
-        ],
-      });
-      render(<DynamicPaneLayout />);
-
-      const panels = screen.getAllByTestId('panel');
-      const panelA = panels.find(p => p.getAttribute('data-panel-id') === 's1-a');
-      expect(panelA?.getAttribute('data-disabled')).toBe('true');
-      const panelB = panels.find(p => p.getAttribute('data-panel-id') === 's1-b');
-      expect(panelB?.getAttribute('data-disabled')).toBeFalsy();
-    });
-
-    it('disables both panels when both subtrees are locked', () => {
-      const layout = createSplit('s1', 'horizontal', 0.5,
-        createLeaf('n1', 'p1'),
-        createLeaf('n2', 'p2'),
-      );
-      setupStoreWithLayout(layout, {
-        panes: [
-          { id: 'p1', terminalId: 'p1', locked: true },
-          { id: 'p2', terminalId: 'p2', locked: true },
-        ],
-      });
-      render(<DynamicPaneLayout />);
-
-      const panels = screen.getAllByTestId('panel');
-      const panelA = panels.find(p => p.getAttribute('data-panel-id') === 's1-a');
-      const panelB = panels.find(p => p.getAttribute('data-panel-id') === 's1-b');
-      expect(panelA?.getAttribute('data-disabled')).toBe('true');
-      expect(panelB?.getAttribute('data-disabled')).toBe('true');
-    });
-  });
 
   // =========================================================================
   // Store reactivity
@@ -1509,8 +1370,8 @@ describe('DynamicPaneLayout', () => {
         useWorkspaceStore.setState({
           layoutRoot: newLayout,
           panes: [
-            { id: 'p1', terminalId: 'p1', locked: false },
-            { id: 'p2', terminalId: 'p2', locked: false },
+            { id: 'p1', terminalId: 'p1' },
+            { id: 'p2', terminalId: 'p2' },
           ],
           terminals: [
             { id: 'p1', pid: 1, workingDir: '/workspace' },

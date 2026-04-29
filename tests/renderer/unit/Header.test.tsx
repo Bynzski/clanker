@@ -27,7 +27,7 @@ describe('Header', () => {
           harness: 'codex',
           model: '',
           terminals: [{ id: 't1', pid: 1, workingDir: '/workspace' }],
-          panes: [{ id: 'p1', terminalId: 't1', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false }],
+          panes: [{ id: 'p1', terminalId: 't1', position: { x: 0, y: 0, w: 6, h: 6 } }],
           browserVisible: false,
           browserUrl: 'https://github.com',
           activeTerminalId: 't1',
@@ -56,8 +56,7 @@ describe('Header', () => {
       model: '',
       browserVisible: false,
       terminals: [{ id: 't1', pid: 1, workingDir: '/workspace' }],
-      panes: [{ id: 'p1', terminalId: 't1', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false }],
-      canAddPane: () => true,
+      panes: [{ id: 'p1', terminalId: 't1', position: { x: 0, y: 0, w: 6, h: 6 } }],
       addTerminal: vi.fn(),
       closeWorkspace: vi.fn(),
       fitAllPanes: vi.fn(),
@@ -338,30 +337,6 @@ describe('Header', () => {
   // =========================================================================
   // Pane Locked State
   // =========================================================================
-  describe('pane locked state', () => {
-    it('disables New Terminal button when all panes are locked', () => {
-      useWorkspaceStore.setState({ canAddPane: () => false });
-      renderHeader();
-      const button = screen.getByText('New Terminal');
-      expect(button).toBeDisabled();
-    });
-
-    it('enables New Terminal button when panes can be added', () => {
-      renderHeader();
-      const button = screen.getByText('New Terminal');
-      expect(button).not.toBeDisabled();
-    });
-
-    it('logs warning when New Terminal is clicked while panes are locked', async () => {
-      useWorkspaceStore.setState({ canAddPane: () => false });
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      renderHeader();
-      const button = screen.getByText('New Terminal');
-      // Button should be disabled, but if somehow clicked, no action
-      expect(button).toBeDisabled();
-      consoleSpy.mockRestore();
-    });
-  });
 
   // =========================================================================
   // Settings Dropdown

@@ -306,28 +306,6 @@ describe('sanitizeWorkspace', () => {
     expect(sanitized.gitChanges).toEqual([]);
   });
 
-  it('sets browserPane.locked to false when undefined', () => {
-    const ws = makeWorkspace({
-      browserPane: {
-        id: 'bp-1',
-        position: { x: 0, y: 0, w: 6, h: 6 },
-        locked: undefined as unknown as boolean,
-        tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }],
-        activeTabId: 'bt-1',
-      },
-    });
-    const sanitized = sanitizeWorkspace(ws);
-    expect(sanitized.browserPane!.locked).toBe(false);
-  });
-
-  it('sets editorPane.locked to false when undefined', () => {
-    const ws = makeWorkspace({
-      editorPane: { id: 'ep-1', locked: undefined as unknown as boolean },
-    });
-    const sanitized = sanitizeWorkspace(ws);
-    expect(sanitized.editorPane!.locked).toBe(false);
-  });
-
   it('sets browserPane to null when null', () => {
     const ws = makeWorkspace({ browserPane: null });
     const sanitized = sanitizeWorkspace(ws);
@@ -361,7 +339,6 @@ describe('sanitizeWorkspace', () => {
     const legacy = {
       id: 'bp-legacy',
       position: { x: 0, y: 0, w: 6, h: 6 },
-      locked: false,
     } as unknown as BrowserPaneState;
     const ws = makeWorkspace({ browserPane: legacy, browserUrl: 'https://legacy.example.com' });
     const sanitized = sanitizeWorkspace(ws);
@@ -375,7 +352,6 @@ describe('sanitizeWorkspace', () => {
     const broken: BrowserPaneState = {
       id: 'bp-empty',
       position: { x: 0, y: 0, w: 6, h: 6 },
-      locked: false,
       tabs: [],
       activeTabId: null,
     };
@@ -390,7 +366,6 @@ describe('sanitizeWorkspace', () => {
     const broken: BrowserPaneState = {
       id: 'bp-bad-active',
       position: { x: 0, y: 0, w: 6, h: 6 },
-      locked: false,
       tabs: [
         { id: 'a', url: 'https://a.example', title: '', canGoBack: false, canGoForward: false },
         { id: 'b', url: 'https://b.example', title: '', canGoBack: false, canGoForward: false },
@@ -406,7 +381,6 @@ describe('sanitizeWorkspace', () => {
     const broken: BrowserPaneState = {
       id: 'bp-dupes',
       position: { x: 0, y: 0, w: 6, h: 6 },
-      locked: false,
       tabs: [
         { id: 'dup', url: 'https://first.example', title: 'first', canGoBack: false, canGoForward: false },
         { id: 'dup', url: 'https://second.example', title: 'second', canGoBack: false, canGoForward: false },
@@ -426,7 +400,6 @@ describe('sanitizeWorkspace', () => {
     const broken = {
       id: 'bp-malformed',
       position: { x: 0, y: 0, w: 6, h: 6 },
-      locked: false,
       tabs: [
         { url: 'https://no-id.example' },
         { id: 'good', url: 'https://good.example', title: '', canGoBack: false, canGoForward: false },
@@ -852,7 +825,6 @@ describe('validateWorkspaceConsistency', () => {
       const bp: BrowserPaneState = {
         id: 'browser-1',
         position: { x: 0, y: 0, w: 6, h: 6 },
-        locked: false,
         tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }],
         activeTabId: 'bt-1',
       };
@@ -863,7 +835,7 @@ describe('validateWorkspaceConsistency', () => {
     });
 
     it('warns when layoutRoot is null but editor is visible', () => {
-      const ep: EditorPaneState = { id: 'editor-1', locked: false };
+      const ep: EditorPaneState = { id: 'editor-1' };
       const state = makeMinimalState({ layoutRoot: null, panes: [], browserVisible: false, editorVisible: true, editorPane: ep });
       expect(validateWorkspaceConsistency(state)).toContain(
         'L1 violated: layoutRoot is null but editor is visible',
@@ -890,7 +862,6 @@ describe('validateWorkspaceConsistency', () => {
       const bp: BrowserPaneState = {
         id: 'browser-1',
         position: { x: 0, y: 0, w: 6, h: 6 },
-        locked: false,
         tabs: [{ id: 'bt-1', url: 'https://github.com', title: '', canGoBack: false, canGoForward: false }],
         activeTabId: 'bt-1',
       };
@@ -900,7 +871,7 @@ describe('validateWorkspaceConsistency', () => {
     });
 
     it('passes when layout references editorPane', () => {
-      const ep: EditorPaneState = { id: 'editor-1', locked: false };
+      const ep: EditorPaneState = { id: 'editor-1' };
       const state = makeMinimalState({ layoutRoot: makeLeaf('editor-1'), panes: [], editorPane: ep, editorVisible: true });
 
       expect(validateWorkspaceConsistency(state)).toEqual([]);
@@ -983,7 +954,7 @@ describe('validateWorkspaceConsistency', () => {
   describe('B1..B4 (browser tab invariants)', () => {
     it('warns when browserPane has an empty tabs array', () => {
       const bp: BrowserPaneState = {
-        id: 'bp', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false, tabs: [], activeTabId: null,
+        id: 'bp', position: { x: 0, y: 0, w: 6, h: 6 }, tabs: [], activeTabId: null,
       };
       const warnings = validateWorkspaceConsistency({ browserPane: bp, browserUrl: '' });
       expect(warnings).toContain('B1 violated: browserPane.tabs must contain at least one tab');
@@ -991,7 +962,7 @@ describe('validateWorkspaceConsistency', () => {
 
     it('warns when browserPane has duplicate tab ids', () => {
       const bp: BrowserPaneState = {
-        id: 'bp', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false,
+        id: 'bp', position: { x: 0, y: 0, w: 6, h: 6 },
         tabs: [
           { id: 'dup', url: 'https://a', title: '', canGoBack: false, canGoForward: false },
           { id: 'dup', url: 'https://b', title: '', canGoBack: false, canGoForward: false },
@@ -1004,7 +975,7 @@ describe('validateWorkspaceConsistency', () => {
 
     it('warns when activeTabId does not reference an existing tab', () => {
       const bp: BrowserPaneState = {
-        id: 'bp', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false,
+        id: 'bp', position: { x: 0, y: 0, w: 6, h: 6 },
         tabs: [{ id: 'a', url: 'https://a', title: '', canGoBack: false, canGoForward: false }],
         activeTabId: 'missing',
       };
@@ -1014,7 +985,7 @@ describe('validateWorkspaceConsistency', () => {
 
     it('warns when browserUrl does not match active tab url', () => {
       const bp: BrowserPaneState = {
-        id: 'bp', position: { x: 0, y: 0, w: 6, h: 6 }, locked: false,
+        id: 'bp', position: { x: 0, y: 0, w: 6, h: 6 },
         tabs: [{ id: 'a', url: 'https://a.example', title: '', canGoBack: false, canGoForward: false }],
         activeTabId: 'a',
       };

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo, useState } from 'react';
-import { Lock, Unlock, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { EditorState, StateEffect, Compartment, type Extension } from '@codemirror/state';
 import {
   EditorView,
@@ -44,15 +44,12 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
   }, []);
 
   const {
-    toggleEditorLock,
     closeEditorPane,
     reloadEditorTab,
     clearEditorTabExternalFlag,
     closeEditorTab,
     saveEditorFile,
   } = useWorkspaceStore();
-
-  const editorLocked = workspace?.editorPane?.locked ?? false;
   const editorVisible = workspace?.editorVisible ?? false;
   const editorTabs = useMemo(() => workspace?.editorTabs ?? [], [workspace]);
   const activeEditorTabId = workspace?.activeEditorTabId ?? null;
@@ -194,17 +191,6 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
     };
   }, [workspaceId]);
 
-  const handleToggleLock = () => {
-    if (!isInteractive) {
-      return;
-    }
-    if (workspaceId) {
-      toggleEditorLock(workspaceId);
-    } else {
-      toggleEditorLock();
-    }
-  };
-
   const handleClosePane = () => {
     if (!isInteractive) {
       return;
@@ -253,19 +239,6 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             disabled={!isInteractive}
           >
             <X size={12} strokeWidth={2} />
-          </button>
-          <button
-            className="editor-pane-lock-btn"
-            onClick={handleToggleLock}
-            title={editorLocked ? 'Unlock editor pane' : 'Lock editor pane'}
-            aria-label={editorLocked ? 'Unlock editor pane' : 'Lock editor pane'}
-            disabled={!isInteractive}
-          >
-            {editorLocked ? (
-              <Lock size={12} strokeWidth={2} />
-            ) : (
-              <Unlock size={12} strokeWidth={2} />
-            )}
           </button>
         </div>
 

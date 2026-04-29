@@ -3,10 +3,8 @@ import {
   buildWorkspaceLayout,
   collectLeafPaneIds,
   dockPaneToEdgeInLayout,
-  findFirstLeafPaneId,
   GRID_COLS,
   GRID_ROWS,
-  hasUnlockedLeaf,
   insertPaneAtEdgeGapInLayout,
   insertPaneAtEdgeSegmentInLayout,
   insertPaneIntoLayout,
@@ -336,10 +334,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           activeTerminalId: state.activeTerminalId,
         });
 
-    if (!paneExists && nextLayoutRoot === state.layoutRoot) {
-      console.warn('All panes are locked. Cannot add a new terminal pane.');
-    }
-
     const nextActiveTerminalId = terminal.id;
 
     const nextState = {
@@ -448,10 +442,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         } else {
           const currentIds = collectLeafPaneIds(state.layoutRoot ?? null);
           if (!currentIds.includes(browserId)) {
-            if (state.layoutRoot != null && !hasUnlockedLeaf(state.layoutRoot, state)) {
-              console.warn('All panes are locked. Cannot add the browser pane.');
-              return state;
-            }
             nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, browserId, {
               panes: state.panes,
               browserPane: nextBrowserPane,
@@ -472,13 +462,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     return {
       browserVisible: nextBrowserVisible,
-      browserPane: nextBrowserPane ? { ...nextBrowserPane, locked: nextBrowserPane.locked ?? false } : nextBrowserPane,
+      browserPane: nextBrowserPane,
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
       ...syncActiveWorkspace(state, (workspace) => ({
         ...workspace,
         browserVisible: nextBrowserVisible,
-        browserPane: nextBrowserPane ? { ...nextBrowserPane, locked: nextBrowserPane.locked ?? false } : nextBrowserPane,
+        browserPane: nextBrowserPane,
         layoutRoot: nextLayoutRoot,
       })),
     };
@@ -1049,7 +1039,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const nextBrowserPane = state.browserPane
       ? {
           ...state.browserPane,
-          locked: state.browserPane.locked ?? false,
           position: normalizedPosition,
         }
       : createDefaultBrowserPane(generateId('browser'), normalizedPosition, state.browserUrl);
@@ -1136,103 +1125,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return nextState;
   }),
 
-
-  bringPaneIntoView: (paneId, workspaceId) => set((state) => {
-    const workspace = resolveWorkspaceByScope(state, workspaceId);
-    if (workspace == null) {
-      return state;
-    }
-
-    const firstPaneId = findFirstLeafPaneId(workspace.layoutRoot);
-    if (firstPaneId == null || firstPaneId === paneId) {
-      return state;
-    }
-
-    const nextLayoutRoot = swapPaneIdsInLayout(workspace.layoutRoot, firstPaneId, paneId);
-
-    const nextState = {
-      layoutRoot: nextLayoutRoot,
-      layoutRevision: state.layoutRevision + 1,
-      ...patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
-        ...currentWorkspace,
-        layoutRoot: nextLayoutRoot,
-      })),
-    };
-    if (import.meta.env.DEV) {
-      const warnings = validateWorkspaceConsistency(nextState);
-      if (warnings.length > 0) {
-        console.warn('[Dev Only] Workspace consistency violation after bringPaneIntoView:', warnings);
-      }
-    }
-
-    return nextState;
-  }),
-
-  bringBrowserIntoView: (workspaceId) => set((state) => {
-    const workspace = resolveWorkspaceByScope(state, workspaceId);
-    if (!workspace?.browserPane || !workspace.browserVisible) {
-      return state;
-    }
-
-    const firstPaneId = findFirstLeafPaneId(workspace.layoutRoot);
-    if (firstPaneId == null || firstPaneId === workspace.browserPane.id) {
-      return state;
-    }
-
-    const nextLayoutRoot = swapPaneIdsInLayout(workspace.layoutRoot, firstPaneId, workspace.browserPane.id);
-
-    const nextState = {
-      layoutRoot: nextLayoutRoot,
-      layoutRevision: state.layoutRevision + 1,
-      ...patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
-        ...currentWorkspace,
-        layoutRoot: nextLayoutRoot,
-      })),
-    };
-    if (import.meta.env.DEV) {
-      const warnings = validateWorkspaceConsistency(nextState);
-      if (warnings.length > 0) {
-        console.warn('[Dev Only] Workspace consistency violation after bringBrowserIntoView:', warnings);
-      }
-    }
-
-    return nextState;
-  }),
-
-  togglePaneLock: (paneId, workspaceId) => set((state) => {
-    const workspace = resolveWorkspaceByScope(state, workspaceId);
-    if (workspace == null) {
-      return state;
-    }
-
-    const nextPanes = (workspace.panes ?? []).map((pane) => (
-      pane.id === paneId
-        ? { ...pane, locked: !(pane.locked ?? false) }
-        : pane
-    ));
-
-    return patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
-      ...currentWorkspace,
-      panes: nextPanes,
-    }));
-  }),
-
-  toggleBrowserLock: (workspaceId) => set((state) => {
-    const workspace = resolveWorkspaceByScope(state, workspaceId);
-    if (!workspace?.browserPane) {
-      return state;
-    }
-
-    const nextBrowserPane = {
-      ...workspace.browserPane,
-      locked: !workspace.browserPane.locked,
-    };
-
-    return patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
-      ...currentWorkspace,
-      browserPane: nextBrowserPane,
-    }));
-  }),
 
   swapPanes: (a, b, workspaceId) => set((state) => {
     if (a === b) return state;
@@ -1376,11 +1268,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return nextState;
   }),
 
-  canAddPane: (): boolean => {
-    const state = get();
-    return hasUnlockedLeaf(state.layoutRoot, state) || state.layoutRoot == null;
-  },
-
   openFileInEditor: async (filePath, workspaceId) => {
     const state = useWorkspaceStore.getState();
     const scopedWorkspace = resolveWorkspaceByScope(state, workspaceId);
@@ -1446,7 +1333,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
         const nextEditorPane = latestWorkspace.editorPane ?? {
           id: generateId('editor'),
-          locked: false,
         };
         const editorLeafExists = collectLeafPaneIds(latestWorkspace.layoutRoot).includes(nextEditorPane.id);
         const shouldInsertEditorPane = !latestWorkspace.editorVisible || !editorLeafExists;
@@ -1661,7 +1547,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (nextEditorVisible && nextEditorPane === null) {
       nextEditorPane = {
         id: generateId('editor'),
-        locked: false,
       };
     }
 
@@ -1669,10 +1554,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (nextEditorVisible && nextEditorPane) {
       const editorId = nextEditorPane.id;
       if (!state.editorVisible) {
-        if (state.layoutRoot != null && !hasUnlockedLeaf(state.layoutRoot, state)) {
-          console.warn('All panes are locked. Cannot add the editor pane.');
-          return state;
-        }
         nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, editorId, {
           panes: state.panes,
           browserPane: state.browserPane,
@@ -1734,53 +1615,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
   },
 
-  toggleEditorLock: (workspaceId) => set((state) => {
-    const workspace = resolveWorkspaceByScope(state, workspaceId);
-    if (!workspace?.editorPane) {
-      return state;
-    }
-
-    const nextEditorPane = {
-      ...workspace.editorPane,
-      locked: !workspace.editorPane.locked,
-    };
-
-    return patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
-      ...currentWorkspace,
-      editorPane: nextEditorPane,
-    }));
-  }),
-
-  bringEditorIntoView: (workspaceId) => set((state) => {
-    const workspace = resolveWorkspaceByScope(state, workspaceId);
-    if (!workspace?.editorPane || !workspace.editorVisible) {
-      return state;
-    }
-
-    const firstPaneId = findFirstLeafPaneId(workspace.layoutRoot);
-    if (firstPaneId == null || firstPaneId === workspace.editorPane.id) {
-      return state;
-    }
-
-    const nextLayoutRoot = swapPaneIdsInLayout(workspace.layoutRoot, firstPaneId, workspace.editorPane.id);
-
-    const nextState = {
-      layoutRoot: nextLayoutRoot,
-      layoutRevision: state.layoutRevision + 1,
-      ...patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
-        ...currentWorkspace,
-        layoutRoot: nextLayoutRoot,
-      })),
-    };
-    if (import.meta.env.DEV) {
-      const warnings = validateWorkspaceConsistency(nextState);
-      if (warnings.length > 0) {
-        console.warn('[Dev Only] Workspace consistency violation after bringEditorIntoView:', warnings);
-      }
-    }
-
-    return nextState;
-  }),
   resetEditorState: () => {
     const nextState = set((state) => ({
       ...createDefaultEditorState(),

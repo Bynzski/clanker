@@ -20,7 +20,6 @@ export default function Header() {
   const addTerminal = useWorkspaceStore((state) => state.addTerminal);
   const fitAllPanes = useWorkspaceStore((state) => state.fitAllPanes);
   const setHarness = useWorkspaceStore((state) => state.setHarness);
-  const canAddPane = useWorkspaceStore((state) => state.canAddPane);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
 
@@ -267,11 +266,6 @@ export default function Header() {
   }, [aiCommitProvider, availableHarnessIds, hasLoadedAiCommitSettings]);
 
   const handleAddTerminal = async () => {
-    if (!canAddPane()) {
-      console.warn('All panes are locked. Unlock a pane before adding a new terminal.');
-      return;
-    }
-
     try {
       // Priority 1: workspace harness + model (highest priority)
       const workspaceHarness = availableHarnessIds.includes(harness) ? harness : '';
@@ -468,7 +462,7 @@ export default function Header() {
           })}
         </div>
 
-        <button className="header-btn header-btn-primary" type="button" onClick={handleAddTerminal} disabled={!canAddPane()}>
+        <button className="header-btn header-btn-primary" type="button" onClick={handleAddTerminal}>
           <Plus size={15} strokeWidth={2.5} />
           New Terminal
         </button>

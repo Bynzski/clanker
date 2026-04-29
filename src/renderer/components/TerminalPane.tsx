@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { LocateFixed, Lock, Unlock } from 'lucide-react';
+
 import { useDragHandle } from './DynamicPaneLayout';
 import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
 import './TerminalPane.css';
@@ -133,13 +133,10 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     setActiveTerminal,
     removeTerminal,
     removePane,
-    bringPaneIntoView,
-    togglePaneLock,
   } = useWorkspaceStore();
   const pane = workspace?.panes.find((item) => item.id === paneId);
   const terminal = workspace?.terminals.find((item) => item.id === pane?.terminalId);
   const terminalId = terminal?.id ?? null;
-  const paneLocked = pane?.locked ?? false;
   const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
 
   // -------------------------------------------------------------------------
@@ -520,32 +517,6 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     }
   }, [isInteractive, terminal, removeTerminal, removePane, paneId]);
 
-  const handleBringIntoView = useCallback(() => {
-    if (!isInteractive) {
-      return;
-    }
-    if (paneId) {
-      if (workspaceId) {
-        bringPaneIntoView(paneId, workspaceId);
-      } else {
-        bringPaneIntoView(paneId);
-      }
-    }
-  }, [bringPaneIntoView, isInteractive, paneId, workspaceId]);
-
-  const handleToggleLock = useCallback(() => {
-    if (!isInteractive) {
-      return;
-    }
-    if (paneId) {
-      if (workspaceId) {
-        togglePaneLock(paneId, workspaceId);
-      } else {
-        togglePaneLock(paneId);
-      }
-    }
-  }, [isInteractive, paneId, togglePaneLock, workspaceId]);
-
   const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     if (!isInteractive) {
       return;
@@ -615,12 +586,6 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
           <div className="terminal-status-indicator" data-active={isActive} />
           <span className="terminal-title" />
           <div className="terminal-header-actions">
-            <button className="terminal-action" onClick={handleBringIntoView} title="Bring into view" disabled={!isInteractive}>
-              <LocateFixed size={14} strokeWidth={2} />
-            </button>
-            <button className="terminal-action" onClick={handleToggleLock} title={paneLocked ? 'Unlock pane' : 'Lock pane'} disabled={!isInteractive}>
-              {paneLocked ? <Unlock size={14} strokeWidth={2} /> : <Lock size={14} strokeWidth={2} />}
-            </button>
             <button className="terminal-close" onClick={handleClose} title="Close terminal" disabled={!isInteractive}>
               ×
             </button>

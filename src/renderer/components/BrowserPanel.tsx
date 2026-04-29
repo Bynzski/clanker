@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, LocateFixed, Lock, Unlock, MousePointer2, ChevronDown, Plus } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, MousePointer2, ChevronDown, Plus } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { BrowserTab } from '../store/workspaceTypes';
@@ -61,15 +61,12 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   const lastBoundsRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const firstBoundsSentRef = useRef(false);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const bringBrowserIntoView = useWorkspaceStore((state) => state.bringBrowserIntoView);
-  const toggleBrowserLock = useWorkspaceStore((state) => state.toggleBrowserLock);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
   const addBrowserTab = useWorkspaceStore((state) => state.addBrowserTab);
   const removeBrowserTab = useWorkspaceStore((state) => state.removeBrowserTab);
   const setActiveBrowserTab = useWorkspaceStore((state) => state.setActiveBrowserTab);
   const updateBrowserTab = useWorkspaceStore((state) => state.updateBrowserTab);
-  const browserLocked = workspace?.browserPane?.locked ?? false;
   const browserOverlayCount = workspace?.browserOverlayCount ?? 0;
   const browserTabs = workspace?.browserPane?.tabs ?? [];
   const [annotationActive, setAnnotationActive] = useState(false);
@@ -471,22 +468,6 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     }
   };
 
-  const handleBringIntoView = () => {
-    if (workspaceId) {
-      bringBrowserIntoView(workspaceId);
-    } else {
-      bringBrowserIntoView();
-    }
-  };
-
-  const handleToggleLock = () => {
-    if (workspaceId) {
-      toggleBrowserLock(workspaceId);
-    } else {
-      toggleBrowserLock();
-    }
-  };
-
   const handleNewTab = async () => {
     if (!workspace?.id) return;
     const tabId = addBrowserTab(workspace.id);
@@ -532,7 +513,6 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
         <div className="browser-pane-drag-handle" aria-hidden="true" title="Drag to move pane" />
         <span className="browser-pane-title">Browser</span>
         <span className="browser-pane-spacer" />
-        {browserLocked ? <Lock size={12} strokeWidth={2} className="browser-pane-lock" /> : null}
       </div>
       <div className="browser-toolbar">
         <button className="browser-nav-btn" onClick={handleBack} disabled={!canGoBack} title="Back">
@@ -668,14 +648,6 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
 
         <button className="browser-nav-btn browser-external" onClick={handleOpenExternal} title="Open in system browser">
           <ExternalLink size={16} strokeWidth={2} />
-        </button>
-
-        <button className="browser-nav-btn" onClick={handleBringIntoView} title="Bring browser into view">
-          <LocateFixed size={16} strokeWidth={2} />
-        </button>
-
-        <button className="browser-nav-btn" onClick={handleToggleLock} title={browserLocked ? 'Unlock browser pane' : 'Lock browser pane'}>
-          {browserLocked ? <Unlock size={16} strokeWidth={2} /> : <Lock size={16} strokeWidth={2} />}
         </button>
 
         <button

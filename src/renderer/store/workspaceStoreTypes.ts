@@ -155,16 +155,11 @@ export interface WorkspaceState {
   setGridViewport: (viewport: GridViewport) => void;
   resetLayout: () => void;
   fitAllPanes: () => void;
-  bringPaneIntoView: (paneId: string, workspaceId?: string) => void;
-  bringBrowserIntoView: (workspaceId?: string) => void;
-  togglePaneLock: (paneId: string, workspaceId?: string) => void;
-  toggleBrowserLock: (workspaceId?: string) => void;
   swapPanes: (a: string, b: string, workspaceId?: string) => void;
   dockPaneToEdge: (paneId: string, edge: 'left' | 'right' | 'top' | 'bottom', workspaceId?: string) => void;
   insertPaneAtEdgeGap: (paneId: string, edge: 'left' | 'right' | 'top' | 'bottom', gapIndex: number, workspaceId?: string) => void;
   insertPaneAtEdgeSegment: (paneId: string, edge: 'left' | 'right' | 'top' | 'bottom', targetPaneId: string, workspaceId?: string) => void;
   setSplitRatio: (nodeId: string, ratio: number, workspaceId?: string) => void;
-  canAddPane: () => boolean;
 
   openFileInEditor: (filePath: string, workspaceId?: string) => Promise<void>;
   closeEditorTab: (tabId: string, workspaceId?: string) => void;
@@ -174,8 +169,6 @@ export interface WorkspaceState {
   saveAllEditorFiles: () => Promise<void>;
   toggleEditorPane: () => void;
   closeEditorPane: (workspaceId?: string) => void;
-  toggleEditorLock: (workspaceId?: string) => void;
-  bringEditorIntoView: (workspaceId?: string) => void;
   resetEditorState: () => void;
   renameEditorTabPath: (oldPath: string, newPath: string, workspaceId?: string) => void;
   reloadEditorTab: (tabId: string, workspaceId?: string) => Promise<void>;

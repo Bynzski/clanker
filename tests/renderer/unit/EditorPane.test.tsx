@@ -83,7 +83,6 @@ describe('EditorPane', () => {
       editorPane: null,
       editorTabs: [],
       activeEditorTabId: null,
-      toggleEditorLock: vi.fn(),
     });
   });
 
@@ -102,7 +101,7 @@ describe('EditorPane', () => {
         id: 'ws-1',
         lifecycle: 'parked',
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [
           {
             id: 'tab-1',
@@ -144,7 +143,7 @@ describe('EditorPane', () => {
         id: 'ws-1',
         lifecycle: 'parked',
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [
           {
             id: 'tab-1',
@@ -172,7 +171,6 @@ describe('EditorPane', () => {
       render(<EditorPane workspaceId="ws-1" />);
 
       expect(document.querySelector('.editor-panel')).toHaveAttribute('data-workspace-interactive', 'false');
-      expect(document.querySelector('.editor-pane-lock-btn')).toBeDisabled();
       expect(document.querySelector('.editor-tab')).toBeDisabled();
     });
 
@@ -225,7 +223,7 @@ describe('EditorPane', () => {
     it('renders content div when tabs exist', () => {
       useWorkspaceStore.setState({
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [
           {
             id: 'tab-1',
@@ -237,54 +235,11 @@ describe('EditorPane', () => {
           },
         ],
         activeEditorTabId: 'tab-1',
-        toggleEditorLock: vi.fn(),
       });
 
       render(<EditorPane />);
       const editorContent = document.querySelector('.editor-content');
       expect(editorContent).toBeTruthy();
-    });
-  });
-
-  // =========================================================================
-  // Lock Button
-  // =========================================================================
-  describe('lock button', () => {
-    it('renders lock button', () => {
-      render(<EditorPane />);
-      const lockBtn = document.querySelector('.editor-pane-lock-btn');
-      expect(lockBtn).toBeTruthy();
-    });
-
-    it('shows lock button when editor pane is locked', () => {
-      useWorkspaceStore.setState({
-        editorVisible: true,
-        editorPane: { id: 'editor-1', locked: true },
-        editorTabs: [],
-        activeEditorTabId: null,
-        toggleEditorLock: vi.fn(),
-      });
-
-      render(<EditorPane />);
-      const lockBtn = document.querySelector('.editor-pane-lock-btn');
-      expect(lockBtn).toBeTruthy();
-    });
-
-    it('calls toggleEditorLock when lock button is clicked', () => {
-      const toggleEditorLock = vi.fn();
-      useWorkspaceStore.setState({
-        editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
-        editorTabs: [],
-        activeEditorTabId: null,
-        toggleEditorLock,
-      });
-
-      render(<EditorPane />);
-      const lockBtn = document.querySelector('.editor-pane-lock-btn') as HTMLButtonElement;
-      lockBtn.click();
-
-      expect(toggleEditorLock).toHaveBeenCalled();
     });
   });
 
@@ -298,7 +253,6 @@ describe('EditorPane', () => {
         editorPane: null,
         editorTabs: [],
         activeEditorTabId: null,
-        toggleEditorLock: vi.fn(),
       });
 
       render(<EditorPane />);
@@ -311,7 +265,6 @@ describe('EditorPane', () => {
         editorPane: null,
         editorTabs: [],
         activeEditorTabId: null,
-        toggleEditorLock: vi.fn(),
       });
 
       const { container } = render(<EditorPane />);
@@ -328,7 +281,7 @@ describe('EditorPane', () => {
     it('keeps the editor panel mounted when editorVisible is false', () => {
       useWorkspaceStore.setState({
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [
           {
             id: 'tab-1',
@@ -340,7 +293,6 @@ describe('EditorPane', () => {
           },
         ],
         activeEditorTabId: 'tab-1',
-        toggleEditorLock: vi.fn(),
       });
 
       const { rerender } = render(<EditorPane />);
@@ -363,10 +315,9 @@ describe('EditorPane', () => {
     it('shows empty state as overlay without destroying the editor content div', () => {
       useWorkspaceStore.setState({
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [],
         activeEditorTabId: null,
-        toggleEditorLock: vi.fn(),
       });
 
       const { rerender } = render(<EditorPane />);
@@ -405,10 +356,9 @@ describe('EditorPane', () => {
       // Start with no tabs
       useWorkspaceStore.setState({
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [],
         activeEditorTabId: null,
-        toggleEditorLock: vi.fn(),
       });
 
       const { rerender } = render(<EditorPane />);
@@ -442,20 +392,6 @@ describe('EditorPane', () => {
   // Store Integration
   // =========================================================================
   describe('store integration', () => {
-    it('renders header with lock button from store state', () => {
-      useWorkspaceStore.setState({
-        editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
-        editorTabs: [],
-        activeEditorTabId: null,
-        toggleEditorLock: vi.fn(),
-      });
-
-      render(<EditorPane />);
-
-      const lockBtn = document.querySelector('.editor-pane-lock-btn');
-      expect(lockBtn).toBeTruthy();
-    });
 
     it('renders content area that changes when tabs are added', () => {
       useWorkspaceStore.setState({
@@ -463,7 +399,6 @@ describe('EditorPane', () => {
         editorPane: null,
         editorTabs: [],
         activeEditorTabId: null,
-        toggleEditorLock: vi.fn(),
       });
 
       const { rerender } = render(<EditorPane />);
@@ -474,7 +409,7 @@ describe('EditorPane', () => {
 
       useWorkspaceStore.setState({
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [
           {
             id: 'tab-new',
@@ -486,7 +421,6 @@ describe('EditorPane', () => {
           },
         ],
         activeEditorTabId: 'tab-new',
-        toggleEditorLock: vi.fn(),
       });
 
       rerender(<EditorPane />);
@@ -502,7 +436,7 @@ describe('EditorPane', () => {
     it('renders reload banner when hasExternalChange is true', () => {
       useWorkspaceStore.setState({
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [
           {
             id: 'tab-1',
@@ -515,7 +449,6 @@ describe('EditorPane', () => {
           },
         ],
         activeEditorTabId: 'tab-1',
-        toggleEditorLock: vi.fn(),
         reloadEditorTab: vi.fn().mockResolvedValue(undefined),
         clearEditorTabExternalFlag: vi.fn(),
       });
@@ -533,7 +466,7 @@ describe('EditorPane', () => {
       const reloadEditorTab = vi.fn().mockResolvedValue(undefined);
       useWorkspaceStore.setState({
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [
           {
             id: 'tab-1',
@@ -546,7 +479,6 @@ describe('EditorPane', () => {
           },
         ],
         activeEditorTabId: 'tab-1',
-        toggleEditorLock: vi.fn(),
         reloadEditorTab,
         clearEditorTabExternalFlag: vi.fn(),
       });
@@ -563,7 +495,7 @@ describe('EditorPane', () => {
       const clearEditorTabExternalFlag = vi.fn();
       useWorkspaceStore.setState({
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [
           {
             id: 'tab-1',
@@ -576,7 +508,6 @@ describe('EditorPane', () => {
           },
         ],
         activeEditorTabId: 'tab-1',
-        toggleEditorLock: vi.fn(),
         reloadEditorTab: vi.fn().mockResolvedValue(undefined),
         clearEditorTabExternalFlag,
       });
@@ -592,7 +523,7 @@ describe('EditorPane', () => {
     it('does not show banner when hasExternalChange is false', () => {
       useWorkspaceStore.setState({
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [
           {
             id: 'tab-1',
@@ -604,7 +535,6 @@ describe('EditorPane', () => {
           },
         ],
         activeEditorTabId: 'tab-1',
-        toggleEditorLock: vi.fn(),
       });
 
       render(<EditorPane />);
@@ -621,7 +551,7 @@ describe('EditorPane', () => {
     it('renders danger banner when isDeleted is true', () => {
       useWorkspaceStore.setState({
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [
           {
             id: 'tab-1',
@@ -634,7 +564,6 @@ describe('EditorPane', () => {
           },
         ],
         activeEditorTabId: 'tab-1',
-        toggleEditorLock: vi.fn(),
         closeEditorTab: vi.fn(),
         saveEditorFile: vi.fn().mockResolvedValue(true),
       });
@@ -652,7 +581,7 @@ describe('EditorPane', () => {
       const closeEditorTab = vi.fn();
       useWorkspaceStore.setState({
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [
           {
             id: 'tab-1',
@@ -665,7 +594,6 @@ describe('EditorPane', () => {
           },
         ],
         activeEditorTabId: 'tab-1',
-        toggleEditorLock: vi.fn(),
         closeEditorTab,
         saveEditorFile: vi.fn().mockResolvedValue(true),
       });
@@ -687,7 +615,7 @@ describe('EditorPane', () => {
       const saveEditorFile = vi.fn().mockResolvedValue(true);
       useWorkspaceStore.setState({
         editorVisible: true,
-        editorPane: { id: 'editor-1', locked: false },
+        editorPane: { id: 'editor-1' },
         editorTabs: [
           {
             id: 'tab-1',
@@ -700,7 +628,6 @@ describe('EditorPane', () => {
           },
         ],
         activeEditorTabId: 'tab-1',
-        toggleEditorLock: vi.fn(),
         closeEditorTab: vi.fn(),
         saveEditorFile,
       });

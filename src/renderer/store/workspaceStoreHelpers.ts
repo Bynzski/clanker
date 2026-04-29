@@ -74,7 +74,6 @@ function sanitizeBrowserTab(raw: unknown, fallbackUrl: string): BrowserTab | nul
  * - Ensures at least one valid tab exists; rebuilds with a default tab if missing/empty.
  * - Drops malformed tab entries; deduplicates by id (first occurrence wins).
  * - Coerces `activeTabId` to a valid tab; falls back to the first tab.
- * - Defaults `locked` to false.
  */
 export function sanitizeBrowserPane(
   pane: BrowserPaneState | null | undefined,
@@ -109,7 +108,6 @@ export function sanitizeBrowserPane(
 
   return {
     id: pane.id,
-    locked: pane.locked ?? false,
     position: pane.position,
     tabs: sanitizedTabs,
     activeTabId,
@@ -128,7 +126,6 @@ export function createDefaultBrowserPane(
   const tab = createDefaultBrowserTab(seedUrl);
   return {
     id: paneId,
-    locked: false,
     position,
     tabs: [tab],
     activeTabId: tab.id,
@@ -257,7 +254,7 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   gitIsRepo: workspace.gitIsRepo ?? false,
   gitIsDetached: workspace.gitIsDetached ?? false,
   editorPane: workspace.editorPane
-    ? { ...workspace.editorPane, locked: workspace.editorPane.locked ?? false }
+    ? { ...workspace.editorPane }
     : null,
   layoutRoot: buildWorkspaceLayout(workspace),
   runtimeState: sanitizeRuntimeState(workspace),
