@@ -6,6 +6,7 @@ import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
 import type { FileOperationResult } from '../../../shared/types/fileOperations';
 import { dirnamePath, isAbsolutePath, joinPaths, relativePath, normalizePath } from '../../lib/pathUtils';
+import { pathKey } from '../../../shared/pathKey';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useScopedWorkspace } from '../WorkspaceScope';
 import FileTree from './FileTree';
@@ -224,13 +225,14 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
       return;
     }
 
-    const existingTimer = explorerTreeRefreshTimersRef.current.get(normalizedDirectoryPath);
+    const refreshKey = pathKey(normalizedDirectoryPath);
+    const existingTimer = explorerTreeRefreshTimersRef.current.get(refreshKey);
     if (existingTimer) {
       clearTimeout(existingTimer);
     }
 
     const timer = setTimeout(() => {
-      explorerTreeRefreshTimersRef.current.delete(normalizedDirectoryPath);
+      explorerTreeRefreshTimersRef.current.delete(refreshKey);
 
       const latestState = useWorkspaceStore.getState();
       const latestWorkspace = resolvedWorkspaceId ? latestState.getWorkspaceById(resolvedWorkspaceId) : null;
@@ -255,7 +257,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
       void loadDirectory(normalizedDirectoryPath);
     }, EXPLORER_TREE_REFRESH_DEBOUNCE_MS);
 
-    explorerTreeRefreshTimersRef.current.set(normalizedDirectoryPath, timer);
+    explorerTreeRefreshTimersRef.current.set(refreshKey, timer);
   }, [resolvedWorkspaceId, loadDirectory, normalizedWorkspacePath]);
 
   useEffect(() => {

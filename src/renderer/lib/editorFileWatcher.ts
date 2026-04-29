@@ -1,6 +1,6 @@
 import { useWorkspaceStore, type WorkspaceTab } from '../store/workspaceStore';
 import type { WorkspaceState } from '../store/workspaceStoreTypes';
-import { toPosixPath } from '../../shared/pathNormalize';
+import { pathKey } from '../../shared/pathKey';
 
 interface EditorWatchTarget {
   filePath: string;
@@ -35,7 +35,7 @@ function getEditorWatchTargets(state: WorkspaceState): EditorWatchTarget[] {
 }
 
 function getOwnerKey(target: Pick<EditorWatchTarget, 'workspaceId' | 'filePath'>): string {
-  return `${target.workspaceId}:${toPosixPath(target.filePath)}`;
+  return `${target.workspaceId}:${pathKey(target.filePath)}`;
 }
 
 function buildTargetsByOwner(state: WorkspaceState): Map<string, EditorWatchTarget> {
@@ -54,7 +54,7 @@ function handleFileChanged(filePath: string, deleted: boolean): void {
 
   for (const workspace of workspaces) {
     for (const tab of workspace.editorTabs) {
-      if (tab.filePath !== filePath) {
+      if (pathKey(tab.filePath) !== pathKey(filePath)) {
         continue;
       }
 
@@ -88,7 +88,7 @@ export function startEditorFileWatcher(): () => void {
   let targetsByOwner = new Map<string, EditorWatchTarget>();
 
   const watchTarget = (target: EditorWatchTarget) => {
-    const normalizedFilePath = toPosixPath(target.filePath);
+    const normalizedFilePath = pathKey(target.filePath);
     const existingOwners = watchedOwnersByFilePath.get(normalizedFilePath);
     const ownerKey = getOwnerKey(target);
 
@@ -105,7 +105,7 @@ export function startEditorFileWatcher(): () => void {
   };
 
   const unwatchTarget = (target: EditorWatchTarget) => {
-    const normalizedFilePath = toPosixPath(target.filePath);
+    const normalizedFilePath = pathKey(target.filePath);
     const existingOwners = watchedOwnersByFilePath.get(normalizedFilePath);
     if (!existingOwners) {
       return;

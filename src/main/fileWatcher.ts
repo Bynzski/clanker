@@ -3,6 +3,7 @@ import { access } from 'fs/promises';
 import type { BrowserWindow } from 'electron';
 import { FILE_CHANGED, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { toPosixPath } from '../shared/pathNormalize';
+import { pathKey } from '../shared/pathKey';
 import type { GitService } from './gitService';
 
 interface FileWatcherDeps {
@@ -37,12 +38,13 @@ export class FileWatcherService {
 
   /** Start watching a file path. No-op if already watching. */
   watchFile(filePath: string): void {
-    if (this.watchers.has(filePath)) return;
+    const key = pathKey(filePath);
+    if (this.watchers.has(key)) return;
     this.clearRewatch(filePath);
 
     try {
       const watcher = this.createWatcher(filePath);
-      this.watchers.set(filePath, watcher);
+      this.watchers.set(key, watcher);
     } catch {
       // File may not exist or be accessible; ignore
     }
@@ -50,18 +52,19 @@ export class FileWatcherService {
 
   /** Stop watching a specific file path. */
   unwatchFile(filePath: string): void {
+    const key = pathKey(filePath);
     this.clearRewatch(filePath);
 
-    const watcher = this.watchers.get(filePath);
+    const watcher = this.watchers.get(key);
     if (watcher) {
       watcher.close();
-      this.watchers.delete(filePath);
+      this.watchers.delete(key);
     }
 
-    const timer = this.debounceTimers.get(filePath);
+    const timer = this.debounceTimers.get(key);
     if (timer) {
       clearTimeout(timer);
-      this.debounceTimers.delete(filePath);
+      this.debounceTimers.delete(key);
     }
   }
 
@@ -70,7 +73,7 @@ export class FileWatcherService {
    * Returns a re-acquire callback if a watcher existed.
    */
   releaseHandle(filePath: string): (() => void) | null {
-    const watcher = this.watchers.get(filePath);
+    const watcher = this.watchers.get(pathKey(filePath));
     if (!watcher) {
       return null;
     }
@@ -107,19 +110,21 @@ export class FileWatcherService {
 
   /** Mark a file as "we just wrote this" to suppress the resulting change event. */
   markWritten(filePath: string): void {
-    this.recentlyWritten.set(filePath, Date.now());
+    this.recentlyWritten.set(pathKey(filePath), Date.now());
   }
 
   private clearRewatch(filePath: string): void {
-    const timer = this.rewatchTimers.get(filePath);
+    const key = pathKey(filePath);
+    const timer = this.rewatchTimers.get(key);
     if (timer) {
       clearTimeout(timer);
-      this.rewatchTimers.delete(filePath);
+      this.rewatchTimers.delete(key);
     }
-    this.rewatchAttempts.delete(filePath);
+    this.rewatchAttempts.delete(key);
   }
 
   private createWatcher(filePath: string): FSWatcher {
+    const key = pathKey(filePath);
     const watcher = watch(filePath, (eventType) => {
       if (eventType === 'change') {
         this.handleChange(filePath);
@@ -136,15 +141,15 @@ export class FileWatcherService {
     watcher.on('error', () => {
       // Errors can occur during atomic saves; keep trying to re-establish the watch
       // unless the renderer explicitly unwatched this path.
-      if (this.watchers.get(filePath) === watcher) {
-        this.watchers.delete(filePath);
+      if (this.watchers.get(key) === watcher) {
+        this.watchers.delete(key);
         this.scheduleRewatch(filePath);
       }
     });
 
     watcher.on('close', () => {
-      if (this.watchers.get(filePath) === watcher) {
-        this.watchers.delete(filePath);
+      if (this.watchers.get(key) === watcher) {
+        this.watchers.delete(key);
       }
     });
 
@@ -157,47 +162,48 @@ export class FileWatcherService {
   }
 
   private scheduleRewatch(filePath: string): void {
-    if (this.rewatchTimers.has(filePath)) return;
+    const key = pathKey(filePath);
+    if (this.rewatchTimers.has(key)) return;
 
     // Ensure we're not stuck following a stale inode.
-    const existing = this.watchers.get(filePath);
+    const existing = this.watchers.get(key);
     if (existing) {
       try {
         existing.close();
       } catch {
         // ignore
       }
-      this.watchers.delete(filePath);
+      this.watchers.delete(key);
     }
 
-    const attempt = (this.rewatchAttempts.get(filePath) ?? 0) + 1;
-    this.rewatchAttempts.set(filePath, attempt);
+    const attempt = (this.rewatchAttempts.get(key) ?? 0) + 1;
+    this.rewatchAttempts.set(key, attempt);
 
     if (attempt > REWATCH_MAX_ATTEMPTS) {
-      this.rewatchAttempts.delete(filePath);
+      this.rewatchAttempts.delete(key);
       return;
     }
 
     const delay = Math.min(REWATCH_BASE_DELAY_MS * (2 ** (attempt - 1)), REWATCH_MAX_DELAY_MS);
     const timer = setTimeout(() => {
-      this.rewatchTimers.delete(filePath);
+      this.rewatchTimers.delete(key);
 
       // Renderer may have re-registered (or unregistered) in the meantime.
-      if (this.watchers.has(filePath)) {
+      if (this.watchers.has(key)) {
         this.clearRewatch(filePath);
         return;
       }
 
       try {
         const watcher = this.createWatcher(filePath);
-        this.watchers.set(filePath, watcher);
+        this.watchers.set(key, watcher);
         this.clearRewatch(filePath);
       } catch {
         this.scheduleRewatch(filePath);
       }
     }, delay);
 
-    this.rewatchTimers.set(filePath, timer);
+    this.rewatchTimers.set(key, timer);
   }
 
   /** Internal: handle a raw change event from fs.watch. */
@@ -205,25 +211,26 @@ export class FileWatcherService {
     // Capture time once so the suppression check and any later time comparisons
     // (e.g., via fake timers in tests) are consistent.
     const now = Date.now();
-    const writtenTimestamp = this.recentlyWritten.get(filePath);
+    const key = pathKey(filePath);
+    const writtenTimestamp = this.recentlyWritten.get(key);
     if (writtenTimestamp !== undefined) {
-      this.recentlyWritten.delete(filePath);
+      this.recentlyWritten.delete(key);
       if (now - writtenTimestamp < SELF_WRITE_SUPPRESSION_MS) {
         return;
       }
     }
 
-    const existingTimer = this.debounceTimers.get(filePath);
+    const existingTimer = this.debounceTimers.get(key);
     if (existingTimer) {
       clearTimeout(existingTimer);
     }
 
     const timer = setTimeout(() => {
-      this.debounceTimers.delete(filePath);
+      this.debounceTimers.delete(key);
       this.emitChange(filePath);
     }, FILE_CHANGE_DEBOUNCE_MS);
 
-    this.debounceTimers.set(filePath, timer);
+    this.debounceTimers.set(key, timer);
     this.scheduleGitStatusRefresh();
   }
 

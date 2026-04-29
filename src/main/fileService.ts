@@ -391,6 +391,14 @@ function toFileOperationError(error: unknown, fallbackMessage: string): FileOper
   return { success: false, error: fallbackMessage };
 }
 
+function isCaseOnlyRename(oldPath: string, newPath: string): boolean {
+  if (process.platform !== 'win32') {
+    return false;
+  }
+
+  return oldPath.toLowerCase() === newPath.toLowerCase() && oldPath !== newPath;
+}
+
 async function renameWithCrossDeviceFallback(oldPath: string, newPath: string): Promise<void> {
   try {
     await fs.rename(oldPath, newPath);
@@ -593,6 +601,18 @@ export async function deleteEntry(request: FileDeleteRequest): Promise<FileOpera
   }
 }
 
+async function renameWithCaseOnlySupport(oldPath: string, newPath: string): Promise<void> {
+  if (!isCaseOnlyRename(oldPath, newPath)) {
+    await renameWithCrossDeviceFallback(oldPath, newPath);
+    return;
+  }
+
+  const parentDir = path.dirname(oldPath);
+  const tempPath = path.join(parentDir, `.case-rename-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  await renameWithCrossDeviceFallback(oldPath, tempPath);
+  await renameWithCrossDeviceFallback(tempPath, newPath);
+}
+
 export async function renameEntry(request: FileRenameRequest): Promise<FileOperationResult> {
   const safeWorkspacePath = resolveExistingDirectory(request.workspacePath);
   if (!safeWorkspacePath) {
@@ -620,15 +640,17 @@ export async function renameEntry(request: FileRenameRequest): Promise<FileOpera
       return { success: false, error: 'Destination path is outside workspace' };
     }
 
-    // Check destination doesn't already exist
+    // Check destination doesn't already exist, except Windows case-only renames.
     try {
       await fs.stat(resolvedNew);
-      return { success: false, error: 'A file or directory already exists at the destination' };
+      if (!isCaseOnlyRename(resolvedOld, resolvedNew)) {
+        return { success: false, error: 'A file or directory already exists at the destination' };
+      }
     } catch {
       // Doesn't exist — good
     }
 
-    await renameWithCrossDeviceFallback(resolvedOld, resolvedNew);
+    await renameWithCaseOnlySupport(resolvedOld, resolvedNew);
     return { success: true };
   } catch (error) {
     if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {

@@ -345,6 +345,12 @@ describe('deleteEntry', () => {
 });
 
 describe('renameEntry', () => {
+  const originalPlatform = process.platform;
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
   it('renames a file successfully', async () => {
     const workspaceRoot = makeTempDir('clanker-grid-rename-file-');
     const oldPath = path.join(workspaceRoot, 'oldname.txt');
@@ -360,6 +366,28 @@ describe('renameEntry', () => {
 
       expect(result.success).toBe(true);
       expect(fs.existsSync(oldPath)).toBe(false);
+      expect(fs.existsSync(newPath)).toBe(true);
+      expect(fs.readFileSync(newPath, 'utf-8')).toBe('content');
+    } finally {
+      fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('supports Windows case-only rename', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const workspaceRoot = makeTempDir('clanker-grid-rename-case-only-');
+    const oldPath = path.join(workspaceRoot, 'Foo.txt');
+    const newPath = path.join(workspaceRoot, 'foo.txt');
+    fs.writeFileSync(oldPath, 'content');
+
+    try {
+      const result = await renameEntry({
+        workspacePath: workspaceRoot,
+        oldPath,
+        newPath,
+      });
+
+      expect(result.success).toBe(true);
       expect(fs.existsSync(newPath)).toBe(true);
       expect(fs.readFileSync(newPath, 'utf-8')).toBe('content');
     } finally {
