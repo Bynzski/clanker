@@ -33,6 +33,8 @@ npm run dev
 
 Requires Node.js 22.12+ and npm 10+.
 
+Windows contributors: install **Git for Windows**. Husky pre-commit hooks execute through the `sh` that ships with Git for Windows.
+
 To build a distributable:
 
 ```bash

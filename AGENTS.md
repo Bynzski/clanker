@@ -52,6 +52,7 @@ Windows 10 1809+ is a supported platform. Key patterns:
 - **No wrapper script:** `ensureHarnessWrapperScript()` returns `null` on Windows. The POSIX wrapper only applies to Linux/macOS.
 - **SSH permissions policy:** On Windows, rely on inherited NTFS ACLs under `%USERPROFILE%\.ssh`; do not treat POSIX `mode/chmod` as effective. Keep explicit POSIX modes only on non-Windows.
 - **Process kill:** `node-pty.kill()` may emit a SIGTERM warning on Windows before falling back to `TerminateProcess`. Wrap in try-catch.
+- **Husky hooks on Windows:** Git hooks run via the `sh` bundled with Git for Windows. Windows contributors must install Git for Windows and run commits through that Git installation.
 
 ## Package Structure
 
