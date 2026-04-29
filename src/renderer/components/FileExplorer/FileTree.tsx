@@ -8,6 +8,7 @@ import type { FileExplorerEntry, FileListDirectoryResult } from '../../../shared
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useScopedWorkspace } from '../WorkspaceScope';
 import { validateFilename } from '../../../shared/filenameValidation';
+import { pathKey } from '../../../shared/pathKey';
 
 interface FileTreeProps {
   workspaceId?: string;
@@ -115,8 +116,8 @@ function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelat
   };
 
   const relativePath = toRelativePath(entry.path, workspaceRoot);
-  const gitStatus = gitStatusByRelativePath.get(relativePath);
-  const hasDescendantChange = entry.isDirectory && descendantChangePaths.has(relativePath);
+  const gitStatus = gitStatusByRelativePath.get(pathKey(relativePath));
+  const hasDescendantChange = entry.isDirectory && descendantChangePaths.has(pathKey(relativePath));
 
   const isRenaming = renaming?.path === entry.path;
   const [renameValue, setRenameValue] = useState(entry.name);
@@ -336,16 +337,16 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
     const descendantPaths = new Set<string>();
     for (const change of gitChanges) {
       const relativeChangePath = change.path.replace(/\\/g, '/');
-      map.set(relativeChangePath, change);
+      map.set(pathKey(relativeChangePath), change);
 
       const segments = relativeChangePath.split('/').filter(Boolean);
       let currentPath = '';
       for (let index = 0; index < segments.length - 1; index += 1) {
         currentPath = currentPath.length === 0 ? segments[index] : `${currentPath}/${segments[index]}`;
-        descendantPaths.add(currentPath);
+        descendantPaths.add(pathKey(currentPath));
       }
       if (segments.length > 0) {
-        descendantPaths.add('');
+        descendantPaths.add(pathKey(''));
       }
     }
     return {

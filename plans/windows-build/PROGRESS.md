@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 8c** — Next to start.
+**Phase 8d** — Next to start.
 
 ## Phase Status
 
@@ -22,7 +22,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 7 | Husky on Windows — document or replace shim | ✅ | uncommitted |
 | 8a | Delete safety + CRLF preservation | ✅ | uncommitted |
 | 8b | UNC / drive-letter / polling / long-path handling | ✅ | uncommitted |
-| 8c | Case-insensitive path keying + case-only rename | 🔲 | — |
+| 8c | Case-insensitive path keying + case-only rename | ✅ | uncommitted |
 | 8d | Verify-only Windows polish sweep | 🔲 | — |
 | 9 | Linux AppImage + unsigned NSIS/portable release smoke and v0.1 prep | 🔲 | — |
 
@@ -138,9 +138,11 @@ Created `src/main/harnessLaunch.ts:resolveHarnessSpawn()` — shared helper for 
 
 **Context:** Bounded implementation phase for F7, F9, F10, and F11. See PLAN.md "Phase 8b" section.
 
-### Phase 8c
+### Phase 8c ✅
 
 **Scope:** Case-insensitive path keying on Windows and case-only rename support while preserving display casing.
+
+**Done:** Added shared `src/shared/pathKey.ts` for canonical path-map keys (Windows: lowercase POSIX key; other platforms: case-preserving POSIX key). Applied it to renderer/editor watcher owner keys (`editorFileWatcher.ts`), explorer git-status/descendant Sets in `FileTree.tsx`, and explorer refresh timer map keys in `FileExplorer/index.tsx`, preserving display/original casing in UI state. Updated `fileWatcher.ts` internal `Map` keys (`watchers`, `recentlyWritten`, `debounceTimers`, `rewatchTimers`, `rewatchAttempts`) to use canonical path keys. Implemented Windows case-only rename handling in `fileService.ts` via two-step temp rename when source/destination differ only by case. Added unit coverage in `tests/main/unit/pathKey.test.ts` and `tests/main/unit/fileService.operations.test.ts` for Windows case-only rename behavior and Windows-vs-POSIX key equality semantics. `npm run validate` green.
 
 **Context:** Bounded implementation phase for F3. See PLAN.md "Phase 8c" section.
 
