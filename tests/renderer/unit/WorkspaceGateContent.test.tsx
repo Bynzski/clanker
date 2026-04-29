@@ -137,6 +137,18 @@ describe('WorkspaceGateContent', () => {
     );
   });
 
+  it('accepts UNC-style absolute paths on submit', async () => {
+    renderGate({ initialPath: '//server/share/repo' });
+    await waitFor(() => {
+      const input = screen.getByPlaceholderText('project name') as HTMLInputElement;
+      expect(input.value).toBe('//server/share/repo');
+    });
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    expect(mockOnSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ path: '//server/share/repo/' })
+    );
+  });
+
   it('does not submit when path is empty', () => {
     renderGate({ initialPath: '' });
     // Override input to be empty

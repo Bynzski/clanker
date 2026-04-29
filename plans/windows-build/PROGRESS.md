@@ -5,7 +5,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 
 ## Current Phase
 
-**Phase 8b** — Next to start.
+**Phase 8c** — Next to start.
 
 ## Phase Status
 
@@ -21,7 +21,7 @@ Updated after each phase commit. Read by agent prompts to determine current stat
 | 6 | Credential / SSH permission policy on Windows | ✅ | uncommitted |
 | 7 | Husky on Windows — document or replace shim | ✅ | uncommitted |
 | 8a | Delete safety + CRLF preservation | ✅ | uncommitted |
-| 8b | UNC / drive-letter / polling / long-path handling | 🔲 | — |
+| 8b | UNC / drive-letter / polling / long-path handling | ✅ | uncommitted |
 | 8c | Case-insensitive path keying + case-only rename | 🔲 | — |
 | 8d | Verify-only Windows polish sweep | 🔲 | — |
 | 9 | Linux AppImage + unsigned NSIS/portable release smoke and v0.1 prep | 🔲 | — |
@@ -130,9 +130,11 @@ Created `src/main/harnessLaunch.ts:resolveHarnessSpawn()` — shared helper for 
 
 **Context:** Bounded implementation phase for F8 and F13. See PLAN.md "Phase 8a" section.
 
-### Phase 8b
+### Phase 8b ✅
 
 **Scope:** UNC/drive-letter workspace acceptance, watcher polling fallback for UNC paths, and long-path documentation/targeted fixes.
+
+**Done:** Added shared `src/shared/pathClassify.ts` for absolute path classification (`isAbsoluteWorkspacePath`, UNC + drive-letter helpers). Updated `WorkspaceGateContent` to normalize backslashes in user input and accept UNC-style absolute paths (`//server/share/...`) in submit/suggestion flows. Added `ExplorerWatcherService` UNC polling fallback via `shouldUsePollingForWorkspace()` — on Windows, polling is enabled automatically for UNC workspaces and can be forced with `CLANKER_GRID_WATCHER_POLLING=1`. Added unit coverage for path classification, UNC submit behavior in workspace gate, and polling-strategy logic. Added `docs/windows.md` with Git-for-Windows note, UNC polling behavior, and Windows long-path enablement guidance; linked it from `README.md`. `npm run validate` green.
 
 **Context:** Bounded implementation phase for F7, F9, F10, and F11. See PLAN.md "Phase 8b" section.
 

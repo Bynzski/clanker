@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog } from 'lucide-react';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
 import type { ModelOption } from '../types/shared';
+import { isAbsoluteWorkspacePath } from '../../shared/pathClassify';
 import './WorkspaceGate.css';
 
 export interface WorkspaceFormData {
@@ -232,19 +233,19 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   // input value: relative when the input is relative (typed under base),
   // absolute when the input starts with `/`.
   const fetchSuggestions = useCallback(async (input: string, base: string) => {
-    // Detect absolute paths: POSIX (/...) or Windows drive letter (C:/...)
-    const isAbsolute = input.startsWith('/') || /^[A-Za-z]:\//.test(input);
+    const normalizedInput = input.replace(/\\/g, '/');
+    const isAbsolute = isAbsoluteWorkspacePath(normalizedInput);
 
     let dirPath: string;
     let nameFilter: string;
     let suggestionPrefix: string;
 
     if (isAbsolute) {
-      if (input === '/') {
+      if (normalizedInput === '/' || normalizedInput === '//') {
         setSuggestions([]);
         return;
       }
-      const trimmed = input.endsWith('/') ? input.slice(0, -1) : input;
+      const trimmed = normalizedInput.endsWith('/') ? normalizedInput.slice(0, -1) : normalizedInput;
       const lastSlash = trimmed.lastIndexOf('/');
       if (lastSlash < 0) {
         setSuggestions([]);
@@ -258,7 +259,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
         setSuggestions([]);
         return;
       }
-      const trimmed = input.endsWith('/') ? input.slice(0, -1) : input;
+      const trimmed = normalizedInput.endsWith('/') ? normalizedInput.slice(0, -1) : normalizedInput;
       const lastSlash = trimmed.lastIndexOf('/');
       const relDir = lastSlash < 0 ? '' : trimmed.substring(0, lastSlash + 1);
       nameFilter = (lastSlash < 0 ? trimmed : trimmed.substring(lastSlash + 1)).toLowerCase();
@@ -335,12 +336,12 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     const trimmed = inputValue.trim();
     if (!trimmed) return;
 
-    // Detect absolute paths: POSIX (/...) or Windows drive letter (C:/...)
-    const isAbsolute = trimmed.startsWith('/') || /^[A-Za-z]:\//.test(trimmed);
+    const normalized = trimmed.replace(/\\/g, '/');
+    const isAbsolute = isAbsoluteWorkspacePath(normalized);
 
     let resolved: string;
     if (isAbsolute) {
-      resolved = trimmed;
+      resolved = normalized;
     } else {
       if (!baseDirectory) return;
       resolved = baseDirectory + trimmed;

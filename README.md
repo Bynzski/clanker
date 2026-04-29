@@ -55,6 +55,7 @@ The full docs are in [`docs/`](docs/):
 - [File Explorer](docs/file-explorer.md) — tree navigation and file operations
 - [Configuration](docs/configuration.md) — settings and credentials
 - [Keyboard Shortcuts](docs/keyboard-shortcuts.md) — quick navigation
+- [Windows Notes](docs/windows.md) — Git for Windows, UNC watcher behavior, and long-path setup
 
 For development setup, see [CONTRIBUTING.md](CONTRIBUTING.md). For codebase architecture and agent guidance, see [AGENTS.md](AGENTS.md).
 

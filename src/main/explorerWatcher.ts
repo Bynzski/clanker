@@ -18,6 +18,7 @@ import * as fs from 'fs';
 import type { BrowserWindow } from 'electron';
 import { EXPLORER_TREE_CHANGED, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { toPosixPath } from '../shared/pathNormalize';
+import { isUncPath } from '../shared/pathClassify';
 import type { GitService } from './gitService';
 
 interface ExplorerWatcherDeps {
@@ -39,6 +40,14 @@ const GIT_STATUS_DEBOUNCE_MS = 500;
  */
 const EXPLORER_TREE_DEBOUNCE_MS = 100;
 const UNLINK_ADD_COLLAPSE_MS = 300;
+
+export function shouldUsePollingForWorkspace(
+  workspacePath: string,
+  platform: NodeJS.Platform = process.platform,
+  forcePolling: boolean = process.env.CLANKER_GRID_WATCHER_POLLING === '1'
+): boolean {
+  return platform === 'win32' && (forcePolling || isUncPath(toPosixPath(workspacePath)));
+}
 
 /** Default patterns to ignore — these directories generate noise without useful events. */
 const DEFAULT_IGNORED = [
@@ -151,7 +160,7 @@ export class ExplorerWatcherService {
       ignored: [...DEFAULT_IGNORED, DOTFILE_GLOB],
       ignoreInitial: true,
       persistent: true,
-      usePolling: false,
+      usePolling: shouldUsePollingForWorkspace(workspacePath),
       // Depth: undefined = unlimited (ignored paths prevent noisy dirs)
       depth: undefined,
       // Suppress unlink events for directories whose children are ignored

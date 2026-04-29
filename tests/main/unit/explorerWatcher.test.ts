@@ -11,7 +11,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 // The module under test
-import { ExplorerWatcherService } from '../../../src/main/explorerWatcher';
+import { ExplorerWatcherService, shouldUsePollingForWorkspace } from '../../../src/main/explorerWatcher';
 
 describe('ExplorerWatcherService', () => {
   let tempDir: string;
@@ -89,6 +89,16 @@ describe('ExplorerWatcherService', () => {
       localWatcher.close();
       await fsPromises.rm(parentRoot, { force: true, recursive: true });
     }
+  });
+
+  describe('polling strategy', () => {
+    test('enables polling for UNC workspaces on Windows', () => {
+      expect(shouldUsePollingForWorkspace('\\\\server\\share\\repo', 'win32')).toBe(true);
+    });
+
+    test('allows forcing polling via override on Windows', () => {
+      expect(shouldUsePollingForWorkspace('C:\\repo', 'win32', true)).toBe(true);
+    });
   });
 
   describe('watchWorkspace', () => {
