@@ -197,6 +197,6 @@ Use `installElectronApiMock()` for renderer tests. Renderer integration tests li
 - **Terminal continuity** — xterm instances cached in `TerminalPane.tsx` across workspace/tab switches.
 - **Flow control disabled** — `handleFlowControl: false` on all PTY spawns to avoid startup stalls.
 - **Harness flags** — Stored in `electron-store` under `harnessDefaults[harness].flags`, applied at spawn time.
-- **Pane locking** — Respect lock state in layout operations.
+- **Pane locking** — Removed from the product; do not add lock-state gating to layout or pane actions.
 - **Shared types** — IPC channels in `ipcChannels.ts`, types in `src/shared/types/`, store schema in `store.ts`.
 - **Main exports internal** — `terminals`, `browserViews`, `gitService`, `store` exported for tests only.

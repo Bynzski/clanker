@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Removed
+
+- **Pane locking feature** — removed `locked` pane state, lock toggles/icons in terminal/browser/editor panes, and lock-based insertion guards. This also resolves issue #4 where lock controls were non-functional.
+- **Bring-to-front actions** — removed `bringPaneIntoView`, `bringBrowserIntoView`, and `bringEditorIntoView` store actions and corresponding UI controls.
+- **`canAddPane` gating** — removed lock-based add-pane gating from header and file explorer terminal creation paths.
+
+### Changed
+
+- **Pane insertion fallback** — layout insertion now falls back to the largest leaf by area (without lock gating) when there is no active terminal target.
+
 ## [0.2.0] - 2026-04-29
 
 First release with native Windows support alongside Linux. The Linux AppImage build remains supported and unchanged for end users.
