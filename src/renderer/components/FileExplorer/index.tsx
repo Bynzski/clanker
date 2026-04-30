@@ -4,14 +4,19 @@ import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw } from 'lu
 import type React from 'react';
 import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer';
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
-import type { FileOperationResult } from '../../../shared/types/fileOperations';
-import { dirnamePath, isAbsolutePath, joinPaths, relativePath, normalizePath } from '../../lib/pathUtils';
+import { dirnamePath, joinPaths, normalizePath } from '../../lib/pathUtils';
 import { pathKey } from '../../../shared/pathKey';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useScopedWorkspace } from '../WorkspaceScope';
 import FileTree from './FileTree';
 import ContextMenu, { type ContextAction } from './ContextMenu';
 import ConfirmCloseDialog from '../ConfirmCloseDialog';
+import {
+  type ExplorerActionDeps,
+  dispatchContextAction,
+  executeDelete,
+  executeRename,
+} from './explorerActionHandlers';
 import './FileExplorer.css';
 
 const EXPLORER_TREE_REFRESH_DEBOUNCE_MS = 100;
@@ -24,30 +29,7 @@ function getDirectoryLoadErrorMessage(error: unknown): string {
   return 'Unable to load directory';
 }
 
-function isPathWithinBase(basePath: string, candidatePath: string): boolean {
-  const nextRelativePath = relativePath(basePath, candidatePath);
-  return nextRelativePath !== '' && nextRelativePath !== candidatePath && !nextRelativePath.startsWith('..');
-}
 
-function filterPathsOutsideBase(basePath: string, paths: string[]): string[] {
-  return paths.filter((path) => path !== basePath && !isPathWithinBase(basePath, path));
-}
-
-function getFileInUseMessage(result: FileOperationResult): string {
-  if (result.errorCode === 'FILE_IN_USE') {
-    return 'File is open in an editor or another app. Close it and retry.';
-  }
-
-  return result.error ?? 'File operation failed';
-}
-
-async function releaseEditorWatchForPath(workspacePath: string, filePath: string): Promise<void> {
-  await window.electronAPI.editorUnwatchFile({ workspacePath, filePath });
-}
-
-async function rewatchEditorPath(workspacePath: string, filePath: string): Promise<void> {
-  await window.electronAPI.editorWatchFile({ workspacePath, filePath });
-}
 
 function resolveCreateParentPath(
   workspacePath: string,
@@ -386,163 +368,71 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     void loadDirectory(c.parentPath);
   }, [creating, normalizedWorkspacePath, loadDirectory]);
 
+  const actionDeps = useMemo<ExplorerActionDeps>(() => ({
+    resolvedWorkspaceId,
+    normalizedWorkspacePath,
+    explorerEntriesByPath,
+    explorerExpandedPaths,
+    setExplorerSelectedPath,
+    setExplorerDirectoryEntries,
+    setExplorerExpandedPaths,
+    clearExplorerDirectoryState,
+    toggleExplorerPath,
+    loadDirectory,
+  }), [
+    resolvedWorkspaceId,
+    normalizedWorkspacePath,
+    explorerEntriesByPath,
+    explorerExpandedPaths,
+    setExplorerSelectedPath,
+    setExplorerDirectoryEntries,
+    setExplorerExpandedPaths,
+    clearExplorerDirectoryState,
+    toggleExplorerPath,
+    loadDirectory,
+  ]);
+
   const commitRenaming = useCallback(async (newName: string) => {
     const r = renaming;
     if (!r) return;
 
-    const parentDir = dirnamePath(r.path);
-    const newPath = joinPaths(parentDir, newName);
-
-    await releaseEditorWatchForPath(normalizedWorkspacePath, r.path);
-
-    const result = await window.electronAPI.fileRename({
-      workspacePath: normalizedWorkspacePath,
-      oldPath: r.path,
-      newPath,
-    });
-
-    if (!result.success) {
-      void rewatchEditorPath(normalizedWorkspacePath, r.path);
-      const message = getFileInUseMessage(result);
-      if (result.errorCode === 'FILE_IN_USE') {
-        window.alert(message);
-      }
-      console.error('Failed to rename entry:', message);
-      setRenaming(null);
-      return;
-    }
-
-    // Update any open editor tabs that reference this file
     const state = useWorkspaceStore.getState();
     const liveWorkspace = resolvedWorkspaceId ? state.getWorkspaceById(resolvedWorkspaceId) : null;
-    const editorTabs = liveWorkspace?.editorTabs ?? [];
-    const { renameEditorTabPath } = state;
-    for (const tab of editorTabs) {
-      if (tab.filePath === r.path) {
-        renameEditorTabPath(r.path, newPath, resolvedWorkspaceId ?? undefined);
-        break;
-      }
-    }
 
-    const latestWorkspace = resolvedWorkspaceId ? useWorkspaceStore.getState().getWorkspaceById(resolvedWorkspaceId) : null;
-    const currentEntries = latestWorkspace?.explorerEntriesByPath ?? {};
-    const currentExpandedPaths = latestWorkspace?.explorerExpandedPaths ?? [];
-    const selectedPath = latestWorkspace?.explorerSelectedPath ?? null;
-    const parentEntries = currentEntries[parentDir] ?? [];
-    const updatedParentEntries = parentEntries.map((entry) =>
-      entry.path === r.path ? { ...entry, name: newName, path: newPath } : entry
+    await executeRename(
+      r.path,
+      newName,
+      liveWorkspace?.editorTabs ?? [],
+      normalizedWorkspacePath,
+      actionDeps,
+      state.renameEditorTabPath,
+      () => {
+        const latest = resolvedWorkspaceId
+          ? useWorkspaceStore.getState().getWorkspaceById(resolvedWorkspaceId)
+          : null;
+        return {
+          explorerEntriesByPath: latest?.explorerEntriesByPath ?? {},
+          explorerExpandedPaths: latest?.explorerExpandedPaths ?? [],
+          explorerSelectedPath: latest?.explorerSelectedPath ?? null,
+        };
+      },
     );
-    setExplorerDirectoryEntries(parentDir, updatedParentEntries, resolvedWorkspaceId ?? undefined);
-
-    if (selectedPath === r.path) {
-      setExplorerSelectedPath(newPath, resolvedWorkspaceId ?? undefined);
-    }
-
-    if (r.path !== newPath) {
-      const staleDirectoryPaths = Object.keys(currentEntries).filter(
-        (cachedPath) => cachedPath === r.path || isPathWithinBase(r.path, cachedPath)
-      );
-      if (staleDirectoryPaths.length > 0) {
-        clearExplorerDirectoryState(staleDirectoryPaths, resolvedWorkspaceId ?? undefined);
-      }
-    }
-
-    const remainingExpandedPaths = filterPathsOutsideBase(r.path, currentExpandedPaths);
-    if (remainingExpandedPaths.length !== currentExpandedPaths.length) {
-      setExplorerExpandedPaths(remainingExpandedPaths, resolvedWorkspaceId ?? undefined);
-    }
 
     setRenaming(null);
-    void loadDirectory(parentDir);
-  }, [
-    renaming,
-    normalizedWorkspacePath,
-    clearExplorerDirectoryState,
-    loadDirectory,
-    setExplorerDirectoryEntries,
-    setExplorerSelectedPath,
-    setExplorerExpandedPaths,
-    resolvedWorkspaceId,
-  ]);
+  }, [renaming, normalizedWorkspacePath, resolvedWorkspaceId, actionDeps]);
 
   const handleContextAction = useCallback(async (action: ContextAction, entry: FileExplorerEntry) => {
     closeContextMenu();
 
-    switch (action) {
-      case 'open-editor': {
-        if (!entry.isDirectory) {
-          const { openFileInEditor } = useWorkspaceStore.getState();
-          void openFileInEditor(entry.path, resolvedWorkspaceId ?? undefined);
-        } else {
-          setExplorerSelectedPath(entry.path, resolvedWorkspaceId ?? undefined);
-          const hasChildren = Object.prototype.hasOwnProperty.call(explorerEntriesByPath, entry.path);
-          if (!explorerExpandedPaths.includes(entry.path) && !hasChildren) {
-            void loadDirectory(entry.path).then((result) => {
-              if (result.success) {
-                toggleExplorerPath(entry.path, resolvedWorkspaceId ?? undefined);
-              }
-            });
-          } else if (!explorerExpandedPaths.includes(entry.path)) {
-            toggleExplorerPath(entry.path, resolvedWorkspaceId ?? undefined);
-          }
-        }
-        break;
-      }
-
-      case 'open-terminal': {
-        const targetDir = entry.isDirectory ? entry.path : dirnamePath(entry.path);
-        const { addTerminal } = useWorkspaceStore.getState();
-
-        try {
-          const info = await window.electronAPI.spawnTerminal(targetDir);
-          addTerminal({
-            id: info.id,
-            pid: info.pid,
-            workingDir: targetDir,
-          });
-        } catch (error) {
-          console.error('Failed to open terminal:', error);
-        }
-        break;
-      }
-
-      case 'copy-path': {
-        await window.electronAPI.writeClipboard(entry.path);
-        break;
-      }
-
-      case 'copy-relative-path': {
-        const root = resolvedWorkspaceId
-          ? useWorkspaceStore.getState().getWorkspaceById(resolvedWorkspaceId)?.workspacePath ?? normalizedWorkspacePath
-          : normalizedWorkspacePath;
-        const nextRelativePath = root
-          ? (() => {
-              const resolved = relativePath(root, entry.path);
-              return resolved === '' || (resolved !== entry.path && !resolved.startsWith('..') && !isAbsolutePath(resolved))
-                ? resolved
-                : entry.path;
-            })()
-          : entry.path;
-        await window.electronAPI.writeClipboard(nextRelativePath);
-        break;
-      }
-
-      case 'reveal-in-files': {
-        await window.electronAPI.revealInFileManager(entry.path);
-        break;
-      }
-
-      case 'rename': {
-        setRenaming({ path: entry.path, originalName: entry.name });
-        break;
-      }
-
-      case 'delete': {
-        setDeleteTarget(entry);
-        break;
-      }
-    }
-  }, [closeContextMenu, explorerEntriesByPath, explorerExpandedPaths, loadDirectory, normalizedWorkspacePath, resolvedWorkspaceId, setExplorerSelectedPath, toggleExplorerPath]);
+    const state = useWorkspaceStore.getState();
+    await dispatchContextAction(action, entry, actionDeps, {
+      openFileInEditor: state.openFileInEditor,
+      addTerminal: state.addTerminal,
+      setRenaming,
+      setDeleteTarget,
+      getWorkspacePath: (id: string) => state.getWorkspaceById(id)?.workspacePath,
+    });
+  }, [closeContextMenu, actionDeps, setRenaming, setDeleteTarget]);
 
   const performDelete = useCallback(async () => {
     const entry = deleteTarget;
@@ -550,76 +440,27 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
 
     setDeleteTarget(null);
 
-    // Close any open editor tabs for the deleted file or files inside the deleted directory
     const state = useWorkspaceStore.getState();
     const liveWorkspace = resolvedWorkspaceId ? state.getWorkspaceById(resolvedWorkspaceId) : null;
-    const editorTabs = liveWorkspace?.editorTabs ?? [];
-    const { closeEditorTab } = state;
-    const tabsToClose = editorTabs.filter((tab) =>
-      tab.filePath === entry.path || isPathWithinBase(entry.path, tab.filePath)
+
+    await executeDelete(
+      entry,
+      liveWorkspace?.editorTabs ?? [],
+      normalizedWorkspacePath,
+      state.closeEditorTab,
+      actionDeps,
+      () => {
+        const latest = resolvedWorkspaceId
+          ? useWorkspaceStore.getState().getWorkspaceById(resolvedWorkspaceId)
+          : null;
+        return {
+          explorerEntriesByPath: latest?.explorerEntriesByPath ?? {},
+          explorerExpandedPaths: latest?.explorerExpandedPaths ?? [],
+          explorerSelectedPath: latest?.explorerSelectedPath ?? null,
+        };
+      },
     );
-
-    await Promise.all(tabsToClose.map((tab) => releaseEditorWatchForPath(normalizedWorkspacePath, tab.filePath)));
-
-    const result = await window.electronAPI.fileDelete({
-      workspacePath: normalizedWorkspacePath,
-      targetPath: entry.path,
-    });
-
-    if (!result.success) {
-      await Promise.all(tabsToClose.map((tab) => rewatchEditorPath(normalizedWorkspacePath, tab.filePath)));
-      const message = getFileInUseMessage(result);
-      if (result.errorCode === 'FILE_IN_USE') {
-        window.alert(message);
-      }
-      console.error('Failed to delete entry:', message);
-      return;
-    }
-    for (const tab of tabsToClose) {
-      closeEditorTab(tab.id, resolvedWorkspaceId ?? undefined);
-    }
-
-    const latestWorkspace = resolvedWorkspaceId ? useWorkspaceStore.getState().getWorkspaceById(resolvedWorkspaceId) : null;
-    const currentEntries = latestWorkspace?.explorerEntriesByPath ?? {};
-    const currentExpandedPaths = latestWorkspace?.explorerExpandedPaths ?? [];
-    const parentDir = dirnamePath(entry.path);
-    const parentEntries = currentEntries[parentDir] ?? [];
-    const updatedParentEntries = parentEntries.filter((child) => child.path !== entry.path);
-    setExplorerDirectoryEntries(parentDir, updatedParentEntries, resolvedWorkspaceId ?? undefined);
-
-    // Clear expanded state for the deleted entry or any children within it
-    const remainingExpandedPaths = filterPathsOutsideBase(entry.path, currentExpandedPaths);
-    if (remainingExpandedPaths.length !== currentExpandedPaths.length) {
-      setExplorerExpandedPaths(remainingExpandedPaths, resolvedWorkspaceId ?? undefined);
-    }
-
-    const selectedPath = resolvedWorkspaceId
-      ? useWorkspaceStore.getState().getWorkspaceById(resolvedWorkspaceId)?.explorerSelectedPath ?? null
-      : null;
-    if (selectedPath && (selectedPath === entry.path || isPathWithinBase(entry.path, selectedPath))) {
-      setExplorerSelectedPath(null, resolvedWorkspaceId ?? undefined);
-    }
-
-    if (entry.isDirectory) {
-      const staleDirectoryPaths = Object.keys(currentEntries).filter(
-        (cachedPath) => cachedPath === entry.path || isPathWithinBase(entry.path, cachedPath)
-      );
-      if (staleDirectoryPaths.length > 0) {
-        clearExplorerDirectoryState(staleDirectoryPaths, resolvedWorkspaceId ?? undefined);
-      }
-    }
-
-    void loadDirectory(parentDir);
-  }, [
-    deleteTarget,
-    normalizedWorkspacePath,
-    clearExplorerDirectoryState,
-    loadDirectory,
-    setExplorerDirectoryEntries,
-    setExplorerSelectedPath,
-    setExplorerExpandedPaths,
-    resolvedWorkspaceId,
-  ]);
+  }, [deleteTarget, normalizedWorkspacePath, resolvedWorkspaceId, actionDeps]);
 
   if (!explorerVisible || !normalizedWorkspacePath) {
     return null;
