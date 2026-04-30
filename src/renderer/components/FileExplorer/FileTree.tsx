@@ -71,6 +71,116 @@ export function toRelativePath(
   return absolutePath;
 }
 
+function TreeNodeIndicator({ isDirectory, isExpanded }: { isDirectory: boolean; isExpanded: boolean }) {
+  if (!isDirectory) {
+    return null;
+  }
+
+  return isExpanded ? <ChevronDown size={14} strokeWidth={2} /> : <ChevronRight size={14} strokeWidth={2} />;
+}
+
+function TreeNodeIcon({ entry, isExpanded }: { entry: FileExplorerEntry; isExpanded: boolean }) {
+  if (entry.isDirectory) {
+    return isExpanded ? <FolderOpen size={16} strokeWidth={2} /> : <Folder size={16} strokeWidth={2} />;
+  }
+
+  const { Icon, color } = getFileTypeConfig(entry.name);
+  return <Icon size={16} strokeWidth={2} style={{ color }} />;
+}
+
+function TreeNodeChildren({
+  entry,
+  depth,
+  isExpanded,
+  isLoading,
+  error,
+  childEntries,
+  workspaceId,
+  onLoadDirectory,
+  gitStatusByRelativePath,
+  descendantChangePaths,
+  workspaceRoot,
+  showHiddenFiles,
+  onContextMenu,
+  creating,
+  renaming,
+  onStartCreating,
+  onStartRenaming,
+  onCancelCreating,
+  onCancelRenaming,
+  onCommitCreating,
+  onCommitRenaming,
+}: {
+  entry: FileExplorerEntry;
+  depth: number;
+  isExpanded: boolean;
+  isLoading: boolean;
+  error?: string | null;
+  childEntries: FileExplorerEntry[];
+  workspaceId?: string;
+  onLoadDirectory: (directoryPath: string) => Promise<FileListDirectoryResult>;
+  gitStatusByRelativePath: Map<string, GitStatus>;
+  descendantChangePaths: Set<string>;
+  workspaceRoot: string;
+  showHiddenFiles: boolean;
+  onContextMenu: {(e: React.MouseEvent<HTMLButtonElement>, entry: FileExplorerEntry): void};
+  creating: { parentPath: string; type: 'file' | 'directory' } | null;
+  renaming: { path: string; originalName: string } | null;
+  onStartCreating: (parentPath: string, type: 'file' | 'directory') => void;
+  onStartRenaming: (path: string, originalName: string) => void;
+  onCancelCreating: () => void;
+  onCancelRenaming: () => void;
+  onCommitCreating: (name: string) => Promise<void>;
+  onCommitRenaming: (newName: string) => Promise<void>;
+}) {
+  if (!entry.isDirectory || !isExpanded) {
+    return null;
+  }
+
+  if (isLoading) {
+    return <div className="tree-node-status" style={{ paddingLeft: depth * 16 + 40 }}>Loading...</div>;
+  }
+
+  if (error) {
+    return <div className="tree-node-status error" style={{ paddingLeft: depth * 16 + 40 }}>{error}</div>;
+  }
+
+  return (
+    <>
+      {creating && creating.parentPath === entry.path ? (
+        <CreateInput
+          type={creating.type}
+          depth={depth + 1}
+          onCommit={onCommitCreating}
+          onCancel={onCancelCreating}
+        />
+      ) : null}
+      {childEntries.map((childEntry) => (
+        <TreeNode
+          key={childEntry.path}
+          workspaceId={workspaceId}
+          entry={childEntry}
+          depth={depth + 1}
+          onLoadDirectory={onLoadDirectory}
+          gitStatusByRelativePath={gitStatusByRelativePath}
+          descendantChangePaths={descendantChangePaths}
+          workspaceRoot={workspaceRoot}
+          showHiddenFiles={showHiddenFiles}
+          onContextMenu={onContextMenu}
+          creating={creating}
+          renaming={renaming}
+          onStartCreating={onStartCreating}
+          onStartRenaming={onStartRenaming}
+          onCancelCreating={onCancelCreating}
+          onCancelRenaming={onCancelRenaming}
+          onCommitCreating={onCommitCreating}
+          onCommitRenaming={onCommitRenaming}
+        />
+      ))}
+    </>
+  );
+}
+
 function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelativePath, descendantChangePaths, workspaceRoot, showHiddenFiles, onContextMenu, creating, renaming, onStartCreating, onStartRenaming, onCancelCreating, onCancelRenaming, onCommitCreating, onCommitRenaming }: TreeNodeProps) {
   const workspace = useScopedWorkspace(workspaceId);
   const {
@@ -169,17 +279,10 @@ function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelat
         }}
       >
         <span className="tree-node-indicator">
-          {entry.isDirectory ? (
-            isExpanded ? <ChevronDown size={14} strokeWidth={2} /> : <ChevronRight size={14} strokeWidth={2} />
-          ) : null}
+          <TreeNodeIndicator isDirectory={entry.isDirectory} isExpanded={isExpanded} />
         </span>
         <span className="tree-node-icon">
-          {entry.isDirectory ? (
-            isExpanded ? <FolderOpen size={16} strokeWidth={2} /> : <Folder size={16} strokeWidth={2} />
-          ) : (() => {
-            const { Icon, color } = getFileTypeConfig(entry.name);
-            return <Icon size={16} strokeWidth={2} style={{ color }} />;
-          })()}
+          <TreeNodeIcon entry={entry} isExpanded={isExpanded} />
         </span>
         {isRenaming ? (
           <input
@@ -198,47 +301,29 @@ function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelat
           <span className={`git-status-indicator git-${gitStatus?.status ?? 'modified'}`} />
         )}
       </button>
-      {entry.isDirectory && isExpanded ? (
-        <>
-          {isLoading ? <div className="tree-node-status" style={{ paddingLeft: depth * 16 + 40 }}>Loading...</div> : null}
-          {!isLoading && error ? <div className="tree-node-status error" style={{ paddingLeft: depth * 16 + 40 }}>{error}</div> : null}
-          {!isLoading && !error ? (
-            <>
-              {/* Inline create input — shown as first child of this directory */}
-              {creating && creating.parentPath === entry.path ? (
-                <CreateInput
-                  type={creating.type}
-                  depth={depth + 1}
-                  onCommit={onCommitCreating}
-                  onCancel={onCancelCreating}
-                />
-              ) : null}
-              {childEntries.map((childEntry) => (
-                <TreeNode
-                  key={childEntry.path}
-                  workspaceId={workspaceId}
-                  entry={childEntry}
-                  depth={depth + 1}
-                  onLoadDirectory={onLoadDirectory}
-                  gitStatusByRelativePath={gitStatusByRelativePath}
-                  descendantChangePaths={descendantChangePaths}
-                  workspaceRoot={workspaceRoot}
-                  showHiddenFiles={showHiddenFiles}
-                  onContextMenu={onContextMenu}
-                  creating={creating}
-                  renaming={renaming}
-                  onStartCreating={onStartCreating}
-                  onStartRenaming={onStartRenaming}
-                  onCancelCreating={onCancelCreating}
-                  onCancelRenaming={onCancelRenaming}
-                  onCommitCreating={onCommitCreating}
-                  onCommitRenaming={onCommitRenaming}
-                />
-              ))}
-            </>
-          ) : null}
-        </>
-      ) : null}
+      <TreeNodeChildren
+        entry={entry}
+        depth={depth}
+        isExpanded={isExpanded}
+        isLoading={isLoading}
+        error={error}
+        childEntries={childEntries}
+        workspaceId={workspaceId}
+        onLoadDirectory={onLoadDirectory}
+        gitStatusByRelativePath={gitStatusByRelativePath}
+        descendantChangePaths={descendantChangePaths}
+        workspaceRoot={workspaceRoot}
+        showHiddenFiles={showHiddenFiles}
+        onContextMenu={onContextMenu}
+        creating={creating}
+        renaming={renaming}
+        onStartCreating={onStartCreating}
+        onStartRenaming={onStartRenaming}
+        onCancelCreating={onCancelCreating}
+        onCancelRenaming={onCancelRenaming}
+        onCommitCreating={onCommitCreating}
+        onCommitRenaming={onCommitRenaming}
+      />
     </>
   );
 }
