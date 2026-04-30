@@ -1,6 +1,6 @@
 {
   "name": "clanker-grid",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Developer workspace tool with terminal grid and web browser",
   "main": "dist/main/main/main.js",
   "author": "Jay (Bynzski) <Bynzski@proton.me>",
