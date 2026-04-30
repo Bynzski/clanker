@@ -26,7 +26,7 @@ const execFileAsync = promisify(execFile);
 
 interface TempRepo {
   path: string;
-  cleanup: () => void;
+  cleanup: () => Promise<void>;
 }
 
 // ============================================================================
@@ -48,9 +48,9 @@ beforeEach(() => {
   resetService();
 });
 
-afterEach(() => {
+afterEach(async () => {
   if (repo) {
-    repo.cleanup();
+    await repo.cleanup();
     repo = null;
   }
 });
@@ -171,7 +171,7 @@ describe('getStatus - edge cases with real git', () => {
       fs.writeFileSync(path.join(tempDir, 'uncommitted.txt'), 'content');
       await execFileAsync('git', ['add', '.'], { cwd: tempDir });
       
-      repo = { path: tempDir, cleanup: () => {} };
+      repo = { path: tempDir, cleanup: async () => {} };
       
       const result = await service.getStatus(repo.path);
       
@@ -263,7 +263,7 @@ describe('getStatus - failure handling with real git', () => {
   it('returns not-a-repo for non-git directory', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'not-a-repo-'));
     try {
-      repo = { path: tempDir, cleanup: () => {} };
+      repo = { path: tempDir, cleanup: async () => {} };
       
       const result = await service.getStatus(repo.path);
       
@@ -291,7 +291,7 @@ describe('getStatus - failure handling with real git', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'no-git-'));
     try {
       fs.writeFileSync(path.join(tempDir, 'file.txt'), 'content');
-      repo = { path: tempDir, cleanup: () => {} };
+      repo = { path: tempDir, cleanup: async () => {} };
       
       const result = await service.getStatus(repo.path);
       
@@ -327,7 +327,7 @@ describe('getStatus - upstream tracking with real git', () => {
     expect(result.upstream).toContain('origin/main');
     expect(result.ahead).toBeGreaterThanOrEqual(1);
     
-    repo.cleanup();
+    await repo.cleanup();
     repo = null;
   });
 
@@ -344,7 +344,7 @@ describe('getStatus - upstream tracking with real git', () => {
     expect(result.ahead).toBe(0);
     expect(result.behind).toBe(0);
     
-    repo.cleanup();
+    await repo.cleanup();
     repo = null;
   });
 
@@ -388,7 +388,7 @@ describe('getStatus - result structure verification', () => {
   it('returns complete result structure on failure', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fail-test-'));
     try {
-      repo = { path: tempDir, cleanup: () => {} };
+      repo = { path: tempDir, cleanup: async () => {} };
       
       const result = await service.getStatus(repo.path);
       
@@ -503,7 +503,7 @@ describe('getStatus - cleanup and resource handling', () => {
     expect(result1.success).toBe(true);
     
     // Clean up the repo
-    repo.cleanup();
+    await repo.cleanup();
     fs.rmSync(originalPath, { recursive: true, force: true });
     
     // Second call should fail gracefully

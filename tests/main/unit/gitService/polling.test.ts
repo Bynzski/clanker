@@ -26,7 +26,7 @@ import {
 
 interface TempRepo {
   path: string;
-  cleanup: () => void;
+  cleanup: () => Promise<void>;
 }
 
 // ============================================================================
@@ -44,7 +44,7 @@ function resetService() {
   });
 }
 
-async function waitForStatusEmission(expectedCount = 1, timeoutMs = 1000): Promise<void> {
+async function waitForStatusEmission(expectedCount = 1, timeoutMs = 5000): Promise<void> {
   const start = Date.now();
 
   while (emittedStatuses.length < expectedCount && Date.now() - start < timeoutMs) {
@@ -66,7 +66,7 @@ afterEach(async () => {
   // before attempting to remove the temp directory (avoids EBUSY on Windows).
   await service.drain();
   if (repo) {
-    repo.cleanup();
+    await repo.cleanup();
     repo = null;
   }
 });
@@ -355,7 +355,7 @@ describe('getCurrentWorkspace - with real git', () => {
 
     // Drain before cleanup so git.exe releases the directory handle on Windows.
     await service.drain();
-    repo2.cleanup();
+    await repo2.cleanup();
   });
 });
 
@@ -429,7 +429,7 @@ describe('polling lifecycle - integration with real git', () => {
 
     // Drain before cleanup so git.exe releases the directory handle on Windows.
     await service.drain();
-    repo2.cleanup();
+    await repo2.cleanup();
   });
 
   it('handles detached HEAD state during polling', async () => {

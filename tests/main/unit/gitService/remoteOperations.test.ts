@@ -14,7 +14,7 @@ import {
 
 interface TempRepo {
   path: string;
-  cleanup: () => void;
+  cleanup: () => Promise<void>;
 }
 
 // ============================================================================
@@ -34,17 +34,17 @@ beforeEach(() => {
   resetService();
 });
 
-afterEach(() => {
+afterEach(async () => {
   if (repo) {
-    repo.cleanup();
+    await repo.cleanup();
     repo = null;
   }
   if (localRepo) {
-    localRepo.cleanup();
+    await localRepo.cleanup();
     localRepo = null;
   }
   if (remoteRepo) {
-    remoteRepo.cleanup();
+    await remoteRepo.cleanup();
     remoteRepo = null;
   }
 });
@@ -296,7 +296,7 @@ describe('addRemote - happy path with real git', () => {
       
       expect(await remoteExists(repo.path, 'local-mirror')).toBe(true);
     } finally {
-      otherRepo.cleanup();
+      await otherRepo.cleanup();
     }
   });
 });
