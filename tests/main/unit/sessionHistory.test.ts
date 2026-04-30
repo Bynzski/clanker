@@ -82,12 +82,130 @@ function makeReadableLines(lines: string[]): Readable {
 // Imports (after mocks are set up)
 // ============================================================================
 
-import { discoverSessions, buildSessionInvokeArgs, clearSessionCache } from '../../../src/main/sessionHistory';
+import {
+  discoverSessions,
+  buildSessionInvokeArgs,
+  clearSessionCache,
+  sessionMatchesWorkspace,
+  encodeClaudeProjectDir,
+} from '../../../src/main/sessionHistory';
 import type { HarnessSession } from '../../../src/shared/types/session';
 
 // ============================================================================
 // Tests
 // ============================================================================
+
+describe('encodeClaudeProjectDir', () => {
+  it('encodes a POSIX path the same way Claude Code does', () => {
+    // Leading dash comes from the leading `/`, not a prepended dash.
+    expect(encodeClaudeProjectDir('/home/jay/dev/projects/foo')).toBe(
+      '-home-jay-dev-projects-foo'
+    );
+  });
+
+  it('encodes a Windows path with drive letter (colon and backslash each become a dash)', () => {
+    // `C:\` → `C--` (one dash for `:`, one for `\`), so no leading dash.
+    expect(encodeClaudeProjectDir('C:\\Users\\jay\\dev\\projects\\foo')).toBe(
+      'C--Users-jay-dev-projects-foo'
+    );
+  });
+
+  it('encodes a Windows path with forward-slash separators', () => {
+    expect(encodeClaudeProjectDir('C:/Users/jay/dev/projects/foo')).toBe(
+      'C--Users-jay-dev-projects-foo'
+    );
+  });
+
+  it('encodes a UNC path with leading double-backslash', () => {
+    // Each leading `\` produces its own dash, matching Claude Code's
+    // observed behavior for UNC paths.
+    expect(encodeClaudeProjectDir('\\\\server\\share\\foo')).toBe('--server-share-foo');
+  });
+
+  it('returns empty string for empty workspace', () => {
+    expect(encodeClaudeProjectDir('')).toBe('');
+  });
+
+  it('replaces non-ASCII and special characters with dashes', () => {
+    expect(encodeClaudeProjectDir('/home/jay/my project')).toBe('-home-jay-my-project');
+  });
+});
+
+describe('sessionMatchesWorkspace', () => {
+  it('returns true when workspace is empty (no filter)', () => {
+    expect(sessionMatchesWorkspace('', '/anything')).toBe(true);
+  });
+
+  it('returns false when candidate is empty', () => {
+    expect(sessionMatchesWorkspace('/home/jay/foo', '')).toBe(false);
+  });
+
+  it('matches exact POSIX path', () => {
+    expect(sessionMatchesWorkspace('/home/jay/foo', '/home/jay/foo')).toBe(true);
+  });
+
+  it('matches child POSIX path', () => {
+    expect(sessionMatchesWorkspace('/home/jay/foo', '/home/jay/foo/src')).toBe(true);
+  });
+
+  it('rejects sibling whose name shares a prefix', () => {
+    expect(sessionMatchesWorkspace('/home/jay/foo', '/home/jay/foo-old')).toBe(false);
+    expect(sessionMatchesWorkspace('/home/jay/foo', '/home/jay/fooold')).toBe(false);
+  });
+
+  it('matches across mixed separators (workspace native, cwd posix)', () => {
+    // Both inputs normalize to forward-slash form before compare, so a
+    // Windows-style workspace still matches a JSONL cwd that was stored
+    // with forward slashes.
+    expect(
+      sessionMatchesWorkspace('C:\\Users\\jay\\foo', 'C:/Users/jay/foo/src')
+    ).toBe(true);
+  });
+
+  it('matches across mixed separators (workspace posix, cwd native)', () => {
+    expect(
+      sessionMatchesWorkspace('C:/Users/jay/foo', 'C:\\Users\\jay\\foo\\src')
+    ).toBe(true);
+  });
+
+  describe('on Windows (case-insensitive)', () => {
+    let originalPlatform: PropertyDescriptor | undefined;
+    beforeEach(() => {
+      originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    });
+    afterEach(() => {
+      if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
+    });
+
+    it('matches when drive letter case differs', () => {
+      expect(sessionMatchesWorkspace('C:\\Users\\jay\\foo', 'c:\\users\\jay\\foo\\src')).toBe(true);
+    });
+
+    it('matches when path segments differ in case', () => {
+      expect(sessionMatchesWorkspace('C:\\Users\\Jay\\Foo', 'C:\\users\\jay\\foo\\src')).toBe(true);
+    });
+
+    it('still rejects sibling directories that case-collapse-prefix', () => {
+      expect(sessionMatchesWorkspace('C:\\Users\\jay\\foo', 'C:\\Users\\jay\\foo-old')).toBe(false);
+    });
+  });
+
+  describe('on POSIX (case-sensitive)', () => {
+    let originalPlatform: PropertyDescriptor | undefined;
+    beforeEach(() => {
+      originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    });
+    afterEach(() => {
+      if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
+    });
+
+    it('treats different-case POSIX paths as different', () => {
+      expect(sessionMatchesWorkspace('/home/jay/Foo', '/home/jay/foo/src')).toBe(false);
+    });
+  });
+});
 
 describe('buildSessionInvokeArgs', () => {
   const wrapper = TEST_HARNESS_WRAPPER;
@@ -561,6 +679,152 @@ describe('discoverSessions — codex title precedence', () => {
     const codexSessions = sessions.filter((s) => s.harness === 'codex');
     expect(codexSessions).toHaveLength(1);
     expect(codexSessions[0].title).toBe('Codex session');
+  });
+});
+
+// ============================================================================
+// discoverSessions — codex orphaned session title resolution
+// ============================================================================
+
+describe('discoverSessions — codex orphaned title resolution', () => {
+  const ORPHAN_ID = '019d35b9-09ea-71e1-b368-dca5fbf08b07';
+  const ORPHAN_FILE = `rollout-2026-04-16T13-03-37-${ORPHAN_ID}.jsonl`;
+
+  const sessionMetaLine = JSON.stringify({
+    type: 'session_meta',
+    timestamp: '2026-04-16T13:03:37.381Z',
+    payload: {
+      id: ORPHAN_ID,
+      cwd: TEST_WORKSPACE,
+      originator: 'codex_vscode',
+      model_provider: 'openai',
+    },
+  });
+
+  const taskStartedLine = JSON.stringify({
+    type: 'event_msg',
+    payload: { type: 'task_started' },
+  });
+
+  const responseItemLine = JSON.stringify({
+    type: 'response_item',
+    payload: { type: 'message' },
+  });
+
+  const turnContextLine = JSON.stringify({ type: 'turn_context' });
+
+  const userMessageLine = (text: string) => JSON.stringify({
+    type: 'event_msg',
+    payload: { type: 'user_message', message: text, images: [], local_images: [], text_elements: [] },
+  });
+
+  beforeEach(() => {
+    clearSessionCache();
+    vi.clearAllMocks();
+
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
+      cb(new Error('not found'), '', '');
+    });
+
+    mockReaddir.mockImplementation((dir: string) => {
+      if (String(dir).includes('.codex') && String(dir).includes('sessions')) {
+        if (String(dir).endsWith('sessions')) {
+          const dirent = { name: '2026', isDirectory: () => true, isFile: () => false } as import('fs').Dirent;
+          return Promise.resolve([dirent]);
+        }
+        if (String(dir).endsWith('2026')) {
+          const dirent = { name: '04', isDirectory: () => true, isFile: () => false } as import('fs').Dirent;
+          return Promise.resolve([dirent]);
+        }
+        if (String(dir).endsWith('04')) {
+          const dirent = { name: '16', isDirectory: () => true, isFile: () => false } as import('fs').Dirent;
+          return Promise.resolve([dirent]);
+        }
+        if (String(dir).endsWith('16')) {
+          const dirent = {
+            name: ORPHAN_FILE,
+            isDirectory: () => false,
+            isFile: () => true,
+          } as import('fs').Dirent;
+          return Promise.resolve([dirent]);
+        }
+      }
+      return Promise.reject(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+    });
+
+    // Empty index — session is orphaned
+    mockReadFile.mockImplementation((filePath: string) => {
+      if (String(filePath).endsWith('session_index.jsonl')) {
+        return Promise.resolve('');
+      }
+      return Promise.reject(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+    });
+
+    mockStat.mockResolvedValue({ mtimeMs: 1700000000000 });
+  });
+
+  afterEach(() => {
+    clearSessionCache();
+  });
+
+  it('uses first user_message text as title when session is orphaned (not in index)', async () => {
+    // Mirror real Codex layout: user_message appears on line 7 after session_meta,
+    // task_started, response_items, and a turn_context.
+    const lines = [
+      sessionMetaLine,
+      taskStartedLine,
+      responseItemLine,
+      responseItemLine,
+      turnContextLine,
+      responseItemLine,
+      userMessageLine('Investigate why the deploy pipeline is failing on staging'),
+    ];
+    mockCreateReadStream.mockImplementation((filePath: string) => {
+      if (String(filePath).includes(ORPHAN_ID)) {
+        return makeReadableLines(lines);
+      }
+      const err = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      return new Readable({ read() { this.destroy(err); } });
+    });
+
+    const sessions = await discoverSessions(TEST_WORKSPACE);
+    const codexSessions = sessions.filter((s) => s.harness === 'codex');
+    expect(codexSessions).toHaveLength(1);
+    expect(codexSessions[0].id).toBe(ORPHAN_ID);
+    expect(codexSessions[0].title).toBe('Investigate why the deploy pipeline is failing on staging');
+  });
+
+  it('truncates long user messages to 120 chars', async () => {
+    const long = 'a'.repeat(300);
+    const lines = [sessionMetaLine, userMessageLine(long)];
+    mockCreateReadStream.mockImplementation((filePath: string) => {
+      if (String(filePath).includes(ORPHAN_ID)) {
+        return makeReadableLines(lines);
+      }
+      const err = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      return new Readable({ read() { this.destroy(err); } });
+    });
+
+    const sessions = await discoverSessions(TEST_WORKSPACE);
+    const codexSessions = sessions.filter((s) => s.harness === 'codex');
+    expect(codexSessions).toHaveLength(1);
+    expect(codexSessions[0].title).toHaveLength(120);
+  });
+
+  it('falls back to cwd basename when no user_message exists in scanned lines', async () => {
+    const lines = [sessionMetaLine, taskStartedLine, responseItemLine];
+    mockCreateReadStream.mockImplementation((filePath: string) => {
+      if (String(filePath).includes(ORPHAN_ID)) {
+        return makeReadableLines(lines);
+      }
+      const err = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      return new Readable({ read() { this.destroy(err); } });
+    });
+
+    const sessions = await discoverSessions(TEST_WORKSPACE);
+    const codexSessions = sessions.filter((s) => s.harness === 'codex');
+    expect(codexSessions).toHaveLength(1);
+    expect(codexSessions[0].title).toBe(path.basename(TEST_WORKSPACE));
   });
 });
 

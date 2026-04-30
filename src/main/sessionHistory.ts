@@ -30,6 +30,11 @@ import { toNativePath, toPosixPath } from '../shared/pathNormalize';
  *   ✓ `/home/jay/dev/projects/foo/src`    — child path
  *   ✗ `/home/jay/dev/projects/foo-old`    — sibling (prefix match only)
  *   ✗ `/home/jay/dev/projects/fooold`     — sibling (different dirname)
+ *
+ * Both inputs are normalized to forward-slash form before comparison so the
+ * check works whether either side stored the path with `/` or `\`. On Windows
+ * the comparison is case-insensitive, since paths there are case-insensitive
+ * (the JSONL cwd may differ in case from the workspace).
  */
 export function sessionMatchesWorkspace(
   workspacePath: string,
@@ -37,14 +42,32 @@ export function sessionMatchesWorkspace(
 ): boolean {
   if (!workspacePath) return true;
   if (!candidatePath) return false;
-  const sep = path.sep;
-  const normedWorkspace = workspacePath.endsWith(sep)
-    ? workspacePath
-    : workspacePath + sep;
-  const normedCandidate = candidatePath.endsWith(sep)
-    ? candidatePath
-    : candidatePath + sep;
-  return normedCandidate.startsWith(normedWorkspace);
+  const norm = (p: string): string => {
+    let s = p.replace(/\\/g, '/');
+    if (process.platform === 'win32') s = s.toLowerCase();
+    return s.endsWith('/') ? s : s + '/';
+  };
+  return norm(candidatePath).startsWith(norm(workspacePath));
+}
+
+/**
+ * Encode a workspace path into the directory-name form used by Claude Code
+ * under `~/.claude/projects/`.
+ *
+ * The rule is the same on every platform: replace each non-`[A-Za-z0-9-]`
+ * character with `-` without collapsing runs. On POSIX the leading `/` is
+ * what produces the leading dash (`/home/jay/foo` → `-home-jay-foo`); on
+ * Windows there is no leading separator so the result starts with the drive
+ * letter (`C:\Users\jay\foo` → `C--Users-jay-foo`, since `:` and `\` each
+ * become a dash). UNC paths keep their double leading dash
+ * (`\\server\share\foo` → `--server-share-foo`).
+ *
+ * Returns an empty string for an empty workspace path so callers can use the
+ * result as a `startsWith` filter that matches everything.
+ */
+export function encodeClaudeProjectDir(workspacePath: string): string {
+  if (!workspacePath) return '';
+  return workspacePath.replace(/[^A-Za-z0-9-]/g, '-');
 }
 
 // ============================================================================
@@ -437,10 +460,11 @@ async function buildCodexFileMap(sessionsDir: string): Promise<Map<string, strin
 }
 
 /**
- * Read first ~10 lines of a Codex session file and return the first user_message content.
+ * Read leading lines of a Codex session file and return the first user_message content.
  * Returns null if no user message is found.
  */
 async function readCodexFirstUserMessage(filePath: string): Promise<string | null> {
+  const MAX_LINES = 30;
   return new Promise<string | null>((resolve) => {
     let stream: fs.ReadStream | null = null;
     let linesRead = 0;
@@ -448,7 +472,7 @@ async function readCodexFirstUserMessage(filePath: string): Promise<string | nul
       stream = fs.createReadStream(filePath, { encoding: 'utf8', highWaterMark: 16 * 1024 });
       const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
       rl.on('line', (line) => {
-        if (!line.trim() || linesRead > 10) {
+        if (!line.trim() || linesRead > MAX_LINES) {
           linesRead++;
           return;
         }
@@ -469,9 +493,11 @@ async function readCodexFirstUserMessage(filePath: string): Promise<string | nul
             typeof payload.message === 'string' &&
             payload.message.trim()
           ) {
+            // Resolve before closing — rl.close() emits 'close' synchronously, which
+            // would otherwise fire the close handler's resolve(null) first.
+            resolve(payload.message.trim().slice(0, 120));
             rl.close();
             stream?.destroy();
-            resolve(payload.message.trim().slice(0, 120));
             return;
           }
         }
@@ -817,11 +843,7 @@ async function discoverClaudeSessions(workspacePath: string): Promise<HarnessSes
   const homeDir = os.homedir();
   const claudeProjectsDir = path.join(homeDir, '.claude', 'projects');
 
-  // Encode: /home/jay/dev/projects/foo → -home-jay-dev-projects-foo
-  const encodedWorkspacePath = toPosixPath(workspacePath);
-  const encodedPrefix = encodedWorkspacePath
-    ? `-${encodedWorkspacePath.replace(/^\//, '').replace(/\//g, '-')}`
-    : '';
+  const encodedPrefix = encodeClaudeProjectDir(workspacePath);
 
   let dirEntries: fs.Dirent[];
   try {
