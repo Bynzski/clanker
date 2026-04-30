@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Removed
+
+- **Unused test helper exports** — deleted 27 unused exports across 5 test infrastructure files. In `gitTestHelpers.ts`, removed 13 dead-code functions (`getCurrentBranch`, `getBranches`, `branchExists`, `createBranch`, `switchBranch`, `deleteBranch`, `getStatus`, `stash`, `listStashes`, `applyStash`, `dropStash`, `createConflict`, `abortMerge`) and inlined the `getStatus` call in `getWorkingTreeFiles`. In `tempPaths.ts`, deleted 5 unused path helpers (`testWorkspace`, `testClankerGridDir`, `testPiSessionsDir`, `testSshKey`, `testPath`). In `httpContractHelpers.ts`, deleted 5 response factory functions (`jsonResponse`, `rateLimitResponse`, `emptyResponse`, `malformedJsonResponse`, `serverErrorResponse`). Dropped `export` on `createElectronApiMock` (electron.ts, internal-only), `createBrowserTabFixture`, `createBrowserPaneFixture`, `createPaneFixture` (fixtures.ts, internal-only). Resolves #12.
+
 ### Added
 
 - **`.fallowrc.json`** — fallow configuration teaching it about the Electron architecture: Vite entry points (`main.tsx`, `index.html`), the renderer ambient declaration `electron.d.ts`, and `shared/types/credentials.ts` (whose IPC types are only consumed via the ambient declaration). An override turns off `unresolved-imports` for `electron.d.ts` since fallow can't resolve relative imports out of `.d.ts` files. Drops unresolved-import noise from 45 to 0 and unused-file noise from 5 to 2 (both genuine). Resolves #8.

@@ -14,32 +14,9 @@ export function testHome(): string {
   return path.join(os.tmpdir(), 'clanker-test-home');
 }
 
-/** Platform-appropriate workspace path under the test home. */
-export function testWorkspace(name = 'project'): string {
-  return path.join(testHome(), name);
-}
-
 /** Platform-appropriate harness wrapper script path. */
 export function testHarnessWrapper(): string {
   return path.join(testHome(), '.clanker-grid', 'harness-wrapper.sh');
 }
 
-/** Platform-appropriate .clanker-grid directory. */
-export function testClankerGridDir(): string {
-  return path.join(testHome(), '.clanker-grid');
-}
 
-/** Platform-appropriate .pi session directory. */
-export function testPiSessionsDir(): string {
-  return path.join(testHome(), '.pi', 'agent', 'sessions', 'dir');
-}
-
-/** Platform-appropriate SSH key path. */
-export function testSshKey(name = 'id_ed25519'): string {
-  return path.join(testHome(), '.ssh', name);
-}
-
-/** Build a nested path under the test home. */
-export function testPath(...segments: string[]): string {
-  return path.join(testHome(), ...segments);
-}

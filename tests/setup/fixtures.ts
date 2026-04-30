@@ -1,6 +1,5 @@
-import type { BrowserPaneState, BrowserTab, Pane, Terminal, WorkspaceTab } from '../../src/renderer/store/workspaceTypes';
+import type { Pane, Terminal, WorkspaceTab } from '../../src/renderer/store/workspaceTypes';
 import {
-  DEFAULT_NEW_TAB_URL,
   DEFAULT_RUNTIME_STATE,
 } from '../../src/renderer/store/workspaceStoreHelpers';
 
@@ -13,33 +12,12 @@ export function createTerminalFixture(overrides: Partial<Terminal> = {}): Termin
   };
 }
 
-export function createBrowserTabFixture(overrides: Partial<BrowserTab> = {}): BrowserTab {
-  return {
-    id: 'browser-tab-1',
-    url: DEFAULT_NEW_TAB_URL,
-    title: '',
-    canGoBack: false,
-    canGoForward: false,
-    ...overrides,
-  };
-}
-
 /**
  * Build a valid browser pane fixture with at least one tab and a matching activeTabId.
  * Use this in tests that need a non-null browserPane.
  */
-export function createBrowserPaneFixture(overrides: Partial<BrowserPaneState> = {}): BrowserPaneState {
-  const tab = createBrowserTabFixture();
-  return {
-    id: 'browser-pane-1',
-    position: { x: 0, y: 0, w: 6, h: 6 },
-    tabs: [tab],
-    activeTabId: tab.id,
-    ...overrides,
-  };
-}
 
-export function createPaneFixture(overrides: Partial<Pane> = {}): Pane {
+function createPaneFixture(overrides: Partial<Pane> = {}): Pane {
   return {
     id: 'pane-1',
     terminalId: 'terminal-1',

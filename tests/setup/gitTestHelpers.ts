@@ -214,73 +214,6 @@ export async function commit(repoPath: string, message: string): Promise<string>
 }
 
 /**
- * Get the current branch name.
- */
-export async function getCurrentBranch(repoPath: string): Promise<string> {
-  const result = await git(repoPath, ['branch', '--show-current']);
-  return result.stdout.trim();
-}
-
-/**
- * Get list of branches.
- */
-export async function getBranches(repoPath: string): Promise<string[]> {
-  const result = await git(repoPath, ['branch', '--format=%(refname:short)']);
-  return result.stdout.trim().split('\n').filter(Boolean);
-}
-
-/**
- * Check if a branch exists.
- */
-export async function branchExists(repoPath: string, branchName: string): Promise<boolean> {
-  const branches = await getBranches(repoPath);
-  return branches.includes(branchName);
-}
-
-/**
- * Create a branch without switching to it.
- */
-export async function createBranch(repoPath: string, branchName: string): Promise<void> {
-  const result = await git(repoPath, ['branch', branchName]);
-  if (result.exitCode !== 0) {
-    throw new Error(`Failed to create branch: ${result.stderr}`);
-  }
-}
-
-/**
- * Switch to a branch.
- */
-export async function switchBranch(repoPath: string, branchName: string): Promise<void> {
-  // Try switch first (git 2.23+), fall back to checkout
-  let result = await git(repoPath, ['switch', branchName]);
-  if (result.exitCode !== 0) {
-    result = await git(repoPath, ['checkout', branchName]);
-  }
-  if (result.exitCode !== 0) {
-    throw new Error(`Failed to switch branch: ${result.stderr}`);
-  }
-}
-
-/**
- * Delete a branch.
- */
-export async function deleteBranch(repoPath: string, branchName: string, force = false): Promise<void> {
-  const flag = force ? '-D' : '-d';
-  const result = await git(repoPath, ['branch', flag, branchName]);
-  if (result.exitCode !== 0) {
-    throw new Error(`Failed to delete branch: ${result.stderr}`);
-  }
-}
-
-/**
- * Get git status in porcelain format.
- */
-export async function getStatus(repoPath: string): Promise<string> {
-  const result = await git(repoPath, ['status', '--porcelain=v2']);
-  return result.stdout;
-}
-
-/**
  * Get the staged files from git diff --cached --name-only.
  */
 export async function getStagedFiles(repoPath: string): Promise<string[]> {
@@ -296,7 +229,8 @@ export async function getWorkingTreeFiles(repoPath: string): Promise<{
   untracked: string[];
   staged: string[];
 }> {
-  const status = await getStatus(repoPath);
+  const statusResult = await git(repoPath, ['status', '--porcelain=v2']);
+  const status = statusResult.stdout;
   const modified: string[] = [];
   const untracked: string[] = [];
   const staged: string[] = [];
@@ -326,89 +260,6 @@ export async function getWorkingTreeFiles(repoPath: string): Promise<{
   return { modified, untracked, staged };
 }
 
-/**
- * Stash changes.
- */
-export async function stash(repoPath: string, message?: string): Promise<void> {
-  const args = message ? ['stash', 'push', '-m', message] : ['stash', 'push'];
-  const result = await git(repoPath, args);
-  if (result.exitCode !== 0) {
-    throw new Error(`Failed to stash: ${result.stderr}`);
-  }
-}
 
-/**
- * Get list of stash entries.
- */
-export async function listStashes(repoPath: string): Promise<{ ref: string; message: string }[]> {
-  const result = await git(repoPath, ['stash', 'list', '--format=%gd|%s']);
-  if (result.exitCode !== 0) {
-    return [];
-  }
-  return result.stdout
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const [ref, ...msgParts] = line.split('|');
-      return { ref, message: msgParts.join('|') };
-    });
-}
 
-/**
- * Apply a stash and optionally drop it.
- */
-export async function applyStash(repoPath: string, stashRef: string, pop = false): Promise<void> {
-  const cmd = pop ? ['stash', 'pop', stashRef] : ['stash', 'apply', stashRef];
-  const result = await git(repoPath, cmd);
-  if (result.exitCode !== 0) {
-    throw new Error(`Failed to ${pop ? 'pop' : 'apply'} stash: ${result.stderr}`);
-  }
-}
 
-/**
- * Drop a stash entry.
- */
-export async function dropStash(repoPath: string, stashRef: string): Promise<void> {
-  const result = await git(repoPath, ['stash', 'drop', stashRef]);
-  if (result.exitCode !== 0) {
-    throw new Error(`Failed to drop stash: ${result.stderr}`);
-  }
-}
-
-/**
- * Create a conflicting state for merge testing.
- */
-export async function createConflict(repoPath: string, branchName: string): Promise<void> {
-  // Create and commit on main
-  await createFile(repoPath, 'conflict.txt', 'Original content\n', true);
-  await commit(repoPath, 'Add conflict file');
-
-  // Create branch and modify
-  await createBranch(repoPath, branchName);
-  await switchBranch(repoPath, branchName);
-  await modifyFile(repoPath, 'conflict.txt', 'Branch content\n', true);
-  await commit(repoPath, 'Modify on branch');
-
-  // Switch back to main and modify differently
-  await switchBranch(repoPath, 'main');
-  await modifyFile(repoPath, 'conflict.txt', 'Main content\n', true);
-  await commit(repoPath, 'Modify on main');
-
-  // Attempt merge (will conflict)
-  await git(repoPath, ['merge', branchName]);
-}
-
-/**
- * Abort an ongoing merge or rebase.
- */
-export async function abortMerge(repoPath: string): Promise<void> {
-  const result = await git(repoPath, ['merge', '--abort']);
-  if (result.exitCode !== 0) {
-    // Try rebase abort
-    const rebaseResult = await git(repoPath, ['rebase', '--abort']);
-    if (rebaseResult.exitCode !== 0) {
-      throw new Error(`Failed to abort: ${rebaseResult.stderr}`);
-    }
-  }
-}
