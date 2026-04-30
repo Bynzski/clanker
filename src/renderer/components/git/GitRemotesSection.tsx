@@ -4,6 +4,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import type { RefObject } from 'react';
 import { Plus, Trash2, Edit2, X, Loader2, Check, AlertCircle, Globe, Network } from 'lucide-react';
 import type { VcsProvider } from '../../../shared/types/vcs';
 import './GitRemotesSection.css';
@@ -31,7 +32,112 @@ interface RemoteFormState {
   error: string | null;
 }
 
+interface RemoteNameInputProps {
+  id: string;
+  value: string;
+  placeholder: string;
+  disabled: boolean;
+  inputRef: RefObject<HTMLInputElement | null>;
+  showError: boolean;
+  showSuccess: boolean;
+  onChange: (value: string) => void;
+  onEnter: () => void;
+  onEscape: () => void;
+}
+
 const REMOTE_NAME_SUGGESTIONS = ['origin', 'upstream', 'github', 'gitlab', 'bitbucket'];
+
+function RemoteNameInput({ id, value, placeholder, disabled, inputRef, showError, showSuccess, onChange, onEnter, onEscape }: RemoteNameInputProps) {
+  return (
+    <div className="git-remotes-input-row">
+      <input
+        ref={inputRef}
+        id={id}
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="git-remotes-input"
+        disabled={disabled}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            onEnter();
+          } else if (e.key === 'Escape') {
+            onEscape();
+          }
+        }}
+      />
+      {showError ? (
+        <AlertCircle size={14} className="git-remotes-input-icon git-remotes-input-icon-error" />
+      ) : showSuccess ? (
+        <Check size={14} className="git-remotes-input-icon git-remotes-input-icon-success" />
+      ) : null}
+    </div>
+  );
+}
+
+function RemoteFormError({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <div className="git-remotes-form-error">
+      <AlertCircle size={12} />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function RemoteList({
+  remotes,
+  onAdd,
+  onEdit,
+  onRemove,
+}: {
+  remotes: GitRemoteEntry[];
+  onAdd: () => void;
+  onEdit: (remote: GitRemoteEntry) => void;
+  onRemove: (name: string) => void;
+}) {
+  return (
+    <div className="git-remotes-list">
+      {remotes.length === 0 ? (
+        <div className="git-remotes-empty">
+          <Network size={24} strokeWidth={1.5} />
+          <p>No remotes configured</p>
+          <span className="git-remotes-hint">Add a remote to connect to a repository host</span>
+          <button type="button" className="git-remotes-empty-add-btn" onClick={onAdd}>
+            <Plus size={12} />
+            Add remote
+          </button>
+        </div>
+      ) : (
+        remotes.map((remote) => (
+          <div key={remote.name} className="git-remote-item">
+            <div className="git-remote-info">
+              <span className="git-remote-name">{remote.name}</span>
+              <span className="git-remote-url" title={remote.fetchUrl}>
+                {remote.fetchUrl}
+              </span>
+            </div>
+            <div className="git-remote-actions">
+              <button type="button" className="git-remote-action-btn" onClick={() => onEdit(remote)} title="Rename remote">
+                <Edit2 size={12} />
+              </button>
+              <button
+                type="button"
+                className="git-remote-action-btn git-remote-action-btn-danger"
+                onClick={() => onRemove(remote.name)}
+                title="Remove remote"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
 
 export default function GitRemotesSection({
   workspacePath,
@@ -207,6 +313,20 @@ export default function GitRemotesSection({
         : null
     : null;
 
+  const canSubmitAdd = !form.isSubmitting && !validationError && !!form.name.trim() && !!form.url.trim();
+  const canSubmitRename = !form.isSubmitting && !validationError && !!form.name.trim() && form.name !== editingRemote;
+  const submitAddOnEnter = () => {
+    if (canSubmitAdd) {
+      void handleAddRemote();
+    }
+  };
+  const submitRenameOnEnter = () => {
+    if (canSubmitRename) {
+      void handleRenameRemote();
+    }
+  };
+  const formErrorMessage = form.error || validationError;
+
   return (
     <div className="git-remotes-section">
       <div className="git-remotes-header">
@@ -238,85 +358,30 @@ export default function GitRemotesSection({
       </div>
 
       {mode === 'list' && (
-        <div className="git-remotes-list">
-          {remotes.length === 0 ? (
-            <div className="git-remotes-empty">
-              <Network size={24} strokeWidth={1.5} />
-              <p>No remotes configured</p>
-              <span className="git-remotes-hint">Add a remote to connect to a repository host</span>
-              <button
-                type="button"
-                className="git-remotes-empty-add-btn"
-                onClick={() => setMode('add')}
-              >
-                <Plus size={12} />
-                Add remote
-              </button>
-            </div>
-          ) : (
-            remotes.map((remote) => (
-              <div key={remote.name} className="git-remote-item">
-                <div className="git-remote-info">
-                  <span className="git-remote-name">{remote.name}</span>
-                  <span className="git-remote-url" title={remote.fetchUrl}>
-                    {remote.fetchUrl}
-                  </span>
-                </div>
-                <div className="git-remote-actions">
-                  <button
-                    type="button"
-                    className="git-remote-action-btn"
-                    onClick={() => startEditing(remote)}
-                    title="Rename remote"
-                  >
-                    <Edit2 size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    className="git-remote-action-btn git-remote-action-btn-danger"
-                    onClick={() => handleRemoveRemote(remote.name)}
-                    title="Remove remote"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+        <RemoteList
+          remotes={remotes}
+          onAdd={() => setMode('add')}
+          onEdit={startEditing}
+          onRemove={(name) => void handleRemoveRemote(name)}
+        />
       )}
 
       {mode === 'add' && (
         <div className="git-remotes-form">
           <div className="git-remotes-form-field">
             <label htmlFor="remote-name">Name</label>
-            <div className="git-remotes-input-row">
-              <input
-                ref={nameInputRef}
-                id="remote-name"
-                type="text"
-                value={form.name}
-                onChange={(e) => handleNameChange(e.target.value)}
-                placeholder="origin"
-                className="git-remotes-input"
-                disabled={form.isSubmitting}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (!validationError && !form.isSubmitting) {
-                      void handleAddRemote();
-                    }
-                  } else if (e.key === 'Escape') {
-                    resetForm();
-                  }
-                }}
-              />
-              {validationError ? (
-                <AlertCircle size={14} className="git-remotes-input-icon git-remotes-input-icon-error" />
-              ) : form.name.trim() && !remoteExists(form.name) ? (
-                <Check size={14} className="git-remotes-input-icon git-remotes-input-icon-success" />
-              ) : null}
-            </div>
+            <RemoteNameInput
+              id="remote-name"
+              value={form.name}
+              placeholder="origin"
+              disabled={form.isSubmitting}
+              inputRef={nameInputRef}
+              showError={!!validationError}
+              showSuccess={!!form.name.trim() && !remoteExists(form.name)}
+              onChange={handleNameChange}
+              onEnter={submitAddOnEnter}
+              onEscape={resetForm}
+            />
             <div className="git-remotes-suggestions">
               {REMOTE_NAME_SUGGESTIONS.filter(
                 (s) => s.includes(form.name) || form.name.length === 0
@@ -365,18 +430,13 @@ export default function GitRemotesSection({
             </div>
           </div>
 
-          {(form.error || validationError) && (
-            <div className="git-remotes-form-error">
-              <AlertCircle size={12} />
-              <span>{form.error || validationError}</span>
-            </div>
-          )}
+          <RemoteFormError message={formErrorMessage} />
 
           <button
             type="button"
             className="git-remotes-submit-btn"
             onClick={handleAddRemote}
-            disabled={form.isSubmitting || !!validationError || !form.name.trim() || !form.url.trim()}
+            disabled={!canSubmitAdd}
           >
             {form.isSubmitting ? (
               <>
@@ -402,52 +462,27 @@ export default function GitRemotesSection({
 
           <div className="git-remotes-form-field">
             <label htmlFor="remote-new-name">New Name</label>
-            <div className="git-remotes-input-row">
-              <input
-                ref={nameInputRef}
-                id="remote-new-name"
-                type="text"
-                value={form.name}
-                onChange={(e) => handleNameChange(e.target.value)}
-                placeholder="new-name"
-                className="git-remotes-input"
-                disabled={form.isSubmitting}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (!validationError && !form.isSubmitting) {
-                      void handleRenameRemote();
-                    }
-                  } else if (e.key === 'Escape') {
-                    resetForm();
-                  }
-                }}
-              />
-              {validationError ? (
-                <AlertCircle size={14} className="git-remotes-input-icon git-remotes-input-icon-error" />
-              ) : form.name.trim() && form.name !== editingRemote && !remoteExists(form.name) ? (
-                <Check size={14} className="git-remotes-input-icon git-remotes-input-icon-success" />
-              ) : null}
-            </div>
+            <RemoteNameInput
+              id="remote-new-name"
+              value={form.name}
+              placeholder="new-name"
+              disabled={form.isSubmitting}
+              inputRef={nameInputRef}
+              showError={!!validationError}
+              showSuccess={!!form.name.trim() && form.name !== editingRemote && !remoteExists(form.name)}
+              onChange={handleNameChange}
+              onEnter={submitRenameOnEnter}
+              onEscape={resetForm}
+            />
           </div>
 
-          {(form.error || validationError) && (
-            <div className="git-remotes-form-error">
-              <AlertCircle size={12} />
-              <span>{form.error || validationError}</span>
-            </div>
-          )}
+          <RemoteFormError message={formErrorMessage} />
 
           <button
             type="button"
             className="git-remotes-submit-btn"
             onClick={handleRenameRemote}
-            disabled={
-              form.isSubmitting ||
-              !!validationError ||
-              !form.name.trim() ||
-              form.name === editingRemote
-            }
+            disabled={!canSubmitRename}
           >
             {form.isSubmitting ? (
               <>
