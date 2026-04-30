@@ -6,7 +6,6 @@
  *
  * Event names (stable, grep-friendly):
  *   switch_start           – workspace switch initiated
- *   switch_end            – workspace switch resolved
  *   surface_mount         – surface became active (isActive=true transition)
  *   surface_unmount       – surface became inactive (isActive=false transition)
  *   surface_remount       – surface reactivated after being parked
@@ -15,7 +14,6 @@
  *   terminal_cache_hit    – xterm found in cache on mount
  *   terminal_cache_miss   – new xterm created on mount
  *   terminal_detach       – xterm element detached on park
- *   terminal_reattach     – xterm element reattached on activate
  *   browser_mount         – BrowserPanel workspace-level show
  *   browser_unmount       – BrowserPanel workspace-level hide
  *   browser_react_mount   – BrowserPanel React component mounted
@@ -49,13 +47,9 @@ function log(event: string, data: Record<string, unknown> = {}): void {
 
 let _activeSwitchId = 0;
 let _currentSwitchId = 0;
-let _currentFromWorkspace: string | null = null;
-let _currentToWorkspace: string | null = null;
 
 export function startSwitch(fromWorkspaceId: string | null, toWorkspaceId: string): string {
   _currentSwitchId = ++_activeSwitchId;
-  _currentFromWorkspace = fromWorkspaceId;
-  _currentToWorkspace = toWorkspaceId;
   log('switch_start', {
     switchId: _currentSwitchId,
     fromWorkspace: fromWorkspaceId,
@@ -65,14 +59,6 @@ export function startSwitch(fromWorkspaceId: string | null, toWorkspaceId: strin
   return `[${_currentSwitchId}]`;
 }
 
-export function endSwitch(switchId: string): void {
-  log('switch_end', {
-    switchId,
-    durationMs: Date.now(),
-    fromWorkspace: _currentFromWorkspace,
-    toWorkspace: _currentToWorkspace,
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Surface lifecycle
@@ -152,14 +138,6 @@ export function terminalDetach(terminalId: string | null, workspaceId: string | 
   });
 }
 
-export function terminalReattach(terminalId: string, workspaceId: string | undefined): void {
-  log('terminal_reattach', {
-    terminalId,
-    workspaceId: workspaceId ?? null,
-    switchId: _currentSwitchId || null,
-    timestamp: Date.now(),
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Browser

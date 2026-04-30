@@ -77,7 +77,7 @@ export function writeCachedTerminalExit(terminalId: string, exitCode: number): b
  * Remove a cached xterm instance.
  * Disposes the xterm and removes it from the cache.
  */
-export function evictCachedTerminal(terminalId: string): void {
+function evictCachedTerminal(terminalId: string): void {
   const cached = xtermCache.get(terminalId);
   if (cached) {
     cached.xterm.dispose();
@@ -90,7 +90,7 @@ export function markTerminalDisposed(terminalId: string): void {
   evictCachedTerminal(terminalId);
 }
 
-export function isTerminalDisposed(terminalId: string): boolean {
+function isTerminalDisposed(terminalId: string): boolean {
   return disposedTerminalIds.has(terminalId);
 }
 

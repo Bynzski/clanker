@@ -34,7 +34,7 @@ function createHarnessLogoIcon(src: string): ElementType<HarnessIconProps> {
 }
 
 // Custom SVG logos from svgl.app, rendered as image URLs under Vite.
-export const HARNESS_SVG_ICONS = {
+const HARNESS_SVG_ICONS = {
   codex: createHarnessLogoIcon(codexLogoUrl),
   claude: createHarnessLogoIcon(claudeLogoUrl),
   opencode: createHarnessLogoIcon(opencodeLogoUrl),
