@@ -537,33 +537,30 @@ async function collectOrphanedSessions(
   return orphaned;
 }
 
-async function discoverCodexSessions(workspacePath: string): Promise<HarnessSession[]> {
-  const homeDir = os.homedir();
-  const indexPath = path.join(homeDir, '.codex', 'session_index.jsonl');
-  const sessionsDir = path.join(homeDir, '.codex', 'sessions');
-
-  let indexContent: string;
-  try {
-    indexContent = await fs.promises.readFile(indexPath, 'utf8');
-  } catch {
-    return [];
-  }
-
-  const fileMap = await buildCodexFileMap(sessionsDir);
-  const sessions: HarnessSession[] = [];
-
-  // Index-based discovery pass
+function parseCodexIndexEntries(indexContent: string): CodexIndexEntry[] {
+  const entries: CodexIndexEntry[] = [];
   for (const line of indexContent.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let entry: CodexIndexEntry;
     try {
-      entry = JSON.parse(trimmed) as CodexIndexEntry;
+      const entry = JSON.parse(trimmed) as CodexIndexEntry;
+      if (entry.id) {
+        entries.push(entry);
+      }
     } catch {
-      continue;
+      // Ignore invalid line
     }
+  }
+  return entries;
+}
 
-    if (!entry.id) continue;
+async function buildCodexIndexedSessions(
+  indexEntries: CodexIndexEntry[],
+  fileMap: Map<string, string>,
+  workspacePath: string
+): Promise<HarnessSession[]> {
+  const sessions: HarnessSession[] = [];
+  for (const entry of indexEntries) {
     const filePath = fileMap.get(entry.id);
     if (!filePath) continue;
     const meta = await readFirstLineJson<CodexSessionMeta>(filePath);
@@ -576,45 +573,60 @@ async function discoverCodexSessions(workspacePath: string): Promise<HarnessSess
       cwd: meta.payload.cwd,
       timestamp: entry.updated_at ? Date.parse(entry.updated_at) : 0,
       modelId: meta.payload.model ?? undefined,
-      provider: meta.payload.model
-        ? (meta.payload.model_provider ?? 'openai')
-        : undefined,
-    });
-  }
-
-  // Build index thread-name map for orphaned session title lookup.
-  const indexThreadNames = new Map<string, string>();
-  for (const l of indexContent.split('\n')) {
-    const t = l.trim();
-    if (!t) continue;
-    let e: CodexIndexEntry;
-    try { e = JSON.parse(t) as CodexIndexEntry; } catch { continue; }
-    if (e.id) indexThreadNames.set(e.id, e.thread_name ?? '');
-  }
-
-  // Fallback pass: orphaned sessions — title from index first,
-  // then readCodexFirstUserMessage, then directory name, then "Codex session"
-  const indexedIds = new Set(sessions.map((s) => s.id));
-  const orphaned = await collectOrphanedSessions(sessionsDir, workspacePath, indexedIds);
-  for (const session of orphaned) {
-    const indexTitle = indexThreadNames.get(session.id);
-    const userMessageTitle = await readCodexFirstUserMessage(session.filePath);
-    const title =
-      (indexTitle && indexTitle.trim()) ||
-      userMessageTitle ||
-      session.cwd.split('/').pop() ||
-      'Codex session';
-    sessions.push({
-      id: session.id,
-      harness: 'codex',
-      title,
-      cwd: session.cwd,
-      timestamp: session.timestamp,
-      modelId: session.modelId,
-      provider: session.provider,
+      provider: meta.payload.model ? (meta.payload.model_provider ?? 'openai') : undefined,
     });
   }
   return sessions;
+}
+
+function buildCodexThreadNameMap(indexEntries: CodexIndexEntry[]): Map<string, string> {
+  const threadNames = new Map<string, string>();
+  for (const entry of indexEntries) {
+    threadNames.set(entry.id, entry.thread_name ?? '');
+  }
+  return threadNames;
+}
+
+async function resolveCodexOrphanedTitle(
+  session: CodexSessionData,
+  indexThreadNames: Map<string, string>
+): Promise<string> {
+  const indexTitle = indexThreadNames.get(session.id);
+  const userMessageTitle = await readCodexFirstUserMessage(session.filePath);
+  return (indexTitle && indexTitle.trim()) || userMessageTitle || session.cwd.split('/').pop() || 'Codex session';
+}
+
+async function discoverCodexSessions(workspacePath: string): Promise<HarnessSession[]> {
+  const homeDir = os.homedir();
+  const indexPath = path.join(homeDir, '.codex', 'session_index.jsonl');
+  const sessionsDir = path.join(homeDir, '.codex', 'sessions');
+
+  let indexContent: string;
+  try {
+    indexContent = await fs.promises.readFile(indexPath, 'utf8');
+  } catch {
+    return [];
+  }
+
+  const indexEntries = parseCodexIndexEntries(indexContent);
+  const fileMap = await buildCodexFileMap(sessionsDir);
+  const sessions = await buildCodexIndexedSessions(indexEntries, fileMap, workspacePath);
+
+  const indexThreadNames = buildCodexThreadNameMap(indexEntries);
+  const indexedIds = new Set(sessions.map((s) => s.id));
+  const orphaned = await collectOrphanedSessions(sessionsDir, workspacePath, indexedIds);
+
+  const orphanedSessions = await Promise.all(orphaned.map(async (session) => ({
+    id: session.id,
+    harness: 'codex' as const,
+    title: await resolveCodexOrphanedTitle(session, indexThreadNames),
+    cwd: session.cwd,
+    timestamp: session.timestamp,
+    modelId: session.modelId,
+    provider: session.provider,
+  })));
+
+  return [...sessions, ...orphanedSessions];
 }
 // ============================================================================
 // Pi session discovery
@@ -627,16 +639,34 @@ interface PiSessionFirst {
   cwd?: string;
 }
 
-async function discoverPiSessionFile(
-  filePath: string,
-  workspacePath: string
-): Promise<HarnessSession | null> {
-  const first = await readFirstLineJson<PiSessionFirst>(filePath);
-  if (!first || first.type !== 'session' || !first.cwd || !first.id) return null;
-  if (workspacePath && !sessionMatchesWorkspace(workspacePath, first.cwd)) return null;
+function extractPiMessageText(content: unknown): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return (content as Array<Record<string, unknown>>)
+      .filter((entry) => typeof entry === 'object' && entry !== null)
+      .map((entry) => String((entry as Record<string, unknown>).text ?? ''))
+      .join('');
+  }
+  return '';
+}
 
-  // Scan all lines for last model_change and first user message title
-  const rawLines = await readFileLines(filePath);
+function extractPiTitleFromParsedEvent(parsed: Record<string, unknown>): string | undefined {
+  if (parsed.type !== 'message' || parsed.message === undefined) {
+    return undefined;
+  }
+
+  const message = parsed.message as Record<string, unknown>;
+  if (message.role !== 'user') {
+    return undefined;
+  }
+
+  const text = extractPiMessageText(message.content).trim();
+  return text ? text.slice(0, 120) : undefined;
+}
+
+function extractPiMetadataFromLines(rawLines: string[]): { modelId?: string; provider?: string; title?: string } {
   let modelId: string | undefined;
   let provider: string | undefined;
   let title: string | undefined;
@@ -648,6 +678,7 @@ async function discoverPiSessionFile(
     } catch {
       continue;
     }
+
     if (
       parsed.type === 'model_change' &&
       typeof parsed.modelId === 'string' &&
@@ -655,45 +686,38 @@ async function discoverPiSessionFile(
     ) {
       modelId = parsed.modelId;
       provider = parsed.provider;
-      // Don't break — keep scanning for title
     }
-    // Extract title from first real user message (Pi content is [{type:"text",text:"..."}])
-    if (
-      !title &&
-      parsed.type === 'message' &&
-      (parsed as Record<string, unknown>).message !== undefined
-    ) {
-      const msg = (parsed as Record<string, unknown>).message as Record<string, unknown>;
-      if (msg.role === 'user') {
-        const content = msg.content;
-        let text = '';
-        if (typeof content === 'string') {
-          text = content;
-        } else if (Array.isArray(content)) {
-          text = (content as Array<Record<string, unknown>>)
-            .filter((c) => typeof c === 'object' && c !== null)
-            .map((c) => String((c as Record<string, unknown>).text ?? ''))
-            .join('');
-        }
-        if (text.trim()) {
-          title = text.slice(0, 120);
-        }
-      }
+
+    if (!title) {
+      title = extractPiTitleFromParsedEvent(parsed);
     }
   }
 
+  return { modelId, provider, title };
+}
+
+async function discoverPiSessionFile(
+  filePath: string,
+  workspacePath: string
+): Promise<HarnessSession | null> {
+  const first = await readFirstLineJson<PiSessionFirst>(filePath);
+  if (!first || first.type !== 'session' || !first.cwd || !first.id) return null;
+  if (workspacePath && !sessionMatchesWorkspace(workspacePath, first.cwd)) return null;
+
+  const rawLines = await readFileLines(filePath);
+  const { modelId, provider, title } = extractPiMetadataFromLines(rawLines);
   const sessionTitle = title ?? (modelId && provider ? `${provider}/${modelId}` : 'Pi session');
 
-    return {
-      id: first.id,
-      harness: 'pi',
-      title: sessionTitle,
-      cwd: first.cwd,
-      timestamp: first.timestamp ? Date.parse(first.timestamp) : 0,
-      modelId,
-      provider,
-      filePath,
-    };
+  return {
+    id: first.id,
+    harness: 'pi',
+    title: sessionTitle,
+    cwd: first.cwd,
+    timestamp: first.timestamp ? Date.parse(first.timestamp) : 0,
+    modelId,
+    provider,
+    filePath,
+  };
 }
 
 async function discoverPiSessions(workspacePath: string): Promise<HarnessSession[]> {
