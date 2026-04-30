@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import type { MouseEvent as ReactMouseEvent, RefObject } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, MousePointer2, ChevronDown, Plus } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
@@ -37,6 +38,91 @@ function getTabSubtitle(tab: BrowserTab): string {
   } catch {
     return tab.url;
   }
+}
+
+interface BrowserTabMenuProps {
+  tabsMenuRef: RefObject<HTMLDivElement | null>;
+  tabsOpen: boolean;
+  browserTabs: BrowserTab[];
+  activeTab: BrowserTab | null;
+  activeTabId: string | null;
+  onToggle: () => void;
+  onNewTab: () => void;
+  onSwitchTab: (tabId: string) => void;
+  onCloseTab: (event: ReactMouseEvent, tabId: string) => void;
+}
+
+function BrowserTabMenu({
+  tabsMenuRef,
+  tabsOpen,
+  browserTabs,
+  activeTab,
+  activeTabId,
+  onToggle,
+  onNewTab,
+  onSwitchTab,
+  onCloseTab,
+}: BrowserTabMenuProps) {
+  return (
+    <div className="browser-tab-menu" ref={tabsMenuRef}>
+      <button
+        className="browser-tab-trigger"
+        type="button"
+        onClick={onToggle}
+        aria-haspopup="menu"
+        aria-expanded={tabsOpen}
+        title="Browser tabs"
+      >
+        <span className="browser-tab-count">{browserTabs.length || 1}</span>
+        <span className="browser-tab-current">{getTabLabel(activeTab)}</span>
+        <ChevronDown size={14} strokeWidth={2} />
+      </button>
+      {tabsOpen ? (
+        <div className="browser-tab-dropdown" role="menu" aria-label="Browser tabs">
+          <div className="browser-tab-dropdown-header">
+            <span>Tabs</span>
+            <button className="browser-tab-add" type="button" onClick={onNewTab} title="New tab">
+              <Plus size={14} strokeWidth={2} />
+            </button>
+          </div>
+          <div className="browser-tab-list">
+            {browserTabs.map((tab) => {
+              const isActive = tab.id === activeTabId;
+              return (
+                <div
+                  key={tab.id}
+                  className={`browser-tab-row ${isActive ? 'active' : ''}`}
+                  role="menuitem"
+                  tabIndex={0}
+                  onClick={() => onSwitchTab(tab.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onSwitchTab(tab.id);
+                    }
+                  }}
+                >
+                  <span className="browser-tab-row-main">
+                    <span className="browser-tab-row-title">{getTabLabel(tab)}</span>
+                    <span className="browser-tab-row-url">{getTabSubtitle(tab)}</span>
+                  </span>
+                  <button
+                    className="browser-tab-close"
+                    type="button"
+                    onClick={(event) => onCloseTab(event, tab.id)}
+                    disabled={browserTabs.length <= 1}
+                    title={browserTabs.length <= 1 ? 'Cannot close the last tab' : 'Close tab'}
+                  >
+                    <X size={12} strokeWidth={2} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPanelProps) {
@@ -413,32 +499,33 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (historySuggestions.length > 0 && e.key === 'ArrowDown') {
-      e.preventDefault();
-      setHighlightedSuggestionIndex((index) => (index + 1) % historySuggestions.length);
-      return;
-    }
+    const keyHandlers: Partial<Record<string, () => void>> = {
+      ArrowDown: () => {
+        if (historySuggestions.length === 0) return;
+        setHighlightedSuggestionIndex((index) => (index + 1) % historySuggestions.length);
+      },
+      ArrowUp: () => {
+        if (historySuggestions.length === 0) return;
+        setHighlightedSuggestionIndex((index) => (index - 1 + historySuggestions.length) % historySuggestions.length);
+      },
+      Escape: () => {
+        setHistorySuggestions([]);
+        setHighlightedSuggestionIndex(0);
+      },
+      Enter: () => {
+        const highlighted = historySuggestions[highlightedSuggestionIndex];
+        if (highlighted) {
+          selectHistorySuggestion(highlighted);
+          return;
+        }
+        void handleNavigate();
+      },
+    };
 
-    if (historySuggestions.length > 0 && e.key === 'ArrowUp') {
+    const handler = keyHandlers[e.key];
+    if (handler) {
       e.preventDefault();
-      setHighlightedSuggestionIndex((index) => (index - 1 + historySuggestions.length) % historySuggestions.length);
-      return;
-    }
-
-    if (e.key === 'Escape') {
-      setHistorySuggestions([]);
-      setHighlightedSuggestionIndex(0);
-      return;
-    }
-
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const highlighted = historySuggestions[highlightedSuggestionIndex];
-      if (highlighted) {
-        selectHistorySuggestion(highlighted);
-        return;
-      }
-      void handleNavigate();
+      handler();
     }
   };
 
@@ -528,64 +615,23 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
           <X size={16} strokeWidth={2} />
         </button>
 
-        <div className="browser-tab-menu" ref={tabsMenuRef}>
-          <button
-            className="browser-tab-trigger"
-            type="button"
-            onClick={() => setTabsOpen((open) => !open)}
-            aria-haspopup="menu"
-            aria-expanded={tabsOpen}
-            title="Browser tabs"
-          >
-            <span className="browser-tab-count">{browserTabs.length || 1}</span>
-            <span className="browser-tab-current">{getTabLabel(activeTab)}</span>
-            <ChevronDown size={14} strokeWidth={2} />
-          </button>
-          {tabsOpen ? (
-            <div className="browser-tab-dropdown" role="menu" aria-label="Browser tabs">
-              <div className="browser-tab-dropdown-header">
-                <span>Tabs</span>
-                <button className="browser-tab-add" type="button" onClick={() => void handleNewTab()} title="New tab">
-                  <Plus size={14} strokeWidth={2} />
-                </button>
-              </div>
-              <div className="browser-tab-list">
-                {browserTabs.map((tab) => {
-                  const isActive = tab.id === activeTabId;
-                  return (
-                    <div
-                      key={tab.id}
-                      className={`browser-tab-row ${isActive ? 'active' : ''}`}
-                      role="menuitem"
-                      tabIndex={0}
-                      onClick={() => void handleSwitchTab(tab.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          void handleSwitchTab(tab.id);
-                        }
-                      }}
-                    >
-                      <span className="browser-tab-row-main">
-                        <span className="browser-tab-row-title">{getTabLabel(tab)}</span>
-                        <span className="browser-tab-row-url">{getTabSubtitle(tab)}</span>
-                      </span>
-                      <button
-                        className="browser-tab-close"
-                        type="button"
-                        onClick={(event) => void handleCloseTab(event, tab.id)}
-                        disabled={browserTabs.length <= 1}
-                        title={browserTabs.length <= 1 ? 'Cannot close the last tab' : 'Close tab'}
-                      >
-                        <X size={12} strokeWidth={2} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </div>
+        <BrowserTabMenu
+          tabsMenuRef={tabsMenuRef}
+          tabsOpen={tabsOpen}
+          browserTabs={browserTabs}
+          activeTab={activeTab}
+          activeTabId={activeTabId}
+          onToggle={() => setTabsOpen((open) => !open)}
+          onNewTab={() => {
+            void handleNewTab();
+          }}
+          onSwitchTab={(tabId) => {
+            void handleSwitchTab(tabId);
+          }}
+          onCloseTab={(event, tabId) => {
+            void handleCloseTab(event, tabId);
+          }}
+        />
 
         <div className="browser-url-container">
           <input
