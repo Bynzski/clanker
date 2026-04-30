@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { normalizePiModelId, type HarnessConfig } from './harnessLaunch';
+import { normalizePiModelId, resolveHarnessSpawn, type HarnessConfig } from './harnessLaunch';
 import {
   ElectronStoreModelCache,
   DEFAULT_MODEL_CACHE_TTL_MS,
@@ -85,8 +85,10 @@ function runCommandOutput(
   extraEnv?: Record<string, string>,
   cwd?: string
 ): Promise<string> {
+  const { spawnCmd, spawnArgs } = resolveHarnessSpawn(command, args, null);
+
   return new Promise((resolve, reject) => {
-    execFile(command, args, {
+    execFile(spawnCmd, spawnArgs, {
       timeout: timeoutMs,
       maxBuffer: 1024 * 1024,
       cwd,

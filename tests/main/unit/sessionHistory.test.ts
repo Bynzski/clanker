@@ -67,7 +67,9 @@ vi.mock('../../../src/main/harnessLaunch', () => ({
   resolveHarnessSpawn: (command: string, args: string[], wrapperPath: string | null) =>
     wrapperPath
       ? { spawnCmd: wrapperPath, spawnArgs: [command, ...args] }
-      : { spawnCmd: command, spawnArgs: args },
+      : process.platform === 'win32'
+        ? { spawnCmd: 'cmd.exe', spawnArgs: ['/c', command, ...args] }
+        : { spawnCmd: command, spawnArgs: args },
 }));
 
 // ============================================================================
@@ -417,15 +419,21 @@ describe('buildSessionInvokeArgs', () => {
 // ============================================================================
 
 describe('discoverSessions — opencode', () => {
+  let originalPlatform: PropertyDescriptor | undefined;
+
   beforeEach(() => {
     clearSessionCache();
     vi.clearAllMocks();
     // Make other harness discovery fail with ENOENT so only opencode results show
     mockReadFile.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
     mockReaddir.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+    originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
   });
 
   afterEach(() => {
+    if (originalPlatform) {
+      Object.defineProperty(process, 'platform', originalPlatform);
+    }
     clearSessionCache();
   });
 
@@ -483,6 +491,21 @@ describe('discoverSessions — opencode', () => {
     const ids = sessions.filter((s) => s.harness === 'opencode').map((s) => s.id);
     expect(ids).toContain('ses_001');
     expect(ids).not.toContain('ses_002');
+  });
+
+  it('uses cmd.exe /c for opencode session discovery on Windows', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
+      cb(null, '[]', '');
+    });
+
+    await discoverSessions(TEST_WORKSPACE);
+
+    expect(mockExecFile).toHaveBeenCalledTimes(1);
+    const [cmd, args] = mockExecFile.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe('cmd.exe');
+    expect(args).toEqual(['/c', 'opencode', 'session', 'list', '--format', 'json']);
   });
 });
 
@@ -580,12 +603,14 @@ describe('discoverSessions — codex', () => {
     expect(codexSessions[0].cwd).toBe(TEST_WORKSPACE_POSIX);
   });
 
-  it('returns empty when session_index.jsonl is missing', async () => {
+  it('falls back to filesystem sessions when session_index.jsonl is missing', async () => {
     mockReadFile.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
 
     const sessions = await discoverSessions(TEST_WORKSPACE);
     const codexSessions = sessions.filter((s) => s.harness === 'codex');
-    expect(codexSessions).toHaveLength(0);
+    expect(codexSessions).toHaveLength(1);
+    expect(codexSessions[0].id).toBe('019d9661-a4d3-7e93-a413-229086109874');
+    expect(codexSessions[0].cwd).toBe(TEST_WORKSPACE_POSIX);
   });
 });
 

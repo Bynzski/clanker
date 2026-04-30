@@ -210,6 +210,87 @@ describe('discoverHarnessModels cache failure regressions', () => {
   });
 });
 
+// =============================================================================
+// Windows command invocation regressions
+// =============================================================================
+
+describe('discoverHarnessModels Windows command invocation', () => {
+  const mockApp = {
+    getAppPath: vi.fn(() => '/opt/clanker-grid'),
+    getPath: vi.fn(() => path.join(os.tmpdir(), 'test-home')),
+  };
+
+  const mockStoreInstance = {
+    get: vi.fn(() => ({})),
+    set: vi.fn(),
+  };
+
+  const mockExecFile = vi.fn();
+  let originalPlatform: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    vi.resetModules();
+    originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+
+    mockExecFile.mockReset();
+    mockStoreInstance.get.mockReset();
+    mockStoreInstance.set.mockReset();
+    mockStoreInstance.get.mockReturnValue({});
+
+    vi.doMock('electron', () => ({
+      app: mockApp,
+    }));
+    vi.doMock('electron-store', () => ({
+      default: class {
+        get = mockStoreInstance.get;
+        set = mockStoreInstance.set;
+      },
+    }));
+    vi.doMock('child_process', () => ({
+      execFile: mockExecFile,
+    }));
+  });
+
+  afterEach(() => {
+    if (originalPlatform) {
+      Object.defineProperty(process, 'platform', originalPlatform);
+    }
+    vi.doUnmock('electron');
+    vi.doUnmock('electron-store');
+    vi.doUnmock('child_process');
+    vi.restoreAllMocks();
+  });
+
+  it('wraps opencode model discovery with cmd.exe /c on Windows', async () => {
+    mockExecFile.mockImplementation((_command: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
+      callback(null, 'openai/gpt-4o\n', '');
+    });
+
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    await discoverHarnessModels('opencode');
+
+    expect(mockExecFile).toHaveBeenCalled();
+    const [command, args] = mockExecFile.mock.calls[0] as [string, string[]];
+    expect(command).toBe('cmd.exe');
+    expect(args).toEqual(['/c', 'opencode', 'models']);
+  });
+
+  it('wraps pi model discovery with cmd.exe /c on Windows', async () => {
+    mockExecFile.mockImplementation((_command: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
+      callback(null, 'Provider  Model\nopenai  gpt-4o\n', '');
+    });
+
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    await discoverHarnessModels('pi');
+
+    expect(mockExecFile).toHaveBeenCalled();
+    const [command, args] = mockExecFile.mock.calls[0] as [string, string[]];
+    expect(command).toBe('cmd.exe');
+    expect(args).toEqual(['/c', 'pi', '--list-models']);
+  });
+});
+
 // ============================================================================
 // getAvailableHarnessOptions Tests
 // ============================================================================

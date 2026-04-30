@@ -189,6 +189,8 @@ export function buildSessionInvokeArgs(
 // ============================================================================
 
 function runCommandOutput(command: string, args: string[]): Promise<string> {
+  const { spawnCmd, spawnArgs } = resolveHarnessSpawn(command, args, null);
+
   // Augment PATH with the platform's typical user-install bin dirs so we can
   // find CLIs (e.g. opencode) installed via npm-global or the standard user
   // path even when the launching shell didn't export them.
@@ -202,8 +204,8 @@ function runCommandOutput(command: string, args: string[]): Promise<string> {
 
   return new Promise((resolve, reject) => {
     execFile(
-      command,
-      args,
+      spawnCmd,
+      spawnArgs,
       {
         timeout: 8000,
         maxBuffer: 2 * 1024 * 1024,
@@ -647,11 +649,16 @@ async function discoverCodexSessions(workspacePath: string): Promise<HarnessSess
   const indexPath = path.join(homeDir, '.codex', 'session_index.jsonl');
   const sessionsDir = path.join(homeDir, '.codex', 'sessions');
 
-  let indexContent: string;
+  let indexContent = '';
   try {
     indexContent = await fs.promises.readFile(indexPath, 'utf8');
-  } catch {
-    return [];
+  } catch (error) {
+    // Some installs (notably on Windows) may have sessions on disk without
+    // session_index.jsonl. Treat missing index as empty and continue scanning.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      return [];
+    }
   }
 
   const indexEntries = parseCodexIndexEntries(indexContent);
