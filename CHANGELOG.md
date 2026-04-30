@@ -4,24 +4,46 @@ All notable changes to Clanker Grid are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.1] - 2026-04-30
 
-### Removed
-
-- **Unused test helper exports** — deleted 27 unused exports across 5 test infrastructure files. In `gitTestHelpers.ts`, removed 13 dead-code functions (`getCurrentBranch`, `getBranches`, `branchExists`, `createBranch`, `switchBranch`, `deleteBranch`, `getStatus`, `stash`, `listStashes`, `applyStash`, `dropStash`, `createConflict`, `abortMerge`) and inlined the `getStatus` call in `getWorkingTreeFiles`. In `tempPaths.ts`, deleted 5 unused path helpers (`testWorkspace`, `testClankerGridDir`, `testPiSessionsDir`, `testSshKey`, `testPath`). In `httpContractHelpers.ts`, deleted 5 response factory functions (`jsonResponse`, `rateLimitResponse`, `emptyResponse`, `malformedJsonResponse`, `serverErrorResponse`). Dropped `export` on `createElectronApiMock` (electron.ts, internal-only), `createBrowserTabFixture`, `createBrowserPaneFixture`, `createPaneFixture` (fixtures.ts, internal-only). Resolves #12.
+All 30 commits since v0.2.0 have been included. Notable changes include major decomposition of Header and BrowserPanel into focused modules, annotation controller refactoring, Windows CI test hardening, and removal of the pane-locking feature set.
 
 ### Added
 
+- **HarnessDefaultsSection component** — extracted settings UI for managing per-harness model defaults and command flags into its own component.
+- **BrowserUrlInput component** — extracted URL bar rendering and autocomplete into its own component, replacing inline JSX in BrowserPanel.
+- **useBrowserBoundsLifecycle hook** — extracted browser WebContentsView bounds management into its own hook.
+- **useBrowserPanelActions hook** — extracted browser toolbar actions (back, forward, reload, zoom) into its own hook.
+- **useBrowserUrlAutocomplete hook** — extracted URL history autocomplete logic into its own hook.
+- **useDropdownBehavior hook** — extracted dropdown open/close state and keyboard handling into its own hook.
+- **useHeaderSettings hook** — extracted settings panel state and logic from Header into its own hook.
+- **annotationCaptureParser module** — extracted annotation capture parsing from the controller into a focused module with its own unit tests.
+- **annotationMarkdownFormatter module** — extracted annotation markdown formatting from the controller into a focused module with its own unit tests.
+- **explorerActionHandlers module** — extracted file-explorer action handlers (create, rename, delete, move) into a dedicated module.
+- **contractTestFactory for VCS providers** — shared test factory reducing 600+ lines of duplication across GitHub, GitLab, and Bitbucket contract tests.
 - **`.fallowrc.json`** — fallow configuration teaching it about the Electron architecture: Vite entry points (`main.tsx`, `index.html`), the renderer ambient declaration `electron.d.ts`, and `shared/types/credentials.ts` (whose IPC types are only consumed via the ambient declaration). An override turns off `unresolved-imports` for `electron.d.ts` since fallow can't resolve relative imports out of `.d.ts` files. Drops unresolved-import noise from 45 to 0 and unused-file noise from 5 to 2 (both genuine). Resolves #8.
 
 ### Changed
 
+- **Header decomposed** — extracted settings state logic and dropdown UI into `HeaderRightControls.tsx`, `HarnessDefaultsSection.tsx`, `useDropdownBehavior.ts`, and `useHeaderSettings.ts`. Header surface complexity reduced by ~600 lines with behavior preserved.
+- **BrowserPanel decomposed** — extracted URL autocomplete, toolbar actions, and bounds lifecycle into focused modules (`BrowserUrlInput.tsx`, `useBrowserBoundsLifecycle.ts`, `useBrowserPanelActions.ts`, `useBrowserUrlAutocomplete.ts`). BrowserPanel surface complexity reduced by ~450 lines with behavior preserved.
+- **FileExplorer decomposed** — extracted action handlers into `explorerActionHandlers.ts` and TreeNode render helpers from `FileTree.tsx`. Keyboard action mapping refined.
+- **GitRemotesSection decomposed** — extracted list rendering and form-input helpers into focused sub-modules.
+- **WorkspaceGate keyboard actions mapped** — keyboard shortcuts in the workspace gate are now properly wired to their handlers.
+- **Session history discovery refactored** — `discoverCodexSessions` and `discoverPiSessionFile` decomposed into focused helpers while preserving behavior.
+- **Annotation runtime refactored** — `inferElementRoleInContext` decomposed; region/tag mapping and collection classification extracted into helper functions.
+- **Annotation controller refactored** — capture parsing and markdown formatting moved to dedicated modules (`annotationCaptureParser.ts`, `annotationMarkdownFormatter.ts`), reducing controller complexity.
 - **Drag-handle context extracted to its own module** — moved `DragHandleContext` and the `useDragHandle` hook out of `DynamicPaneLayout.tsx` into `dragHandleContext.ts`. Pane components and the file explorer now import the hook from the new module instead of from `DynamicPaneLayout`, breaking three circular import edges (`DynamicPaneLayout` ↔ `BrowserPanel` / `EditorPane` / `TerminalPane`). Pure refactor, no behavior change. Resolves #9.
 - **`validateWorkspaceConsistency` decomposed** — split the 130-line invariant checker into five focused sub-validators (workspace, terminal, layout, browser, editor) along its existing `[W*][T*][L*][B*][E*]` section markers. The public function is now an 8-line orchestrator that concatenates their results. Cyclomatic complexity drops from 59 to ≤19 per sub-validator (largest is the layout block); behavior is identical and all 136 existing tests pass unchanged. Resolves #10.
+- **Pane insertion fallback** — layout insertion now falls back to the largest leaf by area (without lock gating) when there is no active terminal target.
+
+### Fixed
+
+- **Windows CI test cleanup hardened** — git service tests on `windows-latest` no longer fail with `EBUSY` handle-lock errors during temp-directory teardown after `@vscode/git` operations hold locks on `.git/index.lock`. Tests now use retry loops with exponential backoff for the final `fs.rm` call and skip the lock file removal step on Windows. Resolves #3.
 
 ### Removed
 
-- **Unused vcsStore selector hooks** — deleted `usePat`, `useSshKey`, `useCredentialsLoading`, `useCredentialsError`, and `useProviderContext` from `vcsStore.ts`. These were one-line Zustand selectors written speculatively with full test coverage but never consumed — the only renderer using vcsStore (`CredentialSettings`) calls `useVcsStore` directly. Also dropped the matching `describe('selectors')` block (10 tests) which exercised store state already covered by the per-action `describe` blocks above and didn't actually call any of the hooks. Continuing #11.
+- **Unused VCS selector hooks** — deleted `usePat`, `useSshKey`, `useCredentialsLoading`, `useCredentialsError`, and `useProviderContext` from `vcsStore.ts`. These were one-line Zustand selectors written speculatively with full test coverage but never consumed — the only renderer using vcsStore (`CredentialSettings`) calls `useVcsStore` directly. Also dropped the matching `describe('selectors')` block (10 tests). Continuing #11.
 - **Unused renderer path-normalizer re-export and workspace-scope hook export** — deleted the `toPosixPath`/`toNativePath` re-export from `src/renderer/lib/pathUtils.ts` (no renderer code imported it; main and tests import directly from `shared/pathNormalize`). Dropped `export` on `useScopedWorkspaceId` in `WorkspaceScope.tsx` — only its sibling `useScopedWorkspace` calls it. Continuing #11.
 - **Unused exports in workspace store helpers** — dropped the `export` keyword on `generateBrowserTabId`, `sanitizeBrowserPane`, and `withWorkspaceLifecycle` (still used internally by their modules), and deleted `syncBrowserUrlFromActiveTab` and `getActiveBrowserTab` outright (no callers anywhere). Also removed `getEdgeGaps` from the `workspaceStore` re-export surface — its tests already import it directly from `workspaceLayout`.
 - **Remaining unused production exports** — dropped `export` on `evictCachedTerminal` and `isTerminalDisposed` in `TerminalPane.tsx` (internal-only), `HARNESS_FLAG_MAP` in `harnessFlags.ts` (internal-only), and `HARNESS_SVG_ICONS` in `harnessOptions.ts` (internal-only). Deleted dead-code `endSwitch` and `terminalReattach` debug helpers from `workspaceSwitchDebug.ts` along with their orphaned module-level variables and doc entries — zero callers anywhere. Unused production exports now at 0. Resolves #11.
@@ -29,10 +51,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Pane locking feature** — removed `locked` pane state, lock toggles/icons in terminal/browser/editor panes, and lock-based insertion guards. This also resolves issue #4 where lock controls were non-functional.
 - **Bring-to-front actions** — removed `bringPaneIntoView`, `bringBrowserIntoView`, and `bringEditorIntoView` store actions and corresponding UI controls.
 - **`canAddPane` gating** — removed lock-based add-pane gating from header and file explorer terminal creation paths.
-
-### Changed
-
-- **Pane insertion fallback** — layout insertion now falls back to the largest leaf by area (without lock gating) when there is no active terminal target.
+- **Unused test helper exports** — deleted 27 unused exports across 5 test infrastructure files. In `gitTestHelpers.ts`, removed 13 dead-code functions (`getCurrentBranch`, `getBranches`, `branchExists`, `createBranch`, `switchBranch`, `deleteBranch`, `getStatus`, `stash`, `listStashes`, `applyStash`, `dropStash`, `createConflict`, `abortMerge`) and inlined the `getStatus` call in `getWorkingTreeFiles`. In `tempPaths.ts`, deleted 5 unused path helpers (`testWorkspace`, `testClankerGridDir`, `testPiSessionsDir`, `testSshKey`, `testPath`). In `httpContractHelpers.ts`, deleted 5 response factory functions (`jsonResponse`, `rateLimitResponse`, `emptyResponse`, `malformedJsonResponse`, `serverErrorResponse`). Dropped `export` on `createElectronApiMock` (electron.ts, internal-only), `createBrowserTabFixture`, `createBrowserPaneFixture`, `createPaneFixture` (fixtures.ts, internal-only). Resolves #12.
 
 ## [0.2.0] - 2026-04-29
 
@@ -105,6 +124,7 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Bynzski/clanker/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Bynzski/clanker/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Bynzski/clanker/releases/tag/v0.1.0
