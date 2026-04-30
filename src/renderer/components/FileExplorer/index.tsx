@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useDragHandle } from '../DynamicPaneLayout';
+import { useDragHandle } from '../dragHandleContext';
 import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw } from 'lucide-react';
 import type React from 'react';
 import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer';

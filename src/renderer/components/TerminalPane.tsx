@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react'
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { useWorkspaceStore } from '../store/workspaceStore';
 
-import { useDragHandle } from './DynamicPaneLayout';
+import { useDragHandle } from './dragHandleContext';
 import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
 import './TerminalPane.css';
 import '@xterm/xterm/css/xterm.css';

@@ -9,7 +9,7 @@ import {
 } from '@codemirror/view';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { useDragHandle } from './DynamicPaneLayout';
+import { useDragHandle } from './dragHandleContext';
 import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
 import EditorTabBar from './EditorTabBar';
 import ConfirmCloseDialog from './ConfirmCloseDialog';

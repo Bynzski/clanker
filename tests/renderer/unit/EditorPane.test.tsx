@@ -62,7 +62,7 @@ vi.mock('@codemirror/theme-one-dark', () => ({
   oneDark: {},
 }));
 
-vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
+vi.mock('../../../src/renderer/components/dragHandleContext', () => ({
   useDragHandle: vi.fn().mockReturnValue({}),
 }));
 

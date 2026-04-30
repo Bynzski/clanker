@@ -1,4 +1,5 @@
-import { Suspense, lazy, useCallback, useRef, useState, createContext, useContext } from 'react';
+import { Suspense, lazy, useCallback, useRef, useState } from 'react';
+import { DragHandleContext } from './dragHandleContext';
 import ErrorBoundary from './ErrorBoundary';
 import { Group, Panel, Separator, type Layout } from 'react-resizable-panels';
 import {
@@ -98,25 +99,18 @@ function PanelWrapper({
   );
 }
 
-// Context to pass drag handle props to header
-const DragHandleContext = createContext<Record<string, unknown> | null>(null);
-
-function DragHandleProvider({ 
-  handleProps, 
-  children 
-}: { 
-  handleProps: Record<string, unknown>; 
-  children: React.ReactNode; 
+function DragHandleProvider({
+  handleProps,
+  children
+}: {
+  handleProps: Record<string, unknown>;
+  children: React.ReactNode;
 }) {
   return (
     <DragHandleContext.Provider value={handleProps}>
       {children}
     </DragHandleContext.Provider>
   );
-}
-
-export function useDragHandle() {
-  return useContext(DragHandleContext);
 }
 
 function LeafView({

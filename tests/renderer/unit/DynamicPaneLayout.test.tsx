@@ -127,7 +127,8 @@ vi.mock('../../../src/renderer/components/ErrorBoundary', () => ({
 // ---------------------------------------------------------------------------
 // Import SUT — after mocks are registered
 // ---------------------------------------------------------------------------
-import DynamicPaneLayout, { useDragHandle } from '../../../src/renderer/components/DynamicPaneLayout';
+import DynamicPaneLayout from '../../../src/renderer/components/DynamicPaneLayout';
+import { useDragHandle } from '../../../src/renderer/components/dragHandleContext';
 
 // ---------------------------------------------------------------------------
 // Helpers
