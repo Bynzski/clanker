@@ -8,7 +8,7 @@ export type ElectronApiMock = {
 const createAsyncMock = <T>(result: T) => vi.fn().mockResolvedValue(result);
 const defaultFileListDirectoryResult: FileListDirectoryResult = { success: true, entries: [] };
 
-export function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): ElectronApiMock {
+function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): ElectronApiMock {
   return {
     getLastWorkspace: createAsyncMock(''),
     getBaseDirectory: createAsyncMock(''),
