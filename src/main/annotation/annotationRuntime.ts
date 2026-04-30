@@ -371,6 +371,53 @@ function inferCollectionLabel(
 /**
  * Infer a short, human-readable role for the selected element in its local UI.
  */
+function isButtonLike(tagName: string, explicitRole: string): boolean {
+  return tagName === 'button' || explicitRole === 'button';
+}
+
+function isLinkLike(tagName: string, explicitRole: string): boolean {
+  return tagName === 'a' || explicitRole === 'link';
+}
+
+function isFormFieldLike(tagName: string, explicitRole: string): boolean {
+  return ['input', 'select', 'textarea'].includes(tagName) || explicitRole === 'textbox';
+}
+
+function isTableRowLike(tagName: string, explicitRole: string): boolean {
+  return tagName === 'tr' || explicitRole === 'row';
+}
+
+function isTableCellLike(tagName: string, explicitRole: string): boolean {
+  return tagName === 'td' || tagName === 'th' || explicitRole === 'cell';
+}
+
+function isListItemLike(tagName: string, explicitRole: string): boolean {
+  return tagName === 'li' || explicitRole === 'listitem';
+}
+
+function isHeadingLike(tagName: string, explicitRole: string): boolean {
+  return tagName.match(/^h[1-6]$/) !== null || explicitRole === 'heading';
+}
+
+function inferCollectionScopedRole(tagName: string, explicitRole: string, collectionLabel: string | null): string | null {
+  if (collectionLabel === 'repository list') return 'repository list entry';
+  if (collectionLabel === 'sidebar list') return 'sidebar list entry';
+
+  if (collectionLabel === 'table') {
+    if (isTableRowLike(tagName, explicitRole)) return 'table row';
+    if (isTableCellLike(tagName, explicitRole)) return 'table cell';
+    return 'table entry';
+  }
+
+  if (collectionLabel === 'form section') {
+    if (isButtonLike(tagName, explicitRole)) return 'action button';
+    if (isFormFieldLike(tagName, explicitRole)) return 'form field';
+    return 'form item';
+  }
+
+  return null;
+}
+
 function inferElementRoleInContext(
   el: Element,
   collectionLabel: string | null,
@@ -379,35 +426,16 @@ function inferElementRoleInContext(
   const explicitRole = normalizeText(el.getAttribute('role')).toLowerCase();
   const tagName = el.tagName.toLowerCase();
 
-  if (collectionLabel === 'repository list') {
-    return 'repository list entry';
-  }
+  const collectionScopedRole = inferCollectionScopedRole(tagName, explicitRole, collectionLabel);
+  if (collectionScopedRole) return collectionScopedRole;
 
-  if (collectionLabel === 'sidebar list') {
-    return 'sidebar list entry';
-  }
-
-  if (collectionLabel === 'table') {
-    if (tagName === 'tr' || explicitRole === 'row') return 'table row';
-    if (tagName === 'td' || tagName === 'th' || explicitRole === 'cell') return 'table cell';
-    return 'table entry';
-  }
-
-  if (collectionLabel === 'form section') {
-    if (tagName === 'button' || explicitRole === 'button') return 'action button';
-    if (tagName === 'input' || tagName === 'select' || tagName === 'textarea') return 'form field';
-    return 'form item';
-  }
-
-  if (tagName === 'button' || explicitRole === 'button') return 'button';
-  if (tagName === 'a' || explicitRole === 'link') return 'link';
-  if (tagName === 'input' || tagName === 'select' || tagName === 'textarea' || explicitRole === 'textbox') {
-    return 'form field';
-  }
-  if (tagName === 'li' || explicitRole === 'listitem') return 'list item';
-  if (tagName === 'tr' || explicitRole === 'row') return 'table row';
-  if (tagName === 'td' || tagName === 'th' || explicitRole === 'cell') return 'table cell';
-  if (tagName.match(/^h[1-6]$/) || explicitRole === 'heading') return 'heading';
+  if (isButtonLike(tagName, explicitRole)) return 'button';
+  if (isLinkLike(tagName, explicitRole)) return 'link';
+  if (isFormFieldLike(tagName, explicitRole)) return 'form field';
+  if (isListItemLike(tagName, explicitRole)) return 'list item';
+  if (isTableRowLike(tagName, explicitRole)) return 'table row';
+  if (isTableCellLike(tagName, explicitRole)) return 'table cell';
+  if (isHeadingLike(tagName, explicitRole)) return 'heading';
 
   if (regionType === 'sidebar') return 'sidebar item';
   if (regionType === 'navigation') return 'navigation item';
@@ -533,6 +561,14 @@ function getRuntimeHelperSource(): string {
     inferRegionType.toString(),
     collectNearbyText.toString(),
     inferCollectionLabel.toString(),
+    isButtonLike.toString(),
+    isLinkLike.toString(),
+    isFormFieldLike.toString(),
+    isTableRowLike.toString(),
+    isTableCellLike.toString(),
+    isListItemLike.toString(),
+    isHeadingLike.toString(),
+    inferCollectionScopedRole.toString(),
     inferElementRoleInContext.toString(),
     extractContextInfo.toString(),
     getAccessibilityInfo.toString(),
