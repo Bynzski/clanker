@@ -54,20 +54,26 @@ export function sessionMatchesWorkspace(
  * Encode a workspace path into the directory-name form used by Claude Code
  * under `~/.claude/projects/`.
  *
- * The rule is the same on every platform: replace each non-`[A-Za-z0-9-]`
- * character with `-` without collapsing runs. On POSIX the leading `/` is
- * what produces the leading dash (`/home/jay/foo` → `-home-jay-foo`); on
- * Windows there is no leading separator so the result starts with the drive
- * letter (`C:\Users\jay\foo` → `C--Users-jay-foo`, since `:` and `\` each
- * become a dash). UNC paths keep their double leading dash
- * (`\\server\share\foo` → `--server-share-foo`).
+ * Claude Code first normalizes the path to POSIX form with a leading `/`,
+ * then replaces each non-`[A-Za-z0-9-]` character with `-` (no collapsing).
+ * A POSIX workspace already starts with `/`; a Windows drive-letter path
+ * does not, so we prepend one before applying the regex. That leading slash
+ * is what produces the leading dash on every directory name:
+ *
+ *   `/home/jay/foo`         → `-home-jay-foo`
+ *   `C:\Users\jay\foo`      → `-C--Users-jay-foo` (the `:` and `\` after `C` each
+ *                                                  become a dash, plus the leading)
+ *   `\\server\share\foo`    → `--server-share-foo` (UNC: leading `\\` already
+ *                                                   becomes the leading double dash)
  *
  * Returns an empty string for an empty workspace path so callers can use the
  * result as a `startsWith` filter that matches everything.
  */
 export function encodeClaudeProjectDir(workspacePath: string): string {
   if (!workspacePath) return '';
-  return workspacePath.replace(/[^A-Za-z0-9-]/g, '-');
+  let normalized = workspacePath.replace(/\\/g, '/');
+  if (!normalized.startsWith('/')) normalized = '/' + normalized;
+  return normalized.replace(/[^A-Za-z0-9-]/g, '-');
 }
 
 // ============================================================================
@@ -183,6 +189,17 @@ export function buildSessionInvokeArgs(
 // ============================================================================
 
 function runCommandOutput(command: string, args: string[]): Promise<string> {
+  // Augment PATH with the platform's typical user-install bin dirs so we can
+  // find CLIs (e.g. opencode) installed via npm-global or the standard user
+  // path even when the launching shell didn't export them.
+  const extraPathDirs: string[] = [];
+  if (process.platform === 'win32') {
+    if (process.env.APPDATA) extraPathDirs.push(path.join(process.env.APPDATA, 'npm'));
+    if (process.env.LOCALAPPDATA) extraPathDirs.push(path.join(process.env.LOCALAPPDATA, 'npm'));
+  } else {
+    extraPathDirs.push(path.join(os.homedir(), '.local', 'bin'));
+  }
+
   return new Promise((resolve, reject) => {
     execFile(
       command,
@@ -192,7 +209,7 @@ function runCommandOutput(command: string, args: string[]): Promise<string> {
         maxBuffer: 2 * 1024 * 1024,
         env: {
           ...process.env,
-          PATH: [path.join(os.homedir(), '.local', 'bin'), process.env.PATH ?? ''].join(path.delimiter),
+          PATH: [...extraPathDirs, process.env.PATH ?? ''].join(path.delimiter),
         } as { [key: string]: string },
       },
       (error, stdout, stderr) => {
