@@ -243,36 +243,55 @@ function findNearestRegionLabel(el: Element): string | null {
 /**
  * Infer the broad UI region type from the nearest landmark or container.
  */
+const REGION_TYPE_BY_ROLE: Record<string, string> = {
+  navigation: 'navigation',
+  complementary: 'sidebar',
+  main: 'main content',
+  dialog: 'dialog',
+  menu: 'menu',
+  tablist: 'tab list',
+  list: 'list',
+  table: 'table',
+  form: 'form section',
+};
+
+const REGION_TYPE_BY_TAG: Record<string, string> = {
+  nav: 'navigation',
+  aside: 'sidebar',
+  main: 'main content',
+  dialog: 'dialog',
+  ul: 'list',
+  ol: 'list',
+  dl: 'list',
+  table: 'table',
+  form: 'form section',
+};
+
+function inferRegionByRoleOrTag(role: string, tagName: string): string | null {
+  return REGION_TYPE_BY_ROLE[role] ?? REGION_TYPE_BY_TAG[tagName] ?? null;
+}
+
+function inferSectionRegionType(el: Element): string {
+  if (el.closest('form, [role="form"]')) return 'form section';
+  if (el.closest('aside, [role="complementary"]')) return 'sidebar';
+  if (el.closest('nav, [role="navigation"]')) return 'navigation';
+  if (el.closest('main, [role="main"]')) return 'main content';
+  return 'section';
+}
+
 function inferRegionType(el: Element): string | null {
   let current: Element | null = el.parentElement;
 
   while (current) {
     const role = normalizeText(current.getAttribute('role')).toLowerCase();
     const tagName = current.tagName.toLowerCase();
+    const directRegionType = inferRegionByRoleOrTag(role, tagName);
+    if (directRegionType) {
+      return directRegionType;
+    }
 
-    if (role === 'navigation' || tagName === 'nav') return 'navigation';
-    if (role === 'complementary' || tagName === 'aside') return 'sidebar';
-    if (role === 'main' || tagName === 'main') return 'main content';
-    if (role === 'dialog' || tagName === 'dialog') return 'dialog';
-    if (role === 'menu') return 'menu';
-    if (role === 'tablist') return 'tab list';
-    if (role === 'list' || tagName === 'ul' || tagName === 'ol' || tagName === 'dl') return 'list';
-    if (role === 'table' || tagName === 'table') return 'table';
-    if (role === 'form' || tagName === 'form') return 'form section';
     if (tagName === 'section' || tagName === 'article') {
-      const formAncestor = current.closest('form, [role="form"]');
-      if (formAncestor) return 'form section';
-
-      const sidebarAncestor = current.closest('aside, [role="complementary"]');
-      if (sidebarAncestor) return 'sidebar';
-
-      const navAncestor = current.closest('nav, [role="navigation"]');
-      if (navAncestor) return 'navigation';
-
-      const mainAncestor = current.closest('main, [role="main"]');
-      if (mainAncestor) return 'main content';
-
-      return 'section';
+      return inferSectionRegionType(current);
     }
 
     current = current.parentElement;
@@ -322,17 +341,12 @@ function collectNearbyText(el: Element): string[] {
 /**
  * Classify the collection/container that the selected element belongs to.
  */
-function inferCollectionLabel(
-  el: Element,
-  regionType: string | null,
-  nearbyText: string[],
-  selectedText: string | null
-): string | null {
-  const repoLike = (text: string | null): boolean => {
-    if (!text) return false;
-    return /^[\w.-]+\/[\w.-]+/.test(text) || text.includes('/');
-  };
+function isRepositoryLikeText(text: string | null): boolean {
+  if (!text) return false;
+  return /^[\w.-]+\/[\w.-]+/.test(text) || text.includes('/');
+}
 
+function inferCollectionFromRegion(regionType: string | null): string | null {
   if (regionType === 'table') return 'table';
   if (regionType === 'form section') return 'form section';
   if (regionType === 'dialog') return 'modal';
@@ -340,32 +354,61 @@ function inferCollectionLabel(
   if (regionType === 'tab list') return 'tab list';
   if (regionType === 'navigation') return 'navigation';
   if (regionType === 'main content') return 'main content';
+  return null;
+}
 
-  const isCollection = nearbyText.length >= 1 || repoLike(selectedText);
-  if (regionType === 'sidebar' && isCollection) {
-    if (repoLike(selectedText) || nearbyText.some(repoLike)) {
-      return 'repository list';
-    }
-    return 'sidebar list';
+function inferCollectionByRegionContext(
+  regionType: string | null,
+  isCollection: boolean,
+  hasRepositoryLikeText: boolean
+): string | null {
+  if (!isCollection) {
+    return null;
   }
 
-  if (regionType === 'list' && isCollection) {
-    if (repoLike(selectedText) || nearbyText.some(repoLike)) {
-      return 'repository list';
-    }
-    return 'list';
+  if (regionType === 'sidebar') {
+    return hasRepositoryLikeText ? 'repository list' : 'sidebar list';
   }
 
-  if (repoLike(selectedText) || nearbyText.some(repoLike)) {
+  if (regionType === 'list') {
+    return hasRepositoryLikeText ? 'repository list' : 'list';
+  }
+
+  return null;
+}
+
+function inferCollectionByTag(el: Element): string | null {
+  const tagName = el.tagName.toLowerCase();
+  if (tagName === 'li') return 'list';
+  if (tagName === 'tr' || tagName === 'td' || tagName === 'th') return 'table';
+  return null;
+}
+
+function inferCollectionLabel(
+  el: Element,
+  regionType: string | null,
+  nearbyText: string[],
+  selectedText: string | null
+): string | null {
+  const regionCollection = inferCollectionFromRegion(regionType);
+  if (regionCollection) {
+    return regionCollection;
+  }
+
+  const hasRepositoryLikeText =
+    isRepositoryLikeText(selectedText) || nearbyText.some((text) => isRepositoryLikeText(text));
+  const isCollection = nearbyText.length >= 1 || isRepositoryLikeText(selectedText);
+
+  const regionContextCollection = inferCollectionByRegionContext(regionType, isCollection, hasRepositoryLikeText);
+  if (regionContextCollection) {
+    return regionContextCollection;
+  }
+
+  if (hasRepositoryLikeText) {
     return 'repository list';
   }
 
-  const tagName = el.tagName.toLowerCase();
-  if (tagName === 'li') return 'list';
-  if (tagName === 'tr') return 'table';
-  if (tagName === 'td' || tagName === 'th') return 'table';
-
-  return null;
+  return inferCollectionByTag(el);
 }
 
 /**
