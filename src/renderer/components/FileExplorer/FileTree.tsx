@@ -374,7 +374,6 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
         (entry) => liveShowHidden || !entry.name.startsWith('.')
       );
 
-      // Build liveNodes from live state
       const liveNodes: Array<{ entry: FileExplorerEntry; depth: number }> = [];
       const walkLive = (entries: FileExplorerEntry[], depth: number) => {
         for (const entry of entries) {
@@ -389,86 +388,80 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
       };
       walkLive(liveRootEntries, 0);
 
-      // Guard: if the tree is empty (still loading), ignore keyboard events
       if (liveNodes.length === 0) {
         return;
       }
 
       const currentIndex = liveNodes.findIndex((n) => n.entry.path === liveSelected);
+      const targetIndex = currentIndex === -1 ? 0 : currentIndex;
+      const selectedNode = liveNodes[targetIndex];
+      const selectNodeAt = (index: number) => {
+        const node = liveNodes[index];
+        if (node) {
+          setExplorerSelectedPath(node.entry.path, workspaceId);
+        }
+      };
+      const ensureLoadedThenToggle = (directoryPath: string) => {
+        void (async () => {
+          if (!Object.prototype.hasOwnProperty.call(liveEntries, directoryPath)) {
+            await onLoadDirectory(directoryPath);
+          }
+          toggleExplorerPath(directoryPath, workspaceId);
+        })();
+      };
 
-      switch (e.key) {
-        case 'ArrowDown': {
-          e.preventDefault();
+      const keyHandlers: Partial<Record<string, () => void>> = {
+        ArrowDown: () => {
           if (currentIndex === -1) {
-            setExplorerSelectedPath(liveNodes[0].entry.path, workspaceId);
-          } else {
-            const nextIndex = currentIndex < liveNodes.length - 1 ? currentIndex + 1 : currentIndex;
-            setExplorerSelectedPath(liveNodes[nextIndex].entry.path, workspaceId);
+            selectNodeAt(0);
+            return;
           }
-          break;
-        }
-        case 'ArrowUp': {
-          e.preventDefault();
+          const nextIndex = Math.min(currentIndex + 1, liveNodes.length - 1);
+          selectNodeAt(nextIndex);
+        },
+        ArrowUp: () => {
           if (currentIndex === -1) {
-            setExplorerSelectedPath(liveNodes[liveNodes.length - 1].entry.path, workspaceId);
-          } else {
-            const prevIndex = currentIndex > 0 ? currentIndex - 1 : currentIndex;
-            setExplorerSelectedPath(liveNodes[prevIndex].entry.path, workspaceId);
+            selectNodeAt(liveNodes.length - 1);
+            return;
           }
-          break;
-        }
-        case 'ArrowRight': {
-          e.preventDefault();
-          const targetIndex = currentIndex === -1 ? 0 : currentIndex;
-          const node = liveNodes[targetIndex];
-          if (node?.entry.isDirectory && !liveExpanded.includes(node.entry.path)) {
-            void (async () => {
-              if (!Object.prototype.hasOwnProperty.call(liveEntries, node.entry.path)) {
-                await onLoadDirectory(node.entry.path);
-              }
-                toggleExplorerPath(node.entry.path, workspaceId);
-              })();
+          const prevIndex = Math.max(currentIndex - 1, 0);
+          selectNodeAt(prevIndex);
+        },
+        ArrowRight: () => {
+          if (selectedNode?.entry.isDirectory && !liveExpanded.includes(selectedNode.entry.path)) {
+            ensureLoadedThenToggle(selectedNode.entry.path);
           }
-          break;
-        }
-        case 'ArrowLeft': {
-          e.preventDefault();
-          const targetIndex = currentIndex === -1 ? 0 : currentIndex;
-          const node = liveNodes[targetIndex];
-          if (node?.entry.isDirectory && liveExpanded.includes(node.entry.path)) {
-            toggleExplorerPath(node.entry.path, workspaceId);
+        },
+        ArrowLeft: () => {
+          if (selectedNode?.entry.isDirectory && liveExpanded.includes(selectedNode.entry.path)) {
+            toggleExplorerPath(selectedNode.entry.path, workspaceId);
           }
-          break;
-        }
-        case 'Enter': {
-          const targetIndex = currentIndex === -1 ? 0 : currentIndex;
-          const node = liveNodes[targetIndex];
-          if (node?.entry.isDirectory) {
-            if (!liveExpanded.includes(node.entry.path)) {
-              void (async () => {
-                if (!Object.prototype.hasOwnProperty.call(liveEntries, node.entry.path)) {
-                  await onLoadDirectory(node.entry.path);
-                }
-                toggleExplorerPath(node.entry.path, workspaceId);
-              })();
+        },
+        Enter: () => {
+          if (!selectedNode) return;
+          if (selectedNode.entry.isDirectory) {
+            if (!liveExpanded.includes(selectedNode.entry.path)) {
+              ensureLoadedThenToggle(selectedNode.entry.path);
             } else {
-              toggleExplorerPath(node.entry.path, workspaceId);
+              toggleExplorerPath(selectedNode.entry.path, workspaceId);
             }
-          } else {
-            void openFileInEditor(node.entry.path, workspaceId);
+            return;
           }
-          break;
-        }
-        case 'F2': {
-          e.preventDefault();
-          if (currentIndex >= 0) {
-            const node = liveNodes[currentIndex];
-            if (node) {
-              onStartRenaming(node.entry.path, node.entry.name);
-            }
+          void openFileInEditor(selectedNode.entry.path, workspaceId);
+        },
+        F2: () => {
+          if (currentIndex < 0) return;
+          const node = liveNodes[currentIndex];
+          if (node) {
+            onStartRenaming(node.entry.path, node.entry.name);
           }
-          break;
-        }
+        },
+      };
+
+      const handler = keyHandlers[e.key];
+      if (handler) {
+        e.preventDefault();
+        handler();
       }
     },
     [rootPath, onLoadDirectory, toggleExplorerPath, setExplorerSelectedPath, openFileInEditor, onStartRenaming, workspaceId]
