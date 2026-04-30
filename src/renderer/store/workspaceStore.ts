@@ -72,7 +72,7 @@ export type {
 } from './workspaceTypes';
 
 export type { DockEdge, EdgeGap, EdgeTerminal } from './workspaceLayout';
-export { getEdgeGaps, getEdgeTerminals } from './workspaceLayout';
+export { getEdgeTerminals } from './workspaceLayout';
 
 export * from './workspaceStoreHelpers';
 
