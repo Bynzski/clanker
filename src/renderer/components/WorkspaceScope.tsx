@@ -22,7 +22,7 @@ export function WorkspaceScopeProvider({
   );
 }
 
-export function useScopedWorkspaceId(workspaceId?: string): string | null {
+function useScopedWorkspaceId(workspaceId?: string): string | null {
   const scopedWorkspaceId = useContext(WorkspaceScopeContext);
   return workspaceId ?? scopedWorkspaceId;
 }
