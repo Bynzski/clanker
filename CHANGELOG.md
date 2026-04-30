@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`.fallowrc.json`** — fallow configuration teaching it about the Electron architecture: Vite entry points (`main.tsx`, `index.html`), the renderer ambient declaration `electron.d.ts`, and `shared/types/credentials.ts` (whose IPC types are only consumed via the ambient declaration). An override turns off `unresolved-imports` for `electron.d.ts` since fallow can't resolve relative imports out of `.d.ts` files. Drops unresolved-import noise from 45 to 0 and unused-file noise from 5 to 2 (both genuine). Resolves #8.
+
 ### Removed
 
 - **Debug console statements** — removed 25 `console.log`, `console.debug`, and `console.info` statements from the annotation module, session history discovery, and IPC handlers that were development/debug leftovers. Resolves #5.
