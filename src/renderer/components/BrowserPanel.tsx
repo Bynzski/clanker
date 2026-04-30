@@ -4,7 +4,7 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { BrowserTab } from '../store/workspaceTypes';
 import { useScopedWorkspace } from './WorkspaceScope';
-import { useDragHandle } from './DynamicPaneLayout';
+import { useDragHandle } from './dragHandleContext';
 import './BrowserPanel.css';
 import {
   browserMount,

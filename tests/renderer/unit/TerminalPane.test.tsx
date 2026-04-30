@@ -57,7 +57,7 @@ vi.mock('@xterm/addon-clipboard', () => ({
 }));
 
 // Mock the drag handle context
-vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
+vi.mock('../../../src/renderer/components/dragHandleContext', () => ({
   useDragHandle: vi.fn().mockReturnValue({}),
 }));
 
