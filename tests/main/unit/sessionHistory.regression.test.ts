@@ -98,6 +98,7 @@ import {
   buildSessionInvokeArgs,
   clearSessionCache,
   sessionMatchesWorkspace,
+  encodeClaudeProjectDir,
 } from '../../../src/main/sessionHistory';
 import type { HarnessSession } from '../../../src/shared/types/session';
 
@@ -316,9 +317,10 @@ describe('discoverSessions — pi', () => {
 });
 
 describe('discoverSessions — claude', () => {
-  // Encode workspace path the same way discoverClaudeSessions does:
-  // /home/user/project → -home-user-project
-  const encodedWorkspace = `-${toPosixPath(TEST_WORKSPACE).replace(/^\//, '').replace(/\//g, '-')}`;
+  // Encode workspace path the same way discoverClaudeSessions does.
+  // Use the production helper so this test stays correct on Windows
+  // (where the drive-letter colon would otherwise diverge).
+  const encodedWorkspace = encodeClaudeProjectDir(TEST_WORKSPACE);
 
   beforeEach(() => {
     clearSessionCache();

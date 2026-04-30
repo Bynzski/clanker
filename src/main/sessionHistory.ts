@@ -619,7 +619,10 @@ async function resolveCodexOrphanedTitle(
 ): Promise<string> {
   const indexTitle = indexThreadNames.get(session.id);
   const userMessageTitle = await readCodexFirstUserMessage(session.filePath);
-  return (indexTitle && indexTitle.trim()) || userMessageTitle || session.cwd.split('/').pop() || 'Codex session';
+  // Split on both separators so a Windows-style cwd (C:\Users\...\foo)
+  // resolves to "foo" instead of the entire path string.
+  const cwdBasename = session.cwd.split(/[/\\]/).filter(Boolean).pop();
+  return (indexTitle && indexTitle.trim()) || userMessageTitle || cwdBasename || 'Codex session';
 }
 
 async function discoverCodexSessions(workspacePath: string): Promise<HarnessSession[]> {
