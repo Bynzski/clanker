@@ -97,28 +97,30 @@ import type { HarnessSession } from '../../../src/shared/types/session';
 
 describe('encodeClaudeProjectDir', () => {
   it('encodes a POSIX path the same way Claude Code does', () => {
-    // Leading dash comes from the leading `/`, not a prepended dash.
+    // Leading dash comes from the leading `/`.
     expect(encodeClaudeProjectDir('/home/jay/dev/projects/foo')).toBe(
       '-home-jay-dev-projects-foo'
     );
   });
 
-  it('encodes a Windows path with drive letter (colon and backslash each become a dash)', () => {
-    // `C:\` → `C--` (one dash for `:`, one for `\`), so no leading dash.
+  it('encodes a Windows drive-letter path with a leading dash (Claude POSIX-normalizes first)', () => {
+    // Claude Code prepends `/` before encoding, so `C:\Users\jay\foo`
+    // → `/C:/Users/jay/foo` → `-C--Users-jay-foo` (leading dash from the
+    // prepended `/`, double dash after `C` from `:` and `/`).
     expect(encodeClaudeProjectDir('C:\\Users\\jay\\dev\\projects\\foo')).toBe(
-      'C--Users-jay-dev-projects-foo'
+      '-C--Users-jay-dev-projects-foo'
     );
   });
 
-  it('encodes a Windows path with forward-slash separators', () => {
+  it('encodes a Windows path with forward-slash separators identically', () => {
     expect(encodeClaudeProjectDir('C:/Users/jay/dev/projects/foo')).toBe(
-      'C--Users-jay-dev-projects-foo'
+      '-C--Users-jay-dev-projects-foo'
     );
   });
 
   it('encodes a UNC path with leading double-backslash', () => {
-    // Each leading `\` produces its own dash, matching Claude Code's
-    // observed behavior for UNC paths.
+    // `\\server\share\foo` → `//server/share/foo` (already starts with `/`,
+    // no extra prepend) → `--server-share-foo`.
     expect(encodeClaudeProjectDir('\\\\server\\share\\foo')).toBe('--server-share-foo');
   });
 
