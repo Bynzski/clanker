@@ -13,6 +13,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 
 - **Drag-handle context extracted to its own module** — moved `DragHandleContext` and the `useDragHandle` hook out of `DynamicPaneLayout.tsx` into `dragHandleContext.ts`. Pane components and the file explorer now import the hook from the new module instead of from `DynamicPaneLayout`, breaking three circular import edges (`DynamicPaneLayout` ↔ `BrowserPanel` / `EditorPane` / `TerminalPane`). Pure refactor, no behavior change. Resolves #9.
+- **`validateWorkspaceConsistency` decomposed** — split the 130-line invariant checker into five focused sub-validators (workspace, terminal, layout, browser, editor) along its existing `[W*][T*][L*][B*][E*]` section markers. The public function is now an 8-line orchestrator that concatenates their results. Cyclomatic complexity drops from 59 to ≤19 per sub-validator (largest is the layout block); behavior is identical and all 136 existing tests pass unchanged. Resolves #10.
 
 ### Removed
 

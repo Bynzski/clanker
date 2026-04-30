@@ -531,15 +531,15 @@ export function clearEditorOperationPending(
   );
 }
 
-export function validateWorkspaceConsistency(state: Partial<WorkspaceState>): string[] {
+// validateWorkspaceConsistency is called with `Partial<WorkspaceState>` snapshots in many places.
+// Treat `undefined` fields as "not provided" (skip checks) to avoid false positives.
+function hasOwnState(state: Partial<WorkspaceState>, key: keyof WorkspaceState): boolean {
+  return Object.prototype.hasOwnProperty.call(state, key);
+}
+
+function validateWorkspaceInvariants(state: Partial<WorkspaceState>): string[] {
   const warnings: string[] = [];
 
-  // This validator is called with `Partial<WorkspaceState>` snapshots in many places.
-  // Treat `undefined` fields as "not provided" (skip checks) to avoid false positives.
-  const hasOwn = (key: keyof WorkspaceState): boolean =>
-    Object.prototype.hasOwnProperty.call(state, key);
-
-  // [W1,W2] Workspace invariants
   if (state.activeWorkspaceId === null && (state.workspaces?.length ?? 0) > 0) {
     warnings.push('W1 violated: activeWorkspaceId is null but workspaces[] is non-empty');
   }
@@ -548,7 +548,7 @@ export function validateWorkspaceConsistency(state: Partial<WorkspaceState>): st
       warnings.push(`W2 violated: activeWorkspaceId "${state.activeWorkspaceId}" not found in workspaces[]`);
     }
   }
-  if (hasOwn('workspaces') && hasOwn('activeWorkspaceId') && Array.isArray(state.workspaces)) {
+  if (hasOwnState(state, 'workspaces') && hasOwnState(state, 'activeWorkspaceId') && Array.isArray(state.workspaces)) {
     const activeLifecycleWorkspaces = state.workspaces.filter((workspace) => workspace.lifecycle === 'active');
 
     if (state.workspaces.length > 0 && activeLifecycleWorkspaces.length !== 1) {
@@ -567,7 +567,12 @@ export function validateWorkspaceConsistency(state: Partial<WorkspaceState>): st
     }
   }
 
-  // [T1,T2] Terminal invariants
+  return warnings;
+}
+
+function validateTerminalInvariants(state: Partial<WorkspaceState>): string[] {
+  const warnings: string[] = [];
+
   if (state.activeTerminalId === null && (state.terminals?.length ?? 0) > 0) {
     warnings.push('T1 violated: activeTerminalId is null but terminals[] is non-empty');
   }
@@ -577,80 +582,101 @@ export function validateWorkspaceConsistency(state: Partial<WorkspaceState>): st
     }
   }
 
-  // [L1,L2] Layout invariants
-  if (hasOwn('layoutRoot')) {
-    const layoutRoot = state.layoutRoot ?? null;
+  return warnings;
+}
 
-    if (layoutRoot === null) {
-      if (Array.isArray(state.panes) && state.panes.length > 0) {
-        warnings.push('L1 violated: layoutRoot is null but panes[] is non-empty');
-      }
-      if (state.browserVisible === true) {
-        warnings.push('L1 violated: layoutRoot is null but browser is visible');
-      }
-      if (state.editorVisible === true) {
-        warnings.push('L1 violated: layoutRoot is null but editor is visible');
-      }
-    } else {
-      // Only validate this invariant when the relevant fields are present; missing booleans
-      // should not be interpreted as "false" in partial snapshots.
-      if (
-        Array.isArray(state.panes)
-        && state.panes.length === 0
-        && state.browserVisible === false
-        && state.editorVisible === false
-      ) {
-        warnings.push('L1 violated: layoutRoot is non-null but no panes exist and browser/editor are invisible');
-      }
+function validateLayoutInvariants(state: Partial<WorkspaceState>): string[] {
+  const warnings: string[] = [];
 
-      const panes = state.panes;
-      if (Array.isArray(panes) && hasOwn('browserPane') && hasOwn('editorPane')) {
-        const leafPaneIds = collectLeafPaneIds(layoutRoot);
-        const allValidPaneIds = new Set<string>([
-          ...panes.map(p => p.id),
-          ...(state.browserPane ? [state.browserPane.id] : []),
-          ...(state.editorPane ? [state.editorPane.id] : []),
-        ]);
-        for (const paneId of leafPaneIds) {
-          if (!allValidPaneIds.has(paneId)) {
-            warnings.push(`L2 violated: layout pane "${paneId}" not found in panes[], browserPane, or editorPane`);
-          }
-        }
+  if (!hasOwnState(state, 'layoutRoot')) {
+    return warnings;
+  }
+
+  const layoutRoot = state.layoutRoot ?? null;
+
+  if (layoutRoot === null) {
+    if (Array.isArray(state.panes) && state.panes.length > 0) {
+      warnings.push('L1 violated: layoutRoot is null but panes[] is non-empty');
+    }
+    if (state.browserVisible === true) {
+      warnings.push('L1 violated: layoutRoot is null but browser is visible');
+    }
+    if (state.editorVisible === true) {
+      warnings.push('L1 violated: layoutRoot is null but editor is visible');
+    }
+    return warnings;
+  }
+
+  // Only validate this invariant when the relevant fields are present; missing booleans
+  // should not be interpreted as "false" in partial snapshots.
+  if (
+    Array.isArray(state.panes)
+    && state.panes.length === 0
+    && state.browserVisible === false
+    && state.editorVisible === false
+  ) {
+    warnings.push('L1 violated: layoutRoot is non-null but no panes exist and browser/editor are invisible');
+  }
+
+  const panes = state.panes;
+  if (Array.isArray(panes) && hasOwnState(state, 'browserPane') && hasOwnState(state, 'editorPane')) {
+    const leafPaneIds = collectLeafPaneIds(layoutRoot);
+    const allValidPaneIds = new Set<string>([
+      ...panes.map(p => p.id),
+      ...(state.browserPane ? [state.browserPane.id] : []),
+      ...(state.editorPane ? [state.editorPane.id] : []),
+    ]);
+    for (const paneId of leafPaneIds) {
+      if (!allValidPaneIds.has(paneId)) {
+        warnings.push(`L2 violated: layout pane "${paneId}" not found in panes[], browserPane, or editorPane`);
       }
     }
   }
 
-  // [B1..B4] Browser pane / tab invariants
-  if (hasOwn('browserPane') && state.browserPane != null) {
-    const tabs = state.browserPane.tabs;
-    if (!Array.isArray(tabs) || tabs.length === 0) {
-      warnings.push('B1 violated: browserPane.tabs must contain at least one tab');
-    } else {
-      const seen = new Set<string>();
-      for (const tab of tabs) {
-        if (seen.has(tab.id)) {
-          warnings.push(`B2 violated: duplicate browser tab id "${tab.id}"`);
-        }
-        seen.add(tab.id);
-      }
+  return warnings;
+}
 
-      const activeTabId = state.browserPane.activeTabId;
-      if (activeTabId == null) {
-        warnings.push('B3 violated: browserPane.activeTabId is null but tabs[] is non-empty');
-      } else if (!tabs.some((tab) => tab.id === activeTabId)) {
-        warnings.push(`B3 violated: browserPane.activeTabId "${activeTabId}" not found in browserPane.tabs[]`);
-      } else if (typeof state.browserUrl === 'string') {
-        const activeTab = tabs.find((tab) => tab.id === activeTabId);
-        if (activeTab && activeTab.url !== state.browserUrl) {
-          warnings.push(
-            `B4 violated: browserUrl "${state.browserUrl}" does not match active tab url "${activeTab.url}"`,
-          );
-        }
-      }
+function validateBrowserInvariants(state: Partial<WorkspaceState>): string[] {
+  const warnings: string[] = [];
+
+  if (!hasOwnState(state, 'browserPane') || state.browserPane == null) {
+    return warnings;
+  }
+
+  const tabs = state.browserPane.tabs;
+  if (!Array.isArray(tabs) || tabs.length === 0) {
+    warnings.push('B1 violated: browserPane.tabs must contain at least one tab');
+    return warnings;
+  }
+
+  const seen = new Set<string>();
+  for (const tab of tabs) {
+    if (seen.has(tab.id)) {
+      warnings.push(`B2 violated: duplicate browser tab id "${tab.id}"`);
+    }
+    seen.add(tab.id);
+  }
+
+  const activeTabId = state.browserPane.activeTabId;
+  if (activeTabId == null) {
+    warnings.push('B3 violated: browserPane.activeTabId is null but tabs[] is non-empty');
+  } else if (!tabs.some((tab) => tab.id === activeTabId)) {
+    warnings.push(`B3 violated: browserPane.activeTabId "${activeTabId}" not found in browserPane.tabs[]`);
+  } else if (typeof state.browserUrl === 'string') {
+    const activeTab = tabs.find((tab) => tab.id === activeTabId);
+    if (activeTab && activeTab.url !== state.browserUrl) {
+      warnings.push(
+        `B4 violated: browserUrl "${state.browserUrl}" does not match active tab url "${activeTab.url}"`,
+      );
     }
   }
 
-  // [E1,E2] Editor invariants
+  return warnings;
+}
+
+function validateEditorInvariants(state: Partial<WorkspaceState>): string[] {
+  const warnings: string[] = [];
+
   if (state.activeEditorTabId === null && (state.editorTabs?.length ?? 0) > 0) {
     warnings.push('E1 violated: activeEditorTabId is null but editorTabs[] is non-empty');
   }
@@ -661,4 +687,14 @@ export function validateWorkspaceConsistency(state: Partial<WorkspaceState>): st
   }
 
   return warnings;
+}
+
+export function validateWorkspaceConsistency(state: Partial<WorkspaceState>): string[] {
+  return [
+    ...validateWorkspaceInvariants(state),
+    ...validateTerminalInvariants(state),
+    ...validateLayoutInvariants(state),
+    ...validateBrowserInvariants(state),
+    ...validateEditorInvariants(state),
+  ];
 }
