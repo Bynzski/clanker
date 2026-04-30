@@ -17,7 +17,7 @@ import {
 
 interface TempRepo {
   path: string;
-  cleanup: () => void;
+  cleanup: () => Promise<void>;
 }
 
 // ============================================================================
@@ -35,9 +35,9 @@ beforeEach(() => {
   resetService();
 });
 
-afterEach(() => {
+afterEach(async () => {
   if (repo) {
-    repo.cleanup();
+    await repo.cleanup();
     repo = null;
   }
 });

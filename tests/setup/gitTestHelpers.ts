@@ -28,20 +28,34 @@ function gitExecOptions(cwd: string) {
   } as const;
 }
 
-function removeTempDir(dirPath: string): void {
-  fs.rmSync(dirPath, {
-    recursive: true,
-    force: true,
-    maxRetries: 10,
-    retryDelay: 50,
-  });
+async function removeTempDir(dirPath: string): Promise<void> {
+  // On Windows, git.exe may still hold directory handles after the test
+  // completes. Use async retries with yields so the process can release
+  // locks between attempts.
+  const maxAttempts = 30;
+  const delayMs = 100;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      fs.rmSync(dirPath, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EBUSY' && attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      if (!fs.existsSync(dirPath)) return;
+      throw err;
+    }
+  }
 }
 
 export interface TempGitRepo {
   /** Path to the temporary repository */
   path: string;
   /** Cleanup function to remove the repo */
-  cleanup: () => void;
+  cleanup: () => Promise<void>;
 }
 
 /**
@@ -93,8 +107,8 @@ export async function createTempGitRepo(options: {
 
   return {
     path: tempDir,
-    cleanup: () => {
-      removeTempDir(tempDir);
+    cleanup: async () => {
+      await removeTempDir(tempDir);
     },
   };
 }
@@ -122,7 +136,7 @@ export async function createTempGitRepoWithRemote(options: {
     local,
     remote: {
       path: remoteDir,
-      cleanup: () => removeTempDir(remoteDir),
+      cleanup: async () => removeTempDir(remoteDir),
     },
   };
 }

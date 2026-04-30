@@ -13,7 +13,7 @@ import { createTempGitRepo, git } from '../../../../tests/setup/gitTestHelpers';
 
 interface TempRepo {
   path: string;
-  cleanup: () => void;
+  cleanup: () => Promise<void>;
 }
 
 // ============================================================================
@@ -31,9 +31,9 @@ beforeEach(() => {
   resetService();
 });
 
-afterEach(() => {
+afterEach(async () => {
   if (repo) {
-    repo.cleanup();
+    await repo.cleanup();
     repo = null;
   }
 });
@@ -227,7 +227,7 @@ describe('getBranches - failure handling with real git', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'not-a-repo-'));
     try {
       fs.writeFileSync(path.join(tempDir, 'file.txt'), 'content');
-      repo = { path: tempDir, cleanup: () => {} };
+      repo = { path: tempDir, cleanup: async () => {} };
       
       // git branch should fail for non-repo
       await expect(service.getBranches(repo.path)).rejects.toThrow();
