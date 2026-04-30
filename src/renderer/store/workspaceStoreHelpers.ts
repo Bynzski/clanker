@@ -32,7 +32,7 @@ export const generateId = (prefix: string) => {
 
 export const generatePaneId = () => generateId('pane');
 
-export const generateBrowserTabId = () => generateId('browser-tab');
+const generateBrowserTabId = () => generateId('browser-tab');
 
 /**
  * Default URL for new browser tabs and freshly-created browser panes.
@@ -75,7 +75,7 @@ function sanitizeBrowserTab(raw: unknown, fallbackUrl: string): BrowserTab | nul
  * - Drops malformed tab entries; deduplicates by id (first occurrence wins).
  * - Coerces `activeTabId` to a valid tab; falls back to the first tab.
  */
-export function sanitizeBrowserPane(
+function sanitizeBrowserPane(
   pane: BrowserPaneState | null | undefined,
   browserUrl: string,
 ): BrowserPaneState | null {
@@ -130,25 +130,6 @@ export function createDefaultBrowserPane(
     tabs: [tab],
     activeTabId: tab.id,
   };
-}
-
-export function getActiveBrowserTab(browserPane: BrowserPaneState | null): BrowserTab | null {
-  if (browserPane == null || browserPane.activeTabId == null) {
-    return null;
-  }
-  return browserPane.tabs.find((tab) => tab.id === browserPane.activeTabId) ?? null;
-}
-
-/**
- * Mirrors the active tab URL into the workspace-level `browserUrl`.
- * No-op when there is no active tab or when the URL already matches.
- */
-export function syncBrowserUrlFromActiveTab(workspace: WorkspaceTab): WorkspaceTab {
-  const activeTab = getActiveBrowserTab(workspace.browserPane);
-  if (activeTab == null || workspace.browserUrl === activeTab.url) {
-    return workspace;
-  }
-  return { ...workspace, browserUrl: activeTab.url };
 }
 
 export const createPane = (terminalId: string | null, position?: PanePosition): Pane => ({
@@ -260,7 +241,7 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   runtimeState: sanitizeRuntimeState(workspace),
 });
 
-export function withWorkspaceLifecycle(
+function withWorkspaceLifecycle(
   workspace: WorkspaceTab,
   lifecycle: WorkspaceLifecycleState,
 ): WorkspaceTab {

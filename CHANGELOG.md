@@ -17,6 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Removed
 
+- **Unused exports in workspace store helpers** — dropped the `export` keyword on `generateBrowserTabId`, `sanitizeBrowserPane`, and `withWorkspaceLifecycle` (still used internally by their modules), and deleted `syncBrowserUrlFromActiveTab` and `getActiveBrowserTab` outright (no callers anywhere). Also removed `getEdgeGaps` from the `workspaceStore` re-export surface — its tests already import it directly from `workspaceLayout`. Drops unused production exports from 20 to 14. First batch toward #11.
 - **Debug console statements** — removed 25 `console.log`, `console.debug`, and `console.info` statements from the annotation module, session history discovery, and IPC handlers that were development/debug leftovers. Resolves #5.
 - **Pane locking feature** — removed `locked` pane state, lock toggles/icons in terminal/browser/editor panes, and lock-based insertion guards. This also resolves issue #4 where lock controls were non-functional.
 - **Bring-to-front actions** — removed `bringPaneIntoView`, `bringBrowserIntoView`, and `bringEditorIntoView` store actions and corresponding UI controls.
