@@ -21,6 +21,7 @@ import {
   generateDisableCode,
   generateCheckCopyTriggerCode,
 } from './annotationRuntime';
+import { type RawCaptureResult, mapRawCaptureToAnnotationData } from './annotationCaptureParser';
 
 export interface AnnotationState {
   enabled: boolean;
@@ -245,27 +246,10 @@ export function createAnnotationController(
     },
 
     async capture(): Promise<AnnotationCaptureResult> {
-      const result = await executeAndCapture<{
-        error?: string;
-        url?: string;
-        title?: string;
-        tagName?: string;
-      selector?: string;
-      fallbackSelectors?: string[];
-      id?: string | null;
-      className?: string | null;
-      text?: string | null;
-      role?: string | null;
-      accessibleName?: string | null;
-      attributes?: Record<string, string>;
-      bounds?: { x: number; y: number; width: number; height: number };
-      uiRegion?: string | null;
-      elementRoleInContext?: string | null;
-      nearbyText?: string[];
-      ancestorContext?: string | null;
-      note?: string;
-      timestamp?: string;
-    }>(state.workspaceId, generateCaptureCode());
+      const result = await executeAndCapture<RawCaptureResult>(
+        state.workspaceId,
+        generateCaptureCode(),
+      );
 
       if (!result.success) {
         return { success: false, error: result.error || 'Unknown error' };
@@ -275,33 +259,13 @@ export function createAnnotationController(
         return { success: false, error: result.result.error };
       }
 
-      // Validate we got actual annotation data
       if (!result.result?.url || !result.result?.selector) {
         return { success: false, error: 'No annotation pending' };
       }
 
       return {
         success: true,
-        annotation: {
-          url: result.result.url,
-          title: result.result.title || '',
-          tagName: result.result.tagName || 'UNKNOWN',
-          selector: result.result.selector || '',
-          fallbackSelectors: result.result.fallbackSelectors || [],
-          id: result.result.id || null,
-          className: result.result.className || null,
-          text: result.result.text || null,
-          role: result.result.role || null,
-          accessibleName: result.result.accessibleName || null,
-          attributes: result.result.attributes || {},
-          bounds: result.result.bounds || { x: 0, y: 0, width: 0, height: 0 },
-          uiRegion: result.result.uiRegion || null,
-          elementRoleInContext: result.result.elementRoleInContext || null,
-          nearbyText: result.result.nearbyText || [],
-          ancestorContext: result.result.ancestorContext || null,
-          note: result.result.note || '',
-          timestamp: result.result.timestamp || new Date().toISOString(),
-        },
+        annotation: mapRawCaptureToAnnotationData(result.result),
       };
     },
 
@@ -331,95 +295,6 @@ export function createAnnotationController(
   };
 }
 
-/**
- * Format annotation as Markdown for clipboard export
- * Structured format suitable for pasting into an agent window
- */
-export function formatAnnotationMarkdown(capture: AnnotationData): string {
-  const formatInlineCodeList = (values: string[]): string => values.map(value => `\`${value}\``).join(', ');
-  const formatTextList = (values: string[]): string => values.map(value => `\`${value}\``).join('; ');
-
-  const lines: string[] = [
-    '## Page Annotation',
-    '',
-    `- URL: ${capture.url}`,
-    `- Title: ${capture.title}`,
-    `- Captured At: ${capture.timestamp}`,
-    '',
-    '### Selected Element',
-    `- Tag: \`${capture.tagName.toLowerCase()}\``,
-    `- Primary Selector: \`${capture.selector}\``,
-  ];
-
-  if (capture.fallbackSelectors.length > 0) {
-    lines.push(`- Fallback Selectors: ${formatInlineCodeList(capture.fallbackSelectors.slice(0, 4))}`);
-  }
-
-  if (capture.id) {
-    lines.push(`- ID: ${capture.id}`);
-  }
-
-  if (capture.className) {
-    const classes = capture.className.split(' ').filter(c => c && !c.match(/^_/)).slice(0, 5);
-    if (classes.length > 0) {
-      lines.push(`- Classes: ${classes.join(' ')}`);
-    }
-  }
-
-  if (capture.text) {
-    lines.push(`- Text: ${capture.text.slice(0, 100)}`);
-  }
-
-  if (capture.role) {
-    lines.push(`- Role: ${capture.role}`);
-  }
-
-  if (capture.accessibleName) {
-    lines.push(`- Accessible Name: ${capture.accessibleName}`);
-  }
-
-  lines.push(
-    `- Bounds: x=${Math.round(capture.bounds.x)} y=${Math.round(capture.bounds.y)} w=${Math.round(capture.bounds.width)} h=${Math.round(capture.bounds.height)}`
-  );
-
-  // Always render context section - show what's available
-  lines.push('');
-  lines.push('### Context');
-
-  if (capture.elementRoleInContext) {
-    lines.push(`- Element Role: ${capture.elementRoleInContext}`);
-  }
-
-  if (capture.uiRegion) {
-    lines.push(`- UI Region: ${capture.uiRegion}`);
-  }
-
-  if (capture.ancestorContext) {
-    lines.push(`- Ancestor Context: ${capture.ancestorContext}`);
-  }
-
-  if (capture.nearbyText.length > 0) {
-    lines.push(`- Nearby Text: ${formatTextList(capture.nearbyText.slice(0, 4))}`);
-  }
-
-  // If nothing was detected, provide a fallback
-  if (!capture.elementRoleInContext && !capture.uiRegion && !capture.ancestorContext && capture.nearbyText.length === 0) {
-    lines.push(`- Element Role: ${capture.tagName.toLowerCase()} (not further classified)`);
-  }
-
-  if (Object.keys(capture.attributes).length > 0) {
-    lines.push('');
-    lines.push('### Attributes');
-    for (const [key, value] of Object.entries(capture.attributes).slice(0, 10)) {
-      lines.push(`- ${key}: ${value}`);
-    }
-  }
-
-  // Always render annotation section to keep clipboard export structure stable
-  lines.push('');
-  lines.push('### Annotation');
-  const trimmedNote = capture.note.trim();
-  lines.push(trimmedNote.length > 0 ? trimmedNote : '_No note provided._');
-
-  return lines.join('\n');
-}
+// Re-export formatAnnotationMarkdown for backward compatibility.
+// Implementation lives in annotationMarkdownFormatter.ts.
+export { formatAnnotationMarkdown } from './annotationMarkdownFormatter';
