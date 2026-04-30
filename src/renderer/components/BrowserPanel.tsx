@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { MouseEvent as ReactMouseEvent, RefObject } from 'react';
+import type {
+  MouseEvent as ReactMouseEvent,
+  RefObject,
+  ChangeEventHandler,
+  FocusEventHandler,
+  KeyboardEventHandler,
+} from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, MousePointer2, ChevronDown, Plus } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
@@ -7,10 +13,11 @@ import type { BrowserTab } from '../store/workspaceTypes';
 import { useScopedWorkspace } from './WorkspaceScope';
 import { useDragHandle } from './dragHandleContext';
 import './BrowserPanel.css';
+import BrowserUrlInput from './BrowserUrlInput';
+import { useBrowserUrlAutocomplete } from './useBrowserUrlAutocomplete';
+import { useBrowserPanelActions } from './useBrowserPanelActions';
+import { useBrowserBoundsLifecycle } from './useBrowserBoundsLifecycle';
 import {
-  browserMount,
-  browserUnmount,
-  browserFirstBounds,
   browserReactMount,
   browserReactUnmount,
 } from '../lib/workspaceSwitchDebug';
@@ -125,27 +132,143 @@ function BrowserTabMenu({
   );
 }
 
+interface BrowserToolbarProps {
+  canGoBack: boolean;
+  canGoForward: boolean;
+  handleBack: () => void;
+  handleForward: () => void;
+  handleRefresh: () => void;
+  handleStop: () => void;
+  tabsMenuRef: RefObject<HTMLDivElement | null>;
+  tabsOpen: boolean;
+  browserTabs: BrowserTab[];
+  activeTab: BrowserTab | null;
+  activeTabId: string | null;
+  setTabsOpen: (value: boolean | ((open: boolean) => boolean)) => void;
+  handleNewTab: () => Promise<void>;
+  handleSwitchTab: (tabId: string) => Promise<void>;
+  handleCloseTab: (event: ReactMouseEvent, tabId: string) => Promise<void>;
+  inputUrl: string;
+  historySuggestions: BrowserHistoryEntry[];
+  highlightedSuggestionIndex: number;
+  handleInputChange: ChangeEventHandler<HTMLInputElement>;
+  handleInputFocus: FocusEventHandler<HTMLInputElement>;
+  handleInputBlur: FocusEventHandler<HTMLInputElement>;
+  handleInputKeyDown: KeyboardEventHandler<HTMLInputElement>;
+  setHighlightedSuggestionIndex: (index: number) => void;
+  handleSuggestionClick: (entry: BrowserHistoryEntry) => void;
+  submitUrl: () => Promise<void>;
+  handleOpenExternal: () => void;
+  annotationActive: boolean;
+  handleAnnotationToggle: () => Promise<void>;
+}
+
+function BrowserToolbar({
+  canGoBack,
+  canGoForward,
+  handleBack,
+  handleForward,
+  handleRefresh,
+  handleStop,
+  tabsMenuRef,
+  tabsOpen,
+  browserTabs,
+  activeTab,
+  activeTabId,
+  setTabsOpen,
+  handleNewTab,
+  handleSwitchTab,
+  handleCloseTab,
+  inputUrl,
+  historySuggestions,
+  highlightedSuggestionIndex,
+  handleInputChange,
+  handleInputFocus,
+  handleInputBlur,
+  handleInputKeyDown,
+  setHighlightedSuggestionIndex,
+  handleSuggestionClick,
+  submitUrl,
+  handleOpenExternal,
+  annotationActive,
+  handleAnnotationToggle,
+}: BrowserToolbarProps) {
+  return (
+    <div className="browser-toolbar">
+      <button className="browser-nav-btn" onClick={handleBack} disabled={!canGoBack} title="Back">
+        <ArrowLeft size={16} strokeWidth={2} />
+      </button>
+      <button className="browser-nav-btn" onClick={handleForward} disabled={!canGoForward} title="Forward">
+        <ArrowRight size={16} strokeWidth={2} />
+      </button>
+      <button className="browser-nav-btn" onClick={handleRefresh} title="Refresh">
+        <RotateCw size={16} strokeWidth={2} />
+      </button>
+      <button className="browser-nav-btn browser-stop" onClick={handleStop} title="Stop">
+        <X size={16} strokeWidth={2} />
+      </button>
+
+      <BrowserTabMenu
+        tabsMenuRef={tabsMenuRef}
+        tabsOpen={tabsOpen}
+        browserTabs={browserTabs}
+        activeTab={activeTab}
+        activeTabId={activeTabId}
+        onToggle={() => setTabsOpen((open) => !open)}
+        onNewTab={() => {
+          void handleNewTab();
+        }}
+        onSwitchTab={(tabId) => {
+          void handleSwitchTab(tabId);
+        }}
+        onCloseTab={(event, tabId) => {
+          void handleCloseTab(event, tabId);
+        }}
+      />
+
+      <BrowserUrlInput
+        inputUrl={inputUrl}
+        historySuggestions={historySuggestions}
+        highlightedSuggestionIndex={highlightedSuggestionIndex}
+        onInputChange={handleInputChange}
+        onInputFocus={handleInputFocus}
+        onInputBlur={handleInputBlur}
+        onInputKeyDown={handleInputKeyDown}
+        onHighlightSuggestion={setHighlightedSuggestionIndex}
+        onSuggestionClick={handleSuggestionClick}
+      />
+
+      <button className="browser-go-btn" onClick={() => void submitUrl()}>
+        Go
+      </button>
+
+      <button className="browser-nav-btn browser-external" onClick={handleOpenExternal} title="Open in system browser">
+        <ExternalLink size={16} strokeWidth={2} />
+      </button>
+
+      <button
+        className={`browser-nav-btn ${annotationActive ? 'browser-annotation-active' : ''}`}
+        onClick={handleAnnotationToggle}
+        title={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}
+      >
+        <MousePointer2 size={16} strokeWidth={2} />
+      </button>
+    </div>
+  );
+}
+
 export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPanelProps) {
   const workspace = useScopedWorkspace(workspaceId);
   const activeTab = workspace?.browserPane?.tabs.find((tab) => tab.id === workspace.browserPane?.activeTabId) ?? null;
   const activeTabId = activeTab?.id ?? null;
   const displayedUrl = activeTab?.url ?? workspace?.browserUrl ?? '';
 
-  const [inputUrl, setInputUrl] = useState(displayedUrl);
   const [canGoBack, setCanGoBack] = useState(activeTab?.canGoBack ?? false);
   const [canGoForward, setCanGoForward] = useState(activeTab?.canGoForward ?? false);
   const [tabsOpen, setTabsOpen] = useState(false);
-  const [urlInputFocused, setUrlInputFocused] = useState(false);
-  const [historySuggestions, setHistorySuggestions] = useState<BrowserHistoryEntry[]>([]);
-  const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const rafRef = useRef<number | null>(null);
   const tabsMenuRef = useRef<HTMLDivElement>(null);
-  const urlUserEditedRef = useRef(false);
-  const blurSuggestionsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastBoundsRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
-  const firstBoundsSentRef = useRef(false);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
@@ -167,67 +290,16 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const callBrowserSetBounds = useCallback((bounds: { x: number; y: number; width: number; height: number }) => {
-    if (!workspace?.id) return;
-    if (activeTabId) {
-      window.electronAPI.browserSetBounds(workspace.id, bounds, activeTabId);
-    } else {
-      window.electronAPI.browserSetBounds(workspace.id, bounds);
-    }
-  }, [activeTabId, workspace?.id]);
-
-  const updateBounds = useCallback(() => {
-    if (!contentRef.current || !workspace?.browserVisible || browserOverlayCount > 0 || !workspace.id || !isActiveWorkspace) return;
-
-    const rect = contentRef.current.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-
-    const scale = window.devicePixelRatio || 1;
-    const newBounds = {
-      x: Math.round((rect.left + window.scrollX) * scale),
-      y: Math.round((rect.top + window.scrollY) * scale),
-      width: Math.round(rect.width * scale),
-      height: Math.round(rect.height * scale),
-    };
-
-    if (lastBoundsRef.current !== null) {
-      const { x, y, width, height } = lastBoundsRef.current;
-      if (
-        Math.abs(newBounds.x - x) <= 1 &&
-        Math.abs(newBounds.y - y) <= 1 &&
-        Math.abs(newBounds.width - width) <= 1 &&
-        Math.abs(newBounds.height - height) <= 1
-      ) {
-        return;
-      }
-    }
-
-    lastBoundsRef.current = newBounds;
-    callBrowserSetBounds(newBounds);
-
-    if (!firstBoundsSentRef.current) {
-      firstBoundsSentRef.current = true;
-      browserFirstBounds(workspace.id, newBounds.x, newBounds.y, newBounds.width, newBounds.height);
-    }
-  }, [browserOverlayCount, callBrowserSetBounds, isActiveWorkspace, workspace?.browserVisible, workspace?.id]);
-
-  const scheduleBoundsUpdate = useCallback((force = false) => {
-    if (force) {
-      lastBoundsRef.current = null;
-    }
-    if (rafRef.current != null) {
-      window.cancelAnimationFrame(rafRef.current);
-    }
-
-    rafRef.current = window.requestAnimationFrame(() => {
-      rafRef.current = null;
-      updateBounds();
-    });
-  }, [updateBounds]);
-
-  useEffect(() => {
-    scheduleBoundsUpdate();
-  }, [layoutVersion, scheduleBoundsUpdate]);
+  const { scheduleBoundsUpdate } = useBrowserBoundsLifecycle({
+    workspaceId: workspace?.id,
+    activeTabId,
+    browserVisible: workspace?.browserVisible,
+    browserOverlayCount,
+    isActiveWorkspace,
+    layoutVersion,
+    containerRef,
+    contentRef,
+  });
 
   useEffect(() => {
     if (activeTab) {
@@ -236,78 +308,54 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     }
   }, [activeTab]);
 
-  useEffect(() => {
-    if (!workspace?.browserVisible || browserOverlayCount > 0 || !workspace.id || !isActiveWorkspace) return;
-    const healthCheckInterval = setInterval(() => {
-      scheduleBoundsUpdate();
-    }, 2000);
-    return () => clearInterval(healthCheckInterval);
-  }, [browserOverlayCount, isActiveWorkspace, scheduleBoundsUpdate, workspace?.id, workspace?.browserVisible]);
+  const handleNavigate = useCallback(async (rawUrl: string): Promise<string | null> => {
+    let navigateUrl = rawUrl.trim();
+    if (!navigateUrl || !workspace?.id) return null;
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const resizeObserver = new ResizeObserver(() => {
-      scheduleBoundsUpdate();
-    });
-
-    resizeObserver.observe(containerRef.current);
-    firstBoundsSentRef.current = false;
-    if (workspace?.id && isActiveWorkspace) {
-      browserMount(workspace.id, lastBoundsRef.current === null);
+    if (!navigateUrl.startsWith('http://') && !navigateUrl.startsWith('https://')) {
+      navigateUrl = `https://${navigateUrl}`;
     }
 
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [isActiveWorkspace, scheduleBoundsUpdate, workspace?.id]);
+    const success = activeTabId
+      ? await window.electronAPI.browserTabNavigate(workspace.id, activeTabId, navigateUrl)
+      : await window.electronAPI.browserNavigate(workspace.id, navigateUrl);
+
+    if (!success) {
+      return null;
+    }
+
+    if (activeTabId) {
+      updateBrowserTab(activeTabId, { url: navigateUrl }, workspace.id);
+    }
+
+    return navigateUrl;
+  }, [activeTabId, updateBrowserTab, workspace?.id]);
+
+  const {
+    inputUrl,
+    historySuggestions,
+    highlightedSuggestionIndex,
+    handleInputChange,
+    handleInputFocus,
+    handleInputBlur,
+    handleInputKeyDown,
+    setHighlightedSuggestionIndex,
+    handleSuggestionClick,
+    submitUrl,
+    syncDisplayedUrl,
+    resetAutocompleteState,
+  } = useBrowserUrlAutocomplete({
+    displayedUrl,
+    activeTabId,
+    getHistory: window.electronAPI.browserHistoryGet,
+    onNavigate: handleNavigate,
+  });
 
   useEffect(() => {
-    const handleWindowResize = () => {
-      scheduleBoundsUpdate();
-    };
-
-    window.addEventListener('resize', handleWindowResize);
-    return () => window.removeEventListener('resize', handleWindowResize);
-  }, [scheduleBoundsUpdate]);
-
-  useEffect(() => {
-    setInputUrl(displayedUrl);
     setTabsOpen(false);
-    setHistorySuggestions([]);
-    setHighlightedSuggestionIndex(0);
-    urlUserEditedRef.current = false;
-  }, [activeTabId, displayedUrl]);
-
-  useEffect(() => {
-    const query = inputUrl.trim();
-    if (!urlInputFocused || !urlUserEditedRef.current || query.length < 2) {
-      setHistorySuggestions([]);
-      setHighlightedSuggestionIndex(0);
-      return;
-    }
-
-    let cancelled = false;
-    const timeoutId = setTimeout(() => {
-      window.electronAPI.browserHistoryGet(query)
-        .then((entries) => {
-          if (cancelled) return;
-          setHistorySuggestions(entries);
-          setHighlightedSuggestionIndex(0);
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setHistorySuggestions([]);
-            setHighlightedSuggestionIndex(0);
-          }
-        });
-    }, 300);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [inputUrl, urlInputFocused, activeTabId]);
+    syncDisplayedUrl(displayedUrl);
+    resetAutocompleteState();
+  }, [activeTabId, displayedUrl, resetAutocompleteState, syncDisplayedUrl]);
 
   useEffect(() => {
     const overlayOpen = tabsOpen || historySuggestions.length > 0;
@@ -365,25 +413,6 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   }, [activeTabId, isActiveWorkspace, updateBrowserTab, workspace?.id]);
 
   useEffect(() => {
-    return () => {
-      if (rafRef.current != null) {
-        window.cancelAnimationFrame(rafRef.current);
-      }
-      if (blurSuggestionsTimerRef.current != null) {
-        clearTimeout(blurSuggestionsTimerRef.current);
-      }
-      const wsId = workspace?.id ?? null;
-      const lb = lastBoundsRef.current;
-      lastBoundsRef.current = null;
-      firstBoundsSentRef.current = false;
-      if (wsId) {
-        browserUnmount(wsId, lb?.x ?? null, lb?.y ?? null, lb?.width ?? null, lb?.height ?? null);
-        window.electronAPI.browserHide(wsId);
-      }
-    };
-  }, [workspace?.id]);
-
-  useEffect(() => {
     if (!workspace?.id) {
       setAnnotationActive(false);
       return;
@@ -417,182 +446,29 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     };
   }, [workspace?.id]);
 
-  const handleAnnotationToggle = async () => {
-    if (!workspace?.id) return;
-
-    if (annotationActive) {
-      await window.electronAPI.annotationDisable();
-      setAnnotationActive(false);
-    } else {
-      const result = await window.electronAPI.annotationEnable(workspace.id);
-      if (result.success) {
-        setAnnotationActive(true);
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (!workspace?.browserVisible || !workspace.id) return;
-
-    if (!isActiveWorkspace) {
-      if (rafRef.current != null) {
-        window.cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      window.electronAPI.browserHide(workspace.id);
-      return;
-    }
-
-    if (lastBoundsRef.current !== null) {
-      callBrowserSetBounds(lastBoundsRef.current);
-    }
-
-    if (browserOverlayCount > 0) {
-      if (rafRef.current != null) {
-        window.cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      lastBoundsRef.current = null;
-      window.electronAPI.browserHide(workspace.id);
-      return;
-    }
-
-    scheduleBoundsUpdate();
-    const followUpFrame = window.requestAnimationFrame(() => {
-      scheduleBoundsUpdate();
-    });
-
-    return () => {
-      window.cancelAnimationFrame(followUpFrame);
-    };
-  }, [browserOverlayCount, callBrowserSetBounds, isActiveWorkspace, scheduleBoundsUpdate, workspace?.id, workspace?.browserVisible]);
-
-  const handleNavigate = async (overrideUrl?: string) => {
-    let navigateUrl = (overrideUrl ?? inputUrl).trim();
-    if (!navigateUrl || !workspace?.id) return;
-
-    if (!navigateUrl.startsWith('http://') && !navigateUrl.startsWith('https://')) {
-      navigateUrl = 'https://' + navigateUrl;
-    }
-
-    const success = activeTabId
-      ? await window.electronAPI.browserTabNavigate(workspace.id, activeTabId, navigateUrl)
-      : await window.electronAPI.browserNavigate(workspace.id, navigateUrl);
-
-    if (success) {
-      setHistorySuggestions([]);
-      setHighlightedSuggestionIndex(0);
-      urlUserEditedRef.current = false;
-      setInputUrl(navigateUrl);
-      if (activeTabId) {
-        updateBrowserTab(activeTabId, { url: navigateUrl }, workspace.id);
-      }
-    }
-  };
-
-  const selectHistorySuggestion = (entry: BrowserHistoryEntry) => {
-    setHistorySuggestions([]);
-    setHighlightedSuggestionIndex(0);
-    setInputUrl(entry.url);
-    urlUserEditedRef.current = false;
-    void handleNavigate(entry.url);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    const keyHandlers: Partial<Record<string, () => void>> = {
-      ArrowDown: () => {
-        if (historySuggestions.length === 0) return;
-        setHighlightedSuggestionIndex((index) => (index + 1) % historySuggestions.length);
-      },
-      ArrowUp: () => {
-        if (historySuggestions.length === 0) return;
-        setHighlightedSuggestionIndex((index) => (index - 1 + historySuggestions.length) % historySuggestions.length);
-      },
-      Escape: () => {
-        setHistorySuggestions([]);
-        setHighlightedSuggestionIndex(0);
-      },
-      Enter: () => {
-        const highlighted = historySuggestions[highlightedSuggestionIndex];
-        if (highlighted) {
-          selectHistorySuggestion(highlighted);
-          return;
-        }
-        void handleNavigate();
-      },
-    };
-
-    const handler = keyHandlers[e.key];
-    if (handler) {
-      e.preventDefault();
-      handler();
-    }
-  };
-
-  const handleBack = () => {
-    if (!workspace?.id) return;
-    window.electronAPI.browserBack(workspace.id);
-  };
-
-  const handleForward = () => {
-    if (!workspace?.id) return;
-    window.electronAPI.browserForward(workspace.id);
-  };
-
-  const handleRefresh = () => {
-    if (!workspace?.id) return;
-    window.electronAPI.browserRefresh(workspace.id);
-  };
-
-  const handleStop = () => {
-    if (!workspace?.id) return;
-    window.electronAPI.browserStop(workspace.id);
-  };
-
-  const handleOpenExternal = () => {
-    if (displayedUrl) {
-      window.electronAPI.openExternal(displayedUrl);
-    }
-  };
-
-  const handleNewTab = async () => {
-    if (!workspace?.id) return;
-    const tabId = addBrowserTab(workspace.id);
-    if (!tabId) return;
-
-    await window.electronAPI.browserCreateTab(workspace.id, tabId);
-    setActiveBrowserTab(tabId, workspace.id);
-    await window.electronAPI.browserSwitchTab(workspace.id, tabId);
-    setTabsOpen(false);
-    scheduleBoundsUpdate(true);
-  };
-
-  const handleSwitchTab = async (tabId: string) => {
-    if (!workspace?.id || tabId === activeTabId) {
-      setTabsOpen(false);
-      return;
-    }
-
-    const changed = setActiveBrowserTab(tabId, workspace.id);
-    if (!changed) return;
-    await window.electronAPI.browserSwitchTab(workspace.id, tabId);
-    setTabsOpen(false);
-    scheduleBoundsUpdate(true);
-  };
-
-  const handleCloseTab = async (event: React.MouseEvent, tabId: string) => {
-    event.stopPropagation();
-    if (!workspace?.id || browserTabs.length <= 1) return;
-
-    const { removed, nextActiveTabId } = removeBrowserTab(tabId, workspace.id);
-    if (!removed) return;
-
-    await window.electronAPI.browserCloseTab(workspace.id, tabId);
-    if (nextActiveTabId) {
-      await window.electronAPI.browserSwitchTab(workspace.id, nextActiveTabId);
-    }
-    scheduleBoundsUpdate(true);
-  };
+  const {
+    handleBack,
+    handleForward,
+    handleRefresh,
+    handleStop,
+    handleOpenExternal,
+    handleAnnotationToggle,
+    handleNewTab,
+    handleSwitchTab,
+    handleCloseTab,
+  } = useBrowserPanelActions({
+    workspaceId: workspace?.id ?? null,
+    activeTabId,
+    browserTabsCount: browserTabs.length,
+    displayedUrl,
+    annotationActive,
+    setAnnotationActive,
+    addBrowserTab,
+    removeBrowserTab,
+    setActiveBrowserTab,
+    onTabMenuClose: () => setTabsOpen(false),
+    scheduleBoundsUpdate,
+  });
 
   return (
     <div className="browser-panel" ref={containerRef}>
@@ -601,109 +477,36 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
         <span className="browser-pane-title">Browser</span>
         <span className="browser-pane-spacer" />
       </div>
-      <div className="browser-toolbar">
-        <button className="browser-nav-btn" onClick={handleBack} disabled={!canGoBack} title="Back">
-          <ArrowLeft size={16} strokeWidth={2} />
-        </button>
-        <button className="browser-nav-btn" onClick={handleForward} disabled={!canGoForward} title="Forward">
-          <ArrowRight size={16} strokeWidth={2} />
-        </button>
-        <button className="browser-nav-btn" onClick={handleRefresh} title="Refresh">
-          <RotateCw size={16} strokeWidth={2} />
-        </button>
-        <button className="browser-nav-btn browser-stop" onClick={handleStop} title="Stop">
-          <X size={16} strokeWidth={2} />
-        </button>
-
-        <BrowserTabMenu
-          tabsMenuRef={tabsMenuRef}
-          tabsOpen={tabsOpen}
-          browserTabs={browserTabs}
-          activeTab={activeTab}
-          activeTabId={activeTabId}
-          onToggle={() => setTabsOpen((open) => !open)}
-          onNewTab={() => {
-            void handleNewTab();
-          }}
-          onSwitchTab={(tabId) => {
-            void handleSwitchTab(tabId);
-          }}
-          onCloseTab={(event, tabId) => {
-            void handleCloseTab(event, tabId);
-          }}
-        />
-
-        <div className="browser-url-container">
-          <input
-            type="text"
-            className="browser-url-input"
-            value={inputUrl}
-            onChange={(e) => {
-              urlUserEditedRef.current = true;
-              setInputUrl(e.target.value);
-            }}
-            onFocus={() => {
-              if (blurSuggestionsTimerRef.current != null) {
-                clearTimeout(blurSuggestionsTimerRef.current);
-                blurSuggestionsTimerRef.current = null;
-              }
-              setUrlInputFocused(true);
-            }}
-            onBlur={() => {
-              blurSuggestionsTimerRef.current = setTimeout(() => {
-                setUrlInputFocused(false);
-                setHistorySuggestions([]);
-                setHighlightedSuggestionIndex(0);
-              }, 120);
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder="Enter URL..."
-            aria-autocomplete="list"
-            aria-expanded={historySuggestions.length > 0}
-            aria-controls="browser-url-history-suggestions"
-          />
-          {historySuggestions.length > 0 ? (
-            <div
-              id="browser-url-history-suggestions"
-              className="browser-history-suggestions"
-              role="listbox"
-              aria-label="URL history suggestions"
-            >
-              {historySuggestions.map((entry, index) => (
-                <button
-                  key={`${entry.url}-${entry.lastVisited}`}
-                  type="button"
-                  className={`browser-history-suggestion ${index === highlightedSuggestionIndex ? 'highlighted' : ''}`}
-                  role="option"
-                  aria-selected={index === highlightedSuggestionIndex}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setHighlightedSuggestionIndex(index)}
-                  onClick={() => selectHistorySuggestion(entry)}
-                >
-                  <span className="browser-history-suggestion-url">{entry.url}</span>
-                  {entry.title ? <span className="browser-history-suggestion-title">{entry.title}</span> : null}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <button className="browser-go-btn" onClick={() => void handleNavigate()}>
-          Go
-        </button>
-
-        <button className="browser-nav-btn browser-external" onClick={handleOpenExternal} title="Open in system browser">
-          <ExternalLink size={16} strokeWidth={2} />
-        </button>
-
-        <button
-          className={`browser-nav-btn ${annotationActive ? 'browser-annotation-active' : ''}`}
-          onClick={handleAnnotationToggle}
-          title={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}
-        >
-          <MousePointer2 size={16} strokeWidth={2} />
-        </button>
-      </div>
+      <BrowserToolbar
+        canGoBack={canGoBack}
+        canGoForward={canGoForward}
+        handleBack={handleBack}
+        handleForward={handleForward}
+        handleRefresh={handleRefresh}
+        handleStop={handleStop}
+        tabsMenuRef={tabsMenuRef}
+        tabsOpen={tabsOpen}
+        browserTabs={browserTabs}
+        activeTab={activeTab}
+        activeTabId={activeTabId}
+        setTabsOpen={setTabsOpen}
+        handleNewTab={handleNewTab}
+        handleSwitchTab={handleSwitchTab}
+        handleCloseTab={handleCloseTab}
+        inputUrl={inputUrl}
+        historySuggestions={historySuggestions}
+        highlightedSuggestionIndex={highlightedSuggestionIndex}
+        handleInputChange={handleInputChange}
+        handleInputFocus={handleInputFocus}
+        handleInputBlur={handleInputBlur}
+        handleInputKeyDown={handleInputKeyDown}
+        setHighlightedSuggestionIndex={setHighlightedSuggestionIndex}
+        handleSuggestionClick={handleSuggestionClick}
+        submitUrl={submitUrl}
+        handleOpenExternal={handleOpenExternal}
+        annotationActive={annotationActive}
+        handleAnnotationToggle={handleAnnotationToggle}
+      />
       <div className="browser-content-shell">
         <div className="browser-content" ref={contentRef} />
       </div>
