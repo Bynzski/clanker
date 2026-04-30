@@ -360,55 +360,71 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (selectedIndex >= 0 && suggestions[selectedIndex]) {
-        setInputValue(suggestions[selectedIndex]);
-        setSuggestions([]);
-        setSelectedIndex(-1);
-      } else {
-        handleSubmit();
-      }
-    } else if (e.key === 'Tab' && suggestions.length > 0) {
-      e.preventDefault();
-      const index = selectedIndex >= 0 ? selectedIndex : 0;
-      setInputValue(suggestions[index]);
-      setSelectedIndex(index);
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (suggestions.length > 0) {
-        setSelectedIndex(prev => prev < suggestions.length - 1 ? prev + 1 : 0);
-      }
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (suggestions.length > 0) {
-        setSelectedIndex(prev => prev > 0 ? prev - 1 : suggestions.length - 1);
-      }
-    } else if (e.key === 'Escape') {
+    const setSuggestionAndReset = (suggestion: string) => {
+      setInputValue(suggestion);
       setSuggestions([]);
       setSelectedIndex(-1);
-      inputRef.current?.blur();
-    } else if (e.key === '1' && !isFocused) {
+    };
+
+    const keyHandlers: Partial<Record<string, () => void>> = {
+      Enter: () => {
+        if (selectedIndex >= 0 && suggestions[selectedIndex]) {
+          setSuggestionAndReset(suggestions[selectedIndex]);
+          return;
+        }
+        handleSubmit();
+      },
+      Escape: () => {
+        setSuggestions([]);
+        setSelectedIndex(-1);
+        inputRef.current?.blur();
+      },
+      ArrowDown: () => {
+        if (suggestions.length === 0) return;
+        setSelectedIndex(prev => prev < suggestions.length - 1 ? prev + 1 : 0);
+      },
+      ArrowUp: () => {
+        if (suggestions.length === 0) return;
+        setSelectedIndex(prev => prev > 0 ? prev - 1 : suggestions.length - 1);
+      },
+      Tab: () => {
+        if (suggestions.length === 0) return;
+        const index = selectedIndex >= 0 ? selectedIndex : 0;
+        setInputValue(suggestions[index]);
+        setSelectedIndex(index);
+      },
+    };
+
+    if (!isFocused) {
+      keyHandlers['1'] = () => setSelectedPreset(0);
+      keyHandlers['2'] = () => setSelectedPreset(1);
+      keyHandlers['4'] = () => setSelectedPreset(2);
+
+      if (selectedHarness !== '') {
+        keyHandlers.b = () => handleHarnessChange('');
+        keyHandlers.B = keyHandlers.b;
+      }
+
+      if (availableHarnessIds.includes('codex')) {
+        keyHandlers.c = () => handleHarnessChange('codex');
+        keyHandlers.C = keyHandlers.c;
+      }
+
+      if (availableHarnessIds.includes('opencode')) {
+        keyHandlers.o = () => handleHarnessChange('opencode');
+        keyHandlers.O = keyHandlers.o;
+      }
+
+      if (!e.metaKey && !e.ctrlKey && availableHarnessIds.includes('pi')) {
+        keyHandlers.p = () => handleHarnessChange('pi');
+        keyHandlers.P = keyHandlers.p;
+      }
+    }
+
+    const handler = keyHandlers[e.key];
+    if (handler) {
       e.preventDefault();
-      setSelectedPreset(0);
-    } else if (e.key === '2' && !isFocused) {
-      e.preventDefault();
-      setSelectedPreset(1);
-    } else if (e.key === '4' && !isFocused) {
-      e.preventDefault();
-      setSelectedPreset(2);
-    } else if ((e.key === 'b' || e.key === 'B') && !isFocused && selectedHarness !== '') {
-      e.preventDefault();
-      handleHarnessChange('');
-    } else if ((e.key === 'c' || e.key === 'C') && !isFocused && availableHarnessIds.includes('codex')) {
-      e.preventDefault();
-      handleHarnessChange('codex');
-    } else if ((e.key === 'o' || e.key === 'O') && !isFocused && availableHarnessIds.includes('opencode')) {
-      e.preventDefault();
-      handleHarnessChange('opencode');
-    } else if ((e.key === 'p' || e.key === 'P') && !isFocused && !e.metaKey && !e.ctrlKey && availableHarnessIds.includes('pi')) {
-      e.preventDefault();
-      handleHarnessChange('pi');
+      handler();
     }
   };
 
