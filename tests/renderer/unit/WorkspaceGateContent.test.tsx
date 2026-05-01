@@ -206,6 +206,37 @@ describe('WorkspaceGateContent', () => {
     expect(mockOnSubmit).toHaveBeenCalled();
   });
 
+  it('prevents suggestion mousedown from stealing focus and applies suggestion click', async () => {
+    vi.mocked(window.electronAPI.readDirectory).mockImplementation(async (dirPath: string) => {
+      const normalizedPath = dirPath.replace(/\\/g, '/');
+      if (normalizedPath.endsWith('/projects/')) {
+        return [{ name: 'alpha', isDirectory: true }];
+      }
+      return [];
+    });
+
+    renderGate();
+
+    const input = screen.getByPlaceholderText('project name') as HTMLInputElement;
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'a' } });
+
+    const suggestionPath = 'alpha/';
+    const suggestion = await screen.findByText(suggestionPath);
+
+    const mouseDownEvent = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    const dispatchResult = suggestion.dispatchEvent(mouseDownEvent);
+    expect(dispatchResult).toBe(false);
+    expect(mouseDownEvent.defaultPrevented).toBe(true);
+
+    fireEvent.click(suggestion);
+    expect(input.value).toBe(suggestionPath);
+
+    await waitFor(() => {
+      expect(screen.queryByText(suggestionPath)).toBeNull();
+    });
+  });
+
   // =========================================================================
   // Model selector
   // =========================================================================

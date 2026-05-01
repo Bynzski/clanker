@@ -235,6 +235,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   const fetchSuggestions = useCallback(async (input: string, base: string) => {
     const normalizedInput = input.replace(/\\/g, '/');
     const isAbsolute = isAbsoluteWorkspacePath(normalizedInput);
+    const hasTrailingSlash = normalizedInput.endsWith('/');
 
     let dirPath: string;
     let nameFilter: string;
@@ -245,26 +246,38 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
         setSuggestions([]);
         return;
       }
-      const trimmed = normalizedInput.endsWith('/') ? normalizedInput.slice(0, -1) : normalizedInput;
-      const lastSlash = trimmed.lastIndexOf('/');
-      if (lastSlash < 0) {
-        setSuggestions([]);
-        return;
+      if (hasTrailingSlash) {
+        dirPath = normalizedInput;
+        nameFilter = '';
+        suggestionPrefix = normalizedInput;
+      } else {
+        const trimmed = normalizedInput;
+        const lastSlash = trimmed.lastIndexOf('/');
+        if (lastSlash < 0) {
+          setSuggestions([]);
+          return;
+        }
+        dirPath = trimmed.substring(0, lastSlash + 1);
+        nameFilter = trimmed.substring(lastSlash + 1).toLowerCase();
+        suggestionPrefix = dirPath;
       }
-      dirPath = trimmed.substring(0, lastSlash + 1);
-      nameFilter = trimmed.substring(lastSlash + 1).toLowerCase();
-      suggestionPrefix = dirPath;
     } else {
       if (!base) {
         setSuggestions([]);
         return;
       }
-      const trimmed = normalizedInput.endsWith('/') ? normalizedInput.slice(0, -1) : normalizedInput;
-      const lastSlash = trimmed.lastIndexOf('/');
-      const relDir = lastSlash < 0 ? '' : trimmed.substring(0, lastSlash + 1);
-      nameFilter = (lastSlash < 0 ? trimmed : trimmed.substring(lastSlash + 1)).toLowerCase();
-      dirPath = base + relDir;
-      suggestionPrefix = relDir;
+      if (hasTrailingSlash) {
+        dirPath = base + normalizedInput;
+        nameFilter = '';
+        suggestionPrefix = normalizedInput;
+      } else {
+        const trimmed = normalizedInput;
+        const lastSlash = trimmed.lastIndexOf('/');
+        const relDir = lastSlash < 0 ? '' : trimmed.substring(0, lastSlash + 1);
+        nameFilter = (lastSlash < 0 ? trimmed : trimmed.substring(lastSlash + 1)).toLowerCase();
+        dirPath = base + relDir;
+        suggestionPrefix = relDir;
+      }
     }
 
     try {
@@ -280,7 +293,9 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
         .slice(0, 8)
         .map((entry) => suggestionPrefix + entry.name + '/');
 
-      setSuggestions(dirs);
+      // When the input ends in '/', the current segment is complete. Avoid
+      // eagerly listing all children until the user starts typing the next segment.
+      setSuggestions(nameFilter === '' ? [] : dirs);
     } catch {
       setSuggestions([]);
     }
@@ -533,6 +548,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
               <li
                 key={suggestion}
                 className={`suggestion-item ${index === selectedIndex ? 'selected' : ''}`}
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => handleSuggestionClick(suggestion)}
                 onMouseEnter={() => setSelectedIndex(index)}
               >
