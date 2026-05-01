@@ -105,24 +105,20 @@ describe('encodeClaudeProjectDir', () => {
     );
   });
 
-  it('encodes a Windows drive-letter path with a leading dash (Claude POSIX-normalizes first)', () => {
-    // Claude Code prepends `/` before encoding, so `C:\Users\jay\foo`
-    // → `/C:/Users/jay/foo` → `-C--Users-jay-foo` (leading dash from the
-    // prepended `/`, double dash after `C` from `:` and `/`).
+  it('encodes a Windows drive-letter path without a synthetic leading dash', () => {
     expect(encodeClaudeProjectDir('C:\\Users\\jay\\dev\\projects\\foo')).toBe(
-      '-C--Users-jay-dev-projects-foo'
+      'C--Users-jay-dev-projects-foo'
     );
   });
 
   it('encodes a Windows path with forward-slash separators identically', () => {
     expect(encodeClaudeProjectDir('C:/Users/jay/dev/projects/foo')).toBe(
-      '-C--Users-jay-dev-projects-foo'
+      'C--Users-jay-dev-projects-foo'
     );
   });
 
   it('encodes a UNC path with leading double-backslash', () => {
-    // `\\server\share\foo` → `//server/share/foo` (already starts with `/`,
-    // no extra prepend) → `--server-share-foo`.
+    // `\\server\share\foo` → `--server-share-foo`.
     expect(encodeClaudeProjectDir('\\\\server\\share\\foo')).toBe('--server-share-foo');
   });
 
