@@ -66,6 +66,9 @@ export type {
 };
 
 interface ElectronAPI {
+  // App
+  getAppVersion: () => Promise<string>;
+
   // Workspace
   getLastWorkspace: () => Promise<string>;
   getBaseDirectory: () => Promise<string>;

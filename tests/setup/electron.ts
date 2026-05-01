@@ -10,6 +10,7 @@ const defaultFileListDirectoryResult: FileListDirectoryResult = { success: true,
 
 function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): ElectronApiMock {
   return {
+    getAppVersion: createAsyncMock('1.0.0'),
     getLastWorkspace: createAsyncMock(''),
     getBaseDirectory: createAsyncMock(''),
     openBaseDirectoryDialog: createAsyncMock(null),

@@ -158,7 +158,6 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                 </button>
               </>
             )}
-            <span className="workspace-tab-count">{workspace.terminals.length}</span>
             <span
               className="workspace-tab-close"
               onClick={(event) => handleClose(workspace.id, event)}

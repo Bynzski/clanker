@@ -2,16 +2,18 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as path from 'node:path';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import StatusBar from '../../../src/renderer/components/StatusBar';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
-import { createTerminalFixture, createWorkspaceFixture } from '../../setup/fixtures';
+import { createWorkspaceFixture } from '../../setup/fixtures';
+import { installElectronApiMock } from '../../setup/electron';
 
 // Platform-neutral path constant for test fixtures
 const TEST_PROJECT = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user', 'my-project');
 
 describe('StatusBar', () => {
   beforeEach(() => {
+    installElectronApiMock();
     useWorkspaceStore.setState({
       workspaces: [],
       activeWorkspaceId: null,
@@ -48,43 +50,10 @@ describe('StatusBar', () => {
     expect(pathEl.textContent).toContain('...');
   });
 
-  it('shows terminal count with singular form', () => {
-    const ws = createWorkspaceFixture({
-      terminals: [createTerminalFixture({ id: 't1', pid: 1, workingDir: '/ws' })],
-    });
-    useWorkspaceStore.setState({
-      workspaces: [ws],
-      activeWorkspaceId: ws.id,
-      activeWorkspaceLifecycle: 'active',
-    });
+  it('shows app version from electronAPI', async () => {
     render(<StatusBar />);
-    expect(screen.getByText(/1 terminal(?!s)/)).toBeTruthy();
-  });
-
-  it('shows terminal count with plural form', () => {
-    const ws = createWorkspaceFixture({
-      terminals: [
-        createTerminalFixture({ id: 't1', pid: 1, workingDir: '/ws' }),
-        createTerminalFixture({ id: 't2', pid: 2, workingDir: '/ws' }),
-      ],
+    await waitFor(() => {
+      expect(screen.getByText('v1.0.0')).toBeTruthy();
     });
-    useWorkspaceStore.setState({
-      workspaces: [ws],
-      activeWorkspaceId: ws.id,
-      activeWorkspaceLifecycle: 'active',
-    });
-    render(<StatusBar />);
-    expect(screen.getByText(/2 terminals/)).toBeTruthy();
-  });
-
-  it('shows zero terminals', () => {
-    const ws = createWorkspaceFixture({ terminals: [] });
-    useWorkspaceStore.setState({
-      workspaces: [ws],
-      activeWorkspaceId: ws.id,
-      activeWorkspaceLifecycle: 'active',
-    });
-    render(<StatusBar />);
-    expect(screen.getByText(/0 terminals/)).toBeTruthy();
   });
 });
