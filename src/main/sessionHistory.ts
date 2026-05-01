@@ -54,26 +54,20 @@ export function sessionMatchesWorkspace(
  * Encode a workspace path into the directory-name form used by Claude Code
  * under `~/.claude/projects/`.
  *
- * Claude Code first normalizes the path to POSIX form with a leading `/`,
- * then replaces each non-`[A-Za-z0-9-]` character with `-` (no collapsing).
- * A POSIX workspace already starts with `/`; a Windows drive-letter path
- * does not, so we prepend one before applying the regex. That leading slash
- * is what produces the leading dash on every directory name:
+ * Claude Code encodes the platform-native path string directly by replacing
+ * each non-`[A-Za-z0-9-]` character with `-` (no collapsing). This means
+ * Windows drive-letter paths do not get a synthetic leading slash:
  *
  *   `/home/jay/foo`         → `-home-jay-foo`
- *   `C:\Users\jay\foo`      → `-C--Users-jay-foo` (the `:` and `\` after `C` each
- *                                                  become a dash, plus the leading)
- *   `\\server\share\foo`    → `--server-share-foo` (UNC: leading `\\` already
- *                                                   becomes the leading double dash)
+ *   `C:\Users\jay\foo`      → `C--Users-jay-foo`
+ *   `\\server\share\foo`    → `--server-share-foo`
  *
  * Returns an empty string for an empty workspace path so callers can use the
  * result as a `startsWith` filter that matches everything.
  */
 export function encodeClaudeProjectDir(workspacePath: string): string {
   if (!workspacePath) return '';
-  let normalized = workspacePath.replace(/\\/g, '/');
-  if (!normalized.startsWith('/')) normalized = '/' + normalized;
-  return normalized.replace(/[^A-Za-z0-9-]/g, '-');
+  return workspacePath.replace(/[^A-Za-z0-9-]/g, '-');
 }
 
 // ============================================================================
