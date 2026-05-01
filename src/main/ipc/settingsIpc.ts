@@ -5,7 +5,7 @@
  * Window controls extracted to windowIpc.ts. AI commit generation extracted to aiCommitIpc.ts.
  */
 
-import { ipcMain, dialog, BrowserWindow } from 'electron';
+import { ipcMain, dialog, BrowserWindow, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import Store from 'electron-store';
@@ -21,6 +21,7 @@ import { type AiCommitProvider } from '../aiCommit';
 import { validateHarnessDefaultsMap } from '../harnessDefaultsValidation';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import {
+  GET_APP_VERSION,
   GET_LAST_WORKSPACE,
   GET_BASE_DIRECTORY,
   OPEN_BASE_DIRECTORY_DIALOG,
@@ -49,6 +50,8 @@ function getInvalidWorkspaceResult() {
 
 export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
   const { getStore, getMainWindow } = deps;
+
+  ipcMain.handle(GET_APP_VERSION, () => app.getVersion());
 
   ipcMain.handle(GET_LAST_WORKSPACE, () => {
     return getStore().get('lastWorkspace');

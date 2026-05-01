@@ -10,6 +10,7 @@ import type { VcsProvider } from '../shared/types/vcs';
 import type { GitStatusResult } from '../shared/types/git';
 import type { HarnessSession } from '../shared/types/session';
 import {
+  GET_APP_VERSION,
   GET_LAST_WORKSPACE,
   GET_BASE_DIRECTORY,
   OPEN_BASE_DIRECTORY_DIALOG,
@@ -138,6 +139,9 @@ import {
 } from '../shared/ipcChannels';
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // App
+  getAppVersion: () => ipcRenderer.invoke(GET_APP_VERSION),
+
   // Workspace
   getLastWorkspace: () => ipcRenderer.invoke(GET_LAST_WORKSPACE),
   getBaseDirectory: () => ipcRenderer.invoke(GET_BASE_DIRECTORY),

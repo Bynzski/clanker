@@ -1,14 +1,19 @@
+import { useEffect, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
-import { Terminal, Circle, GitBranch } from 'lucide-react';
+import { Tag, Circle, GitBranch } from 'lucide-react';
 import './StatusBar.css';
 
 export default function StatusBar() {
   const focusedWorkspace = useWorkspaceStore((state) => selectFocusedWorkspace(state));
   const workspacePath = focusedWorkspace?.workspacePath ?? '';
-  const terminalCount = focusedWorkspace?.terminals.length ?? 0;
   const currentBranch = useWorkspaceStore((state) => state.gitCurrentBranch);
   const isRepo = useWorkspaceStore((state) => state.gitIsRepo);
   const isDetached = useWorkspaceStore((state) => state.gitIsDetached);
+  const [appVersion, setAppVersion] = useState<string>('');
+
+  useEffect(() => {
+    window.electronAPI?.getAppVersion().then(setAppVersion);
+  }, []);
 
   const displayPath = workspacePath.length > 60
     ? '...' + workspacePath.slice(-57)
@@ -18,8 +23,8 @@ export default function StatusBar() {
     <footer className="status-bar">
       <div className="status-left">
         <span className="status-item">
-          <Terminal size={12} strokeWidth={2} />
-          {terminalCount} terminal{terminalCount !== 1 ? 's' : ''}
+          <Tag size={12} strokeWidth={2} />
+          {appVersion ? `v${appVersion}` : ''}
         </span>
       </div>
       

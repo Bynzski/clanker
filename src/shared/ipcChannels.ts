@@ -12,6 +12,7 @@
  * Settings
  * ============================================================================ */
 
+export const GET_APP_VERSION = 'get-app-version';
 export const GET_LAST_WORKSPACE = 'get-last-workspace';
 export const GET_BASE_DIRECTORY = 'get-base-directory';
 export const OPEN_BASE_DIRECTORY_DIALOG = 'open-base-directory-dialog';
@@ -205,6 +206,7 @@ export const ANNOTATION_TRIGGER_COPY = 'annotation-trigger-copy';
  */
 export const ALL_IPC_CHANNELS: readonly string[] = [
   // Settings
+  GET_APP_VERSION,
   GET_LAST_WORKSPACE,
   GET_BASE_DIRECTORY,
   OPEN_BASE_DIRECTORY_DIALOG,
