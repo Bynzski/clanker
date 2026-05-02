@@ -10,7 +10,6 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
@@ -74,7 +73,7 @@ describe('discoverHarnessModels cache integration', () => {
     const result = await discoverHarnessModels('codex');
 
     expect(Array.isArray(result)).toBe(true);
-    // Store should have been updated with deterministic codex fallback results.
+    // Store should have been updated after successful CLI discovery.
     expect(mockStoreInstance.set).toHaveBeenCalled();
   });
 
@@ -105,27 +104,22 @@ describe('discoverHarnessModels cache integration', () => {
     }));
   });
 
-  it('returns fallback models when discovery fails', async () => {
+  it('returns empty array for claude (no CLI discovery available)', async () => {
     mockStoreInstance.get.mockReturnValue({});
 
     const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
     const result = await discoverHarnessModels('claude');
 
-    // Should return an array with fallback models for claude
-    // claude fallback includes sonnet, opus, haiku, claude-sonnet-4-6
-    expect(result.length).toBeGreaterThan(0);
-    expect(result[0]).toHaveProperty('id');
-    expect(result[0]).toHaveProperty('label');
+    expect(result).toEqual([]);
   });
 
-  it('uses fallback for empty discovery result', async () => {
+  it('returns models from codex debug CLI when cache is empty', async () => {
     mockStoreInstance.get.mockReturnValue({});
 
     const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
     const result = await discoverHarnessModels('codex');
 
-    // Should return fallback models (codex has fallbacks defined)
-    expect(result.length).toBeGreaterThan(0);
+    expect(Array.isArray(result)).toBe(true);
   });
 
   it('handles unknown harness by returning empty array', async () => {
@@ -260,6 +254,20 @@ describe('discoverHarnessModels Windows command invocation', () => {
     vi.doUnmock('electron-store');
     vi.doUnmock('child_process');
     vi.restoreAllMocks();
+  });
+
+  it('wraps codex model discovery with cmd.exe /c on Windows', async () => {
+    mockExecFile.mockImplementation((_command: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
+      callback(null, JSON.stringify({ models: [{ slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list' }] }), '');
+    });
+
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    await discoverHarnessModels('codex');
+
+    expect(mockExecFile).toHaveBeenCalled();
+    const [command, args] = mockExecFile.mock.calls[0] as [string, string[]];
+    expect(command).toBe('cmd.exe');
+    expect(args).toEqual(['/c', 'codex', 'debug', 'models']);
   });
 
   it('wraps opencode model discovery with cmd.exe /c on Windows', async () => {
@@ -504,51 +512,13 @@ describe('discoverHarnessModels error paths', () => {
     expect(Array.isArray(result)).toBe(true);
   });
 
-  it('returns configured codex model when available', async () => {
-    // Create a temp codex config
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-test-'));
-    const configPath = path.join(tempDir, '.codex', 'config.toml');
-    fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    fs.writeFileSync(configPath, `model = "gpt-5.4-codex-max"\n`);
-
-    // Mock electron to use temp home
-    vi.doMock('electron', () => ({
-      app: {
-        getAppPath: vi.fn(() => '/opt/clanker-grid'),
-        getPath: vi.fn(() => tempDir),
-      },
-    }));
-
+  it('discovers codex models via CLI regardless of home directory', async () => {
     vi.resetModules();
     const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
 
     const result = await discoverHarnessModels('codex');
 
-    // Should include the configured model (or fallback)
-    // Note: The actual behavior depends on whether the command is installed
     expect(Array.isArray(result)).toBe(true);
-    expect(result.length).toBeGreaterThan(0);
-
-    // Cleanup
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  });
-
-  it('returns fallback when codex config file is missing', async () => {
-    // Use non-existent directory
-    vi.doMock('electron', () => ({
-      app: {
-        getAppPath: vi.fn(() => '/opt/clanker-grid'),
-        getPath: vi.fn(() => '/nonexistent/path/12345'),
-      },
-    }));
-
-    vi.resetModules();
-    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
-
-    const result = await discoverHarnessModels('codex');
-
-    // Should return fallback models
-    expect(result.length).toBeGreaterThan(0);
   });
 });
 

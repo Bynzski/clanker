@@ -1,6 +1,6 @@
 import { AlertTriangle, ChevronRight, Star } from 'lucide-react';
 import { HARNESS_OPTIONS } from '../../lib/harnessOptions';
-import { harnessToggleFromFlags } from '../../lib/harnessFlags';
+import { HARNESS_FLAGS_PLACEHOLDER } from '../../lib/harnessFlags';
 import { KNOWN_HARNESS_IDS } from '../../../shared/harnessIds';
 import type { HarnessDefaultsMap } from '../../../shared/types/store';
 import type { ModelOption } from '../../types/shared';
@@ -13,7 +13,7 @@ interface HarnessDefaultsSectionProps {
   harnessModelCache: Record<string, ModelOption[]>;
   harnessModelLoading: Record<string, boolean>;
   loadHarnessModels: (harnessId: string) => Promise<void>;
-  handleToggleHarnessFlag: (harnessId: string, enabled: boolean) => Promise<void>;
+  handleSetHarnessFlags: (harnessId: string, flags: string) => Promise<void>;
   handleSetDefaultModel: (harnessId: string, modelId: string) => Promise<void>;
   handleToggleFavorite: (harnessId: string, modelId: string) => Promise<void>;
 }
@@ -26,7 +26,7 @@ export default function HarnessDefaultsSection({
   harnessModelCache,
   harnessModelLoading,
   loadHarnessModels,
-  handleToggleHarnessFlag,
+  handleSetHarnessFlags,
   handleSetDefaultModel,
   handleToggleFavorite,
 }: HarnessDefaultsSectionProps) {
@@ -37,7 +37,6 @@ export default function HarnessDefaultsSection({
         const option = HARNESS_OPTIONS.find((entry) => entry.id === harnessId);
         const defaults = harnessDefaults[harnessId];
         const isExpanded = expandedHarness === harnessId;
-        const isFlagEnabled = harnessToggleFromFlags(harnessId, defaults?.flags ?? '');
         const models = harnessModelCache[harnessId] ?? [];
         const isModelsLoading = harnessModelLoading[harnessId] ?? false;
         const currentModelId = defaults?.model ?? '';
@@ -81,42 +80,48 @@ export default function HarnessDefaultsSection({
 
             {isExpanded && (
               <div className="harness-defaults-panel">
-                <label className="harness-defaults-option">
+                <div className="harness-defaults-field">
+                  <span className="harness-defaults-field-label">Extra flags</span>
                   <input
-                    type="checkbox"
-                    checked={isFlagEnabled}
-                    onChange={(e) => void handleToggleHarnessFlag(harnessId, e.target.checked)}
+                    type="text"
+                    className="settings-select"
+                    value={defaults?.flags ?? ''}
+                    onChange={(e) => void handleSetHarnessFlags(harnessId, e.target.value)}
+                    placeholder={HARNESS_FLAGS_PLACEHOLDER[harnessId] ?? ''}
                   />
-                  <span>
-                    {harnessId === 'codex'
-                      ? 'Enable yolo mode'
-                      : harnessId === 'opencode'
-                      ? 'Enable pure mode'
-                      : 'Enable mode flag'}
-                  </span>
-                </label>
+                </div>
 
                 <div className="harness-defaults-field">
                   <span className="harness-defaults-field-label">Default model</span>
-                  <select
-                    className="settings-select"
-                    value={currentModelId}
-                    onChange={(e) => void handleSetDefaultModel(harnessId, e.target.value)}
-                    disabled={isModelsLoading}
-                  >
-                    <option value="">Use harness default</option>
-                    {isModelsLoading ? (
-                      <option value="">Loading...</option>
-                    ) : models.length === 0 ? (
-                      <option value="">No models available</option>
-                    ) : (
-                      models.map((entry) => (
-                        <option key={entry.id} value={entry.id}>
-                          {entry.label}
-                        </option>
-                      ))
-                    )}
-                  </select>
+                  {harnessId === 'claude' ? (
+                    <input
+                      type="text"
+                      className="settings-select"
+                      value={currentModelId}
+                      onChange={(e) => void handleSetDefaultModel(harnessId, e.target.value)}
+                      placeholder="Use harness default"
+                    />
+                  ) : (
+                    <select
+                      className="settings-select"
+                      value={currentModelId}
+                      onChange={(e) => void handleSetDefaultModel(harnessId, e.target.value)}
+                      disabled={isModelsLoading}
+                    >
+                      <option value="">Use harness default</option>
+                      {isModelsLoading ? (
+                        <option value="">Loading...</option>
+                      ) : models.length === 0 ? (
+                        <option value="">No models available</option>
+                      ) : (
+                        models.map((entry) => (
+                          <option key={entry.id} value={entry.id}>
+                            {entry.label}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  )}
                 </div>
 
                 {((defaults?.favorites?.length ?? 0) > 0 || models.length > 0) && (

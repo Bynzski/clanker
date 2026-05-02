@@ -3,7 +3,6 @@
  *
  * Used by:
  * - Store defaults (main.ts): initialises harnessDefaults entries
- * - HARNESS_FLAG_MAP (renderer/lib/harnessFlags.ts): maps harness → known boolean flag
  * - Validation (main/harnessDefaultsValidation.ts): strips unknown harness IDs
  *
  * Adding a new harness requires updating this file only.

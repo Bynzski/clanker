@@ -21,6 +21,7 @@ import {
   normalizeModelLine,
   parsePiModels,
   parseOpenCodeModels,
+  parseCodexDebugModels,
 } from '../../../src/main/harnessCatalog';
 
 // ============================================================================
@@ -311,6 +312,72 @@ Another error message`;
 });
 
 // ============================================================================
+// parseCodexDebugModels Tests
+// ============================================================================
+
+describe('parseCodexDebugModels', () => {
+  it('parses visible models from JSON output', () => {
+    const output = JSON.stringify({
+      models: [
+        { slug: 'gpt-5.5', display_name: 'GPT-5.5', visibility: 'list' },
+        { slug: 'gpt-5.4', display_name: 'gpt-5.4', visibility: 'list' },
+        { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide' },
+      ],
+    });
+
+    const models = parseCodexDebugModels(output);
+
+    expect(models).toHaveLength(2);
+    expect(models[0]).toEqual({ id: 'gpt-5.5', label: 'GPT-5.5' });
+    expect(models[1]).toEqual({ id: 'gpt-5.4', label: 'gpt-5.4' });
+  });
+
+  it('falls back to slug when display_name is absent', () => {
+    const output = JSON.stringify({
+      models: [{ slug: 'gpt-5.4-mini', visibility: 'list' }],
+    });
+
+    const models = parseCodexDebugModels(output);
+
+    expect(models).toHaveLength(1);
+    expect(models[0]).toEqual({ id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' });
+  });
+
+  it('returns empty array for invalid JSON', () => {
+    expect(parseCodexDebugModels('not json')).toEqual([]);
+    expect(parseCodexDebugModels('')).toEqual([]);
+  });
+
+  it('returns empty array when models array is missing', () => {
+    expect(parseCodexDebugModels(JSON.stringify({}))).toEqual([]);
+  });
+
+  it('filters out entries without a slug', () => {
+    const output = JSON.stringify({
+      models: [
+        { display_name: 'No slug', visibility: 'list' },
+        { slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list' },
+      ],
+    });
+
+    const models = parseCodexDebugModels(output);
+
+    expect(models).toHaveLength(1);
+    expect(models[0].id).toBe('gpt-5.4');
+  });
+
+  it('returns empty array when all models are hidden', () => {
+    const output = JSON.stringify({
+      models: [
+        { slug: 'internal', display_name: 'Internal', visibility: 'hide' },
+      ],
+    });
+
+    expect(parseCodexDebugModels(output)).toEqual([]);
+  });
+});
+
+// ============================================================================
 // HARNESS_OPTIONS Tests - Static Data Verification
 // ============================================================================
 
@@ -376,12 +443,9 @@ describe('discoverHarnessModels', () => {
     expect(models).toEqual([]);
   });
 
-  it('returns configured model for codex when available', async () => {
-    // This test verifies the function signature and fallback behavior
-    // The actual filesystem reading is tested separately
+  it('returns models for codex via CLI discovery', async () => {
     const models = await discoverHarnessModels('codex');
-    
-    // Should return fallback models since we don't have real config
+
     expect(models.length).toBeGreaterThan(0);
     expect(models[0]).toHaveProperty('id');
     expect(models[0]).toHaveProperty('label');
@@ -406,11 +470,10 @@ describe('discoverHarnessModels', () => {
     }
   });
 
-  it('codex fallback includes expected models', async () => {
+  it('codex discovery returns gpt models', async () => {
     const models = await discoverHarnessModels('codex');
     const ids = models.map(m => m.id);
-    
-    // Should include at least some of the fallback models
+
     expect(ids.some(id => id.startsWith('gpt'))).toBe(true);
   });
 
@@ -451,7 +514,7 @@ describe('discoverHarnessModels', () => {
 // ============================================================================
 
 describe('ModelOption structure', () => {
-  it('codex fallback models have valid structure', async () => {
+  it('codex discovered models have valid structure', async () => {
     const models = await discoverHarnessModels('codex');
     
     for (const model of models) {
