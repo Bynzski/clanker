@@ -53,7 +53,7 @@ export default function Header() {
     handleToggleAiCommit,
     handleAiCommitProviderChange,
     handleAiCommitModelChange,
-    handleToggleHarnessFlag,
+    handleSetHarnessFlags,
     handleSetDefaultModel,
     handleToggleFavorite,
     loadHarnessModels,
@@ -194,7 +194,7 @@ export default function Header() {
         harnessModelCache={harnessModelCache}
         harnessModelLoading={harnessModelLoading}
         loadHarnessModels={loadHarnessModels}
-        handleToggleHarnessFlag={handleToggleHarnessFlag}
+        handleSetHarnessFlags={handleSetHarnessFlags}
         handleSetDefaultModel={handleSetDefaultModel}
         handleToggleFavorite={handleToggleFavorite}
       />

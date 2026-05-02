@@ -54,13 +54,6 @@ export const HARNESS_OPTIONS: Record<string, HarnessConfig> = {
 };
 
 const MODEL_DISCOVERY_FALLBACKS: Record<string, ModelOption[]> = {
-  codex: [
-    { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
-    { id: 'gpt-5.4', label: 'gpt-5.4' },
-    { id: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark' },
-    { id: 'gpt-5.1-codex-max', label: 'gpt-5.1-codex-max' },
-    { id: 'gpt-5.1-codex-mini', label: 'gpt-5.1-codex-mini' },
-  ],
   opencode: [
     { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
     { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
@@ -68,12 +61,6 @@ const MODEL_DISCOVERY_FALLBACKS: Record<string, ModelOption[]> = {
     { id: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
   ],
   pi: [],
-  claude: [
-    { id: 'sonnet', label: 'Sonnet' },
-    { id: 'opus', label: 'Opus' },
-    { id: 'haiku', label: 'Haiku' },
-    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-  ],
 };
 
 
@@ -189,23 +176,21 @@ export function parseOpenCodeModels(output: string): ModelOption[] {
   return models;
 }
 
-function readCodexConfiguredModel(): string | null {
-  const configPath = path.join(app.getPath('home'), '.codex', 'config.toml');
+/**
+ * Parse model list from codex debug models JSON output.
+ * Filters to visibility:"list" models only.
+ */
+export function parseCodexDebugModels(output: string): ModelOption[] {
   try {
-    const contents = fs.readFileSync(configPath, 'utf8');
-    const match = contents.match(/^\s*model\s*=\s*["']([^"']+)["']\s*$/m);
-    return match?.[1] ?? null;
+    const data = JSON.parse(output) as {
+      models?: Array<{ slug?: string; display_name?: string; visibility?: string }>;
+    };
+    return (data.models ?? [])
+      .filter((m) => m.visibility === 'list' && m.slug)
+      .map((m) => ({ id: m.slug!, label: m.display_name || m.slug! }));
   } catch {
-    return null;
+    return [];
   }
-}
-
-async function discoverCodexModels(): Promise<ModelOption[]> {
-  const configuredModel = readCodexConfiguredModel();
-  const fallback = MODEL_DISCOVERY_FALLBACKS.codex;
-  return configuredModel
-    ? [{ id: configuredModel, label: configuredModel }, ...fallback.filter((model) => model.id !== configuredModel)]
-    : fallback;
 }
 
 function dedupeModels(models: ModelOption[]): ModelOption[] {
@@ -227,7 +212,8 @@ async function discoverHarnessModelsAsync(harness: string): Promise<DiscoveryRes
 
   try {
     if (harness === 'codex') {
-      return { models: dedupeModels(await discoverCodexModels()), discovered: true };
+      const output = await runCommandOutput('codex', ['debug', 'models'], 8000);
+      return { models: dedupeModels(parseCodexDebugModels(output)), discovered: true };
     }
 
     if (harness === 'opencode') {

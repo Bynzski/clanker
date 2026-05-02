@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AI_COMMIT_PROVIDER_IDS, HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
-import { harnessFlagsFromToggle } from '../lib/harnessFlags';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import type { ModelOption } from '../types/shared';
 
@@ -191,13 +190,13 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
     }
   };
 
-  const handleToggleHarnessFlag = async (harnessId: string, enabled: boolean) => {
+  const handleSetHarnessFlags = async (harnessId: string, flags: string) => {
     if (!harnessDefaults) return;
     const newDefaults = {
       ...harnessDefaults,
       [harnessId]: {
         ...harnessDefaults[harnessId],
-        flags: harnessFlagsFromToggle(harnessId, enabled),
+        flags,
       },
     };
     setHarnessDefaultsState(newDefaults);
@@ -289,7 +288,7 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
     handleToggleAiCommit,
     handleAiCommitProviderChange,
     handleAiCommitModelChange,
-    handleToggleHarnessFlag,
+    handleSetHarnessFlags,
     handleSetDefaultModel,
     handleToggleFavorite,
     loadHarnessModels,

@@ -4,6 +4,19 @@ All notable changes to Clanker Grid are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Codex model discovery uses CLI** — replaced the `~/.codex/config.toml` read + hardcoded fallback list with a call to `codex debug models`, which returns a live JSON catalog from the running binary. Only models with `visibility: "list"` are surfaced. Results are cached with the existing 1-hour TTL; discovery failure returns an empty list rather than stale hardcoded data.
+- **Claude model selector replaced with free-text input** — the Claude harness has no model-listing command, so the dropdown (which previously showed four hardcoded model IDs) has been replaced with a plain text input. Users can type any model identifier accepted by the CLI (e.g. `claude-sonnet-4-6`, `opus`).
+- **Harness flags replaced with free-text input** — the per-harness boolean toggle (yolo / pure / dangerously-skip) has been replaced with a free-text "Extra flags" field. Any flags the CLI accepts can be entered. Codex and Claude show their conventional flags as placeholder text (`--yolo` and `--dangerously-skip-permissions` respectively). The `--pure` mode for OpenCode is removed; users who want it can type it manually. Existing stored flag strings carry forward without migration.
+
+### Removed
+
+- **`MODEL_DISCOVERY_FALLBACKS` entries for codex and claude** — codex now discovers models from the CLI; claude intentionally returns no models. The hardcoded fallback lists for both harnesses are gone.
+- **`harnessFlags` toggle abstraction** — `harnessFlagsFromToggle`, `harnessToggleFromFlags`, and `HARNESS_FLAG_MAP` have been removed. The `harnessFlags` module now only exports `HARNESS_FLAGS_PLACEHOLDER` for placeholder hint text.
+
 ## [0.2.1] - 2026-04-30
 
 All 30 commits since v0.2.0 have been included. Notable changes include major decomposition of Header and BrowserPanel into focused modules, annotation controller refactoring, Windows CI test hardening, and removal of the pane-locking feature set.
