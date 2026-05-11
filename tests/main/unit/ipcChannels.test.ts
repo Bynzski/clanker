@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   // Settings
+  GET_APP_VERSION,
   GET_LAST_WORKSPACE,
   GET_BASE_DIRECTORY,
   OPEN_BASE_DIRECTORY_DIALOG,
@@ -150,6 +151,7 @@ import {
 
 const ALL_CHANNELS = [
   // Settings
+  GET_APP_VERSION,
   GET_LAST_WORKSPACE,
   GET_BASE_DIRECTORY,
   OPEN_BASE_DIRECTORY_DIALOG,

@@ -14,6 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Validation pipeline restored** — updated stale IPC/settings tests, removed a jsdom form-submission warning in the git branch form, refreshed vulnerable transitive lockfile entries, and aligned workspace-tab tests with the intentionally count-free tab UI so `npm run validate` passes cleanly.
 - **Browser local-file navigation** — the browser address bar now preserves explicit `file://` URLs and converts absolute POSIX/Windows file paths into file URLs instead of incorrectly prefixing them with `https://`. The main-process navigation pipeline now allows local files only for trusted app-initiated navigation while keeping web-initiated navigation and external-open handling restricted to safe remote protocols. Resolves #33.
 
 ### Removed

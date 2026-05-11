@@ -97,7 +97,13 @@ export function GitBranchesSection({
 
       <div className="git-menu-section">
         <div className="git-menu-section-header">Create Branch</div>
-        <form className="git-create-branch-form" onSubmit={onCreateBranch}>
+        <form
+          className="git-create-branch-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onCreateBranch(event);
+          }}
+        >
           <input
             ref={createBranchInputRef}
             className="git-create-branch-input"
