@@ -167,7 +167,7 @@ describe('WorkspaceTabs', () => {
       expect(screen.getByText('My Project')).toBeTruthy();
     });
 
-    it('displays terminal count in tab', () => {
+    it('does not display terminal count in tabs', () => {
       useWorkspaceStore.setState({
         workspaces: mockWorkspaces,
         activeWorkspaceId: 'ws1',
@@ -175,13 +175,8 @@ describe('WorkspaceTabs', () => {
       
       render(<WorkspaceTabs />);
       
-      // First workspace has 1 terminal
-      const firstTab = screen.getAllByRole('tab')[0];
-      expect(firstTab).toHaveTextContent('1');
-      
-      // Second workspace has 2 terminals
-      const secondTab = screen.getAllByRole('tab')[1];
-      expect(secondTab).toHaveTextContent('2');
+      expect(screen.queryByLabelText(/terminals$/i)).toBeNull();
+      expect(document.querySelector('.workspace-tab-count')).toBeNull();
     });
 
     it('applies active class to active workspace tab', () => {

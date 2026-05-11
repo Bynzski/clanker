@@ -164,6 +164,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const expectedChannels = [
+      'get-app-version',
       'get-last-workspace',
       'get-base-directory',
       'open-base-directory-dialog',
@@ -186,13 +187,13 @@ describe('registerSettingsIpc', () => {
     });
   });
 
-  test('registers exactly 15 settings IPC channels', () => {
+  test('registers exactly 16 settings IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(15);
+    expect(handleCalls.length).toBe(16);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -202,7 +203,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(30);
+    expect(handleCalls.length).toBe(32);
   });
 
   test('settings channels do not overlap with terminal channels', () => {
@@ -211,6 +212,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const settingsChannels = [
+      'get-app-version',
       'get-last-workspace',
       'get-base-directory',
       'open-base-directory-dialog',
@@ -247,6 +249,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const settingsChannels = [
+      'get-app-version',
       'get-last-workspace',
       'get-base-directory',
       'open-base-directory-dialog',
@@ -750,6 +753,7 @@ describe('settings IPC channel constants', () => {
 
   test('all settings channels start with expected prefixes', () => {
     const settingsChannels = [
+      'get-app-version',
       'get-last-workspace',
       'get-base-directory',
       'open-base-directory-dialog',
