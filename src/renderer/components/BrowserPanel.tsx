@@ -38,6 +38,29 @@ function getTabLabel(tab: BrowserTab | null): string {
   }
 }
 
+function isWindowsDrivePath(value: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(value);
+}
+
+function normalizeBrowserInputUrl(rawUrl: string): string {
+  const navigateUrl = rawUrl.trim();
+  const lowerUrl = navigateUrl.toLowerCase();
+
+  if (lowerUrl.startsWith('file://') || lowerUrl.startsWith('http://') || lowerUrl.startsWith('https://')) {
+    return navigateUrl;
+  }
+
+  if (navigateUrl.startsWith('/')) {
+    return `file://${navigateUrl}`;
+  }
+
+  if (isWindowsDrivePath(navigateUrl)) {
+    return `file:///${navigateUrl.replace(/\\/g, '/')}`;
+  }
+
+  return `https://${navigateUrl}`;
+}
+
 function getTabSubtitle(tab: BrowserTab): string {
   try {
     const parsed = new URL(tab.url);
@@ -312,9 +335,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     let navigateUrl = rawUrl.trim();
     if (!navigateUrl || !workspace?.id) return null;
 
-    if (!navigateUrl.startsWith('http://') && !navigateUrl.startsWith('https://')) {
-      navigateUrl = `https://${navigateUrl}`;
-    }
+    navigateUrl = normalizeBrowserInputUrl(navigateUrl);
 
     const success = activeTabId
       ? await window.electronAPI.browserTabNavigate(workspace.id, activeTabId, navigateUrl)

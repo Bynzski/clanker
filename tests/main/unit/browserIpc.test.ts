@@ -523,7 +523,7 @@ describe('browserIpc — error-path: null/invalid workspaceId returns valid resu
     expect(result).toBe(false);
   });
 
-  test('BROWSER_NAVIGATE returns false for invalid (non-http) URL', async () => {
+  test('BROWSER_NAVIGATE returns false for invalid URL schemes', async () => {
     const { deps } = createMockDeps();
     registerBrowserIpc(deps);
 
@@ -531,9 +531,24 @@ describe('browserIpc — error-path: null/invalid workspaceId returns valid resu
       (call) => call[0] === 'browser-navigate'
     )?.[1] as (_: unknown, workspaceId: string, url: string) => boolean;
 
-    // file:// URLs are blocked by normalizeAppBrowserUrl security check
-    const result = await handler(null, 'ws-1', 'file:///etc/passwd');
+    const result = await handler(null, 'ws-1', 'javascript:alert(1)');
     expect(result).toBe(false);
+  });
+
+  test('BROWSER_NAVIGATE allows trusted app-initiated file URLs', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-navigate'
+    )?.[1] as (_: unknown, workspaceId: string, url: string) => boolean;
+
+    const result = await handler(null, 'ws-1', 'file:///tmp/report.html');
+    expect(result).toBe(true);
+
+    const entry = deps.getBrowserViews().get('ws-1')?.get('__fallback_tab__');
+    expect(entry?.url).toBe('file:///tmp/report.html');
+    expect(entry?.view.webContents.loadURL).toHaveBeenLastCalledWith('file:///tmp/report.html');
   });
 
   test('BROWSER_BACK returns undefined for null workspaceId', async () => {
@@ -954,7 +969,7 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     expect(tabs.map((t: { tabId: string }) => t.tabId)).toEqual(['tab-a', 'tab-c']);
   });
 
-  test('BROWSER_TAB_NAVIGATE rejects non-HTTP(S) URLs', async () => {
+  test('BROWSER_TAB_NAVIGATE rejects invalid URL schemes', async () => {
     const { deps } = createMockDeps();
     registerBrowserIpc(deps);
 
@@ -962,8 +977,26 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     const tabNavigate = findHandler('browser-tab-navigate');
 
     await create(null, 'ws-1', 'tab-a');
-    const result = await tabNavigate(null, 'ws-1', 'tab-a', 'file:///etc/passwd');
+    const result = await tabNavigate(null, 'ws-1', 'tab-a', 'javascript:alert(1)');
     expect(result).toBe(false);
+  });
+
+  test('BROWSER_TAB_NAVIGATE allows trusted app-initiated file URLs', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const create = findHandler('browser-create-tab');
+    const tabNavigate = findHandler('browser-tab-navigate');
+    const switchTab = findHandler('browser-switch-tab');
+
+    await create(null, 'ws-1', 'tab-a');
+    await switchTab(null, 'ws-1', 'tab-a');
+    const result = await tabNavigate(null, 'ws-1', 'tab-a', 'file:///tmp/report.html');
+    expect(result).toBe(true);
+
+    const entry = deps.getBrowserViews().get('ws-1')?.get('tab-a');
+    expect(entry?.url).toBe('file:///tmp/report.html');
+    expect(entry?.view.webContents.loadURL).toHaveBeenLastCalledWith('file:///tmp/report.html');
   });
 
   test('BROWSER_TAB_NAVIGATE updates per-tab url for inactive tabs without navigating the view', async () => {

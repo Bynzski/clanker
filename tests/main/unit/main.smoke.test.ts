@@ -39,6 +39,7 @@ import * as path from 'path';
 import {
   normalizeAppBrowserUrl,
   normalizeExternalUrl,
+  normalizeTrustedAppBrowserUrl,
   resolveExistingDirectory,
 } from '../../../src/main/security';
 
@@ -332,9 +333,19 @@ describe('main.ts Entry Point Smoke Tests', () => {
       assert.equal(result, url);
     });
 
-    test('normalizeAppBrowserUrl rejects file:// URLs', () => {
+    test('normalizeAppBrowserUrl rejects untrusted file:// URLs', () => {
       const result = normalizeAppBrowserUrl('file:///etc/passwd');
       assert.equal(result, null);
+    });
+
+    test('normalizeTrustedAppBrowserUrl allows app-initiated file:// URLs', () => {
+      const result = normalizeTrustedAppBrowserUrl('file:///tmp/report.html');
+      assert.equal(result, 'file:///tmp/report.html');
+    });
+
+    test('normalizeTrustedAppBrowserUrl converts absolute local paths', () => {
+      const result = normalizeTrustedAppBrowserUrl('/tmp/report.html');
+      assert.equal(result, 'file:///tmp/report.html');
     });
 
     test('normalizeAppBrowserUrl rejects javascript: URLs', () => {

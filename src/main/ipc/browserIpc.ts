@@ -9,6 +9,7 @@ import { ipcMain, BrowserWindow, Menu, WebContentsView, shell, type Rectangle } 
 import {
   normalizeAppBrowserUrl,
   normalizeExternalUrl,
+  normalizeTrustedAppBrowserUrl,
 } from '../security';
 import {
   BROWSER_SET_BOUNDS,
@@ -462,7 +463,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
 
   ipcMain.handle(BROWSER_NAVIGATE, (_, workspaceId: string, url: string, tabId?: string) => {
     if (!workspaceId) return false;
-    const safeUrl = normalizeAppBrowserUrl(url);
+    const safeUrl = normalizeTrustedAppBrowserUrl(url);
     if (!safeUrl) return false;
 
     const targetTabId = resolveTabIdForWorkspace(workspaceId, tabId);
@@ -531,7 +532,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
   });
 
   ipcMain.handle(BROWSER_SAVE_URL, (_, workspaceId: string, url: string) => {
-    const safeUrl = normalizeAppBrowserUrl(url);
+    const safeUrl = normalizeTrustedAppBrowserUrl(url);
     if (!safeUrl) return false;
     const entry = getActiveBrowserEntryForOperation(workspaceId, deps);
     if (!entry) return false;
@@ -616,7 +617,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
 
   ipcMain.handle(BROWSER_TAB_NAVIGATE, (_, workspaceId: string, tabId: string, url: string) => {
     if (!workspaceId || !tabId) return false;
-    const safeUrl = normalizeAppBrowserUrl(url);
+    const safeUrl = normalizeTrustedAppBrowserUrl(url);
     if (!safeUrl) return false;
 
     const entry = ensureTabViewEntry(workspaceId, tabId, deps);

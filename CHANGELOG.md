@@ -12,6 +12,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Claude model selector replaced with free-text input** — the Claude harness has no model-listing command, so the dropdown (which previously showed four hardcoded model IDs) has been replaced with a plain text input. Users can type any model identifier accepted by the CLI (e.g. `claude-sonnet-4-6`, `opus`).
 - **Harness flags replaced with free-text input** — the per-harness boolean toggle (yolo / pure / dangerously-skip) has been replaced with a free-text "Extra flags" field. Any flags the CLI accepts can be entered. Codex and Claude show their conventional flags as placeholder text (`--yolo` and `--dangerously-skip-permissions` respectively). The `--pure` mode for OpenCode is removed; users who want it can type it manually. Existing stored flag strings carry forward without migration.
 
+### Fixed
+
+- **Browser local-file navigation** — the browser address bar now preserves explicit `file://` URLs and converts absolute POSIX/Windows file paths into file URLs instead of incorrectly prefixing them with `https://`. The main-process navigation pipeline now allows local files only for trusted app-initiated navigation while keeping web-initiated navigation and external-open handling restricted to safe remote protocols. Resolves #33.
+
 ### Removed
 
 - **`MODEL_DISCOVERY_FALLBACKS` entries for codex and claude** — codex now discovers models from the CLI; claude intentionally returns no models. The hardcoded fallback lists for both harnesses are gone.

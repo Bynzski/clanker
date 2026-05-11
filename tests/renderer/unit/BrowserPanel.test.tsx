@@ -507,6 +507,39 @@ describe('BrowserPanel', () => {
 
       expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', 'http://example.com');
     });
+
+    it('preserves file protocol if already specified', () => {
+      render(<BrowserPanel {...defaultProps} />);
+
+      const input = screen.getByPlaceholderText('Enter URL...');
+      fireEvent.change(input, { target: { value: 'file:///tmp/report.html' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+
+      expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', 'file:///tmp/report.html');
+    });
+
+    it('converts absolute POSIX paths to file URLs', () => {
+      render(<BrowserPanel {...defaultProps} />);
+
+      const input = screen.getByPlaceholderText('Enter URL...');
+      fireEvent.change(input, { target: { value: '/tmp/report.html' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+
+      expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', 'file:///tmp/report.html');
+    });
+
+    it('converts absolute Windows paths to file URLs', () => {
+      render(<BrowserPanel {...defaultProps} />);
+
+      const input = screen.getByPlaceholderText('Enter URL...');
+      fireEvent.change(input, { target: { value: 'C:\\Users\\Jay\\report.html' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+
+      expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', 'file:///C:/Users/Jay/report.html');
+    });
   });
 
   // =========================================================================
