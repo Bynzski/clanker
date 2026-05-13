@@ -243,32 +243,32 @@ function findNearestRegionLabel(el: Element): string | null {
 /**
  * Infer the broad UI region type from the nearest landmark or container.
  */
-const REGION_TYPE_BY_ROLE: Record<string, string> = {
-  navigation: 'navigation',
-  complementary: 'sidebar',
-  main: 'main content',
-  dialog: 'dialog',
-  menu: 'menu',
-  tablist: 'tab list',
-  list: 'list',
-  table: 'table',
-  form: 'form section',
-};
-
-const REGION_TYPE_BY_TAG: Record<string, string> = {
-  nav: 'navigation',
-  aside: 'sidebar',
-  main: 'main content',
-  dialog: 'dialog',
-  ul: 'list',
-  ol: 'list',
-  dl: 'list',
-  table: 'table',
-  form: 'form section',
-};
-
 function inferRegionByRoleOrTag(role: string, tagName: string): string | null {
-  return REGION_TYPE_BY_ROLE[role] ?? REGION_TYPE_BY_TAG[tagName] ?? null;
+  const regionTypeByRole: Record<string, string> = {
+    navigation: 'navigation',
+    complementary: 'sidebar',
+    main: 'main content',
+    dialog: 'dialog',
+    menu: 'menu',
+    tablist: 'tab list',
+    list: 'list',
+    table: 'table',
+    form: 'form section',
+  };
+
+  const regionTypeByTag: Record<string, string> = {
+    nav: 'navigation',
+    aside: 'sidebar',
+    main: 'main content',
+    dialog: 'dialog',
+    ul: 'list',
+    ol: 'list',
+    dl: 'list',
+    table: 'table',
+    form: 'form section',
+  };
+
+  return regionTypeByRole[role] ?? regionTypeByTag[tagName] ?? null;
 }
 
 function inferSectionRegionType(el: Element): string {
@@ -601,8 +601,14 @@ function getRuntimeHelperSource(): string {
     buildTagClassSelector.toString(),
     buildFallbackSelectors.toString(),
     findNearestRegionLabel.toString(),
+    inferRegionByRoleOrTag.toString(),
+    inferSectionRegionType.toString(),
     inferRegionType.toString(),
     collectNearbyText.toString(),
+    isRepositoryLikeText.toString(),
+    inferCollectionFromRegion.toString(),
+    inferCollectionByRegionContext.toString(),
+    inferCollectionByTag.toString(),
     inferCollectionLabel.toString(),
     isButtonLike.toString(),
     isLinkLike.toString(),

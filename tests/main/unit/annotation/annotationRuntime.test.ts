@@ -83,9 +83,39 @@ describe('annotationRuntime', () => {
 
     expect(runtime).toContain('function captureElement');
     expect(runtime).toContain('function buildSelector');
+    expect(runtime).toContain('function inferRegionByRoleOrTag');
+    expect(runtime).toContain('function inferSectionRegionType');
+    expect(runtime).toContain('function isRepositoryLikeText');
+    expect(runtime).toContain('function inferCollectionFromRegion');
+    expect(runtime).toContain('function inferCollectionByRegionContext');
+    expect(runtime).toContain('function inferCollectionByTag');
     expect(runtime).toContain('background: #1a1a1a');
     expect(runtime).toContain('border-radius: 4px');
     expect(runtime).toContain("font-family: var(--font-ui, 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace)");
     expect(runtime).not.toContain(':contains(');
+  });
+
+  it('runtime capture path does not throw during mousemove', () => {
+    const dom = new JSDOM(
+      '<!doctype html><html><head></head><body><main><button id="save:btn">Save</button></main></body></html>',
+      { runScripts: 'dangerously' }
+    );
+    const runtime = generateAnnotationRuntime();
+
+    const windowEval = (dom.window as unknown as { eval: (source: string) => unknown }).eval;
+    expect(() => windowEval(runtime)).not.toThrow();
+
+    const enable = (dom.window as Window & { __clankerAnnotationEnable__?: () => void }).__clankerAnnotationEnable__;
+    expect(enable).toBeTypeOf('function');
+    enable?.();
+
+    const button = dom.window.document.querySelector('button');
+    expect(button).not.toBeNull();
+
+    expect(() => {
+      const MouseEventCtor = (dom.window as unknown as { MouseEvent: typeof MouseEvent }).MouseEvent;
+      const event = new MouseEventCtor('mousemove', { bubbles: true, clientX: 10, clientY: 10 });
+      button?.dispatchEvent(event);
+    }).not.toThrow();
   });
 });
