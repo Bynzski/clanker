@@ -236,13 +236,13 @@ Provider implementations are tested with mocked API responses:
 
 ```bash
 # Run all VCS tests
-npm test -- tests/main/unit/vcs/
+npm run test -- tests/main/unit/vcs/
 
 # Run specific provider tests
-npm test -- tests/main/unit/vcs/githubProvider.test.ts
-npm test -- tests/main/unit/vcs/gitlabProvider.test.ts
-npm test -- tests/main/unit/vcs/bitbucketProvider.test.ts
-npm test -- tests/main/unit/vcs/providerDetector.test.ts
+npm run test -- tests/main/unit/vcs/githubProvider.test.ts
+npm run test -- tests/main/unit/vcs/gitlabProvider.test.ts
+npm run test -- tests/main/unit/vcs/bitbucketProvider.test.ts
+npm run test -- tests/main/unit/vcs/providerDetector.test.ts
 ```
 
 ## Security Considerations

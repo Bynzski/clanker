@@ -26,7 +26,7 @@ Each harness (Codex, OpenCode, Pi, Claude) has its own settings:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| Yolo/Auto Mode | Enable boolean flag (e.g., `--yolo` for Codex, `--pure` for OpenCode) | Disabled |
+| Extra Flags | Free-text CLI flags (e.g., `--yolo`, `--dangerously-skip-permissions`) | Empty |
 | Default Model | Model ID pre-selected when launching with this harness | Empty (harness picks) |
 | Favorites | Pinned model IDs shown in the compact model picker | Empty |
 
@@ -35,16 +35,15 @@ Each harness (Codex, OpenCode, Pi, Claude) has its own settings:
 1. Open the settings dropdown from the gear icon
 2. Scroll to the **Harness Defaults** section
 3. Click a harness row to expand its settings
-4. Toggle the yolo/auto checkbox, select a default model, or manage favorites
+4. Edit extra flags text, set a default model, or manage favorites
 
 All changes persist immediately to `electron-store`.
 
 #### Flags Behavior
 
-- User flags **replace** hardcoded defaults entirely (not additive)
-- The UI exposes known boolean-style toggles per harness only
-- Supported flags: `--yolo` (Codex), `--pure` (OpenCode)
-- Pi and Claude have no boolean toggle in this pass
+- Flags are entered as free text and passed through as-is.
+- Placeholders show common examples (`--yolo` for Codex, `--dangerously-skip-permissions` for Claude).
+- There is no per-harness boolean toggle UI.
 
 #### Default Model Resolution
 
