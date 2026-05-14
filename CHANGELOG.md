@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-13
+
 ### Changed
 
 - **Codex model discovery uses CLI** — replaced the `~/.codex/config.toml` read + hardcoded fallback list with a call to `codex debug models`, which returns a live JSON catalog from the running binary. Only models with `visibility: "list"` are surfaced. Results are cached with the existing 1-hour TTL; discovery failure returns an empty list rather than stale hardcoded data.
@@ -142,7 +144,8 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/Bynzski/clanker/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Bynzski/clanker/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Bynzski/clanker/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Bynzski/clanker/releases/tag/v0.1.0

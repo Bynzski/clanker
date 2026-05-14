@@ -46,17 +46,17 @@ Requires Node.js 22.12+ and npm 10+. On Windows, also install **Git for Windows*
 2. The workspace gate opens if no workspaces exist
 3. Select or enter a directory path
 4. Optionally select an AI harness
-5. If a harness is selected, choose a model via the compact model picker
+5. If a harness is selected, choose a model (picker for discoverable harnesses, free text for Claude)
 6. Choose terminal count (1, 2, or 4)
 7. Click **Launch**
 
 ### Model Selection in the Gate
 
-When a harness is selected, the gate shows a compact model pill displaying the current default model:
+When a harness is selected, the gate shows model selection controls:
 
-- **Click the pill** to open the favorites picker (shows pinned models)
-- **"Browse all models"** to search the full model list
-- **Select a model** to use it for this workspace launch
+- **Discoverable harnesses (e.g., Codex):** click the model pill to open favorites and browse/search all discovered models
+- **Claude:** enter the model as free text
+- **Selected model** is used for workspace launch
 
 The default model for each harness can be configured in the header settings dropdown (gear icon).
 

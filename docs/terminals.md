@@ -40,19 +40,14 @@ When a harness exits, the terminal falls back to an interactive shell so the pan
 
 ### Harness Flags
 
-Each harness supports configurable CLI flags stored in `electron-store`:
+Harness flags are configured per-harness in settings as free text and stored in `electron-store`.
 
-| Harness | Flag | Toggle Label | Behavior |
-|---------|------|--------------|----------|
-| Codex | `--yolo` | Enable yolo mode | Auto-approve actions |
-| OpenCode | `--pure` | Enable pure mode | Skip confirmations |
+Examples:
+- Codex: `--yolo`
+- Claude: `--dangerously-skip-permissions`
+- OpenCode: `--pure` (if desired)
 
-Flags are configured per-harness in the header settings dropdown. The UI exposes a boolean checkbox for known flags; the store field (`flags: string`) supports future extensibility for additional CLI arguments.
-
-**Flags ownership:**
-- Static harness config owns `command`, `env`, `modelArg`
-- Store (`harnessDefaults`) owns user-configurable `flags` string
-- The renderer only maps known boolean toggles to known flag strings (via `harnessFlagsFromToggle`)
+Flags are passed through as entered.
 
 ### Harness Default Models
 
@@ -94,10 +89,13 @@ When creating a workspace, the gate provides a compact model selection flow:
 
 1. **Model pill** — shows the current default model (or "Default model")
 2. **Click the pill** — opens the favorites picker showing pinned models
-3. **Browse all models** — opens a discovery popover with search across all available models
+3. **Browse all models** — opens a discovery popover with search across available models for harnesses that support discovery
 4. **Select a model** — updates the pill and uses that model for launch
 
-Unresolved models (no longer discoverable) are shown with a warning indicator.
+Notes:
+- Codex models are discovered from the CLI.
+- Claude uses free-text model input (no model-list command).
+- Unresolved models are shown with a warning indicator.
 
 ### Terminal Count Presets
 
