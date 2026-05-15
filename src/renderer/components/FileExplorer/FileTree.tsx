@@ -9,6 +9,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useScopedWorkspace } from '../WorkspaceScope';
 import { validateFilename } from '../../../shared/filenameValidation';
 import { pathKey } from '../../../shared/pathKey';
+import { computeFilterVisibility, type FilterState } from './filterVisibility';
 
 interface FileTreeProps {
   workspaceId?: string;
@@ -26,6 +27,8 @@ interface FileTreeProps {
   onCancelRenaming: () => void;
   onCommitCreating: (name: string) => Promise<void>;
   onCommitRenaming: (newName: string) => Promise<void>;
+  filterQuery?: string;
+  onFocusFilter?: () => void;
 }
 
 interface TreeNodeProps {
@@ -46,6 +49,7 @@ interface TreeNodeProps {
   onCancelRenaming: () => void;
   onCommitCreating: (name: string) => Promise<void>;
   onCommitRenaming: (newName: string) => Promise<void>;
+  filterState: FilterState;
 }
 
 export function toRelativePath(
@@ -110,6 +114,7 @@ function TreeNodeChildren({
   onCancelRenaming,
   onCommitCreating,
   onCommitRenaming,
+  filterState,
 }: {
   entry: FileExplorerEntry;
   depth: number;
@@ -132,6 +137,7 @@ function TreeNodeChildren({
   onCancelRenaming: () => void;
   onCommitCreating: (name: string) => Promise<void>;
   onCommitRenaming: (newName: string) => Promise<void>;
+  filterState: FilterState;
 }) {
   if (!entry.isDirectory || !isExpanded) {
     return null;
@@ -175,13 +181,14 @@ function TreeNodeChildren({
           onCancelRenaming={onCancelRenaming}
           onCommitCreating={onCommitCreating}
           onCommitRenaming={onCommitRenaming}
+          filterState={filterState}
         />
       ))}
     </>
   );
 }
 
-function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelativePath, descendantChangePaths, workspaceRoot, showHiddenFiles, onContextMenu, creating, renaming, onStartCreating, onStartRenaming, onCancelCreating, onCancelRenaming, onCommitCreating, onCommitRenaming }: TreeNodeProps) {
+function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelativePath, descendantChangePaths, workspaceRoot, showHiddenFiles, onContextMenu, creating, renaming, onStartCreating, onStartRenaming, onCancelCreating, onCancelRenaming, onCommitCreating, onCommitRenaming, filterState }: TreeNodeProps) {
   const workspace = useScopedWorkspace(workspaceId);
   const {
     toggleExplorerPath,
@@ -190,15 +197,15 @@ function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelat
   } = useWorkspaceStore();
   const explorerExpandedPaths = workspace?.explorerExpandedPaths ?? [];
   const explorerSelectedPath = workspace?.explorerSelectedPath ?? null;
-  const explorerEntriesByPath = workspace?.explorerEntriesByPath ?? {};
+  const explorerEntriesByPath = useMemo(() => workspace?.explorerEntriesByPath ?? {}, [workspace]);
   const explorerLoadingPaths = workspace?.explorerLoadingPaths ?? [];
   const explorerErrorsByPath = workspace?.explorerErrorsByPath ?? {};
 
-  const isExpanded = explorerExpandedPaths.includes(entry.path);
+  const isExpanded = explorerExpandedPaths.includes(entry.path) || filterState.forcedExpanded.has(entry.path);
   const isSelected = explorerSelectedPath === entry.path;
-  const childEntries = (explorerEntriesByPath[entry.path] ?? []).filter(
-    (e) => showHiddenFiles || !e.name.startsWith('.')
-  );
+  const childEntries = (explorerEntriesByPath[entry.path] ?? [])
+    .filter((e) => showHiddenFiles || !e.name.startsWith('.'))
+    .filter((e) => !filterState.active || filterState.visiblePaths.has(e.path));
   const isLoading = explorerLoadingPaths.includes(entry.path);
   const error = explorerErrorsByPath[entry.path];
 
@@ -323,6 +330,7 @@ function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelat
         onCancelRenaming={onCancelRenaming}
         onCommitCreating={onCommitCreating}
         onCommitRenaming={onCommitRenaming}
+        filterState={filterState}
       />
     </>
   );
@@ -407,14 +415,14 @@ function CreateInput({ type, depth, onCommit, onCancel }: {
   );
 }
 
-export default function FileTree({ workspaceId, rootPath, workspacePath, rootError, onLoadDirectory, gitChanges, onContextMenu, creating, renaming, onStartCreating, onStartRenaming, onCancelCreating, onCancelRenaming, onCommitCreating, onCommitRenaming }: FileTreeProps) {
+export default function FileTree({ workspaceId, rootPath, workspacePath, rootError, onLoadDirectory, gitChanges, onContextMenu, creating, renaming, onStartCreating, onStartRenaming, onCancelCreating, onCancelRenaming, onCommitCreating, onCommitRenaming, filterQuery = '', onFocusFilter }: FileTreeProps) {
   const workspace = useScopedWorkspace(workspaceId);
   const {
     toggleExplorerPath,
     setExplorerSelectedPath,
     openFileInEditor,
   } = useWorkspaceStore();
-  const explorerEntriesByPath = workspace?.explorerEntriesByPath ?? {};
+  const explorerEntriesByPath = useMemo(() => workspace?.explorerEntriesByPath ?? {}, [workspace]);
   const explorerLoadingPaths = workspace?.explorerLoadingPaths ?? [];
 
   const { gitStatusByRelativePath, descendantChangePaths } = useMemo(() => {
@@ -441,9 +449,15 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
   }, [gitChanges]);
 
   const showHiddenFiles = workspace?.showHiddenFiles ?? true;
-  const rootEntries = (explorerEntriesByPath[rootPath] ?? []).filter(
-    (e) => showHiddenFiles || !e.name.startsWith('.')
+
+  const filterState = useMemo(
+    () => computeFilterVisibility(rootPath, explorerEntriesByPath, filterQuery, showHiddenFiles),
+    [rootPath, explorerEntriesByPath, filterQuery, showHiddenFiles]
   );
+
+  const rootEntries = (explorerEntriesByPath[rootPath] ?? [])
+    .filter((e) => showHiddenFiles || !e.name.startsWith('.'))
+    .filter((e) => !filterState.active || filterState.visiblePaths.has(e.path));
   const isRootLoading = explorerLoadingPaths.includes(rootPath);
 
   const handleKeyDown = useCallback(
@@ -455,18 +469,19 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
       const liveExpanded = liveWorkspace?.explorerExpandedPaths ?? [];
       const liveSelected = liveWorkspace?.explorerSelectedPath ?? null;
       const liveShowHidden = liveWorkspace?.showHiddenFiles ?? true;
-      const liveRootEntries = (liveEntries[rootPath] ?? []).filter(
-        (entry) => liveShowHidden || !entry.name.startsWith('.')
-      );
+      const liveRootEntries = (liveEntries[rootPath] ?? [])
+        .filter((entry) => liveShowHidden || !entry.name.startsWith('.'))
+        .filter((entry) => !filterState.active || filterState.visiblePaths.has(entry.path));
 
       const liveNodes: Array<{ entry: FileExplorerEntry; depth: number }> = [];
       const walkLive = (entries: FileExplorerEntry[], depth: number) => {
         for (const entry of entries) {
           liveNodes.push({ entry, depth });
-          if (entry.isDirectory && liveExpanded.includes(entry.path)) {
-            const children = (liveEntries[entry.path] ?? []).filter(
-              (child) => liveShowHidden || !child.name.startsWith('.')
-            );
+          const isOpen = liveExpanded.includes(entry.path) || filterState.forcedExpanded.has(entry.path);
+          if (entry.isDirectory && isOpen) {
+            const children = (liveEntries[entry.path] ?? [])
+              .filter((child) => liveShowHidden || !child.name.startsWith('.'))
+              .filter((child) => !filterState.active || filterState.visiblePaths.has(child.path));
             walkLive(children, depth + 1);
           }
         }
@@ -494,6 +509,12 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
           toggleExplorerPath(directoryPath, workspaceId);
         })();
       };
+
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        onFocusFilter?.();
+        return;
+      }
 
       const keyHandlers: Partial<Record<string, () => void>> = {
         ArrowDown: () => {
@@ -549,7 +570,7 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
         handler();
       }
     },
-    [rootPath, onLoadDirectory, toggleExplorerPath, setExplorerSelectedPath, openFileInEditor, onStartRenaming, workspaceId]
+    [rootPath, onLoadDirectory, toggleExplorerPath, setExplorerSelectedPath, openFileInEditor, onStartRenaming, workspaceId, filterState, onFocusFilter]
   );
 
   const isCreatingAtRoot = creating?.parentPath === rootPath;
@@ -563,7 +584,7 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
   }
 
   if (rootEntries.length === 0 && !isCreatingAtRoot) {
-    return <div className="file-explorer-status">No files</div>;
+    return <div className="file-explorer-status">{filterState.active ? 'No matches' : 'No files'}</div>;
   }
 
   return (
@@ -601,6 +622,7 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
           onCancelRenaming={onCancelRenaming}
           onCommitCreating={onCommitCreating}
           onCommitRenaming={onCommitRenaming}
+          filterState={filterState}
         />
       ))}
     </div>

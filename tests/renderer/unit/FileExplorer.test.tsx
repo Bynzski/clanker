@@ -67,6 +67,14 @@ function createEntry(name: string, entryPath: string, isDirectory: boolean): Fil
   };
 }
 
+async function findTreeNodeInput(): Promise<HTMLInputElement> {
+  return waitFor(() => {
+    const el = document.querySelector('.tree-node-input') as HTMLInputElement | null;
+    expect(el).not.toBeNull();
+    return el as HTMLInputElement;
+  });
+}
+
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -386,7 +394,7 @@ describe('FileExplorer', () => {
     fireEvent.click(await screen.findByText('index.ts'));
     await user.click(screen.getByTitle('New File'));
 
-    const input = screen.getByRole('textbox');
+    const input = await findTreeNodeInput();
     await user.type(input, 'notes.md{enter}');
 
     await waitFor(() => {
@@ -452,7 +460,7 @@ describe('FileExplorer', () => {
     fireEvent.contextMenu(await screen.findByText('README.md'));
     await user.click(screen.getByRole('menuitem', { name: 'Rename' }));
 
-    const input = await screen.findByRole('textbox');
+    const input = await findTreeNodeInput();
     await user.clear(input);
     await user.type(input, 'docs.md{enter}');
 
@@ -501,7 +509,7 @@ describe('FileExplorer', () => {
     fireEvent.contextMenu(await screen.findByText('src'));
     await user.click(screen.getByRole('menuitem', { name: 'Rename' }));
 
-    const input = await screen.findByRole('textbox');
+    const input = await findTreeNodeInput();
     await user.clear(input);
     await user.type(input, 'lib{enter}');
 
@@ -859,7 +867,7 @@ describe('S8: Inline create/rename UI', () => {
 
     fireEvent.click(screen.getByTitle('New File'));
 
-    const input = await screen.findByRole('textbox');
+    const input = await findTreeNodeInput();
     await userEvent.type(input, 'CON{enter}');
 
     expect(fileCreate).not.toHaveBeenCalled();
@@ -878,7 +886,7 @@ describe('S8: Inline create/rename UI', () => {
 
     fireEvent.click(screen.getByTitle('New File'));
 
-    const input = await screen.findByRole('textbox');
+    const input = await findTreeNodeInput();
     fireEvent.keyDown(input, { key: 'Enter' });
 
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -902,7 +910,7 @@ describe('S8: Inline create/rename UI', () => {
 
     fireEvent.click(screen.getByTitle('New File'));
 
-    const input = await screen.findByRole('textbox');
+    const input = await findTreeNodeInput();
     expect(screen.queryByText('No files')).not.toBeInTheDocument();
     await userEvent.type(input, 'notes.md{enter}');
 
@@ -929,7 +937,7 @@ describe('S8: Inline create/rename UI', () => {
 
     fireEvent.click(screen.getByTitle('New Folder'));
 
-    const input = await screen.findByRole('textbox');
+    const input = await findTreeNodeInput();
     await userEvent.type(input, 'docs{enter}');
 
     await waitFor(() => {
@@ -970,7 +978,7 @@ describe('S8: Inline create/rename UI', () => {
       expect(useWorkspaceStore.getState().explorerExpandedPaths).toContain('/workspace/src');
     });
 
-    const input = await screen.findByRole('textbox');
+    const input = await findTreeNodeInput();
     await userEvent.type(input, 'notes.md{enter}');
 
     await waitFor(() => {
@@ -998,7 +1006,7 @@ describe('S8: Inline create/rename UI', () => {
       render(<FileExplorer />);
 
       fireEvent.click(screen.getByTitle('New File'));
-      const input = await screen.findByRole('textbox');
+      const input = await findTreeNodeInput();
       await userEvent.type(input, 'notes.md{enter}');
 
       await waitFor(() => {
@@ -1461,5 +1469,190 @@ describe('S9: Keyboard navigation', () => {
     await waitFor(() => {
       expect(document.querySelector('.tree-node-input')).toBeInTheDocument();
     });
+  });
+});
+
+
+// =========================================================================
+// Issue #3: Typing filter for the file explorer
+// =========================================================================
+describe('Issue #3: explorer filter input', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStore();
+  });
+
+  function setUpFilterFixture() {
+    setActiveWorkspace({
+      workspacePath: '/workspace',
+      explorerExpandedPaths: ['/workspace/src'],
+      explorerEntriesByPath: {
+        '/workspace': [
+          createEntry('src', '/workspace/src', true),
+          createEntry('docs', '/workspace/docs', true),
+          createEntry('README.md', '/workspace/README.md', false),
+        ],
+        '/workspace/src': [
+          createEntry('index.ts', '/workspace/src/index.ts', false),
+          createEntry('utils.ts', '/workspace/src/utils.ts', false),
+        ],
+        '/workspace/docs': [
+          createEntry('guide.md', '/workspace/docs/guide.md', false),
+        ],
+      },
+    });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+    });
+  }
+
+  it('renders the filter input above the tree', () => {
+    setUpFilterFixture();
+    render(<FileExplorer />);
+
+    expect(screen.getByLabelText('Filter files')).toBeInTheDocument();
+  });
+
+  it('hides non-matching entries when a query is typed', async () => {
+    setUpFilterFixture();
+    render(<FileExplorer />);
+
+    await screen.findByText('README.md');
+    expect(screen.getByText('utils.ts')).toBeInTheDocument();
+
+    const filter = screen.getByLabelText('Filter files');
+    await userEvent.type(filter, 'utils');
+
+    expect(screen.queryByText('README.md')).not.toBeInTheDocument();
+    expect(screen.queryByText('guide.md')).not.toBeInTheDocument();
+    expect(screen.queryByText('docs')).not.toBeInTheDocument();
+    expect(screen.getByText('utils.ts')).toBeInTheDocument();
+    // Ancestor of the match stays visible
+    expect(screen.getByText('src')).toBeInTheDocument();
+  });
+
+  it('matches case-insensitively', async () => {
+    setUpFilterFixture();
+    render(<FileExplorer />);
+
+    await screen.findByText('README.md');
+
+    const filter = screen.getByLabelText('Filter files');
+    await userEvent.type(filter, 'readme');
+
+    expect(screen.getByText('README.md')).toBeInTheDocument();
+    expect(screen.queryByText('utils.ts')).not.toBeInTheDocument();
+  });
+
+  it('auto-expands a collapsed directory that contains a match', async () => {
+    setActiveWorkspace({
+      workspacePath: '/workspace',
+      explorerExpandedPaths: [],
+      explorerEntriesByPath: {
+        '/workspace': [createEntry('src', '/workspace/src', true)],
+        '/workspace/src': [createEntry('config.ts', '/workspace/src/config.ts', false)],
+      },
+    });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+    });
+    render(<FileExplorer />);
+
+    await screen.findByText('src');
+    expect(screen.queryByText('config.ts')).not.toBeInTheDocument();
+
+    const filter = screen.getByLabelText('Filter files');
+    await userEvent.type(filter, 'config');
+
+    expect(screen.getByText('config.ts')).toBeInTheDocument();
+    expect(screen.getByText('src')).toBeInTheDocument();
+
+    // Filter-driven expansion should not mutate the persistent expanded set,
+    // so clearing the filter restores the original collapsed view.
+    expect(useWorkspaceStore.getState().explorerExpandedPaths).not.toContain('/workspace/src');
+  });
+
+  it('shows "No matches" when the filter excludes every entry', async () => {
+    setUpFilterFixture();
+    render(<FileExplorer />);
+
+    await screen.findByText('README.md');
+
+    const filter = screen.getByLabelText('Filter files');
+    await userEvent.type(filter, 'nonexistent-xyz');
+
+    expect(screen.getByText('No matches')).toBeInTheDocument();
+  });
+
+  it('clearing the filter restores the original tree', async () => {
+    setUpFilterFixture();
+    render(<FileExplorer />);
+
+    await screen.findByText('README.md');
+
+    const filter = screen.getByLabelText('Filter files') as HTMLInputElement;
+    await userEvent.type(filter, 'utils');
+    expect(screen.queryByText('README.md')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Clear filter'));
+
+    expect(filter.value).toBe('');
+    expect(screen.getByText('README.md')).toBeInTheDocument();
+    expect(screen.getByText('docs')).toBeInTheDocument();
+  });
+
+  it('pressing "/" with the tree focused moves focus to the filter input', async () => {
+    setUpFilterFixture();
+    render(<FileExplorer />);
+
+    await screen.findByText('README.md');
+
+    const treeContainer = document.querySelector('.file-tree') as HTMLDivElement;
+    treeContainer.focus();
+    fireEvent.keyDown(treeContainer, { key: '/' });
+
+    const filter = screen.getByLabelText('Filter files');
+    expect(filter).toHaveFocus();
+  });
+
+  it('Escape in the filter input clears a non-empty query', async () => {
+    setUpFilterFixture();
+    render(<FileExplorer />);
+
+    await screen.findByText('README.md');
+    const filter = screen.getByLabelText('Filter files') as HTMLInputElement;
+    await userEvent.type(filter, 'utils');
+    expect(filter.value).toBe('utils');
+
+    fireEvent.keyDown(filter, { key: 'Escape' });
+    expect(filter.value).toBe('');
+    expect(screen.getByText('README.md')).toBeInTheDocument();
+  });
+
+  it('filter composes with the hidden-files toggle', async () => {
+    setActiveWorkspace({
+      workspacePath: '/workspace',
+      showHiddenFiles: false,
+      explorerEntriesByPath: {
+        '/workspace': [
+          createEntry('.env', '/workspace/.env', false),
+          createEntry('env.config.ts', '/workspace/env.config.ts', false),
+        ],
+      },
+    });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+    });
+    render(<FileExplorer />);
+
+    await screen.findByText('env.config.ts');
+    expect(screen.queryByText('.env')).not.toBeInTheDocument();
+
+    const filter = screen.getByLabelText('Filter files');
+    await userEvent.type(filter, 'env');
+
+    // The dotfile must remain hidden even though it matches the query.
+    expect(screen.queryByText('.env')).not.toBeInTheDocument();
+    expect(screen.getByText('env.config.ts')).toBeInTheDocument();
   });
 });
