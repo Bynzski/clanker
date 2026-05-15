@@ -867,10 +867,6 @@ describe('S8: Inline create/rename UI', () => {
   });
 
   it('does not create file when name is empty on Enter', async () => {
-    // This test verifies the empty-name guard by directly checking the fileCreate
-    // IPC is not called when Enter is pressed with an empty name.
-    // Note: Testing header button clicks in jsdom can be unreliable due to
-    // event dispatching differences. This test uses fireEvent.click + waitFor.
     setActiveWorkspace({ workspacePath: '/workspace' });
     const fileCreate = vi.fn().mockResolvedValue({ success: true });
     installElectronApiMock({
@@ -880,31 +876,138 @@ describe('S8: Inline create/rename UI', () => {
 
     render(<FileExplorer />);
 
-    const newFileBtn = screen.getByTitle('New File');
+    fireEvent.click(screen.getByTitle('New File'));
 
-    // Simulate clicking the button
-    fireEvent.click(newFileBtn);
+    const input = await screen.findByRole('textbox');
+    fireEvent.keyDown(input, { key: 'Enter' });
 
-    // Wait for re-render
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fileCreate).not.toHaveBeenCalled();
+  });
 
-    const input = document.querySelector('.tree-node-input');
-    if (input) {
-      // If input appeared (normal case), press Enter with empty value
-      fireEvent.keyDown(input, { key: 'Enter' });
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    // fileCreate should never have been called with empty name
-    // (It might be called with a non-empty name, but that's OK for this test)
-    // The key assertion: fileCreate was not called with an empty-name path
-    // We check this by verifying no call had an empty targetPath
-    const calls = fileCreate.mock.calls;
-    const hasEmptyNameCall = calls.some(call => {
-      const arg = call[0];
-      return arg && arg.targetPath && arg.targetPath.endsWith('//');
+  // Regression: issue #34 — adding a file in an empty workspace silently failed
+  // because FileTree returned the "No files" placeholder before the create input
+  // had a chance to render.
+  it('creates a file at the workspace root when the directory is empty', async () => {
+    const workspace = setActiveWorkspace({ workspacePath: '/workspace' });
+    const fileCreate = vi.fn().mockResolvedValue({ success: true });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+      fileCreate,
     });
-    expect(hasEmptyNameCall).toBe(false);
+
+    render(<FileExplorer />);
+
+    expect(await screen.findByText('No files')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('New File'));
+
+    const input = await screen.findByRole('textbox');
+    expect(screen.queryByText('No files')).not.toBeInTheDocument();
+    await userEvent.type(input, 'notes.md{enter}');
+
+    await waitFor(() => {
+      expect(fileCreate).toHaveBeenCalledWith({
+        workspacePath: workspace.workspacePath,
+        targetPath: '/workspace/notes.md',
+        type: 'file',
+      });
+    });
+  });
+
+  it('creates a folder at the workspace root when the directory is empty', async () => {
+    const workspace = setActiveWorkspace({ workspacePath: '/workspace' });
+    const fileCreate = vi.fn().mockResolvedValue({ success: true });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+      fileCreate,
+    });
+
+    render(<FileExplorer />);
+
+    expect(await screen.findByText('No files')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('New Folder'));
+
+    const input = await screen.findByRole('textbox');
+    await userEvent.type(input, 'docs{enter}');
+
+    await waitFor(() => {
+      expect(fileCreate).toHaveBeenCalledWith({
+        workspacePath: workspace.workspacePath,
+        targetPath: '/workspace/docs',
+        type: 'directory',
+      });
+    });
+  });
+
+  // Edge: a directory selected after being collapsed is still in the entry cache,
+  // so resolveCreateParentPath returns its path — but TreeNodeChildren only
+  // renders the create input when the directory is expanded. Auto-expand on
+  // startCreating so the input always has a place to render.
+  it('auto-expands a collapsed-but-loaded parent directory when creating', async () => {
+    const workspace = setActiveWorkspace({
+      workspacePath: '/workspace',
+      explorerSelectedPath: '/workspace/src',
+      explorerEntriesByPath: {
+        '/workspace': [createEntry('src', '/workspace/src', true)],
+        '/workspace/src': [],
+      },
+      explorerExpandedPaths: [],
+    });
+    const fileCreate = vi.fn().mockResolvedValue({ success: true });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+      fileCreate,
+    });
+
+    render(<FileExplorer />);
+
+    await screen.findByText('src');
+    fireEvent.click(screen.getByTitle('New File'));
+
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().explorerExpandedPaths).toContain('/workspace/src');
+    });
+
+    const input = await screen.findByRole('textbox');
+    await userEvent.type(input, 'notes.md{enter}');
+
+    await waitFor(() => {
+      expect(fileCreate).toHaveBeenCalledWith({
+        workspacePath: workspace.workspacePath,
+        targetPath: '/workspace/src/notes.md',
+        type: 'file',
+      });
+    });
+  });
+
+  it('surfaces an alert when fileCreate fails so the user is not left guessing', async () => {
+    setActiveWorkspace({ workspacePath: '/workspace' });
+    const fileCreate = vi.fn().mockResolvedValue({
+      success: false,
+      error: 'Permission denied',
+    });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+      fileCreate,
+    });
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    try {
+      render(<FileExplorer />);
+
+      fireEvent.click(screen.getByTitle('New File'));
+      const input = await screen.findByRole('textbox');
+      await userEvent.type(input, 'notes.md{enter}');
+
+      await waitFor(() => {
+        expect(fileCreate).toHaveBeenCalled();
+        expect(alertSpy).toHaveBeenCalledWith('Permission denied');
+      });
+    } finally {
+      alertSpy.mockRestore();
+    }
   });
 });
 
@@ -962,6 +1065,84 @@ describe('S10: Delete + Rename coordination', () => {
     await waitFor(() => {
       expect(useWorkspaceStore.getState().editorTabs).toHaveLength(0);
     });
+  });
+
+  // Edge: previously only FILE_IN_USE failures alerted; other errors (permission
+  // denied, ENOSPC, etc.) silently console.error'd, leaving the user with no
+  // indication the action failed. All delete failures should now surface.
+  it('alerts when fileDelete fails for any reason (not just FILE_IN_USE)', async () => {
+    setActiveWorkspace({
+      workspacePath: '/workspace',
+      explorerEntriesByPath: {
+        '/workspace': [createEntry('locked.txt', '/workspace/locked.txt', false)],
+      },
+    });
+    const fileDelete = vi.fn().mockResolvedValue({
+      success: false,
+      errorCode: 'PERMISSION_DENIED',
+      error: 'Permission denied',
+    });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({
+        success: true,
+        entries: [createEntry('locked.txt', '/workspace/locked.txt', false)],
+      }),
+      fileDelete,
+    });
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    try {
+      render(<FileExplorer />);
+
+      const fileNode = await screen.findByText('locked.txt');
+      fireEvent.contextMenu(fileNode);
+      fireEvent.click(await screen.findByText('Delete'));
+      fireEvent.click(await screen.findByText('Delete'));
+
+      await waitFor(() => {
+        expect(fileDelete).toHaveBeenCalled();
+        expect(alertSpy).toHaveBeenCalledWith('Permission denied');
+      });
+    } finally {
+      alertSpy.mockRestore();
+    }
+  });
+
+  it('alerts when fileRename fails for any reason (not just FILE_IN_USE)', async () => {
+    setActiveWorkspace({ workspacePath: '/workspace' });
+    const fileRename = vi.fn().mockResolvedValue({
+      success: false,
+      errorCode: 'PERMISSION_DENIED',
+      error: 'Permission denied',
+    });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({
+        success: true,
+        entries: [createEntry('index.ts', '/workspace/index.ts', false)],
+      }),
+      fileRename,
+    });
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    try {
+      render(<FileExplorer />);
+
+      const fileNode = await screen.findByText('index.ts');
+      fireEvent.contextMenu(fileNode);
+      fireEvent.click(await screen.findByText('Rename'));
+
+      const input = document.querySelector('.tree-node-input') as HTMLInputElement;
+      await waitFor(() => expect(input).toBeInTheDocument());
+      await userEvent.clear(input);
+      await userEvent.type(input, 'main.ts{enter}');
+
+      await waitFor(() => {
+        expect(fileRename).toHaveBeenCalled();
+        expect(alertSpy).toHaveBeenCalledWith('Permission denied');
+      });
+    } finally {
+      alertSpy.mockRestore();
+    }
   });
 
   it('deleting a directory closes all editor tabs for files inside that directory', async () => {

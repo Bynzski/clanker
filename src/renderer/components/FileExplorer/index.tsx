@@ -331,8 +331,18 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   }, []);
 
   const startCreating = useCallback((parentPath: string, type: 'file' | 'directory') => {
+    // If the parent is a loaded-but-collapsed subdirectory, expand it so the
+    // inline create input has a place to render. Root and already-expanded dirs
+    // need no toggle.
+    if (
+      parentPath !== normalizedWorkspacePath &&
+      Object.prototype.hasOwnProperty.call(explorerEntriesByPath, parentPath) &&
+      !explorerExpandedPaths.includes(parentPath)
+    ) {
+      toggleExplorerPath(parentPath, resolvedWorkspaceId ?? undefined);
+    }
     setCreating({ parentPath, type });
-  }, []);
+  }, [normalizedWorkspacePath, explorerEntriesByPath, explorerExpandedPaths, toggleExplorerPath, resolvedWorkspaceId]);
 
   const cancelCreating = useCallback(() => {
     setCreating(null);
@@ -359,7 +369,9 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     });
 
     if (!result.success) {
-      console.error('Failed to create entry:', result.error);
+      const message = result.error ?? 'Failed to create entry';
+      console.error('Failed to create entry:', message);
+      window.alert(message);
       setCreating(null);
       return;
     }

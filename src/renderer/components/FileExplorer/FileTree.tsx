@@ -552,7 +552,9 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
     [rootPath, onLoadDirectory, toggleExplorerPath, setExplorerSelectedPath, openFileInEditor, onStartRenaming, workspaceId]
   );
 
-  if (isRootLoading && rootEntries.length === 0) {
+  const isCreatingAtRoot = creating?.parentPath === rootPath;
+
+  if (isRootLoading && rootEntries.length === 0 && !isCreatingAtRoot) {
     return <div className="file-explorer-status">Loading...</div>;
   }
 
@@ -560,7 +562,7 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
     return <div className="file-explorer-status error">{rootError}</div>;
   }
 
-  if (rootEntries.length === 0) {
+  if (rootEntries.length === 0 && !isCreatingAtRoot) {
     return <div className="file-explorer-status">No files</div>;
   }
 
@@ -571,7 +573,7 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
       onKeyDown={handleKeyDown}
     >
       {/* Inline create input at root level */}
-      {creating && creating.parentPath === rootPath ? (
+      {isCreatingAtRoot ? (
         <CreateInput
           type={creating.type}
           depth={0}
