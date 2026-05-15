@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDragHandle } from '../dragHandleContext';
-import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw, Search, X } from 'lucide-react';
 import type React from 'react';
 import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer';
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
@@ -89,6 +89,8 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   const [deleteTarget, setDeleteTarget] = useState<FileExplorerEntry | null>(null);
   const [creating, setCreating] = useState<{ parentPath: string; type: 'file' | 'directory' } | null>(null);
   const [renaming, setRenaming] = useState<{ path: string; originalName: string } | null>(null);
+  const [filterQuery, setFilterQuery] = useState('');
+  const filterInputRef = useRef<HTMLInputElement>(null);
   const dragHandleProps = useDragHandle();
   const explorerTreeRefreshTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const previousExplorerVisibleRef = useRef(explorerVisible);
@@ -330,6 +332,22 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     setContextMenu(null);
   }, []);
 
+  const focusFilterInput = useCallback(() => {
+    filterInputRef.current?.focus();
+    filterInputRef.current?.select();
+  }, []);
+
+  const handleFilterKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (filterQuery.length > 0) {
+        setFilterQuery('');
+      } else {
+        filterInputRef.current?.blur();
+      }
+    }
+  }, [filterQuery]);
+
   const startCreating = useCallback((parentPath: string, type: 'file' | 'directory') => {
     // If the parent is a loaded-but-collapsed subdirectory, expand it so the
     // inline create input has a place to render. Root and already-expanded dirs
@@ -532,6 +550,30 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
           </button>
         </div>
       </div>
+      <div className="file-explorer-filter">
+        <Search size={12} strokeWidth={2} className="file-explorer-filter-icon" aria-hidden="true" />
+        <input
+          ref={filterInputRef}
+          type="text"
+          className="file-explorer-filter-input"
+          value={filterQuery}
+          onChange={(e) => setFilterQuery(e.target.value)}
+          onKeyDown={handleFilterKeyDown}
+          placeholder="Filter files (press / to focus)"
+          aria-label="Filter files"
+        />
+        {filterQuery.length > 0 ? (
+          <button
+            type="button"
+            className="file-explorer-filter-clear"
+            onClick={() => setFilterQuery('')}
+            title="Clear filter"
+            aria-label="Clear filter"
+          >
+            <X size={12} strokeWidth={2} />
+          </button>
+        ) : null}
+      </div>
       <div className="file-explorer-content">
         <FileTree
           workspaceId={resolvedWorkspaceId ?? undefined}
@@ -549,6 +591,8 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
           onCancelRenaming={cancelRenaming}
           onCommitCreating={commitCreating}
           onCommitRenaming={commitRenaming}
+          filterQuery={filterQuery}
+          onFocusFilter={focusFilterInput}
         />
       </div>
       <div className="explorer-resize-handle" onMouseDown={handleResizeStart} />

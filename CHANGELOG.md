@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Explorer typing filter** — a filter input above the file tree narrows the visible entries by name as the user types. Matching is case-insensitive and substring-based; ancestor directories of matches stay visible, and a collapsed directory with a matching descendant is force-expanded for the duration of the filter without mutating the persistent expansion state. Empty filter restores the original view; a non-matching filter shows "No matches". Press `/` while the tree is focused to jump to the filter; press `Escape` inside the filter to clear (or blur when already empty). The filter only sees entries currently loaded into the tree (consistent with the explorer's lazy loading) — unloaded subdirectories are not crawled. Resolves #3.
+
 ### Fixed
 
 - **Explorer file/folder creation in empty directories** — clicking "New File" or "New Folder" on an empty workspace silently failed because `FileTree` returned the "No files" placeholder before the inline create input could render. The early-return now defers to an in-progress root-level create so the input appears and the IPC fires. Resolves #34.
