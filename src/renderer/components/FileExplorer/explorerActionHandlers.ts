@@ -337,10 +337,8 @@ export async function executeDelete(
   if (!result.success) {
     await Promise.all(tabsToClose.map((tab) => rewatchEditorPath(normalizedWorkspacePath, tab.filePath)));
     const message = getFileInUseMessage(result);
-    if (result.errorCode === 'FILE_IN_USE') {
-      window.alert(message);
-    }
     console.error('Failed to delete entry:', message);
+    window.alert(message);
     return;
   }
 
@@ -389,10 +387,8 @@ export async function executeRename(
   if (!result.success) {
     void rewatchEditorPath(normalizedWorkspacePath, oldPath);
     const message = getFileInUseMessage(result);
-    if (result.errorCode === 'FILE_IN_USE') {
-      window.alert(message);
-    }
     console.error('Failed to rename entry:', message);
+    window.alert(message);
     return;
   }
 

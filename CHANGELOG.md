@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Explorer file/folder creation in empty directories** — clicking "New File" or "New Folder" on an empty workspace silently failed because `FileTree` returned the "No files" placeholder before the inline create input could render. The early-return now defers to an in-progress root-level create so the input appears and the IPC fires. Resolves #34.
+- **Silent failures on explorer file operations** — `fileCreate`, `fileDelete`, and `fileRename` failures other than `FILE_IN_USE` previously only logged to the console. All failures now surface via `window.alert` with the underlying error message so the user knows the action did not complete.
+- **Create-in-collapsed-folder edge** — selecting a previously-loaded but currently-collapsed subdirectory and clicking "New File" used to silently fail because the create input only renders inside expanded directories. `startCreating` now auto-expands the parent before opening the input.
+
 ## [0.2.2] - 2026-05-13
 
 ### Changed
