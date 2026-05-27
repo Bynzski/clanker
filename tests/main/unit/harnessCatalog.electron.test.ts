@@ -28,12 +28,21 @@ describe('discoverHarnessModels cache integration', () => {
     get: vi.fn(() => ({})),
     set: vi.fn(),
   };
+  const mockExecFile = vi.fn();
 
   beforeEach(() => {
     vi.resetModules();
     mockStoreInstance.get.mockReset();
     mockStoreInstance.set.mockReset();
     mockStoreInstance.get.mockReturnValue({});
+    mockExecFile.mockReset();
+    mockExecFile.mockImplementation((_command: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
+      callback(null, JSON.stringify({
+        models: [
+          { slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list' },
+        ],
+      }), '');
+    });
     vi.doMock('electron', () => ({
       app: mockApp,
     }));
@@ -43,11 +52,15 @@ describe('discoverHarnessModels cache integration', () => {
         set = mockStoreInstance.set;
       },
     }));
+    vi.doMock('child_process', () => ({
+      execFile: mockExecFile,
+    }));
   });
 
   afterEach(() => {
     vi.doUnmock('electron');
     vi.doUnmock('electron-store');
+    vi.doUnmock('child_process');
     vi.restoreAllMocks();
   });
 
