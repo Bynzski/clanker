@@ -74,12 +74,19 @@ export function buildHarnessWrapperScript(): string {
   return `#!/usr/bin/env sh
 set -eu
 
-# Add ~/.local/bin to PATH for user-installed CLI tools (e.g., Claude, pi)
-LOCAL_BIN="$HOME/.local/bin"
-case ":$PATH:" in
-  *":$LOCAL_BIN:"*) ;;
-  *) PATH="$LOCAL_BIN:$PATH" ;;
-esac
+# Add common user-level CLI bins to PATH. Desktop/AppImage launches often do
+# not inherit interactive shell PATH entries such as ~/.npm-global/bin.
+#
+# Iterate in reverse so each prepend preserves the same final precedence used
+# by userCliBinPaths(): ~/.npm-global/bin, ~/.local/bin, ~/.npm-packages/bin,
+# then ~/bin.
+for CLANKER_BIN in "$HOME/bin" "$HOME/.npm-packages/bin" "$HOME/.local/bin" "$HOME/.npm-global/bin"; do
+  case ":$PATH:" in
+    *":$CLANKER_BIN:"*) ;;
+    *) PATH="$CLANKER_BIN:$PATH" ;;
+  esac
+done
+export PATH
 
 if [ "$#" -eq 0 ]; then
   echo "[clanker-grid] harness wrapper requires a command" >&2

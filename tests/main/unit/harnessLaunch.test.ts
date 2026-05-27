@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -117,6 +118,48 @@ test('buildHarnessWrapperScript runs the harness in the foreground and falls bac
   assert.doesNotMatch(script, /trap 'forward_signal INT' INT/);
   assert.match(script, /exec "\$fallback_shell" -i/);
   assert.match(script, /CLANKER_GRID_FALLBACK_SHELL/);
+});
+
+test('buildHarnessWrapperScript preserves user CLI bin precedence when augmenting PATH', () => {
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-grid-harness-path-'));
+  const wrapperPath = path.join(tempHome, 'wrapper.sh');
+  const fallbackShellPath = path.join(tempHome, 'fallback-shell');
+
+  try {
+    fs.writeFileSync(wrapperPath, buildHarnessWrapperScript(), { encoding: 'utf8', mode: 0o700 });
+    fs.writeFileSync(fallbackShellPath, '#!/usr/bin/env sh\nexit 0\n', { encoding: 'utf8', mode: 0o700 });
+
+    const result = spawnSync(
+      wrapperPath,
+      ['sh', '-c', 'printf "%s" "$PATH"'],
+      {
+        env: {
+          HOME: tempHome,
+          PATH: '/usr/bin',
+          CLANKER_GRID_FALLBACK_SHELL: fallbackShellPath,
+        },
+        encoding: 'utf8',
+      }
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(
+      result.stdout.split(':').slice(0, 5),
+      [
+        path.join(tempHome, '.npm-global', 'bin'),
+        path.join(tempHome, '.local', 'bin'),
+        path.join(tempHome, '.npm-packages', 'bin'),
+        path.join(tempHome, 'bin'),
+        '/usr/bin',
+      ]
+    );
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
 });
 
 test('ensureHarnessWrapperScript uses the platform-appropriate wrapper behavior', () => {

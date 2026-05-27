@@ -16,6 +16,7 @@ import * as readline from 'readline';
 import type { HarnessSession } from '../shared/types/session';
 import { ensureHarnessWrapperScript, resolveHarnessSpawn } from './harnessLaunch';
 import { toNativePath, toPosixPath } from '../shared/pathNormalize';
+import { prependUserCliBinsToPath } from './platformShell';
 
 // ============================================================================
 // Path-boundary matching (replaces raw startsWith for workspace filtering)
@@ -185,17 +186,6 @@ export function buildSessionInvokeArgs(
 function runCommandOutput(command: string, args: string[]): Promise<string> {
   const { spawnCmd, spawnArgs } = resolveHarnessSpawn(command, args, null);
 
-  // Augment PATH with the platform's typical user-install bin dirs so we can
-  // find CLIs (e.g. opencode) installed via npm-global or the standard user
-  // path even when the launching shell didn't export them.
-  const extraPathDirs: string[] = [];
-  if (process.platform === 'win32') {
-    if (process.env.APPDATA) extraPathDirs.push(path.join(process.env.APPDATA, 'npm'));
-    if (process.env.LOCALAPPDATA) extraPathDirs.push(path.join(process.env.LOCALAPPDATA, 'npm'));
-  } else {
-    extraPathDirs.push(path.join(os.homedir(), '.local', 'bin'));
-  }
-
   return new Promise((resolve, reject) => {
     execFile(
       spawnCmd,
@@ -205,7 +195,7 @@ function runCommandOutput(command: string, args: string[]): Promise<string> {
         maxBuffer: 2 * 1024 * 1024,
         env: {
           ...process.env,
-          PATH: [...extraPathDirs, process.env.PATH ?? ''].join(path.delimiter),
+          PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
         } as { [key: string]: string },
       },
       (error, stdout, stderr) => {

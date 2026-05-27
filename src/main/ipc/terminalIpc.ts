@@ -9,7 +9,7 @@ import type * as pty from 'node-pty';
 import Store from 'electron-store';
 import { type StoreSchema } from '../../shared/types/store';
 import { buildHarnessSpawnArgs, ensureHarnessWrapperScript, resolveHarnessSpawn } from '../harnessLaunch';
-import { defaultShell } from '../platformShell';
+import { defaultShell, prependUserCliBinsToPath } from '../platformShell';
 import {
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
@@ -113,6 +113,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
 
     const env: { [key: string]: string } = {
       ...process.env as { [key: string]: string },
+      PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
       ...harnessEnv,
       ...(harnessConfig ? { CLANKER_GRID_FALLBACK_SHELL: userShell } : {}),
       TERM: 'xterm-256color',

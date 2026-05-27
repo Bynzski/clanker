@@ -7,6 +7,7 @@ import {
   ElectronStoreModelCache,
   DEFAULT_MODEL_CACHE_TTL_MS,
 } from './modelCache';
+import { prependUserCliBinsToPath, userCliBinPaths } from './platformShell';
 
 // Module-level singleton for persistent model cache
 const persistentModelCache = new ElectronStoreModelCache();
@@ -81,6 +82,7 @@ function runCommandOutput(
       cwd,
       env: {
         ...process.env,
+        PATH: prependUserCliBinsToPath(process.env.PATH ?? '', app.getPath('home')),
         ...extraEnv,
       } as { [key: string]: string },
     }, (error, stdout, stderr) => {
@@ -286,13 +288,13 @@ function refreshCacheSilently(harness: string): void {
 }
 
 function isCommandAvailable(command: string): boolean {
-  const homeBin = path.join(app.getPath('home'), '.local', 'bin');
+  const homeDir = app.getPath('home');
   const searchPaths = new Set<string>([
     process.cwd(),
     path.join(process.cwd(), 'node_modules', '.bin'),
     app.getAppPath(),
     path.join(app.getAppPath(), 'node_modules', '.bin'),
-    homeBin,
+    ...userCliBinPaths(homeDir),
     ...(process.env.PATH ?? '').split(path.delimiter).filter(Boolean),
   ]);
 
