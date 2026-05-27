@@ -16,6 +16,7 @@ import { test, describe } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { pathToFileURL } from 'url';
 
 // ============================================================================
 // Extract and Import Testable Functions
@@ -345,7 +346,7 @@ describe('main.ts Entry Point Smoke Tests', () => {
 
     test('normalizeTrustedAppBrowserUrl converts absolute local paths', () => {
       const result = normalizeTrustedAppBrowserUrl('/tmp/report.html');
-      assert.equal(result, 'file:///tmp/report.html');
+      assert.equal(result, pathToFileURL('/tmp/report.html').toString());
     });
 
     test('normalizeAppBrowserUrl rejects javascript: URLs', () => {

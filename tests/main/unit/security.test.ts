@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { pathToFileURL } from 'url';
 import { test } from 'vitest';
 import {
   normalizeAppBrowserUrl,
@@ -19,7 +20,7 @@ test('normalizeAppBrowserUrl allows only http and https URLs', () => {
 
 test('normalizeTrustedAppBrowserUrl allows app-initiated file navigation', () => {
   assert.equal(normalizeTrustedAppBrowserUrl('file:///tmp/report.html'), 'file:///tmp/report.html');
-  assert.equal(normalizeTrustedAppBrowserUrl('/tmp/report.html'), 'file:///tmp/report.html');
+  assert.equal(normalizeTrustedAppBrowserUrl('/tmp/report.html'), pathToFileURL('/tmp/report.html').toString());
   assert.equal(normalizeTrustedAppBrowserUrl('C:\\Users\\Jay\\report.html'), 'file:///C:/Users/Jay/report.html');
   assert.equal(normalizeTrustedAppBrowserUrl('https://example.com/docs?q=1'), 'https://example.com/docs?q=1');
   assert.equal(normalizeTrustedAppBrowserUrl('javascript:alert(1)'), null);
