@@ -4,6 +4,7 @@ import type {
   LayoutLeaf,
   LayoutNode,
   LayoutSplit,
+  NotesPaneState,
   Pane,
   PanePosition,
   WorkspaceTab,
@@ -36,6 +37,8 @@ interface LayoutVisibilityState {
   browserVisible: boolean;
   editorPane: EditorPaneState | null;
   editorVisible: boolean;
+  notesPane?: NotesPaneState | null;
+  notesVisible?: boolean;
 }
 
 interface LayoutInsertState extends LayoutVisibilityState {
@@ -541,6 +544,9 @@ export function normalizeLayoutRoot(
     if (state.editorVisible && state.editorPane) {
       paneIds.push(state.editorPane.id);
     }
+    if (state.notesVisible && state.notesPane) {
+      paneIds.push(state.notesPane.id);
+    }
     return buildBalancedLayoutFromPaneIds(paneIds);
   }
 
@@ -550,6 +556,9 @@ export function normalizeLayoutRoot(
   }
   if (state.editorVisible && state.editorPane) {
     visibleIds.add(state.editorPane.id);
+  }
+  if (state.notesVisible && state.notesPane) {
+    visibleIds.add(state.notesPane.id);
   }
 
   function prune(node: LayoutNode | null): LayoutNode | null {
@@ -579,6 +588,7 @@ export function normalizeLayoutRoot(
 
 export function buildWorkspaceLayout(
   workspace: Pick<WorkspaceTab, 'panes' | 'browserVisible' | 'browserPane' | 'editorVisible' | 'editorPane' | 'layoutRoot'>
+    & Partial<Pick<WorkspaceTab, 'notesVisible' | 'notesPane'>>
 ): LayoutNode | null {
   const root = normalizeLayoutRoot(workspace.layoutRoot, workspace);
   if (root != null) {
@@ -591,6 +601,9 @@ export function buildWorkspaceLayout(
   }
   if (workspace.editorVisible && workspace.editorPane) {
     paneIds.push(workspace.editorPane.id);
+  }
+  if (workspace.notesVisible && workspace.notesPane) {
+    paneIds.push(workspace.notesPane.id);
   }
   return buildBalancedLayoutFromPaneIds(paneIds);
 }

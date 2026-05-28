@@ -110,6 +110,9 @@ vi.mock('../../../src/renderer/components/BrowserPanel', () => ({
 vi.mock('../../../src/renderer/components/EditorPane', () => ({
   default: () => require('react').createElement('div', { 'data-testid': 'editor-pane' }, 'Editor'),
 }));
+vi.mock('../../../src/renderer/components/NotesPane', () => ({
+  default: () => require('react').createElement('div', { 'data-testid': 'notes-pane' }, 'Notes'),
+}));
 vi.mock('../../../src/renderer/components/TerminalPane', () => ({
   default: ({ paneId }: { paneId: string }) =>
     require('react').createElement('div', { 'data-testid': 'terminal-pane' }, `Terminal: ${paneId}`),
@@ -159,6 +162,8 @@ function setupStore(overrides: Record<string, unknown> = {}) {
     browserPane: null,
     editorVisible: false,
     editorPane: null,
+    notesVisible: false,
+    notesPane: null,
     browserUrl: '',
     setBrowserUrl: vi.fn(),
     layoutRevision: 1,
@@ -339,6 +344,19 @@ describe('DynamicPaneLayout', () => {
       // EditorPane is imported directly (not lazy)
       await waitFor(() => {
         expect(screen.getByTestId('editor-pane')).toBeTruthy();
+      });
+    });
+
+    it('renders NotesPane when notesVisible and paneId matches', async () => {
+      setupStoreWithLayout(createLeaf('n1', 'notes-1'), {
+        notesVisible: true,
+        notesPane: { id: 'notes-1' },
+      });
+
+      render(<DynamicPaneLayout />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('notes-pane')).toBeTruthy();
       });
     });
 

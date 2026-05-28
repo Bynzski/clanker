@@ -69,6 +69,8 @@ function makeState(overrides: Record<string, unknown> = {}): Record<string, unkn
     gitChanges: ws.gitChanges,
     editorVisible: ws.editorVisible,
     editorPane: ws.editorPane,
+    notesVisible: ws.notesVisible,
+    notesPane: ws.notesPane,
     editorTabs: ws.editorTabs,
     activeEditorTabId: ws.activeEditorTabId,
     workspaces: [ws],
@@ -523,6 +525,8 @@ describe('getActiveWorkspaceSnapshot', () => {
     expect(snap.layoutRoot).toBe(ws.layoutRoot);
     expect(snap.editorVisible).toBe(ws.editorVisible);
     expect(snap.editorPane).toBe(ws.editorPane);
+    expect(snap.notesVisible).toBe(ws.notesVisible);
+    expect(snap.notesPane).toBe(ws.notesPane);
     expect(snap.editorTabs).toBe(ws.editorTabs);
     expect(snap.activeEditorTabId).toBe(ws.activeEditorTabId);
   });
@@ -676,6 +680,8 @@ function makeMinimalState(overrides: Record<string, unknown> = {}): Record<strin
     browserPane: null,
     editorVisible: false,
     editorPane: null,
+    notesVisible: false,
+    notesPane: null,
     editorTabs: [],
     activeEditorTabId: null,
     ...overrides,
@@ -802,20 +808,20 @@ describe('validateWorkspaceConsistency', () => {
 
   // [L1,L2] Layout invariants
   describe('L1 (layoutRoot nullity)', () => {
-    it('passes when layoutRoot is null and no panes/browser/editor', () => {
-      const state = makeMinimalState({ layoutRoot: null, panes: [], browserVisible: false, editorVisible: false });
+    it('passes when layoutRoot is null and no panes/browser/editor/notes', () => {
+      const state = makeMinimalState({ layoutRoot: null, panes: [], browserVisible: false, editorVisible: false, notesVisible: false });
       expect(validateWorkspaceConsistency(state)).toEqual([]);
     });
 
     it('passes when layoutRoot is non-null and panes exist', () => {
       const pane: Pane = { id: 'pane-1', terminalId: null };
-      const state = makeMinimalState({ layoutRoot: makeLeaf('pane-1'), panes: [pane], browserVisible: false, editorVisible: false });
+      const state = makeMinimalState({ layoutRoot: makeLeaf('pane-1'), panes: [pane], browserVisible: false, editorVisible: false, notesVisible: false });
       expect(validateWorkspaceConsistency(state)).toEqual([]);
     });
 
     it('warns when layoutRoot is null but panes[] is non-empty', () => {
       const pane: Pane = { id: 'pane-1', terminalId: null };
-      const state = makeMinimalState({ layoutRoot: null, panes: [pane], browserVisible: false, editorVisible: false });
+      const state = makeMinimalState({ layoutRoot: null, panes: [pane], browserVisible: false, editorVisible: false, notesVisible: false });
       expect(validateWorkspaceConsistency(state)).toContain(
         'L1 violated: layoutRoot is null but panes[] is non-empty',
       );
@@ -842,10 +848,17 @@ describe('validateWorkspaceConsistency', () => {
       );
     });
 
-    it('warns when layoutRoot is non-null but no panes exist and browser/editor are invisible', () => {
-      const state = makeMinimalState({ layoutRoot: makeLeaf('orphan-pane'), panes: [], browserVisible: false, editorVisible: false });
+    it('warns when layoutRoot is null but notes is visible', () => {
+      const state = makeMinimalState({ layoutRoot: null, panes: [], browserVisible: false, editorVisible: false, notesVisible: true, notesPane: { id: 'notes-1' } });
       expect(validateWorkspaceConsistency(state)).toContain(
-        'L1 violated: layoutRoot is non-null but no panes exist and browser/editor are invisible',
+        'L1 violated: layoutRoot is null but notes is visible',
+      );
+    });
+
+    it('warns when layoutRoot is non-null but no panes exist and browser/editor/notes are invisible', () => {
+      const state = makeMinimalState({ layoutRoot: makeLeaf('orphan-pane'), panes: [], browserVisible: false, editorVisible: false, notesVisible: false });
+      expect(validateWorkspaceConsistency(state)).toContain(
+        'L1 violated: layoutRoot is non-null but no panes exist and browser/editor/notes are invisible',
       );
     });
   });
@@ -877,11 +890,17 @@ describe('validateWorkspaceConsistency', () => {
       expect(validateWorkspaceConsistency(state)).toEqual([]);
     });
 
-    it('warns when layout references pane not in panes[], browserPane, or editorPane', () => {
+    it('passes when layout references notesPane', () => {
+      const state = makeMinimalState({ layoutRoot: makeLeaf('notes-1'), panes: [], notesPane: { id: 'notes-1' }, notesVisible: true });
+
+      expect(validateWorkspaceConsistency(state)).toEqual([]);
+    });
+
+    it('warns when layout references pane not in panes[], browserPane, editorPane, or notesPane', () => {
       const pane: Pane = { id: 'pane-1', terminalId: null };
       const state = makeMinimalState({ layoutRoot: makeLeaf('ghost-pane'), panes: [pane] });
       expect(validateWorkspaceConsistency(state)).toContain(
-        'L2 violated: layout pane "ghost-pane" not found in panes[], browserPane, or editorPane',
+        'L2 violated: layout pane "ghost-pane" not found in panes[], browserPane, editorPane, or notesPane',
       );
     });
   });

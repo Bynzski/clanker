@@ -34,6 +34,8 @@ describe('Header', () => {
           browserPane: null,
           editorPane: null,
           editorVisible: false,
+          notesPane: null,
+          notesVisible: false,
           editorTabs: [],
           activeEditorTabId: null,
           layoutRoot: null,
@@ -62,6 +64,7 @@ describe('Header', () => {
       fitAllPanes: vi.fn(),
       setHarness: vi.fn(),
       toggleBrowser: vi.fn(),
+      toggleNotesPane: vi.fn(),
     });
 
     window.electronAPI = {
@@ -313,6 +316,13 @@ describe('Header', () => {
       expect(toggleBrowser).toHaveBeenCalled();
     });
 
+    it('calls toggleNotesPane when Notes is clicked', () => {
+      const toggleNotesPane = useWorkspaceStore.getState().toggleNotesPane as ReturnType<typeof vi.fn>;
+      renderHeader();
+      fireEvent.click(screen.getByText('Notes'));
+      expect(toggleNotesPane).toHaveBeenCalled();
+    });
+
     it('marks browser button active when browser is visible', () => {
       useWorkspaceStore.setState((state) => ({
         workspaces: state.workspaces.map((workspace) => (
@@ -321,6 +331,16 @@ describe('Header', () => {
       }));
       renderHeader();
       expect(screen.getByText('Browser').closest('.header-btn')?.classList.contains('active')).toBe(true);
+    });
+
+    it('marks notes button active when notes are visible', () => {
+      useWorkspaceStore.setState((state) => ({
+        workspaces: state.workspaces.map((workspace) => (
+          workspace.id === 'ws-1' ? { ...workspace, notesVisible: true } : workspace
+        )),
+      }));
+      renderHeader();
+      expect(screen.getByText('Notes').closest('.header-btn')?.classList.contains('active')).toBe(true);
     });
 
     it('handles spawnTerminal failure gracefully', async () => {

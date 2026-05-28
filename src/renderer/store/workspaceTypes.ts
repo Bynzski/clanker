@@ -39,6 +39,10 @@ export interface EditorPaneState {
   id: string;
 }
 
+export interface NotesPaneState {
+  id: string;
+}
+
 export interface EditorTab {
   id: string;
   filePath: string;
@@ -127,6 +131,8 @@ export interface WorkspaceTab {
   browserPane: BrowserPaneState | null;
   editorPane: EditorPaneState | null;
   editorVisible: boolean;
+  notesPane?: NotesPaneState | null;
+  notesVisible?: boolean;
   editorTabs: EditorTab[];
   activeEditorTabId: string | null;
   layoutRoot: LayoutNode | null;

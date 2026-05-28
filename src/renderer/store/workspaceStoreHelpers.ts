@@ -9,6 +9,7 @@ import type {
   BrowserTab,
   EditorPaneState,
   EditorTab,
+  NotesPaneState,
   Pane,
   PanePosition,
   WorkspaceResourcePolicy,
@@ -159,6 +160,11 @@ export const createDefaultEditorState = () => ({
   activeEditorTabId: null as string | null,
 });
 
+export const createDefaultNotesState = () => ({
+  notesVisible: false,
+  notesPane: null as NotesPaneState | null,
+});
+
 /**
  * Default resource policy for new workspaces.
  * All subsystems warm by default: PTY processes run in main, xtermCache keeps
@@ -236,6 +242,10 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
   gitIsDetached: workspace.gitIsDetached ?? false,
   editorPane: workspace.editorPane
     ? { ...workspace.editorPane }
+    : null,
+  notesVisible: workspace.notesVisible ?? false,
+  notesPane: workspace.notesPane
+    ? { ...workspace.notesPane }
     : null,
   layoutRoot: buildWorkspaceLayout(workspace),
   runtimeState: sanitizeRuntimeState(workspace),
@@ -407,6 +417,8 @@ export function getActiveWorkspaceSnapshot(
     | 'gitIsDetached'
     | 'editorVisible'
     | 'editorPane'
+    | 'notesVisible'
+    | 'notesPane'
     | 'editorTabs'
     | 'activeEditorTabId'
   >
@@ -438,6 +450,8 @@ export function getActiveWorkspaceSnapshot(
     gitIsDetached: workspace.gitIsDetached ?? false,
     editorVisible: workspace.editorVisible,
     editorPane: workspace.editorPane,
+    notesVisible: workspace.notesVisible ?? false,
+    notesPane: workspace.notesPane ?? null,
     editorTabs: workspace.editorTabs,
     activeEditorTabId: workspace.activeEditorTabId,
   };
@@ -585,6 +599,9 @@ function validateLayoutInvariants(state: Partial<WorkspaceState>): string[] {
     if (state.editorVisible === true) {
       warnings.push('L1 violated: layoutRoot is null but editor is visible');
     }
+    if (state.notesVisible === true) {
+      warnings.push('L1 violated: layoutRoot is null but notes is visible');
+    }
     return warnings;
   }
 
@@ -595,21 +612,28 @@ function validateLayoutInvariants(state: Partial<WorkspaceState>): string[] {
     && state.panes.length === 0
     && state.browserVisible === false
     && state.editorVisible === false
+    && state.notesVisible === false
   ) {
-    warnings.push('L1 violated: layoutRoot is non-null but no panes exist and browser/editor are invisible');
+    warnings.push('L1 violated: layoutRoot is non-null but no panes exist and browser/editor/notes are invisible');
   }
 
   const panes = state.panes;
-  if (Array.isArray(panes) && hasOwnState(state, 'browserPane') && hasOwnState(state, 'editorPane')) {
+  if (
+    Array.isArray(panes)
+    && hasOwnState(state, 'browserPane')
+    && hasOwnState(state, 'editorPane')
+    && hasOwnState(state, 'notesPane')
+  ) {
     const leafPaneIds = collectLeafPaneIds(layoutRoot);
     const allValidPaneIds = new Set<string>([
       ...panes.map(p => p.id),
       ...(state.browserPane ? [state.browserPane.id] : []),
       ...(state.editorPane ? [state.editorPane.id] : []),
+      ...(state.notesPane ? [state.notesPane.id] : []),
     ]);
     for (const paneId of leafPaneIds) {
       if (!allValidPaneIds.has(paneId)) {
-        warnings.push(`L2 violated: layout pane "${paneId}" not found in panes[], browserPane, or editorPane`);
+        warnings.push(`L2 violated: layout pane "${paneId}" not found in panes[], browserPane, editorPane, or notesPane`);
       }
     }
   }

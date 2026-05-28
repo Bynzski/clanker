@@ -60,6 +60,8 @@ export function createWorkspaceFixture(overrides: Partial<WorkspaceTab> = {}): W
     showHiddenFiles: true,
     editorPane: null,
     editorVisible: false,
+    notesPane: null,
+    notesVisible: false,
     editorTabs: [],
     activeEditorTabId: null,
     gitChanges: [],

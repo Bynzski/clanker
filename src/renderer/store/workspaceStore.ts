@@ -34,6 +34,7 @@ import {
   createDefaultBrowserTab,
   createDefaultEditorState,
   createDefaultExplorerState,
+  createDefaultNotesState,
   createPane,
   createWorkspaceId,
   findActiveWorkspace,
@@ -56,6 +57,10 @@ import {
   withWorkspaceResourcePolicy,
 } from './workspaceStoreHelpers';
 import { preserveOriginalLineEndings } from '../lib/lineEndings';
+import {
+  readStoredNotesVisible,
+  writeStoredNotesVisible,
+} from '../lib/notesStorage';
 
 export type {
   BrowserPaneState,
@@ -65,6 +70,7 @@ export type {
   LayoutLeaf,
   LayoutNode,
   LayoutSplit,
+  NotesPaneState,
   Pane,
   PanePosition,
   Terminal,
@@ -94,11 +100,11 @@ export * from './workspaceStoreHelpers';
  * @invariant activeTerminalId !== null -> terminals.some(t => t.id === activeTerminalId)
  *   The active terminal ID always references an existing terminal.
  *
- * @invariant layoutRoot === null - panes.length === 0 && !browserVisible && !editorVisible
+ * @invariant layoutRoot === null - panes.length === 0 && !browserVisible && !editorVisible && !notesVisible
  *   The layout tree only exists when there are visible panes.
  *
  * @invariant layoutRoot !== null -> all pane IDs in layoutRoot exist in
- *   panes[].id ∪ {browserPane?.id} ∪ {editorPane?.id}
+ *   panes[].id ∪ {browserPane?.id} ∪ {editorPane?.id} ∪ {notesPane?.id}
  *   The layout tree only references valid pane IDs.
  *
  * @invariant activeEditorTabId === null - editorTabs.length === 0
@@ -122,6 +128,7 @@ const defaultWorkspaceState = {
   layoutRoot: null as LayoutNode | null,
   ...createDefaultExplorerState(),
   ...createDefaultEditorState(),
+  ...createDefaultNotesState(),
   gridViewport: { cols: GRID_COLS, rows: GRID_ROWS },
   layoutRevision: 0,
   pendingEditorOperations: {} as Record<string, string>,
@@ -139,12 +146,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   addWorkspace: (workspace) => set((state) => {
     const id = createWorkspaceId();
     const defaultName = workspace.name || getWorkspaceNameFromPath(workspace.workspacePath);
+    const storedNotesVisible = readStoredNotesVisible(workspace.workspacePath);
+    const restoredNotesPane = storedNotesVisible
+      ? workspace.notesPane ?? { id: generateId('notes') }
+      : workspace.notesPane ?? null;
     const nextWorkspace: WorkspaceTab = sanitizeWorkspace({
       ...createDefaultExplorerState(),
+      ...createDefaultEditorState(),
+      ...createDefaultNotesState(),
       id,
       lifecycle: 'active',
       ...workspace,
       name: defaultName,
+      notesVisible: workspace.notesVisible ?? storedNotesVisible,
+      notesPane: restoredNotesPane,
     });
     const nextWorkspaces = assignWorkspaceLifecycles([...state.workspaces, nextWorkspace], id);
 
@@ -324,6 +339,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           browserVisible: state.browserVisible,
           editorPane: state.editorPane,
           editorVisible: state.editorVisible,
+          notesPane: state.notesPane,
+          notesVisible: state.notesVisible,
         })
       : insertPaneIntoLayout(state.layoutRoot, nextPane.id, {
           panes: state.panes,
@@ -331,6 +348,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           browserVisible: state.browserVisible,
           editorPane: state.editorPane,
           editorVisible: state.editorVisible,
+          notesPane: state.notesPane,
+          notesVisible: state.notesVisible,
           activeTerminalId: state.activeTerminalId,
         });
 
@@ -437,6 +456,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             browserVisible: true,
             editorPane: state.editorPane,
             editorVisible: state.editorVisible,
+            notesPane: state.notesPane,
+            notesVisible: state.notesVisible,
             activeTerminalId: state.activeTerminalId,
           });
         } else {
@@ -448,6 +469,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
               browserVisible: true,
               editorPane: state.editorPane,
               editorVisible: state.editorVisible,
+              notesPane: state.notesPane,
+              notesVisible: state.notesVisible,
               activeTerminalId: state.activeTerminalId,
             });
           }
@@ -472,6 +495,80 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         layoutRoot: nextLayoutRoot,
       })),
     };
+  }),
+
+  toggleNotesPane: () => set((state) => {
+    const nextNotesVisible = !state.notesVisible;
+    const nextNotesPane = nextNotesVisible
+      ? state.notesPane ?? { id: generateId('notes') }
+      : state.notesPane;
+
+    let nextLayoutRoot = state.layoutRoot;
+    if (nextNotesVisible && nextNotesPane) {
+      const notesId = nextNotesPane.id;
+      const currentIds = collectLeafPaneIds(state.layoutRoot ?? null);
+      if (!currentIds.includes(notesId)) {
+        nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, notesId, {
+          panes: state.panes,
+          browserPane: state.browserPane,
+          browserVisible: state.browserVisible,
+          editorPane: state.editorPane,
+          editorVisible: state.editorVisible,
+          notesPane: nextNotesPane,
+          notesVisible: true,
+          activeTerminalId: state.activeTerminalId,
+        });
+      }
+    } else if (!nextNotesVisible && state.notesPane) {
+      nextLayoutRoot = removePaneFromLayout(state.layoutRoot, state.notesPane.id);
+    }
+
+    writeStoredNotesVisible(state.workspacePath, nextNotesVisible, state.activeWorkspaceId);
+
+    const nextState = {
+      notesVisible: nextNotesVisible,
+      notesPane: nextNotesPane,
+      layoutRoot: nextLayoutRoot,
+      layoutRevision: state.layoutRevision + 1,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        notesVisible: nextNotesVisible,
+        notesPane: nextNotesPane,
+        layoutRoot: nextLayoutRoot,
+      })),
+    };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after toggleNotesPane:', warnings);
+      }
+    }
+    return nextState;
+  }),
+
+  closeNotesPane: (workspaceId) => set((state) => {
+    const workspace = resolveWorkspaceByScope(state, workspaceId);
+    if (workspace?.notesPane == null) {
+      return state;
+    }
+
+    const nextLayoutRoot = removePaneFromLayout(workspace.layoutRoot, workspace.notesPane.id);
+    writeStoredNotesVisible(workspace.workspacePath, false, workspace.id);
+    const nextState = {
+      layoutRevision: state.layoutRevision + 1,
+      ...patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
+        ...currentWorkspace,
+        notesVisible: false,
+        layoutRoot: nextLayoutRoot,
+      })),
+    };
+    if (import.meta.env.DEV) {
+      const warnings = validateWorkspaceConsistency(nextState);
+      if (warnings.length > 0) {
+        console.warn('[Dev Only] Workspace consistency violation after closeNotesPane:', warnings);
+      }
+    }
+    return nextState;
   }),
 
   pushBrowserOverlay: (workspaceId) => set((state) => {
@@ -948,6 +1045,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       browserPane: state.browserPane,
       editorVisible: state.editorVisible,
       editorPane: state.editorPane,
+      notesVisible: state.notesVisible,
+      notesPane: state.notesPane,
       layoutRoot: state.layoutRoot,
     }),
     ...syncActiveWorkspace(state, (workspace) => ({
@@ -959,6 +1058,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         browserPane: state.browserPane,
         editorVisible: state.editorVisible,
         editorPane: state.editorPane,
+        notesVisible: state.notesVisible,
+        notesPane: state.notesPane,
         layoutRoot: state.layoutRoot,
       }),
     })),
@@ -973,6 +1074,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       browserVisible: state.browserVisible,
       editorPane: state.editorPane,
       editorVisible: state.editorVisible,
+      notesPane: state.notesPane,
+      notesVisible: state.notesVisible,
       activeTerminalId: state.activeTerminalId,
     });
     return {
@@ -1076,6 +1179,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       browserPane: state.browserPane,
       editorVisible: state.editorVisible,
       editorPane: state.editorPane,
+      notesVisible: state.notesVisible,
+      notesPane: state.notesPane,
       layoutRoot: null,
     });
 
@@ -1104,6 +1209,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       browserPane: state.browserPane,
       editorVisible: state.editorVisible,
       editorPane: state.editorPane,
+      notesVisible: state.notesVisible,
+      notesPane: state.notesPane,
       layoutRoot: null,
     });
 
@@ -1343,6 +1450,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
               browserVisible: latestWorkspace.browserVisible,
               editorPane: nextEditorPane,
               editorVisible: true,
+              notesPane: latestWorkspace.notesPane,
+              notesVisible: latestWorkspace.notesVisible,
               activeTerminalId: latestWorkspace.activeTerminalId,
             })
           : latestWorkspace.layoutRoot;
@@ -1560,6 +1669,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           browserVisible: state.browserVisible,
           editorPane: nextEditorPane,
           editorVisible: true,
+          notesPane: state.notesPane,
+          notesVisible: state.notesVisible,
           activeTerminalId: state.activeTerminalId,
         });
       }
