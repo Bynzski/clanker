@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
-import { Plus, Globe, PanelLeft, PanelLeftClose } from 'lucide-react';
+import { Plus, Globe, NotebookPen, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import type { HarnessSession } from '../../shared/types/session';
 import GitButton from './GitButton';
@@ -15,6 +15,7 @@ export default function Header() {
   const focusedWorkspace = useWorkspaceStore((state) => selectFocusedWorkspace(state));
   const setExplorerVisible = useWorkspaceStore((state) => state.setExplorerVisible);
   const toggleBrowser = useWorkspaceStore((state) => state.toggleBrowser);
+  const toggleNotesPane = useWorkspaceStore((state) => state.toggleNotesPane);
   const addTerminal = useWorkspaceStore((state) => state.addTerminal);
   const fitAllPanes = useWorkspaceStore((state) => state.fitAllPanes);
   const setHarness = useWorkspaceStore((state) => state.setHarness);
@@ -23,6 +24,7 @@ export default function Header() {
 
   const workspacePath = focusedWorkspace?.workspacePath ?? '';
   const browserVisible = focusedWorkspace?.browserVisible ?? false;
+  const notesVisible = focusedWorkspace?.notesVisible ?? false;
   const explorerVisible = focusedWorkspace?.explorerVisible ?? false;
   const harness = focusedWorkspace?.harness ?? '';
   const model = focusedWorkspace?.model ?? '';
@@ -97,6 +99,10 @@ export default function Header() {
     toggleBrowser();
   };
 
+  const handleToggleNotes = () => {
+    toggleNotesPane();
+  };
+
   const handleToggleChatHistory = async () => {
     if (showChatHistory) {
       setShowChatHistory(false);
@@ -153,6 +159,11 @@ export default function Header() {
         <button type="button" className={`header-btn ${browserVisible ? 'active' : ''}`} onClick={handleToggleBrowser} title="Toggle browser panel">
           <Globe size={15} strokeWidth={2} />
           Browser
+        </button>
+
+        <button type="button" className={`header-btn ${notesVisible ? 'active' : ''}`} onClick={handleToggleNotes} title="Toggle notes panel">
+          <NotebookPen size={15} strokeWidth={2} />
+          Notes
         </button>
         
         {workspacePath && (

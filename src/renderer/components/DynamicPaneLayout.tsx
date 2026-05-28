@@ -26,6 +26,7 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
 import BrowserPanel from './BrowserPanel';
 import EditorPane from './EditorPane';
+import NotesPane from './NotesPane';
 import { SegmentedDockEdgeTargets } from './DockEdgeTargets';
 import './DynamicPaneLayout.css';
 
@@ -141,6 +142,8 @@ function LeafView({
     <Suspense fallback={<div className="layout-pane-loading">Loading editor...</div>}>
       <EditorPane workspaceId={workspaceId} />
     </Suspense>
+  ) : workspace?.notesVisible && workspace.notesPane?.id === paneId ? (
+    <NotesPane workspaceId={workspaceId} />
   ) : (
     <Suspense fallback={<div className="layout-pane-loading">Loading terminal...</div>}>
       <TerminalPane workspaceId={workspaceId} paneId={paneId} />

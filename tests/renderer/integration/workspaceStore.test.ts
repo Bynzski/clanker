@@ -44,13 +44,35 @@ function resetStore() {
     layoutRevision: 0,
     editorVisible: false,
     editorPane: null,
+    notesVisible: false,
+    notesPane: null,
     editorTabs: [],
     activeEditorTabId: null,
     gitChanges: [],
   });
 }
 
+function installLocalStorageMock() {
+  let store: Record<string, string> = {};
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: vi.fn((key: string) => store[key] ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        store[key] = value;
+      }),
+      removeItem: vi.fn((key: string) => {
+        delete store[key];
+      }),
+      clear: vi.fn(() => {
+        store = {};
+      }),
+    },
+  });
+}
+
 beforeEach(() => {
+  installLocalStorageMock();
   resetStore();
 });
 
@@ -490,6 +512,64 @@ describe('browser', () => {
     getStore().toggleBrowser(); // show
     getStore().toggleBrowser(); // hide
     expect(getStore().browserVisible).toBe(false);
+  });
+
+  it('toggleNotesPane shows notes and creates a notes pane', () => {
+    getStore().toggleNotesPane();
+    expect(getStore().notesVisible).toBe(true);
+    expect(getStore().notesPane).not.toBeNull();
+    expect(getStore().layoutRoot).not.toBeNull();
+    expect(getStore().workspaces.find((workspace) => workspace.id === getStore().activeWorkspaceId)?.notesVisible).toBe(true);
+  });
+
+  it('toggleNotesPane hides notes and removes them from layout while keeping pane state', () => {
+    getStore().toggleNotesPane();
+    const notesPane = getStore().notesPane;
+
+    getStore().toggleNotesPane();
+
+    expect(getStore().notesVisible).toBe(false);
+    expect(getStore().notesPane).toBe(notesPane);
+    expect(JSON.stringify(getStore().layoutRoot)).not.toContain(notesPane!.id);
+  });
+
+  it('persists notes pane visibility by workspace path', () => {
+    getStore().toggleNotesPane();
+    expect(window.localStorage.getItem('clanker-grid:notes-visible:v1:/workspace')).toBe('1');
+
+    getStore().toggleNotesPane();
+    expect(window.localStorage.getItem('clanker-grid:notes-visible:v1:/workspace')).toBe('0');
+  });
+
+  it('restores notes pane visibility when a workspace is reopened', () => {
+    window.localStorage.setItem('clanker-grid:notes-visible:v1:/restored-notes', '1');
+
+    const fixture = createWorkspaceFixture({ workspacePath: '/restored-notes/' });
+    const { id: _ignored, notesVisible: _notesVisible, notesPane: _notesPane, ...withoutId } = fixture;
+    void _ignored;
+    void _notesVisible;
+    void _notesPane;
+    getStore().addWorkspace(withoutId);
+
+    expect(getStore().notesVisible).toBe(true);
+    expect(getStore().notesPane).not.toBeNull();
+    expect(getStore().layoutRoot).not.toBeNull();
+  });
+
+  it('normalizes Windows path casing and separators for notes visibility persistence', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+
+    try {
+      addWorkspace({ workspacePath: 'C:\\Users\\Jay\\Project\\' });
+
+      getStore().toggleNotesPane();
+
+      expect(window.localStorage.getItem('clanker-grid:notes-visible:v1:c:/users/jay/project')).toBe('1');
+      expect(window.localStorage.getItem('clanker-grid:notes-visible:v1:C:\\Users\\Jay\\Project\\')).toBeNull();
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
   });
 
   it('setBrowserUrl updates url', () => {

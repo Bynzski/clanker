@@ -55,6 +55,8 @@ export function useScopedWorkspace(workspaceId?: string): WorkspaceTab | null {
       browserPane: state.browserPane,
       editorPane: state.editorPane,
       editorVisible: state.editorVisible,
+      notesPane: state.notesPane,
+      notesVisible: state.notesVisible,
       editorTabs: state.editorTabs,
       activeEditorTabId: state.activeEditorTabId,
       layoutRoot: state.layoutRoot,

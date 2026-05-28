@@ -5,6 +5,7 @@ import type {
   EditorTab,
   GridViewport,
   LayoutNode,
+  NotesPaneState,
   Pane,
   PanePosition,
   Terminal,
@@ -38,7 +39,7 @@ import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
  *   The layout tree only exists when there are visible panes.
  *
  * @invariant layoutRoot !== null -> all pane IDs in layoutRoot exist in
- *   panes[].id ∪ {browserPane?.id} ∪ {editorPane?.id}
+ *   panes[].id ∪ {browserPane?.id} ∪ {editorPane?.id} ∪ {notesPane?.id}
  *   The layout tree only references valid pane IDs.
  *
  * @invariant activeEditorTabId === null - editorTabs.length === 0
@@ -60,7 +61,7 @@ export interface WorkspaceState {
   /** @invariant null - terminals.length === 0 */
   activeTerminalId: string | null;
   browserPane: BrowserPaneState | null;
-  /** @invariant null - panes.length === 0 && !browserVisible && !editorVisible */
+  /** @invariant null - panes.length === 0 && !browserVisible && !editorVisible && !notesVisible */
   layoutRoot: LayoutNode | null;
   explorerVisible: boolean;
   explorerSidebarWidth: number;
@@ -84,6 +85,8 @@ export interface WorkspaceState {
 
   editorVisible: boolean;
   editorPane: EditorPaneState | null;
+  notesVisible: boolean;
+  notesPane: NotesPaneState | null;
   editorTabs: EditorTab[];
   /** @invariant null - editorTabs.length === 0 */
   activeEditorTabId: string | null;
@@ -111,6 +114,8 @@ export interface WorkspaceState {
   removeTerminal: (id: string) => void;
   setActiveTerminal: (id: string) => void;
   toggleBrowser: () => void;
+  toggleNotesPane: () => void;
+  closeNotesPane: (workspaceId?: string) => void;
   pushBrowserOverlay: (workspaceId?: string) => void;
   popBrowserOverlay: (workspaceId?: string) => void;
   setBrowserUrl: (url: string, workspaceId?: string) => void;
@@ -208,6 +213,8 @@ export type ActiveWorkspaceSnapshot = Pick<
   | 'gitIsDetached'
   | 'editorVisible'
   | 'editorPane'
+  | 'notesVisible'
+  | 'notesPane'
   | 'editorTabs'
   | 'activeEditorTabId'
 >;
