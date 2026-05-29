@@ -90,7 +90,6 @@ describe('IPC registration smoke test', () => {
 
     interface MockStoreSchema {
       lastWorkspace: string;
-      showFastfetch: boolean;
       aiCommitEnabled: boolean;
       aiCommitProvider: string;
       aiCommitModel: string;
@@ -156,7 +155,6 @@ describe('IPC registration smoke test', () => {
       get: vi.fn((key: keyof MockStoreSchema) => {
         const defaults: MockStoreSchema = {
           lastWorkspace: testHome(),
-          showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
           aiCommitModel: '',

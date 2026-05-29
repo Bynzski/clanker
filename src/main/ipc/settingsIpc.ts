@@ -25,8 +25,6 @@ import {
   GET_LAST_WORKSPACE,
   GET_BASE_DIRECTORY,
   OPEN_BASE_DIRECTORY_DIALOG,
-  GET_SHOW_FASTFETCH,
-  SET_SHOW_FASTFETCH,
   GET_AI_COMMIT_SETTINGS,
   SET_AI_COMMIT_ENABLED,
   SET_AI_COMMIT_PROVIDER,
@@ -82,14 +80,6 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
       return posixPath;
     }
     return null;
-  });
-
-  ipcMain.handle(GET_SHOW_FASTFETCH, () => {
-    return getStore().get('showFastfetch');
-  });
-
-  ipcMain.handle(SET_SHOW_FASTFETCH, (_, showFastfetch: boolean) => {
-    getStore().set('showFastfetch', showFastfetch);
   });
 
   ipcMain.handle(GET_AI_COMMIT_SETTINGS, () => {

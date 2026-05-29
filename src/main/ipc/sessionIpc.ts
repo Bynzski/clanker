@@ -64,7 +64,6 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       COLORTERM: 'truecolor',
       TERM_PROGRAM: 'clanker-grid',
       FORCE_COLOR: '1',
-      ...(store.get('showFastfetch') ? {} : { CLANKER_GRID: '1' }),
     };
 
     const launchLabel = `[clanker-grid] ${spawnArgs.join(' ')}`;

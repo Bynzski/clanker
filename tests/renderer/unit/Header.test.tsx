@@ -74,7 +74,6 @@ describe('Header', () => {
         opencode: false,
         pi: false,
       }),
-      getShowFastfetch: vi.fn().mockResolvedValue(true),
       getAiCommitSettings: vi.fn().mockResolvedValue({
         enabled: false,
         provider: 'codex',
@@ -83,7 +82,6 @@ describe('Header', () => {
       setAiCommitEnabled: vi.fn().mockResolvedValue(undefined),
       setAiCommitProvider: vi.fn().mockResolvedValue(undefined),
       setAiCommitModel: vi.fn().mockResolvedValue(undefined),
-      setShowFastfetch: vi.fn().mockResolvedValue(undefined),
       getHarnessModels: vi.fn().mockResolvedValue([
         { id: 'gpt-4', label: 'GPT-4' },
       ]),
@@ -368,7 +366,7 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       fireEvent.click(screen.getByTitle('Settings'));
-      expect(screen.getByText('Show fastfetch')).toBeTruthy();
+      expect(screen.getByText('AI commit messages')).toBeTruthy();
     });
 
     it('closes settings dropdown when clicked again', async () => {
@@ -377,9 +375,9 @@ describe('Header', () => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
       fireEvent.click(screen.getByTitle('Settings'));
-      expect(screen.getByText('Show fastfetch')).toBeTruthy();
+      expect(screen.getByText('AI commit messages')).toBeTruthy();
       fireEvent.click(screen.getByTitle('Settings'));
-      expect(screen.queryByText('Show fastfetch')).toBeNull();
+      expect(screen.queryByText('AI commit messages')).toBeNull();
     });
 
     it('renders settings dropdown container', async () => {
@@ -396,75 +394,6 @@ describe('Header', () => {
       });
       fireEvent.click(screen.getByTitle('Settings'));
       expect(document.querySelector('.settings-dropdown')).toBeTruthy();
-    });
-  });
-
-  // =========================================================================
-  // Fastfetch Setting
-  // =========================================================================
-  describe('fastfetch setting', () => {
-    it('shows fastfetch checkbox', async () => {
-      renderHeader();
-      await waitFor(() => {
-        expect(screen.getByTitle('Settings')).toBeTruthy();
-      });
-      fireEvent.click(screen.getByTitle('Settings'));
-      expect(screen.getByRole('checkbox', { name: /show fastfetch/i })).toBeTruthy();
-    });
-
-    it('shows checked fastfetch checkbox by default', async () => {
-      renderHeader();
-      await waitFor(() => {
-        expect(screen.getByTitle('Settings')).toBeTruthy();
-      });
-      fireEvent.click(screen.getByTitle('Settings'));
-      const checkbox = screen.getByRole('checkbox', { name: /show fastfetch/i }) as HTMLInputElement;
-      expect(checkbox.checked).toBe(true);
-    });
-
-    it('shows unchecked fastfetch checkbox when setting is false', async () => {
-      (window.electronAPI.getShowFastfetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(false);
-      renderHeader();
-      await waitFor(() => {
-        expect(screen.getByTitle('Settings')).toBeTruthy();
-      });
-      fireEvent.click(screen.getByTitle('Settings'));
-      const checkbox = screen.getByRole('checkbox', { name: /show fastfetch/i }) as HTMLInputElement;
-      expect(checkbox.checked).toBe(false);
-    });
-
-    it('toggles fastfetch setting when checkbox is clicked', async () => {
-      renderHeader();
-      await waitFor(() => {
-        expect(screen.getByTitle('Settings')).toBeTruthy();
-      });
-      fireEvent.click(screen.getByTitle('Settings'));
-      fireEvent.click(screen.getByRole('checkbox', { name: /show fastfetch/i }));
-      expect(window.electronAPI.setShowFastfetch).toHaveBeenCalledWith(false);
-    });
-
-    it('handles getShowFastfetch failure gracefully', async () => {
-      (window.electronAPI.getShowFastfetch as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
-      renderHeader();
-      await waitFor(() => {
-        expect(screen.getByTitle('Settings')).toBeTruthy();
-      });
-      // Should still render without crashing
-      expect(screen.getByText('New Terminal')).toBeTruthy();
-    });
-
-    it('handles setShowFastfetch failure gracefully', async () => {
-      (window.electronAPI.setShowFastfetch as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Failed to save'));
-      renderHeader();
-      await waitFor(() => {
-        expect(screen.getByTitle('Settings')).toBeTruthy();
-      });
-      fireEvent.click(screen.getByTitle('Settings'));
-      fireEvent.click(screen.getByRole('checkbox', { name: /show fastfetch/i }));
-      // Should not crash
-      await waitFor(() => {
-        expect(screen.getByText('New Terminal')).toBeTruthy();
-      });
     });
   });
 

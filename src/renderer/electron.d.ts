@@ -78,8 +78,6 @@ interface ElectronAPI {
   fileListDirectory: (request: FileListDirectoryRequest) => Promise<FileListDirectoryResult>;
 
   // Settings
-  getShowFastfetch: () => Promise<boolean>;
-  setShowFastfetch: (show: boolean) => Promise<void>;
   getAiCommitSettings: () => Promise<AiCommitSettings>;
   setAiCommitEnabled: (enabled: boolean) => Promise<void>;
   setAiCommitProvider: (provider: string) => Promise<void>;

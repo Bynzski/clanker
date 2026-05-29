@@ -10,7 +10,6 @@ interface UseHeaderSettingsOptions {
 
 export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOptions) {
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
-  const [showFastfetch, setShowFastfetch] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showCredentialModal, setShowCredentialModal] = useState(false);
   const [aiCommitEnabled, setAiCommitEnabled] = useState(false);
@@ -54,12 +53,6 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
 
   useEffect(() => {
     const loadSettings = async () => {
-      try {
-        setShowFastfetch(await window.electronAPI.getShowFastfetch());
-      } catch (err) {
-        console.error('Failed to load fastfetch setting:', err);
-      }
-
       try {
         const aiCommitSettings = await window.electronAPI.getAiCommitSettings();
         setAiCommitEnabled(aiCommitSettings.enabled);
@@ -151,15 +144,6 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
       cancelled = true;
     };
   }, [aiCommitProvider, availableHarnessIds, hasLoadedAiCommitSettings]);
-
-  const handleToggleFastfetch = async (checked: boolean) => {
-    try {
-      await window.electronAPI.setShowFastfetch(checked);
-      setShowFastfetch(checked);
-    } catch (err) {
-      console.error('Failed to save fastfetch setting:', err);
-    }
-  };
 
   const handleToggleAiCommit = async (checked: boolean) => {
     try {
@@ -269,7 +253,6 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
 
   return {
     availableHarnessIds,
-    showFastfetch,
     showSettings,
     setShowSettings,
     showCredentialModal,
@@ -284,7 +267,6 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
     setExpandedHarness,
     harnessModelCache,
     harnessModelLoading,
-    handleToggleFastfetch,
     handleToggleAiCommit,
     handleAiCommitProviderChange,
     handleAiCommitModelChange,

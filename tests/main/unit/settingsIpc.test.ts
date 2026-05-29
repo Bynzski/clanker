@@ -119,7 +119,6 @@ describe('registerSettingsIpc', () => {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
           lastWorkspace: testHome(),
-          showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
           aiCommitModel: '',
@@ -168,8 +167,6 @@ describe('registerSettingsIpc', () => {
       'get-last-workspace',
       'get-base-directory',
       'open-base-directory-dialog',
-      'get-show-fastfetch',
-      'set-show-fastfetch',
       'get-ai-commit-settings',
       'set-ai-commit-enabled',
       'set-ai-commit-provider',
@@ -187,13 +184,13 @@ describe('registerSettingsIpc', () => {
     });
   });
 
-  test('registers exactly 16 settings IPC channels', () => {
+  test('registers exactly 14 settings IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(16);
+    expect(handleCalls.length).toBe(14);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -203,7 +200,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(32);
+    expect(handleCalls.length).toBe(28);
   });
 
   test('settings channels do not overlap with terminal channels', () => {
@@ -216,8 +213,6 @@ describe('registerSettingsIpc', () => {
       'get-last-workspace',
       'get-base-directory',
       'open-base-directory-dialog',
-      'get-show-fastfetch',
-      'set-show-fastfetch',
       'get-ai-commit-settings',
       'set-ai-commit-enabled',
       'set-ai-commit-provider',
@@ -253,8 +248,6 @@ describe('registerSettingsIpc', () => {
       'get-last-workspace',
       'get-base-directory',
       'open-base-directory-dialog',
-      'get-show-fastfetch',
-      'set-show-fastfetch',
       'get-ai-commit-settings',
       'set-ai-commit-enabled',
       'set-ai-commit-provider',
@@ -318,33 +311,6 @@ describe('settingsIpc — error-path: store returns', () => {
     expect(result).toBeUndefined();
   });
 
-  test('GET_SHOW_FASTFETCH returns whatever the store has (may be undefined)', () => {
-    const mockStore = {
-      get: vi.fn().mockReturnValue(undefined),
-      set: vi.fn(),
-    };
-    const mockMainWindow = {
-      webContents: { send: vi.fn() },
-      minimize: vi.fn(),
-      unmaximize: vi.fn(),
-      maximize: vi.fn(),
-      close: vi.fn(),
-      isMaximized: vi.fn(() => false),
-    };
-    const deps = {
-      getStore: () => mockStore as never,
-      getMainWindow: () => mockMainWindow as never,
-    };
-    registerSettingsIpc(deps);
-
-    const handler = mockIpcMain.handle.mock.calls.find(
-      (call) => call[0] === 'get-show-fastfetch'
-    )?.[1] as () => boolean | undefined;
-
-    const result = handler();
-    expect(result).toBeUndefined();
-  });
-
   test('GET_AI_COMMIT_SETTINGS returns object with potentially undefined fields', () => {
     const mockStore = {
       get: vi.fn().mockReturnValue(undefined),
@@ -386,7 +352,6 @@ describe('settingsIpc — error-path: OPEN_DIRECTORY_DIALOG', () => {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
           lastWorkspace: testHome(),
-          showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
           aiCommitModel: '',
@@ -429,7 +394,6 @@ describe('settingsIpc — harness defaults IPC', () => {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
           lastWorkspace: testHome(),
-          showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
           aiCommitModel: '',
@@ -484,7 +448,6 @@ describe('settingsIpc — harness defaults IPC', () => {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
           lastWorkspace: testHome(),
-          showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
           aiCommitModel: '',
@@ -567,7 +530,6 @@ describe('settingsIpc — error-path: workspace validation', () => {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
           lastWorkspace: testHome(),
-          showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
           aiCommitModel: '',
@@ -695,31 +657,6 @@ describe('settingsIpc — error-path: workspace validation', () => {
     expect(result[0]).toEqual({ id: 'gpt-4', name: 'GPT-4' });
   });
 
-  test('SET_SHOW_FASTFETCH calls store.set and returns undefined', () => {
-    const mockSetFn = vi.fn();
-    const mockStore = {
-      get: vi.fn(),
-      set: mockSetFn,
-    };
-    const mockMainWindow = {
-      webContents: { send: vi.fn() },
-      minimize: vi.fn(), unmaximize: vi.fn(), maximize: vi.fn(), close: vi.fn(),
-      isMaximized: vi.fn(() => false),
-    };
-    const deps = {
-      getStore: () => mockStore as never,
-      getMainWindow: () => mockMainWindow as never,
-    };
-    registerSettingsIpc(deps);
-
-    const handler = mockIpcMain.handle.mock.calls.find(
-      (call) => call[0] === 'set-show-fastfetch'
-    )?.[1] as (_: unknown, value: boolean) => void;
-
-    const result = handler(null, true);
-    expect(result).toBeUndefined();
-    expect(mockSetFn).toHaveBeenCalledWith('showFastfetch', true);
-  });
 });
 
 describe('settings IPC channel constants', () => {
@@ -728,8 +665,6 @@ describe('settings IPC channel constants', () => {
       'get-last-workspace',
       'get-base-directory',
       'open-base-directory-dialog',
-      'get-show-fastfetch',
-      'set-show-fastfetch',
       'get-ai-commit-settings',
       'set-ai-commit-enabled',
       'set-ai-commit-provider',
@@ -757,8 +692,6 @@ describe('settings IPC channel constants', () => {
       'get-last-workspace',
       'get-base-directory',
       'open-base-directory-dialog',
-      'get-show-fastfetch',
-      'set-show-fastfetch',
       'get-ai-commit-settings',
       'set-ai-commit-enabled',
       'set-ai-commit-provider',

@@ -100,7 +100,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const harnessEnv = harness && getHarnessOptions()[harness]?.env ? getHarnessOptions()[harness].env : {};
 
     const harnessConfig = harness ? getHarnessOptions()[harness] : undefined;
-    const harnessDefaults = getStore().get('harnessDefaults');
+    const harnessDefaults = store.get('harnessDefaults');
     const userFlags = harness ? harnessDefaults[harness]?.flags : undefined;
     const effectiveModel = model || (harness ? harnessDefaults[harness]?.model || undefined : undefined);
     const harnessArgs = harnessConfig
@@ -120,10 +120,6 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       COLORTERM: 'truecolor',
       TERM_PROGRAM: 'clanker-grid',
       FORCE_COLOR: '1',
-      // Phase 1 fix: disable flow control to remove it as a startup variable.
-      // The congestion-timer approach was found to stall shell startup (fish DA1 query timeout).
-      // Flow control can be re-enabled in Phase 2 with a proper readiness handshake.
-      ...(store.get('showFastfetch') ? {} : { CLANKER_GRID: '1' }),
     };
 
     let launchLabel: string | undefined;

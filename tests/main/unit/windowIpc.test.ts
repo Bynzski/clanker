@@ -165,8 +165,6 @@ describe('registerWindowIpc', () => {
 
     const settingsChannels = [
       'get-last-workspace',
-      'get-show-fastfetch',
-      'set-show-fastfetch',
       'get-ai-commit-settings',
       'set-ai-commit-enabled',
       'set-ai-commit-provider',

@@ -16,8 +16,6 @@ export const GET_APP_VERSION = 'get-app-version';
 export const GET_LAST_WORKSPACE = 'get-last-workspace';
 export const GET_BASE_DIRECTORY = 'get-base-directory';
 export const OPEN_BASE_DIRECTORY_DIALOG = 'open-base-directory-dialog';
-export const GET_SHOW_FASTFETCH = 'get-show-fastfetch';
-export const SET_SHOW_FASTFETCH = 'set-show-fastfetch';
 export const GET_AI_COMMIT_SETTINGS = 'get-ai-commit-settings';
 export const SET_AI_COMMIT_ENABLED = 'set-ai-commit-enabled';
 export const SET_AI_COMMIT_PROVIDER = 'set-ai-commit-provider';
@@ -210,8 +208,6 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   GET_LAST_WORKSPACE,
   GET_BASE_DIRECTORY,
   OPEN_BASE_DIRECTORY_DIALOG,
-  GET_SHOW_FASTFETCH,
-  SET_SHOW_FASTFETCH,
   GET_AI_COMMIT_SETTINGS,
   SET_AI_COMMIT_ENABLED,
   SET_AI_COMMIT_PROVIDER,

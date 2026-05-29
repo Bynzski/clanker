@@ -17,8 +17,6 @@ interface HeaderRightControlsProps {
   settingsDropdownRef: React.RefObject<HTMLDivElement | null>;
   showSettings: boolean;
   onToggleSettings: () => void;
-  showFastfetch: boolean;
-  onToggleFastfetch: (checked: boolean) => void;
   aiCommitEnabled: boolean;
   onToggleAiCommit: (checked: boolean) => void;
   aiCommitProvider: string;
@@ -53,8 +51,6 @@ export default function HeaderRightControls({
   settingsDropdownRef,
   showSettings,
   onToggleSettings,
-  showFastfetch,
-  onToggleFastfetch,
   aiCommitEnabled,
   onToggleAiCommit,
   aiCommitProvider,
@@ -119,15 +115,6 @@ export default function HeaderRightControls({
 
         {showSettings && (
           <div className="settings-dropdown">
-            <label className="settings-option">
-              <input
-                type="checkbox"
-                checked={showFastfetch}
-                onChange={(e) => onToggleFastfetch(e.target.checked)}
-              />
-              <span>Show fastfetch</span>
-            </label>
-
             <div className="settings-section">
               <label className="settings-option">
                 <input

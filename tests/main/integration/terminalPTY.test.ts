@@ -695,14 +695,14 @@ describe('Terminal PTY Integration Tests', () => {
   // =========================================================================
 
   describe.skipIf(process.platform === 'win32')('Environment Variable Passing', () => {
-    it('passes CLANKER_GRID environment variable', async () => {
-      const result = await runCommandInPty('echo "CLANKER=$CLANKER_GRID"', {
+    it('passes custom environment variables', async () => {
+      const result = await runCommandInPty('echo "CUSTOM=$CLANKER_TEST_ENV"', {
         shell: '/bin/bash',
-        env: { CLANKER_GRID: '1' },
+        env: { CLANKER_TEST_ENV: '1' },
       });
 
       expect(result.pid).toBeGreaterThan(0);
-      expect(result.output).toContain('CLANKER=1');
+      expect(result.output).toContain('CUSTOM=1');
     });
 
     it('passes COLORTERM environment variable', async () => {

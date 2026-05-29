@@ -17,8 +17,6 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     openDirectoryDialog: createAsyncMock(null),
     readDirectory: createAsyncMock([]),
     fileListDirectory: createAsyncMock(defaultFileListDirectoryResult),
-    getShowFastfetch: createAsyncMock(false),
-    setShowFastfetch: createAsyncMock(undefined),
     getAiCommitSettings: createAsyncMock({ enabled: false, provider: 'codex', model: '' }),
     setAiCommitEnabled: createAsyncMock(undefined),
     setAiCommitProvider: createAsyncMock(undefined),

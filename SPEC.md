@@ -224,8 +224,6 @@ All IPC channel names are defined as constants in `src/shared/ipcChannels.ts`. N
 | Channel | Direction | Payload |
 |---------|-----------|---------|
 | `get-last-workspace` | renderer → main | `{}` |
-| `get-show-fastfetch` | renderer → main | `{}` |
-| `set-show-fastfetch` | renderer → main | `boolean` |
 | `get-ai-commit-settings` | renderer → main | `{}` |
 | `set-ai-commit-enabled` | renderer → main | `boolean` |
 | `set-ai-commit-provider` | renderer → main | `provider` |

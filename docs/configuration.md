@@ -4,12 +4,6 @@
 
 Access via the header toolbar gear icon.
 
-### General
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| Fastfetch Suppress | Hide fastfetch on launch | Enabled |
-
 ### AI Commit
 
 | Setting | Description | Default |
@@ -93,7 +87,6 @@ The app can automatically configure your SSH config to use the generated key for
 
 Settings are stored locally via `electron-store` (`clanker-grid.json`):
 - Last workspace path
-- Fastfetch preference
 - AI commit configuration
 - Harness defaults (per-harness model, favorites, flags)
 

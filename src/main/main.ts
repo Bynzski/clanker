@@ -59,7 +59,6 @@ const store = new Store<StoreSchema>({
   defaults: {
     lastWorkspace: app.getPath('home'),
     baseDirectory: app.getPath('home'),
-    showFastfetch: false,
     aiCommitEnabled: false,
     aiCommitProvider: 'codex',
     aiCommitModel: '',

@@ -65,7 +65,6 @@ describe('main.ts Entry Point Smoke Tests', () => {
   describe('Store schema and defaults', () => {
     // The store defaults from main.ts:
     // - lastWorkspace: app.getPath('home')
-    // - showFastfetch: false
     // - aiCommitEnabled: false
     // - aiCommitProvider: 'codex'
     // - aiCommitModel: ''
@@ -74,14 +73,12 @@ describe('main.ts Entry Point Smoke Tests', () => {
       // These are the defaults defined in main.ts StoreSchema
       const expectedDefaults = {
         lastWorkspace: 'string', // app.getPath('home') at runtime
-        showFastfetch: false,
         aiCommitEnabled: false,
         aiCommitProvider: 'codex',
         aiCommitModel: '',
       };
 
       // Verify the structure is correct
-      assert.equal(expectedDefaults.showFastfetch, false);
       assert.equal(expectedDefaults.aiCommitEnabled, false);
       assert.equal(expectedDefaults.aiCommitProvider, 'codex');
       assert.equal(expectedDefaults.aiCommitModel, '');
@@ -91,7 +88,6 @@ describe('main.ts Entry Point Smoke Tests', () => {
     test('store schema includes all required fields', () => {
       const requiredFields = [
         'lastWorkspace',
-        'showFastfetch', 
         'aiCommitEnabled',
         'aiCommitProvider',
         'aiCommitModel',
@@ -100,7 +96,6 @@ describe('main.ts Entry Point Smoke Tests', () => {
       // Verify all fields are present in the schema structure
       const schemaFields = Object.keys({
         lastWorkspace: '',
-        showFastfetch: false,
         aiCommitEnabled: false,
         aiCommitProvider: 'codex',
         aiCommitModel: '',
@@ -586,28 +581,5 @@ describe('main.ts Entry Point Smoke Tests', () => {
       assert.equal(ptyEnv.COLORTERM, 'truecolor');
     });
 
-    test('showFastfetch setting affects CLANKER_GRID env var', () => {
-      const showFastfetch = false;
-      
-      const env = {
-        ...process.env,
-        ...(showFastfetch ? {} : { CLANKER_GRID: '1' }),
-      };
-      
-      assert.equal(env.CLANKER_GRID, '1');
-    });
-
-    test('showFastfetch=true removes CLANKER_GRID env var', () => {
-      const showFastfetch = true;
-      
-      const env = {
-        ...process.env,
-        ...(showFastfetch ? {} : { CLANKER_GRID: '1' }),
-      };
-      
-      // When showFastfetch is true, CLANKER_GRID should not be set
-      // (or should remain from process.env if it was already there)
-      assert.ok(env.CLANKER_GRID === '1' || !('CLANKER_GRID' in env));
-    });
   });
 });

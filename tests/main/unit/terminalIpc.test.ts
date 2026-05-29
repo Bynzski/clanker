@@ -678,7 +678,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     expect(result).toHaveProperty('pid');
   });
 
-  test('SPAWN_TERMINAL does not throw when store returns undefined for showFastfetch', async () => {
+  test('SPAWN_TERMINAL does not throw when store returns undefined values', async () => {
     const { opts } = createMockDeps();
     const storeWithUndefined = { get: vi.fn().mockReturnValue(undefined) };
     (opts as { getStore: () => { get: (key: string) => unknown } }).getStore = vi.fn().mockReturnValue(storeWithUndefined);

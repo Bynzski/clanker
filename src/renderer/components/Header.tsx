@@ -36,7 +36,6 @@ export default function Header() {
 
   const {
     availableHarnessIds,
-    showFastfetch,
     showSettings,
     setShowSettings,
     showCredentialModal,
@@ -51,7 +50,6 @@ export default function Header() {
     setExpandedHarness,
     harnessModelCache,
     harnessModelLoading,
-    handleToggleFastfetch,
     handleToggleAiCommit,
     handleAiCommitProviderChange,
     handleAiCommitModelChange,
@@ -183,8 +181,6 @@ export default function Header() {
         settingsDropdownRef={settingsDropdownRef}
         showSettings={showSettings}
         onToggleSettings={() => setShowSettings(!showSettings)}
-        showFastfetch={showFastfetch}
-        onToggleFastfetch={(checked) => void handleToggleFastfetch(checked)}
         aiCommitEnabled={aiCommitEnabled}
         onToggleAiCommit={(checked) => void handleToggleAiCommit(checked)}
         aiCommitProvider={aiCommitProvider}

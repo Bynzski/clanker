@@ -121,8 +121,6 @@ const MAIN_IPC_INVOKE_CHANNELS = [
   'file-list-directory',
 
   // Settings
-  'get-show-fastfetch',
-  'set-show-fastfetch',
   'get-ai-commit-settings',
   'set-ai-commit-enabled',
   'set-ai-commit-provider',
@@ -471,17 +469,6 @@ describe('preload.ts IPC Bridge Coverage Tests', () => {
   });
 
   describe('Settings API', () => {
-    test('has fastfetch getter and setter', () => {
-      assert.ok(
-        extractedInvokeMethods.some(m => m.method === 'getShowFastfetch'),
-        'Should have getShowFastfetch method'
-      );
-      assert.ok(
-        extractedInvokeMethods.some(m => m.method === 'setShowFastfetch'),
-        'Should have setShowFastfetch method'
-      );
-    });
-
     test('has AI commit settings methods', () => {
       assert.ok(
         extractedInvokeMethods.some(m => m.method === 'getAiCommitSettings'),

@@ -125,7 +125,6 @@ describe('registerAiCommitIpc', () => {
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
           lastWorkspace: testHome(),
-          showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
           aiCommitModel: '',
@@ -187,7 +186,6 @@ describe('registerAiCommitIpc — error-path: workspace validation and commit ge
       get: vi.fn((key: string) => {
         const defaults: Record<string, unknown> = {
           lastWorkspace: testHome(),
-          showFastfetch: false,
           aiCommitEnabled: false,
           aiCommitProvider: 'codex',
           aiCommitModel: '',

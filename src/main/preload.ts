@@ -29,8 +29,6 @@ import {
   EXPLORER_START_WATCHING,
   EXPLORER_STOP_WATCHING,
   REVEAL_IN_FILE_MANAGER,
-  GET_SHOW_FASTFETCH,
-  SET_SHOW_FASTFETCH,
   GET_AI_COMMIT_SETTINGS,
   SET_AI_COMMIT_ENABLED,
   SET_AI_COMMIT_PROVIDER,
@@ -152,8 +150,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(FILE_LIST_DIRECTORY, request),
 
   // Settings
-  getShowFastfetch: () => ipcRenderer.invoke(GET_SHOW_FASTFETCH),
-  setShowFastfetch: (show: boolean) => ipcRenderer.invoke(SET_SHOW_FASTFETCH, show),
   getAiCommitSettings: () => ipcRenderer.invoke(GET_AI_COMMIT_SETTINGS),
   setAiCommitEnabled: (enabled: boolean) => ipcRenderer.invoke(SET_AI_COMMIT_ENABLED, enabled),
   setAiCommitProvider: (provider: string) => ipcRenderer.invoke(SET_AI_COMMIT_PROVIDER, provider),
