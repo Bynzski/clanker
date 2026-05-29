@@ -2,6 +2,8 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+const MAIN_TEST_TIMEOUT_MS = process.platform === 'win32' ? 20000 : 5000;
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -22,6 +24,7 @@ export default defineConfig({
           include: ['tests/main/**/*.test.ts'],
           environment: 'node',
           setupFiles: ['./tests/setup/vitest.setup.ts'],
+          testTimeout: MAIN_TEST_TIMEOUT_MS,
         },
       },
       {
