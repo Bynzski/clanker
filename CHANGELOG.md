@@ -6,15 +6,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-07-03
+
 ### Added
 
 - **Explorer typing filter** — a filter input above the file tree narrows the visible entries by name as the user types. Matching is case-insensitive and substring-based; ancestor directories of matches stay visible, and a collapsed directory with a matching descendant is force-expanded for the duration of the filter without mutating the persistent expansion state. Empty filter restores the original view; a non-matching filter shows "No matches". Press `/` while the tree is focused to jump to the filter; press `Escape` inside the filter to clear (or blur when already empty). The filter only sees entries currently loaded into the tree (consistent with the explorer's lazy loading) — unloaded subdirectories are not crawled. Resolves #3.
+- **Local notes pane** — added a workspace-scoped Notes pane that can be toggled from the header, dragged into the pane layout, and persisted locally by workspace path.
+- **Harness visibility controls** — harness defaults now include a visibility toggle. Harnesses remain visible by default, and hidden harnesses are removed from the top bar and workspace gate without disabling previous-chat resume for installed harnesses.
+
+### Changed
+
+- **Linux-only release artifacts** — `0.2.3` is prepared as a Linux AppImage release. Windows build targets remain configured and tested on a best-effort basis, but Windows artifacts are not produced for this patch release.
 
 ### Fixed
 
+- **Folder picker directory creation on KDE/Linux** — native workspace/base-directory pickers now allow creating a new directory from the picker dialog where the platform file chooser supports it.
+- **New terminal focus** — newly created or activated terminal panes now focus xterm directly once the runtime is ready, so mouse and keyboard input work without an extra click.
+- **Harness PATH precedence** — harness command discovery and spawning now prefer user CLI bin paths before system PATH entries, matching common npm/global CLI installs.
+- **Previous-chat availability** — previous chat discovery now returns only sessions whose harness command is currently available, and session invocation rejects stale sessions if the harness has been removed.
 - **Explorer file/folder creation in empty directories** — clicking "New File" or "New Folder" on an empty workspace silently failed because `FileTree` returned the "No files" placeholder before the inline create input could render. The early-return now defers to an in-progress root-level create so the input appears and the IPC fires. Resolves #34.
 - **Silent failures on explorer file operations** — `fileCreate`, `fileDelete`, and `fileRename` failures other than `FILE_IN_USE` previously only logged to the console. All failures now surface via `window.alert` with the underlying error message so the user knows the action did not complete.
 - **Create-in-collapsed-folder edge** — selecting a previously-loaded but currently-collapsed subdirectory and clicking "New File" used to silently fail because the create input only renders inside expanded directories. `startCreating` now auto-expands the parent before opening the input.
+
+### Removed
+
+- **Fastfetch launch-screen setting** — removed the unused fastfetch setting and related IPC/test plumbing.
+
+### Security
+
+- **Dependency audit cleanup** — refreshed vulnerable transitive dependencies so `npm audit --audit-level=high` reports zero vulnerabilities.
 
 ## [0.2.2] - 2026-05-13
 
@@ -154,7 +174,8 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/Bynzski/clanker/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Bynzski/clanker/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Bynzski/clanker/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Bynzski/clanker/compare/v0.1.0...v0.2.0

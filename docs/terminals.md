@@ -53,8 +53,11 @@ Flags are passed through as entered.
 
 Each harness can have a global default model set in the header settings dropdown. This model is pre-selected when launching a workspace with that harness.
 
+- **Visible** — controls whether the harness appears in the header and workspace gate; enabled by default
 - **Default model** — set in settings, used at spawn time when no workspace-level model is specified
 - **Favorites** — pinned models shown in the gate model picker; these are UX-only and never influence automatic launch behavior
+
+Hidden harnesses are launch-surface preferences only. They can still resume previous chats when the underlying harness command is installed and available.
 
 ### Session History
 
@@ -70,6 +73,7 @@ The **Chat History** button (message icon) in the header opens a dropdown that d
 **Features:**
 - Sessions are grouped by harness type with collapsible sections
 - Sessions are filtered by the current workspace path (shows only sessions from the workspace or its subdirectories)
+- Sessions are shown only for harness commands that are currently installed and available
 - Sessions display title (first user message), relative timestamp, and harness type
 - Click any session to resume it in a new terminal (respects harness default flags from settings)
 - Sessions are cached for 60 seconds to avoid repeated file system scans

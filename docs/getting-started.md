@@ -2,16 +2,16 @@
 
 ## Supported platforms
 
-| Platform | Builds shipped |
-|----------|---------------|
+| Platform | Release artifact status |
+|----------|-------------------------|
 | Linux (x64) | AppImage |
-| Windows 10 1809+ / Windows 11 (x64) | NSIS installer + portable executable (unsigned) |
+| Windows 10 1809+ / Windows 11 (x64) | Supported by the codebase; release artifacts are produced when a Windows build is cut |
 
 macOS, ARM64, and WSL are not supported in this release. WSL users should run the Linux AppImage. See [Windows Notes](windows.md) for Windows-specific setup (long paths, line endings, UNC workspaces, SmartScreen).
 
 ## Installing a release build
 
-Download the artifact for your platform from [GitHub releases](https://github.com/Bynzski/clanker/releases):
+Download the artifact for your platform from [GitHub releases](https://github.com/Bynzski/clanker/releases). Some patch releases are Linux-only; check the release assets before expecting Windows installers.
 
 ### Linux
 
@@ -22,11 +22,15 @@ chmod +x 'Clanker Grid-X.Y.Z.AppImage'
 
 ### Windows — installer
 
+Only available on releases that include Windows artifacts.
+
 1. Run `Clanker Grid Setup X.Y.Z.exe`.
 2. Windows SmartScreen will display "Windows protected your PC" because the installer is unsigned. Click **More info → Run anyway**.
 3. Complete the installer; Clanker Grid is added to the Start Menu.
 
 ### Windows — portable
+
+Only available on releases that include Windows artifacts.
 
 Run `Clanker Grid X.Y.Z.exe` directly. No installation step. SmartScreen will still warn on first launch.
 

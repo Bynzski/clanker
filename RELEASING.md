@@ -26,6 +26,8 @@ Releases are cut from `main`. The working tree must be clean before starting.
 
 A full release produces both the Linux AppImage and the Windows NSIS installer + portable executable. Each platform must be built on its own host: the AppImage on Linux, the NSIS/portable on Windows. There is no cross-compilation step.
 
+Linux-only patch releases are allowed when the release is explicitly scoped that way. For those releases, complete the Linux validation and AppImage smoke test, mention the Linux-only artifact scope in `CHANGELOG.md`, and publish only the AppImage. Windows support should still receive best-effort checks from the shared validation suite, but Windows artifacts are not required for that release.
+
 ### 1. Prepare the release commit (Linux host)
 
 1. Confirm `main` is green: `npm run validate` (lint, typecheck, security audit, build, tests). CI must be green for both `ubuntu-latest` and `windows-latest`.
@@ -41,7 +43,7 @@ A full release produces both the Linux AppImage and the Windows NSIS installer +
 1. Run `npm run build:dist`. The AppImage lands in `release/Clanker Grid-X.Y.Z.AppImage`.
 2. Smoke-test the AppImage on a clean/current Linux desktop: launch it, open a workspace, spawn a terminal, run a git operation, open the file explorer. If it does not launch, do not release.
 
-### 3. Build the Windows artifacts (Windows host)
+### 3. Build the Windows artifacts (Windows host, full releases only)
 
 1. Check out the same `vX.Y.Z` tag on a Windows 10/11 machine with Git for Windows, Node.js 22+, and npm 10+ installed.
 2. Run `npm ci`. `electron-builder` triggers `@electron/rebuild` for `node-pty` against the Electron ABI on first install.
@@ -53,7 +55,7 @@ A full release produces both the Linux AppImage and the Windows NSIS installer +
 
 ### 4. Publish the release
 
-Once all artifacts are built and smoke-tested, attach them to a single GitHub release.
+Once all planned artifacts are built and smoke-tested, attach them to a single GitHub release.
 
 ```
 gh release create vX.Y.Z \
@@ -68,13 +70,19 @@ If the Linux and Windows hosts are different machines, copy the Windows artifact
 
 Mention the SmartScreen warning explicitly in the GitHub release notes so first-time Windows users know to expect it.
 
+For Linux-only patch releases, omit the Windows artifacts from the command and mention that no Windows build was produced for that tag.
+
 ## Platform targets
 
-This release ships:
+A full release ships:
 
 - **Linux AppImage** (x64) — produced on Linux.
 - **Windows NSIS installer** (x64, unsigned) — produced on Windows 10/11.
 - **Windows portable executable** (x64, unsigned) — produced on Windows 10/11.
+
+A Linux-only patch release ships:
+
+- **Linux AppImage** (x64) — produced on Linux.
 
 Not currently produced or supported:
 
@@ -82,7 +90,7 @@ Not currently produced or supported:
 - ARM64 (Windows or Linux) — not built.
 - WSL — not a target. WSL users should run the Linux AppImage.
 
-Code signing for the Windows artifacts is planned for a follow-up release; the current NSIS and portable builds are unsigned and will trigger SmartScreen on first launch.
+Code signing for Windows artifacts is planned for a follow-up release; current NSIS and portable builds are unsigned and will trigger SmartScreen on first launch when they are produced.
 
 ## Hotfix releases
 

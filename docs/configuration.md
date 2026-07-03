@@ -20,6 +20,7 @@ Each harness (Codex, OpenCode, Pi, Claude) has its own settings:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
+| Visible | Whether this harness appears in launch surfaces | Enabled |
 | Extra Flags | Free-text CLI flags (e.g., `--yolo`, `--dangerously-skip-permissions`) | Empty |
 | Default Model | Model ID pre-selected when launching with this harness | Empty (harness picks) |
 | Favorites | Pinned model IDs shown in the compact model picker | Empty |
@@ -29,9 +30,15 @@ Each harness (Codex, OpenCode, Pi, Claude) has its own settings:
 1. Open the settings dropdown from the gear icon
 2. Scroll to the **Harness Defaults** section
 3. Click a harness row to expand its settings
-4. Edit extra flags text, set a default model, or manage favorites
+4. Toggle visibility, edit extra flags text, set a default model, or manage favorites
 
 All changes persist immediately to `electron-store`.
+
+#### Visibility Behavior
+
+- Harnesses are visible by default.
+- Hidden harnesses are removed from the header harness list and workspace gate.
+- Hiding a harness does not disable it. Previous chats can still be resumed when the harness command is installed and available.
 
 #### Flags Behavior
 
@@ -88,7 +95,7 @@ The app can automatically configure your SSH config to use the generated key for
 Settings are stored locally via `electron-store` (`clanker-grid.json`):
 - Last workspace path
 - AI commit configuration
-- Harness defaults (per-harness model, favorites, flags)
+- Harness defaults (per-harness visibility, model, favorites, flags)
 
 The store schema is defined in `src/shared/types/store.ts`.
 

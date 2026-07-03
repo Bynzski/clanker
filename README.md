@@ -24,8 +24,8 @@ Clanker Grid is a single-window desktop app that brings your terminals, AI codin
 
 ## Supported platforms
 
-- **Linux (x64)** — AppImage build, tested on current desktop distributions.
-- **Windows 10 1809+ / Windows 11 (x64)** — NSIS installer and portable executable. Currently **unsigned**; SmartScreen will display a warning on first launch — choose **More info → Run anyway** to continue.
+- **Linux (x64)** — AppImage build, tested on current desktop distributions. This is the actively produced release artifact for the current release.
+- **Windows 10 1809+ / Windows 11 (x64)** — supported by the codebase and build configuration, but Windows artifacts may lag Linux releases. When produced, Windows builds are unsigned; SmartScreen will display a warning on first launch — choose **More info → Run anyway** to continue.
 
 macOS, ARM64, and WSL are not produced in this release. WSL users should run the Linux AppImage.
 
@@ -34,8 +34,8 @@ macOS, ARM64, and WSL are not produced in this release. WSL users should run the
 Pre-built artifacts are attached to each [GitHub release](https://github.com/Bynzski/clanker/releases):
 
 - `Clanker Grid-X.Y.Z.AppImage` — Linux. `chmod +x` and run.
-- `Clanker Grid Setup X.Y.Z.exe` — Windows installer (NSIS). Adds Start Menu and uninstaller entries.
-- `Clanker Grid X.Y.Z.exe` — Windows portable. Run without installing.
+- `Clanker Grid Setup X.Y.Z.exe` — Windows installer (NSIS), when a Windows artifact is produced. Adds Start Menu and uninstaller entries.
+- `Clanker Grid X.Y.Z.exe` — Windows portable, when a Windows artifact is produced. Run without installing.
 
 See [docs/getting-started.md](docs/getting-started.md) for first-launch walkthrough and [docs/windows.md](docs/windows.md) for Windows-specific notes (long paths, line endings, UNC workspaces, SSH lookup).
 
@@ -59,7 +59,7 @@ npm run build
 npm run build:dist
 ```
 
-On Linux this produces an AppImage in `release/`. On Windows it produces an NSIS installer and a portable executable in `release/`. There is no cross-compilation — each platform must be built on its own host. See [RELEASING.md](RELEASING.md) for the full multi-platform release flow.
+On Linux this produces an AppImage in `release/`. On Windows it produces an NSIS installer and a portable executable in `release/`. There is no cross-compilation — each platform must be built on its own host. See [RELEASING.md](RELEASING.md) for the release flow, including Linux-only patch releases.
 
 ## Documentation
 

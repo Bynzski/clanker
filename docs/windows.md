@@ -7,7 +7,9 @@ Reference for running and developing Clanker Grid on Windows.
 
 ## Installing a release build
 
-Two artifacts are produced for each release:
+Windows artifacts are produced only for releases that explicitly include a Windows build. Linux-only patch releases may ship only the AppImage.
+
+When a Windows build is produced, it includes:
 
 | File | Purpose |
 |------|---------|

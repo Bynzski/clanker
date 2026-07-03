@@ -8,6 +8,8 @@ Workspaces provide isolated development environments within a single window.
 2. Enter or browse to a local directory
 3. The workspace opens in a new tab
 
+On platforms whose native directory picker supports it, the folder picker can create a new directory before opening the workspace.
+
 ## Managing Tabs
 
 - **Switch workspaces**: Click a workspace tab
@@ -24,6 +26,7 @@ Each workspace retains:
 - Editor tabs and active tab
 - File explorer state (expanded paths, selected path)
 - Selected harness and model
+- Notes pane visibility and content
 - Active terminal selection
 
 ### Harness and Model Selection
