@@ -239,7 +239,7 @@ app.whenReady().then(() => {
     getSafeWorkspacePath: (workingDir: string) => getSafeWorkspacePath(workingDir, store),
     getIsShuttingDown: getAppShuttingDown,
     getStore: () => store,
-    getHarnessOptions: () => HARNESS_OPTIONS,
+    getHarnessOptions: getAvailableHarnessOptions,
   });
 
   // Register annotation IPC handlers

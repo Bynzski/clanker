@@ -31,7 +31,9 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     const nativeWorkspacePath = workspacePath
       ? toNativePath(workspacePath, process.platform)
       : undefined;
-    return discoverSessions(nativeWorkspacePath);
+    const availableHarnessIds = new Set(Object.keys(getHarnessOptions()));
+    const sessions = await discoverSessions(nativeWorkspacePath);
+    return sessions.filter((session) => availableHarnessIds.has(session.harness));
   });
 
   ipcMain.handle(SESSION_INVOKE, async (_, session: HarnessSession, fork?: boolean) => {
@@ -39,6 +41,11 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     const mainWindow = getMainWindow();
     const store = getStore();
     const harnessOptions = getHarnessOptions();
+    const harnessConfig = harnessOptions[session.harness];
+
+    if (!harnessConfig) {
+      throw new Error(`${session.harness} harness is not available`);
+    }
 
     // Look up per-harness default flags from store — same source as SPAWN_TERMINAL
     const harnessDefaults = store.get('harnessDefaults');
@@ -54,7 +61,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     const cwd = getSafeWorkspacePath(nativeSession.cwd);
     const userShell = defaultShell();
 
-    const harnessEnv = harnessOptions[session.harness]?.env ?? {};
+    const harnessEnv = harnessConfig.env ?? {};
 
     const env: { [key: string]: string } = {
       ...process.env as { [key: string]: string },
