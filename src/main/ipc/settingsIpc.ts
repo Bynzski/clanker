@@ -66,7 +66,7 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
       ? toNativePath(currentBaseRaw, process.platform)
       : currentBaseRaw;
     const result = await dialog.showOpenDialog(mainWindow!, {
-      properties: ['openDirectory'],
+      properties: ['openDirectory', 'createDirectory'],
       title: 'Select Base Directory',
       defaultPath: currentBase,
     });
@@ -105,7 +105,7 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
   ipcMain.handle(OPEN_DIRECTORY_DIALOG, async () => {
     const mainWindow = getMainWindow();
     const result = await dialog.showOpenDialog(mainWindow!, {
-      properties: ['openDirectory'],
+      properties: ['openDirectory', 'createDirectory'],
       title: 'Select Workspace Directory',
       defaultPath: toNativePath(getStore().get('baseDirectory') || '', process.platform) || undefined,
     });

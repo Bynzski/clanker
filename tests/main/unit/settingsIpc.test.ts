@@ -106,7 +106,7 @@ vi.mock('../../../src/main/security', () => ({
   resolveExistingDirectory: mockResolveExistingDirectory,
 }));
 
-import { ipcMain } from 'electron';
+import { dialog, ipcMain } from 'electron';
 import { registerSettingsIpc } from '../../../src/main/ipc/settingsIpc';
 
 describe('registerSettingsIpc', () => {
@@ -201,6 +201,46 @@ describe('registerSettingsIpc', () => {
 
     const handleCalls = mockIpcMain.handle.mock.calls;
     expect(handleCalls.length).toBe(28);
+  });
+
+  test('OPEN_DIRECTORY_DIALOG allows creating directories from the picker', async () => {
+    const { deps } = createMockDeps();
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: true, filePaths: [] });
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'open-directory-dialog'
+    )?.[1] as () => Promise<string | null>;
+
+    await handler();
+
+    expect(dialog.showOpenDialog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        properties: ['openDirectory', 'createDirectory'],
+        title: 'Select Workspace Directory',
+      })
+    );
+  });
+
+  test('OPEN_BASE_DIRECTORY_DIALOG allows creating directories from the picker', async () => {
+    const { deps } = createMockDeps();
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: true, filePaths: [] });
+    registerSettingsIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'open-base-directory-dialog'
+    )?.[1] as () => Promise<string | null>;
+
+    await handler();
+
+    expect(dialog.showOpenDialog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        properties: ['openDirectory', 'createDirectory'],
+        title: 'Select Base Directory',
+      })
+    );
   });
 
   test('settings channels do not overlap with terminal channels', () => {
