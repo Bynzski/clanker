@@ -11,6 +11,7 @@ let attachedDataHandler: ((data: string) => void) | null = null;
 const mockHasSelection = vi.fn().mockReturnValue(false);
 const mockGetSelection = vi.fn().mockReturnValue('');
 const mockClearSelection = vi.fn();
+const mockFocus = vi.fn();
 
 // Mock xterm modules - use actual class-like functions
 const mockOnDataDispose = vi.fn();
@@ -26,6 +27,7 @@ vi.mock('@xterm/xterm', () => {
       hasSelection = mockHasSelection;
       getSelection = mockGetSelection;
       clearSelection = mockClearSelection;
+      focus = mockFocus;
       onData = vi.fn((handler: (data: string) => void) => {
         attachedDataHandler = handler;
         return { dispose: mockOnDataDispose };
@@ -152,6 +154,7 @@ describe('TerminalPane', () => {
     attachedDataHandler = null;
     mockHasSelection.mockReturnValue(false);
     mockGetSelection.mockReturnValue('');
+    mockFocus.mockClear();
     setupElectronAPIMocks();
     // Clear the xterm instance cache between tests to ensure isolation
     clearTerminalCache();
@@ -291,6 +294,34 @@ describe('TerminalPane', () => {
       render(<TerminalPane paneId="p1" />);
       
       expect(document.querySelector('.terminal-pane')).not.toHaveClass('active');
+    });
+
+    it('focuses xterm when the terminal is active and ready', async () => {
+      setupStoreWithTerminal('t1', 'p1', false, 't1');
+
+      render(<TerminalPane paneId="p1" />);
+
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      await waitFor(() => {
+        expect(mockFocus).toHaveBeenCalled();
+      });
+    });
+
+    it('does not focus xterm when a different terminal is active', async () => {
+      setupStoreWithTerminal('t1', 'p1', false, 't2');
+
+      render(<TerminalPane paneId="p1" />);
+
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      expect(mockFocus).not.toHaveBeenCalled();
     });
   });
 
@@ -447,6 +478,7 @@ describe('TerminalPane', () => {
 
       expect(attachedDataHandler).toBeNull();
       expect(attachedKeyHandler).toBeNull();
+      expect(mockFocus).not.toHaveBeenCalled();
       expect(document.querySelector('.terminal-pane')).toHaveAttribute('data-workspace-interactive', 'false');
       expect(screen.getByTitle('Close terminal')).toBeDisabled();
     });

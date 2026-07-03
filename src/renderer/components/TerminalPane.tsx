@@ -492,6 +492,18 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     setIsActive(isInteractive && workspace?.activeTerminalId === terminal?.id);
   }, [isInteractive, workspace?.activeTerminalId, terminal?.id]);
 
+  useEffect(() => {
+    if (!isInteractive || !terminalRuntimeReady || terminalId == null) {
+      return;
+    }
+
+    if (workspace?.activeTerminalId !== terminalId) {
+      return;
+    }
+
+    xtermRef.current?.focus();
+  }, [isInteractive, terminalId, terminalRuntimeReady, workspace?.activeTerminalId]);
+
   // Trigger resize when terminalId changes (e.g., pane gets a new terminal)
   useEffect(() => {
     if (terminalRuntimeReady && fitAddonRef.current != null) {
