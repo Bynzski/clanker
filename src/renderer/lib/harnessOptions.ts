@@ -1,5 +1,6 @@
 import { createElement } from 'react';
 import type { ElementType } from 'react';
+import type { HarnessDefaultsMap } from '../../shared/types/store';
 import codexLogoUrl from '../assets/harness-logos/codex.svg';
 import claudeLogoUrl from '../assets/harness-logos/claude.svg';
 import opencodeLogoUrl from '../assets/harness-logos/opencode.svg';
@@ -58,4 +59,19 @@ export function resolveAvailableHarnessIds(
   return HARNESS_OPTIONS
     .map((option) => option.id)
     .filter((id) => (includeTerminal && id === '') || Boolean(options[id]));
+}
+
+export function isHarnessVisible(defaults: HarnessDefaultsMap | null | undefined, harnessId: string): boolean {
+  if (harnessId === '') {
+    return true;
+  }
+
+  return defaults?.[harnessId]?.visible !== false;
+}
+
+export function resolveVisibleHarnessIds(
+  availableHarnessIds: string[],
+  defaults: HarnessDefaultsMap | null | undefined
+): string[] {
+  return availableHarnessIds.filter((id) => isHarnessVisible(defaults, id));
 }

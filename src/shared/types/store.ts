@@ -30,6 +30,8 @@ export interface HarnessDefaults {
   favorites: string[];
   /** CLI flags string (e.g., "--yolo", "--pure"). */
   flags: string;
+  /** Whether this harness appears in launch/top-bar pickers. */
+  visible: boolean;
 }
 
 /** Map of harness ID → defaults. */

@@ -46,6 +46,7 @@ export default function Header() {
     aiCommitModels,
     isLoadingAiCommitModels,
     harnessDefaults,
+    visibleHarnessIds,
     expandedHarness,
     setExpandedHarness,
     harnessModelCache,
@@ -54,6 +55,7 @@ export default function Header() {
     handleAiCommitProviderChange,
     handleAiCommitModelChange,
     handleSetHarnessFlags,
+    handleSetHarnessVisible,
     handleSetDefaultModel,
     handleToggleFavorite,
     loadHarnessModels,
@@ -69,7 +71,7 @@ export default function Header() {
   const handleAddTerminal = async () => {
     try {
       // Priority 1: workspace harness + model (highest priority)
-      const workspaceHarness = availableHarnessIds.includes(harness) ? harness : '';
+      const workspaceHarness = visibleHarnessIds.includes(harness) ? harness : '';
       const workspaceModel = workspaceHarness ? (model || undefined) : undefined;
 
       // Priority 2: no workspace harness → plain shell.
@@ -133,7 +135,7 @@ export default function Header() {
         </button>
 
         <div className="harness-pills">
-          {HARNESS_OPTIONS.filter((opt) => availableHarnessIds.includes(opt.id)).map(opt => {
+          {HARNESS_OPTIONS.filter((opt) => visibleHarnessIds.includes(opt.id)).map(opt => {
             const IconComponent = opt.Icon;
             return (
               <button
@@ -202,6 +204,7 @@ export default function Header() {
         harnessModelLoading={harnessModelLoading}
         loadHarnessModels={loadHarnessModels}
         handleSetHarnessFlags={handleSetHarnessFlags}
+        handleSetHarnessVisible={handleSetHarnessVisible}
         handleSetDefaultModel={handleSetDefaultModel}
         handleToggleFavorite={handleToggleFavorite}
       />

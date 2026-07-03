@@ -300,6 +300,28 @@
   margin-top: 4px;
 }
 
+.harness-defaults-header-row {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-tertiary);
+}
+
+.harness-defaults-visible-toggle {
+  width: 28px;
+  flex: 0 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--border-color);
+  cursor: pointer;
+}
+
+.harness-defaults-visible-toggle input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+}
+
 .harness-defaults-header {
   width: 100%;
   display: flex;

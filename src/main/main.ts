@@ -63,7 +63,7 @@ const store = new Store<StoreSchema>({
     aiCommitProvider: 'codex',
     aiCommitModel: '',
     harnessDefaults: Object.fromEntries(
-      KNOWN_HARNESS_IDS.map(id => [id, { model: '', favorites: [], flags: '' }])
+      KNOWN_HARNESS_IDS.map(id => [id, { model: '', favorites: [], flags: '', visible: true }])
     ),
   },
 });

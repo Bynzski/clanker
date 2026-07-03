@@ -13,16 +13,16 @@
 import { describe, it, expect } from 'vitest';
 import { validateHarnessDefaultsMap } from '../../../src/main/harnessDefaultsValidation';
 
-const DEFAULT_ENTRY = { model: '', favorites: [], flags: '' };
+const DEFAULT_ENTRY = { model: '', favorites: [], flags: '', visible: true };
 
 describe('validateHarnessDefaultsMap', () => {
   describe('valid payload', () => {
     it('passes through unchanged', () => {
       const input = {
-        codex: { model: 'gpt-4', favorites: ['gpt-4', 'gpt-3.5'], flags: '--yolo' },
-        opencode: { model: '', favorites: [], flags: '--pure' },
-        pi: { model: 'sonnet', favorites: ['sonnet'], flags: '' },
-        claude: { model: '', favorites: [], flags: '' },
+        codex: { model: 'gpt-4', favorites: ['gpt-4', 'gpt-3.5'], flags: '--yolo', visible: false },
+        opencode: { model: '', favorites: [], flags: '--pure', visible: true },
+        pi: { model: 'sonnet', favorites: ['sonnet'], flags: '', visible: true },
+        claude: { model: '', favorites: [], flags: '', visible: true },
       };
       const result = validateHarnessDefaultsMap(input);
       expect(result.valid).toBe(true);
@@ -30,8 +30,21 @@ describe('validateHarnessDefaultsMap', () => {
         expect(result.sanitized.codex.model).toBe('gpt-4');
         expect(result.sanitized.codex.favorites).toEqual(['gpt-4', 'gpt-3.5']);
         expect(result.sanitized.codex.flags).toBe('--yolo');
+        expect(result.sanitized.codex.visible).toBe(false);
         expect(result.sanitized.opencode.model).toBe('');
         expect(result.sanitized.opencode.flags).toBe('--pure');
+        expect(result.sanitized.opencode.visible).toBe(true);
+      }
+    });
+
+    it('defaults visibility to true for legacy entries without visible', () => {
+      const input = {
+        codex: { model: 'gpt-4', favorites: [], flags: '' },
+      };
+      const result = validateHarnessDefaultsMap(input);
+      expect(result.valid).toBe(true);
+      if (result.valid) {
+        expect(result.sanitized.codex.visible).toBe(true);
       }
     });
   });
@@ -73,7 +86,7 @@ describe('validateHarnessDefaultsMap', () => {
   describe('malformed entry', () => {
     it('coerces wrong-type fields to defaults', () => {
       const input = {
-        codex: { model: 123 as unknown, favorites: 'not an array', flags: true },
+        codex: { model: 123 as unknown, favorites: 'not an array', flags: true, visible: 'yes' },
       };
       const result = validateHarnessDefaultsMap(input);
       expect(result.valid).toBe(true);
@@ -81,6 +94,7 @@ describe('validateHarnessDefaultsMap', () => {
         expect(result.sanitized.codex.model).toBe(''); // number coerced to ''
         expect(result.sanitized.codex.favorites).toEqual([]); // string coerced to []
         expect(result.sanitized.codex.flags).toBe(''); // boolean coerced to ''
+        expect(result.sanitized.codex.visible).toBe(true); // string coerced to true
       }
     });
 

@@ -465,7 +465,7 @@ describe('settingsIpc — harness defaults IPC', () => {
     vi.clearAllMocks();
   });
 
-  test('GET_HARNESS_DEFAULTS returns harnessDefaults from store', () => {
+  test('GET_HARNESS_DEFAULTS returns normalized harnessDefaults from store', () => {
     const { deps } = createMockDeps();
     registerSettingsIpc(deps);
 
@@ -475,10 +475,10 @@ describe('settingsIpc — harness defaults IPC', () => {
 
     const result = handler();
     expect(result).toEqual({
-      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo' },
-      opencode: { model: 'opencode/zen/big-pickle', favorites: [], flags: '' },
-      pi: { model: '', favorites: [], flags: '' },
-      claude: { model: '', favorites: [], flags: '' },
+      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo', visible: true },
+      opencode: { model: 'opencode/zen/big-pickle', favorites: [], flags: '', visible: true },
+      pi: { model: '', favorites: [], flags: '', visible: true },
+      claude: { model: '', favorites: [], flags: '', visible: true },
     });
   });
 
@@ -525,7 +525,7 @@ describe('settingsIpc — harness defaults IPC', () => {
     };
     handler(null, payload);
     expect(mockSetFn).toHaveBeenCalledWith('harnessDefaults', expect.objectContaining({
-      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo' },
+      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo', visible: true },
     }));
   });
 

@@ -14,6 +14,7 @@ interface HarnessDefaultsSectionProps {
   harnessModelLoading: Record<string, boolean>;
   loadHarnessModels: (harnessId: string) => Promise<void>;
   handleSetHarnessFlags: (harnessId: string, flags: string) => Promise<void>;
+  handleSetHarnessVisible: (harnessId: string, visible: boolean) => Promise<void>;
   handleSetDefaultModel: (harnessId: string, modelId: string) => Promise<void>;
   handleToggleFavorite: (harnessId: string, modelId: string) => Promise<void>;
 }
@@ -27,6 +28,7 @@ export default function HarnessDefaultsSection({
   harnessModelLoading,
   loadHarnessModels,
   handleSetHarnessFlags,
+  handleSetHarnessVisible,
   handleSetDefaultModel,
   handleToggleFavorite,
 }: HarnessDefaultsSectionProps) {
@@ -40,6 +42,7 @@ export default function HarnessDefaultsSection({
         const models = harnessModelCache[harnessId] ?? [];
         const isModelsLoading = harnessModelLoading[harnessId] ?? false;
         const currentModelId = defaults?.model ?? '';
+        const isVisible = defaults?.visible !== false;
         const modelLabel = currentModelId
           ? (models.find((modelEntry) => modelEntry.id === currentModelId)?.label ?? currentModelId)
           : '';
@@ -47,36 +50,49 @@ export default function HarnessDefaultsSection({
 
         return (
           <div key={harnessId} className="harness-defaults-row">
-            <button
-              type="button"
-              className={`harness-defaults-header ${isExpanded ? 'expanded' : ''}`}
-              onClick={() => {
-                if (!isExpanded) {
-                  setExpandedHarness(harnessId);
-                  void loadHarnessModels(harnessId);
-                } else {
-                  setExpandedHarness(null);
-                }
-              }}
-            >
-              {option && (() => {
-                const HarnessIcon = option.Icon;
-                return <HarnessIcon size={13} strokeWidth={2.5} />;
-              })()}
-              <span className="harness-defaults-label">{option?.label ?? harnessId}</span>
-              {currentModelId && (
-                <span
-                  className={`harness-defaults-current ${currentModelMissing ? 'unresolved' : ''}`}
-                  title={currentModelMissing ? 'This model is no longer available' : modelLabel}
-                >
-                  {currentModelMissing && (
-                    <AlertTriangle size={11} strokeWidth={2} className="unresolved-icon" />
-                  )}
-                  {modelLabel || currentModelId}
-                </span>
-              )}
-              <ChevronRight size={12} strokeWidth={2} className="harness-defaults-chevron" />
-            </button>
+            <div className="harness-defaults-header-row">
+              <label
+                className="harness-defaults-visible-toggle"
+                title={isVisible ? 'Hide from top bar and launcher' : 'Show in top bar and launcher'}
+              >
+                <input
+                  type="checkbox"
+                  checked={isVisible}
+                  onChange={(event) => void handleSetHarnessVisible(harnessId, event.target.checked)}
+                  aria-label={`${isVisible ? 'Hide' : 'Show'} ${option?.label ?? harnessId}`}
+                />
+              </label>
+              <button
+                type="button"
+                className={`harness-defaults-header ${isExpanded ? 'expanded' : ''}`}
+                onClick={() => {
+                  if (!isExpanded) {
+                    setExpandedHarness(harnessId);
+                    void loadHarnessModels(harnessId);
+                  } else {
+                    setExpandedHarness(null);
+                  }
+                }}
+              >
+                {option && (() => {
+                  const HarnessIcon = option.Icon;
+                  return <HarnessIcon size={13} strokeWidth={2.5} />;
+                })()}
+                <span className="harness-defaults-label">{option?.label ?? harnessId}</span>
+                {currentModelId && (
+                  <span
+                    className={`harness-defaults-current ${currentModelMissing ? 'unresolved' : ''}`}
+                    title={currentModelMissing ? 'This model is no longer available' : modelLabel}
+                  >
+                    {currentModelMissing && (
+                      <AlertTriangle size={11} strokeWidth={2} className="unresolved-icon" />
+                    )}
+                    {modelLabel || currentModelId}
+                  </span>
+                )}
+                <ChevronRight size={12} strokeWidth={2} className="harness-defaults-chevron" />
+              </button>
+            </div>
 
             {isExpanded && (
               <div className="harness-defaults-panel">

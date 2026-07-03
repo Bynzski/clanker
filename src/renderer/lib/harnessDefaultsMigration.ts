@@ -56,6 +56,7 @@ export async function migrateLegacyFavorites(): Promise<void> {
           model: '',
           favorites: favs.filter((f): f is string => typeof f === 'string'),
           flags: '',
+          visible: true,
         };
       }
     }

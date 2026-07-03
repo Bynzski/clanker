@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AI_COMMIT_PROVIDER_IDS, HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
+import {
+  AI_COMMIT_PROVIDER_IDS,
+  HARNESS_OPTIONS,
+  resolveAvailableHarnessIds,
+  resolveVisibleHarnessIds,
+} from '../lib/harnessOptions';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import type { ModelOption } from '../types/shared';
 
@@ -22,6 +27,10 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
   const [expandedHarness, setExpandedHarness] = useState<string | null>(null);
   const [harnessModelCache, setHarnessModelCache] = useState<Record<string, ModelOption[]>>({});
   const [harnessModelLoading, setHarnessModelLoading] = useState<Record<string, boolean>>({});
+  const visibleHarnessIds = useMemo(
+    () => resolveVisibleHarnessIds(availableHarnessIds, harnessDefaults),
+    [availableHarnessIds, harnessDefaults],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -46,10 +55,10 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
   }, []);
 
   useEffect(() => {
-    if (harness && !availableHarnessIds.includes(harness)) {
+    if (harness && !visibleHarnessIds.includes(harness)) {
       setHarness('');
     }
-  }, [availableHarnessIds, harness, setHarness]);
+  }, [harness, setHarness, visibleHarnessIds]);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -191,6 +200,26 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
     }
   };
 
+  const handleSetHarnessVisible = async (harnessId: string, visible: boolean) => {
+    if (!harnessDefaults) return;
+    const newDefaults = {
+      ...harnessDefaults,
+      [harnessId]: {
+        ...harnessDefaults[harnessId],
+        visible,
+      },
+    };
+    setHarnessDefaultsState(newDefaults);
+    if (!visible && harness === harnessId) {
+      setHarness('');
+    }
+    try {
+      await window.electronAPI.setHarnessDefaults(newDefaults);
+    } catch (err) {
+      console.error('Failed to save harness visibility:', err);
+    }
+  };
+
   const handleSetDefaultModel = async (harnessId: string, modelId: string) => {
     if (!harnessDefaults) return;
     const newDefaults = {
@@ -253,6 +282,7 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
 
   return {
     availableHarnessIds,
+    visibleHarnessIds,
     showSettings,
     setShowSettings,
     showCredentialModal,
@@ -271,6 +301,7 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
     handleAiCommitProviderChange,
     handleAiCommitModelChange,
     handleSetHarnessFlags,
+    handleSetHarnessVisible,
     handleSetDefaultModel,
     handleToggleFavorite,
     loadHarnessModels,

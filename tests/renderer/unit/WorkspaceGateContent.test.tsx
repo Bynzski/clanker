@@ -36,6 +36,12 @@ describe('WorkspaceGateContent', () => {
         { id: 'gpt-4', label: 'GPT-4' },
         { id: 'gpt-3.5', label: 'GPT-3.5' },
       ]),
+      getHarnessDefaults: vi.fn().mockResolvedValue({
+        codex: { model: '', favorites: [], flags: '', visible: true },
+        claude: { model: '', favorites: [], flags: '', visible: true },
+        opencode: { model: '', favorites: [], flags: '', visible: true },
+        pi: { model: '', favorites: [], flags: '', visible: true },
+      }),
       openDirectoryDialog: vi.fn().mockResolvedValue(null),
       readDirectory: vi.fn().mockResolvedValue([]),
     } as unknown as typeof window.electronAPI;
@@ -92,6 +98,56 @@ describe('WorkspaceGateContent', () => {
       // Only codex is enabled in our mock, plus the terminal-only option
       expect(screen.getByText('Codex')).toBeTruthy();
     });
+  });
+
+  it('preserves the default harness while options are loading', async () => {
+    let resolveOptions: (value: Awaited<ReturnType<typeof window.electronAPI.getHarnessOptions>>) => void;
+    const optionsPromise = new Promise<Awaited<ReturnType<typeof window.electronAPI.getHarnessOptions>>>((resolve) => {
+      resolveOptions = resolve;
+    });
+    vi.mocked(window.electronAPI.getHarnessOptions).mockReturnValue(optionsPromise);
+
+    renderGate({ initialPath: '/workspace/' });
+
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ harness: 'codex' })
+    );
+    mockOnSubmit.mockClear();
+
+    resolveOptions!({
+      codex: { name: 'Codex', command: 'codex', args: [], icon: 'codex' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Codex')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ harness: 'codex' })
+    );
+  });
+
+  it('hides harnesses whose visibility is disabled', async () => {
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      codex: { name: 'Codex', command: 'codex', args: [], icon: 'codex' },
+      claude: { name: 'Claude', command: 'claude', args: [], icon: 'claude' },
+    });
+    vi.mocked(window.electronAPI.getHarnessDefaults).mockResolvedValue({
+      codex: { model: '', favorites: [], flags: '', visible: false },
+      claude: { model: '', favorites: [], flags: '', visible: true },
+      opencode: { model: '', favorites: [], flags: '', visible: true },
+      pi: { model: '', favorites: [], flags: '', visible: true },
+    });
+
+    renderGate();
+
+    await waitFor(() => {
+      expect(screen.getByText('Claude')).toBeTruthy();
+      expect(screen.queryByText('Codex')).toBeNull();
+    });
+    expect(screen.getByText('Terminal')).toBeTruthy();
   });
 
   it('changes harness on click', async () => {

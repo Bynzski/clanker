@@ -248,6 +248,28 @@ describe('Header', () => {
       });
     });
 
+    it('hides harness pills when visibility is disabled', async () => {
+      (window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        codex: true,
+        claude: true,
+        opencode: false,
+        pi: false,
+      });
+      (window.electronAPI.getHarnessDefaults as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        codex: { model: '', favorites: [], flags: '', visible: false },
+        claude: { model: '', favorites: [], flags: '', visible: true },
+        opencode: { model: '', favorites: [], flags: '', visible: true },
+        pi: { model: '', favorites: [], flags: '', visible: true },
+      });
+
+      renderHeader();
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude')).toBeTruthy();
+      });
+      expect(screen.queryByText('Codex')).toBeNull();
+    });
+
     it('handles getHarnessOptions failure gracefully', async () => {
       (window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
       renderHeader();
@@ -394,6 +416,25 @@ describe('Header', () => {
       });
       fireEvent.click(screen.getByTitle('Settings'));
       expect(document.querySelector('.settings-dropdown')).toBeTruthy();
+    });
+
+    it('persists harness visibility changes from settings', async () => {
+      renderHeader();
+      await waitFor(() => {
+        expect(screen.getByTitle('Settings')).toBeTruthy();
+      });
+      fireEvent.click(screen.getByTitle('Settings'));
+
+      const checkbox = await screen.findByLabelText('Hide Codex');
+      fireEvent.click(checkbox);
+
+      await waitFor(() => {
+        expect(window.electronAPI.setHarnessDefaults).toHaveBeenCalledWith(
+          expect.objectContaining({
+            codex: expect.objectContaining({ visible: false }),
+          })
+        );
+      });
     });
   });
 

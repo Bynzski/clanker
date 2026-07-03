@@ -17,6 +17,7 @@ const DEFAULT_ENTRY: HarnessDefaults = {
   model: '',
   favorites: [],
   flags: '',
+  visible: true,
 };
 
 /**
@@ -59,6 +60,7 @@ export function validateHarnessDefaultsMap(
         ? (e.favorites.filter((f): f is string => typeof f === 'string'))
         : [],
       flags: typeof e.flags === 'string' ? e.flags : '',
+      visible: typeof e.visible === 'boolean' ? e.visible : true,
     };
   }
 

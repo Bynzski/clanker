@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog } from 'lucide-react';
-import { HARNESS_OPTIONS, resolveAvailableHarnessIds } from '../lib/harnessOptions';
+import { HARNESS_OPTIONS, resolveAvailableHarnessIds, resolveVisibleHarnessIds } from '../lib/harnessOptions';
 import type { ModelOption } from '../types/shared';
+import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { isAbsoluteWorkspacePath } from '../../shared/pathClassify';
 import './WorkspaceGate.css';
 
@@ -42,6 +43,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   const [selectedPreset, setSelectedPreset] = useState(2); // Default to 2 (index 2)
   const [selectedHarness, setSelectedHarness] = useState('codex'); // Default to codex
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
+  const [hasLoadedHarnessOptions, setHasLoadedHarnessOptions] = useState(false);
+  const [harnessDefaults, setHarnessDefaults] = useState<HarnessDefaultsMap | null>(null);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [allModels, setAllModels] = useState<Record<string, ModelOption[]>>({});
@@ -53,12 +56,17 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   const [defaultModel, setDefaultModel] = useState<string>('');
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const visibleHarnessIds = useMemo(
+    () => resolveVisibleHarnessIds(availableHarnessIds, harnessDefaults),
+    [availableHarnessIds, harnessDefaults],
+  );
 
   // Load harnessDefaults from electron-store on mount
   useEffect(() => {
     const loadDefaults = async () => {
       try {
         const defaults = await window.electronAPI.getHarnessDefaults();
+        setHarnessDefaults(defaults);
         if (defaults[selectedHarness]) {
           setFavorites(defaults[selectedHarness].favorites);
           setDefaultModel(defaults[selectedHarness].model || '');
@@ -98,6 +106,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     const loadFavorites = async () => {
       try {
         const defaults = await window.electronAPI.getHarnessDefaults();
+        setHarnessDefaults(defaults);
         setFavorites(defaults[selectedHarness]?.favorites || []);
         setDefaultModel(defaults[selectedHarness]?.model || '');
       } catch {
@@ -107,6 +116,18 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     };
     void loadFavorites();
   }, [selectedHarness]);
+
+  useEffect(() => {
+    if (!hasLoadedHarnessOptions) {
+      return;
+    }
+
+    setSelectedHarness((current) =>
+      visibleHarnessIds.includes(current)
+        ? current
+        : (visibleHarnessIds.find((id) => id !== '') ?? '')
+    );
+  }, [hasLoadedHarnessOptions, visibleHarnessIds]);
 
   // Load base directory. The input itself stays empty unless an explicit
   // initialPath is passed in — base is the visible context, the input holds
@@ -143,6 +164,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
         const availableIds = resolveAvailableHarnessIds(options);
 
         setAvailableHarnessIds(availableIds);
+        setHasLoadedHarnessOptions(true);
         setSelectedHarness((current) => availableIds.includes(current) ? current : (availableIds.find((id) => id !== '') ?? ''));
 
         // Pre-load models for all available harnesses
@@ -174,6 +196,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       } catch {
         if (!cancelled) {
           setAvailableHarnessIds(['']);
+          setHasLoadedHarnessOptions(true);
           setSelectedHarness('');
         }
       }
@@ -420,17 +443,17 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
         keyHandlers.B = keyHandlers.b;
       }
 
-      if (availableHarnessIds.includes('codex')) {
+      if (visibleHarnessIds.includes('codex')) {
         keyHandlers.c = () => handleHarnessChange('codex');
         keyHandlers.C = keyHandlers.c;
       }
 
-      if (availableHarnessIds.includes('opencode')) {
+      if (visibleHarnessIds.includes('opencode')) {
         keyHandlers.o = () => handleHarnessChange('opencode');
         keyHandlers.O = keyHandlers.o;
       }
 
-      if (!e.metaKey && !e.ctrlKey && availableHarnessIds.includes('pi')) {
+      if (!e.metaKey && !e.ctrlKey && visibleHarnessIds.includes('pi')) {
         keyHandlers.p = () => handleHarnessChange('pi');
         keyHandlers.P = keyHandlers.p;
       }
@@ -564,7 +587,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       <div className="harness-selector">
         <span className="gate-section-label">Harness</span>
         <div className="harness-options">
-          {HARNESS_OPTIONS.filter((harness) => availableHarnessIds.includes(harness.id)).map((harness) => (
+          {HARNESS_OPTIONS.filter((harness) => visibleHarnessIds.includes(harness.id)).map((harness) => (
             <button
               key={harness.id}
               className={`harness-option ${selectedHarness === harness.id ? 'selected' : ''}`}

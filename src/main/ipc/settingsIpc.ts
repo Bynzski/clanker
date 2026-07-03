@@ -148,7 +148,19 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
   });
 
   ipcMain.handle(GET_HARNESS_DEFAULTS, () => {
-    return getStore().get('harnessDefaults');
+    const result = validateHarnessDefaultsMap(getStore().get('harnessDefaults'));
+    if (result.valid) {
+      getStore().set('harnessDefaults', result.sanitized);
+      return result.sanitized;
+    }
+
+    const fallback = validateHarnessDefaultsMap({});
+    if (fallback.valid) {
+      getStore().set('harnessDefaults', fallback.sanitized);
+      return fallback.sanitized;
+    }
+
+    return {};
   });
 
   ipcMain.handle(SET_HARNESS_DEFAULTS, (_, payload: HarnessDefaultsMap) => {
