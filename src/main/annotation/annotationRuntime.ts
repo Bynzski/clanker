@@ -44,585 +44,565 @@ export interface ElementAnnotationData {
   ancestorContext: string | null;
 }
 
-/**
- * Escape a value for inclusion inside a CSS attribute selector string.
- */
-function escapeCssString(value: string): string {
-  return JSON.stringify(value).slice(1, -1);
-}
-
-/**
- * Escape a value for inclusion in a CSS id selector.
- */
-function escapeCssIdent(value: string): string {
-  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
-    return CSS.escape(value);
+function createAnnotationRuntimeHelpers() {
+  /**
+   * Escape a value for inclusion inside a CSS attribute selector string.
+   */
+  function escapeCssString(value: string): string {
+    return JSON.stringify(value).slice(1, -1);
   }
 
-  return value.replace(/[^a-zA-Z0-9_-]/g, char => `\\${char}`);
-}
+  /**
+   * Escape a value for inclusion in a CSS id selector.
+   */
+  function escapeCssIdent(value: string): string {
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+      return CSS.escape(value);
+    }
 
-/**
- * Build a valid nth-of-type fallback selector using same-tag siblings only.
- */
-function buildNthOfTypeSelector(el: Element): string {
-  const parent = el.parentElement;
-  const tagName = el.tagName.toLowerCase();
-
-  if (!parent) {
-    return tagName;
+    return value.replace(/[^a-zA-Z0-9_-]/g, char => `\\${char}`);
   }
 
-  const sameTagSiblings = Array.from(parent.children).filter(sibling => sibling.tagName === el.tagName);
-  const index = sameTagSiblings.indexOf(el);
-  return `${tagName}:nth-of-type(${index >= 0 ? index + 1 : 1})`;
-}
+  /**
+   * Build a valid nth-of-type fallback selector using same-tag siblings only.
+   */
+  function buildNthOfTypeSelector(el: Element): string {
+    const parent = el.parentElement;
+    const tagName = el.tagName.toLowerCase();
 
-/**
- * Selector builder with priority order:
- * 1. data-testid (most stable)
- * 2. id (usually stable)
- * 3. role + aria-label (semantic)
- * 4. tag + class (descriptive, more useful than nth-of-type)
- * 5. tag + nth-of-type (last resort)
- */
-function buildSelector(el: Element): string {
-  // Priority 1: data-testid
-  const testId = el.getAttribute('data-testid');
-  if (testId) return `[data-testid="${escapeCssString(testId)}"]`;
+    if (!parent) {
+      return tagName;
+    }
 
-  // Priority 2: id
-  if (el.id) return `#${escapeCssIdent(el.id)}`;
-
-  // Priority 3: role + accessible name
-  const role = el.getAttribute('role');
-  const ariaLabel = el.getAttribute('aria-label');
-  if (role && ariaLabel) {
-    return `[role="${escapeCssString(role)}"][aria-label="${escapeCssString(ariaLabel)}"]`;
+    const sameTagSiblings = Array.from(parent.children).filter(sibling => sibling.tagName === el.tagName);
+    const index = sameTagSiblings.indexOf(el);
+    return `${tagName}:nth-of-type(${index >= 0 ? index + 1 : 1})`;
   }
 
-  // Priority 4: tag + class (more descriptive than nth-of-type)
-  const tagClassSelector = buildTagClassSelector(el);
-  if (tagClassSelector) return tagClassSelector;
+  /**
+   * Selector builder with priority order:
+   * 1. data-testid (most stable)
+   * 2. id (usually stable)
+   * 3. role + aria-label (semantic)
+   * 4. tag + class (descriptive, more useful than nth-of-type)
+   * 5. tag + nth-of-type (last resort)
+   */
+  function buildSelector(el: Element): string {
+    // Priority 1: data-testid
+    const testId = el.getAttribute('data-testid');
+    if (testId) return `[data-testid="${escapeCssString(testId)}"]`;
 
-  // Priority 5: tag + nth-of-type fallback (last resort)
-  return buildNthOfTypeSelector(el);
-}
+    // Priority 2: id
+    if (el.id) return `#${escapeCssIdent(el.id)}`;
 
-/**
- * Normalize whitespace in a text snippet.
- */
-function normalizeText(value: string | null | undefined): string {
-  return (value || '').replace(/\s+/g, ' ').trim();
-}
+    // Priority 3: role + accessible name
+    const role = el.getAttribute('role');
+    const ariaLabel = el.getAttribute('aria-label');
+    if (role && ariaLabel) {
+      return `[role="${escapeCssString(role)}"][aria-label="${escapeCssString(ariaLabel)}"]`;
+    }
 
-/**
- * Truncate text to a useful annotation-friendly length.
- */
-function truncateText(value: string, maxLength: number): string {
-  if (value.length <= maxLength) return value;
-  return `${value.slice(0, maxLength - 1)}…`;
-}
+    // Priority 4: tag + class (more descriptive than nth-of-type)
+    const tagClassSelector = buildTagClassSelector(el);
+    if (tagClassSelector) return tagClassSelector;
 
-/**
- * Extract a short text snippet from the element's content.
- */
-function getElementTextSnippet(el: Element, maxLength: number): string | null {
-  const text = normalizeText(el.textContent);
-  if (!text) return null;
-  return truncateText(text, maxLength);
-}
+    // Priority 5: tag + nth-of-type fallback (last resort)
+    return buildNthOfTypeSelector(el);
+  }
 
-/**
- * Extract a compact class selector from the element.
- */
-function buildClassSelector(el: Element): string | null {
-  const classList = normalizeText(el.getAttribute('class'))
-    .split(' ')
-    .map(className => className.trim())
-    .filter(Boolean)
-    .filter((className, index, array) => array.indexOf(className) === index)
-    .slice(0, 5);
+  /**
+   * Normalize whitespace in a text snippet.
+   */
+  function normalizeText(value: string | null | undefined): string {
+    return (value || '').replace(/\s+/g, ' ').trim();
+  }
 
-  if (classList.length === 0) {
+  /**
+   * Truncate text to a useful annotation-friendly length.
+   */
+  function truncateText(value: string, maxLength: number): string {
+    if (value.length <= maxLength) return value;
+    return `${value.slice(0, maxLength - 1)}…`;
+  }
+
+  /**
+   * Extract a short text snippet from the element's content.
+   */
+  function getElementTextSnippet(el: Element, maxLength: number): string | null {
+    const text = normalizeText(el.textContent);
+    if (!text) return null;
+    return truncateText(text, maxLength);
+  }
+
+  /**
+   * Extract a compact class selector from the element.
+   */
+  function buildClassSelector(el: Element): string | null {
+    const classList = normalizeText(el.getAttribute('class'))
+      .split(' ')
+      .map(className => className.trim())
+      .filter(Boolean)
+      .filter((className, index, array) => array.indexOf(className) === index)
+      .slice(0, 5);
+
+    if (classList.length === 0) {
+      return null;
+    }
+
+    return `.${classList.map(escapeCssIdent).join('.')}`;
+  }
+
+  /**
+   * Build a tag + class selector when the element has useful classes.
+   */
+  function buildTagClassSelector(el: Element): string | null {
+    const classSelector = buildClassSelector(el);
+    if (!classSelector) return null;
+    return `${el.tagName.toLowerCase()}${classSelector}`;
+  }
+
+  /**
+   * Build alternate selectors to help anchor the exact element in a larger UI.
+   */
+  function buildFallbackSelectors(el: Element): string[] {
+    const fallbacks: string[] = [];
+    const primary = buildSelector(el);
+
+    const candidates: Array<string | null> = [];
+
+    const testId = el.getAttribute('data-testid');
+    if (testId) {
+      candidates.push(`[data-testid="${escapeCssString(testId)}"]`);
+    }
+
+    if (el.id) {
+      candidates.push(`#${escapeCssIdent(el.id)}`);
+    }
+
+    const dataTest = el.getAttribute('data-test');
+    if (dataTest) {
+      candidates.push(`[data-test="${escapeCssString(dataTest)}"]`);
+    }
+
+    const dataQa = el.getAttribute('data-qa');
+    if (dataQa) {
+      candidates.push(`[data-qa="${escapeCssString(dataQa)}"]`);
+    }
+
+    const role = el.getAttribute('role');
+    const ariaLabel = el.getAttribute('aria-label');
+    if (role && ariaLabel) {
+      candidates.push(`[role="${escapeCssString(role)}"][aria-label="${escapeCssString(ariaLabel)}"]`);
+    }
+
+    const classSelector = buildClassSelector(el);
+    if (classSelector) {
+      candidates.push(classSelector);
+    }
+
+    const tagClassSelector = buildTagClassSelector(el);
+    if (tagClassSelector) {
+      candidates.push(tagClassSelector);
+    }
+
+    for (const candidate of candidates) {
+      if (!candidate || candidate === primary || fallbacks.includes(candidate)) continue;
+      fallbacks.push(candidate);
+      if (fallbacks.length >= 4) break;
+    }
+
+    return fallbacks;
+  }
+
+  /**
+   * Resolve the nearest meaningful heading or label for an element.
+   */
+  function findNearestRegionLabel(el: Element): string | null {
+    let current: Element | null = el.parentElement;
+
+    while (current) {
+      const labelled = normalizeText(current.getAttribute('aria-label')) ||
+        normalizeText(current.getAttribute('title'));
+      if (labelled) {
+        return truncateText(labelled, 80);
+      }
+
+      const heading = current.querySelector('h1, h2, h3, h4, h5, h6, [role="heading"]');
+      if (heading) {
+        const headingText = getElementTextSnippet(heading, 80);
+        if (headingText) {
+          return headingText;
+        }
+      }
+
+      current = current.parentElement;
+    }
+
     return null;
   }
 
-  return `.${classList.map(escapeCssIdent).join('.')}`;
-}
+  /**
+   * Infer the broad UI region type from the nearest landmark or container.
+   */
+  function inferRegionByRoleOrTag(role: string, tagName: string): string | null {
+    const regionTypeByRole: Record<string, string> = {
+      navigation: 'navigation',
+      complementary: 'sidebar',
+      main: 'main content',
+      dialog: 'dialog',
+      menu: 'menu',
+      tablist: 'tab list',
+      list: 'list',
+      table: 'table',
+      form: 'form section',
+    };
 
-/**
- * Build a tag + class selector when the element has useful classes.
- */
-function buildTagClassSelector(el: Element): string | null {
-  const classSelector = buildClassSelector(el);
-  if (!classSelector) return null;
-  return `${el.tagName.toLowerCase()}${classSelector}`;
-}
+    const regionTypeByTag: Record<string, string> = {
+      nav: 'navigation',
+      aside: 'sidebar',
+      main: 'main content',
+      dialog: 'dialog',
+      ul: 'list',
+      ol: 'list',
+      dl: 'list',
+      table: 'table',
+      form: 'form section',
+    };
 
-/**
- * Build alternate selectors to help anchor the exact element in a larger UI.
- */
-function buildFallbackSelectors(el: Element): string[] {
-  const fallbacks: string[] = [];
-  const primary = buildSelector(el);
-
-  const candidates: Array<string | null> = [];
-
-  const testId = el.getAttribute('data-testid');
-  if (testId) {
-    candidates.push(`[data-testid="${escapeCssString(testId)}"]`);
+    return regionTypeByRole[role] ?? regionTypeByTag[tagName] ?? null;
   }
 
-  if (el.id) {
-    candidates.push(`#${escapeCssIdent(el.id)}`);
+  function inferSectionRegionType(el: Element): string {
+    if (el.closest('form, [role="form"]')) return 'form section';
+    if (el.closest('aside, [role="complementary"]')) return 'sidebar';
+    if (el.closest('nav, [role="navigation"]')) return 'navigation';
+    if (el.closest('main, [role="main"]')) return 'main content';
+    return 'section';
   }
 
-  const dataTest = el.getAttribute('data-test');
-  if (dataTest) {
-    candidates.push(`[data-test="${escapeCssString(dataTest)}"]`);
-  }
+  function inferRegionType(el: Element): string | null {
+    let current: Element | null = el.parentElement;
 
-  const dataQa = el.getAttribute('data-qa');
-  if (dataQa) {
-    candidates.push(`[data-qa="${escapeCssString(dataQa)}"]`);
-  }
-
-  const role = el.getAttribute('role');
-  const ariaLabel = el.getAttribute('aria-label');
-  if (role && ariaLabel) {
-    candidates.push(`[role="${escapeCssString(role)}"][aria-label="${escapeCssString(ariaLabel)}"]`);
-  }
-
-  const classSelector = buildClassSelector(el);
-  if (classSelector) {
-    candidates.push(classSelector);
-  }
-
-  const tagClassSelector = buildTagClassSelector(el);
-  if (tagClassSelector) {
-    candidates.push(tagClassSelector);
-  }
-
-  for (const candidate of candidates) {
-    if (!candidate || candidate === primary || fallbacks.includes(candidate)) continue;
-    fallbacks.push(candidate);
-    if (fallbacks.length >= 4) break;
-  }
-
-  return fallbacks;
-}
-
-/**
- * Resolve the nearest meaningful heading or label for an element.
- */
-function findNearestRegionLabel(el: Element): string | null {
-  let current: Element | null = el.parentElement;
-
-  while (current) {
-    const labelled = normalizeText(current.getAttribute('aria-label')) ||
-      normalizeText(current.getAttribute('title'));
-    if (labelled) {
-      return truncateText(labelled, 80);
-    }
-
-    const heading = current.querySelector('h1, h2, h3, h4, h5, h6, [role="heading"]');
-    if (heading) {
-      const headingText = getElementTextSnippet(heading, 80);
-      if (headingText) {
-        return headingText;
+    while (current) {
+      const role = normalizeText(current.getAttribute('role')).toLowerCase();
+      const tagName = current.tagName.toLowerCase();
+      const directRegionType = inferRegionByRoleOrTag(role, tagName);
+      if (directRegionType) {
+        return directRegionType;
       }
-    }
 
-    current = current.parentElement;
-  }
-
-  return null;
-}
-
-/**
- * Infer the broad UI region type from the nearest landmark or container.
- */
-function inferRegionByRoleOrTag(role: string, tagName: string): string | null {
-  const regionTypeByRole: Record<string, string> = {
-    navigation: 'navigation',
-    complementary: 'sidebar',
-    main: 'main content',
-    dialog: 'dialog',
-    menu: 'menu',
-    tablist: 'tab list',
-    list: 'list',
-    table: 'table',
-    form: 'form section',
-  };
-
-  const regionTypeByTag: Record<string, string> = {
-    nav: 'navigation',
-    aside: 'sidebar',
-    main: 'main content',
-    dialog: 'dialog',
-    ul: 'list',
-    ol: 'list',
-    dl: 'list',
-    table: 'table',
-    form: 'form section',
-  };
-
-  return regionTypeByRole[role] ?? regionTypeByTag[tagName] ?? null;
-}
-
-function inferSectionRegionType(el: Element): string {
-  if (el.closest('form, [role="form"]')) return 'form section';
-  if (el.closest('aside, [role="complementary"]')) return 'sidebar';
-  if (el.closest('nav, [role="navigation"]')) return 'navigation';
-  if (el.closest('main, [role="main"]')) return 'main content';
-  return 'section';
-}
-
-function inferRegionType(el: Element): string | null {
-  let current: Element | null = el.parentElement;
-
-  while (current) {
-    const role = normalizeText(current.getAttribute('role')).toLowerCase();
-    const tagName = current.tagName.toLowerCase();
-    const directRegionType = inferRegionByRoleOrTag(role, tagName);
-    if (directRegionType) {
-      return directRegionType;
-    }
-
-    if (tagName === 'section' || tagName === 'article') {
-      return inferSectionRegionType(current);
-    }
-
-    current = current.parentElement;
-  }
-
-  return null;
-}
-
-/**
- * Collect nearby sibling/ancestor text that helps explain the local UI.
- */
-function collectNearbyText(el: Element): string[] {
-  const snippets: string[] = [];
-  const seen = new Set<string>();
-  let target: Element | null = el;
-  let container = el.parentElement;
-
-  while (container && snippets.length < 4) {
-    const children = Array.from(container.children);
-    const index = children.indexOf(target as Element);
-    if (index >= 0) {
-      const orderedSiblings = [...children.slice(index + 1), ...children.slice(0, index).reverse()];
-
-      for (const sibling of orderedSiblings) {
-        if (snippets.length >= 4) break;
-        if (sibling === target) continue;
-
-        const siblingTag = sibling.tagName.toLowerCase();
-        const siblingRole = normalizeText(sibling.getAttribute('role')).toLowerCase();
-        if (siblingTag.match(/^h[1-6]$/) || siblingRole === 'heading') continue;
-
-        const text = getElementTextSnippet(sibling, 80);
-        if (!text || seen.has(text)) continue;
-
-        seen.add(text);
-        snippets.push(text);
+      if (tagName === 'section' || tagName === 'article') {
+        return inferSectionRegionType(current);
       }
+
+      current = current.parentElement;
     }
 
-    target = container;
-    container = container.parentElement;
-  }
-
-  return snippets;
-}
-
-/**
- * Classify the collection/container that the selected element belongs to.
- */
-function isRepositoryLikeText(text: string | null): boolean {
-  if (!text) return false;
-  return /^[\w.-]+\/[\w.-]+/.test(text) || text.includes('/');
-}
-
-function inferCollectionFromRegion(regionType: string | null): string | null {
-  if (regionType === 'table') return 'table';
-  if (regionType === 'form section') return 'form section';
-  if (regionType === 'dialog') return 'modal';
-  if (regionType === 'menu') return 'menu';
-  if (regionType === 'tab list') return 'tab list';
-  if (regionType === 'navigation') return 'navigation';
-  if (regionType === 'main content') return 'main content';
-  return null;
-}
-
-function inferCollectionByRegionContext(
-  regionType: string | null,
-  isCollection: boolean,
-  hasRepositoryLikeText: boolean
-): string | null {
-  if (!isCollection) {
     return null;
   }
 
-  if (regionType === 'sidebar') {
-    return hasRepositoryLikeText ? 'repository list' : 'sidebar list';
+  /**
+   * Collect nearby sibling/ancestor text that helps explain the local UI.
+   */
+  function collectNearbyText(el: Element): string[] {
+    const snippets: string[] = [];
+    const seen = new Set<string>();
+    let target: Element | null = el;
+    let container = el.parentElement;
+
+    while (container && snippets.length < 4) {
+      const children = Array.from(container.children);
+      const index = children.indexOf(target as Element);
+      if (index >= 0) {
+        const orderedSiblings = [...children.slice(index + 1), ...children.slice(0, index).reverse()];
+
+        for (const sibling of orderedSiblings) {
+          if (snippets.length >= 4) break;
+          if (sibling === target) continue;
+
+          const siblingTag = sibling.tagName.toLowerCase();
+          const siblingRole = normalizeText(sibling.getAttribute('role')).toLowerCase();
+          if (siblingTag.match(/^h[1-6]$/) || siblingRole === 'heading') continue;
+
+          const text = getElementTextSnippet(sibling, 80);
+          if (!text || seen.has(text)) continue;
+
+          seen.add(text);
+          snippets.push(text);
+        }
+      }
+
+      target = container;
+      container = container.parentElement;
+    }
+
+    return snippets;
   }
 
-  if (regionType === 'list') {
-    return hasRepositoryLikeText ? 'repository list' : 'list';
+  /**
+   * Classify the collection/container that the selected element belongs to.
+   */
+  function isRepositoryLikeText(text: string | null): boolean {
+    if (!text) return false;
+    return /^[\w.-]+\/[\w.-]+/.test(text) || text.includes('/');
   }
 
-  return null;
-}
-
-function inferCollectionByTag(el: Element): string | null {
-  const tagName = el.tagName.toLowerCase();
-  if (tagName === 'li') return 'list';
-  if (tagName === 'tr' || tagName === 'td' || tagName === 'th') return 'table';
-  return null;
-}
-
-function inferCollectionLabel(
-  el: Element,
-  regionType: string | null,
-  nearbyText: string[],
-  selectedText: string | null
-): string | null {
-  const regionCollection = inferCollectionFromRegion(regionType);
-  if (regionCollection) {
-    return regionCollection;
+  function inferCollectionFromRegion(regionType: string | null): string | null {
+    if (regionType === 'table') return 'table';
+    if (regionType === 'form section') return 'form section';
+    if (regionType === 'dialog') return 'modal';
+    if (regionType === 'menu') return 'menu';
+    if (regionType === 'tab list') return 'tab list';
+    if (regionType === 'navigation') return 'navigation';
+    if (regionType === 'main content') return 'main content';
+    return null;
   }
 
-  const hasRepositoryLikeText =
-    isRepositoryLikeText(selectedText) || nearbyText.some((text) => isRepositoryLikeText(text));
-  const isCollection = nearbyText.length >= 1 || isRepositoryLikeText(selectedText);
+  function inferCollectionByRegionContext(
+    regionType: string | null,
+    isCollection: boolean,
+    hasRepositoryLikeText: boolean
+  ): string | null {
+    if (!isCollection) {
+      return null;
+    }
 
-  const regionContextCollection = inferCollectionByRegionContext(regionType, isCollection, hasRepositoryLikeText);
-  if (regionContextCollection) {
-    return regionContextCollection;
+    if (regionType === 'sidebar') {
+      return hasRepositoryLikeText ? 'repository list' : 'sidebar list';
+    }
+
+    if (regionType === 'list') {
+      return hasRepositoryLikeText ? 'repository list' : 'list';
+    }
+
+    return null;
   }
 
-  if (hasRepositoryLikeText) {
-    return 'repository list';
+  function inferCollectionByTag(el: Element): string | null {
+    const tagName = el.tagName.toLowerCase();
+    if (tagName === 'li') return 'list';
+    if (tagName === 'tr' || tagName === 'td' || tagName === 'th') return 'table';
+    return null;
   }
 
-  return inferCollectionByTag(el);
-}
+  function inferCollectionLabel(
+    el: Element,
+    regionType: string | null,
+    nearbyText: string[],
+    selectedText: string | null
+  ): string | null {
+    const regionCollection = inferCollectionFromRegion(regionType);
+    if (regionCollection) {
+      return regionCollection;
+    }
 
-/**
- * Infer a short, human-readable role for the selected element in its local UI.
- */
-function isButtonLike(tagName: string, explicitRole: string): boolean {
-  return tagName === 'button' || explicitRole === 'button';
-}
+    const hasRepositoryLikeText =
+      isRepositoryLikeText(selectedText) || nearbyText.some((text) => isRepositoryLikeText(text));
+    const isCollection = nearbyText.length >= 1 || isRepositoryLikeText(selectedText);
 
-function isLinkLike(tagName: string, explicitRole: string): boolean {
-  return tagName === 'a' || explicitRole === 'link';
-}
+    const regionContextCollection = inferCollectionByRegionContext(regionType, isCollection, hasRepositoryLikeText);
+    if (regionContextCollection) {
+      return regionContextCollection;
+    }
 
-function isFormFieldLike(tagName: string, explicitRole: string): boolean {
-  return ['input', 'select', 'textarea'].includes(tagName) || explicitRole === 'textbox';
-}
+    if (hasRepositoryLikeText) {
+      return 'repository list';
+    }
 
-function isTableRowLike(tagName: string, explicitRole: string): boolean {
-  return tagName === 'tr' || explicitRole === 'row';
-}
+    return inferCollectionByTag(el);
+  }
 
-function isTableCellLike(tagName: string, explicitRole: string): boolean {
-  return tagName === 'td' || tagName === 'th' || explicitRole === 'cell';
-}
+  /**
+   * Infer a short, human-readable role for the selected element in its local UI.
+   */
+  function isButtonLike(tagName: string, explicitRole: string): boolean {
+    return tagName === 'button' || explicitRole === 'button';
+  }
 
-function isListItemLike(tagName: string, explicitRole: string): boolean {
-  return tagName === 'li' || explicitRole === 'listitem';
-}
+  function isLinkLike(tagName: string, explicitRole: string): boolean {
+    return tagName === 'a' || explicitRole === 'link';
+  }
 
-function isHeadingLike(tagName: string, explicitRole: string): boolean {
-  return tagName.match(/^h[1-6]$/) !== null || explicitRole === 'heading';
-}
+  function isFormFieldLike(tagName: string, explicitRole: string): boolean {
+    return ['input', 'select', 'textarea'].includes(tagName) || explicitRole === 'textbox';
+  }
 
-function inferCollectionScopedRole(tagName: string, explicitRole: string, collectionLabel: string | null): string | null {
-  if (collectionLabel === 'repository list') return 'repository list entry';
-  if (collectionLabel === 'sidebar list') return 'sidebar list entry';
+  function isTableRowLike(tagName: string, explicitRole: string): boolean {
+    return tagName === 'tr' || explicitRole === 'row';
+  }
 
-  if (collectionLabel === 'table') {
+  function isTableCellLike(tagName: string, explicitRole: string): boolean {
+    return tagName === 'td' || tagName === 'th' || explicitRole === 'cell';
+  }
+
+  function isListItemLike(tagName: string, explicitRole: string): boolean {
+    return tagName === 'li' || explicitRole === 'listitem';
+  }
+
+  function isHeadingLike(tagName: string, explicitRole: string): boolean {
+    return tagName.match(/^h[1-6]$/) !== null || explicitRole === 'heading';
+  }
+
+  function inferCollectionScopedRole(tagName: string, explicitRole: string, collectionLabel: string | null): string | null {
+    if (collectionLabel === 'repository list') return 'repository list entry';
+    if (collectionLabel === 'sidebar list') return 'sidebar list entry';
+
+    if (collectionLabel === 'table') {
+      if (isTableRowLike(tagName, explicitRole)) return 'table row';
+      if (isTableCellLike(tagName, explicitRole)) return 'table cell';
+      return 'table entry';
+    }
+
+    if (collectionLabel === 'form section') {
+      if (isButtonLike(tagName, explicitRole)) return 'action button';
+      if (isFormFieldLike(tagName, explicitRole)) return 'form field';
+      return 'form item';
+    }
+
+    return null;
+  }
+
+  function inferElementRoleInContext(
+    el: Element,
+    collectionLabel: string | null,
+    regionType: string | null
+  ): string | null {
+    const explicitRole = normalizeText(el.getAttribute('role')).toLowerCase();
+    const tagName = el.tagName.toLowerCase();
+
+    const collectionScopedRole = inferCollectionScopedRole(tagName, explicitRole, collectionLabel);
+    if (collectionScopedRole) return collectionScopedRole;
+
+    if (isButtonLike(tagName, explicitRole)) return 'button';
+    if (isLinkLike(tagName, explicitRole)) return 'link';
+    if (isFormFieldLike(tagName, explicitRole)) return 'form field';
+    if (isListItemLike(tagName, explicitRole)) return 'list item';
     if (isTableRowLike(tagName, explicitRole)) return 'table row';
     if (isTableCellLike(tagName, explicitRole)) return 'table cell';
-    return 'table entry';
+    if (isHeadingLike(tagName, explicitRole)) return 'heading';
+
+    if (regionType === 'sidebar') return 'sidebar item';
+    if (regionType === 'navigation') return 'navigation item';
+    if (regionType === 'main content' && tagName === 'article') return 'content card';
+
+    return null;
   }
 
-  if (collectionLabel === 'form section') {
-    if (isButtonLike(tagName, explicitRole)) return 'action button';
-    if (isFormFieldLike(tagName, explicitRole)) return 'form field';
-    return 'form item';
-  }
+  /**
+   * Build a concise context bundle for the selected element.
+   */
+  function extractContextInfo(el: Element, selectedText: string | null): {
+    uiRegion: string | null;
+    elementRoleInContext: string | null;
+    nearbyText: string[];
+    ancestorContext: string | null;
+  } {
+    const regionLabel = findNearestRegionLabel(el);
+    const regionType = inferRegionType(el);
+    const nearbyText = collectNearbyText(el);
+    const collectionLabel = inferCollectionLabel(el, regionType, nearbyText, selectedText);
+    const elementRoleInContext = inferElementRoleInContext(el, collectionLabel, regionType);
 
-  return null;
-}
+    const viewport = el.ownerDocument?.defaultView;
+    const rect = el.getBoundingClientRect();
+    const viewportWidth = viewport?.innerWidth || 0;
+    let sideLabel: string | null = null;
 
-function inferElementRoleInContext(
-  el: Element,
-  collectionLabel: string | null,
-  regionType: string | null
-): string | null {
-  const explicitRole = normalizeText(el.getAttribute('role')).toLowerCase();
-  const tagName = el.tagName.toLowerCase();
-
-  const collectionScopedRole = inferCollectionScopedRole(tagName, explicitRole, collectionLabel);
-  if (collectionScopedRole) return collectionScopedRole;
-
-  if (isButtonLike(tagName, explicitRole)) return 'button';
-  if (isLinkLike(tagName, explicitRole)) return 'link';
-  if (isFormFieldLike(tagName, explicitRole)) return 'form field';
-  if (isListItemLike(tagName, explicitRole)) return 'list item';
-  if (isTableRowLike(tagName, explicitRole)) return 'table row';
-  if (isTableCellLike(tagName, explicitRole)) return 'table cell';
-  if (isHeadingLike(tagName, explicitRole)) return 'heading';
-
-  if (regionType === 'sidebar') return 'sidebar item';
-  if (regionType === 'navigation') return 'navigation item';
-  if (regionType === 'main content' && tagName === 'article') return 'content card';
-
-  return null;
-}
-
-/**
- * Build a concise context bundle for the selected element.
- */
-function extractContextInfo(el: Element, selectedText: string | null): {
-  uiRegion: string | null;
-  elementRoleInContext: string | null;
-  nearbyText: string[];
-  ancestorContext: string | null;
-} {
-  const regionLabel = findNearestRegionLabel(el);
-  const regionType = inferRegionType(el);
-  const nearbyText = collectNearbyText(el);
-  const collectionLabel = inferCollectionLabel(el, regionType, nearbyText, selectedText);
-  const elementRoleInContext = inferElementRoleInContext(el, collectionLabel, regionType);
-
-  const viewport = el.ownerDocument?.defaultView;
-  const rect = el.getBoundingClientRect();
-  const viewportWidth = viewport?.innerWidth || 0;
-  let sideLabel: string | null = null;
-
-  if (viewportWidth > 0 && (regionType === 'sidebar' || regionType === 'navigation' || regionType === 'main content')) {
-    if (rect.x < viewportWidth * 0.33) {
-      sideLabel = 'left sidebar';
-    } else if (rect.x > viewportWidth * 0.66) {
-      sideLabel = 'right sidebar';
-    } else {
-      sideLabel = 'main content';
+    if (viewportWidth > 0 && (regionType === 'sidebar' || regionType === 'navigation' || regionType === 'main content')) {
+      if (rect.x < viewportWidth * 0.33) {
+        sideLabel = 'left sidebar';
+      } else if (rect.x > viewportWidth * 0.66) {
+        sideLabel = 'right sidebar';
+      } else {
+        sideLabel = 'main content';
+      }
+    } else if (regionType === 'sidebar') {
+      sideLabel = 'sidebar';
     }
-  } else if (regionType === 'sidebar') {
-    sideLabel = 'sidebar';
+
+    const ancestorContextParts = [sideLabel, collectionLabel].filter(Boolean) as string[];
+    const ancestorContext = ancestorContextParts.length > 0 ? ancestorContextParts.join(' ') : regionType;
+
+    return {
+      uiRegion: regionLabel,
+      elementRoleInContext,
+      nearbyText,
+      ancestorContext,
+    };
   }
 
-  const ancestorContextParts = [sideLabel, collectionLabel].filter(Boolean) as string[];
-  const ancestorContext = ancestorContextParts.length > 0 ? ancestorContextParts.join(' ') : regionType;
-
-  return {
-    uiRegion: regionLabel,
-    elementRoleInContext,
-    nearbyText,
-    ancestorContext,
-  };
-}
-
-/**
- * Extract accessibility info from element
- */
-function getAccessibilityInfo(el: Element): { role: string | null; accessibleName: string | null } {
-  return {
-    role: el.getAttribute('role') || null,
-    accessibleName: el.getAttribute('aria-label') ||
-      el.getAttribute('aria-labelledby') ||
-      el.getAttribute('aria-describedby') ||
-      null,
-  };
-}
-
-/**
- * Extract element info from a DOM element
- */
-export function captureElement(el: Element): ElementAnnotationData {
-  const rect = el.getBoundingClientRect();
-  const attrs: Record<string, string> = {};
-
-  // Capture common attributes
-  const attrWhitelist = ['id', 'name', 'type', 'href', 'src', 'alt', 'title',
-    'placeholder', 'value', 'disabled', 'checked',
-    'data-testid', 'data-test', 'data-qa'];
-
-  for (const attr of attrWhitelist) {
-    const val = el.getAttribute(attr);
-    if (val !== null) attrs[attr] = val;
+  /**
+   * Extract accessibility info from element
+   */
+  function getAccessibilityInfo(el: Element): { role: string | null; accessibleName: string | null } {
+    return {
+      role: el.getAttribute('role') || null,
+      accessibleName: el.getAttribute('aria-label') ||
+        el.getAttribute('aria-labelledby') ||
+        el.getAttribute('aria-describedby') ||
+        null,
+    };
   }
 
-  const { role, accessibleName } = getAccessibilityInfo(el);
-  const textContent = getElementTextSnippet(el, 200);
-  const fallbackSelectors = buildFallbackSelectors(el);
-  const context = extractContextInfo(el, textContent);
+  /**
+   * Extract element info from a DOM element
+   */
+  function captureElement(el: Element): ElementAnnotationData {
+    const rect = el.getBoundingClientRect();
+    const attrs: Record<string, string> = {};
+
+    // Capture common attributes
+    const attrWhitelist = ['id', 'name', 'type', 'href', 'src', 'alt', 'title',
+      'placeholder', 'value', 'disabled', 'checked',
+      'data-testid', 'data-test', 'data-qa'];
+
+    for (const attr of attrWhitelist) {
+      const val = el.getAttribute(attr);
+      if (val !== null) attrs[attr] = val;
+    }
+
+    const { role, accessibleName } = getAccessibilityInfo(el);
+    const textContent = getElementTextSnippet(el, 200);
+    const fallbackSelectors = buildFallbackSelectors(el);
+    const context = extractContextInfo(el, textContent);
+
+    return {
+      tagName: el.tagName,
+      id: el.id || null,
+      className: el.className || null,
+      textContent,
+      attributes: attrs,
+      bounds: {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      },
+      selector: buildSelector(el),
+      fallbackSelectors,
+      role,
+      accessibleName,
+      uiRegion: context.uiRegion,
+      elementRoleInContext: context.elementRoleInContext,
+      nearbyText: context.nearbyText,
+      ancestorContext: context.ancestorContext,
+    };
+  }
 
   return {
-    tagName: el.tagName,
-    id: el.id || null,
-    className: el.className || null,
-    textContent,
-    attributes: attrs,
-    bounds: {
-      x: rect.x,
-      y: rect.y,
-      width: rect.width,
-      height: rect.height,
-    },
-    selector: buildSelector(el),
-    fallbackSelectors,
-    role,
-    accessibleName,
-    uiRegion: context.uiRegion,
-    elementRoleInContext: context.elementRoleInContext,
-    nearbyText: context.nearbyText,
-    ancestorContext: context.ancestorContext,
+    captureElement,
   };
 }
+
+const annotationRuntimeHelpers = createAnnotationRuntimeHelpers();
+
+export const captureElement = annotationRuntimeHelpers.captureElement;
 
 function getRuntimeHelperSource(): string {
-  return [
-    escapeCssString.toString(),
-    escapeCssIdent.toString(),
-    buildNthOfTypeSelector.toString(),
-    buildSelector.toString(),
-    normalizeText.toString(),
-    truncateText.toString(),
-    getElementTextSnippet.toString(),
-    buildClassSelector.toString(),
-    buildTagClassSelector.toString(),
-    buildFallbackSelectors.toString(),
-    findNearestRegionLabel.toString(),
-    inferRegionByRoleOrTag.toString(),
-    inferSectionRegionType.toString(),
-    inferRegionType.toString(),
-    collectNearbyText.toString(),
-    isRepositoryLikeText.toString(),
-    inferCollectionFromRegion.toString(),
-    inferCollectionByRegionContext.toString(),
-    inferCollectionByTag.toString(),
-    inferCollectionLabel.toString(),
-    isButtonLike.toString(),
-    isLinkLike.toString(),
-    isFormFieldLike.toString(),
-    isTableRowLike.toString(),
-    isTableCellLike.toString(),
-    isListItemLike.toString(),
-    isHeadingLike.toString(),
-    inferCollectionScopedRole.toString(),
-    inferElementRoleInContext.toString(),
-    extractContextInfo.toString(),
-    getAccessibilityInfo.toString(),
-    captureElement.toString(),
-  ].join('\n\n');
+  return `
+var __clankerAnnotationRuntimeHelpers__ = (${createAnnotationRuntimeHelpers.toString()})();
+var captureElement = __clankerAnnotationRuntimeHelpers__.captureElement;
+  `.trim();
 }
 
 /**

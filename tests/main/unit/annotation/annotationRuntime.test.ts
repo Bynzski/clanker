@@ -2,6 +2,7 @@ import { JSDOM } from 'jsdom';
 import { describe, expect, it } from 'vitest';
 import {
   captureElement,
+  generateCaptureCode,
   generateAnnotationRuntime,
 } from '../../../../src/main/annotation/annotationRuntime';
 
@@ -117,5 +118,60 @@ describe('annotationRuntime', () => {
       const event = new MouseEventCtor('mousemove', { bubbles: true, clientX: 10, clientY: 10 });
       button?.dispatchEvent(event);
     }).not.toThrow();
+  });
+
+  it('executes initialization, hover, selection, copy, and capture in the injected context', () => {
+    const dom = new JSDOM(
+      '<!doctype html><html><head></head><body><main aria-label="Toolbar"><button id="save:btn" data-testid="save-button">Save changes</button></main></body></html>',
+      {
+        runScripts: 'dangerously',
+        url: 'https://example.com/settings',
+      }
+    );
+    const runtime = generateAnnotationRuntime();
+    const windowEval = (dom.window as unknown as { eval: (source: string) => unknown }).eval;
+
+    expect(() => windowEval(runtime)).not.toThrow();
+
+    const runtimeApi = dom.window as Window & {
+      __clankerAnnotationEnable__?: () => void;
+      __clankerAnnotation__?: {
+        active: boolean;
+        hoveredElement: { selector: string } | null;
+        selectedElement: { selector: string } | null;
+      };
+    };
+    runtimeApi.__clankerAnnotationEnable__?.();
+
+    const button = dom.window.document.querySelector('button');
+    expect(button).not.toBeNull();
+
+    const MouseEventCtor = (dom.window as unknown as { MouseEvent: typeof MouseEvent }).MouseEvent;
+    button?.dispatchEvent(new MouseEventCtor('mousemove', { bubbles: true }));
+
+    expect(runtimeApi.__clankerAnnotation__?.active).toBe(true);
+    expect(runtimeApi.__clankerAnnotation__?.hoveredElement?.selector).toBe('[data-testid="save-button"]');
+
+    button?.dispatchEvent(new MouseEventCtor('click', { bubbles: true, cancelable: true }));
+
+    expect(runtimeApi.__clankerAnnotation__?.selectedElement?.selector).toBe('[data-testid="save-button"]');
+
+    const note = dom.window.document.querySelector<HTMLTextAreaElement>('#clanker-annotation-note');
+    expect(note).not.toBeNull();
+    if (note) {
+      note.value = 'Capture this control';
+    }
+
+    const copyButton = dom.window.document.querySelector<HTMLButtonElement>('#clanker-annotation-copy');
+    expect(copyButton).not.toBeNull();
+    copyButton?.dispatchEvent(new MouseEventCtor('click', { bubbles: true }));
+
+    const captured = windowEval(generateCaptureCode());
+    expect(captured).toMatchObject({
+      url: 'https://example.com/settings',
+      tagName: 'BUTTON',
+      selector: '[data-testid="save-button"]',
+      note: 'Capture this control',
+    });
   });
 });
