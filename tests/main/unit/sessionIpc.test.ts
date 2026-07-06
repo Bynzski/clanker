@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HarnessSession } from '../../../src/shared/types/session';
 import { SESSION_DISCOVER, SESSION_INVOKE } from '../../../src/shared/ipcChannels';
+import { toNativePath } from '../../../src/shared/pathNormalize';
 
 const { mockHandle } = vi.hoisted(() => ({
   mockHandle: vi.fn(),
@@ -80,6 +81,8 @@ const claudeSession: HarnessSession = {
   timestamp: 2000,
 };
 
+const nativeWorkspacePath = toNativePath('/workspace', process.platform);
+
 describe('registerSessionIpc', () => {
   beforeEach(() => {
     mockHandle.mockReset();
@@ -103,7 +106,7 @@ describe('registerSessionIpc', () => {
     const result = await handlers.get(SESSION_DISCOVER)?.({}, '/workspace');
 
     expect(result).toEqual([claudeSession]);
-    expect(mockDiscoverSessions).toHaveBeenCalledWith('/workspace');
+    expect(mockDiscoverSessions).toHaveBeenCalledWith(nativeWorkspacePath);
   });
 
   it('rejects invoking a session when its harness is no longer available', async () => {
@@ -144,11 +147,15 @@ describe('registerSessionIpc', () => {
     const result = await handlers.get(SESSION_INVOKE)?.({}, codexSession, true);
 
     expect(result).toEqual({ id: 'term-1', pid: 123 });
-    expect(mockBuildSessionInvokeArgs).toHaveBeenCalledWith(codexSession, true, '--yolo');
+    expect(mockBuildSessionInvokeArgs).toHaveBeenCalledWith(
+      { ...codexSession, cwd: nativeWorkspacePath },
+      true,
+      '--yolo'
+    );
     expect(mockSpawnPtyProcess).toHaveBeenCalledWith(expect.objectContaining({
       spawnCmd: 'codex',
       spawnArgs: ['resume', 'codex-session', '--yolo'],
-      cwd: '/workspace',
+      cwd: nativeWorkspacePath,
       env: expect.objectContaining({
         CODEX_HOME: '/tmp/codex',
         CLANKER_GRID_FALLBACK_SHELL: '/bin/bash',
