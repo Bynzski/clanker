@@ -999,7 +999,7 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     expect(entry?.view.webContents.loadURL).toHaveBeenLastCalledWith('file:///tmp/report.html');
   });
 
-  test('BROWSER_TAB_NAVIGATE updates per-tab url for inactive tabs without navigating the view', async () => {
+  test('BROWSER_TAB_NAVIGATE loads inactive tab views so concurrent activations stay consistent', async () => {
     const { deps, mockMainWindow } = createMockDeps();
     registerBrowserIpc(deps);
 
@@ -1011,6 +1011,9 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     await create(null, 'ws-1', 'tab-a');
     await create(null, 'ws-1', 'tab-b');
     await switchTab(null, 'ws-1', 'tab-a');
+
+    const inactiveEntry = deps.getBrowserViews().get('ws-1')?.get('tab-b');
+    inactiveEntry?.view.webContents.loadURL.mockClear();
 
     mockMainWindow.webContents.send.mockClear();
     const result = await tabNavigate(null, 'ws-1', 'tab-b', 'https://other.example/');
@@ -1024,6 +1027,7 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
       'browser-url-updated',
       expect.objectContaining({ workspaceId: 'ws-1', tabId: 'tab-b', url: 'https://other.example/' }),
     );
+    expect(inactiveEntry?.view.webContents.loadURL).toHaveBeenCalledWith('https://other.example/');
   });
 
   test('BROWSER_GET_TABS returns empty array for unknown workspace', async () => {

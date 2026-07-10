@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
+import { createAndActivateBrowserTab } from '../lib/browserTabActions';
 
 interface RemoveBrowserTabResult {
   removed: boolean;
@@ -13,7 +14,6 @@ interface UseBrowserPanelActionsOptions {
   displayedUrl: string;
   annotationActive: boolean;
   setAnnotationActive: (value: boolean) => void;
-  addBrowserTab: (workspaceId: string) => string | null;
   removeBrowserTab: (tabId: string, workspaceId: string) => RemoveBrowserTabResult;
   setActiveBrowserTab: (tabId: string, workspaceId: string) => boolean;
   onTabMenuClose: () => void;
@@ -39,7 +39,6 @@ export function useBrowserPanelActions({
   displayedUrl,
   annotationActive,
   setAnnotationActive,
-  addBrowserTab,
   removeBrowserTab,
   setActiveBrowserTab,
   onTabMenuClose,
@@ -88,15 +87,11 @@ export function useBrowserPanelActions({
 
   const handleNewTab = useCallback(async () => {
     if (!workspaceId) return;
-    const tabId = addBrowserTab(workspaceId);
+    const tabId = await createAndActivateBrowserTab(workspaceId);
     if (!tabId) return;
-
-    await window.electronAPI.browserCreateTab(workspaceId, tabId);
-    setActiveBrowserTab(tabId, workspaceId);
-    await window.electronAPI.browserSwitchTab(workspaceId, tabId);
     onTabMenuClose();
     scheduleBoundsUpdate(true);
-  }, [addBrowserTab, onTabMenuClose, scheduleBoundsUpdate, setActiveBrowserTab, workspaceId]);
+  }, [onTabMenuClose, scheduleBoundsUpdate, workspaceId]);
 
   const handleSwitchTab = useCallback(async (tabId: string) => {
     if (!workspaceId || tabId === activeTabId) {

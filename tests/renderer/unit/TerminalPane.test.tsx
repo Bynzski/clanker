@@ -5,9 +5,13 @@ import { render, screen, fireEvent, act, waitFor, cleanup } from '@testing-libra
 import TerminalPane from '../../../src/renderer/components/TerminalPane';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
+import type { ILinkProvider } from '@xterm/xterm';
 
 let attachedKeyHandler: ((event: KeyboardEvent) => boolean) | null = null;
 let attachedDataHandler: ((data: string) => void) | null = null;
+let registeredLinkProvider: ILinkProvider | null = null;
+let mockBufferLineText = '';
+let terminalOptions: import('@xterm/xterm').ITerminalOptions | null = null;
 const mockHasSelection = vi.fn().mockReturnValue(false);
 const mockGetSelection = vi.fn().mockReturnValue('');
 const mockClearSelection = vi.fn();
@@ -20,6 +24,11 @@ vi.mock('@xterm/xterm', () => {
   return {
     Terminal: class MockTerminal {
       static defaults = {};
+      options: import('@xterm/xterm').ITerminalOptions;
+      constructor(options?: import('@xterm/xterm').ITerminalOptions) {
+        this.options = options ?? {};
+        terminalOptions = this.options;
+      }
       loadAddon = vi.fn();
       open = vi.fn();
       write = vi.fn();
@@ -37,6 +46,23 @@ vi.mock('@xterm/xterm', () => {
         attachedKeyHandler = handler;
         return true;
       });
+      registerLinkProvider = vi.fn((provider: ILinkProvider) => {
+        registeredLinkProvider = provider;
+        return { dispose: vi.fn() };
+      });
+      cols = 80;
+      buffer = {
+        active: {
+          getLine: vi.fn(() => ({
+            length: mockBufferLineText.length,
+            translateToString: () => mockBufferLineText,
+            getCell: (column: number) => ({
+              getChars: () => mockBufferLineText[column] ?? '',
+              getWidth: () => 1,
+            }),
+          })),
+        },
+      };
       // Use a real DOM element so appendChild works in jsdom tests
       element = document.createElement('div');
     },
@@ -78,6 +104,9 @@ const mockOnTerminalResized = vi.fn().mockReturnValue(vi.fn());
 const mockZoomInWindow = vi.fn().mockResolvedValue(undefined);
 const mockZoomOutWindow = vi.fn().mockResolvedValue(undefined);
 const mockResetZoomWindow = vi.fn().mockResolvedValue(undefined);
+const mockBrowserCreateTab = vi.fn().mockResolvedValue({ url: 'https://github.com', title: '' });
+const mockBrowserSwitchTab = vi.fn().mockResolvedValue({ url: 'https://github.com', title: '' });
+const mockBrowserTabNavigate = vi.fn().mockResolvedValue(true);
 
 // Store state helpers
 function createTerminal(id: string, pid: number, workingDir: string) {
@@ -143,6 +172,9 @@ function setupElectronAPIMocks() {
     zoomInWindow: mockZoomInWindow,
     zoomOutWindow: mockZoomOutWindow,
     resetZoomWindow: mockResetZoomWindow,
+    browserCreateTab: mockBrowserCreateTab,
+    browserSwitchTab: mockBrowserSwitchTab,
+    browserTabNavigate: mockBrowserTabNavigate,
   } as unknown as typeof window.electronAPI;
 }
 
@@ -152,6 +184,9 @@ describe('TerminalPane', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     attachedKeyHandler = null;
     attachedDataHandler = null;
+    registeredLinkProvider = null;
+    mockBufferLineText = '';
+    terminalOptions = null;
     mockHasSelection.mockReturnValue(false);
     mockGetSelection.mockReturnValue('');
     mockFocus.mockClear();
@@ -329,6 +364,93 @@ describe('TerminalPane', () => {
   // Terminal Initialization (xterm mocking)
   // =========================================================================
   describe('terminal initialization', () => {
+    it('registers links that open workspace files in the editor', async () => {
+      const openFileInEditor = vi.fn().mockResolvedValue(undefined);
+      const workspace = createWorkspaceFixture({
+        id: 'ws-1',
+        lifecycle: 'active',
+        workspacePath: '/workspace',
+        terminals: [createTerminal('t1', 1234, '/workspace')],
+        panes: [createPane('p1', 't1', false)],
+        activeTerminalId: 't1',
+      });
+      useWorkspaceStore.setState({
+        workspaces: [workspace],
+        activeWorkspaceId: workspace.id,
+        activeWorkspaceLifecycle: 'active',
+        openFileInEditor,
+      });
+      mockBufferLineText = 'Updated src/renderer/App.tsx:12:4';
+
+      render(<TerminalPane workspaceId="ws-1" paneId="p1" />);
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      expect(registeredLinkProvider).toBeTruthy();
+      let links: import('@xterm/xterm').ILink[] | undefined;
+      registeredLinkProvider?.provideLinks(1, (provided) => { links = provided; });
+      expect(links).toHaveLength(1);
+      expect(links?.[0]?.decorations).toEqual({ pointerCursor: true, underline: true });
+
+      links?.[0]?.activate(new MouseEvent('click'), links[0].text);
+      expect(openFileInEditor).toHaveBeenCalledWith('/workspace/src/renderer/App.tsx', 'ws-1');
+    });
+
+    it('routes OSC 8 hyperlinks into a new in-app browser tab', async () => {
+      const workspace = createWorkspaceFixture({
+        id: 'ws-1',
+        lifecycle: 'active',
+        workspacePath: '/workspace',
+        terminals: [createTerminal('t1', 1234, '/workspace')],
+        panes: [createPane('p1', 't1', false)],
+        activeTerminalId: 't1',
+        browserVisible: true,
+        browserPane: {
+          id: 'browser-1',
+          position: { x: 0, y: 0, w: 6, h: 6 },
+          tabs: [{
+            id: 'browser-tab-1',
+            url: 'https://github.com',
+            title: '',
+            canGoBack: false,
+            canGoForward: false,
+          }],
+          activeTabId: 'browser-tab-1',
+        },
+      });
+      useWorkspaceStore.setState({
+        workspaces: [workspace],
+        activeWorkspaceId: workspace.id,
+        activeWorkspaceLifecycle: 'active',
+      });
+      render(<TerminalPane workspaceId="ws-1" paneId="p1" />);
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      const linkHandler = terminalOptions?.linkHandler;
+      expect(linkHandler).toBeTruthy();
+      linkHandler?.activate(
+        new MouseEvent('click'),
+        'https://example.com/docs',
+        { start: { x: 1, y: 1 }, end: { x: 24, y: 1 } },
+      );
+
+      await waitFor(() => {
+        expect(mockBrowserTabNavigate).toHaveBeenCalledWith(
+          'ws-1',
+          expect.any(String),
+          'https://example.com/docs',
+        );
+      });
+      const tabId = mockBrowserTabNavigate.mock.calls[0]?.[1];
+      expect(mockBrowserCreateTab).toHaveBeenCalledWith('ws-1', tabId);
+      expect(mockBrowserSwitchTab).toHaveBeenCalledWith('ws-1', tabId);
+    });
+
     it('does not register terminal data listener locally', async () => {
       setupStoreWithTerminal('t1', 'p1');
 

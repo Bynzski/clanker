@@ -295,7 +295,6 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
-  const addBrowserTab = useWorkspaceStore((state) => state.addBrowserTab);
   const removeBrowserTab = useWorkspaceStore((state) => state.removeBrowserTab);
   const setActiveBrowserTab = useWorkspaceStore((state) => state.setActiveBrowserTab);
   const updateBrowserTab = useWorkspaceStore((state) => state.updateBrowserTab);
@@ -484,7 +483,6 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     displayedUrl,
     annotationActive,
     setAnnotationActive,
-    addBrowserTab,
     removeBrowserTab,
     setActiveBrowserTab,
     onTabMenuClose: () => setTabsOpen(false),

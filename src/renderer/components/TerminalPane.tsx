@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
+import type { ILink, ILinkProvider } from '@xterm/xterm';
 import { useWorkspaceStore } from '../store/workspaceStore';
 
 import { useDragHandle } from './dragHandleContext';
@@ -13,6 +14,12 @@ import {
   terminalCacheMiss,
   terminalDetach,
 } from '../lib/workspaceSwitchDebug';
+import { openUrlInWorkspaceBrowser } from '../lib/browserTabActions';
+import {
+  findTerminalLinks,
+  normalizeTerminalUrl,
+} from '../lib/linkUtils';
+import { linkRangeForMatch, readWrappedLogicalLine } from '../lib/terminalLinkRanges';
 
 type XTermInstance = import('@xterm/xterm').Terminal;
 type FitAddonInstance = import('@xterm/addon-fit').FitAddon;
@@ -368,6 +375,72 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
 
     window.electronAPI.terminalReady(terminalId).catch(console.error);
   }, [terminalId, terminalRuntimeReady]);
+
+  // -------------------------------------------------------------------------
+  // Terminal links — URLs open in a new in-app tab; workspace files in editor.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    const xterm = xtermRef.current;
+    if (!terminalRuntimeReady || !xterm || !workspace?.workspacePath || !isInteractive) return;
+
+    const resolvedWorkspaceId = workspace.id;
+    const workspacePath = workspace.workspacePath;
+    const oscLinkHandler: import('@xterm/xterm').ILinkHandler = {
+      allowNonHttpProtocols: false,
+      activate: (_event, text) => {
+        const target = normalizeTerminalUrl(text);
+        if (!target) return;
+        void openUrlInWorkspaceBrowser(resolvedWorkspaceId, target).catch((error) => {
+          console.error('Failed to open terminal URL:', error);
+        });
+      },
+    };
+    xterm.options.linkHandler = oscLinkHandler;
+
+    const provider: ILinkProvider = {
+      provideLinks: (bufferLineNumber, callback) => {
+        const logicalLine = readWrappedLogicalLine(
+          xterm.buffer.active,
+          bufferLineNumber,
+          xterm.cols,
+        );
+        if (!logicalLine) {
+          callback(undefined);
+          return;
+        }
+
+        const matches = findTerminalLinks(logicalLine.text, workspacePath);
+        const links = matches.flatMap<ILink>((match) => {
+          const range = linkRangeForMatch(logicalLine, match);
+          if (!range) return [];
+          return [{
+            range,
+            text: match.text,
+            decorations: { pointerCursor: true, underline: true },
+            activate: () => {
+              if (match.kind === 'file') {
+                void useWorkspaceStore.getState().openFileInEditor(match.target, resolvedWorkspaceId);
+                return;
+              }
+
+              void openUrlInWorkspaceBrowser(resolvedWorkspaceId, match.target).catch((error) => {
+                console.error('Failed to open terminal URL:', error);
+              });
+            },
+          }];
+        });
+        callback(links.length > 0 ? links : undefined);
+      },
+    };
+
+    const disposable = xterm.registerLinkProvider(provider);
+    return () => {
+      disposable.dispose();
+      if (xterm.options.linkHandler === oscLinkHandler) {
+        xterm.options.linkHandler = null;
+      }
+    };
+  }, [isInteractive, terminalRuntimeReady, workspace?.id, workspace?.workspacePath]);
 
   // -------------------------------------------------------------------------
   // IPC controls — local input/selection/resize handling only.

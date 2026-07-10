@@ -625,9 +625,10 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
 
     entry.url = safeUrl;
     getMainWindow()?.webContents.send(BROWSER_URL_UPDATED, { workspaceId, tabId, url: safeUrl });
-    if (getActiveTabId(workspaceId) === tabId) {
-      void entry.view.webContents.loadURL(safeUrl);
-    }
+    // Load the target view even when it becomes inactive between tab creation,
+    // activation, and navigation. Each tab then remains internally consistent
+    // under concurrent link activations and is ready when switched back to.
+    void entry.view.webContents.loadURL(safeUrl);
     return true;
   });
 
