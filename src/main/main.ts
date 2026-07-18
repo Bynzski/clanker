@@ -6,9 +6,6 @@
 
 import { app, BrowserWindow, type Rectangle } from 'electron';
 
-// Disable GPU acceleration for compatibility in some environments
-app.disableHardwareAcceleration();
-app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-dev-shm-usage');
 
 // Global exception handlers for main process

@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-07-17
+
+### Added
+
+- **GPU diagnostic** — added `npm run diagnose:gpu` to report Electron/Chromium GPU feature status and verify WebGL 1 and WebGL 2 context creation inside a sandboxed `WebContentsView`.
+- **Clickable terminal links** — HTTP(S) URLs in terminal output open in a new in-app browser tab, while file references contained within the active workspace open directly in the editor.
+
+### Changed
+
+- **Linux-only release artifacts** — `0.2.4` is released as a Linux AppImage. Windows targets remain configured and covered by the shared validation workflow, but Windows binaries are not produced for this patch release.
+
+### Fixed
+
+- **Browser WebGL and hardware acceleration** — removed the legacy global hardware-acceleration disablement and redundant `--disable-gpu` switch so embedded browser tabs can use WebGL, WebGPU, GPU compositing, and accelerated rendering when supported by Chromium.
+
 ## [0.2.3] - 2026-07-03
 
 ### Added
@@ -174,7 +189,8 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/Bynzski/clanker/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Bynzski/clanker/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Bynzski/clanker/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Bynzski/clanker/compare/v0.2.0...v0.2.1

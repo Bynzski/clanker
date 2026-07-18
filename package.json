@@ -1,6 +1,6 @@
 {
   "name": "clanker-grid",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Developer workspace tool with terminal grid and web browser",
   "main": "dist/main/main/main.js",
   "author": "Jay (Bynzski) <Bynzski@proton.me>",
@@ -22,6 +22,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "diagnose:gpu": "electron scripts/gpu-smoke.cjs",
     "validate": "npm run lint && npm run typecheck && npm run security-check && npm run build && npm run test",
     "security-check": "npm audit --audit-level=high",
     "build:dist": "npm run build && electron-builder",

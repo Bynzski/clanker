@@ -92,7 +92,10 @@ src/
 npm run test          # Run all tests (Vitest)
 npm run test:watch    # Watch mode
 npm run test:coverage # With coverage report
+npm run diagnose:gpu  # Check hardware acceleration and sandboxed WebGL support
 ```
+
+The GPU diagnostic launches the installed Electron runtime with an isolated temporary profile. Run it on a desktop session when investigating browser rendering; it is intentionally not part of headless CI.
 
 **Important:** Always use `npm run test`, not bare `npm test`. The validation pipeline uses `npm run validate` which runs lint → typecheck → build → test.
 
