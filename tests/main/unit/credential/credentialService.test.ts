@@ -16,13 +16,21 @@
  */
 
 import assert from 'node:assert/strict';
-import { describe, test, beforeEach, afterEach } from 'vitest';
+import { describe, test, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
 
 import type { VcsProvider } from '../../../../src/shared/types/vcs';
+
+// Credential aggregation is tested here; provider HTTP validation is covered by
+// the provider tests. Keep fake PATs from reaching the real provider APIs.
+vi.mock('../../../../src/main/vcs/providerRegistry', () => ({
+  getProviderInstance: () => ({
+    validateToken: async () => false,
+  }),
+}));
 
 import {
   extractRemoteHostname,
