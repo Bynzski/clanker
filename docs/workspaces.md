@@ -44,31 +44,30 @@ Global harness defaults (model, favorites, flags) are configured in the header s
 | Action | Description |
 |--------|-------------|
 | **Fit All** | Reset panes to balanced sizes |
-| **Drag** | Rearrange panes via drag handle |
-| **Dock** | Drop onto edge to create a full-edge split |
-| **Dock (segmented)** | Target a specific pane on an edge to insert adjacent to it |
-| **Swap** | Drag to swap pane positions |
+| **Drag** | Rearrange terminals, Browser, Editor, Notes, and Explorer from their drag grip |
+| **Dock** | Drop onto a workspace edge or one side of a pane to create a split |
+| **Swap** | Drop onto the center of another pane to swap positions |
+| **Undo** | Restore the previous layout arrangement |
 
 ### Docking Panes
 
-When dragging a pane to an edge, Clanker Grid shows two types of drop targets:
+Dragging a pane reveals two levels of drop targets:
 
-- **Full-edge zone** — A prominent target on the outer edge of the layout. Dropping here creates a split that spans the full height (left/right) or width (top/bottom) of the adjacent edge column.
-- **Segment zones** — Smaller targets aligned to each pane's position along the active edge. Dropping on a segment inserts the dragged pane directly adjacent to that pane.
+- **Workspace edges** — Four bands along the outer edge. Dropping here creates a full-height or full-width split, with the moved pane initially taking 30% of the workspace.
+- **Pane zones** — Each pane has left, right, top, bottom, and center zones. Edge zones split that specific pane; the center swaps the two panes.
 
-Segment zones appear dynamically based on the current layout. Up to 4 segments are shown per edge. They are only visible during an active drag, and highlight when the cursor hovers over them.
+The preview rectangle shows the exact destination before the drop. Dragging uses a lightweight preview card, and native browser content is temporarily hidden so it cannot cover the docking targets.
 
 #### Dock behavior
 
 | Drop target | Result |
 |-------------|--------|
-| Full-edge zone | Full split along the edge column |
-| Segment zone | Pane inserted adjacent to the target pane |
-| Pane | Swapped with the target pane |
+| Workspace edge | Full split along the outer edge |
+| Pane edge | Pane inserted beside that specific pane |
+| Pane center | Pane positions swapped |
 
 ## Persistence
 
-Workspaces are restored on app restart:
-- Last workspace path
-- Terminal state
-- Layout preferences
+The app remembers the last workspace path. Layout topology and split sizes are stored separately for each workspace path and restored when the current pane set is compatible. Pane IDs are regenerated safely and are not persisted directly.
+
+Terminal processes and their runtime state are not reconstructed from layout persistence.

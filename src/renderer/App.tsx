@@ -9,6 +9,7 @@ import { Pane, Terminal, useWorkspaceStore, DEFAULT_RUNTIME_STATE } from './stor
 import { getZoomShortcutAction, isSaveShortcut } from './lib/keyboardShortcuts';
 import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
+import { persistWorkspaceLayout } from './lib/workspaceLayoutStorage';
 import './App.css';
 
 const WorkspaceHost = lazy(() => import('./components/WorkspaceHost'));
@@ -96,6 +97,15 @@ function App() {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => useWorkspaceStore.subscribe((state, previousState) => {
+    for (const workspace of state.workspaces) {
+      const previous = previousState.workspaces.find((entry) => entry.id === workspace.id);
+      if (previous?.layoutRoot !== workspace.layoutRoot) {
+        persistWorkspaceLayout(workspace);
+      }
+    }
+  }), []);
 
   const handleWorkspaceSelect = async (path: string, terminalCount: number, harness: string, model?: string) => {
     const terminals: Terminal[] = [];

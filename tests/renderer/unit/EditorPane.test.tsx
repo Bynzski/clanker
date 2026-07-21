@@ -63,7 +63,7 @@ vi.mock('@codemirror/theme-one-dark', () => ({
 }));
 
 vi.mock('../../../src/renderer/components/dragHandleContext', () => ({
-  useDragHandle: vi.fn().mockReturnValue({}),
+  useDragHandle: vi.fn().mockReturnValue({ 'data-drag-activator': 'true' }),
 }));
 
 // Import EditorPane AFTER mocks are set up
@@ -188,6 +188,8 @@ describe('EditorPane', () => {
       render(<EditorPane />);
       const dragHandle = document.querySelector('.editor-pane-drag-handle');
       expect(dragHandle).toBeTruthy();
+      expect(document.querySelector('.editor-pane-header .pane-drag-surface'))
+        .toHaveAttribute('data-drag-activator', 'true');
     });
 
     it('content area', () => {

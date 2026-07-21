@@ -95,8 +95,9 @@ migration off `syncActiveWorkspace`) is noted in `plans/workspace-residency-plan
 
 | Field | Invariant | Explanation |
 |-------|-----------|-------------|
-| `layoutRoot` | `null` ↔ `panes.length === 0 && !browserVisible && !editorVisible` | Layout only exists when there are visible panes |
-| `layoutRoot` | All pane IDs in tree exist in `panes[].id` ∪ `{browserPane?.id}` ∪ `{editorPane?.id}` | The layout tree only references valid pane IDs |
+| `layoutRoot` | `null` ↔ no terminal or Explorer/Browser/Editor/Notes pane is visible | Layout only exists when there are visible panes |
+| `layoutRoot` | All pane IDs in tree exist in `panes[].id` or the current Explorer/Browser/Editor/Notes pane | The layout tree only references valid pane IDs |
+| `layoutUndoStack` | Restored roots are reconciled with the current visible pane set | Undo cannot resurrect closed panes or orphan newly opened panes |
 
 **Why:** The `layoutRoot` is a tree of pane references. If a pane is referenced in the tree but doesn't exist in the panes array, rendering will fail. Conversely, orphaned panes (existing but not in the tree) would be invisible and waste resources.
 
@@ -141,9 +142,9 @@ The store's actions maintain these invariants internally:
 - `closeEditorTab` → updates `activeEditorTabId` if closing the active tab
 - `setPanes`, `addPane`, `removePane` → rebuilds `layoutRoot` via `buildWorkspaceLayout`
 
-### In Development (Step 10)
+### In Development
 
-A `validateWorkspaceConsistency()` function (see Step 10) will verify these invariants after every layout mutation in development builds, logging warnings if violations are detected.
+`validateWorkspaceConsistency()` verifies these invariants after layout mutations in development builds, logging warnings if violations are detected.
 
 ## Code Review Checklist
 
@@ -166,8 +167,10 @@ terminals[]
   └── activeTerminalId (points into terminals[])
 
 panes[] ─────────────────┐
+explorerPane?.id ─────────┤
 browserPane?.id ──────────┼──→ layoutRoot (tree of references)
-editorPane?.id ──────────┘
+editorPane?.id ───────────┤
+notesPane?.id ────────────┘
 
 editorTabs[]
   └── activeEditorTabId (points into editorTabs[])

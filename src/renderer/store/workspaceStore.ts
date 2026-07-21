@@ -8,6 +8,7 @@ import {
   insertPaneAtEdgeGapInLayout,
   insertPaneAtEdgeSegmentInLayout,
   insertPaneIntoLayout,
+  movePaneInLayout,
   normalizeLayoutRoot,
   normalizePosition,
   removePaneFromLayout,
@@ -57,6 +58,7 @@ import {
   withWorkspaceResourcePolicy,
 } from './workspaceStoreHelpers';
 import { preserveOriginalLineEndings } from '../lib/lineEndings';
+import { restoreWorkspaceLayout } from '../lib/workspaceLayoutStorage';
 import {
   readStoredNotesVisible,
   writeStoredNotesVisible,
@@ -66,6 +68,7 @@ export type {
   BrowserPaneState,
   EditorPaneState,
   EditorTab,
+  ExplorerPaneState,
   GridViewport,
   LayoutLeaf,
   LayoutNode,
@@ -77,7 +80,7 @@ export type {
   WorkspaceTab,
 } from './workspaceTypes';
 
-export type { DockEdge, EdgeGap, EdgeTerminal } from './workspaceLayout';
+export type { DockEdge, EdgeGap, EdgeTerminal, PaneDropTarget } from './workspaceLayout';
 export { getEdgeTerminals } from './workspaceLayout';
 
 export * from './workspaceStoreHelpers';
@@ -100,11 +103,11 @@ export * from './workspaceStoreHelpers';
  * @invariant activeTerminalId !== null -> terminals.some(t => t.id === activeTerminalId)
  *   The active terminal ID always references an existing terminal.
  *
- * @invariant layoutRoot === null - panes.length === 0 && !browserVisible && !editorVisible && !notesVisible
+ * @invariant layoutRoot === null - panes.length === 0 && !explorerVisible && !browserVisible && !editorVisible && !notesVisible
  *   The layout tree only exists when there are visible panes.
  *
  * @invariant layoutRoot !== null -> all pane IDs in layoutRoot exist in
- *   panes[].id ∪ {browserPane?.id} ∪ {editorPane?.id} ∪ {notesPane?.id}
+ *   panes[].id ∪ {explorerPane?.id} ∪ {browserPane?.id} ∪ {editorPane?.id} ∪ {notesPane?.id}
  *   The layout tree only references valid pane IDs.
  *
  * @invariant activeEditorTabId === null - editorTabs.length === 0
@@ -131,11 +134,37 @@ const defaultWorkspaceState = {
   ...createDefaultNotesState(),
   gridViewport: { cols: GRID_COLS, rows: GRID_ROWS },
   layoutRevision: 0,
+  layoutUndoStack: [] as LayoutNode[],
   pendingEditorOperations: {} as Record<string, string>,
   gitCurrentBranch: null as string | null,
   gitIsRepo: false,
   gitIsDetached: false,
 };
+
+const MAX_LAYOUT_UNDO_DEPTH = 20;
+
+function patchWorkspaceLayout(
+  state: WorkspaceState,
+  workspace: WorkspaceTab,
+  nextLayoutRoot: LayoutNode | null,
+  recordUndo = true,
+): Partial<WorkspaceState> | WorkspaceState {
+  if (nextLayoutRoot === workspace.layoutRoot) {
+    return state;
+  }
+
+  const nextUndoStack = recordUndo && workspace.layoutRoot
+    ? [...(workspace.layoutUndoStack ?? []), workspace.layoutRoot].slice(-MAX_LAYOUT_UNDO_DEPTH)
+    : [...(workspace.layoutUndoStack ?? [])];
+  const nextRevision = (workspace.layoutRevision ?? 0) + 1;
+
+  return patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
+    ...currentWorkspace,
+    layoutRoot: nextLayoutRoot,
+    layoutRevision: nextRevision,
+    layoutUndoStack: nextUndoStack,
+  }));
+}
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   ...defaultWorkspaceState,
@@ -150,7 +179,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const restoredNotesPane = storedNotesVisible
       ? workspace.notesPane ?? { id: generateId('notes') }
       : workspace.notesPane ?? null;
-    const nextWorkspace: WorkspaceTab = sanitizeWorkspace({
+    const nextWorkspace: WorkspaceTab = restoreWorkspaceLayout(sanitizeWorkspace({
       ...createDefaultExplorerState(),
       ...createDefaultEditorState(),
       ...createDefaultNotesState(),
@@ -160,7 +189,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       name: defaultName,
       notesVisible: workspace.notesVisible ?? storedNotesVisible,
       notesPane: restoredNotesPane,
-    });
+    }));
     const nextWorkspaces = assignWorkspaceLifecycles([...state.workspaces, nextWorkspace], id);
 
     const nextState = {
@@ -335,6 +364,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const nextLayoutRoot = paneExists
       ? normalizeLayoutRoot(state.layoutRoot, {
           panes: nextPanes,
+          explorerPane: state.explorerPane,
+          explorerVisible: state.explorerVisible,
           browserPane: state.browserPane,
           browserVisible: state.browserVisible,
           editorPane: state.editorPane,
@@ -344,6 +375,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         })
       : insertPaneIntoLayout(state.layoutRoot, nextPane.id, {
           panes: state.panes,
+          explorerPane: state.explorerPane,
+          explorerVisible: state.explorerVisible,
           browserPane: state.browserPane,
           browserVisible: state.browserVisible,
           editorPane: state.editorPane,
@@ -452,6 +485,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         if (state.browserVisible) {
           nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, browserId, {
             panes: state.panes,
+            explorerPane: state.explorerPane,
+            explorerVisible: state.explorerVisible,
             browserPane: nextBrowserPane,
             browserVisible: true,
             editorPane: state.editorPane,
@@ -465,6 +500,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           if (!currentIds.includes(browserId)) {
             nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, browserId, {
               panes: state.panes,
+              explorerPane: state.explorerPane,
+              explorerVisible: state.explorerVisible,
               browserPane: nextBrowserPane,
               browserVisible: true,
               editorPane: state.editorPane,
@@ -510,6 +547,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       if (!currentIds.includes(notesId)) {
         nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, notesId, {
           panes: state.panes,
+          explorerPane: state.explorerPane,
+          explorerVisible: state.explorerVisible,
           browserPane: state.browserPane,
           browserVisible: state.browserVisible,
           editorPane: state.editorPane,
@@ -833,14 +872,30 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   }),
 
   setExplorerVisible: (visible, workspaceId) => set((state) => {
-    const scopedWorkspaceId = resolveWorkspaceIdByScope(state, workspaceId);
-    if (scopedWorkspaceId == null) {
+    const workspace = resolveWorkspaceByScope(state, workspaceId);
+    if (
+      workspace == null
+      || (workspace.explorerVisible === visible && (!visible || workspace.explorerPane != null))
+    ) {
       return state;
     }
 
-    return patchWorkspaceById(state, scopedWorkspaceId, (workspace) => ({
-      ...workspace,
+    const explorerPane = workspace.explorerPane ?? { id: generateId('explorer') };
+    const nextLayoutRoot = visible
+      ? insertPaneIntoLayout(workspace.layoutRoot, explorerPane.id, {
+          ...workspace,
+          explorerPane,
+          explorerVisible: true,
+          notesPane: workspace.notesPane ?? null,
+          notesVisible: workspace.notesVisible ?? false,
+        })
+      : removePaneFromLayout(workspace.layoutRoot, explorerPane.id);
+    return patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
+      ...currentWorkspace,
       explorerVisible: visible,
+      explorerPane,
+      layoutRoot: nextLayoutRoot,
+      layoutRevision: (currentWorkspace.layoutRevision ?? 0) + 1,
     }));
   }),
 
@@ -981,13 +1036,28 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }));
   }),
 
-  resetExplorerState: () => set((state) => ({
-    ...createDefaultExplorerState(),
-    ...syncActiveWorkspace(state, (workspace) => ({
-      ...workspace,
-      ...createDefaultExplorerState(),
-    })),
-  })),
+  resetExplorerState: () => set((state) => {
+    const defaults = createDefaultExplorerState();
+    const explorerPaneId = state.explorerPane?.id;
+    const nextLayoutRoot = explorerPaneId
+      ? removePaneFromLayout(state.layoutRoot, explorerPaneId)
+      : state.layoutRoot;
+    const nextLayoutRevision = nextLayoutRoot === state.layoutRoot
+      ? state.layoutRevision
+      : state.layoutRevision + 1;
+
+    return {
+      ...defaults,
+      layoutRoot: nextLayoutRoot,
+      layoutRevision: nextLayoutRevision,
+      ...syncActiveWorkspace(state, (workspace) => ({
+        ...workspace,
+        ...defaults,
+        layoutRoot: nextLayoutRoot,
+        layoutRevision: nextLayoutRevision,
+      })),
+    };
+  }),
 
   setShowHiddenFiles: (show, workspaceId) => set((state) => {
     const workspace = resolveWorkspaceByScope(state, workspaceId);
@@ -1041,6 +1111,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     panes,
     layoutRoot: buildWorkspaceLayout({
       panes,
+      explorerVisible: state.explorerVisible,
+      explorerPane: state.explorerPane,
       browserVisible: state.browserVisible,
       browserPane: state.browserPane,
       editorVisible: state.editorVisible,
@@ -1054,6 +1126,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       panes,
       layoutRoot: buildWorkspaceLayout({
         panes,
+        explorerVisible: state.explorerVisible,
+        explorerPane: state.explorerPane,
         browserVisible: state.browserVisible,
         browserPane: state.browserPane,
         editorVisible: state.editorVisible,
@@ -1070,6 +1144,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const nextPanes = [...state.panes, nextPane];
     const nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, nextPane.id, {
       panes: state.panes,
+      explorerPane: state.explorerPane,
+      explorerVisible: state.explorerVisible,
       browserPane: state.browserPane,
       browserVisible: state.browserVisible,
       editorPane: state.editorPane,
@@ -1173,63 +1249,48 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   }),
 
   resetLayout: () => set((state) => {
+    const workspace = resolveWorkspaceByScope(state);
+    if (workspace == null) return state;
     const nextLayout = buildWorkspaceLayout({
-      panes: state.panes,
-      browserVisible: state.browserVisible,
-      browserPane: state.browserPane,
-      editorVisible: state.editorVisible,
-      editorPane: state.editorPane,
-      notesVisible: state.notesVisible,
-      notesPane: state.notesPane,
+      ...workspace,
+      explorerPane: workspace.explorerPane ?? null,
+      notesPane: workspace.notesPane ?? null,
+      notesVisible: workspace.notesVisible ?? false,
       layoutRoot: null,
     });
-
-    const nextState = {
-      layoutRoot: nextLayout,
-      layoutRevision: state.layoutRevision + 1,
-      ...syncActiveWorkspace(state, (workspace) => ({
-        ...workspace,
-        layoutRoot: nextLayout,
-      })),
-    };
-    if (import.meta.env.DEV) {
-      const warnings = validateWorkspaceConsistency(nextState);
-      if (warnings.length > 0) {
-        console.warn('[Dev Only] Workspace consistency violation after resetLayout:', warnings);
-      }
-    }
-
-    return nextState;
+    return patchWorkspaceLayout(state, workspace, nextLayout);
   }),
 
-  fitAllPanes: () => set((state) => {
-    const nextLayout = buildWorkspaceLayout({
-      panes: state.panes,
-      browserVisible: state.browserVisible,
-      browserPane: state.browserPane,
-      editorVisible: state.editorVisible,
-      editorPane: state.editorPane,
-      notesVisible: state.notesVisible,
-      notesPane: state.notesPane,
-      layoutRoot: null,
+  fitAllPanes: () => get().resetLayout(),
+
+  movePane: (paneId, target, workspaceId) => set((state) => {
+    const workspace = resolveWorkspaceByScope(state, workspaceId);
+    if (workspace == null) return state;
+    return patchWorkspaceLayout(
+      state,
+      workspace,
+      movePaneInLayout(workspace.layoutRoot, paneId, target),
+    );
+  }),
+
+  undoLayout: (workspaceId) => set((state) => {
+    const workspace = resolveWorkspaceByScope(state, workspaceId);
+    if (workspace == null) return state;
+    const undoStack = workspace.layoutUndoStack ?? [];
+    const previousLayout = undoStack[undoStack.length - 1];
+    if (previousLayout == null) return state;
+    const reconciledLayout = normalizeLayoutRoot(previousLayout, {
+      ...workspace,
+      explorerPane: workspace.explorerPane ?? null,
+      notesPane: workspace.notesPane ?? null,
+      notesVisible: workspace.notesVisible ?? false,
     });
-
-    const nextState = {
-      layoutRoot: nextLayout,
-      layoutRevision: state.layoutRevision + 1,
-      ...syncActiveWorkspace(state, (workspace) => ({
-        ...workspace,
-        layoutRoot: nextLayout,
-      })),
-    };
-    if (import.meta.env.DEV) {
-      const warnings = validateWorkspaceConsistency(nextState);
-      if (warnings.length > 0) {
-        console.warn('[Dev Only] Workspace consistency violation after fitAllPanes:', warnings);
-      }
-    }
-
-    return nextState;
+    return patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
+      ...currentWorkspace,
+      layoutRoot: reconciledLayout,
+      layoutRevision: (currentWorkspace.layoutRevision ?? 0) + 1,
+      layoutUndoStack: undoStack.slice(0, -1),
+    }));
   }),
 
 
@@ -1240,25 +1301,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
-    const nextLayoutRoot = swapPaneIdsInLayout(workspace.layoutRoot, a, b);
-
-
-    const nextState = {
-      layoutRoot: nextLayoutRoot,
-      layoutRevision: state.layoutRevision + 1,
-      ...patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
-        ...currentWorkspace,
-        layoutRoot: nextLayoutRoot,
-      })),
-    };
-    if (import.meta.env.DEV) {
-      const warnings = validateWorkspaceConsistency(nextState);
-      if (warnings.length > 0) {
-        console.warn('[Dev Only] Workspace consistency violation after swapPanes:', warnings);
-      }
-    }
-
-    return nextState;
+    return patchWorkspaceLayout(state, workspace, swapPaneIdsInLayout(workspace.layoutRoot, a, b));
   }),
 
   dockPaneToEdge: (paneId, edge, workspaceId) => set((state) => {
@@ -1267,28 +1310,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
-    const nextLayoutRoot = dockPaneToEdgeInLayout(workspace.layoutRoot, paneId, edge);
-    if (nextLayoutRoot === workspace.layoutRoot) {
-      return state;
-    }
-
-
-    const nextState = {
-      layoutRoot: nextLayoutRoot,
-      layoutRevision: state.layoutRevision + 1,
-      ...patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
-        ...currentWorkspace,
-        layoutRoot: nextLayoutRoot,
-      })),
-    };
-    if (import.meta.env.DEV) {
-      const warnings = validateWorkspaceConsistency(nextState);
-      if (warnings.length > 0) {
-        console.warn('[Dev Only] Workspace consistency violation after dockPaneToEdge:', warnings);
-      }
-    }
-
-    return nextState;
+    return patchWorkspaceLayout(state, workspace, dockPaneToEdgeInLayout(workspace.layoutRoot, paneId, edge));
   }),
 
   insertPaneAtEdgeGap: (paneId, edge, gapIndex, workspaceId) => set((state) => {
@@ -1297,27 +1319,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
-    const nextLayoutRoot = insertPaneAtEdgeGapInLayout(workspace.layoutRoot, paneId, edge, gapIndex);
-    if (nextLayoutRoot === workspace.layoutRoot) {
-      return state;
-    }
-
-    const nextState = {
-      layoutRoot: nextLayoutRoot,
-      layoutRevision: state.layoutRevision + 1,
-      ...patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
-        ...currentWorkspace,
-        layoutRoot: nextLayoutRoot,
-      })),
-    };
-    if (import.meta.env.DEV) {
-      const warnings = validateWorkspaceConsistency(nextState);
-      if (warnings.length > 0) {
-        console.warn('[Dev Only] Workspace consistency violation after insertPaneAtEdgeGap:', warnings);
-      }
-    }
-
-    return nextState;
+    return patchWorkspaceLayout(
+      state,
+      workspace,
+      insertPaneAtEdgeGapInLayout(workspace.layoutRoot, paneId, edge, gapIndex),
+    );
   }),
 
   insertPaneAtEdgeSegment: (paneId, edge, targetPaneId, workspaceId) => set((state) => {
@@ -1326,27 +1332,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
-    const nextLayoutRoot = insertPaneAtEdgeSegmentInLayout(workspace.layoutRoot, paneId, edge, targetPaneId);
-    if (nextLayoutRoot === workspace.layoutRoot) {
-      return state;
-    }
-
-    const nextState = {
-      layoutRoot: nextLayoutRoot,
-      layoutRevision: state.layoutRevision + 1,
-      ...patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
-        ...currentWorkspace,
-        layoutRoot: nextLayoutRoot,
-      })),
-    };
-    if (import.meta.env.DEV) {
-      const warnings = validateWorkspaceConsistency(nextState);
-      if (warnings.length > 0) {
-        console.warn('[Dev Only] Workspace consistency violation after insertPaneAtEdgeSegment:', warnings);
-      }
-    }
-
-    return nextState;
+    return patchWorkspaceLayout(
+      state,
+      workspace,
+      insertPaneAtEdgeSegmentInLayout(workspace.layoutRoot, paneId, edge, targetPaneId),
+    );
   }),
 
   setSplitRatio: (nodeId, ratio, workspaceId) => set((state) => {
@@ -1355,24 +1345,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
-    const nextLayoutRoot = setSplitRatioInLayout(workspace.layoutRoot, nodeId, ratio);
-
-
-    const nextState = {
-      layoutRoot: nextLayoutRoot,
-      layoutRevision: state.layoutRevision + 1,
-      ...patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
-        ...currentWorkspace,
-        layoutRoot: nextLayoutRoot,
-      })),
-    };
-    if (import.meta.env.DEV) {
-      const warnings = validateWorkspaceConsistency(nextState);
-      if (warnings.length > 0) {
-        console.warn('[Dev Only] Workspace consistency violation after setSplitRatio:', warnings);
-      }
-    }
-    return nextState;
+    return patchWorkspaceLayout(
+      state,
+      workspace,
+      setSplitRatioInLayout(workspace.layoutRoot, nodeId, ratio),
+    );
   }),
 
   openFileInEditor: async (filePath, workspaceId) => {
@@ -1446,12 +1423,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         const nextLayoutRoot = shouldInsertEditorPane
           ? insertPaneIntoLayout(latestWorkspace.layoutRoot, nextEditorPane.id, {
               panes: latestWorkspace.panes,
+              explorerPane: latestWorkspace.explorerPane ?? null,
+              explorerVisible: latestWorkspace.explorerVisible,
               browserPane: latestWorkspace.browserPane,
               browserVisible: latestWorkspace.browserVisible,
               editorPane: nextEditorPane,
               editorVisible: true,
-              notesPane: latestWorkspace.notesPane,
-              notesVisible: latestWorkspace.notesVisible,
+              notesPane: latestWorkspace.notesPane ?? null,
+              notesVisible: latestWorkspace.notesVisible ?? false,
               activeTerminalId: latestWorkspace.activeTerminalId,
             })
           : latestWorkspace.layoutRoot;
@@ -1665,6 +1644,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       if (!state.editorVisible) {
         nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, editorId, {
           panes: state.panes,
+          explorerPane: state.explorerPane,
+          explorerVisible: state.explorerVisible,
           browserPane: state.browserPane,
           browserVisible: state.browserVisible,
           editorPane: nextEditorPane,

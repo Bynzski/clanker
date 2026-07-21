@@ -3,6 +3,7 @@ import type {
   BrowserTab,
   EditorPaneState,
   EditorTab,
+  ExplorerPaneState,
   GridViewport,
   LayoutNode,
   NotesPaneState,
@@ -61,6 +62,7 @@ export interface WorkspaceState {
   /** @invariant null - terminals.length === 0 */
   activeTerminalId: string | null;
   browserPane: BrowserPaneState | null;
+  explorerPane: ExplorerPaneState | null;
   /** @invariant null - panes.length === 0 && !browserVisible && !editorVisible && !notesVisible */
   layoutRoot: LayoutNode | null;
   explorerVisible: boolean;
@@ -82,6 +84,7 @@ export interface WorkspaceState {
   activeWorkspaceLifecycle: WorkspaceLifecycleState | null;
   gridViewport: GridViewport;
   layoutRevision: number;
+  layoutUndoStack: LayoutNode[];
 
   editorVisible: boolean;
   editorPane: EditorPaneState | null;
@@ -160,6 +163,8 @@ export interface WorkspaceState {
   setGridViewport: (viewport: GridViewport) => void;
   resetLayout: () => void;
   fitAllPanes: () => void;
+  movePane: (paneId: string, target: import('./workspaceLayout').PaneDropTarget, workspaceId?: string) => void;
+  undoLayout: (workspaceId?: string) => void;
   swapPanes: (a: string, b: string, workspaceId?: string) => void;
   dockPaneToEdge: (paneId: string, edge: 'left' | 'right' | 'top' | 'bottom', workspaceId?: string) => void;
   insertPaneAtEdgeGap: (paneId: string, edge: 'left' | 'right' | 'top' | 'bottom', gapIndex: number, workspaceId?: string) => void;
@@ -199,7 +204,10 @@ export type ActiveWorkspaceSnapshot = Pick<
   | 'activeTerminalId'
   | 'browserPane'
   | 'layoutRoot'
+  | 'layoutRevision'
+  | 'layoutUndoStack'
   | 'explorerVisible'
+  | 'explorerPane'
   | 'explorerSidebarWidth'
   | 'explorerExpandedPaths'
   | 'explorerSelectedPath'

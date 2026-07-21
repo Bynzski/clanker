@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'node:path';
 import { useWorkspaceStore, assignWorkspaceLifecycles, getEdgeTerminals } from '../../../src/renderer/store/workspaceStore';
+import { collectLeafPaneIds } from '../../../src/renderer/store/workspaceLayout';
 import type { LayoutSplit, Terminal, Pane, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
+import { persistWorkspaceLayout } from '../../../src/renderer/lib/workspaceLayoutStorage';
 
 // Platform-neutral path constants for test fixtures
 const TEST_HOME_USER = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user');
@@ -30,6 +32,7 @@ function resetStore() {
     browserPane: null,
     layoutRoot: null,
     explorerVisible: false,
+    explorerPane: null,
     explorerSidebarWidth: 280,
     explorerExpandedPaths: [],
     explorerSelectedPath: null,
@@ -42,6 +45,7 @@ function resetStore() {
     activeWorkspaceLifecycle: null,
     gridViewport: { cols: 12, rows: 8 },
     layoutRevision: 0,
+    layoutUndoStack: [],
     editorVisible: false,
     editorPane: null,
     notesVisible: false,
@@ -115,6 +119,90 @@ describe('workspace lifecycle', () => {
   it('addWorkspace creates a layout from workspace panes', () => {
     const state = addWorkspace();
     expect(state.layoutRoot).not.toBeNull();
+  });
+
+  it('addWorkspace recreates utility panes referenced by the persisted layout', () => {
+    const persisted = createWorkspaceFixture({
+      workspacePath: '/restored-utility-layout',
+      explorerVisible: true,
+      explorerPane: { id: 'saved-explorer' },
+      browserVisible: true,
+      browserPane: {
+        id: 'saved-browser',
+        position: { x: 0, y: 0, w: 6, h: 6 },
+        tabs: [{
+          id: 'saved-browser-tab',
+          url: 'https://example.com',
+          title: 'Example',
+          canGoBack: false,
+          canGoForward: false,
+        }],
+        activeTabId: 'saved-browser-tab',
+      },
+      editorVisible: true,
+      editorPane: { id: 'saved-editor' },
+      notesVisible: true,
+      notesPane: { id: 'saved-notes' },
+      layoutRoot: {
+        type: 'split',
+        nodeId: 'saved-root',
+        orientation: 'horizontal',
+        ratio: 0.25,
+        first: { type: 'leaf', nodeId: 'saved-explorer-leaf', paneId: 'saved-explorer' },
+        second: {
+          type: 'split',
+          nodeId: 'saved-content',
+          orientation: 'vertical',
+          ratio: 0.5,
+          first: { type: 'leaf', nodeId: 'saved-terminal-leaf', paneId: 'pane-1' },
+          second: {
+            type: 'split',
+            nodeId: 'saved-utilities',
+            orientation: 'horizontal',
+            ratio: 0.5,
+            first: { type: 'leaf', nodeId: 'saved-browser-leaf', paneId: 'saved-browser' },
+            second: {
+              type: 'split',
+              nodeId: 'saved-editor-notes',
+              orientation: 'vertical',
+              ratio: 0.5,
+              first: { type: 'leaf', nodeId: 'saved-editor-leaf', paneId: 'saved-editor' },
+              second: { type: 'leaf', nodeId: 'saved-notes-leaf', paneId: 'saved-notes' },
+            },
+          },
+        },
+      },
+    });
+    persistWorkspaceLayout(persisted);
+
+    const state = addWorkspace({
+      workspacePath: persisted.workspacePath,
+      explorerVisible: false,
+      explorerPane: null,
+      browserVisible: false,
+      browserPane: null,
+      editorVisible: false,
+      editorPane: null,
+      notesVisible: false,
+      notesPane: null,
+      layoutRoot: null,
+    });
+
+    expect(state.explorerVisible).toBe(true);
+    expect(state.browserVisible).toBe(true);
+    expect(state.editorVisible).toBe(true);
+    expect(state.notesVisible).toBe(true);
+    expect(state.explorerPane).not.toBeNull();
+    expect(state.browserPane).not.toBeNull();
+    expect(state.editorPane).not.toBeNull();
+    expect(state.notesPane).not.toBeNull();
+    expect(collectLeafPaneIds(state.layoutRoot)).toEqual([
+      state.explorerPane?.id,
+      'pane-1',
+      state.browserPane?.id,
+      state.editorPane?.id,
+      state.notesPane?.id,
+    ]);
   });
 
   it('selectWorkspace restores workspace snapshot', () => {
@@ -994,10 +1082,13 @@ describe('file explorer', () => {
 
     addWorkspace({ workspacePath: '/second', explorerVisible: true });
     getStore().setExplorerVisible(true);
+    const secondExplorerPaneId = getStore().explorerPane?.id;
     getStore().setExplorerSelectedPath('/second/package.json');
     getStore().resetExplorerState();
 
     expect(getStore().explorerVisible).toBe(false);
+    expect(getStore().explorerPane).toBeNull();
+    expect(collectLeafPaneIds(getStore().layoutRoot)).not.toContain(secondExplorerPaneId);
     expect(getStore().explorerSelectedPath).toBeNull();
 
     getStore().selectWorkspace(firstWorkspaceId);
@@ -1025,6 +1116,70 @@ describe('pane management', () => {
     const paneId = getStore().panes[0].id;
     getStore().removePane(paneId);
     expect(getStore().panes.find(p => p.id === paneId)).toBeUndefined();
+  });
+
+  it('moves panes through the canonical drop target and can undo the change', () => {
+    getStore().addTerminal(terminal('t2'));
+    const [firstPane, secondPane] = getStore().panes;
+    const originalLayout = getStore().layoutRoot;
+
+    getStore().movePane(secondPane.id, { kind: 'workspace-edge', edge: 'left' });
+
+    const movedLayout = getStore().layoutRoot as LayoutSplit;
+    expect(movedLayout.ratio).toBe(0.3);
+    expect(collectLeafPaneIds(movedLayout)).toEqual([secondPane.id, firstPane.id]);
+    expect(getStore().layoutUndoStack).toHaveLength(1);
+
+    getStore().undoLayout();
+
+    expect(getStore().layoutRoot).toEqual(originalLayout);
+    expect(getStore().layoutUndoStack).toHaveLength(0);
+  });
+
+  it('keeps a scoped layout move isolated from the active workspace mirror', () => {
+    getStore().addTerminal(terminal('t2'));
+    const parkedWorkspaceId = getStore().activeWorkspaceId!;
+    const parkedPaneIds = getStore().panes.map((pane) => pane.id);
+
+    addWorkspace({ workspacePath: '/second' });
+    const activeLayout = getStore().layoutRoot;
+
+    getStore().movePane(
+      parkedPaneIds[1],
+      { kind: 'workspace-edge', edge: 'left' },
+      parkedWorkspaceId,
+    );
+
+    expect(getStore().layoutRoot).toBe(activeLayout);
+    const parkedWorkspace = getStore().workspaces.find((workspace) => workspace.id === parkedWorkspaceId)!;
+    expect(collectLeafPaneIds(parkedWorkspace.layoutRoot)).toEqual([
+      parkedPaneIds[1],
+      parkedPaneIds[0],
+    ]);
+  });
+
+  it('inserts and removes Explorer as a first-class layout leaf', () => {
+    getStore().setExplorerVisible(true);
+
+    const explorerPaneId = getStore().explorerPane?.id;
+    expect(explorerPaneId).toBeTruthy();
+    expect(collectLeafPaneIds(getStore().layoutRoot)).toContain(explorerPaneId);
+
+    getStore().setExplorerVisible(false);
+
+    expect(getStore().explorerVisible).toBe(false);
+    expect(collectLeafPaneIds(getStore().layoutRoot)).not.toContain(explorerPaneId);
+  });
+
+  it('preserves the Explorer leaf when terminal panes are normalized', () => {
+    getStore().setExplorerVisible(true);
+    const explorerPaneId = getStore().explorerPane!.id;
+
+    getStore().setPanes([...getStore().panes]);
+    expect(collectLeafPaneIds(getStore().layoutRoot)).toContain(explorerPaneId);
+
+    getStore().addTerminal({ ...getStore().terminals[0] });
+    expect(collectLeafPaneIds(getStore().layoutRoot)).toContain(explorerPaneId);
   });
 
   it('updatePanePosition normalizes and applies position', () => {

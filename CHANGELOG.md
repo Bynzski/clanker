@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-07-21
+
+### Added
+
+- **First-class pane docking** — terminals, Browser, Editor, Notes, and Explorer can be moved to workspace edges or split beside a specific pane, with center-drop swapping and an exact destination preview.
+- **Layout undo and persistence** — pane moves and splitter resizing can be undone, while layout topology and split ratios are restored per workspace path across app launches.
+
+### Changed
+
+- **Larger pane drag surfaces** — pane headers now provide a generous, consistent drag target while preserving interactive controls.
+- **Linux-only release artifact** — `0.2.5` is released as a Linux AppImage. Windows remains covered by the shared validation workflow, but no Windows binary is produced for this patch release.
+
+### Fixed
+
+- **Browser alignment while zoomed** — native browser bounds now account for renderer zoom independently from monitor scaling, keeping embedded content aligned with its placeholder.
+- **Explorer layout consistency** — legacy workspace restoration, state resets, and layout normalization preserve Explorer visibility without orphaned or missing leaves.
+- **Persisted utility-pane layouts** — reopening a workspace regenerates runtime state for saved Browser, Explorer, Editor, and Notes leaves instead of destructively collapsing their topology.
+- **Splitter undo rendering** — restoring a saved split ratio now updates mounted panel groups without generating phantom undo entries.
+- **Windows layout keys** — workspace paths with equivalent casing map to the same persisted-layout key on Windows.
+
+### Security
+
+- **Dependency audit cleanup** — refreshed vulnerable transitive dependencies so `npm audit --audit-level=high` reports zero vulnerabilities.
+
 ## [0.2.4] - 2026-07-17
 
 ### Added

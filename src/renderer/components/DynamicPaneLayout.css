@@ -114,7 +114,6 @@
 }
 
 .dock-edge-overlay.dragging {
-  pointer-events: auto;
   opacity: 1;
 }
 
@@ -151,34 +150,32 @@
 
 .dock-left,
 .dock-right {
-  top: 50%;
-  width: 52px;
-  height: 116px;
-  transform: translateY(-50%);
+  top: 8px;
+  bottom: 8px;
+  width: 30px;
 }
 
 .dock-left {
-  left: 96px;
+  left: 6px;
 }
 
 .dock-right {
-  right: 96px;
+  right: 6px;
 }
 
 .dock-top,
 .dock-bottom {
-  left: 50%;
-  height: 42px;
-  width: 150px;
-  transform: translateX(-50%);
+  left: 8px;
+  right: 8px;
+  height: 30px;
 }
 
 .dock-top {
-  top: 62px;
+  top: 6px;
 }
 
 .dock-bottom {
-  bottom: 62px;
+  bottom: 6px;
 }
 
 .dock-edge-label {
@@ -203,95 +200,6 @@
   align-self: center;
 }
 
-/* Segmented edge zones aligned to the actual pane spans on each edge.
-   Inline styles provide top/height for left/right and left/width for top/bottom. */
-.dock-segment {
-  position: absolute;
-  pointer-events: auto;
-  opacity: 0;
-  border: 1px solid rgba(139, 148, 158, 0.3);
-  border-radius: var(--radius-sm);
-  transition:
-    opacity 120ms ease-out,
-    background-color 120ms ease-out,
-    border-color 120ms ease-out,
-    box-shadow 120ms ease-out,
-    transform 120ms ease-out;
-  z-index: 10002;
-}
-
-.dock-edge-overlay:not(.dragging) .dock-segment {
-  display: none;
-}
-
-.dock-edge-overlay.dragging .dock-segment {
-  opacity: 0.6;
-  background: rgba(139, 148, 158, 0.08);
-  box-shadow:
-    inset 0 0 0 1px rgba(230, 237, 243, 0.05),
-    0 0 0 1px rgba(0, 0, 0, 0.16);
-}
-
-.dock-segment.over {
-  opacity: 1;
-  background: rgba(139, 148, 158, 0.24);
-  border-color: rgba(230, 237, 243, 0.48);
-  box-shadow:
-    inset 0 0 0 1px rgba(230, 237, 243, 0.22),
-    0 0 18px rgba(139, 148, 158, 0.32);
-}
-
-.dock-segment-left,
-.dock-segment-right {
-  width: 84px;
-  min-height: 18px;
-}
-
-.dock-segment-left { left: 6px; }
-.dock-segment-right { right: 6px; }
-
-.dock-segment-top,
-.dock-segment-bottom {
-  height: 54px;
-  min-width: 18px;
-}
-
-.dock-segment-top { top: 6px; }
-.dock-segment-bottom { bottom: 6px; }
-
-/* Preview line along the edge where the new pane enters the target span. */
-.dock-segment::before {
-  content: '';
-  position: absolute;
-  background: var(--accent-primary);
-  opacity: 0.6;
-  transition: opacity 120ms ease-out;
-}
-
-.dock-segment-left::before,
-.dock-segment-right::before {
-  top: 0;
-  bottom: 0;
-  width: 2px;
-}
-
-.dock-segment-left::before { left: 0; }
-.dock-segment-right::before { right: 0; }
-
-.dock-segment-top::before,
-.dock-segment-bottom::before {
-  left: 0;
-  right: 0;
-  height: 2px;
-}
-
-.dock-segment-top::before { top: 0; }
-.dock-segment-bottom::before { bottom: 0; }
-
-.dock-segment.over::before {
-  opacity: 1;
-}
-
 /* Draggable/Droppable pane styles */
 .draggable-droppable-pane {
   display: flex;
@@ -305,12 +213,97 @@
 }
 
 .draggable-droppable-pane.dragging {
-  opacity: 0.5;
+  opacity: 0.34;
 }
 
-.draggable-droppable-pane.drop-target {
-  outline: 2px dashed var(--accent-primary);
-  outline-offset: -2px;
+.draggable-droppable-pane::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  z-index: 8999;
+  border: 2px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  background: rgba(88, 166, 255, 0.2);
+  opacity: 0;
+  transition: opacity 90ms ease-out;
+}
+
+.draggable-droppable-pane.preview-left::after { inset: 4px 50% 4px 4px; opacity: 1; }
+.draggable-droppable-pane.preview-right::after { inset: 4px 4px 4px 50%; opacity: 1; }
+.draggable-droppable-pane.preview-top::after { inset: 4px 4px 50% 4px; opacity: 1; }
+.draggable-droppable-pane.preview-bottom::after { inset: 50% 4px 4px 4px; opacity: 1; }
+.draggable-droppable-pane.preview-center::after { inset: 10%; opacity: 1; }
+
+.pane-dock-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+  opacity: 0;
+  background: rgba(9, 12, 17, 0.16);
+  transition: opacity 90ms ease-out;
+}
+
+.pane-dock-overlay.active {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.pane-dock-zone {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(139, 148, 158, 0.13);
+  color: rgba(230, 237, 243, 0.62);
+  background: rgba(13, 17, 23, 0.18);
+  transition: background-color 90ms ease-out, border-color 90ms ease-out;
+}
+
+.pane-dock-zone span {
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: rgba(13, 17, 23, 0.72);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  opacity: 0.56;
+  pointer-events: none;
+}
+
+.pane-dock-zone.over {
+  border-color: rgba(88, 166, 255, 0.72);
+  background: rgba(88, 166, 255, 0.13);
+}
+
+.pane-dock-zone.over span { opacity: 1; color: white; }
+.pane-dock-zone.zone-left { inset: 0 75% 0 0; }
+.pane-dock-zone.zone-right { inset: 0 0 0 75%; }
+.pane-dock-zone.zone-top { inset: 0 25% 75% 25%; }
+.pane-dock-zone.zone-bottom { inset: 75% 25% 0 25%; }
+.pane-dock-zone.zone-center { inset: 25%; }
+
+.pane-drag-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 130px;
+  padding: 9px 12px;
+  border: 1px solid rgba(88, 166, 255, 0.7);
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: rgba(13, 17, 23, 0.94);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pane-drag-preview-grip {
+  width: 10px;
+  height: 14px;
+  border-left: 2px dotted rgba(230, 237, 243, 0.65);
+  border-right: 2px dotted rgba(230, 237, 243, 0.65);
 }
 
 .pane-content {
@@ -318,6 +311,23 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.pane-drag-surface {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+  cursor: grab;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  touch-action: none;
+}
+
+.pane-drag-surface:active {
+  cursor: grabbing;
 }
 
 .layout-pane-loading {
@@ -335,19 +345,8 @@
     linear-gradient(180deg, rgba(22, 27, 34, 0.96), rgba(13, 17, 23, 0.98));
 }
 
-/* Make headers draggable */
-.terminal-header,
-.browser-toolbar {
-  cursor: grab !important;
-}
-
-.terminal-header:active,
-.browser-toolbar:active {
-  cursor: grabbing !important;
-}
-
 .terminal-drag-handle,
-.browser-drag-handle {
+.browser-pane-drag-handle {
   width: 12px;
   height: 12px;
   flex-shrink: 0;
@@ -359,7 +358,13 @@
     radial-gradient(circle at 9px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px);
   opacity: 0.5;
   margin-right: 6px;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.terminal-drag-handle:active,
+.browser-pane-drag-handle:active {
+  cursor: grabbing;
 }
 
 .terminal-title {

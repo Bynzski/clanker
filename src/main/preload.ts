@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import { fileURLToPath } from 'node:url';
 import type { FileListDirectoryRequest } from '../shared/types/fileExplorer';
@@ -280,6 +280,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   zoomInWindow: () => ipcRenderer.invoke(ZOOM_IN_WINDOW),
   zoomOutWindow: () => ipcRenderer.invoke(ZOOM_OUT_WINDOW),
   resetZoomWindow: () => ipcRenderer.invoke(RESET_ZOOM_WINDOW),
+  getWindowZoomFactor: () => webFrame.getZoomFactor(),
 
   // Harness
   getHarnessOptions: () => ipcRenderer.invoke(GET_HARNESS_OPTIONS),

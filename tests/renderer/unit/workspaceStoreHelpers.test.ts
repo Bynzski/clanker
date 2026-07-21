@@ -31,6 +31,7 @@ import type { WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import type { GitStatus } from '../../../src/renderer/components/git/types';
 import type { BrowserPaneState, EditorPaneState, LayoutNode, Pane } from '../../../src/renderer/store/workspaceTypes';
 import { createWorkspaceFixture } from '../../setup/fixtures';
+import { collectLeafPaneIds } from '../../../src/renderer/store/workspaceLayout';
 
 /** Minimal type matching PendingEditorOperationsHolder for editor operation helper tests. */
 type EditorPendingState = { pendingEditorOperations: Record<string, string> };
@@ -275,6 +276,19 @@ describe('areGitStatusListsEqual', () => {
 // sanitizeWorkspace
 // ===========================================================================
 describe('sanitizeWorkspace', () => {
+  it('backfills a pane and layout leaf for a visible legacy Explorer', () => {
+    const workspace = makeWorkspace({
+      explorerVisible: true,
+      explorerPane: undefined,
+      layoutRoot: null,
+    });
+
+    const sanitized = sanitizeWorkspace(workspace);
+
+    expect(sanitized.explorerPane).not.toBeNull();
+    expect(collectLeafPaneIds(sanitized.layoutRoot)).toContain(sanitized.explorerPane?.id);
+  });
+
   it('clones arrays so mutations do not affect original', () => {
     const ws = makeWorkspace();
     const sanitized = sanitizeWorkspace(ws);
@@ -676,6 +690,8 @@ function makeMinimalState(overrides: Record<string, unknown> = {}): Record<strin
     terminals: [],
     layoutRoot: null,
     panes: [],
+    explorerVisible: false,
+    explorerPane: null,
     browserVisible: false,
     browserPane: null,
     editorVisible: false,
@@ -855,10 +871,10 @@ describe('validateWorkspaceConsistency', () => {
       );
     });
 
-    it('warns when layoutRoot is non-null but no panes exist and browser/editor/notes are invisible', () => {
+    it('warns when layoutRoot is non-null but no panes exist and utility panes are invisible', () => {
       const state = makeMinimalState({ layoutRoot: makeLeaf('orphan-pane'), panes: [], browserVisible: false, editorVisible: false, notesVisible: false });
       expect(validateWorkspaceConsistency(state)).toContain(
-        'L1 violated: layoutRoot is non-null but no panes exist and browser/editor/notes are invisible',
+        'L1 violated: layoutRoot is non-null but no panes exist and explorer/browser/editor/notes are invisible',
       );
     });
   });
@@ -896,11 +912,11 @@ describe('validateWorkspaceConsistency', () => {
       expect(validateWorkspaceConsistency(state)).toEqual([]);
     });
 
-    it('warns when layout references pane not in panes[], browserPane, editorPane, or notesPane', () => {
+    it('warns when layout references pane not in panes[] or a utility pane', () => {
       const pane: Pane = { id: 'pane-1', terminalId: null };
       const state = makeMinimalState({ layoutRoot: makeLeaf('ghost-pane'), panes: [pane] });
       expect(validateWorkspaceConsistency(state)).toContain(
-        'L2 violated: layout pane "ghost-pane" not found in panes[], browserPane, editorPane, or notesPane',
+        'L2 violated: layout pane "ghost-pane" not found in panes[], explorerPane, browserPane, editorPane, or notesPane',
       );
     });
   });

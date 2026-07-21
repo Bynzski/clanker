@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => {
       collisionDetection: noop as (...args: unknown[]) => unknown,
     },
     panelGroupOnLayoutChanged: { current: null as ((layout: Record<string, number>) => void) | null },
+    panelGroupSetLayout: vi.fn(),
     draggableReturn: {
       attributes: { role: 'button' as const, tabIndex: 0 },
       listeners: { onPointerDown: vi.fn() },
@@ -60,6 +61,7 @@ vi.mock('@dnd-kit/core', () => {
     DragOverlay: ({ children }: any) =>
       R.createElement('div', { 'data-testid': 'drag-overlay' }, children),
     PointerSensor: class PointerSensor {},
+    KeyboardSensor: class KeyboardSensor {},
     closestCorners: mocks.closestCorners,
     pointerWithin: mocks.pointerWithin,
     useSensor: vi.fn(() => ({})),
@@ -77,10 +79,20 @@ vi.mock('@dnd-kit/core', () => {
 vi.mock('react-resizable-panels', () => {
   const R = require('react');
   return {
-    Group: ({ children, onLayoutChanged, id, className, orientation }: any) => {
+    Group: ({ children, defaultLayout, groupRef, onLayoutChanged, id, className, orientation }: any) => {
+      const layoutRef = R.useRef({ ...defaultLayout });
       if (onLayoutChanged) {
         mocks.panelGroupOnLayoutChanged.current = onLayoutChanged;
       }
+      R.useImperativeHandle(groupRef, () => ({
+        getLayout: () => ({ ...layoutRef.current }),
+        setLayout: (layout: Record<string, number>) => {
+          layoutRef.current = { ...layout };
+          mocks.panelGroupSetLayout(layout);
+          onLayoutChanged?.(layout);
+          return layout;
+        },
+      }), [onLayoutChanged]);
       return R.createElement(
         'div',
         { 'data-testid': 'panel-group', 'data-orientation': orientation, 'data-id': id, className },
@@ -167,6 +179,7 @@ function setupStore(overrides: Record<string, unknown> = {}) {
     browserUrl: '',
     setBrowserUrl: vi.fn(),
     layoutRevision: 1,
+    movePane: vi.fn(),
     swapPanes: vi.fn(),
     dockPaneToEdge: vi.fn(),
     insertPaneAtEdgeGap: vi.fn(),
@@ -211,6 +224,7 @@ describe('DynamicPaneLayout', () => {
     mocks.dndCallbacks.onDragCancel = resetNoop;
     mocks.dndCallbacks.collisionDetection = resetNoop as (...args: unknown[]) => unknown;
     mocks.panelGroupOnLayoutChanged.current = null;
+    mocks.panelGroupSetLayout.mockReset();
     mocks.draggableReturn.transform = null;
   });
 
@@ -434,7 +448,7 @@ describe('DynamicPaneLayout', () => {
       expect(document.querySelector('.draggable-droppable-pane.dragging')).toBeTruthy();
     });
 
-    it('applies drop-target class when another pane is dragged over', () => {
+    it('applies a center preview when another pane is dragged over', () => {
       const layout = createSplit('s1', 'horizontal', 0.5,
         createLeaf('n1', 'p1'),
         createLeaf('n2', 'p2'),
@@ -449,20 +463,16 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragOver({ over: { id: 'drop-p2' } });
       });
 
-      expect(document.querySelector('.draggable-droppable-pane.drop-target')).toBeTruthy();
+      expect(document.querySelector('.draggable-droppable-pane.preview-center')).toBeTruthy();
     });
 
-    it('applies transform style when useDraggable returns transform', async () => {
+    it('does not transform expensive pane content while dragging', () => {
       mocks.draggableReturn.transform = { x: 10, y: 20, scaleX: 1, scaleY: 1 };
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);
 
-      await waitFor(() => {
-        const pane = document.querySelector('.draggable-droppable-pane');
-        expect(pane).toBeTruthy();
-        const style = (pane as HTMLElement).style;
-        expect(style.transform).toContain('translate3d');
-      });
+      const pane = document.querySelector('.draggable-droppable-pane') as HTMLElement;
+      expect(pane.style.transform).toBe('');
     });
 
     it('renders pane-content child', async () => {
@@ -584,9 +594,7 @@ describe('DynamicPaneLayout', () => {
       expect(groups.length).toBe(2);
     });
 
-    it('debounces setSplitRatio call after layout change', () => {
-      vi.useFakeTimers();
-
+    it('commits setSplitRatio when the completed layout changes', () => {
       const mockSetSplitRatio = vi.fn();
       const layout = createSplit('s1', 'horizontal', 0.5,
         createLeaf('n1', 'p1'),
@@ -595,21 +603,15 @@ describe('DynamicPaneLayout', () => {
       setupStoreWithLayout(layout, { setSplitRatio: mockSetSplitRatio });
       render(<DynamicPaneLayout />);
 
-      // Fire layout change
+      // The library reports its initialized layout before any user resize.
+      act(() => {
+        mocks.panelGroupOnLayoutChanged.current?.({ 's1-a': 50, 's1-b': 50 });
+      });
       act(() => {
         mocks.panelGroupOnLayoutChanged.current?.({ 's1-a': 60, 's1-b': 40 });
       });
 
-      // Not called yet (debounced 100ms)
-      expect(mockSetSplitRatio).not.toHaveBeenCalled();
-
-      act(() => {
-        vi.advanceTimersByTime(100);
-      });
-
       expect(mockSetSplitRatio).toHaveBeenCalledWith('s1', 0.6);
-
-      vi.useRealTimers();
     });
 
     it('does not call setSplitRatio when total is 0', () => {
@@ -624,6 +626,9 @@ describe('DynamicPaneLayout', () => {
       render(<DynamicPaneLayout />);
 
       act(() => {
+        mocks.panelGroupOnLayoutChanged.current?.({ 's1-a': 50, 's1-b': 50 });
+      });
+      act(() => {
         mocks.panelGroupOnLayoutChanged.current?.({ 's1-a': 0, 's1-b': 0 });
       });
       act(() => {
@@ -633,6 +638,50 @@ describe('DynamicPaneLayout', () => {
       expect(mockSetSplitRatio).not.toHaveBeenCalled();
 
       vi.useRealTimers();
+    });
+
+    it('ignores the initial layout callback without rounding persisted ratios', () => {
+      const mockSetSplitRatio = vi.fn();
+      const layout = createSplit('s1', 'horizontal', 0.623,
+        createLeaf('n1', 'p1'),
+        createLeaf('n2', 'p2'),
+      );
+      setupStoreWithLayout(layout, { setSplitRatio: mockSetSplitRatio });
+      render(<DynamicPaneLayout />);
+
+      act(() => {
+        mocks.panelGroupOnLayoutChanged.current?.({ 's1-a': 62.3, 's1-b': 37.7 });
+      });
+
+      expect(mockSetSplitRatio).not.toHaveBeenCalled();
+      expect(mocks.panelGroupSetLayout).not.toHaveBeenCalled();
+    });
+
+    it('applies restored ratios to a mounted group without recording another resize', async () => {
+      const mockSetSplitRatio = vi.fn();
+      const layout = createSplit('s1', 'horizontal', 0.5,
+        createLeaf('n1', 'p1'),
+        createLeaf('n2', 'p2'),
+      );
+      setupStoreWithLayout(layout, { setSplitRatio: mockSetSplitRatio });
+      render(<DynamicPaneLayout />);
+
+      act(() => {
+        mocks.panelGroupOnLayoutChanged.current?.({ 's1-a': 50, 's1-b': 50 });
+      });
+      act(() => {
+        useWorkspaceStore.setState({
+          layoutRoot: { ...layout, ratio: 0.7 },
+        });
+      });
+
+      await waitFor(() => {
+        expect(mocks.panelGroupSetLayout).toHaveBeenCalledWith({
+          's1-a': 70,
+          's1-b': 30,
+        });
+      });
+      expect(mockSetSplitRatio).not.toHaveBeenCalled();
     });
   });
 
@@ -726,93 +775,38 @@ describe('DynamicPaneLayout', () => {
       expect(document.querySelector('.dock-bottom')?.classList.contains('over')).toBe(true);
     });
 
-    it('renders one segmented target per edge pane (single-leaf layout)', () => {
-      setupStoreWithLayout(createLeaf('n1', 'p1'));
-      render(<DynamicPaneLayout />);
-
-      const segments = document.querySelectorAll('.dock-segment');
-      expect(segments.length).toBe(4);
-
-      for (const edge of ['left', 'right', 'top', 'bottom'] as const) {
-        const perEdge = document.querySelectorAll(`.dock-segment-${edge}`);
-        expect(perEdge.length).toBe(1);
-      }
-    });
-
-    it('renders segment targets with correct edge, segment, and target pane attributes', () => {
-      setupStoreWithLayout(createLeaf('n1', 'p1'));
-      render(<DynamicPaneLayout />);
-
-      const leftSegment = document.querySelector('.dock-segment-left');
-      expect(leftSegment?.getAttribute('data-edge')).toBe('left');
-      expect(leftSegment?.getAttribute('data-segment-index')).toBe('0');
-      expect(leftSegment?.getAttribute('data-target-pane-id')).toBe('p1');
-    });
-
-    it('segment targets carry inline span styles (top/height for left-right, left/width for top-bottom)', () => {
-      setupStoreWithLayout(createLeaf('n1', 'p1'));
-      render(<DynamicPaneLayout />);
-
-      const leftSegment = document.querySelector('.dock-segment-left') as HTMLElement | null;
-      expect(leftSegment).toBeTruthy();
-      expect(leftSegment!.style.top).not.toBe('');
-      expect(leftSegment!.style.height).not.toBe('');
-
-      const topSegment = document.querySelector('.dock-segment-top') as HTMLElement | null;
-      expect(topSegment).toBeTruthy();
-      expect(topSegment!.style.left).not.toBe('');
-      expect(topSegment!.style.width).not.toBe('');
-    });
-
-    it('renders one segment target for each edge terminal', () => {
-      // Layout: vertical(p1, vertical(p2, p3)) → left edge has 3 terminals.
-      const layout = createSplit(
-        's1',
-        'vertical',
-        0.5,
+    it('renders five pane-relative targets for every pane', () => {
+      const layout = createSplit('s1', 'horizontal', 0.5,
         createLeaf('n1', 'p1'),
-        createSplit('s2', 'vertical', 0.5, createLeaf('n2', 'p2'), createLeaf('n3', 'p3')),
+        createLeaf('n2', 'p2'),
       );
       setupStoreWithLayout(layout);
       render(<DynamicPaneLayout />);
 
-      const leftSegments = document.querySelectorAll('.dock-segment-left');
-      expect(leftSegments.length).toBe(3);
+      expect(document.querySelectorAll('.pane-dock-zone')).toHaveLength(10);
+      for (const zone of ['left', 'right', 'top', 'bottom', 'center']) {
+        expect(document.querySelectorAll(`.pane-dock-zone.zone-${zone}`)).toHaveLength(2);
+      }
     });
 
-    it('caps segment count per edge at MAX_SEGMENTS (4)', () => {
-      // Layout with 5 terminals stacked on left: vertical(A, vertical(B, vertical(C, vertical(D, E))))
-      // Left edge: 5 terminals, capped at 4 rendered segment targets.
-      const deepLeft = createSplit(
-        's1',
-        'vertical',
-        0.5,
+    it('shows a pane-relative split preview for an interior target', () => {
+      const layout = createSplit('s1', 'horizontal', 0.5,
         createLeaf('n1', 'p1'),
-        createSplit(
-          's2',
-          'vertical',
-          0.5,
-          createLeaf('n2', 'p2'),
-          createSplit(
-            's3',
-            'vertical',
-            0.5,
-            createLeaf('n3', 'p3'),
-            createSplit(
-              's4',
-              'vertical',
-              0.5,
-              createLeaf('n4', 'p4'),
-              createLeaf('n5', 'p5'),
-            ),
-          ),
-        ),
+        createLeaf('n2', 'p2'),
       );
-      setupStoreWithLayout(deepLeft);
+      setupStoreWithLayout(layout);
       render(<DynamicPaneLayout />);
 
-      const leftSegments = document.querySelectorAll('.dock-segment-left');
-      expect(leftSegments.length).toBe(4);
+      act(() => mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } }));
+      act(() => mocks.dndCallbacks.onDragOver({
+        over: {
+          id: 'pane-drop-left-p2',
+          data: { current: { intent: { kind: 'pane-edge', targetPaneId: 'p2', edge: 'left' } } },
+        },
+      }));
+
+      expect(document.querySelector('.draggable-droppable-pane.preview-left')).toBeTruthy();
+      expect(document.querySelector('.pane-dock-zone.zone-left.over')).toBeTruthy();
     });
 
     it('full-edge zone lights up on full drop target; segment targets stay unlit', () => {
@@ -827,7 +821,7 @@ describe('DynamicPaneLayout', () => {
       });
 
       expect(document.querySelector('.dock-left')?.classList.contains('over')).toBe(true);
-      expect(document.querySelectorAll('.dock-segment.over').length).toBe(0);
+      expect(document.querySelectorAll('.pane-dock-zone.over').length).toBe(0);
     });
   });
 
@@ -882,7 +876,7 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragOver({ over: { id: 'drop-p2' } });
       });
 
-      expect(document.querySelector('.drop-target')).toBeTruthy();
+      expect(document.querySelector('.preview-center')).toBeTruthy();
     });
 
     it('sets overPaneId for target without drop- prefix', () => {
@@ -900,7 +894,7 @@ describe('DynamicPaneLayout', () => {
         mocks.dndCallbacks.onDragOver({ over: { id: 'p2' } });
       });
 
-      expect(document.querySelector('.drop-target')).toBeTruthy();
+      expect(document.querySelector('.preview-center')).toBeTruthy();
     });
 
     it('clears over state when over is null', () => {
@@ -921,71 +915,26 @@ describe('DynamicPaneLayout', () => {
       expect(document.querySelector('.dock-edge.over')).toBeNull();
     });
 
-    it('highlights the matching segment target and not the full edge for dock-{edge}-segment-{index}', () => {
-      setupStoreWithLayout(createLeaf('n1', 'p1'));
-      render(<DynamicPaneLayout />);
-
-      act(() => {
-        mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
-      });
-      act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-segment-0' } });
-      });
-
-      const activeSegment = document.querySelector('.dock-segment-left[data-segment-index="0"]');
-      expect(activeSegment?.classList.contains('over')).toBe(true);
-      expect(document.querySelector('.dock-left')?.classList.contains('over')).toBe(false);
-    });
-
-    it('switches highlight from one segment to another on subsequent drag-over events', () => {
-      const layout = createSplit(
-        's1',
-        'vertical',
-        0.5,
+    it('switches from a pane preview to a workspace-edge preview', () => {
+      const layout = createSplit('s1', 'horizontal', 0.5,
         createLeaf('n1', 'p1'),
         createLeaf('n2', 'p2'),
       );
       setupStoreWithLayout(layout);
       render(<DynamicPaneLayout />);
 
-      act(() => {
-        mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
-      });
-      act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-segment-0' } });
-      });
-      expect(
-        document.querySelector('.dock-segment-left[data-segment-index="0"]')?.classList.contains('over'),
-      ).toBe(true);
+      act(() => mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } }));
+      act(() => mocks.dndCallbacks.onDragOver({
+        over: {
+          id: 'pane-drop-right-p2',
+          data: { current: { intent: { kind: 'pane-edge', targetPaneId: 'p2', edge: 'right' } } },
+        },
+      }));
+      expect(document.querySelector('.preview-right')).toBeTruthy();
 
-      act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-segment-1' } });
-      });
-      expect(
-        document.querySelector('.dock-segment-left[data-segment-index="0"]')?.classList.contains('over'),
-      ).toBe(false);
-      expect(
-        document.querySelector('.dock-segment-left[data-segment-index="1"]')?.classList.contains('over'),
-      ).toBe(true);
-    });
-
-    it('clears segment highlight and falls back to full highlight when switching to a full target', () => {
-      setupStoreWithLayout(createLeaf('n1', 'p1'));
-      render(<DynamicPaneLayout />);
-
-      act(() => {
-        mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
-      });
-      act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-segment-0' } });
-      });
-      expect(document.querySelectorAll('.dock-segment.over').length).toBe(1);
-
-      act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-full' } });
-      });
-      expect(document.querySelectorAll('.dock-segment.over').length).toBe(0);
-      expect(document.querySelector('.dock-left')?.classList.contains('over')).toBe(true);
+      act(() => mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-full' } }));
+      expect(document.querySelector('.preview-right')).toBeNull();
+      expect(document.querySelector('.dock-left.over')).toBeTruthy();
     });
 
     it('ignores a malformed dock- id and routes as a pane target', () => {
@@ -1013,145 +962,92 @@ describe('DynamicPaneLayout', () => {
   // DnD: handleDragEnd
   // =========================================================================
   describe('handleDragEnd', () => {
-    it('calls dockPaneToEdge when dropped on dock-{edge}-full zone', () => {
-      const mockDock = vi.fn();
-      setupStoreWithLayout(createLeaf('n1', 'p1'), { dockPaneToEdge: mockDock });
+    it('commits a workspace-edge intent through the canonical move action', () => {
+      const movePane = vi.fn();
+      setupStoreWithLayout(createLeaf('n1', 'p1'), { movePane });
       render(<DynamicPaneLayout />);
 
       act(() => {
         mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: { id: 'dock-left-full' } });
       });
 
-      expect(mockDock).toHaveBeenCalledWith('p1', 'left');
+      expect(movePane).toHaveBeenCalledWith('p1', { kind: 'workspace-edge', edge: 'left' }, undefined);
     });
 
-    it('calls insertPaneAtEdgeSegment with parsed edge and target pane when dropped on a segment target', () => {
-      const mockInsert = vi.fn();
-      const mockDock = vi.fn();
-      setupStoreWithLayout(createLeaf('n1', 'p1'), {
-        insertPaneAtEdgeSegment: mockInsert,
-        dockPaneToEdge: mockDock,
-      });
+    it('commits a pane-relative edge intent', () => {
+      const movePane = vi.fn();
+      setupStoreWithLayout(createLeaf('n1', 'p1'), { movePane });
       render(<DynamicPaneLayout />);
 
       act(() => {
         mocks.dndCallbacks.onDragEnd({
           active: { id: 'p1' },
-          over: { id: 'dock-right-segment-0', data: { current: { targetPaneId: 'p2' } } },
+          over: {
+            id: 'pane-drop-right-p2',
+            data: { current: { intent: { kind: 'pane-edge', targetPaneId: 'p2', edge: 'right' } } },
+          },
         });
       });
 
-      expect(mockInsert).toHaveBeenCalledWith('p1', 'right', 'p2');
-      expect(mockDock).not.toHaveBeenCalled();
+      expect(movePane).toHaveBeenCalledWith(
+        'p1',
+        { kind: 'pane-edge', targetPaneId: 'p2', edge: 'right' },
+        undefined,
+      );
     });
 
-    it('passes workspaceId through to insertPaneAtEdgeSegment when scoped', () => {
-      const mockInsert = vi.fn();
-      setupStoreWithLayout(createLeaf('n1', 'p1'), { insertPaneAtEdgeSegment: mockInsert });
+    it('passes workspaceId through to the canonical move action when scoped', () => {
+      const movePane = vi.fn();
+      setupStoreWithLayout(createLeaf('n1', 'p1'), { movePane });
       render(<DynamicPaneLayout workspaceId="ws-42" />);
 
       act(() => {
         mocks.dndCallbacks.onDragEnd({
           active: { id: 'p1' },
-          over: { id: 'dock-top-segment-0', data: { current: { targetPaneId: 'p2' } } },
+          over: {
+            id: 'pane-drop-top-p2',
+            data: { current: { intent: { kind: 'pane-edge', targetPaneId: 'p2', edge: 'top' } } },
+          },
         });
       });
 
-      expect(mockInsert).toHaveBeenCalledWith('p1', 'top', 'p2', 'ws-42');
+      expect(movePane).toHaveBeenCalledWith(
+        'p1',
+        { kind: 'pane-edge', targetPaneId: 'p2', edge: 'top' },
+        'ws-42',
+      );
     });
 
-    it('does not call insertPaneAtEdgeSegment without target pane data', () => {
-      const mockInsert = vi.fn();
-      setupStoreWithLayout(createLeaf('n1', 'p1'), { insertPaneAtEdgeSegment: mockInsert });
-      render(<DynamicPaneLayout />);
-
-      act(() => {
-        mocks.dndCallbacks.onDragEnd({
-          active: { id: 'p1' },
-          over: { id: 'dock-top-segment-0', data: { current: {} } },
-        });
-      });
-
-      expect(mockInsert).not.toHaveBeenCalled();
-    });
-
-    it('clears overSegmentIndex state after drag end', () => {
-      setupStoreWithLayout(createLeaf('n1', 'p1'));
-      render(<DynamicPaneLayout />);
-
-      act(() => {
-        mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
-      });
-      act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-left-segment-0' } });
-      });
-      expect(document.querySelectorAll('.dock-segment.over').length).toBe(1);
-
-      act(() => {
-        mocks.dndCallbacks.onDragEnd({
-          active: { id: 'p1' },
-          over: { id: 'dock-left-segment-0', data: { current: { targetPaneId: 'p1' } } },
-        });
-      });
-      expect(document.querySelectorAll('.dock-segment.over').length).toBe(0);
-    });
-
-    it('calls swapPanes when dropped on a different pane (drop- prefix)', () => {
-      const mockSwap = vi.fn();
+    it('commits a center swap intent', () => {
+      const movePane = vi.fn();
       const layout = createSplit('s1', 'horizontal', 0.5,
         createLeaf('n1', 'p1'),
         createLeaf('n2', 'p2'),
       );
-      setupStoreWithLayout(layout, { swapPanes: mockSwap });
+      setupStoreWithLayout(layout, { movePane });
       render(<DynamicPaneLayout />);
 
       act(() => {
         mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: { id: 'drop-p2' } });
       });
 
-      expect(mockSwap).toHaveBeenCalledWith('p1', 'p2');
-    });
-
-    it('calls swapPanes with paneId extracted from over.id without prefix', () => {
-      const mockSwap = vi.fn();
-      const layout = createSplit('s1', 'horizontal', 0.5,
-        createLeaf('n1', 'p1'),
-        createLeaf('n2', 'p2'),
+      expect(movePane).toHaveBeenCalledWith(
+        'p1',
+        { kind: 'pane-center', targetPaneId: 'p2' },
+        undefined,
       );
-      setupStoreWithLayout(layout, { swapPanes: mockSwap });
-      render(<DynamicPaneLayout />);
-
-      act(() => {
-        mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: { id: 'p2' } });
-      });
-
-      expect(mockSwap).toHaveBeenCalledWith('p1', 'p2');
-    });
-
-    it('does not swap when dropped on same pane', () => {
-      const mockSwap = vi.fn();
-      setupStoreWithLayout(createLeaf('n1', 'p1'), { swapPanes: mockSwap });
-      render(<DynamicPaneLayout />);
-
-      act(() => {
-        mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: { id: 'p1' } });
-      });
-
-      expect(mockSwap).not.toHaveBeenCalled();
     });
 
     it('does nothing when over is null', () => {
-      const mockSwap = vi.fn();
-      const mockDock = vi.fn();
-      setupStoreWithLayout(createLeaf('n1', 'p1'), { swapPanes: mockSwap, dockPaneToEdge: mockDock });
+      const movePane = vi.fn();
+      setupStoreWithLayout(createLeaf('n1', 'p1'), { movePane });
       render(<DynamicPaneLayout />);
 
       act(() => {
         mocks.dndCallbacks.onDragEnd({ active: { id: 'p1' }, over: null });
       });
 
-      expect(mockSwap).not.toHaveBeenCalled();
-      expect(mockDock).not.toHaveBeenCalled();
+      expect(movePane).not.toHaveBeenCalled();
     });
 
     it('clears all drag state after end', () => {
@@ -1175,6 +1071,28 @@ describe('DynamicPaneLayout', () => {
   // DnD: handleDragCancel
   // =========================================================================
   describe('handleDragCancel', () => {
+    it('hides the native browser for the drag and releases its overlay afterward', () => {
+      const electronApi = installElectronApiMock();
+      setupStoreWithLayout(createLeaf('n1', 'p1'), {
+        browserVisible: true,
+        browserOverlayCount: 0,
+      });
+      render(<DynamicPaneLayout />);
+
+      act(() => {
+        mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
+      });
+
+      expect(electronApi.browserHide).toHaveBeenCalledWith('workspace-scope-active');
+      expect(useWorkspaceStore.getState().browserOverlayCount).toBe(1);
+
+      act(() => {
+        mocks.dndCallbacks.onDragCancel();
+      });
+
+      expect(useWorkspaceStore.getState().browserOverlayCount).toBe(0);
+    });
+
     it('clears all drag state', () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);
@@ -1191,22 +1109,26 @@ describe('DynamicPaneLayout', () => {
       expect(document.querySelector('.dock-edge.over')).toBeNull();
     });
 
-    it('clears overSegmentIndex highlight on cancel', () => {
-      setupStoreWithLayout(createLeaf('n1', 'p1'));
+    it('clears a pane preview on cancel', () => {
+      const layout = createSplit('s1', 'horizontal', 0.5,
+        createLeaf('n1', 'p1'),
+        createLeaf('n2', 'p2'),
+      );
+      setupStoreWithLayout(layout);
       render(<DynamicPaneLayout />);
 
       act(() => {
         mocks.dndCallbacks.onDragStart({ active: { id: 'p1' } });
       });
       act(() => {
-        mocks.dndCallbacks.onDragOver({ over: { id: 'dock-top-segment-0' } });
+        mocks.dndCallbacks.onDragOver({ over: { id: 'drop-p2' } });
       });
-      expect(document.querySelectorAll('.dock-segment.over').length).toBe(1);
+      expect(document.querySelector('.preview-center')).toBeTruthy();
 
       act(() => {
         mocks.dndCallbacks.onDragCancel();
       });
-      expect(document.querySelectorAll('.dock-segment.over').length).toBe(0);
+      expect(document.querySelector('.preview-center')).toBeNull();
     });
   });
 
@@ -1255,20 +1177,20 @@ describe('DynamicPaneLayout', () => {
       expect(mocks.closestCorners).not.toHaveBeenCalled();
     });
 
-    it('prioritizes segment collisions over full-edge collisions', () => {
+    it('prioritizes workspace-edge collisions over pane zones', () => {
       setupStoreWithLayout(createLeaf('n1', 'p1'));
       render(<DynamicPaneLayout />);
 
       const fn = mocks.dndCallbacks.collisionDetection;
       mocks.pointerWithin.mockReturnValueOnce([
-        { id: 'dock-left-full' },
-        { id: 'dock-left-segment-0' },
+        { id: 'pane-drop-left-p2' },
+        { id: 'workspace-edge-left' },
       ]);
 
       const result = (fn as (...args: unknown[]) => unknown)({});
       expect(result).toEqual([
-        { id: 'dock-left-segment-0' },
-        { id: 'dock-left-full' },
+        { id: 'workspace-edge-left' },
+        { id: 'pane-drop-left-p2' },
       ]);
     });
 

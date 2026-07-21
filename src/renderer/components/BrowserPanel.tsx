@@ -491,10 +491,12 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
 
   return (
     <div className="browser-panel" ref={containerRef}>
-      <div className="browser-pane-header" {...dragHandleProps}>
-        <div className="browser-pane-drag-handle" aria-hidden="true" title="Drag to move pane" />
-        <span className="browser-pane-title">Browser</span>
-        <span className="browser-pane-spacer" />
+      <div className="browser-pane-header">
+        <div className="pane-drag-surface" title="Drag to move pane" aria-label="Move browser pane" {...dragHandleProps}>
+          <div className="browser-pane-drag-handle" aria-hidden="true" />
+          <span className="browser-pane-title">Browser</span>
+          <span className="browser-pane-spacer" />
+        </div>
       </div>
       <BrowserToolbar
         canGoBack={canGoBack}

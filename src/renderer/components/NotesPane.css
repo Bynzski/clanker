@@ -38,8 +38,11 @@
     radial-gradient(circle at 9px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px);
   opacity: 0.55;
   flex-shrink: 0;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
 }
+
+.notes-pane-drag-handle:active { cursor: grabbing; }
 
 .notes-pane-title {
   font-size: 11px;

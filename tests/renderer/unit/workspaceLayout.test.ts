@@ -9,13 +9,14 @@ import {
   dockPaneToEdgeInLayout,
   setSplitRatioInLayout,
   findFirstLeafPaneId,
-  insertPaneIntoLayout,
-  normalizeLayoutRoot,
-  buildWorkspaceLayout,
+  insertPaneIntoLayout as insertPaneIntoLayoutStrict,
+  normalizeLayoutRoot as normalizeLayoutRootStrict,
+  buildWorkspaceLayout as buildWorkspaceLayoutStrict,
   getEdgeTerminals,
   getEdgeGaps,
   insertPaneAtEdgeGapInLayout,
   insertPaneAtEdgeSegmentInLayout,
+  movePaneInLayout,
 } from '../../../src/renderer/store/workspaceLayout';
 import type { EdgeTerminal } from '../../../src/renderer/store/workspaceLayout';
 import type {
@@ -75,7 +76,42 @@ function makeBrowser(id: string, _locked = false): BrowserPaneState {
   };
 }
 
-const emptyState = { panes: [] as Pane[], browserPane: null as BrowserPaneState | null, browserVisible: false, editorPane: null, editorVisible: false };
+const emptyState = {
+  panes: [] as Pane[],
+  explorerPane: null,
+  explorerVisible: false,
+  browserPane: null as BrowserPaneState | null,
+  browserVisible: false,
+  editorPane: null,
+  editorVisible: false,
+  notesPane: null,
+  notesVisible: false,
+};
+
+function insertPaneIntoLayout(
+  root: LayoutNode | null,
+  paneId: string,
+  state: Record<string, unknown>,
+) {
+  return insertPaneIntoLayoutStrict(
+    root,
+    paneId,
+    { ...emptyState, ...state } as Parameters<typeof insertPaneIntoLayoutStrict>[2],
+  );
+}
+
+function normalizeLayoutRoot(root: LayoutNode | null, state: Record<string, unknown>) {
+  return normalizeLayoutRootStrict(
+    root,
+    { ...emptyState, ...state } as Parameters<typeof normalizeLayoutRootStrict>[1],
+  );
+}
+
+function buildWorkspaceLayout(state: Record<string, unknown>) {
+  return buildWorkspaceLayoutStrict(
+    { ...emptyState, ...state } as Parameters<typeof buildWorkspaceLayoutStrict>[0],
+  );
+}
 
 // ===========================================================================
 // normalizePosition
@@ -812,7 +848,7 @@ describe('setSplitRatioInLayout - additional edge cases', () => {
     const tree = split(leaf('a'), leaf('b'), 'horizontal', 0.5, 'target');
     const result = setSplitRatioInLayout(tree, 'nonexistent', 0.8);
     expect(result).toEqual(tree);
-    expect(result).not.toBe(tree);
+    expect(result).toBe(tree);
   });
 });
 
@@ -1386,6 +1422,61 @@ describe('insertPaneAtEdgeSegmentInLayout', () => {
     const snapshot = JSON.parse(JSON.stringify(original));
     insertPaneAtEdgeSegmentInLayout(original, 'b', 'left', 'a');
     expect(original).toEqual(snapshot);
+  });
+});
+
+// ===========================================================================
+// movePaneInLayout
+// ===========================================================================
+describe('movePaneInLayout', () => {
+  it('swaps panes when dropped on another pane center', () => {
+    const tree = split(leaf('a'), leaf('b'), 'horizontal');
+
+    const result = movePaneInLayout(tree, 'a', {
+      kind: 'pane-center',
+      targetPaneId: 'b',
+    });
+
+    expect(collectLeafPaneIds(result)).toEqual(['b', 'a']);
+  });
+
+  it('creates an interior split when dropped on another pane edge', () => {
+    const tree = split(leaf('a'), split(leaf('b'), leaf('c'), 'vertical'), 'horizontal');
+
+    const result = movePaneInLayout(tree, 'c', {
+      kind: 'pane-edge',
+      targetPaneId: 'a',
+      edge: 'top',
+    }) as LayoutSplit;
+
+    expect(result.first.type).toBe('split');
+    const targetSplit = result.first as LayoutSplit;
+    expect(targetSplit.orientation).toBe('vertical');
+    expect(collectLeafPaneIds(targetSplit)).toEqual(['c', 'a']);
+    expect(collectLeafPaneIds(result)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('docks to a workspace edge using a 30 percent edge share', () => {
+    const tree = split(leaf('a'), leaf('b'), 'horizontal');
+
+    const result = movePaneInLayout(tree, 'b', {
+      kind: 'workspace-edge',
+      edge: 'left',
+    }) as LayoutSplit;
+
+    expect(result.orientation).toBe('horizontal');
+    expect(result.ratio).toBe(0.3);
+    expect(collectLeafPaneIds(result)).toEqual(['b', 'a']);
+  });
+
+  it('preserves identity for invalid and meaningless targets', () => {
+    const tree = split(leaf('a'), leaf('b'), 'horizontal');
+
+    expect(movePaneInLayout(tree, 'ghost', { kind: 'workspace-edge', edge: 'left' })).toBe(tree);
+    expect(movePaneInLayout(tree, 'a', { kind: 'pane-center', targetPaneId: 'ghost' })).toBe(tree);
+    expect(movePaneInLayout(tree, 'a', { kind: 'pane-center', targetPaneId: 'a' })).toBe(tree);
+    const single = leaf('a');
+    expect(movePaneInLayout(single, 'a', { kind: 'workspace-edge', edge: 'right' })).toBe(single);
   });
 });
 

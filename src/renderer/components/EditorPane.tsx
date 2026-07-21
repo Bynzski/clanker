@@ -227,10 +227,12 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
         className={`editor-panel${editorVisible ? '' : ' editor-panel--hidden'}`}
         data-workspace-interactive={isInteractive ? 'true' : 'false'}
       >
-        <div className="editor-pane-header" {...headerDragHandleProps}>
-          <div className="editor-pane-drag-handle" aria-hidden="true" title="Drag to move pane" />
-          <span className="editor-pane-title">Editor</span>
-          <span className="editor-pane-spacer" />
+        <div className="editor-pane-header">
+          <div className="pane-drag-surface" title="Drag to move pane" aria-label="Move editor pane" {...headerDragHandleProps}>
+            <div className="editor-pane-drag-handle" aria-hidden="true" />
+            <span className="editor-pane-title">Editor</span>
+            <span className="editor-pane-spacer" />
+          </div>
           <button
             className="editor-pane-close-btn"
             onClick={handleClosePane}

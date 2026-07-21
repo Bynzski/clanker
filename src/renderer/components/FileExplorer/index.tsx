@@ -62,7 +62,6 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     toggleExplorerPath,
     setExplorerVisible,
     setShowHiddenFiles,
-    setExplorerSidebarWidth,
     setExplorerDirectoryEntries,
     setExplorerDirectoryLoading,
     setExplorerDirectoryError,
@@ -75,7 +74,6 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   const workspacePath = workspace?.workspacePath ?? '';
   const gitChanges = workspace?.gitChanges ?? [];
   const explorerVisible = workspace?.explorerVisible ?? false;
-  const explorerSidebarWidth = workspace?.explorerSidebarWidth ?? 280;
   const explorerEntriesByPath = useMemo(() => workspace?.explorerEntriesByPath ?? {}, [workspace]);
   const explorerLoadingPaths = useMemo(() => workspace?.explorerLoadingPaths ?? [], [workspace]);
   const explorerErrorsByPath = useMemo(() => workspace?.explorerErrorsByPath ?? {}, [workspace]);
@@ -301,26 +299,6 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     return dispose;
   }, [scheduleDirectoryRefresh, resolvedWorkspaceId]);
 
-  const handleResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = explorerSidebarWidth;
-    document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-    const onMove = (ev: MouseEvent) => {
-      const delta = ev.clientX - startX;
-      setExplorerSidebarWidth(Math.max(180, Math.min(500, startWidth + delta)), resolvedWorkspaceId ?? undefined);
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  };
-
   // This handler is passed to FileTree as the onContextMenu prop.
   // TreeNode wraps it (already called preventDefault/stopPropagation) and
   // passes (e, entry) so we can capture the entry in this closure.
@@ -497,10 +475,12 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   }
 
   return (
-    <aside className="file-explorer" style={{ width: explorerSidebarWidth }}>
-      <div className="file-explorer-header" {...dragHandleProps}>
-        <div className="file-explorer-drag-handle" aria-hidden="true" title="Drag to move pane" />
-        <span className="file-explorer-title">Explorer</span>
+    <aside className="file-explorer">
+      <div className="file-explorer-header">
+        <div className="pane-drag-surface" title="Drag to move pane" aria-label="Move explorer pane" {...dragHandleProps}>
+          <div className="file-explorer-drag-handle" aria-hidden="true" />
+          <span className="file-explorer-title">Explorer</span>
+        </div>
         <div className="file-explorer-actions">
           <button
             type="button"
@@ -595,8 +575,6 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
           onFocusFilter={focusFilterInput}
         />
       </div>
-      <div className="explorer-resize-handle" onMouseDown={handleResizeStart} />
-
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
