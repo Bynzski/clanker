@@ -60,6 +60,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     zoomInWindow: createAsyncMock(undefined),
     zoomOutWindow: createAsyncMock(undefined),
     resetZoomWindow: createAsyncMock(undefined),
+    getWindowZoomFactor: vi.fn(() => 1),
     getHarnessOptions: createAsyncMock({}),
     getHarnessModels: createAsyncMock([]),
     getHarnessDefaults: createAsyncMock({

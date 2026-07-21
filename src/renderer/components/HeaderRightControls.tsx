@@ -1,4 +1,4 @@
-import { ChevronDown, LayoutGrid, MessageSquare, Settings } from 'lucide-react';
+import { ChevronDown, LayoutGrid, MessageSquare, Settings, Undo2 } from 'lucide-react';
 import type { HarnessSession } from '../../shared/types/session';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
@@ -7,6 +7,8 @@ import HarnessDefaultsSection from './settings/HarnessDefaultsSection';
 
 interface HeaderRightControlsProps {
   fitAllPanes: () => void;
+  undoLayout: () => void;
+  canUndoLayout: boolean;
   chatDropdownRef: React.RefObject<HTMLDivElement | null>;
   showChatHistory: boolean;
   onToggleChatHistory: () => void;
@@ -42,6 +44,8 @@ interface HeaderRightControlsProps {
 
 export default function HeaderRightControls({
   fitAllPanes,
+  undoLayout,
+  canUndoLayout,
   chatDropdownRef,
   showChatHistory,
   onToggleChatHistory,
@@ -76,6 +80,16 @@ export default function HeaderRightControls({
 }: HeaderRightControlsProps) {
   return (
     <div className="header-right">
+      <button
+        className="header-btn header-btn-icon"
+        type="button"
+        onClick={undoLayout}
+        disabled={!canUndoLayout}
+        title="Undo last layout change"
+        aria-label="Undo layout change"
+      >
+        <Undo2 size={15} strokeWidth={2} />
+      </button>
       <button
         className="header-btn header-btn-icon"
         type="button"

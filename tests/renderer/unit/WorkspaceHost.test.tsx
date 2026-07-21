@@ -10,10 +10,6 @@ vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
   default: () => <div data-testid="dynamic-pane-layout">DynamicPaneLayout</div>,
 }));
 
-vi.mock('../../../src/renderer/components/FileExplorer', () => ({
-  default: () => <div data-testid="file-explorer">FileExplorer</div>,
-}));
-
 const mockBrowserHide = vi.fn();
 
 describe('WorkspaceHost', () => {
@@ -51,7 +47,6 @@ describe('WorkspaceHost', () => {
     expect(surfacesContainer).toBeTruthy();
     expect(surfacesContainer?.querySelector('[data-workspace-id="ws-1"]')).toBeTruthy();
     expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(1);
-    expect(screen.getAllByTestId('file-explorer')).toHaveLength(1);
   });
 
   it('renders parked workspace surfaces in the shared container with proper CSS hiding', async () => {
@@ -82,7 +77,6 @@ describe('WorkspaceHost', () => {
     expect(surfacesContainer?.contains(activeSurface!)).toBe(true);
 
     expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(2);
-    expect(screen.getAllByTestId('file-explorer')).toHaveLength(2);
   });
 
   it('uses the lifecycle-active workspace when activeWorkspaceId is missing', async () => {

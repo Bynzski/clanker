@@ -1,6 +1,7 @@
 import type {
   BrowserPaneState,
   EditorPaneState,
+  ExplorerPaneState,
   LayoutLeaf,
   LayoutNode,
   LayoutSplit,
@@ -16,6 +17,11 @@ const MIN_PANE_W = 3;
 const MIN_PANE_H = 3;
 
 export type DockEdge = 'left' | 'right' | 'top' | 'bottom';
+
+export type PaneDropTarget =
+  | { kind: 'workspace-edge'; edge: DockEdge }
+  | { kind: 'pane-center'; targetPaneId: string }
+  | { kind: 'pane-edge'; targetPaneId: string; edge: DockEdge };
 
 export interface EdgeTerminal {
   paneId: string;
@@ -33,12 +39,14 @@ export interface EdgeGap {
 
 interface LayoutVisibilityState {
   panes: Pane[];
+  explorerPane: ExplorerPaneState | null;
+  explorerVisible: boolean;
   browserPane: BrowserPaneState | null;
   browserVisible: boolean;
   editorPane: EditorPaneState | null;
   editorVisible: boolean;
-  notesPane?: NotesPaneState | null;
-  notesVisible?: boolean;
+  notesPane: NotesPaneState | null;
+  notesVisible: boolean;
 }
 
 interface LayoutInsertState extends LayoutVisibilityState {
@@ -293,21 +301,26 @@ export function swapPaneIdsInLayout(
     return node == null ? null : cloneLayoutNode(node);
   }
 
-  if (node.type === 'leaf') {
-    if (node.paneId === a) {
-      return { ...node, paneId: b };
+  function swap(current: LayoutNode): LayoutNode {
+    if (current.type === 'leaf') {
+      if (current.paneId === a) {
+        return { ...current, paneId: b };
+      }
+      if (current.paneId === b) {
+        return { ...current, paneId: a };
+      }
+      return current;
     }
-    if (node.paneId === b) {
-      return { ...node, paneId: a };
+
+    const first = swap(current.first);
+    const second = swap(current.second);
+    if (first === current.first && second === current.second) {
+      return current;
     }
-    return { ...node };
+    return { ...current, first, second };
   }
 
-  return {
-    ...node,
-    first: swapPaneIdsInLayout(node.first, a, b)!,
-    second: swapPaneIdsInLayout(node.second, a, b)!,
-  };
+  return swap(node);
 }
 
 export function dockPaneToEdgeInLayout(
@@ -331,15 +344,15 @@ export function dockPaneToEdgeInLayout(
 
   const dockedLeaf = createLayoutLeaf(paneId);
   if (edge === 'left') {
-    return createLayoutSplit(dockedLeaf, trimmedLayout, 'horizontal', 0.5);
+    return createLayoutSplit(dockedLeaf, trimmedLayout, 'horizontal', 0.3);
   }
   if (edge === 'right') {
-    return createLayoutSplit(trimmedLayout, dockedLeaf, 'horizontal', 0.5);
+    return createLayoutSplit(trimmedLayout, dockedLeaf, 'horizontal', 0.7);
   }
   if (edge === 'top') {
-    return createLayoutSplit(dockedLeaf, trimmedLayout, 'vertical', 0.5);
+    return createLayoutSplit(dockedLeaf, trimmedLayout, 'vertical', 0.3);
   }
-  return createLayoutSplit(trimmedLayout, dockedLeaf, 'vertical', 0.5);
+  return createLayoutSplit(trimmedLayout, dockedLeaf, 'vertical', 0.7);
 }
 
 export function insertPaneAtEdgeGapInLayout(
@@ -461,20 +474,59 @@ export function setSplitRatioInLayout(
 
   if (node.type === 'split') {
     if (node.nodeId === nodeId) {
+      const nextRatio = clamp(ratio, 0.1, 0.9);
+      if (Math.abs(nextRatio - node.ratio) < 0.0001) {
+        return node;
+      }
       return {
         ...node,
-        ratio: clamp(ratio, 0.1, 0.9),
+        ratio: nextRatio,
       };
     }
 
+    const first = setSplitRatioInLayout(node.first, nodeId, ratio)!;
+    const second = setSplitRatioInLayout(node.second, nodeId, ratio)!;
+    if (first === node.first && second === node.second) {
+      return node;
+    }
     return {
       ...node,
-      first: setSplitRatioInLayout(node.first, nodeId, ratio)!,
-      second: setSplitRatioInLayout(node.second, nodeId, ratio)!,
+      first,
+      second,
     };
   }
 
-  return { ...node };
+  return node;
+}
+
+/** Canonical layout mutation for swap, pane-relative split, and outer docking. */
+export function movePaneInLayout(
+  layoutRoot: LayoutNode | null,
+  paneId: string,
+  target: PaneDropTarget,
+): LayoutNode | null {
+  const paneIds = collectLeafPaneIds(layoutRoot);
+  if (!paneIds.includes(paneId)) {
+    return layoutRoot;
+  }
+  if (target.kind === 'workspace-edge') {
+    if (paneIds.length === 1) {
+      return layoutRoot;
+    }
+    return dockPaneToEdgeInLayout(layoutRoot, paneId, target.edge);
+  }
+  if (paneId === target.targetPaneId || !paneIds.includes(target.targetPaneId)) {
+    return layoutRoot;
+  }
+  if (target.kind === 'pane-center') {
+    return swapPaneIdsInLayout(layoutRoot, paneId, target.targetPaneId);
+  }
+  return insertPaneAtEdgeSegmentInLayout(
+    layoutRoot,
+    paneId,
+    target.edge,
+    target.targetPaneId,
+  );
 }
 
 export function findFirstLeafPaneId(node: LayoutNode | null): string | null {
@@ -538,6 +590,9 @@ export function normalizeLayoutRoot(
 ): LayoutNode | null {
   if (layoutRoot == null) {
     const paneIds = state.panes.map((pane) => pane.id);
+    if (state.explorerVisible && state.explorerPane) {
+      paneIds.push(state.explorerPane.id);
+    }
     if (state.browserVisible && state.browserPane) {
       paneIds.push(state.browserPane.id);
     }
@@ -551,6 +606,9 @@ export function normalizeLayoutRoot(
   }
 
   const visibleIds = new Set(state.panes.map((pane) => pane.id));
+  if (state.explorerVisible && state.explorerPane) {
+    visibleIds.add(state.explorerPane.id);
+  }
   if (state.browserVisible && state.browserPane) {
     visibleIds.add(state.browserPane.id);
   }
@@ -583,12 +641,22 @@ export function normalizeLayoutRoot(
     };
   }
 
-  return prune(layoutRoot);
+  let normalized = prune(layoutRoot);
+  const orderedVisibleIds = [...visibleIds];
+  for (const paneId of orderedVisibleIds) {
+    if (!collectLeafPaneIds(normalized).includes(paneId)) {
+      normalized = insertPaneIntoLayout(normalized, paneId, {
+        ...state,
+        activeTerminalId: null,
+      });
+    }
+  }
+  return normalized;
 }
 
 export function buildWorkspaceLayout(
   workspace: Pick<WorkspaceTab, 'panes' | 'browserVisible' | 'browserPane' | 'editorVisible' | 'editorPane' | 'layoutRoot'>
-    & Partial<Pick<WorkspaceTab, 'notesVisible' | 'notesPane'>>
+    & Required<Pick<WorkspaceTab, 'explorerVisible' | 'explorerPane' | 'notesVisible' | 'notesPane'>>
 ): LayoutNode | null {
   const root = normalizeLayoutRoot(workspace.layoutRoot, workspace);
   if (root != null) {
@@ -596,6 +664,9 @@ export function buildWorkspaceLayout(
   }
 
   const paneIds = workspace.panes.map((pane) => pane.id);
+  if (workspace.explorerVisible && workspace.explorerPane) {
+    paneIds.push(workspace.explorerPane.id);
+  }
   if (workspace.browserVisible && workspace.browserPane) {
     paneIds.push(workspace.browserPane.id);
   }

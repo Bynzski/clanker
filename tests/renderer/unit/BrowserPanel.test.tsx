@@ -52,7 +52,7 @@ class MockResizeObserver {
 
 // Mock the drag handle context
 vi.mock('../../../src/renderer/components/dragHandleContext', () => ({
-  useDragHandle: vi.fn().mockReturnValue({}),
+  useDragHandle: vi.fn().mockReturnValue({ 'data-drag-activator': 'true' }),
 }));
 
 // Mock electron API for browser operations
@@ -175,6 +175,7 @@ function setupElectronAPIMocks() {
     annotationExport: mockAnnotationExport,
     annotationCheckEscaped: mockAnnotationCheckEscaped,
     onAnnotationEscape: mockOnAnnotationEscape,
+    getWindowZoomFactor: vi.fn(() => 1),
   } as unknown as typeof window.electronAPI;
 }
 
@@ -228,6 +229,8 @@ describe('BrowserPanel', () => {
 
       const dragHandle = document.querySelector('.browser-pane-drag-handle');
       expect(dragHandle).toBeTruthy();
+      expect(document.querySelector('.browser-pane-header .pane-drag-surface'))
+        .toHaveAttribute('data-drag-activator', 'true');
     });
 
 

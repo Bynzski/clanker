@@ -2,7 +2,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  flex-shrink: 0;
+  width: 100%;
+  flex: 1;
   min-width: 0;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
@@ -51,9 +52,15 @@
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
+  cursor: grab;
+  user-select: none;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.file-explorer-header:active {
+  cursor: grabbing;
 }
 
 .file-explorer-drag-handle {
@@ -67,8 +74,11 @@
     radial-gradient(circle at 9px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px);
   opacity: 0.55;
   flex-shrink: 0;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
 }
+
+.file-explorer-drag-handle:active { cursor: grabbing; }
 
 .file-explorer-title {
   min-width: 0;

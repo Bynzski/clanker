@@ -43,6 +43,10 @@ export interface NotesPaneState {
   id: string;
 }
 
+export interface ExplorerPaneState {
+  id: string;
+}
+
 export interface EditorTab {
   id: string;
   filePath: string;
@@ -129,6 +133,7 @@ export interface WorkspaceTab {
   browserUrl: string;
   activeTerminalId: string | null;
   browserPane: BrowserPaneState | null;
+  explorerPane?: ExplorerPaneState | null;
   editorPane: EditorPaneState | null;
   editorVisible: boolean;
   notesPane?: NotesPaneState | null;
@@ -136,6 +141,10 @@ export interface WorkspaceTab {
   editorTabs: EditorTab[];
   activeEditorTabId: string | null;
   layoutRoot: LayoutNode | null;
+  /** Monotonic revision scoped to this workspace's layout. */
+  layoutRevision?: number;
+  /** In-memory layout history; intentionally not persisted across launches. */
+  layoutUndoStack?: LayoutNode[];
   explorerVisible: boolean;
   explorerSidebarWidth: number;
   explorerExpandedPaths: string[];

@@ -18,6 +18,7 @@ export default function Header() {
   const toggleNotesPane = useWorkspaceStore((state) => state.toggleNotesPane);
   const addTerminal = useWorkspaceStore((state) => state.addTerminal);
   const fitAllPanes = useWorkspaceStore((state) => state.fitAllPanes);
+  const undoLayout = useWorkspaceStore((state) => state.undoLayout);
   const setHarness = useWorkspaceStore((state) => state.setHarness);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
@@ -173,6 +174,8 @@ export default function Header() {
 
       <HeaderRightControls
         fitAllPanes={fitAllPanes}
+        undoLayout={() => undoLayout(activeWorkspaceId ?? undefined)}
+        canUndoLayout={(focusedWorkspace?.layoutUndoStack?.length ?? 0) > 0}
         chatDropdownRef={chatDropdownRef}
         showChatHistory={showChatHistory}
         onToggleChatHistory={() => void handleToggleChatHistory()}

@@ -86,7 +86,7 @@ vi.mock('@xterm/addon-clipboard', () => ({
 
 // Mock the drag handle context
 vi.mock('../../../src/renderer/components/dragHandleContext', () => ({
-  useDragHandle: vi.fn().mockReturnValue({}),
+  useDragHandle: vi.fn().mockReturnValue({ 'data-drag-activator': 'true' }),
 }));
 
 // Import the cache clearing function for test isolation
@@ -656,13 +656,13 @@ describe('TerminalPane', () => {
   // Drag Handle
   // =========================================================================
   describe('drag handle', () => {
-    it('passes drag handle props to header', () => {
+    it('passes drag handle props to a generous header surface', () => {
       setupStoreWithTerminal('t1', 'p1');
       
       render(<TerminalPane paneId="p1" />);
       
-      const header = document.querySelector('.terminal-header');
-      expect(header).toBeTruthy();
+      const dragSurface = document.querySelector('.terminal-header .pane-drag-surface');
+      expect(dragSurface).toHaveAttribute('data-drag-activator', 'true');
     });
   });
 

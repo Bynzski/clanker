@@ -666,10 +666,12 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       data-workspace-interactive={isInteractive ? 'true' : 'false'}
     >
       {!compact && (
-        <div className="terminal-header" {...headerDragHandleProps}>
-          <div className="terminal-drag-handle" aria-hidden="true" title="Drag to move pane" />
-          <div className="terminal-status-indicator" data-active={isActive} />
-          <span className="terminal-title" />
+        <div className="terminal-header">
+          <div className="pane-drag-surface" title="Drag to move pane" aria-label="Move terminal pane" {...headerDragHandleProps}>
+            <div className="terminal-drag-handle" aria-hidden="true" />
+            <div className="terminal-status-indicator" data-active={isActive} />
+            <span className="terminal-title" />
+          </div>
           <div className="terminal-header-actions">
             <button className="terminal-close" onClick={handleClose} title="Close terminal" disabled={!isInteractive}>
               ×

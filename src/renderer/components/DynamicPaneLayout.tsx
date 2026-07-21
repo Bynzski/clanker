@@ -1,10 +1,17 @@
-import { Suspense, lazy, useCallback, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { DragHandleContext } from './dragHandleContext';
 import ErrorBoundary from './ErrorBoundary';
-import { Group, Panel, Separator, type Layout } from 'react-resizable-panels';
+import {
+  Group,
+  Panel,
+  Separator,
+  type GroupImperativeHandle,
+  type Layout,
+} from 'react-resizable-panels';
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   closestCorners,
   pointerWithin,
@@ -21,13 +28,16 @@ import type {
   LayoutNode,
   LayoutLeaf,
   LayoutSplit,
+  PaneDropTarget,
+  WorkspaceTab,
 } from '../store/workspaceStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
 import BrowserPanel from './BrowserPanel';
 import EditorPane from './EditorPane';
 import NotesPane from './NotesPane';
-import { SegmentedDockEdgeTargets } from './DockEdgeTargets';
+import FileExplorer from './FileExplorer';
+import { DockEdgeTargets } from './DockEdgeTargets';
 import './DynamicPaneLayout.css';
 
 const TerminalPane = lazy(() => import('./TerminalPane'));
@@ -36,59 +46,37 @@ function isLeaf(node: LayoutNode): node is LayoutLeaf {
   return node.type === 'leaf';
 }
 
-// Wrapper that makes the pane draggable
-// The drag handle props are passed to the child component's header
+// Wrapper that makes a pane draggable from its explicit header grip.
 function PanelWrapper({ 
   paneId, 
   children, 
   isDragging,
-  isOver,
-  dragHandleProps,
+  draggedPaneId,
+  dropIntent,
   interactive,
 }: { 
   paneId: string; 
   children: React.ReactNode; 
   isDragging: boolean;
-  isOver: boolean;
-  dragHandleProps?: Record<string, unknown>;
+  draggedPaneId: string | null;
+  dropIntent: PaneDropTarget | null;
   interactive: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({
+  const { attributes, listeners, setNodeRef } = useDraggable({
     id: paneId,
     data: { paneId },
     disabled: !interactive,
   });
 
-  const { setNodeRef: setDropRef } = useDroppable({
-    id: `drop-${paneId}`,
-    data: { paneId },
-    disabled: !interactive,
-  });
-
-  // Combine refs
-  const setRefs = useCallback((node: HTMLDivElement | null) => {
-    setNodeRef(node);
-    setDropRef(node);
-  }, [setNodeRef, setDropRef]);
-
-  const style = transform ? {
-    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-    zIndex: isDragging ? 1000 : undefined,
-    opacity: isDragging ? 0.5 : 1,
-  } : undefined;
-
-  // Merge drag handle props
-  const mergedHandleProps = interactive && dragHandleProps
-    ? { ...dragHandleProps, ...listeners, ...attributes }
-    : interactive
-      ? { ...listeners, ...attributes }
-      : {};
+  const mergedHandleProps = interactive ? { ...listeners, ...attributes } : {};
+  const previewClass = dropIntent != null && 'targetPaneId' in dropIntent && dropIntent.targetPaneId === paneId
+    ? ` preview-${dropIntent.kind === 'pane-center' ? 'center' : dropIntent.edge}`
+    : '';
 
   return (
     <div 
-      ref={setRefs}
-      className={`draggable-droppable-pane ${isDragging ? 'dragging' : ''} ${isOver ? 'drop-target' : ''}`}
-      style={style}
+      ref={setNodeRef}
+      className={`draggable-droppable-pane${isDragging ? ' dragging' : ''}${previewClass}`}
     >
       {/* Pass drag handle props to child for header */}
       <DragHandleProvider handleProps={mergedHandleProps}>
@@ -96,6 +84,84 @@ function PanelWrapper({
           {children}
         </div>
       </DragHandleProvider>
+      <PaneDockTargets
+        paneId={paneId}
+        draggedPaneId={draggedPaneId}
+        activeIntent={dropIntent}
+        interactive={interactive}
+      />
+    </div>
+  );
+}
+
+const PANE_DROP_ZONES: Array<{ zone: 'center' | DockEdge; label: string }> = [
+  { zone: 'left', label: 'Split left' },
+  { zone: 'right', label: 'Split right' },
+  { zone: 'top', label: 'Split above' },
+  { zone: 'bottom', label: 'Split below' },
+  { zone: 'center', label: 'Swap panes' },
+];
+
+function PaneDockTargets({
+  paneId,
+  draggedPaneId,
+  activeIntent,
+  interactive,
+}: {
+  paneId: string;
+  draggedPaneId: string | null;
+  activeIntent: PaneDropTarget | null;
+  interactive: boolean;
+}) {
+  const isAvailable = interactive && draggedPaneId != null && draggedPaneId !== paneId;
+  return (
+    <div className={`pane-dock-overlay${isAvailable ? ' active' : ''}`} aria-hidden="true">
+      {PANE_DROP_ZONES.map(({ zone, label }) => (
+        <PaneDockZone
+          key={zone}
+          paneId={paneId}
+          zone={zone}
+          label={label}
+          disabled={!isAvailable}
+          isActive={zone === 'center'
+            ? activeIntent?.kind === 'pane-center' && activeIntent.targetPaneId === paneId
+            : activeIntent?.kind === 'pane-edge'
+              && activeIntent.targetPaneId === paneId
+              && activeIntent.edge === zone}
+        />
+      ))}
+    </div>
+  );
+}
+
+function PaneDockZone({
+  paneId,
+  zone,
+  label,
+  disabled,
+  isActive,
+}: {
+  paneId: string;
+  zone: 'center' | DockEdge;
+  label: string;
+  disabled: boolean;
+  isActive: boolean;
+}) {
+  const intent: PaneDropTarget = zone === 'center'
+    ? { kind: 'pane-center', targetPaneId: paneId }
+    : { kind: 'pane-edge', targetPaneId: paneId, edge: zone };
+  const droppable = useDroppable({
+    id: `pane-drop-${zone}-${paneId}`,
+    data: { intent },
+    disabled,
+  });
+  return (
+    <div
+      ref={droppable.setNodeRef}
+      className={`pane-dock-zone zone-${zone}${isActive ? ' over' : ''}`}
+      data-zone={zone}
+    >
+      <span>{label}</span>
     </div>
   );
 }
@@ -118,26 +184,26 @@ function LeafView({
   workspaceId,
   node,
   draggedPaneId,
-  overPaneId,
+  dropIntent,
 }: {
   workspaceId?: string;
   node: LayoutLeaf;
   draggedPaneId: string | null;
-  overPaneId: string | null;
+  dropIntent: PaneDropTarget | null;
 }) {
   const workspace = useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
-  const { layoutRevision } = useWorkspaceStore();
+  const fallbackLayoutRevision = useWorkspaceStore((state) => state.layoutRevision);
   const paneId = node.paneId;
   
   const isDraggingThis = draggedPaneId === paneId;
-  const isOverThis = overPaneId === paneId && draggedPaneId !== paneId;
-
   const content = workspace?.browserVisible && workspace.browserPane?.id === paneId ? (
     <BrowserPanel
       workspaceId={workspaceId}
-      layoutVersion={layoutRevision}
+      layoutVersion={workspace.layoutRevision ?? fallbackLayoutRevision}
     />
+  ) : workspace?.explorerVisible && workspace.explorerPane?.id === paneId ? (
+    <FileExplorer workspaceId={workspaceId} />
   ) : workspace?.editorPane?.id === paneId ? (
     <Suspense fallback={<div className="layout-pane-loading">Loading editor...</div>}>
       <EditorPane workspaceId={workspaceId} />
@@ -150,13 +216,12 @@ function LeafView({
     </Suspense>
   );
 
-  // Always wrap with PanelWrapper to show drag handle
-  // Wrap content in ErrorBoundary to isolate pane crashes
   return (
     <PanelWrapper
       paneId={paneId}
       isDragging={isDraggingThis}
-      isOver={isOverThis}
+      draggedPaneId={draggedPaneId}
+      dropIntent={dropIntent}
       interactive={isInteractive}
     >
       <ErrorBoundary paneId={paneId}>
@@ -170,68 +235,104 @@ function SplitView({
   workspaceId,
   node,
   draggedPaneId,
-  overPaneId,
+  dropIntent,
 }: {
   workspaceId?: string;
   node: LayoutSplit;
   draggedPaneId: string | null;
-  overPaneId: string | null;
+  dropIntent: PaneDropTarget | null;
 }) {
   useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
-  const { setSplitRatio } = useWorkspaceStore();
-  
-  // Use local state to track layout during drag, avoiding feedback loop
-  const [localLayout, setLocalLayout] = useState<Layout | null>(null);
-  const pendingUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  const firstRatio = Math.max(10, Math.min(90, Math.round(node.ratio * 100)));
+  const setSplitRatio = useWorkspaceStore((state) => state.setSplitRatio);
+  const groupRef = useRef<GroupImperativeHandle | null>(null);
+  const hasReceivedInitialLayoutRef = useRef(false);
+  const isApplyingStoredLayoutRef = useRef(false);
+  const splitNodeIdRef = useRef(node.nodeId);
+
+  if (splitNodeIdRef.current !== node.nodeId) {
+    splitNodeIdRef.current = node.nodeId;
+    hasReceivedInitialLayoutRef.current = false;
+    isApplyingStoredLayoutRef.current = false;
+  }
+
+  const firstRatio = Math.max(10, Math.min(90, node.ratio * 100));
   const secondRatio = 100 - firstRatio;
+  const renderedRatio = firstRatio / 100;
+  const renderedRatioRef = useRef(renderedRatio);
+  renderedRatioRef.current = renderedRatio;
   
   // Create default layout object with panel IDs as keys
   const panelAId = `${node.nodeId}-a`;
   const panelBId = `${node.nodeId}-b`;
   const defaultLayout: Layout = { [panelAId]: firstRatio, [panelBId]: secondRatio };
+
+  useLayoutEffect(() => {
+    const group = groupRef.current;
+    if (group == null) {
+      return;
+    }
+
+    const currentLayout = group.getLayout();
+    const currentFirst = currentLayout[panelAId];
+    const currentSecond = currentLayout[panelBId];
+    if (currentFirst == null || currentSecond == null) {
+      return;
+    }
+
+    const currentTotal = currentFirst + currentSecond;
+    if (currentTotal <= 0 || Math.abs(currentFirst / currentTotal - renderedRatio) < 0.0001) {
+      return;
+    }
+
+    isApplyingStoredLayoutRef.current = true;
+    try {
+      group.setLayout({ [panelAId]: firstRatio, [panelBId]: secondRatio });
+    } finally {
+      isApplyingStoredLayoutRef.current = false;
+    }
+  }, [firstRatio, panelAId, panelBId, renderedRatio, secondRatio]);
   
   const handleLayoutChange = useCallback((layout: Layout) => {
-    // Always update local state immediately for smooth dragging
-    setLocalLayout(layout);
-    
-    // Debounce the store update to avoid feedback loop
-    if (pendingUpdateRef.current) {
-      clearTimeout(pendingUpdateRef.current);
-    }
-    pendingUpdateRef.current = setTimeout(() => {
-      // Extract values from layout object (format: { "panel-id": percentage })
-      const values = Object.values(layout);
-      if (values.length === 2) {
-        const [first, second] = values;
-        const total = first + second;
-        if (total > 0) {
-        if (workspaceId) {
-          setSplitRatio(node.nodeId, first / total, workspaceId);
-        } else {
-          setSplitRatio(node.nodeId, first / total);
+    const first = layout[panelAId];
+    const second = layout[panelBId];
+    if (first != null && second != null) {
+      const total = first + second;
+      if (total > 0) {
+        const nextRatio = first / total;
+
+        // The panel library reports its initialized layout on mount. Persisting
+        // that callback would create an undo entry without any user action.
+        if (!hasReceivedInitialLayoutRef.current) {
+          hasReceivedInitialLayoutRef.current = true;
+          return;
         }
+
+        // Store-driven changes (for example layout Undo) are applied through
+        // the imperative API above and must not be recorded as a new resize.
+        if (
+          isApplyingStoredLayoutRef.current
+          || Math.abs(nextRatio - renderedRatioRef.current) < 0.0001
+        ) {
+          return;
+        }
+
+        if (workspaceId) {
+          setSplitRatio(node.nodeId, nextRatio, workspaceId);
+        } else {
+          setSplitRatio(node.nodeId, nextRatio);
         }
       }
-    }, 100);
-  }, [node.nodeId, setSplitRatio, workspaceId]);
-  
-  // Reset local layout when node ratio changes (e.g., from other store updates)
-  if (localLayout !== null) {
-    const localFirstRatio = localLayout[panelAId] ?? firstRatio;
-    if (Math.abs(localFirstRatio - firstRatio) > 5) {
-      setLocalLayout(null);
     }
-  }
+  }, [node.nodeId, panelAId, panelBId, setSplitRatio, workspaceId]);
   
   return (
     <Group
       id={node.nodeId}
       className={`split-group split-${node.orientation}`}
       orientation={node.orientation}
-      defaultLayout={localLayout ?? defaultLayout}
+      defaultLayout={defaultLayout}
+      groupRef={groupRef}
       resizeTargetMinimumSize={{ coarse: 28, fine: 20 }}
       onLayoutChanged={handleLayoutChange}
     >
@@ -241,7 +342,7 @@ function SplitView({
         minSize={12}
         disabled={!isInteractive}
       >
-        <LayoutNodeView workspaceId={workspaceId} node={node.first} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />
+        <LayoutNodeView workspaceId={workspaceId} node={node.first} draggedPaneId={draggedPaneId} dropIntent={dropIntent} />
       </Panel>
       <Separator className="split-separator" />
       <Panel
@@ -250,7 +351,7 @@ function SplitView({
         minSize={12}
         disabled={!isInteractive}
       >
-        <LayoutNodeView workspaceId={workspaceId} node={node.second} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />
+        <LayoutNodeView workspaceId={workspaceId} node={node.second} draggedPaneId={draggedPaneId} dropIntent={dropIntent} />
       </Panel>
     </Group>
   );
@@ -260,31 +361,31 @@ function LayoutNodeView({
   workspaceId,
   node,
   draggedPaneId,
-  overPaneId,
+  dropIntent,
 }: {
   workspaceId?: string;
   node: LayoutNode;
   draggedPaneId: string | null;
-  overPaneId: string | null;
+  dropIntent: PaneDropTarget | null;
 }) {
   if (isLeaf(node)) {
-    return <LeafView workspaceId={workspaceId} node={node} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />;
+    return <LeafView workspaceId={workspaceId} node={node} draggedPaneId={draggedPaneId} dropIntent={dropIntent} />;
   }
 
-  return <SplitView workspaceId={workspaceId} node={node} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />;
+  return <SplitView workspaceId={workspaceId} node={node} draggedPaneId={draggedPaneId} dropIntent={dropIntent} />;
 }
 
 function renderLayout(
   workspaceId: string | undefined,
   root: LayoutNode | null,
   draggedPaneId: string | null,
-  overPaneId: string | null,
+  dropIntent: PaneDropTarget | null,
 ): React.ReactNode {
   if (root == null) {
     return null;
   }
 
-  return <LayoutNodeView workspaceId={workspaceId} node={root} draggedPaneId={draggedPaneId} overPaneId={overPaneId} />;
+  return <LayoutNodeView workspaceId={workspaceId} node={root} draggedPaneId={draggedPaneId} dropIntent={dropIntent} />;
 }
 
 type ParsedDockTarget =
@@ -318,131 +419,126 @@ function parseDockDropId(overId: string): ParsedDockTarget | null {
   return null;
 }
 
+function getDropIntent(over: DragOverEvent['over'] | DragEndEvent['over']): PaneDropTarget | null {
+  if (over == null) return null;
+  const intent = over.data?.current?.intent as PaneDropTarget | undefined;
+  if (intent) return intent;
+
+  // Backward-compatible parsing keeps older persisted/test target IDs harmless.
+  const overId = String(over.id);
+  const dock = parseDockDropId(overId);
+  if (dock?.kind === 'full') {
+    return { kind: 'workspace-edge', edge: dock.edge };
+  }
+  const targetPaneId = over.data?.current?.targetPaneId as string | undefined;
+  if (dock?.kind === 'segment' && targetPaneId) {
+    return { kind: 'pane-edge', targetPaneId, edge: dock.edge };
+  }
+  if (overId.startsWith('drop-')) {
+    return { kind: 'pane-center', targetPaneId: overId.slice(5) };
+  }
+  return overId.startsWith('dock-') || overId.startsWith('workspace-edge-') || overId.startsWith('pane-drop-')
+    ? null
+    : { kind: 'pane-center', targetPaneId: overId };
+}
+
 const edgeFriendlyCollisionDetection: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(args);
   if (pointerCollisions.length > 0) {
     return [...pointerCollisions].sort((a, b) => {
-      const aIsSegment = String(a.id).includes('-segment-');
-      const bIsSegment = String(b.id).includes('-segment-');
-      if (aIsSegment === bIsSegment) {
+      const aIsWorkspaceEdge = String(a.id).startsWith('workspace-edge-');
+      const bIsWorkspaceEdge = String(b.id).startsWith('workspace-edge-');
+      if (aIsWorkspaceEdge === bIsWorkspaceEdge) {
         return 0;
       }
-      return aIsSegment ? -1 : 1;
+      return aIsWorkspaceEdge ? -1 : 1;
     });
   }
   return closestCorners(args);
 };
 
+function getPaneLabel(workspace: WorkspaceTab | null, paneId: string): string {
+  if (workspace?.browserPane?.id === paneId) return 'Browser';
+  if (workspace?.explorerPane?.id === paneId) return 'Explorer';
+  if (workspace?.editorPane?.id === paneId) return 'Editor';
+  if (workspace?.notesPane?.id === paneId) return 'Notes';
+  const paneIndex = workspace?.panes.findIndex((pane) => pane.id === paneId) ?? -1;
+  return paneIndex >= 0 ? `Terminal ${paneIndex + 1}` : 'Pane';
+}
+
 export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: string }) {
   const workspace = useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
-  const { swapPanes, dockPaneToEdge, insertPaneAtEdgeSegment } = useWorkspaceStore();
+  const movePane = useWorkspaceStore((state) => state.movePane);
+  const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
+  const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
+  const scopedWorkspaceId = workspace?.id;
+  const hasVisibleBrowser = workspace?.browserVisible === true;
 
   const [activePaneId, setActivePaneId] = useState<string | null>(null);
-  const [overPaneId, setOverPaneId] = useState<string | null>(null);
-  const [overDockEdge, setOverDockEdge] = useState<DockEdge | null>(null);
-  const [overSegmentIndex, setOverSegmentIndex] = useState<number | null>(null);
+  const [dropIntent, setDropIntent] = useState<PaneDropTarget | null>(null);
+  const browserOverlayHeldRef = useRef(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
         distance: 5, // Require 5px movement before activating drag
       },
-    })
+    }),
+    useSensor(KeyboardSensor),
   );
+
+  const releaseBrowserOverlay = useCallback(() => {
+    if (!browserOverlayHeldRef.current || !scopedWorkspaceId) return;
+    browserOverlayHeldRef.current = false;
+    popBrowserOverlay(scopedWorkspaceId);
+  }, [popBrowserOverlay, scopedWorkspaceId]);
+
+  useEffect(() => releaseBrowserOverlay, [releaseBrowserOverlay]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     if (!isInteractive) {
       return;
     }
     setActivePaneId(event.active.id as string);
-    setOverPaneId(null);
-    setOverDockEdge(null);
-    setOverSegmentIndex(null);
-  }, [isInteractive]);
+    setDropIntent(null);
+    if (hasVisibleBrowser && scopedWorkspaceId && !browserOverlayHeldRef.current) {
+      browserOverlayHeldRef.current = true;
+      pushBrowserOverlay(scopedWorkspaceId);
+      void window.electronAPI.browserHide(scopedWorkspaceId);
+    }
+  }, [hasVisibleBrowser, isInteractive, pushBrowserOverlay, scopedWorkspaceId]);
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
     if (!isInteractive) {
       return;
     }
-    const { over } = event;
-    if (over) {
-      const overId = over.id as string;
-      const dock = parseDockDropId(overId);
-      if (dock) {
-        setOverDockEdge(dock.edge);
-        setOverSegmentIndex(dock.kind === 'segment' ? dock.segmentIndex : null);
-        setOverPaneId(null);
-        return;
-      }
-
-      // Extract paneId from droppable id (may have "drop-" prefix)
-      const paneId = overId.startsWith('drop-') ? overId.slice(5) : overId;
-      setOverPaneId(paneId);
-      setOverDockEdge(null);
-      setOverSegmentIndex(null);
-    } else {
-      setOverPaneId(null);
-      setOverDockEdge(null);
-      setOverSegmentIndex(null);
-    }
+    setDropIntent(getDropIntent(event.over));
   }, [isInteractive]);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     if (!isInteractive) {
       setActivePaneId(null);
-      setOverPaneId(null);
-      setOverDockEdge(null);
-      setOverSegmentIndex(null);
+      setDropIntent(null);
+      releaseBrowserOverlay();
       return;
     }
-    const { active, over } = event;
-    const activeId = active.id as string;
-
-    if (over) {
-      const overId = over.id as string;
-      const dock = parseDockDropId(overId);
-
-      if (dock?.kind === 'full') {
-        if (workspaceId) {
-          dockPaneToEdge(activeId, dock.edge, workspaceId);
-        } else {
-          dockPaneToEdge(activeId, dock.edge);
-        }
-      } else if (dock?.kind === 'segment') {
-        const targetPaneId = over.data.current?.targetPaneId as string | undefined;
-        if (targetPaneId != null) {
-          if (workspaceId) {
-            insertPaneAtEdgeSegment(activeId, dock.edge, targetPaneId, workspaceId);
-          } else {
-            insertPaneAtEdgeSegment(activeId, dock.edge, targetPaneId);
-          }
-        }
-      } else if (activeId !== overId) {
-        // Extract paneId from droppable id
-        const targetPaneId = overId.startsWith('drop-') ? overId.slice(5) : overId;
-
-        // Swap the panes
-        if (workspaceId) {
-          swapPanes(activeId, targetPaneId, workspaceId);
-        } else {
-          swapPanes(activeId, targetPaneId);
-        }
-      }
+    const activeId = event.active.id as string;
+    const intent = getDropIntent(event.over);
+    if (intent) {
+      movePane(activeId, intent, workspaceId);
     }
 
     setActivePaneId(null);
-    setOverPaneId(null);
-    setOverDockEdge(null);
-    setOverSegmentIndex(null);
-  }, [dockPaneToEdge, insertPaneAtEdgeSegment, isInteractive, swapPanes, workspaceId]);
+    setDropIntent(null);
+    releaseBrowserOverlay();
+  }, [isInteractive, movePane, releaseBrowserOverlay, workspaceId]);
 
   const handleDragCancel = useCallback(() => {
     setActivePaneId(null);
-    setOverPaneId(null);
-    setOverDockEdge(null);
-    setOverSegmentIndex(null);
-  }, []);
+    setDropIntent(null);
+    releaseBrowserOverlay();
+  }, [releaseBrowserOverlay]);
 
   if (workspace?.layoutRoot == null) {
     return (
@@ -466,17 +562,20 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
     >
       <div className="dynamic-pane-layout" data-workspace-interactive={isInteractive ? 'true' : 'false'}>
         <div className="split-root">
-          {renderLayout(workspaceId, workspace.layoutRoot, activePaneId, overPaneId)}
+          {renderLayout(workspaceId, workspace.layoutRoot, activePaneId, dropIntent)}
         </div>
-        <SegmentedDockEdgeTargets
-          layoutRoot={workspace.layoutRoot}
-          activeEdge={overDockEdge}
-          activeSegmentIndex={overSegmentIndex}
+        <DockEdgeTargets
+          activeIntent={dropIntent}
           isDragging={isInteractive && activePaneId != null}
         />
       </div>
-      <DragOverlay>
-        {/* We could add a drag preview here if needed */}
+      <DragOverlay dropAnimation={null}>
+        {activePaneId ? (
+          <div className="pane-drag-preview">
+            <span className="pane-drag-preview-grip" />
+            <span>{getPaneLabel(workspace, activePaneId)}</span>
+          </div>
+        ) : null}
       </DragOverlay>
     </DndContext>
   );

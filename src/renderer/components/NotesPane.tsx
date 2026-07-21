@@ -50,10 +50,12 @@ export default function NotesPane({ workspaceId }: { workspaceId?: string }) {
       className={`notes-panel${notesVisible ? '' : ' notes-panel--hidden'}`}
       data-workspace-interactive={isInteractive ? 'true' : 'false'}
     >
-      <div className="notes-pane-header" {...headerDragHandleProps}>
-        <div className="notes-pane-drag-handle" aria-hidden="true" title="Drag to move pane" />
-        <span className="notes-pane-title">Notes</span>
-        <span className="notes-pane-spacer" />
+      <div className="notes-pane-header">
+        <div className="pane-drag-surface" title="Drag to move pane" aria-label="Move notes pane" {...headerDragHandleProps}>
+          <div className="notes-pane-drag-handle" aria-hidden="true" />
+          <span className="notes-pane-title">Notes</span>
+          <span className="notes-pane-spacer" />
+        </div>
         <button
           className="notes-pane-close-btn"
           onClick={handleClosePane}

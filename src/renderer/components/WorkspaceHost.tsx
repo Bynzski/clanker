@@ -11,7 +11,6 @@ import {
 } from '../lib/workspaceSwitchDebug';
 
 const DynamicPaneLayout = lazy(() => import('./DynamicPaneLayout'));
-const FileExplorer = lazy(() => import('./FileExplorer'));
 
 function WorkspaceSurface({
   workspaceId,
@@ -78,7 +77,6 @@ function WorkspaceSurface({
       {mountContents ? (
         <WorkspaceScopeProvider workspaceId={workspaceId}>
           <div className="workspace-layout-row">
-            <FileExplorer workspaceId={workspaceId} />
             <DynamicPaneLayout workspaceId={workspaceId} />
           </div>
         </WorkspaceScopeProvider>

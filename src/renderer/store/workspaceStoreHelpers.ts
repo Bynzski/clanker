@@ -143,6 +143,7 @@ export const createWorkspaceId = () => generateId('workspace');
 
 export const createDefaultExplorerState = () => ({
   explorerVisible: false,
+  explorerPane: null as { id: string } | null,
   explorerSidebarWidth: 280,
   explorerExpandedPaths: [] as string[],
   explorerSelectedPath: null as string | null,
@@ -223,33 +224,48 @@ export function areGitStatusListsEqual(a: GitStatus[], b: GitStatus[]): boolean 
   );
 }
 
-export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
-  ...workspace,
-  lifecycle: workspace.lifecycle ?? 'active',
-  terminals: [...workspace.terminals],
-  panes: [...workspace.panes],
-  explorerExpandedPaths: [...workspace.explorerExpandedPaths],
-  explorerEntriesByPath: { ...workspace.explorerEntriesByPath },
-  explorerLoadingPaths: [...workspace.explorerLoadingPaths],
-  explorerErrorsByPath: { ...workspace.explorerErrorsByPath },
-  browserOverlayCount: workspace.browserOverlayCount ?? 0,
-  browserPane: sanitizeBrowserPane(workspace.browserPane, workspace.browserUrl),
-  editorTabs: [...workspace.editorTabs],
-  showHiddenFiles: workspace.showHiddenFiles ?? true,
-  gitChanges: [...(workspace.gitChanges ?? [])],
-  gitCurrentBranch: workspace.gitCurrentBranch ?? null,
-  gitIsRepo: workspace.gitIsRepo ?? false,
-  gitIsDetached: workspace.gitIsDetached ?? false,
-  editorPane: workspace.editorPane
-    ? { ...workspace.editorPane }
-    : null,
-  notesVisible: workspace.notesVisible ?? false,
-  notesPane: workspace.notesPane
-    ? { ...workspace.notesPane }
-    : null,
-  layoutRoot: buildWorkspaceLayout(workspace),
-  runtimeState: sanitizeRuntimeState(workspace),
-});
+export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => {
+  const explorerPane = workspace.explorerPane
+    ? { ...workspace.explorerPane }
+    : workspace.explorerVisible
+      ? { id: generateId('explorer') }
+      : null;
+  const notesVisible = workspace.notesVisible ?? false;
+  const notesPane = workspace.notesPane ? { ...workspace.notesPane } : null;
+  const layoutSource = {
+    ...workspace,
+    explorerPane,
+    notesVisible,
+    notesPane,
+  };
+
+  return {
+    ...workspace,
+    lifecycle: workspace.lifecycle ?? 'active',
+    terminals: [...workspace.terminals],
+    panes: [...workspace.panes],
+    explorerExpandedPaths: [...workspace.explorerExpandedPaths],
+    explorerEntriesByPath: { ...workspace.explorerEntriesByPath },
+    explorerLoadingPaths: [...workspace.explorerLoadingPaths],
+    explorerErrorsByPath: { ...workspace.explorerErrorsByPath },
+    browserOverlayCount: workspace.browserOverlayCount ?? 0,
+    browserPane: sanitizeBrowserPane(workspace.browserPane, workspace.browserUrl),
+    explorerPane,
+    editorTabs: [...workspace.editorTabs],
+    showHiddenFiles: workspace.showHiddenFiles ?? true,
+    gitChanges: [...(workspace.gitChanges ?? [])],
+    gitCurrentBranch: workspace.gitCurrentBranch ?? null,
+    gitIsRepo: workspace.gitIsRepo ?? false,
+    gitIsDetached: workspace.gitIsDetached ?? false,
+    editorPane: workspace.editorPane ? { ...workspace.editorPane } : null,
+    notesVisible,
+    notesPane,
+    layoutRevision: workspace.layoutRevision ?? 0,
+    layoutUndoStack: [...(workspace.layoutUndoStack ?? [])],
+    layoutRoot: buildWorkspaceLayout(layoutSource),
+    runtimeState: sanitizeRuntimeState(workspace),
+  };
+};
 
 function withWorkspaceLifecycle(
   workspace: WorkspaceTab,
@@ -403,7 +419,10 @@ export function getActiveWorkspaceSnapshot(
     | 'activeTerminalId'
     | 'browserPane'
     | 'layoutRoot'
+    | 'layoutRevision'
+    | 'layoutUndoStack'
     | 'explorerVisible'
+    | 'explorerPane'
     | 'explorerSidebarWidth'
     | 'explorerExpandedPaths'
     | 'explorerSelectedPath'
@@ -436,7 +455,10 @@ export function getActiveWorkspaceSnapshot(
     activeTerminalId: workspace.activeTerminalId,
     browserPane: workspace.browserPane,
     layoutRoot: workspace.layoutRoot,
+    layoutRevision: workspace.layoutRevision ?? 0,
+    layoutUndoStack: workspace.layoutUndoStack ?? [],
     explorerVisible: workspace.explorerVisible,
+    explorerPane: workspace.explorerPane ?? null,
     explorerSidebarWidth: workspace.explorerSidebarWidth,
     explorerExpandedPaths: workspace.explorerExpandedPaths,
     explorerSelectedPath: workspace.explorerSelectedPath,
@@ -596,6 +618,9 @@ function validateLayoutInvariants(state: Partial<WorkspaceState>): string[] {
     if (state.browserVisible === true) {
       warnings.push('L1 violated: layoutRoot is null but browser is visible');
     }
+    if (state.explorerVisible === true) {
+      warnings.push('L1 violated: layoutRoot is null but explorer is visible');
+    }
     if (state.editorVisible === true) {
       warnings.push('L1 violated: layoutRoot is null but editor is visible');
     }
@@ -611,16 +636,18 @@ function validateLayoutInvariants(state: Partial<WorkspaceState>): string[] {
     Array.isArray(state.panes)
     && state.panes.length === 0
     && state.browserVisible === false
+    && state.explorerVisible === false
     && state.editorVisible === false
     && state.notesVisible === false
   ) {
-    warnings.push('L1 violated: layoutRoot is non-null but no panes exist and browser/editor/notes are invisible');
+    warnings.push('L1 violated: layoutRoot is non-null but no panes exist and explorer/browser/editor/notes are invisible');
   }
 
   const panes = state.panes;
   if (
     Array.isArray(panes)
     && hasOwnState(state, 'browserPane')
+    && hasOwnState(state, 'explorerPane')
     && hasOwnState(state, 'editorPane')
     && hasOwnState(state, 'notesPane')
   ) {
@@ -628,12 +655,13 @@ function validateLayoutInvariants(state: Partial<WorkspaceState>): string[] {
     const allValidPaneIds = new Set<string>([
       ...panes.map(p => p.id),
       ...(state.browserPane ? [state.browserPane.id] : []),
+      ...(state.explorerPane ? [state.explorerPane.id] : []),
       ...(state.editorPane ? [state.editorPane.id] : []),
       ...(state.notesPane ? [state.notesPane.id] : []),
     ]);
     for (const paneId of leafPaneIds) {
       if (!allValidPaneIds.has(paneId)) {
-        warnings.push(`L2 violated: layout pane "${paneId}" not found in panes[], browserPane, editorPane, or notesPane`);
+        warnings.push(`L2 violated: layout pane "${paneId}" not found in panes[], explorerPane, browserPane, editorPane, or notesPane`);
       }
     }
   }

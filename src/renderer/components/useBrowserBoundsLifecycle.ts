@@ -12,6 +12,21 @@ interface BrowserBounds {
   height: number;
 }
 
+export function browserBoundsFromDomRect(
+  rect: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
+  scrollX: number,
+  scrollY: number,
+  zoomFactor: number,
+): BrowserBounds {
+  const scale = Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
+  return {
+    x: Math.round((rect.left + scrollX) * scale),
+    y: Math.round((rect.top + scrollY) * scale),
+    width: Math.round(rect.width * scale),
+    height: Math.round(rect.height * scale),
+  };
+}
+
 interface UseBrowserBoundsLifecycleOptions {
   workspaceId?: string;
   activeTabId: string | null;
@@ -52,13 +67,15 @@ export function useBrowserBoundsLifecycle({
     const rect = contentRef.current.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
 
-    const scale = window.devicePixelRatio || 1;
-    const newBounds: BrowserBounds = {
-      x: Math.round((rect.left + window.scrollX) * scale),
-      y: Math.round((rect.top + window.scrollY) * scale),
-      width: Math.round(rect.width * scale),
-      height: Math.round(rect.height * scale),
-    };
+    // DOMRect is expressed in zoomed renderer CSS pixels. WebContentsView uses
+    // window DIPs, so apply renderer zoom only. devicePixelRatio also contains
+    // monitor scale and would incorrectly double-scale on HiDPI displays.
+    const newBounds = browserBoundsFromDomRect(
+      rect,
+      window.scrollX,
+      window.scrollY,
+      window.electronAPI.getWindowZoomFactor(),
+    );
 
     if (lastBoundsRef.current !== null) {
       const { x, y, width, height } = lastBoundsRef.current;
