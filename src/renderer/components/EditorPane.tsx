@@ -88,6 +88,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
     if (viewRef.current != null) return;
 
     const langCompartment = langCompartmentRef.current;
+    const initialTab = editorTabs.find((tab) => tab.id === activeEditorTabId) ?? null;
 
     const baseExtensions: Extension[] = [
       lineNumbers(),
@@ -99,7 +100,10 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
     ];
 
     const state = EditorState.create({
-      doc: '',
+      // A cold workspace remount must start with the store snapshot, including
+      // unsaved text. Installing it in the initial state also prevents a brief
+      // editable empty document before the synchronization effect runs.
+      doc: initialTab?.content ?? '',
       extensions: baseExtensions,
     });
 
@@ -109,6 +113,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
     });
 
     viewRef.current = view;
+    lastSyncedTabIdRef.current = initialTab?.id ?? null;
 
     // Instrument: EditorView created
     const activeTab = editorTabs.find((t) => t.id === activeEditorTabId);
@@ -149,18 +154,23 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
     const tab = editorTabs.find((t) => t.id === activeEditorTabId);
     if (!tab) return;
 
-    lastSyncedTabIdRef.current = activeEditorTabId;
-
+    const isTabSwitch = lastSyncedTabIdRef.current !== activeEditorTabId;
     const currentContent = view.state.doc.toString();
-    if (currentContent === tab.content) return;
+    if (currentContent === tab.content) {
+      lastSyncedTabIdRef.current = activeEditorTabId;
+      return;
+    }
 
-
-    // Only sync if the tab is clean (not mid-edit) or has an external change flag
-    if (tab.isDirty && !tab.hasExternalChange) return;
+    // Store updates for the currently edited dirty tab must not overwrite the
+    // live CodeMirror document. A tab switch is different: the view still
+    // contains the previous tab, so the selected tab's stored text is canonical
+    // even when it is dirty.
+    if (!isTabSwitch && tab.isDirty && !tab.hasExternalChange) return;
 
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: tab.content },
     });
+    lastSyncedTabIdRef.current = activeEditorTabId;
   }, [activeEditorTabId, editorTabs]);
 
   // Attach update listener that dispatches changes to the store.

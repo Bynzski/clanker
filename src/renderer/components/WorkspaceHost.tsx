@@ -1,7 +1,12 @@
-import { Suspense, lazy, useEffect, useRef } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { WorkspaceScopeProvider } from './WorkspaceScope';
 import BrowserLifecycleCoordinator from './BrowserLifecycleCoordinator';
+import { withWorkspaceResidency } from '../store/workspaceStoreHelpers';
+import {
+  recordWorkspaceActivation,
+  selectWarmWorkspaceIds,
+} from '../lib/workspaceWarmth';
 import {
   startSwitch,
   surfaceMount,
@@ -71,6 +76,7 @@ function WorkspaceSurface({
       className={`workspace-surface ${isActive ? 'active' : 'parked'}`}
       data-workspace-id={workspaceId}
       data-workspace-visibility={isActive ? 'active' : 'parked'}
+      data-workspace-residency={mountContents ? 'warm' : 'cold'}
       aria-hidden={!isActive}
       tabIndex={isActive ? undefined : -1}
     >
@@ -90,6 +96,12 @@ export default function WorkspaceHost() {
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   // Track prior active ID to detect switches
   const prevActiveWorkspaceIdRef = useRef<string | null>(null);
+  const recentWorkspaceIdsRef = useRef<string[]>([]);
+
+  const workspaceIds = useMemo(
+    () => workspaces.map((workspace) => workspace.id),
+    [workspaces],
+  );
 
   useEffect(() => {
     const prev = prevActiveWorkspaceIdRef.current;
@@ -100,12 +112,45 @@ export default function WorkspaceHost() {
     prevActiveWorkspaceIdRef.current = next;
   }, [activeWorkspaceId]);
 
+  const lifecycleActiveWorkspace = workspaces.find((workspace) => workspace.lifecycle === 'active') ?? null;
+  const resolvedActiveWorkspaceId = activeWorkspaceId ?? lifecycleActiveWorkspace?.id ?? workspaces[0]?.id ?? null;
+  const warmWorkspaceIds = useMemo(
+    () => selectWarmWorkspaceIds(
+      workspaceIds,
+      resolvedActiveWorkspaceId,
+      recentWorkspaceIdsRef.current,
+    ),
+    [resolvedActiveWorkspaceId, workspaceIds],
+  );
+  const warmWorkspaceIdSet = useMemo(() => new Set(warmWorkspaceIds), [warmWorkspaceIds]);
+
+  useEffect(() => {
+    recentWorkspaceIdsRef.current = recordWorkspaceActivation(
+      recentWorkspaceIdsRef.current,
+      resolvedActiveWorkspaceId,
+      workspaceIds,
+    );
+  }, [resolvedActiveWorkspaceId, workspaceIds]);
+
+  useEffect(() => {
+    useWorkspaceStore.setState((state) => {
+      let changed = false;
+      const nextWorkspaces = state.workspaces.map((workspace) => {
+        const residencyState = warmWorkspaceIdSet.has(workspace.id) ? 'warm' : 'cold';
+        if (workspace.runtimeState.residencyState === residencyState) {
+          return workspace;
+        }
+        changed = true;
+        return withWorkspaceResidency(workspace, residencyState);
+      });
+      return changed ? { ...state, workspaces: nextWorkspaces } : state;
+    });
+  }, [warmWorkspaceIdSet]);
+
   if (workspaces.length === 0) {
     return null;
   }
 
-  const lifecycleActiveWorkspace = workspaces.find((workspace) => workspace.lifecycle === 'active') ?? null;
-  const resolvedActiveWorkspaceId = activeWorkspaceId ?? lifecycleActiveWorkspace?.id ?? workspaces[0]?.id ?? null;
   return (
     <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
       <div
@@ -120,6 +165,7 @@ export default function WorkspaceHost() {
               key={workspace.id}
               workspaceId={workspace.id}
               isActive={workspace.id === resolvedActiveWorkspaceId}
+              mountContents={warmWorkspaceIdSet.has(workspace.id)}
             />
           ))}
         </div>

@@ -168,10 +168,10 @@ export const createDefaultNotesState = () => ({
 
 /**
  * Default resource policy for new workspaces.
- * All subsystems warm by default: PTY processes run in main, xtermCache keeps
- * terminal state, and all workspace pane surfaces stay mounted in the shared
- * container (Phase 2 — single shared-container residency). Browser is warm
- * (bounds preserved); explorer is cached (active-workspace-only watcher).
+ * All subsystems start warm. The renderer warmth controller may later mark an
+ * older parked workspace cold while PTY processes, cached xterm state, and the
+ * native browser session continue independently. Explorer remains cached with
+ * an active-workspace-only watcher.
  */
 export const DEFAULT_RESOURCE_POLICY: WorkspaceResourcePolicy = {
   terminals: 'warm',

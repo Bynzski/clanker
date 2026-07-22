@@ -6,15 +6,20 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
+const editorMockState = vi.hoisted(() => ({ createdDocs: [] as string[] }));
+
 // Mock CodeMirror modules synchronously (vi.mock is hoisted so all references must be inline)
 vi.mock('@codemirror/state', () => ({
   EditorState: {
-    create: vi.fn(({ doc }: { doc: string }) => ({
-      doc: { toString: () => doc },
-      facet: vi.fn(() => []),
-      extensionField: vi.fn(),
-      update: vi.fn(() => ({ state: {} })),
-    })),
+    create: vi.fn(({ doc }: { doc: string }) => {
+      editorMockState.createdDocs.push(doc);
+      return {
+        doc: { toString: () => doc, length: doc.length },
+        facet: vi.fn(() => []),
+        extensionField: vi.fn(),
+        update: vi.fn(() => ({ state: {} })),
+      };
+    }),
   },
   StateEffect: {
     define: vi.fn(() => ({ is: vi.fn(() => false) })),
@@ -29,13 +34,12 @@ vi.mock('@codemirror/state', () => ({
 
 vi.mock('@codemirror/view', () => {
   // Define the mock constructor inline (can't reference outer class due to hoisting)
-  const MockEditorView = function (this: Record<string, unknown>) {
+  const MockEditorView = function (
+    this: Record<string, unknown>,
+    config: { state: unknown },
+  ) {
     this.dom = { addEventListener: vi.fn() };
-    this.state = {
-      doc: { toString: vi.fn(() => '') },
-      facet: vi.fn(() => []),
-      extensionField: vi.fn(),
-    };
+    this.state = config.state;
     this.dispatch = vi.fn();
     this.destroy = vi.fn();
     this.setState = vi.fn();
@@ -72,6 +76,7 @@ import EditorPane from '../../../src/renderer/components/EditorPane';
 describe('EditorPane', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    editorMockState.createdDocs.length = 0;
     installElectronApiMock();
 
     // Set up a minimal store state for all tests
@@ -96,6 +101,40 @@ describe('EditorPane', () => {
   // Rendering
   // =========================================================================
   describe('renders', () => {
+    it('restores unsaved text into CodeMirror during a cold-style remount', () => {
+      const dirtyContent = 'const unsaved = "keep me";';
+      const workspace = createWorkspaceFixture({
+        id: 'ws-1',
+        lifecycle: 'active',
+        editorVisible: true,
+        editorPane: { id: 'editor-1' },
+        editorTabs: [{
+          id: 'tab-1',
+          filePath: '/workspace/dirty.ts',
+          fileName: 'dirty.ts',
+          isDirty: true,
+          content: dirtyContent,
+          originalContent: 'const unsaved = false;',
+        }],
+        activeEditorTabId: 'tab-1',
+      });
+      useWorkspaceStore.setState({
+        workspaces: [workspace],
+        activeWorkspaceId: workspace.id,
+        activeWorkspaceLifecycle: 'active',
+      });
+
+      const firstMount = render(<EditorPane workspaceId={workspace.id} />);
+      expect(editorMockState.createdDocs).toEqual([dirtyContent]);
+
+      firstMount.unmount();
+      render(<EditorPane workspaceId={workspace.id} />);
+
+      expect(editorMockState.createdDocs).toEqual([dirtyContent, dirtyContent]);
+      expect(useWorkspaceStore.getState().workspaces[0]?.editorTabs[0]?.content).toBe(dirtyContent);
+      expect(useWorkspaceStore.getState().workspaces[0]?.editorTabs[0]?.isDirty).toBe(true);
+    });
+
     it('reads editor state from the requested workspace', () => {
       const parkedWorkspace = createWorkspaceFixture({
         id: 'ws-1',

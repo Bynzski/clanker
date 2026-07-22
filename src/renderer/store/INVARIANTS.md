@@ -24,8 +24,8 @@ The `workspaceLayout.ts` module now has direct unit test coverage (`tests/render
 
 - `active`: the selected workspace, whose snapshot is mirrored into the store's
   top-level fields and rendered in the visible app viewport
-- `parked`: a mounted-but-hidden workspace that remains alive without being
-  interactive
+- `parked`: an inactive workspace that remains alive without being interactive;
+  its renderer surface may be warm-mounted or cold-unmounted
 - `disposed`: a fully closed workspace with no retained renderer or main-process
   resources
 
@@ -34,7 +34,8 @@ The `workspaceLayout.ts` module now has direct unit test coverage (`tests/render
 The store and renderer now model `active` and `parked` explicitly.
 
 - Exactly one workspace may be active when `workspaces.length > 0`
-- Inactive workspaces remain mounted as parked React workspace trees
+- The active workspace and the two most recently used inactive workspaces keep
+  mounted renderer trees; older parked workspaces retain state but become cold
 - Parked workspaces are hidden and non-interactive
 - The active workspace snapshot is still mirrored into top-level store fields as
   compatibility state for existing consumers
@@ -53,21 +54,20 @@ These rules describe the implemented workspace residency system.
 
 | Resource / behavior | Behavior |
 |-------|-----------|
-| Workspace layout tree | All workspaces render in a single shared container; parked workspaces are `visibility: hidden` but remain mounted — no pane component remounts on switch |
+| Workspace layout tree | All workspace shells render in one shared container; an LRU cap keeps three pane trees mounted and cold-unmounts older parked trees |
 | Terminal PTY output | Continues via `terminalSessionBridge` global listeners while parked; xterm instances cached in `xtermCache` |
 | Terminal input/focus | Active workspace only |
 | Editor file watchers | Active-workspace-only via `WorkspaceTabs.syncExplorerWatcher` |
 | Explorer watcher | Active-workspace-only; parked workspaces retain cached directory contents |
-| Browser native view | Retained per workspace; visible only for active; `lastBoundsRef` preserved across switch; `browserSetBounds` IPC sent immediately on reactivate |
-| Editor `EditorView` | Permanently resident per workspace; `useEffect` with `[]` deps means destroy only on React unmount |
+| Browser native view | Retained per workspace even when its renderer tree is cold; visible only for active and rebound on reactivate |
+| Editor `EditorView` | Resident for warm workspaces; destroyed when its workspace becomes cold and recreated from store state on reactivation |
 | Global shortcuts | Active workspace snapshot via `syncActiveWorkspace` (Phase 1 migration to workspace-scoped reads is deferred) |
 
 ### Review Implication
 
-"Parked" describes a mounted-but-hidden workspace. All the behaviors in the
-Resource Policy Baseline table are currently implemented. Remaining deferred
-work (Phase 4 task 3 bounds pre-warming, Phase 4 task 4 warmth cap, Phase 1
-migration off `syncActiveWorkspace`) is noted in `plans/workspace-residency-plan.md`.
+"Parked" describes an inactive workspace, while `runtimeState.residencyState`
+distinguishes warm-mounted from cold-unmounted renderer contents. Terminal PTYs,
+xterm buffers, and native browser sessions remain warm across both states.
 
 ### Workspace Invariants
 

@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 
-import { render, screen, cleanup } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WorkspaceHost from '../../../src/renderer/components/WorkspaceHost';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
 vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
-  default: () => <div data-testid="dynamic-pane-layout">DynamicPaneLayout</div>,
+  default: ({ workspaceId }: { workspaceId: string }) => (
+    <div data-testid="dynamic-pane-layout" data-layout-workspace-id={workspaceId}>DynamicPaneLayout</div>
+  ),
 }));
 
 const mockBrowserHide = vi.fn();
@@ -121,5 +123,44 @@ describe('WorkspaceHost', () => {
 
     expect(mockBrowserHide).toHaveBeenCalledWith('ws-1');
     expect(mockBrowserHide).not.toHaveBeenCalledWith('ws-2');
+  });
+
+  it('caps mounted renderer surfaces and remounts a cold workspace on activation', async () => {
+    const workspaces = [1, 2, 3, 4, 5].map((index) => createWorkspaceFixture({
+      id: `ws-${index}`,
+      lifecycle: index === 5 ? 'active' : 'parked',
+    }));
+    useWorkspaceStore.setState({
+      workspaces,
+      activeWorkspaceId: 'ws-5',
+      activeWorkspaceLifecycle: 'active',
+    });
+
+    render(<WorkspaceHost />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(3);
+    });
+    expect(document.querySelector('[data-workspace-id="ws-5"]')).toHaveAttribute('data-workspace-residency', 'warm');
+    expect(document.querySelector('[data-workspace-id="ws-4"]')).toHaveAttribute('data-workspace-residency', 'warm');
+    expect(document.querySelector('[data-workspace-id="ws-3"]')).toHaveAttribute('data-workspace-residency', 'warm');
+    expect(document.querySelector('[data-workspace-id="ws-1"]')).toHaveAttribute('data-workspace-residency', 'cold');
+    expect(document.querySelector('[data-layout-workspace-id="ws-1"]')).toBeNull();
+
+    act(() => useWorkspaceStore.getState().selectWorkspace('ws-1'));
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-workspace-id="ws-1"]')).toHaveAttribute('data-workspace-residency', 'warm');
+      expect(document.querySelector('[data-layout-workspace-id="ws-1"]')).toBeTruthy();
+      expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(3);
+    });
+    expect(document.querySelector('[data-workspace-id="ws-3"]')).toHaveAttribute('data-workspace-residency', 'cold');
+
+    await waitFor(() => {
+      const state = useWorkspaceStore.getState();
+      expect(state.workspaces.find((workspace) => workspace.id === 'ws-1')?.runtimeState.residencyState).toBe('warm');
+      expect(state.workspaces.find((workspace) => workspace.id === 'ws-3')?.runtimeState.residencyState).toBe('cold');
+      expect(state.workspaces.find((workspace) => workspace.id === 'ws-3')?.runtimeState.resourcePolicy.terminals).toBe('warm');
+    });
   });
 });

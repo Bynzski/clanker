@@ -72,7 +72,8 @@ export type WorkspaceLifecycleState = 'active' | 'parked';
  * warm in memory. Resource policy gives fine-grained control per subsystem.
  *
  * @note 'closing' and 'errored' are reserved for future lifecycle phases.
- * New workspaces default to 'warm'.
+ * New workspaces default to 'warm'. The renderer keeps the active workspace and
+ * two most recently used workspace surfaces warm, then marks older ones cold.
  */
 export type WorkspaceResidencyState = 'warm' | 'cold' | 'closing' | 'errored';
 
