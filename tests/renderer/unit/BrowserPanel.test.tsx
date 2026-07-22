@@ -81,6 +81,16 @@ const mockAnnotationCapture = vi.fn().mockResolvedValue({ success: false, error:
 const mockAnnotationExport = vi.fn().mockResolvedValue({ success: true });
 const mockAnnotationCheckEscaped = vi.fn().mockResolvedValue(false);
 const mockOnAnnotationEscape = vi.fn(() => () => undefined);
+let annotationStateChangedHandler: ((payload: {
+  enabled: boolean;
+  initialized: boolean;
+  workspaceId: string | null;
+}) => void) | null = null;
+const mockOnAnnotationStateChanged = vi.fn((callback: typeof annotationStateChangedHandler) => {
+  annotationStateChangedHandler = callback;
+  return () => undefined;
+});
+const mockAnnotationTriggerCopy = vi.fn().mockResolvedValue({ success: true });
 const originalResizeObserver = global.ResizeObserver;
 const originalRequestAnimationFrame = window.requestAnimationFrame;
 const originalCancelAnimationFrame = window.cancelAnimationFrame;
@@ -175,6 +185,8 @@ function setupElectronAPIMocks() {
     annotationExport: mockAnnotationExport,
     annotationCheckEscaped: mockAnnotationCheckEscaped,
     onAnnotationEscape: mockOnAnnotationEscape,
+    onAnnotationStateChanged: mockOnAnnotationStateChanged,
+    annotationTriggerCopy: mockAnnotationTriggerCopy,
     getWindowZoomFactor: vi.fn(() => 1),
   } as unknown as typeof window.electronAPI;
 }
@@ -186,6 +198,8 @@ describe('BrowserPanel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    annotationStateChangedHandler = null;
+    mockAnnotationGetState.mockResolvedValue({ enabled: false, initialized: false, workspaceId: null });
     vi.useFakeTimers({ shouldAdvanceTime: true });
     setupElectronAPIMocks();
     MockResizeObserver.reset();
@@ -252,6 +266,37 @@ describe('BrowserPanel', () => {
 
       const lockIcon = document.querySelector('.browser-pane-lock');
       expect(lockIcon).toBeNull();
+    });
+  });
+
+  describe('annotation lifecycle', () => {
+    it('uses an initial state read plus events instead of polling while disabled', async () => {
+      setupStore();
+      render(<BrowserPanel {...defaultProps} />);
+
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(1_500);
+      });
+
+      expect(mockAnnotationGetState).toHaveBeenCalledTimes(1);
+      expect(mockOnAnnotationStateChanged).toHaveBeenCalledOnce();
+    });
+
+    it('reflects annotation state events for the active workspace', async () => {
+      setupStore();
+      render(<BrowserPanel {...defaultProps} />);
+
+      await act(async () => {
+        await Promise.resolve();
+        annotationStateChangedHandler?.({
+          enabled: true,
+          initialized: true,
+          workspaceId: 'workspace-1',
+        });
+      });
+
+      expect(screen.getByTitle('Exit annotation mode (Esc)')).toHaveClass('browser-annotation-active');
     });
   });
 

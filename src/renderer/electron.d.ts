@@ -311,6 +311,11 @@ interface ElectronAPI {
   annotationTriggerCopy: () => Promise<{ success: boolean; error?: string }>;
   annotationCheckEscaped: () => Promise<boolean>;
   onAnnotationEscape: (callback: (payload: { workspaceId: string }) => void) => () => void;
+  onAnnotationStateChanged: (callback: (payload: {
+    enabled: boolean;
+    initialized: boolean;
+    workspaceId: string | null;
+  }) => void) => () => void;
 }
 
 declare global {

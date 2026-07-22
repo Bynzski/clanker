@@ -12,6 +12,9 @@ let attachedDataHandler: ((data: string) => void) | null = null;
 let registeredLinkProvider: ILinkProvider | null = null;
 let mockBufferLineText = '';
 let terminalOptions: import('@xterm/xterm').ITerminalOptions | null = null;
+let terminalConstructionCount = 0;
+let lastTerminalElement: HTMLDivElement | null = null;
+const mockTerminalWrite = vi.fn();
 const mockHasSelection = vi.fn().mockReturnValue(false);
 const mockGetSelection = vi.fn().mockReturnValue('');
 const mockClearSelection = vi.fn();
@@ -26,12 +29,14 @@ vi.mock('@xterm/xterm', () => {
       static defaults = {};
       options: import('@xterm/xterm').ITerminalOptions;
       constructor(options?: import('@xterm/xterm').ITerminalOptions) {
+        terminalConstructionCount += 1;
         this.options = options ?? {};
         terminalOptions = this.options;
+        lastTerminalElement = this.element;
       }
       loadAddon = vi.fn();
-      open = vi.fn();
-      write = vi.fn();
+      open = vi.fn((container: HTMLElement) => container.appendChild(this.element));
+      write = mockTerminalWrite;
       dispose = vi.fn();
       hasSelection = mockHasSelection;
       getSelection = mockGetSelection;
@@ -90,7 +95,13 @@ vi.mock('../../../src/renderer/components/dragHandleContext', () => ({
 }));
 
 // Import the cache clearing function for test isolation
-import { clearTerminalCache } from '../../../src/renderer/components/TerminalPane';
+import {
+  cacheTerminalInstance,
+  clearTerminalCache,
+  finishTerminalDisposal,
+  markTerminalDisposed,
+  writeCachedTerminalData,
+} from '../../../src/renderer/components/TerminalPane';
 
 // Mock electron API for terminal operations
 const mockKillTerminal = vi.fn().mockResolvedValue({ success: true });
@@ -187,6 +198,9 @@ describe('TerminalPane', () => {
     registeredLinkProvider = null;
     mockBufferLineText = '';
     terminalOptions = null;
+    terminalConstructionCount = 0;
+    lastTerminalElement = null;
+    mockTerminalWrite.mockClear();
     mockHasSelection.mockReturnValue(false);
     mockGetSelection.mockReturnValue('');
     mockFocus.mockClear();
@@ -621,6 +635,53 @@ describe('TerminalPane', () => {
       });
 
       expect(() => unmount()).not.toThrow();
+    });
+
+    it('keeps receiving output while detached and reuses the same xterm on remount', async () => {
+      setupStoreWithTerminal('t1', 'p1');
+      const firstRender = render(<TerminalPane paneId="p1" />);
+
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      expect(terminalConstructionCount).toBe(1);
+      const originalElement = lastTerminalElement;
+      expect(originalElement?.parentNode).not.toBeNull();
+
+      firstRender.unmount();
+      expect(originalElement?.parentNode).toBeNull();
+      expect(writeCachedTerminalData('t1', 'output while hidden')).toBe(true);
+      expect(mockTerminalWrite).toHaveBeenCalledWith('output while hidden');
+
+      render(<TerminalPane paneId="p1" />);
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      expect(terminalConstructionCount).toBe(1);
+      expect(originalElement?.parentNode).not.toBeNull();
+    });
+
+    it('keeps disposal tombstones until terminal lifecycle cleanup finishes', async () => {
+      const firstXterm = { dispose: vi.fn(), write: vi.fn() };
+      markTerminalDisposed('reused-id');
+      cacheTerminalInstance('reused-id', firstXterm as never, {} as never);
+      expect(firstXterm.dispose).toHaveBeenCalledOnce();
+
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+      const prematureXterm = { dispose: vi.fn(), write: vi.fn() };
+      cacheTerminalInstance('reused-id', prematureXterm as never, {} as never);
+      expect(prematureXterm.dispose).toHaveBeenCalledOnce();
+
+      finishTerminalDisposal('reused-id');
+      const replacementXterm = { dispose: vi.fn(), write: vi.fn() };
+      cacheTerminalInstance('reused-id', replacementXterm as never, {} as never);
+      expect(writeCachedTerminalData('reused-id', 'ready')).toBe(true);
+      expect(replacementXterm.write).toHaveBeenCalledWith('ready');
     });
   });
 

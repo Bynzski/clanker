@@ -284,6 +284,20 @@ describe('unwatchAll', () => {
     service.watchFile('/test/file.txt');
     expect(() => { service.unwatchAll(); service.unwatchAll(); }).not.toThrow();
   });
+
+  test('clears self-write suppression records', async () => {
+    const service = makeService();
+    service.watchFile('/test/file.txt');
+    service.markWritten('/test/file.txt');
+    service.unwatchAll();
+
+    service.watchFile('/test/file.txt');
+    infra.watchers.get('/test/file.txt')!.fireChange();
+    tick(300);
+    await flush();
+
+    expect(mockWebContents.send).toHaveBeenCalled();
+  });
 });
 
 describe('markWritten / self-write suppression', () => {

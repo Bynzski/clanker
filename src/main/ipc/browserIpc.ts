@@ -59,6 +59,11 @@ interface RegisterBrowserIpcDeps {
   onActiveBrowserTabChanged?: (workspaceId: string, tabId: string | null) => void;
 }
 
+export interface BrowserIpcController {
+  /** Close every native browser view and clear process-lifetime tab bookkeeping. */
+  disposeAll(): void;
+}
+
 const DEFAULT_BROWSER_URL = 'https://github.com';
 
 /**
@@ -370,8 +375,7 @@ function destroyTabView(workspaceId: string, tabId: string, deps: RegisterBrowse
   const entry = workspaceViews?.get(tabId);
   if (!workspaceViews || !entry) return false;
 
-  entry.view.setVisible(false);
-  entry.view.webContents.close();
+  closeBrowserView(entry.view);
   workspaceViews.delete(tabId);
   forgetTabId(workspaceId, tabId);
 
@@ -381,12 +385,26 @@ function destroyTabView(workspaceId: string, tabId: string, deps: RegisterBrowse
   return true;
 }
 
+function closeBrowserView(view: WebContentsView): void {
+  try {
+    view.setVisible(false);
+  } catch {
+    // The owning BrowserWindow may already be tearing down.
+  }
+  try {
+    if (!view.webContents.isDestroyed?.()) {
+      view.webContents.close();
+    }
+  } catch {
+    // Closing an already-destroyed WebContentsView is harmless during teardown.
+  }
+}
+
 function destroyWorkspaceBrowserViews(workspaceId: string, deps: RegisterBrowserIpcDeps): void {
   const workspaceViews = getExistingWorkspaceTabViews(workspaceId, deps);
   if (workspaceViews) {
     for (const { view } of workspaceViews.values()) {
-      view.setVisible(false);
-      view.webContents.close();
+      closeBrowserView(view);
     }
     workspaceViews.clear();
   }
@@ -422,7 +440,7 @@ function getActiveBrowserEntryForOperation(workspaceId: string, deps: RegisterBr
   return getActiveViewEntry(workspaceId, deps);
 }
 
-export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
+export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcController {
   const { getMainWindow } = deps;
 
   ipcMain.handle(BROWSER_SET_BOUNDS, (
@@ -634,6 +652,25 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): void {
 
   ipcMain.on(BROWSER_URL_UPDATED, () => { });
   ipcMain.on(FIT_ALL_PANES, () => { });
+
+  return {
+    disposeAll(): void {
+      const workspaceIds = new Set([
+        ...deps.getBrowserViews().keys(),
+        ...tabOrderByWorkspace.keys(),
+        ...activeTabIdsByWorkspace.keys(),
+        ...lastBrowserBoundsByWorkspace.keys(),
+      ]);
+      for (const workspaceId of workspaceIds) {
+        destroyWorkspaceBrowserViews(workspaceId, deps);
+      }
+      deps.getBrowserViews().clear();
+      tabOrderByWorkspace.clear();
+      activeTabIdsByWorkspace.clear();
+      lastBrowserBoundsByWorkspace.clear();
+      deps.setActiveBrowserWorkspaceId(null);
+    },
+  };
 }
 
 /** Test-only: clear all in-memory tab tracking state. */

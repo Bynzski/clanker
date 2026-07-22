@@ -54,6 +54,7 @@ export class FileWatcherService {
   unwatchFile(filePath: string): void {
     const key = pathKey(filePath);
     this.clearRewatch(filePath);
+    this.recentlyWritten.delete(key);
 
     const watcher = this.watchers.get(key);
     if (watcher) {
@@ -101,6 +102,7 @@ export class FileWatcherService {
       clearTimeout(timer);
     }
     this.debounceTimers.clear();
+    this.recentlyWritten.clear();
 
     if (this.gitStatusTimer) {
       clearTimeout(this.gitStatusTimer);
@@ -110,7 +112,13 @@ export class FileWatcherService {
 
   /** Mark a file as "we just wrote this" to suppress the resulting change event. */
   markWritten(filePath: string): void {
-    this.recentlyWritten.set(pathKey(filePath), Date.now());
+    const now = Date.now();
+    for (const [key, writtenAt] of this.recentlyWritten) {
+      if (now - writtenAt >= SELF_WRITE_SUPPRESSION_MS) {
+        this.recentlyWritten.delete(key);
+      }
+    }
+    this.recentlyWritten.set(pathKey(filePath), now);
   }
 
   private clearRewatch(filePath: string): void {

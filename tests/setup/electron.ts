@@ -163,6 +163,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     annotationTriggerCopy: createAsyncMock({ success: true }),
     annotationCheckEscaped: createAsyncMock(false),
     onAnnotationEscape: vi.fn(() => () => undefined),
+    onAnnotationStateChanged: vi.fn(() => () => undefined),
 
     ...overrides,
   };

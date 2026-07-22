@@ -433,38 +433,77 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   }, [activeTabId, isActiveWorkspace, updateBrowserTab, workspace?.id]);
 
   useEffect(() => {
-    if (!workspace?.id) {
+    if (!workspace?.id || !isActiveWorkspace) {
       setAnnotationActive(false);
       return;
     }
 
     let cancelled = false;
-    const updateState = async () => {
+    const applyState = (state: {
+      enabled: boolean;
+      workspaceId: string | null;
+    }) => {
+      if (!cancelled) {
+        setAnnotationActive(state.enabled && state.workspaceId === workspace.id);
+      }
+    };
+    const loadInitialState = async () => {
       try {
         const state = await window.electronAPI.annotationGetState();
-        if (!cancelled) {
-          setAnnotationActive(state.enabled && state.workspaceId === workspace.id);
-          if (state.copyTriggered) {
-            await window.electronAPI.annotationTriggerCopy();
-          }
+        applyState(state);
+        if (!cancelled && state.copyTriggered && state.enabled && state.workspaceId === workspace.id) {
+          await window.electronAPI.annotationTriggerCopy();
         }
       } catch {
         // Ignore errors
       }
     };
 
-    const unsubscribeEscape = window.electronAPI.onAnnotationEscape(() => {
-      setAnnotationActive(false);
+    const unsubscribeState = window.electronAPI.onAnnotationStateChanged(applyState);
+    const unsubscribeEscape = window.electronAPI.onAnnotationEscape((payload) => {
+      if (payload.workspaceId === workspace.id) {
+        setAnnotationActive(false);
+      }
     });
 
-    updateState();
-    const interval = setInterval(updateState, 500);
+    void loadInitialState();
+    return () => {
+      cancelled = true;
+      unsubscribeState();
+      unsubscribeEscape();
+    };
+  }, [isActiveWorkspace, workspace?.id]);
+
+  useEffect(() => {
+    if (!workspace?.id || !workspace.browserVisible || !isActiveWorkspace || !annotationActive) {
+      return;
+    }
+
+    let cancelled = false;
+    let inFlight = false;
+    const pollCopyTrigger = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const state = await window.electronAPI.annotationGetState();
+        if (cancelled) return;
+        setAnnotationActive(state.enabled && state.workspaceId === workspace.id);
+        if (state.copyTriggered) {
+          await window.electronAPI.annotationTriggerCopy();
+        }
+      } catch {
+        // Ignore transient page-context errors while navigating.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const interval = setInterval(() => void pollCopyTrigger(), 500);
     return () => {
       cancelled = true;
       clearInterval(interval);
-      unsubscribeEscape();
     };
-  }, [workspace?.id]);
+  }, [annotationActive, isActiveWorkspace, workspace?.browserVisible, workspace?.id]);
 
   const {
     handleBack,

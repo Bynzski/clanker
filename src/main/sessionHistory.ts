@@ -75,7 +75,8 @@ export function encodeClaudeProjectDir(workspacePath: string): string {
 // In-memory session cache (60s TTL, keyed by normalised workspace path)
 // ============================================================================
 
-const SESSION_CACHE_TTL_MS = 60 * 1000;
+export const SESSION_CACHE_TTL_MS = 60 * 1000;
+export const SESSION_CACHE_MAX_ENTRIES = 16;
 
 interface SessionCacheEntry {
   sessions: HarnessSession[];
@@ -88,15 +89,39 @@ export function clearSessionCache(): void {
   sessionCache.clear();
 }
 
+/** Test-only/introspection helper for verifying the cache remains bounded. */
+export function getSessionCacheSize(): number {
+  return sessionCache.size;
+}
+
+function pruneSessionCache(now: number): void {
+  for (const [key, entry] of sessionCache) {
+    if (now - entry.cachedAt >= SESSION_CACHE_TTL_MS) {
+      sessionCache.delete(key);
+    }
+  }
+
+  while (sessionCache.size > SESSION_CACHE_MAX_ENTRIES) {
+    const oldestKey = sessionCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    sessionCache.delete(oldestKey);
+  }
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
 
 export async function discoverSessions(workspacePath?: string): Promise<HarnessSession[]> {
   const normalizedPath = toNativePath((workspacePath ?? '').replace(/[\\/]+$/, ''), process.platform);
+  const now = Date.now();
+  pruneSessionCache(now);
 
   const cached = sessionCache.get(normalizedPath);
-  if (cached && Date.now() - cached.cachedAt < SESSION_CACHE_TTL_MS) {
+  if (cached) {
+    // Refresh insertion order so eviction follows least-recently-used behavior.
+    sessionCache.delete(normalizedPath);
+    sessionCache.set(normalizedPath, cached);
     return cached.sessions;
   }
 
@@ -123,6 +148,7 @@ export async function discoverSessions(workspacePath?: string): Promise<HarnessS
   }));
 
   sessionCache.set(normalizedPath, { sessions: posixSessions, cachedAt: Date.now() });
+  pruneSessionCache(Date.now());
   return posixSessions;
 }
 

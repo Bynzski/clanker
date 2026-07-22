@@ -40,7 +40,7 @@ import { registerSettingsIpc } from './ipc/settingsIpc';
 import { registerWindowIpc } from './ipc/windowIpc';
 import { registerAiCommitIpc } from './ipc/aiCommitIpc';
 import { registerTerminalIpc, setAppShuttingDown, getAppShuttingDown, type Terminal } from './ipc/terminalIpc';
-import { registerBrowserIpc, type BrowserViewsByWorkspace } from './ipc/browserIpc';
+import { registerBrowserIpc, type BrowserIpcController, type BrowserViewsByWorkspace } from './ipc/browserIpc';
 import { registerGitIpc } from './ipc/gitIpc';
 import { registerCredentialIpc } from './ipc/credentialIpc';
 import { registerFileIpc } from './ipc/fileIpc';
@@ -74,6 +74,7 @@ let activeBrowserWorkspaceId: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 let annotationModeEnabled = false;
 let annotationController: ReturnType<typeof import('./annotation/annotationIpc').registerAnnotationIpc> | null = null;
+let browserIpcController: BrowserIpcController | null = null;
 
 const GRACEFUL_TERMINATION_TIMEOUT_MS = 1000;
 
@@ -130,6 +131,11 @@ const killAllTerminals = () => {
 };
 
 const cleanupWindowState = () => {
+  void annotationController?.dispose();
+  browserIpcController?.disposeAll();
+  activeBrowserTabIdsByWorkspace.clear();
+  lastBrowserBoundsByWorkspace.clear();
+  annotationModeEnabled = false;
   killAllTerminals();
   activeBrowserWorkspaceId = null;
   mainWindow = null;
@@ -198,7 +204,7 @@ app.whenReady().then(() => {
     getHarnessOptions: () => HARNESS_OPTIONS,
   });
 
-  registerBrowserIpc({
+  browserIpcController = registerBrowserIpc({
     getMainWindow: () => mainWindow,
     getBrowserViews: () => browserViews,
     getActiveBrowserWorkspaceId: () => activeBrowserWorkspaceId,

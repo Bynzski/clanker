@@ -88,6 +88,9 @@ import {
   discoverSessions,
   buildSessionInvokeArgs,
   clearSessionCache,
+  getSessionCacheSize,
+  SESSION_CACHE_MAX_ENTRIES,
+  SESSION_CACHE_TTL_MS,
   sessionMatchesWorkspace,
   encodeClaudeProjectDir,
 } from '../../../src/main/sessionHistory';
@@ -885,5 +888,25 @@ describe('discoverSessions — caching', () => {
 
     // execFile called twice (once per discover call)
     expect(mockExecFile).toHaveBeenCalledTimes(2);
+  });
+
+  it('removes expired entries instead of retaining unreachable workspace keys', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    await discoverSessions('/workspace/old');
+    expect(getSessionCacheSize()).toBe(1);
+
+    nowSpy.mockReturnValue(1_000 + SESSION_CACHE_TTL_MS);
+    await discoverSessions('/workspace/current');
+
+    expect(getSessionCacheSize()).toBe(1);
+    nowSpy.mockRestore();
+  });
+
+  it('caps cached workspace discoveries', async () => {
+    for (let index = 0; index < SESSION_CACHE_MAX_ENTRIES + 3; index += 1) {
+      await discoverSessions(`/workspace/${index}`);
+    }
+
+    expect(getSessionCacheSize()).toBe(SESSION_CACHE_MAX_ENTRIES);
   });
 });

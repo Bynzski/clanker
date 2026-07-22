@@ -192,6 +192,7 @@ export const ANNOTATION_GET_STATE = 'annotation-get-state';
 export const ANNOTATION_EXPORT = 'annotation-export';
 export const ANNOTATION_CHECK_ESCAPED = 'annotation-check-escaped';
 export const ANNOTATION_ESCAPE = 'annotation-escape';
+export const ANNOTATION_STATE_CHANGED = 'annotation-state-changed';
 export const ANNOTATION_TRIGGER_COPY = 'annotation-trigger-copy';
 
 /* ============================================================================
@@ -337,6 +338,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   ANNOTATION_EXPORT,
   ANNOTATION_CHECK_ESCAPED,
   ANNOTATION_ESCAPE,
+  ANNOTATION_STATE_CHANGED,
   ANNOTATION_TRIGGER_COPY,
   // Session history
   SESSION_DISCOVER,

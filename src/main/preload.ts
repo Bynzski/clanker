@@ -131,6 +131,7 @@ import {
   ANNOTATION_EXPORT,
   ANNOTATION_CHECK_ESCAPED,
   ANNOTATION_ESCAPE,
+  ANNOTATION_STATE_CHANGED,
   ANNOTATION_TRIGGER_COPY,
   SESSION_DISCOVER,
   SESSION_INVOKE,
@@ -433,6 +434,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event: IpcRendererEvent, payload: { workspaceId: string }) => callback(payload);
     ipcRenderer.on(ANNOTATION_ESCAPE, handler);
     return () => ipcRenderer.removeListener(ANNOTATION_ESCAPE, handler);
+  },
+  onAnnotationStateChanged: (callback: (payload: {
+    enabled: boolean;
+    initialized: boolean;
+    workspaceId: string | null;
+  }) => void) => {
+    const handler = (_event: IpcRendererEvent, payload: {
+      enabled: boolean;
+      initialized: boolean;
+      workspaceId: string | null;
+    }) => callback(payload);
+    ipcRenderer.on(ANNOTATION_STATE_CHANGED, handler);
+    return () => ipcRenderer.removeListener(ANNOTATION_STATE_CHANGED, handler);
   },
   // Annotation — trigger copy handles the full capture → format → clipboard pipeline
   annotationTriggerCopy: () => ipcRenderer.invoke(ANNOTATION_TRIGGER_COPY),

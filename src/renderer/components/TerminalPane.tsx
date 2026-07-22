@@ -97,6 +97,11 @@ export function markTerminalDisposed(terminalId: string): void {
   evictCachedTerminal(terminalId);
 }
 
+/** Release a disposal guard only after the pane lifecycle has finished. */
+export function finishTerminalDisposal(terminalId: string): void {
+  disposedTerminalIds.delete(terminalId);
+}
+
 function isTerminalDisposed(terminalId: string): boolean {
   return disposedTerminalIds.has(terminalId);
 }
@@ -129,6 +134,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const fitAddonRef = useRef<FitAddonInstance | null>(null);
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const resizeLockRef = useRef<NodeJS.Timeout | null>(null);
+  const lifecycleTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const pendingResizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const [isActive, setIsActive] = useState(false);
   const [terminalRuntimeReady, setTerminalRuntimeReady] = useState(false);
@@ -136,15 +142,21 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const workspace = useScopedWorkspace(workspaceId);
   const isInteractive = useScopedWorkspaceActivity(workspaceId);
 
-  const {
-    setActiveTerminal,
-    removeTerminal,
-    removePane,
-  } = useWorkspaceStore();
+  const setActiveTerminal = useWorkspaceStore((state) => state.setActiveTerminal);
+  const removeTerminal = useWorkspaceStore((state) => state.removeTerminal);
+  const removePane = useWorkspaceStore((state) => state.removePane);
   const pane = workspace?.panes.find((item) => item.id === paneId);
   const terminal = workspace?.terminals.find((item) => item.id === pane?.terminalId);
   const terminalId = terminal?.id ?? null;
   const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
+
+  const scheduleLifecycleTimeout = useCallback((callback: () => void, delayMs: number) => {
+    const timeout: ReturnType<typeof setTimeout> = setTimeout(() => {
+      lifecycleTimeoutsRef.current.delete(timeout);
+      callback();
+    }, delayMs);
+    lifecycleTimeoutsRef.current.add(timeout);
+  }, []);
 
   // -------------------------------------------------------------------------
   // Core resize logic — sends dimensions to main with lock coalescing
@@ -204,6 +216,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
 
     let cancelled = false;
     let handleResize: (() => void) | null = null;
+    const lifecycleTimeouts = lifecycleTimeoutsRef.current;
     setTerminalRuntimeReady(false);
 
     // Check for a cached xterm instance (workspace tab switch restore)
@@ -223,7 +236,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       setTerminalRuntimeReady(true);
 
       // Re-fit to the new container dimensions
-      setTimeout(() => {
+      scheduleLifecycleTimeout(() => {
         if (!cancelled) {
           cached.fitAddon.fit();
           const dims = cached.fitAddon.proposeDimensions();
@@ -305,7 +318,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
         };
 
         window.addEventListener('resize', handleResize);
-        setTimeout(handleResize, 100);
+        scheduleLifecycleTimeout(handleResize, 100);
       }).catch((error) => {
         console.error('Failed to initialize terminal runtime:', error);
       });
@@ -330,6 +343,19 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       if (handleResize) {
         window.removeEventListener('resize', handleResize);
       }
+      if (resizeTimeoutRef.current != null) {
+        clearTimeout(resizeTimeoutRef.current);
+        resizeTimeoutRef.current = null;
+      }
+      if (resizeLockRef.current != null) {
+        clearTimeout(resizeLockRef.current);
+        resizeLockRef.current = null;
+      }
+      pendingResizeRef.current = null;
+      for (const timeout of lifecycleTimeouts) {
+        clearTimeout(timeout);
+      }
+      lifecycleTimeouts.clear();
 
       // On unmount: cache the xterm instance instead of disposing it.
       // This preserves scrollback and session state across workspace tab switches.
@@ -340,10 +366,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
           xtermRef.current = null;
           fitAddonRef.current = null;
           setTerminalRuntimeReady(false);
-          if (resizeTimeoutRef.current != null) {
-            clearTimeout(resizeTimeoutRef.current);
-            resizeTimeoutRef.current = null;
-          }
+          finishTerminalDisposal(terminalId);
           return;
         }
 
@@ -358,10 +381,6 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       xtermRef.current = null;
       fitAddonRef.current = null;
       setTerminalRuntimeReady(false);
-      if (resizeTimeoutRef.current != null) {
-        clearTimeout(resizeTimeoutRef.current);
-        resizeTimeoutRef.current = null;
-      }
     };
   // Deliberately NOT dependent on fitAndResize/sendResize — these are stable
   // via useCallback. We want this effect to run on mount/unmount only.
@@ -504,9 +523,10 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     });
 
     // Kick off initial resize to sync PTY dimensions
-    setTimeout(fitAndResize, 100);
+    const initialResizeTimeout = setTimeout(fitAndResize, 100);
 
     return () => {
+      clearTimeout(initialResizeTimeout);
       inputDisposable?.dispose();
       disposeResized?.();
       selectionDisposable?.dispose();
@@ -580,8 +600,10 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   // Trigger resize when terminalId changes (e.g., pane gets a new terminal)
   useEffect(() => {
     if (terminalRuntimeReady && fitAddonRef.current != null) {
-      setTimeout(fitAndResize, 50);
+      const timeout = setTimeout(fitAndResize, 50);
+      return () => clearTimeout(timeout);
     }
+    return undefined;
   }, [terminalId, terminalRuntimeReady, fitAndResize]);
 
   // -------------------------------------------------------------------------
@@ -590,9 +612,11 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const handleClose = useCallback(async () => {
     if (terminal == null || !isInteractive) return;
     try {
-      // Evict cached xterm before killing the PTY
-      markTerminalDisposed(terminal.id);
       await window.electronAPI.killTerminal(terminal.id);
+      // Guard the React teardown after main confirms the PTY was killed. The
+      // lifecycle cleanup releases this tombstone after it declines to cache
+      // the disposed xterm instance.
+      markTerminalDisposed(terminal.id);
       removeTerminal(terminal.id);
       if (paneId != null) {
         removePane(paneId);

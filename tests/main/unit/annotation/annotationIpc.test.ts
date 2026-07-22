@@ -24,7 +24,10 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { ANNOTATION_ENABLE } from '../../../../src/shared/ipcChannels';
+import {
+  ANNOTATION_ENABLE,
+  ANNOTATION_STATE_CHANGED,
+} from '../../../../src/shared/ipcChannels';
 import { registerAnnotationIpc } from '../../../../src/main/annotation/annotationIpc';
 import { ANNOTATION_EXPORT } from '../../../../src/shared/ipcChannels';
 
@@ -153,5 +156,39 @@ describe('annotationIpc', () => {
     expect(activeTabView.webContents.on).toHaveBeenCalledWith('before-input-event', expect.any(Function));
     expect(activeTabView.webContents.on).toHaveBeenCalledWith('did-finish-load', expect.any(Function));
     expect(inactiveTabView.webContents.on).not.toHaveBeenCalled();
+  });
+
+  it('emits state changes and removes native listeners when disposed', async () => {
+    const send = vi.fn();
+    const view = {
+      webContents: {
+        executeJavaScript: vi.fn().mockResolvedValue(undefined),
+        on: vi.fn(),
+        removeListener: vi.fn(),
+      },
+    };
+    const controller = registerAnnotationIpc({
+      getBrowserViews: () => new Map([
+        ['workspace-1', { view: view as never, url: 'https://example.com' }],
+      ]) as never,
+      getActiveBrowserWorkspaceId: () => 'workspace-1',
+      getMainWindow: () => ({ webContents: { send } } as never),
+    });
+    const enableHandler = mockHandle.mock.calls.find(([channel]) => channel === ANNOTATION_ENABLE)?.[1];
+
+    await enableHandler?.({}, 'workspace-1');
+    await controller.dispose();
+
+    expect(send).toHaveBeenCalledWith(ANNOTATION_STATE_CHANGED, expect.objectContaining({
+      enabled: true,
+      workspaceId: 'workspace-1',
+    }));
+    expect(send).toHaveBeenLastCalledWith(ANNOTATION_STATE_CHANGED, {
+      enabled: false,
+      initialized: false,
+      workspaceId: null,
+    });
+    expect(view.webContents.removeListener).toHaveBeenCalledWith('before-input-event', expect.any(Function));
+    expect(view.webContents.removeListener).toHaveBeenCalledWith('did-finish-load', expect.any(Function));
   });
 });

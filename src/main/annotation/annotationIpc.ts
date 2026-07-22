@@ -14,6 +14,7 @@ import {
   ANNOTATION_EXPORT,
   ANNOTATION_CHECK_ESCAPED,
   ANNOTATION_ESCAPE,
+  ANNOTATION_STATE_CHANGED,
   ANNOTATION_TRIGGER_COPY,
 } from '../../shared/ipcChannels';
 import { generateDisableCode } from './annotationRuntime';
@@ -39,6 +40,11 @@ interface RegisterAnnotationIpcDeps {
   onAnnotationModeChange?: (enabled: boolean) => void;
 }
 
+export interface AnnotationIpcController extends AnnotationController {
+  /** Remove native view listeners and reset annotation state during window teardown. */
+  dispose(): Promise<void>;
+}
+
 function isBrowserViewEntry(value: unknown): value is BrowserViewEntry {
   return typeof value === 'object'
     && value !== null
@@ -61,7 +67,7 @@ function getBrowserViewEntryForWorkspace(deps: RegisterAnnotationIpcDeps, worksp
   return workspaceEntry;
 }
 
-export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): AnnotationController {
+export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): AnnotationIpcController {
   const controller = createAnnotationController(
     deps.getBrowserViews,
     (workspaceId) => getBrowserViewEntryForWorkspace(deps, workspaceId),
@@ -84,12 +90,38 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
     }
   }
 
+  function removeAllHandlers(): void {
+    const workspaceIds = new Set([
+      ...escapeHandlers.keys(),
+      ...navigationHandlers.keys(),
+    ]);
+    for (const workspaceId of workspaceIds) {
+      removeHandlersForWorkspace(workspaceId);
+    }
+  }
+
+  function emitStateChanged(): void {
+    const mainWindow = deps.getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed?.()) return;
+    mainWindow.webContents.send(ANNOTATION_STATE_CHANGED, controller.getState());
+  }
+
   async function disableAnnotationForWorkspace(workspaceId: string): Promise<{ success: boolean }> {
     removeHandlersForWorkspace(workspaceId);
     if (deps.onAnnotationModeChange) {
       deps.onAnnotationModeChange(false);
     }
-    return await controller.disable();
+    const result = await controller.disable();
+    emitStateChanged();
+    return result;
+  }
+
+  async function disableAllAnnotations(): Promise<{ success: boolean }> {
+    removeAllHandlers();
+    deps.onAnnotationModeChange?.(false);
+    const result = await controller.disable();
+    emitStateChanged();
+    return result;
   }
 
   ipcMain.handle(ANNOTATION_ENABLE, async (_, workspaceId: string) => {
@@ -108,12 +140,9 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
           // Ignore errors during cleanup
         });
 
-        void controller.disable();
         removeHandlersForWorkspace(workspaceId);
-
-        if (deps.onAnnotationModeChange) {
-          deps.onAnnotationModeChange(false);
-        }
+        deps.onAnnotationModeChange?.(false);
+        void controller.disable().finally(emitStateChanged);
       };
 
       entry.view.webContents.on('before-input-event', escapeHandler);
@@ -123,9 +152,11 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
         const controllerState = controller.getState();
         if (!controllerState.enabled) return;
 
-        void controller.reinitialize().catch((err: unknown) => {
-          console.error('[Annotation IPC] Re-injection failed:', err);
-        });
+        void controller.reinitialize()
+          .catch((err: unknown) => {
+            console.error('[Annotation IPC] Re-injection failed:', err);
+          })
+          .finally(emitStateChanged);
       };
 
       entry.view.webContents.on('did-finish-load', navigationHandler);
@@ -145,12 +176,14 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
       if (deps.onAnnotationModeChange) {
         deps.onAnnotationModeChange(false);
       }
+      emitStateChanged();
       return result;
     }
 
     if (deps.onAnnotationModeChange) {
       deps.onAnnotationModeChange(true);
     }
+    emitStateChanged();
     return result;
   });
 
@@ -160,10 +193,7 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
       return await disableAnnotationForWorkspace(workspaceId);
     }
 
-    if (deps.onAnnotationModeChange) {
-      deps.onAnnotationModeChange(false);
-    }
-    return await controller.disable();
+    return await disableAllAnnotations();
   });
 
   ipcMain.handle(ANNOTATION_GET_STATE, async () => {
@@ -187,6 +217,7 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
   });
 
   ipcMain.on(ANNOTATION_ESCAPE, () => { });
+  ipcMain.on(ANNOTATION_STATE_CHANGED, () => { });
 
   ipcMain.handle(ANNOTATION_TRIGGER_COPY, async () => {
     const result = await controller.capture();
@@ -204,7 +235,13 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
     }
   });
 
-  return controller;
+  return {
+    ...controller,
+    disable: disableAllAnnotations,
+    async dispose(): Promise<void> {
+      await disableAllAnnotations();
+    },
+  };
 }
 
 export { getBrowserViewEntryForWorkspace, isBrowserViewEntry };

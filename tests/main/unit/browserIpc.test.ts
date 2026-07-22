@@ -181,6 +181,29 @@ describe('registerBrowserIpc', () => {
     expect(attachedContextMenuHandler).not.toBeNull();
   });
 
+  test('disposeAll closes every native view and clears workspace ownership', () => {
+    const { deps } = createMockDeps();
+    const controller = registerBrowserIpc(deps);
+    const setBoundsHandler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-set-bounds'
+    )?.[1] as (_: unknown, workspaceId: string, bounds: object) => void;
+
+    setBoundsHandler(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 });
+    setBoundsHandler(null, 'ws-2', { x: 0, y: 0, width: 640, height: 480 });
+    const views = [...deps.getBrowserViews().values()].flatMap((workspaceViews) => (
+      [...workspaceViews.values()]
+    ));
+
+    controller.disposeAll();
+
+    expect(views).toHaveLength(2);
+    for (const entry of views) {
+      expect(entry.view.webContents.close).toHaveBeenCalledOnce();
+    }
+    expect(deps.getBrowserViews().size).toBe(0);
+    expect(deps.getActiveBrowserWorkspaceId()).toBeNull();
+  });
+
   test('registers all expected browser IPC channels', () => {
     const { deps } = createMockDeps();
 
