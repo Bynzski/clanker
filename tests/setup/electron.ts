@@ -43,6 +43,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     browserCreateTab: createAsyncMock({ url: 'https://github.com', title: '' }),
     browserCloseTab: createAsyncMock(true),
     browserSwitchTab: createAsyncMock({ url: 'https://github.com', title: '' }),
+    browserMoveTab: createAsyncMock(true),
     browserGetTabs: createAsyncMock([]),
     browserTabNavigate: createAsyncMock(true),
     browserHistoryGet: createAsyncMock([]),

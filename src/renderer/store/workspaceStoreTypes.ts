@@ -134,6 +134,7 @@ export interface WorkspaceState {
     workspaceId?: string,
   ) => { removed: boolean; nextActiveTabId: string | null };
   setActiveBrowserTab: (tabId: string, workspaceId?: string) => boolean;
+  moveBrowserTab: (tabId: string, targetTabId: string, workspaceId?: string) => void;
   updateBrowserTab: (
     tabId: string,
     partial: Partial<BrowserTab>,

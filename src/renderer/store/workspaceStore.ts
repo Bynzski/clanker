@@ -808,6 +808,24 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return true;
   },
 
+  moveBrowserTab: (tabId, targetTabId, workspaceId) => set((state) => {
+    const workspace = resolveWorkspaceByScope(state, workspaceId);
+    const tabs = workspace?.browserPane?.tabs;
+    if (!workspace || !tabs || tabId === targetTabId) return state;
+    const fromIndex = tabs.findIndex((tab) => tab.id === tabId);
+    const targetIndex = tabs.findIndex((tab) => tab.id === targetTabId);
+    if (fromIndex < 0 || targetIndex < 0) return state;
+    const reordered = [...tabs];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+    return patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
+      ...currentWorkspace,
+      browserPane: currentWorkspace.browserPane
+        ? { ...currentWorkspace.browserPane, tabs: reordered }
+        : null,
+    }));
+  }),
+
   updateBrowserTab: (tabId, partial, workspaceId) => {
     const state = get();
     const scopedWorkspace = resolveWorkspaceByScope(state, workspaceId);

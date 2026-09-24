@@ -16,7 +16,6 @@ interface UseBrowserPanelActionsOptions {
   setAnnotationActive: (value: boolean) => void;
   removeBrowserTab: (tabId: string, workspaceId: string) => RemoveBrowserTabResult;
   setActiveBrowserTab: (tabId: string, workspaceId: string) => boolean;
-  onTabMenuClose: () => void;
   scheduleBoundsUpdate: (force?: boolean) => void;
 }
 
@@ -41,7 +40,6 @@ export function useBrowserPanelActions({
   setAnnotationActive,
   removeBrowserTab,
   setActiveBrowserTab,
-  onTabMenuClose,
   scheduleBoundsUpdate,
 }: UseBrowserPanelActionsOptions): UseBrowserPanelActionsResult {
   const handleBack = useCallback(() => {
@@ -89,22 +87,17 @@ export function useBrowserPanelActions({
     if (!workspaceId) return;
     const tabId = await createAndActivateBrowserTab(workspaceId);
     if (!tabId) return;
-    onTabMenuClose();
     scheduleBoundsUpdate(true);
-  }, [onTabMenuClose, scheduleBoundsUpdate, workspaceId]);
+  }, [scheduleBoundsUpdate, workspaceId]);
 
   const handleSwitchTab = useCallback(async (tabId: string) => {
-    if (!workspaceId || tabId === activeTabId) {
-      onTabMenuClose();
-      return;
-    }
+    if (!workspaceId || tabId === activeTabId) return;
 
     const changed = setActiveBrowserTab(tabId, workspaceId);
     if (!changed) return;
     await window.electronAPI.browserSwitchTab(workspaceId, tabId);
-    onTabMenuClose();
     scheduleBoundsUpdate(true);
-  }, [activeTabId, onTabMenuClose, scheduleBoundsUpdate, setActiveBrowserTab, workspaceId]);
+  }, [activeTabId, scheduleBoundsUpdate, setActiveBrowserTab, workspaceId]);
 
   const handleCloseTab = useCallback(async (event: ReactMouseEvent, tabId: string) => {
     event.stopPropagation();

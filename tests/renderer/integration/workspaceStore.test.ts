@@ -735,6 +735,17 @@ describe('browser tabs', () => {
     expect(getStore().browserUrl).toBe('https://github.com');
   });
 
+  it('reorders browser tabs without changing the active tab', () => {
+    const wsId = getStore().activeWorkspaceId!;
+    const firstId = getStore().browserPane!.tabs[0].id;
+    const secondId = getStore().addBrowserTab(wsId)!;
+    const thirdId = getStore().addBrowserTab(wsId)!;
+
+    getStore().moveBrowserTab(firstId, thirdId, wsId);
+    expect(getStore().browserPane!.tabs.map((tab) => tab.id)).toEqual([secondId, thirdId, firstId]);
+    expect(getStore().browserPane!.activeTabId).toBe(thirdId);
+  });
+
   it('removeBrowserTab refuses to remove the last remaining tab', () => {
     const wsId = getStore().activeWorkspaceId!;
     const onlyTabId = getStore().browserPane!.tabs[0].id;

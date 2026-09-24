@@ -128,6 +128,12 @@ interface ElectronAPI {
     workspaceId: string,
     tabId: string,
   ) => Promise<{ url: string; title?: string } | null>;
+  browserMoveTab: (
+    workspaceId: string,
+    tabId: string,
+    targetTabId: string,
+    activeTabId: string,
+  ) => Promise<boolean>;
   browserGetTabs: (
     workspaceId: string,
   ) => Promise<Array<{ tabId: string; url: string; title?: string }>>;

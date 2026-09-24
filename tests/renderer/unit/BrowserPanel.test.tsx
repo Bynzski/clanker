@@ -64,6 +64,7 @@ const mockBrowserNavigate = vi.fn().mockResolvedValue(true);
 const mockBrowserCreateTab = vi.fn().mockResolvedValue({ url: 'https://github.com', title: '' });
 const mockBrowserCloseTab = vi.fn().mockResolvedValue(true);
 const mockBrowserSwitchTab = vi.fn().mockResolvedValue({ url: 'https://github.com', title: '' });
+const mockBrowserMoveTab = vi.fn().mockResolvedValue(true);
 const mockBrowserTabNavigate = vi.fn().mockResolvedValue(true);
 const mockBrowserHistoryGet = vi.fn().mockResolvedValue([]);
 const mockBrowserHistoryAdd = vi.fn().mockResolvedValue(true);
@@ -168,6 +169,7 @@ function setupElectronAPIMocks() {
     browserCreateTab: mockBrowserCreateTab,
     browserCloseTab: mockBrowserCloseTab,
     browserSwitchTab: mockBrowserSwitchTab,
+    browserMoveTab: mockBrowserMoveTab,
     browserTabNavigate: mockBrowserTabNavigate,
     browserHistoryGet: mockBrowserHistoryGet,
     browserHistoryAdd: mockBrowserHistoryAdd,
@@ -1172,30 +1174,48 @@ describe('BrowserPanel', () => {
       ],
     });
 
-    it('renders tab count and opens the dropdown', () => {
+    it('renders browser tabs in the pane header', () => {
       setupStore({ browserPane: createTabbedPane() });
       render(<BrowserPanel layoutVersion={1} />);
 
-      expect(screen.getByTitle('Browser tabs').textContent).toContain('2');
-      fireEvent.click(screen.getByTitle('Browser tabs'));
-
-      expect(screen.getByRole('menu', { name: 'Browser tabs' })).toBeTruthy();
-      expect(screen.getAllByText('GitHub').length).toBeGreaterThan(0);
-      expect(screen.getByText('example.com/docs')).toBeTruthy();
+      const tabs = screen.getAllByRole('tab');
+      expect(tabs.map((tab) => tab.textContent)).toEqual(['GitHub', 'example.com']);
+      expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
+      expect(tabs[1]).toHaveAttribute('aria-selected', 'false');
     });
 
-    it('hides the native browser while the tab dropdown is open', async () => {
+    it('does not cover the native browser to show tabs', () => {
       setupStore({ browserPane: createTabbedPane() });
       render(<BrowserPanel layoutVersion={1} />);
 
-      fireEvent.click(screen.getByTitle('Browser tabs'));
-      await waitFor(() => {
-        expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserOverlayCount).toBe(1);
-      });
+      expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserOverlayCount).toBe(0);
+    });
 
-      fireEvent.click(screen.getByTitle('Browser tabs'));
+    it('reorders tabs by dragging and keeps the active native page selected', async () => {
+      setupStore({ browserPane: createTabbedPane() });
+      render(<BrowserPanel layoutVersion={1} />);
+
+      const tabs = screen.getAllByRole('tab');
+      const transfer = { effectAllowed: '', dropEffect: '', setData: vi.fn() };
+      fireEvent.dragStart(tabs[0].closest('.browser-tab')!, { dataTransfer: transfer });
+      fireEvent.dragOver(tabs[1].closest('.browser-tab')!, { dataTransfer: transfer });
+      fireEvent.drop(tabs[1].closest('.browser-tab')!, { dataTransfer: transfer });
+
       await waitFor(() => {
-        expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserOverlayCount).toBe(0);
+        expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserPane?.tabs.map((tab) => tab.id)).toEqual(['tab-b', 'tab-a']);
+      });
+      expect(mockBrowserMoveTab).toHaveBeenCalledWith('workspace-1', 'tab-a', 'tab-b', 'tab-a');
+      expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserPane?.activeTabId).toBe('tab-a');
+      expect(mockBrowserSwitchTab).not.toHaveBeenCalled();
+    });
+
+    it('reorders tabs with Alt+Shift+arrow keys', async () => {
+      setupStore({ browserPane: createTabbedPane() });
+      render(<BrowserPanel layoutVersion={1} />);
+
+      fireEvent.keyDown(screen.getByRole('tab', { name: 'example.com' }), { key: 'ArrowLeft', altKey: true, shiftKey: true });
+      await waitFor(() => {
+        expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['example.com', 'GitHub']);
       });
     });
 
@@ -1203,7 +1223,6 @@ describe('BrowserPanel', () => {
       setupStore({ browserPane: createTabbedPane() });
       render(<BrowserPanel layoutVersion={1} />);
 
-      fireEvent.click(screen.getByTitle('Browser tabs'));
       fireEvent.click(screen.getByTitle('New tab'));
 
       await waitFor(() => {
@@ -1223,8 +1242,7 @@ describe('BrowserPanel', () => {
       setupStore({ browserPane: createTabbedPane() });
       render(<BrowserPanel layoutVersion={1} />);
 
-      fireEvent.click(screen.getByTitle('Browser tabs'));
-      fireEvent.click(screen.getByText('example.com/docs'));
+      fireEvent.click(screen.getByRole('tab', { name: 'example.com' }));
 
       await waitFor(() => {
         expect(mockBrowserSwitchTab).toHaveBeenCalledWith('workspace-1', 'tab-b');
@@ -1237,7 +1255,6 @@ describe('BrowserPanel', () => {
       setupStore({ browserPane: createTabbedPane() });
       render(<BrowserPanel layoutVersion={1} />);
 
-      fireEvent.click(screen.getByTitle('Browser tabs'));
       fireEvent.click(screen.getAllByTitle('Close tab')[0]);
 
       await waitFor(() => {
@@ -1259,7 +1276,6 @@ describe('BrowserPanel', () => {
       });
       render(<BrowserPanel layoutVersion={1} />);
 
-      fireEvent.click(screen.getByTitle('Browser tabs'));
       const closeButton = screen.getByTitle('Cannot close the last tab') as HTMLButtonElement;
       expect(closeButton.disabled).toBe(true);
       fireEvent.click(closeButton);
@@ -1282,8 +1298,7 @@ describe('BrowserPanel', () => {
       });
       mockBrowserSetBounds.mockClear();
 
-      fireEvent.click(screen.getByTitle('Browser tabs'));
-      fireEvent.click(screen.getByText('example.com/docs'));
+      fireEvent.click(screen.getByRole('tab', { name: 'example.com' }));
       act(() => {
         flushAnimationFrame();
       });
@@ -1465,8 +1480,7 @@ describe('BrowserPanel', () => {
       });
       expect(await screen.findByRole('listbox', { name: 'URL history suggestions' })).toBeTruthy();
 
-      fireEvent.click(screen.getByTitle('Browser tabs'));
-      fireEvent.click(screen.getByText('Docs'));
+      fireEvent.click(screen.getByRole('tab', { name: 'Docs' }));
 
       await waitFor(() => {
         expect(screen.queryByRole('listbox', { name: 'URL history suggestions' })).toBeNull();

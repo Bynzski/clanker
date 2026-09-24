@@ -67,6 +67,7 @@ export const BROWSER_SAVE_URL = 'browser-save-url';
 export const BROWSER_CREATE_TAB = 'browser-create-tab';
 export const BROWSER_CLOSE_TAB = 'browser-close-tab';
 export const BROWSER_SWITCH_TAB = 'browser-switch-tab';
+export const BROWSER_MOVE_TAB = 'browser-move-tab';
 export const BROWSER_GET_TABS = 'browser-get-tabs';
 export const BROWSER_TAB_NAVIGATE = 'browser-tab-navigate';
 export const BROWSER_HISTORY_ADD = 'browser-history-add';
@@ -248,6 +249,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   BROWSER_CREATE_TAB,
   BROWSER_CLOSE_TAB,
   BROWSER_SWITCH_TAB,
+  BROWSER_MOVE_TAB,
   BROWSER_GET_TABS,
   BROWSER_TAB_NAVIGATE,
   BROWSER_HISTORY_ADD,

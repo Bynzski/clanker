@@ -59,6 +59,7 @@ import {
   BROWSER_CREATE_TAB,
   BROWSER_CLOSE_TAB,
   BROWSER_SWITCH_TAB,
+  BROWSER_MOVE_TAB,
   BROWSER_GET_TABS,
   BROWSER_TAB_NAVIGATE,
   BROWSER_HISTORY_ADD,
@@ -231,6 +232,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(BROWSER_CLOSE_TAB, workspaceId, tabId),
   browserSwitchTab: (workspaceId: string, tabId: string) =>
     ipcRenderer.invoke(BROWSER_SWITCH_TAB, workspaceId, tabId),
+  browserMoveTab: (workspaceId: string, tabId: string, targetTabId: string, activeTabId: string) =>
+    ipcRenderer.invoke(BROWSER_MOVE_TAB, workspaceId, tabId, targetTabId, activeTabId),
   browserGetTabs: (workspaceId: string) =>
     ipcRenderer.invoke(BROWSER_GET_TABS, workspaceId),
   browserTabNavigate: (workspaceId: string, tabId: string, url: string) =>

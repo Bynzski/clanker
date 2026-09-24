@@ -29,6 +29,7 @@ import {
   BROWSER_CREATE_TAB,
   BROWSER_CLOSE_TAB,
   BROWSER_SWITCH_TAB,
+  BROWSER_MOVE_TAB,
   BROWSER_GET_TABS,
   BROWSER_TAB_NAVIGATE,
   BROWSER_HISTORY_ADD,
@@ -459,7 +460,10 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     };
     lastBrowserBoundsByWorkspace.set(workspaceId, bounds);
 
-    const targetTabId = resolveTabIdForWorkspace(workspaceId, tabId);
+    // Bounds updates can arrive after a newer tab switch. Once a tab is
+    // selected, only explicit switch/create actions should change it.
+    const selectedTabId = getActiveTabId(workspaceId);
+    const targetTabId = selectedTabId ?? resolveTabIdForWorkspace(workspaceId, tabId);
     if (!targetTabId) {
       return;
     }
@@ -467,7 +471,9 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     const entry = ensureTabViewEntry(workspaceId, targetTabId, deps);
     if (!entry) return;
 
-    setActiveTabId(workspaceId, targetTabId, deps);
+    if (!selectedTabId) {
+      setActiveTabId(workspaceId, targetTabId, deps);
+    }
     showTabView(workspaceId, targetTabId, deps);
   });
 
@@ -605,6 +611,24 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
       showTabView(workspaceId, tabId, deps);
     }
     return { url: entry.url, title: entry.title };
+  });
+
+  ipcMain.handle(BROWSER_MOVE_TAB, (
+    _, workspaceId: string, tabId: string, targetTabId: string, activeTabId: string,
+  ) => {
+    const views = getExistingWorkspaceTabViews(workspaceId, deps);
+    const order = tabOrderByWorkspace.get(workspaceId);
+    if (!views || !order || !views.has(activeTabId)) return false;
+    const fromIndex = order.indexOf(tabId);
+    const targetIndex = order.indexOf(targetTabId);
+    if (fromIndex < 0 || targetIndex < 0) return false;
+    if (fromIndex !== targetIndex) {
+      order.splice(fromIndex, 1);
+      order.splice(targetIndex, 0, tabId);
+    }
+    setActiveTabId(workspaceId, activeTabId, deps);
+    showTabView(workspaceId, activeTabId, deps);
+    return true;
   });
 
   ipcMain.handle(BROWSER_GET_TABS, (_, workspaceId: string) => {

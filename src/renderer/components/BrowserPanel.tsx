@@ -1,19 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type {
-  MouseEvent as ReactMouseEvent,
-  RefObject,
   ChangeEventHandler,
   FocusEventHandler,
   KeyboardEventHandler,
 } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, MousePointer2, ChevronDown, Plus } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, MousePointer2 } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
-import type { BrowserTab } from '../store/workspaceTypes';
 import { useScopedWorkspace } from './WorkspaceScope';
 import { useDragHandle } from './dragHandleContext';
 import './BrowserPanel.css';
 import BrowserUrlInput from './BrowserUrlInput';
+import BrowserTabStrip from './BrowserTabStrip';
 import { useBrowserUrlAutocomplete } from './useBrowserUrlAutocomplete';
 import { useBrowserPanelActions } from './useBrowserPanelActions';
 import { useBrowserBoundsLifecycle } from './useBrowserBoundsLifecycle';
@@ -25,17 +23,6 @@ import {
 interface BrowserPanelProps {
   workspaceId?: string;
   layoutVersion: number;
-}
-
-function getTabLabel(tab: BrowserTab | null): string {
-  if (!tab) return 'New Tab';
-  const title = tab.title.trim();
-  if (title) return title;
-  try {
-    return new URL(tab.url).hostname || tab.url || 'New Tab';
-  } catch {
-    return tab.url || 'New Tab';
-  }
 }
 
 function isWindowsDrivePath(value: string): boolean {
@@ -61,100 +48,6 @@ function normalizeBrowserInputUrl(rawUrl: string): string {
   return `https://${navigateUrl}`;
 }
 
-function getTabSubtitle(tab: BrowserTab): string {
-  try {
-    const parsed = new URL(tab.url);
-    return `${parsed.hostname}${parsed.pathname === '/' ? '' : parsed.pathname}`;
-  } catch {
-    return tab.url;
-  }
-}
-
-interface BrowserTabMenuProps {
-  tabsMenuRef: RefObject<HTMLDivElement | null>;
-  tabsOpen: boolean;
-  browserTabs: BrowserTab[];
-  activeTab: BrowserTab | null;
-  activeTabId: string | null;
-  onToggle: () => void;
-  onNewTab: () => void;
-  onSwitchTab: (tabId: string) => void;
-  onCloseTab: (event: ReactMouseEvent, tabId: string) => void;
-}
-
-function BrowserTabMenu({
-  tabsMenuRef,
-  tabsOpen,
-  browserTabs,
-  activeTab,
-  activeTabId,
-  onToggle,
-  onNewTab,
-  onSwitchTab,
-  onCloseTab,
-}: BrowserTabMenuProps) {
-  return (
-    <div className="browser-tab-menu" ref={tabsMenuRef}>
-      <button
-        className="browser-tab-trigger"
-        type="button"
-        onClick={onToggle}
-        aria-haspopup="menu"
-        aria-expanded={tabsOpen}
-        title="Browser tabs"
-      >
-        <span className="browser-tab-count">{browserTabs.length || 1}</span>
-        <span className="browser-tab-current">{getTabLabel(activeTab)}</span>
-        <ChevronDown size={14} strokeWidth={2} />
-      </button>
-      {tabsOpen ? (
-        <div className="browser-tab-dropdown" role="menu" aria-label="Browser tabs">
-          <div className="browser-tab-dropdown-header">
-            <span>Tabs</span>
-            <button className="browser-tab-add" type="button" onClick={onNewTab} title="New tab">
-              <Plus size={14} strokeWidth={2} />
-            </button>
-          </div>
-          <div className="browser-tab-list">
-            {browserTabs.map((tab) => {
-              const isActive = tab.id === activeTabId;
-              return (
-                <div
-                  key={tab.id}
-                  className={`browser-tab-row ${isActive ? 'active' : ''}`}
-                  role="menuitem"
-                  tabIndex={0}
-                  onClick={() => onSwitchTab(tab.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      onSwitchTab(tab.id);
-                    }
-                  }}
-                >
-                  <span className="browser-tab-row-main">
-                    <span className="browser-tab-row-title">{getTabLabel(tab)}</span>
-                    <span className="browser-tab-row-url">{getTabSubtitle(tab)}</span>
-                  </span>
-                  <button
-                    className="browser-tab-close"
-                    type="button"
-                    onClick={(event) => onCloseTab(event, tab.id)}
-                    disabled={browserTabs.length <= 1}
-                    title={browserTabs.length <= 1 ? 'Cannot close the last tab' : 'Close tab'}
-                  >
-                    <X size={12} strokeWidth={2} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 interface BrowserToolbarProps {
   canGoBack: boolean;
   canGoForward: boolean;
@@ -162,15 +55,6 @@ interface BrowserToolbarProps {
   handleForward: () => void;
   handleRefresh: () => void;
   handleStop: () => void;
-  tabsMenuRef: RefObject<HTMLDivElement | null>;
-  tabsOpen: boolean;
-  browserTabs: BrowserTab[];
-  activeTab: BrowserTab | null;
-  activeTabId: string | null;
-  setTabsOpen: (value: boolean | ((open: boolean) => boolean)) => void;
-  handleNewTab: () => Promise<void>;
-  handleSwitchTab: (tabId: string) => Promise<void>;
-  handleCloseTab: (event: ReactMouseEvent, tabId: string) => Promise<void>;
   inputUrl: string;
   historySuggestions: BrowserHistoryEntry[];
   highlightedSuggestionIndex: number;
@@ -193,15 +77,6 @@ function BrowserToolbar({
   handleForward,
   handleRefresh,
   handleStop,
-  tabsMenuRef,
-  tabsOpen,
-  browserTabs,
-  activeTab,
-  activeTabId,
-  setTabsOpen,
-  handleNewTab,
-  handleSwitchTab,
-  handleCloseTab,
   inputUrl,
   historySuggestions,
   highlightedSuggestionIndex,
@@ -230,24 +105,6 @@ function BrowserToolbar({
       <button className="browser-nav-btn browser-stop" onClick={handleStop} title="Stop">
         <X size={16} strokeWidth={2} />
       </button>
-
-      <BrowserTabMenu
-        tabsMenuRef={tabsMenuRef}
-        tabsOpen={tabsOpen}
-        browserTabs={browserTabs}
-        activeTab={activeTab}
-        activeTabId={activeTabId}
-        onToggle={() => setTabsOpen((open) => !open)}
-        onNewTab={() => {
-          void handleNewTab();
-        }}
-        onSwitchTab={(tabId) => {
-          void handleSwitchTab(tabId);
-        }}
-        onCloseTab={(event, tabId) => {
-          void handleCloseTab(event, tabId);
-        }}
-      />
 
       <BrowserUrlInput
         inputUrl={inputUrl}
@@ -288,15 +145,14 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
 
   const [canGoBack, setCanGoBack] = useState(activeTab?.canGoBack ?? false);
   const [canGoForward, setCanGoForward] = useState(activeTab?.canGoForward ?? false);
-  const [tabsOpen, setTabsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const tabsMenuRef = useRef<HTMLDivElement>(null);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
   const removeBrowserTab = useWorkspaceStore((state) => state.removeBrowserTab);
   const setActiveBrowserTab = useWorkspaceStore((state) => state.setActiveBrowserTab);
+  const moveBrowserTab = useWorkspaceStore((state) => state.moveBrowserTab);
   const updateBrowserTab = useWorkspaceStore((state) => state.updateBrowserTab);
   const browserOverlayCount = workspace?.browserOverlayCount ?? 0;
   const browserTabs = workspace?.browserPane?.tabs ?? [];
@@ -372,31 +228,18 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   });
 
   useEffect(() => {
-    setTabsOpen(false);
     syncDisplayedUrl(displayedUrl);
     resetAutocompleteState();
   }, [activeTabId, displayedUrl, resetAutocompleteState, syncDisplayedUrl]);
 
   useEffect(() => {
-    const overlayOpen = tabsOpen || historySuggestions.length > 0;
-    if (!overlayOpen || !workspace?.id) {
+    if (historySuggestions.length === 0 || !workspace?.id) {
       return;
     }
 
     pushBrowserOverlay(workspace.id);
     return () => popBrowserOverlay(workspace.id);
-  }, [historySuggestions.length, popBrowserOverlay, pushBrowserOverlay, tabsOpen, workspace?.id]);
-
-  useEffect(() => {
-    if (!tabsOpen) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!tabsMenuRef.current?.contains(event.target as Node)) {
-        setTabsOpen(false);
-      }
-    };
-    document.addEventListener('pointerdown', handlePointerDown);
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [tabsOpen]);
+  }, [historySuggestions.length, popBrowserOverlay, pushBrowserOverlay, workspace?.id]);
 
   useEffect(() => {
     if (!workspace?.id || !isActiveWorkspace) {
@@ -524,9 +367,16 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     setAnnotationActive,
     removeBrowserTab,
     setActiveBrowserTab,
-    onTabMenuClose: () => setTabsOpen(false),
     scheduleBoundsUpdate,
   });
+
+  const handleMoveTab = useCallback(async (tabId: string, targetTabId: string) => {
+    if (!workspace?.id || !activeTabId) return;
+    const moved = await window.electronAPI.browserMoveTab(workspace.id, tabId, targetTabId, activeTabId);
+    if (!moved) return;
+    moveBrowserTab(tabId, targetTabId, workspace.id);
+    scheduleBoundsUpdate(true);
+  }, [activeTabId, moveBrowserTab, scheduleBoundsUpdate, workspace?.id]);
 
   return (
     <div className="browser-panel" ref={containerRef}>
@@ -534,8 +384,15 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
         <div className="pane-drag-surface" title="Drag to move pane" aria-label="Move browser pane" {...dragHandleProps}>
           <div className="browser-pane-drag-handle" aria-hidden="true" />
           <span className="browser-pane-title">Browser</span>
-          <span className="browser-pane-spacer" />
         </div>
+        <BrowserTabStrip
+          tabs={browserTabs}
+          activeTabId={activeTabId}
+          onNewTab={() => void handleNewTab()}
+          onSwitchTab={(tabId) => void handleSwitchTab(tabId)}
+          onCloseTab={(event, tabId) => void handleCloseTab(event, tabId)}
+          onMoveTab={(tabId, targetTabId) => void handleMoveTab(tabId, targetTabId)}
+        />
       </div>
       <BrowserToolbar
         canGoBack={canGoBack}
@@ -544,15 +401,6 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
         handleForward={handleForward}
         handleRefresh={handleRefresh}
         handleStop={handleStop}
-        tabsMenuRef={tabsMenuRef}
-        tabsOpen={tabsOpen}
-        browserTabs={browserTabs}
-        activeTab={activeTab}
-        activeTabId={activeTabId}
-        setTabsOpen={setTabsOpen}
-        handleNewTab={handleNewTab}
-        handleSwitchTab={handleSwitchTab}
-        handleCloseTab={handleCloseTab}
         inputUrl={inputUrl}
         historySuggestions={historySuggestions}
         highlightedSuggestionIndex={highlightedSuggestionIndex}
