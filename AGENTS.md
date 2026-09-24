@@ -3,7 +3,7 @@
 ## Versions & Requirements
 
 - **TypeScript:** 6.0.2
-- **Electron:** 41.1.1
+- **Electron:** 41.10.7
 - **React:** 19.2.4
 - **Node.js:** 22.12+ (required by current Vite/Electron rebuild tooling)
 - **npm:** 10+
