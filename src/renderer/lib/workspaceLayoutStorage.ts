@@ -18,6 +18,7 @@ type PersistedLayoutNode =
 interface PersistedWorkspaceLayout {
   version: typeof STORAGE_VERSION;
   terminalCount: number;
+  explorerVisible?: boolean;
   root: PersistedLayoutNode | null;
 }
 
@@ -33,7 +34,6 @@ export function getWorkspaceLayoutStorageKey(workspacePath: string, isWindows?: 
 function createPaneKeyMap(workspace: WorkspaceTab): Map<string, string> {
   const map = new Map<string, string>();
   workspace.panes.forEach((pane, index) => map.set(pane.id, `terminal:${index}`));
-  if (workspace.explorerPane) map.set(workspace.explorerPane.id, 'explorer');
   if (workspace.browserPane) map.set(workspace.browserPane.id, 'browser');
   if (workspace.editorPane) map.set(workspace.editorPane.id, 'editor');
   if (workspace.notesPane) map.set(workspace.notesPane.id, 'notes');
@@ -127,7 +127,7 @@ function restoreUtilityPaneState(
   workspace: WorkspaceTab,
   paneKeys: Set<string>,
 ): WorkspaceTab {
-  const explorerPane = paneKeys.has('explorer')
+  const explorerPane = workspace.explorerVisible || paneKeys.has('explorer')
     ? workspace.explorerPane ?? { id: generateId('explorer') }
     : workspace.explorerPane;
   const browserPane = paneKeys.has('browser')
@@ -147,7 +147,7 @@ function restoreUtilityPaneState(
   return {
     ...workspace,
     explorerPane,
-    explorerVisible: paneKeys.has('explorer'),
+    explorerVisible: workspace.explorerVisible || paneKeys.has('explorer'),
     browserPane,
     browserVisible: paneKeys.has('browser'),
     editorPane,
@@ -163,6 +163,7 @@ export function persistWorkspaceLayout(workspace: WorkspaceTab): void {
     const payload: PersistedWorkspaceLayout = {
       version: STORAGE_VERSION,
       terminalCount: workspace.panes.length,
+      explorerVisible: workspace.explorerVisible,
       root: serializeNode(workspace.layoutRoot, createPaneKeyMap(workspace)),
     };
     window.localStorage.setItem(getWorkspaceLayoutStorageKey(workspace.workspacePath), JSON.stringify(payload));
@@ -181,7 +182,11 @@ export function restoreWorkspaceLayout(workspace: WorkspaceTab): WorkspaceTab {
       return workspace;
     }
     const persistedRoot = parsePersistedNode(value.root);
-    if (persistedRoot == null) return workspace;
+    if (persistedRoot == null) {
+      return value.root === null && typeof value.explorerVisible === 'boolean'
+        ? { ...workspace, explorerVisible: value.explorerVisible }
+        : workspace;
+    }
 
     // Pane instances are runtime state and receive fresh IDs on every app
     // launch. Recreate utility panes represented by the saved topology before
@@ -191,15 +196,20 @@ export function restoreWorkspaceLayout(workspace: WorkspaceTab): WorkspaceTab {
       workspace,
       collectPersistedPaneKeys(persistedRoot),
     );
+    restoredWorkspace.explorerVisible = typeof value.explorerVisible === 'boolean'
+      ? value.explorerVisible
+      : restoredWorkspace.explorerVisible;
+    if (restoredWorkspace.explorerVisible && !restoredWorkspace.explorerPane) {
+      restoredWorkspace.explorerPane = { id: generateId('explorer') };
+    }
 
     const paneIds = new Map<string, string>();
     restoredWorkspace.panes.forEach((pane, index) => paneIds.set(`terminal:${index}`, pane.id));
-    if (restoredWorkspace.explorerPane) paneIds.set('explorer', restoredWorkspace.explorerPane.id);
     if (restoredWorkspace.browserPane) paneIds.set('browser', restoredWorkspace.browserPane.id);
     if (restoredWorkspace.editorPane) paneIds.set('editor', restoredWorkspace.editorPane.id);
     if (restoredWorkspace.notesPane) paneIds.set('notes', restoredWorkspace.notesPane.id);
     const layoutRoot = restoreNode(persistedRoot, paneIds);
-    if (layoutRoot == null) return workspace;
+    if (layoutRoot == null && !restoredWorkspace.explorerVisible) return workspace;
 
     return {
       ...restoredWorkspace,

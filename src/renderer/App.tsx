@@ -101,7 +101,7 @@ function App() {
   useEffect(() => useWorkspaceStore.subscribe((state, previousState) => {
     for (const workspace of state.workspaces) {
       const previous = previousState.workspaces.find((entry) => entry.id === workspace.id);
-      if (previous?.layoutRoot !== workspace.layoutRoot) {
+      if (previous?.layoutRoot !== workspace.layoutRoot || previous?.explorerVisible !== workspace.explorerVisible) {
         persistWorkspaceLayout(workspace);
       }
     }

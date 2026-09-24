@@ -197,7 +197,6 @@ describe('workspace lifecycle', () => {
     expect(state.editorPane).not.toBeNull();
     expect(state.notesPane).not.toBeNull();
     expect(collectLeafPaneIds(state.layoutRoot)).toEqual([
-      state.explorerPane?.id,
       'pane-1',
       state.browserPane?.id,
       state.editorPane?.id,
@@ -1158,28 +1157,25 @@ describe('pane management', () => {
     ]);
   });
 
-  it('inserts and removes Explorer as a first-class layout leaf', () => {
+  it('keeps the Explorer dock outside the pane layout', () => {
+    const layoutRoot = getStore().layoutRoot;
     getStore().setExplorerVisible(true);
-
-    const explorerPaneId = getStore().explorerPane?.id;
-    expect(explorerPaneId).toBeTruthy();
-    expect(collectLeafPaneIds(getStore().layoutRoot)).toContain(explorerPaneId);
+    expect(getStore().layoutRoot).toBe(layoutRoot);
+    expect(getStore().explorerVisible).toBe(true);
 
     getStore().setExplorerVisible(false);
-
     expect(getStore().explorerVisible).toBe(false);
-    expect(collectLeafPaneIds(getStore().layoutRoot)).not.toContain(explorerPaneId);
+    expect(getStore().layoutRoot).toBe(layoutRoot);
   });
 
-  it('preserves the Explorer leaf when terminal panes are normalized', () => {
+  it('keeps the Explorer visible when terminal panes are normalized', () => {
     getStore().setExplorerVisible(true);
-    const explorerPaneId = getStore().explorerPane!.id;
 
     getStore().setPanes([...getStore().panes]);
-    expect(collectLeafPaneIds(getStore().layoutRoot)).toContain(explorerPaneId);
+    expect(getStore().explorerVisible).toBe(true);
 
     getStore().addTerminal({ ...getStore().terminals[0] });
-    expect(collectLeafPaneIds(getStore().layoutRoot)).toContain(explorerPaneId);
+    expect(getStore().explorerVisible).toBe(true);
   });
 
   it('updatePanePosition normalizes and applies position', () => {

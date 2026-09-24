@@ -880,22 +880,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return state;
     }
 
-    const explorerPane = workspace.explorerPane ?? { id: generateId('explorer') };
-    const nextLayoutRoot = visible
-      ? insertPaneIntoLayout(workspace.layoutRoot, explorerPane.id, {
-          ...workspace,
-          explorerPane,
-          explorerVisible: true,
-          notesPane: workspace.notesPane ?? null,
-          notesVisible: workspace.notesVisible ?? false,
-        })
-      : removePaneFromLayout(workspace.layoutRoot, explorerPane.id);
     return patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
       ...currentWorkspace,
       explorerVisible: visible,
-      explorerPane,
-      layoutRoot: nextLayoutRoot,
-      layoutRevision: (currentWorkspace.layoutRevision ?? 0) + 1,
     }));
   }),
 

@@ -12,6 +12,12 @@ vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
   ),
 }));
 
+vi.mock('../../../src/renderer/components/FileExplorer', () => ({
+  default: ({ workspaceId }: { workspaceId: string }) => (
+    <aside data-testid="explorer-dock" data-explorer-workspace-id={workspaceId} />
+  ),
+}));
+
 const mockBrowserHide = vi.fn();
 
 describe('WorkspaceHost', () => {
@@ -49,6 +55,7 @@ describe('WorkspaceHost', () => {
     expect(surfacesContainer).toBeTruthy();
     expect(surfacesContainer?.querySelector('[data-workspace-id="ws-1"]')).toBeTruthy();
     expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(1);
+    expect(screen.getByTestId('explorer-dock').nextElementSibling).toHaveAttribute('data-testid', 'dynamic-pane-layout');
   });
 
   it('renders parked workspace surfaces in the shared container with proper CSS hiding', async () => {

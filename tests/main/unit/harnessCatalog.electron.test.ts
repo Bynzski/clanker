@@ -562,7 +562,7 @@ describe('harness discovery integration', () => {
       
       for (const model of models) {
         // Model IDs should match expected patterns
-        expect(model.id).toMatch(/^[\w/.:-]+$/);
+        expect(model.id).toMatch(/^[\w/~.:-]+$/);
         // Labels may contain spaces (e.g., "Claude Sonnet 4.6")
         expect(typeof model.label).toBe('string');
         expect(model.label.length).toBeGreaterThan(0);

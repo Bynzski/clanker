@@ -95,8 +95,8 @@ xterm buffers, and native browser sessions remain warm across both states.
 
 | Field | Invariant | Explanation |
 |-------|-----------|-------------|
-| `layoutRoot` | `null` ↔ no terminal or Explorer/Browser/Editor/Notes pane is visible | Layout only exists when there are visible panes |
-| `layoutRoot` | All pane IDs in tree exist in `panes[].id` or the current Explorer/Browser/Editor/Notes pane | The layout tree only references valid pane IDs |
+| `layoutRoot` | `null` ↔ no terminal or Browser/Editor/Notes pane is visible | The Explorer is a separate left dock |
+| `layoutRoot` | All pane IDs in tree exist in `panes[].id` or the current Browser/Editor/Notes pane | The layout tree only references valid pane IDs |
 | `layoutUndoStack` | Restored roots are reconciled with the current visible pane set | Undo cannot resurrect closed panes or orphan newly opened panes |
 
 **Why:** The `layoutRoot` is a tree of pane references. If a pane is referenced in the tree but doesn't exist in the panes array, rendering will fail. Conversely, orphaned panes (existing but not in the tree) would be invisible and waste resources.

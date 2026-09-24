@@ -590,9 +590,6 @@ export function normalizeLayoutRoot(
 ): LayoutNode | null {
   if (layoutRoot == null) {
     const paneIds = state.panes.map((pane) => pane.id);
-    if (state.explorerVisible && state.explorerPane) {
-      paneIds.push(state.explorerPane.id);
-    }
     if (state.browserVisible && state.browserPane) {
       paneIds.push(state.browserPane.id);
     }
@@ -606,9 +603,6 @@ export function normalizeLayoutRoot(
   }
 
   const visibleIds = new Set(state.panes.map((pane) => pane.id));
-  if (state.explorerVisible && state.explorerPane) {
-    visibleIds.add(state.explorerPane.id);
-  }
   if (state.browserVisible && state.browserPane) {
     visibleIds.add(state.browserPane.id);
   }
@@ -664,9 +658,6 @@ export function buildWorkspaceLayout(
   }
 
   const paneIds = workspace.panes.map((pane) => pane.id);
-  if (workspace.explorerVisible && workspace.explorerPane) {
-    paneIds.push(workspace.explorerPane.id);
-  }
   if (workspace.browserVisible && workspace.browserPane) {
     paneIds.push(workspace.browserPane.id);
   }

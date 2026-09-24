@@ -36,7 +36,6 @@ import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope
 import BrowserPanel from './BrowserPanel';
 import EditorPane from './EditorPane';
 import NotesPane from './NotesPane';
-import FileExplorer from './FileExplorer';
 import { DockEdgeTargets } from './DockEdgeTargets';
 import './DynamicPaneLayout.css';
 
@@ -202,8 +201,6 @@ function LeafView({
       workspaceId={workspaceId}
       layoutVersion={workspace.layoutRevision ?? fallbackLayoutRevision}
     />
-  ) : workspace?.explorerVisible && workspace.explorerPane?.id === paneId ? (
-    <FileExplorer workspaceId={workspaceId} />
   ) : workspace?.editorPane?.id === paneId ? (
     <Suspense fallback={<div className="layout-pane-loading">Loading editor...</div>}>
       <EditorPane workspaceId={workspaceId} />

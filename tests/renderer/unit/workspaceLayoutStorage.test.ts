@@ -114,12 +114,10 @@ describe('workspace layout persistence', () => {
     const restored = restoreWorkspaceLayout(current);
 
     expect(collectLeafPaneIds(restored.layoutRoot)).toEqual([
-      'explorer-new',
       'pane-new',
       'browser-new',
     ]);
-    expect((restored.layoutRoot as LayoutSplit).ratio).toBe(0.35);
-    expect(((restored.layoutRoot as LayoutSplit).second as LayoutSplit).ratio).toBe(0.6);
+    expect((restored.layoutRoot as LayoutSplit).ratio).toBe(0.6);
     expect(restored.layoutRevision).toBe(5);
     expect(restored.layoutUndoStack).toEqual([]);
   });
@@ -141,10 +139,40 @@ describe('workspace layout persistence', () => {
     expect(restored.browserVisible).toBe(true);
     expect(restored.browserPane).not.toBeNull();
     expect(collectLeafPaneIds(restored.layoutRoot)).toEqual([
-      restored.explorerPane?.id,
       'pane-1',
       restored.browserPane?.id,
     ]);
+  });
+
+  it('migrates an older saved Explorer pane into the left dock', () => {
+    window.localStorage.setItem(getWorkspaceLayoutStorageKey('/projects/clanker'), JSON.stringify({
+      version: 1,
+      terminalCount: 1,
+      root: {
+        type: 'split', orientation: 'horizontal', ratio: 0.35,
+        first: { type: 'leaf', paneKey: 'explorer' },
+        second: { type: 'leaf', paneKey: 'terminal:0' },
+      },
+    }));
+    const restored = restoreWorkspaceLayout(workspaceWithLayout({
+      explorerVisible: false,
+      explorerPane: null,
+    }));
+
+    expect(restored.explorerVisible).toBe(true);
+    expect(collectLeafPaneIds(restored.layoutRoot)).toEqual(['pane-1']);
+  });
+
+  it('restores dock visibility when there are no movable panes', () => {
+    persistWorkspaceLayout(workspaceWithLayout({ layoutRoot: null }));
+    const restored = restoreWorkspaceLayout(workspaceWithLayout({
+      explorerVisible: false,
+      explorerPane: null,
+      layoutRoot: null,
+    }));
+
+    expect(restored.explorerVisible).toBe(true);
+    expect(restored.layoutRoot).toBeNull();
   });
 
   it('uses the persisted topology as the source of utility-pane visibility', () => {

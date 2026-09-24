@@ -618,9 +618,6 @@ function validateLayoutInvariants(state: Partial<WorkspaceState>): string[] {
     if (state.browserVisible === true) {
       warnings.push('L1 violated: layoutRoot is null but browser is visible');
     }
-    if (state.explorerVisible === true) {
-      warnings.push('L1 violated: layoutRoot is null but explorer is visible');
-    }
     if (state.editorVisible === true) {
       warnings.push('L1 violated: layoutRoot is null but editor is visible');
     }
@@ -636,11 +633,10 @@ function validateLayoutInvariants(state: Partial<WorkspaceState>): string[] {
     Array.isArray(state.panes)
     && state.panes.length === 0
     && state.browserVisible === false
-    && state.explorerVisible === false
     && state.editorVisible === false
     && state.notesVisible === false
   ) {
-    warnings.push('L1 violated: layoutRoot is non-null but no panes exist and explorer/browser/editor/notes are invisible');
+    warnings.push('L1 violated: layoutRoot is non-null but no terminal/browser/editor/notes panes exist');
   }
 
   const panes = state.panes;
@@ -655,13 +651,12 @@ function validateLayoutInvariants(state: Partial<WorkspaceState>): string[] {
     const allValidPaneIds = new Set<string>([
       ...panes.map(p => p.id),
       ...(state.browserPane ? [state.browserPane.id] : []),
-      ...(state.explorerPane ? [state.explorerPane.id] : []),
       ...(state.editorPane ? [state.editorPane.id] : []),
       ...(state.notesPane ? [state.notesPane.id] : []),
     ]);
     for (const paneId of leafPaneIds) {
       if (!allValidPaneIds.has(paneId)) {
-        warnings.push(`L2 violated: layout pane "${paneId}" not found in panes[], explorerPane, browserPane, editorPane, or notesPane`);
+        warnings.push(`L2 violated: layout pane "${paneId}" not found in panes[], browserPane, editorPane, or notesPane`);
       }
     }
   }

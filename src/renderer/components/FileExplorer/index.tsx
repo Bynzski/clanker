@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useDragHandle } from '../dragHandleContext';
 import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw, Search, X } from 'lucide-react';
 import type React from 'react';
 import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer';
@@ -61,6 +60,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     setExplorerSelectedPath,
     toggleExplorerPath,
     setExplorerVisible,
+    setExplorerSidebarWidth,
     setShowHiddenFiles,
     setExplorerDirectoryEntries,
     setExplorerDirectoryLoading,
@@ -74,6 +74,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   const workspacePath = workspace?.workspacePath ?? '';
   const gitChanges = workspace?.gitChanges ?? [];
   const explorerVisible = workspace?.explorerVisible ?? false;
+  const explorerSidebarWidth = workspace?.explorerSidebarWidth ?? 280;
   const explorerEntriesByPath = useMemo(() => workspace?.explorerEntriesByPath ?? {}, [workspace]);
   const explorerLoadingPaths = useMemo(() => workspace?.explorerLoadingPaths ?? [], [workspace]);
   const explorerErrorsByPath = useMemo(() => workspace?.explorerErrorsByPath ?? {}, [workspace]);
@@ -89,9 +90,27 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   const [renaming, setRenaming] = useState<{ path: string; originalName: string } | null>(null);
   const [filterQuery, setFilterQuery] = useState('');
   const filterInputRef = useRef<HTMLInputElement>(null);
-  const dragHandleProps = useDragHandle();
   const explorerTreeRefreshTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const previousExplorerVisibleRef = useRef(explorerVisible);
+
+  const handleResizeStart = (event: React.MouseEvent) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = explorerSidebarWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (moveEvent: MouseEvent) => {
+      setExplorerSidebarWidth(Math.max(180, Math.min(500, startWidth + moveEvent.clientX - startX)), resolvedWorkspaceId ?? undefined);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
 
   // Hide the native browser whenever the delete confirmation modal is open.
   useEffect(() => {
@@ -475,12 +494,9 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   }
 
   return (
-    <aside className="file-explorer">
+    <aside className="file-explorer" style={{ width: explorerSidebarWidth }}>
       <div className="file-explorer-header">
-        <div className="pane-drag-surface" title="Drag to move pane" aria-label="Move explorer pane" {...dragHandleProps}>
-          <div className="file-explorer-drag-handle" aria-hidden="true" />
-          <span className="file-explorer-title">Explorer</span>
-        </div>
+        <span className="file-explorer-title">Explorer</span>
         <div className="file-explorer-actions">
           <button
             type="button"
@@ -575,6 +591,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
           onFocusFilter={focusFilterInput}
         />
       </div>
+      <div className="explorer-resize-handle" onMouseDown={handleResizeStart} />
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}

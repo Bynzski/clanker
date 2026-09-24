@@ -276,7 +276,7 @@ describe('areGitStatusListsEqual', () => {
 // sanitizeWorkspace
 // ===========================================================================
 describe('sanitizeWorkspace', () => {
-  it('backfills a pane and layout leaf for a visible legacy Explorer', () => {
+  it('keeps a visible legacy Explorer outside the pane layout', () => {
     const workspace = makeWorkspace({
       explorerVisible: true,
       explorerPane: undefined,
@@ -286,7 +286,7 @@ describe('sanitizeWorkspace', () => {
     const sanitized = sanitizeWorkspace(workspace);
 
     expect(sanitized.explorerPane).not.toBeNull();
-    expect(collectLeafPaneIds(sanitized.layoutRoot)).toContain(sanitized.explorerPane?.id);
+    expect(collectLeafPaneIds(sanitized.layoutRoot)).not.toContain(sanitized.explorerPane?.id);
   });
 
   it('clones arrays so mutations do not affect original', () => {
@@ -874,7 +874,7 @@ describe('validateWorkspaceConsistency', () => {
     it('warns when layoutRoot is non-null but no panes exist and utility panes are invisible', () => {
       const state = makeMinimalState({ layoutRoot: makeLeaf('orphan-pane'), panes: [], browserVisible: false, editorVisible: false, notesVisible: false });
       expect(validateWorkspaceConsistency(state)).toContain(
-        'L1 violated: layoutRoot is non-null but no panes exist and explorer/browser/editor/notes are invisible',
+        'L1 violated: layoutRoot is non-null but no terminal/browser/editor/notes panes exist',
       );
     });
   });
@@ -916,7 +916,7 @@ describe('validateWorkspaceConsistency', () => {
       const pane: Pane = { id: 'pane-1', terminalId: null };
       const state = makeMinimalState({ layoutRoot: makeLeaf('ghost-pane'), panes: [pane] });
       expect(validateWorkspaceConsistency(state)).toContain(
-        'L2 violated: layout pane "ghost-pane" not found in panes[], explorerPane, browserPane, editorPane, or notesPane',
+        'L2 violated: layout pane "ghost-pane" not found in panes[], browserPane, editorPane, or notesPane',
       );
     });
   });
