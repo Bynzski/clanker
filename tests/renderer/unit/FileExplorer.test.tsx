@@ -425,11 +425,12 @@ describe('FileExplorer', () => {
     await waitFor(() => {
       expect(spawnTerminal).toHaveBeenCalledWith('/workspace/src');
       expect(useWorkspaceStore.getState().terminals).toHaveLength(initialTerminalCount + 1);
-      expect(useWorkspaceStore.getState().terminals).toContainEqual({
+      expect(useWorkspaceStore.getState().terminals).toContainEqual(expect.objectContaining({
         id: 'terminal-2',
         pid: 2024,
         workingDir: '/workspace/src',
-      });
+        displayName: 'Samson',
+      }));
     });
   });
 

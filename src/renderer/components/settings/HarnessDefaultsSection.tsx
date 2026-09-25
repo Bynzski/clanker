@@ -15,6 +15,7 @@ interface HarnessDefaultsSectionProps {
   loadHarnessModels: (harnessId: string) => Promise<void>;
   handleSetHarnessFlags: (harnessId: string, flags: string) => Promise<void>;
   handleSetHarnessVisible: (harnessId: string, visible: boolean) => Promise<void>;
+  handleSetHarnessAttention: (harnessId: string, enabled: boolean) => Promise<void>;
   handleSetDefaultModel: (harnessId: string, modelId: string) => Promise<void>;
   handleToggleFavorite: (harnessId: string, modelId: string) => Promise<void>;
 }
@@ -29,6 +30,7 @@ export default function HarnessDefaultsSection({
   loadHarnessModels,
   handleSetHarnessFlags,
   handleSetHarnessVisible,
+  handleSetHarnessAttention,
   handleSetDefaultModel,
   handleToggleFavorite,
 }: HarnessDefaultsSectionProps) {
@@ -96,6 +98,15 @@ export default function HarnessDefaultsSection({
 
             {isExpanded && (
               <div className="harness-defaults-panel">
+                <label className="harness-defaults-attention-toggle">
+                  <span className="harness-defaults-field-label">Agent attention</span>
+                  <input
+                    type="checkbox"
+                    checked={defaults?.attentionEnabled === true}
+                    onChange={(event) => void handleSetHarnessAttention(harnessId, event.target.checked)}
+                    aria-label={`Agent attention for ${option?.label ?? harnessId}`}
+                  />
+                </label>
                 <div className="harness-defaults-field">
                   <span className="harness-defaults-field-label">Extra flags</span>
                   <input
@@ -160,7 +171,7 @@ export default function HarnessDefaultsSection({
                             {isUnresolved && (
                               <AlertTriangle size={10} strokeWidth={2} className="unresolved-icon" />
                             )}
-                            {favoriteLabel}
+                            <span className="harness-defaults-favorite-label">{favoriteLabel}</span>
                             <button
                               type="button"
                               className="harness-defaults-remove-fav"
@@ -184,7 +195,7 @@ export default function HarnessDefaultsSection({
                             title={`Add ${entry.label} to favorites`}
                           >
                             <Star size={10} strokeWidth={2} />
-                            {entry.label}
+                            <span className="harness-defaults-favorite-label">{entry.label}</span>
                           </button>
                         ))}
                     </div>

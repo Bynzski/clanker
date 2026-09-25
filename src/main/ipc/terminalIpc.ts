@@ -25,6 +25,8 @@ import {
 } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
 import { toNativePath } from '../../shared/pathNormalize';
+import type { AgentAttentionBroker } from '../agentAttentionBroker';
+import { attentionLaunchOptions, ensureAttentionAdapterFiles, withoutAttentionEnvironment } from '../agentAttentionAdapters';
 
 interface Terminal {
   id: string;
@@ -50,6 +52,7 @@ interface RegisterTerminalIpcDeps {
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
   ensureHarnessWrapperScript?: () => string | null;
   getAppShuttingDown?: () => boolean;
+  agentAttentionBroker?: AgentAttentionBroker;
 }
 
 let appShuttingDown = false;
@@ -70,6 +73,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     getSafeWorkspacePath,
     getHarnessOptions,
     ensureHarnessWrapperScript: ensureHarnessWrapperScriptPath = ensureHarnessWrapperScript,
+    agentAttentionBroker,
   } = deps;
 
   const ok = () => ({ success: true as const });
@@ -82,7 +86,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   const isFiniteNumber = (value: unknown): value is number =>
     typeof value === 'number' && Number.isFinite(value);
 
-  ipcMain.handle(SPAWN_TERMINAL, (_, workingDir: string, harness?: string, model?: string) => {
+  ipcMain.handle(SPAWN_TERMINAL, async (_, workingDir: string, harness?: string, model?: string) => {
     const terminals = getTerminals();
     const mainWindow = getMainWindow();
     const store = getStore();
@@ -97,24 +101,41 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     // PowerShell is interactive by default (no flag needed); bash needs -i.
     const shellArgs = process.platform === 'win32' ? [] : ['-i'];
 
-    const harnessEnv = harness && getHarnessOptions()[harness]?.env ? getHarnessOptions()[harness].env : {};
+    const harnessEnv = (harness && getHarnessOptions()[harness]?.env) || {};
 
     const harnessConfig = harness ? getHarnessOptions()[harness] : undefined;
     const harnessDefaults = store.get('harnessDefaults');
+    const attentionEnabled = Boolean(harnessConfig && harness && harnessDefaults[harness]?.attentionEnabled);
     const userFlags = harness ? harnessDefaults[harness]?.flags : undefined;
     const effectiveModel = model || (harness ? harnessDefaults[harness]?.model || undefined : undefined);
-    const harnessArgs = harnessConfig
+    let harnessArgs = harnessConfig
       ? buildHarnessSpawnArgs(harnessConfig, effectiveModel, userFlags)
       : [];
+    let attentionEnv: Record<string, string> = {};
+    let attentionCommand: string | undefined;
+    if (attentionEnabled && harness && agentAttentionBroker) {
+      try {
+        const options = attentionLaunchOptions(harness, harnessArgs, { ...process.env, ...harnessEnv }, ensureAttentionAdapterFiles());
+        if (options) {
+          attentionEnv = { ...options.env, ...await agentAttentionBroker.register(id, harness) };
+          attentionCommand = ensureAttentionAdapterFiles().command;
+          harnessArgs = options.args;
+        }
+      } catch {
+        agentAttentionBroker.release(id);
+      }
+    }
     const wrapperPath = harnessConfig ? ensureHarnessWrapperScriptPath() : null;
     const harnessCmd = harnessConfig
       ? resolveHarnessSpawn(harnessConfig.command, harnessArgs, wrapperPath)
       : { spawnCmd: userShell, spawnArgs: shellArgs };
 
     const env: { [key: string]: string } = {
-      ...process.env as { [key: string]: string },
+      ...withoutAttentionEnvironment(process.env),
       PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
-      ...harnessEnv,
+      ...withoutAttentionEnvironment(harnessEnv),
+      ...attentionEnv,
+      ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
       ...(harnessConfig ? { CLANKER_GRID_FALLBACK_SHELL: userShell } : {}),
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
@@ -128,7 +149,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       launchLabel = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}`;
     }
 
-    return spawnPtyProcess({
+    try {
+      const result = spawnPtyProcess({
       id,
       spawnCmd: harnessCmd.spawnCmd,
       spawnArgs: harnessCmd.spawnArgs,
@@ -138,7 +160,13 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       mainWindow,
       getIsShuttingDown: () => appShuttingDown,
       launchLabel,
-    });
+      onExit: () => agentAttentionBroker?.release(id),
+      });
+      return { ...result, harnessId: harnessConfig ? harness : undefined, attentionEnabled };
+    } catch (error) {
+      agentAttentionBroker?.release(id);
+      throw error;
+    }
   });
 
   /**
@@ -235,6 +263,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
     const terminal = terminals.get(id);
     if (terminal) {
+      agentAttentionBroker?.release(id);
       try {
         terminal.pty.kill();
       } catch {
@@ -253,6 +282,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     for (const id of ids) {
       const terminal = terminals.get(id);
       if (terminal) {
+        agentAttentionBroker?.release(id);
         try {
           terminal.pty.kill();
         } catch {

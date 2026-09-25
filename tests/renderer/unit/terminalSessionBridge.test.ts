@@ -7,11 +7,16 @@ import {
   writeCachedTerminalExit,
 } from '../../../src/renderer/components/TerminalPane';
 import { startTerminalSessionBridge } from '../../../src/renderer/lib/terminalSessionBridge';
+import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
+import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { createWorkspaceFixture } from '../../setup/fixtures';
+import { installElectronApiMock } from '../../setup/electron';
 
 describe('terminal session bridge', () => {
   beforeEach(() => {
     clearTerminalCache();
     vi.clearAllMocks();
+    useAgentAttentionStore.setState({ byTerminalId: {} });
   });
 
   afterEach(() => {
@@ -76,5 +81,43 @@ describe('terminal session bridge', () => {
     expect(dispose).toHaveBeenCalled();
     expect(writeCachedTerminalData('term-closed', 'ignored')).toBe(false);
     expect(writeCachedTerminalExit('term-closed', 1)).toBe(false);
+  });
+
+  it('acknowledges only the target pane when jumping into another workspace', () => {
+    installElectronApiMock();
+    const first = createWorkspaceFixture({
+      id: 'ws-first',
+      terminals: [{ id: 'a', pid: 1, workingDir: '/' }],
+      panes: [{ id: 'pane-a', terminalId: 'a' }],
+      activeTerminalId: 'a',
+      layoutRoot: { type: 'leaf', nodeId: 'leaf-a', paneId: 'pane-a' },
+    });
+    const second = createWorkspaceFixture({
+      id: 'ws-second', lifecycle: 'parked',
+      terminals: [{ id: 'b', pid: 2, workingDir: '/' }, { id: 'c', pid: 3, workingDir: '/' }],
+      panes: [{ id: 'pane-b', terminalId: 'b' }, { id: 'pane-c', terminalId: 'c' }],
+      activeTerminalId: 'b',
+      layoutRoot: {
+        type: 'split', nodeId: 'split', orientation: 'horizontal', ratio: 0.5,
+        first: { type: 'leaf', nodeId: 'leaf-b', paneId: 'pane-b' },
+        second: { type: 'leaf', nodeId: 'leaf-c', paneId: 'pane-c' },
+      },
+    });
+    useWorkspaceStore.setState({
+      workspaces: [first, second], activeWorkspaceId: first.id,
+      activeTerminalId: 'a', terminals: first.terminals, panes: first.panes,
+      layoutRoot: first.layoutRoot,
+    });
+    const attention = useAgentAttentionStore.getState();
+    attention.applyUpdate({ terminalId: 'b', event: 'turn_completed' }, false);
+    attention.applyUpdate({ terminalId: 'c', event: 'input_requested' }, false);
+
+    const unsubscribe = startTerminalSessionBridge();
+    useWorkspaceStore.getState().selectWorkspace(second.id, 'c');
+
+    expect(useWorkspaceStore.getState().activeTerminalId).toBe('c');
+    expect(useAgentAttentionStore.getState().byTerminalId.b.unseen).toBe(true);
+    expect(useAgentAttentionStore.getState().byTerminalId.c.unseen).toBe(false);
+    unsubscribe();
   });
 });

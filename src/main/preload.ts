@@ -9,6 +9,7 @@ import type { HarnessDefaultsMap } from '../shared/types/store';
 import type { VcsProvider } from '../shared/types/vcs';
 import type { GitStatusResult } from '../shared/types/git';
 import type { HarnessSession } from '../shared/types/session';
+import type { AgentAttentionUpdate } from '../shared/types/agentAttention';
 import {
   GET_APP_VERSION,
   GET_LAST_WORKSPACE,
@@ -41,6 +42,7 @@ import {
   TERMINAL_CLEANUP_WORKSPACE,
   TERMINAL_DATA,
   TERMINAL_EXIT,
+  AGENT_ATTENTION_UPDATE,
   TERMINAL_RESIZED,
   TERMINAL_READY,
   WRITE_CLIPBOARD,
@@ -175,6 +177,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event: IpcRendererEvent, data: { id: string; exitCode: number }) => callback(data);
     ipcRenderer.on(TERMINAL_EXIT, handler);
     return () => ipcRenderer.removeListener(TERMINAL_EXIT, handler);
+  },
+  onAgentAttentionUpdate: (callback: (data: AgentAttentionUpdate) => void) => {
+    const handler = (_event: IpcRendererEvent, data: AgentAttentionUpdate) => callback(data);
+    ipcRenderer.on(AGENT_ATTENTION_UPDATE, handler);
+    return () => ipcRenderer.removeListener(AGENT_ATTENTION_UPDATE, handler);
   },
   onTerminalResized: (callback: (data: { id: string; cols: number; rows: number }) => void) => {
     const handler = (_event: IpcRendererEvent, data: { id: string; cols: number; rows: number }) => callback(data);

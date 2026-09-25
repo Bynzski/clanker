@@ -32,6 +32,8 @@ export interface HarnessDefaults {
   flags: string;
   /** Whether this harness appears in launch/top-bar pickers. */
   visible: boolean;
+  /** Opt in to per-turn attention signals for launches of this harness. */
+  attentionEnabled?: boolean;
 }
 
 /** Map of harness ID → defaults. */

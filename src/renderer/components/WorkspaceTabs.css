@@ -52,6 +52,33 @@
   font-weight: 500;
 }
 
+.workspace-tab-attention {
+  flex-shrink: 0;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(86, 211, 100, 0.16);
+  color: #56d364;
+}
+
+.workspace-tab-attention.needs-input {
+  background: rgba(227, 179, 65, 0.18);
+  color: #e3b341;
+}
+
+.workspace-tab-jump {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 29px;
+  border: 0;
+  background: transparent;
+  color: #e3b341;
+  cursor: pointer;
+}
+
 .workspace-tab-count {
   display: flex;
   align-items: center;

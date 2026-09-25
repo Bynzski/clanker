@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react'
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import type { ILink, ILinkProvider } from '@xterm/xterm';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { useAgentAttentionStore } from '../store/agentAttentionStore';
 
 import { useDragHandle } from './dragHandleContext';
 import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
@@ -148,6 +149,11 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const pane = workspace?.panes.find((item) => item.id === paneId);
   const terminal = workspace?.terminals.find((item) => item.id === pane?.terminalId);
   const terminalId = terminal?.id ?? null;
+  const attention = useAgentAttentionStore((state) => terminalId ? state.byTerminalId[terminalId] : undefined);
+  const showAgentAttention = Boolean(terminal?.harnessId && terminal.attentionEnabled);
+  const attentionLabel = attention?.lifecycle === 'needs_input' ? 'Needs input'
+    : attention?.lifecycle === 'turn_complete' ? 'Turn complete'
+    : attention?.lifecycle === 'running' ? 'Running' : 'Unknown';
   const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
 
   const scheduleLifecycleTimeout = useCallback((callback: () => void, delayMs: number) => {
@@ -686,7 +692,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   return (
     <div
       ref={paneRootRef}
-      className={`terminal-pane ${compact ? 'compact' : ''} ${isActive ? 'active' : ''}`}
+      className={`terminal-pane ${compact ? 'compact' : ''} ${isActive ? 'active' : ''} ${showAgentAttention && attention?.unseen ? 'attention-unseen' : ''}`}
       data-workspace-interactive={isInteractive ? 'true' : 'false'}
     >
       {!compact && (
@@ -694,7 +700,18 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
           <div className="pane-drag-surface" title="Drag to move pane" aria-label="Move terminal pane" {...headerDragHandleProps}>
             <div className="terminal-drag-handle" aria-hidden="true" />
             <div className="terminal-status-indicator" data-active={isActive} />
-            <span className="terminal-title" />
+            <span className="terminal-title" title={terminal.harnessId ? `${terminal.harnessId}${showAgentAttention ? ` · ${attentionLabel}` : ''}` : 'Shell'}>
+              {terminal?.displayName ?? 'Terminal'}
+            </span>
+            {showAgentAttention && (
+              <span
+                className={`terminal-agent-state state-${attention?.lifecycle ?? 'unknown'} ${attention?.unseen ? 'unseen' : ''}`}
+                aria-label={`${terminal.displayName ?? 'Agent'}: ${attentionLabel}`}
+                title={attentionLabel}
+              >
+                {attentionLabel}
+              </span>
+            )}
           </div>
           <div className="terminal-header-actions">
             <button className="terminal-close" onClick={handleClose} title="Close terminal" disabled={!isInteractive}>

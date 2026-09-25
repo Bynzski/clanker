@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect, MouseEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { disposeWorkspaceResources } from '../lib/workspaceLifecycle';
-import { Plus, X, Check, Edit2 } from 'lucide-react';
+import { Plus, X, Check, Edit2, BellRing } from 'lucide-react';
 import { normalizePath } from '../lib/pathUtils';
+import { useAgentAttentionStore, attentionCounts } from '../store/agentAttentionStore';
+import { nextAttentionTarget } from '../lib/agentAttentionNavigation';
 import './WorkspaceTabs.css';
 
 interface WorkspaceTabsProps {
@@ -10,7 +12,9 @@ interface WorkspaceTabsProps {
 }
 
 export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
-  const { workspaces, activeWorkspaceId, selectWorkspace, closeWorkspace, updateWorkspaceName } = useWorkspaceStore();
+  const { workspaces, activeWorkspaceId, activeTerminalId, selectWorkspace, closeWorkspace, updateWorkspaceName } = useWorkspaceStore();
+  const byTerminalId = useAgentAttentionStore((state) => state.byTerminalId);
+  const nextTarget = nextAttentionTarget(workspaces, byTerminalId, activeTerminalId);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -112,6 +116,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
       {workspaces.map((workspace) => {
         const isActive = workspace.id === activeWorkspaceId;
         const isEditing = workspace.id === editingId;
+        const counts = attentionCounts(workspace.terminals.map((terminal) => terminal.id), byTerminalId);
 
         return (
           <button
@@ -158,6 +163,15 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                 </button>
               </>
             )}
+            {(counts.needsInput > 0 || counts.completed > 0) && (
+              <span
+                className={`workspace-tab-attention ${counts.needsInput > 0 ? 'needs-input' : 'complete'}`}
+                aria-label={`${counts.needsInput} agents need input, ${counts.completed} turns complete`}
+                title={`${counts.needsInput} need input · ${counts.completed} complete`}
+              >
+                {counts.needsInput > 0 ? `! ${counts.needsInput}` : `✓ ${counts.completed}`}
+              </span>
+            )}
             <span
               className="workspace-tab-close"
               onClick={(event) => handleClose(workspace.id, event)}
@@ -170,6 +184,20 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
           </button>
         );
       })}
+      {nextTarget && (
+        <button
+          type="button"
+          className="workspace-tab-jump"
+          aria-label="Jump to next agent needing attention"
+          title="Jump to next agent needing attention"
+          onClick={() => {
+            selectWorkspace(nextTarget.workspaceId, nextTarget.terminalId);
+            useAgentAttentionStore.getState().acknowledge(nextTarget.terminalId);
+          }}
+        >
+          <BellRing size={14} strokeWidth={2} />
+        </button>
+      )}
       {onOpenWorkspace && (
         <button
           type="button"

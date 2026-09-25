@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import { validateHarnessDefaultsMap } from '../../../src/main/harnessDefaultsValidation';
 
-const DEFAULT_ENTRY = { model: '', favorites: [], flags: '', visible: true };
+const DEFAULT_ENTRY = { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false };
 
 describe('validateHarnessDefaultsMap', () => {
   describe('valid payload', () => {
@@ -31,6 +31,7 @@ describe('validateHarnessDefaultsMap', () => {
         expect(result.sanitized.codex.favorites).toEqual(['gpt-4', 'gpt-3.5']);
         expect(result.sanitized.codex.flags).toBe('--yolo');
         expect(result.sanitized.codex.visible).toBe(false);
+        expect(result.sanitized.codex.attentionEnabled).toBe(false);
         expect(result.sanitized.opencode.model).toBe('');
         expect(result.sanitized.opencode.flags).toBe('--pure');
         expect(result.sanitized.opencode.visible).toBe(true);
@@ -45,6 +46,15 @@ describe('validateHarnessDefaultsMap', () => {
       expect(result.valid).toBe(true);
       if (result.valid) {
         expect(result.sanitized.codex.visible).toBe(true);
+      }
+    });
+
+    it('accepts only an explicit boolean opt-in for attention', () => {
+      const result = validateHarnessDefaultsMap({ codex: { attentionEnabled: true }, pi: { attentionEnabled: 'true' } });
+      expect(result.valid).toBe(true);
+      if (result.valid) {
+        expect(result.sanitized.codex.attentionEnabled).toBe(true);
+        expect(result.sanitized.pi.attentionEnabled).toBe(false);
       }
     });
   });

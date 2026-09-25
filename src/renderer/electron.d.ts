@@ -38,6 +38,7 @@ import type { AiCommitSettings, ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import type { HarnessSession } from '../../shared/types/session';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
+import type { AgentAttentionUpdate } from '../../shared/types/agentAttention';
 
 export type { VcsProvider, ProviderContext, PullRequestContext, DeepLink, DeepLinkType };
 export type {
@@ -84,7 +85,7 @@ interface ElectronAPI {
   setAiCommitModel: (model: string) => Promise<void>;
 
   // Terminal
-  spawnTerminal: (workingDir: string, harness?: string, model?: string) => Promise<{ id: string; pid: number }>;
+  spawnTerminal: (workingDir: string, harness?: string, model?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
   getTerminalBuffer: (id: string) => Promise<string>;
   writeTerminal: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<{ success: boolean; error?: string }>;
@@ -92,6 +93,7 @@ interface ElectronAPI {
   cleanupWorkspaceTerminals: (ids: string[]) => Promise<number>;
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => () => void;
+  onAgentAttentionUpdate: (callback: (data: AgentAttentionUpdate) => void) => () => void;
   /** Phase 1 resize confirmation: main sends confirmed PTY geometry after resize. */
   onTerminalResized: (callback: (data: { id: string; cols: number; rows: number }) => void) => () => void;
   /** Phase 1 startup fix: renderer signals xterm is ready to receive data. Triggers flush of startup buffer. */
@@ -259,7 +261,7 @@ interface ElectronAPI {
 
   // Session history
   discoverSessions: (workspacePath: string) => Promise<HarnessSession[]>;
-  invokeSession: (session: HarnessSession, fork?: boolean) => Promise<{ id: string; pid: number }>;
+  invokeSession: (session: HarnessSession, fork?: boolean) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
 
   // Browser annotation
   annotationEnable: (workspaceId: string) => Promise<{ success: boolean; error?: string }>;

@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor, cleanup } from '@testing-library/react';
 import TerminalPane from '../../../src/renderer/components/TerminalPane';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import type { ILinkProvider } from '@xterm/xterm';
 
@@ -207,6 +208,7 @@ describe('TerminalPane', () => {
     setupElectronAPIMocks();
     // Clear the xterm instance cache between tests to ensure isolation
     clearTerminalCache();
+    useAgentAttentionStore.setState({ byTerminalId: {} });
   });
 
   afterEach(() => {
@@ -232,6 +234,34 @@ describe('TerminalPane', () => {
   // Basic Rendering
   // =========================================================================
   describe('basic rendering', () => {
+    it('hides unknown status when attention was disabled for the launch', () => {
+      setupStoreWithTerminal('t1', 'p1');
+      useWorkspaceStore.setState({ terminals: [{
+        id: 't1', pid: 1234, workingDir: '/workspace', harnessId: 'opencode',
+        displayName: 'Samson', attentionEnabled: false,
+      }] });
+
+      render(<TerminalPane paneId="p1" />);
+
+      expect(screen.getByText('Samson')).toBeTruthy();
+      expect(screen.queryByText('Unknown')).toBeNull();
+      expect(document.querySelector('.terminal-agent-state')).toBeNull();
+    });
+
+    it('shows unknown until an enabled launch receives an agent event', () => {
+      setupStoreWithTerminal('t1', 'p1');
+      useWorkspaceStore.setState({ terminals: [{
+        id: 't1', pid: 1234, workingDir: '/workspace', harnessId: 'opencode',
+        displayName: 'Samson', attentionEnabled: true,
+      }] });
+
+      render(<TerminalPane paneId="p1" />);
+
+      expect(screen.getByText('Unknown')).toBeTruthy();
+      act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'turn_started' }, false));
+      expect(screen.getByText('Running')).toBeTruthy();
+    });
+
     it('renders terminal pane with header when terminal exists', () => {
       setupStoreWithTerminal('t1', 'p1');
       

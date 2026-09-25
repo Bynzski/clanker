@@ -41,6 +41,7 @@ export const KILL_TERMINAL = 'kill-terminal';
 export const TERMINAL_CLEANUP_WORKSPACE = 'terminal:cleanup-workspace';
 export const TERMINAL_DATA = 'terminal-data';
 export const TERMINAL_EXIT = 'terminal-exit';
+export const AGENT_ATTENTION_UPDATE = 'agent-attention-update';
 export const TERMINAL_RESIZED = 'terminal-resized';
 export const TERMINAL_READY = 'terminal-ready';
 export const WRITE_CLIPBOARD = 'write-clipboard';

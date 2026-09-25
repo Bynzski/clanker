@@ -220,6 +220,20 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
     }
   };
 
+  const handleSetHarnessAttention = async (harnessId: string, attentionEnabled: boolean) => {
+    if (!harnessDefaults) return;
+    const newDefaults = {
+      ...harnessDefaults,
+      [harnessId]: { ...harnessDefaults[harnessId], attentionEnabled },
+    };
+    setHarnessDefaultsState(newDefaults);
+    try {
+      await window.electronAPI.setHarnessDefaults(newDefaults);
+    } catch (err) {
+      console.error('Failed to save agent attention setting:', err);
+    }
+  };
+
   const handleSetDefaultModel = async (harnessId: string, modelId: string) => {
     if (!harnessDefaults) return;
     const newDefaults = {
@@ -302,6 +316,7 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
     handleAiCommitModelChange,
     handleSetHarnessFlags,
     handleSetHarnessVisible,
+    handleSetHarnessAttention,
     handleSetDefaultModel,
     handleToggleFavorite,
     loadHarnessModels,

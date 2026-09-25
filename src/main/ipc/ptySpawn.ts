@@ -21,6 +21,7 @@ export interface SpawnPtyOptions {
   getIsShuttingDown: () => boolean;
   /** Optional banner line sent to the renderer before any PTY data. */
   launchLabel?: string;
+  onExit?: (id: string) => void;
 }
 
 export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: number } {
@@ -34,6 +35,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     mainWindow,
     getIsShuttingDown,
     launchLabel,
+    onExit,
   } = opts;
 
   const ptyProcess = pty.spawn(spawnCmd, spawnArgs, {
@@ -75,6 +77,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
   });
 
   ptyProcess.onExit(({ exitCode }) => {
+    onExit?.(id);
     if (getIsShuttingDown()) return;
     terminals.delete(id);
     if (mainWindow) {

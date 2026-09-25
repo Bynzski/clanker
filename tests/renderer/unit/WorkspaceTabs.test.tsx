@@ -7,6 +7,7 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import type { WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import WorkspaceTabs from '../../../src/renderer/components/WorkspaceTabs';
 import { installElectronApiMock } from '../../setup/electron';
+import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 
 // Platform-neutral path constants for test fixtures
 const TEST_MY_PROJECT = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user', 'my-project');
@@ -59,6 +60,7 @@ describe('WorkspaceTabs', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     installElectronApiMock();
+    useAgentAttentionStore.setState({ byTerminalId: {} });
     
     // Set up default store state
     useWorkspaceStore.setState({
@@ -223,6 +225,33 @@ describe('WorkspaceTabs', () => {
 
       fireEvent.click(openButton);
       expect(onOpenWorkspace).toHaveBeenCalled();
+    });
+
+    it('shows workspace attention and jumps to the waiting pane', () => {
+      const selectWorkspace = vi.fn();
+      useWorkspaceStore.setState({
+        workspaces: [createMockWorkspace({
+          id: 'ws1',
+          terminals: [{ id: 't1', pid: 1, workingDir: '/', displayName: 'Samson', harnessId: 'pi' }],
+          panes: [{ id: 'pane-1', terminalId: 't1' }],
+          activeTerminalId: 't1',
+        }), createMockWorkspace({
+          id: 'ws2',
+          name: 'Other',
+          terminals: [{ id: 't2', pid: 2, workingDir: '/', displayName: 'Delilah', harnessId: 'claude' }],
+          panes: [{ id: 'pane-2', terminalId: 't2' }],
+          activeTerminalId: 't2',
+        })],
+        activeWorkspaceId: 'ws1',
+        activeTerminalId: 't1',
+        selectWorkspace,
+      });
+      useAgentAttentionStore.getState().applyUpdate({ terminalId: 't2', event: 'input_requested' }, false);
+      render(<WorkspaceTabs />);
+      expect(screen.getByLabelText('1 agents need input, 0 turns complete')).toBeTruthy();
+      fireEvent.click(screen.getByLabelText('Jump to next agent needing attention'));
+      expect(selectWorkspace).toHaveBeenCalledWith('ws2', 't2');
+      expect(useAgentAttentionStore.getState().byTerminalId.t2.unseen).toBe(false);
     });
 
     it('uses fallback name when workspace has no name or path', () => {

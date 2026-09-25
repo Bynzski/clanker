@@ -49,6 +49,14 @@ Examples:
 
 Flags are passed through as entered.
 
+### Agent attention and pane names
+
+Terminal panes get short Grateful Dead inspired names such as Samson, Delilah, Jerry, and Bobby. Names identify panes in the UI; they are independent of the harness and its session ID.
+
+In **Settings → Harness Defaults**, expand a harness and enable **Agent attention** for future launches. Clanker then uses that harness's supported hooks to show running, needs input, or turn complete in the pane header. Background needs-input and completed turns also mark the workspace tab. The bell button beside the tabs jumps to the next agent needing attention. Visiting a pane clears its highlight while keeping the status accurate. Plain shells have no agent status; unsupported hook signals show unknown.
+
+Agent attention is opt-in per harness and affects only new terminals. With attention off, the pane has no agent status label. With attention on, the label says unknown until a supported event arrives. It does not parse terminal screen text. Codex currently reports completion, Claude and OpenCode can also report input requests, and Pi reports running and settled turns. Hook availability can vary with CLI version and user configuration; see [the lifecycle design notes](agent-attention-design.md).
+
 ### Harness Default Models
 
 Each harness can have a global default model set in the header settings dropdown. This model is pre-selected when launching a workspace with that harness.

@@ -324,6 +324,7 @@
 
 .harness-defaults-header {
   width: 100%;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -352,6 +353,7 @@
 
 .harness-defaults-current {
   flex: 1;
+  min-width: 0;
   text-align: left;
   font-size: 10px;
   color: var(--text-tertiary);
@@ -417,6 +419,20 @@
   font-weight: 500;
 }
 
+.harness-defaults-attention-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+  cursor: pointer;
+}
+
+.harness-defaults-attention-toggle input {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
 .harness-defaults-favorites {
   display: flex;
   flex-wrap: wrap;
@@ -427,12 +443,21 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  min-width: 0;
+  max-width: 100%;
   padding: 2px 5px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: 3px;
   font-size: 10px;
   color: var(--text-secondary);
+}
+
+.harness-defaults-favorite-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .harness-defaults-favorite-tag.unresolved {
@@ -447,6 +472,7 @@
 }
 
 .harness-defaults-remove-fav {
+  flex-shrink: 0;
   background: none;
   border: none;
   cursor: pointer;
@@ -465,6 +491,8 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  min-width: 0;
+  max-width: 100%;
   padding: 2px 5px;
   background: none;
   border: 1px dashed var(--border-color);
@@ -479,4 +507,8 @@
   background: var(--bg-tertiary);
   border-color: var(--text-secondary);
   color: var(--text-secondary);
+}
+
+.harness-defaults-add-fav svg {
+  flex-shrink: 0;
 }

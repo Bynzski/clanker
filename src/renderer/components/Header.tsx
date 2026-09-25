@@ -57,6 +57,7 @@ export default function Header() {
     handleAiCommitModelChange,
     handleSetHarnessFlags,
     handleSetHarnessVisible,
+    handleSetHarnessAttention,
     handleSetDefaultModel,
     handleToggleFavorite,
     loadHarnessModels,
@@ -90,6 +91,8 @@ export default function Header() {
         id: info.id,
         pid: info.pid,
         workingDir: workspacePath,
+        harnessId: info.harnessId ?? resolvedHarness ?? null,
+        attentionEnabled: info.attentionEnabled === true,
       });
     } catch (err) {
       console.error('Failed to spawn terminal:', err);
@@ -208,6 +211,7 @@ export default function Header() {
         loadHarnessModels={loadHarnessModels}
         handleSetHarnessFlags={handleSetHarnessFlags}
         handleSetHarnessVisible={handleSetHarnessVisible}
+        handleSetHarnessAttention={handleSetHarnessAttention}
         handleSetDefaultModel={handleSetDefaultModel}
         handleToggleFavorite={handleToggleFavorite}
       />

@@ -29,6 +29,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     cleanupWorkspaceTerminals: createAsyncMock(0),
     onTerminalData: vi.fn(() => () => undefined),
     onTerminalExit: vi.fn(() => () => undefined),
+    onAgentAttentionUpdate: vi.fn(() => () => undefined),
     onTerminalResized: vi.fn(() => () => undefined),
     terminalReady: createAsyncMock({ success: true }),
     writeClipboard: createAsyncMock({ success: true }),

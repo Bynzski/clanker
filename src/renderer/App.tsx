@@ -118,6 +118,8 @@ function App() {
           id: info.id,
           pid: info.pid,
           workingDir: path,
+          harnessId: info.harnessId ?? harness ?? null,
+          attentionEnabled: info.attentionEnabled === true,
         });
         panes.push({ id: crypto.randomUUID(), terminalId: info.id });
       } catch (err) {

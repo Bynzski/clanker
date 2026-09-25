@@ -59,6 +59,7 @@ import {
 } from './workspaceStoreHelpers';
 import { preserveOriginalLineEndings } from '../lib/lineEndings';
 import { restoreWorkspaceLayout } from '../lib/workspaceLayoutStorage';
+import { nameTerminal, nameTerminals } from '../lib/agentNames';
 import {
   readStoredNotesVisible,
   writeStoredNotesVisible,
@@ -186,6 +187,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       id,
       lifecycle: 'active',
       ...workspace,
+      terminals: nameTerminals(workspace.terminals),
       name: defaultName,
       notesVisible: workspace.notesVisible ?? storedNotesVisible,
       notesPane: restoredNotesPane,
@@ -220,7 +222,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return isWorkspaceActiveById(get().workspaces, id);
   },
 
-  selectWorkspace: (id) => set((state) => {
+  selectWorkspace: (id, terminalId) => set((state) => {
     const workspace = findWorkspaceById(state.workspaces, id);
     if (workspace == null) {
       return state;
@@ -230,12 +232,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       ...workspace,
       lifecycle: 'active',
     });
+    const selected = terminalId && next.terminals.some((terminal) => terminal.id === terminalId)
+      ? { ...next, activeTerminalId: terminalId }
+      : next;
     const nextWorkspaces = assignWorkspaceLifecycles(
-      state.workspaces.map((entry) => entry.id === id ? next : entry),
+      state.workspaces.map((entry) => entry.id === id ? selected : entry),
       id,
     );
     const nextState = {
-      ...getActiveWorkspaceSnapshot(next),
+      ...getActiveWorkspaceSnapshot(selected),
       workspaces: nextWorkspaces,
       gridViewport: state.gridViewport,
       layoutRevision: state.layoutRevision,
@@ -351,7 +356,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     );
   }),
 
-  addTerminal: (terminal) => set((state) => {
+  addTerminal: (unnamedTerminal) => set((state) => {
+    const terminal = nameTerminal(unnamedTerminal, state.terminals);
     const nextTerminals = [...state.terminals, terminal];
     const paneExists = state.panes.some((pane) => pane.terminalId === terminal.id);
     const nextPane = paneExists

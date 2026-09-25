@@ -49,6 +49,9 @@ import { ExplorerWatcherService } from './explorerWatcher';
 import { registerVcsIpc } from './ipc/vcsIpc';
 import { registerAnnotationIpc } from './annotation/annotationIpc';
 import { registerSessionIpc } from './ipc/sessionIpc';
+import { AgentAttentionBroker } from './agentAttentionBroker';
+import { AGENT_ATTENTION_UPDATE } from '../shared/ipcChannels';
+import { removeAttentionAdapterFiles } from './agentAttentionAdapters';
 
 
 
@@ -72,6 +75,11 @@ const activeBrowserTabIdsByWorkspace: Map<string, string> = new Map();
 const lastBrowserBoundsByWorkspace: Map<string, Rectangle> = new Map();
 let activeBrowserWorkspaceId: string | null = null;
 let mainWindow: BrowserWindow | null = null;
+const agentAttentionBroker = new AgentAttentionBroker((update) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(AGENT_ATTENTION_UPDATE, update);
+  }
+});
 let annotationModeEnabled = false;
 let annotationController: ReturnType<typeof import('./annotation/annotationIpc').registerAnnotationIpc> | null = null;
 let browserIpcController: BrowserIpcController | null = null;
@@ -82,6 +90,7 @@ const killAllTerminals = () => {
   // Phase 1: Send SIGTERM to all terminals for graceful shutdown
   const terminalPids: Map<string, number> = new Map();
   for (const [id, terminal] of terminals.entries()) {
+    agentAttentionBroker.release(id);
     try {
       terminalPids.set(id, terminal.pty.pid);
       terminal.pty.kill('SIGTERM');
@@ -202,6 +211,7 @@ app.whenReady().then(() => {
     getStore: () => store,
     getSafeWorkspacePath: (workingDir: string) => getSafeWorkspacePath(workingDir, store),
     getHarnessOptions: () => HARNESS_OPTIONS,
+    agentAttentionBroker,
   });
 
   browserIpcController = registerBrowserIpc({
@@ -243,6 +253,7 @@ app.whenReady().then(() => {
     getIsShuttingDown: getAppShuttingDown,
     getStore: () => store,
     getHarnessOptions: getAvailableHarnessOptions,
+    agentAttentionBroker,
   });
 
   // Register annotation IPC handlers
@@ -294,6 +305,8 @@ app.on('before-quit', () => {
   // Kill all PTY processes synchronously before quit
   // Uses SIGTERM → SIGKILL sequence for unresponsive processes
   killAllTerminals();
+  agentAttentionBroker.close();
+  removeAttentionAdapterFiles();
   setAppShuttingDown(true);
 });
 

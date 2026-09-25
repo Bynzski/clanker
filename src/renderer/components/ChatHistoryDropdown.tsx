@@ -92,7 +92,7 @@ export default function ChatHistoryDropdown({
   const handleSessionClick = async (session: HarnessSession) => {
     try {
       const info = await window.electronAPI.invokeSession(session);
-      addTerminal({ id: info.id, pid: info.pid, workingDir: workspacePath });
+      addTerminal({ id: info.id, pid: info.pid, workingDir: workspacePath, harnessId: session.harness, attentionEnabled: info.attentionEnabled === true });
       onClose();
     } catch (err) {
       console.error('Failed to invoke session:', err);

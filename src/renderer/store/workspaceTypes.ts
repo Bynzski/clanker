@@ -5,6 +5,9 @@ export interface Terminal {
   id: string;
   pid: number;
   workingDir: string;
+  harnessId?: string | null;
+  attentionEnabled?: boolean;
+  displayName?: string;
 }
 
 export interface PanePosition {

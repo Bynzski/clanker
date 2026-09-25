@@ -18,6 +18,7 @@ const DEFAULT_ENTRY: HarnessDefaults = {
   favorites: [],
   flags: '',
   visible: true,
+  attentionEnabled: false,
 };
 
 /**
@@ -61,6 +62,7 @@ export function validateHarnessDefaultsMap(
         : [],
       flags: typeof e.flags === 'string' ? e.flags : '',
       visible: typeof e.visible === 'boolean' ? e.visible : true,
+      attentionEnabled: e.attentionEnabled === true,
     };
   }
 

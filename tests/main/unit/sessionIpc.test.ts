@@ -146,7 +146,7 @@ describe('registerSessionIpc', () => {
 
     const result = await handlers.get(SESSION_INVOKE)?.({}, codexSession, true);
 
-    expect(result).toEqual({ id: 'term-1', pid: 123 });
+    expect(result).toEqual({ id: 'term-1', pid: 123, harnessId: 'codex', attentionEnabled: false });
     expect(mockBuildSessionInvokeArgs).toHaveBeenCalledWith(
       { ...codexSession, cwd: nativeWorkspacePath },
       true,

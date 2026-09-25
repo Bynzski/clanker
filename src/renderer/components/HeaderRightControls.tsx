@@ -38,6 +38,7 @@ interface HeaderRightControlsProps {
   loadHarnessModels: (harnessId: string) => Promise<void>;
   handleSetHarnessFlags: (harnessId: string, flags: string) => Promise<void>;
   handleSetHarnessVisible: (harnessId: string, visible: boolean) => Promise<void>;
+  handleSetHarnessAttention: (harnessId: string, enabled: boolean) => Promise<void>;
   handleSetDefaultModel: (harnessId: string, modelId: string) => Promise<void>;
   handleToggleFavorite: (harnessId: string, modelId: string) => Promise<void>;
 }
@@ -75,6 +76,7 @@ export default function HeaderRightControls({
   loadHarnessModels,
   handleSetHarnessFlags,
   handleSetHarnessVisible,
+  handleSetHarnessAttention,
   handleSetDefaultModel,
   handleToggleFavorite,
 }: HeaderRightControlsProps) {
@@ -201,6 +203,7 @@ export default function HeaderRightControls({
                 loadHarnessModels={loadHarnessModels}
                 handleSetHarnessFlags={handleSetHarnessFlags}
                 handleSetHarnessVisible={handleSetHarnessVisible}
+                handleSetHarnessAttention={handleSetHarnessAttention}
                 handleSetDefaultModel={handleSetDefaultModel}
                 handleToggleFavorite={handleToggleFavorite}
               />

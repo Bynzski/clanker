@@ -475,10 +475,10 @@ describe('settingsIpc — harness defaults IPC', () => {
 
     const result = handler();
     expect(result).toEqual({
-      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo', visible: true },
-      opencode: { model: 'opencode/zen/big-pickle', favorites: [], flags: '', visible: true },
-      pi: { model: '', favorites: [], flags: '', visible: true },
-      claude: { model: '', favorites: [], flags: '', visible: true },
+      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo', visible: true, attentionEnabled: false },
+      opencode: { model: 'opencode/zen/big-pickle', favorites: [], flags: '', visible: true, attentionEnabled: false },
+      pi: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
+      claude: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
     });
   });
 
@@ -525,7 +525,7 @@ describe('settingsIpc — harness defaults IPC', () => {
     };
     handler(null, payload);
     expect(mockSetFn).toHaveBeenCalledWith('harnessDefaults', expect.objectContaining({
-      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo', visible: true },
+      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo', visible: true, attentionEnabled: false },
     }));
   });
 

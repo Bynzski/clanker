@@ -14,6 +14,8 @@ import type { Terminal } from './terminalIpc';
 import type { HarnessSession } from '../../shared/types/session';
 import { defaultShell } from '../platformShell';
 import { toNativePath } from '../../shared/pathNormalize';
+import type { AgentAttentionBroker } from '../agentAttentionBroker';
+import { attentionLaunchOptions, ensureAttentionAdapterFiles, withoutAttentionEnvironment } from '../agentAttentionAdapters';
 
 interface RegisterSessionIpcDeps {
   getTerminals: () => Map<string, Terminal>;
@@ -22,10 +24,11 @@ interface RegisterSessionIpcDeps {
   getIsShuttingDown: () => boolean;
   getStore: () => Store<StoreSchema>;
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
+  agentAttentionBroker?: AgentAttentionBroker;
 }
 
 export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
-  const { getTerminals, getMainWindow, getSafeWorkspacePath, getIsShuttingDown, getStore, getHarnessOptions } = deps;
+  const { getTerminals, getMainWindow, getSafeWorkspacePath, getIsShuttingDown, getStore, getHarnessOptions, agentAttentionBroker } = deps;
 
   ipcMain.handle(SESSION_DISCOVER, async (_, workspacePath?: string) => {
     const nativeWorkspacePath = workspacePath
@@ -49,6 +52,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
 
     // Look up per-harness default flags from store — same source as SPAWN_TERMINAL
     const harnessDefaults = store.get('harnessDefaults');
+    const attentionEnabled = harnessDefaults[session.harness]?.attentionEnabled === true;
     const userFlags = harnessDefaults[session.harness]?.flags?.trim();
 
     const nativeSession = {
@@ -57,15 +61,32 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       ...(session.filePath ? { filePath: toNativePath(session.filePath, process.platform) } : {}),
     };
 
-    const { spawnCmd, spawnArgs } = buildSessionInvokeArgs(nativeSession, fork ?? false, userFlags);
+    const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const { spawnCmd, spawnArgs: baseArgs } = buildSessionInvokeArgs(nativeSession, fork ?? false, userFlags);
+    const harnessEnv = harnessConfig.env ?? {};
+    let spawnArgs = baseArgs;
+    let attentionEnv: Record<string, string> = {};
+    let attentionCommand: string | undefined;
+    if (attentionEnabled && agentAttentionBroker) {
+      try {
+        const options = attentionLaunchOptions(session.harness, baseArgs, { ...process.env, ...harnessEnv }, ensureAttentionAdapterFiles(), fork ? undefined : session.id);
+        if (options) {
+          attentionEnv = { ...options.env, ...await agentAttentionBroker.register(id, session.harness) };
+          attentionCommand = ensureAttentionAdapterFiles().command;
+          spawnArgs = options.args;
+        }
+      } catch {
+        agentAttentionBroker.release(id);
+      }
+    }
     const cwd = getSafeWorkspacePath(nativeSession.cwd);
     const userShell = defaultShell();
 
-    const harnessEnv = harnessConfig.env ?? {};
-
     const env: { [key: string]: string } = {
-      ...process.env as { [key: string]: string },
-      ...harnessEnv,
+      ...withoutAttentionEnvironment(process.env),
+      ...withoutAttentionEnvironment(harnessEnv),
+      ...attentionEnv,
+      ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
       CLANKER_GRID_FALLBACK_SHELL: userShell,
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
@@ -75,8 +96,9 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
 
     const launchLabel = `[clanker-grid] ${spawnArgs.join(' ')}`;
 
-    return spawnPtyProcess({
-      id: `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    try {
+      const result = spawnPtyProcess({
+      id,
       spawnCmd,
       spawnArgs,
       cwd,
@@ -85,6 +107,12 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       mainWindow,
       getIsShuttingDown,
       launchLabel,
-    });
+      onExit: () => agentAttentionBroker?.release(id),
+      });
+      return { ...result, harnessId: session.harness, attentionEnabled };
+    } catch (error) {
+      agentAttentionBroker?.release(id);
+      throw error;
+    }
   });
 }
