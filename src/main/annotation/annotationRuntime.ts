@@ -79,35 +79,64 @@ function createAnnotationRuntimeHelpers() {
     return `${tagName}:nth-of-type(${index >= 0 ? index + 1 : 1})`;
   }
 
+  function uniquelySelectsElement(el: Element, selector: string): boolean {
+    try {
+      const matches = el.ownerDocument.querySelectorAll(selector);
+      return matches.length === 1 && matches[0] === el;
+    } catch {
+      return false;
+    }
+  }
+
+  function buildStructuralSelector(el: Element): string {
+    const parts: string[] = [];
+    let current: Element | null = el;
+    while (current) {
+      parts.unshift(buildNthOfTypeSelector(current));
+      const candidate = parts.join(' > ');
+      if (uniquelySelectsElement(el, candidate)) return candidate;
+      current = current.parentElement;
+    }
+    return parts.join(' > ');
+  }
+
   /**
    * Selector builder with priority order:
-   * 1. data-testid (most stable)
+   * 1. data-testid / data-test / data-qa (most stable)
    * 2. id (usually stable)
    * 3. role + aria-label (semantic)
-   * 4. tag + class (descriptive, more useful than nth-of-type)
-   * 5. tag + nth-of-type (last resort)
+   * 4. unique tag + class
+   * 5. structural nth-of-type path (last resort)
    */
   function buildSelector(el: Element): string {
-    // Priority 1: data-testid
-    const testId = el.getAttribute('data-testid');
-    if (testId) return `[data-testid="${escapeCssString(testId)}"]`;
+    // Priority 1: stable test attributes
+    for (const attribute of ['data-testid', 'data-test', 'data-qa']) {
+      const value = el.getAttribute(attribute);
+      if (!value) continue;
+      const candidate = `[${attribute}="${escapeCssString(value)}"]`;
+      if (uniquelySelectsElement(el, candidate)) return candidate;
+    }
 
     // Priority 2: id
-    if (el.id) return `#${escapeCssIdent(el.id)}`;
+    if (el.id) {
+      const candidate = `#${escapeCssIdent(el.id)}`;
+      if (uniquelySelectsElement(el, candidate)) return candidate;
+    }
 
     // Priority 3: role + accessible name
     const role = el.getAttribute('role');
     const ariaLabel = el.getAttribute('aria-label');
     if (role && ariaLabel) {
-      return `[role="${escapeCssString(role)}"][aria-label="${escapeCssString(ariaLabel)}"]`;
+      const candidate = `[role="${escapeCssString(role)}"][aria-label="${escapeCssString(ariaLabel)}"]`;
+      if (uniquelySelectsElement(el, candidate)) return candidate;
     }
 
     // Priority 4: tag + class (more descriptive than nth-of-type)
     const tagClassSelector = buildTagClassSelector(el);
-    if (tagClassSelector) return tagClassSelector;
+    if (tagClassSelector && uniquelySelectsElement(el, tagClassSelector)) return tagClassSelector;
 
     // Priority 5: tag + nth-of-type fallback (last resort)
-    return buildNthOfTypeSelector(el);
+    return buildStructuralSelector(el);
   }
 
   /**
@@ -137,11 +166,18 @@ function createAnnotationRuntimeHelpers() {
   /**
    * Extract a compact class selector from the element.
    */
+  function isGeneratedClassName(className: string): boolean {
+    return className.startsWith('_') ||
+      (/^(?:prc-|css-|sc-)/.test(className) && /[a-zA-Z0-9]{5,}$/.test(className)) ||
+      /__[a-zA-Z0-9]{5,}$/.test(className);
+  }
+
   function buildClassSelector(el: Element): string | null {
     const classList = normalizeText(el.getAttribute('class'))
       .split(' ')
       .map(className => className.trim())
       .filter(Boolean)
+      .filter((className) => !isGeneratedClassName(className))
       .filter((className, index, array) => array.indexOf(className) === index)
       .slice(0, 5);
 
@@ -205,8 +241,10 @@ function createAnnotationRuntimeHelpers() {
       candidates.push(tagClassSelector);
     }
 
+    candidates.push(buildStructuralSelector(el));
+
     for (const candidate of candidates) {
-      if (!candidate || candidate === primary || fallbacks.includes(candidate)) continue;
+      if (!candidate || candidate === primary || fallbacks.includes(candidate) || !uniquelySelectsElement(el, candidate)) continue;
       fallbacks.push(candidate);
       if (fallbacks.length >= 4) break;
     }
@@ -310,7 +348,7 @@ function createAnnotationRuntimeHelpers() {
     let target: Element | null = el;
     let container = el.parentElement;
 
-    while (container && snippets.length < 4) {
+    while (container && container !== el.ownerDocument.body && snippets.length < 4) {
       const children = Array.from(container.children);
       const index = children.indexOf(target as Element);
       if (index >= 0) {
@@ -319,6 +357,7 @@ function createAnnotationRuntimeHelpers() {
         for (const sibling of orderedSiblings) {
           if (snippets.length >= 4) break;
           if (sibling === target) continue;
+          if (sibling.matches('script, style, .clanker-annotation-overlay, .clanker-annotation-popup')) continue;
 
           const siblingTag = sibling.tagName.toLowerCase();
           const siblingRole = normalizeText(sibling.getAttribute('role')).toLowerCase();
@@ -331,6 +370,8 @@ function createAnnotationRuntimeHelpers() {
           snippets.push(text);
         }
       }
+
+      if (container.matches('article, li, tr, [role="listitem"], [role="row"]')) break;
 
       target = container;
       container = container.parentElement;
@@ -535,12 +576,22 @@ function createAnnotationRuntimeHelpers() {
    * Extract accessibility info from element
    */
   function getAccessibilityInfo(el: Element): { role: string | null; accessibleName: string | null } {
+    const labelledBy = normalizeText(el.getAttribute('aria-labelledby'));
+    const labelledText = labelledBy
+      ? labelledBy.split(' ')
+        .map((id) => el.ownerDocument.getElementById(id))
+        .filter((label): label is HTMLElement => label !== null)
+        .map((label) => getElementTextSnippet(label, 80)).filter(Boolean).join(' ')
+      : '';
+    const associatedLabels = (el as HTMLInputElement).labels;
+    const labelText = associatedLabels
+      ? Array.from(associatedLabels).map((label) => getElementTextSnippet(label, 80)).filter(Boolean).join(' ')
+      : '';
     return {
       role: el.getAttribute('role') || null,
-      accessibleName: el.getAttribute('aria-label') ||
-        el.getAttribute('aria-labelledby') ||
-        el.getAttribute('aria-describedby') ||
-        null,
+      accessibleName: normalizeText(el.getAttribute('aria-label')) ||
+        labelledText || labelText || normalizeText(el.getAttribute('alt')) ||
+        normalizeText(el.getAttribute('title')) || null,
     };
   }
 
@@ -553,7 +604,7 @@ function createAnnotationRuntimeHelpers() {
 
     // Capture common attributes
     const attrWhitelist = ['id', 'name', 'type', 'href', 'src', 'alt', 'title',
-      'placeholder', 'value', 'disabled', 'checked',
+      'placeholder', 'disabled', 'checked',
       'data-testid', 'data-test', 'data-qa'];
 
     for (const attr of attrWhitelist) {
@@ -569,7 +620,7 @@ function createAnnotationRuntimeHelpers() {
     return {
       tagName: el.tagName,
       id: el.id || null,
-      className: el.className || null,
+      className: el.getAttribute('class') || null,
       textContent,
       attributes: attrs,
       bounds: {
@@ -661,8 +712,9 @@ function generateAnnotationCSS(): string {
       border-radius: 4px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
       padding: 12px;
-      min-width: 340px;
+      width: min(370px, calc(100vw - 16px));
       max-width: 420px;
+      box-sizing: border-box;
       pointer-events: auto;
       color: #e8e8e8;
       font-family: var(--font-ui, 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace);
@@ -707,6 +759,7 @@ function generateAnnotationCSS(): string {
     }
     .clanker-annotation-popup-info {
       font-size: 11px;
+      white-space: pre-line;
       color: #9b9b9b;
       margin-bottom: 8px;
       line-height: 1.5;
@@ -740,12 +793,14 @@ function generateAnnotationCSS(): string {
       display: flex;
       gap: 8px;
       justify-content: flex-end;
+      flex-wrap: wrap;
     }
     .clanker-annotation-btn {
       padding: 7px 12px;
       border-radius: 4px;
       font-size: 12px;
       font-weight: 500;
+      white-space: nowrap;
       cursor: pointer;
       border: 1px solid transparent;
       transition: background 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
@@ -790,11 +845,15 @@ ${getRuntimeHelperSource()}
     active: false,
     selectedElement: null,
     hoveredElement: null,
+    hoveredTarget: null,
     overlayEl: null,
     highlightEl: null,
     labelEl: null,
     popupEl: null,
-    injectedStyles: false
+    styleEl: null,
+    injectedStyles: false,
+    pendingActions: [],
+    pendingActionsOverflowed: false
   };
 
   var state = window.__clankerAnnotation__;
@@ -804,6 +863,7 @@ ${getRuntimeHelperSource()}
     var style = document.createElement('style');
     style.textContent = ${JSON.stringify(generateAnnotationCSS())};
     document.head.appendChild(style);
+    state.styleEl = style;
     state.injectedStyles = true;
   }
 
@@ -861,6 +921,14 @@ ${getRuntimeHelperSource()}
     }
   }
 
+  function queueAction(type, annotation) {
+    if (state.pendingActions.length >= 64) {
+      state.pendingActionsOverflowed = true;
+      return;
+    }
+    state.pendingActions.push({ type: type, annotation: annotation });
+  }
+
   function showPopup(elementInfo) {
     removePopup();
 
@@ -868,8 +936,8 @@ ${getRuntimeHelperSource()}
     popup.className = 'clanker-annotation-popup';
 
     // Popup dimensions (fixed min/max from CSS)
-    var popupWidth = 350; // min-width
-    var popupHeight = 200; // estimated height for safety margin
+    var popupWidth = Math.min(370, window.innerWidth - 16);
+    var popupHeight = 230; // includes wrapped actions in narrow panes
 
     // Determine preferred horizontal position (below element, left-aligned)
     var preferredX = elementInfo.bounds.x;
@@ -901,19 +969,22 @@ ${getRuntimeHelperSource()}
 
     popup.innerHTML =
       '<div class="clanker-annotation-popup-header">' +
-        '<span class="clanker-annotation-popup-tag">' + elementInfo.tagName + '</span>' +
+        '<span class="clanker-annotation-popup-tag"></span>' +
         '<button class="clanker-annotation-popup-close" id="clanker-annotation-close">&times;</button>' +
       '</div>' +
-      '<div class="clanker-annotation-popup-info">' +
-        'Selector: ' + selectorPreview + '<br>' +
-        'Size: ' + Math.round(elementInfo.bounds.width) + 'x' + Math.round(elementInfo.bounds.height) +
-      '</div>' +
+      '<div class="clanker-annotation-popup-info"></div>' +
       '<textarea class="clanker-annotation-popup-note" id="clanker-annotation-note" ' +
         'placeholder="Add your annotation note here..."></textarea>' +
       '<div class="clanker-annotation-popup-actions">' +
         '<button class="clanker-annotation-btn clanker-annotation-btn-secondary" id="clanker-annotation-cancel">Cancel</button>' +
-        '<button class="clanker-annotation-btn clanker-annotation-btn-primary" id="clanker-annotation-copy">Copy Annotation</button>' +
+        '<button class="clanker-annotation-btn clanker-annotation-btn-secondary" id="clanker-annotation-copy">Copy Annotation</button>' +
+        '<button class="clanker-annotation-btn clanker-annotation-btn-primary" id="clanker-annotation-send">Send to agent</button>' +
       '</div>';
+
+    popup.querySelector('.clanker-annotation-popup-tag').textContent = elementInfo.tagName;
+    popup.querySelector('.clanker-annotation-popup-info').textContent =
+      'Selector: ' + selectorPreview + '\\nSize: ' +
+      Math.round(elementInfo.bounds.width) + 'x' + Math.round(elementInfo.bounds.height);
 
     document.body.appendChild(popup);
     state.popupEl = popup;
@@ -934,9 +1005,19 @@ ${getRuntimeHelperSource()}
     popup.querySelector('#clanker-annotation-copy').addEventListener('click', function() {
       var note = popup.querySelector('#clanker-annotation-note').value;
       var annotation = buildAnnotation(elementInfo, note);
-      // Store for capture and signal main process that copy was requested
+      // Keep a snapshot for this click, independent of later selections.
       window.__clankerAnnotationData__ = annotation;
-      window.__clankerAnnotationCopyTrigger__ = true;
+      queueAction('copy', annotation);
+      removePopup();
+      state.selectedElement = null;
+      document.body.classList.remove('clanker-annotation-cursor');
+    });
+
+    popup.querySelector('#clanker-annotation-send').addEventListener('click', function() {
+      var note = popup.querySelector('#clanker-annotation-note').value;
+      var annotation = buildAnnotation(elementInfo, note);
+      window.__clankerAnnotationData__ = annotation;
+      queueAction('send', annotation);
       removePopup();
       state.selectedElement = null;
       document.body.classList.remove('clanker-annotation-cursor');
@@ -952,6 +1033,7 @@ ${getRuntimeHelperSource()}
       title: document.title,
       tagName: info.tagName,
       selector: info.selector,
+      fallbackSelectors: info.fallbackSelectors,
       id: info.id,
       className: info.className,
       text: info.textContent,
@@ -959,6 +1041,10 @@ ${getRuntimeHelperSource()}
       accessibleName: info.accessibleName,
       attributes: info.attributes,
       bounds: info.bounds,
+      uiRegion: info.uiRegion,
+      elementRoleInContext: info.elementRoleInContext,
+      nearbyText: info.nearbyText,
+      ancestorContext: info.ancestorContext,
       note: note,
       timestamp: new Date().toISOString()
     };
@@ -968,13 +1054,23 @@ ${getRuntimeHelperSource()}
     if (!state.active) return;
 
     var target = e.target;
+    if (!(target instanceof Element)) return;
     // Skip overlay elements
     if (target.closest && target.closest('.clanker-annotation-overlay, .clanker-annotation-popup')) {
+      state.hoveredTarget = null;
       hideHighlight();
       return;
     }
 
+    if (target === state.hoveredTarget && state.hoveredElement) {
+      var previous = state.hoveredElement.bounds;
+      var current = target.getBoundingClientRect();
+      if (previous.x === current.x && previous.y === current.y &&
+          previous.width === current.width && previous.height === current.height) return;
+    }
+
     var info = captureElement(target);
+    state.hoveredTarget = target;
     state.hoveredElement = info;
     updateHighlight(info, true);
   }
@@ -983,12 +1079,14 @@ ${getRuntimeHelperSource()}
     if (!state.active) return;
 
     var target = e.target;
+    if (!(target instanceof Element)) return;
     if (target.closest && target.closest('.clanker-annotation-popup')) return;
 
     e.preventDefault();
     e.stopPropagation();
 
     var info = captureElement(target);
+    state.hoveredTarget = null;
     state.selectedElement = info;
     updateHighlight(info, false);
     showPopup(info);
@@ -1006,6 +1104,7 @@ ${getRuntimeHelperSource()}
 
   function cleanup() {
     state.active = false;
+    state.hoveredTarget = null;
     document.body.classList.remove('clanker-annotation-cursor');
 
     // Remove document listeners to prevent accumulation across enable/disable cycles
@@ -1020,13 +1119,10 @@ ${getRuntimeHelperSource()}
 
     removePopup();
 
-    // Remove injected CSS (by finding and removing it)
-    var styles = document.querySelectorAll('style');
-    styles.forEach(function(s) {
-      if (s.textContent && s.textContent.includes('clanker-annotation')) {
-        s.remove();
-      }
-    });
+    if (state.styleEl) {
+      state.styleEl.remove();
+      state.styleEl = null;
+    }
     state.injectedStyles = false;
   }
 
@@ -1060,13 +1156,11 @@ ${getRuntimeHelperSource()}
     window.__clankerAnnotationData__ = null;
   };
 
-  // Check and clear copy trigger flag (returns true once when copy was triggered)
-  window.__clankerAnnotationCheckCopyTrigger__ = function() {
-    if (window.__clankerAnnotationCopyTrigger__) {
-      window.__clankerAnnotationCopyTrigger__ = false;
-      return true;
-    }
-    return false;
+  window.__clankerAnnotationDrainActions__ = function() {
+    var actions = state.pendingActions.splice(0);
+    var overflowed = state.pendingActionsOverflowed;
+    state.pendingActionsOverflowed = false;
+    return { actions: actions, overflowed: overflowed };
   };
 
   // Check if user pressed Escape (reset flag after reading)
@@ -1148,24 +1242,22 @@ export function generateStatusCode(): string {
     initialized: true,
     active: window.__clankerAnnotationIsActive__(),
     hasAnnotation: !!(window.__clankerAnnotationData__),
-    copyTriggered: !!(window.__clankerAnnotationCopyTrigger__)
+    pendingActionCount: window.__clankerAnnotation__.pendingActions.length
   };
 })()
   `.trim();
 }
 
 /**
- * Generate copy trigger check code.
- * Returns true if the copy trigger is set and clears it atomically.
+ * Return and clear action snapshots in one page execution.
  */
-export function generateCheckCopyTriggerCode(): string {
+export function generateDrainActionsCode(): string {
   return `
 (function() {
-  if (window.__clankerAnnotationCopyTrigger__) {
-    window.__clankerAnnotationCopyTrigger__ = false;
-    return true;
+  if (window.__clankerAnnotationDrainActions__) {
+    return window.__clankerAnnotationDrainActions__();
   }
-  return false;
+  return { actions: [], overflowed: false };
 })()
   `.trim();
 }

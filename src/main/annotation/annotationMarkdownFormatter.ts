@@ -14,12 +14,23 @@ import type { AnnotationData } from './annotationController';
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+function pageText(value: string): string {
+  return value.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function inlineCode(value: string): string {
+  const content = pageText(value);
+  const longestRun = (content.match(/`+/g) ?? []).reduce((longest, run) => Math.max(longest, run.length), 0);
+  const fence = '`'.repeat(longestRun + 1);
+  return `${fence}${content}${fence}`;
+}
+
 function formatInlineCodeList(values: string[]): string {
-  return values.map((v) => `\`${v}\``).join(', ');
+  return values.map(inlineCode).join(', ');
 }
 
 function formatTextList(values: string[]): string {
-  return values.map((v) => `\`${v}\``).join('; ');
+  return values.map(inlineCode).join('; ');
 }
 
 // ---------------------------------------------------------------------------
@@ -30,9 +41,9 @@ function buildHeaderLines(capture: AnnotationData): string[] {
   return [
     '## Page Annotation',
     '',
-    `- URL: ${capture.url}`,
-    `- Title: ${capture.title}`,
-    `- Captured At: ${capture.timestamp}`,
+    `- URL: ${pageText(capture.url)}`,
+    `- Title: ${pageText(capture.title)}`,
+    `- Captured At: ${pageText(capture.timestamp)}`,
   ];
 }
 
@@ -40,8 +51,8 @@ function buildElementLines(capture: AnnotationData): string[] {
   const lines: string[] = [
     '',
     '### Selected Element',
-    `- Tag: \`${capture.tagName.toLowerCase()}\``,
-    `- Primary Selector: \`${capture.selector}\``,
+    `- Tag: ${inlineCode(capture.tagName.toLowerCase())}`,
+    `- Primary Selector: ${inlineCode(capture.selector)}`,
   ];
 
   if (capture.fallbackSelectors.length > 0) {
@@ -49,7 +60,7 @@ function buildElementLines(capture: AnnotationData): string[] {
   }
 
   if (capture.id) {
-    lines.push(`- ID: ${capture.id}`);
+    lines.push(`- ID: ${pageText(capture.id)}`);
   }
 
   if (capture.className) {
@@ -58,20 +69,20 @@ function buildElementLines(capture: AnnotationData): string[] {
       .filter((c) => c && !c.match(/^_/))
       .slice(0, 5);
     if (classes.length > 0) {
-      lines.push(`- Classes: ${classes.join(' ')}`);
+      lines.push(`- Classes: ${pageText(classes.join(' '))}`);
     }
   }
 
   if (capture.text) {
-    lines.push(`- Text: ${capture.text.slice(0, 100)}`);
+    lines.push(`- Text: ${pageText(capture.text.slice(0, 100))}`);
   }
 
   if (capture.role) {
-    lines.push(`- Role: ${capture.role}`);
+    lines.push(`- Role: ${pageText(capture.role)}`);
   }
 
   if (capture.accessibleName) {
-    lines.push(`- Accessible Name: ${capture.accessibleName}`);
+    lines.push(`- Accessible Name: ${pageText(capture.accessibleName)}`);
   }
 
   lines.push(
@@ -82,32 +93,25 @@ function buildElementLines(capture: AnnotationData): string[] {
 }
 
 function buildContextLines(capture: AnnotationData): string[] {
+  if (!capture.elementRoleInContext && !capture.uiRegion && !capture.ancestorContext && capture.nearbyText.length === 0) {
+    return [];
+  }
   const lines: string[] = ['', '### Context'];
 
   if (capture.elementRoleInContext) {
-    lines.push(`- Element Role: ${capture.elementRoleInContext}`);
+    lines.push(`- Element Role: ${pageText(capture.elementRoleInContext)}`);
   }
 
   if (capture.uiRegion) {
-    lines.push(`- UI Region: ${capture.uiRegion}`);
+    lines.push(`- UI Region: ${pageText(capture.uiRegion)}`);
   }
 
   if (capture.ancestorContext) {
-    lines.push(`- Ancestor Context: ${capture.ancestorContext}`);
+    lines.push(`- Ancestor Context: ${pageText(capture.ancestorContext)}`);
   }
 
   if (capture.nearbyText.length > 0) {
     lines.push(`- Nearby Text: ${formatTextList(capture.nearbyText.slice(0, 4))}`);
-  }
-
-  // If nothing was detected, provide a fallback
-  if (
-    !capture.elementRoleInContext &&
-    !capture.uiRegion &&
-    !capture.ancestorContext &&
-    capture.nearbyText.length === 0
-  ) {
-    lines.push(`- Element Role: ${capture.tagName.toLowerCase()} (not further classified)`);
   }
 
   return lines;
@@ -120,7 +124,7 @@ function buildAttributesLines(capture: AnnotationData): string[] {
 
   const lines: string[] = ['', '### Attributes'];
   for (const [key, value] of Object.entries(capture.attributes).slice(0, 10)) {
-    lines.push(`- ${key}: ${value}`);
+    lines.push(`- ${pageText(key)}: ${pageText(value)}`);
   }
 
   return lines;

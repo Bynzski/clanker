@@ -37,6 +37,8 @@ import {
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
   WRITE_TERMINAL,
+  SEND_ANNOTATION_TO_AGENT,
+  GET_AGENT_HANDOFF_STATUSES,
   RESIZE_TERMINAL,
   KILL_TERMINAL,
   TERMINAL_CLEANUP_WORKSPACE,
@@ -142,6 +144,7 @@ import {
   ANNOTATION_ESCAPE,
   ANNOTATION_STATE_CHANGED,
   ANNOTATION_TRIGGER_COPY,
+  ANNOTATION_PREPARE_SEND,
   SESSION_DISCOVER,
   SESSION_INVOKE,
 } from '../shared/ipcChannels';
@@ -170,6 +173,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(SPAWN_TERMINAL, workingDir, harness, model),
   getTerminalBuffer: (id: string) => ipcRenderer.invoke(GET_TERMINAL_BUFFER, id),
   writeTerminal: (id: string, data: string) => ipcRenderer.invoke(WRITE_TERMINAL, { id, data }),
+  getAgentHandoffStatuses: () => ipcRenderer.invoke(GET_AGENT_HANDOFF_STATUSES),
+  sendAnnotationToAgent: (workspaceId: string, terminalId: string, message: string) =>
+    ipcRenderer.invoke(SEND_ANNOTATION_TO_AGENT, { workspaceId, terminalId, message }),
   resizeTerminal: (id: string, cols: number, rows: number) =>
     ipcRenderer.invoke(RESIZE_TERMINAL, { id, cols, rows }),
   killTerminal: (id: string) => ipcRenderer.invoke(KILL_TERMINAL, id),
@@ -477,4 +483,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Annotation — trigger copy handles the full capture → format → clipboard pipeline
   annotationTriggerCopy: () => ipcRenderer.invoke(ANNOTATION_TRIGGER_COPY),
+  annotationPrepareSend: () => ipcRenderer.invoke(ANNOTATION_PREPARE_SEND),
 });

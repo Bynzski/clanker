@@ -84,6 +84,8 @@
   overflow: hidden;
 }
 
+.browser-annotation-error { padding: 6px 10px; color: var(--accent-error); font-size: 11px; }
+
 .browser-content {
   width: 100%;
   height: 100%;

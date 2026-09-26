@@ -94,6 +94,8 @@ interface ElectronAPI {
   spawnTerminal: (workingDir: string, harness?: string, model?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
   getTerminalBuffer: (id: string) => Promise<string>;
   writeTerminal: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
+  sendAnnotationToAgent: (workspaceId: string, terminalId: string, message: string) => Promise<{ success: boolean; error?: string }>;
+  getAgentHandoffStatuses: () => Promise<Record<string, 'unverified' | 'ready' | 'running' | 'needs_input' | 'unavailable'>>;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<{ success: boolean; error?: string }>;
   killTerminal: (id: string) => Promise<{ success: boolean; error?: string }>;
   cleanupWorkspaceTerminals: (ids: string[]) => Promise<number>;
@@ -282,7 +284,8 @@ interface ElectronAPI {
     enabled: boolean;
     initialized: boolean;
     workspaceId: string | null;
-    copyTriggered?: boolean;
+    actions: Array<{ type: 'copy' | 'send'; success: boolean; message?: string; error?: string }>;
+    overflowed: boolean;
   }>;
     annotationCapture: () => Promise<{
       success: boolean;
@@ -329,6 +332,7 @@ interface ElectronAPI {
     timestamp: string;
   }) => Promise<{ success: boolean }>;
   annotationTriggerCopy: () => Promise<{ success: boolean; error?: string }>;
+  annotationPrepareSend: () => Promise<{ success: boolean; message?: string; error?: string }>;
   annotationCheckEscaped: () => Promise<boolean>;
   onAnnotationEscape: (callback: (payload: { workspaceId: string }) => void) => () => void;
   onAnnotationStateChanged: (callback: (payload: {

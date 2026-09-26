@@ -42,7 +42,8 @@ import { registerSessionIpc } from '../../../src/main/ipc/sessionIpc';
 type Handler = (_event: unknown, ...args: unknown[]) => unknown;
 
 function registerHandlers(
-  getHarnessOptions = vi.fn(() => ({}))
+  getHarnessOptions = vi.fn(() => ({})),
+  agentAttentionBroker?: Parameters<typeof registerSessionIpc>[0]['agentAttentionBroker'],
 ): Map<string, Handler> {
   const handlers = new Map<string, Handler>();
   mockHandle.mockImplementation((channel: string, handler: Handler) => {
@@ -60,6 +61,7 @@ function registerHandlers(
       })),
     }) as never,
     getHarnessOptions,
+    agentAttentionBroker,
   });
 
   return handlers;
@@ -134,6 +136,7 @@ describe('registerSessionIpc', () => {
     });
     mockSpawnPtyProcess.mockReturnValue({ id: 'term-1', pid: 123 });
 
+    const broker = { register: vi.fn().mockResolvedValue({ CLANKER_ATTENTION_TOKEN: 'test-token' }), release: vi.fn() };
     const handlers = registerHandlers(vi.fn(() => ({
       codex: {
         name: 'Codex',
@@ -142,11 +145,12 @@ describe('registerSessionIpc', () => {
         icon: 'Codex',
         env: { CODEX_HOME: '/tmp/codex' },
       },
-    })));
+    })), broker as never);
 
     const result = await handlers.get(SESSION_INVOKE)?.({}, codexSession, true);
 
     expect(result).toEqual({ id: 'term-1', pid: 123, harnessId: 'codex', attentionEnabled: false });
+    expect(broker.register).toHaveBeenCalledWith(expect.any(String), 'codex');
     expect(mockBuildSessionInvokeArgs).toHaveBeenCalledWith(
       { ...codexSession, cwd: nativeWorkspacePath },
       true,
@@ -158,6 +162,8 @@ describe('registerSessionIpc', () => {
       cwd: nativeWorkspacePath,
       env: expect.objectContaining({
         CODEX_HOME: '/tmp/codex',
+        CLANKER_ATTENTION_TOKEN: 'test-token',
+        CLANKER_ATTENTION_COMMAND: expect.any(String),
         CLANKER_GRID_FALLBACK_SHELL: '/bin/bash',
       }),
     }));

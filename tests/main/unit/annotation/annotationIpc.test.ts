@@ -26,10 +26,13 @@ vi.mock('electron', () => ({
 
 import {
   ANNOTATION_ENABLE,
+  ANNOTATION_GET_STATE,
   ANNOTATION_STATE_CHANGED,
 } from '../../../../src/shared/ipcChannels';
 import { registerAnnotationIpc } from '../../../../src/main/annotation/annotationIpc';
 import { ANNOTATION_EXPORT } from '../../../../src/shared/ipcChannels';
+import { ANNOTATION_PREPARE_SEND } from '../../../../src/shared/ipcChannels';
+import { generateCaptureCode, generateDrainActionsCode } from '../../../../src/main/annotation/annotationRuntime';
 
 describe('annotationIpc', () => {
   beforeEach(() => {
@@ -113,6 +116,56 @@ describe('annotationIpc', () => {
     })).resolves.toEqual({ success: true });
 
     expect(mockWriteText).toHaveBeenCalledWith(expect.stringContaining('### Context'));
+  });
+
+  it('prepares annotation markdown for a trusted preview without copying it', async () => {
+    const executeJavaScript = vi.fn(async (code: string) => code === generateCaptureCode()
+      ? { url: 'https://example.com/settings', selector: '#save', tagName: 'BUTTON', note: 'Make this clearer' }
+      : undefined);
+    const view = { webContents: { executeJavaScript, on: vi.fn(), removeListener: vi.fn() } };
+    registerAnnotationIpc({
+      getBrowserViews: () => new Map([['workspace-1', { view: view as never, url: 'https://example.com/settings' }]]) as never,
+      getActiveBrowserWorkspaceId: () => 'workspace-1',
+      getMainWindow: () => ({ webContents: { send: vi.fn() } } as never),
+    });
+    const enable = mockHandle.mock.calls.find(([channel]) => channel === ANNOTATION_ENABLE)?.[1];
+    const prepare = mockHandle.mock.calls.find(([channel]) => channel === ANNOTATION_PREPARE_SEND)?.[1];
+    await enable?.({}, 'workspace-1');
+    const result = await prepare?.({});
+    expect(result).toMatchObject({ success: true, message: expect.stringContaining('Make this clearer') });
+    expect(mockWriteText).not.toHaveBeenCalled();
+  });
+
+  it('processes queued copy and send actions with their own captures in order', async () => {
+    let drained = false;
+    const executeJavaScript = vi.fn(async (code: string) => {
+      if (code !== generateDrainActionsCode() || drained) return undefined;
+      drained = true;
+      return { actions: [
+        { type: 'copy', annotation: { url: 'https://example.com', selector: '#first', tagName: 'BUTTON', note: 'Copy first' } },
+        { type: 'send', annotation: { url: 'https://example.com', selector: '#second', tagName: 'BUTTON', note: 'Send second' } },
+      ], overflowed: false };
+    });
+    const view = { webContents: { executeJavaScript, on: vi.fn(), removeListener: vi.fn() } };
+    registerAnnotationIpc({
+      getBrowserViews: () => new Map([['workspace-1', { view: view as never, url: 'https://example.com' }]]) as never,
+      getActiveBrowserWorkspaceId: () => 'workspace-1',
+      getMainWindow: () => ({ webContents: { send: vi.fn() } } as never),
+    });
+    const enable = mockHandle.mock.calls.find(([channel]) => channel === ANNOTATION_ENABLE)?.[1];
+    const getState = mockHandle.mock.calls.find(([channel]) => channel === ANNOTATION_GET_STATE)?.[1];
+    await enable?.({}, 'workspace-1');
+    const state = await getState?.({});
+    expect(mockWriteText).toHaveBeenCalledOnce();
+    expect(mockWriteText.mock.calls[0][0]).toContain('Copy first');
+    expect(mockWriteText.mock.calls[0][0]).not.toContain('Send second');
+    expect(state.actions).toEqual([
+      { type: 'copy', success: true },
+      { type: 'send', success: true, message: expect.stringContaining('Send second') },
+    ]);
+    expect(state.actions[1].message).not.toContain('Copy first');
+    const nextState = await getState?.({});
+    expect(nextState?.actions).toEqual([]);
   });
 
   it('resolves the active tab view from nested browser view map', async () => {

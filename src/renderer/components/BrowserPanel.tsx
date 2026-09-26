@@ -12,6 +12,7 @@ import { useDragHandle } from './dragHandleContext';
 import './BrowserPanel.css';
 import BrowserUrlInput from './BrowserUrlInput';
 import BrowserTabStrip from './BrowserTabStrip';
+import AnnotationHandoffDialog from './AnnotationHandoffDialog';
 import { useBrowserUrlAutocomplete } from './useBrowserUrlAutocomplete';
 import { useBrowserPanelActions } from './useBrowserPanelActions';
 import { useBrowserBoundsLifecycle } from './useBrowserBoundsLifecycle';
@@ -157,6 +158,9 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   const browserOverlayCount = workspace?.browserOverlayCount ?? 0;
   const browserTabs = workspace?.browserPane?.tabs ?? [];
   const [annotationActive, setAnnotationActive] = useState(false);
+  const [handoffQueue, setHandoffQueue] = useState<Array<{ id: number; message: string }>>([]);
+  const nextHandoffId = useRef(0);
+  const [handoffError, setHandoffError] = useState('');
   const dragHandleProps = useDragHandle();
   const isActiveWorkspace = workspace?.id != null && workspace.id === activeWorkspaceId;
 
@@ -241,6 +245,18 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     return () => popBrowserOverlay(workspace.id);
   }, [historySuggestions.length, popBrowserOverlay, pushBrowserOverlay, workspace?.id]);
 
+  const handleAnnotationActions = useCallback((state: Awaited<ReturnType<typeof window.electronAPI.annotationGetState>>) => {
+    const pendingMessages = state.actions.flatMap((action) =>
+      action.type === 'send' && action.success && action.message
+        ? [{ id: nextHandoffId.current++, message: action.message }]
+        : []);
+    if (pendingMessages.length > 0) setHandoffQueue((queue) => [...queue, ...pendingMessages]);
+    const failure = state.actions.find((action) => !action.success);
+    if (state.overflowed) setHandoffError('Too many annotations were requested at once. Select the missed elements again.');
+    else if (failure) setHandoffError(failure.error || 'Could not process annotation. Select the element again.');
+    else if (state.actions.length > 0) setHandoffError('');
+  }, []);
+
   useEffect(() => {
     if (!workspace?.id || !isActiveWorkspace) {
       setCanGoBack(false);
@@ -278,6 +294,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   useEffect(() => {
     if (!workspace?.id || !isActiveWorkspace) {
       setAnnotationActive(false);
+      setHandoffQueue([]);
       return;
     }
 
@@ -294,9 +311,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
       try {
         const state = await window.electronAPI.annotationGetState();
         applyState(state);
-        if (!cancelled && state.copyTriggered && state.enabled && state.workspaceId === workspace.id) {
-          await window.electronAPI.annotationTriggerCopy();
-        }
+        if (!cancelled && state.enabled && state.workspaceId === workspace.id) handleAnnotationActions(state);
       } catch {
         // Ignore errors
       }
@@ -315,7 +330,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
       unsubscribeState();
       unsubscribeEscape();
     };
-  }, [isActiveWorkspace, workspace?.id]);
+  }, [handleAnnotationActions, isActiveWorkspace, workspace?.id]);
 
   useEffect(() => {
     if (!workspace?.id || !workspace.browserVisible || !isActiveWorkspace || !annotationActive) {
@@ -324,16 +339,14 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
 
     let cancelled = false;
     let inFlight = false;
-    const pollCopyTrigger = async () => {
+    const pollAnnotationActions = async () => {
       if (inFlight) return;
       inFlight = true;
       try {
         const state = await window.electronAPI.annotationGetState();
         if (cancelled) return;
         setAnnotationActive(state.enabled && state.workspaceId === workspace.id);
-        if (state.copyTriggered) {
-          await window.electronAPI.annotationTriggerCopy();
-        }
+        if (state.enabled && state.workspaceId === workspace.id) handleAnnotationActions(state);
       } catch {
         // Ignore transient page-context errors while navigating.
       } finally {
@@ -341,12 +354,12 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
       }
     };
 
-    const interval = setInterval(() => void pollCopyTrigger(), 500);
+    const interval = setInterval(() => void pollAnnotationActions(), 500);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [annotationActive, isActiveWorkspace, workspace?.browserVisible, workspace?.id]);
+  }, [annotationActive, handleAnnotationActions, isActiveWorkspace, workspace?.browserVisible, workspace?.id]);
 
   const {
     handleBack,
@@ -415,9 +428,11 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
         annotationActive={annotationActive}
         handleAnnotationToggle={handleAnnotationToggle}
       />
+      {handoffError && <div className="browser-annotation-error" role="alert">{handoffError}</div>}
       <div className="browser-content-shell">
         <div className="browser-content" ref={contentRef} />
       </div>
+      {handoffQueue[0] && workspace?.id && <AnnotationHandoffDialog key={handoffQueue[0].id} sourceWorkspaceId={workspace.id} initialMessage={handoffQueue[0].message} onClose={() => setHandoffQueue((queue) => queue.slice(1))} />}
     </div>
   );
 }

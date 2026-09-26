@@ -67,13 +67,17 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     let spawnArgs = baseArgs;
     let attentionEnv: Record<string, string> = {};
     let attentionCommand: string | undefined;
-    if (attentionEnabled && agentAttentionBroker) {
+    if (agentAttentionBroker) {
       try {
-        const options = attentionLaunchOptions(session.harness, baseArgs, { ...process.env, ...harnessEnv }, ensureAttentionAdapterFiles(), fork ? undefined : session.id);
-        if (options) {
-          attentionEnv = { ...options.env, ...await agentAttentionBroker.register(id, session.harness) };
-          attentionCommand = ensureAttentionAdapterFiles().command;
-          spawnArgs = options.args;
+        const files = ensureAttentionAdapterFiles();
+        attentionEnv = await agentAttentionBroker.register(id, session.harness);
+        attentionCommand = files.command;
+        if (attentionEnabled) {
+          const options = attentionLaunchOptions(session.harness, baseArgs, { ...process.env, ...harnessEnv }, files, fork ? undefined : session.id);
+          if (options) {
+            attentionEnv = { ...attentionEnv, ...options.env };
+            spawnArgs = options.args;
+          }
         }
       } catch {
         agentAttentionBroker.release(id);
@@ -107,6 +111,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       mainWindow,
       getIsShuttingDown,
       launchLabel,
+      harnessId: session.harness,
       onExit: () => agentAttentionBroker?.release(id),
       });
       return { ...result, harnessId: session.harness, attentionEnabled };

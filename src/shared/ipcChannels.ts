@@ -36,6 +36,8 @@ export const SET_HARNESS_DEFAULTS = 'set-harness-defaults';
 export const SPAWN_TERMINAL = 'spawn-terminal';
 export const GET_TERMINAL_BUFFER = 'get-terminal-buffer';
 export const WRITE_TERMINAL = 'write-terminal';
+export const GET_AGENT_HANDOFF_STATUSES = 'get-agent-handoff-statuses';
+export const SEND_ANNOTATION_TO_AGENT = 'send-annotation-to-agent';
 export const RESIZE_TERMINAL = 'resize-terminal';
 export const KILL_TERMINAL = 'kill-terminal';
 export const TERMINAL_CLEANUP_WORKSPACE = 'terminal:cleanup-workspace';
@@ -202,6 +204,7 @@ export const ANNOTATION_CHECK_ESCAPED = 'annotation-check-escaped';
 export const ANNOTATION_ESCAPE = 'annotation-escape';
 export const ANNOTATION_STATE_CHANGED = 'annotation-state-changed';
 export const ANNOTATION_TRIGGER_COPY = 'annotation-trigger-copy';
+export const ANNOTATION_PREPARE_SEND = 'annotation-prepare-send';
 
 /* ============================================================================
  * Canonical list (used by integration test to verify all channels registered)
@@ -233,6 +236,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
   WRITE_TERMINAL,
+  GET_AGENT_HANDOFF_STATUSES,
+  SEND_ANNOTATION_TO_AGENT,
   RESIZE_TERMINAL,
   KILL_TERMINAL,
   TERMINAL_CLEANUP_WORKSPACE,
@@ -355,6 +360,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   ANNOTATION_ESCAPE,
   ANNOTATION_STATE_CHANGED,
   ANNOTATION_TRIGGER_COPY,
+  ANNOTATION_PREPARE_SEND,
   // Session history
   SESSION_DISCOVER,
   SESSION_INVOKE,

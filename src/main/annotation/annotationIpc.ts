@@ -16,6 +16,7 @@ import {
   ANNOTATION_ESCAPE,
   ANNOTATION_STATE_CHANGED,
   ANNOTATION_TRIGGER_COPY,
+  ANNOTATION_PREPARE_SEND,
 } from '../../shared/ipcChannels';
 import { generateDisableCode } from './annotationRuntime';
 import {
@@ -198,8 +199,23 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
 
   ipcMain.handle(ANNOTATION_GET_STATE, async () => {
     const state = controller.getState();
-    const copyTriggered = await controller.checkCopyTrigger();
-    return { ...state, copyTriggered };
+    // Drain action snapshots atomically so each click keeps its own element and note.
+    const pending = await controller.drainActions();
+    const actions: Array<{ type: 'copy' | 'send'; success: boolean; message?: string; error?: string }> = [];
+    for (const action of pending.actions) {
+      try {
+        const message = formatAnnotationMarkdown(action.annotation);
+        if (action.type === 'copy') {
+          clipboard.writeText(message);
+          actions.push({ type: 'copy', success: true });
+        } else {
+          actions.push({ type: 'send', success: true, message });
+        }
+      } catch {
+        actions.push({ type: action.type, success: false, error: 'Could not process annotation' });
+      }
+    }
+    return { ...state, actions, overflowed: pending.overflowed };
   });
 
   ipcMain.handle(ANNOTATION_CAPTURE, async () => {
@@ -232,6 +248,16 @@ export function registerAnnotationIpc(deps: RegisterAnnotationIpcDeps): Annotati
       const error = err instanceof Error ? err.message : String(err);
       console.error('[Annotation IPC] Clipboard write failed:', error);
       return { success: false, error };
+    }
+  });
+
+  ipcMain.handle(ANNOTATION_PREPARE_SEND, async () => {
+    const result = await controller.capture();
+    if (!result.success || !result.annotation) return { success: false, error: result.error || 'Capture failed' };
+    try {
+      return { success: true, message: formatAnnotationMarkdown(result.annotation) };
+    } catch {
+      return { success: false, error: 'Could not format annotation' };
     }
   });
 

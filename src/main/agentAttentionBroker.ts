@@ -16,6 +16,8 @@ interface Registration {
 /** A loopback-only, advisory channel for hook notifications. It never accepts commands. */
 export class AgentAttentionBroker {
   private readonly registrations = new Map<string, Registration>();
+  private readonly readyTerminals = new Set<string>();
+  private readonly handoffStates = new Map<string, 'unverified' | 'ready' | 'running' | 'needs_input'>();
   private server: net.Server | null = null;
   private startPromise: Promise<number> | null = null;
 
@@ -24,7 +26,7 @@ export class AgentAttentionBroker {
   async start(): Promise<number> {
     if (this.startPromise) return this.startPromise;
     this.startPromise = new Promise<number>((resolve, reject) => {
-      const server = net.createServer((socket) => {
+      const server = net.createServer({ allowHalfOpen: true }, (socket) => {
         socket.setTimeout(1000, () => socket.destroy());
         let body = '';
         socket.on('data', (chunk: Buffer) => {
@@ -34,7 +36,10 @@ export class AgentAttentionBroker {
           }
           body += chunk.toString('utf8');
         });
-        socket.on('end', () => this.receive(body));
+        socket.on('end', () => {
+          this.receive(body);
+          socket.end('ok');
+        });
         socket.on('error', () => undefined);
       });
       server.maxConnections = 64;
@@ -59,6 +64,7 @@ export class AgentAttentionBroker {
     const port = await this.start();
     const token = randomBytes(32).toString('hex');
     this.registrations.set(token, { terminalId, harness });
+    this.handoffStates.set(terminalId, 'unverified');
     return {
       CLANKER_ATTENTION_PORT: String(port),
       CLANKER_ATTENTION_TOKEN: token,
@@ -67,6 +73,8 @@ export class AgentAttentionBroker {
   }
 
   release(terminalId: string): void {
+    this.readyTerminals.delete(terminalId);
+    this.handoffStates.delete(terminalId);
     for (const [token, registration] of this.registrations) {
       if (registration.terminalId === terminalId) this.registrations.delete(token);
     }
@@ -74,12 +82,35 @@ export class AgentAttentionBroker {
 
   close(): void {
     this.registrations.clear();
+    this.readyTerminals.clear();
+    this.handoffStates.clear();
     this.server?.close();
     this.server = null;
     this.startPromise = null;
   }
 
   /** Public for focused validation tests; the transport uses the same boundary. */
+  isReady(terminalId: string): boolean {
+    return this.readyTerminals.has(terminalId);
+  }
+
+  handoffState(terminalId: string): 'unverified' | 'ready' | 'running' | 'needs_input' | 'unavailable' {
+    return this.handoffStates.get(terminalId) ?? 'unavailable';
+  }
+
+  canHandoff(terminalId: string): boolean {
+    const state = this.handoffState(terminalId);
+    return state === 'unverified' || state === 'ready';
+  }
+
+  markSubmitted(terminalId: string): void {
+    if (this.isReady(terminalId)) {
+      this.readyTerminals.delete(terminalId);
+      this.handoffStates.set(terminalId, 'running');
+      this.onUpdate({ terminalId, event: 'turn_started' });
+    }
+  }
+
   receive(raw: string): void {
     if (Buffer.byteLength(raw) > MAX_MESSAGE_BYTES) return;
     let value: unknown;
@@ -93,11 +124,20 @@ export class AgentAttentionBroker {
     if (typeof data.event !== 'string' || !EVENTS.has(data.event as AgentAttentionEvent)) return;
     if (data.sessionId !== undefined && (typeof data.sessionId !== 'string' || data.sessionId.length > 128)) return;
     if (data.turnId !== undefined && (typeof data.turnId !== 'string' || data.turnId.length > 128)) return;
+    if (data.event === 'turn_completed') {
+      this.readyTerminals.add(registration.terminalId);
+      this.handoffStates.set(registration.terminalId, 'ready');
+    } else {
+      this.readyTerminals.delete(registration.terminalId);
+      if (data.event === 'turn_started' || data.event === 'input_resolved') this.handoffStates.set(registration.terminalId, 'running');
+      if (data.event === 'input_requested') this.handoffStates.set(registration.terminalId, 'needs_input');
+    }
     this.onUpdate({
       terminalId: registration.terminalId,
       event: data.event as AgentAttentionEvent,
       ...(typeof data.sessionId === 'string' ? { sessionId: data.sessionId } : {}),
       ...(typeof data.turnId === 'string' ? { turnId: data.turnId } : {}),
     });
+    if (data.event === 'session_ended') this.release(registration.terminalId);
   }
 }

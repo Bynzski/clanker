@@ -19,7 +19,7 @@ import {
   generateCaptureCode,
   generateEnableCode,
   generateDisableCode,
-  generateCheckCopyTriggerCode,
+  generateDrainActionsCode,
 } from './annotationRuntime';
 import { type RawCaptureResult, mapRawCaptureToAnnotationData } from './annotationCaptureParser';
 
@@ -33,6 +33,11 @@ export interface AnnotationCaptureResult {
   success: boolean;
   annotation?: AnnotationData;
   error?: string;
+}
+
+export interface AnnotationActionCapture {
+  type: 'copy' | 'send';
+  annotation: AnnotationData;
 }
 
 export interface AnnotationData {
@@ -62,8 +67,7 @@ export interface AnnotationController {
   disable(): Promise<{ success: boolean }>;
   capture(): Promise<AnnotationCaptureResult>;
   checkEscaped(): Promise<boolean>;
-  /** Atomically checks and clears the copy trigger flag from the page context. Returns true if a copy was triggered. */
-  checkCopyTrigger(): Promise<boolean>;
+  drainActions(): Promise<{ actions: AnnotationActionCapture[]; overflowed: boolean }>;
   reinitialize(): Promise<{ success: boolean; error?: string }>;
 }
 
@@ -281,12 +285,22 @@ export function createAnnotationController(
       return result.success && result.result === true;
     },
 
-    async checkCopyTrigger(): Promise<boolean> {
-      if (!state.enabled || !state.workspaceId) {
-        return false;
+    async drainActions(): Promise<{ actions: AnnotationActionCapture[]; overflowed: boolean }> {
+      if (!state.enabled || !state.workspaceId) return { actions: [], overflowed: false };
+      const result = await executeAndCapture<{
+        actions?: Array<{ type?: string; annotation?: RawCaptureResult }>;
+        overflowed?: boolean;
+      }>(state.workspaceId, generateDrainActionsCode());
+      if (!result.success || !Array.isArray(result.result?.actions)) return { actions: [], overflowed: false };
+      const actions: AnnotationActionCapture[] = [];
+      for (const entry of result.result.actions.slice(0, 64)) {
+        if ((entry?.type !== 'copy' && entry?.type !== 'send')
+          || typeof entry.annotation?.url !== 'string'
+          || typeof entry.annotation?.selector !== 'string'
+          || !entry.annotation.url || !entry.annotation.selector) continue;
+        actions.push({ type: entry.type, annotation: mapRawCaptureToAnnotationData(entry.annotation) });
       }
-      const result = await executeAndCapture<boolean>(state.workspaceId, generateCheckCopyTriggerCode());
-      return result.success && result.result === true;
+      return { actions, overflowed: result.result.overflowed === true };
     },
 
     async reinitialize(): Promise<{ success: boolean; error?: string }> {

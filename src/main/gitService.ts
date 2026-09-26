@@ -330,6 +330,10 @@ export class GitService {
     this.openWorkspaces.delete(id);
   }
 
+  getOpenWorkspacePath(id: string): string | null {
+    return this.openWorkspaces.get(id) ?? null;
+  }
+
   clearOpenWorkspaces(): void {
     this.openWorkspaces.clear();
   }

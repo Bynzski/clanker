@@ -213,6 +213,7 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
     getStore: () => store,
     getSafeWorkspacePath: (workingDir: string) => getSafeWorkspacePath(workingDir, store),
+    getOpenWorkspacePath: (workspaceId: string) => gitService.getOpenWorkspacePath(workspaceId),
     getHarnessOptions: () => HARNESS_OPTIONS,
     agentAttentionBroker,
   });

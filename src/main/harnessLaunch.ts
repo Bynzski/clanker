@@ -108,13 +108,20 @@ set +e
 exit_code=$?
 set -e
 
-# The PTY stays alive as a shell, so explicitly retire agent attention here.
-if [ -n "\${CLANKER_ATTENTION_COMMAND:-}" ] && command -v node >/dev/null 2>&1; then
-  node "$CLANKER_ATTENTION_COMMAND" --ended </dev/null >/dev/null 2>&1 || true
+# Retire the agent before this PTY becomes a shell. If the lifecycle signal
+# cannot run, close the terminal instead of leaving a shell marked as an agent.
+if [ -n "\${CLANKER_ATTENTION_COMMAND:-}" ]; then
+  if ! command -v node >/dev/null 2>&1; then
+    exit "$exit_code"
+  fi
+  if ! node "$CLANKER_ATTENTION_COMMAND" --ended </dev/null >/dev/null 2>&1; then
+    exit "$exit_code"
+  fi
 fi
 
 # Preserve the existing product behavior: after the harness exits,
 # replace the wrapper with an interactive shell so the terminal stays usable.
+unset CLANKER_ATTENTION_PORT CLANKER_ATTENTION_TOKEN CLANKER_ATTENTION_HARNESS CLANKER_ATTENTION_COMMAND
 exec "$fallback_shell" -i
 `;
 }

@@ -16,6 +16,9 @@
  */
 
 import { describe, test, expect, beforeEach, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { testHome, testHarnessWrapper } from '../../_helpers/tempPaths';
 
 // ---------------------------------------------------------------------------
@@ -140,7 +143,7 @@ describe('registerTerminalIpc — registration', () => {
     });
   });
 
-  test('registers exactly 7 terminal IPC handle channels (6 handlers + write-clipboard)', () => {
+  test('registers terminal IPC handle channels including annotation handoff', () => {
     const mockTerminals = new Map();
     const mockMainWindow = { webContents: { send: vi.fn() } };
     const mockStore = { get: vi.fn().mockReturnValue(false) };
@@ -153,7 +156,7 @@ describe('registerTerminalIpc — registration', () => {
       ensureHarnessWrapperScript: vi.fn().mockReturnValue(testHarnessWrapper()),
     });
 
-    expect(mockHandle.mock.calls.length).toBe(8);
+    expect(mockHandle.mock.calls.length).toBe(10);
   });
 
   test('registers 3 event IPC channels (terminal-data, terminal-exit, terminal-resized)', () => {
@@ -189,7 +192,7 @@ describe('registerTerminalIpc — registration', () => {
     };
     registerTerminalIpc(opts);
     registerTerminalIpc(opts);
-    expect(mockHandle.mock.calls.length).toBe(16);
+    expect(mockHandle.mock.calls.length).toBe(20);
   });
 });
 
@@ -271,6 +274,60 @@ describe('terminalIpc — error-path: handler returns', () => {
     const result = await handler(null, 'nonexistent-term-123');
     expect(result).toBe('');
     expect(typeof result).toBe('string');
+  });
+
+  test('sends an edited annotation only to a ready terminal in its workspace', () => {
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-handoff-'));
+    try {
+      const { terminals, opts } = createMockDeps();
+      const write = vi.fn();
+      const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn(), handoffState: vi.fn().mockReturnValue('unverified') };
+      terminals.set('term-agent', { id: 'term-agent', cwd: workspacePath, harnessId: 'codex', pty: { write } });
+      registerTerminalIpc({ ...opts, getOpenWorkspacePath: () => workspacePath, agentAttentionBroker: broker as never });
+      const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'send-annotation-to-agent')?.[1] as (
+        _: unknown, payload: unknown,
+      ) => { success: boolean; error?: string };
+
+      expect(handler(null, { workspaceId: 'workspace-1', terminalId: 'term-agent', message: 'URL: https://example.com\nNote: Fix this' }))
+        .toEqual({ success: true });
+      expect(write).toHaveBeenCalledWith('\x1b[200~URL: https://example.com\nNote: Fix this\x1b[201~\r');
+      expect(broker.markSubmitted).toHaveBeenCalledWith('term-agent');
+      const statuses = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'get-agent-handoff-statuses')?.[1] as () => Record<string, string>;
+      expect(statuses()).toEqual({ 'term-agent': 'unverified' });
+      expect(handler(null, { workspaceId: 'workspace-1', terminalId: 'term-agent', message: 'unsafe\x1b[201~' }).success).toBe(false);
+      expect(write).toHaveBeenCalledTimes(1);
+    } finally {
+      fs.rmSync(workspacePath, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects closed, shell-fallback, and mismatched annotation targets', () => {
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-handoff-'));
+    const otherPath = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-other-'));
+    try {
+      const { terminals, opts } = createMockDeps();
+      const write = vi.fn();
+      const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn() };
+      registerTerminalIpc({ ...opts, getOpenWorkspacePath: () => workspacePath, agentAttentionBroker: broker as never });
+      const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'send-annotation-to-agent')?.[1] as (
+        _: unknown, payload: unknown,
+      ) => { success: boolean; error?: string };
+      const payload = { workspaceId: 'workspace-1', terminalId: 'term-agent', message: 'Review annotation' };
+
+      expect(handler(null, payload).success).toBe(false);
+      terminals.set('term-agent', { id: 'term-agent', cwd: otherPath, harnessId: 'codex', pty: { write } });
+      expect(handler(null, payload).success).toBe(false);
+      terminals.set('term-agent', { id: 'term-agent', cwd: workspacePath, harnessId: 'codex', pty: { write } });
+      broker.canHandoff.mockReturnValue(false);
+      expect(handler(null, payload).success).toBe(false);
+      broker.canHandoff.mockReturnValue(true);
+      fs.rmSync(workspacePath, { recursive: true, force: true });
+      expect(handler(null, payload).success).toBe(false);
+      expect(write).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(workspacePath, { recursive: true, force: true });
+      fs.rmSync(otherPath, { recursive: true, force: true });
+    }
   });
 
   test('GET_TERMINAL_BUFFER returns empty string when terminals map is empty', async () => {
@@ -478,6 +535,7 @@ describe('terminalIpc — error-path: handler returns', () => {
 
   test('SPAWN_TERMINAL uses wrapper-script execution for harness launches', async () => {
     const { opts } = createMockDeps();
+    const broker = { register: vi.fn().mockResolvedValue({ CLANKER_ATTENTION_TOKEN: 'test-token' }), release: vi.fn() };
     const ensureWrapper = vi.fn().mockReturnValue(testHarnessWrapper());
     opts.ensureHarnessWrapperScript = ensureWrapper;
     opts.getHarnessOptions = vi.fn().mockReturnValue({
@@ -497,7 +555,7 @@ describe('terminalIpc — error-path: handler returns', () => {
       }),
     }) as never;
     mockPtySpawn.mockReturnValue({ pid: 456, onData: vi.fn(), onExit: vi.fn() });
-    registerTerminalIpc(opts);
+    registerTerminalIpc({ ...opts, agentAttentionBroker: broker as never });
 
     const handler = mockIpcMain.handle.mock.calls.find(
       (call) => call[0] === 'spawn-terminal'
@@ -506,6 +564,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     const result = await handler(null, '/test/workspace', 'codex', 'gpt-5.4-mini');
 
     expect(result).toBeDefined();
+    expect(broker.register).toHaveBeenCalledWith(result.id, 'codex');
     expect(ensureWrapper).toHaveBeenCalledTimes(1);
     expect(mockPtySpawn).toHaveBeenCalledWith(
       testHarnessWrapper(),
@@ -514,6 +573,8 @@ describe('terminalIpc — error-path: handler returns', () => {
         cwd: '/test/workspace',
         env: expect.objectContaining({
           CLANKER_GRID_FALLBACK_SHELL: expect.any(String),
+          CLANKER_ATTENTION_TOKEN: 'test-token',
+          CLANKER_ATTENTION_COMMAND: expect.any(String),
           TERM: 'xterm-256color',
         }),
       })

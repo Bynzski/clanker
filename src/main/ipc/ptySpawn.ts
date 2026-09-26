@@ -21,6 +21,7 @@ export interface SpawnPtyOptions {
   getIsShuttingDown: () => boolean;
   /** Optional banner line sent to the renderer before any PTY data. */
   launchLabel?: string;
+  harnessId?: string;
   onExit?: (id: string) => void;
 }
 
@@ -35,6 +36,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     mainWindow,
     getIsShuttingDown,
     launchLabel,
+    harnessId,
     onExit,
   } = opts;
 
@@ -50,6 +52,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     pid: ptyProcess.pid,
     pty: ptyProcess,
     cwd,
+    harnessId,
     startupBuffer: [],
     startupBufferReady: false,
   };

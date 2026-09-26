@@ -41,8 +41,9 @@ Note: Make this the primary CTA, increase horizontal padding.
 ### Adding a Note
 
 1. Type your annotation in the textarea
-2. Click **Copy Annotation** to copy the full structured output to clipboard
-3. Click **Cancel** to deselect without copying
+2. Click **Copy Annotation** to copy the full structured output to clipboard, or **Send to agent** to open a Clanker preview
+3. In the preview, edit the message and select a named agent marked **Ready** or **Open · status unverified**. The latter means the agent process is still open but optional turn tracking is off; check its pane before sending. Agents known to be running, requesting input, closed, or in their fallback shell cannot receive an automatic send. **Copy message** remains available.
+4. Click **Cancel** to deselect without copying or sending
 
 ### Exiting Annotation Mode
 
@@ -78,9 +79,10 @@ The annotation system uses a priority-based selector strategy:
 1. **`data-testid`** / **`data-test`** / **`data-qa`** — Most stable for testing
 2. **`id`** — Usually stable
 3. **`role` + `aria-label`** — Semantic selectors
-4. **Tag + nth-of-type** — Last resort fallback
+4. **Tag + class** — Used only when it identifies one element and the class does not look generated
+5. **Structural `nth-of-type` path** — Last resort when classes repeat
 
-Multiple fallback selectors are captured so you can adapt if the primary selector doesn't work in your context.
+Fallback selectors are included only when they identify the selected element. Positional paths can change when a page layout changes, so check the captured text and context before using one later.
 
 ## Context Extraction
 
@@ -90,6 +92,10 @@ The annotation system analyzes the element's surroundings to provide richer cont
 - **Ancestor Context**: Inferred position (left sidebar, form section, navigation, etc.)
 - **Element Role In Context**: What the element means locally (primary action button, repository list entry, etc.)
 - **Nearby Text**: Sibling text that helps identify the element's purpose
+
+The handoff and copy actions include the same captured context. Form field values are excluded from captured attributes.
+
+Each Copy or Send click stores its own annotation snapshot. Clanker processes those clicks in order, even when several happen between browser polls.
 
 This is especially useful for complex pages like GitHub, where you might want to distinguish between "Save" buttons in different sections.
 
@@ -124,8 +130,8 @@ Make this button more prominent — it's the primary CTA for the profile form.
 2. Enable annotation mode
 3. Click the element you're describing
 4. Add your note
-5. Copy the annotation
-6. Paste into your AI coding agent (Codex, Claude, Pi, etc.)
+5. Copy the annotation and paste it into an agent, or choose **Send to agent**
+6. Review the message and destination workspace before sending
 
 The structured output helps the agent understand exactly which element you mean, its position, and your intended change.
 
@@ -147,6 +153,7 @@ The structured output helps the agent understand exactly which element you mean,
 │  ├── ANNOTATION_DISABLE                                     │
 │  ├── ANNOTATION_CAPTURE                                     │
 │  ├── ANNOTATION_EXPORT                                      │
+│  ├── ANNOTATION_PREPARE_SEND                                │
 │  └── ANNOTATION_ESCAPE                                      │
 │                                                              │
 │  Escape Handler (before-input-event)                         │
@@ -160,7 +167,7 @@ The structured output helps the agent understand exactly which element you mean,
 │  ├── Crosshair cursor on enable                             │
 │  ├── Hover highlight (position: fixed, z-index)             │
 │  ├── Element capture (selector, bounds, context)             │
-│  ├── In-page popup (note textarea, Copy/Cancel)              │
+│  ├── In-page popup (note textarea, Copy/Send/Cancel)         │
 │  └── Annotation storage (__clankerAnnotationData__)         │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -169,6 +176,7 @@ The structured output helps the agent understand exactly which element you mean,
 
 - **Injected runtime**: JavaScript injected via `webContents.executeJavaScript()`
 - **No browser preload**: Communication uses return-value capture
+- **Trusted handoff preview**: The page only signals a request. Clanker captures the annotation, displays an editable preview, and rechecks the destination agent in main before writing to its PTY.
 - **In-page popup**: Renders in page DOM with proper z-index (2147483647)
 - **Escape handling**: Two-layer detection (main process + injected runtime)
 - **Navigation handling**: Runtime re-injected on subsequent navigations
@@ -192,11 +200,14 @@ The structured output helps the agent understand exactly which element you mean,
 | `ANNOTATION_ENABLE` | renderer → main | Enable annotation mode |
 | `ANNOTATION_DISABLE` | renderer → main | Disable annotation mode |
 | `ANNOTATION_CAPTURE` | renderer → main | Capture annotation from page |
-| `ANNOTATION_GET_STATE` | renderer → main | Get annotation state |
+| `ANNOTATION_GET_STATE` | renderer → main | Get annotation state and process queued Copy/Send snapshots |
 | `ANNOTATION_EXPORT` | renderer → main | Export annotation to clipboard |
 | `ANNOTATION_CHECK_ESCAPED` | renderer → main | Check if Escape was pressed |
 | `ANNOTATION_ESCAPE` | main → renderer | Escape event notification |
 | `ANNOTATION_TRIGGER_COPY` | renderer → main | Trigger capture + export pipeline |
+| `ANNOTATION_PREPARE_SEND` | renderer → main | Capture and format a message for preview |
+| `GET_AGENT_HANDOFF_STATUSES` | renderer → main | Get live agent handoff states |
+| `SEND_ANNOTATION_TO_AGENT` | renderer → main | Verify a live agent and deliver the reviewed message |
 
 ## Future Enhancements
 
@@ -205,5 +216,4 @@ Potential additions for future versions:
 - **Screenshots**: Element or viewport capture
 - **Multi-select**: Annotate multiple elements at once
 - **Persistent storage**: Save annotations per page/session
-- **Direct agent handoff**: Send directly to active terminal/agent pane
 - **Source mapping**: Map selected elements to source code

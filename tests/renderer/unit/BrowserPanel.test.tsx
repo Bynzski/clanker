@@ -77,7 +77,7 @@ const mockCanGoBack = vi.fn().mockResolvedValue(false);
 const mockCanGoForward = vi.fn().mockResolvedValue(false);
 const mockAnnotationEnable = vi.fn().mockResolvedValue({ success: true });
 const mockAnnotationDisable = vi.fn().mockResolvedValue({ success: true });
-const mockAnnotationGetState = vi.fn().mockResolvedValue({ enabled: false, initialized: false, workspaceId: null });
+const mockAnnotationGetState = vi.fn().mockResolvedValue({ enabled: false, initialized: false, workspaceId: null, actions: [], overflowed: false });
 const mockAnnotationCapture = vi.fn().mockResolvedValue({ success: false, error: 'No annotation pending' });
 const mockAnnotationExport = vi.fn().mockResolvedValue({ success: true });
 const mockAnnotationCheckEscaped = vi.fn().mockResolvedValue(false);
@@ -92,6 +92,7 @@ const mockOnAnnotationStateChanged = vi.fn((callback: typeof annotationStateChan
   return () => undefined;
 });
 const mockAnnotationTriggerCopy = vi.fn().mockResolvedValue({ success: true });
+const mockAnnotationPrepareSend = vi.fn().mockResolvedValue({ success: true, message: '## Page Annotation' });
 const originalResizeObserver = global.ResizeObserver;
 const originalRequestAnimationFrame = window.requestAnimationFrame;
 const originalCancelAnimationFrame = window.cancelAnimationFrame;
@@ -189,6 +190,10 @@ function setupElectronAPIMocks() {
     onAnnotationEscape: mockOnAnnotationEscape,
     onAnnotationStateChanged: mockOnAnnotationStateChanged,
     annotationTriggerCopy: mockAnnotationTriggerCopy,
+    annotationPrepareSend: mockAnnotationPrepareSend,
+    getAgentHandoffStatuses: vi.fn().mockResolvedValue({}),
+    sendAnnotationToAgent: vi.fn().mockResolvedValue({ success: true }),
+    writeClipboard: vi.fn().mockResolvedValue({ success: true }),
     getWindowZoomFactor: vi.fn(() => 1),
   } as unknown as typeof window.electronAPI;
 }
@@ -201,7 +206,7 @@ describe('BrowserPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     annotationStateChangedHandler = null;
-    mockAnnotationGetState.mockResolvedValue({ enabled: false, initialized: false, workspaceId: null });
+    mockAnnotationGetState.mockResolvedValue({ enabled: false, initialized: false, workspaceId: null, actions: [], overflowed: false });
     vi.useFakeTimers({ shouldAdvanceTime: true });
     setupElectronAPIMocks();
     MockResizeObserver.reset();
@@ -272,6 +277,39 @@ describe('BrowserPanel', () => {
   });
 
   describe('annotation lifecycle', () => {
+    it('opens the send preview when copy and send were requested before one poll', async () => {
+      setupStore();
+      mockAnnotationGetState
+        .mockResolvedValueOnce({ enabled: true, initialized: true, workspaceId: 'workspace-1', actions: [
+          { type: 'copy', success: true },
+          { type: 'send', success: true, message: '## Page Annotation\nSend second' },
+        ], overflowed: false })
+        .mockResolvedValue({ enabled: true, initialized: true, workspaceId: 'workspace-1', actions: [], overflowed: false });
+      render(<BrowserPanel {...defaultProps} />);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(screen.getByRole('dialog', { name: 'Send annotation to agent' })).toBeTruthy();
+      expect(screen.getByLabelText('Message')).toHaveValue('## Page Annotation\nSend second');
+      expect(mockAnnotationPrepareSend).not.toHaveBeenCalled();
+      expect(mockAnnotationTriggerCopy).not.toHaveBeenCalled();
+      expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserOverlayCount).toBeGreaterThan(0);
+    });
+
+    it('shows two queued send previews one at a time', async () => {
+      setupStore();
+      mockAnnotationGetState
+        .mockResolvedValueOnce({ enabled: true, initialized: true, workspaceId: 'workspace-1', actions: [
+          { type: 'send', success: true, message: 'First annotation' },
+          { type: 'send', success: true, message: 'Second annotation' },
+        ], overflowed: false })
+        .mockResolvedValue({ enabled: true, initialized: true, workspaceId: 'workspace-1', actions: [], overflowed: false });
+      render(<BrowserPanel {...defaultProps} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(screen.getByLabelText('Message')).toHaveValue('First annotation');
+      fireEvent.click(screen.getByRole('button', { name: 'Close annotation handoff' }));
+      expect(screen.getByLabelText('Message')).toHaveValue('Second annotation');
+    });
+
     it('uses an initial state read plus events instead of polling while disabled', async () => {
       setupStore();
       render(<BrowserPanel {...defaultProps} />);

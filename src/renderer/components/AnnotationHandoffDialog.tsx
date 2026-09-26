@@ -1,0 +1,132 @@
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
+import { useWorkspaceStore } from '../store/workspaceStore';
+import { useAgentAttentionStore } from '../store/agentAttentionStore';
+import { HARNESS_OPTIONS } from '../lib/harnessOptions';
+import { getWorkspaceProjectName } from '../lib/workspaceLabels';
+import './AnnotationHandoffDialog.css';
+
+interface Props {
+  sourceWorkspaceId: string;
+  initialMessage: string;
+  onClose: () => void;
+}
+
+export default function AnnotationHandoffDialog({ sourceWorkspaceId, initialMessage, onClose }: Props) {
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
+  const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
+  const attentionByTerminalId = useAgentAttentionStore((state) => state.byTerminalId);
+  const [handoffStatuses, setHandoffStatuses] = useState<Awaited<ReturnType<typeof window.electronAPI.getAgentHandoffStatuses>>>({});
+  const [message, setMessage] = useState(initialMessage);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState('');
+
+  useEffect(() => {
+    pushBrowserOverlay(sourceWorkspaceId);
+    return () => popBrowserOverlay(sourceWorkspaceId);
+  }, [popBrowserOverlay, pushBrowserOverlay, sourceWorkspaceId]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  useEffect(() => {
+    let active = true;
+    void window.electronAPI.getAgentHandoffStatuses()
+      .then((statuses) => { if (active) setHandoffStatuses(statuses); })
+      .catch(() => { if (active) setHandoffStatuses({}); });
+    return () => { active = false; };
+  }, [attentionByTerminalId]);
+
+  const candidates = workspaces.flatMap((workspace) => workspace.terminals
+    .filter((terminal) => terminal.harnessId && workspace.panes.some((pane) => pane.terminalId === terminal.id))
+    .map((terminal) => {
+      const handoffState = handoffStatuses[terminal.id] ?? 'unavailable';
+      const canSend = handoffState === 'ready' || handoffState === 'unverified';
+      const status = handoffState === 'ready' ? 'Ready'
+        : handoffState === 'unverified' ? 'Open · status unverified'
+          : handoffState === 'running' ? 'Running'
+            : handoffState === 'needs_input' ? 'Needs input' : 'Unavailable';
+      return { workspace, terminal, canSend, status };
+    }))
+    .sort((left, right) => Number(right.workspace.id === sourceWorkspaceId) - Number(left.workspace.id === sourceWorkspaceId));
+
+  const copyMessage = async () => {
+    try {
+      const result = await window.electronAPI.writeClipboard(message);
+      setFeedback(result.success ? 'Copied message to clipboard.' : result.error || 'Could not copy message.');
+    } catch {
+      setFeedback('Could not copy message.');
+    }
+  };
+
+  const sendMessage = async (workspaceId: string, terminalId: string, name: string) => {
+    setBusy(true);
+    setFeedback('');
+    try {
+      const result = await window.electronAPI.sendAnnotationToAgent(workspaceId, terminalId, message);
+      if (result.success) {
+        onClose();
+        return;
+      }
+      setFeedback(result.error || `Could not send to ${name}. Copy the message instead.`);
+    } catch {
+      setFeedback('Agent is unavailable. Copy the message instead.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return createPortal(
+    <div className="annotation-handoff-overlay" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <section className="annotation-handoff-dialog" role="dialog" aria-modal="true" aria-label="Send annotation to agent">
+        <header className="annotation-handoff-header">
+          <div>
+            <h2>Send annotation to agent</h2>
+            <p>Review the message and choose an open agent. Check the pane when status is unverified.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close annotation handoff"><X size={16} /></button>
+        </header>
+        <label className="annotation-handoff-label" htmlFor="annotation-handoff-message">Message</label>
+        <textarea id="annotation-handoff-message" value={message} onChange={(event) => {
+          setMessage(event.target.value);
+          setFeedback('');
+        }} autoFocus spellCheck={false} />
+        <div className="annotation-handoff-destinations">
+          <div className="annotation-handoff-label">Agents</div>
+          {candidates.length === 0 && <p>No agent panes are open. Copy the message to use it elsewhere.</p>}
+          {candidates.map(({ workspace, terminal, canSend, status }) => {
+            const harnessName = HARNESS_OPTIONS.find((option) => option.id === terminal.harnessId)?.label ?? terminal.harnessId;
+            const projectName = getWorkspaceProjectName(workspace);
+            const destination = `${projectName}${workspace.gitCurrentBranch ? ` · ${workspace.gitCurrentBranch}` : ''}`;
+            const name = terminal.displayName ?? harnessName ?? 'Agent';
+            return <div className="annotation-handoff-agent" key={terminal.id}>
+              <div>
+                <strong>{name}</strong><span> · {harnessName}</span>
+                <small>{destination} · {status}</small>
+                <small className="annotation-handoff-path" title={workspace.workspacePath}>{workspace.workspacePath}</small>
+              </div>
+              <button type="button" disabled={!canSend || busy || !message.trim()} onClick={() => void sendMessage(workspace.id, terminal.id, name)}>
+                Send
+              </button>
+            </div>;
+          })}
+        </div>
+        {feedback && <p className="annotation-handoff-feedback" role="status">{feedback}</p>}
+        <footer className="annotation-handoff-footer">
+          <button type="button" onClick={() => void copyMessage()} disabled={busy || !message}>Copy message</button>
+          <button type="button" onClick={onClose}>Close</button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}

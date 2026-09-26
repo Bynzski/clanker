@@ -67,4 +67,22 @@ describe('agent attention launch adapters', () => {
       broker.close();
     }
   });
+
+  it('acknowledges agent exit before a wrapper can enter its fallback shell', async () => {
+    const broker = new AgentAttentionBroker(() => undefined);
+    try {
+      const env = await broker.register('term-exit', 'codex');
+      const code = await new Promise<number | null>((resolve, reject) => {
+        const child = spawn(process.execPath, [files.command, '--ended'], {
+          env: { ...process.env, ...env },
+        });
+        child.once('error', reject);
+        child.once('close', resolve);
+      });
+      expect(code).toBe(0);
+      expect(broker.handoffState('term-exit')).toBe('unavailable');
+    } finally {
+      broker.close();
+    }
+  });
 });

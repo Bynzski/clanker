@@ -7,6 +7,8 @@
 import { ipcMain, BrowserWindow, clipboard } from 'electron';
 import type * as pty from 'node-pty';
 import Store from 'electron-store';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { type StoreSchema } from '../../shared/types/store';
 import { buildHarnessSpawnArgs, ensureHarnessWrapperScript, resolveHarnessSpawn } from '../harnessLaunch';
 import { defaultShell, prependUserCliBinsToPath } from '../platformShell';
@@ -14,6 +16,8 @@ import {
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
   WRITE_TERMINAL,
+  GET_AGENT_HANDOFF_STATUSES,
+  SEND_ANNOTATION_TO_AGENT,
   RESIZE_TERMINAL,
   KILL_TERMINAL,
   TERMINAL_CLEANUP_WORKSPACE,
@@ -33,6 +37,7 @@ interface Terminal {
   pid: number;
   pty: pty.IPty;
   cwd?: string;
+  harnessId?: string;
   /**
    * Bounded startup buffer — holds PTY output only during the brief window
    * between PTY spawn and renderer confirming xterm is ready.
@@ -50,6 +55,7 @@ interface RegisterTerminalIpcDeps {
   getMainWindow: () => BrowserWindow | null;
   getStore: () => Store<StoreSchema>;
   getSafeWorkspacePath: (workingDir: string) => string;
+  getOpenWorkspacePath?: (workspaceId: string) => string | null;
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
   ensureHarnessWrapperScript?: () => string | null;
   getAppShuttingDown?: () => boolean;
@@ -114,13 +120,17 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       : [];
     let attentionEnv: Record<string, string> = {};
     let attentionCommand: string | undefined;
-    if (attentionEnabled && harness && agentAttentionBroker) {
+    if (harnessConfig && harness && agentAttentionBroker) {
       try {
-        const options = attentionLaunchOptions(harness, harnessArgs, { ...process.env, ...harnessEnv }, ensureAttentionAdapterFiles());
-        if (options) {
-          attentionEnv = { ...options.env, ...await agentAttentionBroker.register(id, harness) };
-          attentionCommand = ensureAttentionAdapterFiles().command;
-          harnessArgs = options.args;
+        const files = ensureAttentionAdapterFiles();
+        attentionEnv = await agentAttentionBroker.register(id, harness);
+        attentionCommand = files.command;
+        if (attentionEnabled) {
+          const options = attentionLaunchOptions(harness, harnessArgs, { ...process.env, ...harnessEnv }, files);
+          if (options) {
+            attentionEnv = { ...attentionEnv, ...options.env };
+            harnessArgs = options.args;
+          }
         }
       } catch {
         agentAttentionBroker.release(id);
@@ -161,6 +171,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       mainWindow,
       getIsShuttingDown: () => appShuttingDown,
       launchLabel,
+      harnessId: harnessConfig ? harness : undefined,
       onExit: () => agentAttentionBroker?.release(id),
       });
       return { ...result, harnessId: harnessConfig ? harness : undefined, attentionEnabled };
@@ -218,6 +229,48 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       return ok();
     }
     return ok(); // no-op for missing terminal
+  });
+
+  ipcMain.handle(GET_AGENT_HANDOFF_STATUSES, () => Object.fromEntries(
+    [...getTerminals()].filter(([, terminal]) => terminal.harnessId).map(([id]) => [
+      id, agentAttentionBroker?.handoffState(id) ?? 'unavailable',
+    ]),
+  ));
+
+  ipcMain.handle(SEND_ANNOTATION_TO_AGENT, (_, payload: unknown) => {
+    if (!isRecord(payload)
+      || !isNonEmptyString(payload.workspaceId)
+      || !isNonEmptyString(payload.terminalId)
+      || !isNonEmptyString(payload.message)
+      || Buffer.byteLength(payload.message, 'utf8') > 32 * 1024) {
+      return fail('Invalid annotation handoff');
+    }
+    const workspacePath = deps.getOpenWorkspacePath?.(payload.workspaceId);
+    const terminal = getTerminals().get(payload.terminalId);
+    if (!workspacePath || !terminal?.cwd) return fail('The destination workspace or terminal is closed. Copy the message instead.');
+    let relative: string;
+    try {
+      relative = path.relative(fs.realpathSync(workspacePath), fs.realpathSync(terminal.cwd));
+    } catch {
+      return fail('The destination directory is unavailable. Copy the message instead.');
+    }
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      return fail('The selected terminal is outside that workspace. Copy the message instead.');
+    }
+    if (!terminal.harnessId || !agentAttentionBroker?.canHandoff(payload.terminalId)) {
+      return fail('The agent is no longer available for handoff. Copy the message instead.');
+    }
+    const message = payload.message.replace(/\r\n?/g, '\n');
+    if (/[\x00-\x08\x0b-\x1f\x7f]/.test(message)) {
+      return fail('The message contains terminal control characters. Edit or copy it instead.');
+    }
+    try {
+      terminal.pty.write(`\x1b[200~${message}\x1b[201~\r`);
+      agentAttentionBroker.markSubmitted(payload.terminalId);
+      return ok();
+    } catch {
+      return fail('The terminal could not receive the message. Copy it instead.');
+    }
   });
 
   ipcMain.handle(RESIZE_TERMINAL, (_, payload: unknown) => {

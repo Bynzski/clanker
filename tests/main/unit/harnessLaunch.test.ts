@@ -162,6 +162,30 @@ test('buildHarnessWrapperScript preserves user CLI bin precedence when augmentin
   }
 });
 
+test('wrapper does not enter its fallback shell when the agent end signal fails', () => {
+  if (process.platform === 'win32') return;
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-grid-harness-retire-'));
+  const wrapperPath = path.join(tempHome, 'wrapper.sh');
+  const fallbackShellPath = path.join(tempHome, 'fallback-shell');
+  const markerPath = path.join(tempHome, 'fallback-entered');
+  try {
+    fs.writeFileSync(wrapperPath, buildHarnessWrapperScript(), { mode: 0o700 });
+    fs.writeFileSync(fallbackShellPath, `#!/usr/bin/env sh\ntouch "${markerPath}"\n`, { mode: 0o700 });
+    const result = spawnSync(wrapperPath, ['/bin/true'], {
+      env: {
+        ...process.env,
+        HOME: tempHome,
+        CLANKER_ATTENTION_COMMAND: path.join(tempHome, 'missing-command.mjs'),
+        CLANKER_GRID_FALLBACK_SHELL: fallbackShellPath,
+      },
+    });
+    assert.equal(result.status, 0);
+    assert.equal(fs.existsSync(markerPath), false);
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+});
+
 test('ensureHarnessWrapperScript uses the platform-appropriate wrapper behavior', () => {
   const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-grid-harness-wrapper-'));
 
