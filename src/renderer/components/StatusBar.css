@@ -36,13 +36,24 @@
   opacity: 0.8;
 }
 
-.status-path {
+.status-project {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 45%;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-secondary);
-  opacity: 0.85;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.status-project svg {
+  flex-shrink: 0;
+  color: var(--accent-primary);
+}
+
+.status-project-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -52,6 +63,8 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+  max-width: 40%;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
@@ -67,6 +80,13 @@
 }
 
 .status-branch svg {
+  flex-shrink: 0;
   opacity: 0.75;
   color: var(--accent-primary);
+}
+
+.status-branch span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

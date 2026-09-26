@@ -11,6 +11,7 @@ import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import { persistWorkspaceLayout } from './lib/workspaceLayoutStorage';
 import { sameWorkspacePath } from './lib/pathUtils';
+import { getWorkspaceNameFromPath } from './lib/workspaceLabels';
 import type { GitWorktree } from '../shared/types/git';
 import './App.css';
 
@@ -144,12 +145,16 @@ function App() {
       const linkedWorktree = worktreeList?.success
         ? worktreeList.worktrees.find((entry: GitWorktree) => !entry.isMain && sameWorkspacePath(entry.path, path))
         : null;
+      const projectName = linkedWorktree
+        ? getWorkspaceNameFromPath(worktreeList?.worktrees.find((entry: GitWorktree) => entry.isMain)?.path ?? path)
+        : getWorkspaceNameFromPath(path);
 
       addWorkspace({
         id: workspaceId,
-        name: '',
+        name: projectName,
         workspacePath: path,
         isLinkedWorktree: !!linkedWorktree,
+        projectName,
         harness,
         model: model ?? '',
         terminals,

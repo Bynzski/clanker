@@ -111,6 +111,44 @@ describe('WorkspaceTabs', () => {
       expect(screen.getByLabelText('Worktree on task/example')).toBeTruthy();
     });
 
+    it('shows the source project and branch for a linked worktree with a generated checkout name', () => {
+      const workspacePath = '/projects/build-it-worktrees/test-tree-5f66ef4178e31b5f4a9b';
+      useWorkspaceStore.setState({
+        workspaces: [createMockWorkspace({
+          name: 'test-tree-5f66ef4178e31b5f4a9b',
+          workspacePath,
+          isLinkedWorktree: true,
+          gitCurrentBranch: 'test-tree',
+        })],
+        activeWorkspaceId: 'ws1',
+      });
+
+      render(<WorkspaceTabs />);
+      const tab = screen.getByRole('tab');
+      expect(tab).toHaveTextContent('build-it');
+      expect(tab).toHaveTextContent('test-tree');
+      expect(tab).not.toHaveTextContent('5f66ef4178e31b5f4a9b');
+      expect(tab).toHaveAttribute('title', expect.stringContaining(workspacePath));
+      fireEvent.click(screen.getByTitle('Rename tab'));
+      expect(screen.getByRole('textbox')).toHaveValue('build-it');
+    });
+
+    it('distinguishes detached worktrees from the same project', () => {
+      useWorkspaceStore.setState({
+        workspaces: [
+          createMockWorkspace({ id: 'ws1', name: 'build-it', projectName: 'build-it', workspacePath: '/projects/build-it-worktrees/task-11111111111111111111', isLinkedWorktree: true, gitIsDetached: true }),
+          createMockWorkspace({ id: 'ws2', name: 'build-it', projectName: 'build-it', workspacePath: '/projects/build-it-worktrees/task-22222222222222222222', isLinkedWorktree: true, gitIsDetached: true }),
+        ],
+        activeWorkspaceId: 'ws1',
+      });
+
+      render(<WorkspaceTabs />);
+      const tabs = screen.getAllByRole('tab');
+      expect(tabs[0]).toHaveTextContent('build-it / 11111111 task');
+      expect(tabs[1]).toHaveTextContent('build-it / 22222222 task');
+      expect(screen.getAllByLabelText('Worktree at detached HEAD')).toHaveLength(2);
+    });
+
     const mockWorkspaces: WorkspaceTab[] = [
       createMockWorkspace({
         id: 'ws1',

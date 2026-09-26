@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { GitBranch, GitWorktree } from '../../shared/types/git';
+import { GitBranch as GitBranchIcon } from 'lucide-react';
 import { sameWorkspacePath } from '../lib/pathUtils';
+import { getWorkspaceNameFromPath } from '../lib/workspaceLabels';
 
 interface Props {
   repoPath: string | null;
@@ -14,6 +16,7 @@ export default function WorktreeLauncher({ repoPath, openPaths, onOpenPath }: Pr
   const [branchName, setBranchName] = useState('');
   const [branchOptions, setBranchOptions] = useState<string[]>([]);
   const [worktrees, setWorktrees] = useState<GitWorktree[]>([]);
+  const [repositoryName, setRepositoryName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [pendingRemoval, setPendingRemoval] = useState<GitWorktree | null>(null);
@@ -37,6 +40,7 @@ export default function WorktreeLauncher({ repoPath, openPaths, onOpenPath }: Pr
       setLoadedRepo(repoPath);
       setBranchOptions(branchState.branches.map((branch: GitBranch) => branch.name));
       setBaseRef(branchState.currentBranch || branchState.branches[0]?.name || 'HEAD');
+      setRepositoryName(getWorkspaceNameFromPath(list.worktrees.find((worktree: GitWorktree) => worktree.isMain)?.path ?? repoPath));
       setWorktrees(list.worktrees.filter((worktree: GitWorktree) => !worktree.isMain));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not load repository');
@@ -124,7 +128,11 @@ export default function WorktreeLauncher({ repoPath, openPaths, onOpenPath }: Pr
           {worktrees.length === 0 && <span>No linked worktrees</span>}
           {worktrees.map((worktree) => (
             <div className="gate-worktree-row" key={worktree.path}>
-              <span title={worktree.path}>{worktree.branch || 'Detached'} · {worktree.path}</span>
+              <span className="gate-worktree-identity" title={worktree.path}>
+                <span className="gate-worktree-project">{repositoryName}</span>
+                <GitBranchIcon size={12} strokeWidth={2} aria-hidden="true" />
+                <span className="gate-worktree-branch">{worktree.branch || `Detached (${getWorkspaceNameFromPath(worktree.path)})`}</span>
+              </span>
               <button type="button" onClick={() => onOpenPath(worktree.path)} disabled={worktree.isPrunable} title={worktree.isPrunable ? 'Checkout directory is missing' : undefined}>Open</button>
               <button type="button" onClick={() => void inspectRemoval(worktree)} disabled={busy || worktree.isLocked || worktree.isPrunable}>Remove…</button>
             </div>

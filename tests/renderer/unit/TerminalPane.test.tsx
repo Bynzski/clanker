@@ -248,7 +248,7 @@ describe('TerminalPane', () => {
       expect(document.querySelector('.terminal-agent-state')).toBeNull();
     });
 
-    it('shows unknown until an enabled launch receives an agent event', () => {
+    it('shows harness and color coded attention icons without status words', () => {
       setupStoreWithTerminal('t1', 'p1');
       useWorkspaceStore.setState({ terminals: [{
         id: 't1', pid: 1234, workingDir: '/workspace', harnessId: 'opencode',
@@ -257,9 +257,15 @@ describe('TerminalPane', () => {
 
       render(<TerminalPane paneId="p1" />);
 
-      expect(screen.getByText('Unknown')).toBeTruthy();
+      expect(screen.getByRole('img', { name: 'OpenCode harness' })).toBeTruthy();
+      expect(screen.getByLabelText('Samson: Unknown')).toBeTruthy();
+      expect(screen.queryByText('Unknown')).toBeNull();
       act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'turn_started' }, false));
-      expect(screen.getByText('Running')).toBeTruthy();
+      expect(screen.getByLabelText('Samson: Running')).toHaveClass('state-running');
+      act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'input_requested' }, false));
+      expect(screen.getByLabelText('Samson: Needs input')).toHaveClass('state-needs_input');
+      act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'turn_completed' }, false));
+      expect(screen.getByLabelText('Samson: Turn complete')).toHaveClass('state-turn_complete');
     });
 
     it('renders terminal pane with header when terminal exists', () => {

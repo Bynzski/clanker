@@ -3,6 +3,7 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import { disposeWorkspaceResources } from '../lib/workspaceLifecycle';
 import { Plus, X, Check, Edit2, BellRing, GitBranch } from 'lucide-react';
 import { normalizePath } from '../lib/pathUtils';
+import { getWorkspaceNameFromPath, getWorkspaceProjectName, getWorkspaceTabLabel } from '../lib/workspaceLabels';
 import { useAgentAttentionStore, attentionCounts } from '../store/agentAttentionStore';
 import { nextAttentionTarget } from '../lib/agentAttentionNavigation';
 import './WorkspaceTabs.css';
@@ -120,6 +121,12 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
         const isActive = workspace.id === activeWorkspaceId;
         const isEditing = workspace.id === editingId;
         const counts = attentionCounts(workspace.terminals.map((terminal) => terminal.id), byTerminalId);
+        const projectName = getWorkspaceProjectName(workspace);
+        const tabLabel = getWorkspaceTabLabel(workspace);
+        const branch = workspace.gitCurrentBranch;
+        const editName = workspace.isLinkedWorktree && workspace.name === getWorkspaceNameFromPath(workspace.workspacePath)
+          ? projectName
+          : workspace.name || projectName;
 
         return (
           <button
@@ -127,6 +134,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
             className={`workspace-tab ${isActive ? 'active' : ''}`}
             role="tab"
             aria-selected={isActive}
+            title={`${tabLabel}${workspace.isLinkedWorktree && branch ? ` · ${branch}` : ''}\n${workspace.workspacePath}`}
             onClick={() => !isEditing && selectWorkspace(workspace.id)}
           >
             {isEditing ? (
@@ -152,14 +160,13 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
               <>
                 <span
                   className="workspace-tab-label"
-                  title={workspace.name || workspace.workspacePath}
-                  onDoubleClick={(e) => startEditing(workspace.id, workspace.name, e)}
+                  onDoubleClick={(e) => startEditing(workspace.id, editName, e)}
                 >
-                  {workspace.name || workspace.workspacePath.split(/[/\\]/).pop() || 'Workspace'}
+                  {tabLabel}
                 </span>
                 <button
                   className="workspace-tab-edit-trigger"
-                  onClick={(e) => startEditing(workspace.id, workspace.name, e)}
+                  onClick={(e) => startEditing(workspace.id, editName, e)}
                   title="Rename tab"
                 >
                   <Edit2 size={12} strokeWidth={2} />
@@ -167,9 +174,9 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
               </>
             )}
             {workspace.isLinkedWorktree && (
-              <span className="workspace-tab-worktree" title={`Worktree${workspace.gitCurrentBranch ? `: ${workspace.gitCurrentBranch}` : ''}`} aria-label={`Worktree${workspace.gitCurrentBranch ? ` on ${workspace.gitCurrentBranch}` : ''}`}>
+              <span className="workspace-tab-worktree" title={`Worktree: ${branch || 'Detached HEAD'}`} aria-label={`Worktree ${branch ? `on ${branch}` : 'at detached HEAD'}`}>
                 <GitBranch size={11} strokeWidth={2} />
-                {workspace.gitCurrentBranch && <span>{workspace.gitCurrentBranch}</span>}
+                <span>{branch || 'HEAD'}</span>
               </span>
             )}
             {(counts.needsInput > 0 || counts.completed > 0) && (

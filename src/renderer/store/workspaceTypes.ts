@@ -129,6 +129,7 @@ export interface WorkspaceTab {
   name: string;
   workspacePath: string;
   isLinkedWorktree?: boolean;
+  projectName?: string;
   harness: string;
   model: string;
   terminals: Terminal[];

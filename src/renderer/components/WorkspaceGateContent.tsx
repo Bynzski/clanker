@@ -6,6 +6,9 @@ import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { isAbsoluteWorkspacePath } from '../../shared/pathClassify';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import WorktreeLauncher from './WorktreeLauncher';
+import { findGeneratedWorktreeContainerOwner } from '../lib/worktreeContainer';
+import { getWorkspaceNameFromPath } from '../lib/workspaceLabels';
+import { joinPaths } from '../lib/pathUtils';
 import './WorkspaceGate.css';
 
 export interface WorkspaceFormData {
@@ -26,6 +29,14 @@ function withTrailingSlash(path: string): string {
   // works with forward slashes internally.
   const normalized = path.replace(/\\/g, '/');
   return normalized.endsWith('/') ? normalized : normalized + '/';
+}
+
+function resolveWorkspacePath(input: string, baseDirectory: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.replace(/\\/g, '/');
+  const resolved = isAbsoluteWorkspacePath(normalized) ? normalized : baseDirectory ? baseDirectory + normalized : '';
+  return resolved ? withTrailingSlash(resolved) : null;
 }
 
 export const TERMINAL_PRESETS = [
@@ -58,10 +69,19 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   const [defaultModel, setDefaultModel] = useState<string>('');
   const [workspaceMode, setWorkspaceMode] = useState<'directory' | 'worktree'>('directory');
   const [hasViewedWorktree, setHasViewedWorktree] = useState(false);
+  const [repoCheck, setRepoCheck] = useState<{ path: string; isRepo: boolean } | null>(null);
+  const [directoryError, setDirectoryError] = useState('');
   const openWorkspaces = useWorkspaceStore((state) => state.workspaces);
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const openPaths = openWorkspaces.map((workspace) => workspace.workspacePath);
+  const selectedPath = resolveWorkspacePath(inputValue, baseDirectory);
+  const activeWorkspacePath = openWorkspaces.find((workspace) => workspace.id === activeWorkspaceId)?.workspacePath ?? null;
+  const repoCandidatePath = selectedPath ?? (!inputValue.trim() ? activeWorkspacePath : null);
+  const worktreeReady = !!repoCandidatePath && repoCheck?.path === repoCandidatePath && repoCheck.isRepo;
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const suggestionRequestRef = useRef(0);
+  const launchRequestRef = useRef(0);
   const visibleHarnessIds = useMemo(
     () => resolveVisibleHarnessIds(availableHarnessIds, harnessDefaults),
     [availableHarnessIds, harnessDefaults],
@@ -157,6 +177,30 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       cancelled = true;
     };
   }, [initialPath]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!repoCandidatePath || typeof window.electronAPI.gitGetBranchState !== 'function') return;
+    const timer = setTimeout(() => {
+      void window.electronAPI.gitGetBranchState(repoCandidatePath)
+        .then(async (result) => {
+          const isRepo = result.success && result.isRepo && !await findGeneratedWorktreeContainerOwner(repoCandidatePath);
+          if (!cancelled) setRepoCheck({ path: repoCandidatePath, isRepo });
+        })
+        .catch(() => {
+          if (!cancelled) setRepoCheck({ path: repoCandidatePath, isRepo: false });
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [repoCandidatePath]);
+
+  useEffect(() => {
+    launchRequestRef.current += 1;
+    setDirectoryError('');
+  }, [inputValue, baseDirectory]);
 
   // Load harnesses and pre-load models for all available harnesses
   useEffect(() => {
@@ -262,6 +306,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   // input value: relative when the input is relative (typed under base),
   // absolute when the input starts with `/`.
   const fetchSuggestions = useCallback(async (input: string, base: string) => {
+    const requestId = ++suggestionRequestRef.current;
     const normalizedInput = input.replace(/\\/g, '/');
     const isAbsolute = isAbsoluteWorkspacePath(normalizedInput);
     const hasTrailingSlash = normalizedInput.endsWith('/');
@@ -309,29 +354,44 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       }
     }
 
+    if (nameFilter === '') {
+      if (requestId === suggestionRequestRef.current) setSuggestions([]);
+      return;
+    }
+
     try {
       const entries = await window.electronAPI.readDirectory(dirPath);
 
-      const dirs = entries
+      const matchingDirectories = entries
         .filter((entry) => entry.isDirectory)
         .filter((entry) => entry.name.toLowerCase().includes(nameFilter))
         .sort((a, b) => {
           if (a.name.length !== b.name.length) return a.name.length - b.name.length;
           return a.name.localeCompare(b.name);
-        })
-        .slice(0, 8)
-        .map((entry) => suggestionPrefix + entry.name + '/');
+        });
 
-      // When the input ends in '/', the current segment is complete. Avoid
-      // eagerly listing all children until the user starts typing the next segment.
-      setSuggestions(nameFilter === '' ? [] : dirs);
+      const dirs: string[] = [];
+      for (let offset = 0; offset < matchingDirectories.length && dirs.length < 8; offset += 16) {
+        const batch = matchingDirectories.slice(offset, offset + 16);
+        const visible = await Promise.all(batch.map(async (entry) => ({
+          entry,
+          owner: entry.name.endsWith('-worktrees')
+            ? await findGeneratedWorktreeContainerOwner(joinPaths(dirPath, entry.name))
+            : null,
+        })));
+        if (requestId !== suggestionRequestRef.current) return;
+        dirs.push(...visible.filter(({ owner }) => !owner).map(({ entry }) => suggestionPrefix + entry.name + '/'));
+      }
+
+      setSuggestions(dirs.slice(0, 8));
     } catch {
-      setSuggestions([]);
+      if (requestId === suggestionRequestRef.current) setSuggestions([]);
     }
   }, []);
 
   // Debounced fetch on input or base change
   useEffect(() => {
+    suggestionRequestRef.current += 1;
     const timer = setTimeout(() => {
       fetchSuggestions(inputValue, baseDirectory);
     }, 150);
@@ -376,23 +436,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     setShowDiscoveryModal(false);
   };
 
-  const resolveInputPath = (): string | null => {
-    const trimmed = inputValue.trim();
-    if (!trimmed) return null;
-
-    const normalized = trimmed.replace(/\\/g, '/');
-    const isAbsolute = isAbsoluteWorkspacePath(normalized);
-
-    let resolved: string;
-    if (isAbsolute) {
-      resolved = normalized;
-    } else {
-      if (!baseDirectory) return null;
-      resolved = baseDirectory + trimmed;
-    }
-    return resolved.endsWith('/') ? resolved : resolved + '/';
-  };
-
   const launchPath = (path: string) => {
     const preset = TERMINAL_PRESETS[selectedPreset];
     // Use defaultModel (from store) as the launch model, falling back to first available
@@ -406,8 +449,20 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   };
 
   const handleSubmit = () => {
-    const path = resolveInputPath();
-    if (path) launchPath(path);
+    if (!selectedPath) return;
+    const requestId = ++launchRequestRef.current;
+    if (!getWorkspaceNameFromPath(selectedPath).endsWith('-worktrees')) {
+      launchPath(selectedPath);
+      return;
+    }
+    void findGeneratedWorktreeContainerOwner(selectedPath).then((owner) => {
+      if (requestId !== launchRequestRef.current) return;
+      if (owner) {
+        setDirectoryError(`This folder holds worktrees for ${getWorkspaceNameFromPath(owner)}. Choose a checkout inside it or select the repository and use Worktree.`);
+      } else {
+        launchPath(selectedPath);
+      }
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -793,10 +848,9 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
           <Play size={14} strokeWidth={2.5} fill="currentColor" />
           Launch Workspace
         </button>
-        <button className="gate-worktree-forward" type="button" aria-label="Worktree options" title="Create or open a task worktree" onClick={() => {
+        <button className="gate-worktree-forward" type="button" aria-label="Worktree options" disabled={!worktreeReady} title={worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first'} onClick={() => {
           if (!inputValue.trim()) {
-            const active = useWorkspaceStore.getState().getActiveWorkspace();
-            if (active) setInputValue(active.workspacePath);
+            if (activeWorkspacePath) setInputValue(activeWorkspacePath);
           }
           setHasViewedWorktree(true);
           setWorkspaceMode('worktree');
@@ -805,6 +859,10 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
           <span>Worktree</span>
         </button>
       </div>
+      {directoryError && <p className="gate-directory-error" role="alert">{directoryError}</p>}
+      {repoCandidatePath && repoCheck?.path === repoCandidatePath && !repoCheck.isRepo && (
+        <p className="gate-worktree-hint">Worktrees require a Git repository or linked checkout.</p>
+      )}
       </div>
       ) : (
       <div className="gate-view gate-view-worktree">
@@ -833,7 +891,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
             </button>
           </div>
         </div>
-        <WorktreeLauncher repoPath={resolveInputPath()} openPaths={openPaths} onOpenPath={launchPath} />
+        <WorktreeLauncher repoPath={selectedPath} openPaths={openPaths} onOpenPath={launchPath} />
         <p className="gate-worktree-launch-summary">Opens with {selectedHarness ? HARNESS_OPTIONS.find((option) => option.id === selectedHarness)?.label ?? selectedHarness : 'Terminal'} · {TERMINAL_PRESETS[selectedPreset].count} terminals</p>
       </div>
       )}

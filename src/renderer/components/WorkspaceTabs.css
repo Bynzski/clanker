@@ -19,7 +19,8 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  max-width: 200px;
+  max-width: 290px;
+  flex: 0 0 auto;
   padding: 5px 10px 6px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid transparent;
@@ -47,6 +48,8 @@
 }
 
 .workspace-tab-label {
+  min-width: 0;
+  max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
@@ -57,12 +60,13 @@
   align-items: center;
   gap: 3px;
   min-width: 0;
+  max-width: 120px;
   color: var(--accent-primary);
   font-family: var(--font-mono);
   font-size: 10px;
 }
 
-.workspace-tab-worktree span { overflow: hidden; text-overflow: ellipsis; }
+.workspace-tab-worktree span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 .workspace-tab-attention {
   flex-shrink: 0;

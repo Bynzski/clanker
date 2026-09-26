@@ -3,6 +3,8 @@ import { ClipboardAddon } from '@xterm/addon-clipboard';
 import type { ILink, ILinkProvider } from '@xterm/xterm';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAgentAttentionStore } from '../store/agentAttentionStore';
+import { CircleAlert, CircleCheck, CircleDot, CircleHelp } from 'lucide-react';
+import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 
 import { useDragHandle } from './dragHandleContext';
 import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
@@ -154,6 +156,11 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const attentionLabel = attention?.lifecycle === 'needs_input' ? 'Needs input'
     : attention?.lifecycle === 'turn_complete' ? 'Turn complete'
     : attention?.lifecycle === 'running' ? 'Running' : 'Unknown';
+  const AttentionIcon = attention?.lifecycle === 'needs_input' ? CircleAlert
+    : attention?.lifecycle === 'turn_complete' ? CircleCheck
+    : attention?.lifecycle === 'running' ? CircleDot : CircleHelp;
+  const harnessOption = HARNESS_OPTIONS.find((option) => option.id === terminal?.harnessId) ?? HARNESS_OPTIONS[0];
+  const HarnessIcon = harnessOption.Icon;
   const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
 
   const scheduleLifecycleTimeout = useCallback((callback: () => void, delayMs: number) => {
@@ -700,7 +707,10 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
           <div className="pane-drag-surface" title="Drag to move pane" aria-label="Move terminal pane" {...headerDragHandleProps}>
             <div className="terminal-drag-handle" aria-hidden="true" />
             <div className="terminal-status-indicator" data-active={isActive} />
-            <span className="terminal-title" title={terminal.harnessId ? `${terminal.harnessId}${showAgentAttention ? ` · ${attentionLabel}` : ''}` : 'Shell'}>
+            <span className="terminal-harness-icon" role="img" aria-label={`${harnessOption.label} harness`} title={`${harnessOption.label} harness`}>
+              <HarnessIcon size={14} strokeWidth={2} />
+            </span>
+            <span className="terminal-title" title={terminal.harnessId ? `${harnessOption.label}${showAgentAttention ? ` · ${attentionLabel}` : ''}` : 'Shell'}>
               {terminal?.displayName ?? 'Terminal'}
             </span>
             {showAgentAttention && (
@@ -709,7 +719,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
                 aria-label={`${terminal.displayName ?? 'Agent'}: ${attentionLabel}`}
                 title={attentionLabel}
               >
-                {attentionLabel}
+                <AttentionIcon size={15} strokeWidth={2} aria-hidden="true" />
               </span>
             )}
           </div>

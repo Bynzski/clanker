@@ -291,12 +291,7 @@ export function assignWorkspaceLifecycles(
   ));
 }
 
-export function getWorkspaceNameFromPath(workspacePath: string): string {
-  const trimmed = workspacePath.replace(/[/\\]+$/, '');
-  if (!trimmed) return 'Workspace';
-  const baseName = trimmed.split(/[/\\]/).pop();
-  return baseName && baseName.length > 0 ? baseName : 'Workspace';
-}
+export { getWorkspaceNameFromPath } from '../lib/workspaceLabels';
 
 export function findWorkspaceById(
   workspaces: WorkspaceTab[],

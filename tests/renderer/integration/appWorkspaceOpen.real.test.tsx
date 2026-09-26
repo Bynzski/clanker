@@ -118,6 +118,7 @@ describe('App workspace open integration', () => {
       expect(useWorkspaceStore.getState().workspaces[0]).toEqual(expect.objectContaining({
         isLinkedWorktree: true,
         gitCurrentBranch: 'task/example',
+        projectName: 'repo',
       }));
     });
   });

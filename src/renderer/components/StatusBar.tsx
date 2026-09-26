@@ -1,23 +1,22 @@
 import { useEffect, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
-import { Tag, Circle, GitBranch } from 'lucide-react';
+import { Tag, Circle, GitBranch, Folder } from 'lucide-react';
+import { getWorkspaceProjectName } from '../lib/workspaceLabels';
 import './StatusBar.css';
 
 export default function StatusBar() {
   const focusedWorkspace = useWorkspaceStore((state) => selectFocusedWorkspace(state));
   const workspacePath = focusedWorkspace?.workspacePath ?? '';
-  const currentBranch = useWorkspaceStore((state) => state.gitCurrentBranch);
-  const isRepo = useWorkspaceStore((state) => state.gitIsRepo);
-  const isDetached = useWorkspaceStore((state) => state.gitIsDetached);
+  const currentBranch = focusedWorkspace?.gitCurrentBranch ?? null;
+  const isRepo = focusedWorkspace?.gitIsRepo ?? false;
+  const isDetached = focusedWorkspace?.gitIsDetached ?? false;
   const [appVersion, setAppVersion] = useState<string>('');
 
   useEffect(() => {
     window.electronAPI?.getAppVersion().then(setAppVersion);
   }, []);
 
-  const displayPath = workspacePath.length > 60
-    ? '...' + workspacePath.slice(-57)
-    : workspacePath || 'No workspace selected';
+  const projectName = focusedWorkspace ? getWorkspaceProjectName(focusedWorkspace) : 'No workspace selected';
 
   return (
     <footer className="status-bar">
@@ -29,13 +28,14 @@ export default function StatusBar() {
       </div>
       
       <div className="status-center">
-        <span className="status-path" title={workspacePath}>
-          {displayPath}
+        <span className="status-project" title={workspacePath}>
+          {focusedWorkspace && <Folder size={12} strokeWidth={2} aria-hidden="true" />}
+          <span className="status-project-name">{projectName}</span>
         </span>
         {isRepo && (
           <span className="status-branch" title={isDetached ? 'Detached HEAD' : currentBranch ?? ''}>
             <GitBranch size={12} strokeWidth={2} />
-            {isDetached ? 'HEAD' : currentBranch}
+            <span>{isDetached ? 'HEAD' : currentBranch}</span>
           </span>
         )}
       </div>
