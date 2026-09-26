@@ -59,7 +59,7 @@ Access via the Git menu header:
 - **Pull** — Fetch and merge (supports rebase)
 - **Push** — Upload local commits to remote
 
-Remote operations are available when connected to a VCS provider.
+Remote operations use Git and configured remotes; they do not require provider API integration. Pull and Push require an upstream branch. If the current branch has no upstream, **Publish branch** is available when a remote exists.
 
 ## Remotes
 
@@ -147,7 +147,7 @@ Access provider links via the dropdown menu:
 - Releases
 - Actions/Pipelines
 
-Links open in your default browser or can be configured to use the browser panel.
+Links open in your default browser.
 
 ## Credential Management
 
@@ -167,7 +167,7 @@ Configure authentication for remote operations:
 3. Enter your token
 4. Click **Save**
 
-Tokens are stored encrypted on your device using Electron's `safeStorage` API.
+New tokens are encrypted with Electron's `safeStorage`; saving fails when OS-backed encryption is unavailable. See [Configuration](configuration.md#persistence).
 
 ### Credential Status
 

@@ -8,7 +8,7 @@
 - Session continuity across workspace/tab switches — xterm instances are cached and reused, not remounted blank
 - Startup uses a bounded 16 KB buffer + `TERMINAL_READY` renderer handshake to protect early PTY output
 - Copy/paste support
-- `handleFlowControl: false` is set on all PTY spawns (re-enabling is a separate future readiness concern, not part of the workspace residency plan)
+- `handleFlowControl: false` is set on all PTY spawns
 
 ### Terminal Actions
 
@@ -55,7 +55,7 @@ Terminal panes get short Grateful Dead inspired names such as Samson, Delilah, J
 
 In **Settings → Harness Defaults**, expand a harness and enable **Agent attention** for future launches. Clanker then uses that harness's supported hooks to show running, needs input, or turn complete in the pane header. Background needs-input and completed turns also mark the workspace tab. The bell button beside the tabs jumps to the next agent needing attention. Visiting a pane clears its highlight while keeping the status accurate. Plain shells have no agent status; unsupported hook signals show unknown.
 
-Agent attention is opt-in per harness and affects only new terminals. With attention off, the pane has no agent status label. With attention on, the label says unknown until a supported event arrives. It does not parse terminal screen text. Codex currently reports completion, Claude and OpenCode can also report input requests, and Pi reports running and settled turns. Hook availability can vary with CLI version and user configuration; see [the lifecycle design notes](agent-attention-design.md).
+Agent attention is opt-in per harness and affects only new terminals. With attention off, the pane has no agent status label. With attention on, the label says unknown until a supported event arrives. It does not parse terminal screen text. Codex currently reports completion, Claude and OpenCode can also report input requests, and Pi reports running and settled turns. Hook availability can vary with CLI version and user configuration.
 
 ### Harness Default Models
 
@@ -106,7 +106,7 @@ When creating a workspace, the gate provides a compact model selection flow:
 
 Notes:
 - Codex models are discovered from the CLI.
-- Claude uses free-text model input (no model-list command).
+- Claude's model ID can be entered in **Settings → Harness Defaults**; the gate does not provide a free-text model field.
 - Unresolved models are shown with a warning indicator.
 
 ### Terminal Count Presets

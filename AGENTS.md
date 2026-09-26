@@ -12,7 +12,7 @@
 
 - All `npm run lint`, `npm run typecheck`, and `npm run build` must pass before considering tasks completed.
 - NEVER run bare `npm test`. Always use `npm run test` (runs Vitest).
-- Run `npm run validate` as the final check — it runs lint → typecheck → build → test.
+- Run `npm run validate` as the final check — it runs lint → typecheck → security-check (`npm audit --audit-level=high`) → build → test.
 
 ## Project Snapshot
 
@@ -61,7 +61,7 @@ src/
 ├── main/                    # Electron main process
 │   ├── main.ts             # Entry point, window lifecycle
 │   ├── preload.ts          # IPC context bridge
-│   ├── gitService.ts       # Git CLI wrapper (1484 lines)
+│   ├── gitService.ts       # Git CLI wrapper
 │   ├── terminalUtils.ts    # Terminal constants
 │   ├── sessionHistory.ts   # Chat history discovery and caching
 │   ├── harnessCatalog.ts   # Harness availability and model discovery
@@ -96,7 +96,6 @@ src/
 ├── renderer/               # React frontend
 │   ├── components/         # UI: Terminal, Editor, Git, Browser, FileExplorer
 │   │   ├── git/            # Modular git UI components
-│   │   │   ├── GitButton.tsx        # Main git button/menu container
 │   │   │   ├── GitBranchesSection.tsx
 │   │   │   ├── GitStashSection.tsx
 │   │   │   ├── GitMergeSection.tsx
@@ -106,7 +105,7 @@ src/
 │   │   │   └── ProviderMenu.tsx      # VCS quick links
 │   │   └── FileExplorer/  # File tree explorer
 │   ├── store/              # Zustand state
-│   │   ├── workspaceStore.ts        # Main state (1688 lines)
+│   │   ├── workspaceStore.ts        # Main state
 │   │   ├── workspaceStoreHelpers.ts # State action helpers
 │   │   ├── workspaceLayout.ts       # Layout tree operations
 │   │   ├── workspaceStoreTypes.ts   # Type definitions
@@ -132,7 +131,7 @@ PTY processes in main via `node-pty`, stream via IPC to renderer (@xterm/xterm 6
 
 ### Browser & Annotation
 
-Native `WebContentsView` in main, toolbar state in renderer. Only `http:`/`https:` URLs allowed. Annotation: element selection with injected JS runtime; escape handling via main process and runtime; re-inject on navigation.
+Native `WebContentsView` in main, toolbar state in renderer. Web-initiated navigation is limited to `http:`/`https:`; trusted app navigation also accepts local `file:` URLs and absolute paths. External-open URLs are separately validated. Annotation: element selection with injected JS runtime; escape handling via main process and runtime; re-inject on navigation.
 
 ### Git Integration
 
@@ -140,7 +139,7 @@ All operations via `src/main/gitService.ts` using `child_process.spawn` with arg
 
 ### State Management
 
-- **`workspaceStore.ts`** (1688 lines) — owns all state: terminals, panes, editor, explorer, browser, git changes.
+- **`workspaceStore.ts`** — owns workspace UI state: terminals, panes, editor, explorer, browser, git changes.
 - **`workspaceStoreHelpers.ts`** — helpers for store.
 - **`workspaceLayout.ts`** — layout tree operations.
 - **`workspaceStoreTypes.ts`** & **`workspaceTypes.ts`** — type definitions.
@@ -170,18 +169,13 @@ npm run lint       # ESLint
 npm run typecheck  # TypeScript
 npm run build      # Vite + tsc
 npm run test       # Vitest
-npm run validate   # All of the above
+npm run security-check # npm audit --audit-level=high
+npm run validate   # lint, typecheck, security-check, build, test
 ```
 
 ## File Size Thresholds
 
-Files over ~800 lines need justification. Currently oversized:
-
-| File | Lines | Reason |
-|------|-------|--------|
-| `workspaceStore.ts` | 1688 | 50+ state actions with invariants |
-| `gitService.ts` | 1484 | Git CLI wrapper, well-tested |
-| `GitButton.tsx` | — | Refactored into modular components in `src/renderer/components/git/` |
+Files over ~800 lines need justification. Keep new behavior in focused modules where possible; `workspaceStore.ts` and `gitService.ts` are large, established integration points.
 
 ## Testing
 

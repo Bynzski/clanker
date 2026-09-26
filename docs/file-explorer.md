@@ -35,6 +35,8 @@ Right-click on any file or directory to access:
 | Expand/Collapse | `Enter` or `→` / `←` |
 | Select Next | `↓` |
 | Select Previous | `↑` |
+| Rename selected entry | `F2` |
+| Focus file filter | `/` |
 
 ## File Operations
 
@@ -49,7 +51,7 @@ These rules are enforced on every platform so a workspace authored on Linux stil
 
 ### Deletion
 
-Deleting a file or folder routes through the OS recycle bin (`shell.trashItem`) where supported, so deletes are recoverable. If the OS trash integration is unavailable, the app falls back to permanent deletion and surfaces the error.
+Deleting a file or folder first tries the OS recycle bin (`shell.trashItem`). If trash integration is unavailable, the app falls back to permanent deletion; check the confirmation dialog before proceeding.
 
 If a file is held open by an editor or another process, the app surfaces a `File is in use` prompt instead of a generic permission error — close the file and retry.
 
@@ -73,13 +75,6 @@ If a file is held open by an editor or another process, the app surfaces a `File
 2. Select **Rename**
 3. Enter the new name
 4. The file/directory is renamed
-
-### Deleting
-
-1. Right-click a file or directory
-2. Select **Delete**
-3. Confirm the deletion
-4. The file/directory is removed
 
 ## Git Integration
 

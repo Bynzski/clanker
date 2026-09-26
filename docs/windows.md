@@ -96,7 +96,7 @@ If you have customized `.ssh` ACLs and need to lock them down, run `icacls` manu
 
 PowerShell (`powershell.exe`) is the default session shell on Windows. Clanker Grid does not pass `-i` (a bash-only flag) on Windows; PowerShell launches in interactive mode by default.
 
-You can override by setting the `SHELL` environment variable before launching Clanker Grid (for example, to `pwsh.exe` or to the Git for Windows `sh.exe`).
+The Windows default shell is fixed to `powershell.exe`; the `SHELL` environment variable applies only on Linux/macOS.
 
 ## Harness launch on Windows
 

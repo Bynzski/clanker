@@ -37,37 +37,38 @@ Run `Clanker Grid X.Y.Z.exe` directly. No installation step. SmartScreen will st
 ## Building from source
 
 ```bash
-git clone <repo-url>
-cd <repo-directory>
+git clone https://github.com/Bynzski/clanker.git
+cd clanker
 npm install
+npm run dev
 ```
 
 Requires Node.js 22.12+ and npm 10+. On Windows, also install **Git for Windows** so husky pre-commit hooks can execute.
 
 ## First Launch
 
-1. Run `npm run dev`
+1. Open the installed app, or run `npm run dev` from a source checkout
 2. The workspace gate opens if no workspaces exist
 3. Select or enter a directory path
 4. Optionally select an AI harness
-5. If a harness is selected, choose a model (picker for discoverable harnesses, free text for Claude)
+5. If a harness is selected, choose a model from its picker when available
 6. Choose terminal count (1, 2, or 4)
-7. Click **Launch**
+7. Click **Launch Workspace**
 
 ### Model Selection in the Gate
 
 When a harness is selected, the gate shows model selection controls:
 
-- **Discoverable harnesses (e.g., Codex):** click the model pill to open favorites and browse/search all discovered models
-- **Claude:** enter the model as free text
+- Click the model pill to open favorites and browse/search models supplied by the harness
+- If a harness cannot supply models, the app may show only configured models
 - **Selected model** is used for workspace launch
 
 The default model for each harness can be configured in the header settings dropdown (gear icon).
 
 ## Creating Workspaces
 
-From the gate or header toolbar:
-- Click **Open Workspace**
+From the gate or workspace tabs:
+- Click **Open Workspace** (`+`) beside the tabs
 - Enter a local directory path
 - Directory autocomplete is available
 

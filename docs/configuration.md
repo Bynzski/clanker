@@ -24,13 +24,14 @@ Each harness (Codex, OpenCode, Pi, Claude) has its own settings:
 | Extra Flags | Free-text CLI flags (e.g., `--yolo`, `--dangerously-skip-permissions`) | Empty |
 | Default Model | Model ID pre-selected when launching with this harness | Empty (harness picks) |
 | Favorites | Pinned model IDs shown in the compact model picker | Empty |
+| Agent attention | Show supported harness turn and input status on new panes | Disabled |
 
 #### Managing Harness Defaults
 
 1. Open the settings dropdown from the gear icon
 2. Scroll to the **Harness Defaults** section
 3. Click a harness row to expand its settings
-4. Toggle visibility, edit extra flags text, set a default model, or manage favorites
+4. Toggle visibility and agent attention, edit extra flags text, set a default model, or manage favorites
 
 All changes persist immediately to `electron-store`.
 
@@ -74,7 +75,7 @@ The public key can be copied to your VCS provider for authentication.
 
 The app can automatically configure your SSH config to use the generated key for specific hosts (e.g., `github.com`, `gitlab.com`, `bitbucket.org`).
 
-#### SSH Keys
+#### Key Actions
 
 | Action | Description |
 |--------|-------------|
@@ -94,14 +95,15 @@ The app can automatically configure your SSH config to use the generated key for
 
 Settings are stored locally via `electron-store` (`clanker-grid.json`):
 - Last workspace path
+- Base directory for workspace suggestions
 - AI commit configuration
-- Harness defaults (per-harness visibility, model, favorites, flags)
+- Harness defaults (per-harness visibility, model, favorites, flags, agent attention)
 
 The store schema is defined in `src/shared/types/store.ts`.
 
-Credentials are stored separately with encryption:
+Credentials are stored separately from app settings:
 - SSH keys in `~/.ssh/id_ed25519_clanker` (Linux/macOS) or `%USERPROFILE%\.ssh\id_ed25519_clanker` (Windows)
-- PATs encrypted via Electron's `safeStorage` API (DPAPI on Windows, libsecret/Keychain on Linux/macOS)
+- PATs are encrypted with Electron's `safeStorage`. Saving a new PAT fails when OS-backed encryption is unavailable.
 
 ## Migration
 
@@ -117,5 +119,5 @@ On first launch after upgrade, the app automatically migrates legacy `localStora
 | Variable | Description |
 |----------|-------------|
 | `NODE_ENV` | `development` or `production` |
-| `SHELL` | User's default shell (fallback: `bash` on Linux/macOS, `powershell.exe` on Windows) |
+| `SHELL` | User's shell on Linux/macOS (fallback: `bash`); Windows uses `powershell.exe` |
 | `CLANKER_GRID_WATCHER_POLLING` | Set to `1` to force polling-based file watching (auto-enabled for UNC paths on Windows). |

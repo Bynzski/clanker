@@ -42,8 +42,8 @@ See [docs/getting-started.md](docs/getting-started.md) for first-launch walkthro
 ## Quick start (development)
 
 ```bash
-git clone <repo-url>
-cd clanker-grid
+git clone https://github.com/Bynzski/clanker.git
+cd clanker
 npm install
 npm run dev
 ```
@@ -70,6 +70,7 @@ The full docs are in [`docs/`](docs/):
 - [Terminals & Harnesses](docs/terminals.md) — terminal panes and AI integrations
 - [Git Integration](docs/git-integration.md) — built-in git tools
 - [VCS Providers](docs/vcs-providers.md) — GitHub, GitLab, Bitbucket
+- [Browser Tabs & History](docs/browser-tabs.md) — tabs, navigation, and DevTools
 - [Browser Annotation](docs/browser-annotation.md) — element selection for AI agents
 - [File Explorer](docs/file-explorer.md) — tree navigation and file operations
 - [Configuration](docs/configuration.md) — settings and credentials

@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **First-class pane docking** — terminals, Browser, Editor, Notes, and Explorer can be moved to workspace edges or split beside a specific pane, with center-drop swapping and an exact destination preview.
+- **First-class pane docking** — terminals, Browser, Editor, and Notes can be moved to workspace edges or split beside a specific pane, with center-drop swapping and an exact destination preview. Explorer remains a separate left sidebar.
 - **Layout undo and persistence** — pane moves and splitter resizing can be undone, while layout topology and split ratios are restored per workspace path across app launches.
 
 ### Changed

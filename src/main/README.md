@@ -65,8 +65,8 @@ All IPC handler registrations. Each file corresponds to a domain:
 
 | File | Handles |
 |------|---------|
-| `settingsIpc.ts` | Store schema, AI commit, harness options, window controls (zoom, minimize, maximize, close) |
-| `terminalIpc.ts` | PTY spawn, write, resize, kill, buffer read, clipboard write |
+| `settingsIpc.ts` | Persisted settings and harness defaults |
+| `terminalIpc.ts` | PTY spawn, write, resize, kill, startup handshake, clipboard write |
 | `gitIpc.ts` | Git polling, status, branch operations, stash, merge, history, diff, remotes, push/pull/fetch |
 | `browserIpc.ts` | WebContentsView navigation, back/forward, bounds, external link handling |
 | `fileIpc.ts` | File read, write, watch, unwatch, create, delete, rename |
@@ -131,17 +131,17 @@ Browser annotation feature for capturing structured element descriptions:
 | `harnessCatalog.ts` | `getAvailableHarnessOptions()` and `discoverHarnessModels()` — detects installed harnesses and available models. |
 | `sessionHistory.ts` | Chat history discovery from Claude, Codex, OpenCode, and Pi session stores. Caches results for 60 seconds. |
 | `fileService.ts` | File read/write operations. Used by `fileIpc.ts`. |
-| `fileWatcher.ts` | FileWatcherService — watches files and reports changes. Couples to GitService for external-change git status updates. |
-| `explorerWatcher.ts` | File explorer state watcher for tracking expanded paths and selected files. |
+| `fileWatcher.ts` | Watches open editor files for external changes. |
+| `explorerWatcher.ts` | Watches the active workspace's explorer tree for file changes. |
 | `modelCache.ts` | Model availability caching to avoid repeated harness calls. |
-| `terminalUtils.ts` | `MAX_TERMINAL_BUFFER_BYTES` and `TERMINAL_SCROLLBACK_LINES` constants, `trimBuffer()` utility. |
+| `terminalUtils.ts` | Re-exports shared terminal constants and deprecated compatibility helpers. |
 | `harnessDefaultsValidation.ts` | Validation logic for harness default flags and model preferences. |
 
 ## Key Constraints
 
 - **No renderer imports.** `src/main/` modules must not be imported from `src/renderer/`. The preload bridge is the only communication path.
 - **IPC channel names from `src/shared/ipcChannels.ts`.** Never hard-code channel strings.
-- **Path validation before use.** Use `security.ts` `resolveExistingDirectory()` before any file system access.
+- **Path validation before use.** Validate untrusted workspace paths with `security.ts` and enforce the appropriate file-operation boundary for each IPC handler.
 - **Test exports are internal.** `main.ts` exports `terminals`, `browserViews`, `gitService`, `store`, `killAllTerminals` for test access only. Do not build new features on these exports.
 - **Canonical IPC paths are POSIX.** Convert incoming paths to native (`path.sep`) at IPC entry, convert outgoing paths back to forward slashes at the boundary. Use the helpers in `src/shared/pathNormalize.ts`. See `AGENTS.md` Maintainability section.
 - **Platform branching.** Use `src/main/platformShell.ts` for default-shell selection and `harnessLaunch.resolveHarnessSpawn()` for harness command resolution. Do not add ad-hoc `process.platform === 'win32'` branches; centralize them in these helpers.

@@ -12,11 +12,9 @@ The `gitChanges` field is stored in the explorer section of workspace state. Thi
 
 ### Centralized Store Design
 
-The `workspaceStore.ts` file was reviewed during a documentation alignment pass and intentionally kept centralized. While the file is large (~1688 lines), it serves as the central composition point for all UI state. The complexity lives in the invariants, not in the file organization. Helper modules (`workspaceStoreHelpers.ts`, `workspaceLayout.ts`) already extract pure functions and layout tree operations.
+`workspaceStore.ts` is the composition point for workspace UI state. Helper modules (`workspaceStoreHelpers.ts`, `workspaceLayout.ts`) hold pure functions and layout tree operations; review the relevant invariants when changing store actions.
 
-The `workspaceLayout.ts` module now has direct unit test coverage (`tests/renderer/unit/workspaceLayout.test.ts`), providing safe refactoring surface for layout operations.
-
-## Core Invariants
+`workspaceLayout.ts` has direct unit test coverage in `tests/renderer/unit/workspaceLayout.test.ts`.
 
 ## Workspace Lifecycle Model
 
@@ -57,11 +55,11 @@ These rules describe the implemented workspace residency system.
 | Workspace layout tree | All workspace shells render in one shared container; an LRU cap keeps three pane trees mounted and cold-unmounts older parked trees |
 | Terminal PTY output | Continues via `terminalSessionBridge` global listeners while parked; xterm instances cached in `xtermCache` |
 | Terminal input/focus | Active workspace only |
-| Editor file watchers | Active-workspace-only via `WorkspaceTabs.syncExplorerWatcher` |
+| Editor file watchers | Watched editor tabs across active and parked workspaces via `editorFileWatcher` |
 | Explorer watcher | Active-workspace-only; parked workspaces retain cached directory contents |
 | Browser native view | Retained per workspace even when its renderer tree is cold; visible only for active and rebound on reactivate |
 | Editor `EditorView` | Resident for warm workspaces; destroyed when its workspace becomes cold and recreated from store state on reactivation |
-| Global shortcuts | Active workspace snapshot via `syncActiveWorkspace` (Phase 1 migration to workspace-scoped reads is deferred) |
+| Global shortcuts | Read the active workspace snapshot via `syncActiveWorkspace` |
 
 ### Review Implication
 
@@ -95,11 +93,11 @@ xterm buffers, and native browser sessions remain warm across both states.
 
 | Field | Invariant | Explanation |
 |-------|-----------|-------------|
-| `layoutRoot` | `null` ↔ no terminal or Browser/Editor/Notes pane is visible | The Explorer is a separate left dock |
-| `layoutRoot` | All pane IDs in tree exist in `panes[].id` or the current Browser/Editor/Notes pane | The layout tree only references valid pane IDs |
+| `layoutRoot` | `null` ↔ no terminal or Explorer/Browser/Editor/Notes pane is visible | Visible pane IDs are tracked in the layout state |
+| `layoutRoot` | All pane IDs in tree exist in `panes[].id` or the current Explorer/Browser/Editor/Notes pane | The layout tree only references valid pane IDs |
 | `layoutUndoStack` | Restored roots are reconciled with the current visible pane set | Undo cannot resurrect closed panes or orphan newly opened panes |
 
-**Why:** The `layoutRoot` is a tree of pane references. If a pane is referenced in the tree but doesn't exist in the panes array, rendering will fail. Conversely, orphaned panes (existing but not in the tree) would be invisible and waste resources.
+**Why:** The `layoutRoot` is a tree of pane references. If a pane is referenced in the tree but doesn't exist in pane state, rendering can fail. The Explorer UI is rendered as a separate left sidebar even though its ID remains part of layout state for compatibility; it is not a draggable pane in the current UI.
 
 ### Browser Pane / Tab Invariants
 
@@ -107,7 +105,7 @@ xterm buffers, and native browser sessions remain warm across both states.
 |-------|-----------|-------------|
 | `browserPane.tabs` | `browserPane !== null` → `browserPane.tabs.length >= 1` | Once a browser pane exists, it always has at least one tab. The last tab cannot be closed. |
 | `browserPane.tabs[].id` | unique within a workspace | Tab IDs identify a `WebContentsView` in main; duplicates would alias native views. |
-| `browserPane.activeTabId` | `null` ↔ `browserPane === null` | When a pane exists the active tab id always references one of its tabs; when no pane exists, no tab is active. |
+| `browserPane.activeTabId` | non-null when `browserPane` exists | An open browser pane always has an active tab. |
 | `browserPane.activeTabId` | `activeTabId !== null` → `tabs.some(tab => tab.id === activeTabId)` | The active tab id always references an existing tab. |
 | `browserUrl` | mirrors active tab's `url` for the active workspace | `browserUrl` is a compatibility mirror of the active tab url. Updating an inactive tab must NOT mutate `browserUrl`. |
 | `browserPane.position` | unchanged by tab actions | Tab create/close/switch/update actions never touch pane geometry. |

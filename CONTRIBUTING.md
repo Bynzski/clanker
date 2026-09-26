@@ -23,7 +23,7 @@ npm run validate
 
 ### Platform support
 
-Clanker Grid is developed and validated on **Linux (x64)** and **Windows 10 1809+ / Windows 11 (x64)**. CI runs the full validation pipeline on both `ubuntu-latest` and `windows-latest`; PRs must pass on both.
+Clanker Grid is developed and validated on **Linux (x64)** and **Windows 10 1809+ / Windows 11 (x64)**. CI runs lint, typecheck, build, and tests on both `ubuntu-latest` and `windows-latest`; PRs must pass on both. The CI npm audit report is informational, while local `npm run validate` treats high-severity audit findings as failures.
 
 When adding code that touches the filesystem, terminals, harness launch, credentials, or paths, follow the platform patterns in [AGENTS.md](AGENTS.md#windows-support) and [docs/windows.md](docs/windows.md). Key rules:
 
@@ -57,7 +57,7 @@ src/
 ├── main/                    # Electron main process
 │   ├── main.ts             # Entry point, window lifecycle
 │   ├── preload.ts          # Context bridge (window.electronAPI)
-│   ├── gitService.ts       # Git CLI wrapper (1484 lines)
+│   ├── gitService.ts       # Git CLI wrapper
 │   ├── harnessLaunch.ts    # Harness spawn argument construction
 │   ├── sessionHistory.ts   # Chat history discovery
 │   ├── harnessCatalog.ts   # Harness availability detection
@@ -78,7 +78,7 @@ src/
 │   │   ├── FileExplorer/   # File tree explorer
 │   │   └── *.tsx
 │   ├── store/              # Zustand stores
-│   │   └── workspaceStore.ts # Main state (1688 lines)
+│   │   └── workspaceStore.ts # Main state
 │   └── lib/                # Utilities
 ├── shared/                  # Cross-boundary types
 │   ├── ipcChannels.ts      # IPC channel constants
@@ -97,7 +97,7 @@ npm run diagnose:gpu  # Check hardware acceleration and sandboxed WebGL support
 
 The GPU diagnostic launches the installed Electron runtime with an isolated temporary profile. Run it on a desktop session when investigating browser rendering; it is intentionally not part of headless CI.
 
-**Important:** Always use `npm run test`, not bare `npm test`. The validation pipeline uses `npm run validate` which runs lint → typecheck → build → test.
+**Important:** Always use `npm run test`, not bare `npm test`. The validation pipeline uses `npm run validate` which runs lint → typecheck → security audit → build → test. CI runs lint, typecheck, build, and tests on Linux and Windows; its separate audit report is informational.
 
 Test directories:
 - `tests/main/unit/` — Main process unit tests
@@ -136,4 +136,4 @@ Before submitting, run:
 npm run validate
 ```
 
-This executes: lint → typecheck → build → test
+This executes: lint → typecheck → security audit (`npm audit --audit-level=high`) → build → test.
