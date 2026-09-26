@@ -51,7 +51,7 @@ describe('GitService worktree lifecycle', () => {
       expect(path.dirname(sibling.worktree?.path ?? '')).toBe(path.dirname(checkout));
       const listed = await service.listWorktrees(repo);
       expect(listed.worktrees).toEqual(expect.arrayContaining([
-        expect.objectContaining({ path: checkout, branch: 'task/example', isMain: false }),
+        expect.objectContaining({ path: checkout.replace(/\\/g, '/'), branch: 'task/example', isMain: false }),
       ]));
       expect((await service.inspectWorktree(repo, checkout)).hasChanges).toBe(false);
       expect((await service.removeWorktree(repo, repo, 'main')).success).toBe(false);
