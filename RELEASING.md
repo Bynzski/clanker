@@ -26,7 +26,7 @@ Releases are cut from `main`. The working tree must be clean before starting.
 
 A full release produces both the Linux AppImage and the Windows NSIS installer + portable executable. Each platform must be built on its own host: the AppImage on Linux, the NSIS/portable on Windows. There is no cross-compilation step.
 
-Linux-only patch releases are allowed when the release is explicitly scoped that way. For those releases, complete the Linux validation and AppImage smoke test, mention the Linux-only artifact scope in `CHANGELOG.md`, and publish only the AppImage. Windows support should still receive best-effort checks from the shared validation suite, but Windows artifacts are not required for that release.
+Linux-only releases are allowed at any semantic version when the artifact scope is explicit. Choose the version from the changes being released, complete Linux validation and the AppImage smoke test, mention the Linux-only artifact scope in `CHANGELOG.md`, and publish only the AppImage. The release commit must pass both Linux and Windows CI validation; a Windows artifact is not required for a Linux-only release.
 
 ### 1. Prepare the release commit (Linux host)
 
@@ -35,8 +35,7 @@ Linux-only patch releases are allowed when the release is explicitly scoped that
 3. Bump `version` in `package.json` to `X.Y.Z`. Update `package-lock.json` to match (the top-level `version` and the root package entry).
 4. Run `npm run validate` again.
 5. Commit the changelog and version bump together: `chore(release): vX.Y.Z`.
-6. Tag the commit: `git tag -a vX.Y.Z -m "Clanker Grid X.Y.Z"`.
-7. Push: `git push origin main && git push origin vX.Y.Z`.
+6. Push the release commit to `main` and wait for both Linux and Windows CI jobs on that commit to pass. Do not create or push the version tag yet.
 
 ### 2. Build the Linux artifact (Linux host)
 
@@ -45,7 +44,7 @@ Linux-only patch releases are allowed when the release is explicitly scoped that
 
 ### 3. Build the Windows artifacts (Windows host, full releases only)
 
-1. Check out the same `vX.Y.Z` tag on a Windows 10/11 machine with Git for Windows, Node.js 22+, and npm 10+ installed.
+1. Check out the release commit from `main` on a Windows 10/11 machine with Git for Windows, Node.js 22+, and npm 10+ installed.
 2. Run `npm ci`. `electron-builder` triggers `@electron/rebuild` for `node-pty` against the Electron ABI on first install.
 3. Run `npm run build:dist`. Two artifacts land in `release/`:
    - `Clanker Grid Setup X.Y.Z.exe` — NSIS installer
@@ -55,7 +54,14 @@ Linux-only patch releases are allowed when the release is explicitly scoped that
 
 ### 4. Publish the release
 
-Once all planned artifacts are built and smoke-tested, attach them to a single GitHub release.
+Once all planned artifacts are built and smoke-tested, confirm the working tree is clean, tag the release commit, and push the tag:
+
+```bash
+git tag -a vX.Y.Z -m "Clanker Grid X.Y.Z"
+git push origin vX.Y.Z
+```
+
+Attach all planned artifacts to a single GitHub release. Replace `X.Y.Z` in the commands below with the actual version. For a full release:
 
 ```
 gh release create vX.Y.Z \
@@ -70,7 +76,16 @@ If the Linux and Windows hosts are different machines, copy the Windows artifact
 
 Mention the SmartScreen warning explicitly in the GitHub release notes so first-time Windows users know to expect it.
 
-For Linux-only patch releases, omit the Windows artifacts from the command and mention that no Windows build was produced for that tag.
+For a Linux-only release, publish only the AppImage:
+
+```bash
+gh release create vX.Y.Z \
+  'release/Clanker Grid-X.Y.Z.AppImage' \
+  --title "vX.Y.Z" \
+  --notes "$(awk '/^## \[X.Y.Z\]/{flag=1;next} /^## \[/{flag=0} flag' CHANGELOG.md)"
+```
+
+Mention in the release notes that no Windows build was produced for this tag.
 
 ## Platform targets
 
@@ -80,7 +95,7 @@ A full release ships:
 - **Windows NSIS installer** (x64, unsigned) — produced on Windows 10/11.
 - **Windows portable executable** (x64, unsigned) — produced on Windows 10/11.
 
-A Linux-only patch release ships:
+A Linux-only release ships:
 
 - **Linux AppImage** (x64) — produced on Linux.
 

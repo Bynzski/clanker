@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-26
+
+### Added
+
+- **Task worktrees** — create and open linked Git worktrees from the workspace launcher. Closed worktrees can be removed with checks for local files and a path-and-branch confirmation.
+- **Agent attention** — opt in per harness to show turn and input status on named terminal panes and workspace tabs, with a shortcut button to jump to a pane needing attention.
+- **Annotation handoff** — review a browser element annotation and send it to an eligible live agent pane, or copy the message.
+- **Reorderable browser tabs** — switch pages from a tab strip and rearrange tabs by dragging or keyboard.
+
+### Changed
+
+- **Workspace identity** — tabs and the status bar show clearer project and checkout context; worktree selection verifies the repository and avoids generated worktree containers.
+- **Explorer layout** — Explorer is a resizable left sidebar, separate from movable panes. Saved layouts containing an Explorer pane are migrated.
+- **Workspace memory use** — the active workspace and two recent inactive workspaces keep mounted renderer surfaces; older inactive surfaces are recreated when selected, while terminal sessions continue.
+- **Linux-only release artifact** — `0.3.0` ships as a Linux AppImage. No Windows binary is produced for this release; Windows remains covered by CI validation.
+
+### Fixed
+
+- **Browser tab switching** — delayed bounds updates no longer bring the previous native page back into view after a switch.
+
+### Security
+
+- **Dependency audit cleanup** — updated Electron and dependencies so `npm audit --audit-level=high` reports zero vulnerabilities.
+
 ## [0.2.5] - 2026-07-21
 
 ### Added
@@ -213,7 +237,9 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Bynzski/clanker/compare/v0.2.5...v0.3.0
+[0.2.5]: https://github.com/Bynzski/clanker/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Bynzski/clanker/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Bynzski/clanker/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Bynzski/clanker/compare/v0.2.1...v0.2.2
