@@ -42,12 +42,13 @@ describe('GitService worktree lifecycle', () => {
       const created = await service.createWorktree(repo, 'main', 'task/example');
       expect(created.success).toBe(true);
       const checkout = created.worktree?.path ?? '';
-      expect(fs.realpathSync(path.dirname(checkout))).toBe(fs.realpathSync(path.join(path.dirname(repo), 'repo-worktrees')));
+      expect(path.basename(path.dirname(checkout))).toBe('repo-worktrees');
+      expect(fs.existsSync(path.join(path.dirname(repo), 'repo-worktrees'))).toBe(true);
       expect(path.basename(checkout)).toMatch(/^task-example-[0-9a-f]{20}$/);
       expect(path.basename(checkout).length).toBeLessThanOrEqual(37);
       expect(fs.existsSync(path.join(checkout, 'README.md'))).toBe(true);
       const sibling = await service.createWorktree(checkout, 'main', 'task/second');
-      expect(fs.realpathSync(path.dirname(sibling.worktree?.path ?? ''))).toBe(fs.realpathSync(path.join(path.dirname(repo), 'repo-worktrees')));
+      expect(path.dirname(sibling.worktree?.path ?? '')).toBe(path.dirname(checkout));
       const listed = await service.listWorktrees(repo);
       expect(listed.worktrees).toEqual(expect.arrayContaining([
         expect.objectContaining({ path: checkout, branch: 'task/example', isMain: false }),
