@@ -174,7 +174,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeWorkspaceLifecycle: null,
 
   addWorkspace: (workspace) => set((state) => {
-    const id = createWorkspaceId();
+    const id = workspace.id ?? createWorkspaceId();
     const defaultName = workspace.name || getWorkspaceNameFromPath(workspace.workspacePath);
     const storedNotesVisible = readStoredNotesVisible(workspace.workspacePath);
     const restoredNotesPane = storedNotesVisible

@@ -49,6 +49,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     id,
     pid: ptyProcess.pid,
     pty: ptyProcess,
+    cwd,
     startupBuffer: [],
     startupBufferReady: false,
   };

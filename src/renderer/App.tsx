@@ -10,6 +10,8 @@ import { getZoomShortcutAction, isSaveShortcut } from './lib/keyboardShortcuts';
 import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import { persistWorkspaceLayout } from './lib/workspaceLayoutStorage';
+import { sameWorkspacePath } from './lib/pathUtils';
+import type { GitWorktree } from '../shared/types/git';
 import './App.css';
 
 const WorkspaceHost = lazy(() => import('./components/WorkspaceHost'));
@@ -108,57 +110,82 @@ function App() {
   }), []);
 
   const handleWorkspaceSelect = async (path: string, terminalCount: number, harness: string, model?: string) => {
+    const workspaceId = crypto.randomUUID();
+    const registration = await window.electronAPI.registerOpenWorkspace(workspaceId, path)
+      .catch((error: unknown) => ({ success: false, error: String(error) }));
+    if (!registration.success) {
+      console.error('Could not open workspace:', registration.error);
+      return false;
+    }
     const terminals: Terminal[] = [];
     const panes: Pane[] = [];
+    try {
+      const worktreeLookup = typeof window.electronAPI.gitListWorktrees === 'function'
+        ? window.electronAPI.gitListWorktrees(path).catch(() => null)
+        : Promise.resolve(null);
 
-    for (let i = 0; i < terminalCount; i++) {
-      try {
-        const info = await window.electronAPI.spawnTerminal(path, harness, model);
-        terminals.push({
-          id: info.id,
-          pid: info.pid,
-          workingDir: path,
-          harnessId: info.harnessId ?? harness ?? null,
-          attentionEnabled: info.attentionEnabled === true,
-        });
-        panes.push({ id: crypto.randomUUID(), terminalId: info.id });
-      } catch (err) {
-        console.error('Failed to spawn terminal:', err);
+      for (let i = 0; i < terminalCount; i++) {
+        try {
+          const info = await window.electronAPI.spawnTerminal(path, harness, model);
+          terminals.push({
+            id: info.id,
+            pid: info.pid,
+            workingDir: path,
+            harnessId: info.harnessId ?? harness ?? null,
+            attentionEnabled: info.attentionEnabled === true,
+          });
+          panes.push({ id: crypto.randomUUID(), terminalId: info.id });
+        } catch (err) {
+          console.error('Failed to spawn terminal:', err);
+        }
       }
-    }
 
-    addWorkspace({
-      name: '',
-      workspacePath: path,
-      harness,
-      model: model ?? '',
-      terminals,
-      panes,
-      browserVisible: false,
-      browserOverlayCount: 0,
-      browserUrl: 'https://github.com',
-      activeTerminalId: terminals.length > 0 ? terminals[terminals.length - 1].id : null,
-      browserPane: null,
-      layoutRoot: null,
-      explorerVisible: false,
-      explorerSidebarWidth: 280,
-      explorerExpandedPaths: [],
-      explorerSelectedPath: null,
-      explorerEntriesByPath: {},
-      explorerLoadingPaths: [],
-      explorerErrorsByPath: {},
-      showHiddenFiles: true,
-      editorPane: null,
-      editorVisible: false,
-      editorTabs: [],
-      activeEditorTabId: null,
-      gitChanges: [],
-      gitCurrentBranch: null,
-      gitIsRepo: false,
-      gitIsDetached: false,
-      runtimeState: { ...DEFAULT_RUNTIME_STATE },
-    });
-    setShowWorkspaceGate(false);
+      const worktreeList = await worktreeLookup;
+      const linkedWorktree = worktreeList?.success
+        ? worktreeList.worktrees.find((entry: GitWorktree) => !entry.isMain && sameWorkspacePath(entry.path, path))
+        : null;
+
+      addWorkspace({
+        id: workspaceId,
+        name: '',
+        workspacePath: path,
+        isLinkedWorktree: !!linkedWorktree,
+        harness,
+        model: model ?? '',
+        terminals,
+        panes,
+        browserVisible: false,
+        browserOverlayCount: 0,
+        browserUrl: 'https://github.com',
+        activeTerminalId: terminals.length > 0 ? terminals[terminals.length - 1].id : null,
+        browserPane: null,
+        layoutRoot: null,
+        explorerVisible: false,
+        explorerSidebarWidth: 280,
+        explorerExpandedPaths: [],
+        explorerSelectedPath: null,
+        explorerEntriesByPath: {},
+        explorerLoadingPaths: [],
+        explorerErrorsByPath: {},
+        showHiddenFiles: true,
+        editorPane: null,
+        editorVisible: false,
+        editorTabs: [],
+        activeEditorTabId: null,
+        gitChanges: [],
+        gitCurrentBranch: linkedWorktree?.branch ?? null,
+        gitIsRepo: false,
+        gitIsDetached: false,
+        runtimeState: { ...DEFAULT_RUNTIME_STATE },
+      });
+      setShowWorkspaceGate(false);
+      return true;
+    } catch (error) {
+      console.error('Could not open workspace:', error);
+      await Promise.allSettled(terminals.map((terminal) => window.electronAPI.killTerminal(terminal.id)));
+      await window.electronAPI.unregisterOpenWorkspace(workspaceId).catch(() => undefined);
+      return false;
+    }
   };
 
   const handleCloseGate = () => {

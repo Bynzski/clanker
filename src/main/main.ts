@@ -4,7 +4,7 @@
  * Thin orchestrator: imports → store init → register IPC calls → create window → lifecycle
  */
 
-import { app, BrowserWindow, type Rectangle } from 'electron';
+import { app, BrowserWindow, shell, type Rectangle } from 'electron';
 
 app.commandLine.appendSwitch('disable-dev-shm-usage');
 
@@ -146,6 +146,7 @@ const cleanupWindowState = () => {
   lastBrowserBoundsByWorkspace.clear();
   annotationModeEnabled = false;
   killAllTerminals();
+  gitService.clearOpenWorkspaces();
   activeBrowserWorkspaceId = null;
   mainWindow = null;
 };
@@ -154,7 +155,9 @@ const gitService = new GitService((status) => {
   if (mainWindow) {
     mainWindow.webContents.send('git-status-update', status);
   }
-});
+}, (worktreePath) => shell.trashItem(worktreePath), () => [...terminals.values()]
+  .map((terminal) => terminal.cwd)
+  .filter((cwd): cwd is string => typeof cwd === 'string'));
 
 const fileWatcher = new FileWatcherService({ getMainWindow: () => mainWindow });
 fileWatcher.setGitService(gitService);

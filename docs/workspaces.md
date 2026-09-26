@@ -10,6 +10,22 @@ Workspaces provide isolated development environments within a single window.
 
 On platforms whose native directory picker supports it, the folder picker can create a new directory before opening the workspace.
 
+### Task worktrees
+
+Click the **Worktree** side of the launch button to slide from the workspace launcher to the task worktree options. Use **Back to workspace** to return to the normal launcher. To make a separate checkout for a task:
+
+1. Select a Git repository directory and click **Load repository**.
+2. Choose a base ref and enter a task branch name.
+3. Click **Create and open worktree**. Clanker creates the checkout beside the repository, then opens it as a normal workspace with its own terminals, editor, browser, and Git state. For a new branch, Clanker creates it from the base ref. If the branch already exists without a checkout, Clanker uses that branch, which also lets you retry after a failed checkout.
+
+If a local branch and tag share a name, the base ref uses the branch. Enter `refs/tags/<name>` to use the tag.
+
+The launcher also lists existing linked worktrees. Click **Open** to use one without recreating it. Several conversations or terminals can share a worktree workspace; create another worktree when work needs separate files and a branch.
+
+Closing a workspace tab stops its live terminals and closes its UI; it leaves the checkout and branch on disk. To remove a checkout, return to **Task worktree**, load the repository, and choose **Remove…** on a closed worktree. Clanker checks for uncommitted, untracked, and ignored files, then asks you to confirm the exact path and branch. Removal moves the checkout to the system Trash and unregisters it from Git, preserving files written during removal. The branch remains.
+
+New worktrees contain Git tracked files from the base commit. Local ignored files such as `.env` and installed dependencies are not copied automatically; set up those files in the new checkout as needed.
+
 ## Managing Tabs
 
 - **Switch workspaces**: Click a workspace tab

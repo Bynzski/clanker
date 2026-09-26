@@ -83,6 +83,12 @@ export const FIT_ALL_PANES = 'fit-all-panes';
 export const GIT_START_POLLING = 'git-start-polling';
 export const GIT_STOP_POLLING = 'git-stop-polling';
 export const GIT_GET_BRANCH_STATE = 'git-get-branch-state';
+export const GIT_LIST_WORKTREES = 'git-list-worktrees';
+export const GIT_CREATE_WORKTREE = 'git-create-worktree';
+export const GIT_INSPECT_WORKTREE = 'git-inspect-worktree';
+export const GIT_REMOVE_WORKTREE = 'git-remove-worktree';
+export const REGISTER_OPEN_WORKSPACE = 'register-open-workspace';
+export const UNREGISTER_OPEN_WORKSPACE = 'unregister-open-workspace';
 export const GIT_GET_OPERATION_STATE = 'git-get-operation-state';
 export const GIT_GET_STASHES = 'git-get-stashes';
 export const GIT_GET_HISTORY = 'git-get-history';
@@ -268,6 +274,12 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   GIT_START_POLLING,
   GIT_STOP_POLLING,
   GIT_GET_BRANCH_STATE,
+  GIT_LIST_WORKTREES,
+  GIT_CREATE_WORKTREE,
+  GIT_INSPECT_WORKTREE,
+  GIT_REMOVE_WORKTREE,
+  REGISTER_OPEN_WORKSPACE,
+  UNREGISTER_OPEN_WORKSPACE,
   GIT_GET_OPERATION_STATE,
   GIT_GET_STASHES,
   GIT_GET_HISTORY,

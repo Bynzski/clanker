@@ -86,6 +86,12 @@ import {
   GIT_UNSTAGE,
   GIT_COMMIT,
   GIT_GET_BRANCH_STATE,
+  GIT_LIST_WORKTREES,
+  GIT_CREATE_WORKTREE,
+  GIT_INSPECT_WORKTREE,
+  GIT_REMOVE_WORKTREE,
+  REGISTER_OPEN_WORKSPACE,
+  UNREGISTER_OPEN_WORKSPACE,
   GIT_GET_OPERATION_STATE,
   GIT_GET_STASHES,
   GIT_GET_HISTORY,
@@ -308,6 +314,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitUnstage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke(GIT_UNSTAGE, workspacePath, files),
   gitCommit: (workspacePath: string, message: string) => ipcRenderer.invoke(GIT_COMMIT, workspacePath, message),
   gitGetBranchState: (workspacePath: string) => ipcRenderer.invoke(GIT_GET_BRANCH_STATE, workspacePath),
+  gitListWorktrees: (workspacePath: string) => ipcRenderer.invoke(GIT_LIST_WORKTREES, workspacePath),
+  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string) =>
+    ipcRenderer.invoke(GIT_CREATE_WORKTREE, workspacePath, baseRef, branch),
+  registerOpenWorkspace: (id: string, workspacePath: string) =>
+    ipcRenderer.invoke(REGISTER_OPEN_WORKSPACE, id, workspacePath),
+  unregisterOpenWorkspace: (id: string) =>
+    ipcRenderer.invoke(UNREGISTER_OPEN_WORKSPACE, id),
+  gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[]) =>
+    ipcRenderer.invoke(GIT_INSPECT_WORKTREE, workspacePath, worktreePath, openWorkspacePaths),
+  gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) =>
+    ipcRenderer.invoke(GIT_REMOVE_WORKTREE, workspacePath, worktreePath, expectedBranch, openWorkspacePaths),
   gitGetOperationState: (workspacePath: string) => ipcRenderer.invoke(GIT_GET_OPERATION_STATE, workspacePath),
   gitGetStashes: (workspacePath: string) => ipcRenderer.invoke(GIT_GET_STASHES, workspacePath),
   gitGetHistory: (workspacePath: string, limit?: number) => ipcRenderer.invoke(GIT_GET_HISTORY, workspacePath, limit),

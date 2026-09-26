@@ -94,7 +94,7 @@ export interface WorkspaceState {
   /** @invariant null - editorTabs.length === 0 */
   activeEditorTabId: string | null;
 
-  addWorkspace: (workspace: Omit<WorkspaceTab, 'id' | 'lifecycle'>) => void;
+  addWorkspace: (workspace: Omit<WorkspaceTab, 'id' | 'lifecycle'> & { id?: string }) => void;
   selectWorkspace: (id: string, terminalId?: string) => void;
   closeWorkspace: (id: string) => void;
   updateWorkspaceName: (id: string, name: string) => void;

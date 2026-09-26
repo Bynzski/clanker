@@ -32,6 +32,7 @@ interface Terminal {
   id: string;
   pid: number;
   pty: pty.IPty;
+  cwd?: string;
   /**
    * Bounded startup buffer — holds PTY output only during the brief window
    * between PTY spawn and renderer confirming xterm is ready.

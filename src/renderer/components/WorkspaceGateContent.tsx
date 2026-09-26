@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog } from 'lucide-react';
+import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog, GitBranch, ArrowLeft } from 'lucide-react';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds, resolveVisibleHarnessIds } from '../lib/harnessOptions';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { isAbsoluteWorkspacePath } from '../../shared/pathClassify';
+import { useWorkspaceStore } from '../store/workspaceStore';
+import WorktreeLauncher from './WorktreeLauncher';
 import './WorkspaceGate.css';
 
 export interface WorkspaceFormData {
@@ -54,6 +56,10 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
   const [discoverySearch, setDiscoverySearch] = useState('');
   const [defaultModel, setDefaultModel] = useState<string>('');
+  const [workspaceMode, setWorkspaceMode] = useState<'directory' | 'worktree'>('directory');
+  const [hasViewedWorktree, setHasViewedWorktree] = useState(false);
+  const openWorkspaces = useWorkspaceStore((state) => state.workspaces);
+  const openPaths = openWorkspaces.map((workspace) => workspace.workspacePath);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const visibleHarnessIds = useMemo(
@@ -370,9 +376,9 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     setShowDiscoveryModal(false);
   };
 
-  const handleSubmit = () => {
+  const resolveInputPath = (): string | null => {
     const trimmed = inputValue.trim();
-    if (!trimmed) return;
+    if (!trimmed) return null;
 
     const normalized = trimmed.replace(/\\/g, '/');
     const isAbsolute = isAbsoluteWorkspacePath(normalized);
@@ -381,20 +387,27 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     if (isAbsolute) {
       resolved = normalized;
     } else {
-      if (!baseDirectory) return;
+      if (!baseDirectory) return null;
       resolved = baseDirectory + trimmed;
     }
-    const finalPath = resolved.endsWith('/') ? resolved : resolved + '/';
+    return resolved.endsWith('/') ? resolved : resolved + '/';
+  };
 
+  const launchPath = (path: string) => {
     const preset = TERMINAL_PRESETS[selectedPreset];
     // Use defaultModel (from store) as the launch model, falling back to first available
     const launchModel = defaultModel || modelOptions[0]?.id || undefined;
     onSubmit({
-      path: finalPath,
+      path,
       terminalCount: preset.count,
       harness: selectedHarness,
       model: selectedHarness ? launchModel : undefined,
     });
+  };
+
+  const handleSubmit = () => {
+    const path = resolveInputPath();
+    if (path) launchPath(path);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -410,7 +423,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
           setSuggestionAndReset(suggestions[selectedIndex]);
           return;
         }
-        handleSubmit();
+        if (workspaceMode === 'directory') handleSubmit();
       },
       Escape: () => {
         setSuggestions([]);
@@ -504,6 +517,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
 
   return (
     <div className="gate-content">
+      {workspaceMode === 'directory' ? (
+      <div className={`gate-view ${hasViewedWorktree ? 'gate-view-return' : ''}`}>
       <div className="gate-header">
         <img src="./robot-icon.png" alt="Clanker Grid" width="64" height="64" className="gate-brand-icon" />
         <h1 className="gate-title">Clanker Grid</h1>
@@ -773,13 +788,55 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
         </div>
       </div>
 
-      <button
-        className="gate-button"
-        onClick={handleSubmit}
-      >
-        <Play size={14} strokeWidth={2.5} fill="currentColor" />
-        Launch Workspace
-      </button>
+      <div className="gate-launch-actions">
+        <button className="gate-button" onClick={handleSubmit}>
+          <Play size={14} strokeWidth={2.5} fill="currentColor" />
+          Launch Workspace
+        </button>
+        <button className="gate-worktree-forward" type="button" aria-label="Worktree options" title="Create or open a task worktree" onClick={() => {
+          if (!inputValue.trim()) {
+            const active = useWorkspaceStore.getState().getActiveWorkspace();
+            if (active) setInputValue(active.workspacePath);
+          }
+          setHasViewedWorktree(true);
+          setWorkspaceMode('worktree');
+        }}>
+          <GitBranch size={13} strokeWidth={2} />
+          <span>Worktree</span>
+        </button>
+      </div>
+      </div>
+      ) : (
+      <div className="gate-view gate-view-worktree">
+        <button className="gate-worktree-back" type="button" onClick={() => setWorkspaceMode('directory')}>
+          <ArrowLeft size={14} strokeWidth={2} /> Back to workspace
+        </button>
+        <div className="gate-worktree-heading">
+          <GitBranch size={18} strokeWidth={2} />
+          <div>
+            <h2>Task worktree</h2>
+            <p>Work on a separate branch and checkout.</p>
+          </div>
+        </div>
+        <div className="gate-input-container">
+          <div className="gate-section-header">
+            <label className="gate-section-label" htmlFor="gate-worktree-repo">Repository</label>
+            {baseDirectory && <span className="gate-base-path" title={`Base: ${baseDirectory}`}>{baseDirectory}</span>}
+          </div>
+          <div className="input-wrapper">
+            <button className="cog-button cog-button-left" onClick={handleOpenBaseDirectory} disabled={isBaseLoading} title="Set base directory" aria-label="Set base directory">
+              {isBaseLoading ? <Loader2 size={18} className="spin" /> : <Cog size={18} strokeWidth={2} />}
+            </button>
+            <input id="gate-worktree-repo" type="text" className="gate-input" value={inputValue} onChange={(event) => setInputValue(event.target.value)} placeholder="repository directory" spellCheck={false} autoComplete="off" autoCapitalize="off" />
+            <button className="cog-button" onClick={handleOpenDirectory} disabled={isLoading} title="Browse repositories" aria-label="Browse repositories">
+              {isLoading ? <Loader2 size={18} className="spin" /> : <FolderOpen size={18} strokeWidth={2} />}
+            </button>
+          </div>
+        </div>
+        <WorktreeLauncher repoPath={resolveInputPath()} openPaths={openPaths} onOpenPath={launchPath} />
+        <p className="gate-worktree-launch-summary">Opens with {selectedHarness ? HARNESS_OPTIONS.find((option) => option.id === selectedHarness)?.label ?? selectedHarness : 'Terminal'} · {TERMINAL_PRESETS[selectedPreset].count} terminals</p>
+      </div>
+      )}
     </div>
   );
 }

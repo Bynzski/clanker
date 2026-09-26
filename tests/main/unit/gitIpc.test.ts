@@ -112,6 +112,12 @@ describe('registerGitIpc', () => {
       isDetached: false,
       branches: [],
     }),
+    listWorktrees: vi.fn().mockResolvedValue({ success: true, worktrees: [] }),
+    createWorktree: vi.fn().mockResolvedValue({ success: true, worktree: { path: 'C:\\tasks\\one', branch: 'one', isMain: false, isLocked: false, isPrunable: false } }),
+    inspectWorktree: vi.fn().mockResolvedValue({ success: true, worktree: { path: 'C:\\tasks\\one', branch: 'one', isMain: false, isLocked: false, isPrunable: false }, hasChanges: false }),
+    removeWorktree: vi.fn().mockResolvedValue({ success: true }),
+    registerOpenWorkspace: vi.fn().mockReturnValue({ success: true }),
+    unregisterOpenWorkspace: vi.fn(),
     getOperationState: vi.fn().mockResolvedValue({
       success: true,
       isRepo: true,
@@ -198,6 +204,10 @@ describe('registerGitIpc', () => {
       'git-start-polling',
       'git-stop-polling',
       'git-get-branch-state',
+      'git-list-worktrees',
+      'git-create-worktree',
+      'git-inspect-worktree',
+      'git-remove-worktree',
       'git-get-operation-state',
       'git-get-stashes',
       'git-get-history',
@@ -233,7 +243,7 @@ describe('registerGitIpc', () => {
     });
   });
 
-  test('registers exactly 30 git IPC channels', () => {
+  test('registers exactly 35 git IPC handlers', () => {
     const mockGitService = createMockGitService();
 
     registerGitIpc({
@@ -242,7 +252,40 @@ describe('registerGitIpc', () => {
     });
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(31);
+    expect(handleCalls.length).toBe(37);
+  });
+
+  test('validates worktree paths and returns POSIX paths across IPC', async () => {
+    const service = createMockGitService();
+    registerGitIpc({ getGitService: () => service as never, getMainWindow: () => mockMainWindow as never });
+    const handler = (channel: string) => mockIpcMain.handle.mock.calls.find((call) => call[0] === channel)?.[1] as (...args: unknown[]) => Promise<unknown>;
+
+    expect(await handler('git-create-worktree')(null, '/bad', 'main', 'one')).toEqual(expect.objectContaining({ success: false }));
+    expect(service.createWorktree).not.toHaveBeenCalled();
+
+    const validPath = process.cwd();
+    expect(await handler('git-create-worktree')(null, validPath, 'main', 'one')).toEqual(expect.objectContaining({
+      worktree: expect.objectContaining({ path: 'C:/tasks/one' }),
+    }));
+    expect(service.createWorktree).toHaveBeenCalledWith(validPath, 'main', 'one');
+    expect(await handler('register-open-workspace')(null, 'tab-1', validPath)).toEqual({ success: true });
+    expect(service.registerOpenWorkspace).toHaveBeenCalledWith('tab-1', validPath);
+    expect(await handler('register-open-workspace')(null, '', validPath)).toEqual(expect.objectContaining({ success: false }));
+    expect(await handler('register-open-workspace')(null, 'tab-2', 'relative/path')).toEqual(expect.objectContaining({ success: false }));
+    expect(await handler('unregister-open-workspace')(null, 'tab-1')).toEqual({ success: true });
+    expect(service.unregisterOpenWorkspace).toHaveBeenCalledWith('tab-1');
+    expect(await handler('git-inspect-worktree')(null, validPath, validPath, [validPath])).toEqual(expect.objectContaining({
+      worktree: expect.objectContaining({ path: 'C:/tasks/one' }),
+    }));
+    expect(service.inspectWorktree).toHaveBeenCalledWith(validPath, validPath, [validPath]);
+    await handler('git-remove-worktree')(null, validPath, validPath, 'one', [validPath]);
+    expect(service.removeWorktree).toHaveBeenCalledWith(validPath, validPath, 'one', [validPath]);
+    const missingOpenPath = `${validPath}/deleted-workspace`;
+    expect(await handler('git-inspect-worktree')(null, validPath, validPath, [missingOpenPath])).toEqual(expect.objectContaining({ success: true }));
+    expect(service.inspectWorktree).toHaveBeenLastCalledWith(validPath, validPath, [expect.stringContaining('deleted-workspace')]);
+    expect(await handler('git-remove-worktree')(null, validPath, validPath, 'one', [missingOpenPath])).toEqual(expect.objectContaining({ success: true }));
+    expect(service.removeWorktree).toHaveBeenLastCalledWith(validPath, validPath, 'one', [expect.stringContaining('deleted-workspace')]);
+    expect(await handler('git-remove-worktree')(null, validPath, validPath, 'one', ['relative/deleted-workspace'])).toEqual(expect.objectContaining({ success: false }));
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -259,7 +302,7 @@ describe('registerGitIpc', () => {
     });
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(62);
+    expect(handleCalls.length).toBe(74);
   });
 
   test('git-stop-polling calls gitService.stopPolling', async () => {

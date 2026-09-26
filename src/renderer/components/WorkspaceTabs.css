@@ -52,6 +52,18 @@
   font-weight: 500;
 }
 
+.workspace-tab-worktree {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.workspace-tab-worktree span { overflow: hidden; text-overflow: ellipsis; }
+
 .workspace-tab-attention {
   flex-shrink: 0;
   padding: 1px 4px;

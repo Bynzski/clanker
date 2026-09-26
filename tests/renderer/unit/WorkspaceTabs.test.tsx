@@ -102,6 +102,15 @@ describe('WorkspaceTabs', () => {
   // Basic Rendering
   // =========================================================================
   describe('basic rendering', () => {
+    it('labels a linked worktree with its branch', () => {
+      useWorkspaceStore.setState({
+        workspaces: [createMockWorkspace({ isLinkedWorktree: true, gitCurrentBranch: 'task/example' })],
+        activeWorkspaceId: 'ws1',
+      });
+      render(<WorkspaceTabs />);
+      expect(screen.getByLabelText('Worktree on task/example')).toBeTruthy();
+    });
+
     const mockWorkspaces: WorkspaceTab[] = [
       createMockWorkspace({
         id: 'ws1',
@@ -602,6 +611,7 @@ describe('WorkspaceTabs', () => {
       
       expect(disposeWorkspaceResources).toHaveBeenCalledWith(mockWorkspaces[0], { isActiveWorkspace: true });
       expect(closeWorkspace).toHaveBeenCalledWith('ws1');
+      expect(window.electronAPI.unregisterOpenWorkspace).toHaveBeenCalledWith('ws1');
       expect(electronApi.explorerStopWatching).not.toHaveBeenCalled();
       expect(electronApi.gitStopPolling).not.toHaveBeenCalled();
     });

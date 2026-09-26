@@ -2,15 +2,17 @@ import { useEffect, useState } from 'react';
 import { Minus, Square, X } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import WorkspaceGateContent, { WorkspaceFormData } from './WorkspaceGateContent';
+import { sameWorkspacePath } from '../lib/pathUtils';
 import './WorkspaceGate.css';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onWorkspaceSelect: (path: string, terminalCount: number, harness: string, model?: string) => void;
+  onWorkspaceSelect: (path: string, terminalCount: number, harness: string, model?: string) => Promise<boolean> | boolean | void;
 }
 
 export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect }: Props) {
+  const [openError, setOpenError] = useState('');
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
 
@@ -36,9 +38,22 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect }: Props
 
   if (!isOpen) return null;
 
-  const handleSubmit = (data: WorkspaceFormData) => {
-    onWorkspaceSelect(data.path, data.terminalCount, data.harness, data.model);
-    onClose();
+  const handleSubmit = async (data: WorkspaceFormData) => {
+    const state = useWorkspaceStore.getState();
+    const open = state.workspaces.find((workspace) => sameWorkspacePath(workspace.workspacePath, data.path));
+    if (open) {
+      state.selectWorkspace(open.id);
+      onClose();
+      return;
+    }
+    setOpenError('');
+    try {
+      const opened = await onWorkspaceSelect(data.path, data.terminalCount, data.harness, data.model);
+      if (opened === false) setOpenError('Could not open this workspace. Check that its directory still exists.');
+      else onClose();
+    } catch {
+      setOpenError('Could not open this workspace. Check that its directory still exists.');
+    }
   };
 
   return (
@@ -56,6 +71,7 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect }: Props
         <WorkspaceGateContent
           onSubmit={handleSubmit}
         />
+        {openError && <p role="alert">{openError}</p>}
       </div>
     </div>
   );
@@ -63,7 +79,7 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect }: Props
 
 // Fullscreen gate version for initial launch
 interface FullscreenGateProps {
-  onWorkspaceSelect: (path: string, terminalCount: number, harness: string, model?: string) => void;
+  onWorkspaceSelect: (path: string, terminalCount: number, harness: string, model?: string) => Promise<boolean> | boolean | void;
 }
 
 function GateTitleBar() {
@@ -116,8 +132,15 @@ function GateTitleBar() {
 }
 
 export function WorkspaceGateFullscreen({ onWorkspaceSelect }: FullscreenGateProps) {
-  const handleSubmit = (data: WorkspaceFormData) => {
-    onWorkspaceSelect(data.path, data.terminalCount, data.harness, data.model);
+  const [openError, setOpenError] = useState('');
+  const handleSubmit = async (data: WorkspaceFormData) => {
+    setOpenError('');
+    try {
+      const opened = await onWorkspaceSelect(data.path, data.terminalCount, data.harness, data.model);
+      if (opened === false) setOpenError('Could not open this workspace. Check that its directory still exists.');
+    } catch {
+      setOpenError('Could not open this workspace. Check that its directory still exists.');
+    }
   };
 
   return (
@@ -125,6 +148,7 @@ export function WorkspaceGateFullscreen({ onWorkspaceSelect }: FullscreenGatePro
       <GateTitleBar />
       <div className="workspace-gate-shell">
         <WorkspaceGateContent onSubmit={handleSubmit} />
+        {openError && <p role="alert">{openError}</p>}
       </div>
     </div>
   );

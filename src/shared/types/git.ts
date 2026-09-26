@@ -116,3 +116,30 @@ export interface GitInitResult {
   success: boolean;
   error?: string;
 }
+
+export interface GitWorktree {
+  path: string;
+  branch: string | null;
+  isMain: boolean;
+  isLocked: boolean;
+  isPrunable: boolean;
+}
+
+export interface GitWorktreeListResult {
+  success: boolean;
+  worktrees: GitWorktree[];
+  error?: string;
+}
+
+export interface GitWorktreeCreateResult {
+  success: boolean;
+  worktree?: GitWorktree;
+  error?: string;
+}
+
+export interface GitWorktreeInspectionResult {
+  success: boolean;
+  worktree?: GitWorktree;
+  hasChanges?: boolean;
+  error?: string;
+}

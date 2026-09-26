@@ -5,7 +5,9 @@
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
+import * as path from 'path';
 import { GitService } from '../gitService';
+import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import {
   getValidatedWorkspacePath,
   getInvalidWorkspaceResult,
@@ -15,6 +17,12 @@ import {
   GIT_START_POLLING,
   GIT_STOP_POLLING,
   GIT_GET_BRANCH_STATE,
+  GIT_LIST_WORKTREES,
+  GIT_CREATE_WORKTREE,
+  GIT_INSPECT_WORKTREE,
+  GIT_REMOVE_WORKTREE,
+  REGISTER_OPEN_WORKSPACE,
+  UNREGISTER_OPEN_WORKSPACE,
   GIT_GET_OPERATION_STATE,
   GIT_GET_STASHES,
   GIT_GET_HISTORY,
@@ -51,6 +59,16 @@ interface RegisterGitIpcDeps {
   getMainWindow: () => BrowserWindow | null;
 }
 
+function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
+  if (!Array.isArray(paths) || !paths.every((entry) => typeof entry === 'string')) return null;
+  const validated = paths.map((entry: string) => {
+    if (!entry.trim() || entry.includes('\0')) return null;
+    const nativePath = toNativePath(entry, process.platform);
+    return path.isAbsolute(nativePath) ? nativePath : null;
+  });
+  return validated.every((entry): entry is string => entry !== null) ? validated : null;
+}
+
 export function registerGitIpc(deps: RegisterGitIpcDeps): void {
   const { getGitService, getMainWindow } = deps;
   const gitService = getGitService();
@@ -80,6 +98,57 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
       };
     }
     return gitService.getBranchState(safeWorkspacePath);
+  });
+
+  ipcMain.handle(GIT_LIST_WORKTREES, async (_, workspacePath: string) => {
+    const safePath = getValidatedWorkspacePath(workspacePath);
+    if (!safePath) return { success: false, worktrees: [], error: getInvalidWorkspaceResult().error };
+    const result = await gitService.listWorktrees(safePath);
+    return { ...result, worktrees: result.worktrees.map((entry) => ({ ...entry, path: toPosixPath(entry.path) })) };
+  });
+
+  ipcMain.handle(GIT_CREATE_WORKTREE, async (_, workspacePath: string, baseRef: string, branch: string) => {
+    const safePath = getValidatedWorkspacePath(workspacePath);
+    if (!safePath) return getInvalidWorkspaceResult();
+    const result = await gitService.createWorktree(safePath, baseRef, branch);
+    return result.worktree
+      ? { ...result, worktree: { ...result.worktree, path: toPosixPath(result.worktree.path) } }
+      : result;
+  });
+
+  ipcMain.handle(REGISTER_OPEN_WORKSPACE, (_, id: string, workspacePath: string) => {
+    if (typeof id !== 'string' || !id.trim() || typeof workspacePath !== 'string') return getInvalidWorkspaceResult();
+    const nativePath = toNativePath(workspacePath, process.platform);
+    if (!path.isAbsolute(nativePath)) return getInvalidWorkspaceResult();
+    const safePath = getValidatedWorkspacePath(workspacePath);
+    return safePath ? gitService.registerOpenWorkspace(id, safePath) : getInvalidWorkspaceResult();
+  });
+
+  ipcMain.handle(UNREGISTER_OPEN_WORKSPACE, (_, id: string) => {
+    if (typeof id !== 'string' || !id.trim()) return { success: false, error: 'Invalid workspace identity' };
+    gitService.unregisterOpenWorkspace(id);
+    return { success: true };
+  });
+
+  ipcMain.handle(GIT_INSPECT_WORKTREE, async (_, workspacePath: string, worktreePath: string, openWorkspacePaths: string[]) => {
+    const safePath = getValidatedWorkspacePath(workspacePath);
+    const safeWorktreePath = getValidatedWorkspacePath(worktreePath);
+    const safeOpenPaths = getValidatedOpenWorkspacePaths(openWorkspacePaths);
+    if (!safePath || !safeWorktreePath || !safeOpenPaths) return getInvalidWorkspaceResult();
+    const result = await gitService.inspectWorktree(safePath, safeWorktreePath, safeOpenPaths);
+    return result.worktree
+      ? { ...result, worktree: { ...result.worktree, path: toPosixPath(result.worktree.path) } }
+      : result;
+  });
+
+  ipcMain.handle(GIT_REMOVE_WORKTREE, async (_, workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) => {
+    const safePath = getValidatedWorkspacePath(workspacePath);
+    const safeWorktreePath = getValidatedWorkspacePath(worktreePath);
+    const safeOpenPaths = getValidatedOpenWorkspacePaths(openWorkspacePaths);
+    if (!safePath || !safeWorktreePath || !safeOpenPaths || (typeof expectedBranch !== 'string' && expectedBranch !== null)) {
+      return getInvalidWorkspaceResult();
+    }
+    return gitService.removeWorktree(safePath, safeWorktreePath, expectedBranch, safeOpenPaths);
   });
 
   ipcMain.handle(GIT_GET_OPERATION_STATE, async (_, workspacePath: string) => {

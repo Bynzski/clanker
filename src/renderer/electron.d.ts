@@ -23,6 +23,9 @@ import type {
   GitRemotesResult,
   GitRemoteOperationResult,
   GitInitResult,
+  GitWorktreeListResult,
+  GitWorktreeCreateResult,
+  GitWorktreeInspectionResult,
 } from '../../shared/types/git';
 import type {
   CredentialOperationResult,
@@ -54,6 +57,9 @@ export type {
   GitRemotesResult,
   GitRemoteOperationResult,
   GitInitResult,
+  GitWorktreeListResult,
+  GitWorktreeCreateResult,
+  GitWorktreeInspectionResult,
 };
 export type {
   CredentialOperationResult,
@@ -184,6 +190,12 @@ interface ElectronAPI {
   gitUnstage: (workspacePath: string, files?: string[]) => Promise<{ success: boolean; error?: string }>;
   gitCommit: (workspacePath: string, message: string) => Promise<{ success: boolean; error?: string }>;
   gitGetBranchState: (workspacePath: string) => Promise<GitBranchStateResult>;
+  gitListWorktrees: (workspacePath: string) => Promise<GitWorktreeListResult>;
+  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string) => Promise<GitWorktreeCreateResult>;
+  registerOpenWorkspace: (id: string, workspacePath: string) => Promise<{ success: boolean; error?: string }>;
+  unregisterOpenWorkspace: (id: string) => Promise<{ success: boolean; error?: string }>;
+  gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[]) => Promise<GitWorktreeInspectionResult>;
+  gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) => Promise<{ success: boolean; error?: string; warning?: string }>;
   gitGetOperationState: (workspacePath: string) => Promise<GitOperationStateResult>;
   gitGetStashes: (workspacePath: string) => Promise<GitStash[]>;
   gitGetHistory: (workspacePath: string, limit?: number) => Promise<GitHistoryEntry[]>;

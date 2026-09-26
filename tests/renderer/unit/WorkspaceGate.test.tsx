@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { WorkspaceGateModal, WorkspaceGateFullscreen } from '../../../src/renderer/components/WorkspaceGate';
+import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 
 // Mock WorkspaceGateContent
 vi.mock('../../../src/renderer/components/WorkspaceGateContent', () => ({
@@ -25,7 +26,7 @@ const mockPushBrowserOverlay = vi.fn();
 const mockPopBrowserOverlay = vi.fn();
 
 vi.mock('../../../src/renderer/store/workspaceStore', () => ({
-  useWorkspaceStore: vi.fn((selector) => {
+  useWorkspaceStore: Object.assign(vi.fn((selector) => {
     const store = {
       pushBrowserOverlay: mockPushBrowserOverlay,
       popBrowserOverlay: mockPopBrowserOverlay,
@@ -34,12 +35,13 @@ vi.mock('../../../src/renderer/store/workspaceStore', () => ({
       return selector(store);
     }
     return store;
-  }),
+  }), { getState: vi.fn(() => ({ workspaces: [], selectWorkspace: vi.fn() })) }),
 }));
 
 describe('WorkspaceGateModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(useWorkspaceStore.getState).mockReturnValue({ workspaces: [], selectWorkspace: vi.fn() } as never);
     vi.useFakeTimers();
   });
 
@@ -99,6 +101,21 @@ describe('WorkspaceGateModal', () => {
         fireEvent.click(closeButton);
       });
       
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it('focuses an already open checkout instead of creating a duplicate workspace', () => {
+      const selectWorkspace = vi.fn();
+      vi.mocked(useWorkspaceStore.getState).mockReturnValue({
+        workspaces: [{ id: 'existing', workspacePath: '/test/' }],
+        selectWorkspace,
+      } as never);
+      const onClose = vi.fn();
+      const onWorkspaceSelect = vi.fn();
+      render(<WorkspaceGateModal isOpen={true} onClose={onClose} onWorkspaceSelect={onWorkspaceSelect} />);
+      fireEvent.click(screen.getByText('Submit'));
+      expect(selectWorkspace).toHaveBeenCalledWith('existing');
+      expect(onWorkspaceSelect).not.toHaveBeenCalled();
       expect(onClose).toHaveBeenCalled();
     });
   });

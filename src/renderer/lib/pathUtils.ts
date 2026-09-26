@@ -45,6 +45,16 @@ export function normalizePath(path: string): string {
   return trimTrailingSlash(normalized);
 }
 
+export function sameWorkspacePath(left: string, right: string): boolean {
+  const comparable = (value: string) => {
+    const normalized = normalizePath(value);
+    return /^[A-Za-z]:\//.test(normalized) || normalized.startsWith('//')
+      ? normalized.toLowerCase()
+      : normalized;
+  };
+  return comparable(left) === comparable(right);
+}
+
 export function isAbsolutePath(path: string): boolean {
   return parsePath(path).absolute;
 }

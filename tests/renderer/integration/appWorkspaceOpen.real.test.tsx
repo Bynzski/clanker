@@ -83,5 +83,42 @@ describe('App workspace open integration', () => {
       expect(document.querySelector('.header')).toBeTruthy();
       expect(document.querySelector('.main-content')).toBeTruthy();
     });
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+    expect(window.electronAPI.registerOpenWorkspace).toHaveBeenCalledWith(workspace.id, '/workspace/');
+    expect(vi.mocked(window.electronAPI.registerOpenWorkspace).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(window.electronAPI.spawnTerminal).mock.invocationCallOrder[0]);
+  });
+
+  it('keeps the launcher open when main rejects workspace registration', async () => {
+    installElectronApiMock({ registerOpenWorkspace: vi.fn().mockResolvedValue({ success: false, error: 'Worktree is being removed' }) });
+    render(<App />);
+    const pathInput = document.querySelector('.gate-input') as HTMLInputElement;
+    fireEvent.change(pathInput, { target: { value: '/workspace/' } });
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    await screen.findByRole('alert');
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
+    expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
+  });
+
+  it('opens an existing worktree as a workspace with its branch identity', async () => {
+    installElectronApiMock({
+      gitListWorktrees: vi.fn().mockResolvedValue({
+        success: true,
+        worktrees: [
+          { path: '/repo', branch: 'main', isMain: true, isLocked: false, isPrunable: false },
+          { path: '/workspace', branch: 'task/example', isMain: false, isLocked: false, isPrunable: false },
+        ],
+      }),
+    });
+    render(<App />);
+    const pathInput = document.querySelector('.gate-input') as HTMLInputElement;
+    fireEvent.change(pathInput, { target: { value: '/workspace/' } });
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().workspaces[0]).toEqual(expect.objectContaining({
+        isLinkedWorktree: true,
+        gitCurrentBranch: 'task/example',
+      }));
+    });
   });
 });

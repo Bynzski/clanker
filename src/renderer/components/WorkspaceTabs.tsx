@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, MouseEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { disposeWorkspaceResources } from '../lib/workspaceLifecycle';
-import { Plus, X, Check, Edit2, BellRing } from 'lucide-react';
+import { Plus, X, Check, Edit2, BellRing, GitBranch } from 'lucide-react';
 import { normalizePath } from '../lib/pathUtils';
 import { useAgentAttentionStore, attentionCounts } from '../store/agentAttentionStore';
 import { nextAttentionTarget } from '../lib/agentAttentionNavigation';
@@ -82,6 +82,9 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
 
     await disposeWorkspaceResources(workspace, { isActiveWorkspace: state.activeWorkspaceId === id });
     closeWorkspace(id);
+    await window.electronAPI.unregisterOpenWorkspace(id).catch((error) => {
+      console.error('Could not unregister closed workspace:', error);
+    });
   };
 
   const startEditing = (id: string, currentName: string, event: MouseEvent) => {
@@ -162,6 +165,12 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                   <Edit2 size={12} strokeWidth={2} />
                 </button>
               </>
+            )}
+            {workspace.isLinkedWorktree && (
+              <span className="workspace-tab-worktree" title={`Worktree${workspace.gitCurrentBranch ? `: ${workspace.gitCurrentBranch}` : ''}`} aria-label={`Worktree${workspace.gitCurrentBranch ? ` on ${workspace.gitCurrentBranch}` : ''}`}>
+                <GitBranch size={11} strokeWidth={2} />
+                {workspace.gitCurrentBranch && <span>{workspace.gitCurrentBranch}</span>}
+              </span>
             )}
             {(counts.needsInput > 0 || counts.completed > 0) && (
               <span
