@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'node:path';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import WorkspaceGateContent, { TERMINAL_PRESETS } from '../../../src/renderer/components/WorkspaceGateContent';
+import { sameWorkspacePath } from '../../../src/renderer/lib/pathUtils';
 
 // Platform-neutral path constants for test fixtures
 const TEST_HOME_USER = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user');
@@ -143,7 +144,7 @@ describe('WorkspaceGateContent', () => {
     window.electronAPI.gitGetBranchState = vi.fn().mockImplementation(async (value: string) => ({
       success: true,
       // A generated container nested in another repository also reports isRepo.
-      isRepo: [repository, container, checkout].includes(value.replace(/\\/g, '/').replace(/\/$/, '')),
+      isRepo: [repository, container, checkout].some((candidate) => sameWorkspacePath(candidate, value)),
       currentBranch: 'main',
       branches: [{ name: 'main', isCurrent: true }],
     }));
