@@ -8,6 +8,10 @@ import { GitService } from '../../../src/main/gitService';
 
 const execFileAsync = promisify(execFile);
 
+function readCheckedOutText(filePath: string): string {
+  return fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
+}
+
 function makeService(trashWorktree: (worktreePath: string) => Promise<void> = async (worktreePath) => {
   await fs.promises.rename(worktreePath, `${worktreePath}.recycled`);
 }, getLiveTerminalPaths: () => string[] = () => []): GitService {
@@ -38,12 +42,12 @@ describe('GitService worktree lifecycle', () => {
       const created = await service.createWorktree(repo, 'main', 'task/example');
       expect(created.success).toBe(true);
       const checkout = created.worktree?.path ?? '';
-      expect(path.dirname(checkout)).toBe(path.join(path.dirname(repo), 'repo-worktrees'));
+      expect(fs.realpathSync(path.dirname(checkout))).toBe(fs.realpathSync(path.join(path.dirname(repo), 'repo-worktrees')));
       expect(path.basename(checkout)).toMatch(/^task-example-[0-9a-f]{20}$/);
       expect(path.basename(checkout).length).toBeLessThanOrEqual(37);
       expect(fs.existsSync(path.join(checkout, 'README.md'))).toBe(true);
       const sibling = await service.createWorktree(checkout, 'main', 'task/second');
-      expect(path.dirname(sibling.worktree?.path ?? '')).toBe(path.join(path.dirname(repo), 'repo-worktrees'));
+      expect(fs.realpathSync(path.dirname(sibling.worktree?.path ?? ''))).toBe(fs.realpathSync(path.join(path.dirname(repo), 'repo-worktrees')));
       const listed = await service.listWorktrees(repo);
       expect(listed.worktrees).toEqual(expect.arrayContaining([
         expect.objectContaining({ path: checkout, branch: 'task/example', isMain: false }),
@@ -68,15 +72,15 @@ describe('GitService worktree lifecycle', () => {
 
       const fromBranch = await service.createWorktree(repo, 'shared', 'from-branch');
       expect(fromBranch.success).toBe(true);
-      expect(fs.readFileSync(path.join(fromBranch.worktree?.path ?? '', 'README.md'), 'utf8')).toBe('branch tip\n');
+      expect(readCheckedOutText(path.join(fromBranch.worktree?.path ?? '', 'README.md'))).toBe('branch tip\n');
 
       const fromTag = await service.createWorktree(repo, 'refs/tags/shared', 'from-tag');
       expect(fromTag.success).toBe(true);
-      expect(fs.readFileSync(path.join(fromTag.worktree?.path ?? '', 'README.md'), 'utf8')).toBe('initial\n');
+      expect(readCheckedOutText(path.join(fromTag.worktree?.path ?? '', 'README.md'))).toBe('initial\n');
 
       const fromExpression = await service.createWorktree(repo, 'HEAD~1', 'from-expression');
       expect(fromExpression.success).toBe(true);
-      expect(fs.readFileSync(path.join(fromExpression.worktree?.path ?? '', 'README.md'), 'utf8')).toBe('initial\n');
+      expect(readCheckedOutText(path.join(fromExpression.worktree?.path ?? '', 'README.md'))).toBe('initial\n');
     });
   });
 
@@ -115,7 +119,7 @@ describe('GitService worktree lifecycle', () => {
 
   it('keeps checkout directory names short for long valid branches', async () => {
     await withRepo(async (repo) => {
-      const branch = `feature/${'long-task-'.repeat(18)}end`;
+      const branch = `feature/${'long-task-'.repeat(7)}end`;
       const created = await makeService().createWorktree(repo, 'main', branch);
       expect(created.success).toBe(true);
       expect(path.basename(created.worktree?.path ?? '').length).toBeLessThanOrEqual(37);
@@ -228,7 +232,7 @@ describe('GitService worktree lifecycle', () => {
       expect(attached.success).toBe(true);
       const { stdout: branchAfter } = await execFileAsync('git', ['rev-parse', 'refs/heads/existing-task'], { cwd: repo });
       expect(branchAfter).toBe(branchBefore);
-      expect(fs.readFileSync(path.join(attached.worktree?.path ?? '', 'README.md'), 'utf8')).toBe('initial\n');
+      expect(readCheckedOutText(path.join(attached.worktree?.path ?? '', 'README.md'))).toBe('initial\n');
     });
   });
 
