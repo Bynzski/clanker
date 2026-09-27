@@ -3,7 +3,7 @@
   top: calc(100% + 4px);
   right: 0;
   min-width: 260px;
-  max-width: 360px;
+  max-width: min(440px, calc(100vw - 16px));
   max-height: 420px;
   overflow-y: auto;
   background: var(--bg-secondary);
@@ -124,8 +124,9 @@
 .chat-history-session-title {
   flex: 1;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   min-width: 0;
 }
 

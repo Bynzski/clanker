@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { HarnessSession } from '../../shared/types/session';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
+import { getSessionDisplayTitles } from '../lib/sessionTitles';
 import './ChatHistoryDropdown.css';
 
 interface Props {
@@ -31,9 +32,10 @@ interface HarnessGroupProps {
   isExpanded: boolean;
   onToggle: () => void;
   onSessionClick: (session: HarnessSession) => void;
+  displayTitles: Map<string, string>;
 }
 
-function HarnessGroup({ harnessId, sessions, isExpanded, onToggle, onSessionClick }: HarnessGroupProps) {
+function HarnessGroup({ harnessId, sessions, isExpanded, onToggle, onSessionClick, displayTitles }: HarnessGroupProps) {
   const harnessOpt = HARNESS_OPTIONS.find((o) => o.id === harnessId);
 
   return (
@@ -64,9 +66,11 @@ function HarnessGroup({ harnessId, sessions, isExpanded, onToggle, onSessionClic
                 type="button"
                 className="chat-history-session"
                 onClick={() => onSessionClick(session)}
-                title={session.cwd}
+                title={`${session.title}\n${session.cwd}`}
               >
-                <span className="chat-history-session-title">{session.title}</span>
+                <span className="chat-history-session-title">
+                  {displayTitles.get(`${session.harness}\0${session.id}`) ?? session.title}
+                </span>
                 {session.timestamp > 0 && (
                   <span className="chat-history-session-time">
                     {formatRelativeTime(session.timestamp)}
@@ -100,6 +104,7 @@ export default function ChatHistoryDropdown({
   };
 
   const grouped: Record<string, HarnessSession[]> = {};
+  const displayTitles = getSessionDisplayTitles(sessions);
   for (const session of sessions) {
     if (!grouped[session.harness]) grouped[session.harness] = [];
     grouped[session.harness].push(session);
@@ -131,6 +136,7 @@ export default function ChatHistoryDropdown({
             isExpanded={!!expanded[harness]}
             onToggle={() => toggleHarness(harness)}
             onSessionClick={handleSessionClick}
+            displayTitles={displayTitles}
           />
         ))
       )}
