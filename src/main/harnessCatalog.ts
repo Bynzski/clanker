@@ -45,6 +45,13 @@ export const HARNESS_OPTIONS: Record<string, HarnessConfig> = {
     icon: 'π',
     modelArg: '--model',
   },
+  omp: {
+    name: 'Oh My Pi',
+    command: 'omp',
+    args: [],
+    icon: 'π',
+    modelArg: '--model',
+  },
   claude: {
     name: 'Claude',
     command: 'claude',
@@ -178,6 +185,30 @@ export function parseOpenCodeModels(output: string): ModelOption[] {
   return models;
 }
 
+/** Return null for a malformed catalog so it is not stored as a successful empty result. */
+function parseOmpModelCatalog(output: string): ModelOption[] | null {
+  try {
+    const data: unknown = JSON.parse(output);
+    if (!data || typeof data !== 'object' || !('models' in data) || !Array.isArray(data.models)) return null;
+    const seen = new Set<string>();
+    const models: ModelOption[] = [];
+    for (const entry of data.models) {
+      if (!entry || typeof entry !== 'object' || entry.kind !== 'chat'
+        || typeof entry.selector !== 'string' || !entry.selector || seen.has(entry.selector)) continue;
+      seen.add(entry.selector);
+      models.push({ id: entry.selector, label: entry.selector });
+    }
+    return models;
+  } catch {
+    return null;
+  }
+}
+
+/** OMP's JSON catalog uses selector as the exact --model value. */
+export function parseOmpModels(output: string): ModelOption[] {
+  return parseOmpModelCatalog(output) ?? [];
+}
+
 /**
  * Parse model list from codex debug models JSON output.
  * Filters to visibility:"list" models only.
@@ -226,6 +257,13 @@ async function discoverHarnessModelsAsync(harness: string): Promise<DiscoveryRes
     if (harness === 'pi') {
       const output = await runCommandOutput('pi', ['--list-models'], 6000);
       return { models: dedupeModels(parsePiModels(output)), discovered: true };
+    }
+
+    if (harness === 'omp') {
+      const output = await runCommandOutput('omp', ['models', '--json'], 8000);
+      const models = parseOmpModelCatalog(output);
+      if (!models) throw new Error('Malformed OMP model catalog');
+      return { models, discovered: true };
     }
   } catch {
     return {

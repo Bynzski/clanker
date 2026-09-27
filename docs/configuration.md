@@ -9,14 +9,14 @@ Access via the header toolbar gear icon.
 | Setting | Description | Default |
 |---------|-------------|---------|
 | Enable AI Commit | Generate commit messages with AI | Disabled |
-| Provider | AI service (Codex, OpenCode, Pi) | Codex |
+| Provider | AI service (Codex, OpenCode, Pi, Oh My Pi) | Codex |
 | Model | Model variant per provider | Varies |
 
 ### Harness Defaults
 
 Per-harness global defaults for AI harnesses. Configured in the header settings dropdown under **Harness Defaults**. These apply when spawning new terminals with a harness selected.
 
-Each harness (Codex, OpenCode, Pi, Claude) has its own settings:
+Each harness (Codex, OpenCode, Pi, Oh My Pi, Claude) has its own settings:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
@@ -51,8 +51,11 @@ All changes persist immediately to `electron-store`.
 
 When spawning a terminal with a harness:
 
-1. **Workspace harness + model** — highest priority, set per-workspace in the gate or header
-2. **Plain shell** — if no workspace harness is set, no harness is inferred from global defaults
+1. **Explicit launch model** — used when selected in the workspace gate or launcher
+2. **Harness default model** — used when no launch model was selected
+3. **Harness choice** — if neither is set, the CLI chooses its own model
+
+Plain shells have no model and do not inherit a harness from global defaults.
 
 Favorites are **never** used at spawn time — they only affect the picker/discovery UI.
 

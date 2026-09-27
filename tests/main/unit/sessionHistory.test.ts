@@ -93,8 +93,49 @@ import {
   SESSION_CACHE_TTL_MS,
   sessionMatchesWorkspace,
   encodeClaudeProjectDir,
+  parseOmpSessionMetadata,
 } from '../../../src/main/sessionHistory';
 import type { HarnessSession } from '../../../src/shared/types/session';
+
+describe('OMP session metadata', () => {
+  it('reads title before header and the latest model selector', () => {
+    expect(parseOmpSessionMetadata([
+      JSON.stringify({ type: 'title', title: 'Review this change' }),
+      JSON.stringify({ type: 'session', id: 'session-1', cwd: TEST_WORKSPACE, timestamp: '2026-09-27T10:00:00Z' }),
+      JSON.stringify({ type: 'model_change', model: 'openai-codex/gpt-5.5' }),
+      JSON.stringify({ type: 'model_change', model: 'anthropic/claude-sonnet-4-6' }),
+    ])).toEqual({ id: 'session-1', cwd: TEST_WORKSPACE, timestamp: '2026-09-27T10:00:00Z', title: 'Review this change', modelId: 'anthropic/claude-sonnet-4-6' });
+  });
+
+  it('discovers OMP files from their own session store and filters by workspace', async () => {
+    clearSessionCache();
+    vi.clearAllMocks();
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (error: Error) => void) => cb(new Error('not found')));
+    mockReaddir.mockImplementation((dir: string) => {
+      const normalized = toPosixPath(dir);
+      if (normalized.endsWith('/.omp/agent/sessions')) {
+        return Promise.resolve([{ name: 'project', isDirectory: () => true, isFile: () => false }]);
+      }
+      if (normalized.endsWith('/.omp/agent/sessions/project')) {
+        return Promise.resolve([
+          { name: 'one.jsonl', isDirectory: () => false, isFile: () => true },
+          { name: 'other.jsonl', isDirectory: () => false, isFile: () => true },
+        ]);
+      }
+      return Promise.reject(new Error('ENOENT'));
+    });
+    mockCreateReadStream.mockImplementation((filePath: string) => makeReadableLines([
+      JSON.stringify({ type: 'title', title: 'OMP task' }),
+      JSON.stringify({ type: 'session', id: path.basename(filePath), cwd: filePath.endsWith('one.jsonl') ? TEST_WORKSPACE : TEST_OTHER, timestamp: '2026-09-27T10:00:00Z' }),
+      JSON.stringify({ type: 'model_change', model: 'openai-codex/gpt-5.5' }),
+    ]));
+    const sessions = (await discoverSessions(TEST_WORKSPACE)).filter((session) => session.harness === 'omp');
+    expect(sessions).toEqual([expect.objectContaining({
+      id: 'one.jsonl', title: 'OMP task', cwd: TEST_WORKSPACE_POSIX,
+      modelId: 'openai-codex/gpt-5.5', filePath: expect.stringContaining('/.omp/agent/sessions/project/one.jsonl'),
+    })]);
+  });
+});
 
 // ============================================================================
 // Tests
@@ -212,6 +253,20 @@ describe('sessionMatchesWorkspace', () => {
 
 describe('buildSessionInvokeArgs', () => {
   const wrapper = TEST_HARNESS_WRAPPER;
+
+  it('builds OMP resume and fork commands with the session path', () => {
+    const filePath = path.join(TEST_HOME, '.omp', 'agent', 'sessions', 'project', 'session.jsonl');
+    const session: HarnessSession = {
+      id: 'session-1', harness: 'omp', title: 'Task', cwd: TEST_WORKSPACE,
+      timestamp: 1, modelId: 'openai-codex/gpt-5.5', filePath,
+    };
+    expect(buildSessionInvokeArgs(session, false, '--thinking high').spawnArgs).toEqual([
+      'omp', '--resume', toPosixPath(filePath), '--model', 'openai-codex/gpt-5.5', '--thinking', 'high',
+    ]);
+    expect(buildSessionInvokeArgs(session, true).spawnArgs).toEqual([
+      'omp', '--fork', toPosixPath(filePath), '--model', 'openai-codex/gpt-5.5',
+    ]);
+  });
 
   it('builds opencode resume args', () => {
     const session: HarnessSession = {

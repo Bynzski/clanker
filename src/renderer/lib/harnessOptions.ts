@@ -5,6 +5,7 @@ import codexLogoUrl from '../assets/harness-logos/codex.svg';
 import claudeLogoUrl from '../assets/harness-logos/claude.svg';
 import opencodeLogoUrl from '../assets/harness-logos/opencode.svg';
 import piLogoUrl from '../assets/harness-logos/pi.svg';
+import ompLogoUrl from '../assets/harness-logos/omp.svg';
 import { Terminal } from 'lucide-react';
 
 export interface HarnessIconProps {
@@ -40,6 +41,7 @@ const HARNESS_SVG_ICONS = {
   claude: createHarnessLogoIcon(claudeLogoUrl),
   opencode: createHarnessLogoIcon(opencodeLogoUrl),
   pi: createHarnessLogoIcon(piLogoUrl),
+  omp: createHarnessLogoIcon(ompLogoUrl),
 } as const;
 
 export const HARNESS_OPTIONS: HarnessOption[] = [
@@ -48,9 +50,10 @@ export const HARNESS_OPTIONS: HarnessOption[] = [
   { id: 'claude', label: 'Claude', Icon: HARNESS_SVG_ICONS.claude },
   { id: 'opencode', label: 'OpenCode', Icon: HARNESS_SVG_ICONS.opencode },
   { id: 'pi', label: 'Pi', Icon: HARNESS_SVG_ICONS.pi },
+  { id: 'omp', label: 'Oh My Pi', Icon: HARNESS_SVG_ICONS.omp },
 ];
 
-export const AI_COMMIT_PROVIDER_IDS = ['codex', 'opencode', 'pi'] as const;
+export const AI_COMMIT_PROVIDER_IDS = ['codex', 'opencode', 'pi', 'omp'] as const;
 
 export function resolveAvailableHarnessIds(
   options: Record<string, unknown>,

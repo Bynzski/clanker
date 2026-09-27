@@ -478,6 +478,7 @@ describe('settingsIpc — harness defaults IPC', () => {
       codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo', visible: true, attentionEnabled: false },
       opencode: { model: 'opencode/zen/big-pickle', favorites: [], flags: '', visible: true, attentionEnabled: false },
       pi: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
+      omp: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
       claude: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
     });
   });

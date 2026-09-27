@@ -33,6 +33,7 @@ When a harness exits, the terminal falls back to an interactive shell so the pan
 | Claude | `claude` | Anthropic Claude |
 | OpenCode | `opencode` | Open source agent |
 | Pi | `pi` | Mario Zechner agent |
+| Oh My Pi | `omp` | OMP coding agent |
 
 **Harness launch model — Linux / macOS:** Harnesses run as the direct PTY foreground job via a generated shell script (`~/.clanker-grid/harness-wrapper.sh`). When the harness exits, the wrapper script replaces itself with an interactive shell so the pane stays usable.
 
@@ -55,7 +56,7 @@ Terminal panes get short Grateful Dead inspired names such as Samson, Delilah, J
 
 In **Settings → Harness Defaults**, expand a harness and enable **Agent attention** for future launches. Clanker then uses that harness's supported hooks to show running, needs input, or turn complete in the pane header. Background needs-input and completed turns also mark the workspace tab. The bell button beside the tabs jumps to the next agent needing attention. Visiting a pane clears its highlight while keeping the status accurate. Plain shells have no agent status; unsupported hook signals show unknown.
 
-Agent attention is opt-in per harness and affects only new terminals. With attention off, the pane has no agent status label. With attention on, the label says unknown until a supported event arrives. It does not parse terminal screen text. Codex currently reports completion, Claude and OpenCode can also report input requests, and Pi reports running and settled turns. Hook availability can vary with CLI version and user configuration.
+Agent attention is opt-in per harness and affects only new terminals. With attention off, the pane has no agent status label. With attention on, the label says unknown until a supported event arrives. It does not parse terminal screen text. Codex currently reports completion, Claude and OpenCode can also report input requests, and Pi reports running and settled turns. OMP maps its agent loop start/end events to running and turn complete; this does not confirm that background work has settled. Hook availability can vary with CLI version and user configuration.
 
 ### Harness Default Models
 
@@ -77,12 +78,13 @@ The **Chat History** button (message icon) in the header opens a dropdown that d
 | Codex | `~/.codex/sessions/` (session_index.jsonl + JSONL files) |
 | OpenCode | `opencode session list --format json` |
 | Pi | `~/.pi/agent/sessions/` (JSONL session files) |
+| Oh My Pi | Default profile: `~/.omp/agent/sessions/` (JSONL session files) |
 
 **Features:**
 - Sessions are grouped by harness type with collapsible sections
 - Sessions are filtered by the current workspace path (shows only sessions from the workspace or its subdirectories)
 - Sessions are shown only for harness commands that are currently installed and available
-- Sessions display title (first user message), relative timestamp, and harness type
+- Sessions display a stored title or first user message, relative timestamp, and harness type
 - Click any session to resume it in a new terminal (respects harness default flags from settings)
 - Sessions are cached for 60 seconds to avoid repeated file system scans
 - Orphaned sessions (sessions not in the index) are automatically discovered and included
@@ -106,8 +108,12 @@ When creating a workspace, the gate provides a compact model selection flow:
 
 Notes:
 - Codex models are discovered from the CLI.
+- OMP models are discovered from `omp models --json`; the catalog may include models that require account credentials.
+- OMP history currently scans the default session directory only. Sessions stored by profiles or session directory overrides do not appear in Clanker's history.
 - Claude's model ID can be entered in **Settings → Harness Defaults**; the gate does not provide a free-text model field.
 - Unresolved models are shown with a warning indicator.
+
+See the [harness integration playbook](harness-integration.md) when adding another CLI.
 
 ### Terminal Count Presets
 

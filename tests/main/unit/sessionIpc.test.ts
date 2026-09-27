@@ -93,6 +93,18 @@ describe('registerSessionIpc', () => {
     mockSpawnPtyProcess.mockReset();
   });
 
+  it('rejects an OMP session without a JSONL file path', async () => {
+    const handlers = registerHandlers(vi.fn(() => ({
+      omp: { name: 'Oh My Pi', command: 'omp', args: [], icon: 'π' },
+    })));
+    const session: HarnessSession = {
+      id: 'session-1', harness: 'omp', title: 'Task', cwd: '/workspace',
+      timestamp: 1, filePath: '/workspace/session.txt',
+    };
+    await expect(handlers.get(SESSION_INVOKE)?.({}, session)).rejects.toThrow('OMP session file is invalid');
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+  });
+
   it('filters discovered sessions to currently available harnesses', async () => {
     mockDiscoverSessions.mockResolvedValue([codexSession, claudeSession]);
 

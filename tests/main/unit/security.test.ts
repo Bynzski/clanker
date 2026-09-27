@@ -9,6 +9,7 @@ import {
   normalizeExternalUrl,
   normalizeTrustedAppBrowserUrl,
   resolveExistingDirectory,
+  resolveExistingFileWithinDirectory,
 } from '../../../src/main/security';
 
 test('normalizeAppBrowserUrl allows only http and https URLs', () => {
@@ -44,5 +45,26 @@ test('resolveExistingDirectory returns the first existing directory candidate', 
     assert.equal(resolveExistingDirectory(path.join(tempRoot, 'missing')), null);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('resolveExistingFileWithinDirectory rejects traversal and symlink escapes', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-grid-session-security-'));
+  const sessions = path.join(root, 'sessions');
+  fs.mkdirSync(sessions);
+  const inside = path.join(sessions, 'inside.jsonl');
+  const outside = path.join(root, 'outside.jsonl');
+  fs.writeFileSync(inside, '{}\n');
+  fs.writeFileSync(outside, '{}\n');
+  if (process.platform !== 'win32') fs.symlinkSync(outside, path.join(sessions, 'linked.jsonl'));
+  try {
+    assert.equal(resolveExistingFileWithinDirectory(inside, sessions), inside);
+    assert.equal(resolveExistingFileWithinDirectory(outside, sessions), null);
+    if (process.platform !== 'win32') {
+      assert.equal(resolveExistingFileWithinDirectory(path.join(sessions, 'linked.jsonl'), sessions), null);
+    }
+    assert.equal(resolveExistingFileWithinDirectory(path.join(sessions, 'missing.jsonl'), sessions), null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

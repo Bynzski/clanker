@@ -5,7 +5,8 @@
  * - Store defaults (main.ts): initialises harnessDefaults entries
  * - Validation (main/harnessDefaultsValidation.ts): strips unknown harness IDs
  *
- * Adding a new harness requires updating this file only.
+ * New harnesses also need main/renderer catalogs and capability-specific adapters;
+ * see docs/harness-integration.md.
  */
-export const KNOWN_HARNESS_IDS = ['codex', 'opencode', 'pi', 'claude'] as const;
+export const KNOWN_HARNESS_IDS = ['codex', 'opencode', 'pi', 'omp', 'claude'] as const;
 export type HarnessId = typeof KNOWN_HARNESS_IDS[number];

@@ -22,7 +22,21 @@ import {
   parsePiModels,
   parseOpenCodeModels,
   parseCodexDebugModels,
+  parseOmpModels,
 } from '../../../src/main/harnessCatalog';
+
+describe('parseOmpModels', () => {
+  it('uses chat selectors and rejects malformed catalog entries', () => {
+    const output = JSON.stringify({ models: [
+      { kind: 'chat', selector: 'openai-codex/gpt-5.5', name: 'GPT-5.5' },
+      { kind: 'chat', selector: 'openai-codex/gpt-5.5' },
+      { kind: 'embedding', selector: 'provider/embed' },
+      { kind: 'chat', selector: 42 },
+    ] });
+    expect(parseOmpModels(output)).toEqual([{ id: 'openai-codex/gpt-5.5', label: 'openai-codex/gpt-5.5' }]);
+    expect(parseOmpModels('{')).toEqual([]);
+  });
+});
 
 // ============================================================================
 // normalizeModelLine Tests
@@ -382,9 +396,9 @@ describe('parseCodexDebugModels', () => {
 // ============================================================================
 
 describe('HARNESS_OPTIONS', () => {
-  it('contains all four harness configs', () => {
+  it('contains all harness configs', () => {
     const keys = Object.keys(HARNESS_OPTIONS).sort();
-    expect(keys).toEqual(['claude', 'codex', 'opencode', 'pi']);
+    expect(keys).toEqual(['claude', 'codex', 'omp', 'opencode', 'pi']);
   });
 
   it('each config has required fields', () => {
@@ -400,6 +414,7 @@ describe('HARNESS_OPTIONS', () => {
     expect(HARNESS_OPTIONS.codex.command).toBe('codex');
     expect(HARNESS_OPTIONS.opencode.command).toBe('opencode');
     expect(HARNESS_OPTIONS.pi.command).toBe('pi');
+    expect(HARNESS_OPTIONS.omp.command).toBe('omp');
     expect(HARNESS_OPTIONS.claude.command).toBe('claude');
   });
 
@@ -419,6 +434,7 @@ describe('HARNESS_OPTIONS', () => {
 
   it('pi uses --model argument', () => {
     expect(HARNESS_OPTIONS.pi.modelArg).toBe('--model');
+    expect(HARNESS_OPTIONS.omp.modelArg).toBe('--model');
   });
 
   it('opencode has permission env configured', () => {

@@ -117,6 +117,15 @@ describe('discoverHarnessModels cache integration', () => {
     }));
   });
 
+  it('does not cache malformed OMP model output', async () => {
+    mockExecFile.mockImplementation((_command: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
+      callback(null, '{"models":', '');
+    });
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    expect(await discoverHarnessModels('omp')).toEqual([]);
+    expect(mockStoreInstance.set).not.toHaveBeenCalled();
+  });
+
   it('returns empty array for claude (no CLI discovery available)', async () => {
     mockStoreInstance.get.mockReturnValue({});
 
@@ -347,7 +356,7 @@ describe('getAvailableHarnessOptions', () => {
     const availableKeys = Object.keys(result);
 
     // All returned keys should be valid harness names
-    const validKeys = ['codex', 'opencode', 'pi', 'claude'];
+    const validKeys = ['codex', 'opencode', 'pi', 'omp', 'claude'];
     for (const key of availableKeys) {
       expect(validKeys).toContain(key);
     }
@@ -556,7 +565,7 @@ describe('harness discovery integration', () => {
   it('model IDs are properly formatted across all harnesses', async () => {
     const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
     
-    const harnesses = ['codex', 'opencode', 'pi', 'claude'];
+    const harnesses = ['codex', 'opencode', 'pi', 'omp', 'claude'];
     for (const harness of harnesses) {
       const models = await discoverHarnessModels(harness);
       
@@ -573,7 +582,7 @@ describe('harness discovery integration', () => {
   it('no duplicate model IDs returned for any harness', async () => {
     const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
     
-    const harnesses = ['codex', 'opencode', 'pi', 'claude'];
+    const harnesses = ['codex', 'opencode', 'pi', 'omp', 'claude'];
     for (const harness of harnesses) {
       const models = await discoverHarnessModels(harness);
       const ids = models.map(m => m.id);

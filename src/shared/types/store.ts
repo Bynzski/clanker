@@ -13,11 +13,11 @@
  */
 
 /**
- * AI commit provider — limited to 3 supported providers.
+ * AI commit provider allowlist.
  * Inlined here to keep shared/types/ self-contained and avoid a main→shared import.
  * aiCommit.ts defines and exports its own AiCommitProvider for internal use.
  */
-export type AiCommitProvider = 'codex' | 'opencode' | 'pi';
+export type AiCommitProvider = 'codex' | 'opencode' | 'pi' | 'omp';
 
 /**
  * Per-harness default settings.

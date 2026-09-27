@@ -105,7 +105,7 @@ export default function ChatHistoryDropdown({
     grouped[session.harness].push(session);
   }
 
-  const harnessOrder = ['claude', 'codex', 'opencode', 'pi'];
+  const harnessOrder = HARNESS_OPTIONS.map((option) => option.id).filter(Boolean);
   const sortedHarnesses = Object.keys(grouped).sort(
     (a, b) => harnessOrder.indexOf(a) - harnessOrder.indexOf(b)
   );

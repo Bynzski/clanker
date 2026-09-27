@@ -103,3 +103,16 @@ export function resolveExistingDirectory(dirPath: string, fallback?: string): st
 
   return null;
 }
+
+/** Resolve a regular file while keeping the target inside an allowed directory. */
+export function resolveExistingFileWithinDirectory(filePath: string, directory: string): string | null {
+  try {
+    const root = fs.realpathSync(directory);
+    const file = fs.realpathSync(filePath);
+    const relative = path.relative(root, file);
+    if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
+    return fs.statSync(file).isFile() ? file : null;
+  } catch {
+    return null;
+  }
+}

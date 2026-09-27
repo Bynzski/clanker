@@ -129,7 +129,7 @@ Browser annotation feature for capturing structured element descriptions:
 | `harnessLaunch.ts` | Harness launch helpers. On Linux/macOS, manages the generated `~/.clanker-grid/harness-wrapper.sh` used for PTY spawning. On Windows, skips wrapper generation and uses `resolveHarnessSpawn()` to wrap commands in `cmd.exe /c` so npm-installed `.cmd` shims resolve correctly. |
 | `platformShell.ts` | Single source of truth for default shell (`powershell.exe` on Windows, `$SHELL`/`bash` elsewhere) and `~/.local/bin` PATH prepending. |
 | `harnessCatalog.ts` | `getAvailableHarnessOptions()` and `discoverHarnessModels()` — detects installed harnesses and available models. |
-| `sessionHistory.ts` | Chat history discovery from Claude, Codex, OpenCode, and Pi session stores. Caches results for 60 seconds. |
+| `sessionHistory.ts` | Chat history discovery from Claude, Codex, OpenCode, Pi, and OMP session stores. Caches results for 60 seconds. |
 | `fileService.ts` | File read/write operations. Used by `fileIpc.ts`. |
 | `fileWatcher.ts` | Watches open editor files for external changes. |
 | `explorerWatcher.ts` | Watches the active workspace's explorer tree for file changes. |

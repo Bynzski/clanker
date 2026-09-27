@@ -5,6 +5,8 @@
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import Store from 'electron-store';
 import { type StoreSchema } from '../../shared/types/store';
 import { discoverSessions, buildSessionInvokeArgs } from '../sessionHistory';
@@ -14,6 +16,7 @@ import type { Terminal } from './terminalIpc';
 import type { HarnessSession } from '../../shared/types/session';
 import { defaultShell } from '../platformShell';
 import { toNativePath } from '../../shared/pathNormalize';
+import { resolveExistingFileWithinDirectory } from '../security';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { attentionLaunchOptions, ensureAttentionAdapterFiles, withoutAttentionEnvironment } from '../agentAttentionAdapters';
 
@@ -50,6 +53,17 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       throw new Error(`${session.harness} harness is not available`);
     }
 
+    // OMP resumes by path; reject renderer-supplied paths outside its session store.
+    const ompSessionPath = session.harness === 'omp' && session.filePath?.endsWith('.jsonl')
+      ? resolveExistingFileWithinDirectory(
+        toNativePath(session.filePath, process.platform),
+        path.join(os.homedir(), '.omp', 'agent', 'sessions'),
+      )
+      : null;
+    if (session.harness === 'omp' && !ompSessionPath) {
+      throw new Error('OMP session file is invalid');
+    }
+
     // Look up per-harness default flags from store — same source as SPAWN_TERMINAL
     const harnessDefaults = store.get('harnessDefaults');
     const attentionEnabled = harnessDefaults[session.harness]?.attentionEnabled === true;
@@ -58,7 +72,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     const nativeSession = {
       ...session,
       cwd: toNativePath(session.cwd, process.platform),
-      ...(session.filePath ? { filePath: toNativePath(session.filePath, process.platform) } : {}),
+      ...(session.filePath ? { filePath: ompSessionPath ?? toNativePath(session.filePath, process.platform) } : {}),
     };
 
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;

@@ -7,6 +7,7 @@ export interface AttentionAdapterFiles {
   claudeSettings: string;
   opencodeDirectory: string;
   piExtension: string;
+  ompExtension: string;
 }
 
 let files: AttentionAdapterFiles | null = null;
@@ -75,6 +76,14 @@ export default function (pi) {
 }
 `;
 
+const OMP = `import { emit } from './observer.mjs';
+export default function (omp) {
+  omp.on('agent_start', (_event, ctx) => emit('turn_started', ctx.sessionManager?.getSessionId?.()));
+  omp.on('agent_end', (_event, ctx) => emit('turn_completed', ctx.sessionManager?.getSessionId?.()));
+  omp.on('session_shutdown', (_event, ctx) => emit('session_ended', ctx.sessionManager?.getSessionId?.()));
+}
+`;
+
 const OPENCODE = `import { emit } from '../observer.mjs';
 let activeSession = process.env.CLANKER_ATTENTION_SESSION_ID || null;
 export const ClankerAttention = async () => ({
@@ -118,11 +127,13 @@ export function ensureAttentionAdapterFiles(): AttentionAdapterFiles {
   fs.writeFileSync(command, COMMAND, { mode: 0o600 });
   const piExtension = path.join(root, 'pi.ts');
   fs.writeFileSync(piExtension, PI, { mode: 0o600 });
+  const ompExtension = path.join(root, 'omp.ts');
+  fs.writeFileSync(ompExtension, OMP, { mode: 0o600 });
   fs.writeFileSync(path.join(opencodeDirectory, 'observer.mjs'), OBSERVER, { mode: 0o600 });
   fs.writeFileSync(path.join(opencodeDirectory, 'plugins', 'clanker-attention.js'), OPENCODE, { mode: 0o600 });
   const claudeSettings = path.join(root, 'claude-settings.json');
   fs.writeFileSync(claudeSettings, JSON.stringify(claudeAttentionSettings(command, process.platform)), { mode: 0o600 });
-  files = { command, claudeSettings, opencodeDirectory, piExtension };
+  files = { command, claudeSettings, opencodeDirectory, piExtension, ompExtension };
   return files;
 }
 
@@ -142,6 +153,7 @@ export function attentionLaunchOptions(
   platform: NodeJS.Platform = process.platform,
 ): { args: string[]; env: Record<string, string> } | null {
   if (harness === 'pi') return { args: [...args, '--extension', adapterFiles.piExtension], env: {} };
+  if (harness === 'omp') return { args: [...args, '--extension', adapterFiles.ompExtension], env: {} };
   if (harness === 'claude') {
     if (args.some((arg) => arg === '--bare' || arg === '--safe-mode' || arg.startsWith('--settings'))) return null;
     return { args: [...args, '--settings', adapterFiles.claudeSettings], env: {} };

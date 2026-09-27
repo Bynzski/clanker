@@ -22,11 +22,12 @@ import {
 // ============================================================================
 
 describe('AI_COMMIT_COMMANDS structure', () => {
-  it('contains all three providers', () => {
-    expect(Object.keys(AI_COMMIT_COMMANDS)).toHaveLength(3);
+  it('contains all supported providers', () => {
+    expect(Object.keys(AI_COMMIT_COMMANDS)).toHaveLength(4);
     expect(AI_COMMIT_COMMANDS).toHaveProperty('codex');
     expect(AI_COMMIT_COMMANDS).toHaveProperty('opencode');
     expect(AI_COMMIT_COMMANDS).toHaveProperty('pi');
+    expect(AI_COMMIT_COMMANDS).toHaveProperty('omp');
   });
 
   it('each provider has required fields', () => {
@@ -51,6 +52,15 @@ describe('AI_COMMIT_COMMANDS structure', () => {
   it('pi uses --model flag', () => {
     expect(AI_COMMIT_COMMANDS.pi.command).toBe('pi');
     expect(AI_COMMIT_COMMANDS.pi.modelArg).toBe('--model');
+  });
+
+  it('OMP uses isolated print mode', () => {
+    expect(AI_COMMIT_COMMANDS.omp).toEqual({
+      command: 'omp', args: ['--print', '--no-session', '--no-tools', '--no-extensions'], modelArg: '--model',
+    });
+    expect(buildAiCommitArgs('omp', 'openai-codex/gpt-5.5')).toEqual([
+      '--print', '--no-session', '--no-tools', '--no-extensions', '--model', 'openai-codex/gpt-5.5',
+    ]);
   });
 });
 

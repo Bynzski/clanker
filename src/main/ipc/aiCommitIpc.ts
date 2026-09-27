@@ -14,6 +14,8 @@ import {
 } from '../security';
 import { toNativePath } from '../../shared/pathNormalize';
 import { GitService } from '../gitService';
+import { resolveHarnessSpawn } from '../harnessLaunch';
+import { prependUserCliBinsToPath } from '../platformShell';
 import {
   AI_COMMIT_COMMANDS,
   buildAiCommitArgs,
@@ -41,10 +43,12 @@ function runCommandWithInput(
   cwd?: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+    const { spawnCmd, spawnArgs } = resolveHarnessSpawn(command, args, null);
+    const child = spawn(spawnCmd, spawnArgs, {
       cwd,
       env: {
         ...process.env,
+        PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
         ...extraEnv,
       } as { [key: string]: string },
       stdio: ['pipe', 'pipe', 'pipe'],

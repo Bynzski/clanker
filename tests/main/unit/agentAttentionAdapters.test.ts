@@ -12,6 +12,9 @@ describe('agent attention launch adapters', () => {
   it('adds Pi and Claude observers without removing existing flags', () => {
     expect(attentionLaunchOptions('pi', ['--model', 'x', '--no-extensions'], {}, files)?.args)
       .toEqual(['--model', 'x', '--no-extensions', '--extension', files.piExtension]);
+    expect(attentionLaunchOptions('omp', ['--model', 'x'], {}, files)?.args)
+      .toEqual(['--model', 'x', '--extension', files.ompExtension]);
+    expect(fs.readFileSync(files.ompExtension, 'utf8')).toContain("omp.on('agent_end'");
     expect(attentionLaunchOptions('claude', ['--model', 'x'], {}, files)?.args)
       .toEqual(['--model', 'x', '--settings', files.claudeSettings]);
     expect(attentionLaunchOptions('claude', ['--settings', 'custom.json'], {}, files)).toBeNull();

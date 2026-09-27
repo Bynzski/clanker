@@ -8,6 +8,6 @@ export interface HarnessSession {
   timestamp: number;
   modelId?: string;
   provider?: string;
-  /** Required for Pi — pi --session takes a file path, not an ID */
+  /** File path used by Pi and OMP for precise session resume/fork. */
   filePath?: string;
 }

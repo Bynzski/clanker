@@ -71,6 +71,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
       codex: { model: '', favorites: [], flags: '' },
       opencode: { model: '', favorites: [], flags: '' },
       pi: { model: '', favorites: [], flags: '' },
+      omp: { model: '', favorites: [], flags: '' },
       claude: { model: '', favorites: [], flags: '' },
     }),
     setHarnessDefaults: createAsyncMock(undefined),
