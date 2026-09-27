@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-27
+
+### Added
+
+- **Oh My Pi harness** — launch Oh My Pi sessions, discover models, resume chat history, track agent attention, and use AI-assisted commit messages.
+- **Hermes harness** — launch Hermes sessions and discover available models.
+
+### Fixed
+
+- **Chat history titles** — disambiguate duplicate titles so sessions remain distinguishable.
+
+### Changed
+
+- **Linux-only release artifact** — `0.4.0` ships as a Linux AppImage. No Windows binary is produced for this release; Windows remains covered by CI validation.
+
 ## [0.3.0] - 2026-09-26
 
 ### Added
@@ -237,8 +252,8 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/Bynzski/clanker/compare/v0.2.5...v0.3.0
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Bynzski/clanker/compare/v0.3.0...v0.4.0
 [0.2.5]: https://github.com/Bynzski/clanker/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Bynzski/clanker/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Bynzski/clanker/compare/v0.2.2...v0.2.3
