@@ -178,7 +178,7 @@ interface ElectronAPI {
   getWindowZoomFactor: () => number;
 
   getHarnessOptions: () => Promise<Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>>;
-  getHarnessModels: (harness: string) => Promise<ModelOption[]>;
+  getHarnessModels: (harness: string, refresh?: boolean) => Promise<ModelOption[]>;
   getHarnessDefaults: () => Promise<HarnessDefaultsMap>;
   setHarnessDefaults: (defaults: HarnessDefaultsMap) => Promise<void>;
 

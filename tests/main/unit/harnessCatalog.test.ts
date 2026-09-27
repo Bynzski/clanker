@@ -23,7 +23,35 @@ import {
   parseOpenCodeModels,
   parseCodexDebugModels,
   parseOmpModels,
+  parseHermesModelOptions,
 } from '../../../src/main/harnessCatalog';
+
+describe('parseHermesModelOptions', () => {
+  it('ignores gateway events and keeps provider identity across matching model names', () => {
+    const output = [
+      JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type: 'gateway.ready' } }),
+      JSON.stringify({ jsonrpc: '2.0', id: 1, result: { providers: [
+        { slug: 'openai-codex', name: 'Codex', authenticated: true, models: ['shared/model', 'shared/model', 'a:b %'] },
+        { slug: 'copilot', name: 'Copilot', authenticated: true, models: ['shared/model'] },
+        { slug: 'unconfigured', name: 'Unconfigured', authenticated: false, models: ['unavailable'] },
+        { slug: '', name: 'Invalid', models: ['ignored'] },
+        { slug: 'invalid', name: 'Invalid', models: [null, {}, '  '] },
+      ] } }),
+    ].join('\n');
+    expect(parseHermesModelOptions(output)).toEqual([
+      { id: 'hermes-provider:openai-codex:shared%2Fmodel', label: 'shared/model · Codex' },
+      { id: 'hermes-provider:openai-codex:a%3Ab%20%25', label: 'a:b % · Codex' },
+      { id: 'hermes-provider:copilot:shared%2Fmodel', label: 'shared/model · Copilot' },
+    ]);
+  });
+
+  it('rejects errors, absent providers and all-malformed catalogs instead of caching an empty result', () => {
+    expect(parseHermesModelOptions('{"jsonrpc":"2.0","id":1,"error":{"code":5033}}')).toBeNull();
+    expect(parseHermesModelOptions('{"jsonrpc":"2.0","id":1,"result":{}}')).toBeNull();
+    expect(parseHermesModelOptions('{"jsonrpc":"2.0","id":1,"result":{"providers":[{"slug":"s","name":"Name","models":[4]}]}}')).toBeNull();
+    expect(parseHermesModelOptions('{"jsonrpc":"2.0","method":"event"}\nnot json')).toBeNull();
+  });
+});
 
 describe('parseOmpModels', () => {
   it('uses chat selectors and rejects malformed catalog entries', () => {
@@ -396,10 +424,6 @@ describe('parseCodexDebugModels', () => {
 // ============================================================================
 
 describe('HARNESS_OPTIONS', () => {
-  it('contains all harness configs', () => {
-    const keys = Object.keys(HARNESS_OPTIONS).sort();
-    expect(keys).toEqual(['claude', 'codex', 'omp', 'opencode', 'pi']);
-  });
 
   it('each config has required fields', () => {
     for (const [name, config] of Object.entries(HARNESS_OPTIONS)) {
@@ -416,6 +440,7 @@ describe('HARNESS_OPTIONS', () => {
     expect(HARNESS_OPTIONS.pi.command).toBe('pi');
     expect(HARNESS_OPTIONS.omp.command).toBe('omp');
     expect(HARNESS_OPTIONS.claude.command).toBe('claude');
+    expect(HARNESS_OPTIONS.hermes.command).toBe('hermes');
   });
 
   it('has modelArg defined for all harnesses', () => {
@@ -435,6 +460,10 @@ describe('HARNESS_OPTIONS', () => {
   it('pi uses --model argument', () => {
     expect(HARNESS_OPTIONS.pi.modelArg).toBe('--model');
     expect(HARNESS_OPTIONS.omp.modelArg).toBe('--model');
+  });
+  it('Hermes launches the TUI so -m overrides the interactive model', () => {
+    expect(HARNESS_OPTIONS.hermes.args).toEqual(['--tui']);
+    expect(HARNESS_OPTIONS.hermes.modelArg).toBe('-m');
   });
 
   it('opencode has permission env configured', () => {

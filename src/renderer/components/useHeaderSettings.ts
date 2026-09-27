@@ -273,15 +273,17 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
     }
   };
 
-  const loadHarnessModels = async (harnessId: string) => {
-    if (harnessModelCache[harnessId] !== undefined) return;
+  const loadHarnessModels = async (harnessId: string, refresh = false) => {
+    if (!refresh && harnessModelCache[harnessId] !== undefined) return;
     setHarnessModelLoading((prev) => ({ ...prev, [harnessId]: true }));
     try {
-      const models = await window.electronAPI.getHarnessModels(harnessId);
+      const models = refresh && harnessId === 'hermes'
+        ? await window.electronAPI.getHarnessModels(harnessId, true)
+        : await window.electronAPI.getHarnessModels(harnessId);
       setHarnessModelCache((prev) => ({ ...prev, [harnessId]: models }));
     } catch (err) {
       console.error(`Failed to load models for ${harnessId}:`, err);
-      setHarnessModelCache((prev) => ({ ...prev, [harnessId]: [] }));
+      if (!refresh) setHarnessModelCache((prev) => ({ ...prev, [harnessId]: [] }));
     } finally {
       setHarnessModelLoading((prev) => ({ ...prev, [harnessId]: false }));
     }

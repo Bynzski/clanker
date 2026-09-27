@@ -480,6 +480,7 @@ describe('settingsIpc — harness defaults IPC', () => {
       pi: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
       omp: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
       claude: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
+      hermes: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
     });
   });
 

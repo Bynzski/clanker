@@ -80,7 +80,7 @@ describe('validateHarnessDefaultsMap', () => {
     it('fills missing harness IDs with defaults', () => {
       const input = {
         codex: { model: 'gpt-4', favorites: [], flags: '' },
-        // opencode, pi, claude are missing
+        // opencode, pi, omp, claude, hermes are missing
       };
       const result = validateHarnessDefaultsMap(input);
       expect(result.valid).toBe(true);
@@ -89,6 +89,7 @@ describe('validateHarnessDefaultsMap', () => {
         expect(result.sanitized.opencode).toEqual(DEFAULT_ENTRY);
         expect(result.sanitized.pi).toEqual(DEFAULT_ENTRY);
         expect(result.sanitized.claude).toEqual(DEFAULT_ENTRY);
+        expect(result.sanitized.hermes).toEqual(DEFAULT_ENTRY);
       }
     });
   });

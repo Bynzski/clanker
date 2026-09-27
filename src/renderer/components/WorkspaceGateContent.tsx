@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog, GitBranch, ArrowLeft } from 'lucide-react';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds, resolveVisibleHarnessIds } from '../lib/harnessOptions';
+import { hermesModelDisplay, hermesModelLabel } from '../lib/hermesModelDisplay';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { isAbsoluteWorkspacePath } from '../../shared/pathClassify';
@@ -45,6 +46,16 @@ export const TERMINAL_PRESETS = [
   { count: 4, label: '4', description: 'Four terminals' },
 ];
 
+function HermesModelName({ option }: { option: ModelOption }) {
+  const { model, provider } = hermesModelDisplay(option);
+  return (
+    <span className="hermes-model-name" title={hermesModelLabel(option)}>
+      <span className="hermes-model-id">{model}</span>
+      {provider && <span className="hermes-model-provider">{provider}</span>}
+    </span>
+  );
+}
+
 export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentProps) {
   const [inputValue, setInputValue] = useState(initialPath || '');
   const [baseDirectory, setBaseDirectory] = useState<string>('');
@@ -62,11 +73,18 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
   const [favorites, setFavorites] = useState<string[]>([]);
   const [allModels, setAllModels] = useState<Record<string, ModelOption[]>>({});
   const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [isRefreshingHermesModels, setIsRefreshingHermesModels] = useState(false);
+  const refreshedHermesModelsRef = useRef<ModelOption[] | null>(null);
   // Compact picker state
   const [showFavoritesPicker, setShowFavoritesPicker] = useState(false);
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
   const [discoverySearch, setDiscoverySearch] = useState('');
-  const [defaultModel, setDefaultModel] = useState<string>('');
+  const [modelOverrides, setModelOverrides] = useState<Record<string, string>>({});
+  const defaultModel = modelOverrides[selectedHarness] ?? harnessDefaults?.[selectedHarness]?.model ?? '';
+  const selectedModelOption = modelOptions.find((model) => model.id === defaultModel);
+  const setDefaultModel = (modelId: string) => {
+    setModelOverrides((overrides) => ({ ...overrides, [selectedHarness]: modelId }));
+  };
   const [workspaceMode, setWorkspaceMode] = useState<'directory' | 'worktree'>('directory');
   const [hasViewedWorktree, setHasViewedWorktree] = useState(false);
   const [repoCheck, setRepoCheck] = useState<{ path: string; isRepo: boolean } | null>(null);
@@ -86,23 +104,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     () => resolveVisibleHarnessIds(availableHarnessIds, harnessDefaults),
     [availableHarnessIds, harnessDefaults],
   );
-
-  // Load harnessDefaults from electron-store on mount
-  useEffect(() => {
-    const loadDefaults = async () => {
-      try {
-        const defaults = await window.electronAPI.getHarnessDefaults();
-        setHarnessDefaults(defaults);
-        if (defaults[selectedHarness]) {
-          setFavorites(defaults[selectedHarness].favorites);
-          setDefaultModel(defaults[selectedHarness].model || '');
-        }
-      } catch {
-        // ignore load errors — defaults handle empty state
-      }
-    };
-    void loadDefaults();
-  }, [selectedHarness]);
 
   const toggleFavorite = useCallback(
     async (harnessId: string, modelId: string) => {
@@ -127,20 +128,20 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     []
   );
 
-  // Keep favorites in sync when selected harness changes
+  // Load settings for the selected harness. A prior request must not apply
+  // after switching harnesses, while local model selections take precedence.
   useEffect(() => {
-    const loadFavorites = async () => {
-      try {
-        const defaults = await window.electronAPI.getHarnessDefaults();
+    let cancelled = false;
+    void window.electronAPI.getHarnessDefaults()
+      .then((defaults) => {
+        if (cancelled) return;
         setHarnessDefaults(defaults);
-        setFavorites(defaults[selectedHarness]?.favorites || []);
-        setDefaultModel(defaults[selectedHarness]?.model || '');
-      } catch {
-        setFavorites([]);
-        setDefaultModel('');
-      }
-    };
-    void loadFavorites();
+        setFavorites(defaults[selectedHarness]?.favorites ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setFavorites([]);
+      });
+    return () => { cancelled = true; };
   }, [selectedHarness]);
 
   useEffect(() => {
@@ -235,12 +236,16 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
           })
         );
         if (!cancelled) {
-          setAllModels(modelsMap);
+          setAllModels(refreshedHermesModelsRef.current
+            ? { ...modelsMap, hermes: refreshedHermesModelsRef.current }
+            : modelsMap);
           setModelsLoaded(true);
           // Set initial model options for the default harness
           const defaultHarness = availableIds.includes('codex') ? 'codex' : availableIds.find((id) => id !== '') || '';
           if (defaultHarness && modelsMap[defaultHarness]) {
-            setModelOptions(modelsMap[defaultHarness]);
+            setModelOptions(defaultHarness === 'hermes'
+              ? refreshedHermesModelsRef.current ?? modelsMap[defaultHarness]
+              : modelsMap[defaultHarness]);
           }
         }
       } catch {
@@ -276,6 +281,18 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       setModelOptions([]);
     }
   }, [selectedHarness, allModels, modelsLoaded]);
+  const refreshHermesModels = async () => {
+    setIsRefreshingHermesModels(true);
+    try {
+      const models = await window.electronAPI.getHarnessModels('hermes', true);
+      refreshedHermesModelsRef.current = models;
+      setAllModels((current) => ({ ...current, hermes: models }));
+    } catch (error) {
+      console.error('Failed to refresh Hermes models:', error);
+    } finally {
+      setIsRefreshingHermesModels(false);
+    }
+  };
 
   // Close favorites picker on outside click
   useEffect(() => {
@@ -431,15 +448,15 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
 
   const handleHarnessChange = (harness: string) => {
     setSelectedHarness(harness);
-    setModelOptions([]);
+    setModelOptions(allModels[harness] ?? []);
     setShowFavoritesPicker(false);
     setShowDiscoveryModal(false);
   };
 
   const launchPath = (path: string) => {
     const preset = TERMINAL_PRESETS[selectedPreset];
-    // Use defaultModel (from store) as the launch model, falling back to first available
-    const launchModel = defaultModel || modelOptions[0]?.id || undefined;
+    // Hermes keeps its own default when no explicit model is chosen.
+    const launchModel = defaultModel || (selectedHarness === 'hermes' ? undefined : modelOptions[0]?.id);
     onSubmit({
       path,
       terminalCount: preset.count,
@@ -546,9 +563,9 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
 
   // Determine if the current default model is unresolved
   const isModelUnresolved = useCallback((modelId: string): boolean => {
-    if (!modelId) return false;
+    if (!modelId || selectedHarness === 'hermes') return false;
     return !modelOptions.some((m) => m.id === modelId);
-  }, [modelOptions]);
+  }, [modelOptions, selectedHarness]);
 
   // Sort models: favorites first, then alphabetically
   const sortedModelOptions = useMemo(() => {
@@ -674,26 +691,59 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       {showModelSelector && (
         <div className="model-picker">
           <span className="gate-section-label">Model</span>
+          {selectedHarness === 'hermes' && modelOptions.length === 0 && (
+            <button
+              type="button"
+              className="gate-model-refresh"
+              onClick={() => void refreshHermesModels()}
+              disabled={isRefreshingHermesModels}
+            >
+              {isRefreshingHermesModels ? 'Refreshing…' : 'Refresh Hermes models'}
+            </button>
+          )}
+          {selectedHarness === 'hermes' && modelOptions.length === 0 ? (
+            <input
+              type="text"
+              className="settings-select"
+              aria-label="Hermes model"
+              placeholder="Use Hermes default"
+              value={defaultModel}
+              onChange={(event) => setDefaultModel(event.target.value)}
+            />
+          ) : (
+          <>
           {/* Compact model pill */}
           <button
             type="button"
-            className="model-pill"
+            className={`model-pill ${selectedHarness === 'hermes' ? 'hermes-model-pill' : ''}`}
             onClick={() => {
               setShowFavoritesPicker(true);
               setShowDiscoveryModal(false);
             }}
             title="Change model"
           >
-            <span className={`model-pill-label ${isModelUnresolved(defaultModel) ? 'unresolved' : ''}`}>
-              {defaultModel
-                ? (modelOptions.find((m) => m.id === defaultModel)?.label ?? defaultModel)
-                : 'Default model'}
+            <span className={`model-pill-label ${selectedHarness === 'hermes' ? 'hermes-model-label' : ''} ${isModelUnresolved(defaultModel) ? 'unresolved' : ''}`}>
+              {selectedHarness === 'hermes' && selectedModelOption
+                ? <HermesModelName option={selectedModelOption} />
+                : defaultModel
+                  ? selectedModelOption?.label ?? defaultModel
+                  : 'Default model'}
             </span>
             {isModelUnresolved(defaultModel) && (
               <AlertTriangle size={12} className="model-pill-warning" />
             )}
             <ChevronDown size={12} strokeWidth={2.5} className="model-pill-caret" />
           </button>
+          {selectedHarness === 'hermes' && (
+            <input
+              type="text"
+              className="settings-select"
+              aria-label="Hermes model"
+              placeholder="Enter custom model"
+              value={modelOptions.some((model) => model.id === defaultModel) ? '' : defaultModel}
+              onChange={(event) => setDefaultModel(event.target.value)}
+            />
+          )}
 
           {/* Favorites picker popover */}
           {showFavoritesPicker && (
@@ -705,7 +755,11 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
               {favorites.length === 0 ? (
                 <div className="favorites-empty">
                   <span className="favorites-empty-text">
-                    {defaultModel ? modelOptions.find((m) => m.id === defaultModel)?.label ?? 'Default model' : 'No default set'}
+                    {selectedHarness === 'hermes' && selectedModelOption
+                      ? <HermesModelName option={selectedModelOption} />
+                      : defaultModel
+                        ? selectedModelOption?.label ?? 'Default model'
+                        : 'No default set'}
                   </span>
                 </div>
               ) : (
@@ -733,8 +787,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
                       >
                         <Star size={12} fill="currentColor" />
                       </button>
-                      <span className="favorites-model-label">
-                        {model?.label ?? favId}
+                      <span className={`favorites-model-label ${selectedHarness === 'hermes' ? 'hermes-favorite-label' : ''}`}>
+                        {model && selectedHarness === 'hermes' ? <HermesModelName option={model} /> : model?.label ?? favId}
                         {isUnresolved && (
                           <AlertTriangle size={10} className="favorites-unresolved-icon" />
                         )}
@@ -745,6 +799,18 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
                     </div>
                   );
                 })
+              )}
+              {selectedHarness === 'hermes' && (
+                <button
+                  type="button"
+                  className="favorites-browse-link"
+                  onClick={() => {
+                    setDefaultModel(harnessDefaults?.hermes?.model ?? '');
+                    setShowFavoritesPicker(false);
+                  }}
+                >
+                  {harnessDefaults?.hermes?.model ? 'Use saved default' : 'Use Hermes default'}
+                </button>
               )}
               <button
                 type="button"
@@ -765,6 +831,16 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
             <div className="discovery-modal">
               <div className="discovery-header">
                 <span className="discovery-title">All Models</span>
+                {selectedHarness === 'hermes' && (
+                  <button
+                    type="button"
+                    className="discovery-refresh"
+                    onClick={() => void refreshHermesModels()}
+                    disabled={isRefreshingHermesModels}
+                  >
+                    {isRefreshingHermesModels ? 'Refreshing…' : 'Refresh Hermes models'}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="discovery-close"
@@ -813,7 +889,13 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
                         >
                           <Star size={12} fill={isFav ? 'currentColor' : 'none'} />
                         </button>
-                        <span className="discovery-model-label">{model.label}</span>
+                        {selectedHarness === 'hermes' ? (
+                          <span className="discovery-model-label hermes-model-label">
+                            <HermesModelName option={model} />
+                          </span>
+                        ) : (
+                          <span className="discovery-model-label">{model.label}</span>
+                        )}
                         {isSelected && (
                           <Check size={12} strokeWidth={2.5} className="discovery-check" />
                         )}
@@ -823,6 +905,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
                 )}
               </div>
             </div>
+          )}
+          </>
           )}
         </div>
       )}

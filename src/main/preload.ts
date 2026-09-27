@@ -307,7 +307,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Harness
   getHarnessOptions: () => ipcRenderer.invoke(GET_HARNESS_OPTIONS),
-  getHarnessModels: (harness: string) => ipcRenderer.invoke(GET_HARNESS_MODELS, harness),
+  getHarnessModels: (harness: string, refresh?: boolean) => ipcRenderer.invoke(GET_HARNESS_MODELS, harness, refresh),
   getHarnessDefaults: () => ipcRenderer.invoke(GET_HARNESS_DEFAULTS),
   setHarnessDefaults: (defaults: HarnessDefaultsMap) =>
     ipcRenderer.invoke(SET_HARNESS_DEFAULTS, defaults),

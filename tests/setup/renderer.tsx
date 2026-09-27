@@ -59,3 +59,6 @@ vi.mock('../../src/renderer/assets/harness-logos/pi.svg', () => ({
 vi.mock('../../src/renderer/assets/harness-logos/omp.svg', () => ({
   default: 'omp-logo.svg',
 }));
+vi.mock('../../src/renderer/assets/harness-logos/hermes.svg', () => ({
+  default: 'hermes-logo.svg',
+}));

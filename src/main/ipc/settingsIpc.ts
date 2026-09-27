@@ -139,8 +139,10 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
     }
   });
 
-  ipcMain.handle(GET_HARNESS_MODELS, async (_, harness: string) => {
-    return discoverHarnessModels(harness);
+  ipcMain.handle(GET_HARNESS_MODELS, async (_, harness: string, refresh?: boolean) => {
+    return refresh === undefined
+      ? discoverHarnessModels(harness)
+      : discoverHarnessModels(harness, refresh);
   });
 
   ipcMain.handle(GET_HARNESS_OPTIONS, () => {

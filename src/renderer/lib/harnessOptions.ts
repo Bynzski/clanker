@@ -6,6 +6,7 @@ import claudeLogoUrl from '../assets/harness-logos/claude.svg';
 import opencodeLogoUrl from '../assets/harness-logos/opencode.svg';
 import piLogoUrl from '../assets/harness-logos/pi.svg';
 import ompLogoUrl from '../assets/harness-logos/omp.svg';
+import hermesLogoUrl from '../assets/harness-logos/hermes.svg';
 import { Terminal } from 'lucide-react';
 
 export interface HarnessIconProps {
@@ -35,13 +36,14 @@ function createHarnessLogoIcon(src: string): ElementType<HarnessIconProps> {
   };
 }
 
-// Custom SVG logos from svgl.app, rendered as image URLs under Vite.
+// Harness logos are SVG image URLs supplied by Vite.
 const HARNESS_SVG_ICONS = {
   codex: createHarnessLogoIcon(codexLogoUrl),
   claude: createHarnessLogoIcon(claudeLogoUrl),
   opencode: createHarnessLogoIcon(opencodeLogoUrl),
   pi: createHarnessLogoIcon(piLogoUrl),
   omp: createHarnessLogoIcon(ompLogoUrl),
+  hermes: createHarnessLogoIcon(hermesLogoUrl),
 } as const;
 
 export const HARNESS_OPTIONS: HarnessOption[] = [
@@ -51,6 +53,7 @@ export const HARNESS_OPTIONS: HarnessOption[] = [
   { id: 'opencode', label: 'OpenCode', Icon: HARNESS_SVG_ICONS.opencode },
   { id: 'pi', label: 'Pi', Icon: HARNESS_SVG_ICONS.pi },
   { id: 'omp', label: 'Oh My Pi', Icon: HARNESS_SVG_ICONS.omp },
+  { id: 'hermes', label: 'Hermes', Icon: HARNESS_SVG_ICONS.hermes },
 ];
 
 export const AI_COMMIT_PROVIDER_IDS = ['codex', 'opencode', 'pi', 'omp'] as const;

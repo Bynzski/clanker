@@ -12,6 +12,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 
 // =============================================================================
 // Model Cache Integration Tests
@@ -152,6 +154,178 @@ describe('discoverHarnessModels cache integration', () => {
 
     expect(result).toEqual([]);
   });
+});
+
+describe('Hermes gateway discovery', () => {
+  const home = path.join(os.tmpdir(), 'test-hermes-home');
+  const store = { get: vi.fn(() => ({})), set: vi.fn() };
+  const spawnGateway = vi.fn();
+  let response: string;
+  let exitCode: number;
+  let request: string;
+
+  beforeEach(() => {
+    vi.resetModules();
+    store.get.mockReset().mockReturnValue({});
+    store.set.mockReset();
+    spawnGateway.mockReset().mockImplementation(() => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdin: PassThrough; stdout: PassThrough; stderr: PassThrough; kill: () => void;
+      };
+      child.stdin = new PassThrough();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.kill = vi.fn();
+      child.stdin.on('data', (chunk: Buffer) => { request += chunk.toString('utf8'); });
+      queueMicrotask(() => {
+        child.stdout.write('{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready"}}\n');
+        child.stdout.write(response);
+        child.emit('close', exitCode);
+      });
+      return child;
+    });
+    request = '';
+    exitCode = 0;
+    response = '{"jsonrpc":"2.0","id":1,"result":{"providers":[{"slug":"copilot","name":"Copilot","models":["same"]},{"slug":"codex","name":"Codex","models":["same"]}]}}\n';
+    vi.doMock('electron', () => ({
+      app: { getPath: () => home, getAppPath: () => '/opt/clanker-grid' },
+    }));
+    vi.doMock('electron-store', () => ({
+      default: class { get = store.get; set = store.set; },
+    }));
+    vi.doMock('child_process', () => ({ execFile: vi.fn(), spawn: spawnGateway }));
+  });
+
+  afterEach(() => {
+    vi.doUnmock('electron');
+    vi.doUnmock('electron-store');
+    vi.doUnmock('child_process');
+  });
+
+  it('queries local model.options through the installed gateway and caches distinct provider choices', async () => {
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    expect(await discoverHarnessModels('hermes')).toEqual([
+      { id: 'hermes-provider:copilot:same', label: 'same · Copilot' },
+      { id: 'hermes-provider:codex:same', label: 'same · Codex' },
+    ]);
+    const root = path.join(home, '.hermes', 'hermes-agent');
+    expect(spawnGateway).toHaveBeenCalledWith(
+      process.env.HERMES_PYTHON?.trim() || path.join(root, 'venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
+      ['-m', 'tui_gateway.entry'],
+      expect.objectContaining({
+        cwd: root,
+        env: expect.objectContaining({ PYTHONPATH: expect.stringContaining(root), HERMES_PYTHON_SRC_ROOT: root }),
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+    );
+    expect(JSON.parse(request)).toEqual({ jsonrpc: '2.0', id: 1, method: 'model.options', params: {} });
+    expect(store.set).toHaveBeenCalled();
+  });
+
+  it('does not cache a failed or malformed gateway response and can retry', async () => {
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    response = '{"jsonrpc":"2.0","id":1,"error":{"code":5033}}\n';
+    expect(await discoverHarnessModels('hermes')).toEqual([]);
+    exitCode = 1;
+    expect(await discoverHarnessModels('hermes')).toEqual([]);
+    expect(store.set).not.toHaveBeenCalled();
+    exitCode = 0;
+    response = '{"jsonrpc":"2.0","id":1,"result":{"providers":[{"slug":"copilot","name":"Copilot","models":["same"]}]}}\n';
+    expect(await discoverHarnessModels('hermes')).toEqual([
+      { id: 'hermes-provider:copilot:same', label: 'same · Copilot' },
+    ]);
+    expect(spawnGateway).toHaveBeenCalledTimes(3);
+  });
+  it('bypasses the cached Hermes catalog only on explicit refresh and persists fresh provider rows', async () => {
+    let cache = {} as Record<string, { models: { id: string; label: string }[]; cachedAt: number }>;
+    store.get.mockImplementation(() => cache);
+    store.set.mockImplementation((_key: string, value: typeof cache) => { cache = value; });
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    const initial = await discoverHarnessModels('hermes');
+    expect(JSON.parse(request).params).toEqual({});
+
+    response = '{"jsonrpc":"2.0","id":1,"result":{"providers":[{"slug":"copilot","name":"Copilot","models":["live"]}]}}\n';
+    expect(await discoverHarnessModels('hermes')).toEqual(initial);
+    // The normal cache hit may refresh in the background, but its request must
+    // still use the fast nonblocking catalog, not an authenticated refresh.
+    expect(JSON.parse(request.trim().split('\n').pop()!).params).toEqual({});
+    request = '';
+    const fresh = await discoverHarnessModels('hermes', true);
+    expect(JSON.parse(request).params).toEqual({ refresh: true });
+    expect(fresh).toEqual([{ id: 'hermes-provider:copilot:live', label: 'live · Copilot' }]);
+    expect(cache.hermes.models).toEqual(fresh);
+    expect(await discoverHarnessModels('hermes')).toEqual(fresh);
+  });
+
+  it('does not let an earlier nonblocking warmup overwrite an explicit refresh', async () => {
+    const old = [{ id: 'hermes-provider:copilot:old', label: 'old · Copilot' }];
+    let cache = { hermes: { models: old, cachedAt: Date.now() } };
+    store.get.mockImplementation(() => cache);
+    store.set.mockImplementation((_key: string, value: typeof cache) => { cache = value; });
+    const normalSpawn = spawnGateway.getMockImplementation()!;
+    const delayed = new EventEmitter() as EventEmitter & {
+      stdin: PassThrough; stdout: PassThrough; stderr: PassThrough; kill: () => void;
+    };
+    delayed.stdin = new PassThrough();
+    delayed.stdout = new PassThrough();
+    delayed.stderr = new PassThrough();
+    delayed.kill = vi.fn();
+    spawnGateway.mockImplementationOnce(() => delayed).mockImplementation(normalSpawn);
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    expect(await discoverHarnessModels('hermes')).toEqual(old);
+    response = '{"jsonrpc":"2.0","id":1,"result":{"providers":[{"slug":"copilot","name":"Copilot","models":["fresh"]}]}}\n';
+    const fresh = await discoverHarnessModels('hermes', true);
+    delayed.stdout.write('{"jsonrpc":"2.0","id":1,"result":{"providers":[{"slug":"copilot","name":"Copilot","models":["obsolete"]}]}}\n');
+    delayed.emit('close', 0);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(cache.hermes.models).toEqual(fresh);
+  });
+
+  it('returns an expired usable Hermes cache when an explicit refresh has malformed output', async () => {
+    const stale = [{ id: 'hermes-provider:copilot:old', label: 'old · Copilot' }];
+    const cache = { hermes: { models: stale, cachedAt: Date.now() - 2 * 60 * 60 * 1000 } };
+    store.get.mockReturnValue(cache);
+    response = '{"jsonrpc":"2.0","id":1,"result":{"providers":[]}}\n';
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    expect(await discoverHarnessModels('hermes', true)).toEqual(stale);
+    expect(JSON.parse(request).params).toEqual({ refresh: true });
+    expect(store.set).not.toHaveBeenCalled();
+  });
+
+  it('bounds explicit refresh at 45 seconds while retaining the last catalog', async () => {
+    vi.useFakeTimers();
+    try {
+      const stale = [{ id: 'hermes-provider:copilot:old', label: 'old · Copilot' }];
+      store.get.mockReturnValue({ hermes: { models: stale, cachedAt: Date.now() } });
+      const child = new EventEmitter() as EventEmitter & {
+        stdin: PassThrough; stdout: PassThrough; stderr: PassThrough; kill: () => void;
+      };
+      child.stdin = new PassThrough();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.kill = vi.fn();
+      spawnGateway.mockReturnValue(child);
+      const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+      const result = discoverHarnessModels('hermes', true);
+      await vi.advanceTimersByTimeAsync(44_999);
+      expect(child.kill).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await result).toEqual(stale);
+      expect(child.kill).toHaveBeenCalledOnce();
+      expect(store.set).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('bounds explicit refresh output and does not persist truncated data', async () => {
+    response = 'x'.repeat(8 * 1024 * 1024 + 1);
+    const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
+    expect(await discoverHarnessModels('hermes', true)).toEqual([]);
+    expect(spawnGateway.mock.results[0].value.kill).toHaveBeenCalled();
+    expect(store.set).not.toHaveBeenCalled();
+  });
+
 });
 
 // =============================================================================
@@ -356,7 +530,7 @@ describe('getAvailableHarnessOptions', () => {
     const availableKeys = Object.keys(result);
 
     // All returned keys should be valid harness names
-    const validKeys = ['codex', 'opencode', 'pi', 'omp', 'claude'];
+    const validKeys = ['codex', 'opencode', 'pi', 'omp', 'claude', 'hermes'];
     for (const key of availableKeys) {
       expect(validKeys).toContain(key);
     }
@@ -565,7 +739,7 @@ describe('harness discovery integration', () => {
   it('model IDs are properly formatted across all harnesses', async () => {
     const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
     
-    const harnesses = ['codex', 'opencode', 'pi', 'omp', 'claude'];
+    const harnesses = ['codex', 'opencode', 'pi', 'omp', 'claude', 'hermes'];
     for (const harness of harnesses) {
       const models = await discoverHarnessModels(harness);
       
@@ -582,7 +756,7 @@ describe('harness discovery integration', () => {
   it('no duplicate model IDs returned for any harness', async () => {
     const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
     
-    const harnesses = ['codex', 'opencode', 'pi', 'omp', 'claude'];
+    const harnesses = ['codex', 'opencode', 'pi', 'omp', 'claude', 'hermes'];
     for (const harness of harnesses) {
       const models = await discoverHarnessModels(harness);
       const ids = models.map(m => m.id);

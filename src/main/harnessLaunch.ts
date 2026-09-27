@@ -58,9 +58,22 @@ export function buildHarnessSpawnArgs(
   }
 
   if (model) {
-    const modelArg = config.modelArg ?? '--model';
-    args.unshift(model);
-    args.unshift(modelArg);
+    if (config.command === 'hermes') {
+      const match = /^hermes-provider:([^:]+):([^:]+)$/.exec(model);
+      if (match) {
+        try {
+          const provider = decodeURIComponent(match[1]);
+          const selectedModel = decodeURIComponent(match[2]);
+          if (provider.trim() && selectedModel.trim()) {
+            args.unshift(config.modelArg ?? '-m', selectedModel, '--provider', provider);
+            return args;
+          }
+        } catch {
+          // Unrecognized legacy text remains a literal -m value.
+        }
+      }
+    }
+    args.unshift(config.modelArg ?? '--model', model);
   }
 
   return args;

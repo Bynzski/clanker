@@ -152,3 +152,37 @@ implements `--fork` and piped prompt input. Its [extension documentation](https:
 distinguishes `agent_end` from Pi's `agent_settled`. Its [storage documentation](https://github.com/can1357/oh-my-pi/blob/main/docs/config-usage.md)
 describes profile and XDG relocation. Verify these seams for each CLI version
 before copying an existing adapter.
+
+## Hermes (`hermes`) implementation notes
+
+Local CLI (Linux, September 2026): `/home/jay/.local/bin/hermes`, version
+`0.21.5+2453.gd0288be` (upstream `d0288be5`). `hermes --help` and
+`hermes chat --help` establish `hermes --tui` for interactive launch and
+`-m <model>` as a TUI model override. Clanker uses the common PTY wrapper,
+passing `-m` before `--tui`, and retains the user's workspace as the CLI cwd.
+The installed `hermes model` command is interactive, not a machine-readable
+list. Clanker requests the documented `model.options` JSON-RPC inventory from
+the local Hermes TUI gateway using its standard Python environment
+(`~/.hermes/hermes-agent/venv`, or `HERMES_PYTHON` for the interpreter).
+Normal discovery is bounded and reads Hermes's nonblocking cached catalog, which
+may omit newly available subscription models. An explicit **Refresh Hermes
+models** in settings or the gate requests live provider catalogs, bypasses
+Clanker's one-hour cache, and is bounded to 45 seconds; failure preserves the
+last usable list. The picker shows model IDs before provider names so variants
+remain legible even when the menu is narrow. Neither mode makes a model call.
+Provider/model selections preserve both identifiers, launching the TUI with
+`-m <model> --provider <provider>`; previously saved manual IDs continue to
+launch with `-m <model>`. Settings and the workspace gate use the existing
+model picker and favorites; the manual field remains available if discovery
+fails or the user needs a custom model.
+
+This integration includes CLI detection, persisted defaults, visibility,
+flags, provider-aware discovery, manual model overrides, and interactive launch. Hermes history,
+resume/fork, attention hooks, and AI commit remain unintegrated. The agent
+attention toggle is disabled, and the workspace gate has no Hermes keyboard
+shortcut. Do not use the installed CLI's `--oneshot` or `chat -q` just to
+probe capability: those commands can incur model charges. Windows and macOS
+launches, authenticated TUI sessions, live model calls, and exit-to-shell
+behavior in Clanker's window remain unverified. On Linux, a `script`-allocated
+pseudo-terminal displayed Hermes's interactive TUI without a model request;
+the smoke process was stopped by a timeout rather than exiting through Clanker.

@@ -616,6 +616,33 @@ describe('terminalIpc — error-path: handler returns', () => {
     );
   });
 
+  test('SPAWN_TERMINAL launches Hermes TUI in the workspace with selected model and flags', async () => {
+    const { opts } = createMockDeps();
+    opts.ensureHarnessWrapperScript = vi.fn().mockReturnValue(testHarnessWrapper());
+    opts.getHarnessOptions = vi.fn().mockReturnValue({
+      hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '☿', modelArg: '-m' },
+    });
+    opts.getStore = vi.fn().mockReturnValue({
+      get: vi.fn().mockImplementation((key: string) => key === 'harnessDefaults'
+        ? { hermes: { model: 'anthropic/default', favorites: [], flags: '--reasoning low' } }
+        : false),
+    }) as never;
+    mockPtySpawn.mockReturnValue({ pid: 459, onData: vi.fn(), onExit: vi.fn() });
+    registerTerminalIpc(opts);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'spawn-terminal'
+    )?.[1] as (_: unknown, workingDir: string, harness?: string, model?: string) => Promise<{ harnessId?: string }>;
+
+    const result = await handler(null, '/test/workspace', 'hermes', 'openrouter/custom-model');
+    expect(result.harnessId).toBe('hermes');
+    expect(mockPtySpawn).toHaveBeenCalledWith(
+      testHarnessWrapper(),
+      ['hermes', '-m', 'openrouter/custom-model', '--tui', '--reasoning', 'low'],
+      expect.objectContaining({ cwd: '/test/workspace' })
+    );
+  });
+
   test('SPAWN_TERMINAL falls back to harnessDefaults model when renderer omits one', async () => {
     const { opts } = createMockDeps();
     opts.ensureHarnessWrapperScript = vi.fn().mockReturnValue(testHarnessWrapper());

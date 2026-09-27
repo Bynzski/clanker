@@ -34,6 +34,7 @@ When a harness exits, the terminal falls back to an interactive shell so the pan
 | OpenCode | `opencode` | Open source agent |
 | Pi | `pi` | Mario Zechner agent |
 | Oh My Pi | `omp` | OMP coding agent |
+| Hermes | `hermes --tui` | Hermes Agent interactive TUI |
 
 **Harness launch model — Linux / macOS:** Harnesses run as the direct PTY foreground job via a generated shell script (`~/.clanker-grid/harness-wrapper.sh`). When the harness exits, the wrapper script replaces itself with an interactive shell so the pane stays usable.
 
@@ -47,6 +48,7 @@ Examples:
 - Codex: `--yolo`
 - Claude: `--dangerously-skip-permissions`
 - OpenCode: `--pure` (if desired)
+- Hermes: `--reasoning low` (if desired)
 
 Flags are passed through as entered.
 
@@ -57,6 +59,7 @@ Terminal panes get short Grateful Dead inspired names such as Samson, Delilah, J
 In **Settings → Harness Defaults**, expand a harness and enable **Agent attention** for future launches. Clanker then uses that harness's supported hooks to show running, needs input, or turn complete in the pane header. Background needs-input and completed turns also mark the workspace tab. The bell button beside the tabs jumps to the next agent needing attention. Visiting a pane clears its highlight while keeping the status accurate. Plain shells have no agent status; unsupported hook signals show unknown.
 
 Agent attention is opt-in per harness and affects only new terminals. With attention off, the pane has no agent status label. With attention on, the label says unknown until a supported event arrives. It does not parse terminal screen text. Codex currently reports completion, Claude and OpenCode can also report input requests, and Pi reports running and settled turns. OMP maps its agent loop start/end events to running and turn complete; this does not confirm that background work has settled. Hook availability can vary with CLI version and user configuration.
+Hermes has no integrated lifecycle adapter; its agent-attention toggle is unavailable. Chat history, resume/fork, and AI commit are not integrated for Hermes.
 
 ### Harness Default Models
 
@@ -106,10 +109,15 @@ When creating a workspace, the gate provides a compact model selection flow:
 3. **Browse all models** — opens a discovery popover with search across available models for harnesses that support discovery
 4. **Select a model** — updates the pill and uses that model for launch
 
+Model choices in the gate are scoped to the selected harness. Switching harnesses
+uses the new harness's default or previously selected model, never a model from
+the harness you switched away from.
+
 Notes:
 - Codex models are discovered from the CLI.
 - OMP models are discovered from `omp models --json`; the catalog may include models that require account credentials.
 - OMP history currently scans the default session directory only. Sessions stored by profiles or session directory overrides do not appear in Clanker's history.
+- Hermes discovers configured provider models through its local `model.options` gateway. The model ID appears before the provider so similarly named subscription variants remain visible; use **Refresh Hermes models** in settings or the workspace gate to query live connector catalogs instead of the fast cached listing. A refresh can take up to 45 seconds and retains prior choices if it fails. Settings and the gate support favorites and custom model IDs even when discovery is unavailable. A selected catalog model launches with `-m <model> --provider <provider>`; manually entered IDs still use `-m <model>`. Leave the default empty to let Hermes choose its own model. No Hermes shortcut is assigned in the workspace gate.
 - Claude's model ID can be entered in **Settings → Harness Defaults**; the gate does not provide a free-text model field.
 - Unresolved models are shown with a warning indicator.
 

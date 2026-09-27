@@ -112,7 +112,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
 
     const harnessConfig = harness ? getHarnessOptions()[harness] : undefined;
     const harnessDefaults = store.get('harnessDefaults');
-    const attentionEnabled = Boolean(harnessConfig && harness && harnessDefaults[harness]?.attentionEnabled);
+    const attentionEnabled = Boolean(harnessConfig && harness && harness !== 'hermes' && harnessDefaults[harness]?.attentionEnabled);
     const userFlags = harness ? harnessDefaults[harness]?.flags : undefined;
     const effectiveModel = model || (harness ? harnessDefaults[harness]?.model || undefined : undefined);
     let harnessArgs = harnessConfig

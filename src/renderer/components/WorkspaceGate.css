@@ -784,6 +784,63 @@
   white-space: nowrap;
 }
 
+/* Hermes IDs lead; long model slugs wrap instead of disappearing behind the provider. */
+.hermes-model-pill {
+  height: auto;
+  min-height: 30px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.hermes-model-label,
+.hermes-favorite-label {
+  min-width: 0;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.hermes-model-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.hermes-model-id {
+  overflow-wrap: anywhere;
+}
+
+.hermes-model-provider {
+  color: var(--text-secondary);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discovery-refresh,
+.gate-model-refresh {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  color: var(--accent-primary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.discovery-refresh:disabled,
+.gate-model-refresh:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.gate-model-refresh {
+  align-self: flex-start;
+  margin-left: 0;
+}
+
 .discovery-check {
   color: var(--accent-primary);
   flex: 0 0 auto;

@@ -37,6 +37,33 @@ const piConfig: HarnessConfig = {
   modelArg: '--model',
 };
 
+const hermesConfig: HarnessConfig = {
+  name: 'Hermes',
+  command: 'hermes',
+  args: ['--tui'],
+  icon: '☿',
+  modelArg: '-m',
+};
+
+test('Hermes provider-aware selection launches its exact provider and decoded model', () => {
+  assert.deepEqual(
+    buildHarnessSpawnArgs(hermesConfig, 'hermes-provider:custom%3Aroute:shared%2Fmodel%20%25', '--verbose'),
+    ['-m', 'shared/model %', '--provider', 'custom:route', '--tui', '--verbose']
+  );
+  assert.deepEqual(
+    buildHarnessSpawnArgs(hermesConfig, 'hermes-provider:copilot:shared%2Fmodel'),
+    ['-m', 'shared/model', '--provider', 'copilot', '--tui']
+  );
+});
+
+test('Hermes manual legacy model defaults remain literal and non-Hermes models never decode', () => {
+  assert.deepEqual(buildHarnessSpawnArgs(hermesConfig, 'shared/model'), ['-m', 'shared/model', '--tui']);
+  assert.deepEqual(buildHarnessSpawnArgs(hermesConfig, 'hermes-provider:broken:%ZZ'),
+    ['-m', 'hermes-provider:broken:%ZZ', '--tui']);
+  assert.deepEqual(buildHarnessSpawnArgs(opencodeConfig, 'hermes-provider:copilot:shared%2Fmodel'),
+    ['-m', 'hermes-provider:copilot:shared%2Fmodel']);
+});
+
 test('buildHarnessSpawnArgs keeps harness args and prepends the selected model flag', () => {
   assert.deepEqual(
     buildHarnessSpawnArgs(opencodeConfig, 'opencode/zen/big-pickle'),

@@ -105,6 +105,17 @@ describe('registerSessionIpc', () => {
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
 
+  it('rejects Hermes session payloads instead of launching Claude resume', async () => {
+    const handlers = registerHandlers(vi.fn(() => ({
+      hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '☿' },
+    })));
+    const session = { ...codexSession, harness: 'hermes' } as unknown as HarnessSession;
+
+    await expect(handlers.get(SESSION_INVOKE)?.({}, session)).rejects.toThrow('hermes session invocation is not supported');
+    expect(mockBuildSessionInvokeArgs).not.toHaveBeenCalled();
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+  });
+
   it('filters discovered sessions to currently available harnesses', async () => {
     mockDiscoverSessions.mockResolvedValue([codexSession, claudeSession]);
 

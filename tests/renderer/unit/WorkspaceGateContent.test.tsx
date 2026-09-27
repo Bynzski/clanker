@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'node:path';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import WorkspaceGateContent, { TERMINAL_PRESETS } from '../../../src/renderer/components/WorkspaceGateContent';
 import { sameWorkspacePath } from '../../../src/renderer/lib/pathUtils';
 
@@ -295,6 +295,170 @@ describe('WorkspaceGateContent', () => {
     await waitFor(() => {
       expect(window.electronAPI.getHarnessModels).toHaveBeenCalledWith('codex');
     });
+  });
+
+  it('launches the selected Hermes provider model and can return to the Hermes default', async () => {
+    const selectedId = 'hermes-provider:openrouter:anthropic%2Fclaude-sonnet';
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '☿' },
+    });
+    vi.mocked(window.electronAPI.getHarnessModels).mockResolvedValue([
+      { id: selectedId, label: 'OpenRouter · anthropic/claude-sonnet' },
+    ]);
+
+    renderGate({ initialPath: '/workspace/' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Hermes' }));
+    await waitFor(() => expect(window.electronAPI.getHarnessModels).toHaveBeenCalledWith('hermes'));
+    await screen.findByTitle('Change model');
+
+    // A discovered model must not silently replace Hermes's own default.
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ harness: 'hermes', model: undefined }));
+
+    fireEvent.click(screen.getByTitle('Change model'));
+    fireEvent.click(screen.getByText('Browse all models'));
+    fireEvent.click(screen.getByText('anthropic/claude-sonnet', { selector: '.discovery-model-label .hermes-model-id' }));
+    expect(screen.getByTitle('Change model')).toHaveTextContent('anthropic/claude-sonnet');
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ harness: 'hermes', model: selectedId }));
+
+    fireEvent.click(screen.getByTitle('Change model'));
+    fireEvent.click(screen.getByText('Use Hermes default'));
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ harness: 'hermes', model: undefined }));
+  });
+
+  it('shows a saved provider-aware Hermes default and preserves its ID at launch', async () => {
+    const savedId = 'hermes-provider:openrouter:anthropic%2Fclaude-sonnet';
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '☿' },
+    });
+    vi.mocked(window.electronAPI.getHarnessModels).mockResolvedValue([
+      { id: savedId, label: 'OpenRouter · anthropic/claude-sonnet' },
+      { id: 'hermes-provider:copilot:other', label: 'GitHub Copilot · other' },
+    ]);
+    vi.mocked(window.electronAPI.getHarnessDefaults).mockResolvedValue({
+      hermes: { model: savedId, favorites: [savedId], flags: '', visible: true },
+    });
+    renderGate({ initialPath: '/workspace/' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Hermes' }));
+    await waitFor(() => expect(screen.getByTitle('Change model')).toHaveTextContent('anthropic/claude-sonnet'));
+    fireEvent.click(screen.getByTitle('Change model'));
+    fireEvent.click(screen.getByText('Browse all models'));
+    fireEvent.click(screen.getByText('other', { selector: '.discovery-model-label .hermes-model-id' }));
+    fireEvent.click(screen.getByTitle('Change model'));
+    fireEvent.click(screen.getByText('Use saved default'));
+    expect(screen.getByTitle('Change model')).toHaveTextContent('anthropic/claude-sonnet');
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ harness: 'hermes', model: savedId }));
+  });
+
+  it('shows full duplicate Hermes slugs before their providers and refreshes without clearing the selection', async () => {
+    const first = 'hermes-provider:codex:gpt-5.3-codex-900k';
+    const second = 'hermes-provider:copilot:gpt-5.3-codex-900k';
+    const third = 'hermes-provider:openrouter:anthropic%2Fclaude-opus';
+    const initial = [
+      { id: first, label: 'ChatGPT or Codex Subscription · gpt-5.3-codex-900k' },
+      { id: second, label: 'GitHub Copilot · gpt-5.3-codex-900k' },
+    ];
+    const refreshed = [...initial, { id: third, label: 'anthropic/claude-opus · OpenRouter' }];
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '☿' },
+    });
+    vi.mocked(window.electronAPI.getHarnessModels).mockImplementation(async (_harness, refresh) => refresh ? refreshed : initial);
+    renderGate({ initialPath: '/workspace/' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Hermes' }));
+    fireEvent.click(await screen.findByTitle('Change model'));
+    fireEvent.click(screen.getByText('Browse all models'));
+
+    const rows = screen.getAllByText('gpt-5.3-codex-900k', { selector: '.discovery-item .hermes-model-id' })
+      .map((entry) => entry.closest('.discovery-item')!);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelector('.hermes-model-provider')).toHaveTextContent('ChatGPT or Codex Subscription');
+    expect(rows[1].querySelector('.hermes-model-provider')).toHaveTextContent('GitHub Copilot');
+    fireEvent.click(rows[1]);
+    expect(screen.getByTitle('Change model').querySelector('.hermes-model-id')).toHaveTextContent('gpt-5.3-codex-900k');
+    expect(screen.getByTitle('Change model').querySelector('.hermes-model-provider')).toHaveTextContent('GitHub Copilot');
+
+    fireEvent.click(screen.getByTitle('Change model'));
+    fireEvent.click(screen.getByText('Browse all models'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Hermes models' }));
+    await waitFor(() => expect(window.electronAPI.getHarnessModels).toHaveBeenCalledWith('hermes', true));
+    expect(screen.getByTitle('Change model').querySelector('.hermes-model-provider')).toHaveTextContent('GitHub Copilot');
+    const newRow = await screen.findByText('anthropic/claude-opus', { selector: '.discovery-item .hermes-model-id' });
+    expect(newRow.closest('.discovery-item')?.querySelector('.hermes-model-provider')).toHaveTextContent('OpenRouter');
+    fireEvent.click(newRow);
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ harness: 'hermes', model: third }));
+  });
+
+  it('accepts a custom Hermes model even with discovered options', async () => {
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '☿' },
+    });
+    vi.mocked(window.electronAPI.getHarnessModels).mockResolvedValue([
+      { id: 'hermes-provider:openrouter:model', label: 'OpenRouter · model' },
+    ]);
+    renderGate({ initialPath: '/workspace/' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Hermes' }));
+    await screen.findByTitle('Change model');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Hermes model' }), { target: { value: 'custom/model' } });
+    expect(screen.getByTitle('Change model')).toHaveTextContent('custom/model');
+    expect(screen.getByTitle('Change model').querySelector('.model-pill-warning')).toBeNull();
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ harness: 'hermes', model: 'custom/model' }));
+  });
+
+  it('launches Hermes with a manually entered model when no catalog is available', async () => {
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '☿' },
+    });
+    vi.mocked(window.electronAPI.getHarnessModels).mockResolvedValue([]);
+
+    renderGate({ initialPath: '/workspace/' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Hermes' }));
+    const modelInput = screen.getByRole('textbox', { name: 'Hermes model' });
+    fireEvent.change(modelInput, { target: { value: 'openrouter/custom-model' } });
+    fireEvent.click(screen.getByText('Launch Workspace'));
+
+    expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      path: '/workspace/',
+      harness: 'hermes',
+      model: 'openrouter/custom-model',
+    }));
+  });
+
+  it('keeps a Hermes launch model scoped to Hermes across delayed defaults loading', async () => {
+    const defaults = {
+      codex: { model: 'openai/codex-default', favorites: [], flags: '', visible: true },
+      hermes: { model: 'anthropic/hermes-default', favorites: [], flags: '', visible: true },
+    };
+    let resolveDelayedDefaults!: (value: typeof defaults) => void;
+    const delayedDefaults = new Promise<typeof defaults>((resolve) => {
+      resolveDelayedDefaults = resolve;
+    });
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      codex: { name: 'Codex', command: 'codex', args: [], icon: 'codex' },
+      hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '☿' },
+    });
+    vi.mocked(window.electronAPI.getHarnessModels).mockResolvedValue([]);
+    vi.mocked(window.electronAPI.getHarnessDefaults).mockResolvedValue(defaults);
+
+    renderGate({ initialPath: '/workspace/' });
+    await screen.findByText('openai/codex-default');
+    vi.mocked(window.electronAPI.getHarnessDefaults).mockReturnValue(delayedDefaults);
+    fireEvent.click(screen.getByRole('button', { name: 'Hermes' }));
+    const modelInput = screen.getByRole('textbox', { name: 'Hermes model' }) as HTMLInputElement;
+    expect(modelInput.value).toBe('anthropic/hermes-default');
+
+    fireEvent.change(modelInput, { target: { value: 'openrouter/selected-model' } });
+    await act(async () => resolveDelayedDefaults(defaults));
+    expect(modelInput.value).toBe('openrouter/selected-model');
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      harness: 'hermes',
+      model: 'openrouter/selected-model',
+    }));
   });
 
   // =========================================================================
