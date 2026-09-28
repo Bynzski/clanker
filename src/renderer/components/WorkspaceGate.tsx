@@ -15,15 +15,17 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect }: Props
   const [openError, setOpenError] = useState('');
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
 
-    pushBrowserOverlay();
-    return () => popBrowserOverlay();
-  }, [isOpen, pushBrowserOverlay, popBrowserOverlay]);
+    const overlayWorkspaceId = activeWorkspaceId ?? undefined;
+    pushBrowserOverlay(overlayWorkspaceId);
+    return () => popBrowserOverlay(overlayWorkspaceId);
+  }, [activeWorkspaceId, isOpen, pushBrowserOverlay, popBrowserOverlay]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {

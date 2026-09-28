@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - **Hermes YOLO mode** — applying `--yolo` through harness Extra Flags now enables the approval bypass in the Hermes TUI backend.
+- **Browser visibility after opening a workspace** — closing the workspace launcher now releases its browser overlay from the workspace that opened it, so returning to that workspace restores the native browser view.
 
 ## [0.4.0] - 2026-09-27
 

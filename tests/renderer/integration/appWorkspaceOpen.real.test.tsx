@@ -89,6 +89,32 @@ describe('App workspace open integration', () => {
       .toBeLessThan(vi.mocked(window.electronAPI.spawnTerminal).mock.invocationCallOrder[0]);
   });
 
+  it('releases the launcher overlay from the workspace that opened it', async () => {
+    render(<App />);
+
+    const initialPathInput = document.querySelector('.gate-input') as HTMLInputElement;
+    fireEvent.change(initialPathInput, { target: { value: '/workspace/' } });
+    fireEvent.click(screen.getByText('Launch Workspace'));
+
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
+    });
+    const firstWorkspaceId = useWorkspaceStore.getState().activeWorkspaceId!;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Workspace' }));
+    expect(useWorkspaceStore.getState().getWorkspaceById(firstWorkspaceId)?.browserOverlayCount).toBe(1);
+
+    const nextPathInput = document.querySelector('.gate-input') as HTMLInputElement;
+    fireEvent.change(nextPathInput, { target: { value: '/second-workspace/' } });
+    fireEvent.click(screen.getByText('Launch Workspace'));
+
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().workspaces).toHaveLength(2);
+    });
+    expect(useWorkspaceStore.getState().getWorkspaceById(firstWorkspaceId)?.browserOverlayCount).toBe(0);
+    expect(useWorkspaceStore.getState().browserOverlayCount).toBe(0);
+  });
+
   it('keeps the launcher open when main rejects workspace registration', async () => {
     installElectronApiMock({ registerOpenWorkspace: vi.fn().mockResolvedValue({ success: false, error: 'Worktree is being removed' }) });
     render(<App />);
