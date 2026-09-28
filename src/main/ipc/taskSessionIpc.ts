@@ -14,6 +14,9 @@ import {
 import { WorkspacePersistenceService } from '../workspacePersistence';
 import { toNativePath } from '../../shared/pathNormalize';
 import type { Terminal } from './terminalIpc';
+import { findUnambiguousSessionCandidate } from '../sessionCorrelation';
+import { discoverSessions } from '../sessionHistory';
+import type { HarnessSession } from '../../shared/types/session';
 
 const SUPPORTED_RESUME_HARNESSES: Record<string, true> = {
   codex: true,
@@ -28,13 +31,23 @@ export interface RegisterTaskSessionIpcDeps {
   getStore: () => Store<StoreSchema>;
   getTerminals: () => Map<string, Terminal>;
   getHarnessOptions: () => Record<string, unknown>;
+  discoverSessionsFn?: (workspacePath?: string, options?: { forceRefresh?: boolean }) => Promise<HarnessSession[]>;
 }
 
 export function evaluateTaskRecoveryState(
   record: TaskSessionRecord,
   liveTerminalIds: Set<string>,
   availableHarnesses: Record<string, unknown>,
-): { state: TaskRecoveryState; stateReason?: string; terminalId?: string } {
+  discoveredSessions?: HarnessSession[],
+  allTasks?: TaskSessionRecord[],
+): {
+  state: TaskRecoveryState;
+  stateReason?: string;
+  terminalId?: string;
+  nativeSessionId?: string;
+  nativeSessionPath?: string;
+  title?: string;
+} {
   // If the record claims to be running, check if its PTY is actually alive in this process
   if (record.state === 'running') {
     if (record.terminalId && liveTerminalIds.has(record.terminalId)) {
@@ -80,13 +93,45 @@ export function evaluateTaskRecoveryState(
 
   // Check native session ID
   if (record.nativeSessionId && record.nativeSessionId.trim()) {
+    // If discovered sessions are provided, verify that the session actually still exists on disk
+    if (discoveredSessions && discoveredSessions.length > 0) {
+      const exists = discoveredSessions.some(
+        (s) => s.harness === record.harnessId && s.id === record.nativeSessionId,
+      );
+      if (!exists) {
+        return {
+          state: 'unavailable',
+          stateReason: 'Native conversation session was not found on disk',
+          terminalId: undefined,
+          nativeSessionId: record.nativeSessionId,
+          nativeSessionPath: record.nativeSessionPath,
+        };
+      }
+    }
+
     return {
       state: 'resumable',
       terminalId: undefined,
+      nativeSessionId: record.nativeSessionId,
+      nativeSessionPath: record.nativeSessionPath,
     };
   }
 
-  // Has task metadata but native session ID is not known
+  // Has task metadata but native session ID is not known yet.
+  // Attempt conservative correlation from discovered sessions.
+  if (discoveredSessions && allTasks) {
+    const candidate = findUnambiguousSessionCandidate(record, discoveredSessions, allTasks);
+    if (candidate) {
+      return {
+        state: 'resumable',
+        terminalId: undefined,
+        nativeSessionId: candidate.id,
+        nativeSessionPath: candidate.filePath,
+        title: candidate.title || record.title,
+      };
+    }
+  }
+
   return {
     state: 'needs-selection',
     terminalId: undefined,
@@ -94,9 +139,8 @@ export function evaluateTaskRecoveryState(
 }
 
 export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): WorkspacePersistenceService {
-  const { getStore, getTerminals, getHarnessOptions } = deps;
+  const { getStore, getTerminals, getHarnessOptions, discoverSessionsFn = discoverSessions } = deps;
   const persistence = new WorkspacePersistenceService(getStore);
-
   ipcMain.handle(TASK_SESSION_LIST, async (_, workspacePath?: string) => {
     const rawSessions = workspacePath && typeof workspacePath === 'string' && workspacePath.trim()
       ? persistence.getTaskSessionsForWorkspace(workspacePath)
@@ -105,20 +149,45 @@ export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): Worksp
     const liveTerminalIds = new Set<string>(getTerminals().keys());
     const availableHarnesses = getHarnessOptions();
 
+    const discoveredByWorkspace = new Map<string, HarnessSession[]>();
+    for (const record of rawSessions) {
+      const key = record.workspacePath;
+      if (!discoveredByWorkspace.has(key)) {
+        try {
+          const nativeDir = toNativePath(record.workspacePath, process.platform);
+          const sessions = await discoverSessionsFn(nativeDir, { forceRefresh: true });
+          discoveredByWorkspace.set(key, sessions);
+        } catch {
+          discoveredByWorkspace.set(key, []);
+        }
+      }
+    }
     const evaluated: TaskSessionRecord[] = [];
     for (const record of rawSessions) {
-      const { state, stateReason, terminalId } = evaluateTaskRecoveryState(
+      const workspaceSessions = discoveredByWorkspace.get(record.workspacePath);
+      const evaluatedState = evaluateTaskRecoveryState(
         record,
         liveTerminalIds,
         availableHarnesses,
+        workspaceSessions,
+        rawSessions,
       );
+      const { state, stateReason, terminalId, nativeSessionId, nativeSessionPath, title } = evaluatedState;
 
-      // If state or terminalId changed, update persistence
-      if (record.state !== state || record.terminalId !== terminalId || record.stateReason !== stateReason) {
+      // If state or attributes changed, update persistence
+      if (
+        record.state !== state
+        || record.terminalId !== terminalId
+        || record.stateReason !== stateReason
+        || (nativeSessionId !== undefined && record.nativeSessionId !== nativeSessionId)
+      ) {
         const updatedRecord: TaskSessionRecord = {
           ...record,
           state,
           terminalId,
+          ...(nativeSessionId ? { nativeSessionId } : {}),
+          ...(nativeSessionPath ? { nativeSessionPath } : {}),
+          ...(title ? { title } : {}),
           ...(stateReason ? { stateReason } : { stateReason: undefined }),
           updatedAt: Date.now(),
         };
@@ -128,7 +197,6 @@ export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): Worksp
         evaluated.push(record);
       }
     }
-
     return evaluated;
   });
 

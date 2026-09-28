@@ -20,7 +20,7 @@ class MemoryStore {
 describe('TaskSessionCoordinator', () => {
   let memoryStore: MemoryStore;
   let persistence: WorkspacePersistenceService;
-  let mockDiscoverSessions: Mock<(workspacePath?: string) => Promise<HarnessSession[]>>;
+  let mockDiscoverSessions: Mock<(workspacePath?: string, options?: { forceRefresh?: boolean }) => Promise<HarnessSession[]>>;
   let coordinator: TaskSessionCoordinator;
 
   beforeEach(() => {
@@ -96,6 +96,60 @@ describe('TaskSessionCoordinator', () => {
     expect(updated?.state).toBe('resumable');
     expect(updated?.stoppedAt).toBeDefined();
   });
+  it('retries with forceRefresh: true to capture delayed session flushes', async () => {
+    const task = coordinator.onTerminalSpawned('term-flush', '/home/user/project', 'codex');
+
+    // First attempt: empty. Second attempt: delayed session file flushed by harness.
+    mockDiscoverSessions
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'delayed-sess-1',
+          harness: 'codex',
+          title: 'Delayed Session Title',
+          cwd: '/home/user/project',
+          timestamp: task.createdAt + 100,
+        },
+      ]);
+
+    const updated = await coordinator.onTerminalExited('term-flush');
+    expect(updated).not.toBeNull();
+    expect(updated?.nativeSessionId).toBe('delayed-sess-1');
+    expect(updated?.title).toBe('Delayed Session Title');
+    expect(updated?.state).toBe('resumable');
+
+    // Verify discoverSessions was called with forceRefresh: true
+    expect(mockDiscoverSessions).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ forceRefresh: true }),
+    );
+  });
+
+  it('leaves task in needs-selection if multiple ambiguous sessions are discovered', async () => {
+    const task = coordinator.onTerminalSpawned('term-ambiguous', '/home/user/project', 'codex');
+
+    // Two candidates match timestamp window -> ambiguous
+    mockDiscoverSessions.mockResolvedValueOnce([
+      {
+        id: 'sess-1',
+        harness: 'codex',
+        title: 'Session 1',
+        cwd: '/home/user/project',
+        timestamp: task.createdAt + 100,
+      },
+      {
+        id: 'sess-2',
+        harness: 'codex',
+        title: 'Session 2',
+        cwd: '/home/user/project',
+        timestamp: task.createdAt + 200,
+      },
+    ]);
+
+    const updated = await coordinator.onTerminalExited('term-ambiguous');
+    expect(updated?.state).toBe('needs-selection');
+    expect(updated?.nativeSessionId).toBeUndefined();
+  });
 
   it('transitions to needs-selection if session correlation fails on terminal exit', async () => {
     const task = coordinator.onTerminalSpawned('term-1', '/home/user/project', 'codex');
@@ -137,5 +191,21 @@ describe('TaskSessionCoordinator', () => {
     expect(task2?.state).toBe('resumable');
     expect(task2?.nativeSessionId).toBe('sess-resumable');
     expect(task2?.stoppedAt).toBeDefined();
+  });
+
+  it('ignores late PTY exit callbacks after onAppShutdown has executed', async () => {
+    coordinator.onTerminalSpawned('term-race', '/home/user/project', 'codex');
+    coordinator.onAppShutdown();
+
+    // PTY kill synchronously or asynchronously fires exit callback
+    const result = await coordinator.onTerminalExited('term-race');
+
+    // Should immediately return null without triggering session discovery
+    expect(result).toBeNull();
+    expect(mockDiscoverSessions).not.toHaveBeenCalled();
+
+    const task = persistence.getAllTaskSessions().find((t) => t.harnessId === 'codex');
+    expect(task?.state).toBe('needs-selection');
+    expect(task?.terminalId).toBeUndefined();
   });
 });

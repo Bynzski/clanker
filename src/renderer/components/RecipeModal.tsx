@@ -17,6 +17,7 @@ import type {
   WorkspaceRecipe,
   RecipeLaunchStep,
   RecipeLaunchResult,
+  PersistedRecipeLayout,
 } from '../../shared/types/recipes';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import './RecipeModal.css';
@@ -28,6 +29,8 @@ interface Props {
   defaultWorkspacePath?: string;
   defaultLaunches?: RecipeLaunchStep[];
   defaultBrowserUrl?: string;
+  defaultLayout?: PersistedRecipeLayout;
+  defaultTerminalCount?: number;
   onLaunchRecipe: (recipe: WorkspaceRecipe) => Promise<RecipeLaunchResult | null | void>;
   onRecipeSaved?: (recipe: WorkspaceRecipe) => void;
   onRecipeDeleted?: (recipeId: string) => void;
@@ -40,6 +43,8 @@ export default function RecipeModal({
   defaultWorkspacePath,
   defaultLaunches,
   defaultBrowserUrl,
+  defaultLayout,
+  defaultTerminalCount,
   onLaunchRecipe,
   onRecipeSaved,
   onRecipeDeleted,
@@ -54,6 +59,8 @@ export default function RecipeModal({
   const [workspacePath, setWorkspacePath] = useState('');
   const [description, setDescription] = useState('');
   const [browserUrl, setBrowserUrl] = useState('');
+  const [layout, setLayout] = useState<PersistedRecipeLayout | undefined>(initialRecipe?.layout ?? defaultLayout);
+  const [terminalCount, setTerminalCount] = useState<number | undefined>(initialRecipe?.terminalCount ?? defaultTerminalCount);
   const [launches, setLaunches] = useState<RecipeLaunchStep[]>([]);
 
   useEffect(() => {
@@ -69,6 +76,8 @@ export default function RecipeModal({
       setWorkspacePath(initialRecipe.workspacePath);
       setDescription(initialRecipe.description ?? '');
       setBrowserUrl(initialRecipe.browser?.url ?? '');
+      setLayout(initialRecipe.layout);
+      setTerminalCount(initialRecipe.terminalCount);
       setLaunches(initialRecipe.launches ?? []);
     } else {
       setIsEditing(true);
@@ -76,9 +85,11 @@ export default function RecipeModal({
       setWorkspacePath(defaultWorkspacePath ?? '');
       setDescription('');
       setBrowserUrl(defaultBrowserUrl ?? '');
+      setLayout(defaultLayout);
+      setTerminalCount(defaultTerminalCount);
       setLaunches(defaultLaunches ?? [{ id: `step-${Date.now()}-1`, type: 'command', command: '' }]);
     }
-  }, [isOpen, initialRecipe, defaultWorkspacePath, defaultLaunches, defaultBrowserUrl]);
+  }, [isOpen, initialRecipe, defaultWorkspacePath, defaultLaunches, defaultBrowserUrl, defaultLayout, defaultTerminalCount]);
 
   if (!isOpen) return null;
 
@@ -128,9 +139,11 @@ export default function RecipeModal({
       id: initialRecipe?.id ?? `recipe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: name.trim(),
       workspacePath: workspacePath.trim(),
+      terminalCount: terminalCount ?? (cleanedLaunches.length || 1),
       ...(description.trim() ? { description: description.trim() } : {}),
       launches: cleanedLaunches,
       ...(browserUrl.trim() ? { browser: { url: browserUrl.trim() } } : {}),
+      ...(layout ? { layout } : {}),
       createdAt: initialRecipe?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
       version: 1,
@@ -348,6 +361,15 @@ export default function RecipeModal({
                 <span className="recipe-preview-label">Workspace:</span>
                 <span className="recipe-preview-path">{workspacePath}</span>
               </div>
+              {layout && (
+                <div className="recipe-preview-workspace">
+                  <span className="recipe-preview-label">Saved Layout:</span>
+                  <span className="recipe-preview-path">
+                    {layout.terminalCount} terminal pane{layout.terminalCount === 1 ? '' : 's'}
+                    {layout.explorerVisible ? ' · Explorer' : ''}
+                  </span>
+                </div>
+              )}
 
               <div className="recipe-preview-section">
                 <span className="recipe-preview-label">Will launch:</span>

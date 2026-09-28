@@ -10,6 +10,7 @@ This document describes the unified architecture for reusable workspace launch r
 4. **No Prompt Replay**: The user's original task prompt is never stored for the purpose of replaying it. Resuming reconnects to the harness's native conversation session using native CLI resume mechanisms.
 5. **Partial Failure Resilience**: Recipe execution never treats failure as all-or-nothing. If a step fails, prior successful terminals remain alive, and the failure is reported clearly.
 
+6. **Conservative Correlation**: Automatic session correlation operates on a strict false-negative preference. If multiple candidate sessions match a task, Clanker marks the task `needs-selection` rather than guessing or attaching the wrong conversation. A native session ID cannot be assigned to more than one task.
 ---
 
 ## 2. Workspace Identity
@@ -73,12 +74,37 @@ interface TaskSessionRecord {
 }
 ```
 
+## 4. Recipe Layout Capture & Restoration
+
+Recipes capture and restore workspace pane topologies using semantic pane keys rather than runtime pane IDs:
+
+- **Semantic Keys**: `terminal:0`, `terminal:1`, `browser`, `editor`, `notes`.
+- **Capture**: When saving a recipe from an active workspace, `serializeWorkspaceLayout()` records the split tree, ratio, terminal count, and explorer visibility.
+- **Restoration**: On recipe launch, `restoreWorkspaceLayoutFromPersisted()` maps the semantic keys onto newly generated runtime pane IDs with fresh `createNodeId()` nodes.
+- **Graceful Fallback**: If the saved layout is incompatible (e.g. terminal counts differ or corrupted structure), layout restoration falls back safely, leaving standard balanced panes without failing the workspace.
+
 ---
 
-## 4. Lifecycle & State Transitions
+## 5. Conservative Task Correlation & Discovery Caching
+
+### 5.1 Correlation Rules
+The `findUnambiguousSessionCandidate()` algorithm associates a native session with a task record only when all conditions are satisfied:
+1. Candidate matches the task's `harnessId`.
+2. Candidate matches the workspace identity (`isSameWorkspaceIdentity()`).
+3. Candidate started around or after task creation (`timestamp >= createdAt - 60_000`).
+4. Candidate session ID is **not** already associated with any other task in the store.
+5. **Strictly Unambiguous**: Exactly one matching candidate exists. If 0 or >1 candidates match, the function returns `null`, leaving the task in `needs-selection`.
+
+### 5.2 Cache Bypass on Recovery Retry
+Normal chat-history browsing utilizes a 60-second in-memory session cache (`discoverSessions`). However, harnesses often flush session files to disk a few hundred milliseconds after PTY termination.
+- During terminal-exit recovery and restart-time correlation, `discoverSessions(workspacePath, { forceRefresh: true })` explicitly bypasses the cache to read fresh disk state on each retry attempt.
+
+---
+
+## 6. Lifecycle & State Transitions
 
 ```
-[Harness Spawned / Resumed]
+(Harness Spawned / Resumed)
              │
              ▼
       state: 'running'
@@ -86,12 +112,12 @@ interface TaskSessionRecord {
              │
              ├──────────────────────────────────────────┐
              ▼                                          ▼
-     [Terminal Exited]                         [App Restarted]
+     (Terminal Exited)                         (App Restarted)
              │                                          │
-    Session Discovered?                         Session Valid?
+   Unambiguous Session?                       Unambiguous Session?
       ┌──────┴──────┐                            ┌──────┴──────┐
       │             │                            │             │
-     Yes            No                          Yes            No
+     Yes       No / Ambiguous                   Yes       No / Ambiguous
       │             │                            │             │
       ▼             ▼                            ▼             ▼
 'resumable'   'needs-selection'            'resumable'   'needs-selection'
@@ -103,16 +129,26 @@ interface TaskSessionRecord {
       User Clicks Resume                         │
              │                                   │
              ▼                                   ▼
-[SESSION_INVOKE in new PTY]                [Unavailable if dir deleted
-             │                              or harness uninstalled]
-             ▼
+SESSION_INVOKE in new PTY                  Unavailable if dir deleted,
+             │                             harness uninstalled, or
+             ▼                             session file deleted from disk
       state: 'running'
       terminalId: 'term-new'
 ```
 
 ---
 
-## 5. Security & Isolation
+## 7. Shutdown Ordering
+
+In `src/main/main.ts`, the `app.on('before-quit')` sequence is strictly ordered:
+1. `setAppShuttingDown(true)` — blocks late PTY data and exit IPC emissions to closing windows.
+2. `taskSessionCoordinator?.onAppShutdown()` — transitions all `running` tasks to their persistent state (`resumable` or `needs-selection`) and sets `shuttingDown = true`.
+3. `killAllTerminals()` — kills PTY processes. Any resulting synchronous or asynchronous PTY exit callbacks immediately return `null` without launching redundant discovery loops.
+4. `agentAttentionBroker.close()` & `removeAttentionAdapterFiles()` — tears down attention adapters.
+
+---
+
+## 8. Security & Isolation
 
 - **PTY Execution**: Commands and harnesses funneled strictly through the existing `spawnPtyProcess` machinery. No renderer-side `child_process` execution.
 - **Browser URLs**: Validated against `normalizeTrustedAppBrowserUrl` allowing only `http:`, `https:`, and trusted local `file:` schemes.

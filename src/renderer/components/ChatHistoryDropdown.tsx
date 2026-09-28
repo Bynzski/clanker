@@ -97,6 +97,7 @@ export default function ChatHistoryDropdown({
   const addTerminal = useWorkspaceStore((state) => state.addTerminal);
   const setActiveTerminal = useWorkspaceStore((state) => state.setActiveTerminal);
   const [tasks, setTasks] = useState<TaskSessionRecord[]>([]);
+  const [resumeError, setResumeError] = useState<{ taskId: string; message: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +117,7 @@ export default function ChatHistoryDropdown({
 
   const handleResumeTask = async (task: TaskSessionRecord) => {
     if (!task.nativeSessionId) return;
+    setResumeError(null);
     try {
       const sessionPayload: HarnessSession = {
         id: task.nativeSessionId,
@@ -140,7 +142,22 @@ export default function ChatHistoryDropdown({
       }
       onClose();
     } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
       console.error('Failed to resume task:', err);
+      setResumeError({ taskId: task.id, message: errorMsg });
+      if (typeof window.electronAPI?.taskSessionUpdate === 'function') {
+        try {
+          await window.electronAPI.taskSessionUpdate({
+            id: task.id,
+            state: 'unavailable',
+            stateReason: `Failed to resume: ${errorMsg}`,
+          });
+          const updated = await window.electronAPI.taskSessionList(workspacePath);
+          setTasks(updated);
+        } catch {
+          // Ignore secondary update error
+        }
+      }
     }
   };
 
@@ -213,6 +230,7 @@ export default function ChatHistoryDropdown({
         onAssociateSession={handleAssociateSession}
         onDeleteTask={handleDeleteTask}
         onFocusTerminal={handleFocusTerminal}
+        resumeError={resumeError}
       />
       {isLoading ? (
         <div className="chat-history-empty">Loading sessions...</div>

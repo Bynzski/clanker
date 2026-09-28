@@ -1,5 +1,6 @@
 import type {
   WorkspaceRecipe,
+  PersistedRecipeLayout,
   RecipeLaunchResult,
   RecipeLaunchStepResult,
 } from '../../shared/types/recipes';
@@ -17,6 +18,7 @@ export interface RecipeExecutionDeps {
     terminal: { id: string; pid: number; workingDir: string; harnessId: string | null; attentionEnabled: boolean },
   ) => void;
   openBrowserPreview?: (workspaceId: string, url: string) => Promise<boolean>;
+  restoreLayout?: (workspaceId: string, layout: PersistedRecipeLayout) => void;
 }
 
 export async function executeWorkspaceRecipe(
@@ -117,6 +119,13 @@ export async function executeWorkspaceRecipe(
         status: 'failed',
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+  if (recipe.layout && deps.restoreLayout) {
+    try {
+      deps.restoreLayout(workspaceId, recipe.layout);
+    } catch {
+      // Incompatible layout restoration falls back gracefully
     }
   }
 

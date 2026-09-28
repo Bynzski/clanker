@@ -12,6 +12,7 @@ import './Header.css';
 import type { WorkspaceRecipe, RecipeLaunchStep } from '../../shared/types/recipes';
 import RecipeModal from './RecipeModal';
 import { executeWorkspaceRecipe } from '../lib/recipeExecution';
+import { serializeWorkspaceLayout } from '../lib/workspaceLayoutStorage';
 
 export default function Header() {
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
@@ -158,6 +159,9 @@ export default function Header() {
         }
         return true;
       },
+      restoreLayout: (wsId, layout) => {
+        useWorkspaceStore.getState().applyPersistedLayout(layout, wsId);
+      },
     });
   };
 
@@ -167,6 +171,7 @@ export default function Header() {
       : { id: `step-${idx + 1}`, type: 'command' as const, command: '' },
   );
 
+  const defaultLayout = focusedWorkspace ? serializeWorkspaceLayout(focusedWorkspace) : undefined;
   return (
     <header className="header">
       <div className="header-center">
@@ -270,6 +275,8 @@ export default function Header() {
         defaultWorkspacePath={workspacePath}
         defaultLaunches={defaultLaunches}
         defaultBrowserUrl={browserVisible ? focusedWorkspace?.browserUrl : undefined}
+        defaultLayout={defaultLayout ?? undefined}
+        defaultTerminalCount={focusedWorkspace?.panes.length ?? 1}
         onLaunchRecipe={handleLaunchRecipe}
         onRecipeSaved={(saved) => setActiveRecipe(saved)}
         onRecipeDeleted={() => setActiveRecipe(null)}

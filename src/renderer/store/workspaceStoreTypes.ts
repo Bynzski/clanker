@@ -1,3 +1,4 @@
+import type { PersistedRecipeLayout } from '../../shared/types/recipes';
 import type {
   BrowserPaneState,
   BrowserTab,
@@ -171,6 +172,7 @@ export interface WorkspaceState {
   insertPaneAtEdgeGap: (paneId: string, edge: 'left' | 'right' | 'top' | 'bottom', gapIndex: number, workspaceId?: string) => void;
   insertPaneAtEdgeSegment: (paneId: string, edge: 'left' | 'right' | 'top' | 'bottom', targetPaneId: string, workspaceId?: string) => void;
   setSplitRatio: (nodeId: string, ratio: number, workspaceId?: string) => void;
+  applyPersistedLayout: (persistedLayout: PersistedRecipeLayout, workspaceId?: string) => void;
 
   openFileInEditor: (filePath: string, workspaceId?: string) => Promise<void>;
   closeEditorTab: (tabId: string, workspaceId?: string) => void;

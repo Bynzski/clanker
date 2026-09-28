@@ -89,6 +89,14 @@ export function clearSessionCache(): void {
   sessionCache.clear();
 }
 
+export function clearSessionCacheForWorkspace(workspacePath?: string): void {
+  if (!workspacePath) {
+    sessionCache.clear();
+    return;
+  }
+  const normalizedPath = toNativePath(workspacePath.replace(/[\\/]+$/, ''), process.platform);
+  sessionCache.delete(normalizedPath);
+}
 /** Test-only/introspection helper for verifying the cache remains bounded. */
 export function getSessionCacheSize(): number {
   return sessionCache.size;
@@ -111,14 +119,20 @@ function pruneSessionCache(now: number): void {
 // ============================================================================
 // Public API
 // ============================================================================
+export interface DiscoverSessionsOptions {
+  forceRefresh?: boolean;
+}
 
-export async function discoverSessions(workspacePath?: string): Promise<HarnessSession[]> {
+export async function discoverSessions(
+  workspacePath?: string,
+  options?: DiscoverSessionsOptions,
+): Promise<HarnessSession[]> {
   const normalizedPath = toNativePath((workspacePath ?? '').replace(/[\\/]+$/, ''), process.platform);
   const now = Date.now();
   pruneSessionCache(now);
 
   const cached = sessionCache.get(normalizedPath);
-  if (cached) {
+  if (cached && !options?.forceRefresh) {
     // Refresh insertion order so eviction follows least-recently-used behavior.
     sessionCache.delete(normalizedPath);
     sessionCache.set(normalizedPath, cached);

@@ -326,13 +326,11 @@ app.on('window-all-closed', () => {
 // Set shutdown flag BEFORE any window teardown begins
 // This prevents late PTY callbacks from sending to dead windows
 app.on('before-quit', () => {
-  // Kill all PTY processes synchronously before quit
-  // Uses SIGTERM → SIGKILL sequence for unresponsive processes
+  setAppShuttingDown(true);
+  taskSessionCoordinator?.onAppShutdown();
   killAllTerminals();
   agentAttentionBroker.close();
   removeAttentionAdapterFiles();
-  taskSessionCoordinator?.onAppShutdown();
-  setAppShuttingDown(true);
 });
 
 // Export shared state for test access

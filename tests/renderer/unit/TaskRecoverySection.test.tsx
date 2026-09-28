@@ -173,4 +173,18 @@ describe('TaskRecoverySection', () => {
 
     expect(onFocus).toHaveBeenCalledWith('term-active');
   });
+  it('renders resume error banner when resumeError is provided', () => {
+    render(
+      <TaskRecoverySection
+        tasks={mockTasks}
+        discoveredSessions={mockDiscovered}
+        onResumeTask={vi.fn()}
+        onAssociateSession={vi.fn()}
+        onDeleteTask={vi.fn()}
+        resumeError={{ taskId: 'task-2', message: 'Harness binary exited with error' }}
+      />,
+    );
+
+    expect(screen.getByText('Harness binary exited with error')).toBeInTheDocument();
+  });
 });

@@ -243,6 +243,9 @@ function App() {
         }
         return true;
       },
+      restoreLayout: (wsId, layout) => {
+        useWorkspaceStore.getState().applyPersistedLayout(layout, wsId);
+      },
     });
     if (recipe.launches.length === 0) {
       const workspace = useWorkspaceStore.getState().workspaces.find((w) => w.id === targetWorkspaceId);

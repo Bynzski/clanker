@@ -100,6 +100,57 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
         expect(browserNavigateMock).toHaveBeenCalledWith(expect.any(String), 'http://localhost:5173');
       });
     });
+    it('restores saved recipe layout topology onto newly spawned panes', async () => {
+      const recipeWithLayout: WorkspaceRecipe = {
+        id: 'recipe-layout',
+        name: 'Split Layout Recipe',
+        workspacePath: '/projects/split-app',
+        terminalCount: 2,
+        launches: [
+          { id: 's1', type: 'command', command: 'npm start' },
+          { id: 's2', type: 'command', command: 'npm test' },
+        ],
+        layout: {
+          root: {
+            type: 'split',
+            orientation: 'horizontal',
+            ratio: 0.5,
+            first: { type: 'leaf', paneKey: 'terminal:0' },
+            second: { type: 'leaf', paneKey: 'terminal:1' },
+          },
+          terminalCount: 2,
+        },
+        createdAt: 1000,
+        updatedAt: 1000,
+        version: 1,
+      };
+
+      installElectronApiMock({
+        recipeGetAll: vi.fn().mockResolvedValue([recipeWithLayout]),
+        spawnTerminal: vi.fn()
+          .mockResolvedValueOnce({ id: 'term-split-1', pid: 2001 })
+          .mockResolvedValueOnce({ id: 'term-split-2', pid: 2002 }),
+        registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true }),
+        getLastWorkspace: vi.fn().mockResolvedValue('/projects/split-app'),
+      });
+
+      render(<App />);
+
+      const chip = await screen.findByRole('button', { name: /Split Layout Recipe/i });
+      fireEvent.click(chip);
+
+      const launchBtn = screen.getByRole('button', { name: /launch recipe/i });
+      fireEvent.click(launchBtn);
+
+      await waitFor(() => {
+        const store = useWorkspaceStore.getState();
+        const activeWs = store.workspaces.find((w) => w.workspacePath === '/projects/split-app');
+        expect(activeWs).toBeDefined();
+        expect(activeWs?.panes.length).toBe(2);
+        expect(activeWs?.layoutRoot).not.toBeNull();
+        expect(activeWs?.layoutRoot?.type).toBe('split');
+      });
+    });
   });
 
   describe('Task Recovery Workflow (#43)', () => {
@@ -172,6 +223,41 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
       const storeState = useWorkspaceStore.getState();
       const activeWorkspace = storeState.workspaces.find((w) => w.id === 'ws-active');
       expect(activeWorkspace?.terminals.some((t) => t.id === 'term-new-resume')).toBe(true);
+    });
+    it('handles deleted native sessions by displaying unavailable status and explanation', async () => {
+      const deletedTask: TaskSessionRecord = {
+        id: 'task-deleted',
+        workspacePath: '/projects/my-app',
+        harnessId: 'codex',
+        nativeSessionId: 'deleted-session-id',
+        title: 'Deleted Task',
+        state: 'unavailable',
+        stateReason: 'Native conversation session was not found on disk',
+        createdAt: 1000,
+        updatedAt: 2000,
+        version: 1,
+      };
+
+      installElectronApiMock({
+        taskSessionList: vi.fn().mockResolvedValue([deletedTask]),
+        discoverSessions: vi.fn().mockResolvedValue([]),
+        getLastWorkspace: vi.fn().mockResolvedValue('/projects/my-app'),
+      });
+
+      useWorkspaceStore.getState().addWorkspace(createWorkspaceFixture({
+        id: 'ws-active-2',
+        name: 'my-app',
+        workspacePath: '/projects/my-app',
+      }));
+
+      render(<App />);
+
+      const chatBtn = screen.getByRole('button', { name: /chat history/i });
+      fireEvent.click(chatBtn);
+
+      expect(await screen.findByText('Deleted Task')).toBeInTheDocument();
+      expect(screen.getByText('Unavailable')).toBeInTheDocument();
+      expect(screen.getByText(/Native conversation session was not found on disk/i)).toBeInTheDocument();
     });
   });
 });

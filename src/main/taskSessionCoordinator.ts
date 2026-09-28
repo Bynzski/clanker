@@ -4,12 +4,18 @@ import { normalizeWorkspacePath, isSameWorkspaceIdentity } from '../shared/works
 import type { WorkspacePersistenceService } from './workspacePersistence';
 import { discoverSessions } from './sessionHistory';
 import { toNativePath } from '../shared/pathNormalize';
+import { findUnambiguousSessionCandidate } from './sessionCorrelation';
+
+export type DiscoverSessionsFunction = (
+  workspacePath?: string,
+  options?: { forceRefresh?: boolean },
+) => Promise<HarnessSession[]>;
 
 export class TaskSessionCoordinator {
   private shuttingDown = false;
   constructor(
     private readonly persistence: WorkspacePersistenceService,
-    private readonly discoverSessionsFn: (workspacePath?: string) => Promise<HarnessSession[]> = discoverSessions,
+    private readonly discoverSessionsFn: DiscoverSessionsFunction = discoverSessions,
   ) {}
 
   public onTerminalSpawned(
@@ -95,34 +101,19 @@ export class TaskSessionCoordinator {
         const nativeDir = toNativePath(task.workspacePath, process.platform);
         // Harnesses often flush their session file just after the PTY exits.
         // Retry briefly before asking the user to associate a session manually.
-        let sessions: HarnessSession[] = [];
         for (let attempt = 0; attempt < 5; attempt++) {
-          sessions = await this.discoverSessionsFn(nativeDir);
-          const matching = sessions.filter((s) =>
-            s.harness === task.harnessId && s.timestamp >= task.createdAt - 60_000,
-          );
-          if (matching.length > 0 || this.shuttingDown) break;
+          const sessions = await this.discoverSessionsFn(nativeDir, { forceRefresh: true });
+          const candidate = findUnambiguousSessionCandidate(task, sessions, all);
+          if (candidate) {
+            nativeSessionId = candidate.id;
+            nativeSessionPath = candidate.filePath;
+            if (candidate.title) {
+              updatedTitle = candidate.title;
+            }
+            break;
+          }
+          if (this.shuttingDown) return null;
           await new Promise((resolve) => setTimeout(resolve, 250));
-        }
-        if (this.shuttingDown) return null;
-        // Look for sessions of the same harness created after the task started (with 60s tolerance)
-        const candidates = sessions
-          .filter((s) => s.harness === task.harnessId && s.timestamp >= task.createdAt - 60_000)
-          .sort((a, b) => b.timestamp - a.timestamp);
-
-        if (candidates.length === 1) {
-          nativeSessionId = candidates[0].id;
-          nativeSessionPath = candidates[0].filePath;
-          if (candidates[0].title) {
-            updatedTitle = candidates[0].title;
-          }
-        } else if (candidates.length > 1 && candidates[0].timestamp >= task.createdAt) {
-          // If the most recent is clearly within the run time, correlate it
-          nativeSessionId = candidates[0].id;
-          nativeSessionPath = candidates[0].filePath;
-          if (candidates[0].title) {
-            updatedTitle = candidates[0].title;
-          }
         }
       } catch {
         // Leave unassociated for manual selection

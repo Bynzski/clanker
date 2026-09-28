@@ -98,4 +98,48 @@ describe('executeWorkspaceRecipe', () => {
     expect(result.steps[0].status).toBe('failed');
     expect(deps.spawnTerminal).not.toHaveBeenCalled();
   });
+  it('calls restoreLayout when recipe includes layout configuration', async () => {
+    const restoreLayoutMock = vi.fn();
+    const recipeWithLayout: WorkspaceRecipe = {
+      ...sampleRecipe,
+      layout: {
+        root: { type: 'leaf', paneKey: 'terminal:0' },
+        terminalCount: 2,
+        explorerVisible: true,
+      },
+    };
+
+    const deps = {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'),
+      spawnTerminal: vi.fn().mockResolvedValue({ id: 'term-1', pid: 101 }),
+      onTerminalSpawned: vi.fn(),
+      restoreLayout: restoreLayoutMock,
+    };
+
+    const result = await executeWorkspaceRecipe(recipeWithLayout, deps);
+    expect(result.success).toBe(true);
+    expect(restoreLayoutMock).toHaveBeenCalledWith('ws-1', recipeWithLayout.layout);
+  });
+
+  it('tolerates errors in restoreLayout gracefully', async () => {
+    const recipeWithLayout: WorkspaceRecipe = {
+      ...sampleRecipe,
+      layout: {
+        root: { type: 'leaf', paneKey: 'terminal:0' },
+        terminalCount: 2,
+      },
+    };
+
+    const deps = {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'),
+      spawnTerminal: vi.fn().mockResolvedValue({ id: 'term-1', pid: 101 }),
+      onTerminalSpawned: vi.fn(),
+      restoreLayout: vi.fn().mockImplementation(() => {
+        throw new Error('Incompatible layout');
+      }),
+    };
+
+    const result = await executeWorkspaceRecipe(recipeWithLayout, deps);
+    expect(result.success).toBe(true);
+  });
 });

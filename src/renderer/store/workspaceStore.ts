@@ -58,7 +58,7 @@ import {
   withWorkspaceResourcePolicy,
 } from './workspaceStoreHelpers';
 import { preserveOriginalLineEndings } from '../lib/lineEndings';
-import { restoreWorkspaceLayout } from '../lib/workspaceLayoutStorage';
+import { restoreWorkspaceLayout, restoreWorkspaceLayoutFromPersisted } from '../lib/workspaceLayoutStorage';
 import { nameTerminal, nameTerminals } from '../lib/agentNames';
 import {
   readStoredNotesVisible,
@@ -1361,6 +1361,37 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       workspace,
       setSplitRatioInLayout(workspace.layoutRoot, nodeId, ratio),
     );
+  }),
+  applyPersistedLayout: (persistedLayout, workspaceId) => set((state) => {
+    const workspace = resolveWorkspaceByScope(state, workspaceId);
+    if (workspace == null) {
+      return state;
+    }
+
+    const restored = restoreWorkspaceLayoutFromPersisted(workspace, persistedLayout);
+    if (restored === workspace) {
+      return state;
+    }
+
+    const isCurrentActive = workspace.id === state.activeWorkspaceId;
+    return {
+      ...(isCurrentActive
+        ? {
+            layoutRoot: restored.layoutRoot,
+            layoutRevision: (state.layoutRevision ?? 0) + 1,
+            layoutUndoStack: [],
+            explorerVisible: restored.explorerVisible,
+            explorerPane: restored.explorerPane,
+            browserVisible: restored.browserVisible,
+            browserPane: restored.browserPane,
+            editorVisible: restored.editorVisible,
+            editorPane: restored.editorPane,
+            notesVisible: restored.notesVisible,
+            notesPane: restored.notesPane,
+          }
+        : {}),
+      ...patchWorkspaceById(state, workspace.id, () => restored),
+    };
   }),
 
   openFileInEditor: async (filePath, workspaceId) => {

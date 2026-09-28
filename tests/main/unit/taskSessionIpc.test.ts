@@ -134,7 +134,7 @@ describe('evaluateTaskRecoveryState', () => {
     expect(result.stateReason).toContain('does not support conversation resume');
   });
 
-  it('marks resumable if native session ID exists and harness is supported', () => {
+  it('marks resumable if native session ID exists and session is found on disk', () => {
     const record: TaskSessionRecord = {
       id: 'task-5',
       workspacePath: process.cwd(),
@@ -147,36 +147,107 @@ describe('evaluateTaskRecoveryState', () => {
       version: 1,
     };
 
+    const discovered = [
+      { id: 'sess-xyz', harness: 'codex' as const, title: 'Found Session', cwd: process.cwd(), timestamp: 1200 },
+    ];
+
     const result = evaluateTaskRecoveryState(
       record,
       new Set(),
       availableHarnesses,
+      discovered,
+      [record],
     );
 
     expect(result.state).toBe('resumable');
     expect(result.terminalId).toBeUndefined();
   });
 
-  it('marks needs-selection if native session ID is missing', () => {
+  it('marks unavailable if native session was deleted from disk', () => {
     const record: TaskSessionRecord = {
-      id: 'task-6',
+      id: 'task-deleted',
       workspacePath: process.cwd(),
-      harnessId: 'claude',
-      title: 'Claude Task',
-      state: 'running',
+      harnessId: 'codex',
+      nativeSessionId: 'sess-missing',
+      title: 'Codex Task',
+      state: 'resumable',
       createdAt: 1000,
       updatedAt: 1000,
       version: 1,
     };
 
+    const discovered = [
+      { id: 'sess-other', harness: 'codex' as const, title: 'Other Session', cwd: process.cwd(), timestamp: 1200 },
+    ];
+
     const result = evaluateTaskRecoveryState(
       record,
       new Set(),
       availableHarnesses,
+      discovered,
+      [record],
+    );
+
+    expect(result.state).toBe('unavailable');
+    expect(result.stateReason).toContain('Native conversation session was not found on disk');
+  });
+
+  it('correlates unambiguous candidate on restart for needs-selection task', () => {
+    const record: TaskSessionRecord = {
+      id: 'task-restart-correlate',
+      workspacePath: process.cwd(),
+      harnessId: 'codex',
+      title: 'Codex Task',
+      state: 'needs-selection',
+      createdAt: 5000,
+      updatedAt: 5000,
+      version: 1,
+    };
+
+    const discovered = [
+      { id: 'sess-flushed', harness: 'codex' as const, title: 'Flushed Title', cwd: process.cwd(), timestamp: 5100 },
+    ];
+
+    const result = evaluateTaskRecoveryState(
+      record,
+      new Set(),
+      availableHarnesses,
+      discovered,
+      [record],
+    );
+
+    expect(result.state).toBe('resumable');
+    expect(result.nativeSessionId).toBe('sess-flushed');
+    expect(result.title).toBe('Flushed Title');
+  });
+
+  it('leaves task in needs-selection if restart correlation is ambiguous', () => {
+    const record: TaskSessionRecord = {
+      id: 'task-restart-ambiguous',
+      workspacePath: process.cwd(),
+      harnessId: 'claude',
+      title: 'Claude Task',
+      state: 'needs-selection',
+      createdAt: 5000,
+      updatedAt: 5000,
+      version: 1,
+    };
+
+    const discovered = [
+      { id: 'sess-1', harness: 'claude' as const, title: 'Session 1', cwd: process.cwd(), timestamp: 5100 },
+      { id: 'sess-2', harness: 'claude' as const, title: 'Session 2', cwd: process.cwd(), timestamp: 5200 },
+    ];
+
+    const result = evaluateTaskRecoveryState(
+      record,
+      new Set(),
+      availableHarnesses,
+      discovered,
+      [record],
     );
 
     expect(result.state).toBe('needs-selection');
-    expect(result.terminalId).toBeUndefined();
+    expect(result.nativeSessionId).toBeUndefined();
   });
 });
 
@@ -243,5 +314,34 @@ describe('taskSessionIpc handlers', () => {
 
     const emptyList = await listHandler(null) as TaskSessionRecord[];
     expect(emptyList.length).toBe(0);
+  });
+  it('auto-correlates needs-selection task on list when unambiguous session is found', async () => {
+    const mockDiscover = vi.fn().mockResolvedValue([
+      { id: 'sess-auto', harness: 'codex', title: 'Auto Found', cwd: process.cwd(), timestamp: 2500 },
+    ]);
+
+    const persistence = registerTaskSessionIpc({
+      getStore: () => memoryStore as unknown as Store<StoreSchema>,
+      getTerminals: () => mockTerminals,
+      getHarnessOptions: () => ({ codex: { name: 'Codex' } }),
+      discoverSessionsFn: mockDiscover,
+    });
+
+    persistence.saveTaskSession({
+      id: 'task-auto',
+      workspacePath: process.cwd(),
+      harnessId: 'codex',
+      title: 'Initial',
+      state: 'needs-selection',
+      createdAt: 2000,
+      updatedAt: 2000,
+    });
+
+    const listHandler = handlers.get(TASK_SESSION_LIST)!;
+    const sessions = await listHandler(null) as TaskSessionRecord[];
+    expect(sessions.length).toBe(1);
+    expect(sessions[0].state).toBe('resumable');
+    expect(sessions[0].nativeSessionId).toBe('sess-auto');
+    expect(sessions[0].title).toBe('Auto Found');
   });
 });

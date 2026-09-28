@@ -20,6 +20,7 @@ interface Props {
   onAssociateSession: (task: TaskSessionRecord, session: HarnessSession) => Promise<void>;
   onDeleteTask: (taskId: string) => Promise<void>;
   onFocusTerminal?: (terminalId: string) => void;
+  resumeError?: { taskId: string; message: string } | null;
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -43,6 +44,7 @@ export default function TaskRecoverySection({
   onAssociateSession,
   onDeleteTask,
   onFocusTerminal,
+  resumeError,
 }: Props) {
   const [selectingSessionTaskId, setSelectingSessionTaskId] = useState<string | null>(null);
   const [resumingTaskId, setResumingTaskId] = useState<string | null>(null);
@@ -174,6 +176,12 @@ export default function TaskRecoverySection({
                   </button>
                 </div>
               </div>
+              {resumeError?.taskId === task.id && (
+                <div className="task-recovery-error-banner">
+                  <AlertTriangle size={11} />
+                  <span>{resumeError.message}</span>
+                </div>
+              )}
 
               {isSelecting && (
                 <div className="task-session-picker">
