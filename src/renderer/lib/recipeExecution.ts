@@ -168,6 +168,14 @@ export async function executeWorkspaceRecipe(
     }
   }
 
+  if (recipe.layout && deps.restoreLayout) {
+    try {
+      deps.restoreLayout(workspaceId, recipe.layout);
+    } catch {
+      // Incompatible layout restoration falls back gracefully
+    }
+  }
+
   if (recipe.browser?.url && deps.openBrowserPreview) {
     try {
       let previewFailure: string | undefined;
@@ -196,14 +204,6 @@ export async function executeWorkspaceRecipe(
       });
     }
   }
-  if (recipe.layout && deps.restoreLayout) {
-    try {
-      deps.restoreLayout(workspaceId, recipe.layout);
-    } catch {
-      // Incompatible layout restoration falls back gracefully
-    }
-  }
-
   const success = steps.every((s) => s.status !== 'failed');
 
   return {

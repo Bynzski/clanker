@@ -50,6 +50,28 @@ describe('executeWorkspaceRecipe', () => {
     expect(openBrowserPreview).not.toHaveBeenCalled();
   });
 
+  it('restores the terminal layout before waiting for preview and retains it after failure', async () => {
+    const events: string[] = [];
+    const layout = { root: { type: 'leaf' as const, paneKey: 'terminal:0' }, terminalCount: 1 };
+    const result = await executeWorkspaceRecipe({ ...previewRecipe, layout }, {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'),
+      spawnTerminal: vi.fn().mockResolvedValue({ id: 'term-1', pid: 101 }),
+      onTerminalSpawned: vi.fn(() => events.push('terminal')),
+      waitRecipeCommand: vi.fn().mockResolvedValue({ status: 'started' }),
+      restoreLayout: vi.fn(() => events.push('layout')),
+      probePreview: vi.fn(async (_url, wait) => {
+        events.push(wait ? 'readiness' : 'preflight');
+        return { status: 'unavailable' as const, host: 'localhost', port: 5173 };
+      }),
+      openBrowserPreview: vi.fn(() => { events.push('browser'); return Promise.resolve(true); }),
+      getExistingTerminalCount: () => 0,
+    });
+    expect(events).toEqual(['preflight', 'terminal', 'layout', 'readiness']);
+    expect(result.steps).toContainEqual({ id: 'browser', type: 'browser', status: 'failed',
+      error: 'Preview did not become available on localhost:5173' });
+    expect(result.steps[0]).toMatchObject({ terminalId: 'term-1', status: 'started' });
+  });
+
   it('navigates when a local preview becomes ready during the retry window', async () => {
     const openBrowserPreview = vi.fn().mockResolvedValue(true);
     const probePreview = vi.fn()

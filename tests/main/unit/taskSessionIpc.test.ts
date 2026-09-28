@@ -449,15 +449,16 @@ describe('taskSessionIpc handlers', () => {
       .resolves.toMatchObject({ nativeSessionId: 'session-y' });
   });
   it('auto-correlates needs-selection task on list when unambiguous session is found', async () => {
-    const mockDiscover = vi.fn().mockResolvedValue([
-      { id: 'sess-auto', harness: 'codex', title: 'Auto Found', cwd: process.cwd(), timestamp: 2500 },
-    ]);
+    const mockDiscover = vi.fn().mockResolvedValue({
+      sessions: [{ id: 'sess-auto', harness: 'codex', title: 'Auto Found', cwd: process.cwd(), timestamp: 2500 }],
+      harnessStatus: { codex: { status: 'success' } },
+    });
 
     const persistence = registerTaskSessionIpc({
       getStore: () => memoryStore as unknown as Store<StoreSchema>,
       getTerminals: () => mockTerminals,
       getHarnessOptions: () => ({ codex: { name: 'Codex' } }),
-      discoverSessionsFn: mockDiscover,
+      discoverSessionsDetailedFn: mockDiscover,
     });
 
     persistence.saveTaskSession({
@@ -477,16 +478,42 @@ describe('taskSessionIpc handlers', () => {
     expect(sessions[0].nativeSessionId).toBe('sess-auto');
     expect(sessions[0].title).toBe('Auto Found');
   });
+  it('uses each harness scan health when evaluating known native sessions', async () => {
+    const persistence = registerTaskSessionIpc({
+      getStore: () => memoryStore as unknown as Store<StoreSchema>,
+      getTerminals: () => mockTerminals,
+      getHarnessOptions: () => ({ codex: {}, claude: {} }),
+      discoverSessionsDetailedFn: vi.fn().mockResolvedValue({
+        sessions: [],
+        harnessStatus: {
+          codex: { status: 'success' },
+          claude: { status: 'error', error: 'EACCES' },
+        },
+      }),
+    });
+    persistence.saveTaskSession({ id: 'codex-known', workspacePath: process.cwd(), harnessId: 'codex',
+      title: 'Codex', nativeSessionId: 'codex-session', state: 'running' });
+    persistence.saveTaskSession({ id: 'claude-known', workspacePath: process.cwd(), harnessId: 'claude',
+      title: 'Claude', nativeSessionId: 'claude-session', state: 'running' });
+    const records = await handlers.get(TASK_SESSION_LIST)!(null) as TaskSessionRecord[];
+    expect(records.find((record) => record.id === 'codex-known')).toMatchObject({
+      state: 'unavailable', stateReason: 'Native conversation session was not found on disk',
+    });
+    expect(records.find((record) => record.id === 'claude-known')).toMatchObject({
+      state: 'resumable', nativeSessionId: 'claude-session',
+    });
+  });
   it('prevents duplicate assignment across tasks during a single TASK_SESSION_LIST pass', async () => {
-    const mockDiscover = vi.fn().mockResolvedValue([
-      { id: 'sess-unique-one', harness: 'codex', title: 'Single Chat', cwd: process.cwd(), timestamp: 2500 },
-    ]);
+    const mockDiscover = vi.fn().mockResolvedValue({
+      sessions: [{ id: 'sess-unique-one', harness: 'codex', title: 'Single Chat', cwd: process.cwd(), timestamp: 2500 }],
+      harnessStatus: { codex: { status: 'success' } },
+    });
 
     const persistence = registerTaskSessionIpc({
       getStore: () => memoryStore as unknown as Store<StoreSchema>,
       getTerminals: () => mockTerminals,
       getHarnessOptions: () => ({ codex: { name: 'Codex' } }),
-      discoverSessionsFn: mockDiscover,
+      discoverSessionsDetailedFn: mockDiscover,
     });
 
     // Two tasks both in needs-selection in the same workspace

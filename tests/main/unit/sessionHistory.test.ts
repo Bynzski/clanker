@@ -87,6 +87,7 @@ function makeReadableLines(lines: string[]): Readable {
 
 import {
   discoverSessions,
+  discoverSessionsDetailed,
   buildSessionInvokeArgs,
   clearSessionCache,
   getSessionCacheSize,
@@ -225,6 +226,7 @@ describe('mapAgyRowToSession', () => {
 
 describe('discoverAgySessions', () => {
   it('returns empty array when database file does not exist', async () => {
+    mockStat.mockRejectedValueOnce(Object.assign(new Error('not found'), { code: 'ENOENT' }));
     const sessions = await discoverAgySessions(TEST_WORKSPACE, '/nonexistent/path/db.sqlite');
     expect(sessions).toEqual([]);
   });
@@ -1040,15 +1042,82 @@ describe('discoverSessions — codex orphaned title resolution', () => {
 // discoverSessions — caching
 // ============================================================================
 
+describe('harness discovery health', () => {
+  beforeEach(() => {
+    clearSessionCache();
+    vi.clearAllMocks();
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => cb(null, '[]', ''));
+    mockReadFile.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+    mockReaddir.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+    mockStat.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+  });
+
+  it('treats a successful empty Codex store as authoritative', async () => {
+    const result = await discoverSessionsDetailed(TEST_WORKSPACE, { forceRefresh: true });
+    expect(result.harnessStatus.codex).toEqual({ status: 'success' });
+    expect(result.sessions.filter((session) => session.harness === 'codex')).toEqual([]);
+  });
+
+  it('reports Codex I/O failure, keeps other sessions, and retries rather than caching the failure', async () => {
+    const indexPath = path.join(TEST_HOME, '.codex', 'session_index.jsonl');
+    mockReadFile.mockImplementation((filePath: string) => filePath === indexPath
+      ? Promise.reject(Object.assign(new Error('access denied'), { code: 'EACCES' }))
+      : Promise.reject(Object.assign(new Error('not found'), { code: 'ENOENT' })));
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) =>
+      cb(null, JSON.stringify([{ id: 'other-session', title: 'Other', directory: TEST_WORKSPACE, updated: 10 }]), ''));
+
+    const first = await discoverSessionsDetailed(TEST_WORKSPACE);
+    expect(first.harnessStatus.codex).toMatchObject({ status: 'error', error: 'access denied' });
+    expect(first.harnessStatus.opencode).toEqual({ status: 'success' });
+    expect(first.sessions.map((session) => session.id)).toContain('other-session');
+    expect(getSessionCacheSize()).toBe(0);
+    expect((await discoverSessions(TEST_WORKSPACE)).map((session) => session.id)).toContain('other-session');
+    expect(mockReadFile).toHaveBeenCalledTimes(2);
+
+    mockReadFile.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+    expect((await discoverSessionsDetailed(TEST_WORKSPACE, { forceRefresh: true })).harnessStatus.codex)
+      .toEqual({ status: 'success' });
+  });
+
+  it('keeps Codex authoritative when Claude fails in the same scan', async () => {
+    const claudeRoot = path.join(TEST_HOME, '.claude', 'projects');
+    mockReaddir.mockImplementation((dir: string) => Promise.reject(
+      dir === claudeRoot
+        ? Object.assign(new Error('Claude I/O failed'), { code: 'EPERM' })
+        : Object.assign(new Error('not found'), { code: 'ENOENT' }),
+    ));
+    const result = await discoverSessionsDetailed(TEST_WORKSPACE, { forceRefresh: true });
+    expect(result.harnessStatus.codex).toEqual({ status: 'success' });
+    expect(result.harnessStatus.claude).toMatchObject({ status: 'error', error: 'Claude I/O failed' });
+  });
+
+  it('reports an unreadable Pi session file as a harness failure', async () => {
+    const piRoot = path.join(TEST_HOME, '.pi', 'agent', 'sessions');
+    mockReaddir.mockImplementation((dir: string) => {
+      if (dir === piRoot) return Promise.resolve([{ name: 'project', isDirectory: () => true }]);
+      if (dir === path.join(piRoot, 'project')) {
+        return Promise.resolve([{ name: 'session.jsonl', isFile: () => true }]);
+      }
+      return Promise.reject(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+    });
+    mockCreateReadStream.mockImplementation(() => new Readable({
+      read() { this.destroy(Object.assign(new Error('read denied'), { code: 'EACCES' })); },
+    }));
+    const result = await discoverSessionsDetailed(TEST_WORKSPACE, { forceRefresh: true });
+    expect(result.harnessStatus.pi).toMatchObject({ status: 'error', error: 'read denied' });
+  });
+});
+
 describe('discoverSessions — caching', () => {
   beforeEach(() => {
     clearSessionCache();
     vi.clearAllMocks();
     mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
-      cb(new Error('not found'), '', '');
+      cb(null, '[]', '');
     });
     mockReadFile.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
     mockReaddir.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
+    mockStat.mockRejectedValue(Object.assign(new Error('not found'), { code: 'ENOENT' }));
   });
 
   afterEach(() => {

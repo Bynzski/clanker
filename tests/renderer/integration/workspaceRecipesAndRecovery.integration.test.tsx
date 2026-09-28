@@ -156,6 +156,43 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
       expect(spawnTerminal).toHaveBeenNthCalledWith(2, '/projects/split-app', 'codex', undefined);
     });
 
+    it.each([false, true])('keeps preview visible when saved layout includes browser: %s', async (layoutHasBrowser) => {
+      const recipe: WorkspaceRecipe = {
+        id: 'recipe-browser-layout', name: 'Browser Layout Recipe', workspacePath: '/projects/browser-app',
+        launches: [{ id: 'shell', type: 'shell' }],
+        browser: { url: 'https://example.com' },
+        layout: {
+          root: layoutHasBrowser
+            ? { type: 'split', orientation: 'horizontal', ratio: 0.5,
+              first: { type: 'leaf', paneKey: 'terminal:0' },
+              second: { type: 'leaf', paneKey: 'browser' } }
+            : { type: 'leaf', paneKey: 'terminal:0' },
+          terminalCount: 1,
+        },
+        createdAt: 1, updatedAt: 1, version: 1,
+      };
+      const browserNavigate = vi.fn().mockResolvedValue(true);
+      installElectronApiMock({
+        recipeGetAll: vi.fn().mockResolvedValue([recipe]),
+        getLastWorkspace: vi.fn().mockResolvedValue('/projects/browser-app'),
+        registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true }),
+        spawnTerminal: vi.fn().mockResolvedValue({ id: 'term-browser', pid: 1001 }),
+        probeRecipePreview: vi.fn().mockResolvedValue({ status: 'remote' }),
+        browserNavigate,
+      });
+      render(<App />);
+      fireEvent.click(await screen.findByRole('button', { name: /Browser Layout Recipe/i }));
+      fireEvent.click(screen.getByRole('button', { name: /launch recipe/i }));
+      await waitFor(() => {
+        const workspace = useWorkspaceStore.getState().workspaces.find((entry) => entry.workspacePath === '/projects/browser-app');
+        expect(workspace?.browserVisible).toBe(true);
+        expect(workspace?.browserPane).toBeDefined();
+        expect(workspace?.panes).toHaveLength(1);
+        expect(browserNavigate).toHaveBeenCalledOnce();
+      });
+      expect(browserNavigate).toHaveBeenCalledWith(expect.any(String), 'https://example.com', undefined, true);
+    });
+
     it('keeps prior terminals usable and reports a command startup failure after opening a workspace', async () => {
       const recipe: WorkspaceRecipe = {
         id: 'recipe-partial', name: 'Partial Recipe', workspacePath: '/projects/partial',

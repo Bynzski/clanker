@@ -15,7 +15,8 @@ import { WorkspacePersistenceService } from '../workspacePersistence';
 import { toNativePath } from '../../shared/pathNormalize';
 import type { Terminal } from './terminalIpc';
 import { findUnambiguousSessionCandidate } from '../sessionCorrelation';
-import { discoverSessions } from '../sessionHistory';
+import { discoverSessionsDetailed } from '../sessionHistory';
+import type { DetailedSessionDiscovery } from '../sessionHistory';
 import type { HarnessSession } from '../../shared/types/session';
 import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
 
@@ -35,7 +36,7 @@ export interface RegisterTaskSessionIpcDeps {
   getStore: () => Store<StoreSchema>;
   getTerminals: () => Map<string, Terminal>;
   getHarnessOptions: () => Record<string, unknown>;
-  discoverSessionsFn?: (workspacePath?: string, options?: { forceRefresh?: boolean }) => Promise<HarnessSession[]>;
+  discoverSessionsDetailedFn?: typeof discoverSessionsDetailed;
 }
 
 export function evaluateTaskRecoveryState(
@@ -176,7 +177,7 @@ export function evaluateTaskRecoveryState(
 }
 
 export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): WorkspacePersistenceService {
-  const { getStore, getTerminals, getHarnessOptions, discoverSessionsFn = discoverSessions } = deps;
+  const { getStore, getTerminals, getHarnessOptions, discoverSessionsDetailedFn = discoverSessionsDetailed } = deps;
   const persistence = new WorkspacePersistenceService(getStore);
   ipcMain.handle(TASK_SESSION_LIST, async (_, workspacePath?: string) => {
     const rawSessions = workspacePath && typeof workspacePath === 'string' && workspacePath.trim()
@@ -186,17 +187,15 @@ export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): Worksp
     const liveTerminalIds = new Set<string>(getTerminals().keys());
     const availableHarnesses = getHarnessOptions();
 
-    const discoveredByWorkspace = new Map<string, SessionDiscoveryResult>();
+    const discoveredByWorkspace = new Map<string, DetailedSessionDiscovery | { error: string }>();
     for (const record of rawSessions) {
       const key = record.workspacePath;
       if (!discoveredByWorkspace.has(key)) {
         try {
           const nativeDir = toNativePath(record.workspacePath, process.platform);
-          const sessions = await discoverSessionsFn(nativeDir, { forceRefresh: true });
-          discoveredByWorkspace.set(key, { status: 'success', sessions });
+          discoveredByWorkspace.set(key, await discoverSessionsDetailedFn(nativeDir, { forceRefresh: true }));
         } catch (err) {
           discoveredByWorkspace.set(key, {
-            status: 'error',
             error: err instanceof Error ? err.message : String(err),
           });
         }
@@ -214,7 +213,15 @@ export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): Worksp
 
     const evaluated: TaskSessionRecord[] = [];
     for (const record of rawSessions) {
-      const workspaceDiscoveryResult = discoveredByWorkspace.get(record.workspacePath);
+      const workspaceDiscovery = discoveredByWorkspace.get(record.workspacePath);
+      const harnessStatus = workspaceDiscovery && 'harnessStatus' in workspaceDiscovery
+        ? workspaceDiscovery.harnessStatus[record.harnessId as keyof DetailedSessionDiscovery['harnessStatus']]
+        : undefined;
+      const workspaceDiscoveryResult: SessionDiscoveryResult = harnessStatus?.status === 'success'
+        ? { status: 'success', sessions: workspaceDiscovery && 'sessions' in workspaceDiscovery
+          ? workspaceDiscovery.sessions.filter((session) => session.harness === record.harnessId) : [] }
+        : { status: 'error', error: harnessStatus?.status === 'error' ? harnessStatus.error
+          : workspaceDiscovery && 'error' in workspaceDiscovery ? workspaceDiscovery.error : 'Session discovery unavailable' };
       const evaluatedState = evaluateTaskRecoveryState(
         record,
         liveTerminalIds,
