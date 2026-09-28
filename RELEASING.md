@@ -39,7 +39,7 @@ Linux-only releases are allowed at any semantic version when the artifact scope 
 
 ### 2. Build the Linux artifact (Linux host)
 
-1. Run `npm run build:dist`. The AppImage lands in `release/Clanker Grid-X.Y.Z.AppImage`.
+1. Run `npm run build:dist`. The AppImage lands in `release/Clanker Grid-X.Y.Z.AppImage`; the `build:dist` script disables electron-builder publishing, so this step creates only a local artifact.
 2. Smoke-test the AppImage on a clean/current Linux desktop: launch it, open a workspace, spawn a terminal, run a git operation, open the file explorer. If it does not launch, do not release.
 
 ### 3. Build the Windows artifacts (Windows host, full releases only)
