@@ -85,6 +85,19 @@ interface SessionCacheEntry {
 }
 
 const sessionCache = new Map<string, SessionCacheEntry>();
+const SESSION_FILE_CONCURRENCY = 16;
+
+async function mapSessionFiles<T, U>(items: T[], read: (item: T) => Promise<U>): Promise<U[]> {
+  const results = new Array<U>(items.length);
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: Math.min(SESSION_FILE_CONCURRENCY, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await read(items[index]);
+    }
+  }));
+  return results;
+}
 
 export function clearSessionCache(): void {
   sessionCache.clear();
@@ -327,26 +340,6 @@ async function readFirstLineJson<T>(filePath: string): Promise<T | null> {
   });
 }
 
-/** Read all non-empty lines of a file as raw strings. */
-async function readFileLines(filePath: string): Promise<string[]> {
-  return new Promise<string[]>((resolve, reject) => {
-    const lines: string[] = [];
-    try {
-      const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
-      const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-      rl.on('line', (line) => {
-        if (line.trim()) lines.push(line);
-      });
-      rl.once('close', () => resolve(lines));
-      rl.once('error', (error) => isMissing(error) ? resolve(lines) : reject(error));
-      stream.once('error', (error) => isMissing(error) ? resolve(lines) : reject(error));
-    } catch (error) {
-      if (isMissing(error)) resolve(lines);
-      else reject(error);
-    }
-  });
-}
-
 /**
  * Read a Claude Code JSONL session file and extract the fields we need.
  * Stops early once cwd + title + modelId are all found.
@@ -527,32 +520,39 @@ interface CodexSessionData {
 
 async function buildCodexFileMap(sessionsDir: string): Promise<Map<string, string>> {
   const map = new Map<string, string>();
-  const scanDir = async (dir: string): Promise<void> => {
-    let entries: fs.Dirent[];
-    try {
-      entries = await fs.promises.readdir(dir, { withFileTypes: true });
-    } catch (error) {
-      if (isMissing(error)) return;
-      throw error;
-    }
-    await Promise.all(
-      entries.map(async (entry) => {
+  let directories = [sessionsDir];
+  while (directories.length > 0) {
+    const batches = await mapSessionFiles(directories, async (dir) => {
+      let entries: fs.Dirent[];
+      try {
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      } catch (error) {
+        if (isMissing(error)) return { files: [] as Array<[string, string]>, directories: [] as string[] };
+        throw error;
+      }
+      const files: Array<[string, string]> = [];
+      const childDirectories: string[] = [];
+      for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-          await scanDir(fullPath);
+          childDirectories.push(fullPath);
         } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
           const match = entry.name.match(
             /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i
           );
           if (match) {
-            map.set(match[1], fullPath);
+            files.push([match[1], fullPath]);
           }
         }
-      })
-    );
-  };
-
-  await scanDir(sessionsDir);
+      }
+      return { files, directories: childDirectories };
+    });
+    directories = [];
+    for (const batch of batches) {
+      for (const [id, filePath] of batch.files) map.set(id, filePath);
+      directories.push(...batch.directories);
+    }
+  }
   return map;
 }
 
@@ -610,57 +610,34 @@ async function readCodexFirstUserMessage(filePath: string): Promise<string | nul
 }
 
 /**
- * Recursive directory scan that collects orphaned session data (files not in the index).
+ * Collect orphaned session data from the file map built during discovery.
  */
 async function collectOrphanedSessions(
-  dir: string,
+  fileMap: Map<string, string>,
   workspacePath: string,
   indexedIds: Set<string>
 ): Promise<CodexSessionData[]> {
-  let entries: fs.Dirent[];
-  try {
-    entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  } catch (error) {
-    if (isMissing(error)) return [];
-    throw error;
-  }
-
-  const orphaned: CodexSessionData[] = [];
-  await Promise.all(
-    entries.map(async (entry) => {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        const sub = await collectOrphanedSessions(fullPath, workspacePath, indexedIds);
-        orphaned.push(...sub);
-      } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
-        const match = entry.name.match(
-          /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i
-        );
-        if (!match) return;
-        const sessionId = match[1];
-        if (indexedIds.has(sessionId)) return;
-        const meta = await readFirstLineJson<CodexSessionMeta>(fullPath);
-        if (!meta?.payload?.cwd) return;
-        if (workspacePath && !sessionMatchesWorkspace(workspacePath, meta.payload.cwd)) return;
-        let timestamp = 0;
-        try {
-          const stat = await fs.promises.stat(fullPath);
-          timestamp = stat.mtimeMs;
-        } catch {
-          // use 0
-        }
-        orphaned.push({
-          filePath: fullPath,
-          id: sessionId,
-          cwd: meta.payload.cwd,
-          timestamp,
-          modelId: meta.payload.model ?? undefined,
-          provider: meta.payload.model ? (meta.payload.model_provider ?? 'openai') : undefined,
-        });
-      }
-    })
-  );
-  return orphaned;
+  const candidates = [...fileMap].filter(([id]) => !indexedIds.has(id));
+  const orphaned = await mapSessionFiles(candidates, async ([sessionId, fullPath]): Promise<CodexSessionData | null> => {
+    const meta = await readFirstLineJson<CodexSessionMeta>(fullPath);
+    if (!meta?.payload?.cwd) return null;
+    if (workspacePath && !sessionMatchesWorkspace(workspacePath, meta.payload.cwd)) return null;
+    let timestamp = 0;
+    try {
+      timestamp = (await fs.promises.stat(fullPath)).mtimeMs;
+    } catch {
+      // Keep sessions whose file was removed during discovery.
+    }
+    return {
+      filePath: fullPath,
+      id: sessionId,
+      cwd: meta.payload.cwd,
+      timestamp,
+      modelId: meta.payload.model ?? undefined,
+      provider: meta.payload.model ? (meta.payload.model_provider ?? 'openai') : undefined,
+    };
+  });
+  return orphaned.filter((session): session is CodexSessionData => session !== null);
 }
 
 function parseCodexIndexEntries(indexContent: string): CodexIndexEntry[] {
@@ -686,13 +663,13 @@ async function buildCodexIndexedSessions(
   workspacePath: string
 ): Promise<HarnessSession[]> {
   const sessions: HarnessSession[] = [];
-  for (const entry of indexEntries) {
+  const indexed = await mapSessionFiles(indexEntries, async (entry): Promise<HarnessSession | null> => {
     const filePath = fileMap.get(entry.id);
-    if (!filePath) continue;
+    if (!filePath) return null;
     const meta = await readFirstLineJson<CodexSessionMeta>(filePath);
-    if (!meta?.payload?.cwd) continue;
-    if (workspacePath && !sessionMatchesWorkspace(workspacePath, meta.payload.cwd)) continue;
-    sessions.push({
+    if (!meta?.payload?.cwd) return null;
+    if (workspacePath && !sessionMatchesWorkspace(workspacePath, meta.payload.cwd)) return null;
+    return {
       id: entry.id,
       harness: 'codex',
       title: entry.thread_name?.trim() || 'Codex session',
@@ -700,8 +677,9 @@ async function buildCodexIndexedSessions(
       timestamp: entry.updated_at ? Date.parse(entry.updated_at) : 0,
       modelId: meta.payload.model ?? undefined,
       provider: meta.payload.model ? (meta.payload.model_provider ?? 'openai') : undefined,
-    });
-  }
+    };
+  });
+  sessions.push(...indexed.filter((session): session is HarnessSession => session !== null));
   return sessions;
 }
 
@@ -745,10 +723,10 @@ async function discoverCodexSessions(workspacePath: string): Promise<HarnessSess
   const sessions = await buildCodexIndexedSessions(indexEntries, fileMap, workspacePath);
 
   const indexThreadNames = buildCodexThreadNameMap(indexEntries);
-  const indexedIds = new Set(sessions.map((s) => s.id));
-  const orphaned = await collectOrphanedSessions(sessionsDir, workspacePath, indexedIds);
+  const indexedIds = new Set(indexEntries.map((entry) => entry.id));
+  const orphaned = await collectOrphanedSessions(fileMap, workspacePath, indexedIds);
 
-  const orphanedSessions = await Promise.all(orphaned.map(async (session) => ({
+  const orphanedSessions = await mapSessionFiles(orphaned, async (session) => ({
     id: session.id,
     harness: 'codex' as const,
     title: await resolveCodexOrphanedTitle(session, indexThreadNames),
@@ -756,7 +734,7 @@ async function discoverCodexSessions(workspacePath: string): Promise<HarnessSess
     timestamp: session.timestamp,
     modelId: session.modelId,
     provider: session.provider,
-  })));
+  }));
 
   return [...sessions, ...orphanedSessions];
 }
@@ -798,34 +776,34 @@ function extractPiTitleFromParsedEvent(parsed: Record<string, unknown>): string 
   return text ? text.slice(0, 120) : undefined;
 }
 
-function extractPiMetadataFromLines(rawLines: string[]): { modelId?: string; provider?: string; title?: string } {
-  let modelId: string | undefined;
-  let provider: string | undefined;
-  let title: string | undefined;
-
-  for (let i = rawLines.length - 1; i >= 0; i--) {
-    let parsed: Record<string, unknown>;
+async function readPiSessionMetadata(filePath: string): Promise<{ modelId?: string; provider?: string; title?: string }> {
+  return new Promise((resolve, reject) => {
+    const metadata: { modelId?: string; provider?: string; title?: string } = {};
     try {
-      parsed = JSON.parse(rawLines[i]) as Record<string, unknown>;
-    } catch {
-      continue;
+      const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+      const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
+      lines.on('line', (line) => {
+        let parsed: Record<string, unknown>;
+        try {
+          parsed = JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          return;
+        }
+        if (parsed.type === 'model_change' && typeof parsed.modelId === 'string'
+          && typeof parsed.provider === 'string') {
+          metadata.modelId = parsed.modelId;
+          metadata.provider = parsed.provider;
+        }
+        metadata.title = extractPiTitleFromParsedEvent(parsed) ?? metadata.title;
+      });
+      lines.once('close', () => resolve(metadata));
+      lines.once('error', (error) => isMissing(error) ? resolve(metadata) : reject(error));
+      stream.once('error', (error) => isMissing(error) ? resolve(metadata) : reject(error));
+    } catch (error) {
+      if (isMissing(error)) resolve(metadata);
+      else reject(error);
     }
-
-    if (
-      parsed.type === 'model_change' &&
-      typeof parsed.modelId === 'string' &&
-      typeof parsed.provider === 'string'
-    ) {
-      modelId = parsed.modelId;
-      provider = parsed.provider;
-    }
-
-    if (!title) {
-      title = extractPiTitleFromParsedEvent(parsed);
-    }
-  }
-
-  return { modelId, provider, title };
+  });
 }
 
 async function discoverPiSessionFile(
@@ -836,8 +814,7 @@ async function discoverPiSessionFile(
   if (!first || first.type !== 'session' || !first.cwd || !first.id) return null;
   if (workspacePath && !sessionMatchesWorkspace(workspacePath, first.cwd)) return null;
 
-  const rawLines = await readFileLines(filePath);
-  const { modelId, provider, title } = extractPiMetadataFromLines(rawLines);
+  const { modelId, provider, title } = await readPiSessionMetadata(filePath);
   const sessionTitle = title ?? (modelId && provider ? `${provider}/${modelId}` : 'Pi session');
 
   return {
@@ -868,8 +845,7 @@ async function discoverPiSessions(workspacePath: string): Promise<HarnessSession
     .filter((e) => e.isDirectory())
     .map((e) => path.join(piSessionsDir, e.name));
 
-  const allResults = await Promise.all(
-    subdirs.map(async (subdir) => {
+  const filesByDirectory = await mapSessionFiles(subdirs, async (subdir) => {
       let fileEntries: fs.Dirent[];
       try {
         fileEntries = await fs.promises.readdir(subdir, { withFileTypes: true });
@@ -877,25 +853,15 @@ async function discoverPiSessions(workspacePath: string): Promise<HarnessSession
         if (isMissing(error)) return [];
         throw error;
       }
-
-      const jsonlFiles = fileEntries.filter(
-        (e) => e.isFile() && e.name.endsWith('.jsonl')
-      );
-
-      const sessionResults = await Promise.all(
-        jsonlFiles.map((e) =>
-          discoverPiSessionFile(path.join(subdir, e.name), workspacePath).catch((error: unknown) => {
-            if (isMissing(error)) return null;
-            throw error;
-          })
-        )
-      );
-
-      return sessionResults.filter((s): s is HarnessSession => s !== null);
-    })
-  );
-
-  return allResults.flat();
+      return fileEntries.filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
+        .map((entry) => path.join(subdir, entry.name));
+  });
+  const sessionResults = await mapSessionFiles(filesByDirectory.flat(), (filePath) =>
+    discoverPiSessionFile(filePath, workspacePath).catch((error: unknown) => {
+      if (isMissing(error)) return null;
+      throw error;
+    }));
+  return sessionResults.filter((session): session is HarnessSession => session !== null);
 }
 
 // ============================================================================
@@ -1011,8 +977,7 @@ async function discoverOmpSessions(workspacePath: string): Promise<HarnessSessio
 
 async function discoverClaudeProjectDir(
   projectDir: string,
-  workspacePath: string
-): Promise<HarnessSession[]> {
+): Promise<string[]> {
   let fileEntries: fs.Dirent[];
   try {
     fileEntries = await fs.promises.readdir(projectDir, { withFileTypes: true });
@@ -1021,41 +986,36 @@ async function discoverClaudeProjectDir(
     throw error;
   }
 
-  const jsonlFiles = fileEntries.filter((e) => e.isFile() && e.name.endsWith('.jsonl'));
+  return fileEntries.filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
+    .map((entry) => path.join(projectDir, entry.name));
+}
 
-  const sessionResults = await Promise.all(
-    jsonlFiles.map(async (e): Promise<HarnessSession | null> => {
-      const filePath = path.join(projectDir, e.name);
-      const sessionId = e.name.replace(/\.jsonl$/, '');
+async function discoverClaudeSessionFile(filePath: string, workspacePath: string): Promise<HarnessSession | null> {
+  const sessionId = path.basename(filePath).replace(/\.jsonl$/, '');
+  const data = await readClaudeSessionData(filePath);
 
-      const data = await readClaudeSessionData(filePath);
+  if (!data.cwd) return null;
+  if (workspacePath && !sessionMatchesWorkspace(workspacePath, data.cwd)) return null;
 
-      if (!data.cwd) return null;
-      if (workspacePath && !sessionMatchesWorkspace(workspacePath, data.cwd)) return null;
+  let fallbackTimestamp: number | undefined;
+  if (!data.timestamp) {
+    try {
+      const stat = await fs.promises.stat(filePath);
+      fallbackTimestamp = stat.mtimeMs;
+    } catch {
+      fallbackTimestamp = 0;
+    }
+  }
 
-      let fallbackTimestamp: number | undefined;
-      if (!data.timestamp) {
-        try {
-          const stat = await fs.promises.stat(filePath);
-          fallbackTimestamp = stat.mtimeMs;
-        } catch {
-          fallbackTimestamp = 0;
-        }
-      }
-
-      return {
-        id: sessionId,
-        harness: 'claude',
-        title: data.title ?? 'Claude session',
-        cwd: data.cwd,
-        timestamp: data.timestamp ?? fallbackTimestamp ?? 0,
-        modelId: data.modelId,
-        provider: data.modelId ? 'anthropic' : undefined,
-      };
-    })
-  );
-
-  return sessionResults.filter((s): s is HarnessSession => s !== null);
+  return {
+    id: sessionId,
+    harness: 'claude',
+    title: data.title ?? 'Claude session',
+    cwd: data.cwd,
+    timestamp: data.timestamp ?? fallbackTimestamp ?? 0,
+    modelId: data.modelId,
+    provider: data.modelId ? 'anthropic' : undefined,
+  };
 }
 
 async function discoverClaudeSessions(workspacePath: string): Promise<HarnessSession[]> {
@@ -1078,11 +1038,10 @@ async function discoverClaudeSessions(workspacePath: string): Promise<HarnessSes
     )
     .map((e) => path.join(claudeProjectsDir, e.name));
 
-  const allResults = await Promise.all(
-    projectDirs.map((dir) => discoverClaudeProjectDir(dir, workspacePath))
-  );
-
-  return allResults.flat();
+  const filesByProject = await mapSessionFiles(projectDirs, discoverClaudeProjectDir);
+  const sessionResults = await mapSessionFiles(filesByProject.flat(), (filePath) =>
+    discoverClaudeSessionFile(filePath, workspacePath));
+  return sessionResults.filter((session): session is HarnessSession => session !== null);
 }
 
 // ============================================================================

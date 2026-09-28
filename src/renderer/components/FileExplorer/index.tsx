@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw, Search, X } from 'lucide-react';
 import type React from 'react';
 import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer';
@@ -6,7 +7,7 @@ import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
 import { dirnamePath, joinPaths, normalizePath } from '../../lib/pathUtils';
 import { pathKey } from '../../../shared/pathKey';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { useScopedWorkspace } from '../WorkspaceScope';
+import { useScopedWorkspaceSelector } from '../WorkspaceScope';
 import FileTree from './FileTree';
 import ContextMenu, { type ContextAction } from './ContextMenu';
 import ConfirmCloseDialog from '../ConfirmCloseDialog';
@@ -19,6 +20,9 @@ import {
 import './FileExplorer.css';
 
 const EXPLORER_TREE_REFRESH_DEBOUNCE_MS = 100;
+const EMPTY_ENTRIES: Record<string, FileExplorerEntry[] | undefined> = {};
+const EMPTY_PATHS: string[] = [];
+const EMPTY_ERRORS: Record<string, string | null | undefined> = {};
 
 function getDirectoryLoadErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) {
@@ -55,7 +59,19 @@ function resolveCreateParentPath(
 }
 
 export default function FileExplorer({ workspaceId }: { workspaceId?: string }) {
-  const workspace = useScopedWorkspace(workspaceId);
+  const workspace = useScopedWorkspaceSelector((current) => current && ({
+    id: current.id,
+    workspacePath: current.workspacePath,
+    gitChanges: current.gitChanges,
+    explorerVisible: current.explorerVisible,
+    explorerSidebarWidth: current.explorerSidebarWidth,
+    explorerEntriesByPath: current.explorerEntriesByPath,
+    explorerLoadingPaths: current.explorerLoadingPaths,
+    explorerErrorsByPath: current.explorerErrorsByPath,
+    explorerExpandedPaths: current.explorerExpandedPaths,
+    showHiddenFiles: current.showHiddenFiles,
+    explorerSelectedPath: current.explorerSelectedPath,
+  }), workspaceId);
   const {
     setExplorerSelectedPath,
     toggleExplorerPath,
@@ -69,16 +85,29 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     clearExplorerDirectoryState,
     pushBrowserOverlay,
     popBrowserOverlay,
-  } = useWorkspaceStore();
+  } = useWorkspaceStore(useShallow((state) => ({
+    setExplorerSelectedPath: state.setExplorerSelectedPath,
+    toggleExplorerPath: state.toggleExplorerPath,
+    setExplorerVisible: state.setExplorerVisible,
+    setExplorerSidebarWidth: state.setExplorerSidebarWidth,
+    setShowHiddenFiles: state.setShowHiddenFiles,
+    setExplorerDirectoryEntries: state.setExplorerDirectoryEntries,
+    setExplorerDirectoryLoading: state.setExplorerDirectoryLoading,
+    setExplorerDirectoryError: state.setExplorerDirectoryError,
+    setExplorerExpandedPaths: state.setExplorerExpandedPaths,
+    clearExplorerDirectoryState: state.clearExplorerDirectoryState,
+    pushBrowserOverlay: state.pushBrowserOverlay,
+    popBrowserOverlay: state.popBrowserOverlay,
+  })));
   const resolvedWorkspaceId = workspace?.id ?? null;
   const workspacePath = workspace?.workspacePath ?? '';
   const gitChanges = workspace?.gitChanges ?? [];
   const explorerVisible = workspace?.explorerVisible ?? false;
   const explorerSidebarWidth = workspace?.explorerSidebarWidth ?? 280;
-  const explorerEntriesByPath = useMemo(() => workspace?.explorerEntriesByPath ?? {}, [workspace]);
-  const explorerLoadingPaths = useMemo(() => workspace?.explorerLoadingPaths ?? [], [workspace]);
-  const explorerErrorsByPath = useMemo(() => workspace?.explorerErrorsByPath ?? {}, [workspace]);
-  const explorerExpandedPaths = useMemo(() => workspace?.explorerExpandedPaths ?? [], [workspace]);
+  const explorerEntriesByPath = workspace?.explorerEntriesByPath ?? EMPTY_ENTRIES;
+  const explorerLoadingPaths = workspace?.explorerLoadingPaths ?? EMPTY_PATHS;
+  const explorerErrorsByPath = workspace?.explorerErrorsByPath ?? EMPTY_ERRORS;
+  const explorerExpandedPaths = workspace?.explorerExpandedPaths ?? EMPTY_PATHS;
   const showHiddenFiles = workspace?.showHiddenFiles ?? true;
   const explorerSelectedPath = workspace?.explorerSelectedPath ?? null;
 

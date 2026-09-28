@@ -114,7 +114,9 @@ export class GitService {
   private pollingInterval: NodeJS.Timeout | null = null;
   private currentWorkspacePath: string | null = null;
   private pollIntervalMs = 30000;
-  private _drainPromise: Promise<void> = Promise.resolve();
+  private pollGeneration = 0;
+  private pollRequested: { path: string; generation: number } | null = null;
+  private pollLoop: Promise<void> | null = null;
 
   constructor(
     private readonly emitStatus: (status: GitStatusResult) => void,
@@ -1264,7 +1266,6 @@ export class GitService {
 
   async getStatus(workspacePath: string): Promise<GitStatusResult> {
     try {
-      await this.execGit(workspacePath, ['rev-parse', '--git-dir']);
       const { stdout } = await this.execGit(workspacePath, ['status', '--porcelain=v2', '--branch']);
 
       const headerLines = stdout.split('\n').filter((l) => l.startsWith('# '));
@@ -1502,19 +1503,16 @@ export class GitService {
   startPolling(workspacePath: string): void {
     this.stopPolling();
     this.currentWorkspacePath = workspacePath;
-    this._drainPromise = this.emitStatusUpdate(workspacePath);
-    this.pollingInterval = setInterval(async () => {
-      if (this.currentWorkspacePath) {
-        this._drainPromise = this.emitStatusUpdate(this.currentWorkspacePath);
-        await this._drainPromise;
-      }
+    this.requestStatusUpdate();
+    this.pollingInterval = setInterval(() => {
+      this.requestStatusUpdate();
     }, this.pollIntervalMs);
   }
 
   /** Resolves when any in-flight status update has finished. Used in tests to
    *  ensure git subprocesses have released file handles before cleanup. */
   drain(): Promise<void> {
-    return this._drainPromise;
+    return this.pollLoop ?? Promise.resolve();
   }
 
   stopPolling(): void {
@@ -1523,6 +1521,8 @@ export class GitService {
       this.pollingInterval = null;
     }
     this.currentWorkspacePath = null;
+    this.pollRequested = null;
+    this.pollGeneration += 1;
   }
 
   async refresh(): Promise<GitStatusResult | null> {
@@ -1536,8 +1536,33 @@ export class GitService {
     return this.currentWorkspacePath;
   }
 
-  private async emitStatusUpdate(workspacePath: string): Promise<void> {
-    this.emitStatus(await this.getStatus(workspacePath));
+  private requestStatusUpdate(): void {
+    if (!this.currentWorkspacePath) return;
+    const request = { path: this.currentWorkspacePath, generation: this.pollGeneration };
+    if (this.pollLoop) {
+      // Keep at most one pending poll while Git is busy. A workspace switch
+      // replaces the pending request, so old results cannot reach the renderer.
+      this.pollRequested = request;
+      return;
+    }
+    this.pollRequested = request;
+    this.pollLoop = this.processStatusUpdates();
+  }
+
+  private async processStatusUpdates(): Promise<void> {
+    try {
+      while (this.pollRequested) {
+        const request = this.pollRequested;
+        this.pollRequested = null;
+        if (request.generation !== this.pollGeneration) continue;
+        const status = await this.getStatus(request.path);
+        if (request.generation === this.pollGeneration && request.path === this.currentWorkspacePath) {
+          this.emitStatus(status);
+        }
+      }
+    } finally {
+      this.pollLoop = null;
+    }
   }
 
   // Exposed for unit testing

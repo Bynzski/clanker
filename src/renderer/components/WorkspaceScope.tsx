@@ -6,6 +6,7 @@ import {
   DEFAULT_RUNTIME_STATE,
   type WorkspaceTab,
 } from '../store/workspaceStore';
+import type { WorkspaceState } from '../store/workspaceStoreTypes';
 
 const WorkspaceScopeContext = createContext<string | null>(null);
 
@@ -23,64 +24,73 @@ export function WorkspaceScopeProvider({
   );
 }
 
-function useScopedWorkspaceId(workspaceId?: string): string | null {
+export function useScopedWorkspaceId(workspaceId?: string): string | null {
   const scopedWorkspaceId = useContext(WorkspaceScopeContext);
   return workspaceId ?? scopedWorkspaceId;
 }
 
-export function useScopedWorkspace(workspaceId?: string): WorkspaceTab | null {
+function resolveScopedWorkspace(state: WorkspaceState, resolvedWorkspaceId: string | null): WorkspaceTab | null {
+  const matchedWorkspace = findWorkspaceById(state.workspaces, resolvedWorkspaceId)
+    ?? findWorkspaceById(state.workspaces, state.activeWorkspaceId);
+
+  if (matchedWorkspace) {
+    return matchedWorkspace;
+  }
+
+  if (state.activeWorkspaceId == null && state.workspaces.length === 0) {
+    return {
+      id: resolvedWorkspaceId ?? 'workspace-scope-active',
+      lifecycle: state.activeWorkspaceLifecycle ?? 'active',
+      name: state.name,
+      workspacePath: state.workspacePath,
+      harness: state.harness,
+      model: state.model,
+      terminals: state.terminals,
+      panes: state.panes,
+      browserVisible: state.browserVisible,
+      browserOverlayCount: state.browserOverlayCount,
+      browserUrl: state.browserUrl,
+      activeTerminalId: state.activeTerminalId,
+      browserPane: state.browserPane,
+      explorerPane: state.explorerPane,
+      editorPane: state.editorPane,
+      editorVisible: state.editorVisible,
+      notesPane: state.notesPane,
+      notesVisible: state.notesVisible,
+      editorTabs: state.editorTabs,
+      activeEditorTabId: state.activeEditorTabId,
+      layoutRoot: state.layoutRoot,
+      layoutRevision: state.layoutRevision,
+      layoutUndoStack: state.layoutUndoStack,
+      explorerVisible: state.explorerVisible,
+      explorerSidebarWidth: state.explorerSidebarWidth,
+      explorerExpandedPaths: state.explorerExpandedPaths,
+      explorerSelectedPath: state.explorerSelectedPath,
+      explorerEntriesByPath: state.explorerEntriesByPath,
+      explorerLoadingPaths: state.explorerLoadingPaths,
+      explorerErrorsByPath: state.explorerErrorsByPath,
+      showHiddenFiles: state.showHiddenFiles,
+      gitChanges: state.gitChanges,
+      gitCurrentBranch: state.gitCurrentBranch,
+      gitIsRepo: state.gitIsRepo,
+      gitIsDetached: state.gitIsDetached,
+      runtimeState: DEFAULT_RUNTIME_STATE,
+    };
+  }
+
+  return null;
+}
+
+export function useScopedWorkspaceSelector<T>(
+  selector: (workspace: WorkspaceTab | null) => T,
+  workspaceId?: string,
+): T {
   const resolvedWorkspaceId = useScopedWorkspaceId(workspaceId);
-  return useWorkspaceStore(useShallow((state): WorkspaceTab | null => {
-    const matchedWorkspace = findWorkspaceById(state.workspaces, resolvedWorkspaceId)
-      ?? findWorkspaceById(state.workspaces, state.activeWorkspaceId);
+  return useWorkspaceStore(useShallow((state) => selector(resolveScopedWorkspace(state, resolvedWorkspaceId))));
+}
 
-    if (matchedWorkspace) {
-      return matchedWorkspace;
-    }
-
-    if (state.activeWorkspaceId == null && state.workspaces.length === 0) {
-      return {
-        id: resolvedWorkspaceId ?? 'workspace-scope-active',
-        lifecycle: state.activeWorkspaceLifecycle ?? 'active',
-        name: state.name,
-        workspacePath: state.workspacePath,
-        harness: state.harness,
-        model: state.model,
-        terminals: state.terminals,
-        panes: state.panes,
-        browserVisible: state.browserVisible,
-        browserOverlayCount: state.browserOverlayCount,
-        browserUrl: state.browserUrl,
-        activeTerminalId: state.activeTerminalId,
-        browserPane: state.browserPane,
-        explorerPane: state.explorerPane,
-        editorPane: state.editorPane,
-        editorVisible: state.editorVisible,
-        notesPane: state.notesPane,
-        notesVisible: state.notesVisible,
-        editorTabs: state.editorTabs,
-        activeEditorTabId: state.activeEditorTabId,
-        layoutRoot: state.layoutRoot,
-        layoutRevision: state.layoutRevision,
-        layoutUndoStack: state.layoutUndoStack,
-        explorerVisible: state.explorerVisible,
-        explorerSidebarWidth: state.explorerSidebarWidth,
-        explorerExpandedPaths: state.explorerExpandedPaths,
-        explorerSelectedPath: state.explorerSelectedPath,
-        explorerEntriesByPath: state.explorerEntriesByPath,
-        explorerLoadingPaths: state.explorerLoadingPaths,
-        explorerErrorsByPath: state.explorerErrorsByPath,
-        showHiddenFiles: state.showHiddenFiles,
-        gitChanges: state.gitChanges,
-        gitCurrentBranch: state.gitCurrentBranch,
-        gitIsRepo: state.gitIsRepo,
-        gitIsDetached: state.gitIsDetached,
-        runtimeState: DEFAULT_RUNTIME_STATE,
-      };
-    }
-
-    return null;
-  }));
+export function useScopedWorkspace(workspaceId?: string): WorkspaceTab | null {
+  return useScopedWorkspaceSelector((workspace) => workspace, workspaceId);
 }
 
 export function useScopedWorkspaceActivity(workspaceId?: string): boolean {

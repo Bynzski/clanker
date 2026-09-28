@@ -1,12 +1,13 @@
 import type React from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { ChevronDown, ChevronRight, Folder, FolderOpen } from 'lucide-react';
 import type { GitStatus } from '../../components/git/types';
 import { isAbsolutePath, relativePath } from '../../lib/pathUtils';
 import { getFileTypeConfig } from './fileTypeConfig';
 import type { FileExplorerEntry, FileListDirectoryResult } from '../../../shared/types/fileExplorer';
 import { useWorkspaceStore } from '../../store/workspaceStore';
-import { useScopedWorkspace } from '../WorkspaceScope';
+import { useScopedWorkspaceSelector } from '../WorkspaceScope';
 import { validateFilename } from '../../../shared/filenameValidation';
 import { pathKey } from '../../../shared/pathKey';
 import { computeFilterVisibility, type FilterState } from './filterVisibility';
@@ -51,6 +52,10 @@ interface TreeNodeProps {
   onCommitRenaming: (newName: string) => Promise<void>;
   filterState: FilterState;
 }
+
+const EMPTY_ENTRIES: Record<string, FileExplorerEntry[] | undefined> = {};
+const EMPTY_PATHS: string[] = [];
+const EMPTY_CHILDREN: FileExplorerEntry[] = [];
 
 export function toRelativePath(
   absolutePath: string,
@@ -188,26 +193,31 @@ function TreeNodeChildren({
   );
 }
 
-function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelativePath, descendantChangePaths, workspaceRoot, showHiddenFiles, onContextMenu, creating, renaming, onStartCreating, onStartRenaming, onCancelCreating, onCancelRenaming, onCommitCreating, onCommitRenaming, filterState }: TreeNodeProps) {
-  const workspace = useScopedWorkspace(workspaceId);
+const TreeNode = memo(function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelativePath, descendantChangePaths, workspaceRoot, showHiddenFiles, onContextMenu, creating, renaming, onStartCreating, onStartRenaming, onCancelCreating, onCancelRenaming, onCommitCreating, onCommitRenaming, filterState }: TreeNodeProps) {
+  const nodeState = useScopedWorkspaceSelector((current) => ({
+    expanded: current?.explorerExpandedPaths.includes(entry.path) ?? false,
+    selected: current?.explorerSelectedPath === entry.path,
+    children: current?.explorerEntriesByPath[entry.path] ?? EMPTY_CHILDREN,
+    hasCachedChildren: current != null && Object.prototype.hasOwnProperty.call(current.explorerEntriesByPath, entry.path),
+    loading: current?.explorerLoadingPaths.includes(entry.path) ?? false,
+    error: current?.explorerErrorsByPath[entry.path],
+  }), workspaceId);
   const {
     toggleExplorerPath,
     setExplorerSelectedPath,
     openFileInEditor,
-  } = useWorkspaceStore();
-  const explorerExpandedPaths = workspace?.explorerExpandedPaths ?? [];
-  const explorerSelectedPath = workspace?.explorerSelectedPath ?? null;
-  const explorerEntriesByPath = useMemo(() => workspace?.explorerEntriesByPath ?? {}, [workspace]);
-  const explorerLoadingPaths = workspace?.explorerLoadingPaths ?? [];
-  const explorerErrorsByPath = workspace?.explorerErrorsByPath ?? {};
-
-  const isExpanded = explorerExpandedPaths.includes(entry.path) || filterState.forcedExpanded.has(entry.path);
-  const isSelected = explorerSelectedPath === entry.path;
-  const childEntries = (explorerEntriesByPath[entry.path] ?? [])
+  } = useWorkspaceStore(useShallow((state) => ({
+    toggleExplorerPath: state.toggleExplorerPath,
+    setExplorerSelectedPath: state.setExplorerSelectedPath,
+    openFileInEditor: state.openFileInEditor,
+  })));
+  const isExpanded = nodeState.expanded || filterState.forcedExpanded.has(entry.path);
+  const isSelected = nodeState.selected;
+  const childEntries = nodeState.children
     .filter((e) => showHiddenFiles || !e.name.startsWith('.'))
     .filter((e) => !filterState.active || filterState.visiblePaths.has(e.path));
-  const isLoading = explorerLoadingPaths.includes(entry.path);
-  const error = explorerErrorsByPath[entry.path];
+  const isLoading = nodeState.loading;
+  const error = nodeState.error;
 
   const handleClick = async () => {
     setExplorerSelectedPath(entry.path, workspaceId);
@@ -217,7 +227,7 @@ function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelat
     }
 
     const shouldExpand = !isExpanded;
-    if (shouldExpand && !Object.prototype.hasOwnProperty.call(explorerEntriesByPath, entry.path)) {
+    if (shouldExpand && !nodeState.hasCachedChildren) {
       const result = await onLoadDirectory(entry.path);
       if (!result.success) {
         return;
@@ -334,7 +344,7 @@ function TreeNode({ workspaceId, entry, depth, onLoadDirectory, gitStatusByRelat
       />
     </>
   );
-}
+});
 
 function CreateInput({ type, depth, onCommit, onCancel }: {
   type: 'file' | 'directory';
@@ -416,14 +426,22 @@ function CreateInput({ type, depth, onCommit, onCancel }: {
 }
 
 export default function FileTree({ workspaceId, rootPath, workspacePath, rootError, onLoadDirectory, gitChanges, onContextMenu, creating, renaming, onStartCreating, onStartRenaming, onCancelCreating, onCancelRenaming, onCommitCreating, onCommitRenaming, filterQuery = '', onFocusFilter }: FileTreeProps) {
-  const workspace = useScopedWorkspace(workspaceId);
+  const workspace = useScopedWorkspaceSelector((current) => current && ({
+    explorerEntriesByPath: current.explorerEntriesByPath,
+    explorerLoadingPaths: current.explorerLoadingPaths,
+    showHiddenFiles: current.showHiddenFiles,
+  }), workspaceId);
   const {
     toggleExplorerPath,
     setExplorerSelectedPath,
     openFileInEditor,
-  } = useWorkspaceStore();
-  const explorerEntriesByPath = useMemo(() => workspace?.explorerEntriesByPath ?? {}, [workspace]);
-  const explorerLoadingPaths = workspace?.explorerLoadingPaths ?? [];
+  } = useWorkspaceStore(useShallow((state) => ({
+    toggleExplorerPath: state.toggleExplorerPath,
+    setExplorerSelectedPath: state.setExplorerSelectedPath,
+    openFileInEditor: state.openFileInEditor,
+  })));
+  const explorerEntriesByPath = workspace?.explorerEntriesByPath ?? EMPTY_ENTRIES;
+  const explorerLoadingPaths = workspace?.explorerLoadingPaths ?? EMPTY_PATHS;
 
   const { gitStatusByRelativePath, descendantChangePaths } = useMemo(() => {
     const map = new Map<string, GitStatus>();

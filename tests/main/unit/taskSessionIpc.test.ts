@@ -378,6 +378,10 @@ describe('taskSessionIpc handlers', () => {
       getStore: () => memoryStore as unknown as Store<StoreSchema>,
       getTerminals: () => mockTerminals,
       getHarnessOptions: () => ({ codex: { name: 'Codex' } }),
+      discoverSessionsDetailedFn: vi.fn().mockResolvedValue({
+        sessions: [],
+        harnessStatus: { codex: { status: 'success' } },
+      }),
     });
 
     expect(handlers.has(TASK_SESSION_LIST)).toBe(true);

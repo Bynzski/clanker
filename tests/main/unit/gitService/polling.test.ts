@@ -12,7 +12,7 @@
  * - Refresh behavior
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -448,4 +448,32 @@ describe('polling lifecycle - integration with real git', () => {
     expect(emittedStatuses[0].isDetached).toBe(true);
     expect(emittedStatuses[0].currentBranch).toBeNull();
   });
+});
+
+it('serializes polls and discards status from a previous workspace', async () => {
+  const pending = new Map<string, (status: GitStatusResult) => void>();
+  const getStatus = vi.spyOn(service, 'getStatus').mockImplementation((workspacePath) =>
+    new Promise((resolve) => pending.set(workspacePath, resolve)));
+  const status = (branch: string): GitStatusResult => ({
+    success: true,
+    isRepo: true,
+    currentBranch: branch,
+    isDetached: false,
+    changes: [],
+    upstream: null,
+    ahead: 0,
+    behind: 0,
+  });
+
+  service.startPolling('/first');
+  service.startPolling('/second');
+  expect(getStatus).toHaveBeenCalledTimes(1);
+
+  pending.get('/first')!(status('first'));
+  await vi.waitFor(() => expect(getStatus).toHaveBeenCalledTimes(2));
+  expect(emittedStatuses).toHaveLength(0);
+
+  pending.get('/second')!(status('second'));
+  await service.drain();
+  expect(emittedStatuses.map((entry) => entry.currentBranch)).toEqual(['second']);
 });
