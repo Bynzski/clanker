@@ -141,6 +141,67 @@ describe('sessionCorrelation', () => {
     expect(resultB?.id).toBe('sess-2');
   });
 
+  it('accepts candidate within task lifetime or slightly after stoppedAt (flush delay)', () => {
+    const stoppedTask: Pick<TaskSessionRecord, 'id' | 'workspacePath' | 'harnessId' | 'createdAt' | 'stoppedAt' | 'updatedAt'> = {
+      id: 'task-lifetime',
+      workspacePath: '/projects/repo',
+      harnessId: 'codex',
+      createdAt: 10_000,
+      stoppedAt: 20_000,
+      updatedAt: 20_000,
+    };
+
+    // Session within run time
+    const sessionDuringRun = [
+      { id: 's-during', harness: 'codex' as const, title: 'During', cwd: '/projects/repo', timestamp: 15_000 },
+    ];
+    expect(findUnambiguousSessionCandidate(stoppedTask, sessionDuringRun, [])?.id).toBe('s-during');
+
+    // Session flushed 30s after exit
+    const sessionShortlyAfter = [
+      { id: 's-after', harness: 'codex' as const, title: 'After', cwd: '/projects/repo', timestamp: 20_030 },
+    ];
+    expect(findUnambiguousSessionCandidate(stoppedTask, sessionShortlyAfter, [])?.id).toBe('s-after');
+  });
+
+  it('rejects candidate created days after task was stopped (unrelated conversation)', () => {
+    const oldTask: Pick<TaskSessionRecord, 'id' | 'workspacePath' | 'harnessId' | 'createdAt' | 'stoppedAt' | 'updatedAt'> = {
+      id: 'task-old',
+      workspacePath: '/projects/repo',
+      harnessId: 'codex',
+      createdAt: 100_000,
+      stoppedAt: 120_000, // Monday
+      updatedAt: 120_000,
+    };
+
+    // Wednesday conversation (days later)
+    const muchLaterSession = [
+      { id: 's-wednesday', harness: 'codex' as const, title: 'New chat', cwd: '/projects/repo', timestamp: 200_000_000 },
+    ];
+
+    const result = findUnambiguousSessionCandidate(oldTask, muchLaterSession, []);
+    expect(result).toBeNull();
+  });
+
+  it('excludes session IDs claimed during the current evaluation pass', () => {
+    const task1 = { id: 't1', workspacePath: '/projects/repo', harnessId: 'codex', createdAt: 1000 };
+    const task2 = { id: 't2', workspacePath: '/projects/repo', harnessId: 'codex', createdAt: 1000 };
+
+    const discovered = [
+      { id: 'sess-single', harness: 'codex' as const, title: 'Chat', cwd: '/projects/repo', timestamp: 1100 },
+    ];
+
+    // Task 1 evaluates first and claims sess-single
+    const claimedInPass = new Set<string>();
+    const res1 = findUnambiguousSessionCandidate(task1, discovered, [], { claimedSessionIds: claimedInPass });
+    expect(res1?.id).toBe('sess-single');
+    claimedInPass.add(res1!.id);
+
+    // Task 2 evaluates in the same pass with claimedInPass updated
+    const res2 = findUnambiguousSessionCandidate(task2, discovered, [], { claimedSessionIds: claimedInPass });
+    // Must NOT claim sess-single
+    expect(res2).toBeNull();
+  });
   it('filters out sessions from different workspaces or harnesses', () => {
     const discovered: HarnessSession[] = [
       {

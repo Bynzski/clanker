@@ -103,7 +103,7 @@ export class TaskSessionCoordinator {
         // Retry briefly before asking the user to associate a session manually.
         for (let attempt = 0; attempt < 5; attempt++) {
           const sessions = await this.discoverSessionsFn(nativeDir, { forceRefresh: true });
-          const candidate = findUnambiguousSessionCandidate(task, sessions, all);
+          const candidate = findUnambiguousSessionCandidate(task, sessions, all, { observedExitTime: Date.now() });
           if (candidate) {
             nativeSessionId = candidate.id;
             nativeSessionPath = candidate.filePath;

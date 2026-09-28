@@ -19,6 +19,7 @@ export interface RecipeExecutionDeps {
   ) => void;
   openBrowserPreview?: (workspaceId: string, url: string) => Promise<boolean>;
   restoreLayout?: (workspaceId: string, layout: PersistedRecipeLayout) => void;
+  getExistingTerminalCount?: (workspaceId: string) => number;
 }
 
 export async function executeWorkspaceRecipe(
@@ -43,34 +44,12 @@ export async function executeWorkspaceRecipe(
     };
   }
 
-  for (const step of recipe.launches) {
-    if (step.type === 'harness') {
+  if (recipe.launches.length === 0) {
+    const targetCount = Math.max(1, recipe.terminalCount ?? 1);
+    const existingCount = deps.getExistingTerminalCount?.(workspaceId) ?? 0;
+    for (let index = existingCount; index < targetCount; index++) {
       try {
-        const info = await deps.spawnTerminal(recipe.workspacePath, step.harnessId, step.modelId);
-        deps.onTerminalSpawned(workspaceId, {
-          id: info.id,
-          pid: info.pid,
-          workingDir: recipe.workspacePath,
-          harnessId: info.harnessId ?? step.harnessId,
-          attentionEnabled: info.attentionEnabled === true,
-        });
-        steps.push({
-          id: step.id,
-          type: 'harness',
-          status: 'success',
-          terminalId: info.id,
-        });
-      } catch (err) {
-        steps.push({
-          id: step.id,
-          type: 'harness',
-          status: 'failed',
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    } else if (step.type === 'command') {
-      try {
-        const info = await deps.spawnTerminal(recipe.workspacePath, undefined, undefined, step.command);
+        const info = await deps.spawnTerminal(recipe.workspacePath);
         deps.onTerminalSpawned(workspaceId, {
           id: info.id,
           pid: info.pid,
@@ -79,18 +58,70 @@ export async function executeWorkspaceRecipe(
           attentionEnabled: false,
         });
         steps.push({
-          id: step.id,
+          id: `terminal-${index + 1}`,
           type: 'command',
           status: 'success',
           terminalId: info.id,
         });
       } catch (err) {
         steps.push({
-          id: step.id,
+          id: `terminal-${index + 1}`,
           type: 'command',
           status: 'failed',
           error: err instanceof Error ? err.message : String(err),
         });
+      }
+    }
+  } else {
+    for (const step of recipe.launches) {
+      if (step.type === 'harness') {
+        try {
+          const info = await deps.spawnTerminal(recipe.workspacePath, step.harnessId, step.modelId);
+          deps.onTerminalSpawned(workspaceId, {
+            id: info.id,
+            pid: info.pid,
+            workingDir: recipe.workspacePath,
+            harnessId: info.harnessId ?? step.harnessId,
+            attentionEnabled: info.attentionEnabled === true,
+          });
+          steps.push({
+            id: step.id,
+            type: 'harness',
+            status: 'success',
+            terminalId: info.id,
+          });
+        } catch (err) {
+          steps.push({
+            id: step.id,
+            type: 'harness',
+            status: 'failed',
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      } else if (step.type === 'command') {
+        try {
+          const info = await deps.spawnTerminal(recipe.workspacePath, undefined, undefined, step.command);
+          deps.onTerminalSpawned(workspaceId, {
+            id: info.id,
+            pid: info.pid,
+            workingDir: recipe.workspacePath,
+            harnessId: null,
+            attentionEnabled: false,
+          });
+          steps.push({
+            id: step.id,
+            type: 'command',
+            status: 'success',
+            terminalId: info.id,
+          });
+        } catch (err) {
+          steps.push({
+            id: step.id,
+            type: 'command',
+            status: 'failed',
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
     }
   }

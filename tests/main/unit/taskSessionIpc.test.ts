@@ -192,6 +192,88 @@ describe('evaluateTaskRecoveryState', () => {
     expect(result.stateReason).toContain('Native conversation session was not found on disk');
   });
 
+  it('marks unavailable when discovery succeeds with zero sessions', () => {
+    const record: TaskSessionRecord = {
+      id: 'task-zero-sessions',
+      workspacePath: process.cwd(),
+      harnessId: 'codex',
+      nativeSessionId: 'sess-abc',
+      title: 'Codex Task',
+      state: 'resumable',
+      createdAt: 1000,
+      updatedAt: 1000,
+      version: 1,
+    };
+
+    const result = evaluateTaskRecoveryState(
+      record,
+      new Set(),
+      availableHarnesses,
+      { status: 'success', sessions: [] },
+      [record],
+    );
+
+    expect(result.state).toBe('unavailable');
+    expect(result.stateReason).toContain('Native conversation session was not found on disk');
+  });
+
+  it('does not falsely report deleted when discovery throws an error', () => {
+    const record: TaskSessionRecord = {
+      id: 'task-err-discovery',
+      workspacePath: process.cwd(),
+      harnessId: 'codex',
+      nativeSessionId: 'sess-abc',
+      title: 'Codex Task',
+      state: 'resumable',
+      createdAt: 1000,
+      updatedAt: 1000,
+      version: 1,
+    };
+
+    const result = evaluateTaskRecoveryState(
+      record,
+      new Set(),
+      availableHarnesses,
+      { status: 'error', error: 'Transient I/O error' },
+      [record],
+    );
+
+    // State is preserved; not marked deleted
+    expect(result.state).toBe('resumable');
+    expect(result.stateReason).toBeUndefined();
+  });
+
+  it('preserves explicit resume failure state without reverting to resumable', () => {
+    const record: TaskSessionRecord = {
+      id: 'task-failed-resume',
+      workspacePath: process.cwd(),
+      harnessId: 'codex',
+      nativeSessionId: 'sess-corrupt',
+      title: 'Codex Task',
+      state: 'unavailable',
+      stateReason: 'Failed to resume: Session JSON is malformed',
+      createdAt: 1000,
+      updatedAt: 1000,
+      version: 1,
+    };
+
+    // Even though the corrupt session file still exists in discovered sessions
+    const discovered = [
+      { id: 'sess-corrupt', harness: 'codex' as const, title: 'Chat', cwd: process.cwd(), timestamp: 1200 },
+    ];
+
+    const result = evaluateTaskRecoveryState(
+      record,
+      new Set(),
+      availableHarnesses,
+      { status: 'success', sessions: discovered },
+      [record],
+    );
+
+    // Option A: stays unavailable with failure reason
+    expect(result.state).toBe('unavailable');
+    expect(result.stateReason).toBe('Failed to resume: Session JSON is malformed');
+  });
   it('correlates unambiguous candidate on restart for needs-selection task', () => {
     const record: TaskSessionRecord = {
       id: 'task-restart-correlate',
@@ -343,5 +425,52 @@ describe('taskSessionIpc handlers', () => {
     expect(sessions[0].state).toBe('resumable');
     expect(sessions[0].nativeSessionId).toBe('sess-auto');
     expect(sessions[0].title).toBe('Auto Found');
+  });
+  it('prevents duplicate assignment across tasks during a single TASK_SESSION_LIST pass', async () => {
+    const mockDiscover = vi.fn().mockResolvedValue([
+      { id: 'sess-unique-one', harness: 'codex', title: 'Single Chat', cwd: process.cwd(), timestamp: 2500 },
+    ]);
+
+    const persistence = registerTaskSessionIpc({
+      getStore: () => memoryStore as unknown as Store<StoreSchema>,
+      getTerminals: () => mockTerminals,
+      getHarnessOptions: () => ({ codex: { name: 'Codex' } }),
+      discoverSessionsFn: mockDiscover,
+    });
+
+    // Two tasks both in needs-selection in the same workspace
+    persistence.saveTaskSession({
+      id: 'task-first',
+      workspacePath: process.cwd(),
+      harnessId: 'codex',
+      title: 'First Task',
+      state: 'needs-selection',
+      createdAt: 2000,
+      updatedAt: 2000,
+    });
+    persistence.saveTaskSession({
+      id: 'task-second',
+      workspacePath: process.cwd(),
+      harnessId: 'codex',
+      title: 'Second Task',
+      state: 'needs-selection',
+      createdAt: 2000,
+      updatedAt: 2000,
+    });
+
+    const listHandler = handlers.get(TASK_SESSION_LIST)!;
+    const sessions = await listHandler(null) as TaskSessionRecord[];
+    expect(sessions.length).toBe(2);
+
+    const first = sessions.find((s) => s.id === 'task-first');
+    const second = sessions.find((s) => s.id === 'task-second');
+
+    // First task claimed the candidate
+    expect(first?.state).toBe('resumable');
+    expect(first?.nativeSessionId).toBe('sess-unique-one');
+
+    // Second task in the same pass MUST NOT claim it and must remain needs-selection
+    expect(second?.state).toBe('needs-selection');
+    expect(second?.nativeSessionId).toBeUndefined();
   });
 });

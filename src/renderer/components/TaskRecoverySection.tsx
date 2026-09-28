@@ -153,6 +153,18 @@ export default function TaskRecoverySection({
                     </button>
                   )}
 
+                  {task.state === 'unavailable' && task.nativeSessionId && (
+                    <button
+                      type="button"
+                      className="task-action-btn resume-btn"
+                      onClick={() => void handleResume(task)}
+                      disabled={isResuming}
+                      title="Retry resuming conversation"
+                    >
+                      <RotateCcw size={12} className={isResuming ? 'spin' : ''} />
+                      Retry
+                    </button>
+                  )}
                   {task.state === 'needs-selection' && (
                     <button
                       type="button"

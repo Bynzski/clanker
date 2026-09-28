@@ -27,6 +27,9 @@ const SUPPORTED_RESUME_HARNESSES: Record<string, true> = {
   agy: true,
 };
 
+export type SessionDiscoveryResult =
+  | { status: 'success'; sessions: HarnessSession[] }
+  | { status: 'error'; error: string };
 export interface RegisterTaskSessionIpcDeps {
   getStore: () => Store<StoreSchema>;
   getTerminals: () => Map<string, Terminal>;
@@ -38,8 +41,9 @@ export function evaluateTaskRecoveryState(
   record: TaskSessionRecord,
   liveTerminalIds: Set<string>,
   availableHarnesses: Record<string, unknown>,
-  discoveredSessions?: HarnessSession[],
+  discoveryResult?: SessionDiscoveryResult | HarnessSession[],
   allTasks?: TaskSessionRecord[],
+  claimedSessionIds?: Set<string>,
 ): {
   state: TaskRecoveryState;
   stateReason?: string;
@@ -48,6 +52,9 @@ export function evaluateTaskRecoveryState(
   nativeSessionPath?: string;
   title?: string;
 } {
+  const normalizedDiscovery: SessionDiscoveryResult | undefined = Array.isArray(discoveryResult)
+    ? { status: 'success', sessions: discoveryResult }
+    : discoveryResult;
   // If the record claims to be running, check if its PTY is actually alive in this process
   if (record.state === 'running') {
     if (record.terminalId && liveTerminalIds.has(record.terminalId)) {
@@ -91,17 +98,38 @@ export function evaluateTaskRecoveryState(
     };
   }
 
+  // Option A: If the task explicitly failed a resume invocation, preserve that failure state and explanation
+  if (record.state === 'unavailable' && /(?:resume failed|failed to resume)/i.test(record.stateReason ?? '')) {
+    return {
+      state: 'unavailable',
+      stateReason: record.stateReason,
+      terminalId: undefined,
+      nativeSessionId: record.nativeSessionId,
+      nativeSessionPath: record.nativeSessionPath,
+    };
+  }
   // Check native session ID
   if (record.nativeSessionId && record.nativeSessionId.trim()) {
-    // If discovered sessions are provided, verify that the session actually still exists on disk
-    if (discoveredSessions && discoveredSessions.length > 0) {
-      const exists = discoveredSessions.some(
-        (s) => s.harness === record.harnessId && s.id === record.nativeSessionId,
-      );
-      if (!exists) {
+    if (normalizedDiscovery) {
+      if (normalizedDiscovery.status === 'success') {
+        const exists = normalizedDiscovery.sessions.some(
+          (s) => s.harness === record.harnessId && s.id === record.nativeSessionId,
+        );
+        if (!exists) {
+          return {
+            state: 'unavailable',
+            stateReason: 'Native conversation session was not found on disk',
+            terminalId: undefined,
+            nativeSessionId: record.nativeSessionId,
+            nativeSessionPath: record.nativeSessionPath,
+          };
+        }
+      } else {
+        // Discovery failed/threw an error: do NOT conclude that the session was deleted.
+        // Preserve the task's existing recoverability state.
         return {
-          state: 'unavailable',
-          stateReason: 'Native conversation session was not found on disk',
+          state: record.state === 'resumable' ? 'resumable' : 'needs-selection',
+          stateReason: undefined,
           terminalId: undefined,
           nativeSessionId: record.nativeSessionId,
           nativeSessionPath: record.nativeSessionPath,
@@ -118,9 +146,14 @@ export function evaluateTaskRecoveryState(
   }
 
   // Has task metadata but native session ID is not known yet.
-  // Attempt conservative correlation from discovered sessions.
-  if (discoveredSessions && allTasks) {
-    const candidate = findUnambiguousSessionCandidate(record, discoveredSessions, allTasks);
+  // Attempt conservative correlation from successfully discovered sessions.
+  if (normalizedDiscovery && normalizedDiscovery.status === 'success' && allTasks) {
+    const candidate = findUnambiguousSessionCandidate(
+      record,
+      normalizedDiscovery.sessions,
+      allTasks,
+      { claimedSessionIds },
+    );
     if (candidate) {
       return {
         state: 'resumable',
@@ -149,31 +182,49 @@ export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): Worksp
     const liveTerminalIds = new Set<string>(getTerminals().keys());
     const availableHarnesses = getHarnessOptions();
 
-    const discoveredByWorkspace = new Map<string, HarnessSession[]>();
+    const discoveredByWorkspace = new Map<string, SessionDiscoveryResult>();
     for (const record of rawSessions) {
       const key = record.workspacePath;
       if (!discoveredByWorkspace.has(key)) {
         try {
           const nativeDir = toNativePath(record.workspacePath, process.platform);
           const sessions = await discoverSessionsFn(nativeDir, { forceRefresh: true });
-          discoveredByWorkspace.set(key, sessions);
-        } catch {
-          discoveredByWorkspace.set(key, []);
+          discoveredByWorkspace.set(key, { status: 'success', sessions });
+        } catch (err) {
+          discoveredByWorkspace.set(key, {
+            status: 'error',
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       }
     }
+
+    // Maintain an evolving set of claimed session IDs across the evaluation pass
+    // to prevent two tasks from claiming the same candidate in one pass.
+    const claimedSessionIds = new Set<string>();
+    for (const record of rawSessions) {
+      if (record.nativeSessionId && record.nativeSessionId.trim()) {
+        claimedSessionIds.add(record.nativeSessionId.trim());
+      }
+    }
+
     const evaluated: TaskSessionRecord[] = [];
     for (const record of rawSessions) {
-      const workspaceSessions = discoveredByWorkspace.get(record.workspacePath);
+      const workspaceDiscoveryResult = discoveredByWorkspace.get(record.workspacePath);
       const evaluatedState = evaluateTaskRecoveryState(
         record,
         liveTerminalIds,
         availableHarnesses,
-        workspaceSessions,
+        workspaceDiscoveryResult,
         rawSessions,
+        claimedSessionIds,
       );
       const { state, stateReason, terminalId, nativeSessionId, nativeSessionPath, title } = evaluatedState;
 
+      // Track newly claimed session IDs in the running set
+      if (nativeSessionId && nativeSessionId.trim()) {
+        claimedSessionIds.add(nativeSessionId.trim());
+      }
       // If state or attributes changed, update persistence
       if (
         record.state !== state

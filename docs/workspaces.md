@@ -132,11 +132,11 @@ When a workspace is restored or the task list is opened, previous tasks are clas
 | **Running** | The PTY is currently active in this running Clanker process. | Jump to terminal |
 | **Resumable** | The previous PTY has exited or the app restarted, but a native conversation session was recorded on disk. | **Resume** |
 | **Needs Session** | Task metadata exists, but Clanker cannot safely correlate a unique native conversation ID. | Select from discovered sessions |
-| **Unavailable** | The task cannot be resumed (e.g. workspace directory was deleted, harness is uninstalled, or harness does not support resume). | Inspect reason / Delete |
+| **Unavailable** | The task cannot be resumed (e.g. workspace directory was deleted, harness is uninstalled, session was deleted from disk, or resume invocation failed). | Inspect reason / Retry / Delete |
 
 ### Native Conversation Resume
 
 Clicking **Resume** attaches a new PTY process directly to the AI harness's existing native conversation (e.g., `codex resume <id>`, `claude --resume <id>`, `opencode --session <id>`, `pi --session <path>`, `omp --resume <path>`, `agy --conversation <id>`).
 
 - **No Prompt Replay**: The user's original prompt is never replayed or re-executed upon restart.
-- **Graceful Failure**: If a session was deleted from disk or a harness is removed, Clanker marks the task `unavailable` with an explanatory reason without affecting the workspace or losing metadata.
+- **Graceful Failure**: If a session was deleted from disk, a harness is removed, or resume invocation fails, Clanker marks the task `unavailable` with an explanatory reason without affecting the workspace or losing metadata. The UI provides a **Retry** option to retry failed resume attempts or attach an alternative session.

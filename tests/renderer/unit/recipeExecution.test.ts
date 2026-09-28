@@ -142,4 +142,85 @@ describe('executeWorkspaceRecipe', () => {
     const result = await executeWorkspaceRecipe(recipeWithLayout, deps);
     expect(result.success).toBe(true);
   });
+
+  it('creates plain terminals before restoring layout for recipes with zero launches', async () => {
+    const spawnedTerminals: unknown[] = [];
+    const restoreLayoutMock = vi.fn();
+
+    const zeroLaunchRecipe: WorkspaceRecipe = {
+      id: 'recipe-zero-launch',
+      name: 'Two Terminals Split',
+      workspacePath: '/projects/repo',
+      terminalCount: 2,
+      launches: [],
+      layout: {
+        root: {
+          type: 'split',
+          orientation: 'horizontal',
+          ratio: 0.5,
+          first: { type: 'leaf', paneKey: 'terminal:0' },
+          second: { type: 'leaf', paneKey: 'terminal:1' },
+        },
+        terminalCount: 2,
+      },
+      createdAt: 1000,
+      updatedAt: 1000,
+      version: 1,
+    };
+
+    const deps = {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'),
+      spawnTerminal: vi.fn()
+        .mockResolvedValueOnce({ id: 'term-shell-1', pid: 101 })
+        .mockResolvedValueOnce({ id: 'term-shell-2', pid: 102 }),
+      onTerminalSpawned: vi.fn((_wsId, term) => spawnedTerminals.push(term)),
+      restoreLayout: restoreLayoutMock,
+      getExistingTerminalCount: vi.fn().mockReturnValue(0),
+    };
+
+    const result = await executeWorkspaceRecipe(zeroLaunchRecipe, deps);
+
+    expect(result.success).toBe(true);
+    expect(result.steps.length).toBe(2);
+    expect(spawnedTerminals.length).toBe(2);
+
+    // restoreLayout was called after both terminals were created
+    expect(restoreLayoutMock).toHaveBeenCalledWith('ws-1', zeroLaunchRecipe.layout);
+  });
+
+  it('handles partial failure of fallback shell creation without tearing down workspace', async () => {
+    const spawnedTerminals: unknown[] = [];
+    const restoreLayoutMock = vi.fn();
+
+    const zeroLaunchRecipe: WorkspaceRecipe = {
+      id: 'recipe-zero-fail',
+      name: 'Two Terminals',
+      workspacePath: '/projects/repo',
+      terminalCount: 2,
+      launches: [],
+      createdAt: 1000,
+      updatedAt: 1000,
+      version: 1,
+    };
+
+    const deps = {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'),
+      spawnTerminal: vi.fn()
+        .mockResolvedValueOnce({ id: 'term-shell-1', pid: 101 })
+        .mockRejectedValueOnce(new Error('Shell spawn failed')),
+      onTerminalSpawned: vi.fn((_wsId, term) => spawnedTerminals.push(term)),
+      restoreLayout: restoreLayoutMock,
+      getExistingTerminalCount: vi.fn().mockReturnValue(0),
+    };
+
+    const result = await executeWorkspaceRecipe(zeroLaunchRecipe, deps);
+
+    expect(result.success).toBe(false);
+    expect(result.steps.length).toBe(2);
+    // Successful terminal remains
+    expect(result.steps[0].status).toBe('success');
+    expect(result.steps[1].status).toBe('failed');
+    expect(result.steps[1].error).toContain('Shell spawn failed');
+    expect(spawnedTerminals.length).toBe(1);
+  });
 });

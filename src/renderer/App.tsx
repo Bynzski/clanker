@@ -246,36 +246,10 @@ function App() {
       restoreLayout: (wsId, layout) => {
         useWorkspaceStore.getState().applyPersistedLayout(layout, wsId);
       },
+      getExistingTerminalCount: (wsId) => {
+        return useWorkspaceStore.getState().workspaces.find((w) => w.id === wsId)?.terminals.length ?? 0;
+      },
     });
-    if (recipe.launches.length === 0) {
-      const workspace = useWorkspaceStore.getState().workspaces.find((w) => w.id === targetWorkspaceId);
-      const terminalCount = Math.max(1, recipe.terminalCount ?? 1);
-      const setupSteps: RecipeLaunchResult['steps'] = [];
-      const existingCount = workspace?.terminals.length ?? 0;
-      for (let index = existingCount; index < terminalCount; index++) {
-        try {
-          const info = await window.electronAPI.spawnTerminal(recipe.workspacePath);
-          useWorkspaceStore.getState().addTerminal({
-            id: info.id,
-            pid: info.pid,
-            workingDir: recipe.workspacePath,
-            harnessId: null,
-            attentionEnabled: false,
-          });
-          setupSteps.push({ id: `terminal-${index + 1}`, type: 'command', status: 'success', terminalId: info.id });
-        } catch (error) {
-          setupSteps.push({
-            id: `terminal-${index + 1}`,
-            type: 'command',
-            status: 'failed',
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-      result.steps.push(...setupSteps);
-      result.success = result.steps.every((step) => step.status === 'success');
-    }
-
     if (result.success) {
       setShowWorkspaceGate(false);
     }

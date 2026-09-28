@@ -58,10 +58,19 @@ describe('ChatHistoryDropdown', () => {
     expect(screen.getByText('Codex')).toBeInTheDocument();
   });
 
-  it('handles resume failure gracefully by updating task state and displaying error', async () => {
+  it('handles resume failure gracefully by updating task state and displaying error and retry', async () => {
     const taskSessionUpdateMock = vi.fn().mockResolvedValue(null);
+    const failedTask: TaskSessionRecord = {
+      ...sampleTask,
+      state: 'unavailable',
+      stateReason: 'Failed to resume: Session file corrupted on disk',
+    };
+    const taskSessionListMock = vi.fn()
+      .mockResolvedValueOnce([sampleTask])
+      .mockResolvedValueOnce([failedTask]);
+
     installElectronApiMock({
-      taskSessionList: vi.fn().mockResolvedValue([sampleTask]),
+      taskSessionList: taskSessionListMock,
       invokeSession: vi.fn().mockRejectedValue(new Error('Session file corrupted on disk')),
       taskSessionUpdate: taskSessionUpdateMock,
     });
@@ -92,6 +101,9 @@ describe('ChatHistoryDropdown', () => {
     // Dropdown did not close silently
     expect(onClose).not.toHaveBeenCalled();
     // Error banner is rendered in the UI
-    expect(await screen.findByText(/Session file corrupted on disk/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Session file corrupted on disk/i).length).toBeGreaterThanOrEqual(1);
+    // Final state follows Option A failure policy: Unavailable badge and Retry button rendered
+    expect(await screen.findByText('Unavailable')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
   });
 });

@@ -80,7 +80,7 @@ Recipes capture and restore workspace pane topologies using semantic pane keys r
 
 - **Semantic Keys**: `terminal:0`, `terminal:1`, `browser`, `editor`, `notes`.
 - **Capture**: When saving a recipe from an active workspace, `serializeWorkspaceLayout()` records the split tree, ratio, terminal count, and explorer visibility.
-- **Restoration**: On recipe launch, `restoreWorkspaceLayoutFromPersisted()` maps the semantic keys onto newly generated runtime pane IDs with fresh `createNodeId()` nodes.
+- **Centralized Restoration**: `executeWorkspaceRecipe()` provisions the complete set of required terminals (including fallback plain shells for recipes with `launches: []`) *before* layout restoration. `restoreWorkspaceLayoutFromPersisted()` then maps the semantic keys onto newly generated runtime pane IDs with fresh `createNodeId()` nodes.
 - **Graceful Fallback**: If the saved layout is incompatible (e.g. terminal counts differ or corrupted structure), layout restoration falls back safely, leaving standard balanced panes without failing the workspace.
 
 ---
@@ -91,13 +91,19 @@ Recipes capture and restore workspace pane topologies using semantic pane keys r
 The `findUnambiguousSessionCandidate()` algorithm associates a native session with a task record only when all conditions are satisfied:
 1. Candidate matches the task's `harnessId`.
 2. Candidate matches the workspace identity (`isSameWorkspaceIdentity()`).
-3. Candidate started around or after task creation (`timestamp >= createdAt - 60_000`).
-4. Candidate session ID is **not** already associated with any other task in the store.
+3. Candidate falls within the task's lifetime window:
+   `task.createdAt - 60_000 <= session.timestamp <= (task.stoppedAt ?? observedExitTime ?? task.updatedAt) + 120_000`. This prevents an old unresolved task from auto-claiming an unrelated session created days later.
+4. Candidate session ID is **not** already associated with any other task in the store, nor claimed by another task earlier in the same evaluation pass.
 5. **Strictly Unambiguous**: Exactly one matching candidate exists. If 0 or >1 candidates match, the function returns `null`, leaving the task in `needs-selection`.
 
 ### 5.2 Cache Bypass on Recovery Retry
 Normal chat-history browsing utilizes a 60-second in-memory session cache (`discoverSessions`). However, harnesses often flush session files to disk a few hundred milliseconds after PTY termination.
 - During terminal-exit recovery and restart-time correlation, `discoverSessions(workspacePath, { forceRefresh: true })` explicitly bypasses the cache to read fresh disk state on each retry attempt.
+
+### 5.3 Explicit Discovery Results
+Discovery distinguishes between successful scans and transient I/O failures using `SessionDiscoveryResult`:
+- **Success with zero sessions**: If discovery completes successfully and the stored `nativeSessionId` is not found, the session was deleted from disk. The task transitions to `unavailable` with `stateReason: 'Native conversation session was not found on disk'`.
+- **Discovery error**: If `discoverSessions()` throws (e.g. transient file system error), Clanker does **not** falsely declare the session deleted. The task's existing recoverability state is preserved.
 
 ---
 
@@ -130,15 +136,23 @@ Normal chat-history browsing utilizes a 60-second in-memory session cache (`disc
              │                                   │
              ▼                                   ▼
 SESSION_INVOKE in new PTY                  Unavailable if dir deleted,
-             │                             harness uninstalled, or
-             ▼                             session file deleted from disk
-      state: 'running'
-      terminalId: 'term-new'
+             │                             harness uninstalled,
+             ▼                             session file deleted from disk,
+      state: 'running'                     or resume invocation failed
+      terminalId: 'term-new'               (Retry button offered in UI)
 ```
 
 ---
 
-## 7. Shutdown Ordering
+## 7. Resume Failure vs. Missing Session
+
+Clanker distinguishes between two different kinds of failure:
+1. **Session Missing on Disk**: Discovery successfully executes, but the file is absent from disk. The task is marked `unavailable` with `Native conversation session was not found on disk`.
+2. **Resume Invocation Failure**: The session file exists on disk, but `SESSION_INVOKE` fails (e.g., corrupted conversation JSON, CLI runtime error, or incompatible model flags). In this case, the task is marked `unavailable` with `Failed to resume: <error>`. Automatic listing/evaluation respects this explicit failure state rather than immediately reverting it to `resumable`. The UI provides an explicit **Retry** button so the user can retry resuming or attach a different session.
+
+---
+
+## 8. Shutdown Ordering
 
 In `src/main/main.ts`, the `app.on('before-quit')` sequence is strictly ordered:
 1. `setAppShuttingDown(true)` — blocks late PTY data and exit IPC emissions to closing windows.
@@ -148,7 +162,7 @@ In `src/main/main.ts`, the `app.on('before-quit')` sequence is strictly ordered:
 
 ---
 
-## 8. Security & Isolation
+## 9. Security & Isolation
 
 - **PTY Execution**: Commands and harnesses funneled strictly through the existing `spawnPtyProcess` machinery. No renderer-side `child_process` execution.
 - **Browser URLs**: Validated against `normalizeTrustedAppBrowserUrl` allowing only `http:`, `https:`, and trusted local `file:` schemes.

@@ -162,6 +162,9 @@ export default function Header() {
       restoreLayout: (wsId, layout) => {
         useWorkspaceStore.getState().applyPersistedLayout(layout, wsId);
       },
+      getExistingTerminalCount: (wsId) => {
+        return useWorkspaceStore.getState().workspaces.find((w) => w.id === wsId)?.terminals.length ?? 0;
+      },
     });
   };
 
