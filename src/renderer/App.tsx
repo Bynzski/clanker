@@ -21,6 +21,7 @@ const WorkspaceHost = lazy(() => import('./components/WorkspaceHost'));
 
 function App() {
   const [showWorkspaceGate, setShowWorkspaceGate] = useState(false);
+  const [recipeFailure, setRecipeFailure] = useState<RecipeLaunchResult | null>(null);
   const { 
     workspaces,
     addWorkspace,
@@ -229,6 +230,8 @@ function App() {
     const result = await executeWorkspaceRecipe(recipe, {
       ensureWorkspaceOpen: async () => targetWorkspaceId,
       spawnTerminal: window.electronAPI.spawnTerminal,
+      waitRecipeCommand: window.electronAPI.waitRecipeCommand,
+      probePreview: window.electronAPI.probeRecipePreview,
       onTerminalSpawned: (_wsId, term) => {
         useWorkspaceStore.getState().addTerminal(term);
       },
@@ -239,9 +242,9 @@ function App() {
           store.toggleBrowser();
         }
         if (typeof window.electronAPI?.browserNavigate === 'function') {
-          return window.electronAPI.browserNavigate(wsId, url);
+          return window.electronAPI.browserNavigate(wsId, url, undefined, true);
         }
-        return true;
+        return false;
       },
       restoreLayout: (wsId, layout) => {
         useWorkspaceStore.getState().applyPersistedLayout(layout, wsId);
@@ -250,9 +253,8 @@ function App() {
         return useWorkspaceStore.getState().workspaces.find((w) => w.id === wsId)?.terminals.length ?? 0;
       },
     });
-    if (result.success) {
-      setShowWorkspaceGate(false);
-    }
+    setRecipeFailure(result.success ? null : result);
+    setShowWorkspaceGate(false);
     return result;
   };
 
@@ -270,6 +272,17 @@ function App() {
     <div className="app">
       <TitleBar onOpenWorkspace={() => setShowWorkspaceGate(true)} />
       <Header />
+      {recipeFailure && (
+        <div className="recipe-workspace-error" role="alert">
+          <div>
+            <strong>Recipe launch was incomplete.</strong>
+            <ul>{recipeFailure.steps.filter((step) => step.status === 'failed').map((step) => (
+              <li key={step.id}>{step.error ?? `${step.type} failed`}</li>
+            ))}</ul>
+          </div>
+          <button type="button" onClick={() => setRecipeFailure(null)} aria-label="Dismiss recipe error">Dismiss</button>
+        </div>
+      )}
       <div className="main-content">
         <ErrorBoundary
           paneId="workspace-layout"

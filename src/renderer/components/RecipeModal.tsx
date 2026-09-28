@@ -235,9 +235,11 @@ export default function RecipeModal({
               <ul className="recipe-launch-results-list">
                 {launchResult.steps.map((step) => (
                   <li key={step.id} className={`recipe-step-status ${step.status}`}>
-                    {step.status === 'success' ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                    {step.status === 'success' ? <CheckCircle2 size={14} />
+                      : step.status === 'started' ? <Loader2 size={14} /> : <XCircle size={14} />}
                     <span className="recipe-step-label">{step.type.toUpperCase()}:</span>
-                    <span className="recipe-step-detail">{step.error ?? 'Launched successfully'}</span>
+                    <span className="recipe-step-detail">{step.error ?? (step.status === 'started'
+                      ? 'Command started; completion not verified' : 'Launched successfully')}</span>
                   </li>
                 ))}
               </ul>

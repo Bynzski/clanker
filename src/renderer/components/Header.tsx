@@ -150,15 +150,17 @@ export default function Header() {
     return executeWorkspaceRecipe(recipe, {
       ensureWorkspaceOpen: async () => activeWorkspaceId,
       spawnTerminal: window.electronAPI.spawnTerminal,
+      waitRecipeCommand: window.electronAPI.waitRecipeCommand,
+      probePreview: window.electronAPI.probeRecipePreview,
       onTerminalSpawned: (_wsId, term) => {
         addTerminal(term);
       },
       openBrowserPreview: async (wsId, url) => {
         if (!browserVisible) toggleBrowser();
         if (typeof window.electronAPI?.browserNavigate === 'function') {
-          return window.electronAPI.browserNavigate(wsId, url);
+          return window.electronAPI.browserNavigate(wsId, url, undefined, true);
         }
-        return true;
+        return false;
       },
       restoreLayout: (wsId, layout) => {
         useWorkspaceStore.getState().applyPersistedLayout(layout, wsId);

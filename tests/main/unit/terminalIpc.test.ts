@@ -98,6 +98,7 @@ vi.mock('electron', () => ({
 
 import { ipcMain } from 'electron';
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
+import { RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY } from '../../../src/shared/ipcChannels';
 
 type MockIpcMain = typeof ipcMain & {
   handle: ReturnType<typeof vi.fn>;
@@ -156,7 +157,7 @@ describe('registerTerminalIpc — registration', () => {
       ensureHarnessWrapperScript: vi.fn().mockReturnValue(testHarnessWrapper()),
     });
 
-    expect(mockHandle.mock.calls.length).toBe(10);
+    expect(mockHandle.mock.calls.length).toBe(11);
   });
 
   test('registers 3 event IPC channels (terminal-data, terminal-exit, terminal-resized)', () => {
@@ -192,7 +193,7 @@ describe('registerTerminalIpc — registration', () => {
     };
     registerTerminalIpc(opts);
     registerTerminalIpc(opts);
-    expect(mockHandle.mock.calls.length).toBe(20);
+    expect(mockHandle.mock.calls.length).toBe(22);
   });
 });
 
@@ -261,6 +262,28 @@ describe('terminalIpc — error-path: handler returns', () => {
     mockOn.mockClear();
     mockClipboardWriteText.mockClear();
     mockPtySpawn.mockClear();
+  });
+
+  test('a recipe command is written only at TERMINAL_READY and its PTY exit marker is reported', async () => {
+    const { opts } = createMockDeps();
+    let emitData: ((data: string) => void) | undefined;
+    const write = vi.fn();
+    mockPtySpawn.mockReturnValue({
+      pid: 1234, write,
+      onData: vi.fn((callback: (data: string) => void) => { emitData = callback; }),
+      onExit: vi.fn(),
+    });
+    registerTerminalIpc(opts);
+    const handler = (channel: string) => mockIpcMain.handle.mock.calls.find((call) => call[0] === channel)?.[1];
+    const spawned = await handler(SPAWN_TERMINAL)(null, process.cwd(), undefined, undefined, 'missing-command', true);
+    expect(write).not.toHaveBeenCalled();
+    const pending = handler(RECIPE_COMMAND_WAIT)(null, spawned.id);
+    handler(TERMINAL_READY)(null, spawned.id);
+    expect(write).toHaveBeenCalledOnce();
+    const marker = String(write.mock.calls[0][0]).match(/CLANKER_RECIPE_[a-f0-9]+_/g)?.[0];
+    expect(marker).toBeDefined();
+    emitData?.(`${marker}127\r\n`);
+    expect(await pending).toMatchObject({ status: 'failed', error: 'Command exited immediately with code 127' });
   });
 
   test('GET_TERMINAL_BUFFER returns empty string for missing terminal ID', async () => {

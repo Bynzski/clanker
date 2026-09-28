@@ -1,4 +1,4 @@
-import type { WorkspaceRecipe } from '../../shared/types/recipes';
+import type { WorkspaceRecipe, RecipePreviewProbeResult } from '../../shared/types/recipes';
 import type { TaskSessionRecord } from '../../shared/types/taskSessions';
 import type { FileListDirectoryRequest, FileListDirectoryResult, ExplorerTreeChangedEvent } from '../../shared/types/fileExplorer';
 import type { FileReadRequest, FileWriteRequest, FileChangedEvent, FileWatchRequest, FileReadResult, FileWriteResult } from '../../shared/types/editor';
@@ -93,7 +93,8 @@ interface ElectronAPI {
   setAiCommitModel: (model: string) => Promise<void>;
 
   // Terminal
-  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
+  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
+  waitRecipeCommand: (id: string) => Promise<{ status: 'success' | 'started' | 'failed'; error?: string }>;
   getTerminalBuffer: (id: string) => Promise<string>;
   writeTerminal: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
   sendAnnotationToAgent: (workspaceId: string, terminalId: string, message: string) => Promise<{ success: boolean; error?: string }>;
@@ -129,7 +130,8 @@ interface ElectronAPI {
    * applied to the underlying single view. Phase 2 will route navigation to
    * the named tab view.
    */
-  browserNavigate: (workspaceId: string, url: string, tabId?: string) => Promise<boolean>;
+  browserNavigate: (workspaceId: string, url: string, tabId?: string, awaitLoad?: boolean) => Promise<boolean>;
+  probeRecipePreview: (url: string, waitForReady: boolean) => Promise<RecipePreviewProbeResult>;
   browserBack: (workspaceId: string) => Promise<void>;
   browserForward: (workspaceId: string) => Promise<void>;
   browserRefresh: (workspaceId: string) => Promise<void>;

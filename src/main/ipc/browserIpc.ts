@@ -15,6 +15,7 @@ import {
   BROWSER_SET_BOUNDS,
   BROWSER_HIDE,
   BROWSER_NAVIGATE,
+  RECIPE_PREVIEW_PROBE,
   BROWSER_BACK,
   BROWSER_FORWARD,
   BROWSER_REFRESH,
@@ -38,6 +39,7 @@ import {
   FIT_ALL_PANES,
 } from '../../shared/ipcChannels';
 import { getBrowserHistoryService } from '../browserHistory';
+import { probeRecipePreview } from '../recipePreview';
 
 export interface BrowserViewEntry {
   view: WebContentsView;
@@ -66,6 +68,7 @@ export interface BrowserIpcController {
 }
 
 const DEFAULT_BROWSER_URL = 'https://github.com';
+const RECIPE_NAVIGATION_TIMEOUT_MS = 10000;
 
 /**
  * Fallback tab ID used by workspace-scoped browser APIs (e.g. BROWSER_NAVIGATE
@@ -485,7 +488,10 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     }
   });
 
-  ipcMain.handle(BROWSER_NAVIGATE, (_, workspaceId: string, url: string, tabId?: string) => {
+  ipcMain.handle(RECIPE_PREVIEW_PROBE, (_, url: string, waitForReady: boolean) =>
+    probeRecipePreview(url, waitForReady === true));
+
+  ipcMain.handle(BROWSER_NAVIGATE, (_, workspaceId: string, url: string, tabId?: string, awaitLoad?: boolean) => {
     if (!workspaceId) return false;
     const safeUrl = normalizeTrustedAppBrowserUrl(url);
     if (!safeUrl) return false;
@@ -499,7 +505,23 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     entry.url = safeUrl;
     setActiveTabId(workspaceId, targetTabId, deps);
     getMainWindow()?.webContents.send(BROWSER_URL_UPDATED, { workspaceId, tabId: targetTabId, url: safeUrl });
-    void entry.view.webContents.loadURL(safeUrl);
+    const loading = entry.view.webContents.loadURL(safeUrl);
+    if (awaitLoad === true) {
+      return new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => {
+          try { entry.view.webContents.stop(); } catch { /* View may have closed. */ }
+          resolve(false);
+        }, RECIPE_NAVIGATION_TIMEOUT_MS);
+        void Promise.resolve(loading).then(() => {
+          clearTimeout(timer);
+          resolve(true);
+        }).catch(() => {
+          clearTimeout(timer);
+          resolve(false);
+        });
+      });
+    }
+    void Promise.resolve(loading).catch(() => {});
     return true;
   });
 

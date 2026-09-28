@@ -6,6 +6,21 @@
   background: var(--bg-primary);
 }
 
+.recipe-workspace-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  background: rgba(180, 50, 50, 0.18);
+  border-bottom: 1px solid rgba(220, 90, 90, 0.45);
+  font-size: 12px;
+}
+
+.recipe-workspace-error ul { margin: 4px 0 0; padding-left: 18px; }
+.recipe-workspace-error button { color: inherit; background: transparent; border: 0; cursor: pointer; }
+
 .main-content {
   flex: 1;
   display: flex;

@@ -128,6 +128,7 @@ const MAIN_IPC_INVOKE_CHANNELS = [
 
   // Terminal
   'spawn-terminal',
+  'recipe-command:wait',
   'get-terminal-buffer',
   'write-terminal',
   'resize-terminal',
@@ -137,6 +138,7 @@ const MAIN_IPC_INVOKE_CHANNELS = [
   'browser-set-bounds',
   'browser-hide',
   'browser-navigate',
+  'recipe-preview:probe',
   'browser-back',
   'browser-forward',
   'browser-refresh',

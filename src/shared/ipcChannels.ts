@@ -46,6 +46,7 @@ export const TERMINAL_EXIT = 'terminal-exit';
 export const AGENT_ATTENTION_UPDATE = 'agent-attention-update';
 export const TERMINAL_RESIZED = 'terminal-resized';
 export const TERMINAL_READY = 'terminal-ready';
+export const RECIPE_COMMAND_WAIT = 'recipe-command:wait';
 export const WRITE_CLIPBOARD = 'write-clipboard';
 
 /* ============================================================================
@@ -55,6 +56,7 @@ export const WRITE_CLIPBOARD = 'write-clipboard';
 export const BROWSER_SET_BOUNDS = 'browser-set-bounds';
 export const BROWSER_HIDE = 'browser-hide';
 export const BROWSER_NAVIGATE = 'browser-navigate';
+export const RECIPE_PREVIEW_PROBE = 'recipe-preview:probe';
 export const BROWSER_BACK = 'browser-back';
 export const BROWSER_FORWARD = 'browser-forward';
 export const BROWSER_REFRESH = 'browser-refresh';
@@ -258,11 +260,13 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   KILL_TERMINAL,
   TERMINAL_CLEANUP_WORKSPACE,
   TERMINAL_READY,
+  RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
   // Browser
   BROWSER_SET_BOUNDS,
   BROWSER_HIDE,
   BROWSER_NAVIGATE,
+  RECIPE_PREVIEW_PROBE,
   BROWSER_BACK,
   BROWSER_FORWARD,
   BROWSER_REFRESH,

@@ -108,6 +108,8 @@ Workspace launch recipes allow saving repeatable development workspace configura
 - Recipe terminal commands run inside standard PTY shells using Clanker's existing terminal architecture and security boundaries.
 - Browser preview URLs are sanitized using trusted URL validation (`http:`, `https:`, local `file:`).
 - **Partial Failure Handling**: If a specific command or browser preview fails, successful terminals remain open and running. Failures are reported with structured per-step error diagnostics without destroying the workspace.
+- **Launch Safety**: Explicit recipe slots require an empty workspace. A populated target is left untouched and the launch returns a clear error. Legacy recipes without slots still fill missing plain terminals up to `terminalCount`.
+- **Startup and Preview Results**: Command steps report an immediate exit when observed through the existing PTY; long-running commands are marked started after a short observation window. Local preview ports are checked before command launch for a busy port and retried briefly after launch for readiness. Recipe browser navigation observes `loadURL()` failure.
 
 ## Agent Task & Session Recovery
 

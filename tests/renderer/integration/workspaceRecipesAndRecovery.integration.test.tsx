@@ -96,8 +96,8 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
         expect(registerOpenWorkspaceMock).toHaveBeenCalled();
         expect(spawnTerminalMock).toHaveBeenCalledTimes(2);
         expect(spawnTerminalMock).toHaveBeenNthCalledWith(1, '/projects/my-web-app', 'codex', 'gpt-5');
-        expect(spawnTerminalMock).toHaveBeenNthCalledWith(2, '/projects/my-web-app', undefined, undefined, 'npm run dev');
-        expect(browserNavigateMock).toHaveBeenCalledWith(expect.any(String), 'http://localhost:5173');
+        expect(spawnTerminalMock).toHaveBeenNthCalledWith(2, '/projects/my-web-app', undefined, undefined, 'npm run dev', true);
+        expect(browserNavigateMock).toHaveBeenCalledWith(expect.any(String), 'http://localhost:5173', undefined, true);
       });
     });
     it('restores saved recipe layout topology onto newly spawned panes', async () => {
@@ -154,6 +154,31 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
       });
       expect(spawnTerminal).toHaveBeenNthCalledWith(1, '/projects/split-app');
       expect(spawnTerminal).toHaveBeenNthCalledWith(2, '/projects/split-app', 'codex', undefined);
+    });
+
+    it('keeps prior terminals usable and reports a command startup failure after opening a workspace', async () => {
+      const recipe: WorkspaceRecipe = {
+        id: 'recipe-partial', name: 'Partial Recipe', workspacePath: '/projects/partial',
+        launches: [{ id: 'shell', type: 'shell' }, { id: 'command', type: 'command', command: 'missing-tool' }],
+        createdAt: 1, updatedAt: 1, version: 1,
+      };
+      const spawnTerminal = vi.fn()
+        .mockResolvedValueOnce({ id: 'shell-term', pid: 1001 })
+        .mockResolvedValueOnce({ id: 'command-term', pid: 1002 });
+      installElectronApiMock({
+        recipeGetAll: vi.fn().mockResolvedValue([recipe]),
+        getLastWorkspace: vi.fn().mockResolvedValue('/projects/partial'),
+        registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true }),
+        spawnTerminal,
+        waitRecipeCommand: vi.fn().mockResolvedValue({ status: 'failed', error: 'Command exited immediately with code 127' }),
+      });
+      render(<App />);
+      fireEvent.click(await screen.findByRole('button', { name: /Partial Recipe/i }));
+      fireEvent.click(screen.getByRole('button', { name: /launch recipe/i }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Command exited immediately with code 127');
+      const ws = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.workspacePath === '/projects/partial');
+      expect(ws?.terminals.map((terminal) => terminal.id)).toEqual(['shell-term', 'command-term']);
+      expect(spawnTerminal).toHaveBeenCalledTimes(2);
     });
   });
 

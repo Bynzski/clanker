@@ -130,6 +130,10 @@
   color: #34d399;
 }
 
+.recipe-step-status.started {
+  color: #fbbf24;
+}
+
 .recipe-step-status.failed {
   color: #f87171;
 }

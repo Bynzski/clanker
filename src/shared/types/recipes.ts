@@ -48,10 +48,15 @@ export interface WorkspaceRecipe {
 export interface RecipeLaunchStepResult {
   id: string;
   type: 'shell' | 'command' | 'harness' | 'browser';
-  status: 'success' | 'failed';
+  status: 'success' | 'started' | 'failed';
   error?: string;
   terminalId?: string;
 }
+
+export type RecipePreviewProbeResult =
+  | { status: 'invalid'; error: string }
+  | { status: 'remote' }
+  | { status: 'ready' | 'unavailable'; host: string; port: number };
 
 export interface RecipeLaunchResult {
   recipeId: string;

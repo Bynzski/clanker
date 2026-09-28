@@ -7,6 +7,105 @@ import type Store from 'electron-store';
 import type { StoreSchema } from '../../../src/shared/types/store';
 
 describe('executeWorkspaceRecipe', () => {
+  const previewRecipe: WorkspaceRecipe = {
+    id: 'preview', name: 'Preview', workspacePath: '/projects/repo',
+    launches: [{ id: 'cmd', type: 'command', command: 'npm run dev' }],
+    browser: { url: 'http://localhost:5173' },
+    createdAt: 1, updatedAt: 1, version: 1,
+  };
+
+  it('reports a PTY command exit failure while keeping its spawned terminal', async () => {
+    const spawned = vi.fn();
+    const result = await executeWorkspaceRecipe({ ...previewRecipe, browser: undefined }, {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'),
+      spawnTerminal: vi.fn().mockResolvedValue({ id: 'term-1', pid: 101 }),
+      onTerminalSpawned: spawned,
+      waitRecipeCommand: vi.fn().mockResolvedValue({ status: 'failed', error: 'Command exited immediately with code 1' }),
+      getExistingTerminalCount: () => 0,
+    });
+    expect(result.success).toBe(false);
+    expect(result.steps[0]).toMatchObject({ type: 'command', status: 'failed', terminalId: 'term-1',
+      error: 'Command exited immediately with code 1' });
+    expect(spawned).toHaveBeenCalledOnce();
+  });
+
+  it('reports an unavailable local preview while preserving successful terminals', async () => {
+    const spawnTerminal = vi.fn().mockResolvedValue({ id: 'term-1', pid: 101 });
+    const onTerminalSpawned = vi.fn();
+    const openBrowserPreview = vi.fn();
+    const probePreview = vi.fn()
+      .mockResolvedValueOnce({ status: 'unavailable', host: 'localhost', port: 5173 })
+      .mockResolvedValueOnce({ status: 'unavailable', host: 'localhost', port: 5173 });
+    const result = await executeWorkspaceRecipe(previewRecipe, {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'), spawnTerminal, onTerminalSpawned,
+      waitRecipeCommand: vi.fn().mockResolvedValue({ status: 'started' }),
+      probePreview, openBrowserPreview, getExistingTerminalCount: () => 0,
+    });
+    expect(result.steps).toEqual([
+      { id: 'cmd', type: 'command', status: 'started', terminalId: 'term-1' },
+      { id: 'browser', type: 'browser', status: 'failed', error: 'Preview did not become available on localhost:5173' },
+    ]);
+    expect(result.success).toBe(false);
+    expect(onTerminalSpawned).toHaveBeenCalledOnce();
+    expect(openBrowserPreview).not.toHaveBeenCalled();
+  });
+
+  it('navigates when a local preview becomes ready during the retry window', async () => {
+    const openBrowserPreview = vi.fn().mockResolvedValue(true);
+    const probePreview = vi.fn()
+      .mockResolvedValueOnce({ status: 'unavailable', host: 'localhost', port: 5173 })
+      .mockResolvedValueOnce({ status: 'ready', host: 'localhost', port: 5173 });
+    const result = await executeWorkspaceRecipe(previewRecipe, {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'),
+      spawnTerminal: vi.fn().mockResolvedValue({ id: 'term-1', pid: 101 }),
+      onTerminalSpawned: vi.fn(), waitRecipeCommand: vi.fn().mockResolvedValue({ status: 'started' }),
+      probePreview, openBrowserPreview, getExistingTerminalCount: () => 0,
+    });
+    expect(result.success).toBe(true);
+    expect(result.steps[1]).toMatchObject({ type: 'browser', status: 'success' });
+    expect(openBrowserPreview).toHaveBeenCalledWith('ws-1', 'http://localhost:5173');
+  });
+
+  it('stops before command launch when the configured preview port is occupied', async () => {
+    const spawnTerminal = vi.fn();
+    const result = await executeWorkspaceRecipe(previewRecipe, {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'), spawnTerminal,
+      onTerminalSpawned: vi.fn(), probePreview: vi.fn().mockResolvedValue({ status: 'ready', host: 'localhost', port: 5173 }),
+      getExistingTerminalCount: () => 0,
+    });
+    expect(result).toMatchObject({ success: false, steps: [{ type: 'browser', status: 'failed',
+      error: 'Port 5173 is already in use on localhost' }] });
+    expect(spawnTerminal).not.toHaveBeenCalled();
+  });
+
+  it('lets a remote preview use normal browser navigation without local retry', async () => {
+    const probePreview = vi.fn().mockResolvedValue({ status: 'remote' });
+    const openBrowserPreview = vi.fn().mockResolvedValue(true);
+    const result = await executeWorkspaceRecipe({ ...previewRecipe, browser: { url: 'https://example.com' } }, {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'),
+      spawnTerminal: vi.fn().mockResolvedValue({ id: 'term-1', pid: 101 }),
+      onTerminalSpawned: vi.fn(), waitRecipeCommand: vi.fn().mockResolvedValue({ status: 'started' }),
+      probePreview, openBrowserPreview, getExistingTerminalCount: () => 0,
+    });
+    expect(result.success).toBe(true);
+    expect(probePreview).toHaveBeenCalledTimes(1);
+    expect(probePreview).toHaveBeenCalledWith('https://example.com', false);
+    expect(openBrowserPreview).toHaveBeenCalledWith('ws-1', 'https://example.com');
+  });
+
+  it('rejects explicit steps in a populated workspace before spawning or restoring layout', async () => {
+    const spawnTerminal = vi.fn();
+    const restoreLayout = vi.fn();
+    const result = await executeWorkspaceRecipe({ ...previewRecipe, browser: undefined,
+      layout: { root: { type: 'leaf', paneKey: 'terminal:0' }, terminalCount: 1 } }, {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'), spawnTerminal,
+      onTerminalSpawned: vi.fn(), getExistingTerminalCount: () => 2, restoreLayout,
+    });
+    expect(result.success).toBe(false);
+    expect(result.steps[0].error).toMatch(/already has active terminals/);
+    expect(spawnTerminal).not.toHaveBeenCalled();
+    expect(restoreLayout).not.toHaveBeenCalled();
+  });
   it.each([
     ['shell then Codex', [null, 'codex'], ['shell', 'harness']],
     ['Codex then shell', ['codex', null], ['harness', 'shell']],
@@ -64,7 +163,7 @@ describe('executeWorkspaceRecipe', () => {
     const result = await executeWorkspaceRecipe(recipe, deps);
     expect(result.steps.map((step) => step.type)).toEqual(['shell', 'command', 'harness']);
     expect(deps.spawnTerminal).toHaveBeenNthCalledWith(1, '/projects/repo');
-    expect(deps.spawnTerminal).toHaveBeenNthCalledWith(2, '/projects/repo', undefined, undefined, 'npm run dev');
+    expect(deps.spawnTerminal).toHaveBeenNthCalledWith(2, '/projects/repo', undefined, undefined, 'npm run dev', true);
     expect(deps.spawnTerminal).toHaveBeenNthCalledWith(3, '/projects/repo', 'codex', undefined);
   });
   const sampleRecipe: WorkspaceRecipe = {
@@ -105,7 +204,7 @@ describe('executeWorkspaceRecipe', () => {
     expect(result.steps[1]).toEqual({
       id: 'step-2',
       type: 'command',
-      status: 'success',
+      status: 'started',
       terminalId: 'term-2',
     });
     expect(result.steps[2]).toEqual({
@@ -115,7 +214,7 @@ describe('executeWorkspaceRecipe', () => {
     });
 
     expect(deps.spawnTerminal).toHaveBeenNthCalledWith(1, '/projects/my-app', 'codex', 'gpt-5');
-    expect(deps.spawnTerminal).toHaveBeenNthCalledWith(2, '/projects/my-app', undefined, undefined, 'npm run dev');
+    expect(deps.spawnTerminal).toHaveBeenNthCalledWith(2, '/projects/my-app', undefined, undefined, 'npm run dev', true);
     expect(deps.openBrowserPreview).toHaveBeenCalledWith('ws-1', 'http://localhost:3000');
     expect(spawnedTerminals.length).toBe(2);
   });

@@ -26,9 +26,11 @@ import {
   TERMINAL_EXIT,
   TERMINAL_RESIZED,
   TERMINAL_READY,
+  RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
 } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
+import { RecipeCommandStartup } from '../recipeCommandStartup';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import {
@@ -54,6 +56,7 @@ interface Terminal {
   startupBuffer: string[];
   startupBufferReady: boolean;
   initialCommand?: string;
+  recipeCommandStartup?: RecipeCommandStartup;
 }
 
 export type { Terminal };
@@ -103,7 +106,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   const isFiniteNumber = (value: unknown): value is number =>
     typeof value === 'number' && Number.isFinite(value);
 
-  ipcMain.handle(SPAWN_TERMINAL, async (_, workingDir: string, harness?: string, model?: string, initialCommand?: string) => {
+  ipcMain.handle(SPAWN_TERMINAL, async (_, workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean) => {
     const terminals = getTerminals();
     const mainWindow = getMainWindow();
     const store = getStore();
@@ -177,6 +180,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const cleanInitialCommand = (!harness && typeof initialCommand === 'string' && initialCommand.trim())
       ? initialCommand.trim().replace(/[\r\n]+/g, ' ')
       : undefined;
+    const recipeCommandStartup = cleanInitialCommand && recipeCommand === true
+      ? new RecipeCommandStartup() : undefined;
     if (harness && getHarnessOptions()[harness]) {
       const config = getHarnessOptions()[harness];
       launchLabel = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}`;
@@ -196,7 +201,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       getIsShuttingDown: () => appShuttingDown,
       launchLabel,
       harnessId: harnessConfig ? harness : undefined,
-      initialCommand: cleanInitialCommand,
+      initialCommand: recipeCommandStartup && cleanInitialCommand
+        ? recipeCommandStartup.wrap(cleanInitialCommand, process.platform, userShell) : cleanInitialCommand,
+      recipeCommandStartup,
       onExit: () => {
         releaseAgyAttentionPlugin(id);
         agentAttentionBroker?.release(id);
@@ -250,8 +257,17 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     if (terminal.initialCommand) {
       terminal.pty.write(`${terminal.initialCommand}\r`);
       terminal.initialCommand = undefined;
+      terminal.recipeCommandStartup?.onReady();
     }
     return ok();
+  });
+
+  ipcMain.handle(RECIPE_COMMAND_WAIT, async (_, id: string) => {
+    const terminal = getTerminals().get(id);
+    if (!terminal?.recipeCommandStartup) {
+      return { status: 'failed', error: 'Recipe command terminal is no longer available' };
+    }
+    return terminal.recipeCommandStartup.wait();
   });
 
   ipcMain.handle(WRITE_TERMINAL, (_, payload: unknown) => {
