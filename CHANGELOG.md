@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Hermes YOLO mode** — applying `--yolo` through harness Extra Flags now enables the approval bypass in the Hermes TUI backend.
+
 ## [0.4.0] - 2026-09-27
 
 ### Added

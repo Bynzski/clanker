@@ -120,6 +120,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const harnessDefaults = store.get('harnessDefaults');
     const attentionEnabled = Boolean(harnessConfig && harness && harness !== 'hermes' && harnessDefaults[harness]?.attentionEnabled);
     const userFlags = harness ? harnessDefaults[harness]?.flags : undefined;
+    const hermesYoloEnabled = harness === 'hermes'
+      && /(?:^|\s)--yolo(?:\s|$)/.test(userFlags ?? '');
     const effectiveModel = model || (harness ? harnessDefaults[harness]?.model || undefined : undefined);
     let harnessArgs = harnessConfig
       ? buildHarnessSpawnArgs(harnessConfig, effectiveModel, userFlags)
@@ -156,6 +158,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
       ...withoutAttentionEnvironment(harnessEnv),
       ...attentionEnv,
+      // Hermes' TUI starts a backend child process; bridge its documented
+      // process-level bypass explicitly instead of relying on CLI propagation.
+      ...(harness === 'hermes' ? { HERMES_YOLO_MODE: hermesYoloEnabled ? '1' : '' } : {}),
       ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
       ...(harnessConfig ? { CLANKER_GRID_FALLBACK_SHELL: userShell } : {}),
       TERM: 'xterm-256color',

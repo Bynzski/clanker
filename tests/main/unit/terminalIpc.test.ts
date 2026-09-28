@@ -616,7 +616,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     );
   });
 
-  test('SPAWN_TERMINAL launches Hermes TUI in the workspace with selected model and flags', async () => {
+  test('SPAWN_TERMINAL enables Hermes YOLO mode from configured extra flags', async () => {
     const { opts } = createMockDeps();
     opts.ensureHarnessWrapperScript = vi.fn().mockReturnValue(testHarnessWrapper());
     opts.getHarnessOptions = vi.fn().mockReturnValue({
@@ -624,7 +624,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     });
     opts.getStore = vi.fn().mockReturnValue({
       get: vi.fn().mockImplementation((key: string) => key === 'harnessDefaults'
-        ? { hermes: { model: 'anthropic/default', favorites: [], flags: '--reasoning low' } }
+        ? { hermes: { model: 'anthropic/default', favorites: [], flags: '--yolo --reasoning low' } }
         : false),
     }) as never;
     mockPtySpawn.mockReturnValue({ pid: 459, onData: vi.fn(), onExit: vi.fn() });
@@ -638,8 +638,11 @@ describe('terminalIpc — error-path: handler returns', () => {
     expect(result.harnessId).toBe('hermes');
     expect(mockPtySpawn).toHaveBeenCalledWith(
       testHarnessWrapper(),
-      ['hermes', '-m', 'openrouter/custom-model', '--tui', '--reasoning', 'low'],
-      expect.objectContaining({ cwd: '/test/workspace' })
+      ['hermes', '-m', 'openrouter/custom-model', '--tui', '--yolo', '--reasoning', 'low'],
+      expect.objectContaining({
+        cwd: '/test/workspace',
+        env: expect.objectContaining({ HERMES_YOLO_MODE: '1' }),
+      })
     );
   });
 

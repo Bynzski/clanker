@@ -50,6 +50,7 @@ All changes persist immediately to `electron-store`.
 - Flags are entered as free text and passed through as-is.
 - Placeholders show common examples (`--yolo` for Codex, `--dangerously-skip-permissions` for Claude).
 - There is no per-harness boolean toggle UI.
+- For Hermes, `--yolo` also sets the TUI backend's process-level approval bypass for the launched session.
 
 #### Default Model Resolution
 
