@@ -56,6 +56,15 @@ export function getIconPath(): string {
 }
 
 /**
+ * Returns true if debug mode is active via CLI flag or environment variables.
+ */
+export function isDebugMode(): boolean {
+  return process.argv.includes('--debug')
+    || process.env.CLANKER_DEBUG === '1'
+    || process.env.DEBUG === '1';
+}
+
+/**
  * Creates the main application window.
  * Returns the created BrowserWindow and a cleanup function.
  */
@@ -86,6 +95,26 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   mainWindow.setMenuBarVisibility(false);
   mainWindow.setAutoHideMenuBar(true);
   Menu.setApplicationMenu(null);
+
+  const isDebug = isDebugMode();
+  if (isDebug) {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  }
+
+  if (isDebug || process.env.NODE_ENV === 'development') {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      const isDevTools = input.key?.toLowerCase() === 'f12'
+        || ((input.control || input.meta) && input.shift && input.key?.toLowerCase() === 'i');
+      if (isDevTools) {
+        event.preventDefault();
+        if (mainWindow.webContents.isDevToolsOpened()) {
+          mainWindow.webContents.closeDevTools();
+        } else {
+          mainWindow.webContents.openDevTools({ mode: 'detach' });
+        }
+      }
+    });
+  }
 
   // Load the app
   if (process.env.NODE_ENV === 'development') {

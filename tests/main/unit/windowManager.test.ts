@@ -143,6 +143,60 @@ describe('windowManager', () => {
     });
   });
 
+  describe('isDebugMode (pure logic)', () => {
+    function isDebugMode(): boolean {
+      return process.argv.includes('--debug')
+        || process.env.CLANKER_DEBUG === '1'
+        || process.env.DEBUG === '1';
+    }
+
+    const originalArgv = [...process.argv];
+    const originalClankerDebug = process.env.CLANKER_DEBUG;
+    const originalDebug = process.env.DEBUG;
+
+    afterEach(() => {
+      process.argv = [...originalArgv];
+      if (originalClankerDebug !== undefined) {
+        process.env.CLANKER_DEBUG = originalClankerDebug;
+      } else {
+        delete process.env.CLANKER_DEBUG;
+      }
+      if (originalDebug !== undefined) {
+        process.env.DEBUG = originalDebug;
+      } else {
+        delete process.env.DEBUG;
+      }
+    });
+
+    test('returns false when no debug flags or env vars are set', () => {
+      process.argv = ['electron', '.'];
+      delete process.env.CLANKER_DEBUG;
+      delete process.env.DEBUG;
+      expect(isDebugMode()).toBe(false);
+    });
+
+    test('returns true when --debug is in process.argv', () => {
+      process.argv = ['electron', '.', '--debug'];
+      delete process.env.CLANKER_DEBUG;
+      delete process.env.DEBUG;
+      expect(isDebugMode()).toBe(true);
+    });
+
+    test('returns true when CLANKER_DEBUG is 1', () => {
+      process.argv = ['electron', '.'];
+      process.env.CLANKER_DEBUG = '1';
+      delete process.env.DEBUG;
+      expect(isDebugMode()).toBe(true);
+    });
+
+    test('returns true when DEBUG is 1', () => {
+      process.argv = ['electron', '.'];
+      delete process.env.CLANKER_DEBUG;
+      process.env.DEBUG = '1';
+      expect(isDebugMode()).toBe(true);
+    });
+  });
+
   describe('getPreloadPath (pure logic)', () => {
     // Replicate the pure logic from windowManager.ts
     function getPreloadPath(): string {
