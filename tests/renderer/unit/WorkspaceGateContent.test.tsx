@@ -568,8 +568,11 @@ describe('WorkspaceGateContent', () => {
     });
     renderGate({ initialPath: '/workspace/' });
     await screen.findByRole('button', { name: 'Antigravity' });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Codex' })).toHaveClass('selected');
+    });
 
-    fireEvent.keyDown(window, { key: 'a' });
+    fireEvent.keyDown(document.body, { key: 'a' });
 
     expect(screen.getByRole('button', { name: 'Antigravity' })).toHaveClass('selected');
   });

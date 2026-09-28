@@ -6,12 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-28
+
+### Added
+
+- **Antigravity harness** — launch Antigravity sessions with harness discovery and keyboard selection.
+
 ### Fixed
 
 - **Hermes YOLO mode** — applying `--yolo` through harness Extra Flags now enables the approval bypass in the Hermes TUI backend.
 - **Browser visibility after opening a workspace** — closing the workspace launcher now releases its browser overlay from the workspace that opened it, so returning to that workspace restores the native browser view.
 
-## [0.4.0] - 2026-09-27
+### Changed
+
+- **Linux-only release artifact** — `0.5.0` ships as a Linux AppImage. No Windows binary is produced for this release; Windows remains covered by CI validation.
 
 ### Added
 
@@ -257,7 +265,8 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Bynzski/clanker/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Bynzski/clanker/compare/v0.3.0...v0.4.0
 [0.2.5]: https://github.com/Bynzski/clanker/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Bynzski/clanker/compare/v0.2.3...v0.2.4
