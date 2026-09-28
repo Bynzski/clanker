@@ -17,6 +17,7 @@ import type { Terminal } from './terminalIpc';
 import { findUnambiguousSessionCandidate } from '../sessionCorrelation';
 import { discoverSessions } from '../sessionHistory';
 import type { HarnessSession } from '../../shared/types/session';
+import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
 
 const SUPPORTED_RESUME_HARNESSES: Record<string, true> = {
   codex: true,
@@ -125,11 +126,10 @@ export function evaluateTaskRecoveryState(
           };
         }
       } else {
-        // Discovery failed/threw an error: do NOT conclude that the session was deleted.
-        // Preserve the task's existing recoverability state.
+        // Failed discovery provides no evidence that the known session disappeared.
         return {
-          state: record.state === 'resumable' ? 'resumable' : 'needs-selection',
-          stateReason: undefined,
+          state: record.state === 'unavailable' ? 'unavailable' : 'resumable',
+          stateReason: record.state === 'unavailable' ? record.stateReason : undefined,
           terminalId: undefined,
           nativeSessionId: record.nativeSessionId,
           nativeSessionPath: record.nativeSessionPath,
@@ -143,6 +143,10 @@ export function evaluateTaskRecoveryState(
       nativeSessionId: record.nativeSessionId,
       nativeSessionPath: record.nativeSessionPath,
     };
+  }
+
+  if (normalizedDiscovery?.status === 'error' && record.state === 'unavailable') {
+    return { state: 'unavailable', stateReason: record.stateReason, terminalId: undefined };
   }
 
   // Has task metadata but native session ID is not known yet.
@@ -272,13 +276,31 @@ export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): Worksp
       throw new Error(`Task session not found: ${updateObj.id}`);
     }
 
+    const requestedSessionId = typeof updateObj.nativeSessionId === 'string'
+      ? updateObj.nativeSessionId.trim()
+      : '';
+    if (requestedSessionId && requestedSessionId !== existing.nativeSessionId) {
+      const owner = persistence.getAllTaskSessions().find((task) =>
+        task.id !== existing.id
+        && task.harnessId === existing.harnessId
+        && isSameWorkspaceIdentity(task.workspacePath, existing.workspacePath)
+        && task.nativeSessionId === requestedSessionId,
+      );
+      if (owner) {
+        throw new Error(`Session ${requestedSessionId} is already associated with task ${owner.id}`);
+      }
+    }
+
     const merged: TaskSessionRecord = {
       ...existing,
       ...(typeof updateObj.title === 'string' && updateObj.title.trim() ? { title: updateObj.title.trim() } : {}),
       ...(typeof updateObj.nativeSessionId === 'string' && updateObj.nativeSessionId.trim() ? { nativeSessionId: updateObj.nativeSessionId.trim() } : {}),
       ...(typeof updateObj.nativeSessionPath === 'string' && updateObj.nativeSessionPath.trim() ? { nativeSessionPath: updateObj.nativeSessionPath.trim() } : {}),
+      ...(requestedSessionId && requestedSessionId !== existing.nativeSessionId && !updateObj.nativeSessionPath
+        ? { nativeSessionPath: undefined } : {}),
       ...(typeof updateObj.state === 'string' && updateObj.state.trim() ? { state: updateObj.state.trim() as TaskRecoveryState } : {}),
       ...(typeof updateObj.stateReason === 'string' ? { stateReason: updateObj.stateReason.trim() } : {}),
+      ...(updateObj.state === 'resumable' && requestedSessionId ? { stateReason: undefined } : {}),
       updatedAt: Date.now(),
     };
 

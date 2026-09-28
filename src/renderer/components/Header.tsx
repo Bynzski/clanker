@@ -9,7 +9,8 @@ import HeaderRightControls from './HeaderRightControls';
 import { useBrowserOverlayWhileOpen, useCloseOnOutsidePointerAndEscape } from './useDropdownBehavior';
 import { useHeaderSettings } from './useHeaderSettings';
 import './Header.css';
-import type { WorkspaceRecipe, RecipeLaunchStep } from '../../shared/types/recipes';
+import type { WorkspaceRecipe } from '../../shared/types/recipes';
+import { captureTerminalLaunches } from '../lib/recipeCapture';
 import RecipeModal from './RecipeModal';
 import { executeWorkspaceRecipe } from '../lib/recipeExecution';
 import { serializeWorkspaceLayout } from '../lib/workspaceLayoutStorage';
@@ -168,11 +169,7 @@ export default function Header() {
     });
   };
 
-  const defaultLaunches: RecipeLaunchStep[] = (focusedWorkspace?.terminals ?? []).map((t, idx) =>
-    t.harnessId
-      ? { id: `step-${idx + 1}`, type: 'harness' as const, harnessId: t.harnessId }
-      : { id: `step-${idx + 1}`, type: 'command' as const, command: '' },
-  );
+  const defaultLaunches = captureTerminalLaunches(focusedWorkspace?.terminals ?? []);
 
   const defaultLayout = focusedWorkspace ? serializeWorkspaceLayout(focusedWorkspace) : undefined;
   return (

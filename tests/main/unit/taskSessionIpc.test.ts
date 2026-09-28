@@ -243,6 +243,32 @@ describe('evaluateTaskRecoveryState', () => {
     expect(result.stateReason).toBeUndefined();
   });
 
+  it('makes a dead running task with a known session resumable when discovery fails', () => {
+    const record: TaskSessionRecord = {
+      id: 'task-running-known', workspacePath: process.cwd(), harnessId: 'codex',
+      title: 'Known task', terminalId: 'dead-pty', nativeSessionId: 'known-session',
+      state: 'running', createdAt: 1000, updatedAt: 1000, version: 1,
+    };
+    const result = evaluateTaskRecoveryState(record, new Set(), availableHarnesses,
+      { status: 'error', error: 'Temporary I/O failure' }, [record]);
+    expect(result.state).toBe('resumable');
+    expect(result.nativeSessionId).toBe('known-session');
+    expect(result.terminalId).toBeUndefined();
+  });
+
+  it('preserves an unavailable task and its reason when discovery fails', () => {
+    const record: TaskSessionRecord = {
+      id: 'task-missing', workspacePath: process.cwd(), harnessId: 'codex',
+      title: 'Missing task', nativeSessionId: 'missing-session', state: 'unavailable',
+      stateReason: 'Native conversation session was not found on disk',
+      createdAt: 1000, updatedAt: 1000, version: 1,
+    };
+    const result = evaluateTaskRecoveryState(record, new Set(), availableHarnesses,
+      { status: 'error', error: 'Temporary I/O failure' }, [record]);
+    expect(result.state).toBe('unavailable');
+    expect(result.stateReason).toBe(record.stateReason);
+  });
+
   it('preserves explicit resume failure state without reverting to resumable', () => {
     const record: TaskSessionRecord = {
       id: 'task-failed-resume',
@@ -396,6 +422,31 @@ describe('taskSessionIpc handlers', () => {
 
     const emptyList = await listHandler(null) as TaskSessionRecord[];
     expect(emptyList.length).toBe(0);
+  });
+  it('rejects duplicate manual assignment and clears stale reason for an unclaimed session', async () => {
+    const persistence = registerTaskSessionIpc({
+      getStore: () => memoryStore as unknown as Store<StoreSchema>,
+      getTerminals: () => mockTerminals,
+      getHarnessOptions: () => ({ codex: { name: 'Codex' } }),
+    });
+    persistence.saveTaskSession({ id: 'task-a', workspacePath: process.cwd(), harnessId: 'codex',
+      title: 'A', nativeSessionId: 'session-x', state: 'resumable' });
+    persistence.saveTaskSession({ id: 'task-b', workspacePath: process.cwd(), harnessId: 'codex',
+      title: 'B', nativeSessionId: 'old-session', state: 'unavailable',
+      stateReason: 'Failed to resume: old session is broken' });
+    const update = handlers.get(TASK_SESSION_UPDATE)!;
+    await expect(update(null, { id: 'task-b', nativeSessionId: 'session-x', state: 'resumable' }))
+      .rejects.toThrow(/already associated with task task-a/);
+    expect(persistence.getTaskSessionById('task-b')?.nativeSessionId).toBe('old-session');
+
+    const reassociated = await update(null, { id: 'task-b', nativeSessionId: 'session-y',
+      nativeSessionPath: '/sessions/y.json', state: 'resumable', stateReason: '' }) as TaskSessionRecord;
+    expect(reassociated.state).toBe('resumable');
+    expect(reassociated.nativeSessionId).toBe('session-y');
+    expect(reassociated.nativeSessionPath).toBe('/sessions/y.json');
+    expect(reassociated.stateReason).toBeUndefined();
+    await expect(update(null, { id: 'task-b', nativeSessionId: 'session-y', state: 'resumable' }))
+      .resolves.toMatchObject({ nativeSessionId: 'session-y' });
   });
   it('auto-correlates needs-selection task on list when unambiguous session is found', async () => {
     const mockDiscover = vi.fn().mockResolvedValue([

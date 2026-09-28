@@ -1,4 +1,10 @@
-export type RecipeLaunchStepType = 'command' | 'harness';
+export type RecipeLaunchStepType = 'shell' | 'command' | 'harness';
+
+export interface RecipeShellStep {
+  id: string;
+  type: 'shell';
+  title?: string;
+}
 
 export interface RecipeCommandStep {
   id: string;
@@ -15,7 +21,7 @@ export interface RecipeHarnessStep {
   title?: string;
 }
 
-export type RecipeLaunchStep = RecipeCommandStep | RecipeHarnessStep;
+export type RecipeLaunchStep = RecipeShellStep | RecipeCommandStep | RecipeHarnessStep;
 
 export interface PersistedRecipeLayout {
   root: unknown;
@@ -41,7 +47,7 @@ export interface WorkspaceRecipe {
 
 export interface RecipeLaunchStepResult {
   id: string;
-  type: 'command' | 'harness' | 'browser';
+  type: 'shell' | 'command' | 'harness' | 'browser';
   status: 'success' | 'failed';
   error?: string;
   terminalId?: string;

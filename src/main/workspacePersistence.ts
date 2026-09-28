@@ -30,6 +30,14 @@ function isFiniteNumber(value: unknown): value is number {
 export function sanitizeRecipeLaunchStep(step: unknown): RecipeLaunchStep | null {
   if (!isObject(step) || !isNonEmptyString(step.id)) return null;
 
+  if (step.type === 'shell') {
+    return {
+      id: step.id.trim(),
+      type: 'shell',
+      ...(isNonEmptyString(step.title) ? { title: step.title.trim() } : {}),
+    };
+  }
+
   if (step.type === 'command') {
     if (!isNonEmptyString(step.command)) return null;
     return {

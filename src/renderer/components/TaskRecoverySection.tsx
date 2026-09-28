@@ -48,6 +48,7 @@ export default function TaskRecoverySection({
 }: Props) {
   const [selectingSessionTaskId, setSelectingSessionTaskId] = useState<string | null>(null);
   const [resumingTaskId, setResumingTaskId] = useState<string | null>(null);
+  const [associationError, setAssociationError] = useState<{ taskId: string; message: string } | null>(null);
 
   if (tasks.length === 0) return null;
 
@@ -63,9 +64,10 @@ export default function TaskRecoverySection({
   const handleAssociate = async (task: TaskSessionRecord, session: HarnessSession) => {
     try {
       await onAssociateSession(task, session);
+      setAssociationError(null);
       setSelectingSessionTaskId(null);
     } catch (err) {
-      console.error('Failed to associate session:', err);
+      setAssociationError({ taskId: task.id, message: err instanceof Error ? err.message : String(err) });
     }
   };
 
@@ -84,7 +86,12 @@ export default function TaskRecoverySection({
           const isSelecting = selectingSessionTaskId === task.id;
 
           // Matching discovered sessions for this task's harness
-          const matchingSessions = discoveredSessions.filter((s) => s.harness === task.harnessId);
+          const matchingSessions = discoveredSessions.filter((s) =>
+            s.harness === task.harnessId
+            && !tasks.some((owner) => owner.id !== task.id && owner.harnessId === task.harnessId && owner.nativeSessionId === s.id),
+          );
+          const canReassociate = task.state === 'needs-selection' || (task.state === 'unavailable'
+            && /(?:not found on disk|failed to resume|resume failed)/i.test(task.stateReason ?? ''));
 
           return (
             <div key={task.id} className={`task-recovery-item ${task.state}`}>
@@ -153,7 +160,7 @@ export default function TaskRecoverySection({
                     </button>
                   )}
 
-                  {task.state === 'unavailable' && task.nativeSessionId && (
+                  {task.state === 'unavailable' && task.nativeSessionId && /(?:failed to resume|resume failed)/i.test(task.stateReason ?? '') && (
                     <button
                       type="button"
                       className="task-action-btn resume-btn"
@@ -165,14 +172,14 @@ export default function TaskRecoverySection({
                       Retry
                     </button>
                   )}
-                  {task.state === 'needs-selection' && (
+                  {canReassociate && (
                     <button
                       type="button"
                       className="task-action-btn select-session-btn"
                       onClick={() => setSelectingSessionTaskId(isSelecting ? null : task.id)}
                       title="Select existing session to attach"
                     >
-                      <span>Select</span>
+                      <span>Select Session</span>
                       <ChevronDown size={11} />
                     </button>
                   )}
@@ -193,6 +200,9 @@ export default function TaskRecoverySection({
                   <AlertTriangle size={11} />
                   <span>{resumeError.message}</span>
                 </div>
+              )}
+              {associationError?.taskId === task.id && (
+                <div className="task-recovery-error-banner"><AlertTriangle size={11} /><span>{associationError.message}</span></div>
               )}
 
               {isSelecting && (

@@ -100,6 +100,13 @@ export default function RecipeModal({
     ]);
   };
 
+  const handleAddShellStep = () => {
+    setLaunches((prev) => [
+      ...prev,
+      { id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: 'shell' },
+    ]);
+  };
+
   const handleAddHarnessStep = () => {
     setLaunches((prev) => [
       ...prev,
@@ -130,6 +137,7 @@ export default function RecipeModal({
     }
 
     const cleanedLaunches = launches.filter((s) => {
+      if (s.type === 'shell') return true;
       if (s.type === 'command') return s.command.trim().length > 0;
       if (s.type === 'harness') return s.harnessId.trim().length > 0;
       return false;
@@ -290,6 +298,9 @@ export default function RecipeModal({
                 <div className="recipe-steps-header">
                   <label>Launch Steps</label>
                   <div className="recipe-add-step-buttons">
+                    <button type="button" className="recipe-add-btn" onClick={handleAddShellStep}>
+                      <Plus size={14} /> Shell
+                    </button>
                     <button type="button" className="recipe-add-btn" onClick={handleAddCommandStep}>
                       <Plus size={14} /> Command
                     </button>
@@ -313,6 +324,11 @@ export default function RecipeModal({
                             onChange={(e) => handleStepChange(index, { ...step, command: e.target.value })}
                             placeholder="Shell command (e.g. npm run dev)"
                           />
+                        </div>
+                      ) : step.type === 'shell' ? (
+                        <div className="recipe-step-inputs">
+                          <TermIcon size={14} className="recipe-step-type-icon" />
+                          <span>Interactive shell</span>
                         </div>
                       ) : (
                         <div className="recipe-step-inputs">
@@ -348,7 +364,7 @@ export default function RecipeModal({
                     </div>
                   ))}
                   {launches.length === 0 && (
-                    <div className="recipe-no-steps">No launch steps. Add a command or agent above.</div>
+                    <div className="recipe-no-steps">No launch steps. Add a shell, command, or agent above.</div>
                   )}
                 </div>
               </div>
@@ -386,6 +402,11 @@ export default function RecipeModal({
                             </strong>
                             {step.modelId ? ` — model: ${step.modelId}` : ''}
                           </span>
+                        </>
+                      ) : step.type === 'shell' ? (
+                        <>
+                          <TermIcon size={14} className="recipe-preview-icon term" />
+                          <span className="recipe-preview-text">Interactive shell</span>
                         </>
                       ) : (
                         <>

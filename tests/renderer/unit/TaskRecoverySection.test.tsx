@@ -133,6 +133,30 @@ describe('TaskRecoverySection', () => {
     });
   });
 
+  it('lets an unavailable task select an unclaimed session and hides sessions owned by other tasks', async () => {
+    const unavailable: TaskSessionRecord = {
+      id: 'task-missing', workspacePath: '/projects/repo', harnessId: 'codex',
+      title: 'Missing chat', nativeSessionId: 'old-id', state: 'unavailable',
+      stateReason: 'Native conversation session was not found on disk',
+      createdAt: 1, updatedAt: 1, version: 1,
+    };
+    const owner: TaskSessionRecord = { ...unavailable, id: 'owner', title: 'Owner',
+      nativeSessionId: 'claimed', state: 'resumable', stateReason: undefined };
+    const sessions: HarnessSession[] = [
+      { id: 'claimed', harness: 'codex', title: 'Claimed chat', cwd: '/projects/repo', timestamp: 2 },
+      { id: 'unclaimed', harness: 'codex', title: 'Free chat', cwd: '/projects/repo', timestamp: 3 },
+    ];
+    const onAssociate = vi.fn().mockResolvedValue(undefined);
+    render(<TaskRecoverySection tasks={[unavailable, owner]} discoveredSessions={sessions}
+      onResumeTask={vi.fn()} onAssociateSession={onAssociate} onDeleteTask={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /select session/i }));
+    expect(screen.getByText('Free chat')).toBeInTheDocument();
+    expect(screen.queryByText('Claimed chat')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Free chat'));
+    await waitFor(() => expect(onAssociate).toHaveBeenCalledWith(unavailable, sessions[1]));
+  });
+
   it('triggers onDeleteTask when clicking trash icon', async () => {
     const onDelete = vi.fn().mockResolvedValue(undefined);
 

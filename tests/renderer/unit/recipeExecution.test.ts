@@ -1,8 +1,72 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { WorkspaceRecipe } from '../../../src/shared/types/recipes';
 import { executeWorkspaceRecipe } from '../../../src/renderer/lib/recipeExecution';
+import { captureTerminalLaunches } from '../../../src/renderer/lib/recipeCapture';
+import { WorkspacePersistenceService } from '../../../src/main/workspacePersistence';
+import type Store from 'electron-store';
+import type { StoreSchema } from '../../../src/shared/types/store';
 
 describe('executeWorkspaceRecipe', () => {
+  it.each([
+    ['shell then Codex', [null, 'codex'], ['shell', 'harness']],
+    ['Codex then shell', ['codex', null], ['harness', 'shell']],
+  ] as const)('preserves captured %s slots through save, reload, and split layout restore', async (_name, harnesses, types) => {
+    const captured = captureTerminalLaunches(harnesses.map((harnessId) => ({ harnessId })));
+    const storage = new Map<string, unknown>();
+    const persistence = new WorkspacePersistenceService(() => ({
+      get: (key: string) => storage.get(key),
+      set: (key: string, value: unknown) => { storage.set(key, value); },
+    }) as unknown as Store<StoreSchema>);
+    const saved = persistence.saveRecipe({
+      id: 'mixed', name: 'Mixed', workspacePath: '/projects/repo',
+      terminalCount: 2, launches: captured,
+      layout: {
+        root: { type: 'split', orientation: 'horizontal', ratio: 0.5,
+          first: { type: 'leaf', paneKey: 'terminal:0' },
+          second: { type: 'leaf', paneKey: 'terminal:1' } },
+        terminalCount: 2,
+      },
+    });
+    expect(saved.launches).toHaveLength(2);
+    const reloaded = persistence.getRecipeById('mixed');
+    expect(reloaded?.launches.map((step) => step.type)).toEqual(types);
+
+    const spawned: { harnessId: string | null }[] = [];
+    const deps = {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'),
+      spawnTerminal: vi.fn().mockResolvedValueOnce({ id: 'term-1', pid: 1 })
+        .mockResolvedValueOnce({ id: 'term-2', pid: 2, harnessId: 'codex' }),
+      onTerminalSpawned: vi.fn((_id: string, term: { harnessId: string | null }) => spawned.push(term)),
+      restoreLayout: vi.fn(() => expect(spawned).toHaveLength(2)),
+    };
+    const result = await executeWorkspaceRecipe(reloaded!, deps);
+    expect(result.success).toBe(true);
+    expect(result.steps.map((step) => step.type)).toEqual(types);
+    expect(deps.spawnTerminal).toHaveBeenCalledTimes(2);
+    for (const [index, type] of types.entries()) {
+      expect(deps.spawnTerminal).toHaveBeenNthCalledWith(index + 1, '/projects/repo', ...(type === 'shell' ? [] : ['codex', undefined]));
+    }
+    expect(deps.restoreLayout).toHaveBeenCalledWith('ws-1', reloaded?.layout);
+  });
+
+  it('launches shell, command, and Codex slots in order', async () => {
+    const recipe: WorkspaceRecipe = {
+      id: 'three', name: 'Three', workspacePath: '/projects/repo', terminalCount: 3,
+      launches: [{ id: 's1', type: 'shell' }, { id: 's2', type: 'command', command: 'npm run dev' },
+        { id: 's3', type: 'harness', harnessId: 'codex' }],
+      createdAt: 1, updatedAt: 1, version: 1,
+    };
+    const deps = {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('ws-1'),
+      spawnTerminal: vi.fn().mockResolvedValue({ id: 'term', pid: 1 }),
+      onTerminalSpawned: vi.fn(),
+    };
+    const result = await executeWorkspaceRecipe(recipe, deps);
+    expect(result.steps.map((step) => step.type)).toEqual(['shell', 'command', 'harness']);
+    expect(deps.spawnTerminal).toHaveBeenNthCalledWith(1, '/projects/repo');
+    expect(deps.spawnTerminal).toHaveBeenNthCalledWith(2, '/projects/repo', undefined, undefined, 'npm run dev');
+    expect(deps.spawnTerminal).toHaveBeenNthCalledWith(3, '/projects/repo', 'codex', undefined);
+  });
   const sampleRecipe: WorkspaceRecipe = {
     id: 'recipe-1',
     name: 'Dev Environment',

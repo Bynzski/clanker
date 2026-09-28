@@ -47,6 +47,7 @@ interface WorkspaceRecipe {
 }
 
 type RecipeLaunchStep =
+  | { id: string; type: 'shell'; title?: string }
   | { id: string; type: 'command'; command: string; title?: string }
   | { id: string; type: 'harness'; harnessId: string; modelId?: string; title?: string };
 ```
@@ -79,8 +80,8 @@ interface TaskSessionRecord {
 Recipes capture and restore workspace pane topologies using semantic pane keys rather than runtime pane IDs:
 
 - **Semantic Keys**: `terminal:0`, `terminal:1`, `browser`, `editor`, `notes`.
-- **Capture**: When saving a recipe from an active workspace, `serializeWorkspaceLayout()` records the split tree, ratio, terminal count, and explorer visibility.
-- **Centralized Restoration**: `executeWorkspaceRecipe()` provisions the complete set of required terminals (including fallback plain shells for recipes with `launches: []`) *before* layout restoration. `restoreWorkspaceLayoutFromPersisted()` then maps the semantic keys onto newly generated runtime pane IDs with fresh `createNodeId()` nodes.
+- **Capture**: When saving a recipe from an active workspace, each terminal contributes an ordered shell or harness launch slot. `serializeWorkspaceLayout()` records the split tree, ratio, terminal count, and explorer visibility.
+- **Centralized Restoration**: `executeWorkspaceRecipe()` provisions launch slots in order, including plain shells, before layout restoration. Legacy recipes with `launches: []` still provision `terminalCount` plain shells. `restoreWorkspaceLayoutFromPersisted()` then maps the semantic keys onto newly generated runtime pane IDs with fresh `createNodeId()` nodes.
 - **Graceful Fallback**: If the saved layout is incompatible (e.g. terminal counts differ or corrupted structure), layout restoration falls back safely, leaving standard balanced panes without failing the workspace.
 
 ---
@@ -103,7 +104,8 @@ Normal chat-history browsing utilizes a 60-second in-memory session cache (`disc
 ### 5.3 Explicit Discovery Results
 Discovery distinguishes between successful scans and transient I/O failures using `SessionDiscoveryResult`:
 - **Success with zero sessions**: If discovery completes successfully and the stored `nativeSessionId` is not found, the session was deleted from disk. The task transitions to `unavailable` with `stateReason: 'Native conversation session was not found on disk'`.
-- **Discovery error**: If `discoverSessions()` throws (e.g. transient file system error), Clanker does **not** falsely declare the session deleted. The task's existing recoverability state is preserved.
+- **Discovery error**: If `discoverSessions()` throws (e.g. transient file system error), Clanker does **not** falsely declare the session deleted. A dead running task with a known native session ID becomes resumable; an unavailable task keeps its reason until a successful scan provides new evidence.
+- **Manual reassociation**: Unavailable tasks with missing sessions or failed resume attempts can select an unclaimed discovered session. Main-process validation rejects duplicate ownership within the same harness and workspace. A successful reassociation clears the stale failure reason.
 
 ---
 

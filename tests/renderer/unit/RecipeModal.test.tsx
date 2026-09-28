@@ -141,6 +141,22 @@ describe('RecipeModal', () => {
     });
   });
 
+  it('saves captured shell and harness slots without filtering or reordering', async () => {
+    const saveMock = vi.fn().mockImplementation(async (recipe) => recipe);
+    installElectronApiMock({ recipeSave: saveMock });
+    render(<RecipeModal isOpen={true} onClose={vi.fn()} defaultWorkspacePath="/projects/test-project"
+      defaultTerminalCount={2} defaultLaunches={[
+        { id: 's1', type: 'shell' }, { id: 's2', type: 'harness', harnessId: 'codex' },
+      ]} onLaunchRecipe={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText(/recipe name/i), { target: { value: 'Mixed' } });
+    expect(screen.getByText('Interactive shell')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /save recipe/i }));
+    await waitFor(() => expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({
+      terminalCount: 2,
+      launches: [{ id: 's1', type: 'shell' }, { id: 's2', type: 'harness', harnessId: 'codex' }],
+    })));
+  });
+
   it('allows deleting a recipe with confirmation', async () => {
     const onDelete = vi.fn();
     const deleteMock = vi.fn().mockResolvedValue(true);

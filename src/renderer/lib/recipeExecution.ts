@@ -59,14 +59,14 @@ export async function executeWorkspaceRecipe(
         });
         steps.push({
           id: `terminal-${index + 1}`,
-          type: 'command',
+          type: 'shell',
           status: 'success',
           terminalId: info.id,
         });
       } catch (err) {
         steps.push({
           id: `terminal-${index + 1}`,
-          type: 'command',
+          type: 'shell',
           status: 'failed',
           error: err instanceof Error ? err.message : String(err),
         });
@@ -98,9 +98,11 @@ export async function executeWorkspaceRecipe(
             error: err instanceof Error ? err.message : String(err),
           });
         }
-      } else if (step.type === 'command') {
+      } else if (step.type === 'shell' || step.type === 'command') {
         try {
-          const info = await deps.spawnTerminal(recipe.workspacePath, undefined, undefined, step.command);
+          const info = step.type === 'shell'
+            ? await deps.spawnTerminal(recipe.workspacePath)
+            : await deps.spawnTerminal(recipe.workspacePath, undefined, undefined, step.command);
           deps.onTerminalSpawned(workspaceId, {
             id: info.id,
             pid: info.pid,
@@ -110,14 +112,14 @@ export async function executeWorkspaceRecipe(
           });
           steps.push({
             id: step.id,
-            type: 'command',
+            type: step.type,
             status: 'success',
             terminalId: info.id,
           });
         } catch (err) {
           steps.push({
             id: step.id,
-            type: 'command',
+            type: step.type,
             status: 'failed',
             error: err instanceof Error ? err.message : String(err),
           });

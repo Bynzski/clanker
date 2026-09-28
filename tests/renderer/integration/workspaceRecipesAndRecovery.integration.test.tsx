@@ -107,8 +107,8 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
         workspacePath: '/projects/split-app',
         terminalCount: 2,
         launches: [
-          { id: 's1', type: 'command', command: 'npm start' },
-          { id: 's2', type: 'command', command: 'npm test' },
+          { id: 's1', type: 'shell' },
+          { id: 's2', type: 'harness', harnessId: 'codex' },
         ],
         layout: {
           root: {
@@ -125,11 +125,12 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
         version: 1,
       };
 
+      const spawnTerminal = vi.fn()
+        .mockResolvedValueOnce({ id: 'term-split-1', pid: 2001 })
+        .mockResolvedValueOnce({ id: 'term-split-2', pid: 2002, harnessId: 'codex' });
       installElectronApiMock({
         recipeGetAll: vi.fn().mockResolvedValue([recipeWithLayout]),
-        spawnTerminal: vi.fn()
-          .mockResolvedValueOnce({ id: 'term-split-1', pid: 2001 })
-          .mockResolvedValueOnce({ id: 'term-split-2', pid: 2002 }),
+        spawnTerminal,
         registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true }),
         getLastWorkspace: vi.fn().mockResolvedValue('/projects/split-app'),
       });
@@ -149,7 +150,10 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
         expect(activeWs?.panes.length).toBe(2);
         expect(activeWs?.layoutRoot).not.toBeNull();
         expect(activeWs?.layoutRoot?.type).toBe('split');
+        expect(activeWs?.terminals.map((terminal) => terminal.harnessId)).toEqual([null, 'codex']);
       });
+      expect(spawnTerminal).toHaveBeenNthCalledWith(1, '/projects/split-app');
+      expect(spawnTerminal).toHaveBeenNthCalledWith(2, '/projects/split-app', 'codex', undefined);
     });
   });
 

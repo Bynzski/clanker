@@ -162,19 +162,16 @@ export default function ChatHistoryDropdown({
   };
 
   const handleAssociateSession = async (task: TaskSessionRecord, session: HarnessSession) => {
-    try {
-      if (typeof window.electronAPI?.taskSessionUpdate === 'function') {
-        await window.electronAPI.taskSessionUpdate({
-          id: task.id,
-          nativeSessionId: session.id,
-          nativeSessionPath: session.filePath,
-          state: 'resumable',
-        });
-        const updated = await window.electronAPI.taskSessionList(workspacePath);
-        setTasks(updated);
-      }
-    } catch (err) {
-      console.error('Failed to associate session with task:', err);
+    if (typeof window.electronAPI?.taskSessionUpdate === 'function') {
+      await window.electronAPI.taskSessionUpdate({
+        id: task.id,
+        nativeSessionId: session.id,
+        nativeSessionPath: session.filePath,
+        state: 'resumable',
+        stateReason: '',
+      });
+      const updated = await window.electronAPI.taskSessionList(workspacePath);
+      setTasks(updated);
     }
   };
 
