@@ -6,9 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-28
+
+### Added
+
+- **Workspace launch recipes** — capture workspace layouts, terminals, shell commands, harness sessions, and browser URLs into reusable recipes, with command previews before execution.
+- **Task session recovery** — restore and resume interrupted agent task sessions across app restarts using native harness CLI resume mechanisms without replaying prompts.
+- **Debug mode DevTools** — open detached DevTools automatically when launched with `--debug` or `CLANKER_DEBUG=1`, and toggle DevTools with `Ctrl+Shift+I` or `F12`.
+
 ### Changed
 
 - **One-click terminal launch** — each terminal or harness button in the header now opens that terminal directly; the separate **New Terminal** button has been removed.
+- **Workspace gate controls** — configure default harness models and flags directly from the workspace launcher gate.
+- **Workspace performance** — faster session history discovery, concurrency limits for session file scans, and optimized file explorer rendering.
+- **Linux-only release artifact** — `0.6.0` ships as a Linux AppImage. No Windows binary is produced for this release; Windows remains covered by CI validation.
+
+### Fixed
+
+- **Git status polling** — serialized polling ensures background status queries from a previous workspace do not overwrite status after switching workspaces.
 
 ## [0.5.0] - 2026-09-28
 
@@ -24,6 +39,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 
 - **Linux-only release artifact** — `0.5.0` ships as a Linux AppImage. No Windows binary is produced for this release; Windows remains covered by CI validation.
+
+## [0.4.0] - 2026-09-27
 
 ### Added
 
@@ -269,9 +286,11 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Bynzski/clanker/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Bynzski/clanker/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Bynzski/clanker/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/Bynzski/clanker/compare/v0.2.5...v0.3.0
 [0.2.5]: https://github.com/Bynzski/clanker/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Bynzski/clanker/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Bynzski/clanker/compare/v0.2.2...v0.2.3
