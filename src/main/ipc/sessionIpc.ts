@@ -15,6 +15,7 @@ import { spawnPtyProcess } from './ptySpawn';
 import type { Terminal } from './terminalIpc';
 import type { HarnessSession } from '../../shared/types/session';
 import { defaultShell } from '../platformShell';
+import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
 import { toNativePath } from '../../shared/pathNormalize';
 import { resolveExistingFileWithinDirectory } from '../security';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
@@ -37,10 +38,11 @@ interface RegisterSessionIpcDeps {
   getStore: () => Store<StoreSchema>;
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
   agentAttentionBroker?: AgentAttentionBroker;
+  taskSessionCoordinator?: TaskSessionCoordinator;
 }
 
 export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
-  const { getTerminals, getMainWindow, getSafeWorkspacePath, getIsShuttingDown, getStore, getHarnessOptions, agentAttentionBroker } = deps;
+  const { getTerminals, getMainWindow, getSafeWorkspacePath, getIsShuttingDown, getStore, getHarnessOptions, agentAttentionBroker, taskSessionCoordinator } = deps;
 
   ipcMain.handle(SESSION_DISCOVER, async (_, workspacePath?: string) => {
     const nativeWorkspacePath = workspacePath
@@ -166,7 +168,14 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       onExit: () => {
         releaseAgyAttentionPlugin(id);
         agentAttentionBroker?.release(id);
+        void taskSessionCoordinator?.onTerminalExited(id);
       },
+      });
+      taskSessionCoordinator?.onSessionInvoked(id, {
+        ...nativeSession,
+        // The session record crosses into persistence and renderer matching;
+        // keep its original IPC-form path, not the native spawn cwd.
+        cwd: session.cwd,
       });
       return { ...result, harnessId: session.harness, attentionEnabled };
     } catch (error) {

@@ -1,0 +1,488 @@
+import { useState, useEffect } from 'react';
+import {
+  X,
+  Play,
+  Trash2,
+  Edit2,
+  Plus,
+  Terminal as TermIcon,
+  Bot,
+  Globe,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+} from 'lucide-react';
+import type {
+  WorkspaceRecipe,
+  RecipeLaunchStep,
+  RecipeLaunchResult,
+  PersistedRecipeLayout,
+} from '../../shared/types/recipes';
+import { HARNESS_OPTIONS } from '../lib/harnessOptions';
+import './RecipeModal.css';
+
+interface Props {
+  isOpen: boolean;
+  onClose: () => void;
+  initialRecipe?: WorkspaceRecipe | null;
+  defaultWorkspacePath?: string;
+  defaultLaunches?: RecipeLaunchStep[];
+  defaultBrowserUrl?: string;
+  defaultLayout?: PersistedRecipeLayout;
+  defaultTerminalCount?: number;
+  onLaunchRecipe: (recipe: WorkspaceRecipe) => Promise<RecipeLaunchResult | null | void>;
+  onRecipeSaved?: (recipe: WorkspaceRecipe) => void;
+  onRecipeDeleted?: (recipeId: string) => void;
+}
+
+export default function RecipeModal({
+  isOpen,
+  onClose,
+  initialRecipe,
+  defaultWorkspacePath,
+  defaultLaunches,
+  defaultBrowserUrl,
+  defaultLayout,
+  defaultTerminalCount,
+  onLaunchRecipe,
+  onRecipeSaved,
+  onRecipeDeleted,
+}: Props) {
+  const [isEditing, setIsEditing] = useState(!initialRecipe);
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [launchResult, setLaunchResult] = useState<RecipeLaunchResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Form state
+  const [name, setName] = useState('');
+  const [workspacePath, setWorkspacePath] = useState('');
+  const [description, setDescription] = useState('');
+  const [browserUrl, setBrowserUrl] = useState('');
+  const [layout, setLayout] = useState<PersistedRecipeLayout | undefined>(initialRecipe?.layout ?? defaultLayout);
+  const [terminalCount, setTerminalCount] = useState<number | undefined>(initialRecipe?.terminalCount ?? defaultTerminalCount);
+  const [launches, setLaunches] = useState<RecipeLaunchStep[]>([]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setLaunchResult(null);
+      setErrorMessage('');
+      return;
+    }
+
+    if (initialRecipe) {
+      setIsEditing(false);
+      setName(initialRecipe.name);
+      setWorkspacePath(initialRecipe.workspacePath);
+      setDescription(initialRecipe.description ?? '');
+      setBrowserUrl(initialRecipe.browser?.url ?? '');
+      setLayout(initialRecipe.layout);
+      setTerminalCount(initialRecipe.terminalCount);
+      setLaunches(initialRecipe.launches ?? []);
+    } else {
+      setIsEditing(true);
+      setName('');
+      setWorkspacePath(defaultWorkspacePath ?? '');
+      setDescription('');
+      setBrowserUrl(defaultBrowserUrl ?? '');
+      setLayout(defaultLayout);
+      setTerminalCount(defaultTerminalCount);
+      setLaunches(defaultLaunches ?? [{ id: `step-${Date.now()}-1`, type: 'command', command: '' }]);
+    }
+  }, [isOpen, initialRecipe, defaultWorkspacePath, defaultLaunches, defaultBrowserUrl, defaultLayout, defaultTerminalCount]);
+
+  if (!isOpen) return null;
+
+  const handleAddCommandStep = () => {
+    setLaunches((prev) => [
+      ...prev,
+      { id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: 'command', command: '' },
+    ]);
+  };
+
+  const handleAddShellStep = () => {
+    setLaunches((prev) => [
+      ...prev,
+      { id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: 'shell' },
+    ]);
+  };
+
+  const handleAddHarnessStep = () => {
+    setLaunches((prev) => [
+      ...prev,
+      { id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: 'harness', harnessId: 'codex' },
+    ]);
+  };
+
+  const handleRemoveStep = (index: number) => {
+    setLaunches((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleStepChange = (index: number, step: RecipeLaunchStep) => {
+    setLaunches((prev) => {
+      const copy = [...prev];
+      copy[index] = step;
+      return copy;
+    });
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      setErrorMessage('Recipe name is required');
+      return;
+    }
+    if (!workspacePath.trim()) {
+      setErrorMessage('Workspace path is required');
+      return;
+    }
+
+    const cleanedLaunches = launches.filter((s) => {
+      if (s.type === 'shell') return true;
+      if (s.type === 'command') return s.command.trim().length > 0;
+      if (s.type === 'harness') return s.harnessId.trim().length > 0;
+      return false;
+    });
+
+    const recipe: WorkspaceRecipe = {
+      id: initialRecipe?.id ?? `recipe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: name.trim(),
+      workspacePath: workspacePath.trim(),
+      terminalCount: terminalCount ?? (cleanedLaunches.length || 1),
+      ...(description.trim() ? { description: description.trim() } : {}),
+      launches: cleanedLaunches,
+      ...(browserUrl.trim() ? { browser: { url: browserUrl.trim() } } : {}),
+      ...(layout ? { layout } : {}),
+      createdAt: initialRecipe?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+      version: 1,
+    };
+
+    try {
+      const saved = await window.electronAPI.recipeSave(recipe);
+      onRecipeSaved?.(saved);
+      setIsEditing(false);
+      setErrorMessage('');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!initialRecipe?.id) return;
+    if (!window.confirm(`Are you sure you want to delete the recipe "${initialRecipe.name}"?`)) {
+      return;
+    }
+
+    try {
+      const ok = await window.electronAPI.recipeDelete(initialRecipe.id);
+      if (ok) {
+        onRecipeDeleted?.(initialRecipe.id);
+        onClose();
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleLaunch = async () => {
+    if (!initialRecipe) return;
+    setIsLaunching(true);
+    setErrorMessage('');
+    try {
+      const result = await onLaunchRecipe(initialRecipe);
+      if (result) {
+        setLaunchResult(result);
+        if (result.success) {
+          onClose();
+        }
+      } else {
+        onClose();
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLaunching(false);
+    }
+  };
+
+  return (
+    <div className="recipe-modal-overlay" onClick={onClose}>
+      <div className="recipe-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="recipe-modal-header">
+          <div className="recipe-modal-title-group">
+            <h2>{isEditing ? (initialRecipe ? 'Edit Launch Recipe' : 'New Launch Recipe') : name}</h2>
+            {!isEditing && <span className="recipe-badge">{launches.length} steps</span>}
+          </div>
+          <button type="button" className="recipe-modal-close" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="recipe-modal-body">
+          {errorMessage && (
+            <div className="recipe-error-banner">
+              <AlertTriangle size={16} />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
+          {launchResult && !launchResult.success && (
+            <div className="recipe-launch-results-banner">
+              <div className="recipe-launch-results-title">
+                <AlertTriangle size={16} />
+                <span>Some launch steps encountered errors:</span>
+              </div>
+              <ul className="recipe-launch-results-list">
+                {launchResult.steps.map((step) => (
+                  <li key={step.id} className={`recipe-step-status ${step.status}`}>
+                    {step.status === 'success' ? <CheckCircle2 size={14} />
+                      : step.status === 'started' ? <Loader2 size={14} /> : <XCircle size={14} />}
+                    <span className="recipe-step-label">{step.type.toUpperCase()}:</span>
+                    <span className="recipe-step-detail">{step.error ?? (step.status === 'started'
+                      ? 'Command started; completion not verified' : 'Launched successfully')}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {isEditing ? (
+            <div className="recipe-form">
+              <div className="recipe-field">
+                <label htmlFor="recipe-name">Recipe Name</label>
+                <input
+                  id="recipe-name"
+                  type="text"
+                  className="recipe-input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Full Stack Dev"
+                />
+              </div>
+
+              <div className="recipe-field">
+                <label htmlFor="recipe-workspace-path">Workspace Path</label>
+                <input
+                  id="recipe-workspace-path"
+                  type="text"
+                  className="recipe-input"
+                  value={workspacePath}
+                  onChange={(e) => setWorkspacePath(e.target.value)}
+                  placeholder="/path/to/project"
+                />
+              </div>
+
+              <div className="recipe-field">
+                <label htmlFor="recipe-desc">Description (optional)</label>
+                <input
+                  id="recipe-desc"
+                  type="text"
+                  className="recipe-input"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Short note about this setup"
+                />
+              </div>
+
+              <div className="recipe-field">
+                <label htmlFor="recipe-browser">Browser Preview URL (optional)</label>
+                <input
+                  id="recipe-browser"
+                  type="text"
+                  className="recipe-input"
+                  value={browserUrl}
+                  onChange={(e) => setBrowserUrl(e.target.value)}
+                  placeholder="http://localhost:3000"
+                />
+              </div>
+
+              <div className="recipe-steps-section">
+                <div className="recipe-steps-header">
+                  <label>Launch Steps</label>
+                  <div className="recipe-add-step-buttons">
+                    <button type="button" className="recipe-add-btn" onClick={handleAddShellStep}>
+                      <Plus size={14} /> Shell
+                    </button>
+                    <button type="button" className="recipe-add-btn" onClick={handleAddCommandStep}>
+                      <Plus size={14} /> Command
+                    </button>
+                    <button type="button" className="recipe-add-btn" onClick={handleAddHarnessStep}>
+                      <Plus size={14} /> Agent
+                    </button>
+                  </div>
+                </div>
+
+                <div className="recipe-steps-list">
+                  {launches.map((step, index) => (
+                    <div key={step.id} className="recipe-step-row">
+                      <span className="recipe-step-number">{index + 1}.</span>
+                      {step.type === 'command' ? (
+                        <div className="recipe-step-inputs">
+                          <TermIcon size={14} className="recipe-step-type-icon" />
+                          <input
+                            type="text"
+                            className="recipe-input step-input"
+                            value={step.command}
+                            onChange={(e) => handleStepChange(index, { ...step, command: e.target.value })}
+                            placeholder="Shell command (e.g. npm run dev)"
+                          />
+                        </div>
+                      ) : step.type === 'shell' ? (
+                        <div className="recipe-step-inputs">
+                          <TermIcon size={14} className="recipe-step-type-icon" />
+                          <span>Interactive shell</span>
+                        </div>
+                      ) : (
+                        <div className="recipe-step-inputs">
+                          <Bot size={14} className="recipe-step-type-icon" />
+                          <select
+                            className="recipe-select step-select"
+                            value={step.harnessId}
+                            onChange={(e) => handleStepChange(index, { ...step, harnessId: e.target.value })}
+                          >
+                            {HARNESS_OPTIONS.map((opt) => (
+                              <option key={opt.id} value={opt.id}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="text"
+                            className="recipe-input step-input"
+                            value={step.modelId ?? ''}
+                            onChange={(e) => handleStepChange(index, { ...step, modelId: e.target.value })}
+                            placeholder="Model override (optional)"
+                          />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        className="recipe-remove-step-btn"
+                        onClick={() => handleRemoveStep(index)}
+                        aria-label="Remove step"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  {launches.length === 0 && (
+                    <div className="recipe-no-steps">No launch steps. Add a shell, command, or agent above.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="recipe-preview">
+              {description && <p className="recipe-description">{description}</p>}
+
+              <div className="recipe-preview-workspace">
+                <span className="recipe-preview-label">Workspace:</span>
+                <span className="recipe-preview-path">{workspacePath}</span>
+              </div>
+              {layout && (
+                <div className="recipe-preview-workspace">
+                  <span className="recipe-preview-label">Saved Layout:</span>
+                  <span className="recipe-preview-path">
+                    {layout.terminalCount} terminal pane{layout.terminalCount === 1 ? '' : 's'}
+                    {layout.explorerVisible ? ' · Explorer' : ''}
+                  </span>
+                </div>
+              )}
+
+              <div className="recipe-preview-section">
+                <span className="recipe-preview-label">Will launch:</span>
+                <div className="recipe-preview-steps">
+                  {launches.map((step, index) => (
+                    <div key={step.id} className="recipe-preview-step-item">
+                      <span className="recipe-preview-step-index">{index + 1}.</span>
+                      {step.type === 'harness' ? (
+                        <>
+                          <Bot size={14} className="recipe-preview-icon bot" />
+                          <span className="recipe-preview-text">
+                            <strong>
+                              {HARNESS_OPTIONS.find((h) => h.id === step.harnessId)?.label ?? step.harnessId}
+                            </strong>
+                            {step.modelId ? ` — model: ${step.modelId}` : ''}
+                          </span>
+                        </>
+                      ) : step.type === 'shell' ? (
+                        <>
+                          <TermIcon size={14} className="recipe-preview-icon term" />
+                          <span className="recipe-preview-text">Interactive shell</span>
+                        </>
+                      ) : (
+                        <>
+                          <TermIcon size={14} className="recipe-preview-icon term" />
+                          <code className="recipe-preview-code">{step.command}</code>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                  {launches.length === 0 && (
+                    <div className="recipe-preview-empty">Opens an interactive terminal.</div>
+                  )}
+                </div>
+              </div>
+
+              {browserUrl && (
+                <div className="recipe-preview-browser">
+                  <Globe size={14} className="recipe-preview-icon globe" />
+                  <span className="recipe-preview-label">Browser:</span>
+                  <span className="recipe-preview-url">{browserUrl}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="recipe-modal-footer">
+          {isEditing ? (
+            <div className="recipe-footer-actions">
+              {initialRecipe && (
+                <button
+                  type="button"
+                  className="recipe-btn recipe-btn-secondary"
+                  onClick={() => setIsEditing(false)}
+                >
+                  Cancel
+                </button>
+              )}
+              <button type="button" className="recipe-btn recipe-btn-primary" onClick={handleSave}>
+                Save Recipe
+              </button>
+            </div>
+          ) : (
+            <div className="recipe-footer-actions space-between">
+              <button
+                type="button"
+                className="recipe-btn recipe-btn-danger"
+                onClick={handleDelete}
+                title="Delete this recipe"
+              >
+                <Trash2 size={14} /> Delete
+              </button>
+              <div className="recipe-footer-right">
+                <button
+                  type="button"
+                  className="recipe-btn recipe-btn-secondary"
+                  onClick={() => setIsEditing(true)}
+                >
+                  <Edit2 size={14} /> Edit
+                </button>
+                <button
+                  type="button"
+                  className="recipe-btn recipe-btn-primary launch"
+                  onClick={handleLaunch}
+                  disabled={isLaunching}
+                >
+                  {isLaunching ? <Loader2 size={14} className="spin" /> : <Play size={14} />}
+                  Launch Recipe
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

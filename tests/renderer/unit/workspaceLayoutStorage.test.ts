@@ -5,6 +5,8 @@ import {
   persistWorkspaceLayout,
   restoreWorkspaceLayout,
   getWorkspaceLayoutStorageKey,
+  serializeWorkspaceLayout,
+  restoreWorkspaceLayoutFromPersisted,
 } from '../../../src/renderer/lib/workspaceLayoutStorage';
 import { collectLeafPaneIds } from '../../../src/renderer/store/workspaceLayout';
 import type { LayoutLeaf, LayoutSplit, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
@@ -218,5 +220,73 @@ describe('workspace layout persistence', () => {
     });
 
     expect(() => persistWorkspaceLayout(workspaceWithLayout())).not.toThrow();
+  });
+  describe('recipe layout capture and restoration', () => {
+    it('captures workspace layout, terminal count, and explorer visibility', () => {
+      const workspace = workspaceWithLayout({
+        panes: [
+          { id: 'pane-term-1', terminalId: 'term-1' },
+          { id: 'pane-term-2', terminalId: 'term-2' },
+        ],
+        explorerVisible: true,
+      });
+
+      const serialized = serializeWorkspaceLayout(workspace);
+      expect(serialized).not.toBeNull();
+      expect(serialized?.terminalCount).toBe(2);
+      expect(serialized?.explorerVisible).toBe(true);
+      expect(serialized?.root).toBeDefined();
+    });
+
+    it('restores recipe layout topology onto fresh runtime pane IDs', () => {
+      const original = createWorkspaceFixture({
+        workspacePath: '/projects/clanker',
+        panes: [
+          { id: 'pane-orig-1', terminalId: 'term-1' },
+          { id: 'pane-orig-2', terminalId: 'term-2' },
+        ],
+        layoutRoot: {
+          type: 'split',
+          nodeId: 'split-1',
+          orientation: 'horizontal',
+          ratio: 0.5,
+          first: leaf('leaf-1', 'pane-orig-1'),
+          second: leaf('leaf-2', 'pane-orig-2'),
+        },
+      });
+      const persisted = serializeWorkspaceLayout(original);
+      expect(persisted).not.toBeNull();
+      const freshWorkspace = createWorkspaceFixture({
+        workspacePath: '/projects/clanker',
+        panes: [
+          { id: 'pane-fresh-1', terminalId: 'term-fresh-1' },
+          { id: 'pane-fresh-2', terminalId: 'term-fresh-2' },
+        ],
+        layoutRoot: null,
+      });
+
+      const restored = restoreWorkspaceLayoutFromPersisted(freshWorkspace, persisted);
+      expect(restored).not.toBe(freshWorkspace);
+      expect(restored.layoutRoot).not.toBeNull();
+      const leafIds = collectLeafPaneIds(restored.layoutRoot);
+      expect(leafIds).toContain('pane-fresh-1');
+      expect(leafIds).toContain('pane-fresh-2');
+    });
+
+    it('gracefully falls back when terminal count is incompatible', () => {
+      const persisted = {
+        root: { type: 'leaf', paneKey: 'terminal:0' },
+        terminalCount: 3,
+      };
+
+      const workspace = createWorkspaceFixture({
+        panes: [
+          { id: 'p1', terminalId: 't1' },
+        ],
+      });
+
+      const restored = restoreWorkspaceLayoutFromPersisted(workspace, persisted);
+      expect(restored).toBe(workspace);
+    });
   });
 });

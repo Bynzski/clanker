@@ -4,14 +4,16 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import WorkspaceGateContent, { WorkspaceFormData } from './WorkspaceGateContent';
 import { sameWorkspacePath } from '../lib/pathUtils';
 import './WorkspaceGate.css';
+import type { WorkspaceRecipe, RecipeLaunchResult } from '../../shared/types/recipes';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onWorkspaceSelect: (path: string, terminalCount: number, harness: string, model?: string) => Promise<boolean> | boolean | void;
+  onLaunchRecipe?: (recipe: WorkspaceRecipe) => Promise<RecipeLaunchResult | null | void>;
 }
 
-export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect }: Props) {
+export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunchRecipe }: Props) {
   const [openError, setOpenError] = useState('');
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
@@ -72,6 +74,13 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect }: Props
         </div>
         <WorkspaceGateContent
           onSubmit={handleSubmit}
+          onLaunchRecipe={onLaunchRecipe ? async (recipe) => {
+            const res = await onLaunchRecipe(recipe);
+            if (res && res.success) {
+              onClose();
+            }
+            return res;
+          } : undefined}
         />
         {openError && <p role="alert">{openError}</p>}
       </div>
@@ -82,6 +91,7 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect }: Props
 // Fullscreen gate version for initial launch
 interface FullscreenGateProps {
   onWorkspaceSelect: (path: string, terminalCount: number, harness: string, model?: string) => Promise<boolean> | boolean | void;
+  onLaunchRecipe?: (recipe: WorkspaceRecipe) => Promise<RecipeLaunchResult | null | void>;
 }
 
 function GateTitleBar() {
@@ -133,7 +143,7 @@ function GateTitleBar() {
   );
 }
 
-export function WorkspaceGateFullscreen({ onWorkspaceSelect }: FullscreenGateProps) {
+export function WorkspaceGateFullscreen({ onWorkspaceSelect, onLaunchRecipe }: FullscreenGateProps) {
   const [openError, setOpenError] = useState('');
   const handleSubmit = async (data: WorkspaceFormData) => {
     setOpenError('');
@@ -149,7 +159,7 @@ export function WorkspaceGateFullscreen({ onWorkspaceSelect }: FullscreenGatePro
     <div className="workspace-gate">
       <GateTitleBar />
       <div className="workspace-gate-shell">
-        <WorkspaceGateContent onSubmit={handleSubmit} />
+        <WorkspaceGateContent onSubmit={handleSubmit} onLaunchRecipe={onLaunchRecipe} />
         {openError && <p role="alert">{openError}</p>}
       </div>
     </div>

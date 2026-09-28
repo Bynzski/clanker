@@ -1,4 +1,4 @@
-import { ChevronDown, LayoutGrid, MessageSquare, Settings, Undo2 } from 'lucide-react';
+import { ChevronDown, LayoutGrid, MessageSquare, ScrollText, Settings, Undo2 } from 'lucide-react';
 import type { HarnessSession } from '../../shared/types/session';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
@@ -9,6 +9,7 @@ interface HeaderRightControlsProps {
   fitAllPanes: () => void;
   undoLayout: () => void;
   canUndoLayout: boolean;
+  onOpenRecipes?: () => void;
   chatDropdownRef: React.RefObject<HTMLDivElement | null>;
   showChatHistory: boolean;
   onToggleChatHistory: () => void;
@@ -47,6 +48,7 @@ export default function HeaderRightControls({
   fitAllPanes,
   undoLayout,
   canUndoLayout,
+  onOpenRecipes,
   chatDropdownRef,
   showChatHistory,
   onToggleChatHistory,
@@ -92,6 +94,17 @@ export default function HeaderRightControls({
       >
         <Undo2 size={15} strokeWidth={2} />
       </button>
+      {onOpenRecipes && (
+        <button
+          className="header-btn header-btn-icon"
+          type="button"
+          onClick={onOpenRecipes}
+          title="Workspace Launch Recipes"
+          aria-label="Workspace Launch Recipes"
+        >
+          <ScrollText size={15} strokeWidth={2} />
+        </button>
+      )}
       <button
         className="header-btn header-btn-icon"
         type="button"

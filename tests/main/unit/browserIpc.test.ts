@@ -245,7 +245,7 @@ describe('registerBrowserIpc', () => {
 
     // Count how many times handle was called
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(22);
+    expect(handleCalls.length).toBe(23);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -257,7 +257,7 @@ describe('registerBrowserIpc', () => {
 
     // Handlers should be registered again
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(44);
+    expect(handleCalls.length).toBe(46);
   });
 
   test('browser context menu can open devtools and inspect the clicked element', () => {
@@ -1116,6 +1116,17 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     const navigate = findHandler('browser-navigate');
     const result = await navigate(null, 'ws-1', 'https://github.com/');
     expect(result).toBe(true);
+  });
+
+  test('recipe navigation observes loadURL failure while normal navigation remains immediate', async () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+    const navigate = findHandler('browser-navigate');
+    expect(await navigate(null, 'ws-1', 'https://example.com/')).toBe(true);
+    const entry = deps.getBrowserViews().get('ws-1')?.get('__fallback_tab__');
+    expect(entry).toBeDefined();
+    vi.mocked(entry!.view.webContents.loadURL).mockRejectedValueOnce(new Error('Navigation failed'));
+    expect(await navigate(null, 'ws-1', 'https://example.com/', undefined, true)).toBe(false);
   });
 
   test('BROWSER_SET_BOUNDS accepts optional tabId for tab-aware callers', async () => {

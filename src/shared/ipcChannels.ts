@@ -46,6 +46,7 @@ export const TERMINAL_EXIT = 'terminal-exit';
 export const AGENT_ATTENTION_UPDATE = 'agent-attention-update';
 export const TERMINAL_RESIZED = 'terminal-resized';
 export const TERMINAL_READY = 'terminal-ready';
+export const RECIPE_COMMAND_WAIT = 'recipe-command:wait';
 export const WRITE_CLIPBOARD = 'write-clipboard';
 
 /* ============================================================================
@@ -55,6 +56,7 @@ export const WRITE_CLIPBOARD = 'write-clipboard';
 export const BROWSER_SET_BOUNDS = 'browser-set-bounds';
 export const BROWSER_HIDE = 'browser-hide';
 export const BROWSER_NAVIGATE = 'browser-navigate';
+export const RECIPE_PREVIEW_PROBE = 'recipe-preview:probe';
 export const BROWSER_BACK = 'browser-back';
 export const BROWSER_FORWARD = 'browser-forward';
 export const BROWSER_REFRESH = 'browser-refresh';
@@ -192,6 +194,22 @@ export const SESSION_DISCOVER = 'session-discover';
 export const SESSION_INVOKE = 'session-invoke';
 
 /* ============================================================================
+ * Workspace Recipes
+ * ============================================================================ */
+
+export const RECIPE_GET_ALL = 'recipe:get-all';
+export const RECIPE_SAVE = 'recipe:save';
+export const RECIPE_DELETE = 'recipe:delete';
+
+/* ============================================================================
+ * Task Sessions
+ * ============================================================================ */
+
+export const TASK_SESSION_LIST = 'task-session:list';
+export const TASK_SESSION_DELETE = 'task-session:delete';
+export const TASK_SESSION_UPDATE = 'task-session:update';
+
+/* ============================================================================
  * Annotation
  * ============================================================================ */
 
@@ -242,11 +260,13 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   KILL_TERMINAL,
   TERMINAL_CLEANUP_WORKSPACE,
   TERMINAL_READY,
+  RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
   // Browser
   BROWSER_SET_BOUNDS,
   BROWSER_HIDE,
   BROWSER_NAVIGATE,
+  RECIPE_PREVIEW_PROBE,
   BROWSER_BACK,
   BROWSER_FORWARD,
   BROWSER_REFRESH,
@@ -364,4 +384,12 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   // Session history
   SESSION_DISCOVER,
   SESSION_INVOKE,
+  // Workspace Recipes
+  RECIPE_GET_ALL,
+  RECIPE_SAVE,
+  RECIPE_DELETE,
+  // Task Sessions
+  TASK_SESSION_LIST,
+  TASK_SESSION_DELETE,
+  TASK_SESSION_UPDATE,
 ];

@@ -9,6 +9,7 @@ import { BrowserWindow } from 'electron';
 import * as pty from 'node-pty';
 import { TERMINAL_DATA, TERMINAL_EXIT } from '../../shared/ipcChannels';
 import type { Terminal } from './terminalIpc';
+import type { RecipeCommandStartup } from '../recipeCommandStartup';
 
 export interface SpawnPtyOptions {
   id: string;
@@ -22,6 +23,8 @@ export interface SpawnPtyOptions {
   /** Optional banner line sent to the renderer before any PTY data. */
   launchLabel?: string;
   harnessId?: string;
+  initialCommand?: string;
+  recipeCommandStartup?: RecipeCommandStartup;
   onExit?: (id: string) => void;
 }
 
@@ -37,6 +40,8 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     getIsShuttingDown,
     launchLabel,
     harnessId,
+    initialCommand,
+    recipeCommandStartup,
     onExit,
   } = opts;
 
@@ -55,6 +60,8 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     harnessId,
     startupBuffer: [],
     startupBufferReady: false,
+    initialCommand,
+    recipeCommandStartup,
   };
   terminals.set(id, terminal);
 
@@ -66,6 +73,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     if (getIsShuttingDown()) return;
     const term = terminals.get(id);
     if (!term) return;
+    term.recipeCommandStartup?.onData(data);
 
     if (!term.startupBufferReady) {
       const totalSize = term.startupBuffer.reduce((acc, chunk) => acc + chunk.length, 0);
@@ -81,6 +89,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
   });
 
   ptyProcess.onExit(({ exitCode }) => {
+    terminal.recipeCommandStartup?.onExit(exitCode);
     onExit?.(id);
     if (getIsShuttingDown()) return;
     terminals.delete(id);

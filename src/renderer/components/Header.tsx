@@ -9,6 +9,11 @@ import HeaderRightControls from './HeaderRightControls';
 import { useBrowserOverlayWhileOpen, useCloseOnOutsidePointerAndEscape } from './useDropdownBehavior';
 import { useHeaderSettings } from './useHeaderSettings';
 import './Header.css';
+import type { WorkspaceRecipe } from '../../shared/types/recipes';
+import { captureTerminalLaunches } from '../lib/recipeCapture';
+import RecipeModal from './RecipeModal';
+import { executeWorkspaceRecipe } from '../lib/recipeExecution';
+import { serializeWorkspaceLayout } from '../lib/workspaceLayoutStorage';
 
 export default function Header() {
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
@@ -34,7 +39,8 @@ export default function Header() {
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const chatDropdownRef = useRef<HTMLDivElement>(null);
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
-
+  const [showRecipeModal, setShowRecipeModal] = useState(false);
+  const [activeRecipe, setActiveRecipe] = useState<WorkspaceRecipe | null>(null);
   const {
     availableHarnessIds,
     showSettings,
@@ -124,7 +130,50 @@ export default function Header() {
       setIsLoadingSessions(false);
     }
   };
+  const handleOpenRecipes = async () => {
+    try {
+      if (typeof window.electronAPI?.recipeGetAll === 'function') {
+        const recipes = await window.electronAPI.recipeGetAll(workspacePath);
+        if (recipes.length > 0) {
+          setActiveRecipe(recipes[0]);
+        } else {
+          setActiveRecipe(null);
+        }
+      }
+    } catch {
+      setActiveRecipe(null);
+    }
+    setShowRecipeModal(true);
+  };
 
+  const handleLaunchRecipe = async (recipe: WorkspaceRecipe) => {
+    return executeWorkspaceRecipe(recipe, {
+      ensureWorkspaceOpen: async () => activeWorkspaceId,
+      spawnTerminal: window.electronAPI.spawnTerminal,
+      waitRecipeCommand: window.electronAPI.waitRecipeCommand,
+      probePreview: window.electronAPI.probeRecipePreview,
+      onTerminalSpawned: (_wsId, term) => {
+        addTerminal(term);
+      },
+      openBrowserPreview: async (wsId, url) => {
+        if (!browserVisible) toggleBrowser();
+        if (typeof window.electronAPI?.browserNavigate === 'function') {
+          return window.electronAPI.browserNavigate(wsId, url, undefined, true);
+        }
+        return false;
+      },
+      restoreLayout: (wsId, layout) => {
+        useWorkspaceStore.getState().applyPersistedLayout(layout, wsId);
+      },
+      getExistingTerminalCount: (wsId) => {
+        return useWorkspaceStore.getState().workspaces.find((w) => w.id === wsId)?.terminals.length ?? 0;
+      },
+    });
+  };
+
+  const defaultLaunches = captureTerminalLaunches(focusedWorkspace?.terminals ?? []);
+
+  const defaultLayout = focusedWorkspace ? serializeWorkspaceLayout(focusedWorkspace) : undefined;
   return (
     <header className="header">
       <div className="header-center">
@@ -180,6 +229,7 @@ export default function Header() {
         undoLayout={() => undoLayout(activeWorkspaceId ?? undefined)}
         canUndoLayout={(focusedWorkspace?.layoutUndoStack?.length ?? 0) > 0}
         chatDropdownRef={chatDropdownRef}
+        onOpenRecipes={handleOpenRecipes}
         showChatHistory={showChatHistory}
         onToggleChatHistory={() => void handleToggleChatHistory()}
         chatSessions={chatSessions}
@@ -219,6 +269,19 @@ export default function Header() {
         isOpen={showCredentialModal}
         onClose={() => setShowCredentialModal(false)}
         workspacePath={workspacePath || undefined}
+      />
+      <RecipeModal
+        isOpen={showRecipeModal}
+        onClose={() => setShowRecipeModal(false)}
+        initialRecipe={activeRecipe}
+        defaultWorkspacePath={workspacePath}
+        defaultLaunches={defaultLaunches}
+        defaultBrowserUrl={browserVisible ? focusedWorkspace?.browserUrl : undefined}
+        defaultLayout={defaultLayout ?? undefined}
+        defaultTerminalCount={focusedWorkspace?.panes.length ?? 1}
+        onLaunchRecipe={handleLaunchRecipe}
+        onRecipeSaved={(saved) => setActiveRecipe(saved)}
+        onRecipeDeleted={() => setActiveRecipe(null)}
       />
     </header>
   );

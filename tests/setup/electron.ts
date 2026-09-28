@@ -22,6 +22,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     setAiCommitProvider: createAsyncMock(undefined),
     setAiCommitModel: createAsyncMock(undefined),
     spawnTerminal: createAsyncMock({ id: 'terminal-1', pid: 1001 }),
+    waitRecipeCommand: createAsyncMock({ status: 'started' }),
     getTerminalBuffer: createAsyncMock(''),
     writeTerminal: createAsyncMock({ success: true }),
     getAgentHandoffStatuses: createAsyncMock({ 'term-1': 'ready' }),
@@ -39,6 +40,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     browserHide: createAsyncMock(undefined),
     browserSetBounds: createAsyncMock(undefined),
     browserNavigate: createAsyncMock(true),
+    probeRecipePreview: createAsyncMock({ status: 'remote' }),
     browserBack: createAsyncMock(undefined),
     browserForward: createAsyncMock(undefined),
     browserRefresh: createAsyncMock(undefined),
@@ -167,6 +169,15 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     discoverSessions: createAsyncMock([]),
     invokeSession: createAsyncMock({ id: 'term-session-1', pid: 2001 }),
 
+    // Workspace Recipes
+    recipeGetAll: createAsyncMock([]),
+    recipeSave: vi.fn(async (recipe) => recipe),
+    recipeDelete: createAsyncMock(true),
+
+    // Task Sessions
+    taskSessionList: createAsyncMock([]),
+    taskSessionDelete: createAsyncMock(true),
+    taskSessionUpdate: vi.fn(async (updates) => ({ id: updates.id, ...updates })),
     // Browser annotation
     annotationEnable: createAsyncMock({ success: true }),
     annotationDisable: createAsyncMock({ success: true }),

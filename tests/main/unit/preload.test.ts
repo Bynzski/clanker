@@ -128,6 +128,7 @@ const MAIN_IPC_INVOKE_CHANNELS = [
 
   // Terminal
   'spawn-terminal',
+  'recipe-command:wait',
   'get-terminal-buffer',
   'write-terminal',
   'resize-terminal',
@@ -137,6 +138,7 @@ const MAIN_IPC_INVOKE_CHANNELS = [
   'browser-set-bounds',
   'browser-hide',
   'browser-navigate',
+  'recipe-preview:probe',
   'browser-back',
   'browser-forward',
   'browser-refresh',
@@ -903,5 +905,20 @@ describe('preload.ts IPC Bridge Coverage Tests', () => {
       const pushLine = preloadSource.match(/gitPush:\s*\([^)]*\)/)?.[0];
       assert.ok(pushLine, 'gitPush method signature should be found');
     });
+  describe('Workspace Recipes API', () => {
+    test('has recipeGetAll, recipeSave, recipeDelete methods', () => {
+      assert.ok(extractedInvokeMethods.some(m => m.method === 'recipeGetAll'), 'recipeGetAll should exist');
+      assert.ok(extractedInvokeMethods.some(m => m.method === 'recipeSave'), 'recipeSave should exist');
+      assert.ok(extractedInvokeMethods.some(m => m.method === 'recipeDelete'), 'recipeDelete should exist');
+    });
+  });
+
+  describe('Task Sessions API', () => {
+    test('has taskSessionList, taskSessionDelete, taskSessionUpdate methods', () => {
+      assert.ok(extractedInvokeMethods.some(m => m.method === 'taskSessionList'), 'taskSessionList should exist');
+      assert.ok(extractedInvokeMethods.some(m => m.method === 'taskSessionDelete'), 'taskSessionDelete should exist');
+      assert.ok(extractedInvokeMethods.some(m => m.method === 'taskSessionUpdate'), 'taskSessionUpdate should exist');
+    });
+  });
   });
 });

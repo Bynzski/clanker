@@ -291,6 +291,50 @@
   font-size: 12px;
   text-align: left;
 }
+/* Launch Recipes Section */
+.gate-recipes-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.gate-recipes-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gate-recipe-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  color: var(--text-primary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.gate-recipe-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent-primary);
+}
+
+.gate-recipe-chip-icon {
+  color: var(--accent-primary);
+}
+
+.gate-recipe-chip-count {
+  font-size: 9px;
+  padding: 1px 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: var(--text-tertiary);
+}
 
 .gate-input::placeholder {
   color: var(--text-tertiary);

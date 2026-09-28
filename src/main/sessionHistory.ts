@@ -3,8 +3,8 @@
  *
  * Discovers past AI harness sessions from OpenCode, Codex, Pi, OMP, and Claude Code.
  *
- * All discovery functions are safe — ENOENT on missing harness dirs returns [].
- * Individual file errors are skipped; one bad file never fails the whole harness.
+ * Missing harness stores return []; operational I/O failures are reported per harness.
+ * Malformed individual JSONL records can be skipped without hiding scan failures.
  */
 
 import { execFile } from 'child_process';
@@ -14,6 +14,7 @@ import * as os from 'os';
 import * as readline from 'readline';
 import { fileURLToPath } from 'url';
 import type { HarnessSession } from '../shared/types/session';
+import type { HarnessId } from '../shared/harnessIds';
 import { ensureHarnessWrapperScript, resolveHarnessSpawn } from './harnessLaunch';
 import { toNativePath, toPosixPath } from '../shared/pathNormalize';
 import { prependUserCliBinsToPath } from './platformShell';
@@ -79,7 +80,7 @@ export const SESSION_CACHE_TTL_MS = 60 * 1000;
 export const SESSION_CACHE_MAX_ENTRIES = 16;
 
 interface SessionCacheEntry {
-  sessions: HarnessSession[];
+  discovery: DetailedSessionDiscovery;
   cachedAt: number;
 }
 
@@ -89,6 +90,14 @@ export function clearSessionCache(): void {
   sessionCache.clear();
 }
 
+export function clearSessionCacheForWorkspace(workspacePath?: string): void {
+  if (!workspacePath) {
+    sessionCache.clear();
+    return;
+  }
+  const normalizedPath = toNativePath(workspacePath.replace(/[\\/]+$/, ''), process.platform);
+  sessionCache.delete(normalizedPath);
+}
 /** Test-only/introspection helper for verifying the cache remains bounded. */
 export function getSessionCacheSize(): number {
   return sessionCache.size;
@@ -111,33 +120,59 @@ function pruneSessionCache(now: number): void {
 // ============================================================================
 // Public API
 // ============================================================================
+export interface DiscoverSessionsOptions {
+  forceRefresh?: boolean;
+}
 
-export async function discoverSessions(workspacePath?: string): Promise<HarnessSession[]> {
+type DiscoveryStatus = { status: 'success' } | { status: 'error'; error: string };
+export interface DetailedSessionDiscovery {
+  sessions: HarnessSession[];
+  harnessStatus: Record<Exclude<HarnessId, 'hermes'>, DiscoveryStatus>;
+}
+
+export async function discoverSessions(
+  workspacePath?: string,
+  options?: DiscoverSessionsOptions,
+): Promise<HarnessSession[]> {
+  return (await discoverSessionsDetailed(workspacePath, options)).sessions;
+}
+
+export async function discoverSessionsDetailed(
+  workspacePath?: string,
+  options?: DiscoverSessionsOptions,
+): Promise<DetailedSessionDiscovery> {
   const normalizedPath = toNativePath((workspacePath ?? '').replace(/[\\/]+$/, ''), process.platform);
   const now = Date.now();
   pruneSessionCache(now);
 
   const cached = sessionCache.get(normalizedPath);
-  if (cached) {
+  if (cached && !options?.forceRefresh) {
     // Refresh insertion order so eviction follows least-recently-used behavior.
     sessionCache.delete(normalizedPath);
     sessionCache.set(normalizedPath, cached);
-    return cached.sessions;
+    return cached.discovery;
   }
 
-  const results = await Promise.allSettled([
-    discoverOpenCodeSessions(normalizedPath),
-    discoverCodexSessions(normalizedPath),
-    discoverPiSessions(normalizedPath),
-    discoverOmpSessions(normalizedPath),
-    discoverClaudeSessions(normalizedPath),
-    discoverAgySessions(normalizedPath),
-  ]);
+  const scans = {
+    opencode: discoverOpenCodeSessions(normalizedPath),
+    codex: discoverCodexSessions(normalizedPath),
+    pi: discoverPiSessions(normalizedPath),
+    omp: discoverOmpSessions(normalizedPath),
+    claude: discoverClaudeSessions(normalizedPath),
+    agy: discoverAgySessions(normalizedPath),
+  };
+  const harnesses = Object.keys(scans) as Array<keyof typeof scans>;
+  const results = await Promise.allSettled(Object.values(scans));
 
   const sessions: HarnessSession[] = [];
-  for (const result of results) {
+  const harnessStatus = {} as DetailedSessionDiscovery['harnessStatus'];
+  for (const [index, result] of results.entries()) {
+    const harness = harnesses[index];
     if (result.status === 'fulfilled') {
       sessions.push(...result.value);
+      harnessStatus[harness] = { status: 'success' };
+    } else {
+      harnessStatus[harness] = { status: 'error', error: result.reason instanceof Error ? result.reason.message : String(result.reason) };
     }
   }
 
@@ -149,9 +184,13 @@ export async function discoverSessions(workspacePath?: string): Promise<HarnessS
     ...(session.filePath ? { filePath: toPosixPath(session.filePath) } : {}),
   }));
 
-  sessionCache.set(normalizedPath, { sessions: posixSessions, cachedAt: Date.now() });
-  pruneSessionCache(Date.now());
-  return posixSessions;
+  const discovery = { sessions: posixSessions, harnessStatus };
+  // A partial scan can still populate history, but it must not turn into a cached empty scan.
+  if (Object.values(harnessStatus).every((status) => status.status === 'success')) {
+    sessionCache.set(normalizedPath, { discovery, cachedAt: Date.now() });
+    pruneSessionCache(Date.now());
+  }
+  return discovery;
 }
 
 export function buildSessionInvokeArgs(
@@ -225,6 +264,10 @@ export function buildSessionInvokeArgs(
 // File I/O helpers
 // ============================================================================
 
+function isMissing(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException)?.code === 'ENOENT';
+}
+
 function runCommandOutput(command: string, args: string[]): Promise<string> {
   const { spawnCmd, spawnArgs } = resolveHarnessSpawn(command, args, null);
 
@@ -251,9 +294,9 @@ function runCommandOutput(command: string, args: string[]): Promise<string> {
   });
 }
 
-/** Read the first non-empty line of a file and parse it as JSON. Returns null on any error. */
+/** Read the first line of a session file; missing files may have raced with discovery. */
 async function readFirstLineJson<T>(filePath: string): Promise<T | null> {
-  return new Promise<T | null>((resolve) => {
+  return new Promise<T | null>((resolve, reject) => {
     let done = false;
     let stream: fs.ReadStream | null = null;
     try {
@@ -275,16 +318,18 @@ async function readFirstLineJson<T>(filePath: string): Promise<T | null> {
         if (!done) resolve(null);
       });
 
-      stream.once('error', () => resolve(null));
-    } catch {
-      resolve(null);
+      rl.once('error', (error) => isMissing(error) ? resolve(null) : reject(error));
+      stream.once('error', (error) => isMissing(error) ? resolve(null) : reject(error));
+    } catch (error) {
+      if (isMissing(error)) resolve(null);
+      else reject(error);
     }
   });
 }
 
 /** Read all non-empty lines of a file as raw strings. */
 async function readFileLines(filePath: string): Promise<string[]> {
-  return new Promise<string[]>((resolve) => {
+  return new Promise<string[]>((resolve, reject) => {
     const lines: string[] = [];
     try {
       const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
@@ -293,9 +338,11 @@ async function readFileLines(filePath: string): Promise<string[]> {
         if (line.trim()) lines.push(line);
       });
       rl.once('close', () => resolve(lines));
-      stream.once('error', () => resolve(lines));
-    } catch {
-      resolve(lines);
+      rl.once('error', (error) => isMissing(error) ? resolve(lines) : reject(error));
+      stream.once('error', (error) => isMissing(error) ? resolve(lines) : reject(error));
+    } catch (error) {
+      if (isMissing(error)) resolve(lines);
+      else reject(error);
     }
   });
 }
@@ -310,7 +357,7 @@ async function readClaudeSessionData(filePath: string): Promise<{
   timestamp?: number;
   modelId?: string;
 }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let cwd: string | undefined;
     let title: string | undefined;
     let timestamp: number | undefined;
@@ -377,14 +424,23 @@ async function readClaudeSessionData(filePath: string): Promise<{
         }
       });
 
-      stream.once('error', () => {
+      rl.once('error', (error) => {
         if (!closed) {
           closed = true;
-          resolve({ cwd, title, timestamp, modelId });
+          if (isMissing(error)) resolve({ cwd, title, timestamp, modelId });
+          else reject(error);
         }
       });
-    } catch {
-      resolve({ cwd, title, timestamp, modelId });
+      stream.once('error', (error) => {
+        if (!closed) {
+          closed = true;
+          if (isMissing(error)) resolve({ cwd, title, timestamp, modelId });
+          else reject(error);
+        }
+      });
+    } catch (error) {
+      if (isMissing(error)) resolve({ cwd, title, timestamp, modelId });
+      else reject(error);
     }
   });
 }
@@ -402,7 +458,6 @@ interface OpenCodeSessionRaw {
 }
 
 async function discoverOpenCodeSessions(workspacePath: string): Promise<HarnessSession[]> {
-  try {
     const output = await runCommandOutput('opencode', ['session', 'list', '--format', 'json']);
     const trimmed = output.trim();
     if (!trimmed) return [];
@@ -410,9 +465,8 @@ async function discoverOpenCodeSessions(workspacePath: string): Promise<HarnessS
     let rawSessions: OpenCodeSessionRaw[] = [];
     try {
       const parsed: unknown = JSON.parse(trimmed);
-      rawSessions = Array.isArray(parsed)
-        ? (parsed as OpenCodeSessionRaw[])
-        : [parsed as OpenCodeSessionRaw];
+      if (typeof parsed !== 'object' || parsed === null) throw new Error('Invalid OpenCode session list');
+      rawSessions = Array.isArray(parsed) ? (parsed as OpenCodeSessionRaw[]) : [parsed as OpenCodeSessionRaw];
     } catch {
       // Fall back to JSONL
       for (const line of trimmed.split('\n')) {
@@ -421,7 +475,7 @@ async function discoverOpenCodeSessions(workspacePath: string): Promise<HarnessS
         try {
           rawSessions.push(JSON.parse(l) as OpenCodeSessionRaw);
         } catch {
-          // skip
+          throw new Error('Invalid OpenCode session list');
         }
       }
     }
@@ -439,9 +493,6 @@ async function discoverOpenCodeSessions(workspacePath: string): Promise<HarnessS
       });
     }
     return sessions;
-  } catch {
-    return [];
-  }
 }
 
 // ============================================================================
@@ -480,8 +531,9 @@ async function buildCodexFileMap(sessionsDir: string): Promise<Map<string, strin
     let entries: fs.Dirent[];
     try {
       entries = await fs.promises.readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
+    } catch (error) {
+      if (isMissing(error)) return;
+      throw error;
     }
     await Promise.all(
       entries.map(async (entry) => {
@@ -510,7 +562,7 @@ async function buildCodexFileMap(sessionsDir: string): Promise<Map<string, strin
  */
 async function readCodexFirstUserMessage(filePath: string): Promise<string | null> {
   const MAX_LINES = 30;
-  return new Promise<string | null>((resolve) => {
+  return new Promise<string | null>((resolve, reject) => {
     let stream: fs.ReadStream | null = null;
     let linesRead = 0;
     try {
@@ -548,9 +600,11 @@ async function readCodexFirstUserMessage(filePath: string): Promise<string | nul
         }
       });
       rl.once('close', () => resolve(null));
-      stream.once('error', () => resolve(null));
-    } catch {
-      resolve(null);
+      rl.once('error', (error) => isMissing(error) ? resolve(null) : reject(error));
+      stream.once('error', (error) => isMissing(error) ? resolve(null) : reject(error));
+    } catch (error) {
+      if (isMissing(error)) resolve(null);
+      else reject(error);
     }
   });
 }
@@ -566,8 +620,9 @@ async function collectOrphanedSessions(
   let entries: fs.Dirent[];
   try {
     entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw error;
   }
 
   const orphaned: CodexSessionData[] = [];
@@ -682,9 +737,7 @@ async function discoverCodexSessions(workspacePath: string): Promise<HarnessSess
     // Some installs (notably on Windows) may have sessions on disk without
     // session_index.jsonl. Treat missing index as empty and continue scanning.
     const code = (error as NodeJS.ErrnoException).code;
-    if (code !== 'ENOENT') {
-      return [];
-    }
+    if (code !== 'ENOENT') throw error;
   }
 
   const indexEntries = parseCodexIndexEntries(indexContent);
@@ -806,8 +859,9 @@ async function discoverPiSessions(workspacePath: string): Promise<HarnessSession
   let subdirEntries: fs.Dirent[];
   try {
     subdirEntries = await fs.promises.readdir(piSessionsDir, { withFileTypes: true });
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw error;
   }
 
   const subdirs = subdirEntries
@@ -819,8 +873,9 @@ async function discoverPiSessions(workspacePath: string): Promise<HarnessSession
       let fileEntries: fs.Dirent[];
       try {
         fileEntries = await fs.promises.readdir(subdir, { withFileTypes: true });
-      } catch {
-        return [];
+      } catch (error) {
+        if (isMissing(error)) return [];
+        throw error;
       }
 
       const jsonlFiles = fileEntries.filter(
@@ -829,7 +884,10 @@ async function discoverPiSessions(workspacePath: string): Promise<HarnessSession
 
       const sessionResults = await Promise.all(
         jsonlFiles.map((e) =>
-          discoverPiSessionFile(path.join(subdir, e.name), workspacePath).catch(() => null)
+          discoverPiSessionFile(path.join(subdir, e.name), workspacePath).catch((error: unknown) => {
+            if (isMissing(error)) return null;
+            throw error;
+          })
         )
       );
 
@@ -881,19 +939,22 @@ export function parseOmpSessionMetadata(lines: string[]): OmpSessionMetadata {
 }
 
 async function readOmpSessionMetadata(filePath: string): Promise<OmpSessionMetadata> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const metadata: OmpSessionMetadata = {};
     try {
       const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
       const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
       lines.on('line', (line) => applyOmpSessionLine(metadata, line));
       lines.once('close', () => resolve(metadata));
-      stream.once('error', () => {
+      lines.once('error', (error) => isMissing(error) ? resolve(metadata) : reject(error));
+      stream.once('error', (error) => {
+        if (isMissing(error)) resolve(metadata);
+        else reject(error);
         lines.close();
-        resolve(metadata);
       });
-    } catch {
-      resolve(metadata);
+    } catch (error) {
+      if (isMissing(error)) resolve(metadata);
+      else reject(error);
     }
   });
 }
@@ -917,19 +978,28 @@ async function discoverOmpSessionFile(filePath: string, workspacePath: string): 
 async function discoverOmpSessions(workspacePath: string): Promise<HarnessSession[]> {
   const root = path.join(os.homedir(), '.omp', 'agent', 'sessions');
   let projectDirs: fs.Dirent[];
-  try { projectDirs = await fs.promises.readdir(root, { withFileTypes: true }); } catch { return []; }
+  try { projectDirs = await fs.promises.readdir(root, { withFileTypes: true }); } catch (error) {
+    if (isMissing(error)) return [];
+    throw error;
+  }
   const sessionFiles: string[] = [];
   for (const project of projectDirs.filter((entry) => entry.isDirectory())) {
     const projectPath = path.join(root, project.name);
     let entries: fs.Dirent[];
-    try { entries = await fs.promises.readdir(projectPath, { withFileTypes: true }); } catch { continue; }
+    try { entries = await fs.promises.readdir(projectPath, { withFileTypes: true }); } catch (error) {
+      if (isMissing(error)) continue;
+      throw error;
+    }
     sessionFiles.push(...entries.filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
       .map((entry) => path.join(projectPath, entry.name)));
   }
   const sessions: HarnessSession[] = [];
   for (let index = 0; index < sessionFiles.length; index += 16) {
     const batch = await Promise.all(sessionFiles.slice(index, index + 16)
-      .map((filePath) => discoverOmpSessionFile(filePath, workspacePath).catch(() => null)));
+      .map((filePath) => discoverOmpSessionFile(filePath, workspacePath).catch((error: unknown) => {
+        if (isMissing(error)) return null;
+        throw error;
+      })));
     sessions.push(...batch.filter((session): session is HarnessSession => session !== null));
   }
   return sessions;
@@ -946,8 +1016,9 @@ async function discoverClaudeProjectDir(
   let fileEntries: fs.Dirent[];
   try {
     fileEntries = await fs.promises.readdir(projectDir, { withFileTypes: true });
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw error;
   }
 
   const jsonlFiles = fileEntries.filter((e) => e.isFile() && e.name.endsWith('.jsonl'));
@@ -996,8 +1067,9 @@ async function discoverClaudeSessions(workspacePath: string): Promise<HarnessSes
   let dirEntries: fs.Dirent[];
   try {
     dirEntries = await fs.promises.readdir(claudeProjectsDir, { withFileTypes: true });
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw error;
   }
 
   const projectDirs = dirEntries
@@ -1007,7 +1079,7 @@ async function discoverClaudeSessions(workspacePath: string): Promise<HarnessSes
     .map((e) => path.join(claudeProjectsDir, e.name));
 
   const allResults = await Promise.all(
-    projectDirs.map((dir) => discoverClaudeProjectDir(dir, workspacePath).catch(() => []))
+    projectDirs.map((dir) => discoverClaudeProjectDir(dir, workspacePath))
   );
 
   return allResults.flat();
@@ -1084,19 +1156,22 @@ export async function discoverAgySessions(
   customDbPath?: string,
 ): Promise<HarnessSession[]> {
   const dbPath = customDbPath ?? path.join(os.homedir(), '.gemini', 'antigravity-cli', 'conversation_summaries.db');
-  if (!fs.existsSync(dbPath)) {
-    return [];
+  try {
+    await fs.promises.stat(dbPath);
+  } catch (error) {
+    if (isMissing(error)) return [];
+    throw error;
   }
 
   let db: { prepare: (sql: string) => { all: () => unknown[] }; close: () => void } | null = null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const sqlite = require('node:sqlite');
-    if (!sqlite?.DatabaseSync) return [];
-    db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
-    if (!db) return [];
+    if (!sqlite?.DatabaseSync) throw new Error('SQLite session discovery is unavailable');
+    const database = new sqlite.DatabaseSync(dbPath, { readOnly: true });
+    db = database;
 
-    const stmt = db.prepare(`
+    const stmt = database.prepare(`
       SELECT conversation_id, title, preview, last_modified_time, last_user_input_time, workspace_uris
       FROM conversation_summaries
       WHERE (title != '' OR (preview != '' AND preview != '<conversation>'))
@@ -1112,8 +1187,6 @@ export async function discoverAgySessions(
       }
     }
     return sessions;
-  } catch {
-    return [];
   } finally {
     if (db) {
       try {

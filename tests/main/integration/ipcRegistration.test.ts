@@ -87,13 +87,16 @@ describe('IPC registration smoke test', () => {
     const { registerVcsIpc } = await import('../../../src/main/ipc/vcsIpc');
     const { registerAnnotationIpc } = await import('../../../src/main/annotation/annotationIpc');
     const { registerSessionIpc } = await import('../../../src/main/ipc/sessionIpc');
-
+    const { registerRecipeIpc } = await import('../../../src/main/ipc/recipeIpc');
+    const { registerTaskSessionIpc } = await import('../../../src/main/ipc/taskSessionIpc');
     interface MockStoreSchema {
       lastWorkspace: string;
       aiCommitEnabled: boolean;
       aiCommitProvider: string;
       aiCommitModel: string;
       harnessDefaults: Record<string, { model: string; favorites: string[]; flags: string }>;
+      workspaceRecipes: unknown[];
+      taskSessions: unknown[];
     }
 
     const mockTerminals = new Map<string, { id: string; pid: number }>();
@@ -159,6 +162,8 @@ describe('IPC registration smoke test', () => {
           aiCommitProvider: 'codex',
           aiCommitModel: '',
           harnessDefaults: {},
+          workspaceRecipes: [],
+          taskSessions: [],
         };
         return defaults[key];
       }),
@@ -237,6 +242,15 @@ describe('IPC registration smoke test', () => {
       getSafeWorkspacePath: () => testHome(),
       getIsShuttingDown: () => false,
       getStore: () => mockStore as never,
+      getHarnessOptions: () => ({}),
+    });
+    registerRecipeIpc({
+      getStore: () => mockStore as never,
+    });
+
+    registerTaskSessionIpc({
+      getStore: () => mockStore as never,
+      getTerminals: () => mockTerminals as never,
       getHarnessOptions: () => ({}),
     });
 

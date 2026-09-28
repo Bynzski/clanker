@@ -47,10 +47,12 @@ import {
   AGENT_ATTENTION_UPDATE,
   TERMINAL_RESIZED,
   TERMINAL_READY,
+  RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
   BROWSER_HIDE,
   BROWSER_SET_BOUNDS,
   BROWSER_NAVIGATE,
+  RECIPE_PREVIEW_PROBE,
   BROWSER_BACK,
   BROWSER_FORWARD,
   BROWSER_REFRESH,
@@ -147,6 +149,12 @@ import {
   ANNOTATION_PREPARE_SEND,
   SESSION_DISCOVER,
   SESSION_INVOKE,
+  RECIPE_GET_ALL,
+  RECIPE_SAVE,
+  RECIPE_DELETE,
+  TASK_SESSION_LIST,
+  TASK_SESSION_DELETE,
+  TASK_SESSION_UPDATE,
 } from '../shared/ipcChannels';
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -169,8 +177,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAiCommitModel: (model: string) => ipcRenderer.invoke(SET_AI_COMMIT_MODEL, model),
 
   // Terminal
-  spawnTerminal: (workingDir: string, harness?: string, model?: string) =>
-    ipcRenderer.invoke(SPAWN_TERMINAL, workingDir, harness, model),
+  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean) =>
+    ipcRenderer.invoke(SPAWN_TERMINAL, workingDir, harness, model, initialCommand, recipeCommand),
+  waitRecipeCommand: (id: string) => ipcRenderer.invoke(RECIPE_COMMAND_WAIT, id),
   getTerminalBuffer: (id: string) => ipcRenderer.invoke(GET_TERMINAL_BUFFER, id),
   writeTerminal: (id: string, data: string) => ipcRenderer.invoke(WRITE_TERMINAL, { id, data }),
   getAgentHandoffStatuses: () => ipcRenderer.invoke(GET_AGENT_HANDOFF_STATUSES),
@@ -239,8 +248,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     bounds: { x: number; y: number; width: number; height: number },
     tabId?: string,
   ) => ipcRenderer.invoke(BROWSER_SET_BOUNDS, workspaceId, bounds, tabId),
-  browserNavigate: (workspaceId: string, url: string, tabId?: string) =>
-    ipcRenderer.invoke(BROWSER_NAVIGATE, workspaceId, url, tabId),
+  browserNavigate: (workspaceId: string, url: string, tabId?: string, awaitLoad?: boolean) =>
+    ipcRenderer.invoke(BROWSER_NAVIGATE, workspaceId, url, tabId, awaitLoad),
+  probeRecipePreview: (url: string, waitForReady: boolean) =>
+    ipcRenderer.invoke(RECIPE_PREVIEW_PROBE, url, waitForReady),
   browserBack: (workspaceId: string) => ipcRenderer.invoke(BROWSER_BACK, workspaceId),
   browserForward: (workspaceId: string) => ipcRenderer.invoke(BROWSER_FORWARD, workspaceId),
   browserRefresh: (workspaceId: string) => ipcRenderer.invoke(BROWSER_REFRESH, workspaceId),
@@ -437,6 +448,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   invokeSession: (session: HarnessSession, fork?: boolean) =>
     ipcRenderer.invoke(SESSION_INVOKE, session, fork),
 
+  // Workspace Recipes
+  recipeGetAll: (workspacePath?: string) =>
+    ipcRenderer.invoke(RECIPE_GET_ALL, workspacePath),
+  recipeSave: (recipe: unknown) =>
+    ipcRenderer.invoke(RECIPE_SAVE, recipe),
+  recipeDelete: (recipeId: string) =>
+    ipcRenderer.invoke(RECIPE_DELETE, recipeId),
+
+  // Task Sessions
+  taskSessionList: (workspacePath?: string) =>
+    ipcRenderer.invoke(TASK_SESSION_LIST, workspacePath),
+  taskSessionDelete: (taskId: string) =>
+    ipcRenderer.invoke(TASK_SESSION_DELETE, taskId),
+  taskSessionUpdate: (updates: { id: string; title?: string; nativeSessionId?: string; nativeSessionPath?: string; state?: string; stateReason?: string }) =>
+    ipcRenderer.invoke(TASK_SESSION_UPDATE, updates),
   // Browser annotation
   annotationEnable: (workspaceId: string) => ipcRenderer.invoke(ANNOTATION_ENABLE, workspaceId),
   annotationDisable: () => ipcRenderer.invoke(ANNOTATION_DISABLE),
