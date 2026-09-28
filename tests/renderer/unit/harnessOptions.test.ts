@@ -15,6 +15,7 @@ describe('HARNESS_OPTIONS', () => {
     expect(ids).toContain('pi');
     expect(ids).toContain('omp');
     expect(ids).toContain('hermes');
+    expect(ids).toContain('agy');
   });
 
   it('each option has label and Icon', () => {
@@ -31,6 +32,7 @@ describe('AI_COMMIT_PROVIDER_IDS', () => {
     expect(AI_COMMIT_PROVIDER_IDS).toContain('opencode');
     expect(AI_COMMIT_PROVIDER_IDS).toContain('pi');
     expect(AI_COMMIT_PROVIDER_IDS).toContain('omp');
+    expect(AI_COMMIT_PROVIDER_IDS).toContain('agy');
   });
 
   it('does not include empty string (terminal-only)', () => {
@@ -44,16 +46,16 @@ describe('AI_COMMIT_PROVIDER_IDS', () => {
 
 describe('resolveAvailableHarnessIds', () => {
   it('returns all harness ids when all options are enabled and includeTerminal is true', () => {
-    const options = { codex: true, claude: true, opencode: true, pi: true, omp: true, hermes: true };
+    const options = { codex: true, claude: true, opencode: true, pi: true, omp: true, hermes: true, agy: true };
     const result = resolveAvailableHarnessIds(options, true);
-    expect(result).toEqual(['', 'codex', 'claude', 'opencode', 'pi', 'omp', 'hermes']);
+    expect(result).toEqual(['', 'codex', 'claude', 'opencode', 'pi', 'omp', 'hermes', 'agy']);
   });
 
   it('excludes terminal when includeTerminal is false', () => {
-    const options = { codex: true, claude: true, opencode: true, pi: true, omp: true, hermes: true };
+    const options = { codex: true, claude: true, opencode: true, pi: true, omp: true, hermes: true, agy: true };
     const result = resolveAvailableHarnessIds(options, false);
     expect(result).not.toContain('');
-    expect(result).toEqual(['codex', 'claude', 'opencode', 'pi', 'omp', 'hermes']);
+    expect(result).toEqual(['codex', 'claude', 'opencode', 'pi', 'omp', 'hermes', 'agy']);
   });
 
   it('only includes enabled options', () => {

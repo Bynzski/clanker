@@ -35,6 +35,7 @@ When a harness exits, the terminal falls back to an interactive shell so the pan
 | Pi | `pi` | Mario Zechner agent |
 | Oh My Pi | `omp` | OMP coding agent |
 | Hermes | `hermes --tui` | Hermes Agent interactive TUI |
+| Antigravity | `agy` | Antigravity CLI |
 
 **Harness launch model — Linux / macOS:** Harnesses run as the direct PTY foreground job via a generated shell script (`~/.clanker-grid/harness-wrapper.sh`). When the harness exits, the wrapper script replaces itself with an interactive shell so the pane stays usable.
 
@@ -58,8 +59,8 @@ Terminal panes get short Grateful Dead inspired names such as Samson, Delilah, J
 
 In **Settings → Harness Defaults**, expand a harness and enable **Agent attention** for future launches. Clanker then uses that harness's supported hooks to show running, needs input, or turn complete in the pane header. Background needs-input and completed turns also mark the workspace tab. The bell button beside the tabs jumps to the next agent needing attention. Visiting a pane clears its highlight while keeping the status accurate. Plain shells have no agent status; unsupported hook signals show unknown.
 
-Agent attention is opt-in per harness and affects only new terminals. With attention off, the pane has no agent status label. With attention on, the label says unknown until a supported event arrives. It does not parse terminal screen text. Codex currently reports completion, Claude and OpenCode can also report input requests, and Pi reports running and settled turns. OMP maps its agent loop start/end events to running and turn complete; this does not confirm that background work has settled. Hook availability can vary with CLI version and user configuration.
-Hermes has no integrated lifecycle adapter; its agent-attention toggle is unavailable. Chat history, resume/fork, and AI commit are not integrated for Hermes.
+Agent attention is opt-in per harness and affects only new terminals. With attention off, the pane has no agent status label. With attention on, the label says unknown until a supported event arrives. It does not parse terminal screen text. Codex currently reports completion, Claude and OpenCode can also report input requests, and Pi reports running and settled turns. OMP maps its agent loop start/end events to running and turn complete; this does not confirm that background work has settled. Antigravity maps `PreInvocation` (turn start), human-interaction tools (needs input / resolved), `Stop` (turn complete), and process exit (session end) via its native plugin hooks. Hook availability can vary with CLI version and user configuration.
+Hermes has no integrated lifecycle adapter; its agent-attention toggle is unavailable. Chat history, resume/fork, and AI commit are not integrated for Hermes. For Antigravity, chat history is discovered from its SQLite store and resumes via `--conversation`, AI commit message generation is supported via noninteractive piped invocation, and agent attention is fully integrated.
 
 ### Harness Default Models
 
@@ -82,6 +83,7 @@ The **Chat History** button (message icon) in the header opens a dropdown that d
 | OpenCode | `opencode session list --format json` |
 | Pi | `~/.pi/agent/sessions/` (JSONL session files) |
 | Oh My Pi | Default profile: `~/.omp/agent/sessions/` (JSONL session files) |
+| Antigravity | `~/.gemini/antigravity-cli/conversation_summaries.db` (SQLite store) |
 
 **Features:**
 - Sessions are grouped by harness type with collapsible sections

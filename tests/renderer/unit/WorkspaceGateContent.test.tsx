@@ -561,6 +561,32 @@ describe('WorkspaceGateContent', () => {
     expect(mockOnSubmit).toHaveBeenCalled();
   });
 
+  it('selects Antigravity from a window keypress outside editable controls', async () => {
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      codex: { name: 'Codex', command: 'codex', args: [], icon: '🧠' },
+      agy: { name: 'Antigravity', command: 'agy', args: [], icon: '🪐' },
+    });
+    renderGate({ initialPath: '/workspace/' });
+    await screen.findByRole('button', { name: 'Antigravity' });
+
+    fireEvent.keyDown(window, { key: 'a' });
+
+    expect(screen.getByRole('button', { name: 'Antigravity' })).toHaveClass('selected');
+  });
+
+  it('does not trigger harness shortcuts while typing in the workspace input', async () => {
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      codex: { name: 'Codex', command: 'codex', args: [], icon: '🧠' },
+      agy: { name: 'Antigravity', command: 'agy', args: [], icon: '🪐' },
+    });
+    renderGate({ initialPath: '/workspace/' });
+    await screen.findByRole('button', { name: 'Antigravity' });
+
+    fireEvent.keyDown(screen.getByPlaceholderText('project name'), { key: 'a' });
+
+    expect(screen.getByRole('button', { name: 'Codex' })).toHaveClass('selected');
+  });
+
   it('prevents suggestion mousedown from stealing focus and applies suggestion click', async () => {
     vi.mocked(window.electronAPI.readDirectory).mockImplementation(async (dirPath: string) => {
       const normalizedPath = dirPath.replace(/\\/g, '/');

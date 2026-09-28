@@ -530,7 +530,7 @@ describe('getAvailableHarnessOptions', () => {
     const availableKeys = Object.keys(result);
 
     // All returned keys should be valid harness names
-    const validKeys = ['codex', 'opencode', 'pi', 'omp', 'claude', 'hermes'];
+    const validKeys = ['codex', 'opencode', 'pi', 'omp', 'claude', 'hermes', 'agy'];
     for (const key of availableKeys) {
       expect(validKeys).toContain(key);
     }
@@ -739,7 +739,7 @@ describe('harness discovery integration', () => {
   it('model IDs are properly formatted across all harnesses', async () => {
     const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
     
-    const harnesses = ['codex', 'opencode', 'pi', 'omp', 'claude', 'hermes'];
+    const harnesses = ['codex', 'opencode', 'pi', 'omp', 'claude', 'hermes', 'agy'];
     for (const harness of harnesses) {
       const models = await discoverHarnessModels(harness);
       
@@ -756,7 +756,7 @@ describe('harness discovery integration', () => {
   it('no duplicate model IDs returned for any harness', async () => {
     const { discoverHarnessModels } = await import('../../../src/main/harnessCatalog');
     
-    const harnesses = ['codex', 'opencode', 'pi', 'omp', 'claude', 'hermes'];
+    const harnesses = ['codex', 'opencode', 'pi', 'omp', 'claude', 'hermes', 'agy'];
     for (const harness of harnesses) {
       const models = await discoverHarnessModels(harness);
       const ids = models.map(m => m.id);

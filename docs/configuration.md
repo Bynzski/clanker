@@ -16,7 +16,7 @@ Access via the header toolbar gear icon.
 
 Per-harness global defaults for AI harnesses. Configured in the header settings dropdown under **Harness Defaults**. These apply when spawning new terminals with a harness selected.
 
-Each harness (Codex, OpenCode, Pi, Oh My Pi, Claude, Hermes) has its own settings:
+Each harness (Codex, OpenCode, Pi, Oh My Pi, Claude, Hermes, Antigravity) has its own settings:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
@@ -27,6 +27,8 @@ Each harness (Codex, OpenCode, Pi, Oh My Pi, Claude, Hermes) has its own setting
 | Agent attention | Show supported harness turn and input status on new panes | Disabled |
 
 Hermes discovers provider-aware models from the local Hermes TUI gateway when its standard Python installation is available. Model IDs appear before their providers so subscription variants stay distinguishable. Choose a provider/model in the default picker, or enter a custom model ID; leaving the field empty uses Hermes's own default. Favorites work in the workspace gate. The initial list may be served from Hermes's cache: use **Refresh Hermes models** in settings or the gate to query live connector catalogs. If discovery is unavailable, the manual model field remains usable. Agent attention is unavailable until Hermes lifecycle events are integrated. Hermes is not an AI commit provider.
+
+Antigravity discovers available models via `agy models`. The model list supports Gemini and Claude variants. Extra flags accept `--dangerously-skip-permissions`, `--effort <level>`, and `--mode <mode>`. Agent attention is supported via native plugin hooks, reporting running, needs input, and turn complete statuses. Antigravity can be selected as an AI commit provider in settings, generating commit messages via piped prompt execution.
 
 #### Managing Harness Defaults
 

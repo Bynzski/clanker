@@ -186,3 +186,21 @@ launches, authenticated TUI sessions, live model calls, and exit-to-shell
 behavior in Clanker's window remain unverified. On Linux, a `script`-allocated
 pseudo-terminal displayed Hermes's interactive TUI without a model request;
 the smoke process was stopped by a timeout rather than exiting through Clanker.
+
+## Antigravity (`agy`) implementation notes
+
+Review environment (September 2026): `/home/jay/.local/bin/agy`, version
+`1.2.12`. Antigravity uses the `agy` ID matching its executable.
+
+| Capability | Observed CLI or storage contract | Integration work |
+| --- | --- | --- |
+| Interactive launch | `agy`; `--model=<selector>` | Registered as a harness using the common PTY launch path. |
+| Models | `agy models` emits spinner on stderr and clean tab-separated `<id>\t<label>` on stdout | Parse stdout lines by tab, deduplicate IDs, fallback to static Gemini list on error or timeout (8s). |
+| Sessions | SQLite database at `~/.gemini/antigravity-cli/conversation_summaries.db`; table `conversation_summaries` | Integrated via Node 22/Electron 41 native `node:sqlite` in read-only mode. All workspace URIs are decoded and matched using `sessionMatchesWorkspace`; unset paths retain the global-session fallback, while malformed metadata is skipped. Resume invokes `agy --conversation <id>` with canonical UUID and model-selector validation; fork is unsupported by the CLI and runs resume. |
+| Attention | Native hooks via an owned plugin at `~/.gemini/config/plugins/clanker-grid-attention/hooks.json` | The plugin exists only while an attention-enabled Antigravity terminal is active. It maps `PreInvocation` (when `invocationNum == 0`) to `turn_started`, `PreToolUse` on `ask_question`, `ask_permission`, or `notify_user` to `input_requested`, matching `PostToolUse` events to `input_resolved`, `Stop` to `turn_completed`, and wrapper exit to `session_ended`. The matcher excludes all other tools so their native permission checks remain authoritative. Clanker refuses to overwrite an unowned directory and removes only files carrying its ownership marker. |
+| AI commit | Piped stdin with `--disable-slash-commands`, `--model <selector>` | Integrated. Noninteractive piped invocation delivers the commit prompt via stdin, outputs the generated commit message, and is normalized by `normalizeCommitMessageOutput`. Timeout: 60s. |
+
+This integration includes CLI detection, persisted defaults, visibility,
+flags, model discovery, interactive launch, session history discovery/resume,
+agent attention, and AI commit message generation. The workspace gate assigns
+`a` / `A` to Antigravity when visible.

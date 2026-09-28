@@ -50,3 +50,4 @@ These shortcuts work in the workspace picker when focus is not inside an input f
 | Codex harness | `C` |
 | OpenCode harness | `O` |
 | Pi harness | `P` |
+| Antigravity harness | `A` |

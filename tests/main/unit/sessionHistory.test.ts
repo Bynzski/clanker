@@ -26,6 +26,7 @@ const { mockHomedir } = vi.hoisted(() => ({ mockHomedir: vi.fn() }));
 // Platform-neutral path constants — built from path.join so tests run on
 // Linux, macOS, and Windows with native separators.
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 const TEST_HOME = path.join(process.platform === 'win32' ? 'C:\\Users\\testuser' : '/tmp', 'testuser');
 const TEST_WORKSPACE = path.join(TEST_HOME, 'project');
 const TEST_OTHER = path.join(TEST_HOME, 'other');
@@ -94,6 +95,9 @@ import {
   sessionMatchesWorkspace,
   encodeClaudeProjectDir,
   parseOmpSessionMetadata,
+  parseAgyWorkspaceUris,
+  mapAgyRowToSession,
+  discoverAgySessions,
 } from '../../../src/main/sessionHistory';
 import type { HarnessSession } from '../../../src/shared/types/session';
 
@@ -134,6 +138,95 @@ describe('OMP session metadata', () => {
       id: 'one.jsonl', title: 'OMP task', cwd: TEST_WORKSPACE_POSIX,
       modelId: 'openai-codex/gpt-5.5', filePath: expect.stringContaining('/.omp/agent/sessions/project/one.jsonl'),
     })]);
+  });
+});
+
+describe('parseAgyWorkspaceUris', () => {
+  it('extracts file URLs using native path separators', () => {
+    expect(parseAgyWorkspaceUris(JSON.stringify([pathToFileURL(TEST_WORKSPACE).href])))
+      .toEqual([TEST_WORKSPACE]);
+  });
+
+  it('accepts multiple raw paths', () => {
+    expect(parseAgyWorkspaceUris(JSON.stringify([TEST_WORKSPACE, TEST_OTHER])))
+      .toEqual([TEST_WORKSPACE, TEST_OTHER]);
+  });
+
+  it('distinguishes absent workspace metadata from malformed data', () => {
+    expect(parseAgyWorkspaceUris('')).toEqual([]);
+    expect(parseAgyWorkspaceUris('[]')).toEqual([]);
+    expect(parseAgyWorkspaceUris('not json')).toBeNull();
+    expect(parseAgyWorkspaceUris('[123]')).toBeNull();
+  });
+});
+
+describe('mapAgyRowToSession', () => {
+  it('maps valid row to HarnessSession with matching workspace', () => {
+    const row = {
+      conversation_id: '79cbc62b-b055-48a5-8655-d9aa83d3a00f',
+      title: 'My Project Discussion',
+      preview: 'Preview text',
+      last_modified_time: '2026-09-28 00:22:11.995865216+00:00',
+      workspace_uris: JSON.stringify([pathToFileURL(TEST_WORKSPACE).href]),
+    };
+    const session = mapAgyRowToSession(row, TEST_WORKSPACE);
+    expect(session).toEqual({
+      id: '79cbc62b-b055-48a5-8655-d9aa83d3a00f',
+      harness: 'agy',
+      title: 'My Project Discussion',
+      cwd: TEST_WORKSPACE,
+      timestamp: expect.any(Number),
+    });
+  });
+
+  it('matches a requested workspace after the first multi-root entry', () => {
+    const row = {
+      conversation_id: '79cbc62b-b055-48a5-8655-d9aa83d3a00f',
+      title: 'Multi-root discussion',
+      workspace_uris: JSON.stringify([
+        pathToFileURL(TEST_OTHER).href,
+        pathToFileURL(TEST_WORKSPACE).href,
+      ]),
+    };
+    expect(mapAgyRowToSession(row, TEST_WORKSPACE)?.cwd).toBe(TEST_WORKSPACE);
+  });
+
+  it('filters out row when workspace does not match', () => {
+    const row = {
+      conversation_id: '79cbc62b-b055-48a5-8655-d9aa83d3a00f',
+      title: 'My Project Discussion',
+      workspace_uris: JSON.stringify([pathToFileURL(TEST_OTHER).href]),
+    };
+    expect(mapAgyRowToSession(row, TEST_WORKSPACE)).toBeNull();
+  });
+
+  it('rejects malformed workspace metadata instead of treating it as global', () => {
+    expect(mapAgyRowToSession({
+      conversation_id: '79cbc62b-b055-48a5-8655-d9aa83d3a00f',
+      workspace_uris: 'not json',
+    }, TEST_WORKSPACE)).toBeNull();
+  });
+
+  it('falls back to preview when title is missing', () => {
+    const row = {
+      conversation_id: '79cbc62b-b055-48a5-8655-d9aa83d3a00f',
+      title: '',
+      preview: 'Preview Title',
+      workspace_uris: JSON.stringify([pathToFileURL(TEST_WORKSPACE).href]),
+    };
+    const session = mapAgyRowToSession(row, TEST_WORKSPACE);
+    expect(session?.title).toBe('Preview Title');
+  });
+
+  it('skips row when conversation_id is missing', () => {
+    expect(mapAgyRowToSession({ conversation_id: '' })).toBeNull();
+  });
+});
+
+describe('discoverAgySessions', () => {
+  it('returns empty array when database file does not exist', async () => {
+    const sessions = await discoverAgySessions(TEST_WORKSPACE, '/nonexistent/path/db.sqlite');
+    expect(sessions).toEqual([]);
   });
 });
 
@@ -379,6 +472,40 @@ describe('buildSessionInvokeArgs', () => {
     expect(result.spawnArgs).toEqual([
       'pi', '--fork', `${TEST_PI_SESSIONS_DIR_POSIX}/1234_uuid.jsonl`,
     ]);
+  });
+
+  it('builds agy resume args and ignores fork flag', () => {
+    const session: HarnessSession = {
+      id: '79cbc62b-b055-48a5-8655-d9aa83d3a00f',
+      harness: 'agy',
+      title: 'High-Level App Structure Review',
+      cwd: TEST_WORKSPACE,
+      timestamp: Date.now(),
+      modelId: 'gemini-3.8-flash-high',
+    };
+    const result = buildSessionInvokeArgs(session, true, '--effort max');
+    expect(result.spawnCmd).toBe(wrapper);
+    expect(result.spawnArgs).toEqual([
+      'agy',
+      '--conversation',
+      '79cbc62b-b055-48a5-8655-d9aa83d3a00f',
+      '--model',
+      'gemini-3.8-flash-high',
+      '--effort',
+      'max',
+    ]);
+  });
+
+  it('builds agy resume args without model or user flags', () => {
+    const session: HarnessSession = {
+      id: '79cbc62b-b055-48a5-8655-d9aa83d3a00f',
+      harness: 'agy',
+      title: 'Session',
+      cwd: TEST_WORKSPACE,
+      timestamp: Date.now(),
+    };
+    const result = buildSessionInvokeArgs(session, false);
+    expect(result.spawnArgs).toEqual(['agy', '--conversation', '79cbc62b-b055-48a5-8655-d9aa83d3a00f']);
   });
 
   it('omits model flag when modelId is undefined', () => {

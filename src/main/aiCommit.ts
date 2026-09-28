@@ -1,4 +1,4 @@
-export type AiCommitProvider = 'codex' | 'opencode' | 'pi' | 'omp';
+export type AiCommitProvider = 'codex' | 'opencode' | 'pi' | 'omp' | 'agy';
 
 export interface AiCommitCommandConfig {
   command: string;
@@ -25,6 +25,8 @@ export function getAiCommitTimeoutMs(provider: AiCommitProvider): number {
       return 45000;
     case 'omp':
       return 60000;
+    case 'agy':
+      return 60000;
     default:
       return 60000;
   }
@@ -49,6 +51,11 @@ export const AI_COMMIT_COMMANDS: Record<AiCommitProvider, AiCommitCommandConfig>
   omp: {
     command: 'omp',
     args: ['--print', '--no-session', '--no-tools', '--no-extensions'],
+    modelArg: '--model',
+  },
+  agy: {
+    command: 'agy',
+    args: ['--disable-slash-commands'],
     modelArg: '--model',
   },
 };

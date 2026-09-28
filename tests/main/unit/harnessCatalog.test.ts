@@ -24,6 +24,7 @@ import {
   parseCodexDebugModels,
   parseOmpModels,
   parseHermesModelOptions,
+  parseAgyModels,
 } from '../../../src/main/harnessCatalog';
 
 describe('parseHermesModelOptions', () => {
@@ -63,6 +64,41 @@ describe('parseOmpModels', () => {
     ] });
     expect(parseOmpModels(output)).toEqual([{ id: 'openai-codex/gpt-5.5', label: 'openai-codex/gpt-5.5' }]);
     expect(parseOmpModels('{')).toEqual([]);
+  });
+});
+
+describe('parseAgyModels', () => {
+  it('parses tab-separated model ids and labels', () => {
+    const output = [
+      'Fetching available models...',
+      'gemini-3.8-flash-high\tGemini 3.8 Flash (High)',
+      'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)',
+      'claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)',
+    ].join('\n');
+    expect(parseAgyModels(output)).toEqual([
+      { id: 'gemini-3.8-flash-high', label: 'Gemini 3.8 Flash (High)' },
+      { id: 'gemini-3.8-flash-medium', label: 'Gemini 3.8 Flash (Medium)' },
+      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)' },
+    ]);
+  });
+
+  it('deduplicates models and ignores ANSI codes and empty lines', () => {
+    const output = [
+      '\u001B[32mgemini-3.8-flash-high\u001B[0m\tGemini 3.8 Flash (High)',
+      'gemini-3.8-flash-high\tDuplicate Name',
+      '',
+      '   ',
+      'gpt-oss-120b-medium',
+    ].join('\n');
+    expect(parseAgyModels(output)).toEqual([
+      { id: 'gemini-3.8-flash-high', label: 'Gemini 3.8 Flash (High)' },
+      { id: 'gpt-oss-120b-medium', label: 'gpt-oss-120b-medium' },
+    ]);
+  });
+
+  it('returns empty array on empty or invalid output', () => {
+    expect(parseAgyModels('')).toEqual([]);
+    expect(parseAgyModels('Fetching available models...\n')).toEqual([]);
   });
 });
 
@@ -441,6 +477,7 @@ describe('HARNESS_OPTIONS', () => {
     expect(HARNESS_OPTIONS.omp.command).toBe('omp');
     expect(HARNESS_OPTIONS.claude.command).toBe('claude');
     expect(HARNESS_OPTIONS.hermes.command).toBe('hermes');
+    expect(HARNESS_OPTIONS.agy.command).toBe('agy');
   });
 
   it('has modelArg defined for all harnesses', () => {
@@ -460,6 +497,7 @@ describe('HARNESS_OPTIONS', () => {
   it('pi uses --model argument', () => {
     expect(HARNESS_OPTIONS.pi.modelArg).toBe('--model');
     expect(HARNESS_OPTIONS.omp.modelArg).toBe('--model');
+    expect(HARNESS_OPTIONS.agy.modelArg).toBe('--model');
   });
   it('Hermes launches the TUI so -m overrides the interactive model', () => {
     expect(HARNESS_OPTIONS.hermes.args).toEqual(['--tui']);

@@ -40,6 +40,14 @@ function resolveWorkspacePath(input: string, baseDirectory: string): string | nu
   return resolved ? withTrailingSlash(resolved) : null;
 }
 
+function isEditableEventTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable
+    || target.tagName === 'INPUT'
+    || target.tagName === 'TEXTAREA'
+    || target.tagName === 'SELECT';
+}
+
 export const TERMINAL_PRESETS = [
   { count: 1, label: '1', description: 'Single terminal' },
   { count: 2, label: '2', description: 'Two terminals' },
@@ -446,12 +454,38 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     }
   };
 
-  const handleHarnessChange = (harness: string) => {
+  const handleHarnessChange = useCallback((harness: string) => {
     setSelectedHarness(harness);
     setModelOptions(allModels[harness] ?? []);
     setShowFavoritesPicker(false);
     setShowDiscoveryModal(false);
-  };
+  }, [allModels]);
+
+  useEffect(() => {
+    const handleLauncherShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey
+        || isEditableEventTarget(event.target)) return;
+
+      const key = event.key.toLowerCase();
+      let handler: (() => void) | undefined;
+      if (key === '1') handler = () => setSelectedPreset(0);
+      else if (key === '2') handler = () => setSelectedPreset(1);
+      else if (key === '4') handler = () => setSelectedPreset(2);
+      else if (key === 'b' && selectedHarness !== '') handler = () => handleHarnessChange('');
+      else if (key === 'c' && visibleHarnessIds.includes('codex')) handler = () => handleHarnessChange('codex');
+      else if (key === 'o' && visibleHarnessIds.includes('opencode')) handler = () => handleHarnessChange('opencode');
+      else if (key === 'p' && visibleHarnessIds.includes('pi')) handler = () => handleHarnessChange('pi');
+      else if (key === 'a' && visibleHarnessIds.includes('agy')) handler = () => handleHarnessChange('agy');
+
+      if (handler) {
+        event.preventDefault();
+        handler();
+      }
+    };
+
+    window.addEventListener('keydown', handleLauncherShortcut);
+    return () => window.removeEventListener('keydown', handleLauncherShortcut);
+  }, [handleHarnessChange, selectedHarness, visibleHarnessIds]);
 
   const launchPath = (path: string) => {
     const preset = TERMINAL_PRESETS[selectedPreset];
@@ -482,7 +516,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     });
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
     const setSuggestionAndReset = (suggestion: string) => {
       setInputValue(suggestion);
       setSuggestions([]);
@@ -518,31 +552,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
       },
     };
 
-    if (!isFocused) {
-      keyHandlers['1'] = () => setSelectedPreset(0);
-      keyHandlers['2'] = () => setSelectedPreset(1);
-      keyHandlers['4'] = () => setSelectedPreset(2);
-
-      if (selectedHarness !== '') {
-        keyHandlers.b = () => handleHarnessChange('');
-        keyHandlers.B = keyHandlers.b;
-      }
-
-      if (visibleHarnessIds.includes('codex')) {
-        keyHandlers.c = () => handleHarnessChange('codex');
-        keyHandlers.C = keyHandlers.c;
-      }
-
-      if (visibleHarnessIds.includes('opencode')) {
-        keyHandlers.o = () => handleHarnessChange('opencode');
-        keyHandlers.O = keyHandlers.o;
-      }
-
-      if (!e.metaKey && !e.ctrlKey && visibleHarnessIds.includes('pi')) {
-        keyHandlers.p = () => handleHarnessChange('pi');
-        keyHandlers.P = keyHandlers.p;
-      }
-    }
 
     const handler = keyHandlers[e.key];
     if (handler) {
@@ -629,7 +638,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
               setInputValue(e.target.value);
               setSelectedIndex(-1);
             }}
-            onKeyDown={handleKeyDown}
+            onKeyDown={handleInputKeyDown}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setTimeout(() => setIsFocused(false), 200)}
             placeholder="project name"

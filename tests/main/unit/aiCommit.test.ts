@@ -23,11 +23,12 @@ import {
 
 describe('AI_COMMIT_COMMANDS structure', () => {
   it('contains all supported providers', () => {
-    expect(Object.keys(AI_COMMIT_COMMANDS)).toHaveLength(4);
+    expect(Object.keys(AI_COMMIT_COMMANDS)).toHaveLength(5);
     expect(AI_COMMIT_COMMANDS).toHaveProperty('codex');
     expect(AI_COMMIT_COMMANDS).toHaveProperty('opencode');
     expect(AI_COMMIT_COMMANDS).toHaveProperty('pi');
     expect(AI_COMMIT_COMMANDS).toHaveProperty('omp');
+    expect(AI_COMMIT_COMMANDS).toHaveProperty('agy');
   });
 
   it('each provider has required fields', () => {
@@ -62,6 +63,15 @@ describe('AI_COMMIT_COMMANDS structure', () => {
       '--print', '--no-session', '--no-tools', '--no-extensions', '--model', 'openai-codex/gpt-5.5',
     ]);
   });
+
+  it('Antigravity uses disabled slash commands', () => {
+    expect(AI_COMMIT_COMMANDS.agy).toEqual({
+      command: 'agy', args: ['--disable-slash-commands'], modelArg: '--model',
+    });
+    expect(buildAiCommitArgs('agy', 'gemini-3.8-flash-high')).toEqual([
+      '--disable-slash-commands', '--model', 'gemini-3.8-flash-high',
+    ]);
+  });
 });
 
 // ============================================================================
@@ -80,6 +90,10 @@ describe('getAiCommitTimeoutMs', () => {
 
     it('returns 45000ms for pi', () => {
       expect(getAiCommitTimeoutMs('pi')).toBe(45000);
+    });
+
+    it('returns 60000ms for agy', () => {
+      expect(getAiCommitTimeoutMs('agy')).toBe(60000);
     });
   });
 
@@ -116,6 +130,11 @@ describe('buildAiCommitArgs', () => {
     it('prepends model arg before harness args for pi', () => {
       const args = buildAiCommitArgs('pi', 'anthropic/sonnet');
       expect(args).toEqual(['--model', 'anthropic/sonnet']);
+    });
+
+    it('includes model for agy', () => {
+      const args = buildAiCommitArgs('agy', 'gemini-3.8-flash-high');
+      expect(args).toEqual(['--disable-slash-commands', '--model', 'gemini-3.8-flash-high']);
     });
 
     it('includes both exec and model for codex', () => {

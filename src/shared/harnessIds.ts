@@ -8,5 +8,5 @@
  * New harnesses also need main/renderer catalogs and capability-specific adapters;
  * see docs/harness-integration.md.
  */
-export const KNOWN_HARNESS_IDS = ['codex', 'opencode', 'pi', 'omp', 'claude', 'hermes'] as const;
+export const KNOWN_HARNESS_IDS = ['codex', 'opencode', 'pi', 'omp', 'claude', 'hermes', 'agy'] as const;
 export type HarnessId = typeof KNOWN_HARNESS_IDS[number];

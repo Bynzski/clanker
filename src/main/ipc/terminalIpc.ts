@@ -30,7 +30,13 @@ import {
 import { spawnPtyProcess } from './ptySpawn';
 import { toNativePath } from '../../shared/pathNormalize';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
-import { attentionLaunchOptions, ensureAttentionAdapterFiles, withoutAttentionEnvironment } from '../agentAttentionAdapters';
+import {
+  acquireAgyAttentionPlugin,
+  attentionLaunchOptions,
+  ensureAttentionAdapterFiles,
+  releaseAgyAttentionPlugin,
+  withoutAttentionEnvironment,
+} from '../agentAttentionAdapters';
 
 interface Terminal {
   id: string;
@@ -123,6 +129,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     if (harnessConfig && harness && agentAttentionBroker) {
       try {
         const files = ensureAttentionAdapterFiles();
+        if (attentionEnabled && harness === 'agy') {
+          acquireAgyAttentionPlugin(id, files);
+        }
         attentionEnv = await agentAttentionBroker.register(id, harness);
         attentionCommand = files.command;
         if (attentionEnabled) {
@@ -133,6 +142,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           }
         }
       } catch {
+        releaseAgyAttentionPlugin(id);
         agentAttentionBroker.release(id);
       }
     }
@@ -172,10 +182,14 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       getIsShuttingDown: () => appShuttingDown,
       launchLabel,
       harnessId: harnessConfig ? harness : undefined,
-      onExit: () => agentAttentionBroker?.release(id),
+      onExit: () => {
+        releaseAgyAttentionPlugin(id);
+        agentAttentionBroker?.release(id);
+      },
       });
       return { ...result, harnessId: harnessConfig ? harness : undefined, attentionEnabled };
     } catch (error) {
+      releaseAgyAttentionPlugin(id);
       agentAttentionBroker?.release(id);
       throw error;
     }

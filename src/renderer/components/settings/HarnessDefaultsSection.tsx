@@ -108,7 +108,11 @@ export default function HarnessDefaultsSection({
                     type="checkbox"
                     checked={defaults?.attentionEnabled === true && harnessId !== 'hermes'}
                     disabled={harnessId === 'hermes'}
-                    title={harnessId === 'hermes' ? 'Hermes lifecycle events are not integrated' : undefined}
+                    title={
+                      harnessId === 'hermes'
+                        ? 'Hermes lifecycle events are not integrated'
+                        : undefined
+                    }
                     onChange={(event) => void handleSetHarnessAttention(harnessId, event.target.checked)}
                     aria-label={`Agent attention for ${option?.label ?? harnessId}`}
                   />

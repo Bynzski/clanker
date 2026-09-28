@@ -17,7 +17,7 @@
  * Inlined here to keep shared/types/ self-contained and avoid a main→shared import.
  * aiCommit.ts defines and exports its own AiCommitProvider for internal use.
  */
-export type AiCommitProvider = 'codex' | 'opencode' | 'pi' | 'omp';
+export type AiCommitProvider = 'codex' | 'opencode' | 'pi' | 'omp' | 'agy';
 
 /**
  * Per-harness default settings.

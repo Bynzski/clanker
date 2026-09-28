@@ -5,4 +5,5 @@
 export const HARNESS_FLAGS_PLACEHOLDER: Record<string, string> = {
   codex: '--yolo',
   claude: '--dangerously-skip-permissions',
+  agy: '--dangerously-skip-permissions',
 };

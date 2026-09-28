@@ -105,6 +105,73 @@ describe('registerSessionIpc', () => {
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
 
+  it.each([
+    'invalid; rm -rf /',
+    '------------------------------------',
+    '79cbc62bb05548a58655d9aa83d3a00f0000',
+  ])('rejects an Antigravity session with invalid UUID %s', async (id) => {
+    const handlers = registerHandlers(vi.fn(() => ({
+      agy: { name: 'Antigravity', command: 'agy', args: [], icon: '🪐' },
+    })));
+    const session: HarnessSession = {
+      id, harness: 'agy', title: 'Task', cwd: '/workspace', timestamp: 1,
+    };
+    await expect(handlers.get(SESSION_INVOKE)?.({}, session)).rejects.toThrow('Antigravity session ID is invalid');
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unsafe renderer-supplied Antigravity model ID', async () => {
+    const handlers = registerHandlers(vi.fn(() => ({
+      agy: { name: 'Antigravity', command: 'agy', args: [], icon: '🪐' },
+    })));
+    const session: HarnessSession = {
+      id: '79cbc62b-b055-48a5-8655-d9aa83d3a00f',
+      harness: 'agy',
+      title: 'Task',
+      cwd: '/workspace',
+      timestamp: 1,
+      modelId: 'gemini&calc',
+    };
+    await expect(handlers.get(SESSION_INVOKE)?.({}, session)).rejects.toThrow('Antigravity model ID is invalid');
+    expect(mockBuildSessionInvokeArgs).not.toHaveBeenCalled();
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+  });
+
+  it('invokes an Antigravity session with a valid UUID', async () => {
+    mockBuildSessionInvokeArgs.mockReturnValue({
+      spawnCmd: '/bin/agy',
+      spawnArgs: ['agy', '--conversation', '79cbc62b-b055-48a5-8655-d9aa83d3a00f'],
+    });
+    mockSpawnPtyProcess.mockReturnValue({
+      ptyProcess: { pid: 12345 },
+      cleanup: vi.fn(),
+    });
+
+    const handlers = registerHandlers(vi.fn(() => ({
+      agy: { name: 'Antigravity', command: 'agy', args: [], icon: '🪐' },
+    })));
+    const session: HarnessSession = {
+      id: ' 79cbc62b-b055-48a5-8655-d9aa83d3a00f ',
+      harness: 'agy',
+      title: 'Task',
+      cwd: '/workspace',
+      timestamp: 1,
+      modelId: ' gemini-3.8-flash-high ',
+    };
+
+    const result = await handlers.get(SESSION_INVOKE)?.({}, session);
+    expect(result).toEqual(expect.objectContaining({ harnessId: 'agy', ptyProcess: { pid: 12345 } }));
+    expect(mockBuildSessionInvokeArgs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: '79cbc62b-b055-48a5-8655-d9aa83d3a00f',
+        harness: 'agy',
+        modelId: 'gemini-3.8-flash-high',
+      }),
+      false,
+      undefined
+    );
+  });
+
   it('rejects Hermes session payloads instead of launching Claude resume', async () => {
     const handlers = registerHandlers(vi.fn(() => ({
       hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '☿' },

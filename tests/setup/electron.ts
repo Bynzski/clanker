@@ -74,6 +74,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
       omp: { model: '', favorites: [], flags: '' },
       hermes: { model: '', favorites: [], flags: '' },
       claude: { model: '', favorites: [], flags: '' },
+      agy: { model: '', favorites: [], flags: '' },
     }),
     setHarnessDefaults: createAsyncMock(undefined),
     onFitAllPanes: vi.fn(() => () => undefined),

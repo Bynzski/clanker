@@ -68,6 +68,13 @@ export const HARNESS_OPTIONS: Record<string, HarnessConfig> = {
     icon: '☿',
     modelArg: '-m',
   },
+  agy: {
+    name: 'Antigravity',
+    command: 'agy',
+    args: [],
+    icon: '🪐',
+    modelArg: '--model',
+  },
 };
 
 const MODEL_DISCOVERY_FALLBACKS: Record<string, ModelOption[]> = {
@@ -78,6 +85,13 @@ const MODEL_DISCOVERY_FALLBACKS: Record<string, ModelOption[]> = {
     { id: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
   ],
   pi: [],
+  agy: [
+    { id: 'gemini-3.8-flash-high', label: 'Gemini 3.8 Flash (High)' },
+    { id: 'gemini-3.7-flash-high', label: 'Gemini 3.7 Flash (High)' },
+    { id: 'gemini-3.6-flash-high', label: 'Gemini 3.6 Flash (High)' },
+    { id: 'gemini-3.1-pro-high', label: 'Gemini 3.1 Pro (High)' },
+    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)' },
+  ],
 };
 
 
@@ -304,6 +318,33 @@ export function parseOpenCodeModels(output: string): ModelOption[] {
   return models;
 }
 
+/**
+ * Parse model list from agy models command output.
+ * Format is TSV: <model-id>\t<model-label> (or whitespace-separated).
+ */
+export function parseAgyModels(output: string): ModelOption[] {
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => normalizeModelLine(line))
+    .filter(Boolean);
+
+  const seen = new Set<string>();
+  const models: ModelOption[] = [];
+
+  for (const line of lines) {
+    if (/fetching available models/i.test(line)) continue;
+    const parts = line.split(/\t+|\s{2,}/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length === 0) continue;
+    const modelId = parts[0];
+    if (!modelId || !/^[-A-Za-z0-9_./:]+$/.test(modelId) || seen.has(modelId)) continue;
+    seen.add(modelId);
+    const label = parts.length > 1 && parts[1] ? parts[1] : modelId;
+    models.push({ id: modelId, label });
+  }
+
+  return models;
+}
+
 /** Return null for a malformed catalog so it is not stored as a successful empty result. */
 function parseOmpModelCatalog(output: string): ModelOption[] | null {
   try {
@@ -388,6 +429,12 @@ async function discoverHarnessModelsAsync(harness: string, refresh = false): Pro
       const models = parseHermesModelOptions(await runHermesModelOptions(refresh));
       if (!models) throw new Error('Malformed Hermes model options');
       return { models, discovered: true };
+    }
+    if (harness === 'agy') {
+      const output = await runCommandOutput('agy', ['models'], 8000);
+      const models = parseAgyModels(output);
+      if (models.length === 0) throw new Error('No models discovered for agy');
+      return { models: dedupeModels(models), discovered: true };
     }
 
   } catch {

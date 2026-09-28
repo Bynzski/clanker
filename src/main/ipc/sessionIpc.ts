@@ -18,7 +18,16 @@ import { defaultShell } from '../platformShell';
 import { toNativePath } from '../../shared/pathNormalize';
 import { resolveExistingFileWithinDirectory } from '../security';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
-import { attentionLaunchOptions, ensureAttentionAdapterFiles, withoutAttentionEnvironment } from '../agentAttentionAdapters';
+import {
+  acquireAgyAttentionPlugin,
+  attentionLaunchOptions,
+  ensureAttentionAdapterFiles,
+  releaseAgyAttentionPlugin,
+  withoutAttentionEnvironment,
+} from '../agentAttentionAdapters';
+
+const AGY_SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const AGY_MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 
 interface RegisterSessionIpcDeps {
   getTerminals: () => Map<string, Terminal>;
@@ -46,7 +55,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     // The installed CLI is not enough to imply that its session format or
     // resume command is integrated. Do not route Hermes through Claude's
     // fallback invocation for renderer-supplied session payloads.
-    if (!['codex', 'claude', 'opencode', 'pi', 'omp'].includes(session.harness)) {
+    if (!['codex', 'claude', 'opencode', 'pi', 'omp', 'agy'].includes(session.harness)) {
       throw new Error(`${session.harness} session invocation is not supported`);
     }
     const terminals = getTerminals();
@@ -70,6 +79,22 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       throw new Error('OMP session file is invalid');
     }
 
+    let agySessionId = session.id;
+    let agyModelId = session.modelId;
+    if (session.harness === 'agy') {
+      if (typeof session.id !== 'string' || !AGY_SESSION_ID_PATTERN.test(session.id.trim())) {
+        throw new Error('Antigravity session ID is invalid');
+      }
+      agySessionId = session.id.trim();
+      if (session.modelId !== undefined) {
+        if (typeof session.modelId !== 'string'
+          || (session.modelId.trim() && !AGY_MODEL_ID_PATTERN.test(session.modelId.trim()))) {
+          throw new Error('Antigravity model ID is invalid');
+        }
+        agyModelId = session.modelId.trim() || undefined;
+      }
+    }
+
     // Look up per-harness default flags from store — same source as SPAWN_TERMINAL
     const harnessDefaults = store.get('harnessDefaults');
     const attentionEnabled = harnessDefaults[session.harness]?.attentionEnabled === true;
@@ -77,6 +102,8 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
 
     const nativeSession = {
       ...session,
+      id: agySessionId,
+      modelId: agyModelId,
       cwd: toNativePath(session.cwd, process.platform),
       ...(session.filePath ? { filePath: ompSessionPath ?? toNativePath(session.filePath, process.platform) } : {}),
     };
@@ -90,16 +117,20 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     if (agentAttentionBroker) {
       try {
         const files = ensureAttentionAdapterFiles();
+        if (attentionEnabled && session.harness === 'agy') {
+          acquireAgyAttentionPlugin(id, files);
+        }
         attentionEnv = await agentAttentionBroker.register(id, session.harness);
         attentionCommand = files.command;
         if (attentionEnabled) {
-          const options = attentionLaunchOptions(session.harness, baseArgs, { ...process.env, ...harnessEnv }, files, fork ? undefined : session.id);
+          const options = attentionLaunchOptions(session.harness, baseArgs, { ...process.env, ...harnessEnv }, files, fork ? undefined : agySessionId);
           if (options) {
             attentionEnv = { ...attentionEnv, ...options.env };
             spawnArgs = options.args;
           }
         }
       } catch {
+        releaseAgyAttentionPlugin(id);
         agentAttentionBroker.release(id);
       }
     }
@@ -132,10 +163,14 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       getIsShuttingDown,
       launchLabel,
       harnessId: session.harness,
-      onExit: () => agentAttentionBroker?.release(id),
+      onExit: () => {
+        releaseAgyAttentionPlugin(id);
+        agentAttentionBroker?.release(id);
+      },
       });
       return { ...result, harnessId: session.harness, attentionEnabled };
     } catch (error) {
+      releaseAgyAttentionPlugin(id);
       agentAttentionBroker?.release(id);
       throw error;
     }

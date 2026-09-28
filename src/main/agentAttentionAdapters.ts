@@ -10,7 +10,17 @@ export interface AttentionAdapterFiles {
   ompExtension: string;
 }
 
+interface ActiveAgyAttentionPlugin {
+  directory: string;
+  terminalIds: Set<string>;
+}
+
+const AGY_PLUGIN_NAME = 'clanker-grid-attention';
+const AGY_PLUGIN_OWNER_MARKER = '.clanker-grid-owner';
+const AGY_PLUGIN_OWNER = 'clanker-grid:agy-attention:v1\n';
+
 let files: AttentionAdapterFiles | null = null;
+let activeAgyPlugin: ActiveAgyAttentionPlugin | null = null;
 
 /** Keep observer credentials scoped to the launch that registered them. */
 export function withoutAttentionEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
@@ -43,8 +53,11 @@ if (process.argv[2] === '--ended') {
   process.exit(await emit('session_ended') ? 0 : 1);
 }
 let input = {};
+const agyHook = process.argv[2] && process.argv[2] !== '--ended' && !process.argv[2].startsWith('{')
+  ? process.argv[2]
+  : null;
 try {
-  if (process.argv[2]) input = JSON.parse(process.argv[2].slice(0, 65536));
+  if (process.argv[2] && !agyHook) input = JSON.parse(process.argv[2].slice(0, 65536));
   else {
     const chunks = [];
     let size = 0;
@@ -56,18 +69,25 @@ try {
     input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   }
 } catch { /* malformed hook input is ignored */ }
-const hook = input.hook_event_name;
+const hook = agyHook || input.hook_event_name;
 const notification = input.notification_type;
+const toolName = input.toolCall?.name;
+const isAskTool = toolName === 'ask_question' || toolName === 'ask_permission' || toolName === 'notify_user';
 const event = input.type === 'agent-turn-complete' || hook === 'Stop' ? 'turn_completed'
-  : hook === 'UserPromptSubmit' ? 'turn_started'
-  : hook === 'Notification' && (notification === 'permission_prompt' || notification === 'agent_needs_input') ? 'input_requested'
-  : hook === 'PostToolUse' ? 'input_resolved'
+  : hook === 'UserPromptSubmit' || (agyHook === 'PreInvocation' && input.invocationNum === 0) ? 'turn_started'
+  : (hook === 'Notification' && (notification === 'permission_prompt' || notification === 'agent_needs_input')) || (agyHook === 'PreToolUse' && isAskTool) ? 'input_requested'
+  : (hook === 'PostToolUse' && (!agyHook || isAskTool)) ? 'input_resolved'
   : hook === 'SessionEnd' ? 'session_ended'
   : null;
-if (event) await emit(event, input.session_id || input['thread-id'], input.turn_id || input['turn-id']);
-process.stdout.write('{}\\n');
+const sessionId = input.conversationId || input.sessionId || input.session_id || input['thread-id'];
+const turnId = input.turn_id || input['turn-id'];
+if (event) await emit(event, sessionId, turnId);
+if (agyHook === 'PreToolUse' && isAskTool) {
+  process.stdout.write(JSON.stringify({ decision: 'allow' }) + '\\n');
+} else {
+  process.stdout.write('{}\\n');
+}
 `;
-
 const PI = `import { emit } from './observer.mjs';
 export default function (pi) {
   pi.on('agent_start', (_event, ctx) => emit('turn_started', ctx.sessionManager?.getSessionId?.()));
@@ -117,6 +137,30 @@ export function claudeAttentionSettings(command: string, platform: NodeJS.Platfo
   return { hooks };
 }
 
+export function agyAttentionPlugin(command: string, platform: NodeJS.Platform): {
+  pluginJson: { $schema: string; name: string; description: string };
+  hooksJson: Record<string, unknown>;
+} {
+  const nodeCommand = hookNodeExecutable(platform);
+  const interactionTools = 'ask_question|ask_permission|notify_user';
+  return {
+    pluginJson: {
+      $schema: 'https://antigravity.google/schemas/v1/plugin.json',
+      name: AGY_PLUGIN_NAME,
+      description: 'Clanker agent attention plugin',
+    },
+    hooksJson: {
+      'clanker-attention': {
+        PreInvocation: [{ type: 'command', command: `${nodeCommand} "${command}" PreInvocation`, timeout: 10 }],
+        PostInvocation: [{ type: 'command', command: `${nodeCommand} "${command}" PostInvocation`, timeout: 10 }],
+        PreToolUse: [{ matcher: interactionTools, hooks: [{ type: 'command', command: `${nodeCommand} "${command}" PreToolUse`, timeout: 10 }] }],
+        PostToolUse: [{ matcher: interactionTools, hooks: [{ type: 'command', command: `${nodeCommand} "${command}" PostToolUse`, timeout: 10 }] }],
+        Stop: [{ type: 'command', command: `${nodeCommand} "${command}" Stop`, timeout: 10 }],
+      },
+    },
+  };
+}
+
 export function ensureAttentionAdapterFiles(): AttentionAdapterFiles {
   if (files) return files;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-attention-'));
@@ -137,11 +181,78 @@ export function ensureAttentionAdapterFiles(): AttentionAdapterFiles {
   return files;
 }
 
+function removeOwnedAgyAttentionPlugin(directory: string): void {
+  const marker = path.join(directory, AGY_PLUGIN_OWNER_MARKER);
+  try {
+    if (fs.readFileSync(marker, 'utf8') !== AGY_PLUGIN_OWNER) return;
+  } catch {
+    return;
+  }
+  for (const filename of ['plugin.json', 'hooks.json', AGY_PLUGIN_OWNER_MARKER]) {
+    fs.rmSync(path.join(directory, filename), { force: true });
+  }
+  try {
+    fs.rmdirSync(directory);
+  } catch {
+    // Preserve unrecognized files rather than recursively deleting user data.
+  }
+}
+
+export function acquireAgyAttentionPlugin(
+  terminalId: string,
+  adapterFiles: AttentionAdapterFiles,
+  homeDir = os.homedir(),
+  platform: NodeJS.Platform = process.platform,
+): void {
+  const directory = path.join(homeDir, '.gemini', 'config', 'plugins', AGY_PLUGIN_NAME);
+  if (activeAgyPlugin) {
+    if (activeAgyPlugin.directory !== directory) {
+      throw new Error('Antigravity attention plugin is already active under a different home directory');
+    }
+    activeAgyPlugin.terminalIds.add(terminalId);
+    return;
+  }
+
+  if (fs.existsSync(directory)) {
+    const marker = path.join(directory, AGY_PLUGIN_OWNER_MARKER);
+    if (!fs.existsSync(marker) || fs.readFileSync(marker, 'utf8') !== AGY_PLUGIN_OWNER) {
+      throw new Error(`Refusing to overwrite an unowned Antigravity plugin at ${directory}`);
+    }
+  } else {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+
+  try {
+    fs.writeFileSync(path.join(directory, AGY_PLUGIN_OWNER_MARKER), AGY_PLUGIN_OWNER, { mode: 0o600 });
+    const { pluginJson, hooksJson } = agyAttentionPlugin(adapterFiles.command, platform);
+    fs.writeFileSync(path.join(directory, 'plugin.json'), JSON.stringify(pluginJson, null, 2), { mode: 0o600 });
+    fs.writeFileSync(path.join(directory, 'hooks.json'), JSON.stringify(hooksJson, null, 2), { mode: 0o600 });
+  } catch (error) {
+    removeOwnedAgyAttentionPlugin(directory);
+    throw error;
+  }
+
+  activeAgyPlugin = { directory, terminalIds: new Set([terminalId]) };
+}
+
+export function releaseAgyAttentionPlugin(terminalId: string): void {
+  if (!activeAgyPlugin) return;
+  activeAgyPlugin.terminalIds.delete(terminalId);
+  if (activeAgyPlugin.terminalIds.size > 0) return;
+  removeOwnedAgyAttentionPlugin(activeAgyPlugin.directory);
+  activeAgyPlugin = null;
+}
+
 export function removeAttentionAdapterFiles(): void {
+  if (activeAgyPlugin) {
+    removeOwnedAgyAttentionPlugin(activeAgyPlugin.directory);
+    activeAgyPlugin = null;
+  }
   if (!files) return;
   fs.rmSync(path.dirname(files.command), { recursive: true, force: true });
   files = null;
 }
+
 
 /** Returns null when launch-time injection would replace user configuration. */
 export function attentionLaunchOptions(
@@ -154,6 +265,7 @@ export function attentionLaunchOptions(
 ): { args: string[]; env: Record<string, string> } | null {
   if (harness === 'pi') return { args: [...args, '--extension', adapterFiles.piExtension], env: {} };
   if (harness === 'omp') return { args: [...args, '--extension', adapterFiles.ompExtension], env: {} };
+  if (harness === 'agy') return { args, env: {} };
   if (harness === 'claude') {
     if (args.some((arg) => arg === '--bare' || arg === '--safe-mode' || arg.startsWith('--settings'))) return null;
     return { args: [...args, '--settings', adapterFiles.claudeSettings], env: {} };

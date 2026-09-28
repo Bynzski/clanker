@@ -75,3 +75,28 @@ describe('Hermes default model settings', () => {
     expect(Array.from(select.options).pop()?.textContent).toBe('anthropic/claude-opus · OpenRouter');
   });
 });
+
+describe('Antigravity default settings', () => {
+  it('allows enabling agent attention for Antigravity', () => {
+    const handleSetHarnessAttention = vi.fn().mockResolvedValue(undefined);
+    const props = {
+      harnessDefaults: { agy: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false } },
+      availableHarnessIds: ['agy'],
+      expandedHarness: 'agy',
+      setExpandedHarness: vi.fn(),
+      harnessModelCache: { agy: [] },
+      harnessModelLoading: {},
+      loadHarnessModels: vi.fn().mockResolvedValue(undefined),
+      handleSetHarnessFlags: vi.fn().mockResolvedValue(undefined),
+      handleSetHarnessVisible: vi.fn().mockResolvedValue(undefined),
+      handleSetHarnessAttention,
+      handleSetDefaultModel: vi.fn().mockResolvedValue(undefined),
+      handleToggleFavorite: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<HarnessDefaultsSection {...props} />);
+    const checkbox = screen.getByRole('checkbox', { name: 'Agent attention for Antigravity' });
+    expect(checkbox).not.toBeDisabled();
+    fireEvent.click(checkbox);
+    expect(handleSetHarnessAttention).toHaveBeenCalledWith('agy', true);
+  });
+});
