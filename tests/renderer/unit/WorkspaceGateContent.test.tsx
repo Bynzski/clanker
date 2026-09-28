@@ -75,6 +75,39 @@ describe('WorkspaceGateContent', () => {
     expect(screen.getByRole('button', { name: 'Worktree options' })).toBeTruthy();
   });
 
+  it('opens harness settings from the gate and applies visibility changes on return', async () => {
+    let defaults = {
+      codex: { model: '', favorites: [], flags: '', visible: true },
+    };
+    window.electronAPI.getHarnessDefaults = vi.fn().mockImplementation(async () => defaults);
+    window.electronAPI.setHarnessDefaults = vi.fn().mockImplementation(async (next) => { defaults = next; });
+    renderGate({ initialPath: '/repo/' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configure' }));
+    expect(screen.getByText('Harness settings')).toBeTruthy();
+    const hideCodex = await screen.findByRole('checkbox', { name: 'Hide Codex' });
+    fireEvent.click(hideCodex);
+    await waitFor(() => expect(window.electronAPI.setHarnessDefaults).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to workspace' }));
+    expect(screen.getByText('Launch Workspace')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Codex' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Configure' })).toBeTruthy();
+  });
+
+  it('does not flash the non-repository hint while typing a workspace path', async () => {
+    window.electronAPI.gitGetBranchState = vi.fn().mockResolvedValue({ success: false, isRepo: false });
+    renderGate({ initialPath: '/not-a-repo/' });
+    expect(await screen.findByText('Worktrees require a Git repository or linked checkout.')).toBeTruthy();
+
+    const input = screen.getByPlaceholderText('project name');
+    fireEvent.focus(input);
+    expect(screen.queryByText('Worktrees require a Git repository or linked checkout.')).toBeNull();
+    fireEvent.change(input, { target: { value: '/not-a-repo/new-path' } });
+    await waitFor(() => expect(window.electronAPI.gitGetBranchState).toHaveBeenCalledWith('/not-a-repo/new-path/'));
+    expect(screen.queryByText('Worktrees require a Git repository or linked checkout.')).toBeNull();
+  });
+
   it('opens the worktree view and returns to the workspace launcher', async () => {
     renderGate({ initialPath: '/repo/' });
     await openWorktreeOptions();

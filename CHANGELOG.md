@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **One-click terminal launch** — each terminal or harness button in the header now opens that terminal directly; the separate **New Terminal** button has been removed.
+
 ## [0.5.0] - 2026-09-28
 
 ### Added

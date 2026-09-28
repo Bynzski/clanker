@@ -11,9 +11,11 @@ import type { ModelOption } from '../types/shared';
 interface UseHeaderSettingsOptions {
   harness: string;
   setHarness: (harnessId: string) => void;
+  includeAiCommit?: boolean;
+  validateHarness?: boolean;
 }
 
-export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOptions) {
+export function useHeaderSettings({ harness, setHarness, includeAiCommit = true, validateHarness = true }: UseHeaderSettingsOptions) {
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
   const [showSettings, setShowSettings] = useState(false);
   const [showCredentialModal, setShowCredentialModal] = useState(false);
@@ -55,12 +57,14 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
   }, []);
 
   useEffect(() => {
+    if (!validateHarness) return;
     if (harness && !visibleHarnessIds.includes(harness)) {
       setHarness('');
     }
-  }, [harness, setHarness, visibleHarnessIds]);
+  }, [harness, setHarness, visibleHarnessIds, validateHarness]);
 
   useEffect(() => {
+    if (!includeAiCommit) return;
     const loadSettings = async () => {
       try {
         const aiCommitSettings = await window.electronAPI.getAiCommitSettings();
@@ -74,7 +78,7 @@ export function useHeaderSettings({ harness, setHarness }: UseHeaderSettingsOpti
       }
     };
     void loadSettings();
-  }, []);
+  }, [includeAiCommit]);
 
   useEffect(() => {
     const loadHarnessDefaults = async () => {

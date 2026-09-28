@@ -107,7 +107,7 @@
   color: #fff;
 }
 
-/* Harness Pills - Modern selector */
+/* Direct terminal launch buttons */
 .harness-pills {
   display: flex;
   align-items: center;
@@ -136,21 +136,6 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
-.harness-pill.active {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-color: var(--border-color);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-.harness-pill.active svg {
-  color: var(--accent-primary);
-}
-
-/* Terminal harness indicator - plain icon to differentiate from accented ones */
-.harness-pill[title="Terminal"].active svg {
-  color: var(--text-secondary);
-}
 
 /* Harness logo SVG icons from svgl.app */
 .harness-logo-icon {

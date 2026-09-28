@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
-import { Plus, Globe, NotebookPen, PanelLeft, PanelLeftClose } from 'lucide-react';
+import { Globe, NotebookPen, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import type { HarnessSession } from '../../shared/types/session';
 import GitButton from './GitButton';
@@ -76,17 +76,12 @@ export default function Header() {
   useBrowserOverlayWhileOpen(showChatHistory, activeWorkspaceId, pushBrowserOverlay, popBrowserOverlay);
   useCloseOnOutsidePointerAndEscape(showChatHistory, chatDropdownRef, () => setShowChatHistory(false));
 
-  const handleAddTerminal = async () => {
+  const handleAddTerminal = async (harnessId: string) => {
     try {
-      // Priority 1: workspace harness + model (highest priority)
-      const workspaceHarness = visibleHarnessIds.includes(harness) ? harness : '';
-      const workspaceModel = workspaceHarness ? (model || undefined) : undefined;
-
-      // Priority 2: no workspace harness → plain shell.
-      // Global defaults do not infer a harness when workspace has none set.
-      // (Flags are read from store by the main process at spawn time.)
-      const resolvedHarness = workspaceHarness || undefined;
-      const resolvedModel = workspaceModel;
+      const resolvedHarness = harnessId && visibleHarnessIds.includes(harnessId)
+        ? harnessId
+        : undefined;
+      const resolvedModel = resolvedHarness === harness ? (model || undefined) : undefined;
 
       const info = await window.electronAPI.spawnTerminal(
         workspacePath || '/',
@@ -193,9 +188,10 @@ export default function Header() {
             return (
               <button
                 key={opt.id}
-                className={`harness-pill ${harness === opt.id ? 'active' : ''}`}
-                onClick={() => setHarness(opt.id)}
-                title={opt.label}
+                type="button"
+                className="harness-pill"
+                onClick={() => void handleAddTerminal(opt.id)}
+                title={opt.id ? `Add ${opt.label} terminal` : 'Add terminal'}
               >
                 <IconComponent size={14} strokeWidth={2.5} />
                 <span>{opt.label}</span>
@@ -203,11 +199,6 @@ export default function Header() {
             );
           })}
         </div>
-
-        <button className="header-btn header-btn-primary" type="button" onClick={handleAddTerminal}>
-          <Plus size={15} strokeWidth={2.5} />
-          New Terminal
-        </button>
 
         <button type="button" className={`header-btn ${browserVisible ? 'active' : ''}`} onClick={handleToggleBrowser} title="Toggle browser panel">
           <Globe size={15} strokeWidth={2} />
@@ -218,7 +209,7 @@ export default function Header() {
           <NotebookPen size={15} strokeWidth={2} />
           Notes
         </button>
-        
+
         {workspacePath && (
           <GitButton workspacePath={workspacePath} />
         )}

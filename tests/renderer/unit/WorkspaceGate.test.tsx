@@ -135,6 +135,18 @@ describe('WorkspaceGateModal', () => {
       expect(onClose).toHaveBeenCalled();
     });
 
+    it('keeps New Workspace open when Escape is used inside a model picker', () => {
+      const onClose = vi.fn();
+      render(<WorkspaceGateModal isOpen={true} onClose={onClose} onWorkspaceSelect={vi.fn()} />);
+      const picker = document.createElement('div');
+      picker.className = 'discovery-modal';
+      document.querySelector('.modal-content')!.appendChild(picker);
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
     it('does not call onClose when Escape is pressed and modal is closed', async () => {
       const onClose = vi.fn();
       render(<WorkspaceGateModal isOpen={false} onClose={onClose} onWorkspaceSelect={vi.fn()} />);

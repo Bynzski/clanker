@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog, GitBranch, ArrowLeft } from 'lucide-react';
+import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog, GitBranch, ArrowLeft, Settings } from 'lucide-react';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../../shared/types/recipes';
 import RecipeModal from './RecipeModal';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds, resolveVisibleHarnessIds } from '../lib/harnessOptions';
@@ -9,6 +9,7 @@ import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { isAbsoluteWorkspacePath } from '../../shared/pathClassify';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import WorktreeLauncher from './WorktreeLauncher';
+import GateHarnessSettings from './GateHarnessSettings';
 import { findGeneratedWorktreeContainerOwner } from '../lib/worktreeContainer';
 import { getWorkspaceNameFromPath } from '../lib/workspaceLabels';
 import { joinPaths } from '../lib/pathUtils';
@@ -99,7 +100,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   const setDefaultModel = (modelId: string) => {
     setModelOverrides((overrides) => ({ ...overrides, [selectedHarness]: modelId }));
   };
-  const [workspaceMode, setWorkspaceMode] = useState<'directory' | 'worktree'>('directory');
+  const [workspaceMode, setWorkspaceMode] = useState<'directory' | 'worktree' | 'settings'>('directory');
   const [hasViewedWorktree, setHasViewedWorktree] = useState(false);
   const [repoCheck, setRepoCheck] = useState<{ path: string; isRepo: boolean } | null>(null);
   const [directoryError, setDirectoryError] = useState('');
@@ -137,6 +138,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         },
       };
       await window.electronAPI.setHarnessDefaults(updated);
+      setHarnessDefaults(updated);
       setFavorites(currentFavorites);
     },
     []
@@ -157,21 +159,24 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     };
   }, []);
 
-  // Load settings for the selected harness. A prior request must not apply
-  // after switching harnesses, while local model selections take precedence.
+  // Load persisted defaults once; changing harnesses only changes which
+  // defaults are displayed, without racing another settings request.
   useEffect(() => {
     let cancelled = false;
     void window.electronAPI.getHarnessDefaults()
       .then((defaults) => {
         if (cancelled) return;
         setHarnessDefaults(defaults);
-        setFavorites(defaults[selectedHarness]?.favorites ?? []);
       })
       .catch(() => {
         if (!cancelled) setFavorites([]);
       });
     return () => { cancelled = true; };
-  }, [selectedHarness]);
+  }, []);
+
+  useEffect(() => {
+    setFavorites(harnessDefaults?.[selectedHarness]?.favorites ?? []);
+  }, [harnessDefaults, selectedHarness]);
 
   useEffect(() => {
     if (!hasLoadedHarnessOptions) {
@@ -323,6 +328,13 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     }
   };
 
+  const returnFromSettings = (defaults: HarnessDefaultsMap | null) => {
+    if (defaults) {
+      setHarnessDefaults(defaults);
+    }
+    setWorkspaceMode('directory');
+  };
+
   // Close favorites picker on outside click
   useEffect(() => {
     if (!showFavoritesPicker) return;
@@ -336,11 +348,24 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     return () => window.removeEventListener('mousedown', handlePointerDown);
   }, [showFavoritesPicker]);
 
+  useEffect(() => {
+    if (!showFavoritesPicker) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setShowFavoritesPicker(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showFavoritesPicker]);
+
   // Close discovery modal on Escape
   useEffect(() => {
     if (!showDiscoveryModal) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
         setShowDiscoveryModal(false);
       }
     };
@@ -727,7 +752,12 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
       )}
 
       <div className="harness-selector">
-        <span className="gate-section-label">Harness</span>
+        <div className="gate-section-header">
+          <span className="gate-section-label">Harness</span>
+          <button type="button" className="gate-settings-link" onClick={() => setWorkspaceMode('settings')}>
+            <Settings size={12} strokeWidth={2} /> Configure
+          </button>
+        </div>
         <div className="harness-options">
           {HARNESS_OPTIONS.filter((harness) => visibleHarnessIds.includes(harness.id)).map((harness) => (
             <button
@@ -999,11 +1029,11 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         </button>
       </div>
       {directoryError && <p className="gate-directory-error" role="alert">{directoryError}</p>}
-      {repoCandidatePath && repoCheck?.path === repoCandidatePath && !repoCheck.isRepo && (
+      {!isFocused && repoCandidatePath && repoCheck?.path === repoCandidatePath && !repoCheck.isRepo && (
         <p className="gate-worktree-hint">Worktrees require a Git repository or linked checkout.</p>
       )}
       </div>
-      ) : (
+      ) : workspaceMode === 'worktree' ? (
       <div className="gate-view gate-view-worktree">
         <button className="gate-worktree-back" type="button" onClick={() => setWorkspaceMode('directory')}>
           <ArrowLeft size={14} strokeWidth={2} /> Back to workspace
@@ -1033,6 +1063,12 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         <WorktreeLauncher repoPath={selectedPath} openPaths={openPaths} onOpenPath={launchPath} />
         <p className="gate-worktree-launch-summary">Opens with {selectedHarness ? HARNESS_OPTIONS.find((option) => option.id === selectedHarness)?.label ?? selectedHarness : 'Terminal'} · {TERMINAL_PRESETS[selectedPreset].count} terminals</p>
       </div>
+      ) : (
+        <GateHarnessSettings
+          selectedHarness={selectedHarness}
+          onSelectHarness={setSelectedHarness}
+          onBack={returnFromSettings}
+        />
       )}
       <RecipeModal
         isOpen={showRecipeModal}

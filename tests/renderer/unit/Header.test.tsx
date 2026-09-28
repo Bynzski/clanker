@@ -137,9 +137,9 @@ describe('Header', () => {
       expect(screen.queryByText('Open Workspace')).toBeNull();
     });
 
-    it('renders New Terminal button', () => {
+    it('does not render a separate New Terminal button', () => {
       renderHeader();
-      expect(screen.getByText('New Terminal')).toBeTruthy();
+      expect(screen.queryByText('New Terminal')).toBeNull();
     });
 
     it('renders icon-only Fit All Panes button', () => {
@@ -215,24 +215,20 @@ describe('Header', () => {
       });
     });
 
-    it('switches harness when pill is clicked', async () => {
-      const setHarness = useWorkspaceStore.getState().setHarness as ReturnType<typeof vi.fn>;
+    it('launches the clicked harness without changing the workspace selection', async () => {
+      const setHarness = vi.mocked(useWorkspaceStore.getState().setHarness);
       renderHeader();
       await waitFor(() => {
         expect(screen.getByText('Codex')).toBeTruthy();
       });
+      setHarness.mockClear();
       fireEvent.click(screen.getByText('Codex'));
-      expect(setHarness).toHaveBeenCalledWith('codex');
+      await waitFor(() => {
+        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', 'codex', undefined);
+      });
+      expect(setHarness).not.toHaveBeenCalled();
     });
 
-    it('highlights active harness pill', async () => {
-      renderHeader();
-      await waitFor(() => {
-        expect(screen.getByText('Codex')).toBeTruthy();
-      });
-      const pill = screen.getByText('Codex').closest('.harness-pill');
-      expect(pill?.classList.contains('active')).toBe(true);
-    });
 
     it('renders multiple harnesses when available', async () => {
       (window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -273,8 +269,9 @@ describe('Header', () => {
     it('handles getHarnessOptions failure gracefully', async () => {
       (window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
       renderHeader();
-      // Should still render without crashing
-      expect(screen.getByText('New Terminal')).toBeTruthy();
+      await waitFor(() => {
+        expect(screen.getByText('Terminal')).toBeTruthy();
+      });
     });
 
     it('renders harness pills container', async () => {
@@ -289,35 +286,17 @@ describe('Header', () => {
   // Button Actions
   // =========================================================================
   describe('button actions', () => {
-    it('spawns terminal when New Terminal is clicked', async () => {
-      renderHeader();
-      fireEvent.click(screen.getByText('New Terminal'));
-      await waitFor(() => {
-        expect(window.electronAPI.spawnTerminal).toHaveBeenCalled();
-      });
-    });
 
-    it('passes correct parameters to spawnTerminal', async () => {
+    it('adds the spawned terminal to the store', async () => {
+      const addTerminal = vi.mocked(useWorkspaceStore.getState().addTerminal);
       renderHeader();
-      // Wait for harness options to load
-      await waitFor(() => {
-        expect(window.electronAPI.getHarnessOptions).toHaveBeenCalled();
-      });
-      fireEvent.click(screen.getByText('New Terminal'));
-      await waitFor(() => {
-        expect(window.electronAPI.spawnTerminal).toHaveBeenCalled();
-      });
-    });
-
-    it('adds terminal to store after spawning', async () => {
-      const addTerminal = useWorkspaceStore.getState().addTerminal as ReturnType<typeof vi.fn>;
-      renderHeader();
-      fireEvent.click(screen.getByText('New Terminal'));
+      fireEvent.click(screen.getByText('Terminal'));
       await waitFor(() => {
         expect(addTerminal).toHaveBeenCalledWith(expect.objectContaining({
           id: 'new-t',
           pid: 42,
           workingDir: '/workspace',
+          harnessId: null,
         }));
       });
     });
@@ -366,10 +345,9 @@ describe('Header', () => {
     it('handles spawnTerminal failure gracefully', async () => {
       (window.electronAPI.spawnTerminal as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Failed to spawn'));
       renderHeader();
-      fireEvent.click(screen.getByText('New Terminal'));
-      // Should not crash
+      fireEvent.click(screen.getByText('Terminal'));
       await waitFor(() => {
-        expect(screen.getByText('New Terminal')).toBeTruthy();
+        expect(screen.getByText('Terminal')).toBeTruthy();
       });
     });
   });
@@ -508,8 +486,6 @@ describe('Header', () => {
       await waitFor(() => {
         expect(screen.getByTitle('Settings')).toBeTruthy();
       });
-      // Should still render without crashing
-      expect(screen.getByText('New Terminal')).toBeTruthy();
     });
 
     it('handles setAiCommitEnabled failure gracefully', async () => {
@@ -520,9 +496,8 @@ describe('Header', () => {
       });
       fireEvent.click(screen.getByTitle('Settings'));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
-      // Should not crash
       await waitFor(() => {
-        expect(screen.getByText('New Terminal')).toBeTruthy();
+        expect(screen.getByTitle('Settings')).toBeTruthy();
       });
     });
 
@@ -570,58 +545,72 @@ describe('Header', () => {
       });
       fireEvent.click(screen.getByTitle('Settings'));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
-      // Should not crash
       await waitFor(() => {
-        expect(screen.getByText('New Terminal')).toBeTruthy();
+        expect(screen.getByTitle('Settings')).toBeTruthy();
       });
     });
   });
 
   // =========================================================================
-  // New Terminal with Different Harness
+  // Direct Terminal Launch
   // =========================================================================
-  describe('new terminal with harness', () => {
-    it('uses current harness when available', async () => {
-      useWorkspaceStore.setState({ harness: 'codex', model: 'gpt-4' });
+  describe('direct terminal launch', () => {
+    it('uses the workspace model when launching its configured harness', async () => {
+      useWorkspaceStore.setState((state) => ({
+        workspaces: state.workspaces.map((workspace) => (
+          workspace.id === 'ws-1' ? { ...workspace, model: 'gpt-4' } : workspace
+        )),
+      }));
       renderHeader();
-      // Wait for harness options to load
       await waitFor(() => {
-        expect(window.electronAPI.getHarnessOptions).toHaveBeenCalled();
+        expect(screen.getByText('Codex')).toBeTruthy();
       });
-      fireEvent.click(screen.getByText('New Terminal'));
+      fireEvent.click(screen.getByText('Codex'));
       await waitFor(() => {
-        expect(window.electronAPI.spawnTerminal).toHaveBeenCalled();
+        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', 'codex', 'gpt-4');
       });
     });
 
-    it('does not pass harness when not in available list', async () => {
-      useWorkspaceStore.setState({ harness: 'unknown', model: '' });
+    it('launches the clicked harness instead of the configured workspace harness', async () => {
+      (window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        codex: true,
+        claude: true,
+        opencode: false,
+        pi: false,
+      });
       renderHeader();
-      fireEvent.click(screen.getByText('New Terminal'));
+      await waitFor(() => {
+        expect(screen.getByText('Claude')).toBeTruthy();
+      });
+      fireEvent.click(screen.getByText('Claude'));
+      await waitFor(() => {
+        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', 'claude', undefined);
+      });
+    });
+
+    it('does not pass a harness or model for a plain terminal', async () => {
+      useWorkspaceStore.setState((state) => ({
+        workspaces: state.workspaces.map((workspace) => (
+          workspace.id === 'ws-1' ? { ...workspace, model: 'gpt-4' } : workspace
+        )),
+      }));
+      renderHeader();
+      fireEvent.click(screen.getByText('Terminal'));
       await waitFor(() => {
         expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', undefined, undefined);
       });
     });
 
-    it('does not pass model when harness is empty', async () => {
-      useWorkspaceStore.setState({ harness: '', model: 'gpt-4' });
+    it('uses the root path when the workspace path is empty', async () => {
+      useWorkspaceStore.setState((state) => ({
+        workspaces: state.workspaces.map((workspace) => (
+          workspace.id === 'ws-1' ? { ...workspace, workspacePath: '' } : workspace
+        )),
+      }));
       renderHeader();
-      fireEvent.click(screen.getByText('New Terminal'));
+      fireEvent.click(screen.getByText('Terminal'));
       await waitFor(() => {
-        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', undefined, undefined);
-      });
-    });
-
-    it('uses default workspace path when workspacePath is empty', async () => {
-      useWorkspaceStore.setState({ workspacePath: '' });
-      renderHeader();
-      // Wait for harness options to load
-      await waitFor(() => {
-        expect(window.electronAPI.getHarnessOptions).toHaveBeenCalled();
-      });
-      fireEvent.click(screen.getByText('New Terminal'));
-      await waitFor(() => {
-        expect(window.electronAPI.spawnTerminal).toHaveBeenCalled();
+        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/', undefined, undefined);
       });
     });
   });
@@ -659,14 +648,15 @@ describe('Header', () => {
   // Empty State
   // =========================================================================
   describe('empty state', () => {
-    it('renders without workspaces', () => {
+    it('still offers a plain terminal without an open workspace', () => {
       useWorkspaceStore.setState({
         workspaces: [],
         activeWorkspaceId: null,
         workspacePath: '',
       });
       renderHeader();
-      expect(screen.getByText('New Terminal')).toBeTruthy();
+      expect(screen.getByText('Terminal')).toBeTruthy();
+      expect(screen.queryByText('New Terminal')).toBeNull();
     });
 
     it('does not render GitButton without workspacePath', () => {
@@ -679,16 +669,17 @@ describe('Header', () => {
       expect(screen.queryByTestId('git-button')).toBeNull();
     });
 
-    it('can still add terminals without workspace', () => {
+    it('can still add terminals without a workspace', async () => {
       useWorkspaceStore.setState({
         workspaces: [],
         activeWorkspaceId: null,
         workspacePath: '',
       });
       renderHeader();
-      fireEvent.click(screen.getByText('New Terminal'));
-      // Should use default path '/'
-      expect(window.electronAPI.spawnTerminal).toHaveBeenCalled();
+      fireEvent.click(screen.getByText('Terminal'));
+      await waitFor(() => {
+        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/', undefined, undefined);
+      });
     });
   });
 
@@ -768,7 +759,7 @@ describe('Header', () => {
         workspacePath: '/workspace2',
       });
       renderHeader();
-      expect(screen.getByText('New Terminal')).toBeTruthy();
+      expect(screen.getByText('Terminal')).toBeTruthy();
     });
   });
 });

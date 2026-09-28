@@ -542,7 +542,7 @@ export default function DynamicPaneLayout({ workspaceId }: { workspaceId?: strin
       <div className="dynamic-pane-layout empty">
         <div className="empty-state">
           <span>No terminals open</span>
-          <span className="hint">Use the + New Terminal button in the header</span>
+          <span className="hint">Choose a terminal type in the header</span>
         </div>
       </div>
     );

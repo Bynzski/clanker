@@ -245,7 +245,7 @@ describe('DynamicPaneLayout', () => {
     it('shows hint text', () => {
       setupStore();
       render(<DynamicPaneLayout />);
-      expect(screen.getByText(/New Terminal button/)).toBeTruthy();
+      expect(screen.getByText('Choose a terminal type in the header')).toBeTruthy();
     });
 
     it('applies empty class to container', () => {

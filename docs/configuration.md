@@ -14,7 +14,7 @@ Access via the header toolbar gear icon.
 
 ### Harness Defaults
 
-Per-harness global defaults for AI harnesses. Configured in the header settings dropdown under **Harness Defaults**. These apply when spawning new terminals with a harness selected.
+Per-harness global defaults for AI harnesses. Configured in the header settings dropdown under **Harness Defaults**. These apply when launching a terminal from that harness's header button.
 
 Each harness (Codex, OpenCode, Pi, Oh My Pi, Claude, Hermes, Antigravity) has its own settings:
 

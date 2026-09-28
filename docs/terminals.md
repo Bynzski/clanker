@@ -14,7 +14,7 @@
 
 | Action | Location |
 |--------|----------|
-| New Terminal | Header toolbar button |
+| New terminal or AI harness | Click its terminal type in the header |
 | Kill Terminal | Right-click → Kill or × |
 | Resize | Drag pane divider |
 

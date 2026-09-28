@@ -31,7 +31,8 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isOpen && !e.defaultPrevented
+        && !document.querySelector('.modal-content .discovery-modal, .modal-content .favorites-picker')) {
         onClose();
       }
     };
