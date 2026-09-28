@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import * as path from 'node:path';
 
 export type RecipeCommandOutcome =
   | { status: 'success' }
@@ -18,7 +17,7 @@ export class RecipeCommandStartup {
   private timer?: ReturnType<typeof setTimeout>;
 
   public wrap(command: string, platform = process.platform, shell = ''): string {
-    const shellName = path.basename(shell).toLowerCase();
+    const shellName = (shell.split(/[/\\]/).pop() ?? '').toLowerCase().replace(/\.exe$/i, '');
     if (platform === 'win32' || shellName === 'pwsh' || shellName === 'powershell') {
       return `try { . { ${command} }; $clankerRecipeExit = if ($?) { 0 } elseif ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) { $LASTEXITCODE } else { 1 } } catch { $clankerRecipeExit = 1 } finally { Write-Output "${this.marker}$clankerRecipeExit" }`;
     }
