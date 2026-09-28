@@ -1,3 +1,5 @@
+import type { WorkspaceRecipe } from '../../shared/types/recipes';
+import type { TaskSessionRecord } from '../../shared/types/taskSessions';
 import type { FileListDirectoryRequest, FileListDirectoryResult, ExplorerTreeChangedEvent } from '../../shared/types/fileExplorer';
 import type { FileReadRequest, FileWriteRequest, FileChangedEvent, FileWatchRequest, FileReadResult, FileWriteResult } from '../../shared/types/editor';
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest, FileOperationResult } from '../../shared/types/fileOperations';
@@ -91,7 +93,7 @@ interface ElectronAPI {
   setAiCommitModel: (model: string) => Promise<void>;
 
   // Terminal
-  spawnTerminal: (workingDir: string, harness?: string, model?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
+  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
   getTerminalBuffer: (id: string) => Promise<string>;
   writeTerminal: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
   sendAnnotationToAgent: (workspaceId: string, terminalId: string, message: string) => Promise<{ success: boolean; error?: string }>;
@@ -277,6 +279,15 @@ interface ElectronAPI {
   discoverSessions: (workspacePath: string) => Promise<HarnessSession[]>;
   invokeSession: (session: HarnessSession, fork?: boolean) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
 
+  // Workspace Recipes
+  recipeGetAll: (workspacePath?: string) => Promise<WorkspaceRecipe[]>;
+  recipeSave: (recipe: WorkspaceRecipe) => Promise<WorkspaceRecipe>;
+  recipeDelete: (recipeId: string) => Promise<boolean>;
+
+  // Task Sessions
+  taskSessionList: (workspacePath?: string) => Promise<TaskSessionRecord[]>;
+  taskSessionDelete: (taskId: string) => Promise<boolean>;
+  taskSessionUpdate: (updates: { id: string; title?: string; nativeSessionId?: string; nativeSessionPath?: string; state?: string; stateReason?: string }) => Promise<TaskSessionRecord | null>;
   // Browser annotation
   annotationEnable: (workspaceId: string) => Promise<{ success: boolean; error?: string }>;
   annotationDisable: () => Promise<{ success: boolean }>;

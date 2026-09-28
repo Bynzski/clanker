@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import { type StoreSchema } from '../../shared/types/store';
 import { buildHarnessSpawnArgs, ensureHarnessWrapperScript, resolveHarnessSpawn } from '../harnessLaunch';
 import { defaultShell, prependUserCliBinsToPath } from '../platformShell';
+import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
 import {
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
@@ -28,7 +29,7 @@ import {
   WRITE_CLIPBOARD,
 } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
-import { toNativePath } from '../../shared/pathNormalize';
+import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import {
   acquireAgyAttentionPlugin,
@@ -52,6 +53,7 @@ interface Terminal {
    */
   startupBuffer: string[];
   startupBufferReady: boolean;
+  initialCommand?: string;
 }
 
 export type { Terminal };
@@ -66,6 +68,7 @@ interface RegisterTerminalIpcDeps {
   ensureHarnessWrapperScript?: () => string | null;
   getAppShuttingDown?: () => boolean;
   agentAttentionBroker?: AgentAttentionBroker;
+  taskSessionCoordinator?: TaskSessionCoordinator;
 }
 
 let appShuttingDown = false;
@@ -87,6 +90,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     getHarnessOptions,
     ensureHarnessWrapperScript: ensureHarnessWrapperScriptPath = ensureHarnessWrapperScript,
     agentAttentionBroker,
+    taskSessionCoordinator,
   } = deps;
 
   const ok = () => ({ success: true as const });
@@ -99,7 +103,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   const isFiniteNumber = (value: unknown): value is number =>
     typeof value === 'number' && Number.isFinite(value);
 
-  ipcMain.handle(SPAWN_TERMINAL, async (_, workingDir: string, harness?: string, model?: string) => {
+  ipcMain.handle(SPAWN_TERMINAL, async (_, workingDir: string, harness?: string, model?: string, initialCommand?: string) => {
     const terminals = getTerminals();
     const mainWindow = getMainWindow();
     const store = getStore();
@@ -170,9 +174,14 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     };
 
     let launchLabel: string | undefined;
+    const cleanInitialCommand = (!harness && typeof initialCommand === 'string' && initialCommand.trim())
+      ? initialCommand.trim().replace(/[\r\n]+/g, ' ')
+      : undefined;
     if (harness && getHarnessOptions()[harness]) {
       const config = getHarnessOptions()[harness];
       launchLabel = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}`;
+    } else if (cleanInitialCommand) {
+      launchLabel = `[clanker-grid] ${cleanInitialCommand}`;
     }
 
     try {
@@ -187,11 +196,16 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       getIsShuttingDown: () => appShuttingDown,
       launchLabel,
       harnessId: harnessConfig ? harness : undefined,
+      initialCommand: cleanInitialCommand,
       onExit: () => {
         releaseAgyAttentionPlugin(id);
         agentAttentionBroker?.release(id);
+        void taskSessionCoordinator?.onTerminalExited(id);
       },
       });
+      if (harnessConfig && harness) {
+        taskSessionCoordinator?.onTerminalSpawned(id, toPosixPath(cwd), harness, effectiveModel);
+      }
       return { ...result, harnessId: harnessConfig ? harness : undefined, attentionEnabled };
     } catch (error) {
       releaseAgyAttentionPlugin(id);
@@ -233,6 +247,10 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     terminal.startupBuffer = [];
     terminal.startupBufferReady = true;
 
+    if (terminal.initialCommand) {
+      terminal.pty.write(`${terminal.initialCommand}\r`);
+      terminal.initialCommand = undefined;
+    }
     return ok();
   });
 

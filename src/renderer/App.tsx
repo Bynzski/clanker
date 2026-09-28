@@ -11,6 +11,8 @@ import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import { persistWorkspaceLayout } from './lib/workspaceLayoutStorage';
 import { sameWorkspacePath } from './lib/pathUtils';
+import type { WorkspaceRecipe, RecipeLaunchResult } from '../shared/types/recipes';
+import { executeWorkspaceRecipe } from './lib/recipeExecution';
 import { getWorkspaceNameFromPath } from './lib/workspaceLabels';
 import type { GitWorktree } from '../shared/types/git';
 import './App.css';
@@ -110,7 +112,7 @@ function App() {
     }
   }), []);
 
-  const handleWorkspaceSelect = async (path: string, terminalCount: number, harness: string, model?: string) => {
+  const handleWorkspaceSelect = async (path: string, terminalCount: number, harness: string, model?: string, closeGate = true) => {
     const workspaceId = crypto.randomUUID();
     const registration = await window.electronAPI.registerOpenWorkspace(workspaceId, path)
       .catch((error: unknown) => ({ success: false, error: String(error) }));
@@ -183,7 +185,7 @@ function App() {
         gitIsDetached: false,
         runtimeState: { ...DEFAULT_RUNTIME_STATE },
       });
-      setShowWorkspaceGate(false);
+      if (closeGate) setShowWorkspaceGate(false);
       return true;
     } catch (error) {
       console.error('Could not open workspace:', error);
@@ -192,6 +194,90 @@ function App() {
       return false;
     }
   };
+  const handleLaunchRecipe = async (recipe: WorkspaceRecipe): Promise<RecipeLaunchResult> => {
+    let targetWorkspaceId: string | null = null;
+    const currentWorkspaces = useWorkspaceStore.getState().workspaces;
+    if (currentWorkspaces.length === 0) {
+      setShowWorkspaceGate(true);
+    }
+
+    const existing = currentWorkspaces.find((w) => sameWorkspacePath(w.workspacePath, recipe.workspacePath));
+    if (existing) {
+      targetWorkspaceId = existing.id;
+      useWorkspaceStore.getState().selectWorkspace(existing.id);
+    } else {
+      const opened = await handleWorkspaceSelect(recipe.workspacePath, 0, '', undefined, false);
+      if (!opened) {
+        return {
+          recipeId: recipe.id,
+          success: false,
+          steps: [{ id: 'open-workspace', type: 'command', status: 'failed', error: 'Failed to open workspace directory' }],
+        };
+      }
+      const newlyOpened = useWorkspaceStore.getState().workspaces.find((w) => sameWorkspacePath(w.workspacePath, recipe.workspacePath));
+      targetWorkspaceId = newlyOpened ? newlyOpened.id : null;
+    }
+
+    if (!targetWorkspaceId) {
+      return {
+        recipeId: recipe.id,
+        success: false,
+        steps: [{ id: 'target-workspace', type: 'command', status: 'failed', error: 'Workspace ID not found' }],
+      };
+    }
+
+    const result = await executeWorkspaceRecipe(recipe, {
+      ensureWorkspaceOpen: async () => targetWorkspaceId,
+      spawnTerminal: window.electronAPI.spawnTerminal,
+      onTerminalSpawned: (_wsId, term) => {
+        useWorkspaceStore.getState().addTerminal(term);
+      },
+      openBrowserPreview: async (wsId, url) => {
+        const store = useWorkspaceStore.getState();
+        const ws = store.workspaces.find((w) => w.id === wsId);
+        if (ws && !ws.browserVisible) {
+          store.toggleBrowser();
+        }
+        if (typeof window.electronAPI?.browserNavigate === 'function') {
+          return window.electronAPI.browserNavigate(wsId, url);
+        }
+        return true;
+      },
+    });
+    if (recipe.launches.length === 0) {
+      const workspace = useWorkspaceStore.getState().workspaces.find((w) => w.id === targetWorkspaceId);
+      const terminalCount = Math.max(1, recipe.terminalCount ?? 1);
+      const setupSteps: RecipeLaunchResult['steps'] = [];
+      const existingCount = workspace?.terminals.length ?? 0;
+      for (let index = existingCount; index < terminalCount; index++) {
+        try {
+          const info = await window.electronAPI.spawnTerminal(recipe.workspacePath);
+          useWorkspaceStore.getState().addTerminal({
+            id: info.id,
+            pid: info.pid,
+            workingDir: recipe.workspacePath,
+            harnessId: null,
+            attentionEnabled: false,
+          });
+          setupSteps.push({ id: `terminal-${index + 1}`, type: 'command', status: 'success', terminalId: info.id });
+        } catch (error) {
+          setupSteps.push({
+            id: `terminal-${index + 1}`,
+            type: 'command',
+            status: 'failed',
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      result.steps.push(...setupSteps);
+      result.success = result.steps.every((step) => step.status === 'success');
+    }
+
+    if (result.success) {
+      setShowWorkspaceGate(false);
+    }
+    return result;
+  };
 
   const handleCloseGate = () => {
     setShowWorkspaceGate(false);
@@ -199,7 +285,7 @@ function App() {
 
   if (workspaces.length === 0) {
     return (
-      <WorkspaceGateFullscreen onWorkspaceSelect={handleWorkspaceSelect} />
+      <WorkspaceGateFullscreen onWorkspaceSelect={handleWorkspaceSelect} onLaunchRecipe={handleLaunchRecipe} />
     );
   }
 
@@ -230,6 +316,7 @@ function App() {
         isOpen={showWorkspaceGate}
         onClose={handleCloseGate}
         onWorkspaceSelect={handleWorkspaceSelect}
+        onLaunchRecipe={handleLaunchRecipe}
       />
     </div>
   );

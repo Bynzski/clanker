@@ -155,6 +155,14 @@ import {
   // Session history
   SESSION_DISCOVER,
   SESSION_INVOKE,
+  // Workspace Recipes
+  RECIPE_GET_ALL,
+  RECIPE_SAVE,
+  RECIPE_DELETE,
+  // Task Sessions
+  TASK_SESSION_LIST,
+  TASK_SESSION_DELETE,
+  TASK_SESSION_UPDATE,
   ALL_IPC_CHANNELS,
 } from '../../../src/shared/ipcChannels';
 
@@ -310,6 +318,14 @@ const ALL_CHANNELS = [
   // Session history
   SESSION_DISCOVER,
   SESSION_INVOKE,
+  // Workspace Recipes
+  RECIPE_GET_ALL,
+  RECIPE_SAVE,
+  RECIPE_DELETE,
+  // Task Sessions
+  TASK_SESSION_LIST,
+  TASK_SESSION_DELETE,
+  TASK_SESSION_UPDATE,
 ];
 
 describe('ipcChannels', () => {

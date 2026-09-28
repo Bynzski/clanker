@@ -9,6 +9,9 @@ import HeaderRightControls from './HeaderRightControls';
 import { useBrowserOverlayWhileOpen, useCloseOnOutsidePointerAndEscape } from './useDropdownBehavior';
 import { useHeaderSettings } from './useHeaderSettings';
 import './Header.css';
+import type { WorkspaceRecipe, RecipeLaunchStep } from '../../shared/types/recipes';
+import RecipeModal from './RecipeModal';
+import { executeWorkspaceRecipe } from '../lib/recipeExecution';
 
 export default function Header() {
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
@@ -34,7 +37,8 @@ export default function Header() {
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const chatDropdownRef = useRef<HTMLDivElement>(null);
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
-
+  const [showRecipeModal, setShowRecipeModal] = useState(false);
+  const [activeRecipe, setActiveRecipe] = useState<WorkspaceRecipe | null>(null);
   const {
     availableHarnessIds,
     showSettings,
@@ -124,6 +128,44 @@ export default function Header() {
       setIsLoadingSessions(false);
     }
   };
+  const handleOpenRecipes = async () => {
+    try {
+      if (typeof window.electronAPI?.recipeGetAll === 'function') {
+        const recipes = await window.electronAPI.recipeGetAll(workspacePath);
+        if (recipes.length > 0) {
+          setActiveRecipe(recipes[0]);
+        } else {
+          setActiveRecipe(null);
+        }
+      }
+    } catch {
+      setActiveRecipe(null);
+    }
+    setShowRecipeModal(true);
+  };
+
+  const handleLaunchRecipe = async (recipe: WorkspaceRecipe) => {
+    return executeWorkspaceRecipe(recipe, {
+      ensureWorkspaceOpen: async () => activeWorkspaceId,
+      spawnTerminal: window.electronAPI.spawnTerminal,
+      onTerminalSpawned: (_wsId, term) => {
+        addTerminal(term);
+      },
+      openBrowserPreview: async (wsId, url) => {
+        if (!browserVisible) toggleBrowser();
+        if (typeof window.electronAPI?.browserNavigate === 'function') {
+          return window.electronAPI.browserNavigate(wsId, url);
+        }
+        return true;
+      },
+    });
+  };
+
+  const defaultLaunches: RecipeLaunchStep[] = (focusedWorkspace?.terminals ?? []).map((t, idx) =>
+    t.harnessId
+      ? { id: `step-${idx + 1}`, type: 'harness' as const, harnessId: t.harnessId }
+      : { id: `step-${idx + 1}`, type: 'command' as const, command: '' },
+  );
 
   return (
     <header className="header">
@@ -180,6 +222,7 @@ export default function Header() {
         undoLayout={() => undoLayout(activeWorkspaceId ?? undefined)}
         canUndoLayout={(focusedWorkspace?.layoutUndoStack?.length ?? 0) > 0}
         chatDropdownRef={chatDropdownRef}
+        onOpenRecipes={handleOpenRecipes}
         showChatHistory={showChatHistory}
         onToggleChatHistory={() => void handleToggleChatHistory()}
         chatSessions={chatSessions}
@@ -219,6 +262,17 @@ export default function Header() {
         isOpen={showCredentialModal}
         onClose={() => setShowCredentialModal(false)}
         workspacePath={workspacePath || undefined}
+      />
+      <RecipeModal
+        isOpen={showRecipeModal}
+        onClose={() => setShowRecipeModal(false)}
+        initialRecipe={activeRecipe}
+        defaultWorkspacePath={workspacePath}
+        defaultLaunches={defaultLaunches}
+        defaultBrowserUrl={browserVisible ? focusedWorkspace?.browserUrl : undefined}
+        onLaunchRecipe={handleLaunchRecipe}
+        onRecipeSaved={(saved) => setActiveRecipe(saved)}
+        onRecipeDeleted={() => setActiveRecipe(null)}
       />
     </header>
   );

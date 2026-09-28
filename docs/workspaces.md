@@ -90,3 +90,53 @@ The Explorer is a separate, resizable left sidebar and does not join the pane la
 The app remembers the last workspace path. Layout topology and split sizes are stored separately for each workspace path and restored when the current pane set is compatible. Pane IDs are regenerated safely and are not persisted directly.
 
 Terminal processes and their runtime state are not reconstructed from layout persistence.
+
+## Workspace Launch Recipes
+
+Workspace launch recipes allow saving repeatable development workspace configurations. A recipe captures:
+
+- **Workspace Path** — Canonical normalized directory path.
+- **Launch Steps** — Sequential list of shell commands and AI agent harnesses (with optional model selections).
+- **Browser Preview URL** — Optional local or remote web address to navigate on launch.
+- **Pane Layout** — Associated layout topology.
+
+### Storage & Security
+
+- Recipes are persisted in `electron-store` under `workspaceRecipes`.
+- **Explicit Trust Boundary**: Opening a workspace or selecting a recipe **never automatically executes commands**. Commands and harnesses are explicitly presented in an inspection preview before launch.
+- Execution requires an intentional user action ("Launch Recipe").
+- Recipe terminal commands run inside standard PTY shells using Clanker's existing terminal architecture and security boundaries.
+- Browser preview URLs are sanitized using trusted URL validation (`http:`, `https:`, local `file:`).
+- **Partial Failure Handling**: If a specific command or browser preview fails, successful terminals remain open and running. Failures are reported with structured per-step error diagnostics without destroying the workspace.
+
+## Agent Task & Session Recovery
+
+Clanker tracks agent coding tasks and harness sessions durably to survive application restarts, workspace closures, and terminal exits.
+
+### Runtime vs. Process Separation
+
+Clanker makes a strict distinction between process persistence and metadata recovery:
+- **PTY processes do not survive application restarts**. Clanker does not implement terminal daemons or pretend disconnected PTYs are alive.
+- **Task metadata is persistent**. What survives restart is:
+  - The workspace identity
+  - The task description and timestamps
+  - The harness and model used
+  - The harness-native conversation session ID and path
+
+### Recovery States
+
+When a workspace is restored or the task list is opened, previous tasks are classified into distinct states:
+
+| State | Meaning | Available Action |
+|-------|---------|------------------|
+| **Running** | The PTY is currently active in this running Clanker process. | Jump to terminal |
+| **Resumable** | The previous PTY has exited or the app restarted, but a native conversation session was recorded on disk. | **Resume** |
+| **Needs Session** | Task metadata exists, but Clanker cannot safely correlate a unique native conversation ID. | Select from discovered sessions |
+| **Unavailable** | The task cannot be resumed (e.g. workspace directory was deleted, harness is uninstalled, or harness does not support resume). | Inspect reason / Delete |
+
+### Native Conversation Resume
+
+Clicking **Resume** attaches a new PTY process directly to the AI harness's existing native conversation (e.g., `codex resume <id>`, `claude --resume <id>`, `opencode --session <id>`, `pi --session <path>`, `omp --resume <path>`, `agy --conversation <id>`).
+
+- **No Prompt Replay**: The user's original prompt is never replayed or re-executed upon restart.
+- **Graceful Failure**: If a session was deleted from disk or a harness is removed, Clanker marks the task `unavailable` with an explanatory reason without affecting the workspace or losing metadata.

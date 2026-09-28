@@ -192,6 +192,22 @@ export const SESSION_DISCOVER = 'session-discover';
 export const SESSION_INVOKE = 'session-invoke';
 
 /* ============================================================================
+ * Workspace Recipes
+ * ============================================================================ */
+
+export const RECIPE_GET_ALL = 'recipe:get-all';
+export const RECIPE_SAVE = 'recipe:save';
+export const RECIPE_DELETE = 'recipe:delete';
+
+/* ============================================================================
+ * Task Sessions
+ * ============================================================================ */
+
+export const TASK_SESSION_LIST = 'task-session:list';
+export const TASK_SESSION_DELETE = 'task-session:delete';
+export const TASK_SESSION_UPDATE = 'task-session:update';
+
+/* ============================================================================
  * Annotation
  * ============================================================================ */
 
@@ -364,4 +380,12 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   // Session history
   SESSION_DISCOVER,
   SESSION_INVOKE,
+  // Workspace Recipes
+  RECIPE_GET_ALL,
+  RECIPE_SAVE,
+  RECIPE_DELETE,
+  // Task Sessions
+  TASK_SESSION_LIST,
+  TASK_SESSION_DELETE,
+  TASK_SESSION_UPDATE,
 ];

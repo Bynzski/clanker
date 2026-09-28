@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog, GitBranch, ArrowLeft } from 'lucide-react';
+import type { WorkspaceRecipe, RecipeLaunchResult } from '../../shared/types/recipes';
+import RecipeModal from './RecipeModal';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds, resolveVisibleHarnessIds } from '../lib/harnessOptions';
 import { hermesModelDisplay, hermesModelLabel } from '../lib/hermesModelDisplay';
 import type { ModelOption } from '../types/shared';
@@ -22,6 +24,7 @@ export interface WorkspaceFormData {
 interface ContentProps {
   initialPath?: string;
   onSubmit: (data: WorkspaceFormData) => void;
+  onLaunchRecipe?: (recipe: WorkspaceRecipe) => Promise<RecipeLaunchResult | null | void>;
 }
 
 function withTrailingSlash(path: string): string {
@@ -64,7 +67,10 @@ function HermesModelName({ option }: { option: ModelOption }) {
   );
 }
 
-export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentProps) {
+export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRecipe }: ContentProps) {
+  const [savedRecipes, setSavedRecipes] = useState<WorkspaceRecipe[]>([]);
+  const [selectedRecipeForModal, setSelectedRecipeForModal] = useState<WorkspaceRecipe | null>(null);
+  const [showRecipeModal, setShowRecipeModal] = useState(false);
   const [inputValue, setInputValue] = useState(initialPath || '');
   const [baseDirectory, setBaseDirectory] = useState<string>('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -135,6 +141,21 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
     },
     []
   );
+  useEffect(() => {
+    let cancelled = false;
+    if (typeof window.electronAPI?.recipeGetAll === 'function') {
+      window.electronAPI.recipeGetAll()
+        .then((res) => {
+          if (!cancelled && Array.isArray(res)) {
+            setSavedRecipes(res);
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Load settings for the selected harness. A prior request must not apply
   // after switching harnesses, while local model selections take precedence.
@@ -679,6 +700,31 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
           </ul>
         )}
       </div>
+      {savedRecipes.length > 0 && (
+        <div className="gate-recipes-section">
+          <div className="gate-section-header">
+            <span className="gate-section-label">Launch Recipes</span>
+          </div>
+          <div className="gate-recipes-chips">
+            {savedRecipes.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                className="gate-recipe-chip"
+                onClick={() => {
+                  setSelectedRecipeForModal(r);
+                  setShowRecipeModal(true);
+                }}
+                title={`Inspect & Launch "${r.name}" (${r.launches.length} steps)`}
+              >
+                <Play size={10} className="gate-recipe-chip-icon" />
+                <span className="gate-recipe-chip-name">{r.name}</span>
+                <span className="gate-recipe-chip-count">{r.launches.length}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="harness-selector">
         <span className="gate-section-label">Harness</span>
@@ -988,6 +1034,38 @@ export default function WorkspaceGateContent({ initialPath, onSubmit }: ContentP
         <p className="gate-worktree-launch-summary">Opens with {selectedHarness ? HARNESS_OPTIONS.find((option) => option.id === selectedHarness)?.label ?? selectedHarness : 'Terminal'} · {TERMINAL_PRESETS[selectedPreset].count} terminals</p>
       </div>
       )}
+      <RecipeModal
+        isOpen={showRecipeModal}
+        onClose={() => setShowRecipeModal(false)}
+        initialRecipe={selectedRecipeForModal}
+        defaultWorkspacePath={selectedPath ?? inputValue}
+        onLaunchRecipe={async (recipe) => {
+          if (onLaunchRecipe) {
+            return onLaunchRecipe(recipe);
+          }
+          const harnessStep = recipe.launches.find((l) => l.type === 'harness');
+          onSubmit({
+            path: recipe.workspacePath,
+            terminalCount: recipe.terminalCount ?? (recipe.launches.length || 1),
+            harness: harnessStep?.harnessId ?? '',
+            model: harnessStep?.modelId,
+          });
+        }}
+        onRecipeSaved={(saved) => {
+          setSavedRecipes((prev) => {
+            const idx = prev.findIndex((p) => p.id === saved.id);
+            if (idx >= 0) {
+              const copy = [...prev];
+              copy[idx] = saved;
+              return copy;
+            }
+            return [...prev, saved];
+          });
+        }}
+        onRecipeDeleted={(id) => {
+          setSavedRecipes((prev) => prev.filter((p) => p.id !== id));
+        }}
+      />
     </div>
   );
 }

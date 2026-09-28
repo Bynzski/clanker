@@ -1,3 +1,6 @@
+import type { WorkspaceRecipe } from './recipes';
+import type { TaskSessionRecord } from './taskSessions';
+
 /**
  * Shared store schema types.
  *
@@ -47,4 +50,6 @@ export interface StoreSchema {
   aiCommitProvider: AiCommitProvider;
   aiCommitModel: string;
   harnessDefaults: HarnessDefaultsMap;
+  workspaceRecipes: WorkspaceRecipe[];
+  taskSessions: TaskSessionRecord[];
 }

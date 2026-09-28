@@ -49,6 +49,9 @@ import { ExplorerWatcherService } from './explorerWatcher';
 import { registerVcsIpc } from './ipc/vcsIpc';
 import { registerAnnotationIpc } from './annotation/annotationIpc';
 import { registerSessionIpc } from './ipc/sessionIpc';
+import { registerRecipeIpc } from './ipc/recipeIpc';
+import { registerTaskSessionIpc } from './ipc/taskSessionIpc';
+import { TaskSessionCoordinator } from './taskSessionCoordinator';
 import { AgentAttentionBroker } from './agentAttentionBroker';
 import { AGENT_ATTENTION_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles } from './agentAttentionAdapters';
@@ -65,6 +68,8 @@ const store = new Store<StoreSchema>({
     harnessDefaults: Object.fromEntries(
       KNOWN_HARNESS_IDS.map(id => [id, { model: '', favorites: [], flags: '', visible: true }])
     ),
+    workspaceRecipes: [],
+    taskSessions: [],
   },
 });
 
@@ -74,6 +79,7 @@ const browserViews: BrowserViewsByWorkspace = new Map();
 const activeBrowserTabIdsByWorkspace: Map<string, string> = new Map();
 const lastBrowserBoundsByWorkspace: Map<string, Rectangle> = new Map();
 let activeBrowserWorkspaceId: string | null = null;
+let taskSessionCoordinator: TaskSessionCoordinator | null = null;
 let mainWindow: BrowserWindow | null = null;
 const agentAttentionBroker = new AgentAttentionBroker((update) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -208,6 +214,18 @@ app.whenReady().then(() => {
     getGitService: () => gitService,
   });
 
+  registerRecipeIpc({
+    getStore: () => store,
+    getSafeWorkspacePath: (workingDir: string) => getSafeWorkspacePath(workingDir, store),
+  });
+
+  const taskSessionPersistence = registerTaskSessionIpc({
+    getStore: () => store,
+    getTerminals: () => terminals,
+    getHarnessOptions: getAvailableHarnessOptions,
+  });
+  taskSessionCoordinator = new TaskSessionCoordinator(taskSessionPersistence);
+
   registerTerminalIpc({
     getTerminals: () => terminals,
     getMainWindow: () => mainWindow,
@@ -216,6 +234,7 @@ app.whenReady().then(() => {
     getOpenWorkspacePath: (workspaceId: string) => gitService.getOpenWorkspacePath(workspaceId),
     getHarnessOptions: () => HARNESS_OPTIONS,
     agentAttentionBroker,
+    taskSessionCoordinator,
   });
 
   browserIpcController = registerBrowserIpc({
@@ -258,6 +277,7 @@ app.whenReady().then(() => {
     getStore: () => store,
     getHarnessOptions: getAvailableHarnessOptions,
     agentAttentionBroker,
+    taskSessionCoordinator,
   });
 
   // Register annotation IPC handlers
@@ -311,6 +331,7 @@ app.on('before-quit', () => {
   killAllTerminals();
   agentAttentionBroker.close();
   removeAttentionAdapterFiles();
+  taskSessionCoordinator?.onAppShutdown();
   setAppShuttingDown(true);
 });
 

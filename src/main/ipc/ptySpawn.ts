@@ -22,6 +22,7 @@ export interface SpawnPtyOptions {
   /** Optional banner line sent to the renderer before any PTY data. */
   launchLabel?: string;
   harnessId?: string;
+  initialCommand?: string;
   onExit?: (id: string) => void;
 }
 
@@ -37,6 +38,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     getIsShuttingDown,
     launchLabel,
     harnessId,
+    initialCommand,
     onExit,
   } = opts;
 
@@ -55,6 +57,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     harnessId,
     startupBuffer: [],
     startupBufferReady: false,
+    initialCommand,
   };
   terminals.set(id, terminal);
 

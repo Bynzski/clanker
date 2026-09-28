@@ -167,6 +167,15 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     discoverSessions: createAsyncMock([]),
     invokeSession: createAsyncMock({ id: 'term-session-1', pid: 2001 }),
 
+    // Workspace Recipes
+    recipeGetAll: createAsyncMock([]),
+    recipeSave: vi.fn(async (recipe) => recipe),
+    recipeDelete: createAsyncMock(true),
+
+    // Task Sessions
+    taskSessionList: createAsyncMock([]),
+    taskSessionDelete: createAsyncMock(true),
+    taskSessionUpdate: vi.fn(async (updates) => ({ id: updates.id, ...updates })),
     // Browser annotation
     annotationEnable: createAsyncMock({ success: true }),
     annotationDisable: createAsyncMock({ success: true }),
