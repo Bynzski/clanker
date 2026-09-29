@@ -303,6 +303,16 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
     getWorkspaceRegistry: () => workspaceRegistry,
     onWorkspaceUnregistered: (id) => remoteFileWatcher.closeWorkspace(id),
+    getLiveRemoteTerminalPaths: (environmentId) => {
+      const paths: string[] = [];
+      for (const terminal of terminals.values()) {
+        if (terminal.environmentId !== environmentId) continue;
+        // The SSH client's local cwd is unrelated to its remote checkout.
+        if (!terminal.remoteWorkingDir) return null;
+        paths.push(terminal.remoteWorkingDir);
+      }
+      return paths;
+    },
   });
 
   registerCredentialIpc();

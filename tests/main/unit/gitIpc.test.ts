@@ -972,7 +972,7 @@ describe('Git IPC workspace identity routing', () => {
     vi.clearAllMocks();
   });
 
-  function setup() {
+  function setup(getLiveRemoteTerminalPaths?: (environmentId: string) => string[] | null) {
     const statuses: GitStatusResult[] = [];
     const mainWindow = { webContents: { send: vi.fn() } };
     const makeEnvironment = (id: string) => ({
@@ -1008,6 +1008,7 @@ describe('Git IPC workspace identity routing', () => {
       getGitService: () => service,
       getMainWindow: () => mainWindow as never,
       getWorkspaceRegistry: () => registry,
+      getLiveRemoteTerminalPaths,
     });
     const handle = (channel: string) =>
       ipc.handle.mock.calls.find(([name]) => name === channel)?.[1] as (...args: unknown[]) => Promise<unknown>;
@@ -1059,6 +1060,37 @@ describe('Git IPC workspace identity routing', () => {
     await registry.unregisterWorkspace('ssh-tab');
     await expect(handle('git-create-worktree')(null, workspacePath, 'HEAD', 'other', 'ssh-tab')).rejects.toThrow('no longer registered');
     expect(createWorktree).toHaveBeenCalledTimes(1);
+  });
+
+  test('inspects using authoritative same-host workspace and terminal activity', async () => {
+    const terminalPaths = vi.fn().mockReturnValue(['/srv/task/src']);
+    const { remote, local, handle } = setup(terminalPaths);
+    const inspectWorktree = vi.fn().mockResolvedValue({ success: true, hasChanges: false, worktree: { path: '/srv/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false } });
+    Object.assign(remote, { inspectWorktree });
+    await handle('register-open-workspace')(null, 'source', workspacePath, 'ssh');
+    await handle('register-open-workspace')(null, 'same-host', '/srv/task', 'ssh');
+    await handle('register-open-workspace')(null, 'local-tab', '/srv/local', 'local');
+    expect(await handle('git-inspect-worktree')(null, '/forged', '/srv/task', ['/untrusted'], 'source')).toMatchObject({ success: true });
+    expect(inspectWorktree).toHaveBeenCalledWith(workspacePath, '/srv/task', [workspacePath, '/srv/task', '/srv/task/src'].sort());
+    expect(terminalPaths).toHaveBeenCalledWith('ssh');
+    expect(local.execGit).not.toHaveBeenCalled();
+    expect(await handle('git-remove-worktree')(null, workspacePath, '/srv/task', 'task', [], 'source')).toMatchObject({ success: false });
+  });
+
+  test('refuses unverifiable terminals and invalidates inspection when activity changes in flight', async () => {
+    const terminalPaths = vi.fn<() => string[] | null>().mockReturnValue(null);
+    const { remote, handle } = setup(terminalPaths);
+    let resolve!: (result: { success: boolean }) => void;
+    const inspectWorktree = vi.fn().mockImplementation(() => new Promise((done) => { resolve = done; }));
+    Object.assign(remote, { inspectWorktree });
+    await handle('register-open-workspace')(null, 'source', workspacePath, 'ssh');
+    expect(await handle('git-inspect-worktree')(null, workspacePath, '/srv/task', [], 'source')).toMatchObject({ success: false, error: expect.stringContaining('could not be verified') });
+    expect(inspectWorktree).not.toHaveBeenCalled();
+    terminalPaths.mockReturnValue([]);
+    const pending = handle('git-inspect-worktree')(null, workspacePath, '/srv/task', [], 'source');
+    terminalPaths.mockReturnValue(['/srv/task']);
+    resolve({ success: true });
+    expect(await pending).toMatchObject({ success: false, error: expect.stringContaining('changed during inspection') });
   });
 
   test('same-path operations retain their environment across overlapping Git commands', async () => {

@@ -13,6 +13,7 @@ import { quotePosixArg, quotePosixCommand } from './posixQuote';
 import { isPathContained } from './remotePaths';
 import { snapshotSshFiles } from './sshFileSnapshot';
 import { createSshWorktree } from './sshWorktrees';
+import { inspectSshWorktree } from './sshWorktreeInspection';
 import type { RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
 export { isPathContained } from './remotePaths';
 import { HARNESS_OPTIONS } from '../harnessCatalog';
@@ -616,6 +617,10 @@ export class SshEnvironment implements WorkspaceEnvironment {
 
   public createWorktree(workspacePath: string, baseRef: string, branch: string) {
     return createSshWorktree(this.executor, this.target, workspacePath, baseRef, branch);
+  }
+
+  public inspectWorktree(workspacePath: string, worktreePath: string, activePaths: string[]) {
+    return inspectSshWorktree(this.executor, this.target, workspacePath, worktreePath, activePaths);
   }
 
   public async execGit(

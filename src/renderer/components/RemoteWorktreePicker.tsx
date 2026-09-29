@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { GitWorktree } from '../../shared/types/git';
 import type { WorkspaceTab } from '../store/workspaceTypes';
 import RemoteWorktreeCreate from './RemoteWorktreeCreate';
+import RemoteWorktreeInspect from './RemoteWorktreeInspect';
 
 interface Props {
   repositories: WorkspaceTab[];
@@ -51,12 +52,16 @@ export default function RemoteWorktreePicker({ repositories, preferredWorkspaceI
     {!loading && !error && !worktrees.length && <p>No worktrees found.</p>}
     {currentResult && !error && <RemoteWorktreeCreate key={`${workspaceId}:${workspacePath}`} workspaceId={repository.id} workspacePath={repository.workspacePath}
       launchReady={launchReady && !creating} onBusyChange={setCreating} onOpenPath={onOpenPath} />}
-    {worktrees.map((worktree) => <div className="gate-worktree-row" key={worktree.path}>
+    {worktrees.map((worktree) => <div key={worktree.path}>
+      <div className="gate-worktree-row">
       <span className="gate-worktree-identity" title={worktree.path}>
         <span className="gate-worktree-branch">{worktree.branch || 'Detached'}{worktree.isMain ? ' · Main' : ''}</span>
         <span className="gate-worktree-project">{worktree.path}{worktree.isLocked ? ' · Locked' : ''}{worktree.isPrunable ? ' · Missing' : ''}</span>
       </span>
       <button type="button" onClick={() => onOpenPath(worktree.path)} disabled={loading || creating || !launchReady || worktree.isPrunable} title={worktree.isPrunable ? 'Checkout directory is missing' : undefined}>Open</button>
+      </div>
+      {!worktree.isMain && <RemoteWorktreeInspect key={`${workspaceId}:${workspacePath}:${refresh}`} workspaceId={repository.id} workspacePath={repository.workspacePath}
+        worktreePath={worktree.path} disabled={creating || loading} />}
     </div>)}
   </div>;
 }

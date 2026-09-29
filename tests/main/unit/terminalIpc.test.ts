@@ -297,6 +297,9 @@ describe('terminalIpc — error-path: handler returns', () => {
     }));
     expect(mockPtySpawn).toHaveBeenCalledWith('ssh', ['-t', 'dev-vps', 'sh -c true'], expect.any(Object));
     expect(validateWorkspacePath).toHaveBeenCalledWith('/srv/project/src');
+    expect([...opts.getTerminals().values()]).toEqual([expect.objectContaining({
+      environmentId: 'dev-vps', workspaceId: 'remote-tab', remoteWorkingDir: '/srv/project/src', cwd: process.cwd(),
+    })]);
     await expect(handler(null, '/srv/project/link', 'codex', undefined, undefined, undefined,
       'remote-tab', 'dev-vps')).rejects.toThrow('Terminal directory is outside the registered workspace');
     await expect(handler(null, '/srv/other', 'codex', undefined, undefined, undefined,

@@ -48,6 +48,7 @@ interface Terminal {
   pid: number;
   pty: pty.IPty;
   cwd?: string;
+  remoteWorkingDir?: string;
   workspaceId?: string;
   environmentId?: string;
   harnessId?: string;
@@ -183,6 +184,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           initialCommand: effectiveEnvironmentId === 'local' ? resolved.initialCommand : undefined,
           workspaceId: resolvedWorkspace.workspaceId,
           environmentId: effectiveEnvironmentId,
+          remoteWorkingDir,
           onExit: () => {
             void taskSessionCoordinator?.onTerminalExited(id, effectiveEnvironmentId);
           },
