@@ -35,6 +35,12 @@ File-monitoring checks (use only the unique temporary fixture):
 
 Monitoring uses one batch every three seconds for the active SSH workspace, with retries backing off to thirty seconds. Each batch is limited to 128 open files and 128 visible or expanded directories, with at most 2,000 direct children per directory.
 
+Default workspace root checks (close all workspaces using the target before editing it):
+
+- In **Manage SSH Targets**, edit a target and set **Default workspace root** to an existing absolute directory accessible to the SSH account. Confirm selecting that target initializes the path field and remote chooser at its canonical path.
+- Set the preference to a nonexistent directory. Confirm selection falls back to `$HOME/workspaces` when accessible, or `$HOME` otherwise.
+- Clear the preference and save. Confirm the automatic starting directory is restored. Restore the original target settings after these checks.
+
 Cleanup guard (run on the remote host after closing the temporary workspace). Replace the placeholder with the recorded absolute path; keep that value unchanged through the checks and deletion. The guard requires a canonical workspace root and a direct child with a strict temporary name. It rejects empty paths, symlink targets, and any path outside that root before `rm -rf`:
 
 ```sh

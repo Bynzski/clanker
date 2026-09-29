@@ -723,6 +723,67 @@ describe('WorkspaceGateContent', () => {
       await screen.findByRole('textbox', { name: 'Remote Directory Path' });
     }
 
+    it('reinitializes the selected target path after its default root is edited', async () => {
+      setupRemote();
+      window.electronAPI.sshEnvironmentSave = vi.fn().mockImplementation(async (config) => ({ success: true, config }));
+      renderGate();
+      await selectRemote();
+      await waitFor(() => expect(screen.getByLabelText('Remote Directory Path')).toHaveValue('/home/alpha/workspaces'));
+      fireEvent.click(screen.getByRole('button', { name: 'Manage SSH Targets' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Edit Alpha' }));
+      fireEvent.change(screen.getByLabelText('Default workspace root (optional)'), { target: { value: '/srv/repos' } });
+      vi.mocked(window.electronAPI.sshGetHomeDirectory).mockResolvedValue({ homePath: '/home/alpha', initialPath: '/srv/repos' });
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+      await waitFor(() => expect(screen.getByLabelText('Remote Directory Path')).toHaveValue('/srv/repos'));
+      expect(window.electronAPI.sshEnvironmentSave).toHaveBeenCalledWith(expect.objectContaining({ id: 'alpha', defaultWorkspaceRoot: '/srv/repos' }));
+      expect(window.electronAPI.getEnvironmentHarnessOptions).toHaveBeenCalledTimes(1);
+    });
+
+    it('rediscovers harnesses after editing the selected host and blocks launching stale choices while loading', async () => {
+      setupRemote();
+      window.electronAPI.sshEnvironmentSave = vi.fn().mockImplementation(async (config) => ({ success: true, config }));
+      let resolveNew!: (value: { pi: boolean }) => void;
+      const newDiscovery = new Promise<{ pi: boolean }>((resolve) => { resolveNew = resolve; });
+      vi.mocked(window.electronAPI.getEnvironmentHarnessOptions).mockResolvedValueOnce({ codex: true }).mockReturnValueOnce(newDiscovery);
+      renderGate();
+      await selectRemote();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Codex' })).toHaveClass('selected'));
+      fireEvent.click(screen.getByRole('button', { name: 'Manage SSH Targets' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Edit Alpha' }));
+      fireEvent.change(screen.getByLabelText('SSH Target'), { target: { value: 'new-alpha.example' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+      await waitFor(() => expect(window.electronAPI.getEnvironmentHarnessOptions).toHaveBeenCalledTimes(2));
+      expect(window.electronAPI.getEnvironmentHarnessOptions).toHaveBeenLastCalledWith('alpha');
+      expect(screen.queryByRole('button', { name: 'Codex' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeDisabled();
+      fireEvent.keyDown(screen.getByLabelText('Remote Directory Path'), { key: 'Enter' });
+      expect(mockOnSubmit).not.toHaveBeenCalled();
+      await act(async () => resolveNew({ pi: true }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Pi' })).toHaveClass('selected'));
+      fireEvent.click(screen.getByRole('button', { name: 'Close SSH target manager' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+      expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({ environmentId: 'alpha', harness: 'pi' }));
+    });
+
+    it('ignores a previous host discovery response after a same-ID target edit', async () => {
+      setupRemote();
+      window.electronAPI.sshEnvironmentSave = vi.fn().mockImplementation(async (config) => ({ success: true, config }));
+      let resolveOld!: (value: { codex: boolean }) => void;
+      const oldDiscovery = new Promise<{ codex: boolean }>((resolve) => { resolveOld = resolve; });
+      vi.mocked(window.electronAPI.getEnvironmentHarnessOptions).mockReturnValueOnce(oldDiscovery).mockResolvedValueOnce({ pi: true });
+      renderGate();
+      await selectRemote();
+      await waitFor(() => expect(window.electronAPI.getEnvironmentHarnessOptions).toHaveBeenCalledTimes(1));
+      fireEvent.click(screen.getByRole('button', { name: 'Manage SSH Targets' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Edit Alpha' }));
+      fireEvent.change(screen.getByLabelText('SSH Target'), { target: { value: 'new-alpha.example' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Pi' })).toHaveClass('selected'));
+      await act(async () => resolveOld({ codex: true }));
+      expect(screen.queryByRole('button', { name: 'Codex' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Pi' })).toHaveClass('selected');
+    });
+
     it('initializes each target separately and ignores a previous target home request', async () => {
       setupRemote();
       let resolveAlpha!: (value: { homePath: string; initialPath: string }) => void;

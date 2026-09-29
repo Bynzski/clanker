@@ -1,0 +1,118 @@
+import { useState } from 'react';
+import { Pencil, X } from 'lucide-react';
+import type { SshEnvironmentConfig } from '../../shared/types/environments';
+import { validateSshEnvironmentConfig } from '../../shared/sshValidation';
+import './WorkspaceGate.css';
+
+interface Props {
+  environments: SshEnvironmentConfig[];
+  onSaved: (config: SshEnvironmentConfig) => void;
+  onDeleted: (id: string) => void;
+  onClose: () => void;
+}
+
+export default function SshEnvironmentManager({ environments, onSaved, onDeleted, onClose }: Props) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [label, setLabel] = useState('');
+  const [target, setTarget] = useState('');
+  const [root, setRoot] = useState('');
+  const [error, setError] = useState('');
+  const [status, setStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [busy, setBusy] = useState<'test' | 'save' | 'delete' | null>(null);
+
+  const reset = () => {
+    setEditingId(null); setLabel(''); setTarget(''); setRoot(''); setError(''); setStatus(null);
+  };
+  const edit = (config: SshEnvironmentConfig) => {
+    setEditingId(config.id); setLabel(config.label); setTarget(config.target);
+    setRoot(config.defaultWorkspaceRoot ?? ''); setError(''); setStatus(null);
+  };
+  const save = async () => {
+    if (busy) return;
+    const validation = validateSshEnvironmentConfig({
+      id: editingId ?? crypto.randomUUID(), kind: 'ssh', label, target, defaultWorkspaceRoot: root,
+    });
+    if (!validation.valid) { setError(validation.error); return; }
+    setBusy('save'); setError('');
+    try {
+      const result = await window.electronAPI.sshEnvironmentSave(validation.config);
+      if (!result.success || !result.config) { setError(result.error || 'Failed to save environment'); return; }
+      onSaved(result.config);
+      reset();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally { setBusy(null); }
+  };
+  const test = async () => {
+    if (busy) return;
+    if (!target.trim()) { setStatus({ success: false, message: 'Please enter an SSH target' }); return; }
+    setBusy('test'); setStatus(null);
+    try {
+      const result = await window.electronAPI.sshEnvironmentTest(target.trim());
+      setStatus({ success: result.success, message: result.success ? 'Connection successful!' : result.error || 'Connection failed' });
+    } catch (reason) {
+      setStatus({ success: false, message: reason instanceof Error ? reason.message : String(reason) });
+    } finally { setBusy(null); }
+  };
+  const remove = async (id: string) => {
+    if (busy) return;
+    setBusy('delete'); setError('');
+    try {
+      const result = await window.electronAPI.sshEnvironmentDelete(id);
+      if (!result.success) { setError(result.error || 'Failed to delete environment'); return; }
+      onDeleted(id);
+      if (editingId === id) reset();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally { setBusy(null); }
+  };
+
+  return <div className="ssh-manager-overlay" onClick={() => { if (!busy) onClose(); }}>
+    <div className="ssh-manager-modal" role="dialog" aria-modal="true" aria-label="Manage SSH Targets" onClick={(event) => event.stopPropagation()}>
+      <div className="ssh-manager-header">
+        <span className="ssh-manager-title">Manage SSH Targets</span>
+        <button type="button" className="modal-close" onClick={onClose} disabled={!!busy} aria-label="Close SSH target manager"><X size={16} /></button>
+      </div>
+      <div className="ssh-manager-body">
+        <form className="ssh-manager-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+          <span className="gate-section-label">{editingId ? 'Edit SSH Environment' : 'Add New SSH Environment'}</span>
+          <div className="ssh-form-row">
+            <label htmlFor="ssh-target-label">Label</label>
+            <input id="ssh-target-label" className="ssh-form-input" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. dev-vps" disabled={!!busy} />
+          </div>
+          <div className="ssh-form-row">
+            <label htmlFor="ssh-target-address">SSH Target</label>
+            <input id="ssh-target-address" className="ssh-form-input" value={target} onChange={(event) => { setTarget(event.target.value); setStatus(null); }} placeholder="e.g. user@192.168.1.100 or vps-host" disabled={!!busy} />
+          </div>
+          <div className="ssh-form-row">
+            <label htmlFor="ssh-target-root">Default workspace root (optional)</label>
+            <input id="ssh-target-root" className="ssh-form-input" value={root} onChange={(event) => setRoot(event.target.value)} placeholder="e.g. /srv/repos" aria-describedby="ssh-root-help" disabled={!!busy} spellCheck={false} />
+            <span id="ssh-root-help" className="ssh-env-target">Absolute remote path. If unavailable or blank, use ~/workspaces or ~.</span>
+          </div>
+          {status && <p role="status" className={status.success ? 'ssh-manager-success' : 'ssh-manager-error'}>{status.message}</p>}
+          {error && <p role="alert" className="ssh-manager-error">{error}</p>}
+          <div className="ssh-form-actions">
+            <button type="button" className="ssh-btn-test" onClick={() => void test()} disabled={!!busy}>{busy === 'test' ? 'Testing...' : 'Test Connection'}</button>
+            <button type="submit" className="ssh-btn-save" disabled={!!busy}>{busy === 'save' ? 'Saving...' : editingId ? 'Save Changes' : 'Save Target'}</button>
+            {editingId && <button type="button" className="ssh-btn-test" onClick={reset} disabled={!!busy}>Cancel Edit</button>}
+          </div>
+        </form>
+        <div className="ssh-saved-list">
+          <span className="gate-section-label">Saved Environments ({environments.length})</span>
+          {!environments.length && <p className="ssh-env-target">No saved SSH environments yet.</p>}
+          {environments.map((config) => <div key={config.id} className="ssh-env-item">
+            <div className="ssh-env-info">
+              <span className="ssh-env-label">{config.label}</span>
+              <span className="ssh-env-target">{config.target}</span>
+              {config.defaultWorkspaceRoot && <span className="ssh-env-target" title={config.defaultWorkspaceRoot}>{config.defaultWorkspaceRoot}</span>}
+            </div>
+            <div className="ssh-env-actions">
+              <button type="button" className="ssh-env-edit-btn" onClick={() => edit(config)} disabled={!!busy} aria-label={`Edit ${config.label}`}><Pencil size={14} /></button>
+              <button type="button" className="ssh-env-delete-btn" onClick={() => void remove(config.id)} disabled={!!busy} aria-label={`Delete ${config.label}`}><X size={14} /></button>
+            </div>
+          </div>)}
+        </div>
+      </div>
+    </div>
+  </div>;
+}

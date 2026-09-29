@@ -47,19 +47,23 @@ const HOME_DIRECTORY_SCRIPT = [
   'if not home or not os.path.isabs(home):',
   '  sys.exit("Remote HOME is unavailable")',
   'home = os.path.realpath(home)',
-  'if not os.path.isdir(home) or not os.access(home, os.R_OK | os.X_OK):',
-  '  sys.exit("Remote HOME is not a directory")',
-  'with os.scandir(home):',
-  '  pass',
-  'initial = os.path.join(home, "workspaces")',
-  'try:',
-  '  if not os.access(initial, os.R_OK | os.X_OK):',
-  '    raise PermissionError("Remote workspaces directory is inaccessible")',
-  '  with os.scandir(initial):',
-  '    pass',
-  '  initial = os.path.realpath(initial)',
-  'except OSError:',
-  '  initial = home',
+  'preferred = sys.argv[1] if len(sys.argv) > 1 else ""',
+  'initial = None',
+  'for candidate in [preferred, os.path.join(home, "workspaces"), home]:',
+  '  if not candidate or not os.path.isabs(candidate):',
+  '    continue',
+  '  try:',
+  '    candidate = os.path.realpath(candidate)',
+  '    if not os.path.isdir(candidate) or not os.access(candidate, os.R_OK | os.X_OK):',
+  '      continue',
+  '    with os.scandir(candidate):',
+  '      pass',
+  '    initial = candidate',
+  '    break',
+  '  except OSError:',
+  '    continue',
+  'if initial is None:',
+  '  sys.exit("Remote starting directory is unavailable")',
   'print(json.dumps({"homePath": home, "initialPath": initial}))',
 ].join('\n');
 
@@ -166,6 +170,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
   public readonly kind = 'ssh' as const;
   public readonly label: string;
   public readonly target: string;
+  private readonly defaultWorkspaceRoot?: string;
 
   public readonly capabilities: EnvironmentCapabilities = {
     watchFiles: true,
@@ -183,6 +188,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
     this.id = config.id;
     this.label = config.label;
     this.target = config.target;
+    this.defaultWorkspaceRoot = config.defaultWorkspaceRoot;
   }
 
   public snapshotFiles(workspacePath: string, targets: RemoteFileSnapshotTargets, signal?: AbortSignal) {
@@ -191,7 +197,8 @@ export class SshEnvironment implements WorkspaceEnvironment {
 
   /** Read-only discovery before any workspace root has been registered. */
   public async getHomeDirectory(): Promise<{ homePath: string; initialPath: string }> {
-    const result = await this.executor.exec(this.target, 'python3', ['-c', HOME_DIRECTORY_SCRIPT], {
+    const args = ['-c', HOME_DIRECTORY_SCRIPT, ...(this.defaultWorkspaceRoot ? [this.defaultWorkspaceRoot] : [])];
+    const result = await this.executor.exec(this.target, 'python3', args, {
       timeoutMs: BROWSE_TIMEOUT_MS,
       maxBuffer: BROWSE_MAX_BYTES,
     });

@@ -5,6 +5,10 @@
  * shell metacharacters, and malformed inputs.
  */
 
+import type { SshEnvironmentConfig } from './types/environments';
+import { utf8ByteLength } from './utf8';
+
+
 export interface SshTargetValidationResult {
   valid: boolean;
   target?: string;
@@ -47,7 +51,7 @@ export function isValidWorkspaceEnvironmentId(id: unknown): id is string {
     && !id.includes('\\');
 }
 
-export function validateSshEnvironmentConfig(input: unknown): { valid: true; config: { id: string; kind: 'ssh'; label: string; target: string } } | { valid: false; error: string } {
+export function validateSshEnvironmentConfig(input: unknown): { valid: true; config: SshEnvironmentConfig } | { valid: false; error: string } {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     return { valid: false, error: 'Invalid SSH environment configuration object' };
   }
@@ -71,6 +75,17 @@ export function validateSshEnvironmentConfig(input: unknown): { valid: true; con
     return { valid: false, error: targetValidation.error || 'Invalid SSH target' };
   }
 
+  let defaultWorkspaceRoot: string | undefined;
+  if (record.defaultWorkspaceRoot !== undefined) {
+    if (typeof record.defaultWorkspaceRoot !== 'string' || /[\x00-\x1f\x7f]/.test(record.defaultWorkspaceRoot)) {
+      return { valid: false, error: 'Default workspace root must be an absolute remote path without control characters' };
+    }
+    defaultWorkspaceRoot = record.defaultWorkspaceRoot.trim() || undefined;
+    if (defaultWorkspaceRoot && (!defaultWorkspaceRoot.startsWith('/') || defaultWorkspaceRoot.includes('\\') || utf8ByteLength(defaultWorkspaceRoot) > 4096)) {
+      return { valid: false, error: 'Default workspace root must be an absolute POSIX path of at most 4096 bytes' };
+    }
+  }
+
   return {
     valid: true,
     config: {
@@ -78,6 +93,7 @@ export function validateSshEnvironmentConfig(input: unknown): { valid: true; con
       kind: 'ssh',
       label: record.label.trim(),
       target: targetValidation.target,
+      ...(defaultWorkspaceRoot ? { defaultWorkspaceRoot } : {}),
     },
   };
 }

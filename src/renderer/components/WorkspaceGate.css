@@ -1315,7 +1315,17 @@
 .ssh-env-info {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
+
+.ssh-env-actions { display: flex; flex-shrink: 0; gap: 4px; }
+.ssh-env-edit-btn { background: transparent; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; }
+.ssh-manager-error, .ssh-manager-success { margin: 4px 0 0; font-size: 12px; }
+.ssh-manager-error { color: var(--accent-error); }
+.ssh-manager-success { color: var(--accent-success); }
+.ssh-saved-list > .gate-section-label { display: block; margin-bottom: 8px; }
+.ssh-saved-list > .ssh-env-item { margin-top: 6px; }
 
 .ssh-env-label {
   font-weight: 500;

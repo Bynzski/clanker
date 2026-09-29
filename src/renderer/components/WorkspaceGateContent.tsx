@@ -15,6 +15,7 @@ import { findGeneratedWorktreeContainerOwner } from '../lib/worktreeContainer';
 import { getWorkspaceNameFromPath } from '../lib/workspaceLabels';
 import { joinPaths } from '../lib/pathUtils';
 import RemoteWorkspacePath from './RemoteWorkspacePath';
+import SshEnvironmentManager from './SshEnvironmentManager';
 import './WorkspaceGate.css';
 
 export interface WorkspaceFormData {
@@ -125,17 +126,15 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   const worktreeReady = !!repoCandidatePath && repoCheck?.path === repoCandidatePath && repoCheck.isRepo;
   const [sshEnvironments, setSshEnvironments] = useState<SshEnvironmentConfig[]>([]);
   const [selectedSshEnvId, setSelectedSshEnvId] = useState<string>('');
+  const selectedSshTarget = locationKind === 'ssh'
+    ? sshEnvironments.find((environment) => environment.id === selectedSshEnvId)?.target
+    : undefined;
   const [remotePath, setRemotePath] = useState('');
   const updateRemotePath = useCallback((path: string) => {
     setRemotePath(path);
     setDirectoryError('');
   }, []);
   const [showSshManager, setShowSshManager] = useState(false);
-  const [sshFormLabel, setSshFormLabel] = useState('');
-  const [sshFormTarget, setSshFormTarget] = useState('');
-  const [sshTestStatus, setSshTestStatus] = useState<{ success: boolean; message: string } | null>(null);
-  const [isTestingSsh, setIsTestingSsh] = useState(false);
-  const [sshSaveError, setSshSaveError] = useState('');
 
   useEffect(() => {
     onTargetChange?.();
@@ -156,69 +155,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   useEffect(() => {
     void refreshSshEnvironments();
   }, [refreshSshEnvironments]);
-
-  const handleTestSsh = async () => {
-    if (!sshFormTarget.trim()) {
-      setSshTestStatus({ success: false, message: 'Please enter an SSH target' });
-      return;
-    }
-    setIsTestingSsh(true);
-    setSshTestStatus(null);
-    try {
-      const res = await window.electronAPI.sshEnvironmentTest(sshFormTarget.trim());
-      if (res.success) {
-        setSshTestStatus({ success: true, message: 'Connection successful!' });
-      } else {
-        setSshTestStatus({ success: false, message: res.error || 'Connection failed' });
-      }
-    } catch (err) {
-      setSshTestStatus({ success: false, message: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setIsTestingSsh(false);
-    }
-  };
-
-  const handleSaveSshEnv = async () => {
-    if (!sshFormLabel.trim() || !sshFormTarget.trim()) {
-      setSshSaveError('Label and target are required');
-      return;
-    }
-    setSshSaveError('');
-    try {
-      const res = await window.electronAPI.sshEnvironmentSave({
-        id: crypto.randomUUID(),
-        kind: 'ssh',
-        label: sshFormLabel.trim(),
-        target: sshFormTarget.trim(),
-      });
-      if (res.success && res.config) {
-        setSshFormLabel('');
-        setSshFormTarget('');
-        setSshTestStatus(null);
-        setRemotePath('');
-        setSelectedSshEnvId(res.config.id);
-        await refreshSshEnvironments();
-      } else {
-        setSshSaveError(res.error || 'Failed to save environment');
-      }
-    } catch (err) {
-      setSshSaveError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const handleDeleteSshEnv = async (id: string) => {
-    try {
-      await window.electronAPI.sshEnvironmentDelete(id);
-      if (selectedSshEnvId === id) {
-        setRemotePath('');
-        setSelectedSshEnvId('');
-      }
-      await refreshSshEnvironments();
-    } catch {
-      // Ignore
-    }
-  };
-
 
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionRequestRef = useRef(0);
@@ -348,8 +284,12 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   // Load harnesses and pre-load models for all available harnesses
   useEffect(() => {
     let cancelled = false;
+    setHasLoadedHarnessOptions(false);
     setModelsLoaded(false);
-    if (locationKind === 'ssh') setAvailableHarnessIds(['']);
+    if (locationKind === 'ssh') {
+      setAvailableHarnessIds(['']);
+      setSelectedHarness('');
+    }
     setModelOptions([]);
     setAllModels({});
 
@@ -363,7 +303,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
           if (cancelled) return;
           const availableIds = resolveAvailableHarnessIds(options);
           setAvailableHarnessIds(availableIds);
-          setSelectedHarness((current) => availableIds.includes(current) ? current : (availableIds.find((id) => id !== '') ?? ''));
+          setSelectedHarness((current) => current && availableIds.includes(current) ? current : (availableIds.find((id) => id !== '') ?? ''));
         } catch {
           if (!cancelled) setAvailableHarnessIds(['']);
         } finally {
@@ -428,7 +368,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     return () => {
       cancelled = true;
     };
-  }, [locationKind, selectedSshEnvId]);
+  }, [locationKind, selectedSshEnvId, selectedSshTarget]);
 
   // Update model options when harness changes (using pre-loaded models)
   useEffect(() => {
@@ -683,6 +623,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
 
   const handleSubmit = () => {
     if (locationKind === 'ssh') {
+      if (!hasLoadedHarnessOptions) return;
       if (!selectedSshEnvId) {
         setDirectoryError('Please select or add an SSH environment first');
         return;
@@ -908,8 +849,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
             className="gate-manage-ssh-link"
             onClick={() => {
               setShowSshManager(true);
-              setSshSaveError('');
-              setSshTestStatus(null);
             }}
           >
             Manage SSH Targets
@@ -938,8 +877,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
               className="gate-add-ssh-btn"
               onClick={() => {
                 setShowSshManager(true);
-                setSshSaveError('');
-                setSshTestStatus(null);
               }}
             >
               + Add SSH Environment
@@ -951,7 +888,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
           <span className="gate-section-label">Remote Directory Path</span>
         </div>
         {selectedSshEnvId && (
-          <RemoteWorkspacePath key={selectedSshEnvId} environmentId={selectedSshEnvId}
+          <RemoteWorkspacePath key={JSON.stringify([selectedSshEnvId, sshEnvironments.find((env) => env.id === selectedSshEnvId)])} environmentId={selectedSshEnvId}
             path={remotePath} onPathChange={updateRemotePath} onSubmit={handleSubmit} />
         )}
       </div>
@@ -1244,7 +1181,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
       </div>
 
       <div className="gate-launch-actions">
-        <button className="gate-button" onClick={handleSubmit}>
+        <button className="gate-button" onClick={handleSubmit} disabled={locationKind === 'ssh' && !hasLoadedHarnessOptions}>
           <Play size={14} strokeWidth={2.5} fill="currentColor" />
           Launch Workspace
         </button>
@@ -1340,112 +1277,21 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
           setSavedRecipes((prev) => prev.filter((p) => p.id !== id));
         }}
       />
-      {showSshManager && (
-        <div className="ssh-manager-overlay" onClick={() => setShowSshManager(false)}>
-          <div className="ssh-manager-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="ssh-manager-header">
-              <span className="ssh-manager-title">Manage SSH Targets</span>
-              <button
-                type="button"
-                className="modal-close"
-                onClick={() => setShowSshManager(false)}
-                title="Close"
-              >
-                <X size={16} strokeWidth={2} />
-              </button>
-            </div>
-            <div className="ssh-manager-body">
-              <div className="ssh-manager-form">
-                <span className="gate-section-label">Add New SSH Environment</span>
-                <div className="ssh-form-row">
-                  <label>Label</label>
-                  <input
-                    type="text"
-                    className="ssh-form-input"
-                    value={sshFormLabel}
-                    onChange={(e) => setSshFormLabel(e.target.value)}
-                    placeholder="e.g. dev-vps"
-                  />
-                </div>
-                <div className="ssh-form-row">
-                  <label>SSH Target</label>
-                  <input
-                    type="text"
-                    className="ssh-form-input"
-                    value={sshFormTarget}
-                    onChange={(e) => {
-                      setSshFormTarget(e.target.value);
-                      setSshTestStatus(null);
-                    }}
-                    placeholder="e.g. user@192.168.1.100 or vps-host"
-                  />
-                </div>
-                {sshTestStatus && (
-                  <p
-                    style={{
-                      margin: '4px 0 0',
-                      fontSize: '12px',
-                      color: sshTestStatus.success ? 'var(--accent-success, #98c379)' : 'var(--accent-error, #e06c75)',
-                    }}
-                  >
-                    {sshTestStatus.message}
-                  </p>
-                )}
-                {sshSaveError && (
-                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--accent-error, #e06c75)' }}>
-                    {sshSaveError}
-                  </p>
-                )}
-                <div className="ssh-form-actions">
-                  <button
-                    type="button"
-                    className="ssh-btn-test"
-                    onClick={handleTestSsh}
-                    disabled={isTestingSsh}
-                  >
-                    {isTestingSsh ? 'Testing...' : 'Test Connection'}
-                  </button>
-                  <button
-                    type="button"
-                    className="ssh-btn-save"
-                    onClick={handleSaveSshEnv}
-                  >
-                    Save Target
-                  </button>
-                </div>
-              </div>
+      {showSshManager && <SshEnvironmentManager
+        environments={sshEnvironments}
+        onClose={() => setShowSshManager(false)}
+        onSaved={(config) => {
+          setSshEnvironments((previous) => [...previous.filter((env) => env.id !== config.id), config]);
+          setRemotePath('');
+          setSelectedSshEnvId(config.id);
+        }}
+        onDeleted={(id) => {
+          const remaining = sshEnvironments.filter((env) => env.id !== id);
+          setSshEnvironments(remaining);
+          if (selectedSshEnvId === id) { setRemotePath(''); setSelectedSshEnvId(remaining[0]?.id ?? ''); }
+        }}
+      />}
 
-              <div className="ssh-saved-list">
-                <span className="gate-section-label" style={{ display: 'block', marginBottom: '8px' }}>
-                  Saved Environments ({sshEnvironments.length})
-                </span>
-                {sshEnvironments.length === 0 ? (
-                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>No saved SSH environments yet.</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {sshEnvironments.map((env) => (
-                      <div key={env.id} className="ssh-env-item">
-                        <div className="ssh-env-info">
-                          <span className="ssh-env-label">{env.label}</span>
-                          <span className="ssh-env-target">{env.target}</span>
-                        </div>
-                        <button
-                          type="button"
-                          className="ssh-env-delete-btn"
-                          onClick={() => handleDeleteSshEnv(env.id)}
-                          title="Delete environment"
-                        >
-                          <X size={14} strokeWidth={2} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
