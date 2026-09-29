@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { GitWorktree } from '../../shared/types/git';
 import type { WorkspaceTab } from '../store/workspaceTypes';
+import RemoteWorktreeCreate from './RemoteWorktreeCreate';
 
 interface Props {
   repositories: WorkspaceTab[];
@@ -14,6 +15,7 @@ export default function RemoteWorktreePicker({ repositories, preferredWorkspaceI
   const [selectedId, setSelectedId] = useState(preferredWorkspaceId ?? '');
   const [result, setResult] = useState<{ workspaceId: string; workspacePath: string; refresh: number; worktrees: GitWorktree[]; error?: string } | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [creating, setCreating] = useState(false);
   const repository = repositories.find((entry) => entry.id === selectedId)
     ?? repositories.find((entry) => entry.id === preferredWorkspaceId) ?? repositories[0];
   const workspaceId = repository?.id;
@@ -40,19 +42,21 @@ export default function RemoteWorktreePicker({ repositories, preferredWorkspaceI
   const worktrees = currentResult?.worktrees ?? [];
   return <div className="gate-worktrees remote-worktree-picker">
     <label htmlFor="remote-worktree-repository">Open SSH repository</label>
-    <select id="remote-worktree-repository" className="ssh-env-select" value={workspaceId} onChange={(event) => setSelectedId(event.target.value)}>
+    <select id="remote-worktree-repository" className="ssh-env-select" value={workspaceId} disabled={creating} onChange={(event) => setSelectedId(event.target.value)}>
       {repositories.map((entry) => <option key={entry.id} value={entry.id}>{entry.name} — {entry.workspacePath}</option>)}
     </select>
-    <button type="button" onClick={() => setRefresh((value) => value + 1)} disabled={loading}>Refresh worktrees</button>
+    <button type="button" onClick={() => setRefresh((value) => value + 1)} disabled={loading || creating}>Refresh worktrees</button>
     {loading && <p role="status">Loading remote worktrees…</p>}
     {error && <p className="gate-worktree-error" role="alert">{error}</p>}
     {!loading && !error && !worktrees.length && <p>No worktrees found.</p>}
+    {currentResult && !error && <RemoteWorktreeCreate key={`${workspaceId}:${workspacePath}`} workspaceId={repository.id} workspacePath={repository.workspacePath}
+      launchReady={launchReady && !creating} onBusyChange={setCreating} onOpenPath={onOpenPath} />}
     {worktrees.map((worktree) => <div className="gate-worktree-row" key={worktree.path}>
       <span className="gate-worktree-identity" title={worktree.path}>
         <span className="gate-worktree-branch">{worktree.branch || 'Detached'}{worktree.isMain ? ' · Main' : ''}</span>
         <span className="gate-worktree-project">{worktree.path}{worktree.isLocked ? ' · Locked' : ''}{worktree.isPrunable ? ' · Missing' : ''}</span>
       </span>
-      <button type="button" onClick={() => onOpenPath(worktree.path)} disabled={loading || !launchReady || worktree.isPrunable} title={worktree.isPrunable ? 'Checkout directory is missing' : undefined}>Open</button>
+      <button type="button" onClick={() => onOpenPath(worktree.path)} disabled={loading || creating || !launchReady || worktree.isPrunable} title={worktree.isPrunable ? 'Checkout directory is missing' : undefined}>Open</button>
     </div>)}
   </div>;
 }

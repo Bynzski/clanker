@@ -26,7 +26,7 @@ describe('remote worktree picker', () => {
     expect(open).toHaveBeenCalledWith('/srv/task');
     const missing = screen.getByText('/srv/missing · Missing');
     expect(within(missing.closest('.gate-worktree-row') as HTMLElement).getByRole('button', { name: 'Open' })).toBeDisabled();
-    expect(screen.queryByText('Create and open worktree')).toBeNull();
+    expect(screen.getByText('Create and open worktree')).toBeDisabled();
     expect(screen.queryByText('Remove…')).toBeNull();
   });
 

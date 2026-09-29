@@ -742,7 +742,7 @@ describe('WorkspaceGateContent', () => {
       expect(window.electronAPI.gitListWorktrees).toHaveBeenCalledWith('/repo', source.id);
       fireEvent.click(screen.getByRole('button', { name: 'Open' }));
       expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({ path: '/remote-task', environmentId: 'alpha', environmentLabel: 'Alpha' }));
-      expect(screen.queryByText('Create and open worktree')).toBeNull();
+      expect(screen.getByText('Create and open worktree')).toBeDisabled();
     });
 
     it('reinitializes the selected target path after its default root is edited', async () => {

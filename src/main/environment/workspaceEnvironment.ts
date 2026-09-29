@@ -18,6 +18,7 @@ import type {
   WorkspaceEnvironmentId,
 } from '../../shared/types/environments';
 import type { RemoteFileSnapshot, RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
+import type { GitWorktreeCreateResult } from '../../shared/types/git';
 
 export interface EnvironmentCapabilities {
   readonly watchFiles: boolean;
@@ -81,6 +82,7 @@ export interface WorkspaceEnvironment {
 
   // Git operations
   execGit(workspacePath: string, args: string[], timeoutMs?: number): Promise<{ stdout: string; stderr: string }>;
+  createWorktree?(workspacePath: string, baseRef: string, branch: string): Promise<GitWorktreeCreateResult>;
 
   // Terminal & Harness operations
   getHarnessOptions(): Promise<Record<string, EnvironmentHarnessOption>>;
