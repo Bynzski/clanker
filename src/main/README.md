@@ -1,6 +1,6 @@
 # src/main/ — Electron Main Process
 
-This directory contains all Electron main process code. The main process runs in Node.js and owns system resources: PTY processes, WebContentsView (browser panel), git CLI operations, file I/O, credential storage, and VCS provider HTTP calls.
+This directory contains all Electron main process code. The main process runs in Node.js and owns system resources: PTY processes, WebContentsView (browser panel), local and SSH-backed Git and file operations, credential storage, and VCS provider HTTP calls.
 
 ## Directory Layout
 
@@ -14,6 +14,9 @@ src/main/
 ├── aiCommit.ts              # AI commit message generation
 ├── harnessLaunch.ts         # Harness spawn argument construction
 ├── harnessCatalog.ts       # Harness availability and model discovery
+├── workspaceRegistry.ts     # Runtime workspace ID to environment and canonical root
+├── environment/             # Local and SSH workspace environment resolution
+├── remote/                  # Bounded OpenSSH commands and SSH filesystem implementation
 ├── sessionHistory.ts       # Chat history discovery and caching
 ├── fileService.ts           # File read/write operations
 ├── fileWatcher.ts           # File system watching (couples to GitService)
@@ -31,6 +34,7 @@ src/main/
 │   ├── vcsIpc.ts           # VCS provider context, PR info, deep links
 │   ├── aiCommitIpc.ts      # AI commit message generation
 │   ├── sessionIpc.ts       # Session history IPC
+│   ├── sshEnvironmentIpc.ts # Saved SSH targets, remote browsing and folder creation
 │   ├── windowIpc.ts        # Window controls (zoom, minimize, maximize)
 │   └── ptySpawn.ts         # PTY spawning utilities
 ├── annotation/             # Browser annotation feature
@@ -74,6 +78,7 @@ All IPC handler registrations. Each file corresponds to a domain:
 | `vcsIpc.ts` | VCS provider context, PR info, deep links |
 | `aiCommitIpc.ts` | AI commit message generation pipeline |
 | `sessionIpc.ts` | Session history discovery and retrieval |
+| `sshEnvironmentIpc.ts` | Saved SSH targets, remote directory browsing and folder creation |
 | `windowIpc.ts` | Window controls (zoom, minimize, maximize) |
 | `ptySpawn.ts` | PTY spawning utilities and session bridge |
 
@@ -142,6 +147,7 @@ Browser annotation feature for capturing structured element descriptions:
 - **No renderer imports.** `src/main/` modules must not be imported from `src/renderer/`. The preload bridge is the only communication path.
 - **IPC channel names from `src/shared/ipcChannels.ts`.** Never hard-code channel strings.
 - **Path validation before use.** Validate untrusted workspace paths with `security.ts` and enforce the appropriate file-operation boundary for each IPC handler.
+- **Workspace identity.** Resolve runtime `workspaceId` through `WorkspaceRegistry`; use its environment ID and canonical root for remote terminals, files, and Git. A path alone identifies only a legacy local request. The remote pre-workspace chooser is permission-bound by the SSH user; registered workspace operations remain root-confined.
 - **Test exports are internal.** `main.ts` exports `terminals`, `browserViews`, `gitService`, `store`, `killAllTerminals` for test access only. Do not build new features on these exports.
-- **Canonical IPC paths are POSIX.** Convert incoming paths to native (`path.sep`) at IPC entry, convert outgoing paths back to forward slashes at the boundary. Use the helpers in `src/shared/pathNormalize.ts`. See `AGENTS.md` Maintainability section.
+- **Canonical IPC paths are POSIX.** Convert local paths to native (`path.sep`) at the main-process boundary and return forward slashes to the renderer. Keep SSH paths as POSIX paths on the remote host. Use the helpers in `src/shared/pathNormalize.ts`. See `AGENTS.md` Maintainability section.
 - **Platform branching.** Use `src/main/platformShell.ts` for default-shell selection and `harnessLaunch.resolveHarnessSpawn()` for harness command resolution. Do not add ad-hoc `process.platform === 'win32'` branches; centralize them in these helpers.

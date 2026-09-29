@@ -31,6 +31,7 @@ When adding code that touches the filesystem, terminals, harness launch, credent
 - Default shell selection lives in `src/main/platformShell.ts` — never branch on `process.platform` ad hoc.
 - Harness commands spawn through `resolveHarnessSpawn()` so `.cmd` shims resolve on Windows.
 - Filesystem-mutating tests must use `os.tmpdir()` / `os.homedir()` via `tests/_helpers/tempPaths.ts` — no hardcoded `/home`, `/tmp`, or `/Users`.
+- Remote runtime operations must resolve `workspaceId` through `WorkspaceRegistry`; treat `environmentId` plus canonical path as the persistent identity. Keep remote pre-workspace browsing separate from root-confined workspace file operations.
 
 ### Windows development
 
@@ -96,6 +97,8 @@ npm run diagnose:gpu  # Check hardware acceleration and sandboxed WebGL support
 ```
 
 The GPU diagnostic launches the installed Electron runtime with an isolated temporary profile. Run it on a desktop session when investigating browser rendering; it is intentionally not part of headless CI.
+
+For a live SSH workspace check, use the guarded [remote VPS smoke procedure](docs/remote-vps-smoke-test.md). Create a unique temporary directory for any destructive test and leave the persistent fixture intact.
 
 **Important:** Always use `npm run test`, not bare `npm test`. The validation pipeline uses `npm run validate` which runs lint → typecheck → security audit → build → test. CI runs lint, typecheck, build, and tests on Linux and Windows; its separate audit report is informational.
 

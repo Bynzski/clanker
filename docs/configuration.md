@@ -64,6 +64,8 @@ Plain shells have no model and do not inherit a harness from global defaults.
 
 Favorites are **never** used at spawn time — they only affect the picker/discovery UI.
 
+For SSH workspaces in V1, harness availability is discovered on the host. Extra flags still apply, but model discovery and selection and Agent Attention are unavailable; the remote CLI uses its own model configuration. Locally installed CLIs and attention adapters are not used for remote launches. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh).
+
 ### VCS Credentials
 
 Manage authentication for remote VCS operations.
@@ -106,6 +108,7 @@ Settings are stored locally via `electron-store` (`clanker-grid.json`):
 - Base directory for workspace suggestions
 - AI commit configuration
 - Harness defaults (per-harness visibility, model, favorites, flags, agent attention)
+- Saved SSH environment labels and targets (no passwords or private keys)
 
 The store schema is defined in `src/shared/types/store.ts`.
 

@@ -41,7 +41,7 @@ When a harness exits, the terminal falls back to an interactive shell so the pan
 
 **Harness launch model — Windows:** No wrapper script is generated. Harnesses are spawned through `cmd.exe /c <harness>` so npm-installed `.cmd` shims resolve correctly. When the harness exits, the pane is replaced by a fresh PowerShell session.
 
-**Harness launch model — Remote Workspaces (SSH):** Remote terminal panes execute on the remote machine via local `node-pty` invoking system `ssh` with interactive pseudo-terminal allocation (`ssh -t`). The remote command changes into the workspace directory and executes the remote harness CLI with fallback to `${SHELL:-bash} -l` on process exit. Harness availability is probed remotely on the target host; only installed remote CLIs are offered for launch.
+**Harness launch model — Remote Workspaces (SSH):** Remote terminal panes execute on the remote machine via local `node-pty` invoking system `ssh` with interactive pseudo-terminal allocation (`ssh -t`). The remote command changes into the workspace directory and executes the remote harness CLI, then leaves `${SHELL:-/bin/bash} -l` running when the harness exits. Harness availability is probed remotely on the target host; only installed remote CLIs are offered for launch. The remote shell and harness receive no local Agent Attention variables.
 ### Harness Flags
 
 Harness flags are configured per-harness in settings as free text and stored in `electron-store`.
@@ -98,7 +98,7 @@ The **Chat History** button (message icon) in the header opens a dropdown that d
 
 **Workspace filtering:** The feature uses path-boundary matching to avoid false positives. For example, `/home/jay/dev/projects/foo` will match `/home/jay/dev/projects/foo/src` but not `/home/jay/dev/projects/foo-old`.
 
-**Remote session isolation:** Chat history discovery scans local filesystems only. When a remote workspace is active or its terminals exit, local session scanners are bypassed to prevent false correlation with local session files. Remote tasks are classified as `unavailable` with a diagnostic explanation.
+**Remote session isolation:** Chat history discovery scans local filesystems only. When a remote workspace is active, its terminals exit, or the app shuts down, local session scanners are bypassed to prevent false correlation with local session files. Remote tasks are classified as `unavailable` with a diagnostic explanation. Native remote session recovery is unavailable in V1.
 ### Selecting a Harness
 
 1. Click the **Harness** pill in the header
@@ -117,6 +117,8 @@ When creating a workspace, the gate provides a compact model selection flow:
 Model choices in the gate are scoped to the selected harness. Switching harnesses
 uses the new harness's default or previously selected model, never a model from
 the harness you switched away from.
+
+The gate's model picker and local default model resolution apply to local workspaces. SSH workspaces discover installed harnesses on the host but do not discover or pass model selections in V1; the remote CLI uses its own configured default.
 
 Notes:
 - Codex models are discovered from the CLI.

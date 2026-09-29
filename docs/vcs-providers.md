@@ -1,6 +1,6 @@
 # VCS Provider Integration
 
-Clanker Grid recognizes GitHub, GitLab, and Bitbucket remotes and shows provider context in the Git menu. Git operations themselves run through the local Git CLI; provider API calls supply pull request or merge request details, checks, reviews, and links.
+Clanker Grid recognizes GitHub, GitLab, and Bitbucket remotes and shows provider context in the Git menu. Git operations use the local Git CLI for local workspaces and Git over SSH on the workspace host for SSH workspaces. Provider API calls from the desktop supply pull request or merge request details, checks, reviews, and links.
 
 ## Detection and context
 
@@ -13,6 +13,8 @@ The **View on provider** menu offers links such as repository, request, branches
 ## Authentication
 
 The **Settings → Credentials** panel can generate a Clanker ED25519 key, configure SSH hosts, and store access tokens for the three providers. New tokens are encrypted with Electron `safeStorage`; saving fails when OS-backed encryption is unavailable. Git fetch, pull, and push continue to use Git's own SSH or credential helper configuration. See [Configuration](configuration.md) and [Git Integration](git-integration.md).
+
+In an SSH workspace, Git and its credentials run on the workspace host. Provider API requests and stored access tokens remain on the desktop; Clanker does not copy a desktop SSH key or token onto the host.
 
 ## Implementation map
 

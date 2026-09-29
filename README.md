@@ -20,6 +20,7 @@ Clanker Grid is a single-window desktop app that brings your terminals, AI codin
 - **Embedded browser** — keep docs, dashboards, or your local app open right next to your code.
 - **Editor & file tree** — CodeMirror-backed editing with syntax highlighting and a familiar explorer.
 - **Multi-workspace** — every project gets its own tab; switch context without losing it.
+- **SSH workspaces** — open a remote Linux/POSIX directory with the built-in SSH directory chooser; terminals, Explorer, Git, and installed AI harnesses run on that host.
 - **Credentials handled** — SSH key generation and encrypted PAT storage built in.
 
 ## Supported platforms
@@ -28,6 +29,8 @@ Clanker Grid is a single-window desktop app that brings your terminals, AI codin
 - **Windows 10 1809+ / Windows 11 (x64)** — supported by the codebase and build configuration, but Windows artifacts may lag Linux releases. When produced, Windows builds are unsigned; SmartScreen will display a warning on first launch — choose **More info → Run anyway** to continue.
 
 macOS, ARM64, and WSL are not produced in this release. WSL users should run the Linux AppImage.
+
+SSH workspaces connect from the desktop app to remote Linux/POSIX hosts. Remote Windows hosts and automatic port forwarding are unavailable in V1; see [SSH Workspaces](docs/workspaces.md#remote-workspaces-ssh).
 
 ## Install
 
@@ -67,6 +70,7 @@ The full docs are in [`docs/`](docs/):
 
 - [Getting Started](docs/getting-started.md) — installation and first launch
 - [Workspaces](docs/workspaces.md) — managing workspace tabs
+- [SSH Workspaces](docs/workspaces.md#remote-workspaces-ssh) — remote setup, directory browsing, and V1 limits
 - [Terminals & Harnesses](docs/terminals.md) — terminal panes and AI integrations
 - [Git Integration](docs/git-integration.md) — built-in git tools
 - [VCS Providers](docs/vcs-providers.md) — GitHub, GitLab, Bitbucket

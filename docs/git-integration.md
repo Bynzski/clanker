@@ -17,7 +17,7 @@ Click the **Git** button in the header to access:
 The file explorer shows git status indicators:
 - Modified files display with an indicator
 - Untracked files are visually distinguished
-- Git changes are reflected in real-time via file watching
+- Local Git changes are reflected via file watching. SSH workspaces refresh without a remote file watcher in V1.
 
 ## Status
 
@@ -61,6 +61,8 @@ Access via the Git menu header:
 
 Remote operations use Git and configured remotes; they do not require provider API integration. Pull and Push require an upstream branch. If the current branch has no upstream, **Publish branch** is available when a remote exists.
 
+For an SSH workspace, Clanker runs Git on the workspace host over SSH in the registered remote repository. Git authentication and remotes for that repository use the remote host's configuration. The desktop never treats a same-path local checkout as the remote repository.
+
 ## Remotes
 
 The **Remotes** section allows you to manage git remote connections:
@@ -86,7 +88,7 @@ The **Remotes** section allows you to manage git remote connections:
 2. Copy the remote URL from GitHub
 3. In Clanker Grid, open the Git menu → Remotes
 4. Click **Add remote**, name it `origin`, paste the URL
-5. Your local repo is now connected to the GitHub remote
+5. The selected repository is now connected to the GitHub remote; for an SSH workspace, that configuration is stored in the remote repository
 
 ## Committing
 
@@ -107,6 +109,8 @@ Optional AI-assisted commit messages:
 4. In commit dialog, click **Generate Message**
 
 The AI analyzes your changes and generates a commit message.
+
+AI commit message generation is unavailable for SSH workspaces in V1. Manual staging and commits run on the remote host.
 
 ## History
 
@@ -168,6 +172,8 @@ Configure authentication for remote operations:
 4. Click **Save**
 
 New tokens are encrypted with Electron's `safeStorage`; saving fails when OS-backed encryption is unavailable. See [Configuration](configuration.md#persistence).
+
+For Git commands in an SSH workspace, authentication happens on the remote host using that host's SSH keys or Git credential helpers. Keys generated on the desktop are not copied to the remote host automatically. Desktop PATs are used for provider API context, not to configure remote Git authentication.
 
 ### Credential Status
 

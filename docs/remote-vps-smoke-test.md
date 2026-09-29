@@ -2,6 +2,12 @@
 
 Use the saved **gyute fiy** SSH environment (`clanker@15.204.255.170`). Keep `/home/clanker/workspaces/clanker-test` as a persistent fixture. Open and read it during testing; never remove it.
 
+Before starting, confirm the fixture exists and check OpenCode on the host using the same user CLI path setup as Clanker. A plain noninteractive SSH command may omit `$HOME/.npm-global/bin` from `PATH`:
+
+```sh
+ssh -o BatchMode=yes clanker@15.204.255.170 'test -f /home/clanker/workspaces/clanker-test/README.md && PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$HOME/.npm-packages/bin:$HOME/bin:$PATH" sh -c "command -v opencode && opencode --version"'
+```
+
 1. In **New Workspace → SSH Remote**, select **gyute fiy**. Confirm the default path is `/home/clanker/workspaces`.
 2. Open the application-rendered remote chooser over SSH, confirm `clanker-test` appears, open and select it. Launch one plain terminal. Confirm `pwd -P` is `/home/clanker/workspaces/clanker-test`, Explorer shows `README.md`, and Git status loads. Close the workspace.
 3. Generate a unique fixture name locally before creating it, such as `clanker-smoke-$(date +%s)-$(openssl rand -hex 4)`. Record the complete expected path under `/home/clanker/workspaces/`.
@@ -18,6 +24,7 @@ case "$smoke_path" in
 esac
 test -n "$smoke_path" || exit 1
 test "$(dirname -- "$smoke_path")" = /home/clanker/workspaces || exit 1
+test "$(realpath -e /home/clanker/workspaces)" = /home/clanker/workspaces || exit 1
 printf '%s\n' "$(basename -- "$smoke_path")" | grep -Eq '^clanker-smoke-[A-Za-z0-9-]+$' || exit 1
 test ! -L "$smoke_path" || exit 1
 test -d "$smoke_path" || exit 1

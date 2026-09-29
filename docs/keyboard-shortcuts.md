@@ -51,3 +51,16 @@ These shortcuts work in the workspace picker when focus is not inside an input f
 | OpenCode harness | `O` |
 | Pi harness | `P` |
 | Antigravity harness | `A` |
+
+## SSH Remote Directory Chooser
+
+| Action | Shortcut |
+|--------|----------|
+| Move through directory entries | `↑` / `↓` |
+| Open focused directory | `Enter` |
+| Navigate to parent directory | `Backspace` or `←` when focus is outside the New Folder input |
+| Select the current directory | `Enter` when the chooser itself has focus |
+| Close the chooser | `Escape` |
+| Cancel the New Folder form | `Escape` while its input is focused |
+
+In the remote path field, `↑` / `↓` move through suggestions, `Enter` accepts a highlighted suggestion or launches the workspace, and `Escape` dismisses visible suggestions.

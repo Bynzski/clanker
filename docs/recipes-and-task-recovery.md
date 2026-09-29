@@ -4,24 +4,26 @@ This document describes the unified architecture for reusable workspace launch r
 
 ## 1. Core Principles
 
-1. **Shared Durable Foundation**: Both features build on a single persistence mechanism (`electron-store`) and canonical workspace identity normalization (`normalizeWorkspacePath`), rather than disparate storage mechanisms.
+1. **Shared Durable Foundation**: Both features build on a single persistence mechanism (`electron-store`) and workspace identity composed of an environment ID and canonical path. Legacy records without an environment ID are local.
 2. **Explicit Execution Boundary**: Opening a workspace or inspecting a recipe **never automatically runs arbitrary shell commands**. All execution steps are visible to the user and require an explicit launch action.
-3. **No Phantom PTYs**: Clanker does not pretend previous PTY terminal processes survive an app restart. PTYs exit on app close; what survives is persistent metadata and native AI conversation resume capability.
-4. **No Prompt Replay**: The user's original task prompt is never stored for the purpose of replaying it. Resuming reconnects to the harness's native conversation session using native CLI resume mechanisms.
+3. **No Phantom PTYs**: Clanker does not pretend previous PTY terminal processes survive an app restart. PTYs exit on app close; what survives is persistent metadata and, for local tasks, native AI conversation resume capability.
+4. **No Prompt Replay**: The user's original task prompt is never stored for the purpose of replaying it. Local resume reconnects to the harness's native conversation session using native CLI resume mechanisms.
 5. **Partial Failure Resilience**: Recipe execution never treats failure as all-or-nothing. If a step fails, prior successful terminals remain alive, and the failure is reported clearly.
-
 6. **Conservative Correlation**: Automatic session correlation operates on a strict false-negative preference. If multiple candidate sessions match a task, Clanker marks the task `needs-selection` rather than guessing or attaching the wrong conversation. A native session ID cannot be assigned to more than one task.
+
 ---
 
 ## 2. Workspace Identity
 
-Workspaces are uniquely identified across restarts by their **canonical POSIX path**:
+Workspaces are uniquely identified across restarts by **environment ID plus canonical POSIX path**. Local workspaces use `local` (also the default for legacy records); SSH workspaces use their saved environment ID. Path normalization then applies within that environment:
 - Normalized with forward slashes (`/`).
 - Trailing slashes stripped (except roots like `/` or `C:/`).
-- Case-insensitively matched on Windows (`pathKey`) and case-sensitively matched on POSIX platforms.
+- Local paths are case-insensitively matched on Windows (`pathKey`); SSH paths remain case-sensitive POSIX paths even when the desktop runs on Windows.
 
 Utilities:
 - `src/shared/workspaceIdentity.ts`: `normalizeWorkspacePath`, `workspaceIdentityKey`, `isSameWorkspaceIdentity`.
+
+Runtime requests use `workspaceId` to resolve the registered environment and canonical root in main. A local and an SSH workspace can share the same path without sharing task, recipe, layout, or note identity.
 
 ---
 
@@ -34,6 +36,7 @@ interface WorkspaceRecipe {
   id: string;
   name: string;
   workspacePath: string; // Canonical POSIX path
+  environmentId?: string; // Absent in legacy local recipes; SSH recipes cannot launch in V1
   description?: string;
   terminalCount?: number;
   launches: RecipeLaunchStep[];
@@ -60,6 +63,7 @@ type TaskRecoveryState = 'running' | 'resumable' | 'needs-selection' | 'unavaila
 interface TaskSessionRecord {
   id: string;
   workspacePath: string; // Canonical POSIX path
+  environmentId?: string; // Absent in legacy local records
   harnessId: string;
   modelId?: string;
   title: string;
@@ -77,7 +81,7 @@ interface TaskSessionRecord {
 
 ## 4. Recipe Layout Capture & Restoration
 
-Recipes capture and restore workspace pane topologies using semantic pane keys rather than runtime pane IDs:
+Recipes are local-only in V1. Saving or launching a recipe for an SSH workspace is rejected before any local command can run. Legacy recipes without `environmentId` remain local. Local recipes capture and restore workspace pane topologies using semantic pane keys rather than runtime pane IDs:
 
 - **Semantic Keys**: `terminal:0`, `terminal:1`, `browser`, `editor`, `notes`.
 - **Capture**: When saving a recipe from an active workspace, each terminal contributes an ordered shell or harness launch slot. `serializeWorkspaceLayout()` records the split tree, ratio, terminal count, and explorer visibility.
@@ -89,7 +93,9 @@ Recipes capture and restore workspace pane topologies using semantic pane keys r
 
 ---
 
-## 5. Conservative Task Correlation & Discovery Caching
+## 5. Conservative Local Task Correlation & Discovery Caching
+
+Native session discovery and correlation in this section apply only to local workspaces. SSH tasks do not scan local session files and become `unavailable` when their terminal exits or the app shuts down, with reason `Remote session recovery is not supported in this version`.
 
 ### 5.1 Correlation Rules
 The `findUnambiguousSessionCandidate()` algorithm associates a native session with a task record only when all conditions are satisfied:
@@ -112,7 +118,9 @@ Discovery distinguishes between successful scans and transient I/O failures usin
 
 ---
 
-## 6. Lifecycle & State Transitions
+## 6. Local Lifecycle & State Transitions
+
+The diagram below describes local tasks. Remote tasks transition from `running` to `unavailable` on terminal exit or app shutdown; remote native session recovery is not supported in V1.
 
 ```
 (Harness Spawned / Resumed)
@@ -161,7 +169,7 @@ Clanker distinguishes between two different kinds of failure:
 
 In `src/main/main.ts`, the `app.on('before-quit')` sequence is strictly ordered:
 1. `setAppShuttingDown(true)` — blocks late PTY data and exit IPC emissions to closing windows.
-2. `taskSessionCoordinator?.onAppShutdown()` — transitions all `running` tasks to their persistent state (`resumable` or `needs-selection`) and sets `shuttingDown = true`.
+2. `taskSessionCoordinator?.onAppShutdown()` — transitions local `running` tasks to `resumable` or `needs-selection`, remote `running` tasks to `unavailable`, and sets `shuttingDown = true`.
 3. `killAllTerminals()` — kills PTY processes. Any resulting synchronous or asynchronous PTY exit callbacks immediately return `null` without launching redundant discovery loops.
 4. `agentAttentionBroker.close()` & `removeAttentionAdapterFiles()` — tears down attention adapters.
 

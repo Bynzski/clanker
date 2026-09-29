@@ -22,7 +22,7 @@ Right-click on any file or directory to access:
 | Action | Description |
 |--------|-------------|
 | **Open in Editor** | Open file in the editor pane |
-| **Reveal in System Explorer** | Open containing folder in OS file manager |
+| **Reveal in System Explorer** | Open containing folder in OS file manager (local workspaces only) |
 | **New File** | Create a new file in the selected directory |
 | **New Folder** | Create a new subdirectory |
 | **Rename** | Rename the selected file or directory |
@@ -51,9 +51,9 @@ These rules are enforced on every platform so a workspace authored on Linux stil
 
 ### Deletion
 
-Deleting a file or folder first tries the OS recycle bin (`shell.trashItem`). If trash integration is unavailable, the app falls back to permanent deletion; check the confirmation dialog before proceeding.
+In a local workspace, deleting a file or folder first tries the OS recycle bin (`shell.trashItem`). If trash integration is unavailable, the app falls back to permanent deletion. In an SSH workspace, deletion happens on the remote host and is permanent; there is no remote trash integration. Check the confirmation dialog before proceeding.
 
-If a file is held open by an editor or another process, the app surfaces a `File is in use` prompt instead of a generic permission error — close the file and retry.
+For local files held open by an editor or another process, the app surfaces a `File is in use` prompt instead of a generic permission error — close the file and retry. Remote filesystem errors are reported from the SSH host.
 
 ### Creating Files
 
@@ -82,7 +82,7 @@ The file explorer integrates with git to show file status:
 
 - **Modified files** — Display with a git status indicator
 - **Untracked files** — Visually distinguished from tracked files
-- **Real-time updates** — File changes are detected via the file watcher
+- **Local real-time updates** — File changes are detected via the local file watcher. SSH workspaces have no remote watcher in V1; the Explorer refreshes on app operations and focus, and its Refresh button requests the current remote contents.
 
 ## Editor Integration
 
@@ -94,7 +94,7 @@ Double-click a file or select **Open in Editor** to:
 
 ## State Persistence
 
-The explorer state is preserved per workspace:
+The explorer state is preserved per workspace identity (SSH environment plus canonical root path, or local root path):
 
 - Expanded directory paths
 - Last selected file path
