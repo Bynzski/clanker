@@ -66,6 +66,24 @@ describe('SshCommandExecutor', () => {
     expect(result.exitCode).toBe(0);
   });
 
+  it('scrubs attention credentials from SSH client environments and rejects forwarding them explicitly', async () => {
+    vi.stubEnv('CLANKER_ATTENTION_TOKEN', 'desktop-secret');
+    vi.stubEnv('CLANKER_REMOTE_ATTENTION_TOKEN', 'prior-launch-secret');
+    try {
+      const child = createMockChild();
+      vi.mocked(spawn).mockReturnValue(child as unknown as ChildProcess);
+      const pending = executor.exec('host', 'true', [], { env: { CLANKER_ATTENTION_PORT: '1234' } });
+      const options = vi.mocked(spawn).mock.calls[0][2];
+      expect(options?.env).not.toHaveProperty('CLANKER_ATTENTION_TOKEN');
+      expect(options?.env).not.toHaveProperty('CLANKER_ATTENTION_PORT');
+      expect(options?.env).not.toHaveProperty('CLANKER_REMOTE_ATTENTION_TOKEN');
+      child.emit('close', 0);
+      await pending;
+      await expect(executor.exec('host', 'true', [], { remoteEnv: { CLANKER_ATTENTION_TOKEN: 'secret' } }))
+        .rejects.toThrow('Invalid remote environment variable name');
+    } finally { vi.unstubAllEnvs(); }
+  });
+
   it('rejects option-injection targets before spawning', async () => {
     await expect(executor.exec('-oProxyCommand=calc.exe', 'ls'))
       .rejects.toThrow('cannot start with a hyphen');

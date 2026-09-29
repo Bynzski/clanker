@@ -29,6 +29,7 @@ export interface SpawnPtyOptions {
   remoteWorkingDir?: string;
   recipeCommandStartup?: RecipeCommandStartup;
   onExit?: (id: string) => void;
+  filterData?: (data: string) => string;
 }
 
 export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: number } {
@@ -79,6 +80,8 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     if (getIsShuttingDown()) return;
     const term = terminals.get(id);
     if (!term) return;
+    data = opts.filterData?.(data) ?? data;
+    if (!data) return;
     term.recipeCommandStartup?.onData(data);
 
     if (!term.startupBufferReady) {

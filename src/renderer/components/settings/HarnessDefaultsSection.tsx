@@ -106,11 +106,10 @@ export default function HarnessDefaultsSection({
                   <span className="harness-defaults-field-label">Agent attention</span>
                   <input
                     type="checkbox"
-                    checked={defaults?.attentionEnabled === true && harnessId !== 'hermes'}
-                    disabled={harnessId === 'hermes'}
+                    checked={defaults?.attentionEnabled === true}
                     title={
                       harnessId === 'hermes'
-                        ? 'Hermes lifecycle events are not integrated'
+                        ? 'Hermes attention is supported for SSH launches; local Hermes attention remains unavailable'
                         : undefined
                     }
                     onChange={(event) => void handleSetHarnessAttention(harnessId, event.target.checked)}

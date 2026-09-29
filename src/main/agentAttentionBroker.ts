@@ -11,9 +11,10 @@ const EVENT_FIELDS = new Set(['version', 'token', 'harness', 'event', 'sessionId
 interface Registration {
   terminalId: string;
   harness: string;
+  transport: 'local' | 'remote';
 }
 
-/** A loopback-only, advisory channel for hook notifications. It never accepts commands. */
+/** Advisory lifecycle events from local loopback hooks or a registered SSH terminal. Never commands. */
 export class AgentAttentionBroker {
   private readonly registrations = new Map<string, Registration>();
   private readonly readyTerminals = new Set<string>();
@@ -63,13 +64,25 @@ export class AgentAttentionBroker {
   async register(terminalId: string, harness: string): Promise<Record<string, string>> {
     const port = await this.start();
     const token = randomBytes(32).toString('hex');
-    this.registrations.set(token, { terminalId, harness });
+    this.registrations.set(token, { terminalId, harness, transport: 'local' });
     this.handoffStates.set(terminalId, 'unverified');
     return {
       CLANKER_ATTENTION_PORT: String(port),
       CLANKER_ATTENTION_TOKEN: token,
       CLANKER_ATTENTION_HARNESS: harness,
     };
+  }
+
+  /** SSH credentials are fresh and cannot authenticate to the desktop listener. */
+  registerRemote(terminalId: string, harness: string): string {
+    const token = randomBytes(32).toString('hex');
+    this.registrations.set(token, { terminalId, harness, transport: 'remote' });
+    this.handoffStates.set(terminalId, 'unverified');
+    return token;
+  }
+
+  receiveRemote(terminalId: string, raw: string): void {
+    this.receiveEvent(raw, terminalId);
   }
 
   release(terminalId: string): void {
@@ -112,6 +125,10 @@ export class AgentAttentionBroker {
   }
 
   receive(raw: string): void {
+    this.receiveEvent(raw);
+  }
+
+  private receiveEvent(raw: string, remoteTerminalId?: string): void {
     if (Buffer.byteLength(raw) > MAX_MESSAGE_BYTES) return;
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return; }
@@ -121,6 +138,8 @@ export class AgentAttentionBroker {
     if (data.version !== 1 || typeof data.token !== 'string') return;
     const registration = this.registrations.get(data.token);
     if (!registration || data.harness !== registration.harness) return;
+    if (remoteTerminalId === undefined ? registration.transport !== 'local'
+      : registration.transport !== 'remote' || registration.terminalId !== remoteTerminalId) return;
     if (typeof data.event !== 'string' || !EVENTS.has(data.event as AgentAttentionEvent)) return;
     if (data.sessionId !== undefined && (typeof data.sessionId !== 'string' || data.sessionId.length > 128)) return;
     if (data.turnId !== undefined && (typeof data.turnId !== 'string' || data.turnId.length > 128)) return;

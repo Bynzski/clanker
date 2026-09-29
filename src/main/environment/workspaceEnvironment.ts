@@ -50,6 +50,8 @@ export interface TerminalSpawnRequest {
   flags?: string;
   initialCommand?: string;
   recipeCommand?: boolean;
+  /** Main-generated per-launch credential; never supplied by the renderer. */
+  attentionToken?: string;
 }
 
 export interface TerminalSpawnResolved {
@@ -61,6 +63,7 @@ export interface TerminalSpawnResolved {
   initialCommand?: string;
   harnessId?: string;
   attentionEnabled?: boolean;
+  releaseAttention?: () => Promise<void>;
 }
 
 export interface WorkspaceEnvironment {

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { quotePosixArg, quotePosixCommand } from './posixQuote';
+import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
 import { validateSshTarget } from '../../shared/sshValidation';
 
 export interface SshExecOptions {
@@ -70,7 +71,7 @@ export class SshCommandExecutor {
     if (options.remoteEnv && Object.keys(options.remoteEnv).length > 0) {
       const envPrefix = Object.entries(options.remoteEnv)
         .map(([key, value]) => {
-          if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(key)) {
+          if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(key) || key.startsWith('CLANKER_ATTENTION_') || key.startsWith('CLANKER_REMOTE_ATTENTION_')) {
             throw new Error('Invalid remote environment variable name');
           }
           return `${key}=${quotePosixArg(value)}`;
@@ -95,10 +96,7 @@ export class SshCommandExecutor {
     try {
       child = spawn('ssh', sshArgs, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          ...(options.env || {}),
-        },
+        env: withoutAttentionEnvironment({ ...process.env, ...options.env }),
       });
     } catch (err) {
       reject(new Error(`Failed to spawn ssh: ${err instanceof Error ? err.message : String(err)}`));

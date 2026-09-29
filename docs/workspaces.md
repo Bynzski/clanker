@@ -79,7 +79,29 @@ Saved SSH targets cannot be edited or deleted while an open workspace uses them.
 - **Supported Remote Platforms**: Linux and POSIX-compatible operating systems (x86_64, ARM64). Remote Windows hosts are not supported in V1.
 - **Prerequisites**: OpenSSH server running on the remote host, with key-based authentication or ssh-agent configured for noninteractive background operations. Python 3 is required on the remote host for root-confined filesystem operations and atomic writes.
 
-Remote harness commands are discovered and executed on the remote host using its shell environment. Configured harness flags and applicable harness environment settings are applied to new remote terminals; local CLI installations and local Agent Attention adapters are not forwarded. Remote model discovery and selection are deferred in V1, so Clanker does not pass a locally selected default model to a remote harness.
+Remote harness commands are discovered and executed on the remote host using its shell environment. Configured harness flags and applicable harness environment settings are applied to new remote terminals; local CLI installations and desktop Agent Attention credentials are not forwarded. Remote attention uses host-side adapters when enabled in harness defaults. Remote model discovery and selection are deferred in V1, so Clanker does not pass a locally selected default model to a remote harness.
+
+### Remote Agent Attention
+
+Enable **Agent attention** in the harness defaults before launching a new SSH agent terminal. The existing pane and workspace badges show native lifecycle events. Events contain only lifecycle names and bounded session/turn IDs; prompts, tool arguments, and model output are excluded. They use the existing SSH terminal connection, with a fresh credential bound to that terminal. No desktop listener secret, additional listener, port forward, or remote daemon is used.
+
+| Harness | Native events used |
+| --- | --- |
+| Codex | Turn completion through `notify`; harness exit through the wrapper. Start and input-request events are unavailable. |
+| Claude | Prompt submission, stop, permission/input notifications, tool completion, and session end. |
+| OpenCode | Session busy/idle, permission/question requests and replies, and session deletion. |
+| Pi | Agent start, agent settled, and session shutdown. |
+| OMP | Agent start, agent end, and session shutdown. |
+| Antigravity | Initial invocation, interactive ask-tool requests/replies, and stop. |
+| Hermes | Turn start/completion and approval requests/replies through observer hooks. |
+
+All harnesses also retire attention on harness exit before the fallback shell. Missing native events remain unknown; terminal output is never interpreted as an agent state. Codex, Claude, Pi, OMP, and Antigravity require Node.js on the host for hooks. OpenCode uses its own JavaScript runtime; Hermes uses Python and must support its observer plugin API.
+
+Clanker refuses launches with attention enabled when hook configuration conflicts: Codex custom notify/profile settings, Claude explicit settings/bare/safe mode, OpenCode a custom config directory/pure mode/attached server, Pi/OMP disabled extensions, or Hermes custom profiles. Disable attention to use those launch modes. Existing user hook files are preserved.
+
+Antigravity installs an owned plugin at `~/.gemini/config/plugins/clanker-grid-remote-attention`; Hermes installs one at `~/.hermes/plugins/clanker-grid-remote-attention` and enables it with `hermes plugins enable`. These plugins remain installed and are inert without Clanker's per-launch environment. Antigravity hooks return an empty response when the launch credentials are absent; Clanker upgrades the exact prior owned hook configuration and refuses unrelated edits. Clanker refuses unowned/conflicting files and writable-by-other-users plugin folders. Hermes settings retain the enabled plugin entry; to uninstall, disable it through Hermes before removing that owned plugin directory. Other launch files use private temporary folders and are cleaned after exit where SSH remains available; interrupted connections can leave private temporary folders for manual cleanup.
+
+Local Hermes attention remains unsupported. Remote native session recovery and annotation handoff are separate capabilities and remain unavailable.
 
 ### Features Intentionally Deferred / Unavailable Remotely in V1
 
@@ -89,7 +111,7 @@ To maintain reliability and safety, the following capabilities are local-only in
 2. **Launch Recipes**: Creating, editing, or launching recipes for SSH workspaces is unavailable in V1. Legacy recipes without an environment ID remain local recipes.
 3. **Reveal in File Manager**: Disabled for remote paths, preventing passing remote paths to desktop OS file managers.
 4. **File Refresh**: One batched SSH poll checks the active workspace about every three seconds. It monitors up to 128 open editor files and 128 visible/expanded Explorer directories, scanning only direct directory children (up to 2,000 entries per directory). Changes refresh Explorer and reload clean editor tabs; dirty tabs keep their buffers and receive an external-change indicator. Polls do not overlap, back off after connection failures, and stop when their workspace closes. Parked workspaces are checked again when activated. Manual Refresh and the existing desktop-focus refresh remain available for larger directories and immediate updates.
-5. **Agent Attention & Remote Native Session Discovery**: Remote terminals run without local attention hooks. On remote terminal exit or app shutdown, local session history scanning is bypassed, and tasks are marked unavailable with a clear diagnostic explanation.
+5. **Remote Native Session Discovery**: On remote terminal exit or app shutdown, local session history scanning is bypassed, and tasks are marked unavailable with a clear diagnostic explanation.
 6. **Automatic Port Forwarding**: VPS development servers listening on `localhost:3000` are remote to that machine. Automatic port forwarding is deferred to a future release.
 7. **Remote Process Persistence**: Remote PTY processes terminate on workspace closure or app exit; PTY daemons are not installed on the remote machine.
 8. **AI Commit Generation**: Disabled for SSH workspaces; manual Git commits work remotely. Local model/CLI discovery is never used to represent a remote host.
@@ -122,7 +144,7 @@ Workspaces store their own harness and model selection independently:
 - **No harness set** — spawns a plain shell; global harness defaults are not inferred
 - **Flags** — read from global store defaults (not per-workspace)
 
-Global harness defaults (model, favorites, flags, visibility, agent attention) are configured in the header settings dropdown. For local workspaces, the model is preselected in the launcher when a harness is chosen, and flags and attention settings apply to new harness terminals. For SSH workspaces, configured flags apply, while model selection and Agent Attention are unavailable in V1. See [Configuration](configuration.md#harness-defaults).
+Global harness defaults (model, favorites, flags, visibility, agent attention) are configured in the header settings dropdown. For local workspaces, the model is preselected in the launcher when a harness is chosen, and flags and attention settings apply to new harness terminals. For SSH workspaces, configured flags apply, and Agent Attention can be enabled per harness, while remote model selection remains unavailable. See [Configuration](configuration.md#harness-defaults).
 
 ## Layout Controls
 

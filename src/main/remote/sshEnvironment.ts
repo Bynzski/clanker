@@ -17,8 +17,10 @@ import { inspectSshWorktree } from './sshWorktreeInspection';
 import { removeSshWorktree, waitForSshWorktreeOperations } from './sshWorktreeRemoval';
 import type { RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
 export { isPathContained } from './remotePaths';
+import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
 import { HARNESS_OPTIONS } from '../harnessCatalog';
 import { buildHarnessSpawnArgs } from '../harnessLaunch';
+import { prepareSshAttention, remoteAttentionEnvironment, REMOTE_CLI_PATH_SETUP } from './sshAgentAttention';
 import type {
   FileListDirectoryRequest,
   FileListDirectoryResult,
@@ -144,28 +146,15 @@ function validNewDirectoryName(value: unknown): value is string {
   return validBrowseName(value) && !value.includes('\\');
 }
 
-// A noninteractive SSH command does not reliably receive the account's login
-// PATH. Source only the POSIX login profile (never an interactive shell rc),
-// then add the same user CLI directories as the local harness wrapper.
-const REMOTE_CLI_PATH_SETUP = [
-  'if [ -r "$HOME/.profile" ]; then . "$HOME/.profile" >/dev/null; fi',
-  'for clanker_bin in "$HOME/bin" "$HOME/.npm-packages/bin" "$HOME/.local/bin" "$HOME/.npm-global/bin"; do',
-  '  case ":$PATH:" in *":$clanker_bin:"*) ;; *) PATH="$clanker_bin:$PATH" ;; esac',
-  'done',
-  'export PATH',
-].join('\n');
-
 function remoteHarnessEnvironment(env: Record<string, string> | undefined): string {
   return Object.entries(env ?? {})
-    .filter(([key]) => /^[A-Za-z_][A-Za-z_0-9]*$/.test(key) && !key.startsWith('CLANKER_ATTENTION_'))
+    .filter(([key]) => /^[A-Za-z_][A-Za-z_0-9]*$/.test(key) && !key.startsWith('CLANKER_ATTENTION_') && !key.startsWith('CLANKER_REMOTE_ATTENTION_'))
     .map(([key, value]) => `${key}=${quotePosixArg(value)}`)
     .join(' ');
 }
 
 function sshProcessEnvironment(): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(process.env).filter(([key, value]) => value !== undefined && !key.startsWith('CLANKER_ATTENTION_'))
-  ) as Record<string, string>;
+  return withoutAttentionEnvironment(process.env);
 }
 
 export class SshEnvironment implements WorkspaceEnvironment {
@@ -180,7 +169,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
     watchFiles: true,
     worktrees: true,
     revealInFileManager: false,
-    agentAttention: false,
+    agentAttention: true,
     sessionDiscovery: false,
     annotationHandoff: false,
   };
@@ -686,15 +675,22 @@ export class SshEnvironment implements WorkspaceEnvironment {
     const remoteScript = [
       `cd ${quotePosixArg(params.workingDir)} || exit 1`,
       REMOTE_CLI_PATH_SETUP,
-      'unset CLANKER_ATTENTION_PORT CLANKER_ATTENTION_TOKEN CLANKER_ATTENTION_HARNESS CLANKER_ATTENTION_COMMAND',
+      `for clanker_key in $(env | sed -n 's/^\\(CLANKER_\\(REMOTE_\\)\\{0,1\\}ATTENTION_[A-Za-z_0-9]*\\)=.*/\\1/p'); do unset "$clanker_key"; done`,
     ];
 
+    let attention: Awaited<ReturnType<typeof prepareSshAttention>> | undefined;
     if (harnessConfig && params.harness) {
-      const harnessArgs = buildHarnessSpawnArgs(harnessConfig, params.model, params.flags);
-      const harnessEnv = remoteHarnessEnvironment(harnessConfig.env);
+      let harnessArgs = buildHarnessSpawnArgs(harnessConfig, params.model, params.flags);
+      if (params.attentionToken) {
+        attention = await prepareSshAttention(this.executor, this.target, params.harness, harnessArgs, params.attentionToken);
+        harnessArgs = attention.args;
+      }
+      const harnessEnv = [remoteHarnessEnvironment(harnessConfig.env), attention ? remoteAttentionEnvironment(attention.env) : ''].filter(Boolean).join(' ');
       const quotedHarness = quotePosixCommand(harnessConfig.command, harnessArgs);
       // Keep the foreground CLI interactive, then leave a usable shell on exit.
+      if (attention) remoteScript.push(`trap ${quotePosixArg(attention.endCommand)} EXIT HUP TERM`);
       remoteScript.push(`(${harnessEnv ? `${harnessEnv} ` : ''}${quotedHarness} || true)`);
+      if (attention) remoteScript.push(attention.endCommand, 'trap - EXIT HUP TERM');
     } else if (params.initialCommand) {
       remoteScript.push(`sh -c ${quotePosixArg(params.initialCommand)}`);
     }
@@ -718,7 +714,8 @@ export class SshEnvironment implements WorkspaceEnvironment {
       launchLabel,
       initialCommand: undefined, // Embedded directly into ssh remoteExec; avoid duplicate PTY stdin replay
       harnessId: harnessConfig ? params.harness : undefined,
-      attentionEnabled: false, // Agent Attention disabled for remote terminals in V1
+      attentionEnabled: Boolean(attention),
+      releaseAttention: attention?.release,
     };
   }
 }

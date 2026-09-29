@@ -34,6 +34,7 @@ import { spawnPtyProcess } from './ptySpawn';
 import { RecipeCommandStartup } from '../recipeCommandStartup';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import { isPathContained } from '../remote/sshEnvironment';
+import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import {
   acquireAgyAttentionPlugin,
@@ -159,22 +160,29 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         remoteWorkingDir = validation.resolvedPath;
       }
 
-      const resolved = await resolvedWorkspace.environment.resolveTerminalSpawn({
-        id,
-        workingDir: remoteWorkingDir,
-        harness,
-        model,
-        flags: harness ? store.get('harnessDefaults')[harness]?.flags : undefined,
-        initialCommand,
-        recipeCommand,
-      });
-
-      if (registry?.getWorkspace(resolvedWorkspace.workspaceId) !== resolvedWorkspace ||
-          registry.isRemotePathReserved?.(effectiveEnvironmentId, remoteWorkingDir)) {
-        throw new Error('Remote workspace was closed or is being removed');
-      }
-
+      const attentionRequested = Boolean(harness && store.get('harnessDefaults')[harness]?.attentionEnabled
+        && resolvedWorkspace.environment.capabilities.agentAttention && agentAttentionBroker);
+      const attentionToken = attentionRequested && harness ? agentAttentionBroker!.registerRemote(id, harness) : undefined;
+      let releaseAttention: (() => Promise<void>) | undefined;
       try {
+        const resolved = await resolvedWorkspace.environment.resolveTerminalSpawn({
+          id,
+          workingDir: remoteWorkingDir,
+          harness,
+          model,
+          flags: harness ? store.get('harnessDefaults')[harness]?.flags : undefined,
+          initialCommand,
+          recipeCommand,
+          attentionToken,
+        });
+        releaseAttention = resolved.releaseAttention;
+
+        if (appShuttingDown || deps.getAppShuttingDown?.() ||
+            registry?.getWorkspace(resolvedWorkspace.workspaceId) !== resolvedWorkspace ||
+            registry.isRemotePathReserved?.(effectiveEnvironmentId, remoteWorkingDir)) {
+          throw new Error('Remote workspace was closed or is being removed');
+        }
+
         const result = spawnPtyProcess({
           id,
           spawnCmd: resolved.spawnCmd,
@@ -190,7 +198,11 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           workspaceId: resolvedWorkspace.workspaceId,
           environmentId: effectiveEnvironmentId,
           remoteWorkingDir,
+          filterData: resolved.attentionEnabled && agentAttentionBroker
+            ? createRemoteAttentionFilter((raw) => agentAttentionBroker.receiveRemote(id, raw)) : undefined,
           onExit: () => {
+            agentAttentionBroker?.release(id);
+            void releaseAttention?.().catch((error: unknown) => console.warn('[clanker-grid] remote attention cleanup failed:', error));
             void taskSessionCoordinator?.onTerminalExited(id, effectiveEnvironmentId);
           },
         });
@@ -208,10 +220,12 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         return {
           id: result.id,
           pid: result.pid,
-          attentionEnabled: false,
+          attentionEnabled: resolved.attentionEnabled === true,
           harnessId: resolved.harnessId ?? harness ?? null,
         };
       } catch (error) {
+        agentAttentionBroker?.release(id);
+        await releaseAttention?.().catch(() => undefined);
         console.error('[clanker-grid] failed to spawn remote terminal via SSH:', error);
         throw error;
       }

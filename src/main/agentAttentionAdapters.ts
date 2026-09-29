@@ -25,7 +25,7 @@ let activeAgyPlugin: ActiveAgyAttentionPlugin | null = null;
 /** Keep observer credentials scoped to the launch that registered them. */
 export function withoutAttentionEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
   return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] =>
-    !entry[0].startsWith('CLANKER_ATTENTION_') && typeof entry[1] === 'string'));
+    !entry[0].startsWith('CLANKER_ATTENTION_') && !entry[0].startsWith('CLANKER_REMOTE_ATTENTION_') && typeof entry[1] === 'string'));
 }
 
 const OBSERVER = `import net from 'node:net';
@@ -122,6 +122,18 @@ export const ClankerAttention = async () => ({
   },
 });
 `;
+
+/** Share event mappings across local and SSH transports. No credentials are embedded. */
+export function attentionAdapterSources(observer: string): Record<string, string> {
+  return {
+    'observer.mjs': observer,
+    'command.mjs': COMMAND,
+    'pi.ts': PI,
+    'omp.ts': OMP,
+    'opencode/observer.mjs': observer,
+    'opencode/plugins/clanker-attention.js': OPENCODE,
+  };
+}
 
 function hookNodeExecutable(platform: NodeJS.Platform): string {
   return platform === 'win32' ? 'node.exe' : 'node';

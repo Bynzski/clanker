@@ -34,7 +34,12 @@ describe('Hermes default model settings', () => {
     expect(handleSetDefaultModel).toHaveBeenCalledWith('hermes', providerModel);
     rerender(<HarnessDefaultsSection {...props} harnessDefaults={{ hermes: { ...props.harnessDefaults.hermes, model: providerModel } }} />);
     expect(screen.getByText('anthropic/claude-sonnet · OpenRouter', { selector: '.harness-defaults-current' })).toBeTruthy();
-    expect(screen.getByRole('checkbox', { name: 'Agent attention for Hermes' })).toBeDisabled();
+    const attention = screen.getByRole('checkbox', { name: 'Agent attention for Hermes' });
+    expect(attention).toBeEnabled();
+    expect(attention).not.toBeChecked();
+    expect(attention.title).toContain('SSH launches');
+    fireEvent.click(attention);
+    expect(props.handleSetHarnessAttention).toHaveBeenCalledWith('hermes', true);
   });
 
   it('keeps an undiscovered manual default selectable and allows changing to a custom model', () => {
