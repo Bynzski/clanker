@@ -17,6 +17,7 @@ import type {
 import type {
   WorkspaceEnvironmentId,
 } from '../../shared/types/environments';
+import type { RemoteFileSnapshot, RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
 
 export interface EnvironmentCapabilities {
   readonly watchFiles: boolean;
@@ -76,6 +77,7 @@ export interface WorkspaceEnvironment {
   createDirectory(request: FileCreateRequest): Promise<FileOperationResult>;
   deleteEntry(request: FileDeleteRequest): Promise<FileOperationResult>;
   renameEntry(request: FileRenameRequest): Promise<FileOperationResult>;
+  snapshotFiles?(workspacePath: string, targets: RemoteFileSnapshotTargets, signal?: AbortSignal): Promise<RemoteFileSnapshot>;
 
   // Git operations
   execGit(workspacePath: string, args: string[], timeoutMs?: number): Promise<{ stdout: string; stderr: string }>;

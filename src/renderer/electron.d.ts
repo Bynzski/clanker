@@ -1,5 +1,6 @@
 import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types/environments';
 import type { RemoteDirectoryListing } from '../shared/types/environments';
+import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { WorkspaceRecipe, RecipePreviewProbeResult } from '../../shared/types/recipes';
 import type { TaskSessionRecord } from '../../shared/types/taskSessions';
 import type { FileListDirectoryRequest, FileListDirectoryResult, ExplorerTreeChangedEvent } from '../../shared/types/fileExplorer';
@@ -266,6 +267,8 @@ interface ElectronAPI {
   editorReadFile: (request: FileReadRequest) => Promise<FileReadResult>;
   editorWriteFile: (request: FileWriteRequest) => Promise<FileWriteResult>;
   editorWatchFile: (request: FileWatchRequest) => Promise<boolean>;
+  remoteFilesWatch: (request: RemoteFileWatchRequest | null) => Promise<boolean>;
+  onRemoteFilesChanged: (callback: (event: RemoteFilesChangedEvent) => void) => () => void;
   editorUnwatchFile: (request: FileWatchRequest) => Promise<boolean>;
   onFileChanged: (callback: (event: FileChangedEvent) => void) => () => void;
 

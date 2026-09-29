@@ -144,6 +144,7 @@ const defaultWorkspaceState = {
 };
 
 const MAX_LAYOUT_UNDO_DEPTH = 20;
+const automaticEditorReloads = new Map<string, { rerun: boolean; invalidated: boolean }>();
 
 function patchWorkspaceLayout(
   state: WorkspaceState,
@@ -1436,11 +1437,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
     // Deduplicate concurrent opens for the same file
-    if (isEditorOperationPending(state, filePath)) {
+    if (isEditorOperationPending(state, filePath, scopedWorkspace.environmentId)) {
       return;
     }
 
-    useWorkspaceStore.setState({ pendingEditorOperations: setEditorOperationPending(state, filePath, 'open') });
+    useWorkspaceStore.setState({ pendingEditorOperations: setEditorOperationPending(state, filePath, 'open', scopedWorkspace.environmentId) });
 
     try {
       const readResult = await window.electronAPI.editorReadFile({
@@ -1520,7 +1521,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     } finally {
       useWorkspaceStore.setState((currentState) => ({
-        pendingEditorOperations: clearEditorOperationPending(currentState, filePath),
+        pendingEditorOperations: clearEditorOperationPending(currentState, filePath, scopedWorkspace.environmentId),
       }));
     }
   },
@@ -1632,12 +1633,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!tab || scopedWorkspace == null) return false;
 
     // Deduplicate concurrent saves for the same file
-    if (isEditorOperationPending(stateBeforeSave, tab.filePath)) {
+    if (isEditorOperationPending(stateBeforeSave, tab.filePath, scopedWorkspace.environmentId)) {
       return true;
     }
 
     const contentToSave = preserveOriginalLineEndings(tab.content, tab.originalContent);
-    useWorkspaceStore.setState({ pendingEditorOperations: setEditorOperationPending(stateBeforeSave, tab.filePath, 'save') });
+    useWorkspaceStore.setState({ pendingEditorOperations: setEditorOperationPending(stateBeforeSave, tab.filePath, 'save', scopedWorkspace.environmentId) });
 
     try {
       const result = await window.electronAPI.editorWriteFile({
@@ -1681,7 +1682,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return true;
     } finally {
       useWorkspaceStore.setState((currentState) => ({
-        pendingEditorOperations: clearEditorOperationPending(currentState, tab.filePath),
+        pendingEditorOperations: clearEditorOperationPending(currentState, tab.filePath, scopedWorkspace.environmentId),
       }));
     }
   },
@@ -1820,18 +1821,32 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     });
   },
 
-  reloadEditorTab: async (tabId, workspaceId) => {
+  reloadEditorTab: async (tabId, workspaceId, options) => {
     const state = useWorkspaceStore.getState();
     const scopedWorkspace = resolveWorkspaceByScope(state, workspaceId);
     const tab = scopedWorkspace?.editorTabs.find((t) => t.id === tabId);
     if (!tab || scopedWorkspace == null) return;
+    if (options?.onlyIfClean && tab.isDirty) return;
 
     // Skip reload if a save is in flight for this file — save takes priority
-    if (isEditorOperationPending(state, tab.filePath)) {
+    if (isEditorOperationPending(state, tab.filePath, scopedWorkspace.environmentId)) {
       return;
     }
 
-    useWorkspaceStore.setState({ pendingEditorOperations: setEditorOperationPending(state, tab.filePath, 'reload') });
+    const automaticKey = JSON.stringify([scopedWorkspace.id, tab.filePath]);
+    const automaticReload = { rerun: false, invalidated: false };
+    if (options?.onlyIfClean) {
+      const inFlight = automaticEditorReloads.get(automaticKey);
+      if (inFlight) {
+        // A retry tick does not represent another edit. Actual changes must
+        // survive the outstanding read, even if it returns older contents.
+        if (!options.retryIfIdle) inFlight.rerun = true;
+        return;
+      }
+      automaticEditorReloads.set(automaticKey, automaticReload);
+    } else {
+      useWorkspaceStore.setState({ pendingEditorOperations: setEditorOperationPending(state, tab.filePath, 'reload', scopedWorkspace.environmentId) });
+    }
 
     try {
       const result = await window.electronAPI.editorReadFile({
@@ -1847,9 +1862,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             return {};
           }
 
-          const nextTabs = workspace.editorTabs.map((t) =>
-            t.id === tabId ? { ...t, isDeleted: true, hasExternalChange: false } : t
-          );
+          const nextTabs = workspace.editorTabs.map((t) => {
+            if (t.id !== tabId || t.filePath !== tab.filePath) return t;
+            if (options?.onlyIfClean && automaticReload.invalidated) return t;
+            if (options?.onlyIfClean && isEditorOperationPending(currentState, tab.filePath, scopedWorkspace.environmentId)) return t;
+            if (options?.onlyIfClean && automaticReload.rerun) return { ...t, hasExternalChange: true };
+            if (options?.onlyIfClean && result.errorCode !== 'not-found') return { ...t, hasExternalChange: true };
+            return { ...t, isDeleted: true, hasExternalChange: false };
+          });
           return patchWorkspaceById(currentState, scopedWorkspace.id, (currentWorkspace) => ({
             ...currentWorkspace,
             editorTabs: nextTabs,
@@ -1864,26 +1884,35 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           return {};
         }
 
-        const nextTabs = workspace.editorTabs.map((t) =>
-          t.id === tabId
-            ? {
-                ...t,
-                content: result.content ?? '',
-                originalContent: result.content ?? '',
-                isDirty: false,
-                hasExternalChange: false,
-                isDeleted: false,
-              }
-            : t
-        );
+        const nextTabs = workspace.editorTabs.map((t) => {
+          if (t.id !== tabId || t.filePath !== tab.filePath) return t;
+          if (options?.onlyIfClean && automaticReload.invalidated) return t;
+          if (options?.onlyIfClean && isEditorOperationPending(currentState, tab.filePath, scopedWorkspace.environmentId)) return t;
+          if (options?.onlyIfClean && automaticReload.rerun) return { ...t, hasExternalChange: true };
+          if (options?.onlyIfClean && (t.isDirty || t.content !== tab.content || t.originalContent !== tab.originalContent)) return { ...t, hasExternalChange: true };
+          return {
+            ...t,
+            content: result.content ?? '',
+            originalContent: result.content ?? '',
+            isDirty: false,
+            hasExternalChange: false,
+            isDeleted: false,
+          };
+        });
         return patchWorkspaceById(currentState, scopedWorkspace.id, (currentWorkspace) => ({
           ...currentWorkspace,
           editorTabs: nextTabs,
         }));
       });
     } finally {
-      useWorkspaceStore.setState((currentState) => ({
-        pendingEditorOperations: clearEditorOperationPending(currentState, tab.filePath),
+      if (options?.onlyIfClean) {
+        automaticEditorReloads.delete(automaticKey);
+        const latestTab = get().getWorkspaceById(scopedWorkspace.id)?.editorTabs.find((entry) => entry.id === tabId);
+        if (automaticReload.rerun && latestTab?.filePath === tab.filePath) {
+          await get().reloadEditorTab(tabId, scopedWorkspace.id, { onlyIfClean: true });
+        }
+      } else useWorkspaceStore.setState((currentState) => ({
+        pendingEditorOperations: clearEditorOperationPending(currentState, tab.filePath, scopedWorkspace.environmentId),
       }));
     }
   },
@@ -1907,6 +1936,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const workspace = resolveWorkspaceByScope(state, workspaceId);
     if (workspace == null) {
       return state;
+    }
+
+    const tab = workspace.editorTabs.find((entry) => entry.id === tabId);
+    if (tab) {
+      const inFlight = automaticEditorReloads.get(JSON.stringify([workspace.id, tab.filePath]));
+      // A deletion is newer than any outstanding automatic read, including
+      // focus refreshes. Even repeated deletions invalidate that read.
+      if (inFlight) inFlight.invalidated = true;
     }
 
     const nextTabs = workspace.editorTabs.map((t) =>

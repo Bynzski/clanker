@@ -405,6 +405,108 @@ describe('editor store actions', () => {
   });
 
   describe('async operation deduplication', () => {
+    it.each([
+      { success: true, content: 'older remote edit' },
+      { success: false, errorCode: 'not-found' },
+    ])('coalesces newer changes into a follow-up automatic reload after %j', async (olderResult) => {
+      addWorkspace();
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({ success: true, content: 'original' });
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
+      const tabId = useWorkspaceStore.getState().editorTabs[0].id;
+      let resolveFirst!: (value: unknown) => void;
+      let resolveFollowup!: (value: unknown) => void;
+      mockElectronApi.editorReadFile.mockReturnValueOnce(new Promise((done) => { resolveFirst = done; }));
+      mockElectronApi.editorReadFile.mockReturnValueOnce(new Promise((done) => { resolveFollowup = done; }));
+      const reload = useWorkspaceStore.getState().reloadEditorTab(tabId, undefined, { onlyIfClean: true });
+      await useWorkspaceStore.getState().reloadEditorTab(tabId, undefined, { onlyIfClean: true });
+      await useWorkspaceStore.getState().reloadEditorTab(tabId, undefined, { onlyIfClean: true });
+      expect(mockElectronApi.editorReadFile).toHaveBeenCalledTimes(2);
+      resolveFirst(olderResult);
+      await Promise.resolve();
+      expect(mockElectronApi.editorReadFile).toHaveBeenCalledTimes(3);
+      expect(useWorkspaceStore.getState().editorTabs[0]).toMatchObject({ content: 'original', hasExternalChange: true });
+      expect(useWorkspaceStore.getState().editorTabs[0].isDeleted).not.toBe(true);
+      // Unchanged polling ticks must not perpetually invalidate a slow retry.
+      await useWorkspaceStore.getState().reloadEditorTab(tabId, undefined, { onlyIfClean: true, retryIfIdle: true });
+      resolveFollowup({ success: true, content: 'newest remote edit' });
+      await reload;
+      expect(mockElectronApi.editorReadFile).toHaveBeenCalledTimes(3);
+      expect(useWorkspaceStore.getState().editorTabs[0]).toMatchObject({ content: 'newest remote edit', originalContent: 'newest remote edit', isDirty: false, hasExternalChange: false });
+    });
+
+    it('preserves unsaved edits when a queued automatic reload becomes dirty', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({ success: true, content: 'original' });
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
+      const tabId = useWorkspaceStore.getState().editorTabs[0].id;
+      let resolve!: (value: unknown) => void;
+      mockElectronApi.editorReadFile.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+      const reload = useWorkspaceStore.getState().reloadEditorTab(tabId, undefined, { onlyIfClean: true });
+      await useWorkspaceStore.getState().reloadEditorTab(tabId, undefined, { onlyIfClean: true });
+      useWorkspaceStore.getState().updateEditorContent(tabId, 'unsaved edits');
+      resolve({ success: true, content: 'older remote edit' });
+      await reload;
+      expect(mockElectronApi.editorReadFile).toHaveBeenCalledTimes(2);
+      expect(useWorkspaceStore.getState().editorTabs[0]).toMatchObject({ content: 'unsaved edits', originalContent: 'original', isDirty: true, hasExternalChange: true });
+    });
+
+    it('preserves edits made while an automatic reload is in flight', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({ success: true, content: 'original' });
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
+      const tabId = useWorkspaceStore.getState().editorTabs[0].id;
+      let resolve!: (value: unknown) => void;
+      mockElectronApi.editorReadFile.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+      const reload = useWorkspaceStore.getState().reloadEditorTab(tabId, undefined, { onlyIfClean: true });
+      useWorkspaceStore.getState().updateEditorContent(tabId, 'unsaved edits');
+      resolve({ success: true, content: 'remote edit' });
+      await reload;
+      expect(useWorkspaceStore.getState().editorTabs[0]).toMatchObject({ content: 'unsaved edits', originalContent: 'original', isDirty: true, hasExternalChange: true });
+    });
+
+    it('allows a save during an automatic reload and preserves the saved content', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({ success: true, content: 'original' });
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
+      const tabId = useWorkspaceStore.getState().editorTabs[0].id;
+      let resolve!: (value: unknown) => void;
+      mockElectronApi.editorReadFile.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+      const reload = useWorkspaceStore.getState().reloadEditorTab(tabId, undefined, { onlyIfClean: true });
+      useWorkspaceStore.getState().updateEditorContent(tabId, 'saved edit');
+      await useWorkspaceStore.getState().saveEditorFile(tabId);
+      expect(mockElectronApi.editorWriteFile).toHaveBeenCalledTimes(1);
+      resolve({ success: true, content: 'older remote edit' });
+      await reload;
+      expect(useWorkspaceStore.getState().editorTabs[0]).toMatchObject({ content: 'saved edit', originalContent: 'saved edit', isDirty: false });
+    });
+
+    it('does not classify an automatic reload transport failure as a deletion', async () => {
+      addWorkspace();
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({ success: true, content: 'original' });
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/test.js');
+      const tabId = useWorkspaceStore.getState().editorTabs[0].id;
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({ success: false, errorCode: 'read-error', error: 'SSH disconnected' });
+      await useWorkspaceStore.getState().reloadEditorTab(tabId, undefined, { onlyIfClean: true });
+      expect(useWorkspaceStore.getState().editorTabs[0]).toMatchObject({ content: 'original', hasExternalChange: true });
+      expect(useWorkspaceStore.getState().editorTabs[0].isDeleted).not.toBe(true);
+    });
+
+    it('keeps same-path local and SSH editor operations independent', async () => {
+      const local = createWorkspaceFixture({ id: 'local', workspacePath: '/workspace' });
+      const remote = createWorkspaceFixture({ id: 'remote', workspacePath: '/workspace', environmentId: 'ssh-host' });
+      useWorkspaceStore.setState({ ...remote, workspaces: [local, remote], activeWorkspaceId: 'remote' });
+      let resolve!: (value: unknown) => void;
+      mockElectronApi.editorReadFile.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+      mockElectronApi.editorReadFile.mockResolvedValueOnce({ success: true, content: 'remote content' });
+      const openingLocal = useWorkspaceStore.getState().openFileInEditor('/workspace/shared', 'local');
+      await useWorkspaceStore.getState().openFileInEditor('/workspace/shared', 'remote');
+      expect(mockElectronApi.editorReadFile).toHaveBeenCalledTimes(2);
+      resolve({ success: true, content: 'local content' });
+      await openingLocal;
+      expect(useWorkspaceStore.getState().getWorkspaceById('local')?.editorTabs[0].content).toBe('local content');
+      expect(useWorkspaceStore.getState().getWorkspaceById('remote')?.editorTabs[0].content).toBe('remote content');
+    });
+
     it('deduplicates rapid double-open of the same file', async () => {
       addWorkspace();
       let resolveRead: (value: unknown) => void;

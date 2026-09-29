@@ -3,6 +3,7 @@ import { quotePosixArg, quotePosixCommand } from './posixQuote';
 import { validateSshTarget } from '../../shared/sshValidation';
 
 export interface SshExecOptions {
+  signal?: AbortSignal;
   cwd?: string;
   timeoutMs?: number;
   maxBuffer?: number;
@@ -55,6 +56,7 @@ export class SshCommandExecutor {
     args: string[] = [],
     options: SshExecOptions = {}
   ): Promise<SshExecResult> {
+    if (options.signal?.aborted) throw new Error('Remote SSH command aborted');
     const targetValidation = validateSshTarget(target);
     if (!targetValidation.valid || !targetValidation.target) {
       throw new Error(targetValidation.error || 'Invalid SSH target');
@@ -128,6 +130,14 @@ export class SshCommandExecutor {
       forceKillTimer.unref();
     };
 
+    const onAbort = () => {
+      if (killed) return;
+      killed = true;
+      clearTimeout(timer);
+      terminateChild();
+      reject(new Error('Remote SSH command aborted'));
+    };
+
     const timer = setTimeout(() => {
       killed = true;
       terminateChild();
@@ -161,6 +171,7 @@ export class SshCommandExecutor {
     });
 
     child.on('error', (err) => {
+      options.signal?.removeEventListener('abort', onAbort);
       clearTimeout(timer);
       if (forceKillTimer) clearTimeout(forceKillTimer);
       if (!killed) {
@@ -169,6 +180,7 @@ export class SshCommandExecutor {
     });
 
     child.on('close', (code, signal) => {
+      options.signal?.removeEventListener('abort', onAbort);
       clearTimeout(timer);
       if (forceKillTimer) clearTimeout(forceKillTimer);
       if (killed) return;
@@ -195,6 +207,9 @@ export class SshCommandExecutor {
       resolve({ stdout, stderr, exitCode });
     });
 
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    if (options.signal?.aborted) onAbort();
+
     if (typeof child.stdin?.on === 'function') {
       child.stdin.on('error', () => {
         // Ignore EPIPE / early stream termination on SSH disconnect
@@ -207,7 +222,7 @@ export class SshCommandExecutor {
       child.stdin?.end();
     }
 
-    return promise;
+    return promise.finally(() => options.signal?.removeEventListener('abort', onAbort));
   }
 
   /**

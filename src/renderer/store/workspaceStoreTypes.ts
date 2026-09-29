@@ -185,7 +185,7 @@ export interface WorkspaceState {
   closeEditorPane: (workspaceId?: string) => void;
   resetEditorState: () => void;
   renameEditorTabPath: (oldPath: string, newPath: string, workspaceId?: string) => void;
-  reloadEditorTab: (tabId: string, workspaceId?: string) => Promise<void>;
+  reloadEditorTab: (tabId: string, workspaceId?: string, options?: { onlyIfClean?: boolean; retryIfIdle?: boolean }) => Promise<void>;
   markEditorTabExternallyChanged: (tabId: string, workspaceId?: string) => void;
   markEditorTabDeleted: (tabId: string, workspaceId?: string) => void;
   clearEditorTabExternalFlag: (tabId: string, workspaceId?: string) => void;

@@ -55,22 +55,25 @@ function handleFileChanged(filePath: string, deleted: boolean): void {
 
   for (const workspace of workspaces) {
     if ((workspace.environmentId ?? 'local') !== 'local') continue;
-    for (const tab of workspace.editorTabs) {
-      if (pathKey(tab.filePath) !== pathKey(filePath)) {
-        continue;
-      }
+    handleWorkspaceFileChanged(workspace, filePath, deleted);
+  }
+}
 
-      if (deleted) {
-        state.markEditorTabDeleted(tab.id, workspace.id);
-        continue;
-      }
-
-      if (tab.isDirty) {
-        state.markEditorTabExternallyChanged(tab.id, workspace.id);
-        continue;
-      }
-
-      void state.reloadEditorTab(tab.id, workspace.id);
+export async function handleWorkspaceFileChanged(workspace: Pick<WorkspaceTab, 'id' | 'environmentId' | 'editorTabs'>, filePath: string, deleted: boolean, initial = false, retryIfIdle = false): Promise<void> {
+  const state = useWorkspaceStore.getState();
+  const remote = (workspace.environmentId ?? 'local') !== 'local';
+  for (const tab of workspace.editorTabs) {
+    if (remote ? tab.filePath !== filePath : pathKey(tab.filePath) !== pathKey(filePath)) continue;
+    if (deleted) state.markEditorTabDeleted(tab.id, workspace.id);
+    else if (tab.isDirty) {
+      if (!initial) state.markEditorTabExternallyChanged(tab.id, workspace.id);
+    } else {
+      await state.reloadEditorTab(tab.id, workspace.id, { onlyIfClean: true, ...(retryIfIdle ? { retryIfIdle: true } : {}) }).catch((error) => {
+        const latest = useWorkspaceStore.getState();
+        const currentTab = latest.getWorkspaceById(workspace.id)?.editorTabs.find((entry) => entry.id === tab.id);
+        if (currentTab?.filePath === filePath) latest.markEditorTabExternallyChanged(tab.id, workspace.id);
+        console.warn('Could not reload changed editor file:', error);
+      });
     }
   }
 }

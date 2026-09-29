@@ -10,6 +10,7 @@ import type { VcsProvider } from '../shared/types/vcs';
 import type { GitStatusResult } from '../shared/types/git';
 import type { HarnessSession } from '../shared/types/session';
 import type { AgentAttentionUpdate } from '../shared/types/agentAttention';
+import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import {
   GET_APP_VERSION,
   GET_LAST_WORKSPACE,
@@ -18,6 +19,8 @@ import {
   OPEN_DIRECTORY_DIALOG,
   READ_DIRECTORY,
   FILE_LIST_DIRECTORY,
+  REMOTE_FILES_WATCH,
+  REMOTE_FILES_CHANGED,
   FILE_READ,
   FILE_WRITE,
   FILE_CHANGED,
@@ -430,6 +433,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   editorReadFile: (request: FileReadRequest) => ipcRenderer.invoke(FILE_READ, request),
   editorWriteFile: (request: FileWriteRequest) => ipcRenderer.invoke(FILE_WRITE, request),
   editorWatchFile: (request: FileWatchRequest) => ipcRenderer.invoke(FILE_WATCH, request),
+  remoteFilesWatch: (request: RemoteFileWatchRequest | null) => ipcRenderer.invoke(REMOTE_FILES_WATCH, request),
+  onRemoteFilesChanged: (callback: (event: RemoteFilesChangedEvent) => void) => {
+    const listener = (_: IpcRendererEvent, event: RemoteFilesChangedEvent) => callback(event);
+    ipcRenderer.on(REMOTE_FILES_CHANGED, listener);
+    return () => ipcRenderer.removeListener(REMOTE_FILES_CHANGED, listener);
+  },
   editorUnwatchFile: (request: FileWatchRequest) => ipcRenderer.invoke(FILE_UNWATCH, request),
   onFileChanged: (callback: (event: FileChangedEvent) => void) => {
     const handler = (_event: IpcRendererEvent, payload: FileChangedEvent) => callback(payload);

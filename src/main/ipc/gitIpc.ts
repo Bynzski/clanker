@@ -58,6 +58,7 @@ interface RegisterGitIpcDeps {
   getGitService: () => GitService;
   getMainWindow: () => BrowserWindow | null;
   getWorkspaceRegistry?: () => WorkspaceRegistry;
+  onWorkspaceUnregistered?: (workspaceId: string) => void;
 }
 function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
   if (!Array.isArray(paths) || !paths.every((entry) => typeof entry === 'string')) return null;
@@ -253,6 +254,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
 
   registerGitHandler(UNREGISTER_OPEN_WORKSPACE, (_, id: string) => {
     if (typeof id !== 'string' || !id.trim()) return { success: false, error: 'Invalid workspace identity' };
+    deps.onWorkspaceUnregistered?.(id);
     getWorkspaceRegistry?.()?.unregisterWorkspace(id);
     gitService.unregisterOpenWorkspace(id);
     if (gitService.getCurrentWorkspaceIdentity?.()?.workspaceId === id) {

@@ -10,6 +10,10 @@ import type {
 import type { RemoteDirectoryListing, SshEnvironmentConfig, WorkspaceEnvironmentId } from '../../shared/types/environments';
 import { SshCommandExecutor, SshExecutionError } from './sshCommandExecutor';
 import { quotePosixArg, quotePosixCommand } from './posixQuote';
+import { isPathContained } from './remotePaths';
+import { snapshotSshFiles } from './sshFileSnapshot';
+import type { RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
+export { isPathContained } from './remotePaths';
 import { HARNESS_OPTIONS } from '../harnessCatalog';
 import { buildHarnessSpawnArgs } from '../harnessLaunch';
 import type {
@@ -157,19 +161,6 @@ function sshProcessEnvironment(): Record<string, string> {
   ) as Record<string, string>;
 }
 
-export function isPathContained(rootPath: string, candidatePath: string): boolean {
-  if (!rootPath || !candidatePath) return false;
-  const normRoot = path.posix.normalize(rootPath).replace(/\/+$/, '') || '/';
-  const normCandidate = path.posix.normalize(candidatePath).replace(/\/+$/, '') || '/';
-
-  if (!path.posix.isAbsolute(normCandidate)) return false;
-  if (normRoot === normCandidate) return true;
-  if (normRoot === '/') return true;
-
-  const relative = path.posix.relative(normRoot, normCandidate);
-  return relative === '' || (!relative.startsWith('..') && !path.posix.isAbsolute(relative));
-}
-
 export class SshEnvironment implements WorkspaceEnvironment {
   public readonly id: WorkspaceEnvironmentId;
   public readonly kind = 'ssh' as const;
@@ -177,7 +168,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
   public readonly target: string;
 
   public readonly capabilities: EnvironmentCapabilities = {
-    watchFiles: false,
+    watchFiles: true,
     worktrees: false,
     revealInFileManager: false,
     agentAttention: false,
@@ -192,6 +183,10 @@ export class SshEnvironment implements WorkspaceEnvironment {
     this.id = config.id;
     this.label = config.label;
     this.target = config.target;
+  }
+
+  public snapshotFiles(workspacePath: string, targets: RemoteFileSnapshotTargets, signal?: AbortSignal) {
+    return snapshotSshFiles(this.executor, this.target, workspacePath, targets, signal);
   }
 
   /** Read-only discovery before any workspace root has been registered. */

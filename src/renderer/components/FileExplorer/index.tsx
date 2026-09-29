@@ -234,8 +234,8 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     });
   }, [normalizedWorkspacePath, explorerExpandedPaths, loadDirectory]);
 
-  // SSH workspaces have no push watcher. Refresh only the active workspace on
-  // desktop focus; never route remote paths into local chokidar.
+  // Keep the immediate SSH focus refresh alongside bounded background polling;
+  // never route remote paths into local chokidar.
   useEffect(() => {
     if (!isRemote || !explorerVisible || !resolvedWorkspaceId) return;
     const onFocus = () => {
@@ -244,7 +244,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
       handleRefresh();
       const current = state.getWorkspaceById(resolvedWorkspaceId);
       current?.editorTabs.filter((tab) => !tab.isDirty).forEach((tab) => {
-        void state.reloadEditorTab(tab.id, resolvedWorkspaceId);
+        void state.reloadEditorTab(tab.id, resolvedWorkspaceId, { onlyIfClean: true });
       });
     };
     window.addEventListener('focus', onFocus);
@@ -275,7 +275,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
       return;
     }
 
-    const refreshKey = pathKey(normalizedDirectoryPath);
+    const refreshKey = isRemote ? normalizedDirectoryPath : pathKey(normalizedDirectoryPath);
     const existingTimer = explorerTreeRefreshTimersRef.current.get(refreshKey);
     if (existingTimer) {
       clearTimeout(existingTimer);
@@ -308,7 +308,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     }, EXPLORER_TREE_REFRESH_DEBOUNCE_MS);
 
     explorerTreeRefreshTimersRef.current.set(refreshKey, timer);
-  }, [resolvedWorkspaceId, loadDirectory, normalizedWorkspacePath]);
+  }, [resolvedWorkspaceId, loadDirectory, normalizedWorkspacePath, isRemote]);
 
   useEffect(() => {
     const wasVisible = previousExplorerVisibleRef.current;
@@ -366,6 +366,19 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
 
     return dispose;
   }, [scheduleDirectoryRefresh, resolvedWorkspaceId]);
+
+  useEffect(() => {
+    if (typeof window.electronAPI.onRemoteFilesChanged !== 'function') return;
+    return window.electronAPI.onRemoteFilesChanged((event) => {
+      const state = useWorkspaceStore.getState();
+      if (event.workspaceId !== resolvedWorkspaceId || state.activeWorkspaceId !== resolvedWorkspaceId) return;
+      event.directoryPaths.forEach(scheduleDirectoryRefresh);
+      const liveWorkspace = state.getWorkspaceById(event.workspaceId);
+      for (const directoryPath of event.unchangedDirectoryPaths ?? []) {
+        if (liveWorkspace?.explorerErrorsByPath[directoryPath]) scheduleDirectoryRefresh(directoryPath);
+      }
+    });
+  }, [resolvedWorkspaceId, scheduleDirectoryRefresh]);
 
   // This handler is passed to FileTree as the onContextMenu prop.
   // TreeNode wraps it (already called preventDefault/stopPropagation) and

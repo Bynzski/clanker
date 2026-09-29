@@ -154,6 +154,8 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     editorReadFile: createAsyncMock({ success: true, content: '' }),
     editorWriteFile: createAsyncMock({ success: true }),
     editorWatchFile: createAsyncMock(undefined),
+    remoteFilesWatch: createAsyncMock(true),
+    onRemoteFilesChanged: vi.fn(() => () => undefined),
     editorUnwatchFile: createAsyncMock(undefined),
     onFileChanged: vi.fn(() => () => undefined),
 

@@ -24,6 +24,8 @@ export const GENERATE_COMMIT_MESSAGE = 'generate-commit-message';
 export const OPEN_DIRECTORY_DIALOG = 'open-directory-dialog';
 export const READ_DIRECTORY = 'read-directory';
 export const FILE_LIST_DIRECTORY = 'file-list-directory';
+export const REMOTE_FILES_WATCH = 'remote-files-watch';
+export const REMOTE_FILES_CHANGED = 'remote-files-changed';
 export const GET_HARNESS_OPTIONS = 'get-harness-options';
 export const GET_HARNESS_MODELS = 'get-harness-models';
 export const GET_HARNESS_DEFAULTS = 'get-harness-defaults';
@@ -378,6 +380,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   FILE_CHANGED,
   FILE_WATCH,
   FILE_UNWATCH,
+  REMOTE_FILES_WATCH,
+  REMOTE_FILES_CHANGED,
   // File Operations
   FILE_CREATE,
   FILE_DELETE,

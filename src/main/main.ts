@@ -49,6 +49,8 @@ import { registerCredentialIpc } from './ipc/credentialIpc';
 import { registerFileIpc } from './ipc/fileIpc';
 import { FileWatcherService } from './fileWatcher';
 import { ExplorerWatcherService } from './explorerWatcher';
+import { RemoteFileWatcher } from './remote/remoteFileWatcher';
+import { REMOTE_FILES_CHANGED } from '../shared/ipcChannels';
 import { registerVcsIpc } from './ipc/vcsIpc';
 import { registerAnnotationIpc } from './annotation/annotationIpc';
 import { registerSessionIpc } from './ipc/sessionIpc';
@@ -150,6 +152,7 @@ const killAllTerminals = () => {
 };
 
 const cleanupWindowState = () => {
+  remoteFileWatcher.close();
   void annotationController?.dispose();
   browserIpcController?.disposeAll();
   activeBrowserTabIdsByWorkspace.clear();
@@ -204,6 +207,13 @@ const explorerWatcher = new ExplorerWatcherService({
   getCurrentWorkspace: () => gitService.getCurrentWorkspace(),
 });
 explorerWatcher.setGitService(gitService);
+
+const remoteFileWatcher = new RemoteFileWatcher({
+  getWorkspaceRegistry: () => workspaceRegistry,
+  onChanged: (event) => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send(REMOTE_FILES_CHANGED, event);
+  },
+});
 
 function getSafeWorkspacePath(workingDir: string, storeInstance: Store<StoreSchema>): string {
   return (
@@ -292,6 +302,7 @@ app.whenReady().then(() => {
     getGitService: () => gitService,
     getMainWindow: () => mainWindow,
     getWorkspaceRegistry: () => workspaceRegistry,
+    onWorkspaceUnregistered: (id) => remoteFileWatcher.closeWorkspace(id),
   });
 
   registerCredentialIpc();
@@ -304,6 +315,7 @@ app.whenReady().then(() => {
     getFileWatcher: () => fileWatcher,
     getExplorerWatcher: () => explorerWatcher,
     getWorkspaceRegistry: () => workspaceRegistry,
+    getRemoteFileWatcher: () => remoteFileWatcher,
   });
 
   registerVcsIpc({
@@ -369,6 +381,7 @@ app.on('window-all-closed', () => {
 // Set shutdown flag BEFORE any window teardown begins
 // This prevents late PTY callbacks from sending to dead windows
 app.on('before-quit', () => {
+  remoteFileWatcher.close();
   setAppShuttingDown(true);
   taskSessionCoordinator?.onAppShutdown();
   killAllTerminals();

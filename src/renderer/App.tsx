@@ -10,6 +10,7 @@ import { getZoomShortcutAction, isSaveShortcut } from './lib/keyboardShortcuts';
 import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import { persistWorkspaceLayout } from './lib/workspaceLayoutStorage';
+import { startRemoteFileWatcher } from './lib/remoteFileWatcher';
 import { sameWorkspacePath } from './lib/pathUtils';
 import { isSameWorkspaceIdentity } from '../shared/workspaceIdentity';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../shared/types/recipes';
@@ -97,6 +98,8 @@ function App() {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => startRemoteFileWatcher(), []);
 
   useEffect(() => {
     const unsubscribe = startTerminalSessionBridge();

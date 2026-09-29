@@ -72,6 +72,24 @@ describe('SshCommandExecutor', () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
+  it('cancels an in-flight SSH command and kills its process', async () => {
+    const child = createMockChild();
+    vi.mocked(spawn).mockReturnValue(child as unknown as ChildProcess);
+    const controller = new AbortController();
+    const pending = executor.exec('vps', 'python3', [], { signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toThrow('aborted');
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    child.emit('close', null, 'SIGTERM');
+  });
+
+  it('does not spawn for an already cancelled snapshot', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(executor.exec('vps', 'python3', [], { signal: controller.signal })).rejects.toThrow('aborted');
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   it('handles non-zero exit codes with SshExecutionError', async () => {
     const mockChild = createMockChild();
     vi.mocked(spawn).mockReturnValue(mockChild as unknown as ChildProcess);
