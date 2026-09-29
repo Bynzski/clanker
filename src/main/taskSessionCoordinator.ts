@@ -161,11 +161,15 @@ export class TaskSessionCoordinator {
     const now = Date.now();
     for (const task of all) {
       if (task.state === 'running') {
-        const state: TaskRecoveryState = task.nativeSessionId ? 'resumable' : 'needs-selection';
+        const isRemote = (task.environmentId || 'local') !== 'local';
+        const state: TaskRecoveryState = isRemote
+          ? 'unavailable'
+          : task.nativeSessionId ? 'resumable' : 'needs-selection';
         this.persistence.saveTaskSession({
           ...task,
           terminalId: undefined,
           state,
+          ...(isRemote ? { stateReason: 'Remote session recovery is not supported in this version' } : {}),
           stoppedAt: now,
           updatedAt: now,
         });

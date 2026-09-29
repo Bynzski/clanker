@@ -83,16 +83,20 @@ const CREATE_DIRECTORY_SCRIPT = [
   'parent_raw = sys.argv[1]',
   'name_raw = sys.argv[2]',
   'parent = os.path.realpath(parent_raw)',
+  'if parent != parent_raw:',
+  '  sys.exit("Parent directory must be canonical")',
   'if not os.path.isdir(parent) or not os.access(parent, os.W_OK | os.X_OK):',
   '  sys.exit("Parent directory does not exist or is not writable")',
   'target = os.path.join(parent, name_raw)',
-  'if os.path.exists(target):',
+  'if os.path.lexists(target):',
   '  sys.exit("Directory already exists")',
   'try:',
   '  os.mkdir(target, 0o755)',
   'except Exception as e:',
   '  sys.exit(str(e))',
   'real_target = os.path.realpath(target)',
+  'if os.path.dirname(real_target) != parent or os.path.basename(real_target) != name_raw:',
+  '  sys.exit("Created directory is not a direct child of the parent")',
   'print(json.dumps({"path": real_target}))',
 ].join('\n');
 
@@ -123,6 +127,10 @@ function validBrowseName(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value !== '.' &&
     value !== '..' && !/[/\x00-\x1f\x7f]/.test(value) &&
     Buffer.byteLength(value, 'utf8') <= 255;
+}
+
+function validNewDirectoryName(value: unknown): value is string {
+  return validBrowseName(value) && !value.includes('\\');
 }
 
 // A noninteractive SSH command does not reliably receive the account's login
@@ -227,10 +235,10 @@ export class SshEnvironment implements WorkspaceEnvironment {
     };
   }
   public async createBrowsableDirectory(parentPath: string, name: string): Promise<{ path: string }> {
-    if (!canonicalBrowsePath(parentPath)) {
+    if (!canonicalBrowsePath(parentPath) || (parentPath !== '/' && parentPath.endsWith('/'))) {
       throw new Error('Invalid remote parent directory path');
     }
-    if (!validBrowseName(name)) {
+    if (!validNewDirectoryName(name)) {
       throw new Error('Invalid directory name');
     }
     try {
@@ -239,6 +247,9 @@ export class SshEnvironment implements WorkspaceEnvironment {
       ], { timeoutMs: BROWSE_TIMEOUT_MS, maxBuffer: BROWSE_MAX_BYTES });
       const value = parseBrowseResponse(result.stdout);
       if (!browseObject(value) || !canonicalBrowsePath(value.path)) {
+        throw new Error('Invalid remote create directory response');
+      }
+      if (path.posix.dirname(value.path) !== parentPath || path.posix.basename(value.path) !== name) {
         throw new Error('Invalid remote create directory response');
       }
       return { path: value.path };

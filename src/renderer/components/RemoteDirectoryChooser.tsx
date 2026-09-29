@@ -16,6 +16,9 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const requestRef = useRef(0);
+  const createRequestRef = useRef(0);
+  const creatingRef = useRef(false);
+  const previousLocationRef = useRef({ environmentId, initialPath });
   const [requestedPath, setRequestedPath] = useState(initialPath);
   const [attempt, setAttempt] = useState(0);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -37,6 +40,22 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
   }, []);
 
   useEffect(() => {
+    const previous = previousLocationRef.current;
+    if (previous.environmentId === environmentId && previous.initialPath === initialPath) return;
+    previousLocationRef.current = { environmentId, initialPath };
+    requestRef.current++;
+    createRequestRef.current++;
+    creatingRef.current = false;
+    setCreating(false);
+    setIsCreating(false);
+    setListing(null);
+    setError('');
+    setLoading(true);
+    setRequestedPath(initialPath);
+    setAttempt((previous) => previous + 1);
+  }, [environmentId, initialPath]);
+
+  useEffect(() => {
     const request = ++requestRef.current;
     let active = true;
     void window.electronAPI.sshListDirectories(environmentId, requestedPath).then((result) => {
@@ -52,6 +71,10 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
   }, [environmentId, requestedPath, attempt]);
 
   const navigate = (path: string) => {
+    requestRef.current++;
+    createRequestRef.current++;
+    creatingRef.current = false;
+    setCreating(false);
     setListing(null);
     setLoading(true);
     setError('');
@@ -64,27 +87,34 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
   };
 
   const handleCreateFolder = async () => {
+    if (creatingRef.current) return;
     const trimmed = newFolderName.trim();
     if (!trimmed) {
       setCreateError('Folder name is required');
       return;
     }
-    if (trimmed.includes('/') || trimmed === '.' || trimmed === '..') {
+    if (trimmed.includes('/') || trimmed.includes('\\') || trimmed === '.' || trimmed === '..') {
       setCreateError('Folder name cannot contain slashes or relative segments');
       return;
     }
     if (!listing) return;
+    const request = ++createRequestRef.current;
+    creatingRef.current = true;
     setCreating(true);
     setCreateError('');
     try {
       const result = await window.electronAPI.sshCreateDirectory(environmentId, listing.path, trimmed);
+      if (request !== createRequestRef.current) return;
       setIsCreating(false);
       setNewFolderName('');
       navigate(result.path);
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : String(err));
+      if (request === createRequestRef.current) setCreateError(err instanceof Error ? err.message : String(err));
     } finally {
-      setCreating(false);
+      if (request === createRequestRef.current) {
+        creatingRef.current = false;
+        setCreating(false);
+      }
     }
   };
 
@@ -94,7 +124,7 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
     }}>
       <div ref={dialogRef} tabIndex={-1} className="remote-chooser" role="dialog" aria-modal="true" aria-label="Browse remote directories" onKeyDown={(event) => {
         if (event.key === 'Escape') { event.stopPropagation(); onClose(); return; }
-        if ((event.key === 'Backspace' || event.key === 'ArrowLeft') && listing?.parentPath
+        if ((event.key === 'Backspace' || event.key === 'ArrowLeft') && !creating && listing?.parentPath
           && !(event.target instanceof HTMLInputElement)) {
           event.preventDefault();
           navigate(listing.parentPath);
@@ -119,14 +149,14 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
           <button type="button" aria-label="Close remote browser" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="remote-chooser-toolbar">
-          <button type="button" aria-label="Parent directory" disabled={loading || !listing?.parentPath} onClick={() => {
+          <button type="button" aria-label="Parent directory" disabled={loading || creating || !listing?.parentPath} onClick={() => {
             if (listing?.parentPath) navigate(listing.parentPath);
           }}><ArrowLeft size={14} /> Parent</button>
-          <button type="button" onClick={() => navigate(homePath)} disabled={loading || !homePath}>Home</button>
+          <button type="button" onClick={() => navigate(homePath)} disabled={loading || creating || !homePath}>Home</button>
           <button
             type="button"
             aria-label="New folder"
-            disabled={loading || !listing}
+            disabled={loading || creating || !listing}
             onClick={() => {
               setIsCreating(true);
               setNewFolderName('');
@@ -188,14 +218,14 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
           {error && <p role="alert">{error} <button type="button" onClick={() => navigate(requestedPath)}>Retry</button></p>}
           {!loading && !error && listing?.directories.length === 0 && <p>No subdirectories</p>}
           {!loading && !error && listing?.directories.map((directory) => (
-            <button type="button" key={directory.path} onClick={() => navigate(directory.path)}>
+            <button type="button" key={directory.path} disabled={creating} onClick={() => navigate(directory.path)}>
               <Folder size={15} /> {directory.name}
             </button>
           ))}
         </div>
         <div className="remote-chooser-actions">
           <button type="button" onClick={onClose}>Cancel</button>
-          <button type="button" disabled={!listing || loading} onClick={() => {
+          <button type="button" disabled={!listing || loading || creating} onClick={() => {
             if (listing) onSelect(listing.path);
           }}>Select this directory</button>
         </div>

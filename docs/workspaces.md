@@ -37,9 +37,9 @@ Clanker supports opening workspaces on remote Linux/POSIX development machines r
 
 ### Selecting a Remote Directory
 
-Choose a saved SSH environment in the launcher. Clanker asks that account for its canonical home directory and starts at `$HOME/workspaces` when that directory exists, or `$HOME` otherwise. Use **Browse remote directories** to explore remote directories, navigate up to parent folders, create new project folders directly from the picker, and select a target folder. The path field also offers debounced remote directory suggestions; an absolute path can still be entered manually.
+Choose a saved SSH environment in the launcher. Clanker asks that account for its canonical home directory and starts at `$HOME/workspaces` when that directory exists, or `$HOME` otherwise. **Browse remote directories** opens an application-rendered chooser, not an operating-system folder dialog. It lists remote directories over SSH, lets you navigate to parent folders, create a remote folder with **New Folder**, and select a target folder. The path field also offers debounced remote directory suggestions; an absolute path can still be entered manually.
 
-Pre-workspace browsing and folder creation are scoped operations resolved from the saved SSH environment ID. Browsing is read-only and returns directory names and canonical paths only; it cannot read file contents. Folder creation validates name safety and only creates new subdirectories inside existing writable directories. After selection, workspace registration validates and canonicalizes the root. All subsequent filesystem requests remain confined to that registered root.
+Pre-workspace browsing and folder creation are resolved from the saved SSH environment ID and can reach directories the SSH account is allowed to access. Browsing returns directory names and canonical paths only; it cannot read file contents. Folder creation validates name safety and only creates new subdirectories inside existing writable directories. After selection, workspace registration validates and canonicalizes the root. All subsequent filesystem requests remain confined to that registered root.
 
 ### Workspace Identity
 

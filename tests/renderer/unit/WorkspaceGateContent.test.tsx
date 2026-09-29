@@ -837,6 +837,7 @@ describe('WorkspaceGateContent', () => {
       vi.mocked(window.electronAPI.sshCreateDirectory).mockResolvedValue({ path: '/home/alpha/workspaces/my-app' });
       renderGate();
       await selectRemote();
+      await waitFor(() => expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe('/home/alpha/workspaces'));
       fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
       await screen.findByRole('dialog', { name: 'Browse remote directories' });
       fireEvent.click(screen.getByRole('button', { name: 'New folder' }));
@@ -847,6 +848,66 @@ describe('WorkspaceGateContent', () => {
       await waitFor(() => expect(screen.getByText('/canonical/my-app')).toBeTruthy());
       fireEvent.click(screen.getByRole('button', { name: 'Select this directory' }));
       expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe('/canonical/my-app');
+    });
+
+    it('ignores a stale directory response after navigation', async () => {
+      setupRemote();
+      let resolveOld!: (value: { path: string; parentPath: string; directories: { name: string; path: string }[] }) => void;
+      const old = new Promise<{ path: string; parentPath: string; directories: { name: string; path: string }[] }>((resolve) => { resolveOld = resolve; });
+      vi.mocked(window.electronAPI.sshListDirectories).mockImplementation((_id, path) => path === '/home/alpha/workspaces'
+        ? Promise.resolve({ path, parentPath: '/home/alpha', directories: [{ name: 'old', path: '/old' }, { name: 'new', path: '/new' }] })
+        : path === '/old' ? old : Promise.resolve({ path: '/new', parentPath: '/', directories: [] }));
+      renderGate();
+      await selectRemote();
+      await waitFor(() => expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe('/home/alpha/workspaces'));
+      fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'old' }));
+      fireEvent.keyDown(screen.getByRole('dialog', { name: 'Browse remote directories' }), { key: 'Escape' });
+      fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'new' }));
+      await waitFor(() => expect(screen.getByText('/new')).toBeTruthy());
+      await act(async () => resolveOld({ path: '/old', parentPath: '/', directories: [] }));
+      expect(screen.getByText('/new')).toBeTruthy();
+    });
+
+    it('discards an in-flight chooser request when the SSH environment changes', async () => {
+      setupRemote();
+      let resolveAlpha!: (value: { path: string; parentPath: string; directories: { name: string; path: string }[] }) => void;
+      const alpha = new Promise<{ path: string; parentPath: string; directories: { name: string; path: string }[] }>((resolve) => { resolveAlpha = resolve; });
+      vi.mocked(window.electronAPI.sshListDirectories).mockImplementation((id, path) => id === 'alpha'
+        ? alpha : Promise.resolve({ path, parentPath: '/home/beta', directories: [] }));
+      renderGate();
+      await selectRemote();
+      await waitFor(() => expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe('/home/alpha/workspaces'));
+      fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
+      await waitFor(() => expect(window.electronAPI.sshListDirectories).toHaveBeenCalledWith('alpha', '/home/alpha/workspaces'));
+      fireEvent.change(document.querySelector('.ssh-env-select')!, { target: { value: 'beta' } });
+      await waitFor(() => expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe('/home/beta/workspaces'));
+      await act(async () => resolveAlpha({ path: '/home/alpha/workspaces', parentPath: '/home/alpha', directories: [{ name: 'old', path: '/home/alpha/workspaces/old' }] }));
+      expect(screen.queryByText('old')).toBeNull();
+      expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe('/home/beta/workspaces');
+    });
+
+    it('submits New Folder once while the request is pending and restores focus after closing', async () => {
+      setupRemote();
+      let resolveCreate!: (value: { path: string }) => void;
+      vi.mocked(window.electronAPI.sshCreateDirectory).mockImplementation(() => new Promise((resolve) => { resolveCreate = resolve; }));
+      renderGate();
+      await selectRemote();
+      await waitFor(() => expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe('/home/alpha/workspaces'));
+      const browse = screen.getByRole('button', { name: 'Browse remote directories' });
+      fireEvent.click(browse);
+      fireEvent.click(await screen.findByRole('button', { name: 'New folder' }));
+      fireEvent.change(screen.getByRole('textbox', { name: 'New folder name' }), { target: { value: 'once' } });
+      const form = screen.getByRole('textbox', { name: 'New folder name' }).closest('form')!;
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+      expect(window.electronAPI.sshCreateDirectory).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Select this directory' })).toBeDisabled();
+      await act(async () => resolveCreate({ path: '/home/alpha/workspaces/once' }));
+      await waitFor(() => expect(screen.getByText('/home/alpha/workspaces/once')).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(document.activeElement).toBe(browse);
     });
 
 

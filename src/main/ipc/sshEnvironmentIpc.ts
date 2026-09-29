@@ -72,8 +72,8 @@ export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): 
     return executor.testConnection(rawTarget);
   });
 
-  // Browsing is deliberately separate from workspace-scoped file APIs. Only
-  // saved SSH IDs can reach these read-only operations.
+  // Pre-workspace browsing and folder creation are separate from workspace-scoped
+  // file APIs. Only saved SSH IDs can reach these operations.
   async function getSavedSshEnvironment(environmentId: unknown) {
     if (typeof environmentId !== 'string' || !environmentId || environmentId === 'local') {
       throw new Error('Unknown SSH environment');

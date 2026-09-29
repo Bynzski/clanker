@@ -193,6 +193,36 @@ describe('TaskSessionCoordinator', () => {
     expect(task2?.stoppedAt).toBeDefined();
   });
 
+  it('marks remote tasks unavailable on shutdown without local session discovery, including tasks with a native ID', async () => {
+    const remote = coordinator.onTerminalSpawned('remote-term', '/home/user/project', 'opencode', undefined, 'dev-vps');
+    persistence.saveTaskSession({ ...remote, nativeSessionId: 'remote-native', stateReason: 'stale reason' });
+    const local = coordinator.onTerminalSpawned('local-term', '/home/user/project', 'codex');
+    coordinator.onAppShutdown();
+
+    const storedRemote = persistence.getTaskSessionById(remote.id);
+    expect(storedRemote).toMatchObject({
+      environmentId: 'dev-vps', state: 'unavailable',
+      stateReason: 'Remote session recovery is not supported in this version',
+      nativeSessionId: 'remote-native',
+    });
+    expect(storedRemote?.terminalId).toBeUndefined();
+    expect(storedRemote?.stoppedAt).toBeDefined();
+    expect(storedRemote?.updatedAt).toBeDefined();
+    expect(persistence.getTaskSessionById(local.id)?.state).toBe('needs-selection');
+    expect(await coordinator.onTerminalExited('remote-term')).toBeNull();
+    expect(mockDiscoverSessions).not.toHaveBeenCalled();
+  });
+
+  it('keeps legacy tasks without environmentId on the local shutdown recovery path', () => {
+    const task = coordinator.onTerminalSpawned('legacy-term', '/home/user/project', 'codex');
+    const raw = memoryStore.get('taskSessions') as Array<Record<string, unknown>>;
+    memoryStore.set('taskSessions', raw.map((record) => record.id === task.id
+      ? { ...record, environmentId: undefined, nativeSessionId: 'legacy-session' }
+      : record));
+    coordinator.onAppShutdown();
+    expect(persistence.getTaskSessionById(task.id)).toMatchObject({ state: 'resumable', nativeSessionId: 'legacy-session' });
+  });
+
   it('ignores late PTY exit callbacks after onAppShutdown has executed', async () => {
     coordinator.onTerminalSpawned('term-race', '/home/user/project', 'codex');
     coordinator.onAppShutdown();

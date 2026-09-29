@@ -21,6 +21,12 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
   const requestRef = useRef(0);
   const editedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const browseButtonRef = useRef<HTMLButtonElement>(null);
+
+  const closeChooser = () => {
+    setChooserOpen(false);
+    browseButtonRef.current?.focus();
+  };
 
   useEffect(() => {
     let active = true;
@@ -78,7 +84,7 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
           }
         }}
         placeholder="/home/jay/Projects/clanker" spellCheck={false} autoComplete="off" autoCapitalize="off" />
-      <button type="button" className="cog-button" aria-label="Browse remote directories" title="Browse remote directories"
+      <button ref={browseButtonRef} type="button" className="cog-button" aria-label="Browse remote directories" title="Browse remote directories"
         disabled={!environmentId || homeLoading && !path} onClick={() => setChooserOpen(true)}>
         {homeLoading && !path ? <Loader2 size={18} className="spin" /> : <FolderOpen size={18} />}
       </button>
@@ -93,6 +99,6 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
       </li>)}
     </ul>}
     {chooserOpen && <RemoteDirectoryChooser environmentId={environmentId} initialPath={path.startsWith('/') ? path : homePath || '/'}
-      homePath={homePath} onSelect={(chosen) => { choose(chosen); setChooserOpen(false); }} onClose={() => setChooserOpen(false)} />}
+      homePath={homePath} onSelect={(chosen) => { choose(chosen); closeChooser(); }} onClose={closeChooser} />}
   </>;
 }

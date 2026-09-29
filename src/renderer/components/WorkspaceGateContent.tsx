@@ -140,9 +140,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
       try {
         const list = await window.electronAPI.sshEnvironmentList();
         setSshEnvironments(list);
-        if (list.length > 0) {
-          setSelectedSshEnvId((prev) => prev || list[0].id);
-        }
+        setSelectedSshEnvId((prev) => list.some((env) => env.id === prev) ? prev : (list[0]?.id ?? ''));
       } catch {
         // Ignore
       }

@@ -494,18 +494,27 @@ describe('pre-workspace SSH directory browsing', () => {
         }),
       } as unknown as SshCommandExecutor;
       const env = new SshEnvironment(config, executor);
-      const created = await env.createBrowsableDirectory(sandbox, 'my-project');
-      expect(created).toEqual({ path: join(sandbox, 'my-project') });
+      for (const name of ['my-project', 'with spaces', "it's here", 'üñíçødë']) {
+        expect(await env.createBrowsableDirectory(sandbox, name)).toEqual({ path: join(sandbox, name) });
+      }
       await expect(env.createBrowsableDirectory(sandbox, 'my-project'))
         .rejects.toThrow('Directory already exists');
-      for (const badName of ['../escaped', 'nested/sub', '.', '..', '', '/root']) {
+      for (const badName of ['../escaped', 'nested/sub', '.', '..', '', '/root', 'back\\slash', 'line\nbreak', 'x'.repeat(256)]) {
         await expect(env.createBrowsableDirectory(sandbox, badName))
           .rejects.toThrow('Invalid directory name');
       }
-      for (const badParent of ['relative', '/tmp/../etc', '']) {
+      for (const badParent of ['relative', '/tmp/../etc', '/tmp/', '']) {
         await expect(env.createBrowsableDirectory(badParent, 'good-name'))
           .rejects.toThrow('Invalid remote parent directory path');
       }
+      await expect(env.createBrowsableDirectory(join(sandbox, 'missing'), 'good-name'))
+        .rejects.toThrow('Parent directory does not exist');
+      await symlink(sandbox, join(sandbox, 'alias'));
+      await expect(env.createBrowsableDirectory(join(sandbox, 'alias'), 'bad-alias'))
+        .rejects.toThrow('Parent directory must be canonical');
+      await symlink(join(sandbox, 'missing'), join(sandbox, 'broken'));
+      await expect(env.createBrowsableDirectory(sandbox, 'broken'))
+        .rejects.toThrow('Directory already exists');
     } finally {
       await rm(sandbox, { recursive: true, force: true });
     }
@@ -557,5 +566,9 @@ describe('pre-workspace SSH directory browsing', () => {
     }
     exec.mockRejectedValueOnce(new Error('Remote SSH command timed out after 12000ms'));
     await expect(env.listBrowsableDirectories('/tmp')).rejects.toThrow('timed out');
+    for (const stdout of ['{"path":"/tmp/other"}', '{"path":"/outside/child"}', '{"path":"relative"}']) {
+      exec.mockResolvedValueOnce({ stdout });
+      await expect(env.createBrowsableDirectory('/tmp', 'child')).rejects.toThrow('Invalid remote create directory response');
+    }
   });
 });
