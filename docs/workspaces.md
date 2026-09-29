@@ -39,7 +39,7 @@ Clanker supports opening workspaces on remote Linux/POSIX development machines r
 
 Choose a saved SSH environment in the launcher. Clanker asks that account for its canonical home directory and starts at `$HOME/workspaces` when that directory exists, or `$HOME` otherwise. **Browse remote directories** opens an application-rendered chooser, not an operating-system folder dialog. It lists remote directories over SSH, lets you navigate to parent folders, create a remote folder with **New Folder**, and select a target folder. The path field also offers debounced remote directory suggestions; an absolute path can still be entered manually.
 
-Pre-workspace browsing and folder creation are resolved from the saved SSH environment ID and can reach directories the SSH account is allowed to access. Browsing returns directory names and canonical paths only; it cannot read file contents. Folder creation validates name safety and only creates new subdirectories inside existing writable directories. After selection, workspace registration validates and canonicalizes the root. All subsequent filesystem requests remain confined to that registered root.
+Pre-workspace browsing and folder creation are resolved from the saved SSH environment ID and can reach directories the SSH account is allowed to access. Browsing returns directory names and canonical paths only; it cannot read file contents. Folder creation validates name safety and creates only a direct child of the selected canonical parent when that directory is writable. After selection, workspace registration validates and canonicalizes the root. All subsequent filesystem requests remain confined to that registered root.
 
 ### Workspace Identity
 
@@ -80,7 +80,7 @@ To maintain reliability and safety, the following capabilities are local-only in
 1. **Task Worktrees**: Creating or removing Git worktrees is disabled for remote workspaces. Opening existing remote checkouts directly as workspaces is fully supported.
 2. **Launch Recipes**: Creating, editing, or launching recipes for SSH workspaces is unavailable in V1. Legacy recipes without an environment ID remain local recipes.
 3. **Reveal in File Manager**: Disabled for remote paths, preventing passing remote paths to desktop OS file managers.
-4. **Local File Watching**: Local file watchers are not attached to remote paths. Remote Explorer and editor state refresh on mutations and focus events.
+4. **File Refresh**: SSH workspaces do not use a remote file watcher in V1. Explorer contents refresh after Clanker-managed mutations and when the desktop app regains focus while the active remote workspace's Explorer is visible. Clean remote editor tabs are reloaded during that focus refresh; dirty tabs are not automatically overwritten. The Explorer's Refresh button also requests current directory contents.
 5. **Agent Attention & Remote Native Session Discovery**: Remote terminals run without local attention hooks. On remote terminal exit or app shutdown, local session history scanning is bypassed, and tasks are marked unavailable with a clear diagnostic explanation.
 6. **Automatic Port Forwarding**: VPS development servers listening on `localhost:3000` are remote to that machine. Automatic port forwarding is deferred to a future release.
 7. **Remote Process Persistence**: Remote PTY processes terminate on workspace closure or app exit; PTY daemons are not installed on the remote machine.

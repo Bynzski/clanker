@@ -17,7 +17,7 @@ Click the **Git** button in the header to access:
 The file explorer shows git status indicators:
 - Modified files display with an indicator
 - Untracked files are visually distinguished
-- Local Git changes are reflected via file watching. SSH workspaces refresh without a remote file watcher in V1.
+- Local Git changes are reflected via local file watching. SSH workspaces have no remote file watcher in V1; remote Explorer contents refresh after Clanker-managed mutations and on desktop focus while the active workspace's Explorer is visible.
 
 ## Status
 

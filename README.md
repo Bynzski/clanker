@@ -20,7 +20,7 @@ Clanker Grid is a single-window desktop app that brings your terminals, AI codin
 - **Embedded browser** — keep docs, dashboards, or your local app open right next to your code.
 - **Editor & file tree** — CodeMirror-backed editing with syntax highlighting and a familiar explorer.
 - **Multi-workspace** — every project gets its own tab; switch context without losing it.
-- **SSH workspaces** — open a remote Linux/POSIX directory with the built-in SSH directory chooser; terminals, Explorer, Git, and installed AI harnesses run on that host.
+- **SSH workspaces** — open a remote Linux/POSIX directory with the built-in SSH directory chooser; terminals, Git, and installed AI harnesses run on that host, while Explorer displays its remote files in the desktop app.
 - **Credentials handled** — SSH key generation and encrypted PAT storage built in.
 
 ## Supported platforms

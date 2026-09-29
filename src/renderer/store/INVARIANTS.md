@@ -61,6 +61,7 @@ These rules describe the implemented workspace residency system.
 | Terminal input/focus | Active workspace only |
 | Editor file watchers | Local watched editor tabs across active and parked workspaces via `editorFileWatcher`; none on SSH workspaces |
 | Explorer watcher | Local active-workspace-only; SSH workspaces have no watcher; parked workspaces retain cached directory contents |
+| SSH focus refresh | While the active SSH workspace's Explorer is visible, desktop focus refreshes Explorer contents and reloads clean editor tabs; dirty tabs are not automatically overwritten |
 | Browser native view | Retained per workspace even when its renderer tree is cold; visible only for active and rebound on reactivate |
 | Editor `EditorView` | Resident for warm workspaces; destroyed when its workspace becomes cold and recreated from store state on reactivation |
 | Global shortcuts | Read the active workspace snapshot via `syncActiveWorkspace` |
