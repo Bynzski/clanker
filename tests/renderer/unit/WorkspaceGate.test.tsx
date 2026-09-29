@@ -7,7 +7,7 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 
 // Mock WorkspaceGateContent
 vi.mock('../../../src/renderer/components/WorkspaceGateContent', () => ({
-  default: ({ onSubmit }: { onSubmit: (data: { path: string; terminalCount: number; harness: string; model?: string; environmentId?: string; environmentLabel?: string }) => void }) => (
+  default: ({ onSubmit, openError, onTargetChange }: { onSubmit: (data: { path: string; terminalCount: number; harness: string; model?: string; environmentId?: string; environmentLabel?: string }) => void; openError?: string; onTargetChange?: () => void }) => (
     <div data-testid="workspace-gate-content">
       <button onClick={() => onSubmit({ path: '/test', terminalCount: 2, harness: 'test' })}>
         Submit
@@ -15,6 +15,8 @@ vi.mock('../../../src/renderer/components/WorkspaceGateContent', () => ({
       <button onClick={() => onSubmit({ path: '/home/dev/Project', terminalCount: 2, harness: 'test', model: 'model-x', environmentId: 'ssh:devbox', environmentLabel: 'Dev Box' })}>
         Submit remote
       </button>
+      <button onClick={onTargetChange}>Change target</button>
+      {openError && <p className="gate-open-error" role="alert">{openError}</p>}
     </div>
   ),
   WorkspaceFormData: {} as object,
@@ -210,6 +212,22 @@ describe('WorkspaceGateModal', () => {
   // Workspace Selection
   // =========================================================================
   describe('workspace selection', () => {
+    it('places local and SSH open errors inside the modal form and clears them on target change', async () => {
+      const onWorkspaceSelect = vi.fn().mockResolvedValue(false);
+      render(<WorkspaceGateModal isOpen={true} onClose={vi.fn()} onWorkspaceSelect={onWorkspaceSelect} />);
+
+      await act(async () => { fireEvent.click(screen.getByText('Submit')); });
+      expect(screen.getByRole('alert')).toHaveClass('gate-open-error');
+      expect(screen.getByTestId('workspace-gate-content')).toContainElement(screen.getByRole('alert'));
+
+      fireEvent.click(screen.getByText('Change target'));
+      expect(screen.queryByRole('alert')).toBeNull();
+
+      await act(async () => { fireEvent.click(screen.getByText('Submit remote')); });
+      expect(screen.getByRole('alert')).toHaveClass('gate-open-error');
+      expect(onWorkspaceSelect).toHaveBeenLastCalledWith('/home/dev/Project', 2, 'test', 'model-x', true, 'ssh:devbox', 'Dev Box');
+    });
+
     it('passes onWorkspaceSelect to WorkspaceGateContent', async () => {
       const onWorkspaceSelect = vi.fn();
       const onClose = vi.fn();
@@ -397,6 +415,21 @@ describe('WorkspaceGateFullscreen', () => {
   // Workspace Selection
   // =========================================================================
   describe('workspace selection', () => {
+    it('places a failed open inside the fullscreen launcher form and clears it before retrying', async () => {
+      const onWorkspaceSelect = vi.fn().mockResolvedValue(false);
+      render(<WorkspaceGateFullscreen onWorkspaceSelect={onWorkspaceSelect} />);
+
+      await act(async () => { fireEvent.click(screen.getByText('Submit remote')); });
+      expect(screen.getByTestId('workspace-gate-content')).toContainElement(screen.getByRole('alert'));
+      expect(document.querySelector('.workspace-gate-shell > [role="alert"]')).toBeNull();
+
+      fireEvent.click(screen.getByText('Change target'));
+      expect(screen.queryByRole('alert')).toBeNull();
+
+      await act(async () => { fireEvent.click(screen.getByText('Submit')); });
+      expect(screen.getByRole('alert')).toHaveClass('gate-open-error');
+    });
+
     it('passes onWorkspaceSelect to WorkspaceGateContent', async () => {
       const onWorkspaceSelect = vi.fn();
       

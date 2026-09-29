@@ -76,6 +76,21 @@ describe('WorkspaceGateContent', () => {
     expect(screen.getByRole('button', { name: 'Worktree options' })).toBeTruthy();
   });
 
+  it('renders an open error beside the launch action and reports target changes', () => {
+    const onTargetChange = vi.fn();
+    render(<WorkspaceGateContent onSubmit={mockOnSubmit} openError="Workspace unavailable" onTargetChange={onTargetChange} />);
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveClass('gate-open-error');
+    expect(alert.previousElementSibling).toHaveClass('gate-launch-actions');
+    const initialCalls = onTargetChange.mock.calls.length;
+
+    fireEvent.change(screen.getByPlaceholderText('project name'), { target: { value: '/new-project' } });
+    expect(onTargetChange.mock.calls.length).toBeGreaterThan(initialCalls);
+    fireEvent.click(screen.getByRole('button', { name: 'SSH Remote' }));
+    expect(onTargetChange.mock.calls.length).toBeGreaterThan(initialCalls + 1);
+  });
+
   it('opens harness settings from the gate and applies visibility changes on return', async () => {
     let defaults = {
       codex: { model: '', favorites: [], flags: '', visible: true },

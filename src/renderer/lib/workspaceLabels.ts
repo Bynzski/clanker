@@ -1,4 +1,5 @@
 import type { WorkspaceTab } from '../store/workspaceTypes';
+import { LOCAL_ENVIRONMENT_ID } from '../../shared/types/environments';
 
 export function getWorkspaceNameFromPath(workspacePath: string): string {
   const trimmed = workspacePath.replace(/[/\\]+$/, '');
@@ -11,6 +12,13 @@ type WorkspaceIdentity = Pick<
   WorkspaceTab,
   'name' | 'workspacePath' | 'isLinkedWorktree' | 'projectName' | 'gitCurrentBranch' | 'environmentId' | 'environmentLabel'
 >;
+
+export function getRemoteEnvironmentLabel(workspace: Pick<WorkspaceTab, 'environmentId' | 'environmentLabel'>): string | null {
+  if (!workspace.environmentId || workspace.environmentId === LOCAL_ENVIRONMENT_ID) return null;
+  const label = workspace.environmentLabel?.trim() || workspace.environmentId;
+  return `SSH · ${label}`;
+}
+
 export function getWorkspaceProjectName(workspace: WorkspaceIdentity): string {
   if (workspace.projectName?.trim()) return workspace.projectName.trim();
   if (workspace.isLinkedWorktree) {

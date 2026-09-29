@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Minus, Square, X } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import WorkspaceGateContent, { WorkspaceFormData } from './WorkspaceGateContent';
@@ -23,6 +23,11 @@ interface Props {
 
 export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunchRecipe }: Props) {
   const [openError, setOpenError] = useState('');
+  const openRequestRef = useRef(0);
+  const clearOpenError = useCallback(() => {
+    openRequestRef.current += 1;
+    setOpenError('');
+  }, []);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
@@ -52,6 +57,8 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
   if (!isOpen) return null;
 
   const handleSubmit = async (data: WorkspaceFormData) => {
+    clearOpenError();
+    const requestId = openRequestRef.current;
     const state = useWorkspaceStore.getState();
     const targetEnvId = data.environmentId || 'local';
     const open = state.workspaces.find((workspace) =>
@@ -62,7 +69,6 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
       onClose();
       return;
     }
-    setOpenError('');
     try {
       const opened = (data.environmentId && data.environmentId !== 'local')
         ? await onWorkspaceSelect(
@@ -80,10 +86,11 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
             data.harness,
             data.model
           );
+      if (requestId !== openRequestRef.current) return;
       if (opened === false) setOpenError('Could not open this workspace. Check that its directory exists and is accessible.');
       else onClose();
     } catch {
-      setOpenError('Could not open this workspace. Check that its directory exists and is accessible.');
+      if (requestId === openRequestRef.current) setOpenError('Could not open this workspace. Check that its directory exists and is accessible.');
     }
   };
 
@@ -101,6 +108,8 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
         </div>
         <WorkspaceGateContent
           onSubmit={handleSubmit}
+          openError={openError}
+          onTargetChange={clearOpenError}
           onLaunchRecipe={onLaunchRecipe ? async (recipe) => {
             const res = await onLaunchRecipe(recipe);
             if (res && res.success) {
@@ -109,7 +118,6 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
             return res;
           } : undefined}
         />
-        {openError && <p role="alert">{openError}</p>}
       </div>
     </div>
   );
@@ -180,8 +188,14 @@ function GateTitleBar() {
 
 export function WorkspaceGateFullscreen({ onWorkspaceSelect, onLaunchRecipe }: FullscreenGateProps) {
   const [openError, setOpenError] = useState('');
-  const handleSubmit = async (data: WorkspaceFormData) => {
+  const openRequestRef = useRef(0);
+  const clearOpenError = useCallback(() => {
+    openRequestRef.current += 1;
     setOpenError('');
+  }, []);
+  const handleSubmit = async (data: WorkspaceFormData) => {
+    clearOpenError();
+    const requestId = openRequestRef.current;
     try {
       const opened = (data.environmentId && data.environmentId !== 'local')
         ? await onWorkspaceSelect(
@@ -199,9 +213,9 @@ export function WorkspaceGateFullscreen({ onWorkspaceSelect, onLaunchRecipe }: F
             data.harness,
             data.model
           );
-      if (opened === false) setOpenError('Could not open this workspace. Check that its directory exists and is accessible.');
+      if (requestId === openRequestRef.current && opened === false) setOpenError('Could not open this workspace. Check that its directory exists and is accessible.');
     } catch {
-      setOpenError('Could not open this workspace. Check that its directory exists and is accessible.');
+      if (requestId === openRequestRef.current) setOpenError('Could not open this workspace. Check that its directory exists and is accessible.');
     }
   };
 
@@ -209,8 +223,7 @@ export function WorkspaceGateFullscreen({ onWorkspaceSelect, onLaunchRecipe }: F
     <div className="workspace-gate">
       <GateTitleBar />
       <div className="workspace-gate-shell">
-        <WorkspaceGateContent onSubmit={handleSubmit} onLaunchRecipe={onLaunchRecipe} />
-        {openError && <p role="alert">{openError}</p>}
+        <WorkspaceGateContent onSubmit={handleSubmit} onLaunchRecipe={onLaunchRecipe} openError={openError} onTargetChange={clearOpenError} />
       </div>
     </div>
   );

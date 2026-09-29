@@ -30,6 +30,8 @@ interface ContentProps {
   initialPath?: string;
   onSubmit: (data: WorkspaceFormData) => void;
   onLaunchRecipe?: (recipe: WorkspaceRecipe) => Promise<RecipeLaunchResult | null | void>;
+  openError?: string;
+  onTargetChange?: () => void;
 }
 
 function withTrailingSlash(path: string): string {
@@ -72,7 +74,7 @@ function HermesModelName({ option }: { option: ModelOption }) {
   );
 }
 
-export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRecipe }: ContentProps) {
+export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRecipe, openError, onTargetChange }: ContentProps) {
   const [savedRecipes, setSavedRecipes] = useState<WorkspaceRecipe[]>([]);
   const [selectedRecipeForModal, setSelectedRecipeForModal] = useState<WorkspaceRecipe | null>(null);
   const [showRecipeModal, setShowRecipeModal] = useState(false);
@@ -134,6 +136,10 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   const [sshTestStatus, setSshTestStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [isTestingSsh, setIsTestingSsh] = useState(false);
   const [sshSaveError, setSshSaveError] = useState('');
+
+  useEffect(() => {
+    onTargetChange?.();
+  }, [locationKind, inputValue, baseDirectory, selectedSshEnvId, remotePath, onTargetChange]);
 
   const refreshSshEnvironments = useCallback(async () => {
     if (typeof window.electronAPI?.sshEnvironmentList === 'function') {
@@ -1253,6 +1259,12 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
           <span>Worktree</span>
         </button>
       </div>
+      {openError && (
+        <p className="gate-open-error" role="alert">
+          <AlertTriangle size={14} strokeWidth={2} aria-hidden="true" />
+          <span>{openError}</span>
+        </p>
+      )}
       {directoryError && <p className="gate-directory-error" role="alert">{directoryError}</p>}
       {!isFocused && repoCandidatePath && repoCheck?.path === repoCandidatePath && !repoCheck.isRepo && (
         <p className="gate-worktree-hint">Worktrees require a Git repository or linked checkout.</p>

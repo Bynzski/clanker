@@ -102,6 +102,36 @@ describe('WorkspaceTabs', () => {
   // Basic Rendering
   // =========================================================================
   describe('basic rendering', () => {
+    it('leaves local tabs unmarked and labels SSH tabs with the configured environment', () => {
+      useWorkspaceStore.setState({
+        workspaces: [
+          createMockWorkspace({ id: 'local', name: 'Local Project', environmentId: 'local', environmentLabel: 'Local' }),
+          createMockWorkspace({ id: 'remote', name: 'Remote Project', environmentId: 'ssh-opaque-id', environmentLabel: 'devbox', workspacePath: '/srv/projects/remote' }),
+        ],
+        activeWorkspaceId: 'local',
+      });
+
+      render(<WorkspaceTabs />);
+
+      const [localTab, remoteTab] = screen.getAllByRole('tab');
+      expect(localTab).toHaveTextContent('Local Project');
+      expect(localTab.querySelector('.workspace-tab-remote')).toBeNull();
+      expect(localTab).toHaveAttribute('title', 'Local Project\n/path/to/workspace');
+      expect(remoteTab.querySelector('.workspace-tab-remote')).toHaveTextContent('SSH · devbox');
+      expect(remoteTab).not.toHaveTextContent('ssh-opaque-id');
+      expect(remoteTab).toHaveAttribute('title', 'SSH · devbox\nRemote Project\n/srv/projects/remote');
+    });
+
+    it('falls back to the environment ID when an SSH label is unavailable', () => {
+      useWorkspaceStore.setState({
+        workspaces: [createMockWorkspace({ environmentId: 'ssh-host-id' })],
+        activeWorkspaceId: 'ws1',
+      });
+
+      render(<WorkspaceTabs />);
+      expect(screen.getByRole('tab').querySelector('.workspace-tab-remote')).toHaveTextContent('SSH · ssh-host-id');
+    });
+
     it('labels a linked worktree with its branch', () => {
       useWorkspaceStore.setState({
         workspaces: [createMockWorkspace({ isLinkedWorktree: true, gitCurrentBranch: 'task/example' })],
