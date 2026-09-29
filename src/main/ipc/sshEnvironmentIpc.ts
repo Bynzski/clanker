@@ -12,6 +12,7 @@ import {
   SSH_ENVIRONMENT_TEST,
   SSH_GET_HOME_DIRECTORY,
   SSH_LIST_DIRECTORIES,
+  SSH_CREATE_DIRECTORY,
   GET_ENVIRONMENT_HARNESS_OPTIONS,
 } from '../../shared/ipcChannels';
 
@@ -96,6 +97,14 @@ export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): 
     }
     return env.listBrowsableDirectories(directoryPath);
   });
+  ipcMain.handle(SSH_CREATE_DIRECTORY, async (_, environmentId: unknown, parentPath: unknown, name: unknown) => {
+    const env = await getSavedSshEnvironment(environmentId);
+    if (typeof parentPath !== 'string' || typeof name !== 'string') {
+      throw new Error('Invalid directory creation request');
+    }
+    return env.createBrowsableDirectory(parentPath, name);
+  });
+
 
   ipcMain.handle(GET_ENVIRONMENT_HARNESS_OPTIONS, async (_, environmentId: unknown) => {
     const envId = typeof environmentId === 'string' ? environmentId : 'local';

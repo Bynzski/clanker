@@ -37,9 +37,9 @@ Clanker supports opening workspaces on remote Linux/POSIX development machines r
 
 ### Selecting a Remote Directory
 
-Choose a saved SSH environment in the launcher. Clanker asks that account for its canonical home directory and starts at `$HOME/workspaces` when that directory exists, or `$HOME` otherwise. Use **Browse** to enter a child directory, move to its parent, and select the current folder. The path field also offers debounced remote directory suggestions; an absolute path can still be entered manually.
+Choose a saved SSH environment in the launcher. Clanker asks that account for its canonical home directory and starts at `$HOME/workspaces` when that directory exists, or `$HOME` otherwise. Use **Browse remote directories** to explore remote directories, navigate up to parent folders, create new project folders directly from the picker, and select a target folder. The path field also offers debounced remote directory suggestions; an absolute path can still be entered manually.
 
-Pre-workspace browsing is a separate, read-only directory-listing operation resolved from the saved SSH environment ID. It returns directory names and canonical paths only; it cannot read file contents or mutate files. After selection, workspace registration validates and canonicalizes the root. All subsequent filesystem requests remain confined to that registered root.
+Pre-workspace browsing and folder creation are scoped operations resolved from the saved SSH environment ID. Browsing is read-only and returns directory names and canonical paths only; it cannot read file contents. Folder creation validates name safety and only creates new subdirectories inside existing writable directories. After selection, workspace registration validates and canonicalizes the root. All subsequent filesystem requests remain confined to that registered root.
 
 ### Workspace Identity
 

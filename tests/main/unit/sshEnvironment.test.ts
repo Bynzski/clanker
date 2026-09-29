@@ -481,6 +481,36 @@ describe('pre-workspace SSH directory browsing', () => {
       await rm(sandbox, { recursive: true, force: true });
     }
   });
+  it('creates browsable directories and rejects invalid names or existing paths', async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-create-dir-'));
+    try {
+      const executor = {
+        exec: vi.fn(async (_target: string, command: string, args: string[]) => {
+          const result = spawnSync(command, args, { encoding: 'utf8' });
+          if (result.status !== 0) {
+            throw new SshExecutionError(result.stderr, result.status ?? 1, result.stdout, result.stderr);
+          }
+          return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
+        }),
+      } as unknown as SshCommandExecutor;
+      const env = new SshEnvironment(config, executor);
+      const created = await env.createBrowsableDirectory(sandbox, 'my-project');
+      expect(created).toEqual({ path: join(sandbox, 'my-project') });
+      await expect(env.createBrowsableDirectory(sandbox, 'my-project'))
+        .rejects.toThrow('Directory already exists');
+      for (const badName of ['../escaped', 'nested/sub', '.', '..', '', '/root']) {
+        await expect(env.createBrowsableDirectory(sandbox, badName))
+          .rejects.toThrow('Invalid directory name');
+      }
+      for (const badParent of ['relative', '/tmp/../etc', '']) {
+        await expect(env.createBrowsableDirectory(badParent, 'good-name'))
+          .rejects.toThrow('Invalid remote parent directory path');
+      }
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  });
+
 
   it('stops a remote scan at the directory count limit', async () => {
     const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-browse-limit-'));

@@ -365,6 +365,7 @@ interface ElectronAPI {
   sshEnvironmentTest: (target: string) => Promise<{ success: boolean; error?: string }>;
   sshGetHomeDirectory: (environmentId: string) => Promise<{ homePath: string; initialPath: string }>;
   sshListDirectories: (environmentId: string, directoryPath: string) => Promise<RemoteDirectoryListing>;
+  sshCreateDirectory: (environmentId: string, parentPath: string, name: string) => Promise<{ path: string }>;
   getEnvironmentHarnessOptions: (environmentId: string) => Promise<Record<string, unknown>>;
 }
 

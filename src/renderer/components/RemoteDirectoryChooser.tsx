@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Folder, Loader2, X } from 'lucide-react';
+import { ArrowLeft, Folder, FolderPlus, Loader2, X } from 'lucide-react';
 import type { RemoteDirectoryListing } from '../../shared/types/environments';
 import './RemoteDirectoryChooser.css';
 
@@ -19,6 +19,18 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
   const [requestedPath, setRequestedPath] = useState(initialPath);
   const [attempt, setAttempt] = useState(0);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const newFolderInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isCreating) {
+      newFolderInputRef.current?.focus();
+    }
+  }, [isCreating]);
+
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -44,8 +56,36 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
     setLoading(true);
     setError('');
     setRequestedPath(path);
+    setIsCreating(false);
+    setNewFolderName('');
+    setCreateError('');
     setAttempt((previous) => previous + 1);
     dialogRef.current?.focus();
+  };
+
+  const handleCreateFolder = async () => {
+    const trimmed = newFolderName.trim();
+    if (!trimmed) {
+      setCreateError('Folder name is required');
+      return;
+    }
+    if (trimmed.includes('/') || trimmed === '.' || trimmed === '..') {
+      setCreateError('Folder name cannot contain slashes or relative segments');
+      return;
+    }
+    if (!listing) return;
+    setCreating(true);
+    setCreateError('');
+    try {
+      const result = await window.electronAPI.sshCreateDirectory(environmentId, listing.path, trimmed);
+      setIsCreating(false);
+      setNewFolderName('');
+      navigate(result.path);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -83,8 +123,66 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
             if (listing?.parentPath) navigate(listing.parentPath);
           }}><ArrowLeft size={14} /> Parent</button>
           <button type="button" onClick={() => navigate(homePath)} disabled={loading || !homePath}>Home</button>
+          <button
+            type="button"
+            aria-label="New folder"
+            disabled={loading || !listing}
+            onClick={() => {
+              setIsCreating(true);
+              setNewFolderName('');
+              setCreateError('');
+            }}
+          >
+            <FolderPlus size={14} /> New Folder
+          </button>
           <span title={listing?.path ?? requestedPath}>{listing?.path ?? requestedPath}</span>
         </div>
+        {isCreating && (
+          <form
+            className="remote-chooser-new-folder"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleCreateFolder();
+            }}
+          >
+            <FolderPlus size={15} />
+            <input
+              ref={newFolderInputRef}
+              type="text"
+              className="remote-chooser-input"
+              aria-label="New folder name"
+              placeholder="Folder name"
+              value={newFolderName}
+              onChange={(event) => {
+                setNewFolderName(event.target.value);
+                setCreateError('');
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.stopPropagation();
+                  setIsCreating(false);
+                  setCreateError('');
+                }
+              }}
+              disabled={creating}
+              autoFocus
+            />
+            <button type="submit" disabled={creating || !newFolderName.trim()}>
+              {creating ? <Loader2 className="spin" size={13} /> : 'Create'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsCreating(false);
+                setCreateError('');
+              }}
+              disabled={creating}
+            >
+              Cancel
+            </button>
+            {createError && <span className="remote-chooser-inline-error" role="alert">{createError}</span>}
+          </form>
+        )}
         <div className="remote-chooser-list">
           {loading && <p role="status"><Loader2 className="spin" size={15} /> Loading directories…</p>}
           {error && <p role="alert">{error} <button type="button" onClick={() => navigate(requestedPath)}>Retry</button></p>}

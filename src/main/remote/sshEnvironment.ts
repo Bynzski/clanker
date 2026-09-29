@@ -78,6 +78,24 @@ const LIST_DIRECTORIES_SCRIPT = [
   'directories.sort(key=lambda entry: (entry["name"].casefold(), entry["name"]))',
   'print(json.dumps({"path": target, "parentPath": os.path.dirname(target) if target != "/" else None, "directories": directories}))',
 ].join('\n');
+const CREATE_DIRECTORY_SCRIPT = [
+  'import json, os, sys',
+  'parent_raw = sys.argv[1]',
+  'name_raw = sys.argv[2]',
+  'parent = os.path.realpath(parent_raw)',
+  'if not os.path.isdir(parent) or not os.access(parent, os.W_OK | os.X_OK):',
+  '  sys.exit("Parent directory does not exist or is not writable")',
+  'target = os.path.join(parent, name_raw)',
+  'if os.path.exists(target):',
+  '  sys.exit("Directory already exists")',
+  'try:',
+  '  os.mkdir(target, 0o755)',
+  'except Exception as e:',
+  '  sys.exit(str(e))',
+  'real_target = os.path.realpath(target)',
+  'print(json.dumps({"path": real_target}))',
+].join('\n');
+
 
 function canonicalBrowsePath(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 &&
@@ -208,6 +226,30 @@ export class SshEnvironment implements WorkspaceEnvironment {
       })),
     };
   }
+  public async createBrowsableDirectory(parentPath: string, name: string): Promise<{ path: string }> {
+    if (!canonicalBrowsePath(parentPath)) {
+      throw new Error('Invalid remote parent directory path');
+    }
+    if (!validBrowseName(name)) {
+      throw new Error('Invalid directory name');
+    }
+    try {
+      const result = await this.executor.exec(this.target, 'python3', [
+        '-c', CREATE_DIRECTORY_SCRIPT, parentPath, name,
+      ], { timeoutMs: BROWSE_TIMEOUT_MS, maxBuffer: BROWSE_MAX_BYTES });
+      const value = parseBrowseResponse(result.stdout);
+      if (!browseObject(value) || !canonicalBrowsePath(value.path)) {
+        throw new Error('Invalid remote create directory response');
+      }
+      return { path: value.path };
+    } catch (err) {
+      if (err instanceof SshExecutionError) {
+        throw new Error(err.message.trim() || 'Failed to create remote directory');
+      }
+      throw err;
+    }
+  }
+
 
   public async validateWorkspacePath(
     workspacePath: string

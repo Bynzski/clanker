@@ -5,6 +5,7 @@ import { SshCommandExecutor } from '../../../src/main/remote/sshCommandExecutor'
 import { registerSshEnvironmentIpc } from '../../../src/main/ipc/sshEnvironmentIpc';
 import {
   SSH_ENVIRONMENT_DELETE, SSH_ENVIRONMENT_SAVE, SSH_GET_HOME_DIRECTORY, SSH_LIST_DIRECTORIES,
+  SSH_CREATE_DIRECTORY,
 } from '../../../src/shared/ipcChannels';
 import { ipcMain } from 'electron';
 
@@ -69,7 +70,8 @@ describe('pre-workspace SSH browse IPC', () => {
     const store = new MemoryStore();
     const exec = vi.fn()
       .mockResolvedValueOnce({ stdout: '{"homePath":"/home/dev","initialPath":"/home/dev/workspaces"}' })
-      .mockResolvedValueOnce({ stdout: '{"path":"/home/dev/workspaces","parentPath":"/home/dev","directories":[]}' });
+      .mockResolvedValueOnce({ stdout: '{"path":"/home/dev/workspaces","parentPath":"/home/dev","directories":[]}' })
+      .mockResolvedValueOnce({ stdout: '{"path":"/home/dev/workspaces/project"}' });
     const manager = new EnvironmentManager(() => store as never, { exec } as unknown as SshCommandExecutor);
     registerSshEnvironmentIpc({
       getStore: () => store as never,
@@ -81,9 +83,12 @@ describe('pre-workspace SSH browse IPC', () => {
       (_event: unknown, id: unknown) => Promise<unknown>;
     const list = handlers.find(([channel]) => channel === SSH_LIST_DIRECTORIES)![1] as
       (_event: unknown, id: unknown, path: unknown) => Promise<unknown>;
+    const create = handlers.find(([channel]) => channel === SSH_CREATE_DIRECTORY)![1] as
+      (_event: unknown, id: unknown, parent: unknown, name: unknown) => Promise<unknown>;
     for (const id of ['local', 'unknown', '', 'dev-vps; touch /tmp/injected', null, {}]) {
       await expect(getHome(null, id)).rejects.toThrow('Unknown SSH environment');
       await expect(list(null, id, '/tmp')).rejects.toThrow('Unknown SSH environment');
+      await expect(create(null, id, '/tmp', 'new')).rejects.toThrow('Unknown SSH environment');
     }
     expect(exec).not.toHaveBeenCalled();
     expect(await getHome(null, existing.id)).toEqual({
@@ -93,10 +98,17 @@ describe('pre-workspace SSH browse IPC', () => {
     expect(await list(null, existing.id, '/home/dev/workspaces')).toEqual({
       path: '/home/dev/workspaces', parentPath: '/home/dev', directories: [],
     });
-    expect(exec).toHaveBeenCalledTimes(2);
+    await expect(create(null, existing.id, null, 'project')).rejects.toThrow('Invalid directory creation request');
+    await expect(create(null, existing.id, '/home/dev/workspaces', null)).rejects.toThrow('Invalid directory creation request');
+    expect(await create(null, existing.id, '/home/dev/workspaces', 'project')).toEqual({
+      path: '/home/dev/workspaces/project',
+    });
+    expect(exec).toHaveBeenCalledTimes(3);
     expect(exec).toHaveBeenNthCalledWith(1, existing.target, 'python3',
       ['-c', expect.any(String)], { timeoutMs: 12000, maxBuffer: 128 * 1024 });
     expect(exec).toHaveBeenNthCalledWith(2, existing.target, 'python3',
       ['-c', expect.any(String), '/home/dev/workspaces'], { timeoutMs: 12000, maxBuffer: 128 * 1024 });
+    expect(exec).toHaveBeenNthCalledWith(3, existing.target, 'python3',
+      ['-c', expect.any(String), '/home/dev/workspaces', 'project'], { timeoutMs: 12000, maxBuffer: 128 * 1024 });
   });
 });

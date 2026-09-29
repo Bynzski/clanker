@@ -161,6 +161,7 @@ import {
   SSH_ENVIRONMENT_TEST,
   SSH_GET_HOME_DIRECTORY,
   SSH_LIST_DIRECTORIES,
+  SSH_CREATE_DIRECTORY,
   GET_ENVIRONMENT_HARNESS_OPTIONS,
 } from '../shared/ipcChannels';
 
@@ -528,5 +529,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sshEnvironmentTest: (target: string) => ipcRenderer.invoke(SSH_ENVIRONMENT_TEST, target),
   sshGetHomeDirectory: (environmentId: string) => ipcRenderer.invoke(SSH_GET_HOME_DIRECTORY, environmentId),
   sshListDirectories: (environmentId: string, directoryPath: string) => ipcRenderer.invoke(SSH_LIST_DIRECTORIES, environmentId, directoryPath),
+  sshCreateDirectory: (environmentId: string, parentPath: string, name: string) =>
+    ipcRenderer.invoke(SSH_CREATE_DIRECTORY, environmentId, parentPath, name),
   getEnvironmentHarnessOptions: (environmentId: string) => ipcRenderer.invoke(GET_ENVIRONMENT_HARNESS_OPTIONS, environmentId),
 });

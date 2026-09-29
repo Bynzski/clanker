@@ -698,6 +698,9 @@ describe('WorkspaceGateContent', () => {
         path: directory, parentPath: directory === '/' ? null : directory.substring(0, directory.lastIndexOf('/')) || '/',
         directories: [],
       }));
+      window.electronAPI.sshCreateDirectory = vi.fn().mockImplementation(async (_id: string, parentPath: string, name: string) => ({
+        path: `${parentPath.replace(/\/+$/, '')}/${name}`,
+      }));
     }
 
     async function selectRemote() {
@@ -823,6 +826,29 @@ describe('WorkspaceGateContent', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
       expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({ path: '/canonical/project', environmentId: 'alpha' }));
     });
+    it('creates a new directory from the chooser and navigates into it', async () => {
+      setupRemote();
+      vi.mocked(window.electronAPI.sshListDirectories).mockImplementation(async (_id, dir) => {
+        if (dir === '/home/alpha/workspaces/my-app') {
+          return { path: '/canonical/my-app', parentPath: '/home/alpha/workspaces', directories: [] };
+        }
+        return { path: '/home/alpha/workspaces', parentPath: '/home/alpha', directories: [] };
+      });
+      vi.mocked(window.electronAPI.sshCreateDirectory).mockResolvedValue({ path: '/home/alpha/workspaces/my-app' });
+      renderGate();
+      await selectRemote();
+      fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
+      await screen.findByRole('dialog', { name: 'Browse remote directories' });
+      fireEvent.click(screen.getByRole('button', { name: 'New folder' }));
+      const folderInput = screen.getByRole('textbox', { name: 'New folder name' });
+      fireEvent.change(folderInput, { target: { value: 'my-app' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+      await waitFor(() => expect(window.electronAPI.sshCreateDirectory).toHaveBeenCalledWith('alpha', '/home/alpha/workspaces', 'my-app'));
+      await waitFor(() => expect(screen.getByText('/canonical/my-app')).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: 'Select this directory' }));
+      expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe('/canonical/my-app');
+    });
+
 
     it('closes the chooser on Escape without changing manually typed path', async () => {
       setupRemote();
