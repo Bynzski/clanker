@@ -8,6 +8,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { GitService, type GitWorkspaceIdentity } from '../gitService';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
+import { RemoteWorktreeCoordinator } from '../remote/remoteWorktreeCoordinator';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import {
   getValidatedWorkspacePath as getValidatedLocalWorkspacePath,
@@ -75,6 +76,7 @@ function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
 export function registerGitIpc(deps: RegisterGitIpcDeps): void {
   const { getGitService, getMainWindow, getWorkspaceRegistry } = deps;
   const gitService = getGitService();
+  const remoteWorktrees = new RemoteWorktreeCoordinator(() => getWorkspaceRegistry?.(), deps.getLiveRemoteTerminalPaths);
 
   // These are the positions of the final workspaceId argument in the bridge.
   // Keeping the positional contract here leaves all legacy local callers intact.
@@ -205,6 +207,10 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
 
   registerGitHandler(GIT_LIST_WORKTREES, async (_, workspacePath: string) => {
     const isRemote = (gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local') !== 'local';
+    if (isRemote) {
+      try { await remoteWorktrees.reconcile(gitService.getScopedWorkspaceIdentity()!.environmentId); }
+      catch (error) { return { success: false, worktrees: [], error: error instanceof Error ? error.message : 'Could not verify remote removal completion' }; }
+    }
     const safePath = getValidatedWorkspacePath(workspacePath);
     if (!safePath) return { success: false, worktrees: [], error: getInvalidWorkspaceResult().error };
     const result = await gitService.listWorktrees(safePath);
@@ -270,20 +276,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
   registerGitHandler(GIT_INSPECT_WORKTREE, async (_, workspacePath: string, worktreePath: string, openWorkspacePaths: string[]) => {
     const ws = resolveWorkspace();
     if (ws && ws.location.environmentId !== 'local') {
-      if (!ws.environment.inspectWorktree) return { success: false, error: 'Worktree inspection is unavailable for this environment' };
-      const activePaths = () => {
-        const terminalPaths = deps.getLiveRemoteTerminalPaths?.(ws.location.environmentId) ?? (deps.getLiveRemoteTerminalPaths ? null : []);
-        if (terminalPaths === null) return null;
-        return [...new Set([...terminalPaths, ...(getWorkspaceRegistry?.().getAllWorkspaces() ?? [])
-          .filter((entry) => entry.location.environmentId === ws.location.environmentId).map((entry) => entry.location.path)])].sort();
-      };
-      const before = activePaths();
-      if (!before) return { success: false, error: 'An active SSH terminal directory could not be verified; stop it before inspection' };
-      const result = await ws.environment.inspectWorktree(ws.location.path, worktreePath, before);
-      if (getWorkspaceRegistry?.().getWorkspace(ws.workspaceId) !== ws || JSON.stringify(before) !== JSON.stringify(activePaths())) {
-        return { success: false, error: 'Workspace or terminal activity changed during inspection; inspect it again' };
-      }
-      return result;
+      return remoteWorktrees.inspect(ws, worktreePath);
     }
     const safePath = getValidatedWorkspacePath(workspacePath);
     const safeWorktreePath = getValidatedLocalWorkspacePath(worktreePath);
@@ -298,7 +291,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
   registerGitHandler(GIT_REMOVE_WORKTREE, async (_, workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) => {
     const ws = resolveWorkspace();
     if (ws && ws.location.environmentId !== 'local') {
-      return { success: false, error: 'Task worktrees are only available for local workspaces in this version' };
+      return remoteWorktrees.remove(ws, worktreePath, expectedBranch);
     }
     const safePath = getValidatedWorkspacePath(workspacePath);
     const safeWorktreePath = getValidatedLocalWorkspacePath(worktreePath);

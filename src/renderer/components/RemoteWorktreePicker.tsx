@@ -17,6 +17,7 @@ export default function RemoteWorktreePicker({ repositories, preferredWorkspaceI
   const [result, setResult] = useState<{ workspaceId: string; workspacePath: string; refresh: number; worktrees: GitWorktree[]; error?: string } | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [creating, setCreating] = useState(false);
+  const [removalNotice, setRemovalNotice] = useState<{ workspaceId: string; message: string } | null>(null);
   const repository = repositories.find((entry) => entry.id === selectedId)
     ?? repositories.find((entry) => entry.id === preferredWorkspaceId) ?? repositories[0];
   const workspaceId = repository?.id;
@@ -49,6 +50,7 @@ export default function RemoteWorktreePicker({ repositories, preferredWorkspaceI
     <button type="button" onClick={() => setRefresh((value) => value + 1)} disabled={loading || creating}>Refresh worktrees</button>
     {loading && <p role="status">Loading remote worktrees…</p>}
     {error && <p className="gate-worktree-error" role="alert">{error}</p>}
+    {removalNotice?.workspaceId === workspaceId && <p role="status">{removalNotice.message}</p>}
     {!loading && !error && !worktrees.length && <p>No worktrees found.</p>}
     {currentResult && !error && <RemoteWorktreeCreate key={`${workspaceId}:${workspacePath}`} workspaceId={repository.id} workspacePath={repository.workspacePath}
       launchReady={launchReady && !creating} onBusyChange={setCreating} onOpenPath={onOpenPath} />}
@@ -61,7 +63,10 @@ export default function RemoteWorktreePicker({ repositories, preferredWorkspaceI
       <button type="button" onClick={() => onOpenPath(worktree.path)} disabled={loading || creating || !launchReady || worktree.isPrunable} title={worktree.isPrunable ? 'Checkout directory is missing' : undefined}>Open</button>
       </div>
       {!worktree.isMain && <RemoteWorktreeInspect key={`${workspaceId}:${workspacePath}:${refresh}`} workspaceId={repository.id} workspacePath={repository.workspacePath}
-        worktreePath={worktree.path} disabled={creating || loading} />}
+        worktreePath={worktree.path} disabled={creating || loading} onBusyChange={setCreating} onRemoved={(removed) => {
+          setResult((previous) => previous?.workspaceId === workspaceId ? { ...previous, worktrees: previous.worktrees.filter((entry) => entry.path !== worktree.path) } : previous);
+          setRemovalNotice({ workspaceId: repository.id, message: removed.warning || `Checkout files preserved at ${removed.recoveryPath ?? 'the remote recovery folder'}. The branch remains.` });
+        }} />}
     </div>)}
   </div>;
 }

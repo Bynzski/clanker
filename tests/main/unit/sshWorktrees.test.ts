@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -51,7 +52,7 @@ describe.skipIf(process.platform === 'win32')('SSH worktrees on a real POSIX hos
     expect(result).toMatchObject({ success: true, worktree: { path: destination, branch: 'task/new' } });
     expect(await readFile(join(destination, 'tracked.txt'), 'utf8')).toBe('branch commit');
     expect(executor.exec).toHaveBeenCalledWith('user@host', 'python3', expect.any(Array), expect.objectContaining({ timeoutMs: 120000 }));
-    expect(environment.capabilities.worktrees).toBe(false); // Removal remains unsupported.
+    expect(environment.capabilities.worktrees).toBe(true);
   });
 
   it('creates from a linked source beside the main repository and reuses an existing branch', async () => {
@@ -239,5 +240,143 @@ describe.skipIf(process.platform === 'win32')('SSH worktrees on a real POSIX hos
     expect(await environment.inspectWorktree(root, join(fixture, 'task'), [])).toMatchObject({ success: false, error: expect.stringContaining('Invalid remote') });
     vi.mocked(executor.exec).mockRejectedValueOnce(new Error('SSH disconnected'));
     expect(await environment.inspectWorktree(root, join(fixture, 'task'), [])).toMatchObject({ success: false, error: 'SSH disconnected' });
+  });
+
+  it('preserves checkout files in a recovery folder and unregisters only the removed checkout', async () => {
+    const checkout = join(fixture, 'task');
+    await git(['worktree', 'add', '-b', 'task', checkout]);
+    const operation = randomUUID();
+    const result = await environment.removeWorktree(root, checkout, 'task', [root], operation);
+    const archive = join(fixture, '.clanker-worktree-recovery', `removed-${operation}`, 'checkout');
+    expect(result).toMatchObject({ success: true, recoveryPath: archive });
+    expect(await readFile(join(archive, 'tracked.txt'), 'utf8')).toBe('initial');
+    expect(JSON.parse(await readFile(join(archive, '..', 'recovery.json'), 'utf8'))).toMatchObject({ originalPath: checkout, branch: 'task' });
+    expect((await git(['worktree', 'list', '--porcelain'])).stdout).not.toContain(checkout);
+    expect((await git(['branch', '--list', 'task'])).stdout).toContain('task');
+    await environment.waitForWorktreeOperations(root, operation);
+  });
+
+  it('rechecks branch, dirty contents, locks, and active paths without removing the checkout', async () => {
+    const checkout = join(fixture, 'task');
+    await git(['worktree', 'add', '-b', 'task', checkout]);
+    expect(await environment.removeWorktree(root, checkout, 'old-branch', [], randomUUID())).toMatchObject({ success: false, error: expect.stringContaining('branch changed') });
+    expect(await environment.removeWorktree(root, checkout, 'task', [join(checkout, 'src')], randomUUID())).toMatchObject({ success: false, error: expect.stringContaining('active terminals') });
+    await git(['worktree', 'lock', checkout]);
+    expect(await environment.removeWorktree(root, checkout, 'task', [], randomUUID())).toMatchObject({ success: false, error: expect.stringContaining('locked') });
+    await git(['worktree', 'unlock', checkout]);
+    await writeFile(join(checkout, 'late-file'), 'preserve');
+    expect(await environment.removeWorktree(root, checkout, 'task', [], randomUUID())).toMatchObject({ success: false, error: expect.stringContaining('untracked') });
+    expect(await readFile(join(checkout, 'late-file'), 'utf8')).toBe('preserve');
+    expect((await git(['worktree', 'list', '--porcelain'])).stdout).toContain(checkout);
+  });
+
+  it('refuses clean submodule checkouts and symlinked recovery folders', async () => {
+    const { checkout } = await submoduleCheckout();
+    expect(await environment.removeWorktree(root, checkout, 'task', [], randomUUID())).toMatchObject({ success: false, error: expect.stringContaining('submodules') });
+    expect((await git(['worktree', 'list', '--porcelain'])).stdout).toContain(checkout);
+    const plain = join(fixture, 'plain');
+    await git(['worktree', 'add', '-b', 'plain', plain, 'main~1']);
+    await symlink(root, join(fixture, '.clanker-worktree-recovery'));
+    expect(await environment.removeWorktree(root, plain, 'plain', [], randomUUID())).toMatchObject({ success: false, error: expect.stringContaining('Recovery folder') });
+    expect(await readFile(join(plain, 'tracked.txt'), 'utf8')).toBe('initial');
+  });
+
+  it.each([0o777, 0o770, 0o755])('rejects an existing recovery folder with non-private mode %s before moving files', async (mode) => {
+    const checkout = join(fixture, 'task');
+    await git(['worktree', 'add', '-b', 'task', checkout]);
+    const recovery = join(fixture, '.clanker-worktree-recovery');
+    await mkdir(recovery);
+    await chmod(recovery, mode);
+    expect(await environment.removeWorktree(root, checkout, 'task', [], randomUUID())).toMatchObject({
+      success: false, error: expect.stringContaining('Recovery folder must be owned by the SSH account with private permissions'),
+    });
+    expect(await readFile(join(checkout, 'tracked.txt'), 'utf8')).toBe('initial');
+    expect((await git(['worktree', 'list', '--porcelain'])).stdout).toContain(checkout);
+    expect((await stat(recovery)).mode & 0o777).toBe(mode);
+  });
+
+  it('accepts an existing private recovery folder owned by the SSH account', async () => {
+    const checkout = join(fixture, 'task');
+    await git(['worktree', 'add', '-b', 'task', checkout]);
+    const recovery = join(fixture, '.clanker-worktree-recovery');
+    await mkdir(recovery, { mode: 0o700 });
+    const result = await environment.removeWorktree(root, checkout, 'task', [], randomUUID());
+    expect(result).toMatchObject({ success: true });
+    expect(await readFile(join(result.recoveryPath!, 'tracked.txt'), 'utf8')).toBe('initial');
+  });
+
+  it('rejects an existing recovery folder owned by another account', async () => {
+    const checkout = join(fixture, 'task');
+    await git(['worktree', 'add', '-b', 'task', checkout]);
+    await mkdir(join(fixture, '.clanker-worktree-recovery'), { mode: 0o700 });
+    // Simulate a foreign owner without requiring privileged chown on CI.
+    const ownershipShim = String.raw`
+import os
+actual_lstat = os.lstat
+def foreign_owner(path, *args, **kwargs):
+  info = actual_lstat(path, *args, **kwargs)
+  if os.fspath(path).endswith('/.clanker-worktree-recovery'):
+    values = list(info)
+    values[4] = info.st_uid + 1
+    return os.stat_result(values)
+  return info
+os.lstat = foreign_owner
+`;
+    vi.mocked(executor.exec).mockImplementationOnce(async (_target, command, args = []) => {
+      const result = await exec(command, [args[0], ownershipShim + args[1], ...args.slice(2)]);
+      return { ...result, exitCode: 0 };
+    });
+    expect(await environment.removeWorktree(root, checkout, 'task', [], randomUUID())).toMatchObject({
+      success: false, error: expect.stringContaining('Recovery folder must be owned by the SSH account'),
+    });
+    expect(await readFile(join(checkout, 'tracked.txt'), 'utf8')).toBe('initial');
+    expect((await git(['worktree', 'list', '--porcelain'])).stdout).toContain(checkout);
+  });
+
+  async function wrapGit(body: string) {
+    const binary = (await exec('sh', ['-c', 'command -v git'])).stdout.trim();
+    const bin = join(fixture, 'bin');
+    await mkdir(bin);
+    await writeFile(join(bin, 'git'), '#!/bin/sh\n' + body, { mode: 0o755 });
+    vi.mocked(executor.exec).mockImplementationOnce(async (_target, command, args) => {
+      const result = await exec(command, args, { env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CLANKER_TEST_REAL_GIT: binary } });
+      return { ...result, exitCode: 0 };
+    });
+  }
+
+  it('preserves files written during removal and leaves recreated original paths untouched', async () => {
+    const checkout = join(fixture, 'task');
+    await git(['worktree', 'add', '-b', 'task', checkout]);
+    await wrapGit('"$CLANKER_TEST_REAL_GIT" "$@"\nresult=$?\nif [ "$result" = 0 ] && [ "$3" = worktree ] && [ "$4" = move ]; then\n  printf late > "$6/late-file"\n  mkdir "$5"\n  printf new > "$5/new-file"\nfi\nexit "$result"\n');
+    const result = await environment.removeWorktree(root, checkout, 'task', [], randomUUID());
+    expect(result).toMatchObject({ success: true, warning: expect.stringContaining('left in place') });
+    expect(await readFile(join(result.recoveryPath!, 'late-file'), 'utf8')).toBe('late');
+    expect(await readFile(join(checkout, 'new-file'), 'utf8')).toBe('new');
+  });
+
+  it('preserves the archive and reports its path if Git cleanup fails', async () => {
+    const checkout = join(fixture, 'task');
+    await git(['worktree', 'add', '-b', 'task', checkout]);
+    await wrapGit('if [ "$3" = worktree ] && [ "$4" = remove ]; then\n  printf "cleanup failed" >&2\n  exit 1\nfi\nexec "$CLANKER_TEST_REAL_GIT" "$@"\n');
+    const operation = randomUUID();
+    const result = await environment.removeWorktree(root, checkout, 'task', [], operation);
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining('preserved at') });
+    const archive = join(fixture, '.clanker-worktree-recovery', `removed-${operation}`, 'checkout');
+    expect(await readFile(join(archive, 'tracked.txt'), 'utf8')).toBe('initial');
+    await environment.waitForWorktreeOperations(root, operation);
+  });
+
+  it('journals completion when SSH loses the result and refuses to confirm nonexistent operations', async () => {
+    const checkout = join(fixture, 'task');
+    await git(['worktree', 'add', '-b', 'task', checkout]);
+    const normalExec = vi.mocked(executor.exec).getMockImplementation()!;
+    vi.mocked(executor.exec).mockImplementationOnce(async (...args) => {
+      await normalExec(...args);
+      throw new Error('SSH disconnected after completion');
+    });
+    const operation = randomUUID();
+    expect(await environment.removeWorktree(root, checkout, 'task', [], operation)).toMatchObject({ success: false, uncertain: true });
+    await environment.waitForWorktreeOperations(root, operation);
+    await expect(environment.waitForWorktreeOperations(root, randomUUID())).rejects.toThrow();
   });
 });

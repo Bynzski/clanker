@@ -14,6 +14,7 @@ import { isPathContained } from './remotePaths';
 import { snapshotSshFiles } from './sshFileSnapshot';
 import { createSshWorktree } from './sshWorktrees';
 import { inspectSshWorktree } from './sshWorktreeInspection';
+import { removeSshWorktree, waitForSshWorktreeOperations } from './sshWorktreeRemoval';
 import type { RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
 export { isPathContained } from './remotePaths';
 import { HARNESS_OPTIONS } from '../harnessCatalog';
@@ -172,11 +173,12 @@ export class SshEnvironment implements WorkspaceEnvironment {
   public readonly kind = 'ssh' as const;
   public readonly label: string;
   public readonly target: string;
+  public readonly worktreeResourceId: string;
   private readonly defaultWorkspaceRoot?: string;
 
   public readonly capabilities: EnvironmentCapabilities = {
     watchFiles: true,
-    worktrees: false,
+    worktrees: true,
     revealInFileManager: false,
     agentAttention: false,
     sessionDiscovery: false,
@@ -190,6 +192,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
     this.id = config.id;
     this.label = config.label;
     this.target = config.target;
+    this.worktreeResourceId = `ssh:${config.target}`;
     this.defaultWorkspaceRoot = config.defaultWorkspaceRoot;
   }
 
@@ -621,6 +624,14 @@ export class SshEnvironment implements WorkspaceEnvironment {
 
   public inspectWorktree(workspacePath: string, worktreePath: string, activePaths: string[]) {
     return inspectSshWorktree(this.executor, this.target, workspacePath, worktreePath, activePaths);
+  }
+
+  public removeWorktree(workspacePath: string, worktreePath: string, expectedBranch: string | null, activePaths: string[], operationId: string) {
+    return removeSshWorktree(this.executor, this.target, workspacePath, worktreePath, expectedBranch, activePaths, operationId);
+  }
+
+  public waitForWorktreeOperations(workspacePath: string, operationId: string) {
+    return waitForSshWorktreeOperations(this.executor, this.target, workspacePath, operationId);
   }
 
   public async execGit(

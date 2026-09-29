@@ -1063,15 +1063,15 @@ describe('Git IPC workspace identity routing', () => {
   });
 
   test('inspects using authoritative same-host workspace and terminal activity', async () => {
-    const terminalPaths = vi.fn().mockReturnValue(['/srv/task/src']);
+    const terminalPaths = vi.fn().mockReturnValue(['/srv/other/src']);
     const { remote, local, handle } = setup(terminalPaths);
     const inspectWorktree = vi.fn().mockResolvedValue({ success: true, hasChanges: false, worktree: { path: '/srv/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false } });
     Object.assign(remote, { inspectWorktree });
     await handle('register-open-workspace')(null, 'source', workspacePath, 'ssh');
-    await handle('register-open-workspace')(null, 'same-host', '/srv/task', 'ssh');
+    await handle('register-open-workspace')(null, 'same-host', '/srv/other', 'ssh');
     await handle('register-open-workspace')(null, 'local-tab', '/srv/local', 'local');
     expect(await handle('git-inspect-worktree')(null, '/forged', '/srv/task', ['/untrusted'], 'source')).toMatchObject({ success: true });
-    expect(inspectWorktree).toHaveBeenCalledWith(workspacePath, '/srv/task', [workspacePath, '/srv/task', '/srv/task/src'].sort());
+    expect(inspectWorktree).toHaveBeenCalledWith(workspacePath, '/srv/task', [workspacePath, '/srv/other', '/srv/other/src'].sort());
     expect(terminalPaths).toHaveBeenCalledWith('ssh');
     expect(local.execGit).not.toHaveBeenCalled();
     expect(await handle('git-remove-worktree')(null, workspacePath, '/srv/task', 'task', [], 'source')).toMatchObject({ success: false });
@@ -1091,6 +1091,23 @@ describe('Git IPC workspace identity routing', () => {
     terminalPaths.mockReturnValue(['/srv/task']);
     resolve({ success: true });
     expect(await pending).toMatchObject({ success: false, error: expect.stringContaining('changed during inspection') });
+  });
+
+  test('routes removal through the registered host and reconciles uncertain completion on refresh', async () => {
+    const { remote, local, registry, handle } = setup();
+    const worktree = { path: '/srv/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false };
+    const inspectWorktree = vi.fn().mockResolvedValue({ success: true, worktree, hasChanges: false });
+    const removeWorktree = vi.fn().mockResolvedValue({ success: false, uncertain: true, error: 'SSH disconnected' });
+    const waitForWorktreeOperations = vi.fn().mockResolvedValue(undefined);
+    Object.assign(remote, { inspectWorktree, removeWorktree, waitForWorktreeOperations });
+    await handle('register-open-workspace')(null, 'source', workspacePath, 'ssh');
+    expect(await handle('git-remove-worktree')(null, '/forged', '/srv/task', 'task', ['/untrusted'], 'source')).toMatchObject({ success: false });
+    expect(removeWorktree).toHaveBeenCalledWith(workspacePath, '/srv/task', 'task', [workspacePath], expect.any(String));
+    expect(registry.isRemotePathReserved('ssh', '/srv/task')).toBe(true);
+    expect(await handle('git-list-worktrees')(null, '/forged', 'source')).toMatchObject({ success: true });
+    expect(waitForWorktreeOperations).toHaveBeenCalledWith(workspacePath, removeWorktree.mock.calls[0][4]);
+    expect(registry.isRemotePathReserved('ssh', '/srv/task')).toBe(false);
+    expect(local.execGit).not.toHaveBeenCalled();
   });
 
   test('same-path operations retain their environment across overlapping Git commands', async () => {

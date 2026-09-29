@@ -146,3 +146,10 @@ export interface GitWorktreeInspectionResult {
   hasChanges?: boolean;
   error?: string;
 }
+
+export interface GitWorktreeRemoveResult {
+  success: boolean;
+  error?: string;
+  warning?: string;
+  recoveryPath?: string;
+}

@@ -18,7 +18,7 @@ import type {
   WorkspaceEnvironmentId,
 } from '../../shared/types/environments';
 import type { RemoteFileSnapshot, RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
-import type { GitWorktreeCreateResult, GitWorktreeInspectionResult } from '../../shared/types/git';
+import type { GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeRemoveResult } from '../../shared/types/git';
 
 export interface EnvironmentCapabilities {
   readonly watchFiles: boolean;
@@ -67,6 +67,8 @@ export interface WorkspaceEnvironment {
   readonly id: WorkspaceEnvironmentId;
   readonly kind: 'local' | 'ssh';
   readonly label: string;
+  /** Saved environments using the same transport share removal safeguards. */
+  readonly worktreeResourceId?: string;
   readonly capabilities: EnvironmentCapabilities;
 
   // Filesystem operations
@@ -84,6 +86,8 @@ export interface WorkspaceEnvironment {
   execGit(workspacePath: string, args: string[], timeoutMs?: number): Promise<{ stdout: string; stderr: string }>;
   createWorktree?(workspacePath: string, baseRef: string, branch: string): Promise<GitWorktreeCreateResult>;
   inspectWorktree?(workspacePath: string, worktreePath: string, activePaths: string[]): Promise<GitWorktreeInspectionResult>;
+  removeWorktree?(workspacePath: string, worktreePath: string, expectedBranch: string | null, activePaths: string[], operationId: string): Promise<GitWorktreeRemoveResult & { uncertain?: boolean }>;
+  waitForWorktreeOperations?(workspacePath: string, operationId: string): Promise<void>;
 
   // Terminal & Harness operations
   getHarnessOptions(): Promise<Record<string, EnvironmentHarnessOption>>;

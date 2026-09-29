@@ -305,8 +305,14 @@ app.whenReady().then(() => {
     onWorkspaceUnregistered: (id) => remoteFileWatcher.closeWorkspace(id),
     getLiveRemoteTerminalPaths: (environmentId) => {
       const paths: string[] = [];
+      const configurations = store.get('sshEnvironments') ?? [];
+      const target = configurations.find((entry) => entry.id === environmentId)?.target;
+      if (!target) return null;
+      const sameTargetIds = new Set(configurations.filter((entry) => entry.target === target).map((entry) => entry.id));
       for (const terminal of terminals.values()) {
-        if (terminal.environmentId !== environmentId) continue;
+        if (!terminal.environmentId || terminal.environmentId === 'local') continue;
+        if (!configurations.some((entry) => entry.id === terminal.environmentId)) return null;
+        if (!sameTargetIds.has(terminal.environmentId)) continue;
         // The SSH client's local cwd is unrelated to its remote checkout.
         if (!terminal.remoteWorkingDir) return null;
         paths.push(terminal.remoteWorkingDir);

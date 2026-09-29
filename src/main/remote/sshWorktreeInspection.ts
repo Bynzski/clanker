@@ -2,9 +2,10 @@ import * as path from 'node:path';
 import type { GitWorktreeInspectionResult } from '../../shared/types/git';
 import { SshCommandExecutor, SshExecutionError } from './sshCommandExecutor';
 
-const INSPECT_SCRIPT = String.raw`
-import json, os, subprocess, sys
-workspace, target, active_raw = sys.argv[1:]
+export const WORKTREE_INSPECTION_PYTHON = String.raw`
+import json, os, subprocess, sys, fcntl
+from contextlib import contextmanager
+workspace, target, active_raw = sys.argv[1:4]
 os.environ['GIT_TERMINAL_PROMPT'] = '0'
 os.environ['GIT_OPTIONAL_LOCKS'] = '0'
 def git(cwd, args):
@@ -44,7 +45,7 @@ def has_changes(cwd, visited):
     if has_changes(submodule, visited):
       return True
   return False
-try:
+def inspect():
   if not canonical(workspace) or not os.path.isdir(workspace):
     raise RuntimeError('Registered workspace is no longer a canonical directory')
   records = git(workspace, ['worktree', 'list', '--porcelain', '-z']).split(b'\0\0')
@@ -82,19 +83,37 @@ try:
   # so a changed/symlinked target is not reported ready.
   if not canonical(target):
     raise RuntimeError('Worktree directory is no longer canonical')
-  print(json.dumps({'success': True, 'worktree': match, 'hasChanges': changed}))
+  return {'success': True, 'worktree': match, 'hasChanges': changed}
+
+@contextmanager
+def repository_lock(exclusive=False):
+  common = os.fsdecode(git(workspace, ['rev-parse', '--path-format=absolute', '--git-common-dir']).rstrip(b'\n'))
+  if not canonical(common):
+    raise RuntimeError('Repository metadata directory is no longer canonical')
+  descriptor = os.open(common, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+  try:
+    fcntl.flock(descriptor, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+    yield
+  finally:
+    os.close(descriptor)
+`;
+
+const INSPECT_SCRIPT = WORKTREE_INSPECTION_PYTHON + String.raw`
+try:
+  with repository_lock():
+    print(json.dumps(inspect()))
 except Exception as error:
   sys.exit(str(error))
 `;
 
-function validPath(value: unknown): value is string {
+export function validRemoteWorktreePath(value: unknown): value is string {
   return typeof value === 'string' && path.posix.isAbsolute(value) && path.posix.normalize(value) === value &&
     !value.includes('\0') && Buffer.byteLength(value) <= 4096;
 }
 
 export async function inspectSshWorktree(executor: SshCommandExecutor, target: string, workspacePath: string, worktreePath: string, activePaths: string[]): Promise<GitWorktreeInspectionResult> {
-  if (!validPath(workspacePath) || !validPath(worktreePath) || !Array.isArray(activePaths) ||
-      activePaths.length > 1024 || !activePaths.every(validPath)) {
+  if (!validRemoteWorktreePath(workspacePath) || !validRemoteWorktreePath(worktreePath) || !Array.isArray(activePaths) ||
+      activePaths.length > 1024 || !activePaths.every(validRemoteWorktreePath)) {
     return { success: false, error: 'Invalid remote worktree inspection paths' };
   }
   try {

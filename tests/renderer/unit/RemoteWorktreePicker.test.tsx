@@ -27,7 +27,7 @@ describe('remote worktree picker', () => {
     const missing = screen.getByText('/srv/missing · Missing');
     expect(within(missing.closest('.gate-worktree-row') as HTMLElement).getByRole('button', { name: 'Open' })).toBeDisabled();
     expect(screen.getByText('Create and open worktree')).toBeDisabled();
-    expect(screen.queryByText('Remove…')).toBeNull();
+    expect(screen.getAllByText('Remove…')).toHaveLength(2);
   });
 
   it('ignores late results after switching repositories with the same path', async () => {

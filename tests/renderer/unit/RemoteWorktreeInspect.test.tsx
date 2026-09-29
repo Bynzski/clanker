@@ -38,4 +38,37 @@ describe('remote worktree inspection', () => {
     expect(screen.queryByRole('status')).toBeNull();
     expect(api.gitInspectWorktree).toHaveBeenCalledTimes(1);
   });
+
+  it('requires a clean inspection and explicit path/branch confirmation before removal', async () => {
+    const removed = vi.fn();
+    const busy = vi.fn();
+    api.gitInspectWorktree.mockResolvedValue({ success: true, worktree, hasChanges: false });
+    api.gitRemoveWorktree.mockResolvedValue({ success: true, recoveryPath: '/srv/recovery/checkout', warning: 'Checkout preserved' });
+    render(<RemoteWorktreeInspect {...props} onRemoved={removed} onBusyChange={busy} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove /srv/task' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Confirm remote worktree removal' });
+    expect(dialog).toHaveTextContent('/srv/task');
+    expect(dialog).toHaveTextContent('task');
+    expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Remove this worktree' })));
+    expect(api.gitRemoveWorktree).toHaveBeenCalledWith('/srv/repo', '/srv/task', 'task', [], 'ssh-repo');
+    expect(removed).toHaveBeenCalledWith(expect.objectContaining({ recoveryPath: '/srv/recovery/checkout' }));
+    expect(busy.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('does not offer confirmation for dirty checkouts and keeps removal failures visible', async () => {
+    const removed = vi.fn();
+    api.gitInspectWorktree.mockResolvedValueOnce({ success: true, worktree, hasChanges: true }).mockResolvedValue({ success: true, worktree, hasChanges: false });
+    api.gitRemoveWorktree.mockResolvedValue({ success: false, error: 'SSH completion is uncertain; refresh worktrees' });
+    render(<RemoteWorktreeInspect {...props} onRemoved={removed} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove /srv/task' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('untracked');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove /srv/task' }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove this worktree' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('uncertain');
+    expect(removed).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
 });

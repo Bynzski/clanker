@@ -308,6 +308,23 @@ describe('terminalIpc — error-path: handler returns', () => {
   });
 
 
+  test('does not spawn a pending remote terminal after its directory becomes reserved', async () => {
+    const { opts } = createMockDeps();
+    let finish!: (result: unknown) => void;
+    const reserved = vi.fn().mockReturnValue(false);
+    const registered = { workspaceId: 'remote', location: { path: '/srv/task', environmentId: 'ssh' },
+      environment: { resolveTerminalSpawn: vi.fn(() => new Promise((done) => { finish = done; })) } };
+    registerTerminalIpc({ ...opts, getWorkspaceRegistry: () => ({
+      getWorkspace: () => registered, isRemotePathReserved: reserved,
+    }) } as never);
+    const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+    const pending = handler(null, '/srv/task', undefined, undefined, undefined, undefined, 'remote', 'ssh');
+    reserved.mockReturnValue(true);
+    finish({ spawnCmd: 'ssh', spawnArgs: [], cwd: process.cwd(), env: {} });
+    await expect(pending).rejects.toThrow('being removed');
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+  });
+
   test('a recipe command is written only at TERMINAL_READY and its PTY exit marker is reported', async () => {
     const { opts } = createMockDeps();
     let emitData: ((data: string) => void) | undefined;

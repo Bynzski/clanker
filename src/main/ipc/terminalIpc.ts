@@ -169,6 +169,11 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         recipeCommand,
       });
 
+      if (registry?.getWorkspace(resolvedWorkspace.workspaceId) !== resolvedWorkspace ||
+          registry.isRemotePathReserved?.(effectiveEnvironmentId, remoteWorkingDir)) {
+        throw new Error('Remote workspace was closed or is being removed');
+      }
+
       try {
         const result = spawnPtyProcess({
           id,
