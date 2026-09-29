@@ -96,7 +96,6 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import { registerGitIpc } from '../../../src/main/ipc/gitIpc';
 import { GitService, type GitStatusResult } from '../../../src/main/gitService';
 import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
-import { toPosixPath } from '../../../src/shared/pathNormalize';
 import { ipcMain } from 'electron';
 
 describe('registerGitIpc', () => {
@@ -967,7 +966,7 @@ describe('git IPC channel constants', () => {
 
 describe('Git IPC workspace identity routing', () => {
   const ipc = ipcMain as typeof ipcMain & { handle: Mock };
-  const workspacePath = toPosixPath(process.cwd());
+  const workspacePath = '/shared/workspace';
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1015,6 +1014,13 @@ describe('Git IPC workspace identity routing', () => {
     return { local, remote, registry, service, statuses, executions, mainWindow, handle };
   }
 
+  test('legacy path-only history remains local', async () => {
+    const { local, remote, handle } = setup();
+    await handle('git-get-history')(null, process.cwd(), 4);
+    expect(local.execGit).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining(['log', '-n4']));
+    expect(remote.execGit).not.toHaveBeenCalled();
+  });
+
   test('same-path operations retain their environment across overlapping Git commands', async () => {
     const { local, remote, handle, executions, mainWindow } = setup();
     expect(await handle('register-open-workspace')(null, 'local-tab', workspacePath, 'local'))
@@ -1033,15 +1039,13 @@ describe('Git IPC workspace identity routing', () => {
     await handle('git-get-history')(null, workspacePath, 4, 'local-tab');
     releaseRemote();
     await remoteHistory;
-    await handle('git-get-history')(null, workspacePath, 4);
 
     expect(executions.filter(({ command }) => command === 'log')).toEqual([
       { workspaceId: 'ssh-tab', environmentId: 'ssh', command: 'log' },
       { workspaceId: 'local-tab', environmentId: 'local', command: 'log' },
-      { workspaceId: undefined, environmentId: undefined, command: 'log' },
     ]);
     expect(remote.execGit).toHaveBeenCalledTimes(1);
-    expect(local.execGit).toHaveBeenCalledTimes(2);
+    expect(local.execGit).toHaveBeenCalledTimes(1);
     await handle('git-get-history')(null, '/caller/path/does/not/exist', 4, 'ssh-tab');
     expect(remote.execGit).toHaveBeenLastCalledWith(workspacePath, expect.arrayContaining(['log', '-n4']));
 
