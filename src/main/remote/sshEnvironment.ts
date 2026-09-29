@@ -398,7 +398,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
 
     const fileBuffer = Buffer.from(request.content, 'utf8');
     const pythonScript = [
-      'import os, sys, tempfile',
+      'import os, stat, sys, tempfile',
       'target, root = sys.argv[1], sys.argv[2]',
       'tmp_path = None',
       'try:',
@@ -407,9 +407,22 @@ export class SshEnvironment implements WorkspaceEnvironment {
       '  real_root = os.path.realpath(root)',
       '  if not (real_dir == real_root or real_dir.startswith(real_root.rstrip("/") + "/")):',
       '    sys.exit(2)',
+      '  existing_mode = None',
+      '  if os.path.lexists(target):',
+      '    existing_stat = os.lstat(target)',
+      '    if stat.S_ISLNK(existing_stat.st_mode):',
+      '      sys.exit(3)',
+      '    if stat.S_ISREG(existing_stat.st_mode):',
+      '      existing_mode = stat.S_IMODE(existing_stat.st_mode)',
       '  fd, tmp_path = tempfile.mkstemp(prefix=".clanker-", dir=target_dir)',
       '  with os.fdopen(fd, "wb") as f:',
       '    f.write(sys.stdin.buffer.read())',
+      '  if existing_mode is None:',
+      '    # A new text file uses the SSH user\'s umask, not mkstemp\'s 0600.',
+      '    mask = os.umask(0)',
+      '    os.umask(mask)',
+      '    existing_mode = 0o666 & ~mask',
+      '  os.chmod(tmp_path, existing_mode)',
       '  os.replace(tmp_path, target)',
       '  tmp_path = None',
       'except Exception as e:',
@@ -428,6 +441,9 @@ export class SshEnvironment implements WorkspaceEnvironment {
     } catch (err) {
       if (err instanceof SshExecutionError && err.exitCode === 2) {
         return { success: false, errorCode: 'invalid-path', error: 'Target directory is outside workspace root' };
+      }
+      if (err instanceof SshExecutionError && err.exitCode === 3) {
+        return { success: false, errorCode: 'invalid-path', error: 'File path is a symbolic link' };
       }
       return { success: false, errorCode: 'write-error', error: err instanceof Error ? err.message : String(err) };
     }

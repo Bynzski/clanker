@@ -108,26 +108,39 @@ export class SshCommandExecutor {
     let totalStdoutLen = 0;
     let totalStderrLen = 0;
     let killed = false;
+    let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const terminateChild = () => {
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // Already exited
+      }
+      forceKillTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          try {
+            child.kill('SIGKILL');
+          } catch {
+            // Already exited
+          }
+        }
+      }, 1000);
+      forceKillTimer.unref();
+    };
 
     const timer = setTimeout(() => {
       killed = true;
-      child.kill('SIGTERM');
-      setTimeout(() => {
-        try {
-          child.kill('SIGKILL');
-        } catch {
-          // Already dead
-        }
-      }, 1000);
+      terminateChild();
       reject(new Error(`Remote SSH command timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
     child.stdout?.on('data', (chunk: Buffer) => {
+      if (killed) return;
       totalStdoutLen += chunk.length;
       if (totalStdoutLen > maxBuffer) {
         killed = true;
         clearTimeout(timer);
-        child.kill('SIGTERM');
+        terminateChild();
         reject(new Error(`Remote SSH command stdout exceeded limit of ${maxBuffer} bytes`));
         return;
       }
@@ -135,11 +148,12 @@ export class SshCommandExecutor {
     });
 
     child.stderr?.on('data', (chunk: Buffer) => {
+      if (killed) return;
       totalStderrLen += chunk.length;
       if (totalStderrLen > maxBuffer) {
         killed = true;
         clearTimeout(timer);
-        child.kill('SIGTERM');
+        terminateChild();
         reject(new Error(`Remote SSH command stderr exceeded limit of ${maxBuffer} bytes`));
         return;
       }
@@ -148,6 +162,7 @@ export class SshCommandExecutor {
 
     child.on('error', (err) => {
       clearTimeout(timer);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
       if (!killed) {
         reject(new Error(`SSH process error: ${err.message}`));
       }
@@ -155,6 +170,7 @@ export class SshCommandExecutor {
 
     child.on('close', (code, signal) => {
       clearTimeout(timer);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
       if (killed) return;
 
       const stdout = Buffer.concat(stdoutChunks).toString('utf8');

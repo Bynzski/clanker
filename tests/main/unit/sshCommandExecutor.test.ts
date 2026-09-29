@@ -10,6 +10,8 @@ vi.mock('child_process', () => ({
 import { spawn } from 'child_process';
 
 interface MockChildProcess extends EventEmitter {
+  exitCode: number | null;
+  signalCode: NodeJS.Signals | null;
   stdout: EventEmitter;
   stderr: EventEmitter;
   stdin: {
@@ -25,6 +27,8 @@ function createMockChild(): MockChildProcess {
   child.stderr = new EventEmitter();
   child.stdin = { end: vi.fn(), on: vi.fn() };
   child.kill = vi.fn();
+  child.exitCode = null;
+  child.signalCode = null;
   return child;
 }
 
@@ -101,14 +105,39 @@ describe('SshCommandExecutor', () => {
   });
 
   it('enforces maximum output buffer limit', async () => {
-    const mockChild = createMockChild();
-    vi.mocked(spawn).mockReturnValue(mockChild as unknown as ChildProcess);
+    vi.useFakeTimers();
+    try {
+      const mockChild = createMockChild();
+      vi.mocked(spawn).mockReturnValue(mockChild as unknown as ChildProcess);
 
-    const execPromise = executor.exec('vps', 'cat', ['large.bin'], { maxBuffer: 100 });
-    mockChild.stdout.emit('data', Buffer.alloc(200));
+      const execPromise = executor.exec('vps', 'cat', ['large.bin'], { maxBuffer: 100 });
+      mockChild.stdout.emit('data', Buffer.alloc(200));
 
-    await expect(execPromise).rejects.toThrow('stdout exceeded limit');
-    expect(mockChild.kill).toHaveBeenCalledWith('SIGTERM');
+      await expect(execPromise).rejects.toThrow('stdout exceeded limit');
+      expect(mockChild.kill).toHaveBeenCalledWith('SIGTERM');
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mockChild.kill).toHaveBeenCalledWith('SIGKILL');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('terminates SSH after stderr exceeds the output buffer', async () => {
+    vi.useFakeTimers();
+    try {
+      const mockChild = createMockChild();
+      vi.mocked(spawn).mockReturnValue(mockChild as unknown as ChildProcess);
+
+      const execPromise = executor.exec('vps', 'cat', ['large.bin'], { maxBuffer: 100 });
+      mockChild.stderr.emit('data', Buffer.alloc(200));
+
+      await expect(execPromise).rejects.toThrow('stderr exceeded limit');
+      expect(mockChild.kill).toHaveBeenCalledWith('SIGTERM');
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mockChild.kill).toHaveBeenCalledWith('SIGKILL');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('tests connection using echo clanker-ssh-ok', async () => {

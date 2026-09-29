@@ -1,11 +1,29 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SshEnvironment, isPathContained } from '../../../src/main/remote/sshEnvironment';
 import { SshCommandExecutor, SshExecutionError } from '../../../src/main/remote/sshCommandExecutor';
+
+function localPythonExecutor(umask022 = false): SshCommandExecutor {
+  return {
+    exec: async (_target: string, command: string, args: string[], options?: { input?: string | Buffer }) =>
+      new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
+        const binary = umask022 ? 'sh' : command;
+        const commandArgs = umask022 ? ['-c', 'umask 022; exec "$@"', 'sh', command, ...args] : args;
+        const child = execFile(binary, commandArgs, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+          if (error) {
+            reject(new SshExecutionError(error.message, Number(error.code), stdout, stderr));
+          } else {
+            resolve({ stdout, stderr, exitCode: 0 });
+          }
+        });
+        child.stdin?.end(options?.input);
+      }),
+  } as unknown as SshCommandExecutor;
+}
 
 describe('SshEnvironment', () => {
   describe('isPathContained', () => {
@@ -379,6 +397,56 @@ describe('remote harness commands executed on a POSIX host', () => {
 });
 
 describe('remote filesystem scripts executed on a POSIX host', () => {
+  it('preserves modes on existing files and uses the remote umask for new files', async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-modes-'));
+    const root = join(sandbox, 'workspace');
+    await mkdir(root);
+    const env = new SshEnvironment({ id: 'host', kind: 'ssh', label: 'host', target: 'host' }, localPythonExecutor(true));
+
+    try {
+      for (const mode of [0o755, 0o644, 0o600]) {
+        const filePath = join(root, `existing-${mode.toString(8)}`);
+        await writeFile(filePath, 'before');
+        await chmod(filePath, mode);
+        const original = await stat(filePath);
+        expect((await env.writeFile({ workspacePath: root, filePath, content: 'after' })).success).toBe(true);
+        const updated = await stat(filePath);
+        expect(updated.mode & 0o777).toBe(mode);
+        expect(updated.ino).not.toBe(original.ino);
+        expect(await readFile(filePath, 'utf8')).toBe('after');
+      }
+
+      const newPath = join(root, 'new.txt');
+      expect((await env.writeFile({ workspacePath: root, filePath: newPath, content: 'new' })).success).toBe(true);
+      expect((await stat(newPath)).mode & 0o777).toBe(0o644);
+      expect(await readFile(newPath, 'utf8')).toBe('new');
+      expect((await readdir(root)).some((name) => name.startsWith('.clanker-'))).toBe(false);
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects symlink escapes and cleans up a temporary file after replacement fails', async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-write-failure-'));
+    const root = join(sandbox, 'workspace');
+    const outside = join(sandbox, 'outside.txt');
+    await mkdir(root);
+    await writeFile(outside, 'untouched');
+    await symlink(outside, join(root, 'escape.txt'));
+    await mkdir(join(root, 'directory-target'));
+    const env = new SshEnvironment({ id: 'host', kind: 'ssh', label: 'host', target: 'host' }, localPythonExecutor());
+
+    try {
+      expect((await env.writeFile({ workspacePath: root, filePath: join(root, 'escape.txt'), content: 'changed' })).errorCode).toBe('invalid-path');
+      expect((await env.writeFile({ workspacePath: root, filePath: join(root, 'directory-target'), content: 'changed' })).success).toBe(false);
+      expect((await env.writeFile({ workspacePath: root, filePath: outside, content: 'changed' })).errorCode).toBe('invalid-path');
+      expect(await readFile(outside, 'utf8')).toBe('untouched');
+      expect((await readdir(root)).some((name) => name.startsWith('.clanker-'))).toBe(false);
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  });
+
   it('mutates within the workspace and rejects symlink escapes without touching external files', async () => {
     const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-files-'));
     const root = join(sandbox, 'workspace');
@@ -388,20 +456,7 @@ describe('remote filesystem scripts executed on a POSIX host', () => {
     await mkdir(outside);
     await writeFile(join(outside, 'secret'), 'unchanged');
     await symlink(outside, join(root, 'escape'));
-    const executor = {
-      exec: async (_target: string, command: string, args: string[], options?: { input?: string | Buffer }) =>
-        new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
-          const child = execFile(command, args, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
-            if (error) {
-              reject(new SshExecutionError(error.message, Number(error.code), stdout, stderr));
-            } else {
-              resolve({ stdout, stderr, exitCode: 0 });
-            }
-          });
-          child.stdin?.end(options?.input);
-        }),
-    } as unknown as SshCommandExecutor;
-    const env = new SshEnvironment({ id: 'host', kind: 'ssh', label: 'host', target: 'host' }, executor);
+    const env = new SshEnvironment({ id: 'host', kind: 'ssh', label: 'host', target: 'host' }, localPythonExecutor());
     try {
       expect((await env.createDirectory({ workspacePath: root, targetPath: join(root, 'escape', 'nested'), type: 'directory' })).success).toBe(false);
       expect((await env.createFile({ workspacePath: root, targetPath: join(root, 'escape', 'new'), type: 'file' })).success).toBe(false);
