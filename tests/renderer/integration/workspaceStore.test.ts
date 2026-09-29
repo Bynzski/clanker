@@ -6,6 +6,7 @@ import type { LayoutSplit, Terminal, Pane, WorkspaceTab } from '../../../src/ren
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
 import { persistWorkspaceLayout } from '../../../src/renderer/lib/workspaceLayoutStorage';
+import { readStoredNotesVisible } from '../../../src/renderer/lib/notesStorage';
 
 // Platform-neutral path constants for test fixtures
 const TEST_HOME_USER = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user');
@@ -109,6 +110,28 @@ describe('workspace lifecycle', () => {
     expect(state.activeWorkspaceLifecycle).toBe('active');
     expect(state.workspaces).toHaveLength(1);
     expect(state.workspaces[0].lifecycle).toBe('active');
+  });
+
+  it('keeps same-path local and SSH notes visibility separate through workspace lifecycle', () => {
+    window.localStorage.setItem('clanker-grid:notes-visible:v1:/shared/project', '1');
+    const local = addWorkspace({ workspacePath: '/shared/project', notesVisible: undefined, notesPane: undefined });
+    expect(local.notesVisible).toBe(true);
+
+    const remote = addWorkspace({
+      workspacePath: '/shared/project',
+      environmentId: 'ssh-server',
+      notesVisible: undefined,
+      notesPane: undefined,
+    });
+    expect(remote.notesVisible).toBe(false);
+    getStore().toggleNotesPane();
+    expect(readStoredNotesVisible('/shared/project', remote.activeWorkspaceId, 'ssh-server')).toBe(true);
+    expect(readStoredNotesVisible('/shared/project', local.activeWorkspaceId)).toBe(true);
+
+    getStore().selectWorkspace(local.activeWorkspaceId!);
+    getStore().toggleNotesPane();
+    expect(readStoredNotesVisible('/shared/project', local.activeWorkspaceId)).toBe(false);
+    expect(readStoredNotesVisible('/shared/project', remote.activeWorkspaceId, 'ssh-server')).toBe(true);
   });
 
   it('addWorkspace derives name from path when name is empty', () => {
@@ -620,12 +643,12 @@ describe('browser', () => {
     expect(JSON.stringify(getStore().layoutRoot)).not.toContain(notesPane!.id);
   });
 
-  it('persists notes pane visibility by workspace path', () => {
+  it('persists notes pane visibility for the active workspace identity', () => {
     getStore().toggleNotesPane();
-    expect(window.localStorage.getItem('clanker-grid:notes-visible:v1:/workspace')).toBe('1');
+    expect(readStoredNotesVisible('/workspace', getStore().activeWorkspaceId)).toBe(true);
 
     getStore().toggleNotesPane();
-    expect(window.localStorage.getItem('clanker-grid:notes-visible:v1:/workspace')).toBe('0');
+    expect(readStoredNotesVisible('/workspace', getStore().activeWorkspaceId)).toBe(false);
   });
 
   it('restores notes pane visibility when a workspace is reopened', () => {
@@ -652,8 +675,8 @@ describe('browser', () => {
 
       getStore().toggleNotesPane();
 
-      expect(window.localStorage.getItem('clanker-grid:notes-visible:v1:c:/users/jay/project')).toBe('1');
-      expect(window.localStorage.getItem('clanker-grid:notes-visible:v1:C:\\Users\\Jay\\Project\\')).toBeNull();
+      expect(readStoredNotesVisible('c:/users/jay/project', getStore().activeWorkspaceId)).toBe(true);
+      expect(readStoredNotesVisible('C:\\Users\\Jay\\Project\\', getStore().activeWorkspaceId)).toBe(true);
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
     }

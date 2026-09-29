@@ -407,7 +407,7 @@ describe('FileExplorer', () => {
   });
 
   it('opens a terminal from the explorer and registers it in the workspace store', async () => {
-    setActiveWorkspace({ workspacePath: '/workspace' });
+    const workspace = setActiveWorkspace({ workspacePath: '/workspace' });
     const initialTerminalCount = useWorkspaceStore.getState().terminals.length;
     const fileListDirectory = vi.fn().mockResolvedValue({
       success: true,
@@ -423,7 +423,8 @@ describe('FileExplorer', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Open in Terminal' }));
 
     await waitFor(() => {
-      expect(spawnTerminal).toHaveBeenCalledWith('/workspace/src');
+      expect(spawnTerminal).toHaveBeenCalledWith('/workspace/src', undefined, undefined,
+        undefined, undefined, workspace.id, 'local');
       expect(useWorkspaceStore.getState().terminals).toHaveLength(initialTerminalCount + 1);
       expect(useWorkspaceStore.getState().terminals).toContainEqual(expect.objectContaining({
         id: 'terminal-2',
@@ -432,6 +433,25 @@ describe('FileExplorer', () => {
         displayName: 'Samson',
       }));
     });
+  });
+
+  it('routes an explorer terminal into its SSH workspace even when a local workspace shares the path', async () => {
+    const workspace = setActiveWorkspace({ workspacePath: '/workspace', environmentId: 'dev-vps' });
+    const spawnTerminal = vi.fn().mockResolvedValue({ id: 'remote-terminal', pid: 100 });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({
+        success: true, entries: [createEntry('src', '/workspace/src', true)],
+      }),
+      spawnTerminal,
+    });
+    render(<FileExplorer />);
+    fireEvent.contextMenu(await screen.findByText('src'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open in Terminal' }));
+    await waitFor(() => expect(spawnTerminal).toHaveBeenCalledWith('/workspace/src', undefined,
+      undefined, undefined, undefined, workspace.id, 'dev-vps'));
+    expect(useWorkspaceStore.getState().terminals).toContainEqual(expect.objectContaining({
+      id: 'remote-terminal', workspaceId: workspace.id, environmentId: 'dev-vps',
+    }));
   });
 
   it('renames files immediately in the explorer tree before refresh completes', async () => {

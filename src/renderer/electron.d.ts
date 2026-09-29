@@ -1,4 +1,4 @@
-import type { SshEnvironmentConfig } from '../../shared/types/environments';
+import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types/environments';
 import type { WorkspaceRecipe, RecipePreviewProbeResult } from '../../shared/types/recipes';
 import type { TaskSessionRecord } from '../../shared/types/taskSessions';
 import type { FileListDirectoryRequest, FileListDirectoryResult, ExplorerTreeChangedEvent } from '../../shared/types/fileExplorer';
@@ -199,7 +199,7 @@ interface ElectronAPI {
   gitGetBranchState: (workspacePath: string, workspaceId?: string) => Promise<GitBranchStateResult>;
   gitListWorktrees: (workspacePath: string, workspaceId?: string) => Promise<GitWorktreeListResult>;
   gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string) => Promise<GitWorktreeCreateResult>;
-  registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) => Promise<{ success: boolean; error?: string }>;
+  registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) => Promise<{ success: boolean; location?: WorkspaceLocation; error?: string }>;
   unregisterOpenWorkspace: (id: string) => Promise<{ success: boolean; error?: string }>;
   gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeInspectionResult>;
   gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) => Promise<{ success: boolean; error?: string; warning?: string }>;
@@ -276,13 +276,13 @@ interface ElectronAPI {
   // Explorer tree auto-refresh
   onExplorerTreeChanged: (callback: (event: ExplorerTreeChangedEvent) => void) => () => void;
   /** Start watching a workspace tree. Triggers EXPLORER_TREE_CHANGED events on file changes. */
-  explorerStartWatching: (workspacePath: string) => Promise<void>;
+  explorerStartWatching: (workspaceId: string) => Promise<void>;
   /** Stop watching the current workspace tree. */
   explorerStopWatching: () => Promise<void>;
 
   // Session history
-  discoverSessions: (workspacePath: string) => Promise<HarnessSession[]>;
-  invokeSession: (session: HarnessSession, fork?: boolean) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
+  discoverSessions: (workspaceId: string) => Promise<HarnessSession[]>;
+  invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
 
   // Workspace Recipes
   recipeGetAll: (workspacePath?: string) => Promise<WorkspaceRecipe[]>;

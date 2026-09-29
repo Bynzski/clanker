@@ -27,6 +27,7 @@ interface Props {
   onClose: () => void;
   initialRecipe?: WorkspaceRecipe | null;
   defaultWorkspacePath?: string;
+  workspaceEnvironmentId?: string;
   defaultLaunches?: RecipeLaunchStep[];
   defaultBrowserUrl?: string;
   defaultLayout?: PersistedRecipeLayout;
@@ -41,6 +42,7 @@ export default function RecipeModal({
   onClose,
   initialRecipe,
   defaultWorkspacePath,
+  workspaceEnvironmentId,
   defaultLaunches,
   defaultBrowserUrl,
   defaultLayout,
@@ -92,6 +94,11 @@ export default function RecipeModal({
   }, [isOpen, initialRecipe, defaultWorkspacePath, defaultLaunches, defaultBrowserUrl, defaultLayout, defaultTerminalCount]);
 
   if (!isOpen) return null;
+  const remoteWorkspace = workspaceEnvironmentId != null && workspaceEnvironmentId !== 'local';
+  const remoteRecipe = initialRecipe?.environmentId != null && initialRecipe.environmentId !== 'local';
+  const recipeUnavailable = remoteWorkspace || remoteRecipe;
+  const unavailableMessage = 'Launch recipes are not supported for SSH workspaces in this version.';
+
 
   const handleAddCommandStep = () => {
     setLaunches((prev) => [
@@ -127,6 +134,10 @@ export default function RecipeModal({
   };
 
   const handleSave = async () => {
+    if (recipeUnavailable) {
+      setErrorMessage(unavailableMessage);
+      return;
+    }
     if (!name.trim()) {
       setErrorMessage('Recipe name is required');
       return;
@@ -147,6 +158,7 @@ export default function RecipeModal({
       id: initialRecipe?.id ?? `recipe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: name.trim(),
       workspacePath: workspacePath.trim(),
+      environmentId: initialRecipe?.environmentId ?? 'local',
       terminalCount: terminalCount ?? (cleanedLaunches.length || 1),
       ...(description.trim() ? { description: description.trim() } : {}),
       launches: cleanedLaunches,
@@ -185,6 +197,10 @@ export default function RecipeModal({
   };
 
   const handleLaunch = async () => {
+    if (recipeUnavailable) {
+      setErrorMessage(unavailableMessage);
+      return;
+    }
     if (!initialRecipe) return;
     setIsLaunching(true);
     setErrorMessage('');
@@ -219,6 +235,12 @@ export default function RecipeModal({
         </div>
 
         <div className="recipe-modal-body">
+          {recipeUnavailable && (
+            <div className="recipe-error-banner">
+              <AlertTriangle size={16} />
+              <span>{unavailableMessage}</span>
+            </div>
+          )}
           {errorMessage && (
             <div className="recipe-error-banner">
               <AlertTriangle size={16} />
@@ -447,7 +469,7 @@ export default function RecipeModal({
                   Cancel
                 </button>
               )}
-              <button type="button" className="recipe-btn recipe-btn-primary" onClick={handleSave}>
+              <button type="button" className="recipe-btn recipe-btn-primary" onClick={handleSave} disabled={recipeUnavailable}>
                 Save Recipe
               </button>
             </div>
@@ -466,6 +488,7 @@ export default function RecipeModal({
                   type="button"
                   className="recipe-btn recipe-btn-secondary"
                   onClick={() => setIsEditing(true)}
+                  disabled={recipeUnavailable}
                 >
                   <Edit2 size={14} /> Edit
                 </button>
@@ -473,7 +496,7 @@ export default function RecipeModal({
                   type="button"
                   className="recipe-btn recipe-btn-primary launch"
                   onClick={handleLaunch}
-                  disabled={isLaunching}
+                  disabled={isLaunching || recipeUnavailable}
                 >
                   {isLaunching ? <Loader2 size={14} className="spin" /> : <Play size={14} />}
                   Launch Recipe

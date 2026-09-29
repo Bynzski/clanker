@@ -118,7 +118,9 @@ describe('App', () => {
     // Mock window.electronAPI
     window.electronAPI = {
       spawnTerminal: mockSpawnTerminal,
-      registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true }),
+      registerOpenWorkspace: vi.fn(async (_id: string, path: string, environmentId = 'local') => ({
+        success: true, location: { path, environmentId },
+      })),
       unregisterOpenWorkspace: vi.fn().mockResolvedValue({ success: true }),
       onFitAllPanes: mockOnFitAllPanes,
       zoomInWindow: mockZoomInWindow,

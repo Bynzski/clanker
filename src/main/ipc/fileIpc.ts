@@ -202,14 +202,16 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
   // This is one-way: main sends events to renderer (no handler needed).
   ipcMain.on(FILE_CHANGED, () => { });
 
-  ipcMain.handle(EXPLORER_START_WATCHING, (_, workspacePath: string) => {
-    const reg = deps.getWorkspaceRegistry?.();
-    if (reg?.getAllWorkspaces().some(
-      (w) => w.location.environmentId !== 'local' && (w.location.path === workspacePath || isPathContained(w.location.path, workspacePath))
-    )) {
+  ipcMain.handle(EXPLORER_START_WATCHING, (_, workspaceId: string) => {
+    const workspace = typeof workspaceId === 'string'
+      ? deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId)
+      : null;
+    if (!workspace) throw new Error('Workspace is not registered');
+    if (workspace.location.environmentId !== 'local') {
+      explorerWatcher.close();
       return;
     }
-    explorerWatcher.watchWorkspace(toNativePath(workspacePath, process.platform));
+    explorerWatcher.watchWorkspace(toNativePath(workspace.location.path, process.platform));
   });
 
   ipcMain.handle(EXPLORER_STOP_WATCHING, () => {

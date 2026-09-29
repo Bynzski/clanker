@@ -33,6 +33,7 @@ import {
 import { spawnPtyProcess } from './ptySpawn';
 import { RecipeCommandStartup } from '../recipeCommandStartup';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
+import { isPathContained } from '../remote/sshEnvironment';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import {
   acquireAgyAttentionPlugin,
@@ -143,11 +144,26 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         throw new Error('Remote workspace is not registered or not accessible');
       }
 
+      const root = resolvedWorkspace.location.path;
+      if (typeof workingDir !== 'string' || !isPathContained(root, workingDir)) {
+        throw new Error('Terminal directory is outside the registered workspace');
+      }
+      let remoteWorkingDir = root;
+      if (workingDir !== root) {
+        const validation = await resolvedWorkspace.environment.validateWorkspacePath(workingDir);
+        if (!validation.valid || !validation.resolvedPath ||
+            !isPathContained(root, validation.resolvedPath)) {
+          throw new Error('Terminal directory is outside the registered workspace');
+        }
+        remoteWorkingDir = validation.resolvedPath;
+      }
+
       const resolved = await resolvedWorkspace.environment.resolveTerminalSpawn({
         id,
-        workingDir: resolvedWorkspace.location.path,
+        workingDir: remoteWorkingDir,
         harness,
         model,
+        flags: harness ? store.get('harnessDefaults')[harness]?.flags : undefined,
         initialCommand,
         recipeCommand,
       });

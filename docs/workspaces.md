@@ -43,7 +43,7 @@ Workspace identity is composite:
 environmentId + canonical workspace path
 ```
 
-This ensures that a workspace on `dev-vps:/home/jay/Projects/clanker` is a distinct identity from `local:/home/jay/Projects/clanker`. Both can be open simultaneously in the same window without state collision.
+This ensures that a workspace on `dev-vps:/home/jay/Projects/clanker` is a distinct identity from `local:/home/jay/Projects/clanker`. Both can be open simultaneously in the same window without layout or notes state collision. SSH paths are canonicalized on the remote host before registration, and subsequent file, Git, and terminal requests use that registered location.
 
 Tab labels clearly display the environment prefix (e.g., `Local · clanker` vs. `dev-vps · clanker`).
 
@@ -57,22 +57,28 @@ Clanker uses the system OpenSSH client (`ssh`). It respects:
 
 Clanker **never** stores SSH passwords or private keys in application state, nor does it disable host-key verification. Saved SSH targets only store non-secret metadata (a label and the connection target string).
 
+Saved SSH targets cannot be edited or deleted while an open workspace uses them. Close the workspace first, then update or remove the target.
+
+
 ### Remote Prerequisites & Platform Support
 
 - **Supported Remote Platforms**: Linux and POSIX-compatible operating systems (x86_64, ARM64). Remote Windows hosts are not supported in V1.
 - **Prerequisites**: OpenSSH server running on the remote host, with key-based authentication or ssh-agent configured for noninteractive background operations. Python 3 is required on the remote host for root-confined filesystem operations and atomic writes.
+
+Remote harness commands are discovered and executed on the remote host using its shell environment. Configured harness flags and applicable harness environment settings are applied to new remote terminals; local CLI installations and local Agent Attention adapters are not forwarded. Remote model discovery and selection are deferred in V1.
 
 ### Features Intentionally Deferred / Unavailable Remotely in V1
 
 To maintain reliability and safety, the following capabilities are local-only in V1:
 
 1. **Task Worktrees**: Creating or removing Git worktrees is disabled for remote workspaces. Opening existing remote checkouts directly as workspaces is fully supported.
-2. **Reveal in File Manager**: Disabled for remote paths, preventing passing remote paths to desktop OS file managers.
-3. **Local File Watching**: Chokidar file watching is not attached to remote paths. Remote explorer and editor state refreshes on mutations and focus events.
-4. **Agent Attention & Remote Native Session Discovery**: Remote terminals run without local attention hooks. On remote terminal exit, local session history scanning is bypassed, and tasks are marked unavailable with a clear diagnostic explanation.
-5. **Automatic Port Forwarding**: VPS development servers listening on `localhost:3000` are remote to that machine. Automatic port forwarding is deferred to a future release.
-6. **Remote Process Persistence**: Remote PTY processes terminate on workspace closure or app exit; PTY daemons are not installed on the remote machine.
-7. **AI Commit Generation**: Disabled for SSH workspaces; manual Git commits work remotely. Local model/CLI discovery is never used to represent a remote host.
+2. **Launch Recipes**: Creating, editing, or launching recipes for SSH workspaces is unavailable in V1. Legacy recipes without an environment ID remain local recipes.
+3. **Reveal in File Manager**: Disabled for remote paths, preventing passing remote paths to desktop OS file managers.
+4. **Local File Watching**: Chokidar file watching is not attached to remote paths. Remote explorer and editor state refreshes on mutations and focus events.
+5. **Agent Attention & Remote Native Session Discovery**: Remote terminals run without local attention hooks. On remote terminal exit, local session history scanning is bypassed, and tasks are marked unavailable with a clear diagnostic explanation.
+6. **Automatic Port Forwarding**: VPS development servers listening on `localhost:3000` are remote to that machine. Automatic port forwarding is deferred to a future release.
+7. **Remote Process Persistence**: Remote PTY processes terminate on workspace closure or app exit; PTY daemons are not installed on the remote machine.
+8. **AI Commit Generation**: Disabled for SSH workspaces; manual Git commits work remotely. Local model/CLI discovery is never used to represent a remote host.
 
 ## Managing Tabs
 
@@ -135,11 +141,13 @@ The Explorer is a separate, resizable left sidebar and does not join the pane la
 
 ## Persistence
 
-The app remembers the last workspace path. Layout topology and split sizes are stored separately for each workspace path and restored when the current pane set is compatible. Pane IDs are regenerated safely and are not persisted directly.
+The app remembers the last workspace path. Layout topology, split sizes, note content, and notes visibility are stored separately by environment and canonical workspace path; old path-only local data is restored for local workspaces and migrated on the next write. Pane IDs are regenerated safely and are not persisted directly.
 
 Terminal processes and their runtime state are not reconstructed from layout persistence.
 
 ## Workspace Launch Recipes
+
+Launch recipes are available for local workspaces only in V1. SSH workspace recipes are rejected rather than executed locally.
 
 Workspace launch recipes allow saving repeatable development workspace configurations. A recipe captures:
 

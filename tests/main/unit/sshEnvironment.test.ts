@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SshEnvironment, isPathContained } from '../../../src/main/remote/sshEnvironment';
 import { SshCommandExecutor, SshExecutionError } from '../../../src/main/remote/sshCommandExecutor';
@@ -203,6 +204,19 @@ describe('SshEnvironment', () => {
       expect(harnesses).toEqual(['codex', 'claude']);
     });
 
+    it('uses the same user CLI PATH for discovery as for remote execution', async () => {
+      vi.mocked(mockExecutor.exec).mockResolvedValueOnce({ stdout: 'codex\n', stderr: '', exitCode: 0 });
+      await env.probeAvailableHarnessIds();
+      const script = vi.mocked(mockExecutor.exec).mock.calls[0]?.[2]?.[1] ?? '';
+      expect(script).toContain('"$HOME/.npm-global/bin"');
+      expect(script).toContain('export PATH');
+      const terminal = await env.resolveTerminalSpawn({
+        id: 'term-cli', workingDir: '/tmp', harness: 'codex',
+      });
+      expect(terminal.spawnArgs[2]).toContain('"$HOME/.npm-global/bin"');
+      expect(terminal.spawnArgs[2]).toContain('export PATH');
+    });
+
     it('resolves terminal spawn to system ssh with TTY allocation', async () => {
       const spawnConfig = await env.resolveTerminalSpawn({
         id: 'term-1',
@@ -213,20 +227,154 @@ describe('SshEnvironment', () => {
       expect(spawnConfig.spawnCmd).toBe('ssh');
       expect(spawnConfig.spawnArgs[0]).toBe('-t');
       expect(spawnConfig.spawnArgs[1]).toBe('user@test-host');
-      expect(spawnConfig.spawnArgs[2]).toContain("cd '/var/www/app'");
-      expect(spawnConfig.spawnArgs[2]).toContain("'codex'");
       expect(spawnConfig.attentionEnabled).toBe(false);
     });
-    it('embeds initialCommand into remoteExec and leaves initialCommand undefined for PTY', async () => {
-      const spawnConfig = await env.resolveTerminalSpawn({
-        id: 'term-2',
-        workingDir: '/var/www/app',
-        initialCommand: 'npm run dev',
-      });
 
-      expect(spawnConfig.spawnArgs[2]).toContain("sh -lc 'npm run dev'");
-      expect(spawnConfig.initialCommand).toBeUndefined();
+    it('does not forward local Agent Attention adapter variables to SSH', async () => {
+      vi.stubEnv('CLANKER_ATTENTION_COMMAND', '/local/adapter.js');
+      vi.stubEnv('CLANKER_ATTENTION_TOKEN', 'local-token');
+      try {
+        const config = await env.resolveTerminalSpawn({
+          id: 'term-attention', workingDir: '/var/www/app', harness: 'codex',
+        });
+        expect(config.env.CLANKER_ATTENTION_COMMAND).toBeUndefined();
+        expect(config.env.CLANKER_ATTENTION_TOKEN).toBeUndefined();
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
+    it('runs an initial command exactly once inside the requested remote directory', async () => {
+      const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-command-'));
+      try {
+        const home = join(sandbox, 'home');
+        await mkdir(home);
+        await writeFile(join(home, 'exit-shell'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+        const spawnConfig = await env.resolveTerminalSpawn({
+          id: 'term-2',
+          workingDir: sandbox,
+          initialCommand: 'printf "%s\\n" "$PWD" >> "$HOME/captured"',
+        });
+        const launched = spawnSync('sh', ['-c', spawnConfig.spawnArgs[2]], {
+          env: { HOME: home, PATH: '/usr/bin:/bin', SHELL: join(home, 'exit-shell') },
+          encoding: 'utf8',
+        });
+        expect(launched.status).toBe(0);
+        expect(await readFile(join(home, 'captured'), 'utf8')).toBe(`${sandbox}\n`);
+        expect(spawnConfig.initialCommand).toBeUndefined();
+      } finally {
+        await rm(sandbox, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+describe('remote harness commands executed on a POSIX host', () => {
+  it('discovers user-installed CLIs, safely passes model and working directory, and isolates attention', async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-cli-'));
+    const home = join(sandbox, 'home');
+    const cliDir = join(home, '.npm-global', 'bin');
+    const marker = join(sandbox, 'injected');
+    const workingDir = join(sandbox, "repo' $(touch injected)");
+    const model = `model'; touch ${marker}; echo '`;
+    const flag = `--danger=;touch${marker}`;
+    try {
+      await mkdir(cliDir, { recursive: true });
+      await mkdir(workingDir);
+      await writeFile(join(cliDir, 'codex'), '#!/bin/sh\nprintf "%s\\n" "$PWD" "$@" > "$HOME/captured"\n', { mode: 0o755 });
+      await chmod(join(cliDir, 'codex'), 0o755);
+      await writeFile(join(home, 'exit-shell'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      await chmod(join(home, 'exit-shell'), 0o755);
+      const executor = { exec: vi.fn(async (_target: string, _command: string, args: string[]) => {
+        const result = spawnSync('sh', ['-c', args[1]], {
+          env: { PATH: '/usr/bin:/bin', HOME: home }, encoding: 'utf8',
+        });
+        if (result.status !== 0) throw new Error(result.stderr);
+        return { stdout: result.stdout, stderr: result.stderr, exitCode: result.status };
+      }) } as unknown as SshCommandExecutor;
+      const environment = new SshEnvironment({
+        id: 'vps-test', kind: 'ssh', label: 'Test VPS', target: 'user@test-host',
+      }, executor);
+      const available = await environment.probeAvailableHarnessIds();
+      expect(available).toContain('codex');
+      const terminal = await environment.resolveTerminalSpawn({
+        id: 'term', workingDir, harness: 'codex', model, flags: `--verbose ${flag}`,
+      });
+      expect(terminal.attentionEnabled).toBe(false);
+      const launched = spawnSync('sh', ['-c', terminal.spawnArgs[2]], {
+        env: {
+          PATH: '/usr/bin:/bin', HOME: home, SHELL: join(home, 'exit-shell'),
+          CLANKER_ATTENTION_COMMAND: 'local-adapter',
+        },
+        cwd: sandbox,
+        encoding: 'utf8',
+      });
+      expect(launched.status).toBe(0);
+      expect(await readFile(join(home, 'captured'), 'utf8')).toBe(`${workingDir}\n-m\n${model}\n--verbose\n${flag}\n`);
+      await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  });
+
+  it('initializes a POSIX login profile for a CLI in a custom PATH without polluting discovery output', async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-profile-'));
+    try {
+      const home = join(sandbox, 'home');
+      const customBin = join(home, 'custom bin');
+      await mkdir(customBin, { recursive: true });
+      await writeFile(join(home, '.profile'), 'PATH="$HOME/custom bin:$PATH"; export PATH; printf "profile banner\\n"\n');
+      await writeFile(join(customBin, 'codex'), '#!/bin/sh\nprintf "launched\\n" > "$HOME/captured"\n', { mode: 0o755 });
+      await writeFile(join(home, 'exit-shell'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      const executor = { exec: vi.fn(async (_target: string, _command: string, args: string[]) => {
+        const result = spawnSync('sh', ['-c', args[1]], {
+          env: { HOME: home, PATH: '/usr/bin:/bin' }, encoding: 'utf8',
+        });
+        if (result.status !== 0) throw new Error(result.stderr);
+        return { stdout: result.stdout, stderr: result.stderr, exitCode: result.status };
+      }) } as unknown as SshCommandExecutor;
+      const environment = new SshEnvironment({
+        id: 'vps-test', kind: 'ssh', label: 'Test VPS', target: 'user@test-host',
+      }, executor);
+      expect(await environment.probeAvailableHarnessIds()).toEqual(['codex']);
+      const terminal = await environment.resolveTerminalSpawn({
+        id: 'term', workingDir: sandbox, harness: 'codex',
+      });
+      const launched = spawnSync('sh', ['-c', terminal.spawnArgs[2]], {
+        env: { HOME: home, PATH: '/usr/bin:/bin', SHELL: join(home, 'exit-shell') },
+        encoding: 'utf8',
+      });
+      expect(launched.status).toBe(0);
+      expect(await readFile(join(home, 'captured'), 'utf8')).toBe('launched\n');
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  });
+
+  it('passes safe harness-specific environment values without shell expansion', async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-env-'));
+    try {
+      const home = join(sandbox, 'home');
+      const bin = join(home, '.local', 'bin');
+      await mkdir(bin, { recursive: true });
+      await writeFile(join(bin, 'opencode'), '#!/bin/sh\nprintf "%s\\n%s\\n" "$OPENCODE_PERMISSION" "${CLANKER_ATTENTION_COMMAND-unset}" > "$HOME/captured"\n', { mode: 0o755 });
+      await writeFile(join(home, 'exit-shell'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      const environment = new SshEnvironment({
+        id: 'vps-test', kind: 'ssh', label: 'Test VPS', target: 'user@test-host',
+      });
+      const terminal = await environment.resolveTerminalSpawn({
+        id: 'term', workingDir: sandbox, harness: 'opencode',
+      });
+      const launched = spawnSync('sh', ['-c', terminal.spawnArgs[2]], {
+        env: { PATH: '/usr/bin:/bin', HOME: home, SHELL: join(home, 'exit-shell'), CLANKER_ATTENTION_COMMAND: 'local-adapter' },
+        encoding: 'utf8',
+      });
+      expect(launched.status).toBe(0);
+      const [permission, attention] = (await readFile(join(home, 'captured'), 'utf8')).trim().split('\n');
+      expect(JSON.parse(permission)).toEqual({ bash: { '*': 'allow' }, edit: 'allow' });
+      expect(attention).toBe('unset');
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
   });
 });
 

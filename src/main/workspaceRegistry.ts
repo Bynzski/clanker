@@ -116,20 +116,11 @@ export class WorkspaceRegistry {
     return null;
   }
 
-  public findWorkspaceByPath(workspacePath: string): RegisteredWorkspace | null {
-    if (!workspacePath) return null;
-
-    // Prefer local match first if multiple exist
-    let fallback: RegisteredWorkspace | null = null;
+  public isEnvironmentInUse(environmentId: WorkspaceEnvironmentId): boolean {
     for (const workspace of this.workspaces.values()) {
-      if (isSameWorkspaceIdentity(workspace.location.path, workspacePath)) {
-        if (workspace.location.environmentId === LOCAL_ENVIRONMENT_ID) {
-          return workspace;
-        }
-        fallback ??= workspace;
-      }
+      if (workspace.location.environmentId === environmentId) return true;
     }
-    return fallback;
+    return false;
   }
 
   public getAllWorkspaces(): RegisteredWorkspace[] {

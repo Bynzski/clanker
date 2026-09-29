@@ -447,6 +447,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
 
   const actionDeps = useMemo<ExplorerActionDeps>(() => ({
     resolvedWorkspaceId,
+    environmentId: workspace?.environmentId ?? 'local',
     normalizedWorkspacePath,
     explorerEntriesByPath,
     explorerExpandedPaths,
@@ -459,6 +460,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   }), [
     resolvedWorkspaceId,
     normalizedWorkspacePath,
+    workspace?.environmentId,
     explorerEntriesByPath,
     explorerExpandedPaths,
     setExplorerSelectedPath,

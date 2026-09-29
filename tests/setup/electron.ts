@@ -90,7 +90,9 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     gitGetBranchState: createAsyncMock({ success: true, isRepo: false, currentBranch: null, isDetached: false, branches: [] }),
     gitListWorktrees: createAsyncMock({ success: true, worktrees: [] }),
     gitCreateWorktree: createAsyncMock({ success: false, error: 'Not configured' }),
-    registerOpenWorkspace: createAsyncMock({ success: true }),
+    registerOpenWorkspace: vi.fn(async (_id: string, path: string, environmentId = 'local') => ({
+      success: true, location: { path, environmentId },
+    })),
     unregisterOpenWorkspace: createAsyncMock({ success: true }),
     gitInspectWorktree: createAsyncMock({ success: false, error: 'Not configured' }),
     gitRemoveWorktree: createAsyncMock({ success: false, error: 'Not configured' }),

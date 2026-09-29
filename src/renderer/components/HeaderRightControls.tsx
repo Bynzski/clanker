@@ -16,6 +16,7 @@ interface HeaderRightControlsProps {
   chatSessions: HarnessSession[];
   isLoadingSessions: boolean;
   workspacePath: string;
+  workspaceId: string | null;
   onCloseChatHistory: () => void;
   settingsDropdownRef: React.RefObject<HTMLDivElement | null>;
   showSettings: boolean;
@@ -55,6 +56,7 @@ export default function HeaderRightControls({
   chatSessions,
   isLoadingSessions,
   workspacePath,
+  workspaceId,
   onCloseChatHistory,
   settingsDropdownRef,
   showSettings,
@@ -129,6 +131,7 @@ export default function HeaderRightControls({
             sessions={chatSessions}
             isLoading={isLoadingSessions}
             workspacePath={workspacePath || '/'}
+            workspaceId={workspaceId}
             onClose={onCloseChatHistory}
           />
         )}

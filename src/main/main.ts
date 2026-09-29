@@ -298,6 +298,7 @@ app.whenReady().then(() => {
   registerSshEnvironmentIpc({
     getStore: () => store,
     getEnvironmentManager: () => environmentManager,
+    getWorkspaceRegistry: () => workspaceRegistry,
   });
   registerFileIpc({
     getFileWatcher: () => fileWatcher,

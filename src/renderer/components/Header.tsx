@@ -119,9 +119,9 @@ export default function Header() {
     setShowChatHistory(true);
     setIsLoadingSessions(true);
     try {
-      const sessions = focusedWorkspace?.environmentId && focusedWorkspace.environmentId !== 'local'
-        ? []
-        : await window.electronAPI.discoverSessions(workspacePath || '/');
+      const sessions = focusedWorkspace?.id && (focusedWorkspace.environmentId ?? 'local') === 'local'
+        ? await window.electronAPI.discoverSessions(focusedWorkspace.id)
+        : [];
       setChatSessions(sessions);
     } catch (err) {
       console.error('Failed to discover sessions:', err);
@@ -131,6 +131,11 @@ export default function Header() {
     }
   };
   const handleOpenRecipes = async () => {
+    if (focusedWorkspace?.environmentId && focusedWorkspace.environmentId !== 'local') {
+      setActiveRecipe(null);
+      setShowRecipeModal(true);
+      return;
+    }
     try {
       if (typeof window.electronAPI?.recipeGetAll === 'function') {
         const recipes = await window.electronAPI.recipeGetAll(workspacePath);
@@ -231,6 +236,7 @@ export default function Header() {
         chatSessions={chatSessions}
         isLoadingSessions={isLoadingSessions}
         workspacePath={workspacePath || '/'}
+        workspaceId={focusedWorkspace?.id ?? null}
         onCloseChatHistory={() => setShowChatHistory(false)}
         settingsDropdownRef={settingsDropdownRef}
         showSettings={showSettings}
@@ -271,6 +277,7 @@ export default function Header() {
         onClose={() => setShowRecipeModal(false)}
         initialRecipe={activeRecipe}
         defaultWorkspacePath={workspacePath}
+        workspaceEnvironmentId={focusedWorkspace?.environmentId}
         defaultLaunches={defaultLaunches}
         defaultBrowserUrl={browserVisible ? focusedWorkspace?.browserUrl : undefined}
         defaultLayout={defaultLayout ?? undefined}

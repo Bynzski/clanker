@@ -179,18 +179,6 @@ describe('WorkspaceTabs', () => {
       expect(tabs).toHaveLength(2);
     });
 
-    it('starts explorer watching for the active workspace on mount', async () => {
-      const electronApi = installElectronApiMock();
-      useWorkspaceStore.setState({
-        workspaces: mockWorkspaces,
-        activeWorkspaceId: 'ws1',
-      });
-
-      render(<WorkspaceTabs />);
-
-      expect(electronApi.explorerStartWatching).toHaveBeenCalledWith(mockWorkspaces[0].workspacePath.replace(/\\/g, '/'));
-    });
-
     it('stops explorer watching on unmount', () => {
       const electronApi = installElectronApiMock();
       useWorkspaceStore.setState({
@@ -345,25 +333,26 @@ describe('WorkspaceTabs', () => {
       expect(selectWorkspace).toHaveBeenCalledWith('ws2');
     });
 
-    it('switches explorer watching to the newly active workspace', async () => {
+    it('stops local watching when switching to a remote workspace at the same path', async () => {
       const electronApi = installElectronApiMock();
       useWorkspaceStore.setState({
-        workspaces: mockWorkspaces,
-        activeWorkspaceId: 'ws1',
+        workspaces: [
+          createMockWorkspace({ id: 'local-id', workspacePath: '/workspace', environmentId: 'local' }),
+          createMockWorkspace({ id: 'remote-id', workspacePath: '/workspace', environmentId: 'vps' }),
+        ],
+        activeWorkspaceId: 'local-id',
       });
 
       render(<WorkspaceTabs />);
+      expect(electronApi.explorerStartWatching).toHaveBeenCalledWith('local-id');
       electronApi.explorerStartWatching.mockClear();
+      electronApi.explorerStopWatching.mockClear();
 
-      useWorkspaceStore.setState({
-        activeWorkspaceId: 'ws2',
-      });
+      useWorkspaceStore.setState({ activeWorkspaceId: 'remote-id' });
+      await act(async () => { await Promise.resolve(); });
 
-      await act(async () => {
-        await Promise.resolve();
-      });
-
-      expect(electronApi.explorerStartWatching).toHaveBeenCalledWith('/path/ws2');
+      expect(electronApi.explorerStopWatching).toHaveBeenCalled();
+      expect(electronApi.explorerStartWatching).not.toHaveBeenCalled();
     });
 
     it('does not call selectWorkspace when in edit mode', async () => {

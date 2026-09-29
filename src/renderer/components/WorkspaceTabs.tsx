@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, MouseEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { disposeWorkspaceResources } from '../lib/workspaceLifecycle';
 import { Plus, X, Check, Edit2, BellRing, GitBranch } from 'lucide-react';
-import { normalizePath } from '../lib/pathUtils';
 import { getWorkspaceNameFromPath, getWorkspaceProjectName, getWorkspaceTabLabel } from '../lib/workspaceLabels';
 import { useAgentAttentionStore, attentionCounts } from '../store/agentAttentionStore';
 import { nextAttentionTarget } from '../lib/agentAttentionNavigation';
@@ -46,7 +45,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
         await window.electronAPI.explorerStopWatching();
         return;
       }
-      await window.electronAPI.explorerStartWatching(normalizePath(workspace.workspacePath));
+      await window.electronAPI.explorerStartWatching(workspace.id);
     };
 
     void syncExplorerWatcher(useWorkspaceStore.getState().activeWorkspaceId);

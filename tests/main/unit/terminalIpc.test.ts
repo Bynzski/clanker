@@ -263,6 +263,47 @@ describe('terminalIpc — error-path: handler returns', () => {
     mockClipboardWriteText.mockClear();
     mockPtySpawn.mockClear();
   });
+  test('uses the registered SSH workspace and stored harness flags for a remote terminal', async () => {
+    const { opts } = createMockDeps();
+    const resolveTerminalSpawn = vi.fn().mockResolvedValue({
+      spawnCmd: 'ssh', spawnArgs: ['-t', 'dev-vps', 'sh -c true'],
+      cwd: process.cwd(), env: {}, harnessId: 'codex', attentionEnabled: false,
+    });
+    const validateWorkspacePath = vi.fn(async (dir: string) => ({
+      valid: true, resolvedPath: dir === '/srv/project/link' ? '/etc' : dir,
+    }));
+    const registered = {
+      workspaceId: 'remote-tab',
+      location: { path: '/srv/project', environmentId: 'dev-vps' },
+      environment: { resolveTerminalSpawn, validateWorkspacePath },
+    };
+    opts.getStore = vi.fn().mockReturnValue({
+      get: (key: string) => key === 'harnessDefaults'
+        ? { codex: { flags: '--sandbox workspace-write', model: 'ignored-local-model' } }
+        : false,
+    }) as never;
+    const deps = { ...opts, getWorkspaceRegistry: () => ({
+      getWorkspace: (id: string) => id === 'remote-tab' ? registered : null,
+    }) };
+    mockPtySpawn.mockReturnValue({
+      pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(),
+    });
+    registerTerminalIpc(deps as never);
+    const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+    await handler(null, '/srv/project/src', 'codex', undefined, undefined, undefined, 'remote-tab', 'dev-vps');
+    expect(resolveTerminalSpawn).toHaveBeenCalledWith(expect.objectContaining({
+      workingDir: '/srv/project/src', flags: '--sandbox workspace-write', harness: 'codex',
+      model: undefined,
+    }));
+    expect(mockPtySpawn).toHaveBeenCalledWith('ssh', ['-t', 'dev-vps', 'sh -c true'], expect.any(Object));
+    expect(validateWorkspacePath).toHaveBeenCalledWith('/srv/project/src');
+    await expect(handler(null, '/srv/project/link', 'codex', undefined, undefined, undefined,
+      'remote-tab', 'dev-vps')).rejects.toThrow('Terminal directory is outside the registered workspace');
+    await expect(handler(null, '/srv/other', 'codex', undefined, undefined, undefined,
+      'remote-tab', 'dev-vps')).rejects.toThrow('Terminal directory is outside the registered workspace');
+    expect(resolveTerminalSpawn).toHaveBeenCalledTimes(1);
+  });
+
 
   test('a recipe command is written only at TERMINAL_READY and its PTY exit marker is reported', async () => {
     const { opts } = createMockDeps();

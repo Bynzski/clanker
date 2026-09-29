@@ -115,6 +115,31 @@ describe('App workspace open integration', () => {
     expect(useWorkspaceStore.getState().browserOverlayCount).toBe(0);
   });
 
+  it('uses the canonical SSH registration path for workspace state and terminal spawning', async () => {
+    const registerOpenWorkspace = vi.fn().mockResolvedValue({
+      success: true, location: { environmentId: 'dev-vps', path: '/srv/projects/project' },
+    });
+    const spawnTerminal = vi.fn().mockResolvedValue({ id: 'remote-terminal', pid: 1234 });
+    installElectronApiMock({
+      sshEnvironmentList: vi.fn().mockResolvedValue([{ id: 'dev-vps', label: 'Dev VPS', target: 'dev-vps' }]),
+      registerOpenWorkspace, spawnTerminal,
+    });
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'SSH Remote' }));
+    await waitFor(() => expect(document.querySelector('.ssh-env-select')).toBeTruthy());
+    fireEvent.change(document.querySelector('input[placeholder^="/home/jay/Projects"]')!, {
+      target: { value: '/home/jay/project' },
+    });
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    await waitFor(() => expect(useWorkspaceStore.getState().workspaces).toHaveLength(1));
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+    expect(registerOpenWorkspace).toHaveBeenCalledWith(workspace.id, '/home/jay/project', 'dev-vps');
+    expect(workspace.workspacePath).toBe('/srv/projects/project');
+    expect(workspace.terminals[0].workingDir).toBe('/srv/projects/project');
+    expect(spawnTerminal).toHaveBeenCalledWith('/srv/projects/project', expect.anything(), undefined,
+      undefined, undefined, workspace.id, 'dev-vps');
+  });
+
   it('keeps the launcher open when main rejects workspace registration', async () => {
     installElectronApiMock({ registerOpenWorkspace: vi.fn().mockResolvedValue({ success: false, error: 'Worktree is being removed' }) });
     render(<App />);

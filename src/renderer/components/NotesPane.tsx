@@ -19,10 +19,13 @@ export default function NotesPane({ workspaceId }: { workspaceId?: string }) {
   const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
   const notesVisible = workspace?.notesVisible ?? false;
   const storageKey = useMemo(
-    () => getNotesContentStorageKey(workspace?.workspacePath ?? '', workspace?.id ?? null),
-    [workspace?.id, workspace?.workspacePath],
+    () => getNotesContentStorageKey(workspace?.workspacePath ?? '', workspace?.id ?? null, workspace?.environmentId),
+    [workspace?.id, workspace?.workspacePath, workspace?.environmentId],
   );
-  const initialContent = useMemo(() => readStoredNote(storageKey), [storageKey]);
+  const initialContent = useMemo(
+    () => readStoredNote(workspace?.workspacePath ?? '', workspace?.id ?? null, workspace?.environmentId),
+    [workspace?.id, workspace?.workspacePath, workspace?.environmentId],
+  );
 
   useEffect(() => {
     if (panelRef.current == null) {

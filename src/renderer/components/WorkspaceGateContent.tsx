@@ -110,9 +110,14 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   const [directoryError, setDirectoryError] = useState('');
   const openWorkspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const openPaths = openWorkspaces.map((workspace) => workspace.workspacePath);
+  const openPaths = openWorkspaces
+    .filter((workspace) => !workspace.environmentId || workspace.environmentId === 'local')
+    .map((workspace) => workspace.workspacePath);
   const selectedPath = resolveWorkspacePath(inputValue, baseDirectory);
-  const activeWorkspacePath = openWorkspaces.find((workspace) => workspace.id === activeWorkspaceId)?.workspacePath ?? null;
+  const activeWorkspace = openWorkspaces.find((workspace) => workspace.id === activeWorkspaceId);
+  const activeWorkspacePath = activeWorkspace && (!activeWorkspace.environmentId || activeWorkspace.environmentId === 'local')
+    ? activeWorkspace.workspacePath
+    : null;
   const repoCandidatePath = selectedPath ?? (!inputValue.trim() ? activeWorkspacePath : null);
   const worktreeReady = !!repoCandidatePath && repoCheck?.path === repoCandidatePath && repoCheck.isRepo;
   const [sshEnvironments, setSshEnvironments] = useState<SshEnvironmentConfig[]>([]);
@@ -954,7 +959,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         </div>
       </div>
       )}
-      {savedRecipes.length > 0 && (
+      {locationKind === 'local' && savedRecipes.length > 0 && (
         <div className="gate-recipes-section">
           <div className="gate-section-header">
             <span className="gate-section-label">Launch Recipes</span>
@@ -1304,6 +1309,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         onClose={() => setShowRecipeModal(false)}
         initialRecipe={selectedRecipeForModal}
         defaultWorkspacePath={selectedPath ?? inputValue}
+        workspaceEnvironmentId={locationKind === 'ssh' ? selectedSshEnvId || 'ssh' : 'local'}
         onLaunchRecipe={async (recipe) => {
           if (onLaunchRecipe) {
             return onLaunchRecipe(recipe);

@@ -45,6 +45,7 @@ export interface TerminalSpawnRequest {
   workingDir: string;
   harness?: string;
   model?: string;
+  flags?: string;
   initialCommand?: string;
   recipeCommand?: boolean;
 }

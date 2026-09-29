@@ -92,6 +92,7 @@ vi.mock('../../../src/main/fileWatcher', () => ({
 
 import { registerFileIpc, type RegisterFileIpcDeps } from '../../../src/main/ipc/fileIpc';
 import { FILE_LIST_DIRECTORY, FILE_READ, FILE_WRITE, FILE_CREATE, FILE_DELETE, FILE_RENAME, REVEAL_IN_FILE_MANAGER, FILE_WATCH, FILE_UNWATCH, EXPLORER_START_WATCHING } from '../../../src/shared/ipcChannels';
+import type { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -727,27 +728,34 @@ describe('registerFileIpc', () => {
       expect(remoteRead).toHaveBeenCalledTimes(1);
       expect(mockReadFile).not.toHaveBeenCalled();
     });
-    test('does not attach explorer watcher to remote workspace paths', async () => {
+    test('watches only the selected local workspace when remote and local share a path', () => {
       const mockExplorer = {
         watchWorkspace: vi.fn(),
         close: vi.fn(),
       };
       const registry = {
-        getAllWorkspaces: () => [
-          { workspaceId: 'remote-1', location: { environmentId: 'vps', path: '/remote/workspace' } },
-        ],
-      } as unknown as NonNullable<ReturnType<NonNullable<RegisterFileIpcDeps['getWorkspaceRegistry']>>>;
+        getWorkspace: (id: string) => ({
+          'local-id': { workspaceId: 'local-id', location: { environmentId: 'local', path: '/workspace' } },
+          'remote-id': { workspaceId: 'remote-id', location: { environmentId: 'vps', path: '/workspace' } },
+        })[id as 'local-id' | 'remote-id'] ?? null,
+      } as unknown as WorkspaceRegistry;
       registerFileIpc({
         getFileWatcher: getMockFileWatcher,
         getExplorerWatcher: () => mockExplorer as never,
         getWorkspaceRegistry: () => registry,
       });
       const handler = extractHandler(EXPLORER_START_WATCHING);
-      await handler({}, '/remote/workspace');
-      expect(mockExplorer.watchWorkspace).not.toHaveBeenCalled();
 
-      await handler({}, '/local/workspace');
-      expect(mockExplorer.watchWorkspace).toHaveBeenCalledWith(expect.stringContaining('local'));
+      handler({}, 'local-id');
+      expect(mockExplorer.watchWorkspace).toHaveBeenCalledWith(nativeTestPath('/workspace'));
+      handler({}, 'remote-id');
+      expect(mockExplorer.close).toHaveBeenCalledTimes(1);
+      expect(mockExplorer.watchWorkspace).toHaveBeenCalledTimes(1);
+
+      for (const id of ['stale-id', '/workspace']) {
+        expect(() => handler({}, id)).toThrow('Workspace is not registered');
+      }
+      expect(mockExplorer.watchWorkspace).toHaveBeenCalledTimes(1);
     });
   });
 

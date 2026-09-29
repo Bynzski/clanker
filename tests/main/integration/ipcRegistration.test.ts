@@ -263,6 +263,7 @@ describe('IPC registration smoke test', () => {
     registerSshEnvironmentIpc({
       getStore: () => mockStore as never,
       getEnvironmentManager: () => mockEnvManager as never,
+      getWorkspaceRegistry: () => ({ isEnvironmentInUse: () => false }) as never,
     });
 
     // ── Assert ──────────────────────────────────────────────────────────────

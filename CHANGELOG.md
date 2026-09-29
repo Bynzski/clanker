@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Workspace notes and layouts** — local and SSH workspaces sharing a path now retain separate layouts, note content, and notes visibility; existing path-only local settings remain readable.
+
 ## [0.6.0] - 2026-09-28
 
 ### Added

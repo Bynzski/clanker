@@ -218,6 +218,9 @@ export class WorkspacePersistenceService {
     if (!sanitized) {
       throw new Error('Invalid workspace recipe payload');
     }
+    if (sanitized.environmentId !== LOCAL_ENVIRONMENT_ID) {
+      throw new Error('Launch recipes are not supported for SSH workspaces in this version.');
+    }
 
     const all = this.getAllRecipes();
     const existingIndex = all.findIndex((r) => r.id === sanitized.id);

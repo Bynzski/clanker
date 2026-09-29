@@ -57,13 +57,14 @@ describe('Remote Workspace Integration', () => {
       vi.fn(),
       () => [],
       () => registry.getLocalOpenWorkspacePaths(),
-      async (workspacePath, args, timeoutMs) => {
-        const ws = registry.findWorkspaceByPath(workspacePath);
-        if (ws && ws.location.environmentId !== LOCAL_ENVIRONMENT_ID) {
-          return ws.environment.execGit(workspacePath, args, timeoutMs);
+      async (workspacePath, args, timeoutMs, workspaceId, environmentId) => {
+        const ws = workspaceId ? registry.getWorkspace(workspaceId) : null;
+        if (workspaceId && (!ws || ws.location.environmentId !== environmentId ||
+            ws.location.path !== workspacePath)) {
+          throw new Error('Workspace identity is no longer registered');
         }
-        const local = await envManager.getEnvironment(LOCAL_ENVIRONMENT_ID);
-        return local!.execGit(workspacePath, args, timeoutMs);
+        const environment = ws?.environment ?? await envManager.getEnvironment(LOCAL_ENVIRONMENT_ID);
+        return environment!.execGit(workspacePath, args, timeoutMs);
       }
     );
 
@@ -133,7 +134,11 @@ describe('Remote Workspace Integration', () => {
       exitCode: 0,
     });
 
-    const branchState = await gitService.getBranches('/var/www/remote-repo');
+    const branchState = await gitService.withWorkspace({
+      workspaceId: 'ws-remote-git',
+      workspacePath: '/var/www/remote-repo',
+      environmentId: 'dev-vps',
+    }, () => gitService.getBranches('/var/www/remote-repo'));
     expect(branchState).toEqual([
       { name: 'feature-remote', isCurrent: true },
       { name: 'main', isCurrent: false },

@@ -13,6 +13,38 @@ describe('executeWorkspaceRecipe', () => {
     browser: { url: 'http://localhost:5173' },
     createdAt: 1, updatedAt: 1, version: 1,
   };
+  it('rejects a remote recipe before opening a workspace or spawning a terminal', async () => {
+    const ensureWorkspaceOpen = vi.fn();
+    const spawnTerminal = vi.fn();
+    const result = await executeWorkspaceRecipe({ ...previewRecipe, environmentId: 'dev-vps' }, {
+      ensureWorkspaceOpen, spawnTerminal, onTerminalSpawned: vi.fn(),
+    });
+    expect(result).toMatchObject({ success: false, steps: [{ status: 'failed',
+      error: 'Launch recipes are not supported for SSH workspaces in this version.' }] });
+    expect(ensureWorkspaceOpen).not.toHaveBeenCalled();
+    expect(spawnTerminal).not.toHaveBeenCalled();
+  });
+
+  it('keeps a legacy recipe local through persistence and launches normally', async () => {
+    const storage = new Map<string, unknown>();
+    const persistence = new WorkspacePersistenceService(() => ({
+      get: (key: string) => storage.get(key),
+      set: (key: string, value: unknown) => { storage.set(key, value); },
+    }) as unknown as Store<StoreSchema>);
+    const recipe = persistence.saveRecipe({ ...previewRecipe, browser: undefined });
+    expect(recipe.environmentId).toBe('local');
+    const spawnTerminal = vi.fn().mockResolvedValue({ id: 'local-terminal', pid: 1 });
+    const result = await executeWorkspaceRecipe(persistence.getRecipeById(recipe.id)!, {
+      ensureWorkspaceOpen: vi.fn().mockResolvedValue('local-workspace'),
+      spawnTerminal, onTerminalSpawned: vi.fn(),
+      waitRecipeCommand: vi.fn().mockResolvedValue({ status: 'success' }),
+    });
+    expect(result.success).toBe(true);
+    expect(spawnTerminal).toHaveBeenCalledWith('/projects/repo', undefined, undefined, 'npm run dev', true);
+    expect(() => persistence.saveRecipe({ ...previewRecipe, environmentId: 'dev-vps' }))
+      .toThrow('Launch recipes are not supported for SSH workspaces in this version.');
+  });
+
 
   it('reports a PTY command exit failure while keeping its spawned terminal', async () => {
     const spawned = vi.fn();

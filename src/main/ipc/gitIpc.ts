@@ -236,13 +236,13 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
       if (!result.success) {
         return { success: false, error: result.error };
       }
-      if (!environmentId || environmentId === 'local') {
-        const safePath = getValidatedLocalWorkspacePath(workspacePath);
+      if (result.location?.environmentId === 'local') {
+        const safePath = getValidatedLocalWorkspacePath(result.location.path);
         if (safePath) {
           gitService.registerOpenWorkspace(id, safePath);
         }
       }
-      return { success: true };
+      return { success: true, location: result.location };
     }
 
     const nativePath = toNativePath(workspacePath, process.platform);

@@ -445,16 +445,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(EXPLORER_TREE_CHANGED, handler);
     return () => ipcRenderer.removeListener(EXPLORER_TREE_CHANGED, handler);
   },
-  explorerStartWatching: (workspacePath: string) =>
-    ipcRenderer.invoke(EXPLORER_START_WATCHING, workspacePath),
+  explorerStartWatching: (workspaceId: string) =>
+    ipcRenderer.invoke(EXPLORER_START_WATCHING, workspaceId),
   explorerStopWatching: () =>
     ipcRenderer.invoke(EXPLORER_STOP_WATCHING),
 
   // Session history
-  discoverSessions: (workspacePath: string) =>
-    ipcRenderer.invoke(SESSION_DISCOVER, workspacePath),
-  invokeSession: (session: HarnessSession, fork?: boolean) =>
-    ipcRenderer.invoke(SESSION_INVOKE, session, fork),
+  discoverSessions: (workspaceId: string) =>
+    ipcRenderer.invoke(SESSION_DISCOVER, workspaceId),
+  invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean) =>
+    ipcRenderer.invoke(SESSION_INVOKE, workspaceId, session, fork),
 
   // Workspace Recipes
   recipeGetAll: (workspacePath?: string) =>

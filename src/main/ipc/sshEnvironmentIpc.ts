@@ -3,6 +3,7 @@ import type Store from 'electron-store';
 import type { StoreSchema } from '../../shared/types/store';
 import type { EnvironmentManager } from '../environment/environmentManager';
 import { WorkspacePersistenceService } from '../workspacePersistence';
+import type { WorkspaceRegistry } from '../workspaceRegistry';
 import {
   SSH_ENVIRONMENT_LIST,
   SSH_ENVIRONMENT_SAVE,
@@ -14,10 +15,11 @@ import {
 export interface RegisterSshEnvironmentIpcDeps {
   getStore: () => Store<StoreSchema>;
   getEnvironmentManager: () => EnvironmentManager;
+  getWorkspaceRegistry: () => WorkspaceRegistry;
 }
 
 export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): void {
-  const { getStore, getEnvironmentManager } = deps;
+  const { getStore, getEnvironmentManager, getWorkspaceRegistry } = deps;
   const persistence = new WorkspacePersistenceService(getStore);
 
   ipcMain.handle(SSH_ENVIRONMENT_LIST, () => {
@@ -25,6 +27,10 @@ export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): 
   });
 
   ipcMain.handle(SSH_ENVIRONMENT_SAVE, (_, payload: unknown) => {
+    if (payload && typeof payload === 'object' && 'id' in payload &&
+        typeof payload.id === 'string' && getWorkspaceRegistry().isEnvironmentInUse(payload.id.trim())) {
+      return { success: false, error: 'Cannot edit an SSH environment while a workspace is using it' };
+    }
     try {
       const saved = persistence.saveSshEnvironment(payload);
       getEnvironmentManager().invalidateSshEnvironment(saved.id);
@@ -37,6 +43,9 @@ export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): 
   ipcMain.handle(SSH_ENVIRONMENT_DELETE, (_, id: unknown) => {
     if (typeof id !== 'string' || !id.trim()) {
       return { success: false, error: 'Invalid environment ID' };
+    }
+    if (getWorkspaceRegistry().isEnvironmentInUse(id.trim())) {
+      return { success: false, error: 'Cannot delete an SSH environment while a workspace is using it' };
     }
 
     const deleted = persistence.deleteSshEnvironment(id.trim());

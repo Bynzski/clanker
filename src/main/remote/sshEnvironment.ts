@@ -33,6 +33,30 @@ import type {
 const MAX_FILE_SIZE = 1024 * 1024; // 1 MB
 const BINARY_DETECTION_BYTES = 8192;
 
+// A noninteractive SSH command does not reliably receive the account's login
+// PATH. Source only the POSIX login profile (never an interactive shell rc),
+// then add the same user CLI directories as the local harness wrapper.
+const REMOTE_CLI_PATH_SETUP = [
+  'if [ -r "$HOME/.profile" ]; then . "$HOME/.profile" >/dev/null; fi',
+  'for clanker_bin in "$HOME/bin" "$HOME/.npm-packages/bin" "$HOME/.local/bin" "$HOME/.npm-global/bin"; do',
+  '  case ":$PATH:" in *":$clanker_bin:"*) ;; *) PATH="$clanker_bin:$PATH" ;; esac',
+  'done',
+  'export PATH',
+].join('\n');
+
+function remoteHarnessEnvironment(env: Record<string, string> | undefined): string {
+  return Object.entries(env ?? {})
+    .filter(([key]) => /^[A-Za-z_][A-Za-z_0-9]*$/.test(key) && !key.startsWith('CLANKER_ATTENTION_'))
+    .map(([key, value]) => `${key}=${quotePosixArg(value)}`)
+    .join(' ');
+}
+
+function sshProcessEnvironment(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([key, value]) => value !== undefined && !key.startsWith('CLANKER_ATTENTION_'))
+  ) as Record<string, string>;
+}
+
 export function isPathContained(rootPath: string, candidatePath: string): boolean {
   if (!rootPath || !candidatePath) return false;
   const normRoot = path.posix.normalize(rootPath).replace(/\/+$/, '') || '/';
@@ -417,9 +441,11 @@ export class SshEnvironment implements WorkspaceEnvironment {
 
   public async probeAvailableHarnessIds(): Promise<string[]> {
     const candidates = ['codex', 'claude', 'opencode', 'pi', 'omp', 'hermes', 'agy'];
-    const script = candidates
-      .map((cmd) => `command -v ${quotePosixArg(cmd)} >/dev/null 2>&1 && echo ${quotePosixArg(cmd)}`)
-      .join(' ; ');
+    const script = [
+      REMOTE_CLI_PATH_SETUP,
+      ...candidates.map((cmd) => `command -v ${quotePosixArg(cmd)} >/dev/null 2>&1 && printf '%s\\n' ${quotePosixArg(cmd)}`),
+      ':', // An absent last candidate must not make the whole probe fail.
+    ].join('\n');
 
     try {
       const result = await this.executor.exec(this.target, 'sh', ['-c', script], { timeoutMs: 5000 });
@@ -450,19 +476,23 @@ export class SshEnvironment implements WorkspaceEnvironment {
 
   public async resolveTerminalSpawn(params: TerminalSpawnRequest): Promise<TerminalSpawnResolved> {
     const harnessConfig = params.harness ? HARNESS_OPTIONS[params.harness] : undefined;
-    let remoteExec = '';
+    const remoteScript = [
+      `cd ${quotePosixArg(params.workingDir)} || exit 1`,
+      REMOTE_CLI_PATH_SETUP,
+      'unset CLANKER_ATTENTION_PORT CLANKER_ATTENTION_TOKEN CLANKER_ATTENTION_HARNESS CLANKER_ATTENTION_COMMAND',
+    ];
 
     if (harnessConfig && params.harness) {
-      const harnessArgs = buildHarnessSpawnArgs(harnessConfig, params.model);
+      const harnessArgs = buildHarnessSpawnArgs(harnessConfig, params.model, params.flags);
+      const harnessEnv = remoteHarnessEnvironment(harnessConfig.env);
       const quotedHarness = quotePosixCommand(harnessConfig.command, harnessArgs);
-      // Run harness, fall back to interactive shell when it exits
-      remoteExec = `cd ${quotePosixArg(params.workingDir)} || exit 1; (${quotedHarness} || true); exec \${SHELL:-bash} -l`;
+      // Keep the foreground CLI interactive, then leave a usable shell on exit.
+      remoteScript.push(`(${harnessEnv ? `${harnessEnv} ` : ''}${quotedHarness} || true)`);
     } else if (params.initialCommand) {
-      remoteExec = `cd ${quotePosixArg(params.workingDir)} || exit 1; sh -lc ${quotePosixArg(params.initialCommand)}; exec \${SHELL:-bash} -l`;
-    } else {
-      remoteExec = `cd ${quotePosixArg(params.workingDir)} || exit 1; exec \${SHELL:-bash} -l`;
+      remoteScript.push(`sh -c ${quotePosixArg(params.initialCommand)}`);
     }
-
+    remoteScript.push('exec "${SHELL:-/bin/bash}" -l');
+    const remoteExec = `sh -c ${quotePosixArg(remoteScript.join('\n'))}`;
     let launchLabel: string | undefined;
     if (harnessConfig && params.harness) {
       launchLabel = `[clanker-grid@${this.label}] ${harnessConfig.command}`;
@@ -475,7 +505,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
       spawnArgs: ['-t', this.target, remoteExec],
       cwd: process.cwd(),
       env: {
-        ...process.env as Record<string, string>,
+        ...sshProcessEnvironment(),
         TERM: 'xterm-256color',
       },
       launchLabel,

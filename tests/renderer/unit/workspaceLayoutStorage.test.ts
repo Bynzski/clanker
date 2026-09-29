@@ -87,6 +87,53 @@ describe('workspace layout persistence', () => {
     expect(getWorkspaceLayoutStorageKey('/Users/Jay/Repo', false)).not.toBe(
       getWorkspaceLayoutStorageKey('/users/jay/repo', false),
     );
+    expect(getWorkspaceLayoutStorageKey('/Repos/Jay', true, 'ssh-server')).not.toBe(
+      getWorkspaceLayoutStorageKey('/repos/jay', true, 'ssh-server'),
+    );
+  });
+
+  it('keeps local and SSH layouts independent even at the same path', () => {
+    const local = workspaceWithLayout();
+    const remote = workspaceWithLayout({
+      environmentId: 'ssh-server',
+      explorerVisible: false,
+      browserVisible: false,
+      browserPane: null,
+      layoutRoot: leaf('remote-terminal', 'pane-1'),
+    });
+    persistWorkspaceLayout(local);
+    persistWorkspaceLayout(remote);
+
+    expect(getWorkspaceLayoutStorageKey(local.workspacePath)).not.toBe(
+      getWorkspaceLayoutStorageKey(remote.workspacePath, undefined, remote.environmentId),
+    );
+    const restoredLocal = restoreWorkspaceLayout(workspaceWithLayout({
+      browserPane: { ...local.browserPane!, id: 'new-local-browser' },
+    }));
+    const restoredRemote = restoreWorkspaceLayout(workspaceWithLayout({
+      environmentId: remote.environmentId,
+      browserVisible: true,
+      browserPane: { ...local.browserPane!, id: 'new-remote-browser' },
+    }));
+    expect(collectLeafPaneIds(restoredLocal.layoutRoot)).toContain('new-local-browser');
+    expect(collectLeafPaneIds(restoredRemote.layoutRoot)).toEqual(['pane-1']);
+    expect(restoredRemote.browserVisible).toBe(false);
+  });
+
+  it('migrates old path-only layout for local workspaces, never for SSH', () => {
+    const legacyKey = 'clanker-grid:layout:v1:%2Fprojects%2Fclanker';
+    const local = workspaceWithLayout();
+    persistWorkspaceLayout(local);
+    const legacyPayload = window.localStorage.getItem(getWorkspaceLayoutStorageKey(local.workspacePath));
+    expect(legacyPayload).not.toBeNull();
+    delete storedValues[getWorkspaceLayoutStorageKey(local.workspacePath)];
+    window.localStorage.setItem(legacyKey, legacyPayload!);
+
+    const remote = workspaceWithLayout({ environmentId: 'ssh-server' });
+    expect(restoreWorkspaceLayout(remote)).toBe(remote);
+    expect(restoreWorkspaceLayout(local)).not.toBe(local);
+    expect(window.localStorage.getItem(getWorkspaceLayoutStorageKey(local.workspacePath))).toBe(legacyPayload);
+    expect(window.localStorage.getItem(getWorkspaceLayoutStorageKey(remote.workspacePath, undefined, remote.environmentId))).toBeNull();
   });
 
   it('restores topology onto newly generated pane IDs', () => {
