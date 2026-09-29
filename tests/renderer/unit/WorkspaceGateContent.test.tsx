@@ -6,6 +6,8 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import WorkspaceGateContent, { TERMINAL_PRESETS } from '../../../src/renderer/components/WorkspaceGateContent';
 import { sameWorkspacePath } from '../../../src/renderer/lib/pathUtils';
+import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { createWorkspaceFixture } from '../../setup/fixtures';
 
 // Platform-neutral path constants for test fixtures
 const TEST_HOME_USER = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user');
@@ -17,6 +19,7 @@ describe('WorkspaceGateContent', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null });
     // Mock localStorage for jsdom
     const store: Record<string, string> = {};
     vi.stubGlobal('localStorage', {
@@ -722,6 +725,25 @@ describe('WorkspaceGateContent', () => {
       fireEvent.click(screen.getByRole('button', { name: 'SSH Remote' }));
       await screen.findByRole('textbox', { name: 'Remote Directory Path' });
     }
+
+    it('discovers from an open repository on the selected target and opens a checkout in that environment', async () => {
+      setupRemote();
+      const source = createWorkspaceFixture({ id: 'alpha-repo', environmentId: 'alpha', workspacePath: '/repo' });
+      const otherHost = createWorkspaceFixture({ id: 'beta-repo', environmentId: 'beta', workspacePath: '/repo' });
+      const local = createWorkspaceFixture({ id: 'local-repo', environmentId: 'local', workspacePath: '/repo' });
+      useWorkspaceStore.setState({ workspaces: [source, otherHost, local], activeWorkspaceId: otherHost.id });
+      vi.mocked(window.electronAPI.gitListWorktrees).mockResolvedValue({ success: true, worktrees: [{ path: '/remote-task', branch: 'task', isMain: false, isLocked: false, isPrunable: false }] });
+      renderGate();
+      await selectRemote();
+      fireEvent.click(screen.getByRole('button', { name: 'Worktree options' }));
+      await screen.findByText('/remote-task');
+      expect(screen.getByLabelText('Open SSH repository')).toHaveValue(source.id);
+      expect(screen.getAllByRole('option').filter((option) => option.parentElement?.id === 'remote-worktree-repository')).toHaveLength(1);
+      expect(window.electronAPI.gitListWorktrees).toHaveBeenCalledWith('/repo', source.id);
+      fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+      expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({ path: '/remote-task', environmentId: 'alpha', environmentLabel: 'Alpha' }));
+      expect(screen.queryByText('Create and open worktree')).toBeNull();
+    });
 
     it('reinitializes the selected target path after its default root is edited', async () => {
       setupRemote();

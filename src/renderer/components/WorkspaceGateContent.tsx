@@ -16,6 +16,7 @@ import { getWorkspaceNameFromPath } from '../lib/workspaceLabels';
 import { joinPaths } from '../lib/pathUtils';
 import RemoteWorkspacePath from './RemoteWorkspacePath';
 import SshEnvironmentManager from './SshEnvironmentManager';
+import RemoteWorktreePicker from './RemoteWorktreePicker';
 import './WorkspaceGate.css';
 
 export interface WorkspaceFormData {
@@ -129,6 +130,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   const selectedSshTarget = locationKind === 'ssh'
     ? sshEnvironments.find((environment) => environment.id === selectedSshEnvId)?.target
     : undefined;
+  const remoteRepositories = openWorkspaces.filter((workspace) => workspace.environmentId === selectedSshEnvId);
   const [remotePath, setRemotePath] = useState('');
   const updateRemotePath = useCallback((path: string) => {
     setRemotePath(path);
@@ -1185,8 +1187,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
           <Play size={14} strokeWidth={2.5} fill="currentColor" />
           Launch Workspace
         </button>
-        <button className="gate-worktree-forward" type="button" aria-label="Worktree options" disabled={locationKind === 'ssh' || !worktreeReady} title={locationKind === 'ssh' ? 'Task worktrees are only available for local workspaces in this version' : worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first'} onClick={() => {
-          if (!inputValue.trim()) {
+        <button className="gate-worktree-forward" type="button" aria-label="Worktree options" disabled={locationKind === 'ssh' ? !remoteRepositories.length : !worktreeReady} title={locationKind === 'ssh' ? 'Discover worktrees from an open repository on this SSH target' : worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first'} onClick={() => {
+          if (locationKind === 'local' && !inputValue.trim()) {
             if (activeWorkspacePath) setInputValue(activeWorkspacePath);
           }
           setHasViewedWorktree(true);
@@ -1215,10 +1217,17 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         <div className="gate-worktree-heading">
           <GitBranch size={18} strokeWidth={2} />
           <div>
-            <h2>Task worktree</h2>
-            <p>Work on a separate branch and checkout.</p>
+            <h2>{locationKind === 'ssh' ? 'Open remote worktree' : 'Task worktree'}</h2>
+            <p>{locationKind === 'ssh' ? `Choose an existing checkout on ${sshEnvironments.find((env) => env.id === selectedSshEnvId)?.label ?? 'this SSH target'}.` : 'Work on a separate branch and checkout.'}</p>
           </div>
         </div>
+        {locationKind === 'ssh' ? <RemoteWorktreePicker
+          key={selectedSshEnvId}
+          repositories={remoteRepositories}
+          preferredWorkspaceId={activeWorkspaceId}
+          launchReady={hasLoadedHarnessOptions}
+          onOpenPath={(path) => launchPath(path, selectedSshEnvId, sshEnvironments.find((env) => env.id === selectedSshEnvId)?.label ?? 'Remote')}
+        /> : <>
         <div className="gate-input-container">
           <div className="gate-section-header">
             <label className="gate-section-label" htmlFor="gate-worktree-repo">Repository</label>
@@ -1235,6 +1244,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
           </div>
         </div>
         <WorktreeLauncher repoPath={selectedPath} openPaths={openPaths} onOpenPath={launchPath} />
+        </>}
         <p className="gate-worktree-launch-summary">Opens with {selectedHarness ? HARNESS_OPTIONS.find((option) => option.id === selectedHarness)?.label ?? selectedHarness : 'Terminal'} · {TERMINAL_PRESETS[selectedPreset].count} terminals</p>
       </div>
       ) : (

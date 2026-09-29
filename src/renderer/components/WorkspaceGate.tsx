@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Minus, Square, X } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import WorkspaceGateContent, { WorkspaceFormData } from './WorkspaceGateContent';
-import { sameWorkspacePath } from '../lib/pathUtils';
+import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
 import './WorkspaceGate.css';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../../shared/types/recipes';
 
@@ -62,7 +62,7 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
     const state = useWorkspaceStore.getState();
     const targetEnvId = data.environmentId || 'local';
     const open = state.workspaces.find((workspace) =>
-      (workspace.environmentId || 'local') === targetEnvId && sameWorkspacePath(workspace.workspacePath, data.path)
+      isSameWorkspaceIdentity({ environmentId: workspace.environmentId || 'local', path: workspace.workspacePath }, { environmentId: targetEnvId, path: data.path })
     );
     if (open) {
       state.selectWorkspace(open.id);

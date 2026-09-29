@@ -140,6 +140,27 @@ describe('App workspace open integration', () => {
       undefined, undefined, workspace.id, 'dev-vps');
   });
 
+  it('preserves branch identity when an SSH checkout is registered at its canonical remote path', async () => {
+    installElectronApiMock({
+      sshEnvironmentList: vi.fn().mockResolvedValue([{ id: 'dev-vps', label: 'Dev VPS', target: 'dev-vps' }]),
+      registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true, location: { environmentId: 'dev-vps', path: '/srv/task' } }),
+      gitListWorktrees: vi.fn().mockResolvedValue({ success: true, worktrees: [
+        { path: '/srv/project', branch: 'main', isMain: true, isLocked: false, isPrunable: false },
+        { path: '/srv/task', branch: 'task/ssh', isMain: false, isLocked: false, isPrunable: false },
+      ] }),
+    });
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'SSH Remote' }));
+    await waitFor(() => expect(document.querySelector('.ssh-env-select')).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText('Remote Directory Path'), { target: { value: '/alias/task' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+    await waitFor(() => expect(useWorkspaceStore.getState().workspaces[0]).toMatchObject({ environmentId: 'dev-vps', workspacePath: '/srv/task', isLinkedWorktree: true, gitCurrentBranch: 'task/ssh', projectName: 'project' }));
+    const workspace = useWorkspaceStore.getState().workspaces[0];
+    expect(window.electronAPI.gitListWorktrees).toHaveBeenCalledWith('/srv/task', workspace.id);
+    expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/srv/task', expect.anything(), undefined, undefined, undefined, workspace.id, 'dev-vps');
+  });
+
   it('keeps the launcher open when main rejects workspace registration', async () => {
     installElectronApiMock({ registerOpenWorkspace: vi.fn().mockResolvedValue({ success: false, error: 'Worktree is being removed' }) });
     render(<App />);

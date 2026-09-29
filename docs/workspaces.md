@@ -22,6 +22,8 @@ If a local branch and tag share a name, the base ref uses the branch. Enter `ref
 
 The launcher also lists existing linked worktrees. Click **Open** to use one without recreating it. Several conversations or terminals can share a worktree workspace; create another worktree when work needs separate files and a branch.
 
+For SSH worktrees, first open a repository workspace on the remote host. In **New Workspace → SSH Remote**, select the same saved target and click **Worktree**. Choose an open SSH repository to discover its existing checkouts, then click **Open** beside a checkout. Discovery uses that repository's registered workspace identity, and the selected checkout opens in the same SSH environment after remote path validation. **Refresh worktrees** retries discovery or reloads the list after changes made on the host. Missing checkouts cannot be opened; a Git worktree lock does not prevent opening. Remote worktree creation and removal remain unavailable.
+
 Closing a workspace tab stops its live terminals and closes its UI; it leaves the checkout and branch on disk. To remove a checkout, return to **Task worktree**, load the repository, and choose **Remove…** on a closed worktree. Clanker checks for uncommitted, untracked, and ignored files, then asks you to confirm the exact path and branch. Removal moves the checkout to the system Trash and unregisters it from Git, preserving files written during removal. The branch remains.
 
 New worktrees contain Git tracked files from the base commit. Local ignored files such as `.env` and installed dependencies are not copied automatically; set up those files in the new checkout as needed.
@@ -77,7 +79,7 @@ Remote harness commands are discovered and executed on the remote host using its
 
 To maintain reliability and safety, the following capabilities are local-only in V1:
 
-1. **Task Worktrees**: Creating or removing Git worktrees is disabled for remote workspaces. Opening existing remote checkouts directly as workspaces is fully supported.
+1. **Task Worktrees**: Creating or removing Git worktrees is disabled for remote workspaces. Existing remote checkouts can be discovered from open SSH repositories in the launcher's **Worktree** view and opened in the same environment.
 2. **Launch Recipes**: Creating, editing, or launching recipes for SSH workspaces is unavailable in V1. Legacy recipes without an environment ID remain local recipes.
 3. **Reveal in File Manager**: Disabled for remote paths, preventing passing remote paths to desktop OS file managers.
 4. **File Refresh**: One batched SSH poll checks the active workspace about every three seconds. It monitors up to 128 open editor files and 128 visible/expanded Explorer directories, scanning only direct directory children (up to 2,000 entries per directory). Changes refresh Explorer and reload clean editor tabs; dirty tabs keep their buffers and receive an external-change indicator. Polls do not overlap, back off after connection failures, and stop when their workspace closes. Parked workspaces are checked again when activated. Manual Refresh and the existing desktop-focus refresh remain available for larger directories and immediate updates.

@@ -202,13 +202,13 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
   });
 
   registerGitHandler(GIT_LIST_WORKTREES, async (_, workspacePath: string) => {
-    if (resolveWorkspace()?.location.environmentId !== 'local' && gitService.getScopedWorkspaceIdentity?.()) {
-      return { success: false, worktrees: [], error: 'Task worktrees are only available for local workspaces in this version' };
-    }
+    const isRemote = (gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local') !== 'local';
     const safePath = getValidatedWorkspacePath(workspacePath);
     if (!safePath) return { success: false, worktrees: [], error: getInvalidWorkspaceResult().error };
     const result = await gitService.listWorktrees(safePath);
-    return { ...result, worktrees: result.worktrees.map((entry) => ({ ...entry, path: toPosixPath(entry.path) })) };
+    return isRemote
+      ? result
+      : { ...result, worktrees: result.worktrees.map((entry) => ({ ...entry, path: toPosixPath(entry.path) })) };
   });
 
   registerGitHandler(GIT_CREATE_WORKTREE, async (_, workspacePath: string, baseRef: string, branch: string) => {

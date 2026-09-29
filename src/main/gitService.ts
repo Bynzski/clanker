@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { VcsProvider } from '../shared/types/vcs';
 import type { GitWorktree, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult } from '../shared/types/git';
+import { utf8ByteLength } from '../shared/utf8';
 
 export interface GitStatusEntry {
   path: string;
@@ -264,11 +265,16 @@ export class GitService {
   async listWorktrees(workspacePath: string): Promise<GitWorktreeListResult> {
     try {
       const { stdout } = await this.execGit(workspacePath, ['worktree', 'list', '--porcelain', '-z']);
+      const isRemote = (this.getScopedWorkspaceIdentity()?.environmentId ?? 'local') !== 'local';
       const records = stdout.split('\0\0').filter(Boolean);
       const worktrees = records.map((record, index): GitWorktree => {
         const lines = record.split('\0');
         const fullPath = lines.find((line) => line.startsWith('worktree '))?.slice(9);
         if (!fullPath) throw new Error('Git returned a worktree without a path');
+        if (isRemote &&
+            (!path.posix.isAbsolute(fullPath) || path.posix.normalize(fullPath) !== fullPath || utf8ByteLength(fullPath) > 4096)) {
+          throw new Error('Git returned an invalid remote worktree path');
+        }
         const branchRef = lines.find((line) => line.startsWith('branch '))?.slice(7);
         return {
           path: fullPath,

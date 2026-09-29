@@ -197,6 +197,9 @@
 .gate-worktree-row { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .gate-worktree-identity { display: inline-flex; align-items: center; gap: 5px; flex: 1; min-width: 0; color: var(--text-primary); }
 .gate-worktree-identity svg { flex-shrink: 0; color: var(--accent-primary); }
+.remote-worktree-picker .gate-worktree-identity { flex-direction: column; align-items: stretch; gap: 2px; }
+.remote-worktree-picker .gate-worktree-project { max-width: 100%; }
+.remote-worktree-picker .gate-worktree-branch { flex: auto; }
 .gate-worktree-project { flex: 0 1 auto; max-width: 85px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .gate-worktree-branch { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
 .gate-worktree-error { color: var(--accent-error); margin: 0; overflow-wrap: anywhere; }

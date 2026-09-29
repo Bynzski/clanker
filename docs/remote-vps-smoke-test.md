@@ -41,6 +41,13 @@ Default workspace root checks (close all workspaces using the target before edit
 - Set the preference to a nonexistent directory. Confirm selection falls back to `$HOME/workspaces` when accessible, or `$HOME` otherwise.
 - Clear the preference and save. Confirm the automatic starting directory is restored. Restore the original target settings after these checks.
 
+Remote worktree discovery checks (use an existing remote repository with linked checkouts, or prepare worktrees inside a unique temporary fixture):
+
+- Keep the SSH repository workspace open. In **New Workspace → SSH Remote**, select its saved target and click **Worktree**. Confirm the repository selector contains only workspaces on that target and discovery shows its worktree paths and branches.
+- Open an existing checkout. Confirm the new workspace's terminal is on the same remote host at the canonical checkout path, and its tab shows the repository name and worktree branch. Open it again and confirm Clanker selects the existing tab.
+- Confirm missing checkouts have disabled **Open** buttons, and remote creation/removal controls are absent. Interrupt SSH during discovery, confirm an error appears, restore connectivity, and use **Refresh worktrees** to recover.
+- If using temporary worktrees, close their Clanker workspaces and remove those exact worktrees through Git on the remote host before running the temporary fixture cleanup guard.
+
 Cleanup guard (run on the remote host after closing the temporary workspace). Replace the placeholder with the recorded absolute path; keep that value unchanged through the checks and deletion. The guard requires a canonical workspace root and a direct child with a strict temporary name. It rejects empty paths, symlink targets, and any path outside that root before `rm -rf`:
 
 ```sh
