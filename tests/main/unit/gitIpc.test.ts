@@ -96,6 +96,7 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import { registerGitIpc } from '../../../src/main/ipc/gitIpc';
 import { GitService, type GitStatusResult } from '../../../src/main/gitService';
 import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
+import { toPosixPath } from '../../../src/shared/pathNormalize';
 import { ipcMain } from 'electron';
 
 describe('registerGitIpc', () => {
@@ -966,7 +967,7 @@ describe('git IPC channel constants', () => {
 
 describe('Git IPC workspace identity routing', () => {
   const ipc = ipcMain as typeof ipcMain & { handle: Mock };
-  const workspacePath = process.cwd();
+  const workspacePath = toPosixPath(process.cwd());
 
   beforeEach(() => {
     vi.clearAllMocks();

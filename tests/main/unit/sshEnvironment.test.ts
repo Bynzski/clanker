@@ -261,7 +261,7 @@ describe('SshEnvironment', () => {
         vi.unstubAllEnvs();
       }
     });
-    it('runs an initial command exactly once inside the requested remote directory', async () => {
+    it.skipIf(process.platform === 'win32')('runs an initial command exactly once inside the requested remote directory', async () => {
       const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-command-'));
       try {
         const home = join(sandbox, 'home');
@@ -286,7 +286,7 @@ describe('SshEnvironment', () => {
   });
 });
 
-describe('remote harness commands executed on a POSIX host', () => {
+describe.skipIf(process.platform === 'win32')('remote harness commands executed on a POSIX host', () => {
   it('discovers user-installed CLIs, safely passes model and working directory, and isolates attention', async () => {
     const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-cli-'));
     const home = join(sandbox, 'home');
@@ -396,7 +396,7 @@ describe('remote harness commands executed on a POSIX host', () => {
   });
 });
 
-describe('remote filesystem scripts executed on a POSIX host', () => {
+describe.skipIf(process.platform === 'win32')('remote filesystem scripts executed on a POSIX host', () => {
   it('preserves modes on existing files and uses the remote umask for new files', async () => {
     const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-modes-'));
     const root = join(sandbox, 'workspace');
@@ -477,7 +477,7 @@ describe('remote filesystem scripts executed on a POSIX host', () => {
 describe('pre-workspace SSH directory browsing', () => {
   const config = { id: 'host', kind: 'ssh' as const, label: 'host', target: 'host' };
 
-  it('canonicalizes HOME and browses directories, hidden names, unicode, and symlinks without shell interpolation', async () => {
+  it.skipIf(process.platform === 'win32')('canonicalizes HOME and browses directories, hidden names, unicode, and symlinks without shell interpolation', async () => {
     const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-browse-'));
     const home = join(sandbox, "home's ünicode");
     const homeAlias = join(sandbox, 'home alias');
@@ -536,7 +536,7 @@ describe('pre-workspace SSH directory browsing', () => {
       await rm(sandbox, { recursive: true, force: true });
     }
   });
-  it('creates browsable directories and rejects invalid names or existing paths', async () => {
+  it.skipIf(process.platform === 'win32')('creates browsable directories and rejects invalid names or existing paths', async () => {
     const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-create-dir-'));
     try {
       const executor = {
@@ -576,7 +576,7 @@ describe('pre-workspace SSH directory browsing', () => {
   });
 
 
-  it('stops a remote scan at the directory count limit', async () => {
+  it.skipIf(process.platform === 'win32')('stops a remote scan at the directory count limit', async () => {
     const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-browse-limit-'));
     try {
       await Promise.all(Array.from({ length: 501 }, (_, i) => mkdir(join(sandbox, String(i)))));
