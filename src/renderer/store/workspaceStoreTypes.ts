@@ -97,6 +97,7 @@ export interface WorkspaceState {
 
   addWorkspace: (workspace: Omit<WorkspaceTab, 'id' | 'lifecycle'> & { id?: string }) => void;
   selectWorkspace: (id: string, terminalId?: string) => void;
+  moveWorkspace: (workspaceId: string, targetWorkspaceId: string) => void;
   closeWorkspace: (id: string) => void;
   updateWorkspaceName: (id: string, name: string) => void;
   getWorkspaceById: (id: string | null) => WorkspaceTab | null;

@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, MouseEvent } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import type { DragEvent, KeyboardEvent, MouseEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { disposeWorkspaceResources } from '../lib/workspaceLifecycle';
 import { Plus, X, Check, Edit2, BellRing, GitBranch } from 'lucide-react';
@@ -12,12 +13,15 @@ interface WorkspaceTabsProps {
 }
 
 export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
-  const { workspaces, activeWorkspaceId, activeTerminalId, selectWorkspace, closeWorkspace, updateWorkspaceName } = useWorkspaceStore();
+  const { workspaces, activeWorkspaceId, activeTerminalId, selectWorkspace, moveWorkspace, closeWorkspace, updateWorkspaceName } = useWorkspaceStore();
   const byTerminalId = useAgentAttentionStore((state) => state.byTerminalId);
   const nextTarget = nextAttentionTarget(workspaces, byTerminalId, activeTerminalId);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const draggedWorkspaceIdRef = useRef<string | null>(null);
+  const suppressClickRef = useRef(false);
+  const [dropTarget, setDropTarget] = useState<{ id: string; side: 'left' | 'right' } | null>(null);
 
   /**
    * Keep the explorer watcher aligned with the active workspace.
@@ -118,9 +122,54 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
     }
   };
 
+  const handleDragStart = (event: DragEvent<HTMLButtonElement>, workspaceId: string) => {
+    if (event.target instanceof HTMLElement && event.target.closest('.workspace-tab-edit, .workspace-tab-edit-trigger, .workspace-tab-close')) {
+      event.preventDefault();
+      return;
+    }
+    draggedWorkspaceIdRef.current = workspaceId;
+    suppressClickRef.current = true;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', workspaceId);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLButtonElement>, targetId: string) => {
+    const draggedId = draggedWorkspaceIdRef.current;
+    if (!draggedId || draggedId === targetId) return;
+    const fromIndex = workspaces.findIndex((workspace) => workspace.id === draggedId);
+    const targetIndex = workspaces.findIndex((workspace) => workspace.id === targetId);
+    if (fromIndex < 0 || targetIndex < 0) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTarget({ id: targetId, side: fromIndex < targetIndex ? 'right' : 'left' });
+  };
+
+  const handleDrop = (event: DragEvent<HTMLButtonElement>, targetId: string) => {
+    event.preventDefault();
+    const draggedId = draggedWorkspaceIdRef.current;
+    draggedWorkspaceIdRef.current = null;
+    setDropTarget(null);
+    if (draggedId && draggedId !== targetId) moveWorkspace(draggedId, targetId);
+  };
+
+  const handleDragEnd = () => {
+    draggedWorkspaceIdRef.current = null;
+    setDropTarget(null);
+    window.setTimeout(() => { suppressClickRef.current = false; }, 0);
+  };
+
+  const handleReorderKey = (event: KeyboardEvent<HTMLButtonElement>, workspaceId: string, index: number) => {
+    if (event.target !== event.currentTarget || !event.altKey || !event.shiftKey) return;
+    const targetIndex = event.key === 'ArrowLeft' ? index - 1 : event.key === 'ArrowRight' ? index + 1 : -1;
+    const target = workspaces[targetIndex];
+    if (!target) return;
+    event.preventDefault();
+    moveWorkspace(workspaceId, target.id);
+  };
+
   return (
     <div className="workspace-tabs" role="tablist" aria-label="Workspaces">
-      {workspaces.map((workspace) => {
+      {workspaces.map((workspace, index) => {
         const isActive = workspace.id === activeWorkspaceId;
         const isEditing = workspace.id === editingId;
         const counts = attentionCounts(workspace.terminals.map((terminal) => terminal.id), byTerminalId);
@@ -135,11 +184,19 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
         return (
           <button
             key={workspace.id}
-            className={`workspace-tab ${isActive ? 'active' : ''}`}
+            className={`workspace-tab ${isActive ? 'active' : ''}${dropTarget?.id === workspace.id ? ` drop-${dropTarget.side}` : ''}`}
             role="tab"
             aria-selected={isActive}
+            aria-keyshortcuts="Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
             title={`${remoteLabel ? `${remoteLabel}\n` : ''}${tabLabel}${workspace.isLinkedWorktree && branch ? ` · ${branch}` : ''}\n${workspace.workspacePath}`}
-            onClick={() => !isEditing && selectWorkspace(workspace.id)}
+            draggable={!isEditing}
+            onDragStart={(event) => handleDragStart(event, workspace.id)}
+            onDragOver={(event) => handleDragOver(event, workspace.id)}
+            onDragLeave={() => setDropTarget((current) => current?.id === workspace.id ? null : current)}
+            onDrop={(event) => handleDrop(event, workspace.id)}
+            onDragEnd={handleDragEnd}
+            onKeyDown={(event) => handleReorderKey(event, workspace.id, index)}
+            onClick={() => { if (!isEditing && !suppressClickRef.current) selectWorkspace(workspace.id); }}
           >
             {isEditing ? (
               <div className="workspace-tab-edit" onClick={(e) => e.stopPropagation()}>

@@ -59,6 +59,7 @@ import {
 } from './workspaceStoreHelpers';
 import { preserveOriginalLineEndings } from '../lib/lineEndings';
 import { restoreWorkspaceLayout, restoreWorkspaceLayoutFromPersisted } from '../lib/workspaceLayoutStorage';
+import { insertWorkspaceInSavedOrder, persistWorkspaceTabOrder } from '../lib/workspaceTabOrder';
 import { nameTerminal, nameTerminals } from '../lib/agentNames';
 import {
   readStoredNotesVisible,
@@ -192,7 +193,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       notesVisible: workspace.notesVisible ?? storedNotesVisible,
       notesPane: restoredNotesPane,
     }));
-    const nextWorkspaces = assignWorkspaceLifecycles([...state.workspaces, nextWorkspace], id);
+    const nextWorkspaces = assignWorkspaceLifecycles(insertWorkspaceInSavedOrder(state.workspaces, nextWorkspace), id);
 
     const nextState = {
       ...getActiveWorkspaceSnapshot(nextWorkspace),
@@ -257,6 +258,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     return nextState;
   }),
+
+  moveWorkspace: (workspaceId, targetWorkspaceId) => {
+    let moved = false;
+    set((state) => {
+      if (workspaceId === targetWorkspaceId) return state;
+      const fromIndex = state.workspaces.findIndex((workspace) => workspace.id === workspaceId);
+      const targetIndex = state.workspaces.findIndex((workspace) => workspace.id === targetWorkspaceId);
+      if (fromIndex < 0 || targetIndex < 0) return state;
+      const workspaces = [...state.workspaces];
+      const [workspace] = workspaces.splice(fromIndex, 1);
+      workspaces.splice(targetIndex, 0, workspace);
+      moved = true;
+      return { workspaces };
+    });
+    if (moved) persistWorkspaceTabOrder(get().workspaces);
+  },
 
   closeWorkspace: (id) => set((state) => {
     const remaining = state.workspaces.filter((workspace) => workspace.id !== id);

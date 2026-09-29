@@ -6,6 +6,7 @@ import type { LayoutSplit, Terminal, Pane, WorkspaceTab } from '../../../src/ren
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
 import { persistWorkspaceLayout } from '../../../src/renderer/lib/workspaceLayoutStorage';
+import { persistWorkspaceTabOrder } from '../../../src/renderer/lib/workspaceTabOrder';
 import { readStoredNotesVisible } from '../../../src/renderer/lib/notesStorage';
 
 // Platform-neutral path constants for test fixtures
@@ -102,6 +103,60 @@ function terminal(id: string, workingDir = '/workspace'): Terminal {
 // addWorkspace / selectWorkspace / closeWorkspace
 // ===========================================================================
 describe('workspace lifecycle', () => {
+  it('moves workspace tabs without changing active state or workspace objects', () => {
+    const firstId = addWorkspace({ workspacePath: '/projects/alpha', name: 'Alpha' }).activeWorkspaceId!;
+    const secondId = addWorkspace({ workspacePath: '/projects/beta', name: 'Beta' }).activeWorkspaceId!;
+    const thirdId = addWorkspace({ workspacePath: '/projects/gamma', name: 'Gamma' }).activeWorkspaceId!;
+    const before = getStore();
+    const byId = new Map(before.workspaces.map((workspace) => [workspace.id, workspace]));
+
+    getStore().moveWorkspace(firstId, thirdId);
+    const after = getStore();
+    expect(after.workspaces.map((workspace) => workspace.id)).toEqual([secondId, thirdId, firstId]);
+    expect(after.activeWorkspaceId).toBe(thirdId);
+    expect(after.workspacePath).toBe('/projects/gamma');
+    for (const workspace of after.workspaces) expect(workspace).toBe(byId.get(workspace.id));
+    expect(after.workspaces.filter((workspace) => workspace.lifecycle === 'active')).toHaveLength(1);
+
+    getStore().moveWorkspace('missing', secondId);
+    expect(getStore().workspaces).toBe(after.workspaces);
+  });
+
+  it('restores a chosen tab order as local and SSH workspaces are reopened', () => {
+    const firstId = addWorkspace({ workspacePath: '/projects/shared', name: 'Local' }).activeWorkspaceId!;
+    const remoteId = addWorkspace({ workspacePath: '/projects/shared', environmentId: 'ssh-host', name: 'Remote' }).activeWorkspaceId!;
+    const thirdId = addWorkspace({ workspacePath: '/projects/third', name: 'Third' }).activeWorkspaceId!;
+    getStore().moveWorkspace(remoteId, firstId);
+    getStore().moveWorkspace(thirdId, firstId);
+    expect(getStore().workspaces.map((workspace) => workspace.name)).toEqual(['Remote', 'Third', 'Local']);
+
+    resetStore();
+    addWorkspace({ workspacePath: '/projects/shared', name: 'Local' });
+    addWorkspace({ workspacePath: '/projects/third', name: 'Third' });
+    addWorkspace({ workspacePath: '/projects/shared', environmentId: 'ssh-host', name: 'Remote' });
+    expect(getStore().workspaces.map((workspace) => workspace.name)).toEqual(['Remote', 'Third', 'Local']);
+  });
+
+  it('keeps a closed workspace in its saved position when the other tabs are reordered', () => {
+    addWorkspace({ workspacePath: '/projects/a', name: 'A' });
+    const bId = addWorkspace({ workspacePath: '/projects/b', name: 'B' }).activeWorkspaceId!;
+    const cId = addWorkspace({ workspacePath: '/projects/c', name: 'C' }).activeWorkspaceId!;
+    const dId = addWorkspace({ workspacePath: '/projects/d', name: 'D' }).activeWorkspaceId!;
+    persistWorkspaceTabOrder(getStore().workspaces);
+
+    getStore().closeWorkspace(bId);
+    getStore().moveWorkspace(dId, cId);
+    expect(getStore().workspaces.map((workspace) => workspace.name)).toEqual(['A', 'D', 'C']);
+    expect(getStore().activeWorkspaceId).toBe(dId);
+
+    resetStore();
+    addWorkspace({ workspacePath: '/projects/c', name: 'C' });
+    addWorkspace({ workspacePath: '/projects/b', name: 'B' });
+    addWorkspace({ workspacePath: '/projects/d', name: 'D' });
+    addWorkspace({ workspacePath: '/projects/a', name: 'A' });
+    expect(getStore().workspaces.map((workspace) => workspace.name)).toEqual(['A', 'B', 'D', 'C']);
+  });
+
   it('addWorkspace sets active workspace and populates snapshot fields', () => {
     const state = addWorkspace({ workspacePath: TEST_PROJECT, name: 'My Project' });
     expect(state.name).toBe('My Project');

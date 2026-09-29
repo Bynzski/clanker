@@ -147,7 +147,7 @@ The Explorer is a separate, resizable left sidebar and does not join the pane la
 
 ## Persistence
 
-The app remembers the last workspace path. Layout topology, split sizes, note content, and notes visibility are stored separately by environment and canonical workspace path; old path-only local data is restored for local workspaces and migrated on the next write. Pane IDs are regenerated safely and are not persisted directly.
+The app remembers the last workspace path. Layout topology, split sizes, note content, and notes visibility are stored separately by environment and canonical workspace path; old path-only local data is restored for local workspaces and migrated on the next write. Pane IDs are regenerated safely and are not persisted directly. Workspace tabs can be dragged or moved with `Alt+Shift+←/→`; their chosen order is remembered by workspace identity when those workspaces are reopened. The app does not automatically reopen all tabs after restart.
 
 Terminal processes and their runtime state are not reconstructed from layout persistence.
 
