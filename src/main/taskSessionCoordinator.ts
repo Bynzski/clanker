@@ -23,8 +23,10 @@ export class TaskSessionCoordinator {
     workspacePath: string,
     harnessId: string,
     modelId?: string,
+    environmentId?: string,
   ): TaskSessionRecord {
     const normalized = normalizeWorkspacePath(workspacePath);
+    const envId = (environmentId && environmentId.trim()) ? environmentId.trim() : 'local';
     const now = Date.now();
     const taskId = `task-${now}-${Math.random().toString(36).slice(2, 8)}`;
     const title = `${harnessId.toUpperCase()} Task (${new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
@@ -32,6 +34,7 @@ export class TaskSessionCoordinator {
     const record: TaskSessionRecord = {
       id: taskId,
       workspacePath: normalized,
+      environmentId: envId,
       harnessId,
       ...(modelId ? { modelId } : {}),
       title,
@@ -45,15 +48,18 @@ export class TaskSessionCoordinator {
     return this.persistence.saveTaskSession(record);
   }
 
-  public onSessionInvoked(terminalId: string, session: HarnessSession): TaskSessionRecord {
+  public onSessionInvoked(terminalId: string, session: HarnessSession & { environmentId?: string }): TaskSessionRecord {
     const normalized = normalizeWorkspacePath(session.cwd);
+    const envId = (session.environmentId && session.environmentId.trim()) ? session.environmentId.trim() : 'local';
     const now = Date.now();
     const all = this.persistence.getAllTaskSessions();
 
     const existing = all.find(
-      (t) => t.nativeSessionId === session.id && isSameWorkspaceIdentity(t.workspacePath, normalized),
+      (t) => t.nativeSessionId === session.id && isSameWorkspaceIdentity(
+        { environmentId: t.environmentId || 'local', path: t.workspacePath },
+        { environmentId: envId, path: normalized }
+      ),
     );
-
     if (existing) {
       const updated: TaskSessionRecord = {
         ...existing,
@@ -71,6 +77,7 @@ export class TaskSessionCoordinator {
     const record: TaskSessionRecord = {
       id: taskId,
       workspacePath: normalized,
+      environmentId: envId,
       harnessId: session.harness,
       ...(session.modelId ? { modelId: session.modelId } : {}),
       title: session.title || `${session.harness.toUpperCase()} Task`,
@@ -86,12 +93,24 @@ export class TaskSessionCoordinator {
     return this.persistence.saveTaskSession(record);
   }
 
-  public async onTerminalExited(terminalId: string): Promise<TaskSessionRecord | null> {
+  public async onTerminalExited(terminalId: string, environmentId?: string): Promise<TaskSessionRecord | null> {
     if (this.shuttingDown) return null;
     const all = this.persistence.getAllTaskSessions();
     const task = all.find((t) => t.terminalId === terminalId);
     if (!task) return null;
 
+    const taskEnv = environmentId || task.environmentId || 'local';
+    if (taskEnv !== 'local') {
+      const updated: TaskSessionRecord = {
+        ...task,
+        terminalId: undefined,
+        state: 'unavailable',
+        stateReason: 'Remote session recovery is not supported in this version',
+        stoppedAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      return this.persistence.saveTaskSession(updated);
+    }
     let nativeSessionId = task.nativeSessionId;
     let nativeSessionPath = task.nativeSessionPath;
     let updatedTitle = task.title;
@@ -142,11 +161,15 @@ export class TaskSessionCoordinator {
     const now = Date.now();
     for (const task of all) {
       if (task.state === 'running') {
-        const state: TaskRecoveryState = task.nativeSessionId ? 'resumable' : 'needs-selection';
+        const isRemote = (task.environmentId || 'local') !== 'local';
+        const state: TaskRecoveryState = isRemote
+          ? 'unavailable'
+          : task.nativeSessionId ? 'resumable' : 'needs-selection';
         this.persistence.saveTaskSession({
           ...task,
           terminalId: undefined,
           state,
+          ...(isRemote ? { stateReason: 'Remote session recovery is not supported in this version' } : {}),
           stoppedAt: now,
           updatedAt: now,
         });

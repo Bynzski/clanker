@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog, GitBranch, ArrowLeft, Settings } from 'lucide-react';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../../shared/types/recipes';
+import type { SshEnvironmentConfig } from '../../shared/types/environments';
 import RecipeModal from './RecipeModal';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds, resolveVisibleHarnessIds } from '../lib/harnessOptions';
 import { hermesModelDisplay, hermesModelLabel } from '../lib/hermesModelDisplay';
@@ -13,6 +14,7 @@ import GateHarnessSettings from './GateHarnessSettings';
 import { findGeneratedWorktreeContainerOwner } from '../lib/worktreeContainer';
 import { getWorkspaceNameFromPath } from '../lib/workspaceLabels';
 import { joinPaths } from '../lib/pathUtils';
+import RemoteWorkspacePath from './RemoteWorkspacePath';
 import './WorkspaceGate.css';
 
 export interface WorkspaceFormData {
@@ -20,6 +22,8 @@ export interface WorkspaceFormData {
   terminalCount: number;
   harness: string;
   model?: string;
+  environmentId?: string;
+  environmentLabel?: string;
 }
 
 interface ContentProps {
@@ -95,7 +99,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
   const [discoverySearch, setDiscoverySearch] = useState('');
   const [modelOverrides, setModelOverrides] = useState<Record<string, string>>({});
-  const defaultModel = modelOverrides[selectedHarness] ?? harnessDefaults?.[selectedHarness]?.model ?? '';
+  const [locationKind, setLocationKind] = useState<'local' | 'ssh'>('local');
+  const defaultModel = locationKind === 'ssh' ? '' : modelOverrides[selectedHarness] ?? harnessDefaults?.[selectedHarness]?.model ?? '';
   const selectedModelOption = modelOptions.find((model) => model.id === defaultModel);
   const setDefaultModel = (modelId: string) => {
     setModelOverrides((overrides) => ({ ...overrides, [selectedHarness]: modelId }));
@@ -106,11 +111,108 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   const [directoryError, setDirectoryError] = useState('');
   const openWorkspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const openPaths = openWorkspaces.map((workspace) => workspace.workspacePath);
+  const openPaths = openWorkspaces
+    .filter((workspace) => !workspace.environmentId || workspace.environmentId === 'local')
+    .map((workspace) => workspace.workspacePath);
   const selectedPath = resolveWorkspacePath(inputValue, baseDirectory);
-  const activeWorkspacePath = openWorkspaces.find((workspace) => workspace.id === activeWorkspaceId)?.workspacePath ?? null;
+  const activeWorkspace = openWorkspaces.find((workspace) => workspace.id === activeWorkspaceId);
+  const activeWorkspacePath = activeWorkspace && (!activeWorkspace.environmentId || activeWorkspace.environmentId === 'local')
+    ? activeWorkspace.workspacePath
+    : null;
   const repoCandidatePath = selectedPath ?? (!inputValue.trim() ? activeWorkspacePath : null);
   const worktreeReady = !!repoCandidatePath && repoCheck?.path === repoCandidatePath && repoCheck.isRepo;
+  const [sshEnvironments, setSshEnvironments] = useState<SshEnvironmentConfig[]>([]);
+  const [selectedSshEnvId, setSelectedSshEnvId] = useState<string>('');
+  const [remotePath, setRemotePath] = useState('');
+  const updateRemotePath = useCallback((path: string) => {
+    setRemotePath(path);
+    setDirectoryError('');
+  }, []);
+  const [showSshManager, setShowSshManager] = useState(false);
+  const [sshFormLabel, setSshFormLabel] = useState('');
+  const [sshFormTarget, setSshFormTarget] = useState('');
+  const [sshTestStatus, setSshTestStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [isTestingSsh, setIsTestingSsh] = useState(false);
+  const [sshSaveError, setSshSaveError] = useState('');
+
+  const refreshSshEnvironments = useCallback(async () => {
+    if (typeof window.electronAPI?.sshEnvironmentList === 'function') {
+      try {
+        const list = await window.electronAPI.sshEnvironmentList();
+        setSshEnvironments(list);
+        setSelectedSshEnvId((prev) => list.some((env) => env.id === prev) ? prev : (list[0]?.id ?? ''));
+      } catch {
+        // Ignore
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSshEnvironments();
+  }, [refreshSshEnvironments]);
+
+  const handleTestSsh = async () => {
+    if (!sshFormTarget.trim()) {
+      setSshTestStatus({ success: false, message: 'Please enter an SSH target' });
+      return;
+    }
+    setIsTestingSsh(true);
+    setSshTestStatus(null);
+    try {
+      const res = await window.electronAPI.sshEnvironmentTest(sshFormTarget.trim());
+      if (res.success) {
+        setSshTestStatus({ success: true, message: 'Connection successful!' });
+      } else {
+        setSshTestStatus({ success: false, message: res.error || 'Connection failed' });
+      }
+    } catch (err) {
+      setSshTestStatus({ success: false, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setIsTestingSsh(false);
+    }
+  };
+
+  const handleSaveSshEnv = async () => {
+    if (!sshFormLabel.trim() || !sshFormTarget.trim()) {
+      setSshSaveError('Label and target are required');
+      return;
+    }
+    setSshSaveError('');
+    try {
+      const res = await window.electronAPI.sshEnvironmentSave({
+        id: crypto.randomUUID(),
+        kind: 'ssh',
+        label: sshFormLabel.trim(),
+        target: sshFormTarget.trim(),
+      });
+      if (res.success && res.config) {
+        setSshFormLabel('');
+        setSshFormTarget('');
+        setSshTestStatus(null);
+        setRemotePath('');
+        setSelectedSshEnvId(res.config.id);
+        await refreshSshEnvironments();
+      } else {
+        setSshSaveError(res.error || 'Failed to save environment');
+      }
+    } catch (err) {
+      setSshSaveError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleDeleteSshEnv = async (id: string) => {
+    try {
+      await window.electronAPI.sshEnvironmentDelete(id);
+      if (selectedSshEnvId === id) {
+        setRemotePath('');
+        setSelectedSshEnvId('');
+      }
+      await refreshSshEnvironments();
+    } catch {
+      // Ignore
+    }
+  };
+
 
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionRequestRef = useRef(0);
@@ -240,8 +342,32 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   // Load harnesses and pre-load models for all available harnesses
   useEffect(() => {
     let cancelled = false;
+    setModelsLoaded(false);
+    if (locationKind === 'ssh') setAvailableHarnessIds(['']);
+    setModelOptions([]);
+    setAllModels({});
+
 
     const loadHarnessOptions = async () => {
+      if (locationKind === 'ssh') {
+        try {
+          const options = selectedSshEnvId
+            ? await window.electronAPI.getEnvironmentHarnessOptions(selectedSshEnvId)
+            : {};
+          if (cancelled) return;
+          const availableIds = resolveAvailableHarnessIds(options);
+          setAvailableHarnessIds(availableIds);
+          setSelectedHarness((current) => availableIds.includes(current) ? current : (availableIds.find((id) => id !== '') ?? ''));
+        } catch {
+          if (!cancelled) setAvailableHarnessIds(['']);
+        } finally {
+          if (!cancelled) {
+            setHasLoadedHarnessOptions(true);
+            setModelsLoaded(true);
+          }
+        }
+        return;
+      }
       try {
         const options = await window.electronAPI.getHarnessOptions();
         if (cancelled) return;
@@ -296,7 +422,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locationKind, selectedSshEnvId]);
 
   // Update model options when harness changes (using pre-loaded models)
   useEffect(() => {
@@ -533,23 +659,46 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     return () => window.removeEventListener('keydown', handleLauncherShortcut);
   }, [handleHarnessChange, selectedHarness, visibleHarnessIds]);
 
-  const launchPath = (path: string) => {
+  const launchPath = (path: string, envId = 'local', envLabel = 'Local') => {
     const preset = TERMINAL_PRESETS[selectedPreset];
     // Hermes keeps its own default when no explicit model is chosen.
-    const launchModel = defaultModel || (selectedHarness === 'hermes' ? undefined : modelOptions[0]?.id);
+    const launchModel = envId === 'local'
+      ? defaultModel || (selectedHarness === 'hermes' ? undefined : modelOptions[0]?.id)
+      : undefined;
     onSubmit({
       path,
       terminalCount: preset.count,
       harness: selectedHarness,
       model: selectedHarness ? launchModel : undefined,
+      environmentId: envId,
+      environmentLabel: envLabel,
     });
   };
 
   const handleSubmit = () => {
+    if (locationKind === 'ssh') {
+      if (!selectedSshEnvId) {
+        setDirectoryError('Please select or add an SSH environment first');
+        return;
+      }
+      const trimmed = remotePath.trim();
+      if (!trimmed) {
+        setDirectoryError('Please enter a remote workspace path');
+        return;
+      }
+      if (!trimmed.startsWith('/')) {
+        setDirectoryError('Remote path must be an absolute POSIX path starting with /');
+        return;
+      }
+      const env = sshEnvironments.find((e) => e.id === selectedSshEnvId);
+      launchPath(trimmed, env?.id || selectedSshEnvId, env?.label || 'Remote');
+      return;
+    }
+
     if (!selectedPath) return;
     const requestId = ++launchRequestRef.current;
     if (!getWorkspaceNameFromPath(selectedPath).endsWith('-worktrees')) {
-      launchPath(selectedPath);
+      launchPath(selectedPath, 'local', 'Local');
       return;
     }
     void findGeneratedWorktreeContainerOwner(selectedPath).then((owner) => {
@@ -557,7 +706,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
       if (owner) {
         setDirectoryError(`This folder holds worktrees for ${getWorkspaceNameFromPath(owner)}. Choose a checkout inside it or select the repository and use Worktree.`);
       } else {
-        launchPath(selectedPath);
+        launchPath(selectedPath, 'local', 'Local');
       }
     });
   };
@@ -652,6 +801,25 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         <p className="gate-subtitle">Developer Workspace Launcher</p>
       </div>
 
+      <div className="gate-location-selector">
+        <button
+          type="button"
+          className={`gate-location-btn ${locationKind === 'local' ? 'active' : ''}`}
+          onClick={() => { setLocationKind('local'); setDirectoryError(''); }}
+        >
+          Local
+        </button>
+        <button
+          type="button"
+          className={`gate-location-btn ${locationKind === 'ssh' ? 'active' : ''}`}
+          onClick={() => { setLocationKind('ssh'); setDirectoryError(''); }}
+        >
+          SSH Remote
+        </button>
+      </div>
+
+      {locationKind === 'local' ? (
+
       <div className="gate-input-container">
         <div className="gate-section-header">
           <span className="gate-section-label">Workspace</span>
@@ -725,7 +893,64 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
           </ul>
         )}
       </div>
-      {savedRecipes.length > 0 && (
+      ) : (
+      <div className="gate-input-container">
+        <div className="gate-section-header">
+          <span className="gate-section-label">SSH Remote Environment</span>
+          <button
+            type="button"
+            className="gate-manage-ssh-link"
+            onClick={() => {
+              setShowSshManager(true);
+              setSshSaveError('');
+              setSshTestStatus(null);
+            }}
+          >
+            Manage SSH Targets
+          </button>
+        </div>
+
+        {sshEnvironments.length > 0 ? (
+          <div className="ssh-env-picker">
+            <select
+              className="ssh-env-select"
+              value={selectedSshEnvId}
+              onChange={(e) => { setRemotePath(''); setDirectoryError(''); setSelectedSshEnvId(e.target.value); }}
+            >
+              {sshEnvironments.map((env) => (
+                <option key={env.id} value={env.id}>
+                  {env.label} ({env.target})
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="ssh-no-environments">
+            <span>No saved SSH environments.</span>
+            <button
+              type="button"
+              className="gate-add-ssh-btn"
+              onClick={() => {
+                setShowSshManager(true);
+                setSshSaveError('');
+                setSshTestStatus(null);
+              }}
+            >
+              + Add SSH Environment
+            </button>
+          </div>
+        )}
+
+        <div className="gate-section-header" style={{ marginTop: '10px' }}>
+          <span className="gate-section-label">Remote Directory Path</span>
+        </div>
+        {selectedSshEnvId && (
+          <RemoteWorkspacePath key={selectedSshEnvId} environmentId={selectedSshEnvId}
+            path={remotePath} onPathChange={updateRemotePath} onSubmit={handleSubmit} />
+        )}
+      </div>
+      )}
+      {locationKind === 'local' && savedRecipes.length > 0 && (
         <div className="gate-recipes-section">
           <div className="gate-section-header">
             <span className="gate-section-label">Launch Recipes</span>
@@ -1017,7 +1242,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
           <Play size={14} strokeWidth={2.5} fill="currentColor" />
           Launch Workspace
         </button>
-        <button className="gate-worktree-forward" type="button" aria-label="Worktree options" disabled={!worktreeReady} title={worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first'} onClick={() => {
+        <button className="gate-worktree-forward" type="button" aria-label="Worktree options" disabled={locationKind === 'ssh' || !worktreeReady} title={locationKind === 'ssh' ? 'Task worktrees are only available for local workspaces in this version' : worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first'} onClick={() => {
           if (!inputValue.trim()) {
             if (activeWorkspacePath) setInputValue(activeWorkspacePath);
           }
@@ -1075,6 +1300,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         onClose={() => setShowRecipeModal(false)}
         initialRecipe={selectedRecipeForModal}
         defaultWorkspacePath={selectedPath ?? inputValue}
+        workspaceEnvironmentId={locationKind === 'ssh' ? selectedSshEnvId || 'ssh' : 'local'}
         onLaunchRecipe={async (recipe) => {
           if (onLaunchRecipe) {
             return onLaunchRecipe(recipe);
@@ -1102,6 +1328,112 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
           setSavedRecipes((prev) => prev.filter((p) => p.id !== id));
         }}
       />
+      {showSshManager && (
+        <div className="ssh-manager-overlay" onClick={() => setShowSshManager(false)}>
+          <div className="ssh-manager-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ssh-manager-header">
+              <span className="ssh-manager-title">Manage SSH Targets</span>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setShowSshManager(false)}
+                title="Close"
+              >
+                <X size={16} strokeWidth={2} />
+              </button>
+            </div>
+            <div className="ssh-manager-body">
+              <div className="ssh-manager-form">
+                <span className="gate-section-label">Add New SSH Environment</span>
+                <div className="ssh-form-row">
+                  <label>Label</label>
+                  <input
+                    type="text"
+                    className="ssh-form-input"
+                    value={sshFormLabel}
+                    onChange={(e) => setSshFormLabel(e.target.value)}
+                    placeholder="e.g. dev-vps"
+                  />
+                </div>
+                <div className="ssh-form-row">
+                  <label>SSH Target</label>
+                  <input
+                    type="text"
+                    className="ssh-form-input"
+                    value={sshFormTarget}
+                    onChange={(e) => {
+                      setSshFormTarget(e.target.value);
+                      setSshTestStatus(null);
+                    }}
+                    placeholder="e.g. user@192.168.1.100 or vps-host"
+                  />
+                </div>
+                {sshTestStatus && (
+                  <p
+                    style={{
+                      margin: '4px 0 0',
+                      fontSize: '12px',
+                      color: sshTestStatus.success ? 'var(--accent-success, #98c379)' : 'var(--accent-error, #e06c75)',
+                    }}
+                  >
+                    {sshTestStatus.message}
+                  </p>
+                )}
+                {sshSaveError && (
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--accent-error, #e06c75)' }}>
+                    {sshSaveError}
+                  </p>
+                )}
+                <div className="ssh-form-actions">
+                  <button
+                    type="button"
+                    className="ssh-btn-test"
+                    onClick={handleTestSsh}
+                    disabled={isTestingSsh}
+                  >
+                    {isTestingSsh ? 'Testing...' : 'Test Connection'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ssh-btn-save"
+                    onClick={handleSaveSshEnv}
+                  >
+                    Save Target
+                  </button>
+                </div>
+              </div>
+
+              <div className="ssh-saved-list">
+                <span className="gate-section-label" style={{ display: 'block', marginBottom: '8px' }}>
+                  Saved Environments ({sshEnvironments.length})
+                </span>
+                {sshEnvironments.length === 0 ? (
+                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>No saved SSH environments yet.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {sshEnvironments.map((env) => (
+                      <div key={env.id} className="ssh-env-item">
+                        <div className="ssh-env-info">
+                          <span className="ssh-env-label">{env.label}</span>
+                          <span className="ssh-env-target">{env.target}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="ssh-env-delete-btn"
+                          onClick={() => handleDeleteSshEnv(env.id)}
+                          title="Delete environment"
+                        >
+                          <X size={14} strokeWidth={2} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

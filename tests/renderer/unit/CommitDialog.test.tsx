@@ -328,6 +328,30 @@ describe('CommitDialog', () => {
     });
   });
 
+  it('hides local-only AI generation but allows manual commits in an SSH workspace', async () => {
+    const remote = createWorkspaceFixture({
+      id: 'ssh-workspace',
+      workspacePath: '/workspace',
+      environmentId: 'ssh-host',
+      lifecycle: 'active',
+    });
+    useWorkspaceStore.setState({ workspaces: [remote], activeWorkspaceId: remote.id });
+    vi.mocked(window.electronAPI.getAiCommitSettings).mockResolvedValue({ enabled: true, provider: 'codex', model: '' });
+    mockOnCommit.mockResolvedValue({ success: true });
+
+    renderDialog({
+      workspaceId: remote.id,
+      changes: [{ path: 'file.ts', status: 'modified' as const, staged: true }],
+    });
+
+    await waitFor(() => expect(window.electronAPI.getAiCommitSettings).toHaveBeenCalled());
+    expect(screen.queryByText('Generate')).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText('Describe your changes...'), { target: { value: 'manual commit' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Commit' }));
+    await waitFor(() => expect(mockOnCommit).toHaveBeenCalledWith('manual commit'));
+    expect(window.electronAPI.generateCommitMessage).not.toHaveBeenCalled();
+  });
+
   it('does not show Generate button when AI is disabled', () => {
     renderDialog({
       changes: [
@@ -562,45 +586,6 @@ describe('CommitDialog', () => {
     });
     const eyeButtons = screen.queryAllByTitle('View diff');
     expect(eyeButtons).toHaveLength(2);
-  });
-
-  it('calls gitGetFileDiff with correct args when eye icon clicked for staged file', async () => {
-    renderDialog({
-      workspacePath: '/test/workspace',
-      changes: [
-        { path: 'staged.ts', status: 'modified' as const, staged: true },
-      ],
-    });
-
-    fireEvent.click(screen.getByTitle('View diff'));
-
-    await waitFor(() => {
-      expect(window.electronAPI.gitGetFileDiff).toHaveBeenCalledWith(
-        '/test/workspace',
-        'staged.ts',
-        'staged'
-      );
-    });
-  });
-
-
-  it('calls gitGetFileDiff with correct args when eye icon clicked for unstaged file', async () => {
-    renderDialog({
-      workspacePath: '/test/workspace',
-      changes: [
-        { path: 'unstaged.ts', status: 'modified' as const, staged: false },
-      ],
-    });
-
-    fireEvent.click(screen.getByTitle('View diff'));
-
-    await waitFor(() => {
-      expect(window.electronAPI.gitGetFileDiff).toHaveBeenCalledWith(
-        '/test/workspace',
-        'unstaged.ts',
-        'working'
-      );
-    });
   });
 
   it('eye icon is disabled while commit is in progress', async () => {

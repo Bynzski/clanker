@@ -35,6 +35,7 @@ vi.mock('../../../src/main/ipc/aiCommitIpc', () => ({
 const mockGitService = {
   getBranchState: vi.fn(),
   getRemotes: vi.fn(),
+  withWorkspace: vi.fn((_identity: unknown, operation: () => unknown) => operation()),
 };
 
 vi.mock('../../../src/main/gitService', () => ({
@@ -253,5 +254,39 @@ describe('registerVcsIpc', () => {
     const result = await handler(null, '/invalid/path', 'repo');
 
     expect(result).toBe(false);
+  });
+  test('uses registered SSH workspace identity for provider metadata at the same local path', async () => {
+    vi.mocked(getValidatedWorkspacePath).mockReturnValue('/same/path');
+    vi.mocked(mockGitService.getBranchState).mockResolvedValue({
+      success: true, currentBranch: 'remote-branch',
+    });
+    vi.mocked(mockGitService.getRemotes).mockResolvedValue({
+      success: true, remotes: [{ name: 'origin', fetchUrl: 'git@remote:org/project.git' }],
+    });
+    vi.mocked(getProviderContext).mockResolvedValue({
+      success: true,
+    });
+    const remote = {
+      workspaceId: 'remote-id',
+      location: { path: '/same/path', environmentId: 'dev-vps' },
+    };
+    registerVcsIpc({
+      getGitService: () => mockGitService as unknown as GitService,
+      getWorkspaceRegistry: () => ({
+        getWorkspace: (id: string) => id === remote.workspaceId ? remote : null,
+      }) as never,
+    });
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'vcs:get-context'
+    )?.[1] as (_: unknown, path: string, id: string) => Promise<ProviderContextResult>;
+    const result = await handler(null, '/same/path', 'remote-id');
+    expect(result.success).toBe(true);
+    expect(mockGitService.withWorkspace).toHaveBeenCalledWith(
+      { workspaceId: 'remote-id', workspacePath: '/same/path', environmentId: 'dev-vps' },
+      expect.any(Function)
+    );
+    expect(getProviderContext).toHaveBeenCalledWith('origin', 'git@remote:org/project.git', 'remote-branch');
+    expect(getValidatedWorkspacePath).not.toHaveBeenCalled();
+    expect(await handler(null, '/same/path', 'stale-id')).toMatchObject({ success: false });
   });
 });

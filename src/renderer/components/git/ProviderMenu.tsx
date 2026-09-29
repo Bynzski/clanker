@@ -30,6 +30,7 @@ interface ProviderMenuProps {
   onLinkClick?: (link: DeepLink) => void;
   /** Current workspace path */
   workspacePath: string;
+  workspaceId?: string;
 }
 
 /**
@@ -55,6 +56,7 @@ export default function ProviderMenu({
   onRefresh,
   onLinkClick,
   workspacePath,
+  workspaceId,
 }: ProviderMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -76,7 +78,7 @@ export default function ProviderMenu({
     setIsOpen(false);
 
     // Open in system browser (could also open in browser panel)
-    window.electronAPI.vcsOpenDeepLink(workspacePath, link.type);
+    window.electronAPI.vcsOpenDeepLink(workspacePath, link.type, workspaceId);
   };
 
   const handleRefresh = () => {

@@ -49,6 +49,7 @@ describe('ChatHistoryDropdown', () => {
         sessions={[sampleSession]}
         isLoading={false}
         workspacePath="/projects/repo"
+        workspaceId="local-ws"
         onClose={vi.fn()}
       />,
     );
@@ -81,12 +82,16 @@ describe('ChatHistoryDropdown', () => {
         sessions={[sampleSession]}
         isLoading={false}
         workspacePath="/projects/repo"
+        workspaceId="local-ws"
         onClose={onClose}
       />,
     );
 
     const resumeBtn = await screen.findByRole('button', { name: /resume/i });
     fireEvent.click(resumeBtn);
+    expect(window.electronAPI.invokeSession).toHaveBeenCalledWith('local-ws', expect.objectContaining({
+      id: 'codex-sess-1', cwd: '/projects/repo',
+    }));
 
     await waitFor(() => {
       expect(taskSessionUpdateMock).toHaveBeenCalledWith(
@@ -105,5 +110,22 @@ describe('ChatHistoryDropdown', () => {
     // Final state follows Option A failure policy: Unavailable badge and Retry button rendered
     expect(await screen.findByText('Unavailable')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+  });
+  it('resumes discovered sessions using the selected workspace ID', async () => {
+    const invokeSession = vi.fn().mockResolvedValue({ id: 'term-1', pid: 5 });
+    installElectronApiMock({ invokeSession });
+    render(
+      <ChatHistoryDropdown
+        sessions={[sampleSession]}
+        isLoading={false}
+        workspacePath="/projects/repo"
+        workspaceId="local-ws"
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Codex.*1/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Auth conversation/i }));
+    await waitFor(() => expect(invokeSession).toHaveBeenCalledWith('local-ws', sampleSession));
   });
 });

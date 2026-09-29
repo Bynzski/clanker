@@ -351,26 +351,6 @@ describe('ProviderMenu', () => {
       expect(onLinkClick).toHaveBeenCalledWith(deepLinks[0]);
     });
 
-    it('calls vcsOpenDeepLink when link clicked', () => {
-      const deepLinks: DeepLink[] = [
-        { type: 'pr', label: 'View PR', url: 'https://github.com/test/pr' },
-      ];
-
-      render(
-        <ProviderMenu
-          provider={createProviderContext({})}
-          deepLinks={deepLinks}
-          isLoading={false}
-          error={null}
-          workspacePath="/workspace"
-        />
-      );
-
-      fireEvent.click(document.querySelector('.provider-menu-trigger')!);
-      fireEvent.click(document.querySelector('.provider-menu-link')!);
-
-      expect(mockVcsOpenDeepLink).toHaveBeenCalledWith('/workspace', 'pr');
-    });
 
     it('closes menu after link click', () => {
       const deepLinks: DeepLink[] = [

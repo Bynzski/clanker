@@ -8,6 +8,7 @@ export interface FileExplorerEntry {
 
 export interface FileListDirectoryRequest {
   workspacePath: string;
+  workspaceId?: string;
   directoryPath: string;
 }
 

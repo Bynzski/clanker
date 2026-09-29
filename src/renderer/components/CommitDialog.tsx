@@ -22,6 +22,7 @@ interface CommitDialogProps {
   onUnstageAll: () => Promise<{ success: boolean; error?: string }>;
   changes: GitStatus[];
   workspacePath: string;
+  workspaceId?: string;
 }
 
 export default function CommitDialog({
@@ -33,12 +34,17 @@ export default function CommitDialog({
   onUnstageAll,
   changes,
   workspacePath,
+  workspaceId,
 }: CommitDialogProps) {
   const [message, setMessage] = useState('');
   const [aiSettings, setAiSettings] = useState<AiCommitSettings | null>(null);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const isRemoteWorkspace = useWorkspaceStore((state) => {
+    const workspace = state.workspaces.find((entry) => entry.id === (workspaceId ?? state.activeWorkspaceId));
+    return workspace ? !!workspace.environmentId && workspace.environmentId !== 'local' : !!workspaceId;
+  });
   const [isCommitting, setIsCommitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isUnstaging, setIsUnstaging] = useState(false);
@@ -156,7 +162,7 @@ export default function CommitDialog({
   };
 
   const handleGenerateMessage = async () => {
-    if (!workspacePath || isGenerating) {
+    if (!workspacePath || isGenerating || isRemoteWorkspace) {
       return;
     }
 
@@ -164,7 +170,7 @@ export default function CommitDialog({
     setError(null);
 
     try {
-      const result = await window.electronAPI.generateCommitMessage(workspacePath);
+      const result = await window.electronAPI.generateCommitMessage(workspacePath, workspaceId);
       if (result.success && result.message) {
         setMessage(result.message);
         window.setTimeout(() => inputRef.current?.focus(), 0);
@@ -246,7 +252,8 @@ export default function CommitDialog({
         const result = await window.electronAPI.gitGetFileDiff(
           workspacePath,
           filePath,
-          mode
+          mode,
+          workspaceId
         );
 
         if (result.success) {
@@ -282,7 +289,7 @@ export default function CommitDialog({
         });
       }
     },
-    [workspacePath]
+    [workspacePath, workspaceId]
   );
 
   const handleCloseDiff = useCallback(() => {
@@ -317,7 +324,7 @@ export default function CommitDialog({
                 <label className="commit-message-label" htmlFor="commit-message">
                   Commit Message
                 </label>
-                {aiCommitEnabled && hasChanges && (
+                {aiCommitEnabled && hasChanges && !isRemoteWorkspace && (
                   <button
                     type="button"
                     className="commit-ai-btn"

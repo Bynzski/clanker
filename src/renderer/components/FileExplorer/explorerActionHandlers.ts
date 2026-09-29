@@ -31,6 +31,7 @@ function filterPathsOutsideBase(basePath: string, paths: string[]): string[] {
 /** Callbacks and state slices the extracted handlers need from the component. */
 export interface ExplorerActionDeps {
   resolvedWorkspaceId: string | null;
+  environmentId?: string;
   normalizedWorkspacePath: string;
   explorerEntriesByPath: Record<string, FileExplorerEntry[] | undefined>;
   explorerExpandedPaths: string[];
@@ -90,16 +91,25 @@ async function handleOpenEditor(
 
 async function handleOpenTerminal(
   entry: FileExplorerEntry,
-  addTerminal: (terminal: { id: string; pid: number; workingDir: string }) => void,
+  addTerminal: (terminal: { id: string; pid: number; workingDir: string; workspaceId?: string; environmentId?: string }) => void,
+  deps: ExplorerActionDeps,
 ): Promise<void> {
   const targetDir = entry.isDirectory ? entry.path : dirnamePath(entry.path);
 
   try {
-    const info = await window.electronAPI.spawnTerminal(targetDir);
+    if (deps.environmentId !== 'local' && !deps.resolvedWorkspaceId) {
+      throw new Error('Remote terminal requires a registered workspace');
+    }
+    const info = await window.electronAPI.spawnTerminal(
+      targetDir, undefined, undefined, undefined, undefined,
+      deps.resolvedWorkspaceId ?? undefined, deps.environmentId,
+    );
     addTerminal({
       id: info.id,
       pid: info.pid,
       workingDir: targetDir,
+      workspaceId: deps.resolvedWorkspaceId ?? undefined,
+      environmentId: deps.environmentId,
     });
   } catch (error) {
     console.error('Failed to open terminal:', error);
@@ -131,8 +141,8 @@ async function handleCopyRelativePath(
   await window.electronAPI.writeClipboard(resolved);
 }
 
-async function handleRevealInFiles(entry: FileExplorerEntry): Promise<void> {
-  await window.electronAPI.revealInFileManager(entry.path);
+async function handleRevealInFiles(entry: FileExplorerEntry, workspaceId: string | null): Promise<void> {
+  await window.electronAPI.revealInFileManager(entry.path, workspaceId ?? undefined);
 }
 
 function handleStartRename(
@@ -170,7 +180,7 @@ export async function dispatchContextAction(
       await handleOpenEditor(entry, deps, callbacks.openFileInEditor);
       break;
     case 'open-terminal':
-      await handleOpenTerminal(entry, callbacks.addTerminal);
+      await handleOpenTerminal(entry, callbacks.addTerminal, deps);
       break;
     case 'copy-path':
       await handleCopyPath(entry);
@@ -179,7 +189,7 @@ export async function dispatchContextAction(
       await handleCopyRelativePath(entry, deps, callbacks.getWorkspacePath);
       break;
     case 'reveal-in-files':
-      await handleRevealInFiles(entry);
+      await handleRevealInFiles(entry, deps.resolvedWorkspaceId);
       break;
     case 'rename':
       handleStartRename(entry, callbacks.setRenaming);
@@ -331,6 +341,7 @@ export async function executeDelete(
 
   const result = await window.electronAPI.fileDelete({
     workspacePath: normalizedWorkspacePath,
+    workspaceId: deps.resolvedWorkspaceId ?? undefined,
     targetPath: entry.path,
   });
 
@@ -380,6 +391,7 @@ export async function executeRename(
 
   const result = await window.electronAPI.fileRename({
     workspacePath: normalizedWorkspacePath,
+    workspaceId: deps.resolvedWorkspaceId ?? undefined,
     oldPath,
     newPath,
   });

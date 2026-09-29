@@ -49,15 +49,15 @@ Requires Node.js 22.12+ and npm 10+. On Windows, also install **Git for Windows*
 
 1. Open the installed app, or run `npm run dev` from a source checkout
 2. The workspace gate opens if no workspaces exist
-3. Select or enter a directory path
+3. Select **Local** and enter or browse for a directory, or select **SSH Remote** and choose a saved SSH target and remote directory
 4. Optionally select an AI harness
-5. If a harness is selected, choose a model from its picker when available
+5. For a local workspace with a selected harness, choose a model from its picker when available
 6. Choose terminal count (1, 2, or 4)
 7. Click **Launch Workspace**
 
 ### Model Selection in the Gate
 
-When a harness is selected, the gate shows model selection controls:
+For local workspaces, selecting a harness shows model selection controls:
 
 - Click the model pill to open favorites and browse/search models supplied by the harness
 - If a harness cannot supply models, the app may show only configured models
@@ -69,8 +69,10 @@ The default model for each harness can be configured in the header settings drop
 
 From the gate or workspace tabs:
 - Click **Open Workspace** (`+`) beside the tabs
-- Enter a local directory path
-- Directory autocomplete is available
+- For **Local**, enter a local directory path or use the operating-system folder picker
+- For **SSH Remote**, add a target in **Manage SSH Targets** if needed, select it, and browse directories over SSH or enter an absolute POSIX path. **New Folder** in the remote chooser creates a directory on the remote host. Clanker starts at `$HOME/workspaces` when it exists and is accessible, otherwise at `$HOME`.
+
+Remote workspaces require system OpenSSH access to a Linux/POSIX host and Python 3 on that host. The SSH account must have permission to access the selected directory. Remote harnesses must be installed on the host; the launcher shows harnesses discovered there. Remote recipes, worktrees, native session recovery, Agent Attention, and automatic port forwarding are unavailable in V1. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh) for setup and the complete limitations list.
 
 ## Navigation
 

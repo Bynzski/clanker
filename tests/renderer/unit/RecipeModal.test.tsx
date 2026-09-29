@@ -23,6 +23,26 @@ describe('RecipeModal', () => {
   beforeEach(() => {
     installElectronApiMock();
   });
+  it('does not save a path-only recipe while editing in an SSH workspace', () => {
+    const saveMock = vi.fn();
+    installElectronApiMock({ recipeSave: saveMock });
+    render(<RecipeModal isOpen onClose={vi.fn()} defaultWorkspacePath="/home/user/project"
+      workspaceEnvironmentId="dev-vps" onLaunchRecipe={vi.fn()} />);
+    expect(screen.getByText('Launch recipes are not supported for SSH workspaces in this version.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Recipe' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save Recipe' }));
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it('does not expose launch or editing of a persisted remote recipe', () => {
+    const launch = vi.fn();
+    render(<RecipeModal isOpen onClose={vi.fn()} initialRecipe={{ ...sampleRecipe, environmentId: 'dev-vps' }}
+      onLaunchRecipe={launch} />);
+    expect(screen.getByRole('button', { name: 'Launch Recipe' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeDisabled();
+    expect(launch).not.toHaveBeenCalled();
+  });
+
 
   it('renders preview mode with clear display of commands to be executed', () => {
     const onLaunch = vi.fn();

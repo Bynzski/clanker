@@ -89,6 +89,7 @@ describe('IPC registration smoke test', () => {
     const { registerSessionIpc } = await import('../../../src/main/ipc/sessionIpc');
     const { registerRecipeIpc } = await import('../../../src/main/ipc/recipeIpc');
     const { registerTaskSessionIpc } = await import('../../../src/main/ipc/taskSessionIpc');
+    const { registerSshEnvironmentIpc } = await import('../../../src/main/ipc/sshEnvironmentIpc');
     interface MockStoreSchema {
       lastWorkspace: string;
       aiCommitEnabled: boolean;
@@ -252,6 +253,17 @@ describe('IPC registration smoke test', () => {
       getStore: () => mockStore as never,
       getTerminals: () => mockTerminals as never,
       getHarnessOptions: () => ({}),
+    });
+
+    const mockEnvManager = {
+      getEnvironment: vi.fn().mockResolvedValue(null),
+      getSshExecutor: vi.fn(() => ({ testConnection: vi.fn().mockResolvedValue({ success: true }) })),
+      invalidateSshEnvironment: vi.fn(),
+    };
+    registerSshEnvironmentIpc({
+      getStore: () => mockStore as never,
+      getEnvironmentManager: () => mockEnvManager as never,
+      getWorkspaceRegistry: () => ({ isEnvironmentInUse: () => false }) as never,
     });
 
     // ── Assert ──────────────────────────────────────────────────────────────

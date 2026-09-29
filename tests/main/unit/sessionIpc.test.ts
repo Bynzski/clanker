@@ -44,6 +44,11 @@ type Handler = (_event: unknown, ...args: unknown[]) => unknown;
 function registerHandlers(
   getHarnessOptions = vi.fn(() => ({})),
   agentAttentionBroker?: Parameters<typeof registerSessionIpc>[0]['agentAttentionBroker'],
+  getWorkspaceRegistry: NonNullable<Parameters<typeof registerSessionIpc>[0]['getWorkspaceRegistry']> = () => ({
+    getWorkspace: (id: string) => id === 'local-ws'
+      ? { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } }
+      : null,
+  }) as never,
 ): Map<string, Handler> {
   const handlers = new Map<string, Handler>();
   mockHandle.mockImplementation((channel: string, handler: Handler) => {
@@ -62,6 +67,7 @@ function registerHandlers(
     }) as never,
     getHarnessOptions,
     agentAttentionBroker,
+    getWorkspaceRegistry,
   });
 
   return handlers;
@@ -101,7 +107,7 @@ describe('registerSessionIpc', () => {
       id: 'session-1', harness: 'omp', title: 'Task', cwd: '/workspace',
       timestamp: 1, filePath: '/workspace/session.txt',
     };
-    await expect(handlers.get(SESSION_INVOKE)?.({}, session)).rejects.toThrow('OMP session file is invalid');
+    await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toThrow('OMP session file is invalid');
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
 
@@ -116,7 +122,7 @@ describe('registerSessionIpc', () => {
     const session: HarnessSession = {
       id, harness: 'agy', title: 'Task', cwd: '/workspace', timestamp: 1,
     };
-    await expect(handlers.get(SESSION_INVOKE)?.({}, session)).rejects.toThrow('Antigravity session ID is invalid');
+    await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toThrow('Antigravity session ID is invalid');
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
 
@@ -132,7 +138,7 @@ describe('registerSessionIpc', () => {
       timestamp: 1,
       modelId: 'gemini&calc',
     };
-    await expect(handlers.get(SESSION_INVOKE)?.({}, session)).rejects.toThrow('Antigravity model ID is invalid');
+    await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toThrow('Antigravity model ID is invalid');
     expect(mockBuildSessionInvokeArgs).not.toHaveBeenCalled();
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
@@ -159,7 +165,7 @@ describe('registerSessionIpc', () => {
       modelId: ' gemini-3.8-flash-high ',
     };
 
-    const result = await handlers.get(SESSION_INVOKE)?.({}, session);
+    const result = await handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session);
     expect(result).toEqual(expect.objectContaining({ harnessId: 'agy', ptyProcess: { pid: 12345 } }));
     expect(mockBuildSessionInvokeArgs).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -178,7 +184,7 @@ describe('registerSessionIpc', () => {
     })));
     const session = { ...codexSession, harness: 'hermes' } as unknown as HarnessSession;
 
-    await expect(handlers.get(SESSION_INVOKE)?.({}, session)).rejects.toThrow('hermes session invocation is not supported');
+    await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toThrow('hermes session invocation is not supported');
     expect(mockBuildSessionInvokeArgs).not.toHaveBeenCalled();
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
@@ -195,7 +201,7 @@ describe('registerSessionIpc', () => {
       },
     })));
 
-    const result = await handlers.get(SESSION_DISCOVER)?.({}, '/workspace');
+    const result = await handlers.get(SESSION_DISCOVER)?.({}, 'local-ws');
 
     expect(result).toEqual([claudeSession]);
     expect(mockDiscoverSessions).toHaveBeenCalledWith(nativeWorkspacePath);
@@ -212,7 +218,7 @@ describe('registerSessionIpc', () => {
     })));
 
     await expect(
-      handlers.get(SESSION_INVOKE)?.({}, codexSession, false)
+      handlers.get(SESSION_INVOKE)?.({}, 'local-ws', codexSession, false)
     ).rejects.toThrow('codex harness is not available');
 
     expect(mockBuildSessionInvokeArgs).not.toHaveBeenCalled();
@@ -237,7 +243,7 @@ describe('registerSessionIpc', () => {
       },
     })), broker as never);
 
-    const result = await handlers.get(SESSION_INVOKE)?.({}, codexSession, true);
+    const result = await handlers.get(SESSION_INVOKE)?.({}, 'local-ws', codexSession, true);
 
     expect(result).toEqual({ id: 'term-1', pid: 123, harnessId: 'codex', attentionEnabled: false });
     expect(broker.register).toHaveBeenCalledWith(expect.any(String), 'codex');
@@ -257,5 +263,50 @@ describe('registerSessionIpc', () => {
         CLANKER_GRID_FALLBACK_SHELL: '/bin/bash',
       }),
     }));
+  });
+  it('keeps local discovery and invocation distinct from a remote workspace at the same path', async () => {
+    const getWorkspace = vi.fn((id: string) => ({
+      'local-ws': { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } },
+      'remote-ws': { workspaceId: 'remote-ws', location: { environmentId: 'vps', path: '/workspace' } },
+    })[id as 'local-ws' | 'remote-ws'] ?? null);
+    const handlers = registerHandlers(vi.fn(() => ({
+      codex: { name: 'Codex', command: 'codex', args: [], icon: 'Codex' },
+    })), undefined, () => ({ getWorkspace }) as never);
+    mockDiscoverSessions.mockResolvedValue([codexSession]);
+    mockBuildSessionInvokeArgs.mockReturnValue({ spawnCmd: 'codex', spawnArgs: ['resume', 'codex-session'] });
+    mockSpawnPtyProcess.mockReturnValue({ id: 'term-1', pid: 123 });
+
+    expect(await handlers.get(SESSION_DISCOVER)?.({}, 'remote-ws')).toEqual([]);
+    expect(mockDiscoverSessions).not.toHaveBeenCalled();
+    await expect(handlers.get(SESSION_INVOKE)?.({}, 'remote-ws', codexSession, false))
+      .rejects.toThrow('Remote session invocation is not supported');
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+
+    expect(await handlers.get(SESSION_DISCOVER)?.({}, 'local-ws')).toEqual([codexSession]);
+    expect(mockDiscoverSessions).toHaveBeenCalledWith(nativeWorkspacePath);
+    expect(await handlers.get(SESSION_INVOKE)?.({}, 'local-ws', codexSession, false))
+      .toEqual(expect.objectContaining({ id: 'term-1', harnessId: 'codex' }));
+  });
+
+  it('rejects stale or path-shaped IDs even when the session cwd belongs to a local workspace', async () => {
+    const handlers = registerHandlers();
+    for (const workspaceId of ['stale-ws', '/workspace', '']) {
+      await expect(handlers.get(SESSION_DISCOVER)?.({}, workspaceId)).rejects.toThrow('Workspace is not registered');
+      await expect(handlers.get(SESSION_INVOKE)?.({}, workspaceId, codexSession))
+        .rejects.toThrow('Workspace is not registered');
+    }
+    expect(mockDiscoverSessions).not.toHaveBeenCalled();
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+  });
+
+  it('rejects sessions whose cwd escapes the selected local workspace', async () => {
+    const handlers = registerHandlers(vi.fn(() => ({
+      codex: { name: 'Codex', command: 'codex', args: [], icon: 'Codex' },
+    })));
+    for (const cwd of ['/workspace-other', '/workspace/../other']) {
+      await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', { ...codexSession, cwd }))
+        .rejects.toThrow('Session working directory is outside the workspace');
+    }
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
 });

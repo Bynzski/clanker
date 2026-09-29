@@ -90,7 +90,9 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     gitGetBranchState: createAsyncMock({ success: true, isRepo: false, currentBranch: null, isDetached: false, branches: [] }),
     gitListWorktrees: createAsyncMock({ success: true, worktrees: [] }),
     gitCreateWorktree: createAsyncMock({ success: false, error: 'Not configured' }),
-    registerOpenWorkspace: createAsyncMock({ success: true }),
+    registerOpenWorkspace: vi.fn(async (_id: string, path: string, environmentId = 'local') => ({
+      success: true, location: { path, environmentId },
+    })),
     unregisterOpenWorkspace: createAsyncMock({ success: true }),
     gitInspectWorktree: createAsyncMock({ success: false, error: 'Not configured' }),
     gitRemoveWorktree: createAsyncMock({ success: false, error: 'Not configured' }),
@@ -190,6 +192,15 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     onAnnotationEscape: vi.fn(() => () => undefined),
     onAnnotationStateChanged: vi.fn(() => () => undefined),
 
+    // SSH Environments
+    sshEnvironmentList: createAsyncMock([]),
+    sshEnvironmentSave: vi.fn(async (config) => ({ success: true, config })),
+    sshEnvironmentDelete: createAsyncMock({ success: true }),
+    sshEnvironmentTest: createAsyncMock({ success: true }),
+    sshGetHomeDirectory: createAsyncMock({ homePath: '/home/user', initialPath: '/home/user/workspaces' }),
+    sshListDirectories: createAsyncMock({ path: '/home/user/workspaces', parentPath: '/home/user', directories: [] }),
+    sshCreateDirectory: createAsyncMock({ path: '/home/user/workspaces/new-folder' }),
+    getEnvironmentHarnessOptions: createAsyncMock({}),
     ...overrides,
   };
 }

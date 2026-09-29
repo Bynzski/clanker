@@ -133,6 +133,8 @@ Make this button more prominent — it's the primary CTA for the profile form.
 5. Copy the annotation and paste it into an agent, or choose **Send to agent**
 6. Review the message and destination workspace before sending
 
+Automatic **Send to agent** handoff is unavailable for remote terminals in V1. Use **Copy message** to paste an annotation into a remote agent yourself.
+
 The structured output helps the agent understand exactly which element you mean, its position, and your intended change.
 
 ## Architecture

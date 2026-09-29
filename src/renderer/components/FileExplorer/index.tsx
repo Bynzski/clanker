@@ -62,6 +62,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   const workspace = useScopedWorkspaceSelector((current) => current && ({
     id: current.id,
     workspacePath: current.workspacePath,
+    environmentId: current.environmentId,
     gitChanges: current.gitChanges,
     explorerVisible: current.explorerVisible,
     explorerSidebarWidth: current.explorerSidebarWidth,
@@ -102,6 +103,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   const resolvedWorkspaceId = workspace?.id ?? null;
   const workspacePath = workspace?.workspacePath ?? '';
   const gitChanges = workspace?.gitChanges ?? [];
+  const isRemote = workspace?.environmentId != null && workspace.environmentId !== 'local';
   const explorerVisible = workspace?.explorerVisible ?? false;
   const explorerSidebarWidth = workspace?.explorerSidebarWidth ?? 280;
   const explorerEntriesByPath = workspace?.explorerEntriesByPath ?? EMPTY_ENTRIES;
@@ -166,6 +168,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     try {
       const result = await window.electronAPI.fileListDirectory({
         workspacePath: normalizedWorkspacePath,
+        workspaceId: requestWorkspaceId,
         directoryPath: normalizedDirectoryPath,
       });
 
@@ -230,6 +233,23 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
       void loadDirectory(dirPath);
     });
   }, [normalizedWorkspacePath, explorerExpandedPaths, loadDirectory]);
+
+  // SSH workspaces have no push watcher. Refresh only the active workspace on
+  // desktop focus; never route remote paths into local chokidar.
+  useEffect(() => {
+    if (!isRemote || !explorerVisible || !resolvedWorkspaceId) return;
+    const onFocus = () => {
+      const state = useWorkspaceStore.getState();
+      if (state.activeWorkspaceId !== resolvedWorkspaceId) return;
+      handleRefresh();
+      const current = state.getWorkspaceById(resolvedWorkspaceId);
+      current?.editorTabs.filter((tab) => !tab.isDirty).forEach((tab) => {
+        void state.reloadEditorTab(tab.id, resolvedWorkspaceId);
+      });
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isRemote, explorerVisible, resolvedWorkspaceId, handleRefresh]);
 
   const scheduleDirectoryRefresh = useCallback(function scheduleDirectoryRefreshImpl(directoryPath: string) {
     if (!normalizedWorkspacePath) {
@@ -408,6 +428,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
 
     const result = await window.electronAPI.fileCreate({
       workspacePath: normalizedWorkspacePath,
+      workspaceId: resolvedWorkspaceId ?? undefined,
       targetPath,
       type: c.type,
     });
@@ -422,10 +443,11 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
 
     setCreating(null);
     void loadDirectory(c.parentPath);
-  }, [creating, normalizedWorkspacePath, loadDirectory]);
+  }, [creating, normalizedWorkspacePath, resolvedWorkspaceId, loadDirectory]);
 
   const actionDeps = useMemo<ExplorerActionDeps>(() => ({
     resolvedWorkspaceId,
+    environmentId: workspace?.environmentId ?? 'local',
     normalizedWorkspacePath,
     explorerEntriesByPath,
     explorerExpandedPaths,
@@ -438,6 +460,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   }), [
     resolvedWorkspaceId,
     normalizedWorkspacePath,
+    workspace?.environmentId,
     explorerEntriesByPath,
     explorerExpandedPaths,
     setExplorerSelectedPath,

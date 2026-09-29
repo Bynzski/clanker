@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **SSH remote workspaces** — first-class environment and canonical-path identity, remote terminals, Explorer, Git, and harness discovery through system OpenSSH. Local and remote workspaces with the same path can coexist.
+- **SSH workspace directory chooser** — browse remote directories before opening a workspace, create new folders directly from the picker dialog, and use home/workspaces defaults and remote path suggestions.
+
+### Fixed
+
+- **Workspace notes and layouts** — local and SSH workspaces sharing a path now retain separate layouts, note content, and notes visibility; existing path-only local settings remain readable.
+- **Remote task shutdown** — tasks from SSH workspaces become unavailable with a clear recovery explanation instead of appearing resumable.
+
 ## [0.6.0] - 2026-09-28
 
 ### Added

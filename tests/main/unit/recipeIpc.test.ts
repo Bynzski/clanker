@@ -101,6 +101,21 @@ describe('recipeIpc', () => {
     expect(remaining.length).toBe(0);
   });
 
+  it('rejects remote recipes before attempting local path validation', async () => {
+    const getSafeWorkspacePath = vi.fn(() => { throw new Error('Not a local path'); });
+    registerRecipeIpc({
+      getStore: () => memoryStore as unknown as Store<StoreSchema>,
+      getSafeWorkspacePath,
+    });
+    const saveHandler = handlers.get(RECIPE_SAVE)!;
+    await expect(saveHandler(null, {
+      id: 'remote-recipe', name: 'Remote', workspacePath: '/home/user/project',
+      environmentId: 'dev-vps', launches: [{ id: 'command', type: 'command', command: 'npm run dev' }],
+    })).rejects.toThrow('Launch recipes are not supported for SSH workspaces in this version.');
+    expect(getSafeWorkspacePath).not.toHaveBeenCalled();
+    expect(memoryStore.get('workspaceRecipes')).toBeUndefined();
+  });
+
   it('rejects invalid recipe save payloads', async () => {
     registerRecipeIpc({
       getStore: () => memoryStore as unknown as Store<StoreSchema>,

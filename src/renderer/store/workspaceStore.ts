@@ -176,7 +176,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   addWorkspace: (workspace) => set((state) => {
     const id = workspace.id ?? createWorkspaceId();
     const defaultName = workspace.name || getWorkspaceNameFromPath(workspace.workspacePath);
-    const storedNotesVisible = readStoredNotesVisible(workspace.workspacePath);
+    const storedNotesVisible = readStoredNotesVisible(workspace.workspacePath, id, workspace.environmentId);
     const restoredNotesPane = storedNotesVisible
       ? workspace.notesPane ?? { id: generateId('notes') }
       : workspace.notesPane ?? null;
@@ -568,7 +568,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       nextLayoutRoot = removePaneFromLayout(state.layoutRoot, state.notesPane.id);
     }
 
-    writeStoredNotesVisible(state.workspacePath, nextNotesVisible, state.activeWorkspaceId);
+    writeStoredNotesVisible(
+      state.workspacePath,
+      nextNotesVisible,
+      state.activeWorkspaceId,
+      findActiveWorkspace(state.workspaces)?.environmentId,
+    );
 
     const nextState = {
       notesVisible: nextNotesVisible,
@@ -598,7 +603,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
 
     const nextLayoutRoot = removePaneFromLayout(workspace.layoutRoot, workspace.notesPane.id);
-    writeStoredNotesVisible(workspace.workspacePath, false, workspace.id);
+    writeStoredNotesVisible(workspace.workspacePath, false, workspace.id, workspace.environmentId);
     const nextState = {
       layoutRevision: state.layoutRevision + 1,
       ...patchWorkspaceById(state, workspace.id, (currentWorkspace) => ({
@@ -1423,6 +1428,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const readResult = await window.electronAPI.editorReadFile({
         workspacePath: scopedWorkspace.workspacePath,
+        workspaceId: scopedWorkspace.id,
         filePath,
       });
 
@@ -1619,6 +1625,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const result = await window.electronAPI.editorWriteFile({
         workspacePath: scopedWorkspace.workspacePath,
+        workspaceId: scopedWorkspace.id,
         filePath: tab.filePath,
         content: contentToSave,
       });
@@ -1812,6 +1819,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const result = await window.electronAPI.editorReadFile({
         workspacePath: scopedWorkspace.workspacePath,
+        workspaceId: scopedWorkspace.id,
         filePath: tab.filePath,
       });
 

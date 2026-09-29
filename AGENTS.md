@@ -18,6 +18,7 @@
 
 Clanker Grid is a desktop developer workspace combining:
 - Multi-pane terminal grid with PTY-backed shells
+- Local and SSH workspace environments with remote files, Git, terminals, and harness discovery
 - AI harness launcher (Codex, Claude, OpenCode, Pi)
 - Integrated native browser panel with element annotation
 - Built-in git tools (branch, stash, merge, commit, history)
@@ -39,7 +40,7 @@ Long-term maintainability is a core priority:
 - **Main/renderer separation** — System resources (PTY, git, browser) live in `src/main/`. UI lives in `src/renderer/`. Never import main modules from renderer.
 - **IPC bridge only** — Renderer communicates with main via preload bridge. No direct Node.js access in renderer.
 - **Extract shared logic** — When adding features, first check if shared utilities belong in a separate module under `src/renderer/lib/`.
-- **Canonical IPC path form** — All paths crossing IPC use POSIX separators. Main converts to native on entry and back to POSIX on return. Renderer assumes POSIX everywhere.
+- **Canonical IPC path form** — All paths crossing IPC use POSIX separators. Main converts local paths to native on entry and back to POSIX on return; SSH paths stay POSIX on the remote host. Renderer assumes POSIX everywhere.
 
 ## Windows Support
 
@@ -66,6 +67,9 @@ src/
 │   ├── sessionHistory.ts   # Chat history discovery and caching
 │   ├── harnessCatalog.ts   # Harness availability and model discovery
 │   ├── harnessLaunch.ts    # Harness spawn argument construction
+│   ├── workspaceRegistry.ts # Workspace ID → environment and canonical root
+│   ├── environment/       # Local and SSH environment resolution
+│   ├── remote/            # OpenSSH command executor and remote filesystem
 │   ├── ipc/                # IPC handler registrations by domain
 │   │   ├── settingsIpc.ts  # Store schema, AI commit, harness options, window
 │   │   ├── terminalIpc.ts  # PTY spawn, write, resize, kill
@@ -76,6 +80,7 @@ src/
 │   │   ├── vcsIpc.ts       # VCS provider context and PR info
 │   │   ├── aiCommitIpc.ts  # AI commit message generation
 │   │   ├── sessionIpc.ts   # Session history IPC
+│   │   ├── sshEnvironmentIpc.ts # Saved targets, remote browsing, folder creation
 │   │   └── windowIpc.ts    # Window controls (zoom, minimize, maximize)
 │   ├── annotation/         # Browser annotation feature
 │   │   ├── annotationController.ts # Annotation lifecycle
@@ -135,7 +140,15 @@ Native `WebContentsView` in main, toolbar state in renderer. Web-initiated navig
 
 ### Git Integration
 
-All operations via `src/main/gitService.ts` using `child_process.spawn` with argument arrays. Polling for status. AI commit in `aiCommit.ts`.
+All operations via `src/main/gitService.ts`, scoped to the registered workspace. Local Git uses `child_process.spawn` with argument arrays; remote Git executes through system SSH on the workspace host. Polling for status. AI commit in `aiCommit.ts` is local-only in V1.
+
+### SSH Workspaces
+
+- **Identity:** `environmentId` plus canonical workspace path. Runtime requests use `workspaceId` to resolve the authoritative environment and root through `WorkspaceRegistry`. Legacy path-only records are local.
+- **Transport:** System OpenSSH; the remote host must be Linux/POSIX with Python 3 for filesystem operations. SSH environments are saved by ID, and an in-use target cannot be edited or deleted.
+- **Pre-workspace browsing:** The application-rendered remote chooser lists directories the SSH account may access, prefers `$HOME/workspaces` when available, and can create a direct child folder. This broader browsing scope does not change root confinement after workspace registration.
+- **V1 limits:** No remote recipes, worktree creation/removal, model discovery, Agent Attention, native session recovery, AI commit generation, file watchers, or automatic port forwarding. Existing remote checkouts may be opened directly. Remote Explorer contents refresh after Clanker-managed mutations and on desktop focus while the active remote workspace's Explorer is visible; clean editor tabs reload on that focus path, while dirty tabs are not automatically overwritten. Remote task records become `unavailable` on terminal exit or app shutdown.
+- **Live testing:** Follow `docs/remote-vps-smoke-test.md`; destructive checks use a unique temporary fixture and preserve `clanker-test`.
 
 ### State Management
 
@@ -149,7 +162,7 @@ All operations via `src/main/gitService.ts` using `child_process.spawn` with arg
 
 ### Editor, Explorer, VCS Providers, Credentials
 
-- Editor: CodeMirror with syntax highlighting, watched file changes.
+- Editor: CodeMirror with syntax highlighting and local watched file changes; remote files have no watcher in V1.
 - Explorer: File tree, context menu, type icons.
 - VCS: Extend `baseProvider.ts` for new providers (GitHub, GitLab, Bitbucket).
 - Credentials: SSH keys and PATs via `credentialService.ts` and `sshKeyService.ts`.
@@ -187,7 +200,7 @@ Use `installElectronApiMock()` for renderer tests. Renderer integration tests li
 
 ## Key Constraints
 
-- **Harness wrapper** — Harnesses spawn via `~/.clanker-grid/harness-wrapper.sh` (generated by `harnessLaunch.ts`). Wrapper execs shell on exit to keep terminal usable.
+- **Harness wrapper** — Local POSIX harnesses spawn via `~/.clanker-grid/harness-wrapper.sh` (generated by `harnessLaunch.ts`). Remote harnesses use SSH and return to a remote login shell on exit. Windows local harnesses use `cmd.exe /c`.
 - **Terminal continuity** — xterm instances cached in `TerminalPane.tsx` across workspace/tab switches.
 - **Flow control disabled** — `handleFlowControl: false` on all PTY spawns to avoid startup stalls.
 - **Harness flags** — Stored in `electron-store` under `harnessDefaults[harness].flags`, applied at spawn time.

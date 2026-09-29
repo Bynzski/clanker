@@ -55,7 +55,9 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
         .mockResolvedValueOnce({ id: 'term-agent', pid: 1001, harnessId: 'codex' })
         .mockResolvedValueOnce({ id: 'term-server', pid: 1002 });
 
-      const registerOpenWorkspaceMock = vi.fn().mockResolvedValue({ success: true });
+      const registerOpenWorkspaceMock = vi.fn(async (_id: string, path: string, environmentId = 'local') => ({
+        success: true, location: { path, environmentId },
+      }));
       const browserNavigateMock = vi.fn().mockResolvedValue(true);
 
       installElectronApiMock({
@@ -131,7 +133,9 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
       installElectronApiMock({
         recipeGetAll: vi.fn().mockResolvedValue([recipeWithLayout]),
         spawnTerminal,
-        registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true }),
+        registerOpenWorkspace: vi.fn(async (_id: string, path: string, environmentId = 'local') => ({
+          success: true, location: { path, environmentId },
+        })),
         getLastWorkspace: vi.fn().mockResolvedValue('/projects/split-app'),
       });
 
@@ -175,7 +179,9 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
       installElectronApiMock({
         recipeGetAll: vi.fn().mockResolvedValue([recipe]),
         getLastWorkspace: vi.fn().mockResolvedValue('/projects/browser-app'),
-        registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true }),
+        registerOpenWorkspace: vi.fn(async (_id: string, path: string, environmentId = 'local') => ({
+          success: true, location: { path, environmentId },
+        })),
         spawnTerminal: vi.fn().mockResolvedValue({ id: 'term-browser', pid: 1001 }),
         probeRecipePreview: vi.fn().mockResolvedValue({ status: 'remote' }),
         browserNavigate,
@@ -205,7 +211,9 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
       installElectronApiMock({
         recipeGetAll: vi.fn().mockResolvedValue([recipe]),
         getLastWorkspace: vi.fn().mockResolvedValue('/projects/partial'),
-        registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true }),
+        registerOpenWorkspace: vi.fn(async (_id: string, path: string, environmentId = 'local') => ({
+          success: true, location: { path, environmentId },
+        })),
         spawnTerminal,
         waitRecipeCommand: vi.fn().mockResolvedValue({ status: 'failed', error: 'Command exited immediately with code 127' }),
       });
@@ -277,6 +285,7 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
       // Verify invokeSession is called with the native conversation session and NO prompt re-execution
       await waitFor(() => {
         expect(invokeSessionMock).toHaveBeenCalledWith(
+          'ws-active',
           expect.objectContaining({
             id: 'codex-sess-999',
             harness: 'codex',

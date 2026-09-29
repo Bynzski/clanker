@@ -89,6 +89,7 @@ interface GitRepoMenuProps {
   upstreamLabel: string | null;
   vcsContextError: string | null;
   workspacePath: string;
+  workspaceId?: string;
 }
 
 export function GitRepoMenu({
@@ -163,6 +164,7 @@ export function GitRepoMenu({
   upstreamLabel,
   vcsContextError,
   workspacePath,
+  workspaceId,
 }: GitRepoMenuProps) {
   const errors = [
     statusErrorMessage,
@@ -233,6 +235,7 @@ export function GitRepoMenu({
         contextError={vcsContextError}
         onRefreshContext={onRefreshContext}
         workspacePath={workspacePath}
+        workspaceId={workspaceId}
       />
 
       <GitStashSection
@@ -253,6 +256,7 @@ export function GitRepoMenu({
 
       <GitRemotesSection
         workspacePath={workspacePath}
+        workspaceId={workspaceId}
         remotes={remotes}
         provider={provider}
         onRemotesChanged={onRemotesChanged}

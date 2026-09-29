@@ -1,5 +1,7 @@
 import type { LayoutNode, WorkspaceTab } from '../store/workspaceTypes';
 import type { PersistedRecipeLayout } from '../../shared/types/recipes';
+import { workspaceIdentityKey } from '../../shared/workspaceIdentity';
+import { LOCAL_ENVIRONMENT_ID } from '../../shared/types/environments';
 import { pathKey } from '../../shared/pathKey';
 import { createDefaultBrowserPane, generateId } from '../store/workspaceStoreHelpers';
 
@@ -23,13 +25,21 @@ interface PersistedWorkspaceLayout {
   root: PersistedLayoutNode | null;
 }
 
-export function getWorkspaceLayoutStorageKey(workspacePath: string, isWindows?: boolean): string {
+function getLegacyWorkspaceLayoutStorageKey(workspacePath: string): string {
   let normalized = workspacePath.trim().replace(/\\/g, '/');
   while (normalized.length > 1 && normalized.endsWith('/') && !/^[A-Za-z]:\/$/.test(normalized)) {
     normalized = normalized.slice(0, -1);
   }
-  normalized = pathKey(normalized, isWindows);
-  return `${STORAGE_PREFIX}${encodeURIComponent(normalized)}`;
+  return `${STORAGE_PREFIX}${encodeURIComponent(pathKey(normalized))}`;
+}
+
+export function getWorkspaceLayoutStorageKey(
+  workspacePath: string,
+  isWindows?: boolean,
+  environmentId?: string,
+): string {
+  const identity = workspaceIdentityKey({ path: workspacePath, environmentId }, isWindows);
+  return `${STORAGE_PREFIX}${encodeURIComponent(identity)}`;
 }
 
 function createPaneKeyMap(workspace: WorkspaceTab): Map<string, string> {
@@ -227,7 +237,10 @@ export function persistWorkspaceLayout(workspace: WorkspaceTab): void {
       explorerVisible: serialized.explorerVisible,
       root: serialized.root as PersistedLayoutNode | null,
     };
-    window.localStorage.setItem(getWorkspaceLayoutStorageKey(workspace.workspacePath), JSON.stringify(payload));
+    window.localStorage.setItem(
+      getWorkspaceLayoutStorageKey(workspace.workspacePath, undefined, workspace.environmentId),
+      JSON.stringify(payload),
+    );
   } catch {
     // Layout persistence must never prevent the workspace from operating.
   }
@@ -236,17 +249,30 @@ export function persistWorkspaceLayout(workspace: WorkspaceTab): void {
 export function restoreWorkspaceLayout(workspace: WorkspaceTab): WorkspaceTab {
   if (typeof window === 'undefined' || !workspace.workspacePath) return workspace;
   try {
-    const raw = window.localStorage.getItem(getWorkspaceLayoutStorageKey(workspace.workspacePath));
+    const key = getWorkspaceLayoutStorageKey(workspace.workspacePath, undefined, workspace.environmentId);
+    const legacyKey = workspace.environmentId == null || workspace.environmentId === LOCAL_ENVIRONMENT_ID
+      ? getLegacyWorkspaceLayoutStorageKey(workspace.workspacePath)
+      : null;
+    const current = window.localStorage.getItem(key);
+    const raw = current ?? (legacyKey ? window.localStorage.getItem(legacyKey) : null);
     if (!raw) return workspace;
     const value = JSON.parse(raw) as Record<string, unknown>;
     if (value.version !== STORAGE_VERSION || value.terminalCount !== workspace.panes.length) {
       return workspace;
     }
-    return restoreWorkspaceLayoutFromPersisted(workspace, {
+    const restored = restoreWorkspaceLayoutFromPersisted(workspace, {
       root: value.root,
       terminalCount: value.terminalCount as number,
       explorerVisible: typeof value.explorerVisible === 'boolean' ? value.explorerVisible : undefined,
     });
+    if (current === null && restored !== workspace) {
+      try {
+        window.localStorage.setItem(key, raw);
+      } catch {
+        // A failed migration must not prevent restoring an existing local layout.
+      }
+    }
+    return restored;
   } catch {
     return workspace;
   }

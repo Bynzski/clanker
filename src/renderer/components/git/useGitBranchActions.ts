@@ -7,6 +7,7 @@ interface UseGitBranchActionsParams {
   onSetActiveAction: (action: string | null) => void;
   refreshAfterAction: () => Promise<void>;
   workspacePath: string;
+  workspaceId?: string;
 }
 
 export function useGitBranchActions({
@@ -15,6 +16,7 @@ export function useGitBranchActions({
   onSetActiveAction,
   refreshAfterAction,
   workspacePath,
+  workspaceId,
 }: UseGitBranchActionsParams) {
   const [branchError, setBranchError] = useState<string | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState | null>(null);
@@ -35,7 +37,8 @@ export function useGitBranchActions({
       const result = await window.electronAPI.gitCreateBranch(
         workspacePath,
         newBranchName,
-        currentBranch ?? undefined
+        currentBranch ?? undefined,
+        workspaceId
       );
 
       if (result.success) {
@@ -56,7 +59,7 @@ export function useGitBranchActions({
     setBranchError(null);
 
     try {
-      const result = await window.electronAPI.gitSwitchBranch(workspacePath, branchName);
+      const result = await window.electronAPI.gitSwitchBranch(workspacePath, branchName, workspaceId);
       if (result.success) {
         await refreshAfterAction();
       } else {
@@ -94,8 +97,8 @@ export function useGitBranchActions({
 
     try {
       const result = forceDelete
-        ? await window.electronAPI.gitForceDeleteBranch(workspacePath, branchName)
-        : await window.electronAPI.gitDeleteBranch(workspacePath, branchName);
+        ? await window.electronAPI.gitForceDeleteBranch(workspacePath, branchName, workspaceId)
+        : await window.electronAPI.gitDeleteBranch(workspacePath, branchName, workspaceId);
 
       if (result.success) {
         setDeleteDialog(null);

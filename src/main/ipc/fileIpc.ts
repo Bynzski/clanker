@@ -8,20 +8,37 @@ import { listDirectory, readFile, writeFile, createFile, createDirectory, delete
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import type { FileWatcherService } from '../fileWatcher';
 import type { ExplorerWatcherService } from '../explorerWatcher';
+import type { WorkspaceRegistry } from '../workspaceRegistry';
+import { isPathContained } from '../remote/sshEnvironment';
 
 export interface RegisterFileIpcDeps {
   getFileWatcher: () => FileWatcherService;
   /** Explorer watcher service for workspace tree auto-refresh. */
   getExplorerWatcher: () => ExplorerWatcherService;
+  getWorkspaceRegistry?: () => WorkspaceRegistry;
 }
 
 export function registerFileIpc(deps: RegisterFileIpcDeps): void {
   const fileWatcher = deps.getFileWatcher();
   const explorerWatcher = deps.getExplorerWatcher();
-  ipcMain.handle(FILE_LIST_DIRECTORY, async (_, request: FileListDirectoryRequest) => {
+  const resolveWorkspace = (workspaceId?: string, workspacePath?: string) => {
+    const reg = deps.getWorkspaceRegistry?.();
+    if (!reg) return null;
+    if (workspaceId) return reg.getWorkspace(workspaceId);
+    // Legacy local callers may omit the ID, but must never resolve to an SSH
+    // environment by path alone (the same path can exist on multiple hosts).
+    return workspacePath ? reg.getWorkspaceByLocation('local', workspacePath) : null;
+  };
+
+  ipcMain.handle(FILE_LIST_DIRECTORY, async (_, request: FileListDirectoryRequest & { workspaceId?: string }) => {
+    const ws = resolveWorkspace(request.workspaceId, request.workspacePath);
+    if (request.workspaceId && !ws) return { success: false, entries: [], errorCode: 'invalid-path', error: 'Workspace is not registered' };
+    if (ws && ws.location.environmentId !== 'local') {
+      return ws.environment.listDirectory({ ...request, workspacePath: ws.location.path });
+    }
+
     const nativeRequest: FileListDirectoryRequest = {
-      ...request,
-      workspacePath: toNativePath(request.workspacePath, process.platform),
+      workspacePath: toNativePath(ws?.location.path ?? request.workspacePath, process.platform),
       directoryPath: toNativePath(request.directoryPath, process.platform),
     };
     const result = await listDirectory(nativeRequest);
@@ -37,19 +54,31 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
     };
   });
 
-  ipcMain.handle(FILE_READ, async (_, request: FileReadRequest) => {
+  ipcMain.handle(FILE_READ, async (_, request: FileReadRequest & { workspaceId?: string }) => {
+    const ws = resolveWorkspace(request.workspaceId, request.workspacePath);
+    if (request.workspaceId && !ws) return { success: false, errorCode: 'invalid-path', error: 'Workspace is not registered' };
+    if (ws && ws.location.environmentId !== 'local') {
+      return ws.environment.readFile({ ...request, workspacePath: ws.location.path });
+    }
+
     const nativeRequest: FileReadRequest = {
       ...request,
-      workspacePath: toNativePath(request.workspacePath, process.platform),
+      workspacePath: toNativePath(ws?.location.path ?? request.workspacePath, process.platform),
       filePath: toNativePath(request.filePath, process.platform),
     };
     return readFile(nativeRequest);
   });
 
-  ipcMain.handle(FILE_WRITE, async (_, request: FileWriteRequest) => {
+  ipcMain.handle(FILE_WRITE, async (_, request: FileWriteRequest & { workspaceId?: string }) => {
+    const ws = resolveWorkspace(request.workspaceId, request.workspacePath);
+    if (request.workspaceId && !ws) return { success: false, errorCode: 'invalid-path', error: 'Workspace is not registered' };
+    if (ws && ws.location.environmentId !== 'local') {
+      return ws.environment.writeFile({ ...request, workspacePath: ws.location.path });
+    }
+
     const nativeRequest: FileWriteRequest = {
       ...request,
-      workspacePath: toNativePath(request.workspacePath, process.platform),
+      workspacePath: toNativePath(ws?.location.path ?? request.workspacePath, process.platform),
       filePath: toNativePath(request.filePath, process.platform),
     };
     const result = await writeFile(nativeRequest);
@@ -59,10 +88,18 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
     return result;
   });
 
-  ipcMain.handle(FILE_CREATE, async (_, request: FileCreateRequest) => {
+  ipcMain.handle(FILE_CREATE, async (_, request: FileCreateRequest & { workspaceId?: string }) => {
+    const ws = resolveWorkspace(request.workspaceId, request.workspacePath);
+    if (request.workspaceId && !ws) return { success: false, error: 'Workspace is not registered' };
+    if (ws && ws.location.environmentId !== 'local') {
+      const scopedRequest = { ...request, workspacePath: ws.location.path };
+      return request.type === 'directory'
+        ? ws.environment.createDirectory(scopedRequest)
+        : ws.environment.createFile(scopedRequest);
+    }
     const nativeRequest: FileCreateRequest = {
       ...request,
-      workspacePath: toNativePath(request.workspacePath, process.platform),
+      workspacePath: toNativePath(ws?.location.path ?? request.workspacePath, process.platform),
       targetPath: toNativePath(request.targetPath, process.platform),
     };
     if (nativeRequest.type === 'directory') {
@@ -71,13 +108,18 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
     return createFile(nativeRequest);
   });
 
-  ipcMain.handle(FILE_DELETE, async (_, request: FileDeleteRequest) => {
+  ipcMain.handle(FILE_DELETE, async (_, request: FileDeleteRequest & { workspaceId?: string }) => {
+    const ws = resolveWorkspace(request.workspaceId, request.workspacePath);
+    if (request.workspaceId && !ws) return { success: false, error: 'Workspace is not registered' };
+    if (ws && ws.location.environmentId !== 'local') {
+      return ws.environment.deleteEntry({ ...request, workspacePath: ws.location.path });
+    }
+
     const nativeRequest: FileDeleteRequest = {
       ...request,
-      workspacePath: toNativePath(request.workspacePath, process.platform),
+      workspacePath: toNativePath(ws?.location.path ?? request.workspacePath, process.platform),
       targetPath: toNativePath(request.targetPath, process.platform),
     };
-
     const rewatch = fileWatcher.releaseHandle(nativeRequest.targetPath);
     const result = await deleteEntry(nativeRequest);
     if (!result.success) {
@@ -86,14 +128,19 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
     return result;
   });
 
-  ipcMain.handle(FILE_RENAME, async (_, request: FileRenameRequest) => {
+  ipcMain.handle(FILE_RENAME, async (_, request: FileRenameRequest & { workspaceId?: string }) => {
+    const ws = resolveWorkspace(request.workspaceId, request.workspacePath);
+    if (request.workspaceId && !ws) return { success: false, error: 'Workspace is not registered' };
+    if (ws && ws.location.environmentId !== 'local') {
+      return ws.environment.renameEntry({ ...request, workspacePath: ws.location.path });
+    }
+
     const nativeRequest: FileRenameRequest = {
       ...request,
-      workspacePath: toNativePath(request.workspacePath, process.platform),
+      workspacePath: toNativePath(ws?.location.path ?? request.workspacePath, process.platform),
       oldPath: toNativePath(request.oldPath, process.platform),
       newPath: toNativePath(request.newPath, process.platform),
     };
-
     const rewatch = fileWatcher.releaseHandle(nativeRequest.oldPath);
     const result = await renameEntry(nativeRequest);
     if (!result.success) {
@@ -102,23 +149,33 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
     return result;
   });
 
-  ipcMain.handle(REVEAL_IN_FILE_MANAGER, async (_, filePath: string) => {
-    if (!filePath || !filePath.trim()) {
+  ipcMain.handle(REVEAL_IN_FILE_MANAGER, async (_, filePath: string, workspaceId?: string) => {
+    if (!filePath || !filePath.trim()) return false;
+    const reg = deps.getWorkspaceRegistry?.();
+    if (workspaceId && reg) {
+      const workspace = reg.getWorkspace(workspaceId);
+      if (!workspace || workspace.location.environmentId !== 'local') return false;
+    } else if (reg?.getAllWorkspaces().some(
+      (w) => w.location.environmentId !== 'local' && isPathContained(w.location.path, filePath)
+    )) {
       return false;
     }
-
     shell.showItemInFolder(path.resolve(toNativePath(filePath, process.platform)));
     return true;
   });
 
-  ipcMain.handle(FILE_WATCH, async (_, request: FileWatchRequest) => {
+  ipcMain.handle(FILE_WATCH, async (_, request: FileWatchRequest & { workspaceId?: string }) => {
     if (!request?.workspacePath || !request.filePath) {
       return false;
     }
 
+    const ws = resolveWorkspace(request.workspaceId, request.workspacePath);
+    if (request.workspaceId && !ws) return false;
+    if (ws && ws.location.environmentId !== 'local') return false;
+
     const nativeRequest: FileWatchRequest = {
       ...request,
-      workspacePath: toNativePath(request.workspacePath, process.platform),
+      workspacePath: toNativePath(ws?.location.path ?? request.workspacePath, process.platform),
       filePath: toNativePath(request.filePath, process.platform),
     };
 
@@ -145,8 +202,16 @@ export function registerFileIpc(deps: RegisterFileIpcDeps): void {
   // This is one-way: main sends events to renderer (no handler needed).
   ipcMain.on(FILE_CHANGED, () => { });
 
-  ipcMain.handle(EXPLORER_START_WATCHING, (_, workspacePath: string) => {
-    explorerWatcher.watchWorkspace(toNativePath(workspacePath, process.platform));
+  ipcMain.handle(EXPLORER_START_WATCHING, (_, workspaceId: string) => {
+    const workspace = typeof workspaceId === 'string'
+      ? deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId)
+      : null;
+    if (!workspace) throw new Error('Workspace is not registered');
+    if (workspace.location.environmentId !== 'local') {
+      explorerWatcher.close();
+      return;
+    }
+    explorerWatcher.watchWorkspace(toNativePath(workspace.location.path, process.platform));
   });
 
   ipcMain.handle(EXPLORER_STOP_WATCHING, () => {

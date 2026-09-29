@@ -78,6 +78,8 @@ $env:CLANKER_GRID_WATCHER_POLLING = "1"
 
 ## SSH home / `.ssh` lookup
 
+The Windows desktop app can use system OpenSSH to connect to supported Linux/POSIX SSH workspaces. The remote host itself must not be Windows in V1. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh).
+
 Credential code resolves the SSH parent directory in this order on Windows:
 
 1. `%USERPROFILE%\.ssh` (preferred — matches the OpenSSH default)

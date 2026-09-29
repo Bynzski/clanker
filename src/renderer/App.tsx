@@ -11,6 +11,7 @@ import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import { persistWorkspaceLayout } from './lib/workspaceLayoutStorage';
 import { sameWorkspacePath } from './lib/pathUtils';
+import { isSameWorkspaceIdentity } from '../shared/workspaceIdentity';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../shared/types/recipes';
 import { executeWorkspaceRecipe } from './lib/recipeExecution';
 import { getWorkspaceNameFromPath } from './lib/workspaceLabels';
@@ -113,28 +114,52 @@ function App() {
     }
   }), []);
 
-  const handleWorkspaceSelect = async (path: string, terminalCount: number, harness: string, model?: string, closeGate = true) => {
+  const handleWorkspaceSelect = async (
+    path: string,
+    terminalCount: number,
+    harness: string,
+    model?: string,
+    closeGate = true,
+    environmentId?: string,
+    environmentLabel?: string
+  ) => {
+    const effectiveEnvironmentId = environmentId || 'local';
+    const effectiveEnvironmentLabel = environmentLabel || (effectiveEnvironmentId !== 'local' ? effectiveEnvironmentId : 'Local');
+    const isRemote = effectiveEnvironmentId !== 'local';
     const workspaceId = crypto.randomUUID();
-    const registration = await window.electronAPI.registerOpenWorkspace(workspaceId, path)
-      .catch((error: unknown) => ({ success: false, error: String(error) }));
+    const registration = isRemote
+      ? await window.electronAPI.registerOpenWorkspace(workspaceId, path, effectiveEnvironmentId).catch((error: unknown) => ({ success: false, error: String(error), location: undefined }))
+      : await window.electronAPI.registerOpenWorkspace(workspaceId, path).catch((error: unknown) => ({ success: false, error: String(error), location: undefined }));
     if (!registration.success) {
       console.error('Could not open workspace:', registration.error);
+      return false;
+    }
+    const canonicalPath = registration.location?.environmentId === effectiveEnvironmentId
+      ? registration.location.path
+      : undefined;
+    if (!canonicalPath) {
+      await window.electronAPI.unregisterOpenWorkspace(workspaceId);
+      console.error('Could not open workspace: registration did not return a canonical path');
       return false;
     }
     const terminals: Terminal[] = [];
     const panes: Pane[] = [];
     try {
-      const worktreeLookup = typeof window.electronAPI.gitListWorktrees === 'function'
-        ? window.electronAPI.gitListWorktrees(path).catch(() => null)
+      const worktreeLookup = (!isRemote && typeof window.electronAPI.gitListWorktrees === 'function')
+        ? window.electronAPI.gitListWorktrees(canonicalPath).catch(() => null)
         : Promise.resolve(null);
 
       for (let i = 0; i < terminalCount; i++) {
         try {
-          const info = await window.electronAPI.spawnTerminal(path, harness, model);
+          const info = isRemote
+            ? await window.electronAPI.spawnTerminal(canonicalPath, harness, model, undefined, undefined, workspaceId, effectiveEnvironmentId)
+            : await window.electronAPI.spawnTerminal(canonicalPath, harness, model);
           terminals.push({
             id: info.id,
             pid: info.pid,
-            workingDir: path,
+            workingDir: canonicalPath,
+            workspaceId,
+            environmentId: effectiveEnvironmentId,
             harnessId: info.harnessId ?? harness ?? null,
             attentionEnabled: info.attentionEnabled === true,
           });
@@ -146,16 +171,17 @@ function App() {
 
       const worktreeList = await worktreeLookup;
       const linkedWorktree = worktreeList?.success
-        ? worktreeList.worktrees.find((entry: GitWorktree) => !entry.isMain && sameWorkspacePath(entry.path, path))
+        ? worktreeList.worktrees.find((entry: GitWorktree) => !entry.isMain && sameWorkspacePath(entry.path, canonicalPath))
         : null;
       const projectName = linkedWorktree
-        ? getWorkspaceNameFromPath(worktreeList?.worktrees.find((entry: GitWorktree) => entry.isMain)?.path ?? path)
-        : getWorkspaceNameFromPath(path);
-
+        ? getWorkspaceNameFromPath(worktreeList?.worktrees.find((entry: GitWorktree) => entry.isMain)?.path ?? canonicalPath)
+        : getWorkspaceNameFromPath(canonicalPath);
       addWorkspace({
         id: workspaceId,
+        environmentId: effectiveEnvironmentId,
+        environmentLabel: effectiveEnvironmentLabel,
         name: projectName,
-        workspacePath: path,
+        workspacePath: canonicalPath,
         isLinkedWorktree: !!linkedWorktree,
         projectName,
         harness,
@@ -195,19 +221,38 @@ function App() {
       return false;
     }
   };
+  const unsupportedRemoteRecipe = (recipe: WorkspaceRecipe): RecipeLaunchResult => ({
+    recipeId: recipe.id,
+    success: false,
+    steps: [{ id: 'remote-recipe', type: 'command', status: 'failed',
+      error: 'Launch recipes are not supported for SSH workspaces in this version.' }],
+  });
+
   const handleLaunchRecipe = async (recipe: WorkspaceRecipe): Promise<RecipeLaunchResult> => {
+    if (recipe.environmentId && recipe.environmentId !== 'local') {
+      const result = unsupportedRemoteRecipe(recipe);
+      setRecipeFailure(result);
+      return result;
+    }
+
     let targetWorkspaceId: string | null = null;
     const currentWorkspaces = useWorkspaceStore.getState().workspaces;
     if (currentWorkspaces.length === 0) {
       setShowWorkspaceGate(true);
     }
 
-    const existing = currentWorkspaces.find((w) => sameWorkspacePath(w.workspacePath, recipe.workspacePath));
+    const recipeEnvId = recipe.environmentId || 'local';
+    const existing = currentWorkspaces.find((w) =>
+      isSameWorkspaceIdentity(
+        { environmentId: w.environmentId || 'local', path: w.workspacePath },
+        { environmentId: recipeEnvId, path: recipe.workspacePath }
+      )
+    );
     if (existing) {
       targetWorkspaceId = existing.id;
       useWorkspaceStore.getState().selectWorkspace(existing.id);
     } else {
-      const opened = await handleWorkspaceSelect(recipe.workspacePath, 0, '', undefined, false);
+      const opened = await handleWorkspaceSelect(recipe.workspacePath, 0, '', undefined, false, recipeEnvId);
       if (!opened) {
         return {
           recipeId: recipe.id,
@@ -215,7 +260,12 @@ function App() {
           steps: [{ id: 'open-workspace', type: 'command', status: 'failed', error: 'Failed to open workspace directory' }],
         };
       }
-      const newlyOpened = useWorkspaceStore.getState().workspaces.find((w) => sameWorkspacePath(w.workspacePath, recipe.workspacePath));
+      const newlyOpened = useWorkspaceStore.getState().workspaces.find((w) =>
+        isSameWorkspaceIdentity(
+          { environmentId: w.environmentId || 'local', path: w.workspacePath },
+          { environmentId: recipeEnvId, path: recipe.workspacePath }
+        )
+      );
       targetWorkspaceId = newlyOpened ? newlyOpened.id : null;
     }
 

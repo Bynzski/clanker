@@ -8,7 +8,7 @@ Workspaces provide isolated development environments within a single window.
 2. Enter or browse to a local directory
 3. The workspace opens in a new tab
 
-On platforms whose native directory picker supports it, the folder picker can create a new directory before opening the workspace.
+For local workspaces, the native directory picker can create a new directory before opening the workspace on platforms that support it. SSH workspaces use Clanker's own remote chooser and **New Folder** action.
 
 ### Task worktrees
 
@@ -25,6 +25,66 @@ The launcher also lists existing linked worktrees. Click **Open** to use one wit
 Closing a workspace tab stops its live terminals and closes its UI; it leaves the checkout and branch on disk. To remove a checkout, return to **Task worktree**, load the repository, and choose **Remove…** on a closed worktree. Clanker checks for uncommitted, untracked, and ignored files, then asks you to confirm the exact path and branch. Removal moves the checkout to the system Trash and unregisters it from Git, preserving files written during removal. The branch remains.
 
 New worktrees contain Git tracked files from the base commit. Local ignored files such as `.env` and installed dependencies are not copied automatically; set up those files in the new checkout as needed.
+
+## Remote Workspaces (SSH)
+
+Clanker supports opening workspaces on remote Linux/POSIX development machines reachable via SSH. The local Clanker desktop app provides the editor, terminal grid, and Git interface, while the remote development machine owns the filesystem, Git checkout, shell processes, and coding agents.
+
+### Local vs. SSH Environments
+
+- **Local environment (`local`)**: The default built-in environment. Files, terminals, worktrees, and processes run directly on the machine running Clanker.
+- **SSH Remote environments**: Configured targets pointing to remote Linux/POSIX servers (such as a public VPS, cloud instance, homelab machine, or Tailscale node).
+
+### Selecting a Remote Directory
+
+Choose a saved SSH environment in the launcher. Clanker asks that account for its canonical home directory and starts at `$HOME/workspaces` when that directory exists, or `$HOME` otherwise. **Browse remote directories** opens an application-rendered chooser, not an operating-system folder dialog. It lists remote directories over SSH, lets you navigate to parent folders, create a remote folder with **New Folder**, and select a target folder. The path field also offers debounced remote directory suggestions; an absolute path can still be entered manually.
+
+Pre-workspace browsing and folder creation are resolved from the saved SSH environment ID and can reach directories the SSH account is allowed to access. Browsing returns directory names and canonical paths only; it cannot read file contents. Folder creation validates name safety and creates only a direct child of the selected canonical parent when that directory is writable. After selection, workspace registration validates and canonicalizes the root. All subsequent filesystem requests remain confined to that registered root.
+
+### Workspace Identity
+
+Workspace identity is composite:
+
+```text
+environmentId + canonical workspace path
+```
+
+This ensures that a workspace on `dev-vps:/home/jay/Projects/clanker` is a distinct identity from `local:/home/jay/Projects/clanker`. Both can be open simultaneously in the same window without layout or notes state collision. SSH paths are canonicalized on the remote host before registration, and subsequent file, Git, and terminal requests use that registered location.
+
+Tab labels clearly display the environment prefix (e.g., `Local · clanker` vs. `dev-vps · clanker`).
+
+### OpenSSH Transport & Credentials
+
+Clanker uses the system OpenSSH client (`ssh`). It respects:
+- `~/.ssh/config` (Host aliases, Port, User, ProxyJump, IdentityFile)
+- Active `ssh-agent` keys
+- Known hosts verification
+- Tailscale SSH and MagicDNS hostnames
+
+Clanker **never** stores SSH passwords or private keys in application state, nor does it disable host-key verification. Saved SSH targets only store non-secret metadata (a label and the connection target string).
+
+Saved SSH targets cannot be edited or deleted while an open workspace uses them. Close the workspace first, then update or remove the target.
+
+
+### Remote Prerequisites & Platform Support
+
+- **Supported Remote Platforms**: Linux and POSIX-compatible operating systems (x86_64, ARM64). Remote Windows hosts are not supported in V1.
+- **Prerequisites**: OpenSSH server running on the remote host, with key-based authentication or ssh-agent configured for noninteractive background operations. Python 3 is required on the remote host for root-confined filesystem operations and atomic writes.
+
+Remote harness commands are discovered and executed on the remote host using its shell environment. Configured harness flags and applicable harness environment settings are applied to new remote terminals; local CLI installations and local Agent Attention adapters are not forwarded. Remote model discovery and selection are deferred in V1, so Clanker does not pass a locally selected default model to a remote harness.
+
+### Features Intentionally Deferred / Unavailable Remotely in V1
+
+To maintain reliability and safety, the following capabilities are local-only in V1:
+
+1. **Task Worktrees**: Creating or removing Git worktrees is disabled for remote workspaces. Opening existing remote checkouts directly as workspaces is fully supported.
+2. **Launch Recipes**: Creating, editing, or launching recipes for SSH workspaces is unavailable in V1. Legacy recipes without an environment ID remain local recipes.
+3. **Reveal in File Manager**: Disabled for remote paths, preventing passing remote paths to desktop OS file managers.
+4. **File Refresh**: SSH workspaces do not use a remote file watcher in V1. Explorer contents refresh after Clanker-managed mutations and when the desktop app regains focus while the active remote workspace's Explorer is visible. Clean remote editor tabs are reloaded during that focus refresh; dirty tabs are not automatically overwritten. The Explorer's Refresh button also requests current directory contents.
+5. **Agent Attention & Remote Native Session Discovery**: Remote terminals run without local attention hooks. On remote terminal exit or app shutdown, local session history scanning is bypassed, and tasks are marked unavailable with a clear diagnostic explanation.
+6. **Automatic Port Forwarding**: VPS development servers listening on `localhost:3000` are remote to that machine. Automatic port forwarding is deferred to a future release.
+7. **Remote Process Persistence**: Remote PTY processes terminate on workspace closure or app exit; PTY daemons are not installed on the remote machine.
+8. **AI Commit Generation**: Disabled for SSH workspaces; manual Git commits work remotely. Local model/CLI discovery is never used to represent a remote host.
 
 ## Managing Tabs
 
@@ -54,7 +114,7 @@ Workspaces store their own harness and model selection independently:
 - **No harness set** — spawns a plain shell; global harness defaults are not inferred
 - **Flags** — read from global store defaults (not per-workspace)
 
-Global harness defaults (model, favorites, flags, visibility, agent attention) are configured in the header settings dropdown. The model is preselected in the launcher when a harness is chosen; flags and attention settings apply to new harness terminals. See [Configuration](configuration.md#harness-defaults).
+Global harness defaults (model, favorites, flags, visibility, agent attention) are configured in the header settings dropdown. For local workspaces, the model is preselected in the launcher when a harness is chosen, and flags and attention settings apply to new harness terminals. For SSH workspaces, configured flags apply, while model selection and Agent Attention are unavailable in V1. See [Configuration](configuration.md#harness-defaults).
 
 ## Layout Controls
 
@@ -87,11 +147,13 @@ The Explorer is a separate, resizable left sidebar and does not join the pane la
 
 ## Persistence
 
-The app remembers the last workspace path. Layout topology and split sizes are stored separately for each workspace path and restored when the current pane set is compatible. Pane IDs are regenerated safely and are not persisted directly.
+The app remembers the last workspace path. Layout topology, split sizes, note content, and notes visibility are stored separately by environment and canonical workspace path; old path-only local data is restored for local workspaces and migrated on the next write. Pane IDs are regenerated safely and are not persisted directly.
 
 Terminal processes and their runtime state are not reconstructed from layout persistence.
 
 ## Workspace Launch Recipes
+
+Launch recipes are available for local workspaces only in V1. SSH workspace recipes are rejected rather than executed locally.
 
 Workspace launch recipes allow saving repeatable development workspace configurations. A recipe captures:
 
@@ -134,11 +196,13 @@ When a workspace is restored or the task list is opened, previous tasks are clas
 | **Running** | The PTY is currently active in this running Clanker process. | Jump to terminal |
 | **Resumable** | The previous PTY has exited or the app restarted, but a native conversation session was recorded on disk. | **Resume** |
 | **Needs Session** | Task metadata exists, but Clanker cannot safely correlate a unique native conversation ID. | Select from discovered sessions |
-| **Unavailable** | The task cannot be resumed (e.g. workspace directory was deleted, harness is uninstalled, session was deleted from disk, or resume invocation failed). | Inspect reason / Retry / Delete |
+| **Unavailable** | The task cannot be resumed (e.g. workspace directory was deleted, harness is uninstalled, session was deleted from disk, resume invocation failed, or remote native recovery is unsupported). | Inspect reason / Retry / Delete where supported |
 
 ### Native Conversation Resume
 
 Clicking **Resume** attaches a new PTY process directly to the AI harness's existing native conversation (e.g., `codex resume <id>`, `claude --resume <id>`, `opencode --session <id>`, `pi --session <path>`, `omp --resume <path>`, `agy --conversation <id>`).
+
+Native conversation resume is local-only in V1. A remote task is marked `unavailable` after its terminal exits or the app shuts down, even if a native session ID was recorded.
 
 - **No Prompt Replay**: The user's original prompt is never replayed or re-executed upon restart.
 - **Graceful Failure**: If a session was deleted from disk, a harness is removed, or resume invocation fails, Clanker marks the task `unavailable` with an explanatory reason without affecting the workspace or losing metadata. The UI provides a **Retry** option to retry failed resume attempts or attach an alternative session.

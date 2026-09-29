@@ -2,6 +2,7 @@ export type FileReadErrorCode = 'file-too-large' | 'binary-file' | 'invalid-path
 
 export interface FileReadRequest {
   workspacePath: string;
+  workspaceId?: string;
   filePath: string;
 }
 
@@ -15,6 +16,7 @@ export interface FileReadResult {
 export interface FileWriteRequest {
   workspacePath: string;
   filePath: string;
+  workspaceId?: string;
   content: string;
 }
 
@@ -32,4 +34,5 @@ export interface FileChangedEvent {
 export interface FileWatchRequest {
   workspacePath: string;
   filePath: string;
+  workspaceId?: string;
 }

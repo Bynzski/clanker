@@ -12,7 +12,10 @@ import type {
 import {
   normalizeWorkspacePath,
   isSameWorkspaceIdentity,
+  parseWorkspaceIdentity,
 } from '../shared/workspaceIdentity';
+import { LOCAL_ENVIRONMENT_ID, type SshEnvironmentConfig } from '../shared/types/environments';
+import { isValidWorkspaceEnvironmentId, validateSshEnvironmentConfig } from '../shared/sshValidation';
 import { normalizeTrustedAppBrowserUrl } from './security';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -67,6 +70,8 @@ export function sanitizeWorkspaceRecipe(input: unknown): WorkspaceRecipe | null 
   if (!isNonEmptyString(input.id) || !isNonEmptyString(input.name) || !isNonEmptyString(input.workspacePath)) {
     return null;
   }
+  if (input.environmentId != null && input.environmentId !== ''
+    && !isValidWorkspaceEnvironmentId(input.environmentId)) return null;
 
   const normalizedPath = normalizeWorkspacePath(input.workspacePath);
   if (!normalizedPath) return null;
@@ -101,10 +106,15 @@ export function sanitizeWorkspaceRecipe(input: unknown): WorkspaceRecipe | null 
   const createdAt = isFiniteNumber(input.createdAt) ? input.createdAt : now;
   const updatedAt = isFiniteNumber(input.updatedAt) ? input.updatedAt : now;
 
+  const environmentId = isNonEmptyString(input.environmentId)
+    ? input.environmentId.trim()
+    : LOCAL_ENVIRONMENT_ID;
+
   return {
     id: input.id.trim(),
     name: input.name.trim(),
     workspacePath: normalizedPath,
+    environmentId,
     ...(isNonEmptyString(input.description) ? { description: input.description.trim() } : {}),
     ...(isFiniteNumber(input.terminalCount) ? { terminalCount: Math.max(1, Math.floor(input.terminalCount)) } : {}),
     launches,
@@ -128,6 +138,8 @@ export function sanitizeTaskSessionRecord(input: unknown): TaskSessionRecord | n
   if (!isNonEmptyString(input.id) || !isNonEmptyString(input.workspacePath) || !isNonEmptyString(input.harnessId)) {
     return null;
   }
+  if (input.environmentId != null && input.environmentId !== ''
+    && !isValidWorkspaceEnvironmentId(input.environmentId)) return null;
 
   const normalizedPath = normalizeWorkspacePath(input.workspacePath);
   if (!normalizedPath) return null;
@@ -141,9 +153,14 @@ export function sanitizeTaskSessionRecord(input: unknown): TaskSessionRecord | n
   const createdAt = isFiniteNumber(input.createdAt) ? input.createdAt : now;
   const updatedAt = isFiniteNumber(input.updatedAt) ? input.updatedAt : now;
 
+  const environmentId = isNonEmptyString(input.environmentId)
+    ? input.environmentId.trim()
+    : LOCAL_ENVIRONMENT_ID;
+
   return {
     id: input.id.trim(),
     workspacePath: normalizedPath,
+    environmentId,
     harnessId: input.harnessId.trim(),
     title: isNonEmptyString(input.title) ? input.title.trim() : `${input.harnessId.trim()} Task`,
     ...(isNonEmptyString(input.modelId) ? { modelId: input.modelId.trim() } : {}),
@@ -177,9 +194,17 @@ export class WorkspacePersistenceService {
     }
   }
 
-  public getRecipesForWorkspace(workspacePath: string): WorkspaceRecipe[] {
+  public getRecipesForWorkspace(workspacePath: string, environmentId?: string): WorkspaceRecipe[] {
     const all = this.getAllRecipes();
-    return all.filter((recipe) => isSameWorkspaceIdentity(recipe.workspacePath, workspacePath));
+    const parsed = parseWorkspaceIdentity(workspacePath);
+    const target = {
+      environmentId: environmentId || parsed.environmentId,
+      path: parsed.path,
+    };
+    return all.filter((recipe) => isSameWorkspaceIdentity(
+      { environmentId: recipe.environmentId || LOCAL_ENVIRONMENT_ID, path: recipe.workspacePath },
+      target
+    ));
   }
 
   public getRecipeById(recipeId: string): WorkspaceRecipe | null {
@@ -192,6 +217,9 @@ export class WorkspacePersistenceService {
     const sanitized = sanitizeWorkspaceRecipe(recipeInput);
     if (!sanitized) {
       throw new Error('Invalid workspace recipe payload');
+    }
+    if (sanitized.environmentId !== LOCAL_ENVIRONMENT_ID) {
+      throw new Error('Launch recipes are not supported for SSH workspaces in this version.');
     }
 
     const all = this.getAllRecipes();
@@ -238,9 +266,17 @@ export class WorkspacePersistenceService {
     }
   }
 
-  public getTaskSessionsForWorkspace(workspacePath: string): TaskSessionRecord[] {
+  public getTaskSessionsForWorkspace(workspacePath: string, environmentId?: string): TaskSessionRecord[] {
     const all = this.getAllTaskSessions();
-    return all.filter((session) => isSameWorkspaceIdentity(session.workspacePath, workspacePath));
+    const parsed = parseWorkspaceIdentity(workspacePath);
+    const target = {
+      environmentId: environmentId || parsed.environmentId,
+      path: parsed.path,
+    };
+    return all.filter((session) => isSameWorkspaceIdentity(
+      { environmentId: session.environmentId || LOCAL_ENVIRONMENT_ID, path: session.workspacePath },
+      target
+    ));
   }
 
   public getTaskSessionById(taskId: string): TaskSessionRecord | null {
@@ -281,6 +317,58 @@ export class WorkspacePersistenceService {
     if (filtered.length === all.length) return false;
 
     this.getStore().set('taskSessions', filtered);
+    return true;
+  }
+
+  public getAllSshEnvironments(): SshEnvironmentConfig[] {
+    try {
+      const raw = this.getStore().get('sshEnvironments');
+      if (!Array.isArray(raw)) return [];
+      const valid: SshEnvironmentConfig[] = [];
+      for (const item of raw) {
+        const res = validateSshEnvironmentConfig(item);
+        if (res.valid) {
+          valid.push(res.config);
+        }
+      }
+      return valid;
+    } catch {
+      return [];
+    }
+  }
+
+  public getSshEnvironmentById(id: string): SshEnvironmentConfig | null {
+    if (!id) return null;
+    return this.getAllSshEnvironments().find((env) => env.id === id) ?? null;
+  }
+
+  public saveSshEnvironment(input: unknown): SshEnvironmentConfig {
+    const validation = validateSshEnvironmentConfig(input);
+    if (!validation.valid) {
+      throw new Error(validation.error);
+    }
+
+    const all = this.getAllSshEnvironments();
+    const existingIndex = all.findIndex((e) => e.id === validation.config.id);
+    let nextList: SshEnvironmentConfig[];
+    if (existingIndex >= 0) {
+      nextList = [...all];
+      nextList[existingIndex] = validation.config;
+    } else {
+      nextList = [...all, validation.config];
+    }
+
+    this.getStore().set('sshEnvironments', nextList);
+    return validation.config;
+  }
+
+  public deleteSshEnvironment(id: string): boolean {
+    if (!id) return false;
+    const all = this.getAllSshEnvironments();
+    const filtered = all.filter((e) => e.id !== id);
+    if (filtered.length === all.length) return false;
+
+    this.getStore().set('sshEnvironments', filtered);
     return true;
   }
 }

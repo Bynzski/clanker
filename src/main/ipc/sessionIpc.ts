@@ -15,9 +15,10 @@ import { spawnPtyProcess } from './ptySpawn';
 import type { Terminal } from './terminalIpc';
 import type { HarnessSession } from '../../shared/types/session';
 import { defaultShell } from '../platformShell';
-import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
+import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { toNativePath } from '../../shared/pathNormalize';
 import { resolveExistingFileWithinDirectory } from '../security';
+import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import {
   acquireAgyAttentionPlugin,
@@ -39,21 +40,43 @@ interface RegisterSessionIpcDeps {
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
   agentAttentionBroker?: AgentAttentionBroker;
   taskSessionCoordinator?: TaskSessionCoordinator;
+  getWorkspaceRegistry?: () => WorkspaceRegistry;
 }
 
 export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
   const { getTerminals, getMainWindow, getSafeWorkspacePath, getIsShuttingDown, getStore, getHarnessOptions, agentAttentionBroker, taskSessionCoordinator } = deps;
 
-  ipcMain.handle(SESSION_DISCOVER, async (_, workspacePath?: string) => {
-    const nativeWorkspacePath = workspacePath
-      ? toNativePath(workspacePath, process.platform)
-      : undefined;
+  ipcMain.handle(SESSION_DISCOVER, async (_, workspaceId: string) => {
+    const workspace = typeof workspaceId === 'string'
+      ? deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId)
+      : null;
+    if (!workspace) throw new Error('Workspace is not registered');
+    if (workspace.location.environmentId !== 'local') return [];
+
+    const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
     const availableHarnessIds = new Set(Object.keys(getHarnessOptions()));
     const sessions = await discoverSessions(nativeWorkspacePath);
     return sessions.filter((session) => availableHarnessIds.has(session.harness));
   });
 
-  ipcMain.handle(SESSION_INVOKE, async (_, session: HarnessSession, fork?: boolean) => {
+  ipcMain.handle(SESSION_INVOKE, async (_, workspaceId: string, session: HarnessSession, fork?: boolean) => {
+    const workspace = typeof workspaceId === 'string'
+      ? deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId)
+      : null;
+    if (!workspace) throw new Error('Workspace is not registered');
+    if (workspace.location.environmentId !== 'local') {
+      throw new Error('Remote session invocation is not supported in this version');
+    }
+    const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
+    const nativeSessionCwd = typeof session?.cwd === 'string'
+      ? toNativePath(session.cwd, process.platform)
+      : '';
+    const relativeCwd = path.relative(nativeWorkspacePath, nativeSessionCwd);
+    if (!path.isAbsolute(nativeSessionCwd) || relativeCwd === '..'
+      || relativeCwd.startsWith(`..${path.sep}`) || path.isAbsolute(relativeCwd)) {
+      throw new Error('Session working directory is outside the workspace');
+    }
+
     // The installed CLI is not enough to imply that its session format or
     // resume command is integrated. Do not route Hermes through Claude's
     // fallback invocation for renderer-supplied session payloads.
@@ -106,7 +129,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       ...session,
       id: agySessionId,
       modelId: agyModelId,
-      cwd: toNativePath(session.cwd, process.platform),
+      cwd: nativeSessionCwd,
       ...(session.filePath ? { filePath: ompSessionPath ?? toNativePath(session.filePath, process.platform) } : {}),
     };
 

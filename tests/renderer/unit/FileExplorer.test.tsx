@@ -101,17 +101,17 @@ describe('FileExplorer', () => {
     render(<FileExplorer />);
 
     await waitFor(() => {
-      expect(electronApi.fileListDirectory).toHaveBeenCalledWith({
+      expect(electronApi.fileListDirectory).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace',
         directoryPath: '/workspace',
-      });
+      }));
     });
 
     // Ensure we don't accidentally call with the trailing slash variant.
-    expect(electronApi.fileListDirectory).not.toHaveBeenCalledWith({
+    expect(electronApi.fileListDirectory).not.toHaveBeenCalledWith(expect.objectContaining({
       workspacePath: workspace.workspacePath,
       directoryPath: workspace.workspacePath,
-    });
+    }));
   });
 
   it('loads the workspace root when visible', async () => {
@@ -123,10 +123,10 @@ describe('FileExplorer', () => {
     render(<FileExplorer />);
 
     await waitFor(() => {
-      expect(electronApi.fileListDirectory).toHaveBeenCalledWith({
+      expect(electronApi.fileListDirectory).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: workspace.workspacePath,
         directoryPath: workspace.workspacePath,
-      });
+      }));
     });
   });
 
@@ -208,10 +208,10 @@ describe('FileExplorer', () => {
     });
 
     expect(fileListDirectory).toHaveBeenCalledTimes(1);
-    expect(fileListDirectory).toHaveBeenCalledWith({
+    expect(fileListDirectory).toHaveBeenCalledWith(expect.objectContaining({
       workspacePath: '/workspace',
       directoryPath: '/workspace/src',
-    });
+    }));
   });
 
   it('shows hidden files and does not preload child directories on mount', async () => {
@@ -229,10 +229,10 @@ describe('FileExplorer', () => {
     expect(await screen.findByText('.env')).toBeInTheDocument();
     expect(screen.getByText('src')).toBeInTheDocument();
     expect(electronApi.fileListDirectory).toHaveBeenCalledTimes(1);
-    expect(electronApi.fileListDirectory).toHaveBeenCalledWith({
+    expect(electronApi.fileListDirectory).toHaveBeenCalledWith(expect.objectContaining({
       workspacePath: workspace.workspacePath,
       directoryPath: workspace.workspacePath,
-    });
+    }));
   });
 
   it('lazy loads children when a folder is expanded', async () => {
@@ -257,14 +257,14 @@ describe('FileExplorer', () => {
     fireEvent.click(await screen.findByText('src'));
 
     expect(await screen.findByText('index.ts')).toBeInTheDocument();
-    expect(fileListDirectory).toHaveBeenNthCalledWith(1, {
+    expect(fileListDirectory).toHaveBeenNthCalledWith(1, expect.objectContaining({
       workspacePath: '/workspace',
       directoryPath: '/workspace',
-    });
-    expect(fileListDirectory).toHaveBeenNthCalledWith(2, {
+    }));
+    expect(fileListDirectory).toHaveBeenNthCalledWith(2, expect.objectContaining({
       workspacePath: '/workspace',
       directoryPath: '/workspace/src',
-    });
+    }));
   });
 
   it('selects a file on click', async () => {
@@ -398,16 +398,16 @@ describe('FileExplorer', () => {
     await user.type(input, 'notes.md{enter}');
 
     await waitFor(() => {
-      expect(fileCreate).toHaveBeenCalledWith({
+      expect(fileCreate).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: workspace.workspacePath,
         targetPath: '/workspace/src/notes.md',
         type: 'file',
-      });
+      }));
     });
   });
 
   it('opens a terminal from the explorer and registers it in the workspace store', async () => {
-    setActiveWorkspace({ workspacePath: '/workspace' });
+    const workspace = setActiveWorkspace({ workspacePath: '/workspace' });
     const initialTerminalCount = useWorkspaceStore.getState().terminals.length;
     const fileListDirectory = vi.fn().mockResolvedValue({
       success: true,
@@ -423,7 +423,8 @@ describe('FileExplorer', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Open in Terminal' }));
 
     await waitFor(() => {
-      expect(spawnTerminal).toHaveBeenCalledWith('/workspace/src');
+      expect(spawnTerminal).toHaveBeenCalledWith('/workspace/src', undefined, undefined,
+        undefined, undefined, workspace.id, 'local');
       expect(useWorkspaceStore.getState().terminals).toHaveLength(initialTerminalCount + 1);
       expect(useWorkspaceStore.getState().terminals).toContainEqual(expect.objectContaining({
         id: 'terminal-2',
@@ -432,6 +433,25 @@ describe('FileExplorer', () => {
         displayName: 'Samson',
       }));
     });
+  });
+
+  it('routes an explorer terminal into its SSH workspace even when a local workspace shares the path', async () => {
+    const workspace = setActiveWorkspace({ workspacePath: '/workspace', environmentId: 'dev-vps' });
+    const spawnTerminal = vi.fn().mockResolvedValue({ id: 'remote-terminal', pid: 100 });
+    installElectronApiMock({
+      fileListDirectory: vi.fn().mockResolvedValue({
+        success: true, entries: [createEntry('src', '/workspace/src', true)],
+      }),
+      spawnTerminal,
+    });
+    render(<FileExplorer />);
+    fireEvent.contextMenu(await screen.findByText('src'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open in Terminal' }));
+    await waitFor(() => expect(spawnTerminal).toHaveBeenCalledWith('/workspace/src', undefined,
+      undefined, undefined, undefined, workspace.id, 'dev-vps'));
+    expect(useWorkspaceStore.getState().terminals).toContainEqual(expect.objectContaining({
+      id: 'remote-terminal', workspaceId: workspace.id, environmentId: 'dev-vps',
+    }));
   });
 
   it('renames files immediately in the explorer tree before refresh completes', async () => {
@@ -524,10 +544,10 @@ describe('FileExplorer', () => {
 
     refreshDeferred.resolve({ success: true, entries: refreshedEntries });
     await waitFor(() => {
-      expect(fileListDirectory).toHaveBeenCalledWith({
+      expect(fileListDirectory).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace',
         directoryPath: '/workspace',
-      });
+      }));
     });
   });
 
@@ -573,10 +593,10 @@ describe('FileExplorer', () => {
 
     refreshDeferred.resolve({ success: true, entries: refreshedEntries });
     await waitFor(() => {
-      expect(fileListDirectory).toHaveBeenCalledWith({
+      expect(fileListDirectory).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace',
         directoryPath: '/workspace',
-      });
+      }));
     });
   });
 });
@@ -658,18 +678,18 @@ describe('S8: Inline create/rename UI', () => {
     await userEvent.keyboard('{Enter}');
 
     await waitFor(() => {
-      expect(fileRename).toHaveBeenCalledWith({
+      expect(fileRename).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace',
         oldPath: '/workspace/index.ts',
         newPath: '/workspace/main.ts',
-      });
+      }));
     });
 
     await waitFor(() => {
-      expect(fileListDirectory).toHaveBeenCalledWith({
+      expect(fileListDirectory).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace',
         directoryPath: '/workspace',
-      });
+      }));
     });
   });
 
@@ -711,10 +731,10 @@ describe('S8: Inline create/rename UI', () => {
     fireEvent.click(screen.getByText('Open Folder'));
 
     await waitFor(() => {
-      expect(fileListDirectory).toHaveBeenCalledWith({
+      expect(fileListDirectory).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace',
         directoryPath: '/workspace/src',
-      });
+      }));
     });
   });
 
@@ -741,7 +761,7 @@ describe('S8: Inline create/rename UI', () => {
     fireEvent.click(screen.getByText('Reveal in File Manager'));
 
     await waitFor(() => {
-      expect(revealInFileManager).toHaveBeenCalledWith('/workspace/index.ts');
+      expect(revealInFileManager).toHaveBeenCalledWith('/workspace/index.ts', expect.any(String));
     });
   });
 
@@ -916,11 +936,11 @@ describe('S8: Inline create/rename UI', () => {
     await userEvent.type(input, 'notes.md{enter}');
 
     await waitFor(() => {
-      expect(fileCreate).toHaveBeenCalledWith({
+      expect(fileCreate).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: workspace.workspacePath,
         targetPath: '/workspace/notes.md',
         type: 'file',
-      });
+      }));
     });
   });
 
@@ -942,11 +962,11 @@ describe('S8: Inline create/rename UI', () => {
     await userEvent.type(input, 'docs{enter}');
 
     await waitFor(() => {
-      expect(fileCreate).toHaveBeenCalledWith({
+      expect(fileCreate).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: workspace.workspacePath,
         targetPath: '/workspace/docs',
         type: 'directory',
-      });
+      }));
     });
   });
 
@@ -983,11 +1003,11 @@ describe('S8: Inline create/rename UI', () => {
     await userEvent.type(input, 'notes.md{enter}');
 
     await waitFor(() => {
-      expect(fileCreate).toHaveBeenCalledWith({
+      expect(fileCreate).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: workspace.workspacePath,
         targetPath: '/workspace/src/notes.md',
         type: 'file',
-      });
+      }));
     });
   });
 

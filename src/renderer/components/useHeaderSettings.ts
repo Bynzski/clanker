@@ -12,10 +12,11 @@ interface UseHeaderSettingsOptions {
   harness: string;
   setHarness: (harnessId: string) => void;
   includeAiCommit?: boolean;
+  environmentId?: string;
   validateHarness?: boolean;
 }
 
-export function useHeaderSettings({ harness, setHarness, includeAiCommit = true, validateHarness = true }: UseHeaderSettingsOptions) {
+export function useHeaderSettings({ harness, setHarness, includeAiCommit = true, validateHarness = true, environmentId = 'local' }: UseHeaderSettingsOptions) {
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
   const [showSettings, setShowSettings] = useState(false);
   const [showCredentialModal, setShowCredentialModal] = useState(false);
@@ -35,11 +36,17 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
   );
 
   useEffect(() => {
+    setHarnessModelCache({});
+  }, [environmentId]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const loadHarnessOptions = async () => {
       try {
-        const options = await window.electronAPI.getHarnessOptions();
+        const options = environmentId === 'local'
+          ? await window.electronAPI.getHarnessOptions()
+          : await window.electronAPI.getEnvironmentHarnessOptions(environmentId);
         if (cancelled) return;
         setAvailableHarnessIds(resolveAvailableHarnessIds(options));
       } catch {
@@ -54,7 +61,7 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [environmentId]);
 
   useEffect(() => {
     if (!validateHarness) return;
@@ -278,6 +285,10 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
   };
 
   const loadHarnessModels = async (harnessId: string, refresh = false) => {
+    if (environmentId !== 'local') {
+      setHarnessModelCache((prev) => ({ ...prev, [harnessId]: [] }));
+      return;
+    }
     if (!refresh && harnessModelCache[harnessId] !== undefined) return;
     setHarnessModelLoading((prev) => ({ ...prev, [harnessId]: true }));
     try {

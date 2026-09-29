@@ -13,7 +13,7 @@ import {
   resolveExistingDirectory,
 } from '../security';
 import { toNativePath } from '../../shared/pathNormalize';
-import { GitService } from '../gitService';
+import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { resolveHarnessSpawn } from '../harnessLaunch';
 import { prependUserCliBinsToPath } from '../platformShell';
 import {
@@ -24,7 +24,7 @@ import {
   normalizeCommitMessageOutput,
   type AiCommitProvider,
 } from '../aiCommit';
-import type { GitStatusEntry } from '../gitService';
+import type { GitService, GitStatusEntry } from '../gitService';
 import {
   GENERATE_COMMIT_MESSAGE,
 } from '../../shared/ipcChannels';
@@ -32,6 +32,7 @@ import {
 interface RegisterAiCommitIpcDeps {
   getStore: () => Store<StoreSchema>;
   getGitService: () => GitService;
+  getWorkspaceRegistry?: () => WorkspaceRegistry;
 }
 
 function runCommandWithInput(
@@ -171,12 +172,25 @@ async function generateAiCommitMessage(
 export function registerAiCommitIpc(deps: RegisterAiCommitIpcDeps): void {
   const { getStore, getGitService } = deps;
 
-  ipcMain.handle(GENERATE_COMMIT_MESSAGE, async (_, workspacePath: string) => {
-    const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  ipcMain.handle(GENERATE_COMMIT_MESSAGE, async (_, workspacePath: string, workspaceId?: string) => {
+    const registry = deps.getWorkspaceRegistry?.();
+    const ws = workspaceId ? registry?.getWorkspace(workspaceId) : null;
+    if (workspaceId && registry && !ws) {
+      return { success: false, error: 'Workspace is not registered' };
+    }
+    if (ws?.location.environmentId !== undefined && ws.location.environmentId !== 'local') {
+      return { success: false, error: 'AI commit message generation is not supported for remote workspaces in this version' };
+    }
+    if (!workspaceId && registry?.getAllWorkspaces().some(
+      (entry) => entry.location.environmentId !== 'local' && entry.location.path === workspacePath
+    )) {
+      return { success: false, error: 'Select a registered local workspace to generate an AI commit message' };
+    }
+
+    const safeWorkspacePath = getValidatedWorkspacePath(ws?.location.path ?? workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
-
     return generateAiCommitMessage(safeWorkspacePath, getStore(), getGitService());
   });
 }

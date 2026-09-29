@@ -91,7 +91,8 @@ vi.mock('../../../src/main/fileWatcher', () => ({
 // ---------------------------------------------------------------------------
 
 import { registerFileIpc, type RegisterFileIpcDeps } from '../../../src/main/ipc/fileIpc';
-import { FILE_LIST_DIRECTORY, FILE_READ, FILE_WRITE, FILE_CREATE, FILE_DELETE, FILE_RENAME, REVEAL_IN_FILE_MANAGER, FILE_WATCH, FILE_UNWATCH } from '../../../src/shared/ipcChannels';
+import { FILE_LIST_DIRECTORY, FILE_READ, FILE_WRITE, FILE_CREATE, FILE_DELETE, FILE_RENAME, REVEAL_IN_FILE_MANAGER, FILE_WATCH, FILE_UNWATCH, EXPLORER_START_WATCHING } from '../../../src/shared/ipcChannels';
+import type { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -693,6 +694,68 @@ describe('registerFileIpc', () => {
 
       expect(result).toBe(true);
       expect(mockUnwatchFile).toHaveBeenCalled();
+    });
+  });
+
+  describe('registered remote workspace routing', () => {
+    test('uses the registered root instead of a renderer-supplied root with the same path as local', async () => {
+      const remoteRead = vi.fn().mockResolvedValue({ success: true, content: 'remote' });
+      const remote = {
+        workspaceId: 'remote-id',
+        location: { environmentId: 'vps', path: '/workspace' },
+        environment: { readFile: remoteRead },
+      };
+      const local = {
+        workspaceId: 'local-id',
+        location: { environmentId: 'local', path: '/workspace' },
+        environment: {},
+      };
+      const registry = {
+        getWorkspace: (id: string) => id === remote.workspaceId ? remote : id === local.workspaceId ? local : null,
+        getWorkspaceByLocation: () => local,
+      } as unknown as NonNullable<ReturnType<NonNullable<RegisterFileIpcDeps['getWorkspaceRegistry']>>>;
+      registerFileIpc({
+        getFileWatcher: getMockFileWatcher,
+        getExplorerWatcher: getMockExplorerWatcher,
+        getWorkspaceRegistry: () => registry,
+      });
+      const handler = extractHandler(FILE_READ);
+      expect(await handler({}, { workspaceId: 'remote-id', workspacePath: '/', filePath: '/workspace/a' }))
+        .toEqual({ success: true, content: 'remote' });
+      expect(remoteRead).toHaveBeenCalledWith({ workspaceId: 'remote-id', workspacePath: '/workspace', filePath: '/workspace/a' });
+      expect(await handler({}, { workspaceId: 'stale-id', workspacePath: '/workspace', filePath: '/workspace/a' }))
+        .toMatchObject({ success: false, errorCode: 'invalid-path' });
+      expect(remoteRead).toHaveBeenCalledTimes(1);
+      expect(mockReadFile).not.toHaveBeenCalled();
+    });
+    test('watches only the selected local workspace when remote and local share a path', () => {
+      const mockExplorer = {
+        watchWorkspace: vi.fn(),
+        close: vi.fn(),
+      };
+      const registry = {
+        getWorkspace: (id: string) => ({
+          'local-id': { workspaceId: 'local-id', location: { environmentId: 'local', path: '/workspace' } },
+          'remote-id': { workspaceId: 'remote-id', location: { environmentId: 'vps', path: '/workspace' } },
+        })[id as 'local-id' | 'remote-id'] ?? null,
+      } as unknown as WorkspaceRegistry;
+      registerFileIpc({
+        getFileWatcher: getMockFileWatcher,
+        getExplorerWatcher: () => mockExplorer as never,
+        getWorkspaceRegistry: () => registry,
+      });
+      const handler = extractHandler(EXPLORER_START_WATCHING);
+
+      handler({}, 'local-id');
+      expect(mockExplorer.watchWorkspace).toHaveBeenCalledWith(nativeTestPath('/workspace'));
+      handler({}, 'remote-id');
+      expect(mockExplorer.close).toHaveBeenCalledTimes(1);
+      expect(mockExplorer.watchWorkspace).toHaveBeenCalledTimes(1);
+
+      for (const id of ['stale-id', '/workspace']) {
+        expect(() => handler({}, id)).toThrow('Workspace is not registered');
+      }
+      expect(mockExplorer.watchWorkspace).toHaveBeenCalledTimes(1);
     });
   });
 

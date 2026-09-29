@@ -8,7 +8,7 @@ interface EditorWatchTarget {
   workspacePath: string;
 }
 
-function getEditorWatchWorkspaces(state: WorkspaceState): Array<Pick<WorkspaceTab, 'id' | 'workspacePath' | 'editorTabs'>> {
+function getEditorWatchWorkspaces(state: WorkspaceState): Array<Pick<WorkspaceTab, 'id' | 'workspacePath' | 'editorTabs' | 'environmentId'>> {
   if (state.workspaces.length > 0) {
     return state.workspaces;
   }
@@ -20,18 +20,19 @@ function getEditorWatchWorkspaces(state: WorkspaceState): Array<Pick<WorkspaceTa
   return [{
     id: state.activeWorkspaceId ?? 'workspace-active',
     workspacePath: state.workspacePath,
+    environmentId: 'local',
     editorTabs: state.editorTabs,
   }];
 }
 
 function getEditorWatchTargets(state: WorkspaceState): EditorWatchTarget[] {
-  return getEditorWatchWorkspaces(state).flatMap((workspace) => (
-    workspace.editorTabs.map((tab) => ({
+  return getEditorWatchWorkspaces(state)
+    .filter((workspace) => (workspace.environmentId ?? 'local') === 'local')
+    .flatMap((workspace) => workspace.editorTabs.map((tab) => ({
       filePath: tab.filePath,
       workspaceId: workspace.id,
       workspacePath: workspace.workspacePath,
-    }))
-  ));
+    })));
 }
 
 function getOwnerKey(target: Pick<EditorWatchTarget, 'workspaceId' | 'filePath'>): string {
@@ -53,6 +54,7 @@ function handleFileChanged(filePath: string, deleted: boolean): void {
   const workspaces = getEditorWatchWorkspaces(state);
 
   for (const workspace of workspaces) {
+    if ((workspace.environmentId ?? 'local') !== 'local') continue;
     for (const tab of workspace.editorTabs) {
       if (pathKey(tab.filePath) !== pathKey(filePath)) {
         continue;
@@ -100,6 +102,7 @@ export function startEditorFileWatcher(): () => void {
     watchedOwnersByFilePath.set(normalizedFilePath, new Set([ownerKey]));
     void window.electronAPI.editorWatchFile({
       workspacePath: target.workspacePath,
+      workspaceId: target.workspaceId,
       filePath: target.filePath,
     });
   };
@@ -119,6 +122,7 @@ export function startEditorFileWatcher(): () => void {
     watchedOwnersByFilePath.delete(normalizedFilePath);
     void window.electronAPI.editorUnwatchFile({
       workspacePath: target.workspacePath,
+      workspaceId: target.workspaceId,
       filePath: target.filePath,
     });
   };

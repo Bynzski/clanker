@@ -1,17 +1,20 @@
 export interface FileCreateRequest {
   workspacePath: string;
+  workspaceId?: string;
   targetPath: string;
   type: 'file' | 'directory';
 }
 
 export interface FileDeleteRequest {
   workspacePath: string;
+  workspaceId?: string;
   targetPath: string;
 }
 
 export interface FileRenameRequest {
   workspacePath: string;
   oldPath: string;
+  workspaceId?: string;
   newPath: string;
 }
 

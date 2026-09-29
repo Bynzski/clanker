@@ -555,4 +555,32 @@ describe('taskSessionIpc handlers', () => {
     expect(second?.state).toBe('needs-selection');
     expect(second?.nativeSessionId).toBeUndefined();
   });
+  it('isolates same-path remote tasks without scanning local session files', async () => {
+    const discover = vi.fn().mockResolvedValue({
+      sessions: [],
+      harnessStatus: { codex: { status: 'success' } },
+    });
+    const persistence = registerTaskSessionIpc({
+      getStore: () => memoryStore as unknown as Store<StoreSchema>,
+      getTerminals: () => mockTerminals,
+      getHarnessOptions: () => ({ codex: { name: 'Codex' } }),
+      discoverSessionsDetailedFn: discover,
+    });
+    persistence.saveTaskSession({
+      id: 'local-task', environmentId: 'local', workspacePath: process.cwd(),
+      harnessId: 'codex', title: 'Local', state: 'running', terminalId: 'stopped-local',
+    });
+    persistence.saveTaskSession({
+      id: 'remote-task', environmentId: 'vps', workspacePath: process.cwd(),
+      harnessId: 'codex', title: 'Remote', state: 'running', terminalId: 'stopped-remote',
+    });
+    const list = handlers.get(TASK_SESSION_LIST)!;
+    const remote = await list(null, process.cwd(), 'vps') as TaskSessionRecord[];
+    expect(remote).toMatchObject([{ id: 'remote-task', state: 'unavailable' }]);
+    expect(discover).not.toHaveBeenCalled();
+    const local = await list(null, process.cwd(), 'local') as TaskSessionRecord[];
+    expect(local).toHaveLength(1);
+    expect(local[0].id).toBe('local-task');
+    expect(discover).toHaveBeenCalledTimes(1);
+  });
 });

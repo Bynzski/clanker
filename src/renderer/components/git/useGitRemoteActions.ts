@@ -8,6 +8,7 @@ interface UseGitRemoteActionsParams {
   refreshAfterAction: () => Promise<void>;
   remotes: GitRemote[];
   workspacePath: string;
+  workspaceId?: string;
 }
 
 export function useGitRemoteActions({
@@ -16,6 +17,7 @@ export function useGitRemoteActions({
   refreshAfterAction,
   remotes,
   workspacePath,
+  workspaceId,
 }: UseGitRemoteActionsParams) {
   const [remoteAction, setRemoteAction] = useState<RemoteAction>(null);
   const [remoteError, setRemoteError] = useState<string | null>(null);
@@ -25,7 +27,7 @@ export function useGitRemoteActions({
     setRemoteError(null);
 
     try {
-      const result = await window.electronAPI.gitFetch(workspacePath);
+      const result = await window.electronAPI.gitFetch(workspacePath, undefined, workspaceId);
       if (result.success) {
         await refreshAfterAction();
       } else {
@@ -43,7 +45,7 @@ export function useGitRemoteActions({
     setRemoteError(null);
 
     try {
-      const result = await window.electronAPI.gitPull(workspacePath);
+      const result = await window.electronAPI.gitPull(workspacePath, undefined, workspaceId);
       if (result.success) {
         await refreshAfterAction();
       } else {
@@ -61,7 +63,7 @@ export function useGitRemoteActions({
     setRemoteError(null);
 
     try {
-      const result = await window.electronAPI.gitPush(workspacePath);
+      const result = await window.electronAPI.gitPush(workspacePath, undefined, undefined, undefined, undefined, workspaceId);
       if (result.success) {
         await refreshAfterAction();
       } else {
@@ -90,7 +92,8 @@ export function useGitRemoteActions({
         targetRemote,
         currentBranch,
         false,
-        true
+        true,
+        workspaceId
       );
       if (result.success) {
         await refreshAfterAction();

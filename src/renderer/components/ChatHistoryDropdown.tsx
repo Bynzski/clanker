@@ -12,6 +12,7 @@ interface Props {
   sessions: HarnessSession[];
   isLoading: boolean;
   workspacePath: string;
+  workspaceId: string | null;
   onClose: () => void;
 }
 
@@ -92,17 +93,19 @@ export default function ChatHistoryDropdown({
   sessions,
   isLoading,
   workspacePath,
+  workspaceId,
   onClose,
 }: Props) {
   const addTerminal = useWorkspaceStore((state) => state.addTerminal);
   const setActiveTerminal = useWorkspaceStore((state) => state.setActiveTerminal);
+  const environmentId = useWorkspaceStore((state) => state.getWorkspaceById(workspaceId)?.environmentId ?? 'local');
   const [tasks, setTasks] = useState<TaskSessionRecord[]>([]);
   const [resumeError, setResumeError] = useState<{ taskId: string; message: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     if (typeof window.electronAPI?.taskSessionList === 'function') {
-      window.electronAPI.taskSessionList(workspacePath)
+      window.electronAPI.taskSessionList(workspacePath, environmentId)
         .then((res) => {
           if (!cancelled) setTasks(res);
         })
@@ -113,7 +116,7 @@ export default function ChatHistoryDropdown({
     return () => {
       cancelled = true;
     };
-  }, [workspacePath]);
+  }, [workspacePath, environmentId]);
 
   const handleResumeTask = async (task: TaskSessionRecord) => {
     if (!task.nativeSessionId) return;
@@ -128,7 +131,8 @@ export default function ChatHistoryDropdown({
         modelId: task.modelId,
         filePath: task.nativeSessionPath,
       };
-      const info = await window.electronAPI.invokeSession(sessionPayload);
+      if (!workspaceId) throw new Error('Workspace is not registered');
+      const info = await window.electronAPI.invokeSession(workspaceId, sessionPayload);
       addTerminal({
         id: info.id,
         pid: info.pid,
@@ -137,7 +141,7 @@ export default function ChatHistoryDropdown({
         attentionEnabled: info.attentionEnabled === true,
       });
       if (typeof window.electronAPI?.taskSessionList === 'function') {
-        const updated = await window.electronAPI.taskSessionList(workspacePath);
+        const updated = await window.electronAPI.taskSessionList(workspacePath, environmentId);
         setTasks(updated);
       }
       onClose();
@@ -152,7 +156,7 @@ export default function ChatHistoryDropdown({
             state: 'unavailable',
             stateReason: `Failed to resume: ${errorMsg}`,
           });
-          const updated = await window.electronAPI.taskSessionList(workspacePath);
+          const updated = await window.electronAPI.taskSessionList(workspacePath, environmentId);
           setTasks(updated);
         } catch {
           // Ignore secondary update error
@@ -170,7 +174,7 @@ export default function ChatHistoryDropdown({
         state: 'resumable',
         stateReason: '',
       });
-      const updated = await window.electronAPI.taskSessionList(workspacePath);
+      const updated = await window.electronAPI.taskSessionList(workspacePath, environmentId);
       setTasks(updated);
     }
   };
@@ -192,7 +196,8 @@ export default function ChatHistoryDropdown({
   };
   const handleSessionClick = async (session: HarnessSession) => {
     try {
-      const info = await window.electronAPI.invokeSession(session);
+      if (!workspaceId) throw new Error('Workspace is not registered');
+      const info = await window.electronAPI.invokeSession(workspaceId, session);
       addTerminal({ id: info.id, pid: info.pid, workingDir: workspacePath, harnessId: session.harness, attentionEnabled: info.attentionEnabled === true });
       onClose();
     } catch (err) {

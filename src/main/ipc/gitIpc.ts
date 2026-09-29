@@ -6,12 +6,12 @@
 
 import { ipcMain, BrowserWindow } from 'electron';
 import * as path from 'path';
-import { GitService } from '../gitService';
+import { GitService, type GitWorkspaceIdentity } from '../gitService';
+import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import {
-  getValidatedWorkspacePath,
+  getValidatedWorkspacePath as getValidatedLocalWorkspacePath,
   getInvalidWorkspaceResult,
-  refreshGitStatus,
 } from './aiCommitIpc';
 import {
   GIT_START_POLLING,
@@ -57,8 +57,8 @@ import {
 interface RegisterGitIpcDeps {
   getGitService: () => GitService;
   getMainWindow: () => BrowserWindow | null;
+  getWorkspaceRegistry?: () => WorkspaceRegistry;
 }
-
 function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
   if (!Array.isArray(paths) || !paths.every((entry) => typeof entry === 'string')) return null;
   const validated = paths.map((entry: string) => {
@@ -70,22 +70,122 @@ function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
 }
 
 export function registerGitIpc(deps: RegisterGitIpcDeps): void {
-  const { getGitService, getMainWindow } = deps;
+  const { getGitService, getMainWindow, getWorkspaceRegistry } = deps;
   const gitService = getGitService();
 
-  ipcMain.handle(GIT_START_POLLING, (_, workspacePath: string) => {
-    const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
-    if (!safeWorkspacePath) {
+  // These are the positions of the final workspaceId argument in the bridge.
+  // Keeping the positional contract here leaves all legacy local callers intact.
+  const workspaceIdPositions: Record<string, number> = {
+    [GIT_STOP_POLLING]: 0,
+    [GIT_REFRESH]: 0,
+    [GIT_START_POLLING]: 1,
+    [GIT_GET_BRANCH_STATE]: 1,
+    [GIT_LIST_WORKTREES]: 1,
+    [GIT_GET_OPERATION_STATE]: 1,
+    [GIT_GET_STASHES]: 1,
+    [GIT_CLEAR_STASHES]: 1,
+    [GIT_ABORT_OPERATION]: 1,
+    [GIT_GET_REMOTES]: 1,
+    [GIT_GET_HISTORY]: 2,
+    [GIT_STAGE]: 2,
+    [GIT_UNSTAGE]: 2,
+    [GIT_COMMIT]: 2,
+    [GIT_SWITCH_BRANCH]: 2,
+    [GIT_DELETE_BRANCH]: 2,
+    [GIT_FORCE_DELETE_BRANCH]: 2,
+    [GIT_MERGE_BRANCH]: 2,
+    [GIT_APPLY_STASH]: 2,
+    [GIT_POP_STASH]: 2,
+    [GIT_DROP_STASH]: 2,
+    [GIT_FETCH]: 2,
+    [GIT_PULL]: 2,
+    [GIT_REMOVE_REMOTE]: 2,
+    [GIT_INIT]: 2,
+    [GIT_CREATE_WORKTREE]: 3,
+    [GIT_GET_DIFF]: 3,
+    [GIT_GET_FILE_DIFF]: 3,
+    [GIT_CREATE_BRANCH]: 3,
+    [GIT_STASH]: 3,
+    [GIT_ADD_REMOTE]: 3,
+    [GIT_RENAME_REMOTE]: 3,
+    [GIT_INSPECT_WORKTREE]: 3,
+    [GIT_REMOVE_WORKTREE]: 4,
+    [GIT_PUSH]: 5,
+  };
+
+  const registerGitHandler = (channel: string, handler: Parameters<typeof ipcMain.handle>[1]): void => {
+    const idPosition = workspaceIdPositions[channel];
+    if (idPosition === undefined) {
+      ipcMain.handle(channel, handler);
       return;
     }
-    gitService.startPolling(safeWorkspacePath);
+    ipcMain.handle(channel, async (event, ...args) => {
+      const workspaceId: unknown = args[idPosition];
+      if (workspaceId === undefined) return handler(event, ...args);
+      if (typeof workspaceId !== 'string' || !workspaceId.trim()) {
+        throw new Error('Invalid workspace identity');
+      }
+      const ws = getWorkspaceRegistry?.().getWorkspace(workspaceId);
+      if (!ws) throw new Error('Workspace identity is no longer registered');
+      const identity: GitWorkspaceIdentity = {
+        workspacePath: ws.location.path,
+        workspaceId: ws.workspaceId,
+        environmentId: ws.location.environmentId,
+      };
+      if (channel === GIT_GET_FILE_DIFF && ws.location.environmentId !== 'local') {
+        identity.readFile = (filePath) => {
+          if (getWorkspaceRegistry?.().getWorkspace(ws.workspaceId) !== ws) {
+            throw new Error('Workspace identity is no longer registered');
+          }
+          return ws.environment.readFile({
+            workspacePath: ws.location.path,
+            workspaceId: ws.workspaceId,
+            filePath,
+          });
+        };
+      }
+      return gitService.withWorkspace(identity, () => handler(event, ...args));
+    });
+  };
+
+  const resolveWorkspace = (workspaceId?: string) => {
+    const id = workspaceId ?? gitService.getScopedWorkspaceIdentity?.()?.workspaceId;
+    return id ? getWorkspaceRegistry?.().getWorkspace(id) ?? null : null;
+  };
+
+  const getValidatedWorkspacePath = (workspacePath: string | null | undefined): string | null => {
+    if (!workspacePath) return null;
+    const scoped = gitService.getScopedWorkspaceIdentity?.();
+    return scoped?.workspacePath ?? getValidatedLocalWorkspacePath(workspacePath);
+  };
+
+  const refreshGitStatus = async (workspacePath: string): Promise<void> => {
+    const status = await gitService.getStatus(workspacePath);
+    const scoped = gitService.getScopedWorkspaceIdentity?.();
+    if (scoped) {
+      const registered = resolveWorkspace(scoped.workspaceId);
+      if (!registered || registered.location.path !== scoped.workspacePath ||
+          registered.location.environmentId !== scoped.environmentId) return;
+      status.workspaceId = scoped.workspaceId;
+      status.environmentId = scoped.environmentId;
+    }
+    status.workspacePath = workspacePath;
+    getMainWindow()?.webContents.send(GIT_STATUS_UPDATE, status);
+  };
+
+  registerGitHandler(GIT_START_POLLING, (_, workspacePath: string, workspaceId?: string) => {
+    const ws = resolveWorkspace(workspaceId);
+    const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+    if (!safeWorkspacePath) return;
+    gitService.startPolling(safeWorkspacePath, ws?.workspaceId, ws?.location.environmentId ?? 'local');
   });
 
-  ipcMain.handle(GIT_STOP_POLLING, () => {
+  registerGitHandler(GIT_STOP_POLLING, (_, workspaceId?: string) => {
+    if (workspaceId && gitService.getCurrentWorkspaceIdentity?.()?.workspaceId !== workspaceId) return;
     gitService.stopPolling();
   });
 
-  ipcMain.handle(GIT_GET_BRANCH_STATE, async (_, workspacePath: string) => {
+  registerGitHandler(GIT_GET_BRANCH_STATE, async (_, workspacePath: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return {
@@ -100,14 +200,21 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return gitService.getBranchState(safeWorkspacePath);
   });
 
-  ipcMain.handle(GIT_LIST_WORKTREES, async (_, workspacePath: string) => {
+  registerGitHandler(GIT_LIST_WORKTREES, async (_, workspacePath: string) => {
+    if (resolveWorkspace()?.location.environmentId !== 'local' && gitService.getScopedWorkspaceIdentity?.()) {
+      return { success: false, worktrees: [], error: 'Task worktrees are only available for local workspaces in this version' };
+    }
     const safePath = getValidatedWorkspacePath(workspacePath);
     if (!safePath) return { success: false, worktrees: [], error: getInvalidWorkspaceResult().error };
     const result = await gitService.listWorktrees(safePath);
     return { ...result, worktrees: result.worktrees.map((entry) => ({ ...entry, path: toPosixPath(entry.path) })) };
   });
 
-  ipcMain.handle(GIT_CREATE_WORKTREE, async (_, workspacePath: string, baseRef: string, branch: string) => {
+  registerGitHandler(GIT_CREATE_WORKTREE, async (_, workspacePath: string, baseRef: string, branch: string) => {
+    const ws = resolveWorkspace();
+    if (ws && ws.location.environmentId !== 'local') {
+      return { success: false, error: 'Task worktrees are only available for local workspaces in this version' };
+    }
     const safePath = getValidatedWorkspacePath(workspacePath);
     if (!safePath) return getInvalidWorkspaceResult();
     const result = await gitService.createWorktree(safePath, baseRef, branch);
@@ -116,23 +223,51 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
       : result;
   });
 
-  ipcMain.handle(REGISTER_OPEN_WORKSPACE, (_, id: string, workspacePath: string) => {
+  registerGitHandler(REGISTER_OPEN_WORKSPACE, async (_, id: string, workspacePath: string, environmentId?: string) => {
     if (typeof id !== 'string' || !id.trim() || typeof workspacePath !== 'string') return getInvalidWorkspaceResult();
+
+    const reg = getWorkspaceRegistry?.();
+    if (reg) {
+      const result = await reg.registerWorkspace({
+        workspaceId: id,
+        workspacePath,
+        environmentId,
+      });
+      if (!result.success) {
+        return { success: false, error: result.error };
+      }
+      if (result.location?.environmentId === 'local') {
+        const safePath = getValidatedLocalWorkspacePath(result.location.path);
+        if (safePath) {
+          gitService.registerOpenWorkspace(id, safePath);
+        }
+      }
+      return { success: true, location: result.location };
+    }
+
     const nativePath = toNativePath(workspacePath, process.platform);
     if (!path.isAbsolute(nativePath)) return getInvalidWorkspaceResult();
-    const safePath = getValidatedWorkspacePath(workspacePath);
+    const safePath = getValidatedLocalWorkspacePath(workspacePath);
     return safePath ? gitService.registerOpenWorkspace(id, safePath) : getInvalidWorkspaceResult();
   });
 
-  ipcMain.handle(UNREGISTER_OPEN_WORKSPACE, (_, id: string) => {
+  registerGitHandler(UNREGISTER_OPEN_WORKSPACE, (_, id: string) => {
     if (typeof id !== 'string' || !id.trim()) return { success: false, error: 'Invalid workspace identity' };
+    getWorkspaceRegistry?.()?.unregisterWorkspace(id);
     gitService.unregisterOpenWorkspace(id);
+    if (gitService.getCurrentWorkspaceIdentity?.()?.workspaceId === id) {
+      gitService.stopPolling();
+    }
     return { success: true };
   });
 
-  ipcMain.handle(GIT_INSPECT_WORKTREE, async (_, workspacePath: string, worktreePath: string, openWorkspacePaths: string[]) => {
+  registerGitHandler(GIT_INSPECT_WORKTREE, async (_, workspacePath: string, worktreePath: string, openWorkspacePaths: string[]) => {
+    const ws = resolveWorkspace();
+    if (ws && ws.location.environmentId !== 'local') {
+      return { success: false, error: 'Task worktrees are only available for local workspaces in this version' };
+    }
     const safePath = getValidatedWorkspacePath(workspacePath);
-    const safeWorktreePath = getValidatedWorkspacePath(worktreePath);
+    const safeWorktreePath = getValidatedLocalWorkspacePath(worktreePath);
     const safeOpenPaths = getValidatedOpenWorkspacePaths(openWorkspacePaths);
     if (!safePath || !safeWorktreePath || !safeOpenPaths) return getInvalidWorkspaceResult();
     const result = await gitService.inspectWorktree(safePath, safeWorktreePath, safeOpenPaths);
@@ -141,17 +276,20 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
       : result;
   });
 
-  ipcMain.handle(GIT_REMOVE_WORKTREE, async (_, workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) => {
+  registerGitHandler(GIT_REMOVE_WORKTREE, async (_, workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) => {
+    const ws = resolveWorkspace();
+    if (ws && ws.location.environmentId !== 'local') {
+      return { success: false, error: 'Task worktrees are only available for local workspaces in this version' };
+    }
     const safePath = getValidatedWorkspacePath(workspacePath);
-    const safeWorktreePath = getValidatedWorkspacePath(worktreePath);
+    const safeWorktreePath = getValidatedLocalWorkspacePath(worktreePath);
     const safeOpenPaths = getValidatedOpenWorkspacePaths(openWorkspacePaths);
     if (!safePath || !safeWorktreePath || !safeOpenPaths || (typeof expectedBranch !== 'string' && expectedBranch !== null)) {
       return getInvalidWorkspaceResult();
     }
     return gitService.removeWorktree(safePath, safeWorktreePath, expectedBranch, safeOpenPaths);
   });
-
-  ipcMain.handle(GIT_GET_OPERATION_STATE, async (_, workspacePath: string) => {
+  registerGitHandler(GIT_GET_OPERATION_STATE, async (_, workspacePath: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return {
@@ -167,7 +305,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return gitService.getOperationState(safeWorkspacePath);
   });
 
-  ipcMain.handle(GIT_GET_STASHES, async (_, workspacePath: string) => {
+  registerGitHandler(GIT_GET_STASHES, async (_, workspacePath: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return [];
@@ -175,7 +313,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return gitService.listStashes(safeWorkspacePath);
   });
 
-  ipcMain.handle(GIT_GET_HISTORY, async (_, workspacePath: string, limit?: number) => {
+  registerGitHandler(GIT_GET_HISTORY, async (_, workspacePath: string, limit?: number) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return [];
@@ -183,7 +321,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return gitService.getHistory(safeWorkspacePath, limit);
   });
 
-  ipcMain.handle(GIT_GET_DIFF, async (
+  registerGitHandler(GIT_GET_DIFF, async (
     _,
     workspacePath: string,
     mode: 'working' | 'staged' | 'commit',
@@ -201,172 +339,189 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return gitService.getDiff(safeWorkspacePath, mode, ref);
   });
 
-  ipcMain.handle(GIT_STAGE, async (_, workspacePath: string, files?: string[]) => {
+  registerGitHandler(GIT_STAGE, async (_, workspacePath: string, files?: string[]) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.stage(safeWorkspacePath, files);
-    await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+    await refreshGitStatus(safeWorkspacePath);
     return result;
   });
 
-  ipcMain.handle(GIT_UNSTAGE, async (_, workspacePath: string, files?: string[]) => {
+  registerGitHandler(GIT_UNSTAGE, async (_, workspacePath: string, files?: string[]) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.unstage(safeWorkspacePath, files);
-    await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+    await refreshGitStatus(safeWorkspacePath);
     return result;
   });
 
-  ipcMain.handle(GIT_COMMIT, async (_, workspacePath: string, message: string) => {
+  registerGitHandler(GIT_COMMIT, async (_, workspacePath: string, message: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.commit(safeWorkspacePath, message);
-    await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+    await refreshGitStatus(safeWorkspacePath);
     return result;
   });
 
-  ipcMain.handle(GIT_CREATE_BRANCH, async (_, workspacePath: string, name: string, baseBranch?: string) => {
+  registerGitHandler(GIT_CREATE_BRANCH, async (_, workspacePath: string, name: string, baseBranch?: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.createBranch(safeWorkspacePath, name, baseBranch);
     if (result.success) {
-      await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+      await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  ipcMain.handle(GIT_SWITCH_BRANCH, async (_, workspacePath: string, name: string) => {
+  registerGitHandler(GIT_SWITCH_BRANCH, async (_, workspacePath: string, name: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.switchBranch(safeWorkspacePath, name);
     if (result.success) {
-      await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+      await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  ipcMain.handle(GIT_DELETE_BRANCH, async (_, workspacePath: string, name: string) => {
+  registerGitHandler(GIT_DELETE_BRANCH, async (_, workspacePath: string, name: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.deleteBranch(safeWorkspacePath, name);
     if (result.success) {
-      await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+      await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  ipcMain.handle(GIT_FORCE_DELETE_BRANCH, async (_, workspacePath: string, name: string) => {
+  registerGitHandler(GIT_FORCE_DELETE_BRANCH, async (_, workspacePath: string, name: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.forceDeleteBranch(safeWorkspacePath, name);
     if (result.success) {
-      await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+      await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  ipcMain.handle(GIT_MERGE_BRANCH, async (_, workspacePath: string, branchName: string) => {
+  registerGitHandler(GIT_MERGE_BRANCH, async (_, workspacePath: string, branchName: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.mergeBranch(safeWorkspacePath, branchName);
     if (result.success) {
-      await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+      await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  ipcMain.handle(GIT_ABORT_OPERATION, async (_, workspacePath: string) => {
+  registerGitHandler(GIT_ABORT_OPERATION, async (_, workspacePath: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.abortCurrentOperation(safeWorkspacePath);
     if (result.success) {
-      await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+      await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  ipcMain.handle(GIT_STASH, async (_, workspacePath: string, message?: string, includeUntracked?: boolean) => {
+  registerGitHandler(GIT_STASH, async (_, workspacePath: string, message?: string, includeUntracked?: boolean) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.stashChanges(safeWorkspacePath, message, includeUntracked);
     if (result.success) {
-      await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+      await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  ipcMain.handle(GIT_APPLY_STASH, async (_, workspacePath: string, stashRef: string) => {
+  registerGitHandler(GIT_APPLY_STASH, async (_, workspacePath: string, stashRef: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.applyStash(safeWorkspacePath, stashRef);
     if (result.success) {
-      await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+      await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  ipcMain.handle(GIT_POP_STASH, async (_, workspacePath: string, stashRef: string) => {
+  registerGitHandler(GIT_POP_STASH, async (_, workspacePath: string, stashRef: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.popStash(safeWorkspacePath, stashRef);
     if (result.success) {
-      await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+      await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  ipcMain.handle(GIT_DROP_STASH, async (_, workspacePath: string, stashRef: string) => {
+  registerGitHandler(GIT_DROP_STASH, async (_, workspacePath: string, stashRef: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.dropStash(safeWorkspacePath, stashRef);
     if (result.success) {
-      await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+      await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  ipcMain.handle(GIT_CLEAR_STASHES, async (_, workspacePath: string) => {
+  registerGitHandler(GIT_CLEAR_STASHES, async (_, workspacePath: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
     }
     const result = await gitService.clearStashes(safeWorkspacePath);
     if (result.success) {
-      await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+      await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  ipcMain.handle(GIT_REFRESH, async () => {
+  registerGitHandler(GIT_REFRESH, async (_, workspaceId?: string) => {
+    if (workspaceId && gitService.getCurrentWorkspaceIdentity?.()?.workspaceId !== workspaceId) return null;
     const workspacePath = gitService.getCurrentWorkspace();
-    if (!workspacePath) {
-      return null;
+    if (!workspacePath) return null;
+    const identity = gitService.getCurrentWorkspaceIdentity?.();
+    if (identity) {
+      const ws = getWorkspaceRegistry?.().getWorkspace(identity.workspaceId);
+      if (!ws || ws.location.path !== identity.workspacePath ||
+          ws.location.environmentId !== identity.environmentId) {
+        gitService.stopPolling();
+        throw new Error('Workspace identity is no longer registered');
+      }
+      return gitService.withWorkspace(identity, async () => {
+        const status = await gitService.getStatus(ws.location.path);
+        if (gitService.getCurrentWorkspaceIdentity?.()?.workspaceId !== identity.workspaceId ||
+            gitService.getCurrentWorkspace() !== identity.workspacePath) return null;
+        status.workspacePath = ws.location.path;
+        status.workspaceId = ws.workspaceId;
+        status.environmentId = ws.location.environmentId;
+        return status;
+      });
     }
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
@@ -383,7 +538,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return gitService.getStatus(safeWorkspacePath);
   });
 
-  ipcMain.handle(GIT_INIT, async (_, workspacePath: string, defaultBranch?: string) => {
+  registerGitHandler(GIT_INIT, async (_, workspacePath: string, defaultBranch?: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return getInvalidWorkspaceResult();
@@ -394,12 +549,12 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     }
     const result = await gitService.initRepository(safeWorkspacePath, { defaultBranch });
     if (result.success) {
-      await refreshGitStatus(safeWorkspacePath, getMainWindow, gitService);
+      await refreshGitStatus(safeWorkspacePath);
     }
     return result;
   });
 
-  ipcMain.handle(GIT_GET_REMOTES, async (_, workspacePath: string) => {
+  registerGitHandler(GIT_GET_REMOTES, async (_, workspacePath: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return { success: false, remotes: [], provider: 'unknown', error: 'Invalid workspace path' };
@@ -407,7 +562,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return gitService.getRemotes(safeWorkspacePath);
   });
 
-  ipcMain.handle(GIT_FETCH, async (_, workspacePath: string, remote?: string) => {
+  registerGitHandler(GIT_FETCH, async (_, workspacePath: string, remote?: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return { success: false, error: 'Invalid workspace path' };
@@ -415,7 +570,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return gitService.fetch(safeWorkspacePath, remote);
   });
 
-  ipcMain.handle(GIT_PULL, async (_, workspacePath: string, rebase?: boolean) => {
+  registerGitHandler(GIT_PULL, async (_, workspacePath: string, rebase?: boolean) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return { success: false, error: 'Invalid workspace path' };
@@ -423,25 +578,22 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return gitService.pull(safeWorkspacePath, rebase);
   });
 
-  ipcMain.handle(
-    GIT_PUSH,
-    async (
-      _,
-      workspacePath: string,
-      remote?: string,
-      branch?: string,
-      forceWithLease?: boolean,
-      setUpstream?: boolean
-    ) => {
-      const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
-      if (!safeWorkspacePath) {
-        return { success: false, error: 'Invalid workspace path' };
-      }
-      return gitService.push(safeWorkspacePath, remote, branch, forceWithLease, setUpstream);
+  registerGitHandler(GIT_PUSH, async (
+    _,
+    workspacePath: string,
+    remote?: string,
+    branch?: string,
+    forceWithLease?: boolean,
+    setUpstream?: boolean
+  ) => {
+    const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+    if (!safeWorkspacePath) {
+      return { success: false, error: 'Invalid workspace path' };
     }
-  );
+    return gitService.push(safeWorkspacePath, remote, branch, forceWithLease, setUpstream);
+  });
 
-  ipcMain.handle(GIT_ADD_REMOTE, async (_, workspacePath: string, name: string, url: string) => {
+  registerGitHandler(GIT_ADD_REMOTE, async (_, workspacePath: string, name: string, url: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return { success: false, error: 'Invalid workspace path' };
@@ -452,7 +604,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return gitService.addRemote(safeWorkspacePath, name, url);
   });
 
-  ipcMain.handle(GIT_REMOVE_REMOTE, async (_, workspacePath: string, name: string) => {
+  registerGitHandler(GIT_REMOVE_REMOTE, async (_, workspacePath: string, name: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return { success: false, error: 'Invalid workspace path' };
@@ -463,7 +615,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return gitService.removeRemote(safeWorkspacePath, name);
   });
 
-  ipcMain.handle(GIT_RENAME_REMOTE, async (_, workspacePath: string, oldName: string, newName: string) => {
+  registerGitHandler(GIT_RENAME_REMOTE, async (_, workspacePath: string, oldName: string, newName: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return { success: false, error: 'Invalid workspace path' };
@@ -474,7 +626,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return gitService.renameRemote(safeWorkspacePath, oldName, newName);
   });
 
-  ipcMain.handle(GIT_GET_FILE_DIFF, async (_, workspacePath: string, filePath: string, mode: 'working' | 'staged') => {
+  registerGitHandler(GIT_GET_FILE_DIFF, async (_, workspacePath: string, filePath: string, mode: 'working' | 'staged') => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
     if (!safeWorkspacePath) {
       return {

@@ -68,7 +68,7 @@ export default function Header() {
     handleToggleFavorite,
     loadHarnessModels,
     aiCommitProviderOptions,
-  } = useHeaderSettings({ harness, setHarness });
+  } = useHeaderSettings({ harness, setHarness, environmentId: focusedWorkspace?.environmentId });
 
   useBrowserOverlayWhileOpen(showSettings, activeWorkspaceId, pushBrowserOverlay, popBrowserOverlay);
   useCloseOnOutsidePointerAndEscape(showSettings, settingsDropdownRef, () => setShowSettings(false));
@@ -81,13 +81,16 @@ export default function Header() {
       const resolvedHarness = harnessId && visibleHarnessIds.includes(harnessId)
         ? harnessId
         : undefined;
-      const resolvedModel = resolvedHarness === harness ? (model || undefined) : undefined;
+      const resolvedModel = focusedWorkspace?.environmentId && focusedWorkspace.environmentId !== 'local'
+        ? undefined
+        : resolvedHarness === harness ? (model || undefined) : undefined;
 
-      const info = await window.electronAPI.spawnTerminal(
-        workspacePath || '/',
-        resolvedHarness,
-        resolvedModel,
-      );
+      const info = focusedWorkspace?.environmentId && focusedWorkspace.environmentId !== 'local'
+        ? await window.electronAPI.spawnTerminal(
+          workspacePath || '/', resolvedHarness, resolvedModel, undefined, undefined,
+          focusedWorkspace.id, focusedWorkspace.environmentId,
+        )
+        : await window.electronAPI.spawnTerminal(workspacePath || '/', resolvedHarness, resolvedModel);
       addTerminal({
         id: info.id,
         pid: info.pid,
@@ -116,7 +119,9 @@ export default function Header() {
     setShowChatHistory(true);
     setIsLoadingSessions(true);
     try {
-      const sessions = await window.electronAPI.discoverSessions(workspacePath || '/');
+      const sessions = focusedWorkspace?.id && (focusedWorkspace.environmentId ?? 'local') === 'local'
+        ? await window.electronAPI.discoverSessions(focusedWorkspace.id)
+        : [];
       setChatSessions(sessions);
     } catch (err) {
       console.error('Failed to discover sessions:', err);
@@ -126,6 +131,11 @@ export default function Header() {
     }
   };
   const handleOpenRecipes = async () => {
+    if (focusedWorkspace?.environmentId && focusedWorkspace.environmentId !== 'local') {
+      setActiveRecipe(null);
+      setShowRecipeModal(true);
+      return;
+    }
     try {
       if (typeof window.electronAPI?.recipeGetAll === 'function') {
         const recipes = await window.electronAPI.recipeGetAll(workspacePath);
@@ -211,7 +221,7 @@ export default function Header() {
         </button>
 
         {workspacePath && (
-          <GitButton workspacePath={workspacePath} />
+          <GitButton key={focusedWorkspace?.id} workspacePath={workspacePath} workspaceId={focusedWorkspace?.id} />
         )}
       </div>
 
@@ -226,6 +236,7 @@ export default function Header() {
         chatSessions={chatSessions}
         isLoadingSessions={isLoadingSessions}
         workspacePath={workspacePath || '/'}
+        workspaceId={focusedWorkspace?.id ?? null}
         onCloseChatHistory={() => setShowChatHistory(false)}
         settingsDropdownRef={settingsDropdownRef}
         showSettings={showSettings}
@@ -266,6 +277,7 @@ export default function Header() {
         onClose={() => setShowRecipeModal(false)}
         initialRecipe={activeRecipe}
         defaultWorkspacePath={workspacePath}
+        workspaceEnvironmentId={focusedWorkspace?.environmentId}
         defaultLaunches={defaultLaunches}
         defaultBrowserUrl={browserVisible ? focusedWorkspace?.browserUrl : undefined}
         defaultLayout={defaultLayout ?? undefined}

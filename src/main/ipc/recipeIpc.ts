@@ -30,6 +30,10 @@ export function registerRecipeIpc(deps: RegisterRecipeIpcDeps): WorkspacePersist
       throw new Error('Invalid recipe payload');
     }
     const input = recipeInput as Record<string, unknown>;
+    if (typeof input.environmentId === 'string' && input.environmentId.trim() &&
+        input.environmentId.trim() !== 'local') {
+      throw new Error('Launch recipes are not supported for SSH workspaces in this version.');
+    }
     if (getSafeWorkspacePath && typeof input.workspacePath === 'string') {
       const nativePath = toNativePath(input.workspacePath, process.platform);
       getSafeWorkspacePath(nativePath);

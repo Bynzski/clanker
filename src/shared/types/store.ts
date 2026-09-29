@@ -1,6 +1,6 @@
 import type { WorkspaceRecipe } from './recipes';
 import type { TaskSessionRecord } from './taskSessions';
-
+import type { SshEnvironmentConfig } from './environments';
 /**
  * Shared store schema types.
  *
@@ -52,4 +52,5 @@ export interface StoreSchema {
   harnessDefaults: HarnessDefaultsMap;
   workspaceRecipes: WorkspaceRecipe[];
   taskSessions: TaskSessionRecord[];
+  sshEnvironments: SshEnvironmentConfig[];
 }

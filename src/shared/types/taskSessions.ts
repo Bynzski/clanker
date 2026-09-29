@@ -1,3 +1,5 @@
+import type { WorkspaceEnvironmentId } from './environments';
+
 export type TaskRecoveryState =
   | 'running'
   | 'resumable'
@@ -7,6 +9,7 @@ export type TaskRecoveryState =
 export interface TaskSessionRecord {
   id: string;
   workspacePath: string;
+  environmentId?: WorkspaceEnvironmentId;
   harnessId: string;
   modelId?: string;
   title: string;

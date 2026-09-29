@@ -16,6 +16,10 @@ The `gitChanges` field is stored in the explorer section of workspace state. Thi
 
 `workspaceLayout.ts` has direct unit test coverage in `tests/renderer/unit/workspaceLayout.test.ts`.
 
+### Workspace Identity
+
+A workspace's persistent identity is its environment ID plus canonical POSIX path. Legacy records without an environment ID are local. A local and an SSH workspace may have the same path while keeping separate layouts, notes, Explorer state, terminals, and browser tabs. Runtime actions use `workspaceId` to select the workspace; a resource file path does not identify one by itself.
+
 ## Workspace Lifecycle Model
 
 ### Lifecycle Vocabulary
@@ -39,8 +43,8 @@ The store and renderer now model `active` and `parked` explicitly.
   compatibility state for existing consumers
 - Background behavior is now split by policy:
   - terminal sessions continue through the app-level bridge
-  - editor file watch registration spans active and parked workspaces
-  - explorer watch registration remains active-workspace only
+  - local editor file watch registration spans active and parked workspaces
+  - local explorer watch registration remains active-workspace only
   - browser panel interaction and bounds updates remain active-workspace only
 
 That means the current system preserves inactive workspace data and mounted UI
@@ -55,8 +59,9 @@ These rules describe the implemented workspace residency system.
 | Workspace layout tree | All workspace shells render in one shared container; an LRU cap keeps three pane trees mounted and cold-unmounts older parked trees |
 | Terminal PTY output | Continues via `terminalSessionBridge` global listeners while parked; xterm instances cached in `xtermCache` |
 | Terminal input/focus | Active workspace only |
-| Editor file watchers | Watched editor tabs across active and parked workspaces via `editorFileWatcher` |
-| Explorer watcher | Active-workspace-only; parked workspaces retain cached directory contents |
+| Editor file watchers | Local watched editor tabs across active and parked workspaces via `editorFileWatcher`; none on SSH workspaces |
+| Explorer watcher | Local active-workspace-only; SSH workspaces have no watcher; parked workspaces retain cached directory contents |
+| SSH focus refresh | While the active SSH workspace's Explorer is visible, desktop focus refreshes Explorer contents and reloads clean editor tabs; dirty tabs are not automatically overwritten |
 | Browser native view | Retained per workspace even when its renderer tree is cold; visible only for active and rebound on reactivate |
 | Editor `EditorView` | Resident for warm workspaces; destroyed when its workspace becomes cold and recreated from store state on reactivation |
 | Global shortcuts | Read the active workspace snapshot via `syncActiveWorkspace` |

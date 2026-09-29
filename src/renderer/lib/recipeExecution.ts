@@ -30,6 +30,15 @@ export async function executeWorkspaceRecipe(
   recipe: WorkspaceRecipe,
   deps: RecipeExecutionDeps,
 ): Promise<RecipeLaunchResult> {
+  if (recipe.environmentId && recipe.environmentId !== 'local') {
+    return {
+      recipeId: recipe.id,
+      success: false,
+      steps: [{ id: 'remote-recipe', type: 'command', status: 'failed',
+        error: 'Launch recipes are not supported for SSH workspaces in this version.' }],
+    };
+  }
+
   const steps: RecipeLaunchStepResult[] = [];
 
   const workspaceId = await deps.ensureWorkspaceOpen(recipe.workspacePath);

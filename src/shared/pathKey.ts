@@ -1,6 +1,6 @@
 import { toPosixPath } from './pathNormalize';
 
-function runtimeIsWindows(): boolean {
+export function runtimeIsWindows(): boolean {
   const maybeProcess = globalThis as { process?: { platform?: string } };
   if (maybeProcess.process?.platform) {
     return maybeProcess.process.platform === 'win32';
