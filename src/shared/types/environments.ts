@@ -24,3 +24,9 @@ export interface SshEnvironmentTestResult {
   success: boolean;
   error?: string;
 }
+
+export interface RemoteDirectoryListing {
+  path: string;
+  parentPath: string | null;
+  directories: Array<{ name: string; path: string }>;
+}

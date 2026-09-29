@@ -1,0 +1,17 @@
+.remote-path-input .gate-input { min-width: 0; }
+.remote-suggestions { position: relative; margin: 4px 0 0; padding: 4px; list-style: none; }
+.remote-suggestions .suggestion-item { width: 100%; border: 0; text-align: left; display: flex; align-items: center; }
+.remote-chooser-overlay { position: fixed; inset: 0; z-index: 1100; background: rgba(0, 0, 0, 0.65); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.remote-chooser { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 8px; width: min(480px, 100%); max-height: min(570px, 85vh); display: flex; flex-direction: column; box-shadow: 0 16px 44px rgba(0, 0, 0, 0.35); }
+.remote-chooser-header, .remote-chooser-toolbar, .remote-chooser-actions { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border-color); }
+.remote-chooser-header { justify-content: space-between; }
+.remote-chooser-toolbar span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.remote-chooser button { cursor: pointer; color: var(--text-primary); background: transparent; border: 1px solid var(--border-color); border-radius: 5px; padding: 5px 8px; display: inline-flex; align-items: center; gap: 6px; }
+.remote-chooser button:hover:not(:disabled), .remote-chooser button:focus-visible { background: var(--bg-tertiary); border-color: var(--accent-primary); }
+.remote-chooser button:disabled { cursor: not-allowed; opacity: 0.45; }
+.remote-chooser-list { min-height: 130px; overflow: auto; padding: 8px; }
+.remote-chooser-list > button { width: 100%; text-align: left; border: 0; padding: 8px; }
+.remote-chooser-list p { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; margin: 8px; overflow-wrap: anywhere; }
+.remote-chooser-list p[role="alert"] { color: var(--accent-error); }
+.remote-chooser-actions { justify-content: flex-end; border-bottom: 0; border-top: 1px solid var(--border-color); }
+.remote-chooser-actions button:last-child { background: var(--accent-primary); color: var(--bg-primary); border-color: var(--accent-primary); }

@@ -1,4 +1,5 @@
 import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types/environments';
+import type { RemoteDirectoryListing } from '../shared/types/environments';
 import type { WorkspaceRecipe, RecipePreviewProbeResult } from '../../shared/types/recipes';
 import type { TaskSessionRecord } from '../../shared/types/taskSessions';
 import type { FileListDirectoryRequest, FileListDirectoryResult, ExplorerTreeChangedEvent } from '../../shared/types/fileExplorer';
@@ -362,6 +363,8 @@ interface ElectronAPI {
   sshEnvironmentSave: (config: unknown) => Promise<{ success: boolean; config?: SshEnvironmentConfig; error?: string }>;
   sshEnvironmentDelete: (id: string) => Promise<{ success: boolean; error?: string }>;
   sshEnvironmentTest: (target: string) => Promise<{ success: boolean; error?: string }>;
+  sshGetHomeDirectory: (environmentId: string) => Promise<{ homePath: string; initialPath: string }>;
+  sshListDirectories: (environmentId: string, directoryPath: string) => Promise<RemoteDirectoryListing>;
   getEnvironmentHarnessOptions: (environmentId: string) => Promise<Record<string, unknown>>;
 }
 

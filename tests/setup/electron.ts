@@ -197,6 +197,8 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     sshEnvironmentSave: vi.fn(async (config) => ({ success: true, config })),
     sshEnvironmentDelete: createAsyncMock({ success: true }),
     sshEnvironmentTest: createAsyncMock({ success: true }),
+    sshGetHomeDirectory: createAsyncMock({ homePath: '/home/user', initialPath: '/home/user/workspaces' }),
+    sshListDirectories: createAsyncMock({ path: '/home/user/workspaces', parentPath: '/home/user', directories: [] }),
     getEnvironmentHarnessOptions: createAsyncMock({}),
     ...overrides,
   };

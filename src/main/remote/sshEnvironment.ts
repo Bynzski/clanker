@@ -7,7 +7,7 @@ import type {
   TerminalSpawnRequest,
   TerminalSpawnResolved,
 } from '../environment/workspaceEnvironment';
-import type { SshEnvironmentConfig, WorkspaceEnvironmentId } from '../../shared/types/environments';
+import type { RemoteDirectoryListing, SshEnvironmentConfig, WorkspaceEnvironmentId } from '../../shared/types/environments';
 import { SshCommandExecutor, SshExecutionError } from './sshCommandExecutor';
 import { quotePosixArg, quotePosixCommand } from './posixQuote';
 import { HARNESS_OPTIONS } from '../harnessCatalog';
@@ -32,6 +32,80 @@ import type {
 
 const MAX_FILE_SIZE = 1024 * 1024; // 1 MB
 const BINARY_DETECTION_BYTES = 8192;
+const BROWSE_TIMEOUT_MS = 12000;
+const BROWSE_MAX_BYTES = 128 * 1024;
+const BROWSE_MAX_PATH_BYTES = 4096;
+const BROWSE_MAX_DIRECTORIES = 500;
+
+const HOME_DIRECTORY_SCRIPT = [
+  'import json, os, sys',
+  'home = os.environ.get("HOME")',
+  'if not home or not os.path.isabs(home):',
+  '  sys.exit("Remote HOME is unavailable")',
+  'home = os.path.realpath(home)',
+  'if not os.path.isdir(home) or not os.access(home, os.R_OK | os.X_OK):',
+  '  sys.exit("Remote HOME is not a directory")',
+  'with os.scandir(home):',
+  '  pass',
+  'initial = os.path.join(home, "workspaces")',
+  'try:',
+  '  if not os.access(initial, os.R_OK | os.X_OK):',
+  '    raise PermissionError("Remote workspaces directory is inaccessible")',
+  '  with os.scandir(initial):',
+  '    pass',
+  '  initial = os.path.realpath(initial)',
+  'except OSError:',
+  '  initial = home',
+  'print(json.dumps({"homePath": home, "initialPath": initial}))',
+].join('\n');
+
+const LIST_DIRECTORIES_SCRIPT = [
+  'import json, os, sys',
+  'requested = sys.argv[1]',
+  'target = os.path.realpath(requested)',
+  'if not os.path.isdir(target) or not os.access(target, os.R_OK | os.X_OK):',
+  '  sys.exit("Remote directory does not exist")',
+  'directories = []',
+  'with os.scandir(target) as entries:',
+  '  for entry in entries:',
+  '    try:',
+  '      if entry.is_dir(follow_symlinks=True):',
+  '        directories.append({"name": entry.name, "path": os.path.realpath(entry.path)})',
+  '        if len(directories) > 500:',
+  '          sys.exit("Remote directory has too many subdirectories")',
+  '    except OSError:',
+  '      continue',
+  'directories.sort(key=lambda entry: (entry["name"].casefold(), entry["name"]))',
+  'print(json.dumps({"path": target, "parentPath": os.path.dirname(target) if target != "/" else None, "directories": directories}))',
+].join('\n');
+
+function canonicalBrowsePath(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 &&
+    Buffer.byteLength(value, 'utf8') <= BROWSE_MAX_PATH_BYTES &&
+    path.posix.isAbsolute(value) && path.posix.normalize(value) === value &&
+    !/[\x00-\x1f\x7f]/.test(value);
+}
+
+function parseBrowseResponse(stdout: string): unknown {
+  if (Buffer.byteLength(stdout, 'utf8') > BROWSE_MAX_BYTES) {
+    throw new Error('Remote directory response exceeds size limit');
+  }
+  try {
+    return JSON.parse(stdout) as unknown;
+  } catch {
+    throw new Error('Invalid remote directory response');
+  }
+}
+
+function browseObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validBrowseName(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value !== '.' &&
+    value !== '..' && !/[/\x00-\x1f\x7f]/.test(value) &&
+    Buffer.byteLength(value, 'utf8') <= 255;
+}
 
 // A noninteractive SSH command does not reliably receive the account's login
 // PATH. Source only the POSIX login profile (never an interactive shell rc),
@@ -92,6 +166,47 @@ export class SshEnvironment implements WorkspaceEnvironment {
     this.id = config.id;
     this.label = config.label;
     this.target = config.target;
+  }
+
+  /** Read-only discovery before any workspace root has been registered. */
+  public async getHomeDirectory(): Promise<{ homePath: string; initialPath: string }> {
+    const result = await this.executor.exec(this.target, 'python3', ['-c', HOME_DIRECTORY_SCRIPT], {
+      timeoutMs: BROWSE_TIMEOUT_MS,
+      maxBuffer: BROWSE_MAX_BYTES,
+    });
+    const value = parseBrowseResponse(result.stdout);
+    if (!browseObject(value) || !canonicalBrowsePath(value.homePath) ||
+        !canonicalBrowsePath(value.initialPath)) {
+      throw new Error('Invalid remote home directory response');
+    }
+    return { homePath: value.homePath, initialPath: value.initialPath };
+  }
+
+  /** Browsing has no registered root; workspace file APIs retain their own confinement. */
+  public async listBrowsableDirectories(directoryPath: string): Promise<RemoteDirectoryListing> {
+    if (!canonicalBrowsePath(directoryPath)) {
+      throw new Error('Invalid remote directory path');
+    }
+    const result = await this.executor.exec(this.target, 'python3', [
+      '-c', LIST_DIRECTORIES_SCRIPT, directoryPath,
+    ], { timeoutMs: BROWSE_TIMEOUT_MS, maxBuffer: BROWSE_MAX_BYTES });
+    const value = parseBrowseResponse(result.stdout);
+    if (!browseObject(value) || !canonicalBrowsePath(value.path) ||
+        (value.parentPath !== null && !canonicalBrowsePath(value.parentPath)) ||
+        value.parentPath !== (value.path === '/' ? null : path.posix.dirname(value.path)) ||
+        !Array.isArray(value.directories) || value.directories.length > BROWSE_MAX_DIRECTORIES ||
+        !value.directories.every((entry: unknown) => browseObject(entry) &&
+          validBrowseName(entry.name) && canonicalBrowsePath(entry.path))) {
+      throw new Error('Invalid remote directory listing response');
+    }
+    return {
+      path: value.path,
+      parentPath: value.parentPath,
+      directories: value.directories.map((entry: { name: string; path: string }) => ({
+        name: entry.name,
+        path: entry.path,
+      })),
+    };
   }
 
   public async validateWorkspacePath(

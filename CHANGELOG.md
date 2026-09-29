@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **SSH workspace directory chooser** — browse remote directories before opening a workspace, with home/workspaces defaults and remote path suggestions.
+
 ### Fixed
 
 - **Workspace notes and layouts** — local and SSH workspaces sharing a path now retain separate layouts, note content, and notes visibility; existing path-only local settings remain readable.

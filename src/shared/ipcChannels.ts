@@ -217,6 +217,8 @@ export const SSH_ENVIRONMENT_LIST = 'ssh-environment:list';
 export const SSH_ENVIRONMENT_SAVE = 'ssh-environment:save';
 export const SSH_ENVIRONMENT_DELETE = 'ssh-environment:delete';
 export const SSH_ENVIRONMENT_TEST = 'ssh-environment:test';
+export const SSH_GET_HOME_DIRECTORY = 'ssh-environment:get-home-directory';
+export const SSH_LIST_DIRECTORIES = 'ssh-environment:list-directories';
 export const GET_ENVIRONMENT_HARNESS_OPTIONS = 'get-environment-harness-options';
 /* ============================================================================
  * Annotation
@@ -406,5 +408,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   SSH_ENVIRONMENT_SAVE,
   SSH_ENVIRONMENT_DELETE,
   SSH_ENVIRONMENT_TEST,
+  SSH_GET_HOME_DIRECTORY,
+  SSH_LIST_DIRECTORIES,
   GET_ENVIRONMENT_HARNESS_OPTIONS,
 ];

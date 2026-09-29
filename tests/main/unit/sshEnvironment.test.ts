@@ -418,3 +418,114 @@ describe('remote filesystem scripts executed on a POSIX host', () => {
     }
   });
 });
+
+describe('pre-workspace SSH directory browsing', () => {
+  const config = { id: 'host', kind: 'ssh' as const, label: 'host', target: 'host' };
+
+  it('canonicalizes HOME and browses directories, hidden names, unicode, and symlinks without shell interpolation', async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-browse-'));
+    const home = join(sandbox, "home's ünicode");
+    const homeAlias = join(sandbox, 'home alias');
+    const workspaces = join(home, 'workspaces');
+    const external = join(sandbox, 'outside');
+    const marker = join(sandbox, 'injected');
+    try {
+      await mkdir(workspaces, { recursive: true });
+      await symlink(home, homeAlias);
+      await mkdir(external);
+      await mkdir(join(workspaces, '.hidden'));
+      await mkdir(join(workspaces, "it's $pecial ü"));
+      await writeFile(join(workspaces, 'ordinary.txt'), 'not a directory');
+      await symlink(external, join(workspaces, 'external link'));
+      await symlink(join(sandbox, 'gone'), join(workspaces, 'broken link'));
+      const executor = {
+        exec: vi.fn(async (_target: string, command: string, args: string[], options?: { timeoutMs: number; maxBuffer: number }) => {
+          expect(command).toBe('python3');
+          expect(options).toEqual({ timeoutMs: 12000, maxBuffer: 128 * 1024 });
+          const result = spawnSync(command, args, {
+            env: { ...process.env, HOME: homeAlias },
+            encoding: 'utf8',
+          });
+          if (result.status !== 0) {
+            throw new SshExecutionError(result.stderr, result.status ?? 1, result.stdout, result.stderr);
+          }
+          return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
+        }),
+      } as unknown as SshCommandExecutor;
+      const env = new SshEnvironment(config, executor);
+      expect(await env.getHomeDirectory()).toEqual({ homePath: home, initialPath: workspaces });
+      const listing = await env.listBrowsableDirectories(workspaces);
+      expect(listing).toEqual({
+        path: workspaces,
+        parentPath: home,
+        directories: [
+          { name: '.hidden', path: join(workspaces, '.hidden') },
+          { name: 'external link', path: external },
+          { name: "it's $pecial ü", path: join(workspaces, "it's $pecial ü") },
+        ],
+      });
+      expect((await env.listBrowsableDirectories(join(workspaces, 'external link'))).path).toBe(external);
+      expect((await env.listBrowsableDirectories('/')).parentPath).toBeNull();
+      const injection = join(workspaces, `nonexistent'; touch ${marker}; echo '`);
+      await expect(env.listBrowsableDirectories(injection)).rejects.toThrow();
+      await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+      await chmod(workspaces, 0o000);
+      expect(await env.getHomeDirectory()).toEqual({ homePath: home, initialPath: home });
+      await expect(env.listBrowsableDirectories(workspaces)).rejects.toThrow();
+      await chmod(workspaces, 0o755);
+      await rm(workspaces, { recursive: true });
+      expect(await env.getHomeDirectory()).toEqual({ homePath: home, initialPath: home });
+      await expect(env.listBrowsableDirectories(workspaces)).rejects.toThrow();
+    } finally {
+      await chmod(workspaces, 0o755).catch(() => {});
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  });
+
+  it('stops a remote scan at the directory count limit', async () => {
+    const sandbox = await mkdtemp(join(tmpdir(), 'clanker-ssh-browse-limit-'));
+    try {
+      await Promise.all(Array.from({ length: 501 }, (_, i) => mkdir(join(sandbox, String(i)))));
+      const executor = {
+        exec: vi.fn(async (_target: string, command: string, args: string[]) => {
+          const result = spawnSync(command, args, { encoding: 'utf8' });
+          if (result.status !== 0) {
+            throw new SshExecutionError(result.stderr, result.status ?? 1, result.stdout, result.stderr);
+          }
+          return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
+        }),
+      } as unknown as SshCommandExecutor;
+      await expect(new SshEnvironment(config, executor).listBrowsableDirectories(sandbox))
+        .rejects.toThrow('too many subdirectories');
+    } finally {
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects invalid inputs, malformed responses, excess entries, and timeouts', async () => {
+    const exec = vi.fn();
+    const env = new SshEnvironment(config, { exec } as unknown as SshCommandExecutor);
+    for (const input of ['relative', '/tmp/../etc', '/tmp\nx', `/tmp/${'x'.repeat(4100)}`, '']) {
+      await expect(env.listBrowsableDirectories(input)).rejects.toThrow('Invalid remote directory path');
+    }
+    expect(exec).not.toHaveBeenCalled();
+    for (const stdout of ['not json', '{}', '{"homePath":"/tmp","initialPath":"relative"}']) {
+      exec.mockResolvedValueOnce({ stdout });
+      await expect(env.getHomeDirectory()).rejects.toThrow();
+    }
+    const response = (directories: unknown, extra: Record<string, unknown> = {}) =>
+      JSON.stringify({ path: '/tmp', parentPath: '/', directories, ...extra });
+    for (const stdout of [
+      response([{ name: 'file', path: 'relative' }]),
+      response([{ name: '../escape', path: '/tmp/x' }]),
+      response([], { parentPath: '/not-parent' }),
+      response(Array.from({ length: 501 }, (_, i) => ({ name: String(i), path: `/tmp/${i}` }))),
+      'x'.repeat(128 * 1024 + 1),
+    ]) {
+      exec.mockResolvedValueOnce({ stdout });
+      await expect(env.listBrowsableDirectories('/tmp')).rejects.toThrow();
+    }
+    exec.mockRejectedValueOnce(new Error('Remote SSH command timed out after 12000ms'));
+    await expect(env.listBrowsableDirectories('/tmp')).rejects.toThrow('timed out');
+  });
+});

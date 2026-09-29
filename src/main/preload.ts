@@ -159,6 +159,8 @@ import {
   SSH_ENVIRONMENT_SAVE,
   SSH_ENVIRONMENT_DELETE,
   SSH_ENVIRONMENT_TEST,
+  SSH_GET_HOME_DIRECTORY,
+  SSH_LIST_DIRECTORIES,
   GET_ENVIRONMENT_HARNESS_OPTIONS,
 } from '../shared/ipcChannels';
 
@@ -524,5 +526,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sshEnvironmentSave: (config: unknown) => ipcRenderer.invoke(SSH_ENVIRONMENT_SAVE, config),
   sshEnvironmentDelete: (id: string) => ipcRenderer.invoke(SSH_ENVIRONMENT_DELETE, id),
   sshEnvironmentTest: (target: string) => ipcRenderer.invoke(SSH_ENVIRONMENT_TEST, target),
+  sshGetHomeDirectory: (environmentId: string) => ipcRenderer.invoke(SSH_GET_HOME_DIRECTORY, environmentId),
+  sshListDirectories: (environmentId: string, directoryPath: string) => ipcRenderer.invoke(SSH_LIST_DIRECTORIES, environmentId, directoryPath),
   getEnvironmentHarnessOptions: (environmentId: string) => ipcRenderer.invoke(GET_ENVIRONMENT_HARNESS_OPTIONS, environmentId),
 });

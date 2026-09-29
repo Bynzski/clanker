@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
+import { EnvironmentManager } from '../../../src/main/environment/environmentManager';
+import { SshCommandExecutor } from '../../../src/main/remote/sshCommandExecutor';
 import { registerSshEnvironmentIpc } from '../../../src/main/ipc/sshEnvironmentIpc';
-import { SSH_ENVIRONMENT_DELETE, SSH_ENVIRONMENT_SAVE } from '../../../src/shared/ipcChannels';
+import {
+  SSH_ENVIRONMENT_DELETE, SSH_ENVIRONMENT_SAVE, SSH_GET_HOME_DIRECTORY, SSH_LIST_DIRECTORIES,
+} from '../../../src/shared/ipcChannels';
 import { ipcMain } from 'electron';
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() } }));
@@ -56,5 +60,43 @@ describe('SSH environment lifecycle', () => {
     expect(remove(null, existing.id).success).toBe(true);
     expect(store.get('sshEnvironments')).toEqual([]);
     expect(invalidate).toHaveBeenCalledWith(existing.id);
+  });
+});
+
+describe('pre-workspace SSH browse IPC', () => {
+  it('only accepts saved SSH IDs and forwards bounded read-only Python calls', async () => {
+    vi.clearAllMocks();
+    const store = new MemoryStore();
+    const exec = vi.fn()
+      .mockResolvedValueOnce({ stdout: '{"homePath":"/home/dev","initialPath":"/home/dev/workspaces"}' })
+      .mockResolvedValueOnce({ stdout: '{"path":"/home/dev/workspaces","parentPath":"/home/dev","directories":[]}' });
+    const manager = new EnvironmentManager(() => store as never, { exec } as unknown as SshCommandExecutor);
+    registerSshEnvironmentIpc({
+      getStore: () => store as never,
+      getEnvironmentManager: () => manager,
+      getWorkspaceRegistry: () => new WorkspaceRegistry(async () => null),
+    });
+    const handlers = vi.mocked(ipcMain.handle).mock.calls;
+    const getHome = handlers.find(([channel]) => channel === SSH_GET_HOME_DIRECTORY)![1] as
+      (_event: unknown, id: unknown) => Promise<unknown>;
+    const list = handlers.find(([channel]) => channel === SSH_LIST_DIRECTORIES)![1] as
+      (_event: unknown, id: unknown, path: unknown) => Promise<unknown>;
+    for (const id of ['local', 'unknown', '', 'dev-vps; touch /tmp/injected', null, {}]) {
+      await expect(getHome(null, id)).rejects.toThrow('Unknown SSH environment');
+      await expect(list(null, id, '/tmp')).rejects.toThrow('Unknown SSH environment');
+    }
+    expect(exec).not.toHaveBeenCalled();
+    expect(await getHome(null, existing.id)).toEqual({
+      homePath: '/home/dev', initialPath: '/home/dev/workspaces',
+    });
+    await expect(list(null, existing.id, null)).rejects.toThrow('Invalid remote directory path');
+    expect(await list(null, existing.id, '/home/dev/workspaces')).toEqual({
+      path: '/home/dev/workspaces', parentPath: '/home/dev', directories: [],
+    });
+    expect(exec).toHaveBeenCalledTimes(2);
+    expect(exec).toHaveBeenNthCalledWith(1, existing.target, 'python3',
+      ['-c', expect.any(String)], { timeoutMs: 12000, maxBuffer: 128 * 1024 });
+    expect(exec).toHaveBeenNthCalledWith(2, existing.target, 'python3',
+      ['-c', expect.any(String), '/home/dev/workspaces'], { timeoutMs: 12000, maxBuffer: 128 * 1024 });
   });
 });

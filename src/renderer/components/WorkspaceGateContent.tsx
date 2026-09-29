@@ -14,6 +14,7 @@ import GateHarnessSettings from './GateHarnessSettings';
 import { findGeneratedWorktreeContainerOwner } from '../lib/worktreeContainer';
 import { getWorkspaceNameFromPath } from '../lib/workspaceLabels';
 import { joinPaths } from '../lib/pathUtils';
+import RemoteWorkspacePath from './RemoteWorkspacePath';
 import './WorkspaceGate.css';
 
 export interface WorkspaceFormData {
@@ -123,6 +124,10 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   const [sshEnvironments, setSshEnvironments] = useState<SshEnvironmentConfig[]>([]);
   const [selectedSshEnvId, setSelectedSshEnvId] = useState<string>('');
   const [remotePath, setRemotePath] = useState('');
+  const updateRemotePath = useCallback((path: string) => {
+    setRemotePath(path);
+    setDirectoryError('');
+  }, []);
   const [showSshManager, setShowSshManager] = useState(false);
   const [sshFormLabel, setSshFormLabel] = useState('');
   const [sshFormTarget, setSshFormTarget] = useState('');
@@ -186,6 +191,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         setSshFormLabel('');
         setSshFormTarget('');
         setSshTestStatus(null);
+        setRemotePath('');
         setSelectedSshEnvId(res.config.id);
         await refreshSshEnvironments();
       } else {
@@ -200,6 +206,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     try {
       await window.electronAPI.sshEnvironmentDelete(id);
       if (selectedSshEnvId === id) {
+        setRemotePath('');
         setSelectedSshEnvId('');
       }
       await refreshSshEnvironments();
@@ -910,7 +917,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
             <select
               className="ssh-env-select"
               value={selectedSshEnvId}
-              onChange={(e) => setSelectedSshEnvId(e.target.value)}
+              onChange={(e) => { setRemotePath(''); setDirectoryError(''); setSelectedSshEnvId(e.target.value); }}
             >
               {sshEnvironments.map((env) => (
                 <option key={env.id} value={env.id}>
@@ -939,24 +946,10 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         <div className="gate-section-header" style={{ marginTop: '10px' }}>
           <span className="gate-section-label">Remote Directory Path</span>
         </div>
-        <div className="input-wrapper">
-          <input
-            type="text"
-            className="gate-input"
-            value={remotePath}
-            onChange={(e) => {
-              setRemotePath(e.target.value);
-              setDirectoryError('');
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSubmit();
-            }}
-            placeholder="/home/jay/Projects/clanker"
-            spellCheck={false}
-            autoComplete="off"
-            autoCapitalize="off"
-          />
-        </div>
+        {selectedSshEnvId && (
+          <RemoteWorkspacePath key={selectedSshEnvId} environmentId={selectedSshEnvId}
+            path={remotePath} onPathChange={updateRemotePath} onSubmit={handleSubmit} />
+        )}
       </div>
       )}
       {locationKind === 'local' && savedRecipes.length > 0 && (

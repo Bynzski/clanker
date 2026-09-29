@@ -35,6 +35,12 @@ Clanker supports opening workspaces on remote Linux/POSIX development machines r
 - **Local environment (`local`)**: The default built-in environment. Files, terminals, worktrees, and processes run directly on the machine running Clanker.
 - **SSH Remote environments**: Configured targets pointing to remote Linux/POSIX servers (such as a public VPS, cloud instance, homelab machine, or Tailscale node).
 
+### Selecting a Remote Directory
+
+Choose a saved SSH environment in the launcher. Clanker asks that account for its canonical home directory and starts at `$HOME/workspaces` when that directory exists, or `$HOME` otherwise. Use **Browse** to enter a child directory, move to its parent, and select the current folder. The path field also offers debounced remote directory suggestions; an absolute path can still be entered manually.
+
+Pre-workspace browsing is a separate, read-only directory-listing operation resolved from the saved SSH environment ID. It returns directory names and canonical paths only; it cannot read file contents or mutate files. After selection, workspace registration validates and canonicalizes the root. All subsequent filesystem requests remain confined to that registered root.
+
 ### Workspace Identity
 
 Workspace identity is composite:

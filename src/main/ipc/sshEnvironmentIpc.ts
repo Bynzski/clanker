@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import type Store from 'electron-store';
 import type { StoreSchema } from '../../shared/types/store';
 import type { EnvironmentManager } from '../environment/environmentManager';
+import { SshEnvironment } from '../remote/sshEnvironment';
 import { WorkspacePersistenceService } from '../workspacePersistence';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
 import {
@@ -9,6 +10,8 @@ import {
   SSH_ENVIRONMENT_SAVE,
   SSH_ENVIRONMENT_DELETE,
   SSH_ENVIRONMENT_TEST,
+  SSH_GET_HOME_DIRECTORY,
+  SSH_LIST_DIRECTORIES,
   GET_ENVIRONMENT_HARNESS_OPTIONS,
 } from '../../shared/ipcChannels';
 
@@ -66,6 +69,32 @@ export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): 
 
     const executor = getEnvironmentManager().getSshExecutor();
     return executor.testConnection(rawTarget);
+  });
+
+  // Browsing is deliberately separate from workspace-scoped file APIs. Only
+  // saved SSH IDs can reach these read-only operations.
+  async function getSavedSshEnvironment(environmentId: unknown) {
+    if (typeof environmentId !== 'string' || !environmentId || environmentId === 'local') {
+      throw new Error('Unknown SSH environment');
+    }
+    const env = await getEnvironmentManager().getEnvironment(environmentId);
+    if (!(env instanceof SshEnvironment)) {
+      throw new Error('Unknown SSH environment');
+    }
+    return env;
+  }
+
+  ipcMain.handle(SSH_GET_HOME_DIRECTORY, async (_, environmentId: unknown) => {
+    const env = await getSavedSshEnvironment(environmentId);
+    return env.getHomeDirectory();
+  });
+
+  ipcMain.handle(SSH_LIST_DIRECTORIES, async (_, environmentId: unknown, directoryPath: unknown) => {
+    const env = await getSavedSshEnvironment(environmentId);
+    if (typeof directoryPath !== 'string') {
+      throw new Error('Invalid remote directory path');
+    }
+    return env.listBrowsableDirectories(directoryPath);
   });
 
   ipcMain.handle(GET_ENVIRONMENT_HARNESS_OPTIONS, async (_, environmentId: unknown) => {
