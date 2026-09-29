@@ -26,6 +26,54 @@ Closing a workspace tab stops its live terminals and closes its UI; it leaves th
 
 New worktrees contain Git tracked files from the base commit. Local ignored files such as `.env` and installed dependencies are not copied automatically; set up those files in the new checkout as needed.
 
+## Remote Workspaces (SSH)
+
+Clanker supports opening workspaces on remote Linux/POSIX development machines reachable via SSH. The local Clanker desktop app provides the editor, terminal grid, and Git interface, while the remote development machine owns the filesystem, Git checkout, shell processes, and coding agents.
+
+### Local vs. SSH Environments
+
+- **Local environment (`local`)**: The default built-in environment. Files, terminals, worktrees, and processes run directly on the machine running Clanker.
+- **SSH Remote environments**: Configured targets pointing to remote Linux/POSIX servers (such as a public VPS, cloud instance, homelab machine, or Tailscale node).
+
+### Workspace Identity
+
+Workspace identity is composite:
+
+```text
+environmentId + canonical workspace path
+```
+
+This ensures that a workspace on `dev-vps:/home/jay/Projects/clanker` is a distinct identity from `local:/home/jay/Projects/clanker`. Both can be open simultaneously in the same window without state collision.
+
+Tab labels clearly display the environment prefix (e.g., `Local · clanker` vs. `dev-vps · clanker`).
+
+### OpenSSH Transport & Credentials
+
+Clanker uses the system OpenSSH client (`ssh`). It respects:
+- `~/.ssh/config` (Host aliases, Port, User, ProxyJump, IdentityFile)
+- Active `ssh-agent` keys
+- Known hosts verification
+- Tailscale SSH and MagicDNS hostnames
+
+Clanker **never** stores SSH passwords or private keys in application state, nor does it disable host-key verification. Saved SSH targets only store non-secret metadata (a label and the connection target string).
+
+### Remote Prerequisites & Platform Support
+
+- **Supported Remote Platforms**: Linux and POSIX-compatible operating systems (x86_64, ARM64). Remote Windows hosts are not supported in V1.
+- **Prerequisites**: OpenSSH server running on the remote host, with key-based authentication or ssh-agent configured for noninteractive background operations. Python 3 is required on the remote host for root-confined filesystem operations and atomic writes.
+
+### Features Intentionally Deferred / Unavailable Remotely in V1
+
+To maintain reliability and safety, the following capabilities are local-only in V1:
+
+1. **Task Worktrees**: Creating or removing Git worktrees is disabled for remote workspaces. Opening existing remote checkouts directly as workspaces is fully supported.
+2. **Reveal in File Manager**: Disabled for remote paths, preventing passing remote paths to desktop OS file managers.
+3. **Local File Watching**: Chokidar file watching is not attached to remote paths. Remote explorer and editor state refreshes on mutations and focus events.
+4. **Agent Attention & Remote Native Session Discovery**: Remote terminals run without local attention hooks. On remote terminal exit, local session history scanning is bypassed, and tasks are marked unavailable with a clear diagnostic explanation.
+5. **Automatic Port Forwarding**: VPS development servers listening on `localhost:3000` are remote to that machine. Automatic port forwarding is deferred to a future release.
+6. **Remote Process Persistence**: Remote PTY processes terminate on workspace closure or app exit; PTY daemons are not installed on the remote machine.
+7. **AI Commit Generation**: Disabled for SSH workspaces; manual Git commits work remotely. Local model/CLI discovery is never used to represent a remote host.
+
 ## Managing Tabs
 
 - **Switch workspaces**: Click a workspace tab

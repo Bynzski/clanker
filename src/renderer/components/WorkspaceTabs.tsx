@@ -42,6 +42,10 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
         return;
       }
 
+      if ((workspace.environmentId ?? 'local') !== 'local') {
+        await window.electronAPI.explorerStopWatching();
+        return;
+      }
       await window.electronAPI.explorerStartWatching(normalizePath(workspace.workspacePath));
     };
 
@@ -124,6 +128,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
         const projectName = getWorkspaceProjectName(workspace);
         const tabLabel = getWorkspaceTabLabel(workspace);
         const branch = workspace.gitCurrentBranch;
+        const envLabel = workspace.environmentLabel || (workspace.environmentId && workspace.environmentId !== 'local' ? workspace.environmentId : 'Local');
         const editName = workspace.isLinkedWorktree && workspace.name === getWorkspaceNameFromPath(workspace.workspacePath)
           ? projectName
           : workspace.name || projectName;
@@ -134,7 +139,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
             className={`workspace-tab ${isActive ? 'active' : ''}`}
             role="tab"
             aria-selected={isActive}
-            title={`${tabLabel}${workspace.isLinkedWorktree && branch ? ` · ${branch}` : ''}\n${workspace.workspacePath}`}
+            title={`${envLabel} · ${tabLabel}${workspace.isLinkedWorktree && branch ? ` · ${branch}` : ''}\n${workspace.workspacePath}`}
             onClick={() => !isEditing && selectWorkspace(workspace.id)}
           >
             {isEditing ? (
@@ -162,7 +167,11 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                   className="workspace-tab-label"
                   onDoubleClick={(e) => startEditing(workspace.id, editName, e)}
                 >
-                  {tabLabel}
+                  <span className="workspace-tab-env-prefix">
+                    {envLabel}
+                    <span className="workspace-tab-env-sep"> · </span>
+                  </span>
+                  <span className="workspace-tab-name">{tabLabel}</span>
                 </span>
                 <button
                   className="workspace-tab-edit-trigger"

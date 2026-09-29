@@ -91,14 +91,14 @@ describe('editorFileWatcher', () => {
       activeUnsub = startEditorFileWatcher();
 
       expect(mockEditorWatchFile).toHaveBeenCalledTimes(2);
-      expect(mockEditorWatchFile).toHaveBeenCalledWith({
+      expect(mockEditorWatchFile).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace-1',
         filePath: '/workspace-1/file-1.ts',
-      });
-      expect(mockEditorWatchFile).toHaveBeenCalledWith({
+      }));
+      expect(mockEditorWatchFile).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace-2',
         filePath: '/workspace-2/file-2.ts',
-      });
+      }));
     });
 
     it('does not thrash watch registrations on workspace switches alone', () => {
@@ -207,10 +207,10 @@ describe('editorFileWatcher', () => {
       }));
 
       expect(mockEditorUnwatchFile).toHaveBeenCalledTimes(1);
-      expect(mockEditorUnwatchFile).toHaveBeenCalledWith({
+      expect(mockEditorUnwatchFile).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace-2',
         filePath: '/shared/file.ts',
-      });
+      }));
     });
 
     it('cleanup unwatches all tracked files', () => {
@@ -242,10 +242,10 @@ describe('editorFileWatcher', () => {
       activeUnsub = null;
 
       expect(mockEditorUnwatchFile).toHaveBeenCalledTimes(1);
-      expect(mockEditorUnwatchFile).toHaveBeenCalledWith({
+      expect(mockEditorUnwatchFile).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace-1',
         filePath: '/workspace-1/file.ts',
-      });
+      }));
     });
   });
 

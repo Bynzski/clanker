@@ -277,11 +277,11 @@ describe('editor store actions', () => {
       const tab = state.editorTabs.find(t => t.id === tabId);
       expect(tab?.isDirty).toBe(false);
       expect(tab?.originalContent).toBe('modified');
-      expect(mockElectronApi.editorWriteFile).toHaveBeenCalledWith({
+      expect(mockElectronApi.editorWriteFile).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace',
         filePath: '/workspace/test.js',
         content: 'modified',
-      });
+      }));
     });
 
     it('preserves CRLF when saving a CRLF-origin file', async () => {
@@ -298,11 +298,11 @@ describe('editor store actions', () => {
 
       await useWorkspaceStore.getState().saveEditorFile(tabId);
 
-      expect(mockElectronApi.editorWriteFile).toHaveBeenCalledWith({
+      expect(mockElectronApi.editorWriteFile).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace',
         filePath: '/workspace/crlf.txt',
         content: 'line1\r\nline2\r\nline3\r\n',
-      });
+      }));
     });
 
     it('preserves LF when saving an LF-origin file', async () => {
@@ -319,11 +319,11 @@ describe('editor store actions', () => {
 
       await useWorkspaceStore.getState().saveEditorFile(tabId);
 
-      expect(mockElectronApi.editorWriteFile).toHaveBeenCalledWith({
+      expect(mockElectronApi.editorWriteFile).toHaveBeenCalledWith(expect.objectContaining({
         workspacePath: '/workspace',
         filePath: '/workspace/lf.txt',
         content: 'line1\nline2\nline3\n',
-      });
+      }));
     });
   });
 

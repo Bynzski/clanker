@@ -8,6 +8,7 @@ import {
   Link,
   FolderOutput,
 } from 'lucide-react';
+import { useWorkspaceStore } from '../../store/workspaceStore';
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
 import './ContextMenu.css';
 
@@ -29,6 +30,11 @@ export interface ContextMenuProps {
 }
 
 export default function ContextMenu({ x, y, entry, onAction, onClose }: ContextMenuProps) {
+  const isRemote = useWorkspaceStore((state) => {
+    const ws = state.getActiveWorkspace();
+    return Boolean(ws?.environmentId && ws.environmentId !== 'local');
+  });
+
   // Viewport edge clamping
   const menuStyle = useMemo(() => {
     const menuWidth = 200;
@@ -142,18 +148,20 @@ export default function ContextMenu({ x, y, entry, onAction, onClose }: ContextM
           Copy Relative Path
         </button>
 
-        {/* Reveal in file manager */}
-        <button
-          type="button"
-          className="context-menu-action"
-          role="menuitem"
-          onClick={() => onAction('reveal-in-files')}
-        >
-          <span className="context-menu-icon">
-            <FolderOutput size={14} />
-          </span>
-          Reveal in File Manager
-        </button>
+        {/* Reveal in file manager (local workspaces only) */}
+        {!isRemote && (
+          <button
+            type="button"
+            className="context-menu-action"
+            role="menuitem"
+            onClick={() => onAction('reveal-in-files')}
+          >
+            <span className="context-menu-icon">
+              <FolderOutput size={14} />
+            </span>
+            Reveal in File Manager
+          </button>
+        )}
       </div>
     </>
   );

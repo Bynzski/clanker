@@ -31,6 +31,9 @@ process.on('unhandledRejection', (reason) => {
 import Store from 'electron-store';
 
 import { GitService } from './gitService';
+import { EnvironmentManager } from './environment/environmentManager';
+import { WorkspaceRegistry } from './workspaceRegistry';
+import { registerSshEnvironmentIpc } from './ipc/sshEnvironmentIpc';
 import { resolveExistingDirectory } from './security';
 import { type StoreSchema } from '../shared/types/store';
 import { KNOWN_HARNESS_IDS } from '../shared/harnessIds';
@@ -70,6 +73,7 @@ const store = new Store<StoreSchema>({
     ),
     workspaceRecipes: [],
     taskSessions: [],
+    sshEnvironments: [],
   },
 });
 
@@ -153,17 +157,43 @@ const cleanupWindowState = () => {
   annotationModeEnabled = false;
   killAllTerminals();
   gitService.clearOpenWorkspaces();
+  workspaceRegistry.clear();
   activeBrowserWorkspaceId = null;
   mainWindow = null;
 };
 
-const gitService = new GitService((status) => {
-  if (mainWindow) {
-    mainWindow.webContents.send('git-status-update', status);
+const environmentManager = new EnvironmentManager(() => store);
+const workspaceRegistry: WorkspaceRegistry = new WorkspaceRegistry(
+  (id) => environmentManager.getEnvironment(id),
+  { isWorktreeBeingRemoved: (p: string): boolean => gitService.isWorktreeBeingRemoved(p) }
+);
+
+const gitService: GitService = new GitService(
+  (status) => {
+    if (mainWindow) {
+      mainWindow.webContents.send('git-status-update', status);
+    }
+  },
+  (worktreePath) => shell.trashItem(worktreePath),
+  () => [...terminals.values()]
+    .map((terminal) => terminal.cwd)
+    .filter((cwd): cwd is string => typeof cwd === 'string'),
+  () => workspaceRegistry.getLocalOpenWorkspacePaths(),
+  async (workspacePath, args, timeoutMs, workspaceId, environmentId) => {
+    if (workspaceId !== undefined) {
+      const ws = workspaceRegistry.getWorkspace(workspaceId);
+      if (!ws || ws.location.path !== workspacePath || ws.location.environmentId !== environmentId) {
+        throw new Error('Workspace identity is no longer registered');
+      }
+      return ws.environment.execGit(ws.location.path, args, timeoutMs);
+    }
+    // A path alone cannot distinguish an SSH workspace from a local checkout.
+    // Legacy callers without an identity always run against the local filesystem.
+    const local = await environmentManager.getEnvironment('local');
+    if (!local) throw new Error('Local environment is unavailable');
+    return local.execGit(workspacePath, args, timeoutMs);
   }
-}, (worktreePath) => shell.trashItem(worktreePath), () => [...terminals.values()]
-  .map((terminal) => terminal.cwd)
-  .filter((cwd): cwd is string => typeof cwd === 'string'));
+);
 
 const fileWatcher = new FileWatcherService({ getMainWindow: () => mainWindow });
 fileWatcher.setGitService(gitService);
@@ -212,6 +242,7 @@ app.whenReady().then(() => {
   registerAiCommitIpc({
     getStore: () => store,
     getGitService: () => gitService,
+    getWorkspaceRegistry: () => workspaceRegistry,
   });
 
   registerRecipeIpc({
@@ -232,6 +263,7 @@ app.whenReady().then(() => {
     getStore: () => store,
     getSafeWorkspacePath: (workingDir: string) => getSafeWorkspacePath(workingDir, store),
     getOpenWorkspacePath: (workspaceId: string) => gitService.getOpenWorkspacePath(workspaceId),
+    getWorkspaceRegistry: () => workspaceRegistry,
     getHarnessOptions: () => HARNESS_OPTIONS,
     agentAttentionBroker,
     taskSessionCoordinator,
@@ -256,17 +288,26 @@ app.whenReady().then(() => {
       }
     },
   });
-
   registerGitIpc({
     getGitService: () => gitService,
     getMainWindow: () => mainWindow,
+    getWorkspaceRegistry: () => workspaceRegistry,
   });
 
   registerCredentialIpc();
-  registerFileIpc({ getFileWatcher: () => fileWatcher, getExplorerWatcher: () => explorerWatcher });
+  registerSshEnvironmentIpc({
+    getStore: () => store,
+    getEnvironmentManager: () => environmentManager,
+  });
+  registerFileIpc({
+    getFileWatcher: () => fileWatcher,
+    getExplorerWatcher: () => explorerWatcher,
+    getWorkspaceRegistry: () => workspaceRegistry,
+  });
 
   registerVcsIpc({
     getGitService: () => gitService,
+    getWorkspaceRegistry: () => workspaceRegistry,
   });
 
   registerSessionIpc({
@@ -276,6 +317,7 @@ app.whenReady().then(() => {
     getIsShuttingDown: getAppShuttingDown,
     getStore: () => store,
     getHarnessOptions: getAvailableHarnessOptions,
+    getWorkspaceRegistry: () => workspaceRegistry,
     agentAttentionBroker,
     taskSessionCoordinator,
   });
@@ -334,4 +376,4 @@ app.on('before-quit', () => {
 });
 
 // Export shared state for test access
-export { terminals, browserViews, activeBrowserWorkspaceId, activeBrowserTabIdsByWorkspace, lastBrowserBoundsByWorkspace, gitService, explorerWatcher, store, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS, annotationModeEnabled, annotationController };
+export { terminals, browserViews, activeBrowserWorkspaceId, activeBrowserTabIdsByWorkspace, lastBrowserBoundsByWorkspace, gitService, explorerWatcher, store, workspaceRegistry, environmentManager, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS, annotationModeEnabled, annotationController };

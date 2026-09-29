@@ -4,12 +4,14 @@ interface UseGitStashActionsParams {
   onSetActiveAction: (action: string | null) => void;
   refreshAfterAction: () => Promise<void>;
   workspacePath: string;
+  workspaceId?: string;
 }
 
 export function useGitStashActions({
   onSetActiveAction,
   refreshAfterAction,
   workspacePath,
+  workspaceId,
 }: UseGitStashActionsParams) {
   const [includeUntracked, setIncludeUntracked] = useState(true);
   const [stashError, setStashError] = useState<string | null>(null);
@@ -20,7 +22,7 @@ export function useGitStashActions({
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitStash(workspacePath, stashMessage, includeUntracked);
+      const result = await window.electronAPI.gitStash(workspacePath, stashMessage, includeUntracked, workspaceId);
 
       if (result.success) {
         setStashMessage('');
@@ -40,7 +42,7 @@ export function useGitStashActions({
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitApplyStash(workspacePath, stashRef);
+      const result = await window.electronAPI.gitApplyStash(workspacePath, stashRef, workspaceId);
       if (result.success) {
         await refreshAfterAction();
       } else {
@@ -58,7 +60,7 @@ export function useGitStashActions({
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitPopStash(workspacePath, stashRef);
+      const result = await window.electronAPI.gitPopStash(workspacePath, stashRef, workspaceId);
       if (result.success) {
         await refreshAfterAction();
       } else {
@@ -80,7 +82,7 @@ export function useGitStashActions({
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitDropStash(workspacePath, stashRef);
+      const result = await window.electronAPI.gitDropStash(workspacePath, stashRef, workspaceId);
       if (result.success) {
         await refreshAfterAction();
       } else {
@@ -102,7 +104,7 @@ export function useGitStashActions({
     setStashError(null);
 
     try {
-      const result = await window.electronAPI.gitClearStashes(workspacePath);
+      const result = await window.electronAPI.gitClearStashes(workspacePath, workspaceId);
       if (result.success) {
         await refreshAfterAction();
       } else {

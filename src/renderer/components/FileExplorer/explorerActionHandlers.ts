@@ -131,8 +131,8 @@ async function handleCopyRelativePath(
   await window.electronAPI.writeClipboard(resolved);
 }
 
-async function handleRevealInFiles(entry: FileExplorerEntry): Promise<void> {
-  await window.electronAPI.revealInFileManager(entry.path);
+async function handleRevealInFiles(entry: FileExplorerEntry, workspaceId: string | null): Promise<void> {
+  await window.electronAPI.revealInFileManager(entry.path, workspaceId ?? undefined);
 }
 
 function handleStartRename(
@@ -179,7 +179,7 @@ export async function dispatchContextAction(
       await handleCopyRelativePath(entry, deps, callbacks.getWorkspacePath);
       break;
     case 'reveal-in-files':
-      await handleRevealInFiles(entry);
+      await handleRevealInFiles(entry, deps.resolvedWorkspaceId);
       break;
     case 'rename':
       handleStartRename(entry, callbacks.setRenaming);
@@ -331,6 +331,7 @@ export async function executeDelete(
 
   const result = await window.electronAPI.fileDelete({
     workspacePath: normalizedWorkspacePath,
+    workspaceId: deps.resolvedWorkspaceId ?? undefined,
     targetPath: entry.path,
   });
 
@@ -380,6 +381,7 @@ export async function executeRename(
 
   const result = await window.electronAPI.fileRename({
     workspacePath: normalizedWorkspacePath,
+    workspaceId: deps.resolvedWorkspaceId ?? undefined,
     oldPath,
     newPath,
   });

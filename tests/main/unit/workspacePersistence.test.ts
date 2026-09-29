@@ -45,9 +45,60 @@ describe('workspaceIdentity', () => {
     expect(isSameWorkspaceIdentity('/home/user/repo/', '/home/user/repo', false)).toBe(true);
   });
 
-  it('returns canonical keys', () => {
-    expect(workspaceIdentityKey('C:\\Foo\\Bar\\', true)).toBe('c:/foo/bar');
-    expect(workspaceIdentityKey('/Foo/Bar/', false)).toBe('/Foo/Bar');
+  it('preserves remote POSIX case on Windows and separates remote hosts', () => {
+    const upper = { environmentId: 'host-a', path: '/home/User/Repo/' };
+    const lower = { environmentId: 'host-a', path: '/home/user/repo' };
+    expect(isSameWorkspaceIdentity(upper, lower, true)).toBe(false);
+    expect(isSameWorkspaceIdentity(upper, { ...upper, environmentId: 'host-b' }, true)).toBe(false);
+    expect(isSameWorkspaceIdentity(upper, { ...upper, path: '/home/User/Repo' }, true)).toBe(true);
+    expect(isSameWorkspaceIdentity({ environmentId: 'local', path: '/Home/User/Repo' }, '/home/user/repo', true)).toBe(true);
+  });
+
+  it('treats delimiter characters in an absolute path as local path content', () => {
+    expect(isSameWorkspaceIdentity('/home/foo::bar', { environmentId: 'local', path: '/home/foo::bar' })).toBe(true);
+    expect(isSameWorkspaceIdentity('host-a::/repo', { environmentId: 'host-a', path: '/repo' })).toBe(true);
+    expect(() => workspaceIdentityKey({ environmentId: 'host::a', path: '/repo' })).toThrow('Invalid workspace environment ID');
+  });
+
+  it('returns canonical keys including environmentId', () => {
+    expect(workspaceIdentityKey('C:\\Foo\\Bar\\', true)).toBe('local::c:/foo/bar');
+    expect(workspaceIdentityKey('/Foo/Bar/', false)).toBe('local::/Foo/Bar');
+    expect(workspaceIdentityKey({ environmentId: 'vps-1', path: '/Foo/Bar/' }, false)).toBe('vps-1::/Foo/Bar');
+  });
+
+  it('distinguishes local and remote workspaces with identical paths', () => {
+    expect(isSameWorkspaceIdentity(
+      { environmentId: 'local', path: '/home/user/project' },
+      { environmentId: 'dev-vps', path: '/home/user/project' }
+    )).toBe(false);
+    expect(isSameWorkspaceIdentity(
+      { environmentId: 'local', path: '/home/user/project' },
+      '/home/user/project'
+    )).toBe(true);
+  });
+  it('falls back to navigator userAgent when process is undefined in browser context', () => {
+    const originalProcess = process;
+    const originalUserAgent = globalThis.navigator?.userAgent;
+    try {
+      // @ts-expect-error test override
+      globalThis.process = undefined;
+      Object.defineProperty(globalThis.navigator, 'userAgent', {
+        value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        configurable: true,
+      });
+      expect(isSameWorkspaceIdentity('C:/Projects/Repo', 'c:/projects/repo/')).toBe(true);
+    } finally {
+      globalThis.process = originalProcess;
+      if (originalUserAgent !== undefined) {
+        Object.defineProperty(globalThis.navigator, 'userAgent', {
+          value: originalUserAgent,
+          configurable: true,
+        });
+      } else {
+        // @ts-expect-error test cleanup
+        delete globalThis.navigator?.userAgent;
+      }
+    }
   });
 });
 
@@ -114,6 +165,7 @@ describe('sanitizeWorkspaceRecipe', () => {
       id: 'rec-1',
       name: 'Full Stack',
       workspacePath: 'C:/Users/user/project',
+      environmentId: 'local',
       description: 'Web app with worker',
       terminalCount: 2,
       launches: [
@@ -166,6 +218,7 @@ describe('sanitizeTaskSessionRecord', () => {
     expect(record).toEqual({
       id: 'task-1',
       workspacePath: '/home/user/project',
+      environmentId: 'local',
       harnessId: 'codex',
       modelId: 'gpt-5',
       title: 'Fix issue 42',
@@ -193,6 +246,51 @@ describe('sanitizeTaskSessionRecord', () => {
     expect(sanitizeTaskSessionRecord({})).toBeNull();
     expect(sanitizeTaskSessionRecord({ id: '1', workspacePath: '' })).toBeNull();
     expect(sanitizeTaskSessionRecord({ id: '1', workspacePath: '/p', harnessId: '' })).toBeNull();
+  });
+
+  it('migrates path-only task sessions and recipes to local environment', () => {
+    const recipe = sanitizeWorkspaceRecipe({
+      id: 'rec-legacy',
+      name: 'Legacy Recipe',
+      workspacePath: '/home/user/legacy',
+      launches: [],
+    });
+    expect(recipe?.environmentId).toBe('local');
+
+    const task = sanitizeTaskSessionRecord({
+      id: 'task-legacy',
+      workspacePath: '/home/user/legacy',
+      harnessId: 'codex',
+    });
+    expect(task?.environmentId).toBe('local');
+  });
+
+  it('preserves non-local environmentId when present', () => {
+    const recipe = sanitizeWorkspaceRecipe({
+      id: 'rec-remote',
+      name: 'Remote Recipe',
+      workspacePath: '/home/jay/remote',
+      environmentId: 'vps-1',
+      launches: [],
+    });
+    expect(recipe?.environmentId).toBe('vps-1');
+
+    const task = sanitizeTaskSessionRecord({
+      id: 'task-remote',
+      workspacePath: '/home/jay/remote',
+      environmentId: 'vps-1',
+      harnessId: 'claude',
+    });
+    expect(task?.environmentId).toBe('vps-1');
+  });
+
+  it('rejects ambiguous environment IDs instead of assigning a record to another workspace', () => {
+    expect(sanitizeWorkspaceRecipe({
+      id: 'r1', name: 'Recipe', workspacePath: '/repo', environmentId: 'host::other', launches: [],
+    })).toBeNull();
+    expect(sanitizeTaskSessionRecord({
+      id: 't1', harnessId: 'codex', workspacePath: '/repo', environmentId: 'host::other',
+    })).toBeNull();
   });
 });
 
@@ -258,6 +356,19 @@ describe('WorkspacePersistenceService', () => {
     expect(forP1[0].id).toBe('r1');
   });
 
+  it('loads legacy recipes as local without mixing same-path remote recipes', () => {
+    memoryStore.set('workspaceRecipes', [
+      { id: 'legacy', name: 'Legacy', workspacePath: '/repo', launches: [] },
+      { id: 'host-a-upper', name: 'Upper', workspacePath: '/Repo', environmentId: 'host-a', launches: [] },
+      { id: 'host-a-lower', name: 'Lower', workspacePath: '/repo', environmentId: 'host-a', launches: [] },
+      { id: 'host-b', name: 'Other host', workspacePath: '/repo', environmentId: 'host-b', launches: [] },
+    ]);
+    expect(service.getRecipesForWorkspace('/repo').map((r) => [r.id, r.environmentId])).toEqual([['legacy', 'local']]);
+    expect(service.getRecipesForWorkspace('/Repo', 'host-a').map((r) => r.id)).toEqual(['host-a-upper']);
+    expect(service.getRecipesForWorkspace('host-a::/repo').map((r) => r.id)).toEqual(['host-a-lower']);
+    expect(service.getRecipesForWorkspace('/repo', 'host-b').map((r) => r.id)).toEqual(['host-b']);
+  });
+
   it('deletes recipes by ID', () => {
     service.saveRecipe({ id: 'r1', name: 'R1', workspacePath: '/p', launches: [] });
     service.saveRecipe({ id: 'r2', name: 'R2', workspacePath: '/p', launches: [] });
@@ -303,10 +414,70 @@ describe('WorkspacePersistenceService', () => {
     expect(sessions[0].id).toBe('t1');
   });
 
+  it('loads legacy task sessions as local without mixing same-path remote sessions', () => {
+    memoryStore.set('taskSessions', [
+      { id: 'legacy', workspacePath: '/repo', harnessId: 'codex' },
+      { id: 'host-a-upper', workspacePath: '/Repo', environmentId: 'host-a', harnessId: 'codex' },
+      { id: 'host-a-lower', workspacePath: '/repo', environmentId: 'host-a', harnessId: 'codex' },
+      { id: 'host-b', workspacePath: '/repo', environmentId: 'host-b', harnessId: 'codex' },
+    ]);
+    expect(service.getTaskSessionsForWorkspace('/repo').map((r) => [r.id, r.environmentId])).toEqual([['legacy', 'local']]);
+    expect(service.getTaskSessionsForWorkspace('/Repo', 'host-a').map((r) => r.id)).toEqual(['host-a-upper']);
+    expect(service.getTaskSessionsForWorkspace('host-a::/repo').map((r) => r.id)).toEqual(['host-a-lower']);
+    expect(service.getTaskSessionsForWorkspace('/repo', 'host-b').map((r) => r.id)).toEqual(['host-b']);
+  });
+
   it('deletes task session by ID', () => {
     service.saveTaskSession({ id: 't1', workspacePath: '/repo', harnessId: 'codex', state: 'resumable' });
     expect(service.deleteTaskSession('t1')).toBe(true);
     expect(service.deleteTaskSession('t1')).toBe(false);
     expect(service.getAllTaskSessions()).toEqual([]);
+  });
+
+  it('manages saved SSH environments and rejects invalid targets', () => {
+    expect(service.getAllSshEnvironments()).toEqual([]);
+
+    const saved = service.saveSshEnvironment({
+      id: 'env-1',
+      kind: 'ssh',
+      label: 'Production VPS',
+      target: 'deploy@192.168.1.100',
+    });
+
+    expect(saved).toEqual({
+      id: 'env-1',
+      kind: 'ssh',
+      label: 'Production VPS',
+      target: 'deploy@192.168.1.100',
+    });
+    expect(service.getSshEnvironmentById('env-1')?.label).toBe('Production VPS');
+
+    // Rejects option injection
+    expect(() => service.saveSshEnvironment({
+      id: 'env-bad',
+      kind: 'ssh',
+      label: 'Bad target',
+      target: '-oProxyCommand=calc.exe host',
+    })).toThrow();
+
+    expect(() => service.saveSshEnvironment({
+      id: 'env::bad',
+      kind: 'ssh',
+      label: 'Ambiguous identity',
+      target: 'host.example',
+    })).toThrow();
+
+    // Rejects shell metacharacters
+    expect(() => service.saveSshEnvironment({
+      id: 'env-bad2',
+      kind: 'ssh',
+      label: 'Bad target',
+      target: 'host; rm -rf /',
+    })).toThrow();
+
+    // Deletes environment
+    expect(service.deleteSshEnvironment('env-1')).toBe(true);
+    expect(service.deleteSshEnvironment('env-1')).toBe(false);
+    expect(service.getAllSshEnvironments()).toEqual([]);
   });
 });

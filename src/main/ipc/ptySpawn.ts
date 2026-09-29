@@ -24,6 +24,8 @@ export interface SpawnPtyOptions {
   launchLabel?: string;
   harnessId?: string;
   initialCommand?: string;
+  workspaceId?: string;
+  environmentId?: string;
   recipeCommandStartup?: RecipeCommandStartup;
   onExit?: (id: string) => void;
 }
@@ -57,6 +59,8 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     pid: ptyProcess.pid,
     pty: ptyProcess,
     cwd,
+    workspaceId: opts.workspaceId,
+    environmentId: opts.environmentId,
     harnessId,
     startupBuffer: [],
     startupBufferReady: false,

@@ -7,8 +7,10 @@ export function getWorkspaceNameFromPath(workspacePath: string): string {
   return baseName && baseName.length > 0 ? baseName : 'Workspace';
 }
 
-type WorkspaceIdentity = Pick<WorkspaceTab, 'name' | 'workspacePath' | 'isLinkedWorktree' | 'projectName' | 'gitCurrentBranch'>;
-
+type WorkspaceIdentity = Pick<
+  WorkspaceTab,
+  'name' | 'workspacePath' | 'isLinkedWorktree' | 'projectName' | 'gitCurrentBranch' | 'environmentId' | 'environmentLabel'
+>;
 export function getWorkspaceProjectName(workspace: WorkspaceIdentity): string {
   if (workspace.projectName?.trim()) return workspace.projectName.trim();
   if (workspace.isLinkedWorktree) {

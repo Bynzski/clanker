@@ -155,6 +155,11 @@ import {
   TASK_SESSION_LIST,
   TASK_SESSION_DELETE,
   TASK_SESSION_UPDATE,
+  SSH_ENVIRONMENT_LIST,
+  SSH_ENVIRONMENT_SAVE,
+  SSH_ENVIRONMENT_DELETE,
+  SSH_ENVIRONMENT_TEST,
+  GET_ENVIRONMENT_HARNESS_OPTIONS,
 } from '../shared/ipcChannels';
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -177,8 +182,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAiCommitModel: (model: string) => ipcRenderer.invoke(SET_AI_COMMIT_MODEL, model),
 
   // Terminal
-  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean) =>
-    ipcRenderer.invoke(SPAWN_TERMINAL, workingDir, harness, model, initialCommand, recipeCommand),
+  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string) =>
+    ipcRenderer.invoke(SPAWN_TERMINAL, workingDir, harness, model, initialCommand, recipeCommand, workspaceId, environmentId),
   waitRecipeCommand: (id: string) => ipcRenderer.invoke(RECIPE_COMMAND_WAIT, id),
   getTerminalBuffer: (id: string) => ipcRenderer.invoke(GET_TERMINAL_BUFFER, id),
   writeTerminal: (id: string, data: string) => ipcRenderer.invoke(WRITE_TERMINAL, { id, data }),
@@ -272,7 +277,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   browserHistoryAdd: (url: string, title?: string) => ipcRenderer.invoke(BROWSER_HISTORY_ADD, url, title),
   browserHistoryClear: () => ipcRenderer.invoke(BROWSER_HISTORY_CLEAR),
   openExternal: (url: string) => ipcRenderer.invoke(OPEN_EXTERNAL, url),
-  revealInFileManager: (filePath: string) => ipcRenderer.invoke(REVEAL_IN_FILE_MANAGER, filePath),
+  revealInFileManager: (filePath: string, workspaceId?: string) => ipcRenderer.invoke(REVEAL_IN_FILE_MANAGER, filePath, workspaceId),
   canGoBack: (workspaceId: string) => ipcRenderer.invoke(CAN_GO_BACK, workspaceId),
   canGoForward: (workspaceId: string) => ipcRenderer.invoke(CAN_GO_FORWARD, workspaceId),
   browserDisposeWorkspace: (workspaceId: string) => ipcRenderer.invoke(BROWSER_DISPOSE_WORKSPACE, workspaceId),
@@ -324,70 +329,73 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(SET_HARNESS_DEFAULTS, defaults),
 
   // Git operations - managed by GitService in main process
-  gitStartPolling: (workspacePath: string) => ipcRenderer.invoke(GIT_START_POLLING, workspacePath),
-  gitStopPolling: () => ipcRenderer.invoke(GIT_STOP_POLLING),
-  generateCommitMessage: (workspacePath: string) => ipcRenderer.invoke(GENERATE_COMMIT_MESSAGE, workspacePath),
-  gitStage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke(GIT_STAGE, workspacePath, files),
-  gitUnstage: (workspacePath: string, files?: string[]) => ipcRenderer.invoke(GIT_UNSTAGE, workspacePath, files),
-  gitCommit: (workspacePath: string, message: string) => ipcRenderer.invoke(GIT_COMMIT, workspacePath, message),
-  gitGetBranchState: (workspacePath: string) => ipcRenderer.invoke(GIT_GET_BRANCH_STATE, workspacePath),
-  gitListWorktrees: (workspacePath: string) => ipcRenderer.invoke(GIT_LIST_WORKTREES, workspacePath),
-  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string) =>
-    ipcRenderer.invoke(GIT_CREATE_WORKTREE, workspacePath, baseRef, branch),
-  registerOpenWorkspace: (id: string, workspacePath: string) =>
-    ipcRenderer.invoke(REGISTER_OPEN_WORKSPACE, id, workspacePath),
+  gitStartPolling: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_START_POLLING, workspacePath, workspaceId),
+  gitStopPolling: (workspaceId?: string) => ipcRenderer.invoke(GIT_STOP_POLLING, workspaceId),
+  generateCommitMessage: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GENERATE_COMMIT_MESSAGE, workspacePath, workspaceId),
+  gitStage: (workspacePath: string, files?: string[], workspaceId?: string) => ipcRenderer.invoke(GIT_STAGE, workspacePath, files, workspaceId),
+  gitUnstage: (workspacePath: string, files?: string[], workspaceId?: string) => ipcRenderer.invoke(GIT_UNSTAGE, workspacePath, files, workspaceId),
+  gitCommit: (workspacePath: string, message: string, workspaceId?: string) => ipcRenderer.invoke(GIT_COMMIT, workspacePath, message, workspaceId),
+  gitGetBranchState: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_GET_BRANCH_STATE, workspacePath, workspaceId),
+  gitListWorktrees: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_LIST_WORKTREES, workspacePath, workspaceId),
+  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_CREATE_WORKTREE, workspacePath, baseRef, branch, workspaceId),
+  registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) =>
+    ipcRenderer.invoke(REGISTER_OPEN_WORKSPACE, id, workspacePath, environmentId),
   unregisterOpenWorkspace: (id: string) =>
     ipcRenderer.invoke(UNREGISTER_OPEN_WORKSPACE, id),
-  gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[]) =>
-    ipcRenderer.invoke(GIT_INSPECT_WORKTREE, workspacePath, worktreePath, openWorkspacePaths),
-  gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) =>
-    ipcRenderer.invoke(GIT_REMOVE_WORKTREE, workspacePath, worktreePath, expectedBranch, openWorkspacePaths),
-  gitGetOperationState: (workspacePath: string) => ipcRenderer.invoke(GIT_GET_OPERATION_STATE, workspacePath),
-  gitGetStashes: (workspacePath: string) => ipcRenderer.invoke(GIT_GET_STASHES, workspacePath),
-  gitGetHistory: (workspacePath: string, limit?: number) => ipcRenderer.invoke(GIT_GET_HISTORY, workspacePath, limit),
+  gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[], workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_INSPECT_WORKTREE, workspacePath, worktreePath, openWorkspacePaths, workspaceId),
+  gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_REMOVE_WORKTREE, workspacePath, worktreePath, expectedBranch, openWorkspacePaths, workspaceId),
+  gitGetOperationState: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_GET_OPERATION_STATE, workspacePath, workspaceId),
+  gitGetStashes: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_GET_STASHES, workspacePath, workspaceId),
+  gitGetHistory: (workspacePath: string, limit?: number, workspaceId?: string) => ipcRenderer.invoke(GIT_GET_HISTORY, workspacePath, limit, workspaceId),
   gitGetDiff: (
     workspacePath: string,
     mode: 'working' | 'staged' | 'commit',
-    ref?: string
-  ) => ipcRenderer.invoke(GIT_GET_DIFF, workspacePath, mode, ref),
+    ref?: string,
+    workspaceId?: string
+  ) => ipcRenderer.invoke(GIT_GET_DIFF, workspacePath, mode, ref, workspaceId),
   gitGetFileDiff: (
     workspacePath: string,
     filePath: string,
-    mode: 'working' | 'staged'
-  ) => ipcRenderer.invoke(GIT_GET_FILE_DIFF, workspacePath, filePath, mode),
-  gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string) =>
-    ipcRenderer.invoke(GIT_CREATE_BRANCH, workspacePath, name, baseBranch),
-  gitSwitchBranch: (workspacePath: string, name: string) => ipcRenderer.invoke(GIT_SWITCH_BRANCH, workspacePath, name),
-  gitDeleteBranch: (workspacePath: string, name: string) => ipcRenderer.invoke(GIT_DELETE_BRANCH, workspacePath, name),
-  gitForceDeleteBranch: (workspacePath: string, name: string) =>
-    ipcRenderer.invoke(GIT_FORCE_DELETE_BRANCH, workspacePath, name),
-  gitMergeBranch: (workspacePath: string, branchName: string) => ipcRenderer.invoke(GIT_MERGE_BRANCH, workspacePath, branchName),
-  gitAbortOperation: (workspacePath: string) => ipcRenderer.invoke(GIT_ABORT_OPERATION, workspacePath),
-  gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean) =>
-    ipcRenderer.invoke(GIT_STASH, workspacePath, message, includeUntracked),
-  gitApplyStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke(GIT_APPLY_STASH, workspacePath, stashRef),
-  gitPopStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke(GIT_POP_STASH, workspacePath, stashRef),
-  gitDropStash: (workspacePath: string, stashRef: string) => ipcRenderer.invoke(GIT_DROP_STASH, workspacePath, stashRef),
-  gitClearStashes: (workspacePath: string) => ipcRenderer.invoke(GIT_CLEAR_STASHES, workspacePath),
-  gitRefresh: () => ipcRenderer.invoke(GIT_REFRESH),
-  gitInit: (workspacePath: string, defaultBranch?: string) =>
-    ipcRenderer.invoke(GIT_INIT, workspacePath, defaultBranch),
-  gitGetRemotes: (workspacePath: string) => ipcRenderer.invoke(GIT_GET_REMOTES, workspacePath),
-  gitAddRemote: (workspacePath: string, name: string, url: string) =>
-    ipcRenderer.invoke(GIT_ADD_REMOTE, workspacePath, name, url),
-  gitRemoveRemote: (workspacePath: string, name: string) =>
-    ipcRenderer.invoke(GIT_REMOVE_REMOTE, workspacePath, name),
-  gitRenameRemote: (workspacePath: string, oldName: string, newName: string) =>
-    ipcRenderer.invoke(GIT_RENAME_REMOTE, workspacePath, oldName, newName),
-  gitFetch: (workspacePath: string, remote?: string) => ipcRenderer.invoke(GIT_FETCH, workspacePath, remote),
-  gitPull: (workspacePath: string, rebase?: boolean) => ipcRenderer.invoke(GIT_PULL, workspacePath, rebase),
+    mode: 'working' | 'staged',
+    workspaceId?: string
+  ) => ipcRenderer.invoke(GIT_GET_FILE_DIFF, workspacePath, filePath, mode, workspaceId),
+  gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string, workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_CREATE_BRANCH, workspacePath, name, baseBranch, workspaceId),
+  gitSwitchBranch: (workspacePath: string, name: string, workspaceId?: string) => ipcRenderer.invoke(GIT_SWITCH_BRANCH, workspacePath, name, workspaceId),
+  gitDeleteBranch: (workspacePath: string, name: string, workspaceId?: string) => ipcRenderer.invoke(GIT_DELETE_BRANCH, workspacePath, name, workspaceId),
+  gitForceDeleteBranch: (workspacePath: string, name: string, workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_FORCE_DELETE_BRANCH, workspacePath, name, workspaceId),
+  gitMergeBranch: (workspacePath: string, branchName: string, workspaceId?: string) => ipcRenderer.invoke(GIT_MERGE_BRANCH, workspacePath, branchName, workspaceId),
+  gitAbortOperation: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_ABORT_OPERATION, workspacePath, workspaceId),
+  gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean, workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_STASH, workspacePath, message, includeUntracked, workspaceId),
+  gitApplyStash: (workspacePath: string, stashRef: string, workspaceId?: string) => ipcRenderer.invoke(GIT_APPLY_STASH, workspacePath, stashRef, workspaceId),
+  gitPopStash: (workspacePath: string, stashRef: string, workspaceId?: string) => ipcRenderer.invoke(GIT_POP_STASH, workspacePath, stashRef, workspaceId),
+  gitDropStash: (workspacePath: string, stashRef: string, workspaceId?: string) => ipcRenderer.invoke(GIT_DROP_STASH, workspacePath, stashRef, workspaceId),
+  gitClearStashes: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_CLEAR_STASHES, workspacePath, workspaceId),
+  gitRefresh: (workspaceId?: string) => ipcRenderer.invoke(GIT_REFRESH, workspaceId),
+  gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_INIT, workspacePath, defaultBranch, workspaceId),
+  gitGetRemotes: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_GET_REMOTES, workspacePath, workspaceId),
+  gitAddRemote: (workspacePath: string, name: string, url: string, workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_ADD_REMOTE, workspacePath, name, url, workspaceId),
+  gitRemoveRemote: (workspacePath: string, name: string, workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_REMOVE_REMOTE, workspacePath, name, workspaceId),
+  gitRenameRemote: (workspacePath: string, oldName: string, newName: string, workspaceId?: string) =>
+    ipcRenderer.invoke(GIT_RENAME_REMOTE, workspacePath, oldName, newName, workspaceId),
+  gitFetch: (workspacePath: string, remote?: string, workspaceId?: string) => ipcRenderer.invoke(GIT_FETCH, workspacePath, remote, workspaceId),
+  gitPull: (workspacePath: string, rebase?: boolean, workspaceId?: string) => ipcRenderer.invoke(GIT_PULL, workspacePath, rebase, workspaceId),
   gitPush: (
     workspacePath: string,
     remote?: string,
     branch?: string,
     forceWithLease?: boolean,
-    setUpstream?: boolean
-  ) => ipcRenderer.invoke(GIT_PUSH, workspacePath, remote, branch, forceWithLease, setUpstream),
+    setUpstream?: boolean,
+    workspaceId?: string
+  ) => ipcRenderer.invoke(GIT_PUSH, workspacePath, remote, branch, forceWithLease, setUpstream, workspaceId),
   onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => {
     const handler = (_event: IpcRendererEvent, status: GitStatusResult) => callback(status);
     ipcRenderer.on(GIT_STATUS_UPDATE, handler);
@@ -409,11 +417,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   credentialConfigureSshHost: (hostname: string) => ipcRenderer.invoke(CREDENTIAL_CONFIGURE_SSH_HOST, hostname),
 
   // VCS Provider Context
-  vcsGetContext: (workspacePath: string) => ipcRenderer.invoke(VCS_GET_CONTEXT, workspacePath),
-  vcsGetPrInfo: (workspacePath: string) => ipcRenderer.invoke(VCS_GET_PR_INFO, workspacePath),
-  vcsGetDeepLinks: (workspacePath: string, prNumber?: number) => ipcRenderer.invoke(VCS_GET_DEEP_LINKS, workspacePath, prNumber),
-  vcsGetDeepLink: (workspacePath: string, type: string) => ipcRenderer.invoke(VCS_GET_DEEP_LINK, workspacePath, type),
-  vcsOpenDeepLink: (workspacePath: string, type: string) => ipcRenderer.invoke(VCS_OPEN_DEEP_LINK, workspacePath, type),
+  vcsGetContext: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(VCS_GET_CONTEXT, workspacePath, workspaceId),
+  vcsGetPrInfo: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(VCS_GET_PR_INFO, workspacePath, workspaceId),
+  vcsGetDeepLinks: (workspacePath: string, prNumber?: number, workspaceId?: string) => ipcRenderer.invoke(VCS_GET_DEEP_LINKS, workspacePath, prNumber, workspaceId),
+  vcsGetDeepLink: (workspacePath: string, type: string, workspaceId?: string) => ipcRenderer.invoke(VCS_GET_DEEP_LINK, workspacePath, type, workspaceId),
+  vcsOpenDeepLink: (workspacePath: string, type: string, workspaceId?: string) => ipcRenderer.invoke(VCS_OPEN_DEEP_LINK, workspacePath, type, workspaceId),
 
   // Editor
   editorReadFile: (request: FileReadRequest) => ipcRenderer.invoke(FILE_READ, request),
@@ -457,8 +465,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(RECIPE_DELETE, recipeId),
 
   // Task Sessions
-  taskSessionList: (workspacePath?: string) =>
-    ipcRenderer.invoke(TASK_SESSION_LIST, workspacePath),
+  taskSessionList: (workspacePath?: string, environmentId?: string) =>
+    ipcRenderer.invoke(TASK_SESSION_LIST, workspacePath, environmentId),
   taskSessionDelete: (taskId: string) =>
     ipcRenderer.invoke(TASK_SESSION_DELETE, taskId),
   taskSessionUpdate: (updates: { id: string; title?: string; nativeSessionId?: string; nativeSessionPath?: string; state?: string; stateReason?: string }) =>
@@ -510,4 +518,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Annotation — trigger copy handles the full capture → format → clipboard pipeline
   annotationTriggerCopy: () => ipcRenderer.invoke(ANNOTATION_TRIGGER_COPY),
   annotationPrepareSend: () => ipcRenderer.invoke(ANNOTATION_PREPARE_SEND),
+
+  // SSH Environments
+  sshEnvironmentList: () => ipcRenderer.invoke(SSH_ENVIRONMENT_LIST),
+  sshEnvironmentSave: (config: unknown) => ipcRenderer.invoke(SSH_ENVIRONMENT_SAVE, config),
+  sshEnvironmentDelete: (id: string) => ipcRenderer.invoke(SSH_ENVIRONMENT_DELETE, id),
+  sshEnvironmentTest: (target: string) => ipcRenderer.invoke(SSH_ENVIRONMENT_TEST, target),
+  getEnvironmentHarnessOptions: (environmentId: string) => ipcRenderer.invoke(GET_ENVIRONMENT_HARNESS_OPTIONS, environmentId),
 });

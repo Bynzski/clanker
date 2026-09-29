@@ -14,6 +14,9 @@ export interface GitStatus {
 }
 
 export interface GitStatusResult {
+  workspacePath?: string;
+  workspaceId?: string;
+  environmentId?: string;
   success: boolean;
   isRepo: boolean;
   currentBranch: string | null;

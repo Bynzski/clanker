@@ -5,6 +5,8 @@ export interface Terminal {
   id: string;
   pid: number;
   workingDir: string;
+  workspaceId?: string;
+  environmentId?: string;
   harnessId?: string | null;
   attentionEnabled?: boolean;
   displayName?: string;
@@ -128,6 +130,8 @@ export interface WorkspaceTab {
   lifecycle: WorkspaceLifecycleState;
   name: string;
   workspacePath: string;
+  environmentId?: string;
+  environmentLabel?: string;
   isLinkedWorktree?: boolean;
   projectName?: string;
   harness: string;

@@ -1,4 +1,5 @@
 import { execFile } from 'child_process';
+import { AsyncLocalStorage } from 'async_hooks';
 import { createHash, randomBytes } from 'crypto';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -28,6 +29,9 @@ export interface GitRemotesResult {
 export type GitErrorCode = 'not-a-repo' | 'git-not-found' | 'unknown';
 
 export interface GitStatusResult {
+  workspacePath?: string;
+  workspaceId?: string;
+  environmentId?: string;
   success: boolean;
   isRepo: boolean;
   currentBranch: string | null;
@@ -107,12 +111,30 @@ export interface GitRemoteOperationResult {
   error?: string;
 }
 
+export type GitCommandExecutor = (
+  workspacePath: string,
+  args: string[],
+  timeoutMs?: number,
+  workspaceId?: string,
+  environmentId?: string,
+) => Promise<{ stdout: string; stderr: string }>;
+
+export interface GitWorkspaceIdentity {
+  workspacePath: string;
+  workspaceId: string;
+  environmentId: string;
+  readFile?: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string; errorCode?: string }>;
+}
+
 export class GitService {
+  private readonly workspaceContext = new AsyncLocalStorage<GitWorkspaceIdentity>();
   private worktreeCreateDrain: Promise<void> = Promise.resolve();
   private readonly openWorkspaces = new Map<string, string>();
   private readonly worktreesBeingRemoved = new Set<string>();
   private pollingInterval: NodeJS.Timeout | null = null;
   private currentWorkspacePath: string | null = null;
+  private currentWorkspaceId: string | null = null;
+  private currentEnvironmentId: string | null = null;
   private pollIntervalMs = 30000;
   private pollGeneration = 0;
   private pollRequested: { path: string; generation: number } | null = null;
@@ -122,18 +144,56 @@ export class GitService {
     private readonly emitStatus: (status: GitStatusResult) => void,
     private readonly trashWorktree: (worktreePath: string) => Promise<void> = async () => { throw new Error('System trash is unavailable'); },
     private readonly getLiveTerminalPaths: () => string[] = () => [],
+    private readonly getOpenWorkspacePaths: () => string[] = () => [],
+    private gitExecutor?: GitCommandExecutor,
   ) {}
+
+  public setGitExecutor(executor: GitCommandExecutor): void {
+    this.gitExecutor = executor;
+  }
+
+  public isWorktreeBeingRemoved(worktreePath: string): boolean {
+    return [...this.worktreesBeingRemoved].some((w) => this.isOpenWorkspace(w, [worktreePath]));
+  }
+
+  /** Scope all commands in an IPC operation to its registered workspace, even across awaits. */
+  withWorkspace<T>(identity: GitWorkspaceIdentity, operation: () => T): T {
+    return this.workspaceContext.run(identity, operation);
+  }
+
+  getScopedWorkspaceIdentity(): GitWorkspaceIdentity | undefined {
+    return this.workspaceContext.getStore();
+  }
 
   private async execGit(
     workspacePath: string,
     args: string[],
-    timeoutMs = 15000
+    timeoutMs = 15000,
+    workspaceId?: string,
   ): Promise<{ stdout: string; stderr: string }> {
+    const scoped = this.workspaceContext.getStore();
+    if (scoped && scoped.environmentId !== 'local' && scoped.workspacePath !== workspacePath) {
+      throw new Error('Git command targets a different remote workspace');
+    }
+    if (this.gitExecutor) {
+      return this.gitExecutor(
+        workspacePath, args, timeoutMs,
+        scoped?.workspacePath === workspacePath ? scoped.workspaceId : workspaceId,
+        scoped?.workspacePath === workspacePath ? scoped.environmentId : undefined
+      );
+    }
+    if (scoped && scoped.environmentId !== 'local') {
+      throw new Error('Remote Git executor is unavailable');
+    }
     const execFileAsync = promisify(execFile);
     return execFileAsync('git', args, {
       cwd: workspacePath,
       timeout: timeoutMs,
-      maxBuffer: 1024 * 1024,
+      maxBuffer: 10 * 1024 * 1024,
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: '0',
+      },
     }) as Promise<{ stdout: string; stderr: string }>;
   }
 
@@ -343,7 +403,8 @@ export class GitService {
   private isOpenWorkspace(worktreePath: string, openWorkspacePaths: string[]): boolean {
     const comparable = (value: string) => process.platform === 'win32' ? value.toLowerCase() : value;
     const target = comparable(fs.realpathSync.native(worktreePath));
-    return [...this.openWorkspaces.values(), ...this.getLiveTerminalPaths(), ...openWorkspacePaths].some((openPath) => {
+    const registryPaths = this.getOpenWorkspacePaths ? this.getOpenWorkspacePaths() : [];
+    return [...registryPaths, ...this.openWorkspaces.values(), ...this.getLiveTerminalPaths(), ...openWorkspacePaths].some((openPath) => {
       let existingPath = openPath;
       const missingSegments: string[] = [];
       while (true) {
@@ -946,13 +1007,22 @@ export class GitService {
           ]);
           newContent = stdout;
         } else {
-          // Working tree: read from disk
-          const fs = await import('fs');
-          const path = await import('path');
-          const fullPath = path.resolve(workspacePath, safeFilePath);
-          newContent = fs.readFileSync(fullPath, 'utf-8');
+          const scoped = this.workspaceContext.getStore();
+          if (scoped?.environmentId && scoped.environmentId !== 'local') {
+            if (!scoped.readFile) throw new Error('Remote file access is unavailable');
+            const file = await scoped.readFile(path.posix.resolve(workspacePath, safeFilePath));
+            if (!file.success && file.errorCode !== 'not-found') {
+              throw new Error(file.error || 'Could not read remote file');
+            }
+            newContent = file.content ?? '';
+          } else {
+            const fullPath = path.resolve(workspacePath, safeFilePath);
+            newContent = fs.readFileSync(fullPath, 'utf-8');
+          }
         }
-      } catch {
+      } catch (error) {
+        const scoped = this.workspaceContext.getStore();
+        if (mode === 'working' && scoped && scoped.environmentId !== 'local') throw error;
         // File may not exist (deleted)
         newContent = '';
       }
@@ -1371,12 +1441,7 @@ export class GitService {
     workspacePath: string,
     args: string[]
   ): Promise<{ stdout: string; stderr: string }> {
-    const execFileAsync = promisify(execFile);
-    return execFileAsync('git', args, {
-      cwd: workspacePath,
-      timeout: 60000,
-      maxBuffer: 1024 * 1024,
-    }) as Promise<{ stdout: string; stderr: string }>;
+    return this.execGit(workspacePath, args, 60000);
   }
 
   async fetch(workspacePath: string, remote?: string): Promise<{ success: boolean; error?: string }> {
@@ -1500,9 +1565,11 @@ export class GitService {
     }
   }
 
-  startPolling(workspacePath: string): void {
+  startPolling(workspacePath: string, workspaceId?: string, environmentId?: string): void {
     this.stopPolling();
     this.currentWorkspacePath = workspacePath;
+    this.currentWorkspaceId = workspaceId ?? null;
+    this.currentEnvironmentId = environmentId ?? null;
     this.requestStatusUpdate();
     this.pollingInterval = setInterval(() => {
       this.requestStatusUpdate();
@@ -1521,19 +1588,32 @@ export class GitService {
       this.pollingInterval = null;
     }
     this.currentWorkspacePath = null;
+    this.currentWorkspaceId = null;
+    this.currentEnvironmentId = null;
     this.pollRequested = null;
     this.pollGeneration += 1;
   }
 
   async refresh(): Promise<GitStatusResult | null> {
-    if (!this.currentWorkspacePath) {
-      return null;
-    }
-    return this.getStatus(this.currentWorkspacePath);
+    const workspacePath = this.currentWorkspacePath;
+    if (!workspacePath) return null;
+    const identity = this.getCurrentWorkspaceIdentity();
+    return identity
+      ? this.withWorkspace(identity, () => this.getStatus(workspacePath))
+      : this.getStatus(workspacePath);
   }
 
   getCurrentWorkspace(): string | null {
     return this.currentWorkspacePath;
+  }
+
+  getCurrentWorkspaceIdentity(): GitWorkspaceIdentity | null {
+    if (!this.currentWorkspacePath || !this.currentWorkspaceId || !this.currentEnvironmentId) return null;
+    return {
+      workspacePath: this.currentWorkspacePath,
+      workspaceId: this.currentWorkspaceId,
+      environmentId: this.currentEnvironmentId,
+    };
   }
 
   private requestStatusUpdate(): void {
@@ -1555,8 +1635,15 @@ export class GitService {
         const request = this.pollRequested;
         this.pollRequested = null;
         if (request.generation !== this.pollGeneration) continue;
-        const status = await this.getStatus(request.path);
-        if (request.generation === this.pollGeneration && request.path === this.currentWorkspacePath) {
+        const identity = this.getCurrentWorkspaceIdentity();
+        const status = await (identity
+          ? this.withWorkspace(identity, () => this.getStatus(request.path))
+          : this.getStatus(request.path));
+        if (request.generation !== this.pollGeneration) continue;
+        status.workspacePath = request.path;
+        status.workspaceId = identity?.workspaceId;
+        status.environmentId = identity?.environmentId;
+        if (request.path === this.currentWorkspacePath) {
           this.emitStatus(status);
         }
       }

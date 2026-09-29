@@ -1423,6 +1423,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const readResult = await window.electronAPI.editorReadFile({
         workspacePath: scopedWorkspace.workspacePath,
+        workspaceId: scopedWorkspace.id,
         filePath,
       });
 
@@ -1619,6 +1620,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const result = await window.electronAPI.editorWriteFile({
         workspacePath: scopedWorkspace.workspacePath,
+        workspaceId: scopedWorkspace.id,
         filePath: tab.filePath,
         content: contentToSave,
       });
@@ -1812,6 +1814,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const result = await window.electronAPI.editorReadFile({
         workspacePath: scopedWorkspace.workspacePath,
+        workspaceId: scopedWorkspace.id,
         filePath: tab.filePath,
       });
 

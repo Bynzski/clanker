@@ -4,7 +4,7 @@
  * Tests for the git IPC module, verifying channel registration and behavior.
  */
 
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
 import { testHome } from '../../_helpers/tempPaths';
 
 // Mock electron module
@@ -94,6 +94,8 @@ vi.mock('../../../src/main/ipc/settingsIpc', () => ({
 // Import after mocking
 import { describe, test, expect, beforeEach } from 'vitest';
 import { registerGitIpc } from '../../../src/main/ipc/gitIpc';
+import { GitService, type GitStatusResult } from '../../../src/main/gitService';
+import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
 import { ipcMain } from 'electron';
 
 describe('registerGitIpc', () => {
@@ -959,5 +961,150 @@ describe('git IPC channel constants', () => {
     // Verify no duplicates
     const uniqueChannels = new Set(expectedChannels);
     expect(uniqueChannels.size).toBe(expectedChannels.length);
+  });
+});
+
+describe('Git IPC workspace identity routing', () => {
+  const ipc = ipcMain as typeof ipcMain & { handle: Mock };
+  const workspacePath = process.cwd();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function setup() {
+    const statuses: GitStatusResult[] = [];
+    const mainWindow = { webContents: { send: vi.fn() } };
+    const makeEnvironment = (id: string) => ({
+      id,
+      validateWorkspacePath: vi.fn(async (workspacePath: string) => ({ valid: true, resolvedPath: workspacePath })),
+      readFile: vi.fn(async () => ({ success: true, content: `${id} working tree` })),
+      execGit: vi.fn(async (_cwd: string, args: string[]) => ({
+        stdout: args[0] === 'status'
+          ? `# branch.head ${id}\n`
+          : args[0] === 'show' ? `${id} HEAD` : '',
+        stderr: '',
+      })),
+    });
+    const local = makeEnvironment('local');
+    const remote = makeEnvironment('ssh');
+    const registry = new WorkspaceRegistry((id) =>
+      id === 'local' ? local as never : id === 'ssh' ? remote as never : null);
+    const executions: Array<{ workspaceId?: string; environmentId?: string; command: string }> = [];
+    const service = new GitService(
+      (status) => statuses.push(status),
+      undefined, undefined, undefined,
+      async (cwd, args, _timeout, workspaceId, environmentId) => {
+        executions.push({ workspaceId, environmentId, command: args[0] });
+        const registered = workspaceId ? registry.getWorkspace(workspaceId) : null;
+        if (workspaceId && (!registered || registered.location.path !== cwd ||
+            registered.location.environmentId !== environmentId)) {
+          throw new Error('Workspace identity is no longer registered');
+        }
+        return (registered?.environment ?? local).execGit(cwd, args);
+      }
+    );
+    registerGitIpc({
+      getGitService: () => service,
+      getMainWindow: () => mainWindow as never,
+      getWorkspaceRegistry: () => registry,
+    });
+    const handle = (channel: string) =>
+      ipc.handle.mock.calls.find(([name]) => name === channel)?.[1] as (...args: unknown[]) => Promise<unknown>;
+    return { local, remote, registry, service, statuses, executions, mainWindow, handle };
+  }
+
+  test('same-path operations retain their environment across overlapping Git commands', async () => {
+    const { local, remote, handle, executions, mainWindow } = setup();
+    expect(await handle('register-open-workspace')(null, 'local-tab', workspacePath, 'local')).toEqual({ success: true });
+    expect(await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh')).toEqual({ success: true });
+
+    let releaseRemote!: () => void;
+    const delayed = new Promise<void>((resolve) => { releaseRemote = resolve; });
+    remote.execGit.mockImplementationOnce(async () => {
+      await delayed;
+      return { stdout: '', stderr: '' };
+    });
+    const remoteHistory = handle('git-get-history')(null, workspacePath, 4, 'ssh-tab');
+    await Promise.resolve();
+    await handle('git-get-history')(null, workspacePath, 4, 'local-tab');
+    releaseRemote();
+    await remoteHistory;
+    await handle('git-get-history')(null, workspacePath, 4);
+
+    expect(executions.filter(({ command }) => command === 'log')).toEqual([
+      { workspaceId: 'ssh-tab', environmentId: 'ssh', command: 'log' },
+      { workspaceId: 'local-tab', environmentId: 'local', command: 'log' },
+      { workspaceId: undefined, environmentId: undefined, command: 'log' },
+    ]);
+    expect(remote.execGit).toHaveBeenCalledTimes(1);
+    expect(local.execGit).toHaveBeenCalledTimes(2);
+    await handle('git-get-history')(null, '/caller/path/does/not/exist', 4, 'ssh-tab');
+    expect(remote.execGit).toHaveBeenLastCalledWith(workspacePath, expect.arrayContaining(['log', '-n4']));
+
+    const diff = await handle('git-get-file-diff')(null, workspacePath, 'tracked.txt', 'working', 'ssh-tab');
+    expect(diff).toEqual(expect.objectContaining({
+      success: true, oldContent: 'ssh HEAD', newContent: 'ssh working tree',
+    }));
+    expect(remote.readFile).toHaveBeenCalledWith({
+      workspacePath, workspaceId: 'ssh-tab', filePath: `${workspacePath}/tracked.txt`,
+    });
+    expect(local.readFile).not.toHaveBeenCalled();
+
+    expect(await handle('git-stage')(null, workspacePath, ['tracked.txt'], 'ssh-tab')).toEqual({ success: true });
+    expect(mainWindow.webContents.send).toHaveBeenLastCalledWith('git-status-update',
+      expect.objectContaining({ workspaceId: 'ssh-tab', environmentId: 'ssh', workspacePath, currentBranch: 'ssh' }));
+    expect(await handle('git-push')(null, workspacePath, 'origin', 'main', false, true, 'ssh-tab')).toEqual({ success: true });
+    expect(remote.execGit).toHaveBeenCalledWith(workspacePath, ['push', '--set-upstream', 'origin', 'main']);
+    expect(await handle('git-list-worktrees')(null, workspacePath, 'ssh-tab')).toEqual(expect.objectContaining({ success: false }));
+    expect(await handle('git-create-worktree')(null, workspacePath, 'main', 'task', 'ssh-tab')).toEqual(expect.objectContaining({ success: false }));
+    await expect(handle('git-get-branch-state')(null, workspacePath, 'stale-tab'))
+      .rejects.toThrow('Workspace identity is no longer registered');
+    await expect(handle('git-get-history')(null, workspacePath, 4, 'stale-tab'))
+      .rejects.toThrow('Workspace identity is no longer registered');
+  });
+
+  test('rapid same-path polling switch discards stale status without stopping the other workspace', async () => {
+    const { local, remote, handle, statuses, service, mainWindow } = setup();
+    await handle('register-open-workspace')(null, 'local-tab', workspacePath, 'local');
+    await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+    let releaseLocal!: () => void;
+    const delayed = new Promise<void>((resolve) => { releaseLocal = resolve; });
+    local.execGit.mockImplementationOnce(async () => {
+      await delayed;
+      return { stdout: '# branch.head local\n', stderr: '' };
+    });
+    try {
+      await handle('git-start-polling')(null, workspacePath, 'local-tab');
+      await handle('git-start-polling')(null, workspacePath, 'ssh-tab');
+      releaseLocal();
+      await service.drain();
+      expect(statuses.map(({ workspaceId, environmentId, currentBranch }) =>
+        ({ workspaceId, environmentId, currentBranch }))).toEqual([
+        { workspaceId: 'ssh-tab', environmentId: 'ssh', currentBranch: 'ssh' },
+      ]);
+      expect(await handle('git-refresh')(null, 'ssh-tab')).toEqual(expect.objectContaining({
+        workspaceId: 'ssh-tab', environmentId: 'ssh', currentBranch: 'ssh',
+      }));
+      expect(await handle('git-refresh')(null, 'local-tab')).toBeNull();
+      await handle('git-stop-polling')(null, 'local-tab');
+      expect(service.getCurrentWorkspaceIdentity()?.workspaceId).toBe('ssh-tab');
+      await handle('git-stage')(null, workspacePath, ['local.txt'], 'local-tab');
+      expect(local.execGit).toHaveBeenCalledWith(workspacePath, ['add', '--', 'local.txt']);
+      expect(remote.execGit).not.toHaveBeenCalledWith(workspacePath, ['add', '--', 'local.txt']);
+      expect(mainWindow.webContents.send).toHaveBeenLastCalledWith('git-status-update',
+        expect.objectContaining({ workspaceId: 'local-tab', environmentId: 'local', currentBranch: 'local' }));
+      expect(service.getCurrentWorkspaceIdentity()?.workspaceId).toBe('ssh-tab');
+      await handle('unregister-open-workspace')(null, 'local-tab');
+      expect(service.getCurrentWorkspaceIdentity()?.workspaceId).toBe('ssh-tab');
+      await handle('unregister-open-workspace')(null, 'ssh-tab');
+      expect(service.getCurrentWorkspace()).toBeNull();
+      await expect(handle('git-get-history')(null, workspacePath, 4, 'ssh-tab'))
+        .rejects.toThrow('Workspace identity is no longer registered');
+    } finally {
+      releaseLocal();
+      service.stopPolling();
+      await service.drain();
+    }
   });
 });

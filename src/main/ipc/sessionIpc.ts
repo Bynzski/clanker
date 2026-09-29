@@ -15,9 +15,11 @@ import { spawnPtyProcess } from './ptySpawn';
 import type { Terminal } from './terminalIpc';
 import type { HarnessSession } from '../../shared/types/session';
 import { defaultShell } from '../platformShell';
-import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
+import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { toNativePath } from '../../shared/pathNormalize';
+import { isPathContained } from '../remote/sshEnvironment';
 import { resolveExistingFileWithinDirectory } from '../security';
+import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import {
   acquireAgyAttentionPlugin,
@@ -39,12 +41,19 @@ interface RegisterSessionIpcDeps {
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
   agentAttentionBroker?: AgentAttentionBroker;
   taskSessionCoordinator?: TaskSessionCoordinator;
+  getWorkspaceRegistry?: () => WorkspaceRegistry;
 }
 
 export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
   const { getTerminals, getMainWindow, getSafeWorkspacePath, getIsShuttingDown, getStore, getHarnessOptions, agentAttentionBroker, taskSessionCoordinator } = deps;
 
   ipcMain.handle(SESSION_DISCOVER, async (_, workspacePath?: string) => {
+    if (workspacePath) {
+      const ws = deps.getWorkspaceRegistry?.()?.findWorkspaceByPath(workspacePath);
+      if (ws && ws.location.environmentId !== 'local') {
+        return [];
+      }
+    }
     const nativeWorkspacePath = workspacePath
       ? toNativePath(workspacePath, process.platform)
       : undefined;
@@ -59,6 +68,16 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     // fallback invocation for renderer-supplied session payloads.
     if (!['codex', 'claude', 'opencode', 'pi', 'omp', 'agy'].includes(session.harness)) {
       throw new Error(`${session.harness} session invocation is not supported`);
+    }
+    const reg = deps.getWorkspaceRegistry?.();
+    const isLocal = reg?.getAllWorkspaces().some(
+      (w) => w.location.environmentId === 'local' && isPathContained(w.location.path, session.cwd)
+    );
+    const isRemote = !isLocal && reg?.getAllWorkspaces().some(
+      (w) => w.location.environmentId !== 'local' && isPathContained(w.location.path, session.cwd)
+    );
+    if (isRemote) {
+      throw new Error('Remote session invocation is not supported in this version');
     }
     const terminals = getTerminals();
     const mainWindow = getMainWindow();

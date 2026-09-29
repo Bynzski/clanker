@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, GitBranch as GitBranchIcon } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { sameWorkspacePath } from '../lib/pathUtils';
 import CommitDialog from './CommitDialog';
 import { GitDeleteBranchDialog } from './git/GitDeleteBranchDialog';
 import { GitInitMenu } from './git/GitInitMenu';
@@ -24,9 +25,10 @@ import './GitButton.css';
 
 interface GitButtonProps {
   workspacePath: string;
+  workspaceId?: string;
 }
 
-export default function GitButton({ workspacePath }: GitButtonProps) {
+export default function GitButton({ workspacePath, workspaceId }: GitButtonProps) {
   const [changeCount, setChangeCount] = useState(0);
   const [isRepo, setIsRepo] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -120,7 +122,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     setVcsContextError(null);
 
     try {
-      const result = await window.electronAPI.vcsGetContext(workspacePath);
+      const result = await window.electronAPI.vcsGetContext(workspacePath, workspaceId);
 
       if (result.success && result.provider) {
         setVcsProviderContext(result.provider as ProviderContext);
@@ -136,7 +138,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     } finally {
       setIsLoadingVcsContext(false);
     }
-  }, [workspacePath, provider]);
+  }, [workspacePath, provider, workspaceId]);
 
   const loadRemotes = useCallback(async () => {
     if (!workspacePath) {
@@ -144,7 +146,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     }
 
     try {
-      const remotesResult = await window.electronAPI.gitGetRemotes(workspacePath);
+      const remotesResult = await window.electronAPI.gitGetRemotes(workspacePath, workspaceId);
       if (remotesResult.success) {
         setRemotes(remotesResult.remotes);
         setProvider(remotesResult.provider);
@@ -154,7 +156,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     } catch {
       setRemotes([]);
     }
-  }, [workspacePath]);
+  }, [workspacePath, workspaceId]);
 
   useEffect(() => {
     if (!workspacePath) {
@@ -168,8 +170,8 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   const refreshMenuDataRef = useRef<() => Promise<void>>(async () => {});
 
   const refreshAfterAction = useCallback(async () => {
-    await Promise.all([refreshMenuDataRef.current(), window.electronAPI.gitRefresh()]);
-  }, []);
+    await Promise.all([refreshMenuDataRef.current(), window.electronAPI.gitRefresh(workspaceId)]);
+  }, [workspaceId]);
 
   const {
     branchError,
@@ -188,6 +190,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     onSetActiveAction: setActiveAction,
     refreshAfterAction,
     workspacePath,
+    workspaceId,
   });
 
   const {
@@ -204,6 +207,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     refreshAfterAction,
     remotes,
     workspacePath,
+    workspaceId,
   });
 
   const {
@@ -222,6 +226,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     onSetActiveAction: setActiveAction,
     refreshAfterAction,
     workspacePath,
+    workspaceId,
   });
 
   const refreshMenuData = useCallback(async () => {
@@ -242,10 +247,10 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
 
     try {
       const [branchState, opState, stashItems, historyItems] = await Promise.all([
-        window.electronAPI.gitGetBranchState(workspacePath),
-        window.electronAPI.gitGetOperationState(workspacePath),
-        window.electronAPI.gitGetStashes(workspacePath),
-        window.electronAPI.gitGetHistory(workspacePath, 8),
+        window.electronAPI.gitGetBranchState(workspacePath, workspaceId),
+        window.electronAPI.gitGetOperationState(workspacePath, workspaceId),
+        window.electronAPI.gitGetStashes(workspacePath, workspaceId),
+        window.electronAPI.gitGetHistory(workspacePath, 8, workspaceId),
       ]);
 
       if (branchState.success) {
@@ -303,13 +308,13 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         setSelectedDiffRef(diffRef);
       }
 
-      const diff = await window.electronAPI.gitGetDiff(workspacePath, selectedDiffMode, diffRef);
+      const diff = await window.electronAPI.gitGetDiff(workspacePath, selectedDiffMode, diffRef, workspaceId);
       setDiffResult(diff);
       if (!diff.success) {
         setDiffError(diff.error || 'Unable to load diff');
       }
 
-      const remotesResult = await window.electronAPI.gitGetRemotes(workspacePath);
+      const remotesResult = await window.electronAPI.gitGetRemotes(workspacePath, workspaceId);
       if (remotesResult.success) {
         setProvider(remotesResult.provider);
         setRemotes(remotesResult.remotes);
@@ -332,7 +337,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       setIsLoadingHistory(false);
       setIsLoadingDiff(false);
     }
-  }, [selectedDiffMode, selectedDiffRef, workspacePath, loadVcsContext, setBranchError, setStashError]);
+  }, [selectedDiffMode, selectedDiffRef, workspacePath, workspaceId, loadVcsContext, setBranchError, setStashError]);
 
   refreshMenuDataRef.current = refreshMenuData;
 
@@ -347,7 +352,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     setDiffError(null);
 
     try {
-      const diff = await window.electronAPI.gitGetDiff(workspacePath, mode, ref);
+      const diff = await window.electronAPI.gitGetDiff(workspacePath, mode, ref, workspaceId);
       setDiffResult(diff);
       if (!diff.success) {
         setDiffError(diff.error || 'Unable to load diff');
@@ -382,11 +387,11 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
       return;
     }
 
-    window.electronAPI.gitStartPolling(workspacePath);
+    window.electronAPI.gitStartPolling(workspacePath, workspaceId);
 
     void (async () => {
       try {
-        const result = await window.electronAPI.gitGetRemotes(workspacePath);
+        const result = await window.electronAPI.gitGetRemotes(workspacePath, workspaceId);
         if (result.success) {
           setProvider(result.provider);
         }
@@ -396,12 +401,31 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     })();
 
     return () => {
-      window.electronAPI.gitStopPolling();
+      void window.electronAPI.gitStopPolling(workspaceId).catch((error: unknown) => {
+        if (error instanceof Error && error.message.includes('Workspace identity is no longer registered')) return;
+        console.error('Failed to stop Git polling:', error);
+      });
     };
-  }, [workspacePath]);
+  }, [workspacePath, workspaceId]);
 
   useEffect(() => {
     const unsubscribe = window.electronAPI.onGitStatusUpdate((status) => {
+      const activeWs = useWorkspaceStore.getState().getActiveWorkspace();
+      if (activeWs) {
+        if (workspaceId
+          ? activeWs.id !== workspaceId || status.workspaceId !== workspaceId
+          : status.workspaceId && status.workspaceId !== activeWs.id) {
+          return;
+        }
+        if (status.environmentId && status.environmentId !== (activeWs.environmentId || 'local')) {
+          return;
+        }
+        if (status.workspacePath && !sameWorkspacePath(status.workspacePath, activeWs.workspacePath)) {
+          return;
+        }
+      } else if (workspacePath && status.workspacePath && !sameWorkspacePath(status.workspacePath, workspacePath)) {
+        return;
+      }
       if (status.success) {
         setIsRepo(status.isRepo);
         setChangeCount(status.changes.length);
@@ -432,7 +456,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     });
 
     return unsubscribe;
-  }, []);
+  }, [workspacePath, workspaceId]);
 
   useEffect(() => {
     if (!isMenuOpen) {
@@ -467,16 +491,16 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     };
   }, [isMenuOpen, isRepo, refreshMenuData]);
 
-  const handleCommit = async (message: string) => window.electronAPI.gitCommit(workspacePath, message);
+  const handleCommit = async (message: string) => window.electronAPI.gitCommit(workspacePath, message, workspaceId);
 
   const handleStage = async () => {
-    await window.electronAPI.gitStage(workspacePath);
+    await window.electronAPI.gitStage(workspacePath, undefined, workspaceId);
   };
 
   const handleUnstageFile = async (path: string): Promise<{ success: boolean; error?: string }> => {
-    const result = await window.electronAPI.gitUnstage(workspacePath, [path]);
+    const result = await window.electronAPI.gitUnstage(workspacePath, [path], workspaceId);
     if (result.success) {
-      const status = await window.electronAPI.gitRefresh();
+      const status = await window.electronAPI.gitRefresh(workspaceId);
       if (status) {
         setChanges(status.changes);
         setChangeCount(status.changes.length);
@@ -486,9 +510,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   };
 
   const handleUnstageAll = async (): Promise<{ success: boolean; error?: string }> => {
-    const result = await window.electronAPI.gitUnstage(workspacePath);
+    const result = await window.electronAPI.gitUnstage(workspacePath, undefined, workspaceId);
     if (result.success) {
-      const status = await window.electronAPI.gitRefresh();
+      const status = await window.electronAPI.gitRefresh(workspaceId);
       if (status) {
         setChanges(status.changes);
         setChangeCount(status.changes.length);
@@ -502,9 +526,9 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     setInitError(null);
 
     try {
-      const result = await window.electronAPI.gitInit(workspacePath, selectedDefaultBranch);
+      const result = await window.electronAPI.gitInit(workspacePath, selectedDefaultBranch, workspaceId);
       if (result.success) {
-        await window.electronAPI.gitRefresh();
+        await window.electronAPI.gitRefresh(workspaceId);
         setIsMenuOpen(false);
       } else {
         setInitError(result.error || 'Failed to initialize repository');
@@ -517,7 +541,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
   };
 
   const handleOpenCommitDialog = async () => {
-    const status = await window.electronAPI.gitRefresh();
+    const status = await window.electronAPI.gitRefresh(workspaceId);
     if (status) {
       setChanges(status.changes);
       setChangeCount(status.changes.length);
@@ -546,7 +570,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     setMergeError(null);
 
     try {
-      const result = await window.electronAPI.gitMergeBranch(workspacePath, mergeTargetBranch);
+      const result = await window.electronAPI.gitMergeBranch(workspacePath, mergeTargetBranch, workspaceId);
       if (result.success) {
         await refreshAfterAction();
       } else {
@@ -564,7 +588,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
     setMergeError(null);
 
     try {
-      const result = await window.electronAPI.gitAbortOperation(workspacePath);
+      const result = await window.electronAPI.gitAbortOperation(workspacePath, workspaceId);
       if (result.success) {
         await refreshAfterAction();
       } else {
@@ -701,6 +725,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
             upstreamLabel={upstreamLabel}
             vcsContextError={vcsContextError}
             workspacePath={workspacePath}
+            workspaceId={workspaceId}
           />
         )}
       </div>
@@ -714,6 +739,7 @@ export default function GitButton({ workspacePath }: GitButtonProps) {
         onUnstageAll={handleUnstageAll}
         changes={changes}
         workspacePath={workspacePath}
+        workspaceId={workspaceId}
       />
 
       {deleteDialog && (

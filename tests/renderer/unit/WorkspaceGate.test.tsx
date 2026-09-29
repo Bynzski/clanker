@@ -7,10 +7,13 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 
 // Mock WorkspaceGateContent
 vi.mock('../../../src/renderer/components/WorkspaceGateContent', () => ({
-  default: ({ onSubmit }: { onSubmit: (data: { path: string; terminalCount: number; harness: string; model?: string }) => void }) => (
+  default: ({ onSubmit }: { onSubmit: (data: { path: string; terminalCount: number; harness: string; model?: string; environmentId?: string; environmentLabel?: string }) => void }) => (
     <div data-testid="workspace-gate-content">
       <button onClick={() => onSubmit({ path: '/test', terminalCount: 2, harness: 'test' })}>
         Submit
+      </button>
+      <button onClick={() => onSubmit({ path: '/home/dev/Project', terminalCount: 2, harness: 'test', model: 'model-x', environmentId: 'ssh:devbox', environmentLabel: 'Dev Box' })}>
+        Submit remote
       </button>
     </div>
   ),
@@ -117,6 +120,25 @@ describe('WorkspaceGateModal', () => {
       expect(selectWorkspace).toHaveBeenCalledWith('existing');
       expect(onWorkspaceSelect).not.toHaveBeenCalled();
       expect(onClose).toHaveBeenCalled();
+    });
+
+    it('does not focus a local workspace when the same path belongs to a remote environment', async () => {
+      const selectWorkspace = vi.fn();
+      vi.mocked(useWorkspaceStore.getState).mockReturnValue({
+        workspaces: [{ id: 'local-existing', workspacePath: '/home/dev/Project' }],
+        selectWorkspace,
+      } as never);
+      const onWorkspaceSelect = vi.fn().mockResolvedValue(true);
+      render(<WorkspaceGateModal isOpen={true} onClose={vi.fn()} onWorkspaceSelect={onWorkspaceSelect} />);
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('Submit remote'));
+      });
+
+      expect(selectWorkspace).not.toHaveBeenCalled();
+      expect(onWorkspaceSelect).toHaveBeenCalledWith(
+        '/home/dev/Project', 2, 'test', 'model-x', true, 'ssh:devbox', 'Dev Box'
+      );
     });
   });
 
@@ -386,6 +408,19 @@ describe('WorkspaceGateFullscreen', () => {
       });
       
       expect(onWorkspaceSelect).toHaveBeenCalledWith('/test', 2, 'test', undefined);
+    });
+
+    it('opens a remote workspace with its SSH environment identity', async () => {
+      const onWorkspaceSelect = vi.fn().mockResolvedValue(true);
+      render(<WorkspaceGateFullscreen onWorkspaceSelect={onWorkspaceSelect} />);
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('Submit remote'));
+      });
+
+      expect(onWorkspaceSelect).toHaveBeenCalledWith(
+        '/home/dev/Project', 2, 'test', 'model-x', true, 'ssh:devbox', 'Dev Box'
+      );
     });
   });
 });

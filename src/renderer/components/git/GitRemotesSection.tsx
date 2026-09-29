@@ -17,6 +17,7 @@ export interface GitRemoteEntry {
 
 interface GitRemotesSectionProps {
   workspacePath: string;
+  workspaceId?: string;
   remotes: GitRemoteEntry[];
   provider: VcsProvider;
   onRemotesChanged: () => void;
@@ -141,6 +142,7 @@ function RemoteList({
 
 export default function GitRemotesSection({
   workspacePath,
+  workspaceId,
   remotes,
   provider,
   onRemotesChanged,
@@ -183,7 +185,8 @@ export default function GitRemotesSection({
       const result = await window.electronAPI.gitAddRemote(
         workspacePath,
         form.name.trim(),
-        form.url.trim()
+        form.url.trim(),
+        workspaceId
       );
 
       if (result.success) {
@@ -204,7 +207,7 @@ export default function GitRemotesSection({
         error: err instanceof Error ? err.message : 'Failed to add remote',
       }));
     }
-  }, [form.name, form.url, workspacePath, resetForm, onRemotesChanged, onError]);
+  }, [form.name, form.url, workspacePath, workspaceId, resetForm, onRemotesChanged, onError]);
 
   // Handle removing a remote
   const handleRemoveRemote = useCallback(
@@ -214,7 +217,7 @@ export default function GitRemotesSection({
       }
 
       try {
-        const result = await window.electronAPI.gitRemoveRemote(workspacePath, name);
+        const result = await window.electronAPI.gitRemoveRemote(workspacePath, name, workspaceId);
 
         if (result.success) {
           onRemotesChanged();
@@ -226,7 +229,7 @@ export default function GitRemotesSection({
         onError(err instanceof Error ? err.message : 'Failed to remove remote');
       }
     },
-    [workspacePath, onRemotesChanged, onError]
+    [workspacePath, workspaceId, onRemotesChanged, onError]
   );
 
   // Handle renaming a remote
@@ -247,7 +250,8 @@ export default function GitRemotesSection({
       const result = await window.electronAPI.gitRenameRemote(
         workspacePath,
         editingRemote,
-        form.name.trim()
+        form.name.trim(),
+        workspaceId
       );
 
       if (result.success) {
@@ -268,7 +272,7 @@ export default function GitRemotesSection({
         error: err instanceof Error ? err.message : 'Failed to rename remote',
       }));
     }
-  }, [editingRemote, form.name, workspacePath, resetForm, onRemotesChanged, onError]);
+  }, [editingRemote, form.name, workspacePath, workspaceId, resetForm, onRemotesChanged, onError]);
 
   // Start editing a remote
   const startEditing = useCallback(

@@ -239,8 +239,13 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => {
     notesPane,
   };
 
+  const environmentId = workspace.environmentId || 'local';
+  const environmentLabel = workspace.environmentLabel || (environmentId !== 'local' ? environmentId : 'Local');
+
   return {
     ...workspace,
+    environmentId,
+    environmentLabel,
     lifecycle: workspace.lifecycle ?? 'active',
     terminals: [...workspace.terminals],
     panes: [...workspace.panes],

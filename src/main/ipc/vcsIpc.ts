@@ -14,6 +14,7 @@ import {
 } from '../vcs';
 import { GitService } from '../gitService';
 import { getValidatedWorkspacePath } from './aiCommitIpc';
+import type { WorkspaceRegistry } from '../workspaceRegistry';
 import {
   VCS_GET_CONTEXT,
   VCS_GET_PR_INFO,
@@ -24,14 +25,38 @@ import {
 
 export interface RegisterVcsIpcDeps {
   getGitService: () => GitService;
+  getWorkspaceRegistry?: () => WorkspaceRegistry;
 }
 
 export function registerVcsIpc(deps: RegisterVcsIpcDeps): void {
   const { getGitService } = deps;
   const gitService = getGitService();
+  const resolveWorkspacePath = (workspacePath: string, workspaceId?: string) => {
+    const registry = deps.getWorkspaceRegistry?.();
+    if (workspaceId && registry) {
+      const workspace = registry.getWorkspace(workspaceId);
+      return workspace?.location.path ?? null;
+    }
+    // Legacy path-only requests are local. Never infer an SSH host from a path.
+    return getValidatedWorkspacePath(workspacePath);
+  };
+  const getGitMetadata = (workspacePath: string, workspaceId?: string) => {
+    const registered = workspaceId ? deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId) : null;
+    const operation = () => Promise.all([
+      gitService.getBranchState(workspacePath),
+      gitService.getRemotes(workspacePath),
+    ]);
+    return registered
+      ? gitService.withWorkspace({
+        workspaceId: registered.workspaceId,
+        workspacePath: registered.location.path,
+        environmentId: registered.location.environmentId,
+      }, operation)
+      : operation();
+  };
 
-  ipcMain.handle(VCS_GET_CONTEXT, async (_, workspacePath: string) => {
-    const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  ipcMain.handle(VCS_GET_CONTEXT, async (_, workspacePath: string, workspaceId?: string) => {
+    const safeWorkspacePath = resolveWorkspacePath(workspacePath, workspaceId);
     if (!safeWorkspacePath) {
       return {
         success: false,
@@ -40,10 +65,7 @@ export function registerVcsIpc(deps: RegisterVcsIpcDeps): void {
     }
 
     // Get current branch and remotes
-    const [branchState, remotesResult] = await Promise.all([
-      gitService.getBranchState(safeWorkspacePath),
-      gitService.getRemotes(safeWorkspacePath),
-    ]);
+    const [branchState, remotesResult] = await getGitMetadata(safeWorkspacePath, workspaceId);
 
     if (!branchState.success || !remotesResult.success || remotesResult.remotes.length === 0) {
       return {
@@ -62,16 +84,13 @@ export function registerVcsIpc(deps: RegisterVcsIpcDeps): void {
     );
   });
 
-  ipcMain.handle(VCS_GET_PR_INFO, async (_, workspacePath: string) => {
-    const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  ipcMain.handle(VCS_GET_PR_INFO, async (_, workspacePath: string, workspaceId?: string) => {
+    const safeWorkspacePath = resolveWorkspacePath(workspacePath, workspaceId);
     if (!safeWorkspacePath) {
       return { success: false, error: 'Invalid workspace path' };
     }
 
-    const [branchState, remotesResult] = await Promise.all([
-      gitService.getBranchState(safeWorkspacePath),
-      gitService.getRemotes(safeWorkspacePath),
-    ]);
+    const [branchState, remotesResult] = await getGitMetadata(safeWorkspacePath, workspaceId);
 
     if (!branchState.success || !remotesResult.success || remotesResult.remotes.length === 0) {
       return { success: false, error: 'Not a git repository or no remotes' };
@@ -95,16 +114,13 @@ export function registerVcsIpc(deps: RegisterVcsIpcDeps): void {
     };
   });
 
-  ipcMain.handle(VCS_GET_DEEP_LINKS, async (_, workspacePath: string, prNumber?: number) => {
-    const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  ipcMain.handle(VCS_GET_DEEP_LINKS, async (_, workspacePath: string, prNumber?: number, workspaceId?: string) => {
+    const safeWorkspacePath = resolveWorkspacePath(workspacePath, workspaceId);
     if (!safeWorkspacePath) {
       return [] as DeepLink[];
     }
 
-    const [branchState, remotesResult] = await Promise.all([
-      gitService.getBranchState(safeWorkspacePath),
-      gitService.getRemotes(safeWorkspacePath),
-    ]);
+    const [branchState, remotesResult] = await getGitMetadata(safeWorkspacePath, workspaceId);
 
     if (!branchState.success || !remotesResult.success || remotesResult.remotes.length === 0) {
       return [] as DeepLink[];
@@ -124,16 +140,13 @@ export function registerVcsIpc(deps: RegisterVcsIpcDeps): void {
     return getProviderDeepLinks(primaryRemote.fetchUrl, currentBranch, prNumber, defaultBranch);
   });
 
-  ipcMain.handle(VCS_GET_DEEP_LINK, async (_, workspacePath: string, type: DeepLink['type']) => {
-    const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  ipcMain.handle(VCS_GET_DEEP_LINK, async (_, workspacePath: string, type: DeepLink['type'], workspaceId?: string) => {
+    const safeWorkspacePath = resolveWorkspacePath(workspacePath, workspaceId);
     if (!safeWorkspacePath) {
       return null;
     }
 
-    const [branchState, remotesResult] = await Promise.all([
-      gitService.getBranchState(safeWorkspacePath),
-      gitService.getRemotes(safeWorkspacePath),
-    ]);
+    const [branchState, remotesResult] = await getGitMetadata(safeWorkspacePath, workspaceId);
 
     if (!branchState.success || !remotesResult.success || remotesResult.remotes.length === 0) {
       return null;
@@ -155,16 +168,13 @@ export function registerVcsIpc(deps: RegisterVcsIpcDeps): void {
     return getDeepLinkUrl(primaryRemote.fetchUrl, type, currentBranch, prNumber, defaultBranch);
   });
 
-  ipcMain.handle(VCS_OPEN_DEEP_LINK, async (_, workspacePath: string, type: DeepLink['type']) => {
-    const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
+  ipcMain.handle(VCS_OPEN_DEEP_LINK, async (_, workspacePath: string, type: DeepLink['type'], workspaceId?: string) => {
+    const safeWorkspacePath = resolveWorkspacePath(workspacePath, workspaceId);
     if (!safeWorkspacePath) {
       return false;
     }
 
-    const [branchState, remotesResult] = await Promise.all([
-      gitService.getBranchState(safeWorkspacePath),
-      gitService.getRemotes(safeWorkspacePath),
-    ]);
+    const [branchState, remotesResult] = await getGitMetadata(safeWorkspacePath, workspaceId);
 
     if (!branchState.success || !remotesResult.success || remotesResult.remotes.length === 0) {
       return false;

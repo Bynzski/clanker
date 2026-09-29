@@ -1,4 +1,5 @@
-export type RecipeLaunchStepType = 'shell' | 'command' | 'harness';
+import type { WorkspaceEnvironmentId } from './environments';
+
 
 export interface RecipeShellStep {
   id: string;
@@ -33,6 +34,7 @@ export interface WorkspaceRecipe {
   id: string;
   name: string;
   workspacePath: string;
+  environmentId?: WorkspaceEnvironmentId;
   description?: string;
   terminalCount?: number;
   launches: RecipeLaunchStep[];

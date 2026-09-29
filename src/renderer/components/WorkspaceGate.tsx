@@ -9,7 +9,15 @@ import type { WorkspaceRecipe, RecipeLaunchResult } from '../../shared/types/rec
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onWorkspaceSelect: (path: string, terminalCount: number, harness: string, model?: string) => Promise<boolean> | boolean | void;
+  onWorkspaceSelect: (
+    path: string,
+    terminalCount: number,
+    harness: string,
+    model?: string,
+    closeGate?: boolean,
+    environmentId?: string,
+    environmentLabel?: string
+  ) => Promise<boolean> | boolean | void;
   onLaunchRecipe?: (recipe: WorkspaceRecipe) => Promise<RecipeLaunchResult | null | void>;
 }
 
@@ -45,7 +53,10 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
 
   const handleSubmit = async (data: WorkspaceFormData) => {
     const state = useWorkspaceStore.getState();
-    const open = state.workspaces.find((workspace) => sameWorkspacePath(workspace.workspacePath, data.path));
+    const targetEnvId = data.environmentId || 'local';
+    const open = state.workspaces.find((workspace) =>
+      (workspace.environmentId || 'local') === targetEnvId && sameWorkspacePath(workspace.workspacePath, data.path)
+    );
     if (open) {
       state.selectWorkspace(open.id);
       onClose();
@@ -53,11 +64,26 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
     }
     setOpenError('');
     try {
-      const opened = await onWorkspaceSelect(data.path, data.terminalCount, data.harness, data.model);
-      if (opened === false) setOpenError('Could not open this workspace. Check that its directory still exists.');
+      const opened = (data.environmentId && data.environmentId !== 'local')
+        ? await onWorkspaceSelect(
+            data.path,
+            data.terminalCount,
+            data.harness,
+            data.model,
+            true,
+            data.environmentId,
+            data.environmentLabel
+          )
+        : await onWorkspaceSelect(
+            data.path,
+            data.terminalCount,
+            data.harness,
+            data.model
+          );
+      if (opened === false) setOpenError('Could not open this workspace. Check that its directory exists and is accessible.');
       else onClose();
     } catch {
-      setOpenError('Could not open this workspace. Check that its directory still exists.');
+      setOpenError('Could not open this workspace. Check that its directory exists and is accessible.');
     }
   };
 
@@ -91,7 +117,15 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
 
 // Fullscreen gate version for initial launch
 interface FullscreenGateProps {
-  onWorkspaceSelect: (path: string, terminalCount: number, harness: string, model?: string) => Promise<boolean> | boolean | void;
+  onWorkspaceSelect: (
+    path: string,
+    terminalCount: number,
+    harness: string,
+    model?: string,
+    closeGate?: boolean,
+    environmentId?: string,
+    environmentLabel?: string
+  ) => Promise<boolean> | boolean | void;
   onLaunchRecipe?: (recipe: WorkspaceRecipe) => Promise<RecipeLaunchResult | null | void>;
 }
 
@@ -149,10 +183,25 @@ export function WorkspaceGateFullscreen({ onWorkspaceSelect, onLaunchRecipe }: F
   const handleSubmit = async (data: WorkspaceFormData) => {
     setOpenError('');
     try {
-      const opened = await onWorkspaceSelect(data.path, data.terminalCount, data.harness, data.model);
-      if (opened === false) setOpenError('Could not open this workspace. Check that its directory still exists.');
+      const opened = (data.environmentId && data.environmentId !== 'local')
+        ? await onWorkspaceSelect(
+            data.path,
+            data.terminalCount,
+            data.harness,
+            data.model,
+            true,
+            data.environmentId,
+            data.environmentLabel
+          )
+        : await onWorkspaceSelect(
+            data.path,
+            data.terminalCount,
+            data.harness,
+            data.model
+          );
+      if (opened === false) setOpenError('Could not open this workspace. Check that its directory exists and is accessible.');
     } catch {
-      setOpenError('Could not open this workspace. Check that its directory still exists.');
+      setOpenError('Could not open this workspace. Check that its directory exists and is accessible.');
     }
   };
 

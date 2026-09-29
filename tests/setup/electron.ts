@@ -190,6 +190,12 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     onAnnotationEscape: vi.fn(() => () => undefined),
     onAnnotationStateChanged: vi.fn(() => () => undefined),
 
+    // SSH Environments
+    sshEnvironmentList: createAsyncMock([]),
+    sshEnvironmentSave: vi.fn(async (config) => ({ success: true, config })),
+    sshEnvironmentDelete: createAsyncMock({ success: true }),
+    sshEnvironmentTest: createAsyncMock({ success: true }),
+    getEnvironmentHarnessOptions: createAsyncMock({}),
     ...overrides,
   };
 }

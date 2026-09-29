@@ -25,6 +25,7 @@ interface GitBranchesSectionProps {
   contextError: string | null;
   onRefreshContext: () => void;
   workspacePath: string;
+  workspaceId?: string;
 }
 
 export function GitBranchesSection({
@@ -46,6 +47,7 @@ export function GitBranchesSection({
   contextError,
   onRefreshContext,
   workspacePath,
+  workspaceId,
 }: GitBranchesSectionProps) {
   // Handle opening PR in browser
   const handleViewPr = () => {
@@ -56,7 +58,7 @@ export function GitBranchesSection({
 
   // Handle creating PR
   const handleCreatePr = () => {
-    window.electronAPI.vcsOpenDeepLink(workspacePath, 'create-pr');
+    window.electronAPI.vcsOpenDeepLink(workspacePath, 'create-pr', workspaceId);
   };
 
   // Get provider name for badge
@@ -91,6 +93,7 @@ export function GitBranchesSection({
             error={contextError}
             onRefresh={onRefreshContext}
             workspacePath={workspacePath}
+            workspaceId={workspaceId}
           />
         </div>
       )}

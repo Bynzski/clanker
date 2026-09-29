@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import { type StoreSchema } from '../../shared/types/store';
 import { buildHarnessSpawnArgs, ensureHarnessWrapperScript, resolveHarnessSpawn } from '../harnessLaunch';
 import { defaultShell, prependUserCliBinsToPath } from '../platformShell';
+import type { WorkspaceRegistry } from '../workspaceRegistry';
 import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
 import {
   SPAWN_TERMINAL,
@@ -46,9 +47,10 @@ interface Terminal {
   pid: number;
   pty: pty.IPty;
   cwd?: string;
+  workspaceId?: string;
+  environmentId?: string;
   harnessId?: string;
   /**
-   * Bounded startup buffer — holds PTY output only during the brief window
    * between PTY spawn and renderer confirming xterm is ready.
    * Cleared after flush on TERMINAL_READY.
    * Max 16 KB to prevent unbounded growth if renderer never signals ready.
@@ -67,6 +69,7 @@ interface RegisterTerminalIpcDeps {
   getStore: () => Store<StoreSchema>;
   getSafeWorkspacePath: (workingDir: string) => string;
   getOpenWorkspacePath?: (workspaceId: string) => string | null;
+  getWorkspaceRegistry?: () => WorkspaceRegistry;
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
   ensureHarnessWrapperScript?: () => string | null;
   getAppShuttingDown?: () => boolean;
@@ -106,14 +109,92 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   const isFiniteNumber = (value: unknown): value is number =>
     typeof value === 'number' && Number.isFinite(value);
 
-  ipcMain.handle(SPAWN_TERMINAL, async (_, workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean) => {
+  ipcMain.handle(SPAWN_TERMINAL, async (
+    _,
+    workingDir: string,
+    harness?: string,
+    model?: string,
+    initialCommand?: string,
+    recipeCommand?: boolean,
+    workspaceId?: string,
+    environmentId?: string
+  ) => {
     const terminals = getTerminals();
     const mainWindow = getMainWindow();
     const store = getStore();
+    const registry = deps.getWorkspaceRegistry?.();
 
+    let resolvedWorkspace = workspaceId ? registry?.getWorkspace(workspaceId) : null;
+    if (workspaceId && registry && !resolvedWorkspace) {
+      throw new Error('Workspace is not registered or not accessible');
+    }
+    if (!resolvedWorkspace && workingDir && !environmentId) {
+      resolvedWorkspace = registry?.getWorkspaceByLocation('local', workingDir) ?? null;
+    }
+    if (environmentId && resolvedWorkspace && environmentId !== resolvedWorkspace.location.environmentId) {
+      throw new Error('Workspace environment does not match registered workspace');
+    }
+    const effectiveEnvironmentId = resolvedWorkspace?.location.environmentId || environmentId || 'local';
+    const isRemote = effectiveEnvironmentId !== 'local';
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const cwd = getSafeWorkspacePath(toNativePath(workingDir, process.platform));
 
+    if (isRemote) {
+      if (!resolvedWorkspace || resolvedWorkspace.location.environmentId === 'local') {
+        throw new Error('Remote workspace is not registered or not accessible');
+      }
+
+      const resolved = await resolvedWorkspace.environment.resolveTerminalSpawn({
+        id,
+        workingDir: resolvedWorkspace.location.path,
+        harness,
+        model,
+        initialCommand,
+        recipeCommand,
+      });
+
+      try {
+        const result = spawnPtyProcess({
+          id,
+          spawnCmd: resolved.spawnCmd,
+          spawnArgs: resolved.spawnArgs,
+          cwd: process.cwd(),
+          env: resolved.env,
+          terminals,
+          mainWindow,
+          getIsShuttingDown: () => appShuttingDown,
+          launchLabel: resolved.launchLabel,
+          harnessId: resolved.harnessId,
+          initialCommand: effectiveEnvironmentId === 'local' ? resolved.initialCommand : undefined,
+          workspaceId: resolvedWorkspace.workspaceId,
+          environmentId: effectiveEnvironmentId,
+          onExit: () => {
+            void taskSessionCoordinator?.onTerminalExited(id, effectiveEnvironmentId);
+          },
+        });
+
+        if (resolved.harnessId) {
+          taskSessionCoordinator?.onTerminalSpawned(
+            id,
+            resolvedWorkspace.location.path,
+            resolved.harnessId,
+            model,
+            effectiveEnvironmentId
+          );
+        }
+
+        return {
+          id: result.id,
+          pid: result.pid,
+          attentionEnabled: false,
+          harnessId: resolved.harnessId ?? harness ?? null,
+        };
+      } catch (error) {
+        console.error('[clanker-grid] failed to spawn remote terminal via SSH:', error);
+        throw error;
+      }
+    }
+
+    const cwd = getSafeWorkspacePath(toNativePath(workingDir, process.platform));
     // Use user's default shell, fallback to bash
     const userShell = defaultShell();
 
@@ -298,9 +379,16 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       || Buffer.byteLength(payload.message, 'utf8') > 32 * 1024) {
       return fail('Invalid annotation handoff');
     }
+    const registeredWs = deps.getWorkspaceRegistry?.()?.getWorkspace(payload.workspaceId);
+    if (registeredWs && registeredWs.location.environmentId !== 'local') {
+      return fail('Annotation handoff is not supported for remote terminals. Copy the message instead.');
+    }
     const workspacePath = deps.getOpenWorkspacePath?.(payload.workspaceId);
     const terminal = getTerminals().get(payload.terminalId);
     if (!workspacePath || !terminal?.cwd) return fail('The destination workspace or terminal is closed. Copy the message instead.');
+    if (terminal.environmentId && terminal.environmentId !== 'local') {
+      return fail('Annotation handoff is not supported for remote terminals. Copy the message instead.');
+    }
     let relative: string;
     try {
       relative = path.relative(fs.realpathSync(workspacePath), fs.realpathSync(terminal.cwd));

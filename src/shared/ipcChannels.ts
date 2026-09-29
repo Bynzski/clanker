@@ -210,6 +210,15 @@ export const TASK_SESSION_DELETE = 'task-session:delete';
 export const TASK_SESSION_UPDATE = 'task-session:update';
 
 /* ============================================================================
+ * SSH Environments
+ * ============================================================================ */
+
+export const SSH_ENVIRONMENT_LIST = 'ssh-environment:list';
+export const SSH_ENVIRONMENT_SAVE = 'ssh-environment:save';
+export const SSH_ENVIRONMENT_DELETE = 'ssh-environment:delete';
+export const SSH_ENVIRONMENT_TEST = 'ssh-environment:test';
+export const GET_ENVIRONMENT_HARNESS_OPTIONS = 'get-environment-harness-options';
+/* ============================================================================
  * Annotation
  * ============================================================================ */
 
@@ -392,4 +401,10 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   TASK_SESSION_LIST,
   TASK_SESSION_DELETE,
   TASK_SESSION_UPDATE,
+  // SSH Environments
+  SSH_ENVIRONMENT_LIST,
+  SSH_ENVIRONMENT_SAVE,
+  SSH_ENVIRONMENT_DELETE,
+  SSH_ENVIRONMENT_TEST,
+  GET_ENVIRONMENT_HARNESS_OPTIONS,
 ];

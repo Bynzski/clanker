@@ -258,4 +258,71 @@ describe('registerSessionIpc', () => {
       }),
     }));
   });
+  it('allows invoking local session when local workspace shares path with a remote workspace', async () => {
+    mockBuildSessionInvokeArgs.mockReturnValue({
+      spawnCmd: 'codex',
+      spawnArgs: ['resume', 'codex-session'],
+    });
+    mockSpawnPtyProcess.mockReturnValue({ id: 'term-1', pid: 123 });
+
+    const handlers = new Map<string, Handler>();
+    mockHandle.mockImplementation((channel: string, handler: Handler) => {
+      handlers.set(channel, handler);
+    });
+
+    const registry = {
+      getAllWorkspaces: () => [
+        { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } },
+        { workspaceId: 'remote-ws', location: { environmentId: 'vps', path: '/workspace' } },
+      ],
+    };
+
+    registerSessionIpc({
+      getTerminals: () => new Map(),
+      getMainWindow: () => ({ webContents: { send: vi.fn() } }) as never,
+      getSafeWorkspacePath: (workingDir: string) => workingDir,
+      getIsShuttingDown: () => false,
+      getStore: () => ({
+        get: vi.fn(() => ({})),
+      }) as never,
+      getHarnessOptions: () => ({
+        codex: { name: 'Codex', command: 'codex', args: [], icon: 'Codex', env: {} },
+      }),
+      getWorkspaceRegistry: () => registry as never,
+    });
+
+    const result = await handlers.get(SESSION_INVOKE)?.({}, codexSession, false);
+    expect(result).toEqual(expect.objectContaining({ id: 'term-1', harnessId: 'codex' }));
+  });
+
+  it('rejects invoking session when only a remote workspace owns the cwd', async () => {
+    const handlers = new Map<string, Handler>();
+    mockHandle.mockImplementation((channel: string, handler: Handler) => {
+      handlers.set(channel, handler);
+    });
+
+    const registry = {
+      getAllWorkspaces: () => [
+        { workspaceId: 'remote-ws', location: { environmentId: 'vps', path: '/workspace' } },
+      ],
+    };
+
+    registerSessionIpc({
+      getTerminals: () => new Map(),
+      getMainWindow: () => ({ webContents: { send: vi.fn() } }) as never,
+      getSafeWorkspacePath: (workingDir: string) => workingDir,
+      getIsShuttingDown: () => false,
+      getStore: () => ({
+        get: vi.fn(() => ({})),
+      }) as never,
+      getHarnessOptions: () => ({
+        codex: { name: 'Codex', command: 'codex', args: [], icon: 'Codex', env: {} },
+      }),
+      getWorkspaceRegistry: () => registry as never,
+    });
+
+    await expect(handlers.get(SESSION_INVOKE)?.({}, codexSession, false)).rejects.toThrow(
+      'Remote session invocation is not supported in this version'
+    );
+  });
 });

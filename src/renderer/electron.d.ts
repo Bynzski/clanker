@@ -1,3 +1,4 @@
+import type { SshEnvironmentConfig } from '../../shared/types/environments';
 import type { WorkspaceRecipe, RecipePreviewProbeResult } from '../../shared/types/recipes';
 import type { TaskSessionRecord } from '../../shared/types/taskSessions';
 import type { FileListDirectoryRequest, FileListDirectoryResult, ExplorerTreeChangedEvent } from '../../shared/types/fileExplorer';
@@ -93,7 +94,7 @@ interface ElectronAPI {
   setAiCommitModel: (model: string) => Promise<void>;
 
   // Terminal
-  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
+  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
   waitRecipeCommand: (id: string) => Promise<{ status: 'success' | 'started' | 'failed'; error?: string }>;
   getTerminalBuffer: (id: string) => Promise<string>;
   writeTerminal: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
@@ -156,7 +157,7 @@ interface ElectronAPI {
   browserHistoryAdd: (url: string, title?: string) => Promise<boolean>;
   browserHistoryClear: () => Promise<boolean>;
   openExternal: (url: string) => Promise<boolean>;
-  revealInFileManager: (filePath: string) => Promise<boolean>;
+  revealInFileManager: (filePath: string, workspaceId?: string) => Promise<boolean>;
   canGoBack: (workspaceId: string) => Promise<boolean>;
   canGoForward: (workspaceId: string) => Promise<boolean>;
   browserDisposeWorkspace: (workspaceId: string) => Promise<void>;
@@ -189,53 +190,55 @@ interface ElectronAPI {
   onFitAllPanes: (callback: () => void) => () => void;
 
   // Git operations
-  gitStartPolling: (workspacePath: string) => Promise<void>;
-  gitStopPolling: () => Promise<void>;
-  generateCommitMessage: (workspacePath: string) => Promise<GenerateCommitMessageResult>;
-  gitStage: (workspacePath: string, files?: string[]) => Promise<{ success: boolean; error?: string }>;
-  gitUnstage: (workspacePath: string, files?: string[]) => Promise<{ success: boolean; error?: string }>;
-  gitCommit: (workspacePath: string, message: string) => Promise<{ success: boolean; error?: string }>;
-  gitGetBranchState: (workspacePath: string) => Promise<GitBranchStateResult>;
-  gitListWorktrees: (workspacePath: string) => Promise<GitWorktreeListResult>;
-  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string) => Promise<GitWorktreeCreateResult>;
-  registerOpenWorkspace: (id: string, workspacePath: string) => Promise<{ success: boolean; error?: string }>;
+  gitStartPolling: (workspacePath: string, workspaceId?: string) => Promise<void>;
+  gitStopPolling: (workspaceId?: string) => Promise<void>;
+  generateCommitMessage: (workspacePath: string, workspaceId?: string) => Promise<GenerateCommitMessageResult>;
+  gitStage: (workspacePath: string, files?: string[], workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitUnstage: (workspacePath: string, files?: string[], workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitCommit: (workspacePath: string, message: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitGetBranchState: (workspacePath: string, workspaceId?: string) => Promise<GitBranchStateResult>;
+  gitListWorktrees: (workspacePath: string, workspaceId?: string) => Promise<GitWorktreeListResult>;
+  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string) => Promise<GitWorktreeCreateResult>;
+  registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) => Promise<{ success: boolean; error?: string }>;
   unregisterOpenWorkspace: (id: string) => Promise<{ success: boolean; error?: string }>;
-  gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[]) => Promise<GitWorktreeInspectionResult>;
-  gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) => Promise<{ success: boolean; error?: string; warning?: string }>;
-  gitGetOperationState: (workspacePath: string) => Promise<GitOperationStateResult>;
-  gitGetStashes: (workspacePath: string) => Promise<GitStash[]>;
-  gitGetHistory: (workspacePath: string, limit?: number) => Promise<GitHistoryEntry[]>;
-  gitGetDiff: (workspacePath: string, mode: 'working' | 'staged' | 'commit', ref?: string) => Promise<GitDiffResult>;
+  gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeInspectionResult>;
+  gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) => Promise<{ success: boolean; error?: string; warning?: string }>;
+  gitGetOperationState: (workspacePath: string, workspaceId?: string) => Promise<GitOperationStateResult>;
+  gitGetStashes: (workspacePath: string, workspaceId?: string) => Promise<GitStash[]>;
+  gitGetHistory: (workspacePath: string, limit?: number, workspaceId?: string) => Promise<GitHistoryEntry[]>;
+  gitGetDiff: (workspacePath: string, mode: 'working' | 'staged' | 'commit', ref?: string, workspaceId?: string) => Promise<GitDiffResult>;
   gitGetFileDiff: (
     workspacePath: string,
     filePath: string,
-    mode: 'working' | 'staged'
+    mode: 'working' | 'staged',
+    workspaceId?: string
   ) => Promise<FileDiffResult>;
-  gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string) => Promise<{ success: boolean; error?: string }>;
-  gitSwitchBranch: (workspacePath: string, name: string) => Promise<{ success: boolean; error?: string }>;
-  gitDeleteBranch: (workspacePath: string, name: string) => Promise<GitDeleteBranchResult>;
-  gitForceDeleteBranch: (workspacePath: string, name: string) => Promise<GitDeleteBranchResult>;
-  gitMergeBranch: (workspacePath: string, branchName: string) => Promise<{ success: boolean; error?: string }>;
-  gitAbortOperation: (workspacePath: string) => Promise<{ success: boolean; error?: string }>;
-  gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean) => Promise<{ success: boolean; error?: string }>;
-  gitApplyStash: (workspacePath: string, stashRef: string) => Promise<{ success: boolean; error?: string }>;
-  gitPopStash: (workspacePath: string, stashRef: string) => Promise<{ success: boolean; error?: string }>;
-  gitDropStash: (workspacePath: string, stashRef: string) => Promise<{ success: boolean; error?: string }>;
-  gitClearStashes: (workspacePath: string) => Promise<{ success: boolean; error?: string }>;
-  gitRefresh: () => Promise<GitStatusResult | null>;
-  gitInit: (workspacePath: string, defaultBranch?: string) => Promise<GitInitResult>;
-  gitGetRemotes: (workspacePath: string) => Promise<GitRemotesResult>;
-  gitAddRemote: (workspacePath: string, name: string, url: string) => Promise<GitRemoteOperationResult>;
-  gitRemoveRemote: (workspacePath: string, name: string) => Promise<GitRemoteOperationResult>;
-  gitRenameRemote: (workspacePath: string, oldName: string, newName: string) => Promise<GitRemoteOperationResult>;
-  gitFetch: (workspacePath: string, remote?: string) => Promise<{ success: boolean; error?: string }>;
-  gitPull: (workspacePath: string, rebase?: boolean) => Promise<{ success: boolean; error?: string }>;
+  gitCreateBranch: (workspacePath: string, name: string, baseBranch?: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitSwitchBranch: (workspacePath: string, name: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitDeleteBranch: (workspacePath: string, name: string, workspaceId?: string) => Promise<GitDeleteBranchResult>;
+  gitForceDeleteBranch: (workspacePath: string, name: string, workspaceId?: string) => Promise<GitDeleteBranchResult>;
+  gitMergeBranch: (workspacePath: string, branchName: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitAbortOperation: (workspacePath: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitStash: (workspacePath: string, message?: string, includeUntracked?: boolean, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitApplyStash: (workspacePath: string, stashRef: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitPopStash: (workspacePath: string, stashRef: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitDropStash: (workspacePath: string, stashRef: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitClearStashes: (workspacePath: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitRefresh: (workspaceId?: string) => Promise<GitStatusResult | null>;
+  gitInit: (workspacePath: string, defaultBranch?: string, workspaceId?: string) => Promise<GitInitResult>;
+  gitGetRemotes: (workspacePath: string, workspaceId?: string) => Promise<GitRemotesResult>;
+  gitAddRemote: (workspacePath: string, name: string, url: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;
+  gitRemoveRemote: (workspacePath: string, name: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;
+  gitRenameRemote: (workspacePath: string, oldName: string, newName: string, workspaceId?: string) => Promise<GitRemoteOperationResult>;
+  gitFetch: (workspacePath: string, remote?: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+  gitPull: (workspacePath: string, rebase?: boolean, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
   gitPush: (
     workspacePath: string,
     remote?: string,
     branch?: string,
     forceWithLease?: boolean,
-    setUpstream?: boolean
+    setUpstream?: boolean,
+    workspaceId?: string
   ) => Promise<{ success: boolean; error?: string }>;
   onGitStatusUpdate: (callback: (status: GitStatusResult) => void) => () => void;
 
@@ -252,11 +255,11 @@ interface ElectronAPI {
   credentialConfigureSshHost: (hostname: string) => Promise<CredentialOperationResult>;
 
   // VCS Provider Context
-  vcsGetContext: (workspacePath: string) => Promise<VcsContextResult>;
-  vcsGetPrInfo: (workspacePath: string) => Promise<VcsPrInfoResult>;
-  vcsGetDeepLinks: (workspacePath: string, prNumber?: number) => Promise<DeepLink[]>;
-  vcsGetDeepLink: (workspacePath: string, type: string) => Promise<string | null>;
-  vcsOpenDeepLink: (workspacePath: string, type: string) => Promise<boolean>;
+  vcsGetContext: (workspacePath: string, workspaceId?: string) => Promise<VcsContextResult>;
+  vcsGetPrInfo: (workspacePath: string, workspaceId?: string) => Promise<VcsPrInfoResult>;
+  vcsGetDeepLinks: (workspacePath: string, prNumber?: number, workspaceId?: string) => Promise<DeepLink[]>;
+  vcsGetDeepLink: (workspacePath: string, type: string, workspaceId?: string) => Promise<string | null>;
+  vcsOpenDeepLink: (workspacePath: string, type: string, workspaceId?: string) => Promise<boolean>;
 
   // Editor
   editorReadFile: (request: FileReadRequest) => Promise<FileReadResult>;
@@ -287,7 +290,7 @@ interface ElectronAPI {
   recipeDelete: (recipeId: string) => Promise<boolean>;
 
   // Task Sessions
-  taskSessionList: (workspacePath?: string) => Promise<TaskSessionRecord[]>;
+  taskSessionList: (workspacePath?: string, environmentId?: string) => Promise<TaskSessionRecord[]>;
   taskSessionDelete: (taskId: string) => Promise<boolean>;
   taskSessionUpdate: (updates: { id: string; title?: string; nativeSessionId?: string; nativeSessionPath?: string; state?: string; stateReason?: string }) => Promise<TaskSessionRecord | null>;
   // Browser annotation
@@ -353,6 +356,13 @@ interface ElectronAPI {
     initialized: boolean;
     workspaceId: string | null;
   }) => void) => () => void;
+
+  // SSH Environments
+  sshEnvironmentList: () => Promise<SshEnvironmentConfig[]>;
+  sshEnvironmentSave: (config: unknown) => Promise<{ success: boolean; config?: SshEnvironmentConfig; error?: string }>;
+  sshEnvironmentDelete: (id: string) => Promise<{ success: boolean; error?: string }>;
+  sshEnvironmentTest: (target: string) => Promise<{ success: boolean; error?: string }>;
+  getEnvironmentHarnessOptions: (environmentId: string) => Promise<Record<string, unknown>>;
 }
 
 declare global {

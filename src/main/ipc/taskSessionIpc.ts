@@ -179,9 +179,9 @@ export function evaluateTaskRecoveryState(
 export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): WorkspacePersistenceService {
   const { getStore, getTerminals, getHarnessOptions, discoverSessionsDetailedFn = discoverSessionsDetailed } = deps;
   const persistence = new WorkspacePersistenceService(getStore);
-  ipcMain.handle(TASK_SESSION_LIST, async (_, workspacePath?: string) => {
+  ipcMain.handle(TASK_SESSION_LIST, async (_, workspacePath?: string, environmentId?: string) => {
     const rawSessions = workspacePath && typeof workspacePath === 'string' && workspacePath.trim()
-      ? persistence.getTaskSessionsForWorkspace(workspacePath)
+      ? persistence.getTaskSessionsForWorkspace(workspacePath, environmentId)
       : persistence.getAllTaskSessions();
 
     const liveTerminalIds = new Set<string>(getTerminals().keys());
@@ -189,6 +189,7 @@ export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): Worksp
 
     const discoveredByWorkspace = new Map<string, DetailedSessionDiscovery | { error: string }>();
     for (const record of rawSessions) {
+      if ((record.environmentId ?? 'local') !== 'local') continue;
       const key = record.workspacePath;
       if (!discoveredByWorkspace.has(key)) {
         try {
@@ -213,6 +214,16 @@ export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): Worksp
 
     const evaluated: TaskSessionRecord[] = [];
     for (const record of rawSessions) {
+      if ((record.environmentId ?? 'local') !== 'local') {
+        const live = record.terminalId && liveTerminalIds.has(record.terminalId);
+        evaluated.push(live ? record : {
+          ...record,
+          state: 'unavailable',
+          stateReason: 'Remote session recovery is not supported in this version',
+          terminalId: undefined,
+        });
+        continue;
+      }
       const workspaceDiscovery = discoveredByWorkspace.get(record.workspacePath);
       const harnessStatus = workspaceDiscovery && 'harnessStatus' in workspaceDiscovery
         ? workspaceDiscovery.harnessStatus[record.harnessId as keyof DetailedSessionDiscovery['harnessStatus']]
@@ -290,7 +301,10 @@ export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): Worksp
       const owner = persistence.getAllTaskSessions().find((task) =>
         task.id !== existing.id
         && task.harnessId === existing.harnessId
-        && isSameWorkspaceIdentity(task.workspacePath, existing.workspacePath)
+        && isSameWorkspaceIdentity(
+          { environmentId: task.environmentId ?? 'local', path: task.workspacePath },
+          { environmentId: existing.environmentId ?? 'local', path: existing.workspacePath }
+        )
         && task.nativeSessionId === requestedSessionId,
       );
       if (owner) {
