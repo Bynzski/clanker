@@ -14,6 +14,7 @@ import {
   ZOOM_IN_WINDOW,
   ZOOM_OUT_WINDOW,
   RESET_ZOOM_WINDOW,
+  WINDOW_READY_TO_SHOW,
 } from '../../shared/ipcChannels';
 
 interface RegisterWindowIpcDeps {
@@ -84,6 +85,13 @@ export function registerWindowIpc(deps: RegisterWindowIpcDeps): void {
 
   ipcMain.handle(RESET_ZOOM_WINDOW, () => {
     resetWindowZoom(getMainWindow);
+  });
+
+  ipcMain.handle(WINDOW_READY_TO_SHOW, () => {
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed?.() && !mainWindow.isVisible?.()) {
+      mainWindow.show();
+    }
   });
 }
 

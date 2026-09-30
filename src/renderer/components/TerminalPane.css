@@ -6,7 +6,7 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  background: var(--bg-primary);
+  background: var(--surface-app);
   border: 1px solid transparent;
   overflow: hidden;
 }
@@ -29,8 +29,8 @@
   justify-content: space-between;
   align-items: center;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--surface-header);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   gap: 8px;
 }
@@ -39,27 +39,27 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #3fb950;
+  background: var(--status-success);
   opacity: 0.3;
   flex-shrink: 0;
   transition: all 150ms ease-out;
-  box-shadow: 0 0 0 0 rgba(63, 185, 80, 0);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-success) 0%, transparent);
 }
 
 .terminal-status-indicator[data-active="true"] {
   opacity: 1;
-  background: #3fb950;
+  background: var(--status-success);
   box-shadow: 
-    0 0 6px 2px rgba(63, 185, 80, 0.4),
-    0 0 12px 4px rgba(63, 185, 80, 0.2);
+    0 0 6px 2px color-mix(in srgb, var(--status-success) 40%, transparent),
+    0 0 12px 4px color-mix(in srgb, var(--status-success) 20%, transparent);
 }
 
 .terminal-pane.active .terminal-status-indicator[data-active="true"] {
   opacity: 1;
-  background: #56d364;
+  background: var(--status-success-emphasis);
   box-shadow: 
-    0 0 8px 3px rgba(86, 211, 100, 0.5),
-    0 0 16px 6px rgba(86, 211, 100, 0.25);
+    0 0 8px 3px color-mix(in srgb, var(--status-success-emphasis) 50%, transparent),
+    0 0 16px 6px color-mix(in srgb, var(--status-success-emphasis) 25%, transparent);
 }
 
 .terminal-pane .terminal-title {
@@ -89,7 +89,7 @@
 }
 
 .terminal-pane.attention-unseen {
-  border-color: #d29922;
+  border-color: var(--status-warning);
 }
 
 .terminal-agent-state {
@@ -102,9 +102,9 @@
   color: var(--text-secondary);
 }
 
-.terminal-agent-state.state-needs_input { color: #e3b341; }
-.terminal-agent-state.state-turn_complete { color: #56d364; }
-.terminal-agent-state.state-running { color: #79c0ff; }
+.terminal-agent-state.state-needs_input { color: var(--status-warning-emphasis); }
+.terminal-agent-state.state-turn_complete { color: var(--status-success-emphasis); }
+.terminal-agent-state.state-running { color: var(--status-info-emphasis); }
 .terminal-agent-state.unseen { font-weight: 700; }
 
 .terminal-header-actions {
@@ -141,12 +141,12 @@
 }
 
 .terminal-action:hover {
-  background: var(--bg-tertiary);
+  background: var(--surface-control);
   color: var(--text-primary);
 }
 
 .terminal-pane .terminal-close:hover {
-  color: var(--accent-primary);
+  color: var(--accent-interactive);
 }
 
 .terminal-content {
@@ -166,7 +166,8 @@
   min-width: 0;
 }
 
-.terminal-content .xterm-viewport {
+.terminal-content .xterm .xterm-viewport {
+  background-color: inherit;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }

@@ -6,7 +6,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--overlay-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -14,15 +14,15 @@
 }
 
 .diff-viewer-modal {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   width: 90vw;
   max-width: 1200px;
   height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-dialog);
 }
 
 .diff-viewer-header {
@@ -30,7 +30,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 14px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .diff-viewer-header h2 {
@@ -57,7 +57,7 @@
 }
 
 .diff-viewer-close:hover {
-  background: var(--bg-tertiary);
+  background: var(--surface-control);
   color: var(--text-primary);
 }
 
@@ -76,7 +76,7 @@
 .diff-viewer-pane-headers {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .diff-viewer-pane-header {
@@ -84,20 +84,20 @@
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-header);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .diff-viewer-pane-header + .diff-viewer-pane-header {
-  border-left: 1px solid var(--border-color);
+  border-left: 1px solid var(--border-default);
 }
 
 .diff-viewer-unified-content {
   flex: 1;
   overflow: auto;
-  background: var(--bg-primary);
+  background: var(--surface-app);
 }
 
 .diff-viewer-merge-root {
@@ -112,48 +112,18 @@
   min-height: 100%;
 }
 
-.diff-viewer-merge-root .cm-editor {
-  height: 100%;
-  background: var(--bg-primary) !important;
-  color: var(--text-primary);
-}
-
+/* Layout and the Clanker-owned gap outside the two editor themes. */
+.diff-viewer-merge-root .cm-editor { height: 100%; }
 .diff-viewer-merge-root .cm-scroller {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 20px;
-  background: var(--bg-primary) !important;
 }
-
-.diff-viewer-merge-root .cm-content,
-.diff-viewer-merge-root .cm-mergeViewEditors,
-.diff-viewer-merge-root .cm-mergeView {
-  background: var(--bg-primary) !important;
-}
-
-.diff-viewer-merge-root .cm-gutters {
-  background: var(--bg-primary) !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
-  color: var(--text-tertiary);
-}
-
-.diff-viewer-merge-root .cm-lineNumbers .cm-gutterElement {
-  color: var(--text-tertiary);
-}
-
+.diff-viewer-merge-root .cm-mergeView,
 .diff-viewer-merge-root .cm-mergeGap {
-  background: var(--bg-primary) !important;
+  background: var(--surface-app);
 }
-
-.diff-viewer-merge-root .cm-mergeGap .cm-mergeRevert {
-  display: none;
-}
-
-.diff-viewer-merge-root .cm-changedText,
-.diff-viewer-merge-root .cm-deletedText,
-.diff-viewer-merge-root .cm-deletedChunk .cm-deletedText {
-  background: transparent !important;
-}
+.diff-viewer-merge-root .cm-mergeGap .cm-mergeRevert { display: none; }
 
 /* State messages */
 .diff-viewer-loading,
@@ -164,12 +134,12 @@
   align-items: center;
   justify-content: center;
   flex: 1;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   font-size: 13px;
   padding: 40px;
 }
 
 .diff-viewer-error {
-  color: var(--accent-error);
-  background: rgba(244, 67, 54, 0.1);
+  color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 10%, transparent);
 }

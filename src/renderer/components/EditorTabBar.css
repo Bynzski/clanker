@@ -4,13 +4,13 @@
   align-items: center;
   overflow-x: auto;
   overflow-y: hidden;
-  background: var(--bg-primary);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--surface-app);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   height: 32px;
   min-height: 32px;
   scrollbar-width: thin;
-  scrollbar-color: var(--bg-tertiary) transparent;
+  scrollbar-color: var(--surface-control) transparent;
 }
 
 .editor-tab-bar::-webkit-scrollbar {
@@ -22,7 +22,7 @@
 }
 
 .editor-tab-bar::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary);
+  background: var(--surface-control);
   border-radius: 2px;
 }
 
@@ -36,7 +36,7 @@
   min-height: 28px;
   background: transparent;
   border: none;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
@@ -47,21 +47,21 @@
 }
 
 .editor-tab:hover {
-  background: var(--bg-secondary);
+  background: var(--surface-raised);
   color: var(--text-primary);
 }
 
 .editor-tab.active {
-  background: var(--bg-secondary);
+  background: var(--surface-raised);
   color: var(--text-primary);
-  border-bottom: 2px solid var(--accent-color, #6366f1);
+  border-bottom: 2px solid var(--status-merged);
 }
 
 .editor-tab-dirty {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent-color, #6366f1);
+  background: var(--status-merged);
   flex-shrink: 0;
 }
 
@@ -89,7 +89,7 @@
 }
 
 .editor-tab-close:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--surface-tint) 10%, transparent);
   color: var(--text-primary);
 }
 

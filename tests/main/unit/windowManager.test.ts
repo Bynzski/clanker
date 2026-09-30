@@ -6,8 +6,9 @@
 
 import { vi, describe, test, expect, afterEach } from 'vitest';
 import { BrowserWindow } from 'electron';
-import { createMainWindow } from '../../../src/main/windowManager';
+import { createMainWindow, resolveInitialWindowBackground } from '../../../src/main/windowManager';
 
+import { getThemeMetadata } from '../../../src/shared/types/theme';
 vi.mock('electron', () => ({ BrowserWindow: vi.fn(), Menu: { setApplicationMenu: vi.fn() } }));
 
 test('renderer loss stops file/git watchers and releases workspace resources without waiting for window close', () => {
@@ -163,6 +164,131 @@ describe('windowManager', () => {
 
       expect(result.window).toBeDefined();
       expect(typeof result.cleanup).toBe('function');
+    });
+
+    test('BrowserWindow starts hidden (show: false) by default', () => {
+      const prevEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+      const mockWin = {
+        setMenuBarVisibility: vi.fn(),
+        setAutoHideMenuBar: vi.fn(),
+        loadURL: vi.fn(),
+        loadFile: vi.fn(),
+        on: vi.fn(),
+        webContents: { on: vi.fn(), openDevTools: vi.fn() },
+      };
+      vi.mocked(BrowserWindow).mockImplementation(function () { return mockWin as never; });
+      try {
+        const deps = {
+          preloadPath: '/preload.js',
+          gitService: { stopPolling: vi.fn() },
+          fileWatcher: { unwatchAll: vi.fn() },
+        };
+        createMainWindow(deps);
+        expect(BrowserWindow).toHaveBeenCalledWith(
+          expect.objectContaining({
+            show: false,
+            backgroundColor: '#121212',
+          })
+        );
+      } finally {
+        process.env.NODE_ENV = prevEnv;
+      }
+    });
+
+    test('uses light theme window background when specified', () => {
+      const prevEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+      const mockWin = {
+        setMenuBarVisibility: vi.fn(),
+        setAutoHideMenuBar: vi.fn(),
+        loadURL: vi.fn(),
+        loadFile: vi.fn(),
+        on: vi.fn(),
+        webContents: { on: vi.fn(), openDevTools: vi.fn() },
+      };
+      vi.mocked(BrowserWindow).mockImplementation(function () { return mockWin as never; });
+      try {
+        const deps = {
+          preloadPath: '/preload.js',
+          gitService: { stopPolling: vi.fn() },
+          fileWatcher: { unwatchAll: vi.fn() },
+          backgroundColor: getThemeMetadata('light').windowBackground,
+        };
+        createMainWindow(deps);
+        expect(BrowserWindow).toHaveBeenCalledWith(
+          expect.objectContaining({
+            show: false,
+            backgroundColor: '#f3f4f6',
+          })
+        );
+      } finally {
+        process.env.NODE_ENV = prevEnv;
+      }
+    });
+
+    test('resolveInitialWindowBackground resolves persisted themes correctly', () => {
+      expect(resolveInitialWindowBackground({ get: () => 'dark' })).toBe('#121212');
+      expect(resolveInitialWindowBackground({ get: () => 'light' })).toBe('#f3f4f6');
+      expect(resolveInitialWindowBackground({ get: () => 'invalid' })).toBe('#121212');
+      expect(resolveInitialWindowBackground({ get: () => undefined })).toBe('#121212');
+    });
+
+    test('window recreation through the activate path uses the current persisted theme', () => {
+      const prevEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+      const mockWin = {
+        setMenuBarVisibility: vi.fn(),
+        setAutoHideMenuBar: vi.fn(),
+        loadURL: vi.fn(),
+        loadFile: vi.fn(),
+        on: vi.fn(),
+        webContents: { on: vi.fn(), openDevTools: vi.fn() },
+      };
+      vi.mocked(BrowserWindow).mockImplementation(function () { return mockWin as never; });
+      try {
+        // Simulated electron-store holding mutable theme setting
+        let persistedTheme: string = 'dark';
+        const mockStore = {
+          get: vi.fn((key: string) => (key === 'theme' ? persistedTheme : undefined)),
+        };
+
+        const baseDeps = {
+          preloadPath: '/preload.js',
+          gitService: { stopPolling: vi.fn() },
+          fileWatcher: { unwatchAll: vi.fn() },
+        };
+
+        // Initial window launch reads persisted dark theme
+        createMainWindow({
+          ...baseDeps,
+          backgroundColor: resolveInitialWindowBackground(mockStore),
+        });
+        expect(BrowserWindow).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            backgroundColor: '#121212',
+            show: false,
+          })
+        );
+
+        // Theme is changed while running to 'light'
+        persistedTheme = 'light';
+
+        // Window closed and app reactivated via app.on('activate')
+        // Recreate path queries resolveInitialWindowBackground(store)
+        createMainWindow({
+          ...baseDeps,
+          backgroundColor: resolveInitialWindowBackground(mockStore),
+        });
+        expect(BrowserWindow).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            backgroundColor: '#f3f4f6',
+            show: false,
+          })
+        );
+      } finally {
+        process.env.NODE_ENV = prevEnv;
+      }
     });
   });
 

@@ -3,6 +3,7 @@ import type { HarnessSession } from '../../shared/types/session';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import ChatHistoryDropdown from './ChatHistoryDropdown';
+import AppearanceSettings from './settings/AppearanceSettings';
 import HarnessDefaultsSection from './settings/HarnessDefaultsSection';
 
 interface HeaderRightControlsProps {
@@ -152,6 +153,7 @@ export default function HeaderRightControls({
 
         {showSettings && (
           <div className="settings-dropdown">
+            <AppearanceSettings />
             <div className="settings-section">
               <label className="settings-option">
                 <input

@@ -1,32 +1,168 @@
+/* Structural tokens are shared by every theme. */
 :root {
-  --bg-primary: #121212;
-  --bg-secondary: #1a1a1a;
-  --bg-tertiary: #232323;
-  --border-color: #2f2f2f;
-  --text-primary: #e8e8e8;
-  --text-secondary: #9b9b9b;
-  --text-tertiary: #70757d;
-  --accent-primary: #8b949e;
-  --accent-secondary: #6b7280;
-  --accent-success: #3fb950;
-  --accent-warning: #d29922;
-  --accent-error: #f85149;
-  
   --font-ui: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Fira Mono', Menlo, Consolas, monospace;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Fira Mono', Menlo, Consolas, monospace;
-  
+
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 16px;
   --space-lg: 24px;
   --space-xl: 32px;
   --space-2xl: 48px;
-  
+
   --radius-sm: 2px;
   --radius-md: 4px;
   --radius-lg: 8px;
-  
+
   --transition: 150ms ease-out;
+}
+
+/* Dark is also the safe fallback before theme resolution. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  /* Monochrome artwork contrast */
+  --logo-monochrome-filter: none;
+  /* Surfaces and translucent interaction layers */
+  --surface-app: #121212;
+  --surface-raised: #1a1a1a;
+  --surface-elevated: #1a1a1a;
+  --surface-sunken: #111;
+  --surface-control: #232323;
+  --surface-control-hover: #2f2f2f;
+  --surface-tint: #fff;
+  --surface-inset-tint: #000;
+  --surface-header: rgba(255, 255, 255, 0.03);
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-active: rgba(255, 255, 255, 0.12);
+  --surface-selected: rgba(139, 148, 158, 0.18);
+  --surface-preview: rgba(13, 17, 23, 0.94);
+  --surface-preview-active: rgba(35, 41, 49, 0.94);
+  --surface-loading-start: rgba(22, 27, 34, 0.96);
+  --surface-loading-end: rgba(9, 12, 17, 0.98);
+  /* Foreground roles */
+  --text-primary: #e8e8e8;
+  --text-secondary: #9b9b9b;
+  --text-muted: #70757d;
+  --text-inverse: #fff;
+  --text-link: #58a6ff;
+  --text-on-emphasis: rgba(230, 237, 243, 0.72);
+  /* Boundaries and focus */
+  --border-default: #2f2f2f;
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --focus-ring: #8b949e;
+  --accent-interactive: #8b949e;
+  --accent-interactive-hover: #6b7280;
+  /* Filled action pairs */
+  --control-primary-bg: #8b949e;
+  --control-primary-bg-hover: #a0a0a0;
+  --control-primary-fg: #fff;
+  --control-primary-fg-hover: #121212;
+  --control-info-bg-hover: #1d4ed8;
+  --control-success-bg: #059669;
+  --control-success-bg-hover: #047857;
+  --control-danger-bg: #f85149;
+  --control-danger-fg: #fff;
+  /* Lifecycle and feedback states */
+  --status-success: #3fb950;
+  --status-warning: #d29922;
+  --status-error: #f85149;
+  --status-info: #58a6ff;
+  --status-merged: #a371f7;
+  --status-success-emphasis: #56d364;
+  --status-warning-emphasis: #e3b341;
+  --status-info-emphasis: #79c0ff;
+  /* Git file states */
+  --git-added: #81c784;
+  --git-modified: #ffb74d;
+  --git-deleted: #e57373;
+  --git-renamed: #64b5f6;
+  --git-untracked: #bdbdbd;
+  /* Overlays and elevation */
+  --overlay-backdrop: rgba(0, 0, 0, 0.6);
+  --shadow-color: #000;
+  --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-dialog: 0 8px 32px rgba(0, 0, 0, 0.4);
+  /* Global interactions */
+  --selection-bg: rgba(255, 255, 255, 0.12);
+  --selection-fg: #e8e8e8;
+  --scrollbar-track: #121212;
+  --scrollbar-thumb: #3a3a3a;
+  --scrollbar-thumb-hover: #9b9b9b;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  /* Monochrome artwork contrast */
+  --logo-monochrome-filter: brightness(0.25);
+  /* Surfaces and translucent interaction layers */
+  --surface-app: #f3f4f6;
+  --surface-raised: #e9ecf0;
+  --surface-elevated: #fafbfc;
+  --surface-sunken: #e1e5ea;
+  --surface-control: #f8f9fb;
+  --surface-control-hover: #dce1e7;
+  --surface-tint: #18212f;
+  --surface-inset-tint: #18212f;
+  --surface-header: rgba(24, 33, 47, 0.03);
+  --surface-hover: rgba(24, 33, 47, 0.06);
+  --surface-active: rgba(24, 33, 47, 0.12);
+  --surface-selected: rgba(65, 97, 140, 0.14);
+  --surface-preview: rgba(250, 251, 252, 0.94);
+  --surface-preview-active: rgba(222, 231, 242, 0.94);
+  --surface-loading-start: rgba(233, 236, 240, 0.96);
+  --surface-loading-end: rgba(243, 244, 246, 0.98);
+  /* Foreground roles */
+  --text-primary: #202630;
+  --text-secondary: #525e6d;
+  --text-muted: #606a77;
+  --text-inverse: #fff;
+  --text-link: #154b83;
+  --text-on-emphasis: #465567;
+  /* Boundaries and focus */
+  --border-default: #c9d0d9;
+  --border-subtle: rgba(24, 33, 47, 0.12);
+  --border-strong: #9aa6b5;
+  --focus-ring: #2667b0;
+  --accent-interactive: #526880;
+  --accent-interactive-hover: #41566f;
+  /* Filled action pairs */
+  --control-primary-bg: #526880;
+  --control-primary-bg-hover: #41566f;
+  --control-primary-fg: #fff;
+  --control-primary-fg-hover: #fff;
+  --control-info-bg-hover: #1b4f8c;
+  --control-success-bg: #08764f;
+  --control-success-bg-hover: #065c3e;
+  --control-danger-bg: #921e1b;
+  --control-danger-fg: #fff;
+  /* Lifecycle and feedback states */
+  --status-success: #105a29;
+  --status-warning: #6d4600;
+  --status-error: #921e1b;
+  --status-info: #154b83;
+  --status-merged: #59318c;
+  --status-success-emphasis: #125c2b;
+  --status-warning-emphasis: #704900;
+  --status-info-emphasis: #144c84;
+  /* Git file states */
+  --git-added: #105a29;
+  --git-modified: #6d4600;
+  --git-deleted: #921e1b;
+  --git-renamed: #154b83;
+  --git-untracked: #495361;
+  /* Overlays and elevation */
+  --overlay-backdrop: rgba(28, 38, 52, 0.35);
+  --shadow-color: #475569;
+  --shadow-popover: 0 4px 16px rgba(28, 38, 52, 0.18);
+  --shadow-dialog: 0 8px 32px rgba(28, 38, 52, 0.22);
+  /* Global interactions */
+  --selection-bg: rgba(38, 103, 176, 0.22);
+  --selection-fg: #202630;
+  --scrollbar-track: #f3f4f6;
+  --scrollbar-thumb: #b1bac6;
+  --scrollbar-thumb-hover: #8895a5;
 }
 
 * {
@@ -46,7 +182,7 @@ body {
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-primary);
-  background: var(--bg-primary);
+  background: var(--surface-app);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -76,8 +212,8 @@ input {
 
 /* Selection styling */
 ::selection {
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--text-primary);
+  background: var(--selection-bg);
+  color: var(--selection-fg);
 }
 
 /* Scrollbar styling */
@@ -87,20 +223,25 @@ input {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary);
+  background: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3a3a3a;
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* Focus visible for accessibility */
-:focus-visible {
-  outline: 2px solid var(--accent-primary);
+:root :focus-visible:not(.cm-content):not(.xterm-helper-textarea) {
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* White monochrome harness marks need contrast on Light surfaces. Brand artwork stays intact. */
+.harness-logo-monochrome {
+  filter: var(--logo-monochrome-filter);
 }

@@ -7,20 +7,20 @@
 .git-operation-status {
   padding: 8px 10px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--surface-tint) 4%, transparent);
   color: var(--text-primary);
   font-size: 12px;
   line-height: 1.4;
 }
 
 .git-operation-status.merge {
-  background: rgba(217, 146, 34, 0.12);
-  color: #f5d58a;
+  background: color-mix(in srgb, var(--status-warning) 12%, transparent);
+  color: var(--status-warning-emphasis);
 }
 
 .git-operation-status.rebase {
-  background: rgba(139, 148, 158, 0.12);
-  color: #cdd3da;
+  background: color-mix(in srgb, var(--accent-interactive) 12%, transparent);
+  color: var(--text-primary);
 }
 
 .git-conflict-list {
@@ -32,8 +32,8 @@
 .git-conflict-file {
   padding: 5px 8px;
   border-radius: var(--radius-sm);
-  background: rgba(248, 81, 73, 0.12);
-  color: #ffb4af;
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+  color: var(--status-error);
   font-size: 11px;
   word-break: break-word;
 }
@@ -46,14 +46,14 @@
   align-self: flex-start;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
-  background: rgba(248, 81, 73, 0.12);
-  color: #ffb4af;
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+  color: var(--status-error);
   font-size: 11px;
   font-weight: 600;
 }
 
 .git-operation-abort:hover:not(:disabled) {
-  background: rgba(248, 81, 73, 0.2);
+  background: color-mix(in srgb, var(--status-error) 20%, transparent);
 }
 
 .git-merge-form {
@@ -66,8 +66,8 @@
   flex: 1;
   min-width: 0;
   padding: 8px 10px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
+  background: var(--surface-control);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: 12px;

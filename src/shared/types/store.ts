@@ -1,6 +1,7 @@
 import type { WorkspaceRecipe } from './recipes';
 import type { TaskSessionRecord } from './taskSessions';
 import type { SshEnvironmentConfig } from './environments';
+import type { ThemeId } from './theme';
 /**
  * Shared store schema types.
  *
@@ -53,6 +54,7 @@ export interface RemoteWorktreeRemovalRecord {
 
 /** Top-level store schema. */
 export interface StoreSchema {
+  theme: ThemeId;
   lastWorkspace: string;
   baseDirectory: string;
   aiCommitEnabled: boolean;

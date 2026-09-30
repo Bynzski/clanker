@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Dark/Light appearance** — application-wide persisted themes for UI chrome, terminals, editors, and diffs, with live switching from Settings and synchronized startup appearance.
+
 ## [0.8.0] - 2026-09-30
 
 ### Added

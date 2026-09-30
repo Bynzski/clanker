@@ -30,6 +30,8 @@ export const GET_HARNESS_OPTIONS = 'get-harness-options';
 export const GET_HARNESS_MODELS = 'get-harness-models';
 export const GET_HARNESS_DEFAULTS = 'get-harness-defaults';
 export const SET_HARNESS_DEFAULTS = 'set-harness-defaults';
+export const GET_THEME = 'get-theme';
+export const SET_THEME = 'set-theme';
 
 /* ============================================================================
  * Terminal
@@ -142,6 +144,7 @@ export const IS_MAXIMIZED_WINDOW = 'is-maximized-window';
 export const ZOOM_IN_WINDOW = 'zoom-in-window';
 export const ZOOM_OUT_WINDOW = 'zoom-out-window';
 export const RESET_ZOOM_WINDOW = 'reset-zoom-window';
+export const WINDOW_READY_TO_SHOW = 'window-ready-to-show';
 
 /* ============================================================================
  * Credentials
@@ -270,6 +273,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   GET_HARNESS_MODELS,
   GET_HARNESS_DEFAULTS,
   SET_HARNESS_DEFAULTS,
+  GET_THEME,
+  SET_THEME,
   // Terminal
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
@@ -319,6 +324,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   ZOOM_IN_WINDOW,
   ZOOM_OUT_WINDOW,
   RESET_ZOOM_WINDOW,
+  WINDOW_READY_TO_SHOW,
   // Git
   GIT_START_POLLING,
   GIT_STOP_POLLING,

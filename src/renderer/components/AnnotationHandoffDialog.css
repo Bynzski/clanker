@@ -5,7 +5,7 @@
   display: grid;
   place-items: center;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.65);
+  background: var(--overlay-backdrop);
 }
 
 .annotation-handoff-dialog {
@@ -16,10 +16,10 @@
   gap: 12px;
   padding: 18px;
   color: var(--text-primary);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 16px 50px color-mix(in srgb, var(--shadow-color) 45%, transparent);
 }
 
 .annotation-handoff-header { display: flex; justify-content: space-between; gap: 16px; }
@@ -36,19 +36,19 @@
   padding: 10px;
   box-sizing: border-box;
   color: var(--text-primary);
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  background: var(--surface-app);
+  border: 1px solid var(--border-default);
   border-radius: 5px;
   font: 11px/1.5 var(--font-mono);
 }
 .annotation-handoff-destinations { overflow-y: auto; min-height: 0; }
-.annotation-handoff-agent { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border-color); font-size: 12px; }
+.annotation-handoff-agent { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border-default); font-size: 12px; }
 .annotation-handoff-agent div { min-width: 0; }
 .annotation-handoff-agent small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
 .annotation-handoff-path { font-family: var(--font-mono); opacity: 0.75; }
 .annotation-handoff-agent button { flex-shrink: 0; }
 .annotation-handoff-feedback { margin: 0; font-size: 12px; color: var(--text-secondary); }
 .annotation-handoff-footer { display: flex; justify-content: flex-end; gap: 8px; }
-.annotation-handoff-dialog button { padding: 6px 10px; color: var(--text-primary); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 5px; cursor: pointer; }
-.annotation-handoff-dialog button:hover:not(:disabled) { border-color: var(--accent-primary); }
+.annotation-handoff-dialog button { padding: 6px 10px; color: var(--text-primary); background: var(--surface-control); border: 1px solid var(--border-default); border-radius: 5px; cursor: pointer; }
+.annotation-handoff-dialog button:hover:not(:disabled) { border-color: var(--accent-interactive); }
 .annotation-handoff-dialog button:disabled { opacity: 0.45; cursor: not-allowed; }

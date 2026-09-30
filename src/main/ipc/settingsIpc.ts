@@ -20,6 +20,7 @@ import { type StoreSchema, type HarnessDefaultsMap } from '../../shared/types/st
 import { type AiCommitProvider } from '../aiCommit';
 import { validateHarnessDefaultsMap } from '../harnessDefaultsValidation';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
+import { isThemeId, normalizeThemeId, getThemeMetadata } from '../../shared/types/theme';
 import {
   GET_APP_VERSION,
   GET_LAST_WORKSPACE,
@@ -35,6 +36,8 @@ import {
   READ_DIRECTORY,
   GET_HARNESS_OPTIONS,
   GET_HARNESS_MODELS,
+  GET_THEME,
+  SET_THEME,
 } from '../../shared/ipcChannels';
 
 interface RegisterSettingsIpcDeps {
@@ -172,6 +175,27 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
       return;
     }
     getStore().set('harnessDefaults', result.sanitized);
+  });
+
+  ipcMain.handle(GET_THEME, () => {
+    const raw = getStore().get('theme');
+    const normalized = normalizeThemeId(raw);
+    if (raw !== normalized) {
+      getStore().set('theme', normalized);
+    }
+    return normalized;
+  });
+
+  ipcMain.handle(SET_THEME, (_, theme: unknown) => {
+    if (!isThemeId(theme)) {
+      console.warn('[clanker-grid] SET_THEME rejected invalid theme:', theme);
+      return;
+    }
+    getStore().set('theme', theme);
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed?.()) {
+      mainWindow.setBackgroundColor?.(getThemeMetadata(theme).windowBackground);
+    }
   });
 }
 

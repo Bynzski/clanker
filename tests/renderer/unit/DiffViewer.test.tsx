@@ -1,22 +1,30 @@
 // @vitest-environment jsdom
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
+import { useThemeStore } from '../../../src/renderer/theme/themeStore';
+import { EditorState } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
 import DiffViewer from '../../../src/renderer/components/DiffViewer';
 
+const mergeMocks = vi.hoisted(() => ({ instances: [] as {
+  a: { state: import('@codemirror/state').EditorState; dispatch: ReturnType<typeof vi.fn> };
+  b: { state: import('@codemirror/state').EditorState; dispatch: ReturnType<typeof vi.fn> };
+  destroy: ReturnType<typeof vi.fn>;
+}[] }));
 vi.mock('@codemirror/merge', () => ({
   MergeView: class MockMergeView {
-    private parent: HTMLElement;
-
-    constructor(options: { parent: HTMLElement }) {
-      this.parent = options.parent;
-      const marker = document.createElement('div');
-      marker.className = 'mock-merge-view';
-      this.parent.appendChild(marker);
-    }
-
-    destroy() {
-      this.parent.replaceChildren();
+    a; b; destroy;
+    constructor(options: import('@codemirror/merge').DirectMergeConfig) {
+      const side = (config: import('@codemirror/state').EditorStateConfig) => {
+        const editor = { state: EditorState.create(config), dispatch: vi.fn((spec: import('@codemirror/state').TransactionSpec) => { editor.state = editor.state.update(spec).state; }) };
+        return editor;
+      };
+      this.a = side(options.a); this.b = side(options.b);
+      const parent = options.parent!;
+      const marker = document.createElement('div'); marker.className = 'mock-merge-view'; parent.appendChild(marker);
+      this.destroy = vi.fn(() => parent.replaceChildren());
+      mergeMocks.instances.push(this);
     }
   },
 }));
@@ -26,7 +34,11 @@ describe('DiffViewer', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mergeMocks.instances.length = 0;
+    useThemeStore.setState({ theme: 'dark' });
   });
+
+  afterEach(cleanup);
 
   function renderDiffViewer(overrides = {}) {
     const props = {
@@ -43,6 +55,47 @@ describe('DiffViewer', () => {
     };
     return render(<DiffViewer {...props} />);
   }
+
+  const themeProps = { oldContent: 'const old = 1;', newContent: 'const next = 2;', oldPath: 'a.ts', newPath: 'b.ts', isBinary: false, hasDiff: true, isLoading: false, error: null, onClose: mockOnClose };
+  it.each(['dark', 'light'] as const)('initializes both sides in %s', (theme) => {
+    useThemeStore.setState({ theme }); render(<DiffViewer {...themeProps} />);
+    const merge = mergeMocks.instances[0];
+    for (const side of [merge.a, merge.b]) {
+      expect(side.state.facet(EditorView.darkTheme)).toBe(theme === 'dark');
+      expect(side.state.readOnly).toBe(true);
+      expect(side.state.facet(EditorView.editable)).toBe(false);
+      expect(side.dispatch).not.toHaveBeenCalled();
+    }
+  });
+  it('reconfigures both sides in place and keeps input changes independent', () => {
+    const rendered = render(<DiffViewer {...themeProps} />);
+    const merge = mergeMocks.instances[0], a = merge.a, b = merge.b;
+    for (const theme of ['light', 'dark'] as const) {
+      act(() => useThemeStore.setState({ theme }));
+      expect(mergeMocks.instances).toEqual([merge]);
+      expect(merge.destroy).not.toHaveBeenCalled();
+      expect(merge.a).toBe(a); expect(merge.b).toBe(b);
+      expect(a.state.doc.toString()).toBe(themeProps.oldContent);
+      expect(b.state.doc.toString()).toBe(themeProps.newContent);
+      for (const side of [a, b]) {
+        expect(side.state.facet(EditorView.darkTheme)).toBe(theme === 'dark');
+        expect(side.state.readOnly).toBe(true);
+        expect(side.state.facet(EditorView.editable)).toBe(false);
+      }
+    }
+    expect(a.dispatch).toHaveBeenCalledTimes(2); expect(b.dispatch).toHaveBeenCalledTimes(2);
+    rendered.rerender(<DiffViewer {...themeProps} newContent="actual content change" />);
+    expect(merge.destroy).toHaveBeenCalledOnce(); expect(mergeMocks.instances).toHaveLength(2);
+    expect(mergeMocks.instances[1].b.state.doc.toString()).toBe('actual content change');
+  });
+
+  it.each([{ oldContent: 'changed HEAD text' }, { newPath: 'plain.txt' }])('keeps actual diff input changes in the creation lifecycle: %j', (changed) => {
+    const rendered = render(<DiffViewer {...themeProps} />);
+    const original = mergeMocks.instances[0];
+    rendered.rerender(<DiffViewer {...themeProps} {...changed} />);
+    expect(original.destroy).toHaveBeenCalledOnce();
+    expect(mergeMocks.instances).toHaveLength(2);
+  });
 
   // =========================================================================
   // Loading state

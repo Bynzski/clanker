@@ -18,6 +18,7 @@ import { executeWorkspaceRecipe } from './lib/recipeExecution';
 import { getWorkspaceNameFromPath } from './lib/workspaceLabels';
 import type { GitWorktree } from '../shared/types/git';
 import './App.css';
+import { useThemeStore } from './theme/themeStore';
 
 const WorkspaceHost = lazy(() => import('./components/WorkspaceHost'));
 
@@ -35,6 +36,13 @@ function App() {
   useEffect(() => {
     void migrateLegacyFavorites();
   }, []);
+  // Ensure theme is initialized if App is mounted directly (e.g. in test environments)
+  useEffect(() => {
+    if (!useThemeStore.getState().resolved) {
+      void useThemeStore.getState().initializeTheme();
+    }
+  }, []);
+
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

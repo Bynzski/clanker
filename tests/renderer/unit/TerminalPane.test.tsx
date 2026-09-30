@@ -6,6 +6,9 @@ import TerminalPane from '../../../src/renderer/components/TerminalPane';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
+import { useThemeStore } from '../../../src/renderer/theme/themeStore';
+import { startTerminalThemeSync } from '../../../src/renderer/theme/themeRuntime';
+import { getTerminalTheme } from '../../../src/renderer/theme/terminalTheme';
 import type { ILinkProvider } from '@xterm/xterm';
 
 let attachedKeyHandler: ((event: KeyboardEvent) => boolean) | null = null;
@@ -14,6 +17,8 @@ let registeredLinkProvider: ILinkProvider | null = null;
 let mockBufferLineText = '';
 let terminalOptions: import('@xterm/xterm').ITerminalOptions | null = null;
 let terminalConstructionCount = 0;
+const constructedTerminals: { options: import('@xterm/xterm').ITerminalOptions; dispose: ReturnType<typeof vi.fn> }[] = [];
+let stopThemeSync: () => void;
 let lastTerminalElement: HTMLDivElement | null = null;
 const mockTerminalWrite = vi.fn();
 const mockHasSelection = vi.fn().mockReturnValue(false);
@@ -31,6 +36,7 @@ vi.mock('@xterm/xterm', () => {
       options: import('@xterm/xterm').ITerminalOptions;
       constructor(options?: import('@xterm/xterm').ITerminalOptions) {
         terminalConstructionCount += 1;
+        constructedTerminals.push(this);
         this.options = options ?? {};
         terminalOptions = this.options;
         lastTerminalElement = this.element;
@@ -200,6 +206,7 @@ describe('TerminalPane', () => {
     mockBufferLineText = '';
     terminalOptions = null;
     terminalConstructionCount = 0;
+    constructedTerminals.length = 0;
     lastTerminalElement = null;
     mockTerminalWrite.mockClear();
     mockHasSelection.mockReturnValue(false);
@@ -208,12 +215,118 @@ describe('TerminalPane', () => {
     setupElectronAPIMocks();
     // Clear the xterm instance cache between tests to ensure isolation
     clearTerminalCache();
+    useThemeStore.setState({ theme: 'dark', resolved: true });
+    stopThemeSync = startTerminalThemeSync();
     useAgentAttentionStore.setState({ byTerminalId: {} });
   });
 
   afterEach(() => {
     cleanup();
+    clearTerminalCache();
+    stopThemeSync();
     vi.useRealTimers();
+  });
+
+  describe('terminal themes', () => {
+    async function settleRuntime() {
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(150);
+      });
+    }
+
+    it.each(['dark', 'light'] as const)('constructs directly with the current %s palette', async (theme) => {
+      useThemeStore.setState({ theme });
+      setupStoreWithTerminal('t1', 'p1');
+      render(<TerminalPane paneId="p1" />);
+      await settleRuntime();
+      expect(terminalOptions?.theme).toEqual(getTerminalTheme(theme));
+      expect(lastTerminalElement?.style.backgroundColor).toBe(theme === 'dark' ? 'rgb(18, 18, 18)' : 'rgb(243, 244, 246)');
+      expect(terminalConstructionCount).toBe(1);
+    });
+
+    it('reads the current theme after async imports resolve', async () => {
+      setupStoreWithTerminal('t1', 'p1');
+      render(<TerminalPane paneId="p1" />);
+      expect(terminalConstructionCount).toBe(0);
+      // The import continuation has not run yet: a pre-import capture is stale.
+      useThemeStore.setState({ theme: 'light' });
+      await settleRuntime();
+      expect(terminalOptions?.theme).toEqual(getTerminalTheme('light'));
+    });
+
+    it('switches all living xterms both ways without session lifecycle work', async () => {
+      setupStoreWithTerminal('t1', 'p1');
+      useWorkspaceStore.setState({
+        terminals: [createTerminal('t1', 1234, '/workspace'), createTerminal('t2', 1235, '/workspace')],
+        panes: [createPane('p1', 't1', false), createPane('p2', 't2', false)],
+      });
+      render(<TerminalPane paneId="p1" />);
+      await settleRuntime();
+      render(<TerminalPane paneId="p2" />);
+      await settleRuntime();
+      await waitFor(() => expect(terminalConstructionCount).toBe(2));
+      await settleRuntime();
+      const originals = [...constructedTerminals];
+      writeCachedTerminalData('t1', 'existing scrollback');
+      mockHasSelection.mockReturnValue(true);
+      const readyCount = vi.mocked(window.electronAPI.terminalReady).mock.calls.length;
+      mockTerminalWrite.mockClear();
+      mockClearSelection.mockClear();
+      mockResizeTerminal.mockClear();
+      mockWriteTerminal.mockClear();
+
+      for (const theme of ['light', 'dark'] as const) {
+        await act(() => useThemeStore.getState().setTheme(theme));
+        expect(constructedTerminals).toEqual(originals);
+        expect(terminalConstructionCount).toBe(2);
+        for (const terminal of originals) {
+          expect(terminal.options.theme).toEqual(getTerminalTheme(theme));
+          expect(lastTerminalElement?.style.backgroundColor).toBe(theme === 'dark' ? 'rgb(18, 18, 18)' : 'rgb(243, 244, 246)');
+          expect(terminal.dispose).not.toHaveBeenCalled();
+        }
+      }
+      expect(mockTerminalWrite).not.toHaveBeenCalled();
+      expect(mockClearSelection).not.toHaveBeenCalled();
+      expect(mockKillTerminal).not.toHaveBeenCalled();
+      expect(mockWriteTerminal).not.toHaveBeenCalled();
+      expect(mockResizeTerminal).not.toHaveBeenCalled();
+      expect(window.electronAPI.terminalReady).toHaveBeenCalledTimes(readyCount);
+    });
+
+    it('unregisters intentional disposal and cache clearing', async () => {
+      setupStoreWithTerminal('t1', 'p1');
+      const view = render(<TerminalPane paneId="p1" />);
+      await settleRuntime();
+      const original = constructedTerminals[0];
+      view.unmount();
+      markTerminalDisposed('t1');
+      await act(() => useThemeStore.getState().setTheme('light'));
+      expect(original.dispose).toHaveBeenCalledOnce();
+      expect(original.options.theme).toEqual(getTerminalTheme('dark'));
+      expect(writeCachedTerminalData('t1', 'after disposal')).toBe(false);
+      finishTerminalDisposal('t1');
+
+      const restored = render(<TerminalPane paneId="p1" />);
+      await settleRuntime();
+      const replacement = constructedTerminals[1];
+      restored.unmount();
+      clearTerminalCache();
+      await act(() => useThemeStore.getState().setTheme('dark'));
+      expect(replacement.dispose).toHaveBeenCalledOnce();
+      expect(replacement.options.theme).toEqual(getTerminalTheme('light'));
+    });
+
+    it('unregisters a replaced cache entry', () => {
+      const oldTerminal = { options: {}, dispose: vi.fn() };
+      const replacement = { options: {}, dispose: vi.fn() };
+      cacheTerminalInstance('same-id', oldTerminal as never, {} as never);
+      cacheTerminalInstance('same-id', replacement as never, {} as never);
+      useThemeStore.setState({ theme: 'light' });
+      expect(oldTerminal.dispose).toHaveBeenCalledOnce();
+      expect(oldTerminal.options).toEqual({ theme: getTerminalTheme('dark') });
+      expect(replacement.options).toEqual({ theme: getTerminalTheme('light') });
+    });
   });
 
   // =========================================================================
@@ -686,7 +799,10 @@ describe('TerminalPane', () => {
       const originalElement = lastTerminalElement;
       expect(originalElement?.parentNode).not.toBeNull();
 
+      const originalXterm = constructedTerminals[0];
       firstRender.unmount();
+      await act(() => useThemeStore.getState().setTheme('light'));
+      expect(originalXterm.options.theme).toEqual(getTerminalTheme('light'));
       expect(originalElement?.parentNode).toBeNull();
       expect(writeCachedTerminalData('t1', 'output while hidden')).toBe(true);
       expect(mockTerminalWrite).toHaveBeenCalledWith('output while hidden');
@@ -699,22 +815,25 @@ describe('TerminalPane', () => {
 
       expect(terminalConstructionCount).toBe(1);
       expect(originalElement?.parentNode).not.toBeNull();
+      expect(constructedTerminals[0]).toBe(originalXterm);
+      expect(originalXterm.options.theme).toEqual(getTerminalTheme('light'));
+      expect(originalXterm.dispose).not.toHaveBeenCalled();
     });
 
     it('keeps disposal tombstones until terminal lifecycle cleanup finishes', async () => {
-      const firstXterm = { dispose: vi.fn(), write: vi.fn() };
+      const firstXterm = { dispose: vi.fn(), write: vi.fn(), options: {} };
       markTerminalDisposed('reused-id');
       cacheTerminalInstance('reused-id', firstXterm as never, {} as never);
       expect(firstXterm.dispose).toHaveBeenCalledOnce();
 
       await vi.advanceTimersByTimeAsync(5 * 60_000);
 
-      const prematureXterm = { dispose: vi.fn(), write: vi.fn() };
+      const prematureXterm = { dispose: vi.fn(), write: vi.fn(), options: {} };
       cacheTerminalInstance('reused-id', prematureXterm as never, {} as never);
       expect(prematureXterm.dispose).toHaveBeenCalledOnce();
 
       finishTerminalDisposal('reused-id');
-      const replacementXterm = { dispose: vi.fn(), write: vi.fn() };
+      const replacementXterm = { dispose: vi.fn(), write: vi.fn(), options: {} };
       cacheTerminalInstance('reused-id', replacementXterm as never, {} as never);
       expect(writeCachedTerminalData('reused-id', 'ready')).toBe(true);
       expect(replacementXterm.write).toHaveBeenCalledWith('ready');

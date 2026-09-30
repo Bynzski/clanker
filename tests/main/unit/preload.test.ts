@@ -125,6 +125,8 @@ const MAIN_IPC_INVOKE_CHANNELS = [
   'set-ai-commit-enabled',
   'set-ai-commit-provider',
   'set-ai-commit-model',
+  'get-theme',
+  'set-theme',
 
   // Terminal
   'spawn-terminal',
@@ -489,6 +491,16 @@ describe('preload.ts IPC Bridge Coverage Tests', () => {
         'Should have setAiCommitModel method'
       );
     });
+
+    test('has theme settings methods mapped to correct channels', () => {
+      const getTheme = extractedInvokeMethods.find(m => m.method === 'getTheme');
+      assert.ok(getTheme, 'Should have getTheme method');
+      assert.equal(getTheme.channel, 'GET_THEME');
+
+      const setTheme = extractedInvokeMethods.find(m => m.method === 'setTheme');
+      assert.ok(setTheme, 'Should have setTheme method');
+      assert.equal(setTheme.channel, 'SET_THEME');
+    });
   });
 
   describe('Terminal API', () => {
@@ -558,6 +570,7 @@ describe('preload.ts IPC Bridge Coverage Tests', () => {
         'toggleMaximizeWindow',
         'closeWindow',
         'isMaximizedWindow',
+        'windowReadyToShow',
       ];
 
       for (const method of windowMethods) {

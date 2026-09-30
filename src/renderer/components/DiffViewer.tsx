@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { X } from 'lucide-react';
-import { EditorState } from '@codemirror/state';
+import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, lineNumbers } from '@codemirror/view';
-import { oneDark } from '@codemirror/theme-one-dark';
+import { getEditorTheme } from '../theme/editorTheme';
+import { useThemeStore } from '../theme/themeStore';
 import { MergeView } from '@codemirror/merge';
 import { getLanguageExtension } from '../lib/editorLanguage';
 import './DiffViewer.css';
@@ -39,6 +40,11 @@ export default function DiffViewer({
   error,
   onClose,
 }: DiffViewerProps) {
+  const theme = useThemeStore((state) => state.theme);
+  const mergeViewRef = useRef<MergeView | null>(null);
+  const themeARef = useRef(new Compartment());
+  const themeBRef = useRef(new Compartment());
+  const appliedThemeRef = useRef(theme);
   const mergeRootRef = useRef<HTMLDivElement>(null);
   const languageExtension = useMemo(
     () => getLanguageExtension(newPath || oldPath || ''),
@@ -52,6 +58,7 @@ export default function DiffViewer({
     }
 
     root.replaceChildren();
+    const currentTheme = useThemeStore.getState().theme;
     const mergeView = new MergeView({
       parent: root,
       orientation: 'a-b',
@@ -67,7 +74,7 @@ export default function DiffViewer({
           EditorState.readOnly.of(true),
           EditorView.editable.of(false),
           lineNumbers(),
-          oneDark,
+          themeARef.current.of(getEditorTheme(currentTheme)),
           languageExtension,
         ],
       },
@@ -77,16 +84,27 @@ export default function DiffViewer({
           EditorState.readOnly.of(true),
           EditorView.editable.of(false),
           lineNumbers(),
-          oneDark,
+          themeBRef.current.of(getEditorTheme(currentTheme)),
           languageExtension,
         ],
       },
     });
 
+    mergeViewRef.current = mergeView;
+    appliedThemeRef.current = currentTheme;
     return () => {
+      mergeViewRef.current = null;
       mergeView.destroy();
     };
   }, [error, hasDiff, isBinary, isLoading, languageExtension, newContent, oldContent]);
+
+  useEffect(() => {
+    const mergeView = mergeViewRef.current;
+    if (!mergeView || appliedThemeRef.current === theme) return;
+    mergeView.a.dispatch({ effects: themeARef.current.reconfigure(getEditorTheme(theme)) });
+    mergeView.b.dispatch({ effects: themeBRef.current.reconfigure(getEditorTheme(theme)) });
+    appliedThemeRef.current = theme;
+  }, [theme]);
 
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {

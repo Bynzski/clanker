@@ -36,9 +36,10 @@ import { WorkspaceRegistry } from './workspaceRegistry';
 import { registerSshEnvironmentIpc } from './ipc/sshEnvironmentIpc';
 import { resolveExistingDirectory } from './security';
 import { type StoreSchema } from '../shared/types/store';
+import { DEFAULT_THEME_ID } from '../shared/types/theme';
 import { KNOWN_HARNESS_IDS } from '../shared/harnessIds';
 import { HARNESS_OPTIONS, getAvailableHarnessOptions, discoverHarnessModels } from './harnessCatalog';
-import { createMainWindow, getPreloadPath, isWindowAvailable } from './windowManager';
+import { createMainWindow, getPreloadPath, isWindowAvailable, resolveInitialWindowBackground } from './windowManager';
 import { registerSettingsIpc } from './ipc/settingsIpc';
 import { registerWindowIpc } from './ipc/windowIpc';
 import { registerAiCommitIpc } from './ipc/aiCommitIpc';
@@ -69,6 +70,7 @@ import { waitForTerminalCleanup } from './ipc/ptySpawn';
 
 const store = new Store<StoreSchema>({
   defaults: {
+    theme: DEFAULT_THEME_ID,
     lastWorkspace: app.getPath('home'),
     baseDirectory: app.getPath('home'),
     aiCommitEnabled: false,
@@ -388,6 +390,7 @@ app.whenReady().then(() => {
     gitService,
     fileWatcher,
     explorerWatcher,
+    backgroundColor: resolveInitialWindowBackground(store),
     onWindowClosed: cleanupWindowState,
     onRendererGone: cleanupWorkspaceResources,
   }));
@@ -403,6 +406,7 @@ app.whenReady().then(() => {
         gitService,
         fileWatcher,
         explorerWatcher,
+        backgroundColor: resolveInitialWindowBackground(store),
         onWindowClosed: cleanupWindowState,
         onRendererGone: cleanupWorkspaceResources,
       }));
@@ -442,4 +446,6 @@ app.on('before-quit', (event) => {
 });
 
 // Export shared state for test access
+export { resolveInitialWindowBackground };
+
 export { terminals, browserViews, activeBrowserWorkspaceId, activeBrowserTabIdsByWorkspace, lastBrowserBoundsByWorkspace, gitService, explorerWatcher, store, workspaceRegistry, environmentManager, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS, annotationModeEnabled, annotationController };

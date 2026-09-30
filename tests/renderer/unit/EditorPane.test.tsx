@@ -1,17 +1,24 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, act } from '@testing-library/react';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
-const editorMockState = vi.hoisted(() => ({ createdDocs: [] as string[] }));
+const editorMockState = vi.hoisted(() => ({
+  createdDocs: [] as string[],
+  extensions: [] as unknown[][],
+  views: [] as { state: { doc: { toString: () => string } }; dispatch: ReturnType<typeof vi.fn>; destroy: ReturnType<typeof vi.fn>; setState: ReturnType<typeof vi.fn>; scrollDOM: { scrollTop: number }; selection: { anchor: number } }[],
+}));
+import { useThemeStore } from '../../../src/renderer/theme/themeStore';
+vi.mock('../../../src/renderer/theme/editorTheme', () => ({ getEditorTheme: (theme: string) => [theme] }));
 
 // Mock CodeMirror modules synchronously (vi.mock is hoisted so all references must be inline)
 vi.mock('@codemirror/state', () => ({
   EditorState: {
-    create: vi.fn(({ doc }: { doc: string }) => {
+    create: vi.fn(({ doc, extensions }: { doc: string; extensions: unknown[] }) => {
+      editorMockState.extensions.push(extensions);
       editorMockState.createdDocs.push(doc);
       return {
         doc: { toString: () => doc, length: doc.length },
@@ -27,8 +34,8 @@ vi.mock('@codemirror/state', () => ({
     reconfigure: { of: vi.fn(() => ({})) },
   },
   Compartment: class MockCompartment {
-    of = vi.fn(() => ({}));
-    reconfigure = vi.fn(() => ({}));
+    of = vi.fn((value: unknown) => ({ compartment: this, value }));
+    reconfigure = vi.fn((value: unknown) => ({ reconfigure: this, value }));
   },
 }));
 
@@ -43,6 +50,9 @@ vi.mock('@codemirror/view', () => {
     this.dispatch = vi.fn();
     this.destroy = vi.fn();
     this.setState = vi.fn();
+    this.scrollDOM = { scrollTop: 72 };
+    this.selection = { anchor: 9 };
+    editorMockState.views.push(this as unknown as typeof editorMockState.views[number]);
   };
   (MockEditorView as unknown as Record<string, unknown>).updateListener = { of: vi.fn(() => ({})) };
   (MockEditorView as unknown as Record<string, unknown>).lineWrapping = true;
@@ -77,6 +87,9 @@ describe('EditorPane', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     editorMockState.createdDocs.length = 0;
+    editorMockState.extensions.length = 0;
+    editorMockState.views.length = 0;
+    useThemeStore.setState({ theme: 'dark' });
     installElectronApiMock();
 
     // Set up a minimal store state for all tests
@@ -95,6 +108,46 @@ describe('EditorPane', () => {
     cleanup();
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  describe('theme compartments', () => {
+    function dirtyWorkspace() {
+      return createWorkspaceFixture({ id: 'theme-ws', lifecycle: 'active', editorVisible: true,
+        editorPane: { id: 'editor-1' }, activeEditorTabId: 'dirty-tab',
+        editorTabs: [{ id: 'dirty-tab', filePath: '/workspace/file.ts', fileName: 'file.ts',
+          content: 'const unsaved = 42;', originalContent: '', isDirty: true, hasExternalChange: true }],
+      });
+    }
+    it.each(['dark', 'light'] as const)('constructs directly in %s', (theme) => {
+      useThemeStore.setState({ theme });
+      const workspace = dirtyWorkspace();
+      useWorkspaceStore.setState({ workspaces: [workspace], activeWorkspaceId: workspace.id });
+      render(<EditorPane workspaceId={workspace.id} />);
+      expect(editorMockState.views).toHaveLength(1);
+      expect(editorMockState.extensions[0]).toContainEqual(expect.objectContaining({ value: [theme] }));
+      expect(editorMockState.views[0].dispatch.mock.calls.some(([spec]) => spec.effects?.reconfigure && spec.effects.value?.[0] === theme)).toBe(false);
+    });
+    it('reconfigures Dark/Light/Dark without replacing the view or dirty workspace state', () => {
+      const workspace = dirtyWorkspace();
+      const updateEditorContent = vi.fn();
+      useWorkspaceStore.setState({ workspaces: [workspace], activeWorkspaceId: workspace.id, updateEditorContent });
+      render(<EditorPane workspaceId={workspace.id} />);
+      const view = editorMockState.views[0];
+      view.dispatch.mockClear();
+      for (const theme of ['light', 'dark'] as const) {
+        act(() => useThemeStore.setState({ theme }));
+        expect(editorMockState.views).toEqual([view]);
+        expect(view.dispatch).toHaveBeenLastCalledWith({ effects: expect.objectContaining({ value: [theme], reconfigure: expect.anything() }) });
+        expect(view.state.doc.toString()).toBe('const unsaved = 42;');
+        expect(view.scrollDOM.scrollTop).toBe(72);
+        expect(view.selection.anchor).toBe(9);
+        expect(view.destroy).not.toHaveBeenCalled();
+        expect(view.setState).not.toHaveBeenCalled();
+        expect(useWorkspaceStore.getState().workspaces[0]).toBe(workspace);
+      }
+      expect(view.dispatch).toHaveBeenCalledTimes(2);
+      expect(updateEditorContent).not.toHaveBeenCalled();
+    });
   });
 
   // =========================================================================

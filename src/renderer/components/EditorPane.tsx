@@ -7,7 +7,8 @@ import {
   highlightActiveLine,
   keymap,
 } from '@codemirror/view';
-import { oneDark } from '@codemirror/theme-one-dark';
+import { getEditorTheme } from '../theme/editorTheme';
+import { useThemeStore } from '../theme/themeStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useDragHandle } from './dragHandleContext';
 import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
@@ -22,6 +23,9 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const lastSyncedTabIdRef = useRef<string | null>(null);
+  const theme = useThemeStore((state) => state.theme);
+  const themeCompartmentRef = useRef(new Compartment());
+  const appliedThemeRef = useRef(theme);
   const langCompartmentRef = useRef<Compartment>(new Compartment());
   const isInteractiveRef = useRef(true);
 
@@ -94,7 +98,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
       lineNumbers(),
       highlightActiveLine(),
       keymap.of([]),
-      oneDark,
+      themeCompartmentRef.current.of(getEditorTheme(useThemeStore.getState().theme)),
       EditorView.lineWrapping,
       langCompartment.of(languageExtension),
     ];
@@ -113,6 +117,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
     });
 
     viewRef.current = view;
+    appliedThemeRef.current = useThemeStore.getState().theme;
     lastSyncedTabIdRef.current = initialTab?.id ?? null;
 
     // Instrument: EditorView created
@@ -129,6 +134,13 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Presentation changes never enter the creation or document-sync lifecycle.
+  useEffect(() => {
+    if (!viewRef.current || appliedThemeRef.current === theme) return;
+    viewRef.current.dispatch({ effects: themeCompartmentRef.current.reconfigure(getEditorTheme(theme)) });
+    appliedThemeRef.current = theme;
+  }, [theme]);
 
   // Sync language extension when the active tab changes.
   useEffect(() => {

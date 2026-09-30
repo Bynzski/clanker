@@ -3,8 +3,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  background: var(--surface-app);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   overflow: hidden;
   position: relative;
@@ -15,8 +15,8 @@
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--surface-header);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
   cursor: grab;
@@ -32,10 +32,10 @@
   height: 12px;
   border-radius: 3px;
   background:
-    radial-gradient(circle at 3px 3px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
-    radial-gradient(circle at 9px 3px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
-    radial-gradient(circle at 3px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
-    radial-gradient(circle at 9px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px);
+    radial-gradient(circle at 3px 3px, color-mix(in srgb, var(--text-primary) 65%, transparent) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 9px 3px, color-mix(in srgb, var(--text-primary) 65%, transparent) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 3px 9px, color-mix(in srgb, var(--text-primary) 65%, transparent) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 9px 9px, color-mix(in srgb, var(--text-primary) 65%, transparent) 1.2px, transparent 1.3px);
   opacity: 0.55;
   flex-shrink: 0;
   pointer-events: auto;
@@ -73,8 +73,8 @@
 }
 
 .notes-pane-close-btn:hover {
-  background: rgba(244, 67, 54, 0.2);
-  color: var(--accent-error);
+  background: color-mix(in srgb, var(--status-error) 20%, transparent);
+  color: var(--status-error);
 }
 
 .notes-pane-close-btn:disabled {
@@ -90,7 +90,7 @@
   border: none;
   outline: none;
   padding: 12px 14px;
-  background: var(--bg-primary);
+  background: var(--surface-app);
   color: var(--text-primary);
   font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
