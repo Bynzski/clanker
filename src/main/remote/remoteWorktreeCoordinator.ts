@@ -21,19 +21,38 @@ interface PendingRemoval {
 
 export class RemoteWorktreeCoordinator {
   private readonly pending = new Map<string, PendingRemoval>();
+  private recoveryError?: string;
+
+  public getRecoveryError(): string | undefined { return this.recoveryError; }
+
+  private requireManualRecovery(): void {
+    this.recoveryError = 'Manual recovery required: saved remote worktree removal state is invalid or conflicting. ' +
+      'Preserve and inspect remoteWorktreeRemovals in the application store and the host completion journals before repairing it; ' +
+      'do not reopen affected checkouts until host completion is verified. Remote worktree operations are blocked.';
+  }
+
   constructor(private readonly registry: () => WorkspaceRegistry | undefined,
     private readonly terminalPaths?: (environmentId: string) => string[] | null,
     private readonly persistence?: RemoteWorktreeRemovalPersistence) {
-    for (const record of persistence?.read() ?? []) {
-      if (!record || !/^[0-9a-f-]{36}$/.test(record.operationId) || typeof record.environmentId !== 'string' ||
+    let records: RemoteWorktreeRemovalRecord[];
+    try {
+      records = persistence ? persistence.read() : [];
+      if (!Array.isArray(records)) { this.requireManualRecovery(); return; }
+    } catch { this.requireManualRecovery(); return; }
+    for (const record of records) {
+      if (!record || typeof record.operationId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(record.operationId) || typeof record.environmentId !== 'string' ||
           !record.environmentId || record.environmentId === 'local' || typeof record.resourceId !== 'string' ||
           !record.resourceId.startsWith('ssh:') || !validRemoteWorktreePath(record.workspacePath) || !validRemoteWorktreePath(record.worktreePath)) {
-        throw new Error('Invalid saved remote worktree removal; reservations require manual recovery');
+        this.requireManualRecovery();
+        continue;
       }
       const { stagingPath, recoveryDirectory } = remoteRemovalPaths(record.worktreePath, record.operationId);
-      const release = registry()?.reserveRemotePaths(record.environmentId, [record.worktreePath, stagingPath, recoveryDirectory], record.resourceId);
-      if (!release) throw new Error('Conflicting saved remote worktree removal reservations');
-      this.pending.set(record.operationId, { record, release, active: false, persisted: true });
+      const restored = registry()?.restoreRemotePaths(record.environmentId, [record.worktreePath, stagingPath, recoveryDirectory], record.resourceId);
+      if (!restored) { this.requireManualRecovery(); continue; }
+      if (restored.conflict || this.pending.has(record.operationId)) this.requireManualRecovery();
+      // Never replace the original evidence for a duplicate ID. All restored
+      // reservations remain held while recovery is required, including overlaps.
+      if (!this.pending.has(record.operationId)) this.pending.set(record.operationId, { record, release: restored.release, active: false, persisted: true });
     }
   }
 
@@ -58,6 +77,7 @@ export class RemoteWorktreeCoordinator {
   }
 
   public async inspect(workspace: RegisteredWorkspace, worktreePath: string): Promise<GitWorktreeInspectionResult> {
+    if (this.recoveryError) return { success: false, error: this.recoveryError };
     if (!workspace.environment.inspectWorktree) return { success: false, error: 'Worktree inspection is unavailable for this environment' };
     if (!validRemoteWorktreePath(worktreePath)) return { success: false, error: 'Invalid remote worktree inspection path' };
     const before = this.activity(workspace);
@@ -73,6 +93,7 @@ export class RemoteWorktreeCoordinator {
   }
 
   public async remove(workspace: RegisteredWorkspace, worktreePath: string, expectedBranch: string | null): Promise<GitWorktreeRemoveResult> {
+    if (this.recoveryError) return { success: false, error: this.recoveryError };
     if (!workspace.environment.removeWorktree || !workspace.environment.waitForWorktreeOperations) return { success: false, error: 'Remote worktree removal is unavailable for this environment' };
     if (!validRemoteWorktreePath(worktreePath) || (typeof expectedBranch !== 'string' && expectedBranch !== null)) return { success: false, error: 'Invalid remote worktree removal request' };
     const operationId = randomUUID();
@@ -110,6 +131,7 @@ export class RemoteWorktreeCoordinator {
 
   /** Release uncertain reservations only after the host journals completion. */
   public async reconcile(environmentId: string): Promise<void> {
+    if (this.recoveryError) throw new Error(this.recoveryError);
     for (const [operationId, entry] of this.pending) {
       if (entry.active || entry.record.resourceId !== this.registry()?.getWorktreeResourceId(environmentId)) continue;
       const workspace = entry.workspace ?? this.registry()?.getAllWorkspaces().find((workspace) =>

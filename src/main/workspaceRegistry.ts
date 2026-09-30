@@ -52,6 +52,16 @@ export class WorkspaceRegistry {
     return () => { this.remoteReservations.delete(token); };
   }
 
+  /** Persisted operations may overlap. Preserve each operation's protection;
+   * the coordinator must require manual recovery if restoration conflicts. */
+  public restoreRemotePaths(environmentId: string, paths: string[], resourceId: string): { release: () => void; conflict: boolean } {
+    this.worktreeResourceIds.set(environmentId, resourceId);
+    const conflict = paths.some((entry) => this.isRemotePathReserved(environmentId, entry));
+    const token = Symbol('restored-remote-worktree-removal');
+    this.remoteReservations.set(token, { environmentId, resourceId, paths });
+    return { conflict, release: () => { this.remoteReservations.delete(token); } };
+  }
+
   constructor(
     private readonly resolveEnvironment: EnvironmentResolver,
     options?: {

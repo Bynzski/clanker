@@ -96,6 +96,7 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import { registerGitIpc } from '../../../src/main/ipc/gitIpc';
 import { GitService, type GitStatusResult } from '../../../src/main/gitService';
 import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
+import type { RemoteWorktreeRemovalPersistence } from '../../../src/main/remote/remoteWorktreeCoordinator';
 import { ipcMain } from 'electron';
 
 describe('registerGitIpc', () => {
@@ -972,7 +973,7 @@ describe('Git IPC workspace identity routing', () => {
     vi.clearAllMocks();
   });
 
-  function setup(getLiveRemoteTerminalPaths?: (environmentId: string) => string[] | null) {
+  function setup(getLiveRemoteTerminalPaths?: (environmentId: string) => string[] | null, remoteWorktreeRemovalPersistence?: RemoteWorktreeRemovalPersistence) {
     const statuses: GitStatusResult[] = [];
     const mainWindow = { webContents: { send: vi.fn() } };
     const makeEnvironment = (id: string) => ({
@@ -1009,6 +1010,7 @@ describe('Git IPC workspace identity routing', () => {
       getMainWindow: () => mainWindow as never,
       getWorkspaceRegistry: () => registry,
       getLiveRemoteTerminalPaths,
+      remoteWorktreeRemovalPersistence,
     });
     const handle = (channel: string) =>
       ipc.handle.mock.calls.find(([name]) => name === channel)?.[1] as (...args: unknown[]) => Promise<unknown>;
@@ -1020,6 +1022,27 @@ describe('Git IPC workspace identity routing', () => {
     await handle('git-get-history')(null, process.cwd(), 4);
     expect(local.execGit).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining(['log', '-n4']));
     expect(remote.execGit).not.toHaveBeenCalled();
+  });
+
+  test('registers Git IPC despite damaged removal state, blocks remote worktrees, and keeps local Git usable', async () => {
+    const write = vi.fn();
+    const { remote, local, registry, handle } = setup(undefined, { read: () => [null] as unknown as ReturnType<RemoteWorktreeRemovalPersistence['read']>, write });
+    await registry.registerWorkspace({ workspaceId: 'ssh-tab', environmentId: 'ssh', workspacePath });
+    const createWorktree = vi.fn();
+    Object.assign(remote, { createWorktree });
+    for (const [channel, args] of [
+      ['git-list-worktrees', [workspacePath, 'ssh-tab']],
+      ['git-create-worktree', [workspacePath, 'HEAD', 'task', 'ssh-tab']],
+      ['git-inspect-worktree', [workspacePath, '/srv/task', [], 'ssh-tab']],
+      ['git-remove-worktree', [workspacePath, '/srv/task', 'task', [], 'ssh-tab']],
+    ] as const) {
+      expect(await handle(channel)(null, ...args)).toMatchObject({ success: false, error: expect.stringContaining('Manual recovery required') });
+    }
+    expect(createWorktree).not.toHaveBeenCalled();
+    expect(remote.execGit).not.toHaveBeenCalled();
+    await handle('git-get-history')(null, process.cwd(), 4);
+    expect(local.execGit).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining(['log', '-n4']));
+    expect(write).not.toHaveBeenCalled();
   });
 
   test('discovers remote worktrees through the registered identity and keeps mutations disabled', async () => {

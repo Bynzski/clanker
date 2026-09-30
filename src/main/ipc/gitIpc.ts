@@ -223,6 +223,8 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
   registerGitHandler(GIT_CREATE_WORKTREE, async (_, workspacePath: string, baseRef: string, branch: string) => {
     const ws = resolveWorkspace();
     if (ws && ws.location.environmentId !== 'local') {
+      const recoveryError = remoteWorktrees.getRecoveryError();
+      if (recoveryError) return { success: false, error: recoveryError };
       return ws.environment.createWorktree
         ? ws.environment.createWorktree(ws.location.path, baseRef, branch)
         : { success: false, error: 'Worktree creation is unavailable for this environment' };

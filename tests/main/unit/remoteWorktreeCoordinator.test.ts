@@ -22,6 +22,68 @@ async function setup() {
 }
 
 describe('remote worktree removal coordination', () => {
+  const saved = (operationId = '12345678-1234-1234-1234-123456789abc'): RemoteWorktreeRemovalRecord => ({
+    operationId, environmentId: 'ssh', resourceId: 'ssh:host', workspacePath: '/srv/repo', worktreePath: '/srv/task',
+  });
+
+  it('starts with malformed evidence intact, protects other valid records, and fails remote operations closed', async () => {
+    const f = await setup();
+    const records = [{ operationId: 'damaged' }, saved()] as RemoteWorktreeRemovalRecord[];
+    const write = vi.fn();
+    const coordinator = new RemoteWorktreeCoordinator(() => f.registry, f.terminals, { read: () => records, write });
+    expect(coordinator.getRecoveryError()).toContain('Manual recovery required');
+    expect(await coordinator.inspect(f.source, '/srv/other')).toMatchObject({ success: false, error: expect.stringContaining('remoteWorktreeRemovals') });
+    expect(await coordinator.remove(f.source, '/srv/other', 'task')).toMatchObject({ success: false, error: expect.stringContaining('host completion journals') });
+    await expect(coordinator.reconcile('ssh')).rejects.toThrow('Manual recovery required');
+    expect(f.environment.inspectWorktree).not.toHaveBeenCalled();
+    expect(f.environment.removeWorktree).not.toHaveBeenCalled();
+    expect(f.environment.waitForWorktreeOperations).not.toHaveBeenCalled();
+    for (const path of ['/srv/task', ...Object.values(remoteRemovalPaths('/srv/task', saved().operationId))]) {
+      expect(f.registry.isRemotePathReserved('ssh', path)).toBe(true);
+    }
+    expect(write).not.toHaveBeenCalled();
+    expect(records[0]).toEqual({ operationId: 'damaged' });
+    expect(await f.registry.registerWorkspace({ workspaceId: 'local', environmentId: 'local', workspacePath: '/srv/task' })).toMatchObject({ success: true });
+  });
+
+  it.each([false, true])('retains all conflicting operation protections (duplicate ID: %s)', async (duplicate) => {
+    const f = await setup();
+    const first = saved();
+    const second = { ...saved(duplicate ? first.operationId : 'abcdef01-1234-1234-1234-123456789abc'), worktreePath: '/srv/task/child' };
+    const records = [first, second];
+    const write = vi.fn();
+    const coordinator = new RemoteWorktreeCoordinator(() => f.registry, f.terminals, { read: () => records, write });
+    await expect(coordinator.reconcile('ssh')).rejects.toThrow('Manual recovery required');
+    for (const record of records) {
+      for (const path of [record.worktreePath, ...Object.values(remoteRemovalPaths(record.worktreePath, record.operationId))]) {
+        expect(f.registry.isRemotePathReserved('ssh', path)).toBe(true);
+      }
+    }
+    expect(write).not.toHaveBeenCalled();
+    expect(records).toEqual([first, second]);
+    expect(f.environment.waitForWorktreeOperations).not.toHaveBeenCalled();
+  });
+
+  it.each([null, {}, 'corrupt'])('does not throw or overwrite a malformed persistence collection: %j', (value) => {
+    const registry = new WorkspaceRegistry(() => null);
+    const write = vi.fn();
+    const coordinator = new RemoteWorktreeCoordinator(() => registry, undefined, {
+      read: () => value as unknown as RemoteWorktreeRemovalRecord[], write,
+    });
+    expect(coordinator.getRecoveryError()).toContain('Manual recovery required');
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when persistence cannot be read, and leaves empty persistence usable', () => {
+    const registry = new WorkspaceRegistry(() => null);
+    const write = vi.fn();
+    const damaged = new RemoteWorktreeCoordinator(() => registry, undefined, { read: () => { throw new Error('Read failed'); }, write });
+    expect(damaged.getRecoveryError()).toContain('Manual recovery required');
+    const empty = new RemoteWorktreeCoordinator(() => registry, undefined, { read: () => [], write });
+    expect(empty.getRecoveryError()).toBeUndefined();
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it('restores uncertain reservations after restart and requires a verified host journal before releasing them', async () => {
     const f = await setup();
     Object.assign(f.environment, { worktreeResourceId: 'ssh:user@host' });
