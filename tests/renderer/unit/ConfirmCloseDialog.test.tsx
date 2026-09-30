@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
+import userEvent from '@testing-library/user-event';
+import { installElectronApiMock } from '../../setup/electron';
+import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import ConfirmCloseDialog from '../../../src/renderer/components/ConfirmCloseDialog';
 
 describe('ConfirmCloseDialog', () => {
@@ -18,11 +22,13 @@ describe('ConfirmCloseDialog', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    installElectronApiMock();
+    useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null, browserOverlayCount: 0 });
   });
 
   it('renders dialog when isOpen is true', () => {
     render(<ConfirmCloseDialog {...defaultProps} />);
-    expect(screen.getByText('Test Title')).toBeInTheDocument();
+    expect(screen.getByRole('alertdialog', { name: 'Test Title' })).toHaveAccessibleDescription('Test message content');
     expect(screen.getByText('Test message content')).toBeInTheDocument();
   });
 
@@ -53,9 +59,8 @@ describe('ConfirmCloseDialog', () => {
   it('calls onCancel when overlay is clicked', () => {
     render(<ConfirmCloseDialog {...defaultProps} />);
     const overlay = document.querySelector('.confirm-close-overlay');
-    if (overlay) {
-      fireEvent.click(overlay);
-    }
+    expect(overlay).not.toBeNull();
+    fireEvent.click(overlay!);
     expect(defaultProps.onCancel).toHaveBeenCalledTimes(1);
   });
 
@@ -85,4 +90,40 @@ describe('ConfirmCloseDialog', () => {
     fireEvent.click(screen.getByText('Cancel'));
     expect(defaultProps.onCancel).toHaveBeenCalledTimes(1);
   });
+  it('focuses Cancel and restores the origin after controlled cancellation', async () => {
+    function Controlled() {
+      const [open, setOpen] = useState(false);
+      return <><button onClick={() => setOpen(true)}>Close file</button>
+        <ConfirmCloseDialog {...defaultProps} isOpen={open} onCancel={() => setOpen(false)} />
+      </>;
+    }
+    const user = userEvent.setup();
+    render(<Controlled />);
+    await user.click(screen.getByText('Close file'));
+    expect(screen.getByText('Cancel')).toHaveFocus();
+    expect(useWorkspaceStore.getState().browserOverlayCount).toBe(1);
+    await user.click(screen.getByText('Cancel'));
+    await waitFor(() => expect(screen.getByText('Close file')).toHaveFocus());
+    expect(useWorkspaceStore.getState().browserOverlayCount).toBe(0);
+  });
+
+  it('does not cancel from inside content or after confirming', () => {
+    render(<ConfirmCloseDialog {...defaultProps} />);
+    fireEvent.click(screen.getByText('Test message content'));
+    fireEvent.click(screen.getByText("Don't Save"));
+    expect(defaultProps.onCancel).not.toHaveBeenCalled();
+    expect(defaultProps.options[1].action).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases suppression on close and unmount, preserving another owner', () => {
+    useWorkspaceStore.getState().pushBrowserOverlay();
+    const { rerender, unmount } = render(<ConfirmCloseDialog {...defaultProps} />);
+    expect(useWorkspaceStore.getState().browserOverlayCount).toBe(2);
+    rerender(<ConfirmCloseDialog {...defaultProps} isOpen={false} />);
+    expect(useWorkspaceStore.getState().browserOverlayCount).toBe(1);
+    rerender(<ConfirmCloseDialog {...defaultProps} />);
+    unmount();
+    expect(useWorkspaceStore.getState().browserOverlayCount).toBe(1);
+  });
+
 });

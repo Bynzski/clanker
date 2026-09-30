@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { AlertDialog, AlertDialogContent, AlertDialogTitle, AlertDialogDescription, AlertDialogCancel } from './ui/AlertDialog';
 import './ConfirmCloseDialog.css';
 
 export interface ConfirmCloseDialogOption {
@@ -22,38 +22,17 @@ export default function ConfirmCloseDialog({
   options,
   onCancel,
 }: ConfirmCloseDialogProps) {
-  // Handle escape key
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCancel();
-      }
-    };
-
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onCancel]);
-
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onCancel();
-    }
-  };
-
-  if (!isOpen) return null;
-
   return (
-    <div className="confirm-close-overlay" onClick={handleOverlayClick}>
-      <div className="confirm-close-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-close-title">
+    <AlertDialog open={isOpen} onOpenChange={(open) => { if (!open) onCancel(); }}>
+      <AlertDialogContent className="confirm-close-dialog" overlayClassName="confirm-close-overlay" onBackdropCancel={onCancel}>
         <div className="confirm-close-header">
-          <h3 id="confirm-close-title">{title}</h3>
+          <AlertDialogTitle asChild><h3>{title}</h3></AlertDialogTitle>
         </div>
         <div className="confirm-close-body">
-          <p>{message}</p>
+          <AlertDialogDescription asChild><p>{message}</p></AlertDialogDescription>
         </div>
         <div className="confirm-close-footer">
+          {/* Actions own closing (including async saves); do not route them through onCancel. */}
           {options.map((option, index) => (
             <button
               key={index}
@@ -64,15 +43,11 @@ export default function ConfirmCloseDialog({
               {option.label}
             </button>
           ))}
-          <button
-            type="button"
-            className="confirm-close-btn confirm-close-btn-secondary"
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
+          <AlertDialogCancel asChild>
+            <button type="button" className="confirm-close-btn confirm-close-btn-secondary">Cancel</button>
+          </AlertDialogCancel>
         </div>
-      </div>
-    </div>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
