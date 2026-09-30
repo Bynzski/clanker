@@ -9,7 +9,7 @@
   justify-content: center;
   height: 100%;
   width: 100%;
-  background: var(--bg-secondary, #1a1a1a);
+  background: var(--surface-raised);
   border-radius: var(--radius-md, 8px);
   padding: var(--space-md, 16px);
 }
@@ -24,7 +24,7 @@
 }
 
 .error-boundary-icon {
-  color: var(--color-warning, #d29922);
+  color: var(--status-warning);
   opacity: 0.9;
   margin-bottom: var(--space-xs, 4px);
 }
@@ -32,20 +32,20 @@
 .error-boundary-title {
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-primary, #e8e8e8);
+  color: var(--text-primary);
   margin: 0;
 }
 
 .error-boundary-pane-id {
   font-size: 11px;
-  color: var(--text-tertiary, rgba(230, 237, 243, 0.5));
+  color: var(--text-muted);
   margin: 0;
   font-family: var(--font-mono, monospace);
 }
 
 .error-boundary-message {
   font-size: 12px;
-  color: var(--text-secondary, rgba(230, 237, 243, 0.72));
+  color: var(--text-secondary);
   margin: 0;
   word-break: break-word;
   max-height: 60px;
@@ -60,25 +60,25 @@
   padding: 6px 12px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--text-primary, #e8e8e8);
-  background: var(--bg-tertiary, #2a2a2a);
-  border: 1px solid var(--border-color, rgba(139, 148, 158, 0.18));
+  color: var(--text-primary);
+  background: var(--surface-control);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .error-boundary-retry:hover {
-  background: var(--bg-hover, #3a3a3a);
-  border-color: var(--border-color-hover, rgba(139, 148, 158, 0.3));
+  background: var(--surface-control-hover);
+  border-color: var(--border-strong);
 }
 
 .error-boundary-retry:active {
-  background: var(--bg-active, #4a4a4a);
+  background: var(--surface-active);
 }
 
 .error-boundary-retry:focus-visible {
-  outline: 2px solid var(--color-focus, #58a6ff);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 

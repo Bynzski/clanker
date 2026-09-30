@@ -3,8 +3,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  background: var(--surface-app);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   overflow: hidden;
   position: relative;
@@ -15,8 +15,8 @@
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--surface-header);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
   cursor: grab;
@@ -32,10 +32,10 @@
   height: 12px;
   border-radius: 3px;
   background:
-    radial-gradient(circle at 3px 3px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
-    radial-gradient(circle at 9px 3px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
-    radial-gradient(circle at 3px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px),
-    radial-gradient(circle at 9px 9px, rgba(230, 237, 243, 0.65) 1.2px, transparent 1.3px);
+    radial-gradient(circle at 3px 3px, color-mix(in srgb, var(--text-primary) 65%, transparent) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 9px 3px, color-mix(in srgb, var(--text-primary) 65%, transparent) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 3px 9px, color-mix(in srgb, var(--text-primary) 65%, transparent) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 9px 9px, color-mix(in srgb, var(--text-primary) 65%, transparent) 1.2px, transparent 1.3px);
   opacity: 0.55;
   flex-shrink: 0;
   pointer-events: auto;
@@ -73,7 +73,7 @@
 }
 
 .editor-pane-lock-btn:hover {
-  background: var(--bg-tertiary);
+  background: var(--surface-control);
   color: var(--text-primary);
 }
 
@@ -94,8 +94,8 @@
 }
 
 .editor-pane-close-btn:hover {
-  background: rgba(244, 67, 54, 0.2);
-  color: var(--accent-error);
+  background: color-mix(in srgb, var(--status-error) 20%, transparent);
+  color: var(--status-error);
 }
 
 .editor-content-area {
@@ -104,7 +104,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: var(--bg-primary);
+  background: var(--surface-app);
 }
 
 .editor-content {
@@ -115,20 +115,21 @@
   overflow: hidden;
 }
 
+/* Preserve existing Dark editor overrides until subsystem theming (Stage 3). */
 .editor-content .cm-editor {
   height: 100%;
   width: 100%;
-  background: var(--bg-primary);
+  background: #121212;
 }
 
 .editor-content .cm-scroller {
   overflow: auto;
   height: 100%;
-  background: var(--bg-primary);
+  background: #121212;
 }
 
 .editor-content .cm-gutters {
-  background: var(--bg-primary);
+  background: #121212;
   border-right: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -153,14 +154,14 @@
   align-items: center;
   gap: 8px;
   padding: 4px 10px;
-  background: rgba(255, 152, 0, 0.15);
-  border-bottom: 1px solid rgba(255, 152, 0, 0.3);
+  background: color-mix(in srgb, var(--status-warning) 15%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--status-warning) 30%, transparent);
   flex-shrink: 0;
 }
 
 .editor-reload-banner--danger {
-  background: rgba(244, 67, 54, 0.15);
-  border-bottom-color: rgba(244, 67, 54, 0.3);
+  background: color-mix(in srgb, var(--status-error) 15%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--status-error) 30%, transparent);
 }
 
 .editor-reload-banner-text {
@@ -172,7 +173,7 @@
 .editor-reload-banner-btn {
   font-size: 11px;
   padding: 2px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
   background: transparent;
   color: var(--text-primary);
@@ -181,7 +182,7 @@
 }
 
 .editor-reload-banner-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--surface-tint) 8%, transparent);
 }
 
 .editor-reload-banner-btn--secondary {
@@ -199,6 +200,6 @@
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: var(--bg-primary);
+  background: var(--surface-app);
   flex: none;
 }

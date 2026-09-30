@@ -44,7 +44,7 @@ export default function StatusBar() {
       
       <div className="status-right">
         <span className="status-item">
-          <Circle size={8} fill="var(--accent-success)" strokeWidth={0} />
+          <Circle size={8} fill="var(--status-success)" strokeWidth={0} />
           Ready
         </span>
       </div>

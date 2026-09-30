@@ -3,8 +3,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 4px var(--space-md);
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border-color);
+  background: var(--surface-raised);
+  border-top: 1px solid var(--border-default);
   min-height: 26px;
   font-size: 11px;
   color: var(--text-secondary);
@@ -44,9 +44,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   padding: 1px 5px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
+  background: var(--surface-control);
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -66,7 +66,7 @@
 
 .status-project svg {
   flex-shrink: 0;
-  color: var(--accent-primary);
+  color: var(--accent-interactive);
 }
 
 .status-project-name {
@@ -91,14 +91,14 @@
   content: '';
   width: 1px;
   height: 11px;
-  background: var(--border-color);
+  background: var(--surface-control-hover);
   margin-right: var(--space-xs);
 }
 
 .status-branch svg {
   flex-shrink: 0;
   opacity: 0.75;
-  color: var(--accent-primary);
+  color: var(--accent-interactive);
 }
 
 .status-branch span {

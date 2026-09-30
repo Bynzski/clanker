@@ -1,7 +1,7 @@
 .task-recovery-section {
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid var(--border-color, #27272a);
+  border-bottom: 1px solid var(--border-default);
   margin-bottom: 8px;
   padding-bottom: 8px;
 }
@@ -18,16 +18,16 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-secondary, #a1a1aa);
+  color: var(--text-secondary);
 }
 
 .task-recovery-count {
   font-size: 10px;
   font-weight: 500;
   padding: 1px 6px;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--surface-tint) 8%, transparent);
   border-radius: 10px;
-  color: var(--text-tertiary, #71717a);
+  color: var(--text-muted);
 }
 
 .task-recovery-list {
@@ -42,16 +42,16 @@
 .task-recovery-item {
   display: flex;
   flex-direction: column;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--surface-tint) 2%, transparent);
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: 6px 8px;
   transition: all 0.15s ease;
 }
 
 .task-recovery-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--surface-tint) 4%, transparent);
+  border-color: var(--border-strong);
 }
 
 .task-recovery-main {
@@ -64,7 +64,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent-primary, #3b82f6);
+  color: var(--accent-interactive);
 }
 
 .task-recovery-details {
@@ -84,7 +84,7 @@
 .task-recovery-task-title {
   font-size: 12px;
   font-weight: 500;
-  color: var(--text-primary, #f4f4f5);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -104,31 +104,31 @@
 }
 
 .task-recovery-state-badge.running {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
+  background: color-mix(in srgb, var(--status-success) 15%, transparent);
+  color: var(--status-success-emphasis);
 }
 
 .task-recovery-state-badge.resumable {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
+  background: color-mix(in srgb, var(--status-info) 15%, transparent);
+  color: var(--status-info);
 }
 
 .task-recovery-state-badge.needs-selection {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
+  background: color-mix(in srgb, var(--status-warning) 15%, transparent);
+  color: var(--status-warning-emphasis);
 }
 
 .task-recovery-state-badge.unavailable {
-  background: rgba(113, 113, 122, 0.15);
-  color: #a1a1aa;
+  background: color-mix(in srgb, var(--text-muted) 15%, transparent);
+  color: var(--text-secondary);
 }
 
 .task-state-pulse {
   width: 5px;
   height: 5px;
-  background: #34d399;
+  background: var(--status-success-emphasis);
   border-radius: 50%;
-  box-shadow: 0 0 6px #34d399;
+  box-shadow: 0 0 6px var(--status-success-emphasis);
 }
 
 .task-recovery-meta-row {
@@ -136,7 +136,7 @@
   align-items: center;
   gap: 8px;
   font-size: 10px;
-  color: var(--text-tertiary, #71717a);
+  color: var(--text-muted);
 }
 
 .task-recovery-time {
@@ -150,7 +150,7 @@
   align-items: center;
   gap: 4px;
   font-size: 10px;
-  color: #f87171;
+  color: var(--status-error);
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -175,48 +175,48 @@
   border: 1px solid transparent;
   cursor: pointer;
   background: transparent;
-  color: var(--text-secondary, #a1a1aa);
+  color: var(--text-secondary);
   transition: all 0.15s ease;
 }
 
 .task-action-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary, #f4f4f5);
+  background: color-mix(in srgb, var(--surface-tint) 8%, transparent);
+  color: var(--text-primary);
 }
 
 .task-action-btn.resume-btn {
-  background: rgba(59, 130, 246, 0.15);
-  border-color: rgba(59, 130, 246, 0.3);
-  color: #60a5fa;
+  background: color-mix(in srgb, var(--status-info) 15%, transparent);
+  border-color: color-mix(in srgb, var(--status-info) 30%, transparent);
+  color: var(--status-info);
 }
 
 .task-action-btn.resume-btn:hover:not(:disabled) {
-  background: rgba(59, 130, 246, 0.25);
-  color: #93c5fd;
+  background: color-mix(in srgb, var(--status-info) 25%, transparent);
+  color: var(--status-info-emphasis);
 }
 
 .task-action-btn.select-session-btn {
-  background: rgba(245, 158, 11, 0.15);
-  border-color: rgba(245, 158, 11, 0.3);
-  color: #fbbf24;
+  background: color-mix(in srgb, var(--status-warning) 15%, transparent);
+  border-color: color-mix(in srgb, var(--status-warning) 30%, transparent);
+  color: var(--status-warning-emphasis);
 }
 
 .task-action-btn.delete-btn {
-  color: var(--text-tertiary, #71717a);
+  color: var(--text-muted);
   padding: 4px;
 }
 
 .task-action-btn.delete-btn:hover {
-  color: #f87171;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 10%, transparent);
 }
 
 .task-session-picker {
   margin-top: 6px;
   padding: 6px;
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--surface-inset-tint) 30%, transparent);
   border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -225,12 +225,12 @@
 .task-session-picker-title {
   font-size: 10px;
   font-weight: 500;
-  color: var(--text-secondary, #a1a1aa);
+  color: var(--text-secondary);
 }
 
 .task-session-picker-empty {
   font-size: 10px;
-  color: var(--text-tertiary, #71717a);
+  color: var(--text-muted);
   font-style: italic;
   padding: 4px;
 }
@@ -251,14 +251,14 @@
   background: transparent;
   border: none;
   border-radius: 3px;
-  color: var(--text-primary, #f4f4f5);
+  color: var(--text-primary);
   font-size: 11px;
   cursor: pointer;
   text-align: left;
 }
 
 .task-session-picker-item:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--surface-tint) 8%, transparent);
 }
 
 .picker-session-title {
@@ -270,15 +270,15 @@
 
 .picker-session-time {
   font-size: 9px;
-  color: var(--text-tertiary, #71717a);
+  color: var(--text-muted);
 }
 .task-recovery-error-banner {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #f87171;
+  background: color-mix(in srgb, var(--status-error) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-error) 30%, transparent);
+  color: var(--status-error);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 11px;

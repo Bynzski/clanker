@@ -4,7 +4,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--overlay-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -12,17 +12,17 @@
 }
 
 .confirm-close-dialog {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   width: 380px;
   max-width: 90vw;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-dialog);
 }
 
 .confirm-close-header {
   padding: 12px 14px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .confirm-close-header h3 {
@@ -49,7 +49,7 @@
   justify-content: flex-end;
   gap: var(--space-sm);
   padding: 12px 14px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-default);
 }
 
 .confirm-close-btn {
@@ -63,32 +63,32 @@
 }
 
 .confirm-close-btn-primary {
-  background: var(--accent-primary);
-  color: white;
-  border-color: var(--accent-primary);
+  background: var(--control-primary-bg);
+  color: var(--control-primary-fg);
+  border-color: var(--accent-interactive);
 }
 
 .confirm-close-btn-primary:hover {
-  background: var(--accent-primary-hover, #1e88e5);
+  background: var(--control-primary-bg-hover);
 }
 
 .confirm-close-btn-secondary {
-  background: var(--bg-tertiary);
+  background: var(--surface-control);
   color: var(--text-secondary);
-  border-color: var(--border-color);
+  border-color: var(--border-default);
 }
 
 .confirm-close-btn-secondary:hover {
-  background: var(--border-color);
+  background: var(--surface-control-hover);
   color: var(--text-primary);
 }
 
 .confirm-close-btn-danger {
-  background: rgba(244, 67, 54, 0.15);
-  color: var(--accent-error);
-  border-color: rgba(244, 67, 54, 0.3);
+  background: color-mix(in srgb, var(--status-error) 15%, transparent);
+  color: var(--status-error);
+  border-color: color-mix(in srgb, var(--status-error) 30%, transparent);
 }
 
 .confirm-close-btn-danger:hover {
-  background: rgba(244, 67, 54, 0.25);
+  background: color-mix(in srgb, var(--status-error) 25%, transparent);
 }

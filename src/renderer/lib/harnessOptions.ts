@@ -22,9 +22,9 @@ export interface HarnessOption {
   Icon: ElementType<HarnessIconProps>;
 }
 
-function createHarnessLogoIcon(src: string): ElementType<HarnessIconProps> {
+function createHarnessLogoIcon(src: string, monochrome = false): ElementType<HarnessIconProps> {
   return function HarnessLogoIcon({ size = 16, className }: HarnessIconProps) {
-    const classes = ['harness-logo-icon', className].filter(Boolean).join(' ');
+    const classes = ['harness-logo-icon', monochrome && 'harness-logo-monochrome', className].filter(Boolean).join(' ');
 
     return createElement('img', {
       src,
@@ -39,13 +39,13 @@ function createHarnessLogoIcon(src: string): ElementType<HarnessIconProps> {
 
 // Harness logos are SVG image URLs supplied by Vite.
 const HARNESS_SVG_ICONS = {
-  codex: createHarnessLogoIcon(codexLogoUrl),
+  codex: createHarnessLogoIcon(codexLogoUrl, true),
   claude: createHarnessLogoIcon(claudeLogoUrl),
   opencode: createHarnessLogoIcon(opencodeLogoUrl),
-  pi: createHarnessLogoIcon(piLogoUrl),
-  omp: createHarnessLogoIcon(ompLogoUrl),
+  pi: createHarnessLogoIcon(piLogoUrl, true),
+  omp: createHarnessLogoIcon(ompLogoUrl, true),
   hermes: createHarnessLogoIcon(hermesLogoUrl),
-  agy: createHarnessLogoIcon(agyLogoUrl),
+  agy: createHarnessLogoIcon(agyLogoUrl, true),
 } as const;
 
 export const HARNESS_OPTIONS: HarnessOption[] = [
