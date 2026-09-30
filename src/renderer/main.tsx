@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles/global.css'
 import { useThemeStore, applyThemeToDocument } from './theme/themeStore'
+import { startTerminalThemeSync } from './theme/themeRuntime'
 import { DEFAULT_THEME_ID } from '../shared/types/theme'
 
 // Global exception handlers for renderer process
@@ -25,6 +26,8 @@ export async function bootstrap(rootElement?: HTMLElement | null): Promise<void>
   if (!root) {
     throw new Error('Root element not found');
   }
+
+  startTerminalThemeSync();
 
   try {
     await useThemeStore.getState().initializeTheme();

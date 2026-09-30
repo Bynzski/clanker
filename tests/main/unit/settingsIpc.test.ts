@@ -842,11 +842,11 @@ describe('GET_THEME and SET_THEME handlers', () => {
     if (!handler) throw new Error('set-theme handler not found');
     await handler({}, 'light');
     expect(mockStore.set).toHaveBeenCalledWith('theme', 'light');
-    expect(mockWindow.setBackgroundColor).toHaveBeenCalledWith('#ffffff');
+    expect(mockWindow.setBackgroundColor).toHaveBeenCalledWith('#f3f4f6');
 
     await handler({}, 'dark');
     expect(mockStore.set).toHaveBeenCalledWith('theme', 'dark');
-    expect(mockWindow.setBackgroundColor).toHaveBeenCalledWith('#0d1117');
+    expect(mockWindow.setBackgroundColor).toHaveBeenCalledWith('#121212');
   });
 
   test('SET_THEME rejects invalid values safely without persisting', async () => {

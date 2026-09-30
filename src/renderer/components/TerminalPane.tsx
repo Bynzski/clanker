@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import type { ILink, ILinkProvider } from '@xterm/xterm';
+import { useThemeStore } from '../theme/themeStore';
+import { getTerminalTheme, registerThemedTerminal, unregisterThemedTerminal } from '../theme/terminalTheme';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAgentAttentionStore } from '../store/agentAttentionStore';
 import { CircleAlert, CircleCheck, CircleDot, CircleHelp } from 'lucide-react';
@@ -56,10 +58,16 @@ const disposedTerminalIds = new Set<string>();
 
 export function cacheTerminalInstance(terminalId: string, xterm: XTermInstance, fitAddon: FitAddonInstance): void {
   if (disposedTerminalIds.has(terminalId)) {
+    unregisterThemedTerminal(xterm);
     xterm.dispose();
     return;
   }
 
+  const previous = xtermCache.get(terminalId);
+  if (previous && previous.xterm !== xterm) {
+    evictCachedTerminal(terminalId);
+  }
+  registerThemedTerminal(xterm, useThemeStore.getState().theme);
   xtermCache.set(terminalId, { xterm, fitAddon });
 }
 
@@ -90,6 +98,7 @@ export function writeCachedTerminalExit(terminalId: string, exitCode: number): b
 function evictCachedTerminal(terminalId: string): void {
   const cached = xtermCache.get(terminalId);
   if (cached) {
+    unregisterThemedTerminal(cached.xterm);
     cached.xterm.dispose();
     xtermCache.delete(terminalId);
   }
@@ -114,6 +123,7 @@ function isTerminalDisposed(terminalId: string): boolean {
  */
 export function clearTerminalCache(): void {
   for (const [, cached] of xtermCache) {
+    unregisterThemedTerminal(cached.xterm);
     cached.xterm.dispose();
   }
   xtermCache.clear();
@@ -236,6 +246,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     const cached = terminalId != null ? xtermCache.get(terminalId) : null;
 
     if (cached) {
+      registerThemedTerminal(cached.xterm, useThemeStore.getState().theme);
       // Reuse cached xterm — just reattach to the new DOM container
       if (terminalRef.current && cached.xterm.element) {
         terminalRef.current.appendChild(cached.xterm.element);
@@ -265,35 +276,13 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
         import('@xterm/xterm'),
         import('@xterm/addon-fit'),
       ]).then(([xtermModule, fitAddonModule]) => {
-        if (cancelled || terminalRef.current == null) {
+        if (cancelled || terminalRef.current == null || (terminalId != null && isTerminalDisposed(terminalId))) {
           return;
         }
 
         const xterm = new xtermModule.Terminal({
           allowTransparency: false,
-          theme: {
-            background: '#121212',
-            foreground: '#e8e8e8',
-            cursor: '#8b949e',
-            cursorAccent: '#121212',
-            selectionBackground: '#2f2f2f',
-            black: '#121212',
-            red: '#f85149',
-            green: '#3fb950',
-            yellow: '#d29922',
-            blue: '#58a6ff',
-            magenta: '#bc8cff',
-            cyan: '#39c5cf',
-            white: '#e8e8e8',
-            brightBlack: '#9b9b9b',
-            brightRed: '#ffa198',
-            brightGreen: '#56d364',
-            brightYellow: '#e3b341',
-            brightBlue: '#79c0ff',
-            brightMagenta: '#d2a8ff',
-            brightCyan: '#56d4dd',
-            brightWhite: '#ffffff',
-          },
+          theme: getTerminalTheme(useThemeStore.getState().theme),
           fontFamily: '"DejaVu Sans Mono", "JetBrains Mono", "Fira Code", "Cascadia Code", "Fira Mono", Menlo, Consolas, monospace',
           fontSize: 13,
           fontWeight: '400',
@@ -311,15 +300,22 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
 
         const fitAddon = new fitAddonModule.FitAddon();
         const clipboardAddon = new ClipboardAddon();
-        xterm.loadAddon(fitAddon);
-        xterm.loadAddon(clipboardAddon);
-        xterm.open(terminalRef.current);
-        fitAddon.fit();
+        try {
+          xterm.loadAddon(fitAddon);
+          xterm.loadAddon(clipboardAddon);
+          xterm.open(terminalRef.current);
+          fitAddon.fit();
+        } catch (error) {
+          xterm.dispose();
+          throw error;
+        }
 
         xtermRef.current = xterm;
         fitAddonRef.current = fitAddon;
         if (terminalId != null) {
           cacheTerminalInstance(terminalId, xterm, fitAddon);
+        } else {
+          registerThemedTerminal(xterm, useThemeStore.getState().theme);
         }
         setTerminalRuntimeReady(true);
 
@@ -389,6 +385,9 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
         }
         xtermCache.set(terminalId, { xterm, fitAddon });
         terminalDetach(terminalId, workspaceId ?? undefined);
+      } else if (xterm) {
+        unregisterThemedTerminal(xterm);
+        xterm.dispose();
       }
 
       xtermRef.current = null;

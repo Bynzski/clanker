@@ -166,7 +166,8 @@
   min-width: 0;
 }
 
-.terminal-content .xterm-viewport {
+.terminal-content .xterm .xterm-viewport {
+  background-color: inherit;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }

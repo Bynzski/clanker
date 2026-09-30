@@ -23,13 +23,13 @@ export const THEME_METADATA: Readonly<Record<ThemeId, ThemeMetadata>> = {
     id: 'dark',
     label: 'Dark',
     colorScheme: 'dark',
-    windowBackground: '#0d1117',
+    windowBackground: '#121212',
   },
   light: {
     id: 'light',
     label: 'Light',
     colorScheme: 'light',
-    windowBackground: '#ffffff',
+    windowBackground: '#f3f4f6',
   },
 } as const;
 

@@ -75,29 +75,29 @@ describe('theme model', () => {
       }
     });
 
-    it('maps dark to #0d1117 windowBackground and dark colorScheme', () => {
+    it('maps dark to #121212 windowBackground and dark colorScheme', () => {
       expect(THEME_METADATA.dark).toEqual({
         id: 'dark',
         label: 'Dark',
         colorScheme: 'dark',
-        windowBackground: '#0d1117',
+        windowBackground: '#121212',
       });
     });
 
-    it('maps light to #ffffff windowBackground and light colorScheme', () => {
+    it('maps light to #f3f4f6 windowBackground and light colorScheme', () => {
       expect(THEME_METADATA.light).toEqual({
         id: 'light',
         label: 'Light',
         colorScheme: 'light',
-        windowBackground: '#ffffff',
+        windowBackground: '#f3f4f6',
       });
     });
   });
 
   describe('getThemeMetadata', () => {
     it('retrieves metadata for valid themes', () => {
-      expect(getThemeMetadata('dark').windowBackground).toBe('#0d1117');
-      expect(getThemeMetadata('light').windowBackground).toBe('#ffffff');
+      expect(getThemeMetadata('dark').windowBackground).toBe('#121212');
+      expect(getThemeMetadata('light').windowBackground).toBe('#f3f4f6');
     });
 
     it('safely falls back to default theme metadata for invalid inputs', () => {

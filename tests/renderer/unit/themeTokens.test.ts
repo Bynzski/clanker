@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { THEME_IDS, getThemeMetadata } from '../../../src/shared/types/theme';
 
 const rendererRoot = resolve(__dirname, '../../../src/renderer');
 const globalCss = readFileSync(resolve(rendererRoot, 'styles/global.css'), 'utf8');
@@ -45,6 +46,10 @@ function contrast(foreground: string, background: string) {
 }
 
 describe('renderer semantic theme contract', () => {
+  it.each(THEME_IDS)('matches the native window background to the %s application surface', (theme) => {
+    expect(getThemeMetadata(theme).windowBackground).toBe(palette(theme).get('--surface-app'));
+  });
+
   it('defines the same nonempty color contract in both palettes', () => {
     expect([...light.keys()].sort()).toEqual([...dark.keys()].sort());
     for (const token of coreTokens) {

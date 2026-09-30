@@ -26,7 +26,7 @@ describe('terminal session bridge', () => {
   it('routes terminal output to cached terminals while hidden', () => {
     const write = vi.fn();
     const dispose = vi.fn();
-    const terminal = { write, dispose, element: document.createElement('div') } as unknown as {
+    const terminal = { write, dispose, options: {}, element: document.createElement('div') } as unknown as {
       write: (data: string) => void;
       dispose: () => void;
       element: HTMLDivElement;
@@ -68,7 +68,7 @@ describe('terminal session bridge', () => {
   it('prevents explicitly disposed terminals from being re-cached', () => {
     const write = vi.fn();
     const dispose = vi.fn();
-    const terminal = { write, dispose, element: document.createElement('div') } as unknown as {
+    const terminal = { write, dispose, options: {}, element: document.createElement('div') } as unknown as {
       write: (data: string) => void;
       dispose: () => void;
       element: HTMLDivElement;

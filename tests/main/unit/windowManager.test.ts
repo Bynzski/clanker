@@ -188,7 +188,7 @@ describe('windowManager', () => {
         expect(BrowserWindow).toHaveBeenCalledWith(
           expect.objectContaining({
             show: false,
-            backgroundColor: '#0d1117',
+            backgroundColor: '#121212',
           })
         );
       } finally {
@@ -219,7 +219,7 @@ describe('windowManager', () => {
         expect(BrowserWindow).toHaveBeenCalledWith(
           expect.objectContaining({
             show: false,
-            backgroundColor: '#ffffff',
+            backgroundColor: '#f3f4f6',
           })
         );
       } finally {
@@ -228,10 +228,10 @@ describe('windowManager', () => {
     });
 
     test('resolveInitialWindowBackground resolves persisted themes correctly', () => {
-      expect(resolveInitialWindowBackground({ get: () => 'dark' })).toBe('#0d1117');
-      expect(resolveInitialWindowBackground({ get: () => 'light' })).toBe('#ffffff');
-      expect(resolveInitialWindowBackground({ get: () => 'invalid' })).toBe('#0d1117');
-      expect(resolveInitialWindowBackground({ get: () => undefined })).toBe('#0d1117');
+      expect(resolveInitialWindowBackground({ get: () => 'dark' })).toBe('#121212');
+      expect(resolveInitialWindowBackground({ get: () => 'light' })).toBe('#f3f4f6');
+      expect(resolveInitialWindowBackground({ get: () => 'invalid' })).toBe('#121212');
+      expect(resolveInitialWindowBackground({ get: () => undefined })).toBe('#121212');
     });
 
     test('window recreation through the activate path uses the current persisted theme', () => {
@@ -266,7 +266,7 @@ describe('windowManager', () => {
         });
         expect(BrowserWindow).toHaveBeenLastCalledWith(
           expect.objectContaining({
-            backgroundColor: '#0d1117',
+            backgroundColor: '#121212',
             show: false,
           })
         );
@@ -282,7 +282,7 @@ describe('windowManager', () => {
         });
         expect(BrowserWindow).toHaveBeenLastCalledWith(
           expect.objectContaining({
-            backgroundColor: '#ffffff',
+            backgroundColor: '#f3f4f6',
             show: false,
           })
         );
