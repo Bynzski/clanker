@@ -566,9 +566,9 @@
   flex: 0 0 auto;
 }
 
-/* Favorites popover */
+/* Portaled favorites use the trigger width and Radix collision bounds. */
 .favorites-picker {
-  position: static;
+  width: var(--radix-popover-trigger-width);
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -577,7 +577,7 @@
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   box-shadow: 0 12px 32px color-mix(in srgb, var(--shadow-color) 45%, transparent);
-  max-height: min(280px, 34vh);
+  max-height: min(280px, 34vh, var(--radix-popover-content-available-height));
   overflow-y: auto;
 }
 
@@ -678,9 +678,9 @@
   background: color-mix(in srgb, var(--surface-tint) 5%, transparent);
 }
 
-/* Discovery popover */
+/* Searchable All Models dialog */
 .discovery-modal {
-  position: static;
+  width: 388px;
   display: flex;
   flex-direction: column;
   background: var(--surface-elevated);
@@ -1295,3 +1295,15 @@
 .ssh-env-delete-btn:hover {
   background: color-mix(in srgb, var(--status-error) 15%, transparent);
 }
+
+/* Selection and favorite actions are independent native buttons. */
+.model-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  padding: 0;
+}
+

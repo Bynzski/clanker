@@ -427,7 +427,7 @@ describe('WorkspaceGateContent', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].querySelector('.hermes-model-provider')).toHaveTextContent('ChatGPT or Codex Subscription');
     expect(rows[1].querySelector('.hermes-model-provider')).toHaveTextContent('GitHub Copilot');
-    fireEvent.click(rows[1]);
+    fireEvent.click(rows[1].querySelector('.model-choice')!);
     expect(screen.getByTitle('Change model').querySelector('.hermes-model-id')).toHaveTextContent('gpt-5.3-codex-900k');
     expect(screen.getByTitle('Change model').querySelector('.hermes-model-provider')).toHaveTextContent('GitHub Copilot');
 
@@ -778,7 +778,9 @@ describe('WorkspaceGateContent', () => {
     await user.click(screen.getByTitle('Change model'));
     await user.click(screen.getByText('Browse all models'));
     expect(document.querySelector('.discovery-modal')).toBeInTheDocument();
-    await user.click(screen.getByRole('radio', { name: 'Codex' }));
+    // All Models is modal; use the existing launcher shortcut from a non-editable control.
+    act(() => screen.getByRole('button', { name: 'Close All Models' }).focus());
+    await user.keyboard('c');
     expect(document.querySelector('.discovery-modal')).not.toBeInTheDocument();
     expect(screen.getByTitle('Change model')).toHaveTextContent('GPT-4');
     await user.click(screen.getByRole('button', { name: 'Launch Workspace' }));
