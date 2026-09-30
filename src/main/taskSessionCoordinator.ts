@@ -105,7 +105,7 @@ export class TaskSessionCoordinator {
         ...task,
         terminalId: undefined,
         state: 'unavailable',
-        stateReason: 'Remote session recovery is not supported in this version',
+        stateReason: task.nativeSessionId ? 'Awaiting remote conversation verification' : 'Associate a remote conversation to resume this task',
         stoppedAt: Date.now(),
         updatedAt: Date.now(),
       };
@@ -169,7 +169,7 @@ export class TaskSessionCoordinator {
           ...task,
           terminalId: undefined,
           state,
-          ...(isRemote ? { stateReason: 'Remote session recovery is not supported in this version' } : {}),
+          ...(isRemote ? { stateReason: task.nativeSessionId ? 'Awaiting remote conversation verification' : 'Associate a remote conversation to resume this task' } : {}),
           stoppedAt: now,
           updatedAt: now,
         });

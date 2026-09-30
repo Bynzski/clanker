@@ -22,6 +22,8 @@ import {
   registerTaskSessionIpc,
   evaluateTaskRecoveryState,
 } from '../../../src/main/ipc/taskSessionIpc';
+import type { WorkspaceRegistry, RegisteredWorkspace } from '../../../src/main/workspaceRegistry';
+import type { HarnessSession } from '../../../src/shared/types/session';
 import type { Terminal } from '../../../src/main/ipc/terminalIpc';
 
 class MemoryStore {
@@ -555,6 +557,60 @@ describe('taskSessionIpc handlers', () => {
     expect(second?.state).toBe('needs-selection');
     expect(second?.nativeSessionId).toBeUndefined();
   });
+  it.each(['verify', 'resume', 'update', 'delete'] as const)('handles remote task verification overlapping %s', async (action) => {
+    let finish!: (sessions: HarnessSession[]) => void;
+    const session: HarnessSession = { id: 'remote-native', harness: 'codex', cwd: '/host/repo', title: 'Host title', timestamp: 1 };
+    const discoverRemote = vi.fn().mockReturnValue(new Promise<HarnessSession[]>((resolve) => { finish = resolve; }));
+    const workspace = {
+      workspaceId: 'ssh-ws', location: { environmentId: 'vps', path: '/host/repo' },
+      environment: {
+        capabilities: { sessionDiscovery: true },
+        validateWorkspacePath: vi.fn().mockResolvedValue({ valid: true, resolvedPath: '/host/repo' }),
+        getHarnessOptions: vi.fn().mockResolvedValue({ codex: {} }),
+        discoverSessions: discoverRemote,
+      },
+    } as unknown as RegisteredWorkspace;
+    const registry = {
+      getWorkspaceByLocation: vi.fn().mockImplementation((environmentId: string) => environmentId === 'vps' ? workspace : null),
+      getWorkspace: vi.fn().mockReturnValue(workspace),
+    } as unknown as WorkspaceRegistry;
+    const discoverLocal = vi.fn();
+    const localHarnesses = vi.fn();
+    const persistence = registerTaskSessionIpc({
+      getStore: () => memoryStore as unknown as Store<StoreSchema>,
+      getTerminals: () => mockTerminals,
+      getHarnessOptions: localHarnesses,
+      discoverSessionsDetailedFn: discoverLocal,
+      getWorkspaceRegistry: () => registry,
+    });
+    const record = persistence.saveTaskSession({
+      id: 'remote-known', environmentId: 'vps', workspacePath: '/host/repo',
+      harnessId: 'codex', nativeSessionId: 'remote-native', title: 'Old title',
+      state: 'unavailable', stateReason: 'Awaiting verification',
+    });
+    const listing = handlers.get(TASK_SESSION_LIST)!(null, '/host/repo', 'vps');
+    await vi.waitFor(() => expect(discoverRemote).toHaveBeenCalledTimes(1));
+    if (action === 'resume') persistence.saveTaskSession({ ...record, state: 'running', terminalId: 'new-terminal' });
+    if (action === 'update') persistence.saveTaskSession({ ...record, title: 'User title' });
+    if (action === 'delete') persistence.deleteTaskSession(record.id);
+    finish([session]);
+    const results = await listing as TaskSessionRecord[];
+    if (action === 'verify') {
+      expect(results).toMatchObject([{ state: 'resumable', title: 'Host title' }]);
+      expect(results[0].stateReason).toBeUndefined();
+      expect(persistence.getTaskSessionById(record.id)?.state).toBe('resumable');
+    } else if (action === 'resume') {
+      expect(results).toMatchObject([{ state: 'running', terminalId: 'new-terminal' }]);
+    } else if (action === 'update') {
+      expect(results).toMatchObject([{ title: 'User title' }]);
+    } else {
+      expect(results).toEqual([]);
+      expect(persistence.getTaskSessionById(record.id)).toBeNull();
+    }
+    expect(discoverLocal).not.toHaveBeenCalled();
+    expect(localHarnesses).not.toHaveBeenCalled();
+  });
+
   it('isolates same-path remote tasks without scanning local session files', async () => {
     const discover = vi.fn().mockResolvedValue({
       sessions: [],

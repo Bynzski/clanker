@@ -226,7 +226,7 @@ describe('Remote Workspace Integration', () => {
     // On exit, remote terminal does NOT scan local sessions; marks unavailable
     const exitedTask = await coordinator.onTerminalExited('term-remote-1', 'dev-vps');
     expect(exitedTask?.state).toBe('unavailable');
-    expect(exitedTask?.stateReason).toContain('Remote session recovery is not supported');
+    expect(exitedTask?.stateReason).toContain('Associate a remote conversation');
   });
 
   it('unregisters remote workspace cleanly without affecting local workspaces', async () => {

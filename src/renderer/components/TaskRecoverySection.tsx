@@ -91,7 +91,7 @@ export default function TaskRecoverySection({
             && !tasks.some((owner) => owner.id !== task.id && owner.harnessId === task.harnessId && owner.nativeSessionId === s.id),
           );
           const canReassociate = task.state === 'needs-selection' || (task.state === 'unavailable'
-            && /(?:not found on disk|failed to resume|resume failed)/i.test(task.stateReason ?? ''));
+            && /(?:not found on (?:disk|the remote host)|failed to resume|resume failed)/i.test(task.stateReason ?? ''));
 
           return (
             <div key={task.id} className={`task-recovery-item ${task.state}`}>

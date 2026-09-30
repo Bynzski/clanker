@@ -272,6 +272,7 @@ app.whenReady().then(() => {
     getStore: () => store,
     getTerminals: () => terminals,
     getHarnessOptions: getAvailableHarnessOptions,
+    getWorkspaceRegistry: () => workspaceRegistry,
   });
   taskSessionCoordinator = new TaskSessionCoordinator(taskSessionPersistence);
 

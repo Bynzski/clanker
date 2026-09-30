@@ -1,5 +1,7 @@
 import type { HarnessSession } from '../shared/types/session';
 
+export const SUPPORTED_RESUME_HARNESSES: ReadonlySet<string> = new Set(['codex', 'claude', 'opencode', 'pi', 'omp', 'agy']);
+
 /** Pure native CLI arguments, shared by local and SSH session launches. */
 export function buildSessionCommand(session: HarnessSession, fork = false, userFlags?: string): { command: string; args: string[] } {
   const command = (command: string, args: string[]) => ({ command, args });

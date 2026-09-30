@@ -18,16 +18,11 @@ import { findUnambiguousSessionCandidate } from '../sessionCorrelation';
 import { discoverSessionsDetailed } from '../sessionHistory';
 import type { DetailedSessionDiscovery } from '../sessionHistory';
 import type { HarnessSession } from '../../shared/types/session';
+import { RemoteTaskRecovery } from './remoteTaskRecovery';
+import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
 
-const SUPPORTED_RESUME_HARNESSES: Record<string, true> = {
-  codex: true,
-  claude: true,
-  opencode: true,
-  pi: true,
-  omp: true,
-  agy: true,
-};
+import { SUPPORTED_RESUME_HARNESSES } from '../sessionLaunch';
 
 export type SessionDiscoveryResult =
   | { status: 'success'; sessions: HarnessSession[] }
@@ -37,6 +32,7 @@ export interface RegisterTaskSessionIpcDeps {
   getTerminals: () => Map<string, Terminal>;
   getHarnessOptions: () => Record<string, unknown>;
   discoverSessionsDetailedFn?: typeof discoverSessionsDetailed;
+  getWorkspaceRegistry?: () => WorkspaceRegistry;
 }
 
 export function evaluateTaskRecoveryState(
@@ -92,7 +88,7 @@ export function evaluateTaskRecoveryState(
   }
 
   // Check if harness supports resume
-  if (!(record.harnessId in SUPPORTED_RESUME_HARNESSES)) {
+  if (!(SUPPORTED_RESUME_HARNESSES.has(record.harnessId))) {
     return {
       state: 'unavailable',
       stateReason: `Harness '${record.harnessId}' does not support conversation resume`,
@@ -185,7 +181,7 @@ export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): Worksp
       : persistence.getAllTaskSessions();
 
     const liveTerminalIds = new Set<string>(getTerminals().keys());
-    const availableHarnesses = getHarnessOptions();
+    const availableHarnesses = rawSessions.some((record) => (record.environmentId ?? 'local') === 'local') ? getHarnessOptions() : {};
 
     const discoveredByWorkspace = new Map<string, DetailedSessionDiscovery | { error: string }>();
     for (const record of rawSessions) {
@@ -212,16 +208,28 @@ export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): Worksp
       }
     }
 
+    const remoteRecovery = new RemoteTaskRecovery(deps.getWorkspaceRegistry?.());
     const evaluated: TaskSessionRecord[] = [];
     for (const record of rawSessions) {
       if ((record.environmentId ?? 'local') !== 'local') {
         const live = record.terminalId && liveTerminalIds.has(record.terminalId);
-        evaluated.push(live ? record : {
-          ...record,
-          state: 'unavailable',
-          stateReason: 'Remote session recovery is not supported in this version',
-          terminalId: undefined,
-        });
+        if (live) {
+          evaluated.push(record);
+          continue;
+        }
+        const recovered = await remoteRecovery.evaluate(record);
+        // Host reads can overlap a resume, update, or deletion. Keep the newer record.
+        const current = persistence.getTaskSessionById(record.id);
+        if (!current) continue;
+        if (JSON.stringify(current) !== JSON.stringify(record)) {
+          evaluated.push(current);
+          continue;
+        }
+        if (JSON.stringify(recovered) !== JSON.stringify(record)) {
+          evaluated.push(persistence.saveTaskSession({ ...recovered, updatedAt: Date.now() }));
+        } else {
+          evaluated.push(record);
+        }
         continue;
       }
       const workspaceDiscovery = discoveredByWorkspace.get(record.workspacePath);

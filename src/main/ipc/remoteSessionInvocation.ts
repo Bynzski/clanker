@@ -6,7 +6,7 @@ import { isPathContained } from '../remote/remotePaths';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import { spawnPtyProcess } from './ptySpawn';
 
-const SUPPORTED = ['codex', 'claude', 'opencode', 'pi', 'omp', 'agy'];
+import { SUPPORTED_RESUME_HARNESSES } from '../sessionLaunch';
 const SELECTION_FLAGS: Record<string, string[]> = {
   codex: ['resume', 'fork'], claude: ['--resume', '-r', '--continue', '-c', '--fork-session'],
   opencode: ['--session', '-s', '--continue', '-c', '--fork'],
@@ -18,7 +18,7 @@ const SELECTION_FLAGS: Record<string, string[]> = {
 export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspace: RegisteredWorkspace, requested: HarnessSession, fork?: boolean) {
   const environment = workspace.environment;
   if (!environment?.capabilities.sessionDiscovery || !environment.discoverSessions) throw new Error('Remote session invocation is not supported by this environment');
-  if (!requested || !SUPPORTED.includes(requested.harness) || typeof requested.id !== 'string'
+  if (!requested || !SUPPORTED_RESUME_HARNESSES.has(requested.harness) || typeof requested.id !== 'string'
     || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(requested.id) || (fork !== undefined && typeof fork !== 'boolean')) throw new Error('Invalid remote session selection');
   if (fork && requested.harness === 'agy') throw new Error('Antigravity session forking is not supported');
   const registry = deps.getWorkspaceRegistry?.();

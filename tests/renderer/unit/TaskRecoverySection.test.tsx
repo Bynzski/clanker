@@ -133,11 +133,12 @@ describe('TaskRecoverySection', () => {
     });
   });
 
-  it('lets an unavailable task select an unclaimed session and hides sessions owned by other tasks', async () => {
+  it.each(['disk', 'the remote host'])('lets a task missing on %s select an unclaimed session', async (location) => {
     const unavailable: TaskSessionRecord = {
       id: 'task-missing', workspacePath: '/projects/repo', harnessId: 'codex',
       title: 'Missing chat', nativeSessionId: 'old-id', state: 'unavailable',
-      stateReason: 'Native conversation session was not found on disk',
+      stateReason: `Native conversation session was not found on ${location}`,
+      environmentId: location === 'disk' ? 'local' : 'vps',
       createdAt: 1, updatedAt: 1, version: 1,
     };
     const owner: TaskSessionRecord = { ...unavailable, id: 'owner', title: 'Owner',

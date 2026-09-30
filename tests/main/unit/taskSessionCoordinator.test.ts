@@ -202,7 +202,7 @@ describe('TaskSessionCoordinator', () => {
     const storedRemote = persistence.getTaskSessionById(remote.id);
     expect(storedRemote).toMatchObject({
       environmentId: 'dev-vps', state: 'unavailable',
-      stateReason: 'Remote session recovery is not supported in this version',
+      stateReason: 'Awaiting remote conversation verification',
       nativeSessionId: 'remote-native',
     });
     expect(storedRemote?.terminalId).toBeUndefined();
