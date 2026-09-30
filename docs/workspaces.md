@@ -246,6 +246,10 @@ When a workspace is restored or the task list is opened, previous tasks are clas
 | **Needs Session** | Task metadata exists, but Clanker cannot safely correlate a unique native conversation ID. | Select from discovered sessions |
 | **Unavailable** | The task cannot be resumed (e.g. workspace directory was deleted, harness is uninstalled, session was deleted from disk, resume invocation failed, or the remote conversation could not be verified). | Inspect reason / Retry / Delete where supported |
 
+### Remote Process Persistence Proposal
+
+SSH process persistence/reconnect is not implemented. The [architecture proposal](remote-process-persistence-design.md) evaluates transports and recommends opt-in tmux sessions with separate process and attachment lifetimes. It defines disconnect/stop behavior, worktree protections, and the Agent Attention release gate; this is a design for review, not an available launch setting.
+
 ### Native Conversation Resume
 
 Clicking **Resume** attaches a new PTY process directly to the AI harness's existing native conversation (e.g., `codex resume <id>`, `claude --resume <id>`, `opencode --session <id>`, `pi --session <path>`, `omp --resume <path>`, `agy --conversation <id>`).
