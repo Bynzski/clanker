@@ -18,6 +18,8 @@ export interface SshEnvironmentConfig {
   kind: 'ssh';
   label: string;
   target: string;
+  /** Optional absolute POSIX starting directory for pre-workspace browsing. */
+  defaultWorkspaceRoot?: string;
 }
 
 export interface SshEnvironmentTestResult {

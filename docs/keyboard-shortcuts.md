@@ -52,6 +52,12 @@ These shortcuts work in the workspace picker when focus is not inside an input f
 | Pi harness | `P` |
 | Antigravity harness | `A` |
 
+## Workspace Tabs
+
+| Action | Shortcut | Notes |
+|--------|----------|-------|
+| Move focused workspace tab left or right | `Alt+Shift+←` / `Alt+Shift+→` | Also available by dragging a tab; does not activate an inactive tab |
+
 ## SSH Remote Directory Chooser
 
 | Action | Shortcut |

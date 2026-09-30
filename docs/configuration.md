@@ -26,7 +26,7 @@ Each harness (Codex, OpenCode, Pi, Oh My Pi, Claude, Hermes, Antigravity) has it
 | Favorites | Pinned model IDs shown in the compact model picker | Empty |
 | Agent attention | Show supported harness turn and input status on new panes | Disabled |
 
-Hermes discovers provider-aware models from the local Hermes TUI gateway when its standard Python installation is available. Model IDs appear before their providers so subscription variants stay distinguishable. Choose a provider/model in the default picker, or enter a custom model ID; leaving the field empty uses Hermes's own default. Favorites work in the workspace gate. The initial list may be served from Hermes's cache: use **Refresh Hermes models** in settings or the gate to query live connector catalogs. If discovery is unavailable, the manual model field remains usable. Agent attention is unavailable until Hermes lifecycle events are integrated. Hermes is not an AI commit provider.
+Hermes discovers provider-aware models from the local Hermes TUI gateway when its standard Python installation is available. Model IDs appear before their providers so subscription variants stay distinguishable. Choose a provider/model in the default picker, or enter a custom model ID; leaving the field empty uses Hermes's own default. Favorites work in the workspace gate. The initial list may be served from Hermes's cache: use **Refresh Hermes models** in settings or the gate to query live connector catalogs. If discovery is unavailable, the manual model field remains usable. Agent attention supports SSH Hermes launches through a host observer plugin; local Hermes attention remains unavailable. Hermes is not an AI commit provider.
 
 Antigravity discovers available models via `agy models`. The model list supports Gemini and Claude variants. Extra flags accept `--dangerously-skip-permissions`, `--effort <level>`, and `--mode <mode>`. Agent attention is supported via native plugin hooks, reporting running, needs input, and turn complete statuses. Antigravity can be selected as an AI commit provider in settings, generating commit messages via piped prompt execution.
 
@@ -64,7 +64,7 @@ Plain shells have no model and do not inherit a harness from global defaults.
 
 Favorites are **never** used at spawn time — they only affect the picker/discovery UI.
 
-For SSH workspaces in V1, harness availability is discovered on the host. Extra flags still apply, but model discovery and selection and Agent Attention are unavailable; the remote CLI uses its own model configuration. Locally installed CLIs and attention adapters are not used for remote launches. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh).
+For SSH workspaces in V1, harness availability is discovered on the host. Extra flags still apply, but model discovery and selection remain unavailable; the remote CLI uses its own model configuration. Agent attention uses host-side adapters when enabled in harness defaults; see [Remote Agent Attention](workspaces.md#remote-agent-attention) for setup and limits. Locally installed CLIs and desktop attention credentials are not used for remote launches. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh).
 
 ### VCS Credentials
 

@@ -29,10 +29,17 @@
   border-top-right-radius: 5px;
   color: var(--text-secondary);
   font-size: 11px;
-  cursor: pointer;
+  cursor: grab;
   white-space: nowrap;
   transition: all var(--transition);
 }
+
+.workspace-tab:active { cursor: grabbing; }
+
+.workspace-tab.drop-left { box-shadow: inset 3px 0 0 var(--accent-primary); }
+.workspace-tab.drop-right { box-shadow: inset -3px 0 0 var(--accent-primary); }
+.workspace-tab.active.drop-left { box-shadow: inset 3px 0 0 var(--accent-primary), inset 0 2px 0 var(--accent-primary); }
+.workspace-tab.active.drop-right { box-shadow: inset -3px 0 0 var(--accent-primary), inset 0 2px 0 var(--accent-primary); }
 
 .workspace-tab:hover {
   color: var(--text-primary);
@@ -48,11 +55,33 @@
 }
 
 .workspace-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   min-width: 0;
-  max-width: 150px;
+  max-width: 210px;
+  font-weight: 500;
+}
+
+.workspace-tab-remote {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: 500;
+  padding: 1px 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.workspace-tab-name {
+  flex: 0 1 auto;
+  min-width: 40px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .workspace-tab-worktree {
@@ -148,6 +177,7 @@
   padding-right: 8px;
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
 }
 
 .workspace-tab-new:hover {

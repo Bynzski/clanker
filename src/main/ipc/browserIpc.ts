@@ -30,6 +30,7 @@ import {
   BROWSER_CREATE_TAB,
   BROWSER_CLOSE_TAB,
   BROWSER_SWITCH_TAB,
+  BROWSER_ACTIVATE,
   BROWSER_MOVE_TAB,
   BROWSER_GET_TABS,
   BROWSER_TAB_NAVIGATE,
@@ -360,6 +361,8 @@ function hideAllOtherWorkspaceTabViews(workspaceId: string, deps: RegisterBrowse
 }
 
 function showTabView(workspaceId: string, tabId: string, deps: RegisterBrowserIpcDeps): boolean {
+  // Remembered geometry is not permission to take over the visible browser.
+  if (deps.getActiveBrowserWorkspaceId() !== workspaceId) return false;
   const entry = getExistingWorkspaceTabViews(workspaceId, deps)?.get(tabId);
   const bounds = lastBrowserBoundsByWorkspace.get(workspaceId);
   if (!entry || !bounds) return false;
@@ -446,6 +449,18 @@ function getActiveBrowserEntryForOperation(workspaceId: string, deps: RegisterBr
 
 export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcController {
   const { getMainWindow } = deps;
+
+  ipcMain.handle(BROWSER_ACTIVATE, (_, workspaceId: string, tabId?: string) => {
+    if (!workspaceId) return false;
+    const targetTabId = resolveTabIdForWorkspace(workspaceId, tabId);
+    if (!targetTabId || !ensureTabViewEntry(workspaceId, targetTabId, deps)) return false;
+    hideAllOtherWorkspaceTabViews(workspaceId, deps);
+    hideWorkspaceTabViews(workspaceId, deps);
+    deps.setActiveBrowserWorkspaceId(workspaceId);
+    setActiveTabId(workspaceId, targetTabId, deps);
+    showTabView(workspaceId, targetTabId, deps);
+    return true;
+  });
 
   ipcMain.handle(BROWSER_SET_BOUNDS, (
     _,
@@ -629,9 +644,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
     if (!entry) return null;
 
     setActiveTabId(workspaceId, tabId, deps);
-    if (deps.getActiveBrowserWorkspaceId() === workspaceId || lastBrowserBoundsByWorkspace.has(workspaceId)) {
-      showTabView(workspaceId, tabId, deps);
-    }
+    showTabView(workspaceId, tabId, deps);
     return { url: entry.url, title: entry.title };
   });
 

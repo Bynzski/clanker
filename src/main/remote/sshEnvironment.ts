@@ -10,8 +10,20 @@ import type {
 import type { RemoteDirectoryListing, SshEnvironmentConfig, WorkspaceEnvironmentId } from '../../shared/types/environments';
 import { SshCommandExecutor, SshExecutionError } from './sshCommandExecutor';
 import { quotePosixArg, quotePosixCommand } from './posixQuote';
+import { isPathContained } from './remotePaths';
+import { startSshPortForward } from './sshPortForward';
+import { snapshotSshFiles } from './sshFileSnapshot';
+import { createSshWorktree } from './sshWorktrees';
+import { inspectSshWorktree } from './sshWorktreeInspection';
+import { removeSshWorktree, waitForSshWorktreeOperations } from './sshWorktreeRemoval';
+import type { RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
+export { isPathContained } from './remotePaths';
+import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
 import { HARNESS_OPTIONS } from '../harnessCatalog';
 import { buildHarnessSpawnArgs } from '../harnessLaunch';
+import { prepareSshAttention, remoteAttentionEnvironment, REMOTE_CLI_PATH_SETUP } from './sshAgentAttention';
+import { discoverSshSessions } from './sshSessionDiscovery';
+import { buildSessionCommand } from '../sessionLaunch';
 import type {
   FileListDirectoryRequest,
   FileListDirectoryResult,
@@ -43,19 +55,23 @@ const HOME_DIRECTORY_SCRIPT = [
   'if not home or not os.path.isabs(home):',
   '  sys.exit("Remote HOME is unavailable")',
   'home = os.path.realpath(home)',
-  'if not os.path.isdir(home) or not os.access(home, os.R_OK | os.X_OK):',
-  '  sys.exit("Remote HOME is not a directory")',
-  'with os.scandir(home):',
-  '  pass',
-  'initial = os.path.join(home, "workspaces")',
-  'try:',
-  '  if not os.access(initial, os.R_OK | os.X_OK):',
-  '    raise PermissionError("Remote workspaces directory is inaccessible")',
-  '  with os.scandir(initial):',
-  '    pass',
-  '  initial = os.path.realpath(initial)',
-  'except OSError:',
-  '  initial = home',
+  'preferred = sys.argv[1] if len(sys.argv) > 1 else ""',
+  'initial = None',
+  'for candidate in [preferred, os.path.join(home, "workspaces"), home]:',
+  '  if not candidate or not os.path.isabs(candidate):',
+  '    continue',
+  '  try:',
+  '    candidate = os.path.realpath(candidate)',
+  '    if not os.path.isdir(candidate) or not os.access(candidate, os.R_OK | os.X_OK):',
+  '      continue',
+  '    with os.scandir(candidate):',
+  '      pass',
+  '    initial = candidate',
+  '    break',
+  '  except OSError:',
+  '    continue',
+  'if initial is None:',
+  '  sys.exit("Remote starting directory is unavailable")',
   'print(json.dumps({"homePath": home, "initialPath": initial}))',
 ].join('\n');
 
@@ -133,41 +149,15 @@ function validNewDirectoryName(value: unknown): value is string {
   return validBrowseName(value) && !value.includes('\\');
 }
 
-// A noninteractive SSH command does not reliably receive the account's login
-// PATH. Source only the POSIX login profile (never an interactive shell rc),
-// then add the same user CLI directories as the local harness wrapper.
-const REMOTE_CLI_PATH_SETUP = [
-  'if [ -r "$HOME/.profile" ]; then . "$HOME/.profile" >/dev/null; fi',
-  'for clanker_bin in "$HOME/bin" "$HOME/.npm-packages/bin" "$HOME/.local/bin" "$HOME/.npm-global/bin"; do',
-  '  case ":$PATH:" in *":$clanker_bin:"*) ;; *) PATH="$clanker_bin:$PATH" ;; esac',
-  'done',
-  'export PATH',
-].join('\n');
-
 function remoteHarnessEnvironment(env: Record<string, string> | undefined): string {
   return Object.entries(env ?? {})
-    .filter(([key]) => /^[A-Za-z_][A-Za-z_0-9]*$/.test(key) && !key.startsWith('CLANKER_ATTENTION_'))
+    .filter(([key]) => /^[A-Za-z_][A-Za-z_0-9]*$/.test(key) && !key.startsWith('CLANKER_ATTENTION_') && !key.startsWith('CLANKER_REMOTE_ATTENTION_'))
     .map(([key, value]) => `${key}=${quotePosixArg(value)}`)
     .join(' ');
 }
 
 function sshProcessEnvironment(): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(process.env).filter(([key, value]) => value !== undefined && !key.startsWith('CLANKER_ATTENTION_'))
-  ) as Record<string, string>;
-}
-
-export function isPathContained(rootPath: string, candidatePath: string): boolean {
-  if (!rootPath || !candidatePath) return false;
-  const normRoot = path.posix.normalize(rootPath).replace(/\/+$/, '') || '/';
-  const normCandidate = path.posix.normalize(candidatePath).replace(/\/+$/, '') || '/';
-
-  if (!path.posix.isAbsolute(normCandidate)) return false;
-  if (normRoot === normCandidate) return true;
-  if (normRoot === '/') return true;
-
-  const relative = path.posix.relative(normRoot, normCandidate);
-  return relative === '' || (!relative.startsWith('..') && !path.posix.isAbsolute(relative));
+  return withoutAttentionEnvironment(process.env);
 }
 
 export class SshEnvironment implements WorkspaceEnvironment {
@@ -175,28 +165,38 @@ export class SshEnvironment implements WorkspaceEnvironment {
   public readonly kind = 'ssh' as const;
   public readonly label: string;
   public readonly target: string;
+  public readonly worktreeResourceId: string;
+  private readonly defaultWorkspaceRoot?: string;
 
   public readonly capabilities: EnvironmentCapabilities = {
-    watchFiles: false,
-    worktrees: false,
+    watchFiles: true,
+    worktrees: true,
     revealInFileManager: false,
-    agentAttention: false,
-    sessionDiscovery: false,
+    agentAttention: true,
+    sessionDiscovery: true,
     annotationHandoff: false,
   };
 
   constructor(
     config: SshEnvironmentConfig,
-    private readonly executor: SshCommandExecutor = new SshCommandExecutor()
+    private readonly executor: SshCommandExecutor = new SshCommandExecutor(),
+    resourceId?: string
   ) {
     this.id = config.id;
     this.label = config.label;
     this.target = config.target;
+    this.worktreeResourceId = resourceId ?? `ssh:${config.target}`;
+    this.defaultWorkspaceRoot = config.defaultWorkspaceRoot;
+  }
+
+  public snapshotFiles(workspacePath: string, targets: RemoteFileSnapshotTargets, signal?: AbortSignal) {
+    return snapshotSshFiles(this.executor, this.target, workspacePath, targets, signal);
   }
 
   /** Read-only discovery before any workspace root has been registered. */
   public async getHomeDirectory(): Promise<{ homePath: string; initialPath: string }> {
-    const result = await this.executor.exec(this.target, 'python3', ['-c', HOME_DIRECTORY_SCRIPT], {
+    const args = ['-c', HOME_DIRECTORY_SCRIPT, ...(this.defaultWorkspaceRoot ? [this.defaultWorkspaceRoot] : [])];
+    const result = await this.executor.exec(this.target, 'python3', args, {
       timeoutMs: BROWSE_TIMEOUT_MS,
       maxBuffer: BROWSE_MAX_BYTES,
     });
@@ -611,6 +611,22 @@ export class SshEnvironment implements WorkspaceEnvironment {
     }
   }
 
+  public createWorktree(workspacePath: string, baseRef: string, branch: string) {
+    return createSshWorktree(this.executor, this.target, workspacePath, baseRef, branch);
+  }
+
+  public inspectWorktree(workspacePath: string, worktreePath: string, activePaths: string[]) {
+    return inspectSshWorktree(this.executor, this.target, workspacePath, worktreePath, activePaths);
+  }
+
+  public removeWorktree(workspacePath: string, worktreePath: string, expectedBranch: string | null, activePaths: string[], operationId: string) {
+    return removeSshWorktree(this.executor, this.target, workspacePath, worktreePath, expectedBranch, activePaths, operationId);
+  }
+
+  public waitForWorktreeOperations(workspacePath: string, operationId: string) {
+    return waitForSshWorktreeOperations(this.executor, this.target, workspacePath, operationId);
+  }
+
   public async execGit(
     workspacePath: string,
     args: string[],
@@ -653,6 +669,22 @@ export class SshEnvironment implements WorkspaceEnvironment {
     return options;
   }
 
+  public startPortForward(localPort: number, remotePort: number, signal: AbortSignal, onExit: (error: string) => void) {
+    return startSshPortForward(this.target, localPort, remotePort, signal, onExit);
+  }
+
+  public async discoverSessions(workspacePath: string) {
+    return discoverSshSessions(this.executor, this.target, workspacePath, await this.probeAvailableHarnessIds());
+  }
+
+  public async captureSessionBaseline(workspacePath: string, harnessId: string) {
+    const sessions = await discoverSshSessions(this.executor, this.target, workspacePath, [harnessId]);
+    const result = await this.executor.exec(this.target, 'python3', ['-c', 'import time; print(time.time() * 1000)'], { timeoutMs: 5000, maxBuffer: 1024 });
+    const hostTime = Number(result.stdout.trim());
+    if (!Number.isFinite(hostTime) || hostTime <= 0) throw new Error('Invalid SSH host clock');
+    return { sessions, hostTime };
+  }
+
   public async discoverHarnessModels(): Promise<EnvironmentModelOption[]> {
     // Model discovery is best-effort. Return empty array to use harness defaults on remote host
     return [];
@@ -660,18 +692,34 @@ export class SshEnvironment implements WorkspaceEnvironment {
 
   public async resolveTerminalSpawn(params: TerminalSpawnRequest): Promise<TerminalSpawnResolved> {
     const harnessConfig = params.harness ? HARNESS_OPTIONS[params.harness] : undefined;
-    const remoteScript = [
+    const remoteScript: string[] = [];
+    if (params.resumeSession) {
+      const { session, workspaceRoot } = params.resumeSession;
+      if (!harnessConfig || session.harness !== params.harness || session.cwd !== params.workingDir) throw new Error('Invalid remote session launch');
+      const check = `import os,sys\nroot,cwd,file,harness=sys.argv[1:]\nif not os.path.isdir(root) or os.path.realpath(root)!=root or not os.path.isdir(cwd) or os.path.realpath(cwd)!=cwd or not (cwd==root or cwd.startswith(root.rstrip('/')+'/')): sys.exit('Remote session directory is no longer within the workspace')\nif harness in ('pi','omp'):\n store=os.path.join(os.path.realpath(os.path.expanduser('~')),'.'+harness,'agent','sessions')\n if not file.endswith('.jsonl') or not os.path.isfile(file) or os.path.realpath(file)!=file or os.path.realpath(store)!=store or not file.startswith(store+'/'): sys.exit('Remote session file is no longer valid')\n`;
+      remoteScript.push(`${quotePosixCommand('python3', ['-c', check, workspaceRoot, session.cwd, session.filePath ?? '', session.harness])} || exit 1`);
+    }
+    remoteScript.push(
       `cd ${quotePosixArg(params.workingDir)} || exit 1`,
       REMOTE_CLI_PATH_SETUP,
-      'unset CLANKER_ATTENTION_PORT CLANKER_ATTENTION_TOKEN CLANKER_ATTENTION_HARNESS CLANKER_ATTENTION_COMMAND',
-    ];
+      `for clanker_key in $(env | sed -n 's/^\\(CLANKER_\\(REMOTE_\\)\\{0,1\\}ATTENTION_[A-Za-z_0-9]*\\)=.*/\\1/p'); do unset "$clanker_key"; done`,
+    );
 
+    let attention: Awaited<ReturnType<typeof prepareSshAttention>> | undefined;
     if (harnessConfig && params.harness) {
-      const harnessArgs = buildHarnessSpawnArgs(harnessConfig, params.model, params.flags);
-      const harnessEnv = remoteHarnessEnvironment(harnessConfig.env);
+      let harnessArgs = params.resumeSession
+        ? buildSessionCommand(params.resumeSession.session, params.resumeSession.fork, params.flags).args
+        : buildHarnessSpawnArgs(harnessConfig, params.model, params.flags);
+      if (params.attentionToken) {
+        attention = await prepareSshAttention(this.executor, this.target, params.harness, harnessArgs, params.attentionToken);
+        harnessArgs = attention.args;
+      }
+      const harnessEnv = [remoteHarnessEnvironment(harnessConfig.env), attention ? remoteAttentionEnvironment(attention.env) : ''].filter(Boolean).join(' ');
       const quotedHarness = quotePosixCommand(harnessConfig.command, harnessArgs);
       // Keep the foreground CLI interactive, then leave a usable shell on exit.
+      if (attention) remoteScript.push(`trap ${quotePosixArg(attention.endCommand)} EXIT HUP TERM`);
       remoteScript.push(`(${harnessEnv ? `${harnessEnv} ` : ''}${quotedHarness} || true)`);
+      if (attention) remoteScript.push(attention.endCommand, 'trap - EXIT HUP TERM');
     } else if (params.initialCommand) {
       remoteScript.push(`sh -c ${quotePosixArg(params.initialCommand)}`);
     }
@@ -695,7 +743,8 @@ export class SshEnvironment implements WorkspaceEnvironment {
       launchLabel,
       initialCommand: undefined, // Embedded directly into ssh remoteExec; avoid duplicate PTY stdin replay
       harnessId: harnessConfig ? params.harness : undefined,
-      attentionEnabled: false, // Agent Attention disabled for remote terminals in V1
+      attentionEnabled: Boolean(attention),
+      releaseAttention: attention?.release,
     };
   }
 }

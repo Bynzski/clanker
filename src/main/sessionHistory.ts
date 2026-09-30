@@ -16,6 +16,7 @@ import { fileURLToPath } from 'url';
 import type { HarnessSession } from '../shared/types/session';
 import type { HarnessId } from '../shared/harnessIds';
 import { ensureHarnessWrapperScript, resolveHarnessSpawn } from './harnessLaunch';
+import { buildSessionCommand } from './sessionLaunch';
 import { toNativePath, toPosixPath } from '../shared/pathNormalize';
 import { prependUserCliBinsToPath } from './platformShell';
 
@@ -206,71 +207,9 @@ export async function discoverSessionsDetailed(
   return discovery;
 }
 
-export function buildSessionInvokeArgs(
-  session: HarnessSession,
-  fork = false,
-  userFlags?: string
-): { spawnCmd: string; spawnArgs: string[] } {
-  const wrapperPath = ensureHarnessWrapperScript();
-
-  /** Helper: wrap harness args with the wrapper script, or invoke via cmd.exe on Windows. */
-  const wrapOrDirect = (harnessCmd: string, harnessArgs: string[]): { spawnCmd: string; spawnArgs: string[] } => {
-    return resolveHarnessSpawn(harnessCmd, harnessArgs, wrapperPath);
-  };
-
-  let modelStr: string | undefined;
-  if (session.modelId) {
-    if (session.harness === 'pi' && session.provider) {
-      modelStr = `${session.provider}/${session.modelId}`;
-    } else {
-      modelStr = session.modelId;
-    }
-  }
-
-  const flagArgs = userFlags && userFlags.trim() ? userFlags.trim().split(/\s+/) : [];
-
-  switch (session.harness) {
-    case 'opencode':
-      return wrapOrDirect('opencode', [
-        '--session', session.id, ...(fork ? ['--fork'] : []), ...flagArgs,
-      ]);
-
-    case 'pi': {
-      const target = session.filePath ? toPosixPath(session.filePath) : session.id;
-      return wrapOrDirect('pi', [
-        fork ? '--fork' : '--session', target,
-        ...(modelStr ? ['--model', modelStr] : []), ...flagArgs,
-      ]);
-    }
-
-    case 'omp': {
-      const target = session.filePath ? toPosixPath(session.filePath) : session.id;
-      return wrapOrDirect('omp', [
-        fork ? '--fork' : '--resume', target,
-        ...(modelStr ? ['--model', modelStr] : []), ...flagArgs,
-      ]);
-    }
-
-    case 'codex':
-      return wrapOrDirect('codex', [
-        fork ? 'fork' : 'resume', session.id,
-        ...(modelStr ? ['-m', modelStr] : []), ...flagArgs,
-      ]);
-
-    case 'agy':
-      return wrapOrDirect('agy', [
-        '--conversation', session.id,
-        ...(modelStr ? ['--model', modelStr] : []), ...flagArgs,
-      ]);
-
-    case 'claude':
-    default:
-      return wrapOrDirect('claude', [
-        '--resume', session.id,
-        ...(fork ? ['--fork-session'] : []),
-        ...(modelStr ? ['--model', modelStr] : []), ...flagArgs,
-      ]);
-  }
+export function buildSessionInvokeArgs(session: HarnessSession, fork = false, userFlags?: string): { spawnCmd: string; spawnArgs: string[] } {
+  const launch = buildSessionCommand({ ...session, ...(session.filePath ? { filePath: toPosixPath(session.filePath) } : {}) }, fork, userFlags);
+  return resolveHarnessSpawn(launch.command, launch.args, ensureHarnessWrapperScript());
 }
 
 // ============================================================================

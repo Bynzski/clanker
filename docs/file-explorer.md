@@ -82,7 +82,7 @@ The file explorer integrates with git to show file status:
 
 - **Modified files** — Display with a git status indicator
 - **Untracked files** — Visually distinguished from tracked files
-- **File updates** — Local file changes are detected by a local watcher. SSH workspaces have no remote watcher in V1. Remote Explorer contents refresh after Clanker-managed mutations and when the desktop app regains focus while that workspace is active and Explorer is visible. Clean remote editor tabs reload during that focus refresh; dirty tabs are not automatically overwritten. The Explorer's Refresh button requests current remote directory contents.
+- **File updates** — Local file changes are detected by a local watcher. The active SSH workspace uses one batched poll about every three seconds for up to 128 open editor files and 128 visible/expanded directories (at most 2,000 direct children each). Clean editor tabs reload; dirty buffers are preserved and flagged when their files change. SSH failures back off without treating files as deleted. Remote contents also refresh after Clanker-managed mutations and on desktop focus while Explorer is visible. Use Refresh for immediate updates or directories beyond the polling limits.
 
 ## Editor Integration
 

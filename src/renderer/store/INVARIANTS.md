@@ -60,7 +60,7 @@ These rules describe the implemented workspace residency system.
 | Terminal PTY output | Continues via `terminalSessionBridge` global listeners while parked; xterm instances cached in `xtermCache` |
 | Terminal input/focus | Active workspace only |
 | Editor file watchers | Local watched editor tabs across active and parked workspaces via `editorFileWatcher`; none on SSH workspaces |
-| Explorer watcher | Local active-workspace-only; SSH workspaces have no watcher; parked workspaces retain cached directory contents |
+| Explorer watcher | Local active-workspace-only; SSH uses one bounded batched poll for the active workspace's visible/expanded directories and open editor files; parked workspaces retain cached contents |
 | SSH focus refresh | While the active SSH workspace's Explorer is visible, desktop focus refreshes Explorer contents and reloads clean editor tabs; dirty tabs are not automatically overwritten |
 | Browser native view | Retained per workspace even when its renderer tree is cold; visible only for active and rebound on reactivate |
 | Editor `EditorView` | Resident for warm workspaces; destroyed when its workspace becomes cold and recreated from store state on reactivation |
@@ -120,6 +120,8 @@ xterm buffers, and native browser sessions remain warm across both states.
 - Tab IDs are renderer-generated and must be passed unchanged to main, so duplicates would corrupt the workspace → tab → `WebContentsView` map.
 - `browserUrl` predates the tab model; existing consumers (URL input, external links) read it directly. Treating it as the active-tab mirror keeps these consumers correct without forcing all of them to learn about tabs.
 - Inactive tab updates (e.g., a background load completing) must not redraw the URL bar or visible browser surface.
+- Browser activation explicitly synchronizes the renderer-selected tab with main. Only that workspace may show native views; remembered bounds and background tab actions cannot claim visibility. Bounds updates never replace an established tab selection.
+- Tab creation selects the new tab immediately in the store. Async create/navigation completions must respect later selections, closures, and workspace switches; close completions synchronize the current selection rather than a captured fallback.
 
 ### Editor Invariants
 

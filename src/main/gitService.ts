@@ -1,11 +1,13 @@
 import { execFile } from 'child_process';
 import { AsyncLocalStorage } from 'async_hooks';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { VcsProvider } from '../shared/types/vcs';
 import type { GitWorktree, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult } from '../shared/types/git';
+import { utf8ByteLength } from '../shared/utf8';
+import { worktreeDirectoryName } from './worktreePaths';
 
 export interface GitStatusEntry {
   path: string;
@@ -256,19 +258,19 @@ export class GitService {
     return normalize(left) === normalize(right);
   }
 
-  private worktreeDirectoryName(branch: string): string {
-    const readable = branch.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 16) || 'branch';
-    return `${readable}-${createHash('sha256').update(branch).digest('hex').slice(0, 20)}`;
-  }
-
   async listWorktrees(workspacePath: string): Promise<GitWorktreeListResult> {
     try {
       const { stdout } = await this.execGit(workspacePath, ['worktree', 'list', '--porcelain', '-z']);
+      const isRemote = (this.getScopedWorkspaceIdentity()?.environmentId ?? 'local') !== 'local';
       const records = stdout.split('\0\0').filter(Boolean);
       const worktrees = records.map((record, index): GitWorktree => {
         const lines = record.split('\0');
         const fullPath = lines.find((line) => line.startsWith('worktree '))?.slice(9);
         if (!fullPath) throw new Error('Git returned a worktree without a path');
+        if (isRemote &&
+            (!path.posix.isAbsolute(fullPath) || path.posix.normalize(fullPath) !== fullPath || utf8ByteLength(fullPath) > 4096)) {
+          throw new Error('Git returned an invalid remote worktree path');
+        }
         const branchRef = lines.find((line) => line.startsWith('branch '))?.slice(7);
         return {
           path: fullPath,
@@ -326,7 +328,7 @@ export class GitService {
         if (!/^[0-9a-f]{40,64}$/i.test(commit)) throw new Error('Base ref does not resolve to a commit');
       }
 
-      const destination = path.join(path.dirname(repoRoot), `${path.basename(repoRoot)}-worktrees`, this.worktreeDirectoryName(branch));
+      const destination = path.join(path.dirname(repoRoot), `${path.basename(repoRoot)}-worktrees`, worktreeDirectoryName(branch));
       try {
         fs.lstatSync(destination);
         return { success: false, error: `Destination already exists: ${destination}` };

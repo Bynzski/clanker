@@ -91,7 +91,7 @@ vi.mock('../../../src/main/fileWatcher', () => ({
 // ---------------------------------------------------------------------------
 
 import { registerFileIpc, type RegisterFileIpcDeps } from '../../../src/main/ipc/fileIpc';
-import { FILE_LIST_DIRECTORY, FILE_READ, FILE_WRITE, FILE_CREATE, FILE_DELETE, FILE_RENAME, REVEAL_IN_FILE_MANAGER, FILE_WATCH, FILE_UNWATCH, EXPLORER_START_WATCHING } from '../../../src/shared/ipcChannels';
+import { FILE_LIST_DIRECTORY, FILE_READ, FILE_WRITE, FILE_CREATE, FILE_DELETE, FILE_RENAME, REVEAL_IN_FILE_MANAGER, FILE_WATCH, FILE_UNWATCH, EXPLORER_START_WATCHING, REMOTE_FILES_WATCH } from '../../../src/shared/ipcChannels';
 import type { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
 
 // ---------------------------------------------------------------------------
@@ -133,6 +133,15 @@ function getMockExplorerWatcher() {
 describe('registerFileIpc', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  test('delegates batched remote monitoring without invoking local watchers', async () => {
+    const sync = vi.fn().mockReturnValue(true);
+    registerFileIpc({ getFileWatcher: getMockFileWatcher, getExplorerWatcher: getMockExplorerWatcher, getRemoteFileWatcher: () => ({ sync }) as never });
+    const request = { workspaceId: 'remote', filePaths: ['/ws/file'], directoryPaths: ['/ws'] };
+    expect(await extractHandler(REMOTE_FILES_WATCH)({}, request)).toBe(true);
+    expect(sync).toHaveBeenCalledWith(request);
+    expect(mockWatchFile).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------

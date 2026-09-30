@@ -102,6 +102,120 @@ describe('WorkspaceTabs', () => {
   // Basic Rendering
   // =========================================================================
   describe('basic rendering', () => {
+    it('reorders tabs by dragging without selecting an inactive workspace', () => {
+      const moveWorkspace = vi.fn();
+      const selectWorkspace = vi.fn();
+      useWorkspaceStore.setState({
+        workspaces: [
+          createMockWorkspace({ id: 'a', name: 'Alpha' }),
+          createMockWorkspace({ id: 'b', name: 'Beta' }),
+          createMockWorkspace({ id: 'c', name: 'Gamma' }),
+        ],
+        activeWorkspaceId: 'a',
+        moveWorkspace,
+        selectWorkspace,
+      });
+      render(<WorkspaceTabs onOpenWorkspace={vi.fn()} />);
+      const [alpha, , gamma] = screen.getAllByRole('tab');
+      const transfer = { effectAllowed: '', dropEffect: '', setData: vi.fn() };
+
+      fireEvent.dragStart(gamma, { dataTransfer: transfer });
+      fireEvent.dragOver(alpha, { dataTransfer: transfer });
+      expect(alpha).toHaveClass('drop-left');
+      fireEvent.drop(alpha, { dataTransfer: transfer });
+      fireEvent.dragEnd(gamma, { dataTransfer: transfer });
+      fireEvent.click(gamma);
+
+      expect(moveWorkspace).toHaveBeenCalledWith('c', 'a');
+      expect(selectWorkspace).not.toHaveBeenCalled();
+      expect(alpha).not.toHaveClass('drop-left');
+      expect(screen.getByRole('button', { name: 'Open Workspace' })).toBeTruthy();
+      expect(screen.getByRole('tablist').lastElementChild).toBe(screen.getByRole('button', { name: 'Open Workspace' }));
+    });
+
+    it('supports keyboard reordering without changing the active workspace', () => {
+      const moveWorkspace = vi.fn();
+      const selectWorkspace = vi.fn();
+      useWorkspaceStore.setState({
+        workspaces: [createMockWorkspace({ id: 'a', name: 'Alpha' }), createMockWorkspace({ id: 'b', name: 'Beta' })],
+        activeWorkspaceId: 'a',
+        moveWorkspace,
+        selectWorkspace,
+      });
+      render(<WorkspaceTabs />);
+      const [alpha, beta] = screen.getAllByRole('tab');
+      fireEvent.keyDown(alpha, { key: 'ArrowRight', altKey: true, shiftKey: true });
+      fireEvent.keyDown(beta, { key: 'ArrowLeft', altKey: true, shiftKey: true });
+      fireEvent.keyDown(alpha, { key: 'ArrowLeft', altKey: true, shiftKey: true });
+      expect(moveWorkspace.mock.calls).toEqual([['a', 'b'], ['b', 'a']]);
+      expect(selectWorkspace).not.toHaveBeenCalled();
+    });
+
+    it('does not reorder while editing a tab name', () => {
+      const moveWorkspace = vi.fn();
+      useWorkspaceStore.setState({
+        workspaces: [createMockWorkspace({ id: 'a' }), createMockWorkspace({ id: 'b' })],
+        activeWorkspaceId: 'a',
+        moveWorkspace,
+      });
+      render(<WorkspaceTabs />);
+      fireEvent.click(screen.getAllByTitle('Rename tab')[0]);
+      fireEvent.keyDown(screen.getByRole('textbox'), { key: 'ArrowRight', altKey: true, shiftKey: true });
+      expect(moveWorkspace).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['Close workspace', false], ['Close workspace', true], ['Rename tab', false], ['Rename tab', true],
+    ])('does not start a drag from %s (SVG descendant: %s)', (label, svg) => {
+      useWorkspaceStore.setState({ workspaces: [createMockWorkspace()], activeWorkspaceId: 'ws1' });
+      render(<WorkspaceTabs />);
+      const transfer = { effectAllowed: '', setData: vi.fn() };
+      const control = label === 'Close workspace' ? screen.getByLabelText(label) : screen.getByTitle(label);
+      const target = svg ? control.querySelector('svg path')! : control;
+      expect(target).toBeTruthy();
+      expect(fireEvent.dragStart(target, { dataTransfer: transfer })).toBe(false);
+      expect(transfer.setData).not.toHaveBeenCalled();
+    });
+
+    it('starts a drag from normal tab content', () => {
+      useWorkspaceStore.setState({ workspaces: [createMockWorkspace()], activeWorkspaceId: 'ws1' });
+      render(<WorkspaceTabs />);
+      const transfer = { effectAllowed: '', setData: vi.fn() };
+      fireEvent.dragStart(screen.getByText('Test Workspace'), { dataTransfer: transfer });
+      expect(transfer.setData).toHaveBeenCalledExactlyOnceWith('text/plain', 'ws1');
+      expect(transfer.effectAllowed).toBe('move');
+    });
+
+    it('leaves local tabs unmarked and labels SSH tabs with the configured environment', () => {
+      useWorkspaceStore.setState({
+        workspaces: [
+          createMockWorkspace({ id: 'local', name: 'Local Project', environmentId: 'local', environmentLabel: 'Local' }),
+          createMockWorkspace({ id: 'remote', name: 'Remote Project', environmentId: 'ssh-opaque-id', environmentLabel: 'devbox', workspacePath: '/srv/projects/remote' }),
+        ],
+        activeWorkspaceId: 'local',
+      });
+
+      render(<WorkspaceTabs />);
+
+      const [localTab, remoteTab] = screen.getAllByRole('tab');
+      expect(localTab).toHaveTextContent('Local Project');
+      expect(localTab.querySelector('.workspace-tab-remote')).toBeNull();
+      expect(localTab).toHaveAttribute('title', 'Local Project\n/path/to/workspace');
+      expect(remoteTab.querySelector('.workspace-tab-remote')).toHaveTextContent('SSH · devbox');
+      expect(remoteTab).not.toHaveTextContent('ssh-opaque-id');
+      expect(remoteTab).toHaveAttribute('title', 'SSH · devbox\nRemote Project\n/srv/projects/remote');
+    });
+
+    it('falls back to the environment ID when an SSH label is unavailable', () => {
+      useWorkspaceStore.setState({
+        workspaces: [createMockWorkspace({ environmentId: 'ssh-host-id' })],
+        activeWorkspaceId: 'ws1',
+      });
+
+      render(<WorkspaceTabs />);
+      expect(screen.getByRole('tab').querySelector('.workspace-tab-remote')).toHaveTextContent('SSH · ssh-host-id');
+    });
+
     it('labels a linked worktree with its branch', () => {
       useWorkspaceStore.setState({
         workspaces: [createMockWorkspace({ isLinkedWorktree: true, gitCurrentBranch: 'task/example' })],

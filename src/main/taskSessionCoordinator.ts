@@ -1,5 +1,5 @@
 import type { HarnessSession } from '../shared/types/session';
-import type { TaskSessionRecord, TaskRecoveryState } from '../shared/types/taskSessions';
+import type { TaskSessionRecord, TaskRecoveryState, RemoteSessionBaseline } from '../shared/types/taskSessions';
 import { normalizeWorkspacePath, isSameWorkspaceIdentity } from '../shared/workspaceIdentity';
 import type { WorkspacePersistenceService } from './workspacePersistence';
 import { discoverSessions } from './sessionHistory';
@@ -24,6 +24,7 @@ export class TaskSessionCoordinator {
     harnessId: string,
     modelId?: string,
     environmentId?: string,
+    remoteSessionBaseline?: RemoteSessionBaseline,
   ): TaskSessionRecord {
     const normalized = normalizeWorkspacePath(workspacePath);
     const envId = (environmentId && environmentId.trim()) ? environmentId.trim() : 'local';
@@ -35,6 +36,7 @@ export class TaskSessionCoordinator {
       id: taskId,
       workspacePath: normalized,
       environmentId: envId,
+      ...(envId !== 'local' && remoteSessionBaseline ? { remoteSessionBaseline } : {}),
       harnessId,
       ...(modelId ? { modelId } : {}),
       title,
@@ -55,7 +57,7 @@ export class TaskSessionCoordinator {
     const all = this.persistence.getAllTaskSessions();
 
     const existing = all.find(
-      (t) => t.nativeSessionId === session.id && isSameWorkspaceIdentity(
+      (t) => t.harnessId === session.harness && t.nativeSessionId === session.id && isSameWorkspaceIdentity(
         { environmentId: t.environmentId || 'local', path: t.workspacePath },
         { environmentId: envId, path: normalized }
       ),
@@ -105,7 +107,7 @@ export class TaskSessionCoordinator {
         ...task,
         terminalId: undefined,
         state: 'unavailable',
-        stateReason: 'Remote session recovery is not supported in this version',
+        stateReason: task.nativeSessionId ? 'Awaiting remote conversation verification' : 'Associate a remote conversation to resume this task',
         stoppedAt: Date.now(),
         updatedAt: Date.now(),
       };
@@ -169,7 +171,7 @@ export class TaskSessionCoordinator {
           ...task,
           terminalId: undefined,
           state,
-          ...(isRemote ? { stateReason: 'Remote session recovery is not supported in this version' } : {}),
+          ...(isRemote ? { stateReason: task.nativeSessionId ? 'Awaiting remote conversation verification' : 'Associate a remote conversation to resume this task' } : {}),
           stoppedAt: now,
           updatedAt: now,
         });

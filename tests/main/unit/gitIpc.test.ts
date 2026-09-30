@@ -96,6 +96,8 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import { registerGitIpc } from '../../../src/main/ipc/gitIpc';
 import { GitService, type GitStatusResult } from '../../../src/main/gitService';
 import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
+import type { RemoteWorktreeRemovalPersistence } from '../../../src/main/remote/remoteWorktreeCoordinator';
+import { remoteRemovalPaths } from '../../../src/main/remote/sshWorktreeRemoval';
 import { ipcMain } from 'electron';
 
 describe('registerGitIpc', () => {
@@ -972,7 +974,7 @@ describe('Git IPC workspace identity routing', () => {
     vi.clearAllMocks();
   });
 
-  function setup() {
+  function setup(getLiveRemoteTerminalPaths?: (environmentId: string) => string[] | null, remoteWorktreeRemovalPersistence?: RemoteWorktreeRemovalPersistence) {
     const statuses: GitStatusResult[] = [];
     const mainWindow = { webContents: { send: vi.fn() } };
     const makeEnvironment = (id: string) => ({
@@ -1008,6 +1010,8 @@ describe('Git IPC workspace identity routing', () => {
       getGitService: () => service,
       getMainWindow: () => mainWindow as never,
       getWorkspaceRegistry: () => registry,
+      getLiveRemoteTerminalPaths,
+      remoteWorktreeRemovalPersistence,
     });
     const handle = (channel: string) =>
       ipc.handle.mock.calls.find(([name]) => name === channel)?.[1] as (...args: unknown[]) => Promise<unknown>;
@@ -1019,6 +1023,172 @@ describe('Git IPC workspace identity routing', () => {
     await handle('git-get-history')(null, process.cwd(), 4);
     expect(local.execGit).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining(['log', '-n4']));
     expect(remote.execGit).not.toHaveBeenCalled();
+  });
+
+  const savedRemoval = {
+    operationId: '12345678-1234-1234-1234-123456789abc', environmentId: 'ssh', resourceId: 'ssh:host',
+    workspacePath: '/srv/repo', worktreePath: '/srv/task',
+  };
+
+  test.each([
+    ['damaged ID with plausible host paths', [{ ...savedRemoval, operationId: 'invalid' }]],
+    ['null collection', null],
+    ['object collection', {}],
+    ['unreadable persistence', new Error('Read failed')],
+    ['duplicate records', [savedRemoval, savedRemoval]],
+    ['conflicting reservations', [savedRemoval, { ...savedRemoval, operationId: 'abcdef01-1234-1234-1234-123456789abc' }]],
+  ])('blocks SSH registration before validation while preserving local access: %s', async (_label, evidence) => {
+    const write = vi.fn();
+    const read = () => {
+      if (evidence instanceof Error) throw evidence;
+      return evidence as ReturnType<RemoteWorktreeRemovalPersistence['read']>;
+    };
+    const { remote, local, registry, handle } = setup(undefined, { read, write });
+    for (const environmentId of ['ssh', ' ssh ']) {
+      expect(await handle('register-open-workspace')(null, 'blocked', '/srv/task', environmentId))
+        .toMatchObject({ success: false, error: expect.stringContaining('Manual recovery required') });
+      expect(registry.getWorkspace('blocked')).toBeNull();
+    }
+    expect(remote.validateWorkspacePath).not.toHaveBeenCalled();
+    expect(remote.execGit).not.toHaveBeenCalled();
+    for (const [index, environmentId] of [undefined, 'local', '', '  ', ' local '].entries()) {
+      const id = `local-${index}`;
+      expect(await handle('register-open-workspace')(null, id, process.cwd(), environmentId)).toMatchObject({ success: true });
+      expect(registry.getWorkspace(id)?.location.environmentId).toBe('local');
+    }
+    await handle('git-get-history')(null, process.cwd(), 4, 'local-0');
+    expect(local.execGit).toHaveBeenCalledWith(registry.getWorkspace('local-0')!.location.path, expect.arrayContaining(['log', '-n4']));
+    expect(write).not.toHaveBeenCalled();
+    if (Array.isArray(evidence) && evidence[0]?.operationId === savedRemoval.operationId) {
+      for (const record of evidence) {
+        for (const path of [record.worktreePath, ...Object.values(remoteRemovalPaths(record.worktreePath, record.operationId))]) {
+          expect(registry.isRemotePathReserved('ssh', path)).toBe(true);
+        }
+      }
+    }
+  });
+
+  test.each([{ evidence: [] }, { evidence: [savedRemoval] }])('keeps healthy persistence registration scoped to reserved paths: %j', async ({ evidence }) => {
+    const write = vi.fn();
+    const { remote, registry, handle } = setup(undefined, { read: () => evidence, write });
+    expect(await handle('register-open-workspace')(null, 'safe', workspacePath, 'ssh')).toMatchObject({ success: true });
+    expect(registry.getWorkspace('safe')?.location.environmentId).toBe('ssh');
+    expect(remote.validateWorkspacePath).toHaveBeenCalledExactlyOnceWith(workspacePath);
+    const result = await handle('register-open-workspace')(null, 'task', savedRemoval.worktreePath, 'ssh');
+    expect(result).toMatchObject(evidence.length
+      ? { success: false, error: expect.stringContaining('awaiting completion verification') }
+      : { success: true });
+    expect(registry.getWorkspace('task') !== null).toBe(evidence.length === 0);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  test('registers Git IPC despite damaged removal state, blocks remote worktrees, and keeps local Git usable', async () => {
+    const write = vi.fn();
+    const { remote, local, registry, handle } = setup(undefined, { read: () => [null] as unknown as ReturnType<RemoteWorktreeRemovalPersistence['read']>, write });
+    await registry.registerWorkspace({ workspaceId: 'ssh-tab', environmentId: 'ssh', workspacePath });
+    const createWorktree = vi.fn();
+    Object.assign(remote, { createWorktree });
+    for (const [channel, args] of [
+      ['git-list-worktrees', [workspacePath, 'ssh-tab']],
+      ['git-create-worktree', [workspacePath, 'HEAD', 'task', 'ssh-tab']],
+      ['git-inspect-worktree', [workspacePath, '/srv/task', [], 'ssh-tab']],
+      ['git-remove-worktree', [workspacePath, '/srv/task', 'task', [], 'ssh-tab']],
+    ] as const) {
+      expect(await handle(channel)(null, ...args)).toMatchObject({ success: false, error: expect.stringContaining('Manual recovery required') });
+    }
+    expect(createWorktree).not.toHaveBeenCalled();
+    expect(remote.execGit).not.toHaveBeenCalled();
+    await handle('git-get-history')(null, process.cwd(), 4);
+    expect(local.execGit).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining(['log', '-n4']));
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  test('discovers remote worktrees through the registered identity and keeps mutations disabled', async () => {
+    const { local, remote, handle } = setup();
+    await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+    remote.execGit.mockResolvedValueOnce({ stdout: 'worktree /srv/repo\0branch refs/heads/main\0\0worktree /srv/Repo-task\0branch refs/heads/task\0locked reason\0\0', stderr: '' });
+    const result = await handle('git-list-worktrees')(null, '/forged/local/path', 'ssh-tab');
+    expect(result).toMatchObject({ success: true, worktrees: [
+      { path: '/srv/repo', isMain: true, branch: 'main' },
+      { path: '/srv/Repo-task', isMain: false, branch: 'task', isLocked: true },
+    ] });
+    expect(remote.execGit).toHaveBeenCalledWith(workspacePath, ['worktree', 'list', '--porcelain', '-z']);
+    expect(local.execGit).not.toHaveBeenCalled();
+    expect(await handle('git-create-worktree')(null, workspacePath, 'main', 'task', 'ssh-tab')).toMatchObject({ success: false });
+    expect(await handle('git-inspect-worktree')(null, workspacePath, '/srv/Repo-task', [], 'ssh-tab')).toMatchObject({ success: false });
+    expect(await handle('git-remove-worktree')(null, workspacePath, '/srv/Repo-task', 'task', [], 'ssh-tab')).toMatchObject({ success: false });
+    expect(remote.execGit).toHaveBeenCalledTimes(1);
+    await expect(handle('git-list-worktrees')(null, workspacePath, 'unregistered')).rejects.toThrow('no longer registered');
+  });
+
+  test.each(['relative/path', '/srv/../escape'])('rejects malformed remote worktree path %s', async (worktreePath) => {
+    const { remote, handle } = setup();
+    await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+    remote.execGit.mockResolvedValueOnce({ stdout: `worktree ${worktreePath}\0branch refs/heads/main\0\0`, stderr: '' });
+    expect(await handle('git-list-worktrees')(null, workspacePath, 'ssh-tab')).toMatchObject({ success: false, worktrees: [], error: expect.stringContaining('invalid remote worktree path') });
+  });
+
+  test('creates on the registered SSH environment without invoking local worktree code', async () => {
+    const { local, remote, registry, service, handle } = setup();
+    const createWorktree = vi.fn().mockResolvedValue({ success: true, worktree: { path: '/srv/Repo-worktrees/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false } });
+    Object.assign(remote, { createWorktree });
+    const localCreate = vi.spyOn(service, 'createWorktree');
+    await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+    expect(await handle('git-create-worktree')(null, '/forged/local/path', 'HEAD', 'task', 'ssh-tab')).toMatchObject({ success: true, worktree: { path: '/srv/Repo-worktrees/task' } });
+    expect(createWorktree).toHaveBeenCalledWith(workspacePath, 'HEAD', 'task');
+    expect(localCreate).not.toHaveBeenCalled();
+    expect(local.execGit).not.toHaveBeenCalled();
+    await registry.unregisterWorkspace('ssh-tab');
+    await expect(handle('git-create-worktree')(null, workspacePath, 'HEAD', 'other', 'ssh-tab')).rejects.toThrow('no longer registered');
+    expect(createWorktree).toHaveBeenCalledTimes(1);
+  });
+
+  test('inspects using authoritative same-host workspace and terminal activity', async () => {
+    const terminalPaths = vi.fn().mockReturnValue(['/srv/other/src']);
+    const { remote, local, handle } = setup(terminalPaths);
+    const inspectWorktree = vi.fn().mockResolvedValue({ success: true, hasChanges: false, worktree: { path: '/srv/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false } });
+    Object.assign(remote, { inspectWorktree });
+    await handle('register-open-workspace')(null, 'source', workspacePath, 'ssh');
+    await handle('register-open-workspace')(null, 'same-host', '/srv/other', 'ssh');
+    await handle('register-open-workspace')(null, 'local-tab', '/srv/local', 'local');
+    expect(await handle('git-inspect-worktree')(null, '/forged', '/srv/task', ['/untrusted'], 'source')).toMatchObject({ success: true });
+    expect(inspectWorktree).toHaveBeenCalledWith(workspacePath, '/srv/task', [workspacePath, '/srv/other', '/srv/other/src'].sort());
+    expect(terminalPaths).toHaveBeenCalledWith('ssh');
+    expect(local.execGit).not.toHaveBeenCalled();
+    expect(await handle('git-remove-worktree')(null, workspacePath, '/srv/task', 'task', [], 'source')).toMatchObject({ success: false });
+  });
+
+  test('refuses unverifiable terminals and invalidates inspection when activity changes in flight', async () => {
+    const terminalPaths = vi.fn<() => string[] | null>().mockReturnValue(null);
+    const { remote, handle } = setup(terminalPaths);
+    let resolve!: (result: { success: boolean }) => void;
+    const inspectWorktree = vi.fn().mockImplementation(() => new Promise((done) => { resolve = done; }));
+    Object.assign(remote, { inspectWorktree });
+    await handle('register-open-workspace')(null, 'source', workspacePath, 'ssh');
+    expect(await handle('git-inspect-worktree')(null, workspacePath, '/srv/task', [], 'source')).toMatchObject({ success: false, error: expect.stringContaining('could not be verified') });
+    expect(inspectWorktree).not.toHaveBeenCalled();
+    terminalPaths.mockReturnValue([]);
+    const pending = handle('git-inspect-worktree')(null, workspacePath, '/srv/task', [], 'source');
+    terminalPaths.mockReturnValue(['/srv/task']);
+    resolve({ success: true });
+    expect(await pending).toMatchObject({ success: false, error: expect.stringContaining('changed during inspection') });
+  });
+
+  test('routes removal through the registered host and reconciles uncertain completion on refresh', async () => {
+    const { remote, local, registry, handle } = setup();
+    const worktree = { path: '/srv/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false };
+    const inspectWorktree = vi.fn().mockResolvedValue({ success: true, worktree, hasChanges: false });
+    const removeWorktree = vi.fn().mockResolvedValue({ success: false, uncertain: true, error: 'SSH disconnected' });
+    const waitForWorktreeOperations = vi.fn().mockResolvedValue(undefined);
+    Object.assign(remote, { inspectWorktree, removeWorktree, waitForWorktreeOperations });
+    await handle('register-open-workspace')(null, 'source', workspacePath, 'ssh');
+    expect(await handle('git-remove-worktree')(null, '/forged', '/srv/task', 'task', ['/untrusted'], 'source')).toMatchObject({ success: false });
+    expect(removeWorktree).toHaveBeenCalledWith(workspacePath, '/srv/task', 'task', [workspacePath], expect.any(String));
+    expect(registry.isRemotePathReserved('ssh', '/srv/task')).toBe(true);
+    expect(await handle('git-list-worktrees')(null, '/forged', 'source')).toMatchObject({ success: true });
+    expect(waitForWorktreeOperations).toHaveBeenCalledWith(workspacePath, removeWorktree.mock.calls[0][4]);
+    expect(registry.isRemotePathReserved('ssh', '/srv/task')).toBe(false);
+    expect(local.execGit).not.toHaveBeenCalled();
   });
 
   test('same-path operations retain their environment across overlapping Git commands', async () => {
@@ -1063,7 +1233,7 @@ describe('Git IPC workspace identity routing', () => {
       expect.objectContaining({ workspaceId: 'ssh-tab', environmentId: 'ssh', workspacePath, currentBranch: 'ssh' }));
     expect(await handle('git-push')(null, workspacePath, 'origin', 'main', false, true, 'ssh-tab')).toEqual({ success: true });
     expect(remote.execGit).toHaveBeenCalledWith(workspacePath, ['push', '--set-upstream', 'origin', 'main']);
-    expect(await handle('git-list-worktrees')(null, workspacePath, 'ssh-tab')).toEqual(expect.objectContaining({ success: false }));
+    expect(await handle('git-list-worktrees')(null, workspacePath, 'ssh-tab')).toEqual(expect.objectContaining({ success: true }));
     expect(await handle('git-create-worktree')(null, workspacePath, 'main', 'task', 'ssh-tab')).toEqual(expect.objectContaining({ success: false }));
     await expect(handle('git-get-branch-state')(null, workspacePath, 'stale-tab'))
       .rejects.toThrow('Workspace identity is no longer registered');

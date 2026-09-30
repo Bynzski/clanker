@@ -211,6 +211,7 @@ describe('registerBrowserIpc', () => {
 
     // Verify all expected channels are registered
     const expectedChannels = [
+      'browser-activate',
       'browser-set-bounds',
       'browser-hide',
       'browser-navigate',
@@ -238,14 +239,14 @@ describe('registerBrowserIpc', () => {
     });
   });
 
-  test('registers exactly 22 browser IPC channels', () => {
+  test('registers exactly 24 browser IPC handlers', () => {
     const { deps } = createMockDeps();
 
     registerBrowserIpc(deps);
 
     // Count how many times handle was called
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(23);
+    expect(handleCalls.length).toBe(24);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -257,7 +258,7 @@ describe('registerBrowserIpc', () => {
 
     // Handlers should be registered again
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(46);
+    expect(handleCalls.length).toBe(48);
   });
 
   test('browser context menu can open devtools and inspect the clicked element', () => {
@@ -958,6 +959,7 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     await create(null, 'ws-1', 'tab-b');
     await create(null, 'ws-1', 'tab-c');
     await navigate(null, 'ws-1', 'tab-b', 'https://example.com/');
+    await findHandler('browser-activate')(null, 'ws-1', 'tab-c');
     await setBounds(null, 'ws-1', { x: 0, y: 0, width: 500, height: 300 }, 'tab-c');
 
     expect(await move(null, 'ws-1', 'tab-a', 'tab-c', 'tab-b')).toBe(true);
@@ -980,6 +982,7 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
     await create(null, 'ws-1', 'tab-old');
     await create(null, 'ws-1', 'tab-new');
     await navigate(null, 'ws-1', 'tab-old', 'https://redsox.com/');
+    await findHandler('browser-activate')(null, 'ws-1', 'tab-old');
     await setBounds(null, 'ws-1', { x: 0, y: 0, width: 500, height: 300 }, 'tab-old');
     await switchTab(null, 'ws-1', 'tab-new');
     await setBounds(null, 'ws-1', { x: 0, y: 0, width: 500, height: 300 }, 'tab-old');
@@ -1167,6 +1170,7 @@ describe('registerBrowserIpc — tab handlers (Phase 1)', () => {
 
     await switchTab(null, 'ws-1', 'tab-b');
     await setBounds(null, 'ws-1', { x: 1, y: 2, width: 300, height: 200 }, 'tab-a');
+    await findHandler('browser-activate')(null, 'ws-1', 'tab-b');
 
     const workspaceViews = mockBrowserViews.get('ws-1') as Map<string, { view: { setVisible: ReturnType<typeof vi.fn>; setBounds: ReturnType<typeof vi.fn> } }>;
     expect(workspaceViews.get('tab-a')?.view.setVisible).toHaveBeenLastCalledWith(false);
@@ -1309,6 +1313,66 @@ describe('registerBrowserIpc — integration hardening (Phase 6)', () => {
     __resetBrowserHistoryServiceForTests(new BrowserHistoryService(new MemoryHistoryStore()));
   });
 
+  test('late background tab operations and bounds cannot take over the foreground workspace', async () => {
+    const { deps, mockBrowserViews } = createMockDeps();
+    registerBrowserIpc(deps);
+    const create = findHandler('browser-create-tab');
+    const activate = findHandler('browser-activate');
+    const bounds = findHandler('browser-set-bounds');
+    const switchTab = findHandler('browser-switch-tab');
+    const navigate = findHandler('browser-tab-navigate');
+    const viewport = { x: 0, y: 0, width: 800, height: 600 };
+    for (const [workspaceId, tabs] of [['ws-a', ['a1', 'a2']], ['ws-b', ['b1', 'b2']]] as const) {
+      for (const tabId of tabs) await create(null, workspaceId, tabId);
+    }
+    await activate(null, 'ws-a', 'a2');
+    await bounds(null, 'ws-a', viewport, 'a2');
+
+    let finish!: () => void;
+    const delayedCreation = new Promise<void>((resolve) => { finish = resolve; }).then(async () => {
+      await create(null, 'ws-a', 'a3');
+      await navigate(null, 'ws-a', 'a3', 'https://a3.example/');
+      await switchTab(null, 'ws-a', 'a3');
+      await bounds(null, 'ws-a', viewport, 'a2');
+      await findHandler('browser-move-tab')(null, 'ws-a', 'a1', 'a2', 'a3');
+    });
+    await activate(null, 'ws-b', 'b2');
+    await bounds(null, 'ws-b', viewport, 'b2');
+    finish();
+    await delayedCreation;
+
+    expect(deps.getActiveBrowserWorkspaceId()).toBe('ws-b');
+    const assertVisible = (workspaceId: string, tabId: string) => {
+      for (const [id, views] of mockBrowserViews) {
+        for (const [tab, { view }] of views) {
+          expect(view.setVisible).toHaveBeenLastCalledWith(id === workspaceId && tab === tabId);
+        }
+      }
+    };
+    assertVisible('ws-b', 'b2');
+
+    // Reconcile a renderer selection that differs from the background main state.
+    await activate(null, 'ws-a', 'a1');
+    assertVisible('ws-a', 'a1');
+    await switchTab(null, 'ws-a', 'a2');
+    await bounds(null, 'ws-a', viewport, 'a1');
+    assertVisible('ws-a', 'a2');
+    await activate(null, 'ws-b', 'b1');
+    await bounds(null, 'ws-a', viewport, 'a3');
+    assertVisible('ws-b', 'b1');
+    await activate(null, 'ws-a', 'a3');
+    expect(await findHandler('browser-get-url')(null, 'ws-a')).toBe('https://a3.example/');
+    assertVisible('ws-a', 'a3');
+
+    await findHandler('browser-hide')(null, 'ws-a');
+    await bounds(null, 'ws-a', viewport, 'a3');
+    await switchTab(null, 'ws-a', 'a2');
+    expect(deps.getActiveBrowserWorkspaceId()).toBeNull();
+    for (const views of mockBrowserViews.values()) {
+      for (const { view } of views.values()) expect(view.setVisible).toHaveBeenLastCalledWith(false);
+    }
+  });
+
   test('no stale views remain visible after tab switch', async () => {
     const { deps, mockBrowserViews } = createMockDeps();
     registerBrowserIpc(deps);
@@ -1322,6 +1386,7 @@ describe('registerBrowserIpc — integration hardening (Phase 6)', () => {
     await create(null, 'ws-1', 'tab-c');
 
     // Show tab-a
+    await findHandler('browser-activate')(null, 'ws-1', 'tab-a');
     await setBounds(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 }, 'tab-a');
     // Switch to tab-c
     await switchTab(null, 'ws-1', 'tab-c');
@@ -1390,6 +1455,8 @@ describe('registerBrowserIpc — integration hardening (Phase 6)', () => {
     await create(null, 'ws-1', 'tab-a');
     await create(null, 'ws-1', 'tab-b');
     await setBounds(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 }, 'tab-b');
+
+    await findHandler('browser-activate')(null, 'ws-1', 'tab-b');
 
     // Close active tab-b — should fall back to tab-a
     await close(null, 'ws-1', 'tab-b');

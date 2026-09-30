@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import Header from '../../../src/renderer/components/Header';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { installElectronApiMock } from '../../setup/electron';
+import { createWorkspaceFixture } from '../../setup/fixtures';
 
 // Mock GitButton to isolate Header tests
 vi.mock('../../../src/renderer/components/GitButton', () => ({
@@ -13,6 +15,23 @@ vi.mock('../../../src/renderer/components/GitButton', () => ({
 }));
 
 describe('Header', () => {
+  it('discovers history on SSH workspaces and ignores late responses from a previous workspace', async () => {
+    // This setup runs after beforeEach, keeping the usual header fixture intact.
+    installElectronApiMock();
+    let finish!: (sessions: import('../../../src/shared/types/session').HarnessSession[]) => void;
+    vi.mocked(window.electronAPI.discoverSessions).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    useWorkspaceStore.setState({ workspaces: [createWorkspaceFixture({ id: 'remote-a', environmentId: 'ssh-a' }), createWorkspaceFixture({ id: 'remote-b', environmentId: 'ssh-b' })], activeWorkspaceId: 'remote-a' });
+    render(<Header />);
+    fireEvent.click(screen.getByRole('button', { name: 'Chat history' }));
+    expect(window.electronAPI.discoverSessions).toHaveBeenCalledWith('remote-a');
+    act(() => { useWorkspaceStore.setState({ activeWorkspaceId: 'remote-b' }); });
+    await act(async () => finish([{ id: 'old', harness: 'codex', title: 'Host A session', cwd: '/workspace', timestamp: 1 }]));
+    expect(screen.queryByText('Host A session')).toBeNull();
+    expect(screen.queryByText(/Remote history is read-only/)).toBeNull();
+    vi.mocked(window.electronAPI.discoverSessions).mockResolvedValue([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Chat history' }));
+    await waitFor(() => expect(window.electronAPI.discoverSessions).toHaveBeenCalledWith('remote-b'));
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     useWorkspaceStore.setState({

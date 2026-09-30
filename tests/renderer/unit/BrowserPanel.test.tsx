@@ -5,6 +5,7 @@ import { render, screen, fireEvent, act, cleanup, waitFor } from '@testing-libra
 import BrowserPanel from '../../../src/renderer/components/BrowserPanel';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import type { BrowserPaneState, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
+import type { RemotePreviewResult } from '../../../src/shared/types/remotePreview';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
 class MockResizeObserver {
@@ -170,6 +171,7 @@ function setupElectronAPIMocks() {
     browserCreateTab: mockBrowserCreateTab,
     browserCloseTab: mockBrowserCloseTab,
     browserSwitchTab: mockBrowserSwitchTab,
+    browserActivate: vi.fn().mockResolvedValue(true),
     browserMoveTab: mockBrowserMoveTab,
     browserTabNavigate: mockBrowserTabNavigate,
     browserHistoryGet: mockBrowserHistoryGet,
@@ -791,8 +793,7 @@ describe('BrowserPanel', () => {
 
     it('preserves lastBoundsRef and forces one reactivation bounds call on workspace switch-back', async () => {
       // When switching back to a workspace, the browser must become visible again.
-      // Simply restoring the last bounds is sufficient — the IPC both repositions
-      // the view and (via updateBrowserView → setVisible(true)) makes it visible.
+      // Explicit activation restores selection; cached bounds restore geometry.
       // scheduleBoundsUpdate() alone cannot be relied upon because it early-returns
       // when lastBoundsRef is non-null and within the 1px jitter threshold.
       setupStore({ browserVisible: true, browserOverlayCount: 0 });
@@ -824,6 +825,7 @@ describe('BrowserPanel', () => {
 
       // Switch back: browser must be re-shown via a bounds IPC with preserved bounds
       mockBrowserSetBounds.mockClear();
+      vi.mocked(window.electronAPI.browserActivate).mockClear();
       useWorkspaceStore.setState({ activeWorkspaceId: 'workspace-1' });
 
       act(() => {
@@ -834,6 +836,7 @@ describe('BrowserPanel', () => {
       // One explicit bounds IPC restores visibility (not suppressed by threshold)
       expect(mockBrowserSetBounds).toHaveBeenCalledTimes(1);
       expect(mockBrowserSetBounds).toHaveBeenCalledWith('workspace-1', preservedBounds);
+      expect(window.electronAPI.browserActivate).toHaveBeenCalledExactlyOnceWith('workspace-1', undefined);
     });
 
     it('clears lastBoundsRef only on true component unmount', () => {
@@ -1210,6 +1213,99 @@ describe('BrowserPanel', () => {
         { id: 'tab-a', url: 'https://github.com', title: 'GitHub', canGoBack: false, canGoForward: false },
         { id: 'tab-b', url: 'https://example.com/docs', title: '', canGoBack: true, canGoForward: false },
       ],
+    });
+
+    it('reconciles the selected tab on workspace activation without reordering', async () => {
+      setupStore({ browserPane: { ...createTabbedPane(), activeTabId: 'tab-b' } });
+      render(<BrowserPanel layoutVersion={1} workspaceId="workspace-1" />);
+      expect(window.electronAPI.browserActivate).toHaveBeenCalledWith('workspace-1', 'tab-b');
+      act(() => { useWorkspaceStore.setState({ activeWorkspaceId: 'workspace-2' }); });
+      vi.mocked(window.electronAPI.browserActivate).mockClear();
+      act(() => { useWorkspaceStore.setState({ activeWorkspaceId: 'workspace-1' }); });
+      expect(window.electronAPI.browserActivate).toHaveBeenCalledExactlyOnceWith('workspace-1', 'tab-b');
+      expect(mockBrowserMoveTab).not.toHaveBeenCalled();
+    });
+
+    it('does not reselect the old fallback after a delayed close completes', async () => {
+      const pane = createTabbedPane();
+      pane.tabs.push({ id: 'tab-c', url: 'https://third.example', title: 'Third', canGoBack: false, canGoForward: false });
+      setupStore({ browserPane: pane });
+      let finishClose!: (closed: boolean) => void;
+      mockBrowserCloseTab.mockReturnValueOnce(new Promise<boolean>((resolve) => { finishClose = resolve; }));
+      render(<BrowserPanel layoutVersion={1} />);
+      fireEvent.click(screen.getAllByTitle('Close tab')[0]);
+      fireEvent.click(screen.getByRole('tab', { name: 'Third' }));
+      await waitFor(() => expect(screen.getByRole('tab', { name: 'Third' })).toHaveAttribute('aria-selected', 'true'));
+      mockBrowserSwitchTab.mockClear();
+      await act(async () => finishClose(true));
+      expect(mockBrowserSwitchTab).toHaveBeenCalledExactlyOnceWith('workspace-1', 'tab-c');
+      expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserPane?.activeTabId).toBe('tab-c');
+    });
+
+    it('does not switch the old workspace after a delayed close completes', async () => {
+      setupStore({ browserPane: createTabbedPane() });
+      let finishClose!: (closed: boolean) => void;
+      mockBrowserCloseTab.mockReturnValueOnce(new Promise<boolean>((resolve) => { finishClose = resolve; }));
+      render(<BrowserPanel layoutVersion={1} workspaceId="workspace-1" />);
+      fireEvent.click(screen.getAllByTitle('Close tab')[0]);
+      act(() => { useWorkspaceStore.setState({ activeWorkspaceId: 'workspace-2' }); });
+      mockBrowserSwitchTab.mockClear();
+      await act(async () => finishClose(true));
+      expect(mockBrowserSwitchTab).not.toHaveBeenCalled();
+      expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('workspace-2');
+    });
+
+    function setupRemoteBrowser() {
+      const browserPane = createTabbedPane();
+      setupStore({
+        browserPane,
+        workspaces: [createWorkspaceFixture({
+          id: 'workspace-1', environmentId: 'ssh-a', lifecycle: 'active', browserPane, browserVisible: true,
+        })],
+      });
+      window.electronAPI.remotePreviewGet = vi.fn().mockResolvedValue(null);
+      window.electronAPI.remotePreviewStart = vi.fn();
+      window.electronAPI.onRemotePreviewChanged = vi.fn(() => vi.fn());
+    }
+
+    it('retains preview inputs and errors across browser tab switches without refetching', async () => {
+      setupRemoteBrowser();
+      vi.mocked(window.electronAPI.remotePreviewStart).mockResolvedValue({ success: false, forward: null, error: 'Address already in use' });
+      render(<BrowserPanel layoutVersion={1} />);
+      await act(async () => {});
+
+      fireEvent.change(screen.getByLabelText('Remote preview port'), { target: { value: '3100' } });
+      fireEvent.change(screen.getByLabelText('Local preview port'), { target: { value: '4300' } });
+      fireEvent.click(screen.getByText('Start preview'));
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Address already in use'));
+      fireEvent.click(screen.getByRole('tab', { name: 'example.com' }));
+      await waitFor(() => expect(screen.getByRole('tab', { name: 'example.com' })).toHaveAttribute('aria-selected', 'true'));
+
+      expect(screen.getByLabelText('Remote preview port')).toHaveValue(3100);
+      expect(screen.getByLabelText('Local preview port')).toHaveValue(4300);
+      expect(screen.getByRole('alert')).toHaveTextContent('Address already in use');
+      expect(window.electronAPI.remotePreviewGet).toHaveBeenCalledTimes(1);
+      expect(window.electronAPI.onRemotePreviewChanged).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens an in-flight preview in the selected browser tab after switching tabs', async () => {
+      setupRemoteBrowser();
+      let resolveStart!: (result: RemotePreviewResult) => void;
+      vi.mocked(window.electronAPI.remotePreviewStart).mockReturnValue(new Promise((resolve) => { resolveStart = resolve; }));
+      render(<BrowserPanel layoutVersion={1} />);
+      await act(async () => {});
+      fireEvent.click(screen.getByText('Start preview'));
+      fireEvent.click(screen.getByRole('tab', { name: 'example.com' }));
+      await waitFor(() => expect(screen.getByRole('tab', { name: 'example.com' })).toHaveAttribute('aria-selected', 'true'));
+
+      await act(async () => resolveStart({
+        success: true,
+        forward: { workspaceId: 'workspace-1', remotePort: 3000, localPort: 3000, status: 'active', url: 'http://127.0.0.1:3000/' },
+      }));
+
+      expect(mockBrowserTabNavigate).toHaveBeenCalledExactlyOnceWith('workspace-1', 'tab-b', 'http://127.0.0.1:3000/');
+      expect(screen.getByText('Open preview')).toBeInTheDocument();
+      expect(window.electronAPI.remotePreviewGet).toHaveBeenCalledTimes(1);
     });
 
     it('renders browser tabs in the pane header', () => {

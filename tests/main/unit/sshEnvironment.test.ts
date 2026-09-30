@@ -69,6 +69,15 @@ describe('SshEnvironment', () => {
       );
     });
 
+    it('captures harness-specific session IDs before reading the host clock', async () => {
+      vi.mocked(mockExecutor.exec)
+        .mockResolvedValueOnce({ stdout: '[]', stderr: '', exitCode: 0 })
+        .mockResolvedValueOnce({ stdout: '8000000\n', stderr: '', exitCode: 0 });
+      expect(await env.captureSessionBaseline('/repo', 'codex')).toEqual({ sessions: [], hostTime: 8_000_000 });
+      expect(mockExecutor.exec).toHaveBeenNthCalledWith(1, 'user@test-host', 'python3', expect.arrayContaining(['/repo', '["codex"]']), expect.any(Object));
+      expect(mockExecutor.exec).toHaveBeenNthCalledWith(2, 'user@test-host', 'python3', ['-c', 'import time; print(time.time() * 1000)'], expect.objectContaining({ timeoutMs: 5000, maxBuffer: 1024 }));
+    });
+
     it('validates workspace path and resolves canonical directory', async () => {
       vi.mocked(mockExecutor.exec).mockResolvedValueOnce({
         stdout: '/var/www/canonical-app\n',
@@ -509,6 +518,22 @@ describe('pre-workspace SSH directory browsing', () => {
       } as unknown as SshCommandExecutor;
       const env = new SshEnvironment(config, executor);
       expect(await env.getHomeDirectory()).toEqual({ homePath: home, initialPath: workspaces });
+      const customAlias = join(sandbox, "repos $pecial ü's");
+      await symlink(external, customAlias);
+      const customEnv = new SshEnvironment({ ...config, defaultWorkspaceRoot: customAlias }, executor);
+      expect(await customEnv.getHomeDirectory()).toEqual({ homePath: home, initialPath: external });
+      expect(executor.exec).toHaveBeenLastCalledWith(config.target, 'python3', ['-c', expect.any(String), customAlias], expect.any(Object));
+      await chmod(home, 0o000);
+      expect(await customEnv.getHomeDirectory()).toEqual({ homePath: home, initialPath: external });
+      await expect(env.getHomeDirectory()).rejects.toThrow('Remote starting directory is unavailable');
+      await chmod(home, 0o755);
+      const missingEnv = new SshEnvironment({ ...config, defaultWorkspaceRoot: join(sandbox, 'missing') }, executor);
+      expect(await missingEnv.getHomeDirectory()).toEqual({ homePath: home, initialPath: workspaces });
+      const fileEnv = new SshEnvironment({ ...config, defaultWorkspaceRoot: join(workspaces, 'ordinary.txt') }, executor);
+      expect(await fileEnv.getHomeDirectory()).toEqual({ homePath: home, initialPath: workspaces });
+      await chmod(external, 0o000);
+      expect(await customEnv.getHomeDirectory()).toEqual({ homePath: home, initialPath: workspaces });
+      await chmod(external, 0o755);
       const listing = await env.listBrowsableDirectories(workspaces);
       expect(listing).toEqual({
         path: workspaces,
@@ -530,8 +555,11 @@ describe('pre-workspace SSH directory browsing', () => {
       await chmod(workspaces, 0o755);
       await rm(workspaces, { recursive: true });
       expect(await env.getHomeDirectory()).toEqual({ homePath: home, initialPath: home });
+      expect(await missingEnv.getHomeDirectory()).toEqual({ homePath: home, initialPath: home });
       await expect(env.listBrowsableDirectories(workspaces)).rejects.toThrow();
     } finally {
+      await chmod(home, 0o755).catch(() => {});
+      await chmod(external, 0o755).catch(() => {});
       await chmod(workspaces, 0o755).catch(() => {});
       await rm(sandbox, { recursive: true, force: true });
     }

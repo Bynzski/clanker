@@ -48,6 +48,16 @@ describe('sshValidation', () => {
   });
 
   describe('validateSshEnvironmentConfig', () => {
+    const config = { id: 'host', label: 'Host', target: 'host' };
+    it('keeps an absolute remote default root and omits a cleared root', () => {
+      expect(validateSshEnvironmentConfig({ ...config, defaultWorkspaceRoot: ' /srv/my repos/ ' })).toMatchObject({ valid: true, config: { defaultWorkspaceRoot: '/srv/my repos/' } });
+      const cleared = validateSshEnvironmentConfig({ ...config, defaultWorkspaceRoot: '  ' });
+      expect(cleared.valid).toBe(true);
+      if (cleared.valid) expect(cleared.config).not.toHaveProperty('defaultWorkspaceRoot');
+    });
+    it.each(['repos', '~/repos', '$HOME/repos', 'C:\\repos', '/srv\\repos', '/srv\nrepos', '/srv\0repos', '/srv\t', null, 12, '/'+ 'ü'.repeat(2048)])('rejects invalid remote default root %j', (defaultWorkspaceRoot) => {
+      expect(validateSshEnvironmentConfig({ ...config, defaultWorkspaceRoot }).valid).toBe(false);
+    });
     it('validates a complete and correct config', () => {
       const res = validateSshEnvironmentConfig({
         id: 'vps-1',

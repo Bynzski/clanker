@@ -10,6 +10,7 @@ import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import { useScopedWorkspace } from './WorkspaceScope';
 import { useDragHandle } from './dragHandleContext';
 import './BrowserPanel.css';
+import RemotePreviewBar from './RemotePreviewBar';
 import BrowserUrlInput from './BrowserUrlInput';
 import BrowserTabStrip from './BrowserTabStrip';
 import AnnotationHandoffDialog from './AnnotationHandoffDialog';
@@ -428,6 +429,9 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
         annotationActive={annotationActive}
         handleAnnotationToggle={handleAnnotationToggle}
       />
+      {workspace?.environmentId && workspace.environmentId !== 'local' && <RemotePreviewBar
+        key={workspace.id} workspaceId={workspace.id} onOpen={handleNavigate} onLayoutChange={scheduleBoundsUpdate}
+      />}
       {handoffError && <div className="browser-annotation-error" role="alert">{handoffError}</div>}
       <div className="browser-content-shell">
         <div className="browser-content" ref={contentRef} />

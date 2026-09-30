@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
 import { Tag, Circle, GitBranch, Folder } from 'lucide-react';
-import { getWorkspaceProjectName } from '../lib/workspaceLabels';
+import { getRemoteEnvironmentLabel, getWorkspaceProjectName } from '../lib/workspaceLabels';
 import './StatusBar.css';
 
 export default function StatusBar() {
@@ -17,6 +17,7 @@ export default function StatusBar() {
   }, []);
 
   const projectName = focusedWorkspace ? getWorkspaceProjectName(focusedWorkspace) : 'No workspace selected';
+  const remoteLabel = focusedWorkspace ? getRemoteEnvironmentLabel(focusedWorkspace) : null;
 
   return (
     <footer className="status-bar">
@@ -28,6 +29,7 @@ export default function StatusBar() {
       </div>
       
       <div className="status-center">
+        {remoteLabel && <span className="status-environment" title={remoteLabel}>{remoteLabel}</span>}
         <span className="status-project" title={workspacePath}>
           {focusedWorkspace && <Folder size={12} strokeWidth={2} aria-hidden="true" />}
           <span className="status-project-name">{projectName}</span>

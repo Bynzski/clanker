@@ -10,6 +10,7 @@ import { getZoomShortcutAction, isSaveShortcut } from './lib/keyboardShortcuts';
 import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import { persistWorkspaceLayout } from './lib/workspaceLayoutStorage';
+import { startRemoteFileWatcher } from './lib/remoteFileWatcher';
 import { sameWorkspacePath } from './lib/pathUtils';
 import { isSameWorkspaceIdentity } from '../shared/workspaceIdentity';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../shared/types/recipes';
@@ -98,6 +99,8 @@ function App() {
     };
   }, []);
 
+  useEffect(() => startRemoteFileWatcher(), []);
+
   useEffect(() => {
     const unsubscribe = startTerminalSessionBridge();
     return () => {
@@ -145,8 +148,8 @@ function App() {
     const terminals: Terminal[] = [];
     const panes: Pane[] = [];
     try {
-      const worktreeLookup = (!isRemote && typeof window.electronAPI.gitListWorktrees === 'function')
-        ? window.electronAPI.gitListWorktrees(canonicalPath).catch(() => null)
+      const worktreeLookup = (typeof window.electronAPI.gitListWorktrees === 'function')
+        ? (isRemote ? window.electronAPI.gitListWorktrees(canonicalPath, workspaceId) : window.electronAPI.gitListWorktrees(canonicalPath)).catch(() => null)
         : Promise.resolve(null);
 
       for (let i = 0; i < terminalCount; i++) {
@@ -171,7 +174,9 @@ function App() {
 
       const worktreeList = await worktreeLookup;
       const linkedWorktree = worktreeList?.success
-        ? worktreeList.worktrees.find((entry: GitWorktree) => !entry.isMain && sameWorkspacePath(entry.path, canonicalPath))
+        ? worktreeList.worktrees.find((entry: GitWorktree) => !entry.isMain && (isRemote
+          ? isSameWorkspaceIdentity({ environmentId: effectiveEnvironmentId, path: entry.path }, { environmentId: effectiveEnvironmentId, path: canonicalPath })
+          : sameWorkspacePath(entry.path, canonicalPath)))
         : null;
       const projectName = linkedWorktree
         ? getWorkspaceNameFromPath(worktreeList?.worktrees.find((entry: GitWorktree) => entry.isMain)?.path ?? canonicalPath)

@@ -1,5 +1,7 @@
+import type { RemotePreviewRequest, RemotePreviewState, RemotePreviewResult, RemotePreviewUpdate } from '../shared/types/remotePreview';
 import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types/environments';
 import type { RemoteDirectoryListing } from '../shared/types/environments';
+import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { WorkspaceRecipe, RecipePreviewProbeResult } from '../../shared/types/recipes';
 import type { TaskSessionRecord } from '../../shared/types/taskSessions';
 import type { FileListDirectoryRequest, FileListDirectoryResult, ExplorerTreeChangedEvent } from '../../shared/types/fileExplorer';
@@ -30,6 +32,7 @@ import type {
   GitWorktreeListResult,
   GitWorktreeCreateResult,
   GitWorktreeInspectionResult,
+  GitWorktreeRemoveResult,
 } from '../../shared/types/git';
 import type {
   CredentialOperationResult,
@@ -117,6 +120,10 @@ interface ElectronAPI {
   resolveDroppedFilePath: (file: File, uriList?: string) => string;
 
   // Browser (WebContentsView)
+  remotePreviewGet: (request: { workspaceId: string }) => Promise<RemotePreviewState | null>;
+  remotePreviewStart: (request: RemotePreviewRequest) => Promise<RemotePreviewResult>;
+  remotePreviewStop: (request: { workspaceId: string }) => Promise<boolean>;
+  onRemotePreviewChanged: (callback: (update: RemotePreviewUpdate) => void) => () => void;
   browserHide: (workspaceId: string) => Promise<void>;
   /**
    * Phase 1: optional `tabId` is recorded as the active tab for the workspace
@@ -140,6 +147,7 @@ interface ElectronAPI {
   browserStop: (workspaceId: string) => Promise<void>;
   browserCreateTab: (workspaceId: string, tabId: string) => Promise<{ url: string; title: string }>;
   browserCloseTab: (workspaceId: string, tabId: string) => Promise<boolean>;
+  browserActivate: (workspaceId: string, tabId?: string) => Promise<boolean>;
   browserSwitchTab: (
     workspaceId: string,
     tabId: string,
@@ -203,7 +211,7 @@ interface ElectronAPI {
   registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) => Promise<{ success: boolean; location?: WorkspaceLocation; error?: string }>;
   unregisterOpenWorkspace: (id: string) => Promise<{ success: boolean; error?: string }>;
   gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeInspectionResult>;
-  gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) => Promise<{ success: boolean; error?: string; warning?: string }>;
+  gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeRemoveResult>;
   gitGetOperationState: (workspacePath: string, workspaceId?: string) => Promise<GitOperationStateResult>;
   gitGetStashes: (workspacePath: string, workspaceId?: string) => Promise<GitStash[]>;
   gitGetHistory: (workspacePath: string, limit?: number, workspaceId?: string) => Promise<GitHistoryEntry[]>;
@@ -266,6 +274,8 @@ interface ElectronAPI {
   editorReadFile: (request: FileReadRequest) => Promise<FileReadResult>;
   editorWriteFile: (request: FileWriteRequest) => Promise<FileWriteResult>;
   editorWatchFile: (request: FileWatchRequest) => Promise<boolean>;
+  remoteFilesWatch: (request: RemoteFileWatchRequest | null) => Promise<boolean>;
+  onRemoteFilesChanged: (callback: (event: RemoteFilesChangedEvent) => void) => () => void;
   editorUnwatchFile: (request: FileWatchRequest) => Promise<boolean>;
   onFileChanged: (callback: (event: FileChangedEvent) => void) => () => void;
 
@@ -283,7 +293,7 @@ interface ElectronAPI {
 
   // Session history
   discoverSessions: (workspaceId: string) => Promise<HarnessSession[]>;
-  invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
+  invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean; workingDir?: string }>;
 
   // Workspace Recipes
   recipeGetAll: (workspacePath?: string) => Promise<WorkspaceRecipe[]>;

@@ -30,6 +30,26 @@ describe('TaskSessionCoordinator', () => {
     coordinator = new TaskSessionCoordinator(persistence, mockDiscoverSessions);
   });
 
+  it('keeps resumed SSH tasks independent when two harnesses use the same native ID', () => {
+    const session: HarnessSession & { environmentId: string } = { id: 'shared-id', harness: 'pi', cwd: '/repo', title: 'Pi', timestamp: 1, environmentId: 'vps' };
+    const pi = coordinator.onSessionInvoked('pi-terminal', session);
+    const omp = coordinator.onSessionInvoked('omp-terminal', { ...session, harness: 'omp', title: 'OMP' });
+    expect(omp.id).not.toBe(pi.id);
+    expect(persistence.getTaskSessionById(pi.id)).toMatchObject({ harnessId: 'pi', terminalId: 'pi-terminal' });
+    expect(persistence.getTaskSessionById(omp.id)).toMatchObject({ harnessId: 'omp', terminalId: 'omp-terminal' });
+  });
+
+  it('preserves the main-captured SSH baseline across exit and shutdown', async () => {
+    const baseline = { cwd: '/repo/sub', sessionIds: ['old'], hostTime: 8_000_000, localTime: 1_000_000 };
+    const exited = coordinator.onTerminalSpawned('remote-exit', '/repo', 'codex', undefined, 'vps', baseline);
+    await coordinator.onTerminalExited('remote-exit', 'vps');
+    expect(persistence.getTaskSessionById(exited.id)).toMatchObject({ remoteSessionBaseline: baseline, state: 'unavailable', stoppedAt: expect.any(Number) });
+    const shutdown = coordinator.onTerminalSpawned('remote-shutdown', '/repo', 'claude', undefined, 'vps', baseline);
+    coordinator.onAppShutdown();
+    expect(persistence.getTaskSessionById(shutdown.id)).toMatchObject({ remoteSessionBaseline: baseline, state: 'unavailable', stoppedAt: expect.any(Number) });
+    expect(mockDiscoverSessions).not.toHaveBeenCalled();
+  });
+
   it('tracks spawned terminal as running task session', () => {
     const task = coordinator.onTerminalSpawned(
       'term-1',
@@ -202,7 +222,7 @@ describe('TaskSessionCoordinator', () => {
     const storedRemote = persistence.getTaskSessionById(remote.id);
     expect(storedRemote).toMatchObject({
       environmentId: 'dev-vps', state: 'unavailable',
-      stateReason: 'Remote session recovery is not supported in this version',
+      stateReason: 'Awaiting remote conversation verification',
       nativeSessionId: 'remote-native',
     });
     expect(storedRemote?.terminalId).toBeUndefined();

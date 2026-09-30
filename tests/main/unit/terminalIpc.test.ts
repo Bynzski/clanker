@@ -97,6 +97,8 @@ vi.mock('electron', () => ({
 }));
 
 import { ipcMain } from 'electron';
+import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
+import { REMOTE_ATTENTION_PREFIX } from '../../../src/main/remote/remoteAttentionTransport';
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
 import { RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY } from '../../../src/shared/ipcChannels';
 
@@ -263,6 +265,46 @@ describe('terminalIpc — error-path: handler returns', () => {
     mockClipboardWriteText.mockClear();
     mockPtySpawn.mockClear();
   });
+  test('routes remote attention from PTY data and releases credentials and files on exit or spawn failure', async () => {
+    const { opts } = createMockDeps();
+    const updates = vi.fn();
+    const broker = new AgentAttentionBroker(updates);
+    const releaseAttention = vi.fn().mockResolvedValue(undefined);
+    let token = '';
+    const resolveTerminalSpawn = vi.fn(async (request: { attentionToken: string }) => {
+      token = request.attentionToken;
+      return { spawnCmd: 'ssh', spawnArgs: ['-t', 'host', 'true'], env: {},
+        harnessId: 'opencode', attentionEnabled: true, releaseAttention };
+    });
+    const registered = { workspaceId: 'remote', location: { path: '/srv/project', environmentId: 'host' },
+      environment: { capabilities: { agentAttention: true }, resolveTerminalSpawn } };
+    opts.getStore = vi.fn().mockReturnValue({ get: () => ({ opencode: { attentionEnabled: true } }) }) as never;
+    let onData!: (data: string) => void;
+    let onExit!: (result: { exitCode: number }) => void;
+    mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(),
+      onData: (callback: typeof onData) => { onData = callback; },
+      onExit: (callback: typeof onExit) => { onExit = callback; } });
+    registerTerminalIpc({ ...opts, agentAttentionBroker: broker,
+      getWorkspaceRegistry: () => ({ getWorkspace: () => registered }) } as never);
+    const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+    try {
+      const result = await handler(null, '/srv/project', 'opencode', undefined, undefined, undefined, 'remote', 'host');
+      expect(result.attentionEnabled).toBe(true);
+      const raw = JSON.stringify({ version: 1, token, harness: 'opencode', event: 'input_requested' });
+      onData('ordinary output' + REMOTE_ATTENTION_PREFIX + Buffer.from(raw).toString('base64') + '\x07');
+      expect(updates).toHaveBeenCalledWith({ terminalId: result.id, event: 'input_requested' });
+      expect(opts.getTerminals().get(result.id)?.startupBuffer).toEqual(['ordinary output']);
+      onExit({ exitCode: 0 });
+      expect(releaseAttention).toHaveBeenCalledTimes(1);
+      expect(broker.handoffState(result.id)).toBe('unavailable');
+      broker.receiveRemote(result.id, raw);
+      expect(updates).toHaveBeenCalledTimes(1);
+      mockPtySpawn.mockImplementationOnce(() => { throw new Error('spawn failed'); });
+      await expect(handler(null, '/srv/project', 'opencode', undefined, undefined, undefined, 'remote', 'host')).rejects.toThrow('spawn failed');
+      expect(releaseAttention).toHaveBeenCalledTimes(2);
+    } finally { broker.close(); }
+  });
+
   test('uses the registered SSH workspace and stored harness flags for a remote terminal', async () => {
     const { opts } = createMockDeps();
     const resolveTerminalSpawn = vi.fn().mockResolvedValue({
@@ -272,17 +314,19 @@ describe('terminalIpc — error-path: handler returns', () => {
     const validateWorkspacePath = vi.fn(async (dir: string) => ({
       valid: true, resolvedPath: dir === '/srv/project/link' ? '/etc' : dir,
     }));
+    const captureSessionBaseline = vi.fn().mockResolvedValue({ sessions: [{ id: 'existing', harness: 'codex' }], hostTime: 8_000_000 });
+    const onTerminalSpawned = vi.fn();
     const registered = {
       workspaceId: 'remote-tab',
       location: { path: '/srv/project', environmentId: 'dev-vps' },
-      environment: { resolveTerminalSpawn, validateWorkspacePath },
+      environment: { resolveTerminalSpawn, validateWorkspacePath, capabilities: { sessionDiscovery: true }, captureSessionBaseline },
     };
     opts.getStore = vi.fn().mockReturnValue({
       get: (key: string) => key === 'harnessDefaults'
         ? { codex: { flags: '--sandbox workspace-write', model: 'ignored-local-model' } }
         : false,
     }) as never;
-    const deps = { ...opts, getWorkspaceRegistry: () => ({
+    const deps = { ...opts, taskSessionCoordinator: { onTerminalSpawned }, getWorkspaceRegistry: () => ({
       getWorkspace: (id: string) => id === 'remote-tab' ? registered : null,
     }) };
     mockPtySpawn.mockReturnValue({
@@ -295,8 +339,14 @@ describe('terminalIpc — error-path: handler returns', () => {
       workingDir: '/srv/project/src', flags: '--sandbox workspace-write', harness: 'codex',
       model: undefined,
     }));
+    expect(captureSessionBaseline).toHaveBeenCalledWith('/srv/project', 'codex');
+    expect(captureSessionBaseline.mock.invocationCallOrder[0]).toBeLessThan(resolveTerminalSpawn.mock.invocationCallOrder[0]);
+    expect(onTerminalSpawned).toHaveBeenCalledWith(expect.any(String), '/srv/project', 'codex', undefined, 'dev-vps', expect.objectContaining({ cwd: '/srv/project/src', sessionIds: ['existing'], hostTime: 8_000_000, localTime: expect.any(Number) }));
     expect(mockPtySpawn).toHaveBeenCalledWith('ssh', ['-t', 'dev-vps', 'sh -c true'], expect.any(Object));
     expect(validateWorkspacePath).toHaveBeenCalledWith('/srv/project/src');
+    expect([...opts.getTerminals().values()]).toEqual([expect.objectContaining({
+      environmentId: 'dev-vps', workspaceId: 'remote-tab', remoteWorkingDir: '/srv/project/src', cwd: process.cwd(),
+    })]);
     await expect(handler(null, '/srv/project/link', 'codex', undefined, undefined, undefined,
       'remote-tab', 'dev-vps')).rejects.toThrow('Terminal directory is outside the registered workspace');
     await expect(handler(null, '/srv/other', 'codex', undefined, undefined, undefined,
@@ -304,6 +354,24 @@ describe('terminalIpc — error-path: handler returns', () => {
     expect(resolveTerminalSpawn).toHaveBeenCalledTimes(1);
   });
 
+
+  test('does not spawn a pending remote terminal after its directory becomes reserved', async () => {
+    const { opts } = createMockDeps();
+    let finish!: (result: unknown) => void;
+    const reserved = vi.fn().mockReturnValue(false);
+    const registered = { workspaceId: 'remote', location: { path: '/srv/task', environmentId: 'ssh' },
+      environment: { resolveTerminalSpawn: vi.fn(() => new Promise((done) => { finish = done; })) } };
+    registerTerminalIpc({ ...opts, getWorkspaceRegistry: () => ({
+      getWorkspace: () => registered, isRemotePathReserved: reserved,
+    }) } as never);
+    const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+    const pending = handler(null, '/srv/task', undefined, undefined, undefined, undefined, 'remote', 'ssh');
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    reserved.mockReturnValue(true);
+    finish({ spawnCmd: 'ssh', spawnArgs: [], cwd: process.cwd(), env: {} });
+    await expect(pending).rejects.toThrow('being removed');
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+  });
 
   test('a recipe command is written only at TERMINAL_READY and its PTY exit marker is reported', async () => {
     const { opts } = createMockDeps();

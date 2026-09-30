@@ -42,6 +42,15 @@ export interface HarnessDefaults {
 /** Map of harness ID → defaults. */
 export type HarnessDefaultsMap = Record<string, HarnessDefaults>;
 
+/** Persisted before host dispatch; released only after a definite host result. */
+export interface RemoteWorktreeRemovalRecord {
+  operationId: string;
+  environmentId: string;
+  resourceId: string;
+  workspacePath: string;
+  worktreePath: string;
+}
+
 /** Top-level store schema. */
 export interface StoreSchema {
   lastWorkspace: string;
@@ -53,4 +62,5 @@ export interface StoreSchema {
   workspaceRecipes: WorkspaceRecipe[];
   taskSessions: TaskSessionRecord[];
   sshEnvironments: SshEnvironmentConfig[];
+  remoteWorktreeRemovals?: RemoteWorktreeRemovalRecord[];
 }

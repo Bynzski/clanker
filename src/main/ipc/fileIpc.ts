@@ -1,6 +1,6 @@
 import { ipcMain, shell } from 'electron';
 import * as path from 'node:path';
-import { FILE_LIST_DIRECTORY, FILE_READ, FILE_WRITE, FILE_CREATE, FILE_DELETE, FILE_RENAME, REVEAL_IN_FILE_MANAGER, FILE_WATCH, FILE_UNWATCH, FILE_CHANGED, EXPLORER_TREE_CHANGED, EXPLORER_START_WATCHING, EXPLORER_STOP_WATCHING } from '../../shared/ipcChannels';
+import { FILE_LIST_DIRECTORY, FILE_READ, FILE_WRITE, FILE_CREATE, FILE_DELETE, FILE_RENAME, REVEAL_IN_FILE_MANAGER, FILE_WATCH, FILE_UNWATCH, FILE_CHANGED, EXPLORER_TREE_CHANGED, EXPLORER_START_WATCHING, EXPLORER_STOP_WATCHING, REMOTE_FILES_WATCH, REMOTE_FILES_CHANGED } from '../../shared/ipcChannels';
 import type { FileListDirectoryRequest } from '../../shared/types/fileExplorer';
 import type { FileReadRequest, FileWriteRequest, FileWatchRequest } from '../../shared/types/editor';
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest } from '../../shared/types/fileOperations';
@@ -10,17 +10,22 @@ import type { FileWatcherService } from '../fileWatcher';
 import type { ExplorerWatcherService } from '../explorerWatcher';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { isPathContained } from '../remote/sshEnvironment';
+import type { RemoteFileWatcher } from '../remote/remoteFileWatcher';
+import type { RemoteFileWatchRequest } from '../../shared/types/remoteFileWatch';
 
 export interface RegisterFileIpcDeps {
   getFileWatcher: () => FileWatcherService;
   /** Explorer watcher service for workspace tree auto-refresh. */
   getExplorerWatcher: () => ExplorerWatcherService;
   getWorkspaceRegistry?: () => WorkspaceRegistry;
+  getRemoteFileWatcher?: () => RemoteFileWatcher;
 }
 
 export function registerFileIpc(deps: RegisterFileIpcDeps): void {
   const fileWatcher = deps.getFileWatcher();
   const explorerWatcher = deps.getExplorerWatcher();
+  ipcMain.handle(REMOTE_FILES_WATCH, (_, request: RemoteFileWatchRequest | null) => deps.getRemoteFileWatcher?.().sync(request) ?? false);
+  ipcMain.on(REMOTE_FILES_CHANGED, () => { });
   const resolveWorkspace = (workspaceId?: string, workspacePath?: string) => {
     const reg = deps.getWorkspaceRegistry?.();
     if (!reg) return null;

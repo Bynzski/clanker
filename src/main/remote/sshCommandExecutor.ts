@@ -1,8 +1,10 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { quotePosixArg, quotePosixCommand } from './posixQuote';
+import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
 import { validateSshTarget } from '../../shared/sshValidation';
 
 export interface SshExecOptions {
+  signal?: AbortSignal;
   cwd?: string;
   timeoutMs?: number;
   maxBuffer?: number;
@@ -55,6 +57,7 @@ export class SshCommandExecutor {
     args: string[] = [],
     options: SshExecOptions = {}
   ): Promise<SshExecResult> {
+    if (options.signal?.aborted) throw new Error('Remote SSH command aborted');
     const targetValidation = validateSshTarget(target);
     if (!targetValidation.valid || !targetValidation.target) {
       throw new Error(targetValidation.error || 'Invalid SSH target');
@@ -68,7 +71,7 @@ export class SshCommandExecutor {
     if (options.remoteEnv && Object.keys(options.remoteEnv).length > 0) {
       const envPrefix = Object.entries(options.remoteEnv)
         .map(([key, value]) => {
-          if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(key)) {
+          if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(key) || key.startsWith('CLANKER_ATTENTION_') || key.startsWith('CLANKER_REMOTE_ATTENTION_')) {
             throw new Error('Invalid remote environment variable name');
           }
           return `${key}=${quotePosixArg(value)}`;
@@ -93,10 +96,7 @@ export class SshCommandExecutor {
     try {
       child = spawn('ssh', sshArgs, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          ...(options.env || {}),
-        },
+        env: withoutAttentionEnvironment({ ...process.env, ...options.env }),
       });
     } catch (err) {
       reject(new Error(`Failed to spawn ssh: ${err instanceof Error ? err.message : String(err)}`));
@@ -109,6 +109,8 @@ export class SshCommandExecutor {
     let totalStderrLen = 0;
     let killed = false;
     let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+    let resolveClosed!: () => void;
+    const closed = new Promise<void>((resolve) => { resolveClosed = resolve; });
 
     const terminateChild = () => {
       try {
@@ -126,6 +128,14 @@ export class SshCommandExecutor {
         }
       }, 1000);
       forceKillTimer.unref();
+    };
+
+    const onAbort = () => {
+      if (killed) return;
+      killed = true;
+      clearTimeout(timer);
+      terminateChild();
+      reject(new Error('Remote SSH command aborted'));
     };
 
     const timer = setTimeout(() => {
@@ -161,6 +171,7 @@ export class SshCommandExecutor {
     });
 
     child.on('error', (err) => {
+      options.signal?.removeEventListener('abort', onAbort);
       clearTimeout(timer);
       if (forceKillTimer) clearTimeout(forceKillTimer);
       if (!killed) {
@@ -169,6 +180,8 @@ export class SshCommandExecutor {
     });
 
     child.on('close', (code, signal) => {
+      resolveClosed();
+      options.signal?.removeEventListener('abort', onAbort);
       clearTimeout(timer);
       if (forceKillTimer) clearTimeout(forceKillTimer);
       if (killed) return;
@@ -195,6 +208,9 @@ export class SshCommandExecutor {
       resolve({ stdout, stderr, exitCode });
     });
 
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    if (options.signal?.aborted) onAbort();
+
     if (typeof child.stdin?.on === 'function') {
       child.stdin.on('error', () => {
         // Ignore EPIPE / early stream termination on SSH disconnect
@@ -207,7 +223,12 @@ export class SshCommandExecutor {
       child.stdin?.end();
     }
 
-    return promise;
+    return promise.finally(async () => {
+      options.signal?.removeEventListener('abort', onAbort);
+      // Cancellation is complete only when the owned client is gone. Pollers
+      // and shutdown drains must not start new work/quit during kill escalation.
+      if (killed) await closed;
+    });
   }
 
   /**

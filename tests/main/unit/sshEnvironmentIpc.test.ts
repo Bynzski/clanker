@@ -46,6 +46,7 @@ describe('SSH environment lifecycle', () => {
 
   it('refuses editing and deleting an environment that owns an open workspace without mutating persistence or cache', () => {
     expect(save(null, { ...existing, label: 'Changed', target: 'user@new-host' })).toMatchObject({ success: false, error: expect.stringContaining('using it') });
+    expect(save(null, { ...existing, defaultWorkspaceRoot: '/srv/repos' })).toMatchObject({ success: false, error: expect.stringContaining('using it') });
     expect(save(null, { ...existing, id: ` ${existing.id} `, target: 'user@new-host' })).toMatchObject({ success: false, error: expect.stringContaining('using it') });
     expect(remove(null, existing.id)).toMatchObject({ success: false, error: expect.stringContaining('using it') });
     expect(remove(null, ` ${existing.id} `)).toMatchObject({ success: false, error: expect.stringContaining('using it') });
@@ -72,7 +73,7 @@ describe('pre-workspace SSH browse IPC', () => {
       .mockResolvedValueOnce({ stdout: '{"homePath":"/home/dev","initialPath":"/home/dev/workspaces"}' })
       .mockResolvedValueOnce({ stdout: '{"path":"/home/dev/workspaces","parentPath":"/home/dev","directories":[]}' })
       .mockResolvedValueOnce({ stdout: '{"path":"/home/dev/workspaces/project"}' });
-    const manager = new EnvironmentManager(() => store as never, { exec } as unknown as SshCommandExecutor);
+    const manager = new EnvironmentManager(() => store as never, { exec } as unknown as SshCommandExecutor, async (target) => `ssh:${target}`);
     registerSshEnvironmentIpc({
       getStore: () => store as never,
       getEnvironmentManager: () => manager,

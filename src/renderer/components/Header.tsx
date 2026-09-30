@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
 import { Globe, NotebookPen, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
@@ -37,6 +37,15 @@ export default function Header() {
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [chatSessions, setChatSessions] = useState<HarnessSession[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [sessionDiscoveryError, setSessionDiscoveryError] = useState('');
+  const sessionRequest = useRef(0);
+  useEffect(() => {
+    sessionRequest.current++;
+    setShowChatHistory(false);
+    setChatSessions([]);
+    setSessionDiscoveryError('');
+    setIsLoadingSessions(false);
+  }, [focusedWorkspace?.id]);
   const chatDropdownRef = useRef<HTMLDivElement>(null);
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
   const [showRecipeModal, setShowRecipeModal] = useState(false);
@@ -112,22 +121,25 @@ export default function Header() {
   };
 
   const handleToggleChatHistory = async () => {
+    const request = ++sessionRequest.current;
     if (showChatHistory) {
       setShowChatHistory(false);
       return;
     }
     setShowChatHistory(true);
     setIsLoadingSessions(true);
+    setSessionDiscoveryError('');
+    setChatSessions([]);
     try {
-      const sessions = focusedWorkspace?.id && (focusedWorkspace.environmentId ?? 'local') === 'local'
+      const sessions = focusedWorkspace?.id
         ? await window.electronAPI.discoverSessions(focusedWorkspace.id)
         : [];
-      setChatSessions(sessions);
+      if (sessionRequest.current === request) setChatSessions(sessions);
     } catch (err) {
       console.error('Failed to discover sessions:', err);
-      setChatSessions([]);
+      if (sessionRequest.current === request) setSessionDiscoveryError(err instanceof Error ? err.message : 'Could not discover sessions');
     } finally {
-      setIsLoadingSessions(false);
+      if (sessionRequest.current === request) setIsLoadingSessions(false);
     }
   };
   const handleOpenRecipes = async () => {
@@ -235,6 +247,7 @@ export default function Header() {
         onToggleChatHistory={() => void handleToggleChatHistory()}
         chatSessions={chatSessions}
         isLoadingSessions={isLoadingSessions}
+        sessionDiscoveryError={sessionDiscoveryError}
         workspacePath={workspacePath || '/'}
         workspaceId={focusedWorkspace?.id ?? null}
         onCloseChatHistory={() => setShowChatHistory(false)}

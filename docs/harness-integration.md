@@ -178,8 +178,8 @@ fails or the user needs a custom model.
 
 This integration includes CLI detection, persisted defaults, visibility,
 flags, provider-aware discovery, manual model overrides, and interactive launch. Hermes history,
-resume/fork, attention hooks, and AI commit remain unintegrated. The agent
-attention toggle is disabled, and the workspace gate has no Hermes keyboard
+resume/fork, local attention hooks, and AI commit remain unintegrated. SSH attention now uses the Hermes observer plugin API; see [Remote Agent Attention](workspaces.md#remote-agent-attention). The agent
+attention toggle applies to SSH launches, and the workspace gate has no Hermes keyboard
 shortcut. Do not use the installed CLI's `--oneshot` or `chat -q` just to
 probe capability: those commands can incur model charges. Windows and macOS
 launches, authenticated TUI sessions, live model calls, and exit-to-shell
@@ -204,3 +204,11 @@ This integration includes CLI detection, persisted defaults, visibility,
 flags, model discovery, interactive launch, session history discovery/resume,
 agent attention, and AI commit message generation. The workspace gate assigns
 `a` / `A` to Antigravity when visible.
+
+## SSH attention transport
+
+`sshAgentAttention.ts` reuses the hook/extension event mappings from `agentAttentionAdapters.ts` with a tty observer transport. `remoteAttentionTransport.ts` extracts bounded OSC frames before normal PTY buffering/rendering. `AgentAttentionBroker` accepts remote credentials only from their registered terminal, independently of the desktop loopback listener. Unsupported native events remain unknown.
+
+Hermes uses its [observer hook contract](https://hermes-agent.nousresearch.com/docs/developer-guide/observer-hooks), including turn-scoped `pre_llm_call` / `post_llm_call` and advisory approval hooks. Its owned plugin is enabled via the native CLI, preserving other plugin configuration. OpenCode uses its [plugin events](https://opencode.ai/docs/plugins/); Claude uses its [command hook API](https://code.claude.com/docs/en/hooks). Shared Pi, OMP, Codex, and Antigravity mappings retain the contracts documented above.
+
+Tests exercise all seven adapters with synthetic lifecycle events over real pseudo-terminals, configuration conflicts, ownership checks, and terminal credential/cleanup routing. Those checks do not make model calls or establish compatibility with every installed CLI version. Live remote agent turns remain a separate smoke check.

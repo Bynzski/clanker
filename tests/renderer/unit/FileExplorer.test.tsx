@@ -9,6 +9,7 @@ import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
 import type { FileExplorerEntry, FileListDirectoryRequest, FileListDirectoryResult } from '../../../src/shared/types/fileExplorer';
 import type { ExplorerTreeChangedEvent } from '../../../src/shared/types/fileExplorer';
+import type { RemoteFilesChangedEvent } from '../../../src/shared/types/remoteFileWatch';
 
 function resetStore() {
   useWorkspaceStore.setState({
@@ -166,6 +167,62 @@ describe('FileExplorer', () => {
     });
 
     expect(fileListDirectory).not.toHaveBeenCalled();
+  });
+
+  it('refreshes remote directories only for the matching active workspace', async () => {
+    const workspace = setActiveWorkspace({ id: 'remote', environmentId: 'ssh-host', workspacePath: '/workspace' });
+    let callback!: (event: RemoteFilesChangedEvent) => void;
+    const api = installElectronApiMock({
+      onRemoteFilesChanged: vi.fn((listener) => { callback = listener; return () => {}; }),
+      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+    });
+    render(<FileExplorer />);
+    await waitFor(() => expect(api.fileListDirectory).toHaveBeenCalled());
+    api.fileListDirectory.mockClear();
+    await act(async () => {
+      callback({ workspaceId: 'other-host', directoryPaths: ['/workspace'], files: [] });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    });
+    expect(api.fileListDirectory).not.toHaveBeenCalled();
+    await act(async () => {
+      callback({ workspaceId: workspace.id, directoryPaths: ['/workspace'], files: [] });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    });
+    expect(api.fileListDirectory).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: workspace.id, directoryPath: '/workspace' }));
+  });
+
+  it('retries a failed remote directory listing on an unchanged snapshot', async () => {
+    const workspace = setActiveWorkspace({ id: 'remote', environmentId: 'ssh-host', workspacePath: '/workspace' });
+    let callback!: (event: RemoteFilesChangedEvent) => void;
+    const api = installElectronApiMock({
+      onRemoteFilesChanged: vi.fn((listener) => { callback = listener; return () => {}; }),
+      fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+    });
+    render(<FileExplorer />);
+    await waitFor(() => expect(api.fileListDirectory).toHaveBeenCalledTimes(1));
+    api.fileListDirectory.mockResolvedValueOnce({ success: false, entries: [], errorCode: 'unknown', error: 'SSH disconnected' });
+    await act(async () => {
+      callback({ workspaceId: workspace.id, directoryPaths: ['/workspace'], files: [] });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    });
+    expect(useWorkspaceStore.getState().getWorkspaceById(workspace.id)?.explorerErrorsByPath['/workspace']).toBe('SSH disconnected');
+    api.fileListDirectory.mockResolvedValue({ success: true, entries: [createEntry('recovered.txt', '/workspace/recovered.txt', false)] });
+    await act(async () => {
+      callback({ workspaceId: 'other-host', directoryPaths: [], files: [], unchangedDirectoryPaths: ['/workspace'] });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    });
+    expect(api.fileListDirectory).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      callback({ workspaceId: workspace.id, directoryPaths: [], files: [], unchangedDirectoryPaths: ['/workspace'] });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    });
+    expect(screen.getByText('recovered.txt')).toBeInTheDocument();
+    expect(useWorkspaceStore.getState().getWorkspaceById(workspace.id)?.explorerErrorsByPath['/workspace']).toBeNull();
+    await act(async () => {
+      callback({ workspaceId: workspace.id, directoryPaths: [], files: [], unchangedDirectoryPaths: ['/workspace'] });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    });
+    expect(api.fileListDirectory).toHaveBeenCalledTimes(3);
   });
 
   it('coalesces repeated explorer watcher events for expanded directories', async () => {

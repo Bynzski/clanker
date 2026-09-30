@@ -527,24 +527,30 @@ export function patchWorkspaceById(
   return { workspaces: nextWorkspaces };
 }
 
-export function isEditorOperationPending(state: PendingEditorOperationsHolder, filePath: string): boolean {
-  return filePath in state.pendingEditorOperations;
+function editorOperationKey(filePath: string, environmentId?: string): string {
+  return environmentId && environmentId !== 'local' ? `${environmentId}::${filePath}` : filePath;
+}
+
+export function isEditorOperationPending(state: PendingEditorOperationsHolder, filePath: string, environmentId?: string): boolean {
+  return editorOperationKey(filePath, environmentId) in state.pendingEditorOperations;
 }
 
 export function setEditorOperationPending(
   state: PendingEditorOperationsHolder,
   filePath: string,
-  opType: string
+  opType: string,
+  environmentId?: string,
 ): Record<string, string> {
-  return { ...state.pendingEditorOperations, [filePath]: opType };
+  return { ...state.pendingEditorOperations, [editorOperationKey(filePath, environmentId)]: opType };
 }
 
 export function clearEditorOperationPending(
   state: PendingEditorOperationsHolder,
-  filePath: string
+  filePath: string,
+  environmentId?: string,
 ): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(state.pendingEditorOperations).filter(([key]) => key !== filePath)
+    Object.entries(state.pendingEditorOperations).filter(([key]) => key !== editorOperationKey(filePath, environmentId))
   );
 }
 

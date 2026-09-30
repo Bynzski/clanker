@@ -377,7 +377,7 @@ describe('editorFileWatcher', () => {
       const fileCallback = mockOnFileChanged.mock.calls[0][0];
       fileCallback({ filePath: '/workspace-1/file.ts', deleted: false });
 
-      expect(reloadEditorTab).toHaveBeenCalledWith('tab-1', 'ws-1');
+      expect(reloadEditorTab).toHaveBeenCalledWith('tab-1', 'ws-1', { onlyIfClean: true });
     });
   });
 });

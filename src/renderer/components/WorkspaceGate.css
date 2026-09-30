@@ -197,6 +197,12 @@
 .gate-worktree-row { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .gate-worktree-identity { display: inline-flex; align-items: center; gap: 5px; flex: 1; min-width: 0; color: var(--text-primary); }
 .gate-worktree-identity svg { flex-shrink: 0; color: var(--accent-primary); }
+.remote-worktree-picker .gate-worktree-identity { flex-direction: column; align-items: stretch; gap: 2px; }
+.remote-worktree-picker .gate-worktree-project { max-width: 100%; }
+.remote-worktree-picker .gate-worktree-branch { flex: auto; }
+.remote-worktree-picker .gate-worktree-create { display: flex; flex-direction: column; gap: 5px; }
+.remote-worktree-inspect { margin-top: 4px; }
+.remote-worktree-inspect p { margin: 4px 0 0; overflow-wrap: anywhere; }
 .gate-worktree-project { flex: 0 1 auto; max-width: 85px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .gate-worktree-branch { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
 .gate-worktree-error { color: var(--accent-error); margin: 0; overflow-wrap: anywhere; }
@@ -947,6 +953,24 @@
 
 .gate-launch-actions .gate-button { flex: 4; min-width: 0; }
 
+.gate-open-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--accent-error);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--accent-error);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.gate-open-error svg { flex-shrink: 0; }
+
 .gate-worktree-forward {
   flex: 1;
   min-width: 64px;
@@ -1297,7 +1321,17 @@
 .ssh-env-info {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
+
+.ssh-env-actions { display: flex; flex-shrink: 0; gap: 4px; }
+.ssh-env-edit-btn { background: transparent; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; }
+.ssh-manager-error, .ssh-manager-success { margin: 4px 0 0; font-size: 12px; }
+.ssh-manager-error { color: var(--accent-error); }
+.ssh-manager-success { color: var(--accent-success); }
+.ssh-saved-list > .gate-section-label { display: block; margin-bottom: 8px; }
+.ssh-saved-list > .ssh-env-item { margin-top: 6px; }
 
 .ssh-env-label {
   font-weight: 500;

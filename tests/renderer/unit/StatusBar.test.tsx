@@ -2,7 +2,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as path from 'node:path';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import StatusBar from '../../../src/renderer/components/StatusBar';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
@@ -36,6 +36,23 @@ describe('StatusBar', () => {
     render(<StatusBar />);
     expect(screen.getByText('my-project')).toBeTruthy();
     expect(screen.getByTitle(TEST_PROJECT)).toBeTruthy();
+    expect(document.querySelector('.status-environment')).toBeNull();
+  });
+
+  it('shows the active SSH environment and removes it when switching to local', () => {
+    const local = createWorkspaceFixture({ id: 'local', workspacePath: '/projects/local', environmentId: 'local', environmentLabel: 'Local', terminals: [] });
+    const remote = createWorkspaceFixture({ id: 'remote', workspacePath: '/srv/projects/remote', environmentId: 'ssh-opaque-id', environmentLabel: 'devbox', terminals: [], gitCurrentBranch: 'feature', gitIsRepo: true });
+    useWorkspaceStore.setState({ workspaces: [local, remote], activeWorkspaceId: 'remote', activeWorkspaceLifecycle: 'active' });
+
+    render(<StatusBar />);
+    expect(document.querySelector('.status-environment')).toHaveTextContent('SSH · devbox');
+    expect(screen.getByText('feature')).toBeTruthy();
+    expect(screen.getByText('remote')).toBeTruthy();
+
+    act(() => useWorkspaceStore.setState({ activeWorkspaceId: 'local' }));
+    expect(document.querySelector('.status-environment')).toBeNull();
+    expect(screen.getByText('local')).toBeTruthy();
+    expect(screen.queryByText('feature')).toBeNull();
   });
 
   it('shows the source project for a linked worktree instead of its generated folder', () => {

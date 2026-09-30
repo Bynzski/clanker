@@ -8,6 +8,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { GitService, type GitWorkspaceIdentity } from '../gitService';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
+import { RemoteWorktreeCoordinator, type RemoteWorktreeRemovalPersistence } from '../remote/remoteWorktreeCoordinator';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import {
   getValidatedWorkspacePath as getValidatedLocalWorkspacePath,
@@ -58,6 +59,10 @@ interface RegisterGitIpcDeps {
   getGitService: () => GitService;
   getMainWindow: () => BrowserWindow | null;
   getWorkspaceRegistry?: () => WorkspaceRegistry;
+  /** null means an active remote terminal's directory cannot be verified. */
+  getLiveRemoteTerminalPaths?: (environmentId: string) => string[] | null;
+  onWorkspaceUnregistered?: (workspaceId: string) => void;
+  remoteWorktreeRemovalPersistence?: RemoteWorktreeRemovalPersistence;
 }
 function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
   if (!Array.isArray(paths) || !paths.every((entry) => typeof entry === 'string')) return null;
@@ -72,6 +77,7 @@ function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
 export function registerGitIpc(deps: RegisterGitIpcDeps): void {
   const { getGitService, getMainWindow, getWorkspaceRegistry } = deps;
   const gitService = getGitService();
+  const remoteWorktrees = new RemoteWorktreeCoordinator(() => getWorkspaceRegistry?.(), deps.getLiveRemoteTerminalPaths, deps.remoteWorktreeRemovalPersistence);
 
   // These are the positions of the final workspaceId argument in the bridge.
   // Keeping the positional contract here leaves all legacy local callers intact.
@@ -201,19 +207,27 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
   });
 
   registerGitHandler(GIT_LIST_WORKTREES, async (_, workspacePath: string) => {
-    if (resolveWorkspace()?.location.environmentId !== 'local' && gitService.getScopedWorkspaceIdentity?.()) {
-      return { success: false, worktrees: [], error: 'Task worktrees are only available for local workspaces in this version' };
+    const isRemote = (gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local') !== 'local';
+    if (isRemote) {
+      try { await remoteWorktrees.reconcile(gitService.getScopedWorkspaceIdentity()!.environmentId); }
+      catch (error) { return { success: false, worktrees: [], error: error instanceof Error ? error.message : 'Could not verify remote removal completion' }; }
     }
     const safePath = getValidatedWorkspacePath(workspacePath);
     if (!safePath) return { success: false, worktrees: [], error: getInvalidWorkspaceResult().error };
     const result = await gitService.listWorktrees(safePath);
-    return { ...result, worktrees: result.worktrees.map((entry) => ({ ...entry, path: toPosixPath(entry.path) })) };
+    return isRemote
+      ? result
+      : { ...result, worktrees: result.worktrees.map((entry) => ({ ...entry, path: toPosixPath(entry.path) })) };
   });
 
   registerGitHandler(GIT_CREATE_WORKTREE, async (_, workspacePath: string, baseRef: string, branch: string) => {
     const ws = resolveWorkspace();
     if (ws && ws.location.environmentId !== 'local') {
-      return { success: false, error: 'Task worktrees are only available for local workspaces in this version' };
+      const recoveryError = remoteWorktrees.getRecoveryError();
+      if (recoveryError) return { success: false, error: recoveryError };
+      return ws.environment.createWorktree
+        ? ws.environment.createWorktree(ws.location.path, baseRef, branch)
+        : { success: false, error: 'Worktree creation is unavailable for this environment' };
     }
     const safePath = getValidatedWorkspacePath(workspacePath);
     if (!safePath) return getInvalidWorkspaceResult();
@@ -225,6 +239,12 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
 
   registerGitHandler(REGISTER_OPEN_WORKSPACE, async (_, id: string, workspacePath: string, environmentId?: string) => {
     if (typeof id !== 'string' || !id.trim() || typeof workspacePath !== 'string') return getInvalidWorkspaceResult();
+    // Damaged evidence cannot establish which host paths are safe to reopen.
+    // Match registry defaults: omitted/blank environment IDs remain local.
+    if (typeof environmentId === 'string' && environmentId.trim() && environmentId.trim() !== 'local') {
+      const recoveryError = remoteWorktrees.getRecoveryError();
+      if (recoveryError) return { success: false, error: recoveryError };
+    }
 
     const reg = getWorkspaceRegistry?.();
     if (reg) {
@@ -253,6 +273,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
 
   registerGitHandler(UNREGISTER_OPEN_WORKSPACE, (_, id: string) => {
     if (typeof id !== 'string' || !id.trim()) return { success: false, error: 'Invalid workspace identity' };
+    deps.onWorkspaceUnregistered?.(id);
     getWorkspaceRegistry?.()?.unregisterWorkspace(id);
     gitService.unregisterOpenWorkspace(id);
     if (gitService.getCurrentWorkspaceIdentity?.()?.workspaceId === id) {
@@ -264,7 +285,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
   registerGitHandler(GIT_INSPECT_WORKTREE, async (_, workspacePath: string, worktreePath: string, openWorkspacePaths: string[]) => {
     const ws = resolveWorkspace();
     if (ws && ws.location.environmentId !== 'local') {
-      return { success: false, error: 'Task worktrees are only available for local workspaces in this version' };
+      return remoteWorktrees.inspect(ws, worktreePath);
     }
     const safePath = getValidatedWorkspacePath(workspacePath);
     const safeWorktreePath = getValidatedLocalWorkspacePath(worktreePath);
@@ -279,7 +300,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
   registerGitHandler(GIT_REMOVE_WORKTREE, async (_, workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) => {
     const ws = resolveWorkspace();
     if (ws && ws.location.environmentId !== 'local') {
-      return { success: false, error: 'Task worktrees are only available for local workspaces in this version' };
+      return remoteWorktrees.remove(ws, worktreePath, expectedBranch);
     }
     const safePath = getValidatedWorkspacePath(workspacePath);
     const safeWorktreePath = getValidatedLocalWorkspacePath(worktreePath);

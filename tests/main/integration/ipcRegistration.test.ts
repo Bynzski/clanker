@@ -80,6 +80,7 @@ describe('IPC registration smoke test', () => {
     const { registerWindowIpc } = await import('../../../src/main/ipc/windowIpc');
     const { registerAiCommitIpc } = await import('../../../src/main/ipc/aiCommitIpc');
     const { registerTerminalIpc } = await import('../../../src/main/ipc/terminalIpc');
+    const { registerRemotePreviewIpc } = await import('../../../src/main/ipc/remotePreviewIpc');
     const { registerBrowserIpc } = await import('../../../src/main/ipc/browserIpc');
     const { registerGitIpc } = await import('../../../src/main/ipc/gitIpc');
     const { registerCredentialIpc } = await import('../../../src/main/ipc/credentialIpc');
@@ -265,6 +266,8 @@ describe('IPC registration smoke test', () => {
       getEnvironmentManager: () => mockEnvManager as never,
       getWorkspaceRegistry: () => ({ isEnvironmentInUse: () => false }) as never,
     });
+
+    registerRemotePreviewIpc({ get: vi.fn(), start: vi.fn(), stop: vi.fn() } as never);
 
     // ── Assert ──────────────────────────────────────────────────────────────
     const allRegistered = [

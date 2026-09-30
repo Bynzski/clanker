@@ -480,4 +480,15 @@ describe('WorkspacePersistenceService', () => {
     expect(service.deleteSshEnvironment('env-1')).toBe(false);
     expect(service.getAllSshEnvironments()).toEqual([]);
   });
+
+  it('persists, updates, and clears the optional per-host workspace root', () => {
+    const config = { id: 'root-host', kind: 'ssh', label: 'Host', target: 'host' };
+    service.saveSshEnvironment({ ...config, defaultWorkspaceRoot: '/srv/repos' });
+    expect(service.getSshEnvironmentById(config.id)?.defaultWorkspaceRoot).toBe('/srv/repos');
+    service.saveSshEnvironment({ ...config, defaultWorkspaceRoot: '/opt/projects' });
+    expect(service.getAllSshEnvironments()).toHaveLength(1);
+    expect(service.getSshEnvironmentById(config.id)?.defaultWorkspaceRoot).toBe('/opt/projects');
+    service.saveSshEnvironment({ ...config, defaultWorkspaceRoot: '' });
+    expect(service.getSshEnvironmentById(config.id)).not.toHaveProperty('defaultWorkspaceRoot');
+  });
 });

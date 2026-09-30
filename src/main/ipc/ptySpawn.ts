@@ -10,6 +10,14 @@ import * as pty from 'node-pty';
 import { TERMINAL_DATA, TERMINAL_EXIT } from '../../shared/ipcChannels';
 import type { Terminal } from './terminalIpc';
 import type { RecipeCommandStartup } from '../recipeCommandStartup';
+import { isWindowAvailable } from '../windowManager';
+
+const pendingCleanups = new Set<Promise<void>>();
+
+/** Quit waits for cleanup already started by explicit kills or window teardown. */
+export async function waitForTerminalCleanup(): Promise<void> {
+  await Promise.all([...pendingCleanups]);
+}
 
 export interface SpawnPtyOptions {
   id: string;
@@ -26,8 +34,10 @@ export interface SpawnPtyOptions {
   initialCommand?: string;
   workspaceId?: string;
   environmentId?: string;
+  remoteWorkingDir?: string;
   recipeCommandStartup?: RecipeCommandStartup;
-  onExit?: (id: string) => void;
+  onExit?: (id: string) => void | Promise<void>;
+  filterData?: (data: string) => string;
 }
 
 export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: number } {
@@ -61,15 +71,31 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     cwd,
     workspaceId: opts.workspaceId,
     environmentId: opts.environmentId,
+    remoteWorkingDir: opts.remoteWorkingDir,
     harnessId,
     startupBuffer: [],
     startupBufferReady: false,
     initialCommand,
     recipeCommandStartup,
   };
+  let cleanup: Promise<void> | undefined;
+  terminal.releaseResources = () => {
+    if (!cleanup) {
+      // Reserve once before invoking callbacks, including reentrant exit/kill.
+      let finish!: () => void;
+      cleanup = new Promise<void>((resolve) => { finish = resolve; });
+      pendingCleanups.add(cleanup);
+      void (async () => {
+        try { await onExit?.(id); }
+        catch (error) { console.warn('[clanker-grid] terminal resource cleanup failed:', error); }
+        finally { pendingCleanups.delete(cleanup!); finish(); }
+      })();
+    }
+    return cleanup;
+  };
   terminals.set(id, terminal);
 
-  if (launchLabel && mainWindow) {
+  if (launchLabel && isWindowAvailable(mainWindow)) {
     mainWindow.webContents.send(TERMINAL_DATA, { id, data: `${launchLabel}\r\n` });
   }
 
@@ -77,6 +103,8 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     if (getIsShuttingDown()) return;
     const term = terminals.get(id);
     if (!term) return;
+    data = opts.filterData?.(data) ?? data;
+    if (!data) return;
     term.recipeCommandStartup?.onData(data);
 
     if (!term.startupBufferReady) {
@@ -87,17 +115,17 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
       }
     }
 
-    if (mainWindow) {
+    if (isWindowAvailable(mainWindow)) {
       mainWindow.webContents.send(TERMINAL_DATA, { id, data });
     }
   });
 
   ptyProcess.onExit(({ exitCode }) => {
     terminal.recipeCommandStartup?.onExit(exitCode);
-    onExit?.(id);
+    void terminal.releaseResources?.();
     if (getIsShuttingDown()) return;
     terminals.delete(id);
-    if (mainWindow) {
+    if (isWindowAvailable(mainWindow)) {
       mainWindow.webContents.send(TERMINAL_EXIT, { id, exitCode });
     }
   });

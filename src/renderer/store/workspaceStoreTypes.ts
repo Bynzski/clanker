@@ -97,6 +97,7 @@ export interface WorkspaceState {
 
   addWorkspace: (workspace: Omit<WorkspaceTab, 'id' | 'lifecycle'> & { id?: string }) => void;
   selectWorkspace: (id: string, terminalId?: string) => void;
+  moveWorkspace: (workspaceId: string, targetWorkspaceId: string) => void;
   closeWorkspace: (id: string) => void;
   updateWorkspaceName: (id: string, name: string) => void;
   getWorkspaceById: (id: string | null) => WorkspaceTab | null;
@@ -114,7 +115,7 @@ export interface WorkspaceState {
   setWorkspacePath: (path: string) => void;
   setHarness: (harness: string) => void;
   setModel: (model: string) => void;
-  addTerminal: (terminal: Terminal) => void;
+  addTerminal: (terminal: Terminal, workspaceId?: string) => void;
   removeTerminal: (id: string) => void;
   setActiveTerminal: (id: string) => void;
   toggleBrowser: () => void;
@@ -184,7 +185,7 @@ export interface WorkspaceState {
   closeEditorPane: (workspaceId?: string) => void;
   resetEditorState: () => void;
   renameEditorTabPath: (oldPath: string, newPath: string, workspaceId?: string) => void;
-  reloadEditorTab: (tabId: string, workspaceId?: string) => Promise<void>;
+  reloadEditorTab: (tabId: string, workspaceId?: string, options?: { onlyIfClean?: boolean; retryIfIdle?: boolean }) => Promise<void>;
   markEditorTabExternallyChanged: (tabId: string, workspaceId?: string) => void;
   markEditorTabDeleted: (tabId: string, workspaceId?: string) => void;
   clearEditorTabExternalFlag: (tabId: string, workspaceId?: string) => void;
