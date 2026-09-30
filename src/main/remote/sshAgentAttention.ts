@@ -143,6 +143,8 @@ finally:
     os.close(fd)
 root = os.path.realpath(tempfile.mkdtemp(prefix='clanker-remote-attention-'))
 try:
+    # A setgid TMPDIR can propagate special bits despite mkdtemp's private mode.
+    os.chmod(root, 0o700)
     for name, content in request['files'].items():
         filename = os.path.join(root, name)
         os.makedirs(os.path.dirname(filename), mode=0o700, exist_ok=True)
@@ -245,7 +247,7 @@ export async function prepareSshAttention(
     throw new Error('Invalid remote attention preparation response');
   }
   const release = async () => {
-    await executor.exec(target, 'python3', ['-c', END_AND_CLEANUP_PYTHON, response.root, '', harness], { timeoutMs: 5000, maxBuffer: 4096 });
+    await executor.exec(target, 'sh', ['-c', `${REMOTE_CLI_PATH_SETUP}\nexec ${quotePosixCommand('python3', ['-c', END_AND_CLEANUP_PYTHON, response.root, '', harness])}`], { timeoutMs: 5000, maxBuffer: 4096 });
   };
   if (harness === 'hermes') {
     try {

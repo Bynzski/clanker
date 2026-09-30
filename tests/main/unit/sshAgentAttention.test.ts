@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync, readFileSync, chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, readFileSync, chmodSync, mkdirSync, writeFileSync, symlinkSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -25,7 +25,7 @@ function fixture(extraEnv: Record<string, string> = {}) {
   roots.push(home);
   const exec = vi.fn(async (_target: string, command: string, args: string[], options?: { input?: string | Buffer }) => {
     if (args.some((arg) => arg.includes('exec hermes plugins enable'))) return { stdout: '', stderr: '', exitCode: 0 };
-    const result = spawnSync(command, args, { input: options?.input, encoding: 'utf8',
+    const result = spawnSync(command === 'sh' ? '/bin/sh' : command, args, { input: options?.input, encoding: 'utf8',
       env: { ...process.env, HOME: home, HERMES_HOME: '', HERMES_PROFILE: '', OPENCODE_CONFIG_DIR: '', CODEX_HOME: '', ...extraEnv } });
     if (result.status !== 0) throw new Error(result.stderr);
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
@@ -100,9 +100,55 @@ describe('SSH attention event boundary', () => {
     expect(filter('still visible')).toBe('still visible');
     expect(receive).not.toHaveBeenCalled();
   });
+
+  it('consumes oversized BEL-terminated private frames and preserves trailing PTY output exactly', () => {
+    const receive = vi.fn();
+    const filter = createRemoteAttentionFilter(receive);
+    // Reserved control frames are never rendered, including malformed frames.
+    const trailing = '\r\n世界\x1b[31mordinary output\x1b[0m';
+    expect(filter(REMOTE_ATTENTION_PREFIX + 'A'.repeat(5000) + '\x07' + trailing)).toBe(trailing);
+    expect(receive).not.toHaveBeenCalled();
+    expect(filter('next chunk')).toBe('next chunk');
+  });
 });
 
 describe.skipIf(process.platform === 'win32')('remote attention adapters', () => {
+  it('uses the prepared user CLI PATH for out-of-band cleanup when system PATH has no Python', async () => {
+    const { executor, home, exec } = fixture({ PATH: '' });
+    const bin = join(home, '.local/bin');
+    mkdirSync(bin, { recursive: true });
+    const python = execFileSync('/bin/sh', ['-c', 'command -v python3'], { encoding: 'utf8' }).trim();
+    symlinkSync(python, join(bin, 'python3'));
+    expect(spawnSync('python3', ['--version'], { env: { PATH: '' } }).error).toBeDefined();
+    const prepared = await prepareSshAttention(executor, 'host', 'opencode', [], token);
+    const root = join(prepared.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..');
+    roots.push(root);
+    expect(existsSync(join(root, 'command.mjs'))).toBe(true);
+    await prepared.release();
+    expect(exec.mock.calls[1][1]).toBe('sh');
+    expect(existsSync(root)).toBe(false);
+  });
+
+  it('normalizes a setgid TMPDIR launch root to 0700 and preserves unknown files during release', async () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'clanker-sgid-test-')));
+    roots.push(parent);
+    chmodSync(parent, 0o2700);
+    expect(statSync(parent).mode & 0o7777).toBe(0o2700);
+    const { executor } = fixture({ TMPDIR: parent });
+    const prepared = await prepareSshAttention(executor, 'host', 'opencode', [], token);
+    const root = join(prepared.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..');
+    expect(root.startsWith(parent + '/')).toBe(true);
+    expect(statSync(root).mode & 0o7777).toBe(0o700);
+    writeFileSync(join(root, 'unknown.txt'), 'preserve');
+    await prepared.release();
+    expect(readFileSync(join(root, 'unknown.txt'), 'utf8')).toBe('preserve');
+    expect(existsSync(join(root, 'command.mjs'))).toBe(false);
+    expect(existsSync(join(root, 'opencode'))).toBe(false);
+    expect(statSync(root).mode & 0o7777).toBe(0o700);
+    rmSync(join(root, 'unknown.txt'));
+    await prepared.release();
+    expect(existsSync(root)).toBe(false);
+  });
   it.each(['codex', 'claude', 'opencode', 'pi', 'omp', 'agy', 'hermes'])('prepares isolated %s hooks and cleans launch files without deleting unrecognized files', async (harness) => {
     const { executor, home, exec } = fixture();
     const prepared = await prepareSshAttention(executor, 'test-host', harness, ['--model', 'test'], token);
