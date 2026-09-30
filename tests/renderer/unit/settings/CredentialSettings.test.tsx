@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup, fireEvent, act } from '@testing-library/react';
+import { render, cleanup, fireEvent, act, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
+import userEvent from '@testing-library/user-event';
+import { useWorkspaceStore } from '../../../../src/renderer/store/workspaceStore';
+import { createWorkspaceFixture } from '../../../setup/fixtures';
+import { installElectronApiMock } from '../../../setup/electron';
 import { useVcsStore } from '../../../../src/renderer/store/vcsStore';
 import CredentialSettings from '../../../../src/renderer/components/settings/CredentialSettings';
 
@@ -24,6 +29,7 @@ const mockClipboard = {
 };
 Object.defineProperty(navigator, 'clipboard', {
   value: mockClipboard,
+  configurable: true,
   writable: true,
 });
 
@@ -62,10 +68,7 @@ describe('CredentialSettings', () => {
     mockConfirm = vi.fn(() => true);
     vi.stubGlobal('confirm', mockConfirm);
 
-    Object.defineProperty(window, 'electronAPI', {
-      value: mockElectronAPI,
-      writable: true,
-    });
+    installElectronApiMock(mockElectronAPI);
 
     // Reset VCS store
     useVcsStore.setState({
@@ -399,5 +402,50 @@ describe('CredentialSettings', () => {
       const errorDiv = document.querySelector('.credential-error');
       expect(errorDiv?.textContent).toContain('Failed to copy to clipboard');
     });
+  });
+});
+
+describe('CredentialSettings dialog lifecycle', () => {
+  const count = () => useWorkspaceStore.getState().getWorkspaceById('credentials')?.browserOverlayCount ?? 0;
+  beforeEach(() => {
+    installElectronApiMock();
+    useWorkspaceStore.setState({ activeWorkspaceId: 'credentials', workspaces: [createWorkspaceFixture({ id: 'credentials', browserVisible: true, browserOverlayCount: 0 })] });
+    useVcsStore.setState({ sshKey: { exists: false }, storedPats: { github: null, gitlab: null, bitbucket: null, unknown: null }, isLoading: false, error: null });
+  });
+  function Demo() {
+    const [open, setOpen] = useState(false);
+    return <><button onClick={() => setOpen(true)}>Manage credentials</button>
+      <CredentialSettings isOpen={open} onClose={() => setOpen(false)} /></>;
+  }
+
+  it('names the Dialog, moves and traps focus, then restores its origin after Escape', async () => {
+    const user = userEvent.setup();
+    render(<Demo />);
+    const origin = screen.getByRole('button', { name: 'Manage credentials' });
+    await user.click(origin);
+    const dialog = screen.getByRole('dialog', { name: 'VCS Credentials' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(count()).toBe(1);
+    expect(screen.getByRole('button', { name: 'Close VCS Credentials' })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(origin).not.toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Close VCS Credentials' })).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(count()).toBe(0);
+    await waitFor(() => expect(origin).toHaveFocus());
+  });
+
+  it('releases its own lease on unmount while preserving another owner', async () => {
+    const user = userEvent.setup();
+    useWorkspaceStore.getState().pushBrowserOverlay('credentials');
+    const { unmount } = render(<Demo />);
+    await user.click(screen.getByRole('button', { name: 'Manage credentials' }));
+    expect(count()).toBe(2);
+    unmount();
+    expect(count()).toBe(1);
+    useWorkspaceStore.getState().popBrowserOverlay('credentials');
   });
 });
