@@ -30,6 +30,8 @@ export const GET_HARNESS_OPTIONS = 'get-harness-options';
 export const GET_HARNESS_MODELS = 'get-harness-models';
 export const GET_HARNESS_DEFAULTS = 'get-harness-defaults';
 export const SET_HARNESS_DEFAULTS = 'set-harness-defaults';
+export const GET_THEME = 'get-theme';
+export const SET_THEME = 'set-theme';
 
 /* ============================================================================
  * Terminal
@@ -270,6 +272,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   GET_HARNESS_MODELS,
   GET_HARNESS_DEFAULTS,
   SET_HARNESS_DEFAULTS,
+  GET_THEME,
+  SET_THEME,
   // Terminal
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,

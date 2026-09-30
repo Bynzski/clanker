@@ -21,6 +21,8 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     setAiCommitEnabled: createAsyncMock(undefined),
     setAiCommitProvider: createAsyncMock(undefined),
     setAiCommitModel: createAsyncMock(undefined),
+    getTheme: createAsyncMock('dark'),
+    setTheme: createAsyncMock(undefined),
     spawnTerminal: createAsyncMock({ id: 'terminal-1', pid: 1001 }),
     waitRecipeCommand: createAsyncMock({ status: 'started' }),
     getTerminalBuffer: createAsyncMock(''),

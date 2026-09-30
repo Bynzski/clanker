@@ -128,6 +128,7 @@ describe('registerSettingsIpc', () => {
             pi: { model: '', favorites: [], flags: '' },
             claude: { model: '', favorites: [], flags: '' },
           },
+          theme: 'dark',
         };
         return defaults[key];
       }),
@@ -143,6 +144,7 @@ describe('registerSettingsIpc', () => {
       maximize: vi.fn(),
       close: vi.fn(),
       isMaximized: vi.fn(() => false),
+      setBackgroundColor: vi.fn(),
     };
 
     return {
@@ -177,6 +179,8 @@ describe('registerSettingsIpc', () => {
       'get-harness-options',
       'get-harness-defaults',
       'set-harness-defaults',
+      'get-theme',
+      'set-theme',
     ];
 
     expectedChannels.forEach(channel => {
@@ -184,13 +188,13 @@ describe('registerSettingsIpc', () => {
     });
   });
 
-  test('registers exactly 14 settings IPC channels', () => {
+  test('registers exactly 16 settings IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(14);
+    expect(handleCalls.length).toBe(16);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -200,7 +204,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(28);
+    expect(handleCalls.length).toBe(32);
   });
 
   test('OPEN_DIRECTORY_DIALOG allows creating directories from the picker', async () => {
@@ -743,6 +747,8 @@ describe('settings IPC channel constants', () => {
       'read-directory',
       'get-harness-models',
       'get-harness-options',
+      'get-theme',
+      'set-theme',
     ];
 
     const expectedPrefixes = ['get-', 'set-', 'open-', 'read-'];
@@ -750,5 +756,121 @@ describe('settings IPC channel constants', () => {
       const hasExpectedPrefix = expectedPrefixes.some(prefix => channel.startsWith(prefix));
       expect(hasExpectedPrefix).toBe(true);
     });
+  });
+});
+
+describe('GET_THEME and SET_THEME handlers', () => {
+  const mockIpcMain = ipcMain as unknown as {
+    handle: { mock: { calls: Array<[string, (...args: unknown[]) => unknown]> } };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('GET_THEME returns persisted valid theme', async () => {
+    const mockStore = {
+      get: vi.fn().mockReturnValue('light'),
+      set: vi.fn(),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => null,
+    };
+    registerSettingsIpc(deps);
+    const handler = mockIpcMain.handle.mock.calls.find((c) => c[0] === 'get-theme')?.[1] as (() => Promise<string>) | undefined;
+    expect(handler).toBeDefined();
+    if (!handler) throw new Error('get-theme handler not found');
+
+    const result = await handler();
+    expect(result).toBe('light');
+    expect(mockStore.set).not.toHaveBeenCalled();
+  });
+
+  test('GET_THEME returns and normalizes missing theme to dark', async () => {
+    const mockStore = {
+      get: vi.fn().mockReturnValue(undefined),
+      set: vi.fn(),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => null,
+    };
+    registerSettingsIpc(deps);
+    const handler = mockIpcMain.handle.mock.calls.find((c) => c[0] === 'get-theme')?.[1] as (() => Promise<string>) | undefined;
+    expect(handler).toBeDefined();
+    if (!handler) throw new Error('get-theme handler not found');
+    const result = await handler();
+    expect(result).toBe('dark');
+    expect(mockStore.set).toHaveBeenCalledWith('theme', 'dark');
+  });
+
+  test('GET_THEME normalizes corrupt theme to dark and repairs store', async () => {
+    const mockStore = {
+      get: vi.fn().mockReturnValue('solarized-neon-invalid'),
+      set: vi.fn(),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => null,
+    };
+    registerSettingsIpc(deps);
+    const handler = mockIpcMain.handle.mock.calls.find((c) => c[0] === 'get-theme')?.[1] as (() => Promise<string>) | undefined;
+    expect(handler).toBeDefined();
+    if (!handler) throw new Error('get-theme handler not found');
+    const result = await handler();
+    expect(result).toBe('dark');
+    expect(mockStore.set).toHaveBeenCalledWith('theme', 'dark');
+  });
+
+  test('SET_THEME persists valid theme and updates window background', async () => {
+    const mockStore = {
+      get: vi.fn(),
+      set: vi.fn(),
+    };
+    const mockWindow = {
+      isDestroyed: () => false,
+      setBackgroundColor: vi.fn(),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => mockWindow as never,
+    };
+    registerSettingsIpc(deps);
+    const handler = mockIpcMain.handle.mock.calls.find((c) => c[0] === 'set-theme')?.[1] as ((_event: unknown, theme: unknown) => Promise<void>) | undefined;
+    expect(handler).toBeDefined();
+    if (!handler) throw new Error('set-theme handler not found');
+    await handler({}, 'light');
+    expect(mockStore.set).toHaveBeenCalledWith('theme', 'light');
+    expect(mockWindow.setBackgroundColor).toHaveBeenCalledWith('#ffffff');
+
+    await handler({}, 'dark');
+    expect(mockStore.set).toHaveBeenCalledWith('theme', 'dark');
+    expect(mockWindow.setBackgroundColor).toHaveBeenCalledWith('#0d1117');
+  });
+
+  test('SET_THEME rejects invalid values safely without persisting', async () => {
+    const mockStore = {
+      get: vi.fn(),
+      set: vi.fn(),
+    };
+    const mockWindow = {
+      isDestroyed: () => false,
+      setBackgroundColor: vi.fn(),
+    };
+    const deps = {
+      getStore: () => mockStore as never,
+      getMainWindow: () => mockWindow as never,
+    };
+    registerSettingsIpc(deps);
+    const handler = mockIpcMain.handle.mock.calls.find((c) => c[0] === 'set-theme')?.[1] as ((_event: unknown, theme: unknown) => Promise<void>) | undefined;
+    expect(handler).toBeDefined();
+    if (!handler) throw new Error('set-theme handler not found');
+    await handler({}, 'garbage-theme');
+    await handler({}, null);
+    await handler({}, 123);
+
+    expect(mockStore.set).not.toHaveBeenCalled();
+    expect(mockWindow.setBackgroundColor).not.toHaveBeenCalled();
   });
 });

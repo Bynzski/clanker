@@ -49,8 +49,10 @@ import type { HarnessDefaultsMap } from '../../shared/types/store';
 import type { HarnessSession } from '../../shared/types/session';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { AgentAttentionUpdate } from '../../shared/types/agentAttention';
+import type { ThemeId } from '../../shared/types/theme';
 
 export type { VcsProvider, ProviderContext, PullRequestContext, DeepLink, DeepLinkType };
+export type { ThemeId };
 export type {
   GitStatusResult,
   GitBranchStateResult,
@@ -96,6 +98,8 @@ interface ElectronAPI {
   setAiCommitEnabled: (enabled: boolean) => Promise<void>;
   setAiCommitProvider: (provider: string) => Promise<void>;
   setAiCommitModel: (model: string) => Promise<void>;
+  getTheme: () => Promise<ThemeId>;
+  setTheme: (theme: ThemeId) => Promise<void>;
 
   // Terminal
   spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;

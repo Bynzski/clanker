@@ -36,6 +36,7 @@ import { WorkspaceRegistry } from './workspaceRegistry';
 import { registerSshEnvironmentIpc } from './ipc/sshEnvironmentIpc';
 import { resolveExistingDirectory } from './security';
 import { type StoreSchema } from '../shared/types/store';
+import { DEFAULT_THEME_ID, normalizeThemeId, getThemeMetadata } from '../shared/types/theme';
 import { KNOWN_HARNESS_IDS } from '../shared/harnessIds';
 import { HARNESS_OPTIONS, getAvailableHarnessOptions, discoverHarnessModels } from './harnessCatalog';
 import { createMainWindow, getPreloadPath, isWindowAvailable } from './windowManager';
@@ -69,6 +70,7 @@ import { waitForTerminalCleanup } from './ipc/ptySpawn';
 
 const store = new Store<StoreSchema>({
   defaults: {
+    theme: DEFAULT_THEME_ID,
     lastWorkspace: app.getPath('home'),
     baseDirectory: app.getPath('home'),
     aiCommitEnabled: false,
@@ -382,12 +384,18 @@ app.whenReady().then(() => {
     },
   });
 
+  function getInitialWindowBackground(): string {
+    const savedTheme = normalizeThemeId(store.get('theme'));
+    return getThemeMetadata(savedTheme).windowBackground;
+  }
+
   // Create window
   ({ window: mainWindow } = createMainWindow({
     preloadPath,
     gitService,
     fileWatcher,
     explorerWatcher,
+    backgroundColor: getInitialWindowBackground(),
     onWindowClosed: cleanupWindowState,
     onRendererGone: cleanupWorkspaceResources,
   }));
@@ -403,6 +411,7 @@ app.whenReady().then(() => {
         gitService,
         fileWatcher,
         explorerWatcher,
+        backgroundColor: getInitialWindowBackground(),
         onWindowClosed: cleanupWindowState,
         onRendererGone: cleanupWorkspaceResources,
       }));

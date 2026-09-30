@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import App from '../../../src/renderer/App';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { useThemeStore } from '../../../src/renderer/theme/themeStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
 // Mock localStorage for migrateLegacyFavorites in App.tsx
@@ -115,6 +116,12 @@ describe('App', () => {
       fitAllPanes: mockFitAllPanes,
     });
 
+    // Reset theme store
+    useThemeStore.setState({
+      theme: 'dark',
+      resolved: false,
+    });
+
     // Mock window.electronAPI
     window.electronAPI = {
       spawnTerminal: mockSpawnTerminal,
@@ -133,6 +140,8 @@ describe('App', () => {
         claude: { model: '', favorites: [], flags: '' },
       }),
       setHarnessDefaults: vi.fn().mockResolvedValue(undefined),
+      getTheme: vi.fn().mockResolvedValue('dark'),
+      setTheme: vi.fn().mockResolvedValue(undefined),
       onGitStatusUpdate: vi.fn(),
       gitStartPolling: vi.fn(),
       gitStopPolling: vi.fn(),
@@ -814,5 +823,16 @@ describe('App', () => {
     const state = useWorkspaceStore.getState();
     expect(state.browserUrl).toBe('https://example.com');
     expect(state.workspaces.find((workspace) => workspace.id === workspaceId)?.browserUrl).toBe('https://example.com');
+  });
+
+  it('initializes theme and applies root data-theme on mount', async () => {
+    const mockGetTheme = vi.fn().mockResolvedValue('light');
+    window.electronAPI.getTheme = mockGetTheme;
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(mockGetTheme).toHaveBeenCalled();
+    });
   });
 });

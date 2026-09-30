@@ -12,6 +12,7 @@ import type { HarnessSession } from '../shared/types/session';
 import type { AgentAttentionUpdate } from '../shared/types/agentAttention';
 import type { RemotePreviewRequest, RemotePreviewUpdate } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
+import type { ThemeId } from '../shared/types/theme';
 import {
   GET_APP_VERSION,
   GET_LAST_WORKSPACE,
@@ -38,6 +39,8 @@ import {
   SET_AI_COMMIT_ENABLED,
   SET_AI_COMMIT_PROVIDER,
   SET_AI_COMMIT_MODEL,
+  GET_THEME,
+  SET_THEME,
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
   WRITE_TERMINAL,
@@ -192,6 +195,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAiCommitEnabled: (enabled: boolean) => ipcRenderer.invoke(SET_AI_COMMIT_ENABLED, enabled),
   setAiCommitProvider: (provider: string) => ipcRenderer.invoke(SET_AI_COMMIT_PROVIDER, provider),
   setAiCommitModel: (model: string) => ipcRenderer.invoke(SET_AI_COMMIT_MODEL, model),
+  getTheme: () => ipcRenderer.invoke(GET_THEME),
+  setTheme: (theme: ThemeId) => ipcRenderer.invoke(SET_THEME, theme),
 
   // Terminal
   spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string) =>

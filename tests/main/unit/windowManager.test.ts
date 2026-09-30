@@ -8,6 +8,7 @@ import { vi, describe, test, expect, afterEach } from 'vitest';
 import { BrowserWindow } from 'electron';
 import { createMainWindow } from '../../../src/main/windowManager';
 
+import { getThemeMetadata } from '../../../src/shared/types/theme';
 vi.mock('electron', () => ({ BrowserWindow: vi.fn(), Menu: { setApplicationMenu: vi.fn() } }));
 
 test('renderer loss stops file/git watchers and releases workspace resources without waiting for window close', () => {
@@ -163,6 +164,108 @@ describe('windowManager', () => {
 
       expect(result.window).toBeDefined();
       expect(typeof result.cleanup).toBe('function');
+    });
+
+    test('uses dark theme window background by default', () => {
+      const prevEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+      const mockWin = {
+        setMenuBarVisibility: vi.fn(),
+        setAutoHideMenuBar: vi.fn(),
+        loadURL: vi.fn(),
+        loadFile: vi.fn(),
+        on: vi.fn(),
+        webContents: { on: vi.fn(), openDevTools: vi.fn() },
+      };
+      vi.mocked(BrowserWindow).mockImplementation(function () { return mockWin as never; });
+      try {
+        const deps = {
+          preloadPath: '/preload.js',
+          gitService: { stopPolling: vi.fn() },
+          fileWatcher: { unwatchAll: vi.fn() },
+        };
+        createMainWindow(deps);
+        expect(BrowserWindow).toHaveBeenCalledWith(
+          expect.objectContaining({
+            backgroundColor: '#0d1117',
+          })
+        );
+      } finally {
+        process.env.NODE_ENV = prevEnv;
+      }
+    });
+
+    test('uses light theme window background when specified', () => {
+      const prevEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+      const mockWin = {
+        setMenuBarVisibility: vi.fn(),
+        setAutoHideMenuBar: vi.fn(),
+        loadURL: vi.fn(),
+        loadFile: vi.fn(),
+        on: vi.fn(),
+        webContents: { on: vi.fn(), openDevTools: vi.fn() },
+      };
+      vi.mocked(BrowserWindow).mockImplementation(function () { return mockWin as never; });
+      try {
+        const deps = {
+          preloadPath: '/preload.js',
+          gitService: { stopPolling: vi.fn() },
+          fileWatcher: { unwatchAll: vi.fn() },
+          backgroundColor: getThemeMetadata('light').windowBackground,
+        };
+        createMainWindow(deps);
+        expect(BrowserWindow).toHaveBeenCalledWith(
+          expect.objectContaining({
+            backgroundColor: '#ffffff',
+          })
+        );
+      } finally {
+        process.env.NODE_ENV = prevEnv;
+      }
+    });
+
+    test('recreated window uses the supplied theme background rather than hardcoded dark', () => {
+      const prevEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+      const mockWin = {
+        setMenuBarVisibility: vi.fn(),
+        setAutoHideMenuBar: vi.fn(),
+        loadURL: vi.fn(),
+        loadFile: vi.fn(),
+        on: vi.fn(),
+        webContents: { on: vi.fn(), openDevTools: vi.fn() },
+      };
+      vi.mocked(BrowserWindow).mockImplementation(function () { return mockWin as never; });
+      try {
+        const baseDeps = {
+          preloadPath: '/preload.js',
+          gitService: { stopPolling: vi.fn() },
+          fileWatcher: { unwatchAll: vi.fn() },
+        };
+
+        createMainWindow({
+          ...baseDeps,
+          backgroundColor: getThemeMetadata('dark').windowBackground,
+        });
+        expect(BrowserWindow).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            backgroundColor: '#0d1117',
+          })
+        );
+
+        createMainWindow({
+          ...baseDeps,
+          backgroundColor: getThemeMetadata('light').windowBackground,
+        });
+        expect(BrowserWindow).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            backgroundColor: '#ffffff',
+          })
+        );
+      } finally {
+        process.env.NODE_ENV = prevEnv;
+      }
     });
   });
 

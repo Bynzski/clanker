@@ -8,6 +8,7 @@
 import { BrowserWindow, Menu } from 'electron';
 import * as path from 'path';
 
+import { DEFAULT_THEME_ID, getThemeMetadata } from '../shared/types/theme';
 /** Async resource callbacks may outlive the renderer or its window. */
 export function isWindowAvailable(window: BrowserWindow | null): window is BrowserWindow {
   return !!window && !window.isDestroyed?.() && !window.webContents.isDestroyed?.() && !window.webContents.isCrashed?.();
@@ -27,6 +28,7 @@ export interface CreateMainWindowOptions {
   };
   onWindowClosed?: () => void;
   onRendererGone?: () => void;
+  backgroundColor?: string;
 }
 
 /**
@@ -78,15 +80,20 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   window: BrowserWindow;
   cleanup: () => void;
 } {
-  const { preloadPath, gitService, fileWatcher, onWindowClosed } = deps;
-
+  const {
+    preloadPath,
+    gitService,
+    fileWatcher,
+    onWindowClosed,
+    backgroundColor = getThemeMetadata(DEFAULT_THEME_ID).windowBackground,
+  } = deps;
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
     minHeight: 600,
     title: 'Clanker Grid',
-    backgroundColor: '#0d1117',
+    backgroundColor,
     icon: getIconPath(),
     show: true,
     frame: false,
