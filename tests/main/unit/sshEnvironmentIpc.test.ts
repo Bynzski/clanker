@@ -73,7 +73,7 @@ describe('pre-workspace SSH browse IPC', () => {
       .mockResolvedValueOnce({ stdout: '{"homePath":"/home/dev","initialPath":"/home/dev/workspaces"}' })
       .mockResolvedValueOnce({ stdout: '{"path":"/home/dev/workspaces","parentPath":"/home/dev","directories":[]}' })
       .mockResolvedValueOnce({ stdout: '{"path":"/home/dev/workspaces/project"}' });
-    const manager = new EnvironmentManager(() => store as never, { exec } as unknown as SshCommandExecutor);
+    const manager = new EnvironmentManager(() => store as never, { exec } as unknown as SshCommandExecutor, async (target) => `ssh:${target}`);
     registerSshEnvironmentIpc({
       getStore: () => store as never,
       getEnvironmentManager: () => manager,

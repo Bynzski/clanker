@@ -87,4 +87,25 @@ describe('RemotePreviewManager', () => {
     expect(close).toHaveBeenCalled();
     expect((await manager.start(request)).success).toBe(false);
   });
+
+  it('waits for pending startup and child termination on shutdown, ignoring stale exit callbacks', async () => {
+    const { manager, startPortForward, close } = fixture();
+    const starting = deferred<PortForwardHandle>();
+    const closing = deferred<void>();
+    startPortForward.mockReturnValueOnce(starting.promise);
+    close.mockReturnValueOnce(closing.promise);
+    const started = manager.start(request);
+    const staleExit = startPortForward.mock.calls[0][3] as (error: string) => void;
+    let drained = false;
+    const shutdown = manager.close().then(() => { drained = true; });
+    starting.resolve({ close });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    expect(manager.get('ssh-a')?.status).toBe('stopping');
+    closing.resolve();
+    await shutdown;
+    expect((await started).success).toBe(false);
+    staleExit('late disconnect');
+    expect(manager.get('ssh-a')).toBeNull();
+  });
 });

@@ -3,6 +3,7 @@ import { RemoteWorktreeCoordinator } from '../../../src/main/remote/remoteWorktr
 import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
 import type { WorkspaceEnvironment } from '../../../src/main/environment/workspaceEnvironment';
 import { remoteRemovalPaths } from '../../../src/main/remote/sshWorktreeRemoval';
+import type { RemoteWorktreeRemovalRecord } from '../../../src/shared/types/store';
 
 async function setup() {
   const worktree = { path: '/srv/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false };
@@ -21,6 +22,46 @@ async function setup() {
 }
 
 describe('remote worktree removal coordination', () => {
+  it('restores uncertain reservations after restart and requires a verified host journal before releasing them', async () => {
+    const f = await setup();
+    Object.assign(f.environment, { worktreeResourceId: 'ssh:user@host' });
+    f.registry.unregisterWorkspace('source');
+    await f.registry.registerWorkspace({ workspaceId: 'source', environmentId: 'ssh', workspacePath: '/srv/repo' });
+    let records: RemoteWorktreeRemovalRecord[] = [];
+    const persistence = { read: () => records, write: (value: RemoteWorktreeRemovalRecord[]) => { records = structuredClone(value); } };
+    const coordinator = new RemoteWorktreeCoordinator(() => f.registry, f.terminals, persistence);
+    f.environment.removeWorktree.mockImplementation(async () => {
+      expect(records).toHaveLength(1); // Durable before any host dispatch.
+      return { success: false, uncertain: true };
+    });
+    expect(await coordinator.remove(f.registry.getWorkspace('source')!, '/srv/task', 'task')).toMatchObject({ success: false });
+    const restarted = new WorkspaceRegistry(() => f.environment as unknown as WorkspaceEnvironment);
+    const restored = new RemoteWorktreeCoordinator(() => restarted, f.terminals, persistence);
+    expect(restarted.isRemotePathReserved('ssh', '/srv/task/sub')).toBe(true);
+    expect(restarted.isEnvironmentInUse('ssh')).toBe(true);
+    expect(await restarted.registerWorkspace({ workspaceId: 'blocked', environmentId: 'alias', workspacePath: '/srv/task' })).toMatchObject({ success: false });
+    await restarted.registerWorkspace({ workspaceId: 'source', environmentId: 'alias', workspacePath: '/srv/repo' });
+    f.environment.waitForWorktreeOperations.mockRejectedValueOnce(new Error('Host outcome unknown'));
+    await expect(restored.reconcile('alias')).rejects.toThrow('unknown');
+    expect(records).toHaveLength(1);
+    expect(restarted.isRemotePathReserved('alias', '/srv/task')).toBe(true);
+    await restored.reconcile('alias');
+    expect(records).toEqual([]);
+    expect(restarted.isRemotePathReserved('ssh', '/srv/task')).toBe(false);
+  });
+
+  it('does not dispatch removal if desktop persistence fails and keeps protection if completion cannot be persisted', async () => {
+    const f = await setup();
+    const write = vi.fn().mockImplementationOnce(() => { throw new Error('Disk full'); });
+    const coordinator = new RemoteWorktreeCoordinator(() => f.registry, f.terminals, { read: () => [], write });
+    expect(await coordinator.remove(f.source, '/srv/task', 'task')).toMatchObject({ success: false, error: 'Disk full' });
+    expect(f.environment.removeWorktree).not.toHaveBeenCalled();
+    expect(f.registry.isRemotePathReserved('ssh', '/srv/task')).toBe(false);
+    write.mockImplementationOnce(() => undefined).mockImplementationOnce(() => { throw new Error('Disk full'); });
+    await expect(coordinator.remove(f.source, '/srv/task', 'task')).rejects.toThrow('Disk full');
+    expect(f.registry.isRemotePathReserved('ssh', '/srv/task')).toBe(true);
+  });
+
   it('uses authoritative identity and reserves all operation paths until completion', async () => {
     const { coordinator, source, registry, environment } = await setup();
     let finish!: (result: { success: boolean }) => void;

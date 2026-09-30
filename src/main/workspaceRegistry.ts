@@ -28,8 +28,9 @@ export type EnvironmentResolver = (
 
 export class WorkspaceRegistry {
   private readonly workspaces = new Map<string, RegisteredWorkspace>();
+  private readonly pendingRegistrations = new Map<string, { environmentId: string }>();
   private readonly isWorktreeBeingRemoved?: (path: string) => boolean;
-  private readonly remoteReservations = new Map<symbol, { environmentId: string; paths: string[] }>();
+  private readonly remoteReservations = new Map<symbol, { environmentId: string; resourceId: string; paths: string[] }>();
   private readonly worktreeResourceIds = new Map<string, string>();
 
   public getWorktreeResourceId(environmentId: string): string {
@@ -37,14 +38,17 @@ export class WorkspaceRegistry {
   }
 
   public isRemotePathReserved(environmentId: string, workspacePath: string): boolean {
-    return [...this.remoteReservations.values()].some((entry) => this.getWorktreeResourceId(entry.environmentId) === this.getWorktreeResourceId(environmentId) && entry.paths.some((reserved) =>
+    return [...this.remoteReservations.values()].some((entry) => (entry.environmentId === environmentId || entry.resourceId === this.getWorktreeResourceId(environmentId)) && entry.paths.some((reserved) =>
       isPathContained(reserved, workspacePath) || isPathContained(workspacePath, reserved)));
   }
 
-  public reserveRemotePaths(environmentId: string, paths: string[]): (() => void) | null {
+  public reserveRemotePaths(environmentId: string, paths: string[], resourceId?: string): (() => void) | null {
+    // Restored removal records must protect duplicate saved targets before any
+    // workspace has resolved that environment in this desktop process.
+    if (resourceId) this.worktreeResourceIds.set(environmentId, resourceId);
     if (environmentId === LOCAL_ENVIRONMENT_ID || paths.some((entry) => this.isRemotePathReserved(environmentId, entry))) return null;
     const token = Symbol('remote-worktree-removal');
-    this.remoteReservations.set(token, { environmentId, paths });
+    this.remoteReservations.set(token, { environmentId, resourceId: this.getWorktreeResourceId(environmentId), paths });
     return () => { this.remoteReservations.delete(token); };
   }
 
@@ -65,7 +69,7 @@ export class WorkspaceRegistry {
       return { success: false, error: 'Workspace ID is required' };
     }
 
-    if (this.workspaces.has(workspaceId)) {
+    if (this.workspaces.has(workspaceId) || this.pendingRegistrations.has(workspaceId)) {
       return { success: false, error: 'Workspace identity is already registered' };
     }
 
@@ -77,48 +81,61 @@ export class WorkspaceRegistry {
       ? input.environmentId.trim()
       : LOCAL_ENVIRONMENT_ID;
 
-    const environment = await this.resolveEnvironment(environmentId);
-    if (!environment) {
-      return { success: false, error: `Environment '${environmentId}' not found` };
-    }
-    if (environmentId !== LOCAL_ENVIRONMENT_ID) this.worktreeResourceIds.set(environmentId, environment.worktreeResourceId ?? environmentId);
+    const pending = { environmentId };
+    this.pendingRegistrations.set(workspaceId, pending);
+    try {
+      const environment = await this.resolveEnvironment(environmentId);
+      if (this.pendingRegistrations.get(workspaceId) !== pending) {
+        return { success: false, error: 'Workspace registration was cancelled' };
+      }
+      if (!environment) {
+        return { success: false, error: `Environment '${environmentId}' not found` };
+      }
+      if (environmentId !== LOCAL_ENVIRONMENT_ID) this.worktreeResourceIds.set(environmentId, environment.worktreeResourceId ?? environmentId);
 
-    // Worktree safety check for local environment
-    if (environmentId === LOCAL_ENVIRONMENT_ID && this.isWorktreeBeingRemoved?.(workspacePath)) {
-      return { success: false, error: 'This worktree is being removed' };
-    }
-    if (environmentId !== LOCAL_ENVIRONMENT_ID && this.isRemotePathReserved(environmentId, workspacePath)) {
-      return { success: false, error: 'This remote worktree is being removed or awaiting completion verification' };
-    }
+      // Worktree safety check for local environment
+      if (environmentId === LOCAL_ENVIRONMENT_ID && this.isWorktreeBeingRemoved?.(workspacePath)) {
+        return { success: false, error: 'This worktree is being removed' };
+      }
+      if (environmentId !== LOCAL_ENVIRONMENT_ID && this.isRemotePathReserved(environmentId, workspacePath)) {
+        return { success: false, error: 'This remote worktree is being removed or awaiting completion verification' };
+      }
 
-    const validation = await environment.validateWorkspacePath(workspacePath);
-    if (!validation.valid || !validation.resolvedPath) {
-      return { success: false, error: validation.error || 'Workspace directory is invalid or not accessible' };
+      const validation = await environment.validateWorkspacePath(workspacePath);
+      if (this.pendingRegistrations.get(workspaceId) !== pending) {
+        return { success: false, error: 'Workspace registration was cancelled' };
+      }
+      if (!validation.valid || !validation.resolvedPath) {
+        return { success: false, error: validation.error || 'Workspace directory is invalid or not accessible' };
+      }
+
+      const canonicalPath = normalizeWorkspacePath(validation.resolvedPath);
+      // Validation crosses SSH; a removal may start while it is in flight.
+      if (environmentId !== LOCAL_ENVIRONMENT_ID && this.isRemotePathReserved(environmentId, canonicalPath)) {
+        return { success: false, error: 'This remote worktree is being removed or awaiting completion verification' };
+      }
+      const location: WorkspaceLocation = {
+        environmentId,
+        path: canonicalPath,
+      };
+
+      const registered: RegisteredWorkspace = {
+        workspaceId,
+        location,
+        environment,
+      };
+
+      this.workspaces.set(workspaceId, registered);
+      return { success: true, location };
+    } finally {
+      if (this.pendingRegistrations.get(workspaceId) === pending) this.pendingRegistrations.delete(workspaceId);
     }
-
-    const canonicalPath = normalizeWorkspacePath(validation.resolvedPath);
-    // Validation crosses SSH; a removal may start while it is in flight.
-    if (environmentId !== LOCAL_ENVIRONMENT_ID && this.isRemotePathReserved(environmentId, canonicalPath)) {
-      return { success: false, error: 'This remote worktree is being removed or awaiting completion verification' };
-    }
-    const location: WorkspaceLocation = {
-      environmentId,
-      path: canonicalPath,
-    };
-
-    const registered: RegisteredWorkspace = {
-      workspaceId,
-      location,
-      environment,
-    };
-
-    this.workspaces.set(workspaceId, registered);
-    return { success: true, location };
   }
 
   public unregisterWorkspace(workspaceId: string): void {
     if (!workspaceId) return;
     this.workspaces.delete(workspaceId);
+    this.pendingRegistrations.delete(workspaceId);
   }
 
   public getWorkspace(workspaceId: string): RegisteredWorkspace | null {
@@ -144,7 +161,8 @@ export class WorkspaceRegistry {
   }
 
   public isEnvironmentInUse(environmentId: WorkspaceEnvironmentId): boolean {
-    if ([...this.remoteReservations.values()].some((entry) => this.getWorktreeResourceId(entry.environmentId) === this.getWorktreeResourceId(environmentId))) return true;
+    if ([...this.pendingRegistrations.values()].some((entry) => entry.environmentId === environmentId)) return true;
+    if ([...this.remoteReservations.values()].some((entry) => entry.environmentId === environmentId || entry.resourceId === this.getWorktreeResourceId(environmentId))) return true;
     for (const workspace of this.workspaces.values()) {
       if (workspace.location.environmentId === environmentId) return true;
     }
@@ -163,5 +181,6 @@ export class WorkspaceRegistry {
 
   public clear(): void {
     this.workspaces.clear();
+    this.pendingRegistrations.clear();
   }
 }

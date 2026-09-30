@@ -8,7 +8,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { GitService, type GitWorkspaceIdentity } from '../gitService';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
-import { RemoteWorktreeCoordinator } from '../remote/remoteWorktreeCoordinator';
+import { RemoteWorktreeCoordinator, type RemoteWorktreeRemovalPersistence } from '../remote/remoteWorktreeCoordinator';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import {
   getValidatedWorkspacePath as getValidatedLocalWorkspacePath,
@@ -62,6 +62,7 @@ interface RegisterGitIpcDeps {
   /** null means an active remote terminal's directory cannot be verified. */
   getLiveRemoteTerminalPaths?: (environmentId: string) => string[] | null;
   onWorkspaceUnregistered?: (workspaceId: string) => void;
+  remoteWorktreeRemovalPersistence?: RemoteWorktreeRemovalPersistence;
 }
 function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
   if (!Array.isArray(paths) || !paths.every((entry) => typeof entry === 'string')) return null;
@@ -76,7 +77,7 @@ function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
 export function registerGitIpc(deps: RegisterGitIpcDeps): void {
   const { getGitService, getMainWindow, getWorkspaceRegistry } = deps;
   const gitService = getGitService();
-  const remoteWorktrees = new RemoteWorktreeCoordinator(() => getWorkspaceRegistry?.(), deps.getLiveRemoteTerminalPaths);
+  const remoteWorktrees = new RemoteWorktreeCoordinator(() => getWorkspaceRegistry?.(), deps.getLiveRemoteTerminalPaths, deps.remoteWorktreeRemovalPersistence);
 
   // These are the positions of the final workspaceId argument in the bridge.
   // Keeping the positional contract here leaves all legacy local callers intact.

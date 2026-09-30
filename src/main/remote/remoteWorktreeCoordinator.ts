@@ -4,11 +4,50 @@ import type { RegisteredWorkspace, WorkspaceRegistry } from '../workspaceRegistr
 import { validRemoteWorktreePath } from './sshWorktreeInspection';
 import { remoteRemovalPaths } from './sshWorktreeRemoval';
 import { isPathContained } from './remotePaths';
+import type { RemoteWorktreeRemovalRecord } from '../../shared/types/store';
+
+export interface RemoteWorktreeRemovalPersistence {
+  read(): RemoteWorktreeRemovalRecord[];
+  write(records: RemoteWorktreeRemovalRecord[]): void;
+}
+
+interface PendingRemoval {
+  record: RemoteWorktreeRemovalRecord;
+  workspace?: RegisteredWorkspace;
+  release: () => void;
+  active: boolean;
+  persisted: boolean;
+}
 
 export class RemoteWorktreeCoordinator {
-  private readonly pending = new Map<string, { workspace: RegisteredWorkspace; release: () => void; active: boolean }>();
+  private readonly pending = new Map<string, PendingRemoval>();
   constructor(private readonly registry: () => WorkspaceRegistry | undefined,
-    private readonly terminalPaths?: (environmentId: string) => string[] | null) {}
+    private readonly terminalPaths?: (environmentId: string) => string[] | null,
+    private readonly persistence?: RemoteWorktreeRemovalPersistence) {
+    for (const record of persistence?.read() ?? []) {
+      if (!record || !/^[0-9a-f-]{36}$/.test(record.operationId) || typeof record.environmentId !== 'string' ||
+          !record.environmentId || record.environmentId === 'local' || typeof record.resourceId !== 'string' ||
+          !record.resourceId.startsWith('ssh:') || !validRemoteWorktreePath(record.workspacePath) || !validRemoteWorktreePath(record.worktreePath)) {
+        throw new Error('Invalid saved remote worktree removal; reservations require manual recovery');
+      }
+      const { stagingPath, recoveryDirectory } = remoteRemovalPaths(record.worktreePath, record.operationId);
+      const release = registry()?.reserveRemotePaths(record.environmentId, [record.worktreePath, stagingPath, recoveryDirectory], record.resourceId);
+      if (!release) throw new Error('Conflicting saved remote worktree removal reservations');
+      this.pending.set(record.operationId, { record, release, active: false, persisted: true });
+    }
+  }
+
+  private save(): void {
+    this.persistence?.write([...this.pending.values()].filter((entry) => entry.persisted).map((entry) => entry.record));
+  }
+
+  private complete(operationId: string, entry: PendingRemoval): void {
+    // A failed desktop write must retain both the durable and runtime protection.
+    entry.persisted = false;
+    try { this.save(); } catch (error) { entry.persisted = true; throw error; }
+    entry.release();
+    this.pending.delete(operationId);
+  }
 
   private activity(workspace: RegisteredWorkspace): string[] | null {
     const terminals = this.terminalPaths ? this.terminalPaths(workspace.location.environmentId) : [];
@@ -40,7 +79,10 @@ export class RemoteWorktreeCoordinator {
     const { stagingPath, recoveryDirectory } = remoteRemovalPaths(worktreePath, operationId);
     const release = this.registry()?.reserveRemotePaths(workspace.location.environmentId, [worktreePath, stagingPath, recoveryDirectory]);
     if (!release) return { success: false, error: 'This worktree is being removed or awaiting completion verification; refresh worktrees' };
-    const pending = { workspace, release, active: true };
+    const pending: PendingRemoval = { workspace, release, active: true, persisted: false,
+      record: { operationId, environmentId: workspace.location.environmentId,
+        resourceId: this.registry()!.getWorktreeResourceId(workspace.location.environmentId),
+        workspacePath: workspace.location.path, worktreePath } };
     this.pending.set(operationId, pending);
     let uncertain = false;
     try {
@@ -52,6 +94,8 @@ export class RemoteWorktreeCoordinator {
       if (!activity) return { success: false, error: 'Active terminal directories could not be verified' };
       // No await between the final activity snapshot and dispatch. Registrations
       // and terminal spawns reject the reserved paths throughout the operation.
+      pending.persisted = true;
+      try { this.save(); } catch (error) { pending.persisted = false; throw error; }
       uncertain = true;
       const result = await workspace.environment.removeWorktree(workspace.location.path, worktreePath, expectedBranch, activity, operationId);
       uncertain = result.uncertain === true;
@@ -60,16 +104,19 @@ export class RemoteWorktreeCoordinator {
       return { success: false, error: `${error instanceof Error ? error.message : 'Remote removal failed'}${uncertain ? '\nRefresh worktrees to verify completion before reopening.' : ''}` };
     } finally {
       pending.active = false;
-      if (!uncertain) { release(); this.pending.delete(operationId); }
+      if (!uncertain) this.complete(operationId, pending);
     }
   }
 
   /** Release uncertain reservations only after the host journals completion. */
   public async reconcile(environmentId: string): Promise<void> {
     for (const [operationId, entry] of this.pending) {
-      if (entry.active || this.registry()?.getWorktreeResourceId(entry.workspace.location.environmentId) !== this.registry()?.getWorktreeResourceId(environmentId)) continue;
-      await entry.workspace.environment.waitForWorktreeOperations?.(entry.workspace.location.path, operationId);
-      entry.release(); this.pending.delete(operationId);
+      if (entry.active || entry.record.resourceId !== this.registry()?.getWorktreeResourceId(environmentId)) continue;
+      const workspace = entry.workspace ?? this.registry()?.getAllWorkspaces().find((workspace) =>
+        workspace.environment.kind === 'ssh' && workspace.environment.worktreeResourceId === entry.record.resourceId);
+      if (!workspace?.environment.waitForWorktreeOperations) throw new Error('Open the owning SSH repository to verify pending worktree removal');
+      await workspace.environment.waitForWorktreeOperations(entry.record.workspacePath, operationId);
+      this.complete(operationId, entry);
     }
   }
 }

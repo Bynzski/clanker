@@ -179,12 +179,13 @@ export class SshEnvironment implements WorkspaceEnvironment {
 
   constructor(
     config: SshEnvironmentConfig,
-    private readonly executor: SshCommandExecutor = new SshCommandExecutor()
+    private readonly executor: SshCommandExecutor = new SshCommandExecutor(),
+    resourceId?: string
   ) {
     this.id = config.id;
     this.label = config.label;
     this.target = config.target;
-    this.worktreeResourceId = `ssh:${config.target}`;
+    this.worktreeResourceId = resourceId ?? `ssh:${config.target}`;
     this.defaultWorkspaceRoot = config.defaultWorkspaceRoot;
   }
 

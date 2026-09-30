@@ -124,6 +124,28 @@ describe('WorkspaceRegistry', () => {
     expect(dup.error).toContain('already registered');
   });
 
+  it.each(['unregister', 'clear'] as const)('cancels pending SSH registration on %s without resurrecting it', async (action) => {
+    let finish!: (value: { valid: boolean; resolvedPath: string }) => void;
+    vi.mocked(remoteEnv.validateWorkspacePath).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const pending = registry.registerWorkspace({ workspaceId: 'pending', environmentId: 'vps-1', workspacePath: '/repo' });
+    await vi.waitFor(() => expect(remoteEnv.validateWorkspacePath).toHaveBeenCalled());
+    expect(registry.isEnvironmentInUse('vps-1')).toBe(true);
+    expect(await registry.registerWorkspace({ workspaceId: 'pending', environmentId: 'vps-1', workspacePath: '/other' })).toMatchObject({ success: false });
+    if (action === 'clear') registry.clear();
+    else registry.unregisterWorkspace('pending');
+    // A newer request can use the ID; the cancelled request must not replace it.
+    expect(await registry.registerWorkspace({ workspaceId: 'pending', environmentId: 'vps-1', workspacePath: '/new' })).toMatchObject({ success: true });
+    finish({ valid: true, resolvedPath: '/repo' });
+    expect(await pending).toMatchObject({ success: false, error: expect.stringContaining('cancelled') });
+    expect(registry.getWorkspace('pending')?.location.path).toBe('/new');
+  });
+
+  it('releases a pending environment lock when SSH validation fails', async () => {
+    vi.mocked(remoteEnv.validateWorkspacePath).mockRejectedValueOnce(new Error('SSH disconnected'));
+    await expect(registry.registerWorkspace({ workspaceId: 'pending', environmentId: 'vps-1', workspacePath: '/repo' })).rejects.toThrow('SSH disconnected');
+    expect(registry.isEnvironmentInUse('vps-1')).toBe(false);
+  });
+
   it('rejects invalid or inaccessible paths', async () => {
     const res = await registry.registerWorkspace({
       workspaceId: 'ws-bad',

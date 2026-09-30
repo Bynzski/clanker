@@ -109,6 +109,8 @@ export class SshCommandExecutor {
     let totalStderrLen = 0;
     let killed = false;
     let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+    let resolveClosed!: () => void;
+    const closed = new Promise<void>((resolve) => { resolveClosed = resolve; });
 
     const terminateChild = () => {
       try {
@@ -178,6 +180,7 @@ export class SshCommandExecutor {
     });
 
     child.on('close', (code, signal) => {
+      resolveClosed();
       options.signal?.removeEventListener('abort', onAbort);
       clearTimeout(timer);
       if (forceKillTimer) clearTimeout(forceKillTimer);
@@ -220,7 +223,12 @@ export class SshCommandExecutor {
       child.stdin?.end();
     }
 
-    return promise.finally(() => options.signal?.removeEventListener('abort', onAbort));
+    return promise.finally(async () => {
+      options.signal?.removeEventListener('abort', onAbort);
+      // Cancellation is complete only when the owned client is gone. Pollers
+      // and shutdown drains must not start new work/quit during kill escalation.
+      if (killed) await closed;
+    });
   }
 
   /**

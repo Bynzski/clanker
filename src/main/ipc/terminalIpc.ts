@@ -54,6 +54,7 @@ interface Terminal {
   workspaceId?: string;
   environmentId?: string;
   harnessId?: string;
+  releaseResources?: () => Promise<void>;
   /**
    * between PTY spawn and renderer confirming xterm is ready.
    * Cleared after flush on TERMINAL_READY.
@@ -204,8 +205,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
             ? createRemoteAttentionFilter((raw) => agentAttentionBroker.receiveRemote(id, raw)) : undefined,
           onExit: () => {
             agentAttentionBroker?.release(id);
-            void releaseAttention?.().catch((error: unknown) => console.warn('[clanker-grid] remote attention cleanup failed:', error));
-            void taskSessionCoordinator?.onTerminalExited(id, effectiveEnvironmentId);
+            return Promise.all([
+              releaseAttention?.(), taskSessionCoordinator?.onTerminalExited(id, effectiveEnvironmentId),
+            ]).then(() => undefined);
           },
         });
 
@@ -499,6 +501,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const terminal = terminals.get(id);
     if (terminal) {
       agentAttentionBroker?.release(id);
+      void terminal.releaseResources?.();
       try {
         terminal.pty.kill();
       } catch {
@@ -518,6 +521,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       const terminal = terminals.get(id);
       if (terminal) {
         agentAttentionBroker?.release(id);
+        void terminal.releaseResources?.();
         try {
           terminal.pty.kill();
         } catch {

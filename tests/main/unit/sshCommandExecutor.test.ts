@@ -95,10 +95,15 @@ describe('SshCommandExecutor', () => {
     vi.mocked(spawn).mockReturnValue(child as unknown as ChildProcess);
     const controller = new AbortController();
     const pending = executor.exec('vps', 'python3', [], { signal: controller.signal });
+    let settled = false;
+    void pending.catch(() => { settled = true; });
     controller.abort();
-    await expect(pending).rejects.toThrow('aborted');
     expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
     child.emit('close', null, 'SIGTERM');
+    await expect(pending).rejects.toThrow('aborted');
   });
 
   it('does not spawn for an already cancelled snapshot', async () => {
@@ -149,10 +154,11 @@ describe('SshCommandExecutor', () => {
       const execPromise = executor.exec('vps', 'cat', ['large.bin'], { maxBuffer: 100 });
       mockChild.stdout.emit('data', Buffer.alloc(200));
 
-      await expect(execPromise).rejects.toThrow('stdout exceeded limit');
       expect(mockChild.kill).toHaveBeenCalledWith('SIGTERM');
       await vi.advanceTimersByTimeAsync(1000);
       expect(mockChild.kill).toHaveBeenCalledWith('SIGKILL');
+      mockChild.emit('close', null, 'SIGKILL');
+      await expect(execPromise).rejects.toThrow('stdout exceeded limit');
     } finally {
       vi.useRealTimers();
     }
@@ -167,10 +173,11 @@ describe('SshCommandExecutor', () => {
       const execPromise = executor.exec('vps', 'cat', ['large.bin'], { maxBuffer: 100 });
       mockChild.stderr.emit('data', Buffer.alloc(200));
 
-      await expect(execPromise).rejects.toThrow('stderr exceeded limit');
       expect(mockChild.kill).toHaveBeenCalledWith('SIGTERM');
       await vi.advanceTimersByTimeAsync(1000);
       expect(mockChild.kill).toHaveBeenCalledWith('SIGKILL');
+      mockChild.emit('close', null, 'SIGKILL');
+      await expect(execPromise).rejects.toThrow('stderr exceeded limit');
     } finally {
       vi.useRealTimers();
     }

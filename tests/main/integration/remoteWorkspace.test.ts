@@ -48,7 +48,7 @@ describe('Remote Workspace Integration', () => {
       testConnection: vi.fn(async () => ({ success: true })),
     } as unknown as SshCommandExecutor;
 
-    envManager = new EnvironmentManager(() => store as never, mockSshExecutor);
+    envManager = new EnvironmentManager(() => store as never, mockSshExecutor, async (target) => `ssh:${target}`);
 
     registry = new WorkspaceRegistry((id) => envManager.getEnvironment(id));
 

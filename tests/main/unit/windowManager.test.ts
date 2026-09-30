@@ -5,6 +5,29 @@
  */
 
 import { vi, describe, test, expect, afterEach } from 'vitest';
+import { BrowserWindow } from 'electron';
+import { createMainWindow } from '../../../src/main/windowManager';
+
+vi.mock('electron', () => ({ BrowserWindow: vi.fn(), Menu: { setApplicationMenu: vi.fn() } }));
+
+test('renderer loss stops file/git watchers and releases workspace resources without waiting for window close', () => {
+  const nodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'development';
+  const handlers = new Map<string, () => void>();
+  const window = { setMenuBarVisibility: vi.fn(), setAutoHideMenuBar: vi.fn(), loadURL: vi.fn(), loadFile: vi.fn(), on: vi.fn(),
+    webContents: { on: vi.fn((name: string, handler: () => void) => handlers.set(name, handler)), openDevTools: vi.fn() } };
+  vi.mocked(BrowserWindow).mockImplementation(function () { return window as never; });
+  const deps = { preloadPath: '/preload.js', gitService: { stopPolling: vi.fn() }, fileWatcher: { unwatchAll: vi.fn() },
+    explorerWatcher: { close: vi.fn() }, onRendererGone: vi.fn(), onWindowClosed: vi.fn() };
+  createMainWindow(deps);
+  handlers.get('render-process-gone')!();
+  expect(deps.gitService.stopPolling).toHaveBeenCalledTimes(1);
+  expect(deps.fileWatcher.unwatchAll).toHaveBeenCalledTimes(1);
+  expect(deps.explorerWatcher.close).toHaveBeenCalledTimes(1);
+  expect(deps.onRendererGone).toHaveBeenCalledTimes(1);
+  expect(deps.onWindowClosed).not.toHaveBeenCalled();
+  process.env.NODE_ENV = nodeEnv;
+});
 
 // ============================================================================
 // Pure Function Tests

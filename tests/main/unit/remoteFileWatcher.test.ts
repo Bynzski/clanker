@@ -93,7 +93,7 @@ describe('remote file watcher', () => {
   });
 
   it('discards responses from another SSH workspace with the same root', async () => {
-    await registry.registerWorkspace({ workspaceId: 'other', workspacePath: '/ws', environmentId: 'ssh-host' });
+    await registry.registerWorkspace({ workspaceId: 'other', workspacePath: '/ws', environmentId: 'different-ssh-host' });
     let resolve!: (value: RemoteFileSnapshot) => void;
     snapshot.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
     watcher.sync(request);
@@ -139,5 +139,16 @@ describe('remote file watcher', () => {
     watcher.sync(request);
     await vi.advanceTimersByTimeAsync(0);
     expect(changed).toHaveBeenCalledWith(expect.objectContaining({ files: [{ filePath: '/ws/a', deleted: false, initial: false }] }));
+  });
+
+  it('clears failure-backoff timers on close and does not schedule more SSH work', async () => {
+    snapshot.mockRejectedValue(new Error('SSH disconnected'));
+    watcher.sync(request);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(1);
+    watcher.closeWorkspace('remote');
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(snapshot).toHaveBeenCalledTimes(1);
   });
 });

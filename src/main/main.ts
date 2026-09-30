@@ -38,7 +38,7 @@ import { resolveExistingDirectory } from './security';
 import { type StoreSchema } from '../shared/types/store';
 import { KNOWN_HARNESS_IDS } from '../shared/harnessIds';
 import { HARNESS_OPTIONS, getAvailableHarnessOptions, discoverHarnessModels } from './harnessCatalog';
-import { createMainWindow, getPreloadPath } from './windowManager';
+import { createMainWindow, getPreloadPath, isWindowAvailable } from './windowManager';
 import { registerSettingsIpc } from './ipc/settingsIpc';
 import { registerWindowIpc } from './ipc/windowIpc';
 import { registerAiCommitIpc } from './ipc/aiCommitIpc';
@@ -61,8 +61,9 @@ import { registerRecipeIpc } from './ipc/recipeIpc';
 import { registerTaskSessionIpc } from './ipc/taskSessionIpc';
 import { TaskSessionCoordinator } from './taskSessionCoordinator';
 import { AgentAttentionBroker } from './agentAttentionBroker';
-import { AGENT_ATTENTION_UPDATE } from '../shared/ipcChannels';
+import { AGENT_ATTENTION_UPDATE, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles } from './agentAttentionAdapters';
+import { waitForTerminalCleanup } from './ipc/ptySpawn';
 
 
 
@@ -79,6 +80,7 @@ const store = new Store<StoreSchema>({
     workspaceRecipes: [],
     taskSessions: [],
     sshEnvironments: [],
+    remoteWorktreeRemovals: [],
   },
 });
 
@@ -91,7 +93,7 @@ let activeBrowserWorkspaceId: string | null = null;
 let taskSessionCoordinator: TaskSessionCoordinator | null = null;
 let mainWindow: BrowserWindow | null = null;
 const agentAttentionBroker = new AgentAttentionBroker((update) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
+  if (isWindowAvailable(mainWindow)) {
     mainWindow.webContents.send(AGENT_ATTENTION_UPDATE, update);
   }
 });
@@ -106,6 +108,7 @@ const killAllTerminals = () => {
   const terminalPids: Map<string, number> = new Map();
   for (const [id, terminal] of terminals.entries()) {
     agentAttentionBroker.release(id);
+    void terminal.releaseResources?.();
     try {
       terminalPids.set(id, terminal.pty.pid);
       terminal.pty.kill('SIGTERM');
@@ -154,8 +157,8 @@ const killAllTerminals = () => {
   }
 };
 
-const cleanupWindowState = () => {
-  remotePreviewManager.closeWorkspaces();
+const cleanupWorkspaceResources = () => {
+  void remotePreviewManager.closeWorkspaces();
   remoteFileWatcher.close();
   void annotationController?.dispose();
   browserIpcController?.disposeAll();
@@ -166,6 +169,10 @@ const cleanupWindowState = () => {
   gitService.clearOpenWorkspaces();
   workspaceRegistry.clear();
   activeBrowserWorkspaceId = null;
+};
+
+const cleanupWindowState = () => {
+  cleanupWorkspaceResources();
   mainWindow = null;
 };
 
@@ -176,13 +183,13 @@ const workspaceRegistry: WorkspaceRegistry = new WorkspaceRegistry(
 );
 
 const remotePreviewManager = new RemotePreviewManager(workspaceRegistry, (update) => {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(REMOTE_PREVIEW_CHANGED, update);
+  if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(REMOTE_PREVIEW_CHANGED, update);
 });
 
 const gitService: GitService = new GitService(
   (status) => {
-    if (mainWindow) {
-      mainWindow.webContents.send('git-status-update', status);
+    if (isWindowAvailable(mainWindow)) {
+      mainWindow.webContents.send(GIT_STATUS_UPDATE, status);
     }
   },
   (worktreePath) => shell.trashItem(worktreePath),
@@ -219,7 +226,7 @@ explorerWatcher.setGitService(gitService);
 const remoteFileWatcher = new RemoteFileWatcher({
   getWorkspaceRegistry: () => workspaceRegistry,
   onChanged: (event) => {
-    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send(REMOTE_FILES_CHANGED, event);
+    if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(REMOTE_FILES_CHANGED, event);
   },
 });
 
@@ -309,6 +316,10 @@ app.whenReady().then(() => {
     },
   });
   registerGitIpc({
+    remoteWorktreeRemovalPersistence: {
+      read: () => store.get('remoteWorktreeRemovals') ?? [],
+      write: (records) => store.set('remoteWorktreeRemovals', records),
+    },
     getGitService: () => gitService,
     getMainWindow: () => mainWindow,
     getWorkspaceRegistry: () => workspaceRegistry,
@@ -316,13 +327,12 @@ app.whenReady().then(() => {
     getLiveRemoteTerminalPaths: (environmentId) => {
       const paths: string[] = [];
       const configurations = store.get('sshEnvironments') ?? [];
-      const target = configurations.find((entry) => entry.id === environmentId)?.target;
-      if (!target) return null;
-      const sameTargetIds = new Set(configurations.filter((entry) => entry.target === target).map((entry) => entry.id));
+      if (!configurations.some((entry) => entry.id === environmentId)) return null;
+      const resourceId = workspaceRegistry.getWorktreeResourceId(environmentId);
       for (const terminal of terminals.values()) {
         if (!terminal.environmentId || terminal.environmentId === 'local') continue;
         if (!configurations.some((entry) => entry.id === terminal.environmentId)) return null;
-        if (!sameTargetIds.has(terminal.environmentId)) continue;
+        if (workspaceRegistry.getWorktreeResourceId(terminal.environmentId) !== resourceId) continue;
         // The SSH client's local cwd is unrelated to its remote checkout.
         if (!terminal.remoteWorkingDir) return null;
         paths.push(terminal.remoteWorkingDir);
@@ -379,6 +389,7 @@ app.whenReady().then(() => {
     fileWatcher,
     explorerWatcher,
     onWindowClosed: cleanupWindowState,
+    onRendererGone: cleanupWorkspaceResources,
   }));
 
   // Pre-warm model cache in background after startup
@@ -393,6 +404,7 @@ app.whenReady().then(() => {
         fileWatcher,
         explorerWatcher,
         onWindowClosed: cleanupWindowState,
+        onRendererGone: cleanupWorkspaceResources,
       }));
     }
   });
@@ -406,14 +418,27 @@ app.on('window-all-closed', () => {
 
 // Set shutdown flag BEFORE any window teardown begins
 // This prevents late PTY callbacks from sending to dead windows
-app.on('before-quit', () => {
-  remotePreviewManager.close();
+let quitCleanup: Promise<void> | undefined;
+let quitCleanupComplete = false;
+app.on('before-quit', (event) => {
+  if (quitCleanupComplete) return;
+  event.preventDefault();
+  if (quitCleanup) return;
+  const previewsClosed = remotePreviewManager.close();
   remoteFileWatcher.close();
   setAppShuttingDown(true);
+  workspaceRegistry.clear();
   taskSessionCoordinator?.onAppShutdown();
   killAllTerminals();
   agentAttentionBroker.close();
   removeAttentionAdapterFiles();
+  // Keep the event loop alive for SSH SIGKILL escalation and host launch-file
+  // cleanup. A repeated quit request shares this drain instead of bypassing it.
+  quitCleanup = Promise.all([previewsClosed, waitForTerminalCleanup()]).then(() => undefined);
+  void quitCleanup.catch((error: unknown) => console.warn('[clanker-grid] shutdown cleanup failed:', error)).finally(() => {
+    quitCleanupComplete = true;
+    app.quit();
+  });
 });
 
 // Export shared state for test access

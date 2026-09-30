@@ -76,11 +76,11 @@ export class RemotePreviewManager {
     })();
     return entry.stopping;
   }
-  close(): void {
+  close(): Promise<void> {
     this.shuttingDown = true;
-    for (const id of this.entries.keys()) void this.stop(id);
+    return this.closeWorkspaces();
   }
-  closeWorkspaces(): void {
-    for (const id of this.entries.keys()) void this.stop(id);
+  async closeWorkspaces(): Promise<void> {
+    await Promise.all([...this.entries.keys()].map((id) => this.stop(id)));
   }
 }

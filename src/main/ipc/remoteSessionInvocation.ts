@@ -70,8 +70,9 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
       filterData: resolved.attentionEnabled && broker ? createRemoteAttentionFilter((raw) => broker.receiveRemote(id, raw)) : undefined,
       onExit: () => {
         broker?.release(id);
-        void releaseAttention?.().catch((error: unknown) => console.warn('[clanker-grid] remote session attention cleanup failed:', error));
-        void deps.taskSessionCoordinator?.onTerminalExited(id, workspace.location.environmentId);
+        return Promise.all([
+          releaseAttention?.(), deps.taskSessionCoordinator?.onTerminalExited(id, workspace.location.environmentId),
+        ]).then(() => undefined);
       },
     });
     if (fork) deps.taskSessionCoordinator?.onTerminalSpawned(id, workspace.location.path, session.harness, session.modelId, workspace.location.environmentId, baseline);

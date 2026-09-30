@@ -93,12 +93,33 @@ vi.mock('node-pty', () => ({
 }));
 
 import { registerTerminalIpc, setAppShuttingDown } from '../../../src/main/ipc/terminalIpc';
+import { app } from 'electron';
+import { RemotePreviewManager } from '../../../src/main/remote/remotePreviewManager';
 
 describe('Terminal Shutdown Behavior', () => {
   beforeEach(() => {
     mockHandle.mockClear();
     mockOn.mockClear();
     setAppShuttingDown(false);
+  });
+
+  test('before-quit drains preview teardown and repeated requests cannot bypass cleanup', async () => {
+    await import('../../../src/main/main');
+    let finish!: () => void;
+    const close = vi.spyOn(RemotePreviewManager.prototype, 'close').mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+    const handler = vi.mocked(app.on).mock.calls.find(([event]) => String(event) === 'before-quit')![1] as (event: { preventDefault: () => void }) => void;
+    const event = { preventDefault: vi.fn() };
+    vi.mocked(app.quit).mockClear();
+    handler(event);
+    handler(event);
+    expect(event.preventDefault).toHaveBeenCalledTimes(2);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(app.quit).not.toHaveBeenCalled();
+    finish();
+    await vi.waitFor(() => expect(app.quit).toHaveBeenCalledTimes(1));
+    handler(event);
+    expect(event.preventDefault).toHaveBeenCalledTimes(2);
+    close.mockRestore();
   });
 
   test('setAppShuttingDown flag is exported and accessible', () => {

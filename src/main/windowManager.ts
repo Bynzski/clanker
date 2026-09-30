@@ -8,6 +8,11 @@
 import { BrowserWindow, Menu } from 'electron';
 import * as path from 'path';
 
+/** Async resource callbacks may outlive the renderer or its window. */
+export function isWindowAvailable(window: BrowserWindow | null): window is BrowserWindow {
+  return !!window && !window.isDestroyed?.() && !window.webContents.isDestroyed?.() && !window.webContents.isCrashed?.();
+}
+
 export interface CreateMainWindowOptions {
   preloadPath: string;
   gitService: {
@@ -21,6 +26,7 @@ export interface CreateMainWindowOptions {
     close: () => void;
   };
   onWindowClosed?: () => void;
+  onRendererGone?: () => void;
 }
 
 /**
@@ -131,6 +137,12 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   };
 
   mainWindow.on('closed', cleanup);
+  mainWindow.webContents.on('render-process-gone', () => {
+    gitService.stopPolling();
+    fileWatcher.unwatchAll();
+    deps.explorerWatcher?.close();
+    deps.onRendererGone?.();
+  });
 
   return {
     window: mainWindow,

@@ -33,6 +33,28 @@ function fixture(harness: HarnessSession['harness'] = 'codex') {
 beforeEach(() => { vi.mocked(spawnPtyProcess).mockReset().mockImplementation((options) => ({ id: options.id, pid: 123 })); });
 
 describe('remote session invocation', () => {
+  it('releases broker registration when remote attention preparation fails', async () => {
+    const f = fixture();
+    f.environment.resolveTerminalSpawn.mockRejectedValueOnce(new Error('Host attention setup failed'));
+    await expect(invokeRemoteSession(f.deps, f.workspace, f.session)).rejects.toThrow('attention setup failed');
+    const id = f.broker.registerRemote.mock.calls[0][0];
+    expect(f.broker.release).toHaveBeenCalledExactlyOnceWith(id);
+    expect(spawnPtyProcess).not.toHaveBeenCalled();
+  });
+
+  it('refuses a workspace closed during host discovery before preparing attention', async () => {
+    const f = fixture();
+    let finish!: (sessions: HarnessSession[]) => void;
+    f.environment.discoverSessions.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const pending = invokeRemoteSession(f.deps, f.workspace, f.session);
+    f.registry.getWorkspace.mockReturnValue(null);
+    finish([f.session]);
+    await expect(pending).rejects.toThrow('closed');
+    expect(f.broker.registerRemote).not.toHaveBeenCalled();
+    expect(f.environment.resolveTerminalSpawn).not.toHaveBeenCalled();
+    expect(spawnPtyProcess).not.toHaveBeenCalled();
+  });
+
   it.each(['codex', 'claude', 'opencode', 'pi', 'omp', 'agy'] as const)('resumes %s using fresh host metadata and the remote PTY lifecycle', async (harness) => {
     const f = fixture(harness);
     const result = await invokeRemoteSession(f.deps, f.workspace, { ...f.session, cwd: '/desktop/evil', modelId: 'spoofed', filePath: '/desktop/evil.jsonl' });
