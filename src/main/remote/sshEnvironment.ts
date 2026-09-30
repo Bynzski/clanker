@@ -22,6 +22,7 @@ import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
 import { HARNESS_OPTIONS } from '../harnessCatalog';
 import { buildHarnessSpawnArgs } from '../harnessLaunch';
 import { prepareSshAttention, remoteAttentionEnvironment, REMOTE_CLI_PATH_SETUP } from './sshAgentAttention';
+import { discoverSshSessions } from './sshSessionDiscovery';
 import type {
   FileListDirectoryRequest,
   FileListDirectoryResult,
@@ -171,7 +172,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
     worktrees: true,
     revealInFileManager: false,
     agentAttention: true,
-    sessionDiscovery: false,
+    sessionDiscovery: true,
     annotationHandoff: false,
   };
 
@@ -668,6 +669,10 @@ export class SshEnvironment implements WorkspaceEnvironment {
 
   public startPortForward(localPort: number, remotePort: number, signal: AbortSignal, onExit: (error: string) => void) {
     return startSshPortForward(this.target, localPort, remotePort, signal, onExit);
+  }
+
+  public async discoverSessions(workspacePath: string) {
+    return discoverSshSessions(this.executor, this.target, workspacePath, await this.probeAvailableHarnessIds());
   }
 
   public async discoverHarnessModels(): Promise<EnvironmentModelOption[]> {

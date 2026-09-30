@@ -51,7 +51,12 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       ? deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId)
       : null;
     if (!workspace) throw new Error('Workspace is not registered');
-    if (workspace.location.environmentId !== 'local') return [];
+    if (workspace.location.environmentId !== 'local') {
+      if (!workspace.environment?.capabilities.sessionDiscovery || !workspace.environment.discoverSessions) return [];
+      const sessions = await workspace.environment.discoverSessions(workspace.location.path);
+      if (deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId) !== workspace) throw new Error('Remote workspace closed during discovery');
+      return sessions;
+    }
 
     const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
     const availableHarnessIds = new Set(Object.keys(getHarnessOptions()));

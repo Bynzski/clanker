@@ -1,5 +1,7 @@
 # Remote VPS smoke test
 
+SSH history checks: create a short session in the unique temporary workspace using an installed supported harness (OpenCode is suitable on the existing VPS). Open **Chat history**, expand the harness, and verify the host's session title appears with a disabled entry and a read-only notice. Check that sessions from unrelated sibling workspaces and desktop history are absent. Switch workspaces while discovery is pending and confirm the old results do not appear in the new menu. Interrupt SSH and confirm an error rather than an empty-history message; restore connectivity, close/reopen history, and retry. Remote resume remains unavailable in this slice.
+
 Use a saved SSH environment for a test host you control. Prepare a persistent workspace with a `README.md` and Git repository. Open and read that fixture during testing; never remove it.
 
 ```text

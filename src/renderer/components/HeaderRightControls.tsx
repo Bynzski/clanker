@@ -15,6 +15,7 @@ interface HeaderRightControlsProps {
   onToggleChatHistory: () => void;
   chatSessions: HarnessSession[];
   isLoadingSessions: boolean;
+  sessionDiscoveryError?: string;
   workspacePath: string;
   workspaceId: string | null;
   onCloseChatHistory: () => void;
@@ -55,6 +56,7 @@ export default function HeaderRightControls({
   onToggleChatHistory,
   chatSessions,
   isLoadingSessions,
+  sessionDiscoveryError,
   workspacePath,
   workspaceId,
   onCloseChatHistory,
@@ -130,6 +132,7 @@ export default function HeaderRightControls({
           <ChatHistoryDropdown
             sessions={chatSessions}
             isLoading={isLoadingSessions}
+            discoveryError={sessionDiscoveryError}
             workspacePath={workspacePath || '/'}
             workspaceId={workspaceId}
             onClose={onCloseChatHistory}

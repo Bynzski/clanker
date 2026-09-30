@@ -11,6 +11,7 @@ import './ChatHistoryDropdown.css';
 interface Props {
   sessions: HarnessSession[];
   isLoading: boolean;
+  discoveryError?: string;
   workspacePath: string;
   workspaceId: string | null;
   onClose: () => void;
@@ -37,9 +38,10 @@ interface HarnessGroupProps {
   onToggle: () => void;
   onSessionClick: (session: HarnessSession) => void;
   displayTitles: Map<string, string>;
+  readOnly: boolean;
 }
 
-function HarnessGroup({ harnessId, sessions, isExpanded, onToggle, onSessionClick, displayTitles }: HarnessGroupProps) {
+function HarnessGroup({ harnessId, sessions, isExpanded, onToggle, onSessionClick, displayTitles, readOnly }: HarnessGroupProps) {
   const harnessOpt = HARNESS_OPTIONS.find((o) => o.id === harnessId);
 
   return (
@@ -69,6 +71,7 @@ function HarnessGroup({ harnessId, sessions, isExpanded, onToggle, onSessionClic
                 key={`${session.harness}-${session.id}`}
                 type="button"
                 className="chat-history-session"
+                disabled={readOnly}
                 onClick={() => onSessionClick(session)}
                 title={`${session.title}\n${session.cwd}`}
               >
@@ -92,6 +95,7 @@ function HarnessGroup({ harnessId, sessions, isExpanded, onToggle, onSessionClic
 export default function ChatHistoryDropdown({
   sessions,
   isLoading,
+  discoveryError,
   workspacePath,
   workspaceId,
   onClose,
@@ -195,6 +199,7 @@ export default function ChatHistoryDropdown({
     onClose();
   };
   const handleSessionClick = async (session: HarnessSession) => {
+    if (environmentId !== 'local') return;
     try {
       if (!workspaceId) throw new Error('Workspace is not registered');
       const info = await window.electronAPI.invokeSession(workspaceId, session);
@@ -225,6 +230,7 @@ export default function ChatHistoryDropdown({
 
   return (
     <div className="chat-history-dropdown">
+      {environmentId !== 'local' && <div className="chat-history-empty">Remote history is read-only. Remote resume is not available yet.</div>}
       <TaskRecoverySection
         tasks={tasks}
         discoveredSessions={sessions}
@@ -236,6 +242,8 @@ export default function ChatHistoryDropdown({
       />
       {isLoading ? (
         <div className="chat-history-empty">Loading sessions...</div>
+      ) : discoveryError ? (
+        <div className="chat-history-empty" role="alert">{discoveryError}</div>
       ) : sessions.length === 0 ? (
         <div className="chat-history-empty">No sessions for this workspace</div>
       ) : (
@@ -248,6 +256,7 @@ export default function ChatHistoryDropdown({
             onToggle={() => toggleHarness(harness)}
             onSessionClick={handleSessionClick}
             displayTitles={displayTitles}
+            readOnly={environmentId !== 'local'}
           />
         ))
       )}

@@ -207,6 +207,34 @@ describe('registerSessionIpc', () => {
     expect(mockDiscoverSessions).toHaveBeenCalledWith(nativeWorkspacePath);
   });
 
+  it('routes discovery by registered environment even for identical local and remote paths', async () => {
+    const discoverA = vi.fn().mockResolvedValue([{ ...codexSession, title: 'Host A' }]);
+    const discoverB = vi.fn().mockResolvedValue([{ ...codexSession, title: 'Host B' }]);
+    const workspaces = {
+      a: { location: { environmentId: 'ssh-a', path: '/workspace' }, environment: { capabilities: { sessionDiscovery: true }, discoverSessions: discoverA } },
+      b: { location: { environmentId: 'ssh-b', path: '/workspace' }, environment: { capabilities: { sessionDiscovery: true }, discoverSessions: discoverB } },
+    };
+    const handlers = registerHandlers(undefined, undefined, () => ({ getWorkspace: (id: keyof typeof workspaces) => workspaces[id] }) as never);
+    expect(await handlers.get(SESSION_DISCOVER)?.({}, 'a')).toEqual([expect.objectContaining({ title: 'Host A' })]);
+    expect(await handlers.get(SESSION_DISCOVER)?.({}, 'b')).toEqual([expect.objectContaining({ title: 'Host B' })]);
+    expect(discoverA).toHaveBeenCalledWith('/workspace');
+    expect(discoverB).toHaveBeenCalledWith('/workspace');
+    expect(mockDiscoverSessions).not.toHaveBeenCalled();
+  });
+
+  it('discards remote discovery when the workspace registration changes while reading', async () => {
+    let resolve!: (sessions: HarnessSession[]) => void;
+    const discover = vi.fn(() => new Promise<HarnessSession[]>((res) => { resolve = res; }));
+    const workspace = { location: { environmentId: 'ssh-a', path: '/workspace' }, environment: { capabilities: { sessionDiscovery: true }, discoverSessions: discover } };
+    const getWorkspace = vi.fn().mockReturnValue(workspace);
+    const handlers = registerHandlers(undefined, undefined, () => ({ getWorkspace }) as never);
+    const discovery = handlers.get(SESSION_DISCOVER)?.({}, 'a');
+    getWorkspace.mockReturnValue({ ...workspace });
+    resolve([codexSession]);
+    await expect(discovery).rejects.toThrow('closed during discovery');
+    expect(mockDiscoverSessions).not.toHaveBeenCalled();
+  });
+
   it('rejects invoking a session when its harness is no longer available', async () => {
     const handlers = registerHandlers(vi.fn(() => ({
       claude: {

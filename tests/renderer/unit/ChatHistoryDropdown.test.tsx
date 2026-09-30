@@ -7,6 +7,7 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import type { TaskSessionRecord } from '../../../src/shared/types/taskSessions';
 import type { HarnessSession } from '../../../src/shared/types/session';
+import { createWorkspaceFixture } from '../../setup/fixtures';
 
 describe('ChatHistoryDropdown', () => {
   const sampleTask: TaskSessionRecord = {
@@ -37,6 +38,25 @@ describe('ChatHistoryDropdown', () => {
       terminals: [],
       panes: [],
     });
+  });
+
+  it('displays remote history without allowing session invocation', async () => {
+    installElectronApiMock();
+    useWorkspaceStore.setState({ workspaces: [createWorkspaceFixture({ id: 'remote-ws', environmentId: 'ssh-a' })] });
+    render(<ChatHistoryDropdown sessions={[sampleSession]} isLoading={false} workspacePath="/projects/repo" workspaceId="remote-ws" onClose={vi.fn()} />);
+    expect(screen.getByText(/Remote history is read-only/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Codex.*1/i }));
+    const session = screen.getByRole('button', { name: /Auth conversation/i });
+    expect(session).toBeDisabled();
+    fireEvent.click(session);
+    expect(window.electronAPI.invokeSession).not.toHaveBeenCalled();
+  });
+
+  it('surfaces discovery failures instead of implying that the remote history is empty', () => {
+    installElectronApiMock();
+    render(<ChatHistoryDropdown sessions={[]} isLoading={false} discoveryError="SSH authentication failed" workspacePath="/projects/repo" workspaceId="remote-ws" onClose={vi.fn()} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('SSH authentication failed');
+    expect(screen.queryByText('No sessions for this workspace')).toBeNull();
   });
 
   it('renders tasks and discovered sessions', async () => {

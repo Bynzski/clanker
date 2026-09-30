@@ -103,6 +103,14 @@ Antigravity installs an owned plugin at `~/.gemini/config/plugins/clanker-grid-r
 
 Local Hermes attention remains unsupported. Remote native session recovery and annotation handoff are separate capabilities and remain unavailable.
 
+### SSH session history
+
+Open **Chat history** in an SSH workspace to browse that host's sessions for the workspace and its subdirectories. Clanker discovers installed Codex, Claude, OpenCode, Pi, OMP, and Antigravity harnesses and reads their native metadata remotely. Desktop history is never used for an SSH workspace. Antigravity requires a conversation with an explicit matching workspace path. Hermes session history remains unsupported.
+
+Remote history is currently read-only: session entries cannot launch or resume a terminal, and remote task records remain unavailable after exit or shutdown. Remote resume and task recovery are subsequent slices. SSH/discovery failures appear in the history menu; close and reopen it to retry. Switching workspaces closes the menu and discards pending results from the previous workspace.
+
+Discovery uses bounded metadata reads and omits messages beyond the first 256 KiB of each JSONL file. Large histories can exceed the scan/result limits and report an error. Custom session-store locations are not supported in this slice.
+
 ### SSH browser previews
 
 Start a development server on the SSH host, then open the workspace's **Browser** pane. In **SSH preview**, enter its **Remote port** and an unused **Local port**, then click **Start preview**. Ports must be whole numbers from 1024 to 65535. Clanker checks the remote service and opens `http://127.0.0.1:<local-port>/` after the SSH tunnel is ready. Use **Open preview** to reopen that URL, or navigate to a path under it normally.
@@ -121,7 +129,7 @@ To maintain reliability and safety, the following capabilities are local-only in
 2. **Launch Recipes**: Creating, editing, or launching recipes for SSH workspaces is unavailable in V1. Legacy recipes without an environment ID remain local recipes.
 3. **Reveal in File Manager**: Disabled for remote paths, preventing passing remote paths to desktop OS file managers.
 4. **File Refresh**: One batched SSH poll checks the active workspace about every three seconds. It monitors up to 128 open editor files and 128 visible/expanded Explorer directories, scanning only direct directory children (up to 2,000 entries per directory). Changes refresh Explorer and reload clean editor tabs; dirty tabs keep their buffers and receive an external-change indicator. Polls do not overlap, back off after connection failures, and stop when their workspace closes. Parked workspaces are checked again when activated. Manual Refresh and the existing desktop-focus refresh remain available for larger directories and immediate updates.
-5. **Remote Native Session Discovery**: On remote terminal exit or app shutdown, local session history scanning is bypassed, and tasks are marked unavailable with a clear diagnostic explanation.
+5. **Remote Native Session Resume**: Read-only host session discovery is supported for six harnesses. Remote resume and automatic task association remain deferred; on remote terminal exit or app shutdown, tasks are marked unavailable. Hermes history remains unsupported.
 6. **Automatic Port Discovery**: Explicit workspace-scoped SSH browser previews are supported; automatic service discovery and persisted forwarding rules remain deferred.
 7. **Remote Process Persistence**: Remote PTY processes terminate on workspace closure or app exit; PTY daemons are not installed on the remote machine.
 8. **AI Commit Generation**: Disabled for SSH workspaces; manual Git commits work remotely. Local model/CLI discovery is never used to represent a remote host.
