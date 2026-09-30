@@ -32,6 +32,20 @@ const cssFiles = readdirSync(rendererRoot, { recursive: true, withFileTypes: tru
   .filter((entry) => entry.isFile() && entry.name.endsWith('.css'))
   .map((entry) => resolve(entry.parentPath, entry.name));
 
+// Radix provides only these positioning dimensions at runtime. Keep the theme
+// contract strict for every other reference, including all color/focus roles.
+const runtimeDimensions = new Map([
+  [resolve(rendererRoot, 'components/ChatHistoryDropdown.css'), new Set([
+    '--radix-popover-content-available-height',
+  ])],
+  [resolve(rendererRoot, 'components/ui/Popover.css'), new Set([
+    '--radix-popover-content-available-width', '--radix-popover-content-available-height',
+  ])],
+  [resolve(rendererRoot, 'components/WorkspaceGate.css'), new Set([
+    '--radix-popover-trigger-width', '--radix-popover-content-available-height',
+  ])],
+]);
+
 // WCAG relative luminance for the opaque text/control palette contract.
 function luminance(hex: string) {
   const rgb = hex.slice(1).length === 3 ? hex.slice(1).split('').map((c) => c + c).join('') : hex.slice(1);
@@ -86,7 +100,7 @@ describe('renderer semantic theme contract', () => {
       const css = withoutComments(readFileSync(file, 'utf8'));
       expect(css, file).not.toMatch(/--(?:bg-(?:primary|secondary|tertiary|hover|active)|border-color|accent-(?:primary|secondary|success|warning|error)|text-tertiary)\b/);
       for (const reference of css.matchAll(/var\((--[\w-]+)/g)) {
-        expect(defined.has(reference[1]), `${file}: ${reference[1]}`).toBe(true);
+        expect(defined.has(reference[1]) || runtimeDimensions.get(file)?.has(reference[1]) === true, `${file}: ${reference[1]}`).toBe(true);
       }
     }
   });

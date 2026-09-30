@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog, GitBranch, ArrowLeft, Settings } from 'lucide-react';
+import { FolderOpen, Folder, Loader2, Play, ChevronRight, AlertTriangle, Cog, GitBranch, ArrowLeft } from 'lucide-react';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../../shared/types/recipes';
 import type { SshEnvironmentConfig } from '../../shared/types/environments';
 import RecipeModal from './RecipeModal';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds, resolveVisibleHarnessIds } from '../lib/harnessOptions';
-import { hermesModelDisplay, hermesModelLabel } from '../lib/hermesModelDisplay';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { isAbsoluteWorkspacePath } from '../../shared/pathClassify';
@@ -17,6 +16,12 @@ import { joinPaths } from '../lib/pathUtils';
 import RemoteWorkspacePath from './RemoteWorkspacePath';
 import SshEnvironmentManager from './SshEnvironmentManager';
 import RemoteWorktreePicker from './RemoteWorktreePicker';
+import { ModelPicker } from './gate/ModelPicker';
+import { GateLaunchActions } from './gate/GateLaunchActions';
+import { WorkspaceLocationPicker } from './gate/WorkspaceLocationPicker';
+import { HarnessPicker } from './gate/HarnessPicker';
+import { TerminalCountPicker, TERMINAL_PRESETS } from './gate/TerminalCountPicker';
+export { TERMINAL_PRESETS } from './gate/TerminalCountPicker';
 import './WorkspaceGate.css';
 
 export interface WorkspaceFormData {
@@ -60,21 +65,6 @@ function isEditableEventTarget(target: EventTarget | null): boolean {
     || target.tagName === 'SELECT';
 }
 
-export const TERMINAL_PRESETS = [
-  { count: 1, label: '1', description: 'Single terminal' },
-  { count: 2, label: '2', description: 'Two terminals' },
-  { count: 4, label: '4', description: 'Four terminals' },
-];
-
-function HermesModelName({ option }: { option: ModelOption }) {
-  const { model, provider } = hermesModelDisplay(option);
-  return (
-    <span className="hermes-model-name" title={hermesModelLabel(option)}>
-      <span className="hermes-model-id">{model}</span>
-      {provider && <span className="hermes-model-provider">{provider}</span>}
-    </span>
-  );
-}
 
 export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRecipe, openError, onTargetChange }: ContentProps) {
   const [savedRecipes, setSavedRecipes] = useState<WorkspaceRecipe[]>([]);
@@ -101,11 +91,9 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   // Compact picker state
   const [showFavoritesPicker, setShowFavoritesPicker] = useState(false);
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
-  const [discoverySearch, setDiscoverySearch] = useState('');
   const [modelOverrides, setModelOverrides] = useState<Record<string, string>>({});
   const [locationKind, setLocationKind] = useState<'local' | 'ssh'>('local');
   const defaultModel = locationKind === 'ssh' ? '' : modelOverrides[selectedHarness] ?? harnessDefaults?.[selectedHarness]?.model ?? '';
-  const selectedModelOption = modelOptions.find((model) => model.id === defaultModel);
   const setDefaultModel = (modelId: string) => {
     setModelOverrides((overrides) => ({ ...overrides, [selectedHarness]: modelId }));
   };
@@ -409,44 +397,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     setWorkspaceMode('directory');
   };
 
-  // Close favorites picker on outside click
-  useEffect(() => {
-    if (!showFavoritesPicker) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      const picker = document.querySelector('.model-picker');
-      if (picker && !picker.contains(event.target as Node)) {
-        setShowFavoritesPicker(false);
-      }
-    };
-    window.addEventListener('mousedown', handlePointerDown);
-    return () => window.removeEventListener('mousedown', handlePointerDown);
-  }, [showFavoritesPicker]);
-
-  useEffect(() => {
-    if (!showFavoritesPicker) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        setShowFavoritesPicker(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showFavoritesPicker]);
-
-  // Close discovery modal on Escape
-  useEffect(() => {
-    if (!showDiscoveryModal) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setShowDiscoveryModal(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showDiscoveryModal]);
-
   // Fetch directory suggestions. Returns suggestions in the same form as the
   // input value: relative when the input is relative (typed under base),
   // absolute when the input starts with `/`.
@@ -732,14 +682,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     });
   }, [modelOptions, favorites]);
 
-  // Filtered discovery models
-  const discoveryModels = useMemo(() => {
-    const query = discoverySearch.toLowerCase();
-    return sortedModelOptions.filter((m) =>
-      m.label.toLowerCase().includes(query) || m.id.toLowerCase().includes(query)
-    );
-  }, [sortedModelOptions, discoverySearch]);
-
   return (
     <div className="gate-content">
       {workspaceMode === 'directory' ? (
@@ -750,22 +692,10 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         <p className="gate-subtitle">Developer Workspace Launcher</p>
       </div>
 
-      <div className="gate-location-selector">
-        <button
-          type="button"
-          className={`gate-location-btn ${locationKind === 'local' ? 'active' : ''}`}
-          onClick={() => { setLocationKind('local'); setDirectoryError(''); }}
-        >
-          Local
-        </button>
-        <button
-          type="button"
-          className={`gate-location-btn ${locationKind === 'ssh' ? 'active' : ''}`}
-          onClick={() => { setLocationKind('ssh'); setDirectoryError(''); }}
-        >
-          SSH Remote
-        </button>
-      </div>
+      <WorkspaceLocationPicker location={locationKind} onChange={(location) => {
+        setLocationKind(location);
+        setDirectoryError('');
+      }} />
 
       {locationKind === 'local' ? (
 
@@ -921,283 +851,29 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         </div>
       )}
 
-      <div className="harness-selector">
-        <div className="gate-section-header">
-          <span className="gate-section-label">Harness</span>
-          <button type="button" className="gate-settings-link" onClick={() => setWorkspaceMode('settings')}>
-            <Settings size={12} strokeWidth={2} /> Configure
-          </button>
-        </div>
-        <div className="harness-options">
-          {HARNESS_OPTIONS.filter((harness) => visibleHarnessIds.includes(harness.id)).map((harness) => (
-            <button
-              key={harness.id}
-              className={`harness-option ${selectedHarness === harness.id ? 'selected' : ''}`}
-              onClick={() => handleHarnessChange(harness.id)}
-              title={harness.id ? `Select ${harness.label}` : 'No harness (basic terminal)'}
-            >
-              <harness.Icon size={16} strokeWidth={2} className="harness-icon" />
-              <span className="harness-label">{harness.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      <HarnessPicker options={HARNESS_OPTIONS.filter((harness) => visibleHarnessIds.includes(harness.id))}
+        selectedHarness={selectedHarness} onSelect={handleHarnessChange} onConfigure={() => setWorkspaceMode('settings')} />
 
-      {showModelSelector && (
-        <div className="model-picker">
-          <span className="gate-section-label">Model</span>
-          {selectedHarness === 'hermes' && modelOptions.length === 0 && (
-            <button
-              type="button"
-              className="gate-model-refresh"
-              onClick={() => void refreshHermesModels()}
-              disabled={isRefreshingHermesModels}
-            >
-              {isRefreshingHermesModels ? 'Refreshing…' : 'Refresh Hermes models'}
-            </button>
-          )}
-          {selectedHarness === 'hermes' && modelOptions.length === 0 ? (
-            <input
-              type="text"
-              className="settings-select"
-              aria-label="Hermes model"
-              placeholder="Use Hermes default"
-              value={defaultModel}
-              onChange={(event) => setDefaultModel(event.target.value)}
-            />
-          ) : (
-          <>
-          {/* Compact model pill */}
-          <button
-            type="button"
-            className={`model-pill ${selectedHarness === 'hermes' ? 'hermes-model-pill' : ''}`}
-            onClick={() => {
-              setShowFavoritesPicker(true);
-              setShowDiscoveryModal(false);
-            }}
-            title="Change model"
-          >
-            <span className={`model-pill-label ${selectedHarness === 'hermes' ? 'hermes-model-label' : ''} ${isModelUnresolved(defaultModel) ? 'unresolved' : ''}`}>
-              {selectedHarness === 'hermes' && selectedModelOption
-                ? <HermesModelName option={selectedModelOption} />
-                : defaultModel
-                  ? selectedModelOption?.label ?? defaultModel
-                  : 'Default model'}
-            </span>
-            {isModelUnresolved(defaultModel) && (
-              <AlertTriangle size={12} className="model-pill-warning" />
-            )}
-            <ChevronDown size={12} strokeWidth={2.5} className="model-pill-caret" />
-          </button>
-          {selectedHarness === 'hermes' && (
-            <input
-              type="text"
-              className="settings-select"
-              aria-label="Hermes model"
-              placeholder="Enter custom model"
-              value={modelOptions.some((model) => model.id === defaultModel) ? '' : defaultModel}
-              onChange={(event) => setDefaultModel(event.target.value)}
-            />
-          )}
+      {showModelSelector && <ModelPicker harness={selectedHarness} model={defaultModel} models={modelOptions}
+        sortedModels={sortedModelOptions} favorites={favorites} savedHermesModel={harnessDefaults?.hermes?.model ?? ''}
+        refreshing={isRefreshingHermesModels} favoritesOpen={showFavoritesPicker} discoveryOpen={showDiscoveryModal}
+        onFavoritesOpenChange={setShowFavoritesPicker} onDiscoveryOpenChange={setShowDiscoveryModal}
+        onSelect={setDefaultModel} isUnresolved={isModelUnresolved}
+        onToggleFavorite={(model) => { void toggleFavorite(selectedHarness, model); }}
+        onRefreshHermes={() => { void refreshHermesModels(); }} />}
 
-          {/* Favorites picker popover */}
-          {showFavoritesPicker && (
-            <div
-              className="favorites-picker"
-              role="listbox"
-              aria-label="Favorite models"
-            >
-              {favorites.length === 0 ? (
-                <div className="favorites-empty">
-                  <span className="favorites-empty-text">
-                    {selectedHarness === 'hermes' && selectedModelOption
-                      ? <HermesModelName option={selectedModelOption} />
-                      : defaultModel
-                        ? selectedModelOption?.label ?? 'Default model'
-                        : 'No default set'}
-                  </span>
-                </div>
-              ) : (
-                favorites.map((favId) => {
-                  const model = modelOptions.find((m) => m.id === favId);
-                  const isUnresolved = isModelUnresolved(favId);
-                  return (
-                    <div
-                      key={favId}
-                      className={`favorites-item ${defaultModel === favId ? 'selected' : ''} ${isUnresolved ? 'unresolved' : ''}`}
-                      onClick={() => {
-                        setDefaultModel(favId);
-                        setShowFavoritesPicker(false);
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="favorites-star-btn favorited"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void toggleFavorite(selectedHarness, favId);
-                        }}
-                        title="Remove from favorites"
-                        aria-label="Remove from favorites"
-                      >
-                        <Star size={12} fill="currentColor" />
-                      </button>
-                      <span className={`favorites-model-label ${selectedHarness === 'hermes' ? 'hermes-favorite-label' : ''}`}>
-                        {model && selectedHarness === 'hermes' ? <HermesModelName option={model} /> : model?.label ?? favId}
-                        {isUnresolved && (
-                          <AlertTriangle size={10} className="favorites-unresolved-icon" />
-                        )}
-                      </span>
-                      {defaultModel === favId && (
-                        <Check size={12} strokeWidth={2.5} className="favorites-check" />
-                      )}
-                    </div>
-                  );
-                })
-              )}
-              {selectedHarness === 'hermes' && (
-                <button
-                  type="button"
-                  className="favorites-browse-link"
-                  onClick={() => {
-                    setDefaultModel(harnessDefaults?.hermes?.model ?? '');
-                    setShowFavoritesPicker(false);
-                  }}
-                >
-                  {harnessDefaults?.hermes?.model ? 'Use saved default' : 'Use Hermes default'}
-                </button>
-              )}
-              <button
-                type="button"
-                className="favorites-browse-link"
-                onClick={() => {
-                  setShowFavoritesPicker(false);
-                  setShowDiscoveryModal(true);
-                  setDiscoverySearch('');
-                }}
-              >
-                Browse all models
-              </button>
-            </div>
-          )}
+      <TerminalCountPicker selectedPreset={selectedPreset} onSelect={setSelectedPreset} />
 
-          {/* Discovery modal */}
-          {showDiscoveryModal && (
-            <div className="discovery-modal">
-              <div className="discovery-header">
-                <span className="discovery-title">All Models</span>
-                {selectedHarness === 'hermes' && (
-                  <button
-                    type="button"
-                    className="discovery-refresh"
-                    onClick={() => void refreshHermesModels()}
-                    disabled={isRefreshingHermesModels}
-                  >
-                    {isRefreshingHermesModels ? 'Refreshing…' : 'Refresh Hermes models'}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="discovery-close"
-                  onClick={() => setShowDiscoveryModal(false)}
-                  aria-label="Close"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="discovery-search-wrap">
-                <Search size={14} className="discovery-search-icon" />
-                <input
-                  type="text"
-                  className="discovery-search-input"
-                  placeholder="Search models..."
-                  value={discoverySearch}
-                  onChange={(e) => setDiscoverySearch(e.target.value)}
-                  autoFocus
-                />
-              </div>
-              <div className="discovery-list">
-                {discoveryModels.length === 0 ? (
-                  <div className="discovery-empty">No models found</div>
-                ) : (
-                  discoveryModels.map((model) => {
-                    const isFav = favorites.includes(model.id);
-                    const isSelected = defaultModel === model.id;
-                    return (
-                      <div
-                        key={model.id}
-                        className={`discovery-item ${isSelected ? 'selected' : ''}`}
-                        onClick={() => {
-                          setDefaultModel(model.id);
-                          setShowDiscoveryModal(false);
-                        }}
-                      >
-                        <button
-                          type="button"
-                          className={`discovery-star-btn ${isFav ? 'favorited' : ''}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void toggleFavorite(selectedHarness, model.id);
-                          }}
-                          title={isFav ? 'Remove from favorites' : 'Add to favorites'}
-                          aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
-                        >
-                          <Star size={12} fill={isFav ? 'currentColor' : 'none'} />
-                        </button>
-                        {selectedHarness === 'hermes' ? (
-                          <span className="discovery-model-label hermes-model-label">
-                            <HermesModelName option={model} />
-                          </span>
-                        ) : (
-                          <span className="discovery-model-label">{model.label}</span>
-                        )}
-                        {isSelected && (
-                          <Check size={12} strokeWidth={2.5} className="discovery-check" />
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          )}
-          </>
-          )}
-        </div>
-      )}
-
-      <div className="grid-selector">
-        <span className="gate-section-label">Terminals</span>
-        <div className="grid-options">
-          {TERMINAL_PRESETS.map((preset, index) => (
-            <button
-              key={preset.count}
-              className={`grid-option ${selectedPreset === index ? 'selected' : ''}`}
-              onClick={() => setSelectedPreset(index)}
-              title={`Press ${preset.label} to select`}
-            >
-              <span className="grid-label">{preset.label} terminal{preset.count > 1 ? 's' : ''}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="gate-launch-actions">
-        <button className="gate-button" onClick={handleSubmit} disabled={locationKind === 'ssh' && !hasLoadedHarnessOptions}>
-          <Play size={14} strokeWidth={2.5} fill="currentColor" />
-          Launch Workspace
-        </button>
-        <button className="gate-worktree-forward" type="button" aria-label="Worktree options" disabled={locationKind === 'ssh' ? !remoteRepositories.length : !worktreeReady} title={locationKind === 'ssh' ? 'Discover worktrees from an open repository on this SSH target' : worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first'} onClick={() => {
+      <GateLaunchActions launchDisabled={locationKind === 'ssh' && !hasLoadedHarnessOptions}
+        worktreeDisabled={locationKind === 'ssh' ? !remoteRepositories.length : !worktreeReady}
+        worktreeTitle={locationKind === 'ssh' ? 'Discover worktrees from an open repository on this SSH target' : worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first'}
+        onLaunch={handleSubmit} onWorktree={() => {
           if (locationKind === 'local' && !inputValue.trim()) {
             if (activeWorkspacePath) setInputValue(activeWorkspacePath);
           }
           setHasViewedWorktree(true);
           setWorkspaceMode('worktree');
-        }}>
-          <GitBranch size={13} strokeWidth={2} />
-          <span>Worktree</span>
-        </button>
-      </div>
+        }} />
       {openError && (
         <p className="gate-open-error" role="alert">
           <AlertTriangle size={14} strokeWidth={2} aria-hidden="true" />

@@ -170,16 +170,11 @@
   color: var(--text-primary);
 }
 
-/* Settings Dropdown */
-.settings-dropdown-container {
-  position: relative;
-}
+/* Interactive Header panels are positioned by Popover. */
+.header-btn.clanker-button { height: auto; font-weight: 500; gap: 5px; }
+.header-btn.clanker-icon-button { width: 28px; }
 
 .settings-dropdown {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
   background: var(--surface-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
@@ -503,3 +498,6 @@
 .harness-defaults-add-fav svg {
   flex-shrink: 0;
 }
+
+.header-chat-popover { padding: 0; border: 0; box-shadow: none; width: max-content; }
+.settings-dropdown { width: max-content; overflow-y: auto; }

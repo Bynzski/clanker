@@ -1,23 +1,5 @@
-.confirm-close-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: var(--overlay-backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
 .confirm-close-dialog {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
   width: 380px;
-  max-width: 90vw;
-  box-shadow: var(--shadow-dialog);
 }
 
 .confirm-close-header {

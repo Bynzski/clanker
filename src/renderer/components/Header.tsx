@@ -6,7 +6,6 @@ import type { HarnessSession } from '../../shared/types/session';
 import GitButton from './GitButton';
 import CredentialSettings from './settings/CredentialSettings';
 import HeaderRightControls from './HeaderRightControls';
-import { useBrowserOverlayWhileOpen, useCloseOnOutsidePointerAndEscape } from './useDropdownBehavior';
 import { useHeaderSettings } from './useHeaderSettings';
 import './Header.css';
 import type { WorkspaceRecipe } from '../../shared/types/recipes';
@@ -25,8 +24,6 @@ export default function Header() {
   const fitAllPanes = useWorkspaceStore((state) => state.fitAllPanes);
   const undoLayout = useWorkspaceStore((state) => state.undoLayout);
   const setHarness = useWorkspaceStore((state) => state.setHarness);
-  const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
-  const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
 
   const workspacePath = focusedWorkspace?.workspacePath ?? '';
   const browserVisible = focusedWorkspace?.browserVisible ?? false;
@@ -46,8 +43,8 @@ export default function Header() {
     setSessionDiscoveryError('');
     setIsLoadingSessions(false);
   }, [focusedWorkspace?.id]);
-  const chatDropdownRef = useRef<HTMLDivElement>(null);
-  const settingsDropdownRef = useRef<HTMLDivElement>(null);
+  const settingsTriggerRef = useRef<HTMLButtonElement>(null);
+  const credentialHandoff = useRef(false);
   const [showRecipeModal, setShowRecipeModal] = useState(false);
   const [activeRecipe, setActiveRecipe] = useState<WorkspaceRecipe | null>(null);
   const {
@@ -78,12 +75,6 @@ export default function Header() {
     loadHarnessModels,
     aiCommitProviderOptions,
   } = useHeaderSettings({ harness, setHarness, environmentId: focusedWorkspace?.environmentId });
-
-  useBrowserOverlayWhileOpen(showSettings, activeWorkspaceId, pushBrowserOverlay, popBrowserOverlay);
-  useCloseOnOutsidePointerAndEscape(showSettings, settingsDropdownRef, () => setShowSettings(false));
-
-  useBrowserOverlayWhileOpen(showChatHistory, activeWorkspaceId, pushBrowserOverlay, popBrowserOverlay);
-  useCloseOnOutsidePointerAndEscape(showChatHistory, chatDropdownRef, () => setShowChatHistory(false));
 
   const handleAddTerminal = async (harnessId: string) => {
     try {
@@ -120,13 +111,11 @@ export default function Header() {
     toggleNotesPane();
   };
 
-  const handleToggleChatHistory = async () => {
+  const handleChatHistoryOpenChange = async (open: boolean) => {
     const request = ++sessionRequest.current;
-    if (showChatHistory) {
-      setShowChatHistory(false);
-      return;
-    }
-    setShowChatHistory(true);
+    setShowChatHistory(open);
+    if (!open) return;
+    setShowSettings(false);
     setIsLoadingSessions(true);
     setSessionDiscoveryError('');
     setChatSessions([]);
@@ -142,6 +131,11 @@ export default function Header() {
       if (sessionRequest.current === request) setIsLoadingSessions(false);
     }
   };
+  const handleSettingsOpenChange = (open: boolean) => {
+    setShowSettings(open);
+    if (open) void handleChatHistoryOpenChange(false);
+  };
+
   const handleOpenRecipes = async () => {
     if (focusedWorkspace?.environmentId && focusedWorkspace.environmentId !== 'local') {
       setActiveRecipe(null);
@@ -241,19 +235,21 @@ export default function Header() {
         fitAllPanes={fitAllPanes}
         undoLayout={() => undoLayout(activeWorkspaceId ?? undefined)}
         canUndoLayout={(focusedWorkspace?.layoutUndoStack?.length ?? 0) > 0}
-        chatDropdownRef={chatDropdownRef}
         onOpenRecipes={handleOpenRecipes}
         showChatHistory={showChatHistory}
-        onToggleChatHistory={() => void handleToggleChatHistory()}
+        onChatHistoryOpenChange={(open) => void handleChatHistoryOpenChange(open)}
         chatSessions={chatSessions}
         isLoadingSessions={isLoadingSessions}
         sessionDiscoveryError={sessionDiscoveryError}
         workspacePath={workspacePath || '/'}
         workspaceId={focusedWorkspace?.id ?? null}
-        onCloseChatHistory={() => setShowChatHistory(false)}
-        settingsDropdownRef={settingsDropdownRef}
+        onCloseChatHistory={() => void handleChatHistoryOpenChange(false)}
+        settingsTriggerRef={settingsTriggerRef}
+        onSettingsCloseAutoFocus={(event) => {
+          if (credentialHandoff.current) event.preventDefault();
+        }}
         showSettings={showSettings}
-        onToggleSettings={() => setShowSettings(!showSettings)}
+        onSettingsOpenChange={handleSettingsOpenChange}
         aiCommitEnabled={aiCommitEnabled}
         onToggleAiCommit={(checked) => void handleToggleAiCommit(checked)}
         aiCommitProvider={aiCommitProvider}
@@ -264,8 +260,8 @@ export default function Header() {
         isLoadingAiCommitModels={isLoadingAiCommitModels}
         onAiCommitModelChange={(nextModel) => void handleAiCommitModelChange(nextModel)}
         onOpenCredentialModal={() => {
+          credentialHandoff.current = true;
           setShowCredentialModal(true);
-          setShowSettings(false);
         }}
         harnessDefaults={harnessDefaults}
         availableHarnessIds={availableHarnessIds}
@@ -284,6 +280,18 @@ export default function Header() {
         isOpen={showCredentialModal}
         onClose={() => setShowCredentialModal(false)}
         workspacePath={workspacePath || undefined}
+        onOpenAutoFocus={() => {
+          // Dialog content has acquired its lease before autofocus. Keep the
+          // outgoing Popover mounted until then so the browser never reappears.
+          setShowSettings(false);
+        }}
+        onCloseAutoFocus={(event) => {
+          if (credentialHandoff.current) {
+            event.preventDefault();
+            settingsTriggerRef.current?.focus();
+            credentialHandoff.current = false;
+          }
+        }}
       />
       <RecipeModal
         isOpen={showRecipeModal}

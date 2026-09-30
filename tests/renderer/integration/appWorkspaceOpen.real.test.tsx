@@ -125,12 +125,14 @@ describe('App workspace open integration', () => {
       registerOpenWorkspace, spawnTerminal,
     });
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: 'SSH Remote' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'SSH Remote' }));
     await waitFor(() => expect(document.querySelector('.ssh-env-select')).toBeTruthy());
-    fireEvent.change(document.querySelector('input[placeholder^="/home/jay/Projects"]')!, {
+    fireEvent.change(screen.getByLabelText('Remote Directory Path'), {
       target: { value: '/home/jay/project' },
     });
-    fireEvent.click(screen.getByText('Launch Workspace'));
+    // The target selector renders before asynchronous harness discovery is ready.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
     await waitFor(() => expect(useWorkspaceStore.getState().workspaces).toHaveLength(1));
     const workspace = useWorkspaceStore.getState().workspaces[0];
     expect(registerOpenWorkspace).toHaveBeenCalledWith(workspace.id, '/home/jay/project', 'dev-vps');
@@ -150,7 +152,7 @@ describe('App workspace open integration', () => {
       ] }),
     });
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: 'SSH Remote' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'SSH Remote' }));
     await waitFor(() => expect(document.querySelector('.ssh-env-select')).toBeTruthy());
     await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
     fireEvent.change(screen.getByLabelText('Remote Directory Path'), { target: { value: '/alias/task' } });

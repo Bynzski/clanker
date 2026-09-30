@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import Header from '../../../src/renderer/components/Header';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
@@ -399,11 +400,14 @@ describe('Header', () => {
       expect(screen.queryByText('AI commit messages')).toBeNull();
     });
 
-    it('renders settings dropdown container', async () => {
+    it('exposes Settings trigger open state', async () => {
+      const user = userEvent.setup();
       renderHeader();
-      await waitFor(() => {
-        expect(document.querySelector('.settings-dropdown-container')).toBeTruthy();
-      });
+      const trigger = screen.getByRole('button', { name: 'Settings' });
+      expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await user.click(trigger);
+      expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
     });
 
     it('renders settings dropdown when open', async () => {
@@ -799,4 +803,5 @@ describe('Header', () => {
       expect(screen.getByText('Terminal')).toBeTruthy();
     });
   });
+
 });

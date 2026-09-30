@@ -2,6 +2,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '../../../src/renderer/components/ui/Dialog';
 import { WorkspaceGateModal, WorkspaceGateFullscreen } from '../../../src/renderer/components/WorkspaceGate';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 
@@ -16,6 +18,9 @@ vi.mock('../../../src/renderer/components/WorkspaceGateContent', () => ({
         Submit remote
       </button>
       <button onClick={onTargetChange}>Change target</button>
+      <Dialog><DialogTrigger>Open model child</DialogTrigger><DialogContent aria-describedby={undefined}>
+        <DialogTitle>Model child</DialogTitle><button>Child control</button>
+      </DialogContent></Dialog>
       {openError && <p className="gate-open-error" role="alert">{openError}</p>}
     </div>
   ),
@@ -35,6 +40,7 @@ vi.mock('../../../src/renderer/store/workspaceStore', () => ({
     const store = {
       pushBrowserOverlay: mockPushBrowserOverlay,
       popBrowserOverlay: mockPopBrowserOverlay,
+      activeWorkspaceId: null,
     };
     if (typeof selector === 'function') {
       return selector(store);
@@ -47,12 +53,10 @@ describe('WorkspaceGateModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(useWorkspaceStore.getState).mockReturnValue({ workspaces: [], selectWorkspace: vi.fn() } as never);
-    vi.useFakeTimers();
   });
 
   afterEach(() => {
     cleanup();
-    vi.useRealTimers();
   });
 
   // =========================================================================
@@ -77,10 +81,8 @@ describe('WorkspaceGateModal', () => {
       const onClose = vi.fn();
       render(<WorkspaceGateModal isOpen={true} onClose={onClose} onWorkspaceSelect={vi.fn()} />);
       
-      const overlay = document.querySelector('.modal-overlay');
-      await act(async () => {
-        fireEvent.click(overlay!);
-      });
+      const user = userEvent.setup();
+      await user.click(document.querySelector('.modal-overlay')!);
       
       expect(onClose).toHaveBeenCalled();
     });
@@ -153,7 +155,7 @@ describe('WorkspaceGateModal', () => {
       render(<WorkspaceGateModal isOpen={true} onClose={onClose} onWorkspaceSelect={vi.fn()} />);
       
       await act(async () => {
-        fireEvent.keyDown(window, { key: 'Escape' });
+        fireEvent.keyDown(document, { key: 'Escape' });
       });
       
       expect(onClose).toHaveBeenCalled();
@@ -162,12 +164,11 @@ describe('WorkspaceGateModal', () => {
     it('keeps New Workspace open when Escape is used inside a model picker', () => {
       const onClose = vi.fn();
       render(<WorkspaceGateModal isOpen={true} onClose={onClose} onWorkspaceSelect={vi.fn()} />);
-      const picker = document.createElement('div');
-      picker.className = 'discovery-modal';
-      document.querySelector('.modal-content')!.appendChild(picker);
-
-      fireEvent.keyDown(window, { key: 'Escape' });
-
+      fireEvent.click(screen.getByRole('button', { name: 'Open model child' }));
+      expect(screen.getByRole('dialog', { name: 'Model child' })).toBeInTheDocument();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByRole('dialog', { name: 'Model child' })).not.toBeInTheDocument();
+      expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBeInTheDocument();
       expect(onClose).not.toHaveBeenCalled();
     });
 
@@ -176,20 +177,20 @@ describe('WorkspaceGateModal', () => {
       render(<WorkspaceGateModal isOpen={false} onClose={onClose} onWorkspaceSelect={vi.fn()} />);
       
       await act(async () => {
-        fireEvent.keyDown(window, { key: 'Escape' });
+        fireEvent.keyDown(document, { key: 'Escape' });
       });
       
       expect(onClose).not.toHaveBeenCalled();
     });
 
-    it('removes keyboard listener when unmounted', async () => {
+    it('does not respond to Escape after unmount', async () => {
       const onClose = vi.fn();
       const { unmount } = render(<WorkspaceGateModal isOpen={true} onClose={onClose} onWorkspaceSelect={vi.fn()} />);
       
       unmount();
       
       await act(async () => {
-        fireEvent.keyDown(window, { key: 'Escape' });
+        fireEvent.keyDown(document, { key: 'Escape' });
       });
       
       expect(onClose).not.toHaveBeenCalled();
@@ -286,7 +287,6 @@ describe('WorkspaceGateModal', () => {
 describe('WorkspaceGateFullscreen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers();
     
     // Mock window.electronAPI for GateTitleBar
     Object.defineProperty(window, 'electronAPI', {
@@ -302,7 +302,6 @@ describe('WorkspaceGateFullscreen', () => {
 
   afterEach(() => {
     cleanup();
-    vi.useRealTimers();
   });
 
   // =========================================================================
@@ -325,6 +324,8 @@ describe('WorkspaceGateFullscreen', () => {
       render(<WorkspaceGateFullscreen onWorkspaceSelect={vi.fn()} />);
       
       expect(document.querySelector('.workspace-gate-titlebar')).toBeTruthy();
+      expect(document.querySelector('.workspace-gate-window-controls')).toHaveClass('window-controls');
+      expect(screen.getByRole('button', { name: 'Maximize window' })).toHaveClass('window-controls-button', 'workspace-gate-window-btn');
     });
 
     it('renders workspace gate shell', () => {

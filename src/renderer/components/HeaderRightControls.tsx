@@ -2,6 +2,9 @@ import { ChevronDown, LayoutGrid, MessageSquare, ScrollText, Settings, Undo2 } f
 import type { HarnessSession } from '../../shared/types/session';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
+import { Popover, PopoverTrigger, PopoverContent } from './ui/Popover';
+import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
 import ChatHistoryDropdown from './ChatHistoryDropdown';
 import AppearanceSettings from './settings/AppearanceSettings';
 import HarnessDefaultsSection from './settings/HarnessDefaultsSection';
@@ -11,18 +14,18 @@ interface HeaderRightControlsProps {
   undoLayout: () => void;
   canUndoLayout: boolean;
   onOpenRecipes?: () => void;
-  chatDropdownRef: React.RefObject<HTMLDivElement | null>;
   showChatHistory: boolean;
-  onToggleChatHistory: () => void;
+  onChatHistoryOpenChange: (open: boolean) => void;
   chatSessions: HarnessSession[];
   isLoadingSessions: boolean;
   sessionDiscoveryError?: string;
   workspacePath: string;
   workspaceId: string | null;
   onCloseChatHistory: () => void;
-  settingsDropdownRef: React.RefObject<HTMLDivElement | null>;
+  settingsTriggerRef: React.RefObject<HTMLButtonElement | null>;
+  onSettingsCloseAutoFocus: (event: Event) => void;
   showSettings: boolean;
-  onToggleSettings: () => void;
+  onSettingsOpenChange: (open: boolean) => void;
   aiCommitEnabled: boolean;
   onToggleAiCommit: (checked: boolean) => void;
   aiCommitProvider: string;
@@ -52,18 +55,18 @@ export default function HeaderRightControls({
   undoLayout,
   canUndoLayout,
   onOpenRecipes,
-  chatDropdownRef,
   showChatHistory,
-  onToggleChatHistory,
+  onChatHistoryOpenChange,
   chatSessions,
   isLoadingSessions,
   sessionDiscoveryError,
   workspacePath,
   workspaceId,
   onCloseChatHistory,
-  settingsDropdownRef,
+  settingsTriggerRef,
+  onSettingsCloseAutoFocus,
   showSettings,
-  onToggleSettings,
+  onSettingsOpenChange,
   aiCommitEnabled,
   onToggleAiCommit,
   aiCommitProvider,
@@ -119,17 +122,17 @@ export default function HeaderRightControls({
       >
         <LayoutGrid size={15} strokeWidth={2} />
       </button>
-      <div className="settings-dropdown-container" ref={chatDropdownRef}>
-        <button
-          className={`header-btn header-btn-icon ${showChatHistory ? 'active' : ''}`}
-          type="button"
-          onClick={onToggleChatHistory}
-          title="Chat history"
-          aria-label="Chat history"
-        >
-          <MessageSquare size={15} strokeWidth={2} />
-        </button>
-        {showChatHistory && (
+      <Popover open={showChatHistory} onOpenChange={onChatHistoryOpenChange}>
+        <PopoverTrigger asChild>
+          <IconButton
+            className={`header-btn header-btn-icon ${showChatHistory ? 'active' : ''}`}
+            title="Chat history"
+            aria-label="Chat history"
+          >
+            <MessageSquare size={15} strokeWidth={2} />
+          </IconButton>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="header-chat-popover" aria-label="Chat history" workspaceId={workspaceId ?? undefined}>
           <ChatHistoryDropdown
             sessions={chatSessions}
             isLoading={isLoadingSessions}
@@ -138,100 +141,97 @@ export default function HeaderRightControls({
             workspaceId={workspaceId}
             onClose={onCloseChatHistory}
           />
-        )}
-      </div>
-      <div className="settings-dropdown-container" ref={settingsDropdownRef}>
-        <button
-          className="header-btn"
-          type="button"
-          onClick={onToggleSettings}
-          title="Settings"
-        >
-          <Settings size={15} strokeWidth={2} />
-          <ChevronDown size={12} strokeWidth={2} />
-        </button>
-
-        {showSettings && (
-          <div className="settings-dropdown">
-            <AppearanceSettings />
-            <div className="settings-section">
-              <label className="settings-option">
-                <input
-                  type="checkbox"
-                  checked={aiCommitEnabled}
-                  onChange={(e) => onToggleAiCommit(e.target.checked)}
-                />
-                <span>AI commit messages</span>
-              </label>
-
-              <div className="settings-row">
-                <span className="settings-row-label">Provider</span>
-                <select
-                  className="settings-select"
-                  value={aiCommitProvider}
-                  onChange={(e) => void onAiCommitProviderChange(e.target.value)}
-                  disabled={!aiCommitEnabled || aiCommitProviderOptions.length === 0}
-                >
-                  {aiCommitProviderOptions.length === 0 ? (
-                    <option value="">No providers available</option>
-                  ) : (
-                    aiCommitProviderOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-
-              <div className="settings-row">
-                <span className="settings-row-label">Model</span>
-                <select
-                  className="settings-select"
-                  value={aiCommitModel}
-                  onChange={(e) => void onAiCommitModelChange(e.target.value)}
-                  disabled={!aiCommitEnabled || isLoadingAiCommitModels || aiCommitModels.length === 0}
-                >
-                  {isLoadingAiCommitModels ? (
-                    <option value="">Loading models...</option>
-                  ) : aiCommitModels.length === 0 ? (
-                    <option value="">No models available</option>
-                  ) : (
-                    <>
-                      <option value="">Default model</option>
-                      {aiCommitModels.map((model) => (
-                        <option key={model.id} value={model.id}>
-                          {model.label}
-                        </option>
-                      ))}
-                    </>
-                  )}
-                </select>
-              </div>
-            </div>
-            <button type="button" className="settings-dropdown-action" onClick={onOpenCredentialModal}>
-              Manage VCS credentials
-            </button>
-
-            {harnessDefaults && (
-              <HarnessDefaultsSection
-                harnessDefaults={harnessDefaults}
-                availableHarnessIds={availableHarnessIds}
-                expandedHarness={expandedHarness}
-                setExpandedHarness={setExpandedHarness}
-                harnessModelCache={harnessModelCache}
-                harnessModelLoading={harnessModelLoading}
-                loadHarnessModels={loadHarnessModels}
-                handleSetHarnessFlags={handleSetHarnessFlags}
-                handleSetHarnessVisible={handleSetHarnessVisible}
-                handleSetHarnessAttention={handleSetHarnessAttention}
-                handleSetDefaultModel={handleSetDefaultModel}
-                handleToggleFavorite={handleToggleFavorite}
+        </PopoverContent>
+      </Popover>
+      <Popover open={showSettings} onOpenChange={onSettingsOpenChange}>
+        <PopoverTrigger asChild>
+          <Button ref={settingsTriggerRef} className="header-btn" aria-label="Settings" title="Settings">
+            <Settings size={15} strokeWidth={2} />
+            <ChevronDown size={12} strokeWidth={2} />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="settings-dropdown" aria-label="Settings"
+          workspaceId={workspaceId ?? undefined} onCloseAutoFocus={onSettingsCloseAutoFocus}>
+          <AppearanceSettings />
+          <div className="settings-section">
+            <label className="settings-option">
+              <input
+                type="checkbox"
+                checked={aiCommitEnabled}
+                onChange={(e) => onToggleAiCommit(e.target.checked)}
               />
-            )}
+              <span>AI commit messages</span>
+            </label>
+
+            <div className="settings-row">
+              <span className="settings-row-label">Provider</span>
+              <select
+                className="settings-select"
+                aria-label="AI commit provider"
+                value={aiCommitProvider}
+                onChange={(e) => void onAiCommitProviderChange(e.target.value)}
+                disabled={!aiCommitEnabled || aiCommitProviderOptions.length === 0}
+              >
+                {aiCommitProviderOptions.length === 0 ? (
+                  <option value="">No providers available</option>
+                ) : (
+                  aiCommitProviderOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div className="settings-row">
+              <span className="settings-row-label">Model</span>
+              <select
+                className="settings-select"
+                aria-label="AI commit model"
+                value={aiCommitModel}
+                onChange={(e) => void onAiCommitModelChange(e.target.value)}
+                disabled={!aiCommitEnabled || isLoadingAiCommitModels || aiCommitModels.length === 0}
+              >
+                {isLoadingAiCommitModels ? (
+                  <option value="">Loading models...</option>
+                ) : aiCommitModels.length === 0 ? (
+                  <option value="">No models available</option>
+                ) : (
+                  <>
+                    <option value="">Default model</option>
+                    {aiCommitModels.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.label}
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
+            </div>
           </div>
-        )}
-      </div>
+          <button type="button" className="settings-dropdown-action" onClick={onOpenCredentialModal}>
+            Manage VCS credentials
+          </button>
+
+          {harnessDefaults && (
+            <HarnessDefaultsSection
+              harnessDefaults={harnessDefaults}
+              availableHarnessIds={availableHarnessIds}
+              expandedHarness={expandedHarness}
+              setExpandedHarness={setExpandedHarness}
+              harnessModelCache={harnessModelCache}
+              harnessModelLoading={harnessModelLoading}
+              loadHarnessModels={loadHarnessModels}
+              handleSetHarnessFlags={handleSetHarnessFlags}
+              handleSetHarnessVisible={handleSetHarnessVisible}
+              handleSetHarnessAttention={handleSetHarnessAttention}
+              handleSetDefaultModel={handleSetDefaultModel}
+              handleToggleFavorite={handleToggleFavorite}
+            />
+          )}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

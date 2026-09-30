@@ -1,0 +1,27 @@
+.clanker-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--overlay-backdrop);
+}
+
+.clanker-dialog-content {
+  position: fixed;
+  z-index: 1000;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: var(--shadow-dialog);
+}
+
+.clanker-dialog-content :focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

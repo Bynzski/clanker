@@ -90,7 +90,7 @@ describe('WorkspaceGateContent', () => {
 
     fireEvent.change(screen.getByPlaceholderText('project name'), { target: { value: '/new-project' } });
     expect(onTargetChange.mock.calls.length).toBeGreaterThan(initialCalls);
-    fireEvent.click(screen.getByRole('button', { name: 'SSH Remote' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'SSH Remote' }));
     expect(onTargetChange.mock.calls.length).toBeGreaterThan(initialCalls + 1);
   });
 
@@ -110,7 +110,7 @@ describe('WorkspaceGateContent', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to workspace' }));
     expect(screen.getByText('Launch Workspace')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Codex' })).toBeNull();
+    expect(screen.queryByRole('radio', { name: 'Codex' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Configure' })).toBeTruthy();
   });
 
@@ -270,10 +270,9 @@ describe('WorkspaceGateContent', () => {
   // =========================================================================
   it('selects terminal preset on click', () => {
     renderGate({ initialPath: '/workspace/' });
-    const preset1 = screen.getByText('1 terminal');
+    const preset1 = screen.getByRole('radio', { name: '1 terminal' });
     fireEvent.click(preset1);
-    // The preset should now be selected (visual confirmation via class)
-    expect(preset1.closest('.grid-option')?.classList.contains('selected')).toBe(true);
+    expect(preset1).toBeChecked();
   });
 
   // =========================================================================
@@ -359,7 +358,7 @@ describe('WorkspaceGateContent', () => {
     ]);
 
     renderGate({ initialPath: '/workspace/' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Hermes' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'Hermes' }));
     await waitFor(() => expect(window.electronAPI.getHarnessModels).toHaveBeenCalledWith('hermes'));
     await screen.findByTitle('Change model');
 
@@ -393,7 +392,7 @@ describe('WorkspaceGateContent', () => {
       hermes: { model: savedId, favorites: [savedId], flags: '', visible: true },
     });
     renderGate({ initialPath: '/workspace/' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Hermes' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'Hermes' }));
     await waitFor(() => expect(screen.getByTitle('Change model')).toHaveTextContent('anthropic/claude-sonnet'));
     fireEvent.click(screen.getByTitle('Change model'));
     fireEvent.click(screen.getByText('Browse all models'));
@@ -419,7 +418,7 @@ describe('WorkspaceGateContent', () => {
     });
     vi.mocked(window.electronAPI.getHarnessModels).mockImplementation(async (_harness, refresh) => refresh ? refreshed : initial);
     renderGate({ initialPath: '/workspace/' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Hermes' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'Hermes' }));
     fireEvent.click(await screen.findByTitle('Change model'));
     fireEvent.click(screen.getByText('Browse all models'));
 
@@ -428,7 +427,7 @@ describe('WorkspaceGateContent', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].querySelector('.hermes-model-provider')).toHaveTextContent('ChatGPT or Codex Subscription');
     expect(rows[1].querySelector('.hermes-model-provider')).toHaveTextContent('GitHub Copilot');
-    fireEvent.click(rows[1]);
+    fireEvent.click(rows[1].querySelector('.model-choice')!);
     expect(screen.getByTitle('Change model').querySelector('.hermes-model-id')).toHaveTextContent('gpt-5.3-codex-900k');
     expect(screen.getByTitle('Change model').querySelector('.hermes-model-provider')).toHaveTextContent('GitHub Copilot');
 
@@ -452,7 +451,7 @@ describe('WorkspaceGateContent', () => {
       { id: 'hermes-provider:openrouter:model', label: 'OpenRouter · model' },
     ]);
     renderGate({ initialPath: '/workspace/' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Hermes' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'Hermes' }));
     await screen.findByTitle('Change model');
     fireEvent.change(screen.getByRole('textbox', { name: 'Hermes model' }), { target: { value: 'custom/model' } });
     expect(screen.getByTitle('Change model')).toHaveTextContent('custom/model');
@@ -468,7 +467,7 @@ describe('WorkspaceGateContent', () => {
     vi.mocked(window.electronAPI.getHarnessModels).mockResolvedValue([]);
 
     renderGate({ initialPath: '/workspace/' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Hermes' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'Hermes' }));
     const modelInput = screen.getByRole('textbox', { name: 'Hermes model' });
     fireEvent.change(modelInput, { target: { value: 'openrouter/custom-model' } });
     fireEvent.click(screen.getByText('Launch Workspace'));
@@ -499,7 +498,7 @@ describe('WorkspaceGateContent', () => {
     renderGate({ initialPath: '/workspace/' });
     await screen.findByText('openai/codex-default');
     vi.mocked(window.electronAPI.getHarnessDefaults).mockReturnValue(delayedDefaults);
-    fireEvent.click(screen.getByRole('button', { name: 'Hermes' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Hermes' }));
     const modelInput = screen.getByRole('textbox', { name: 'Hermes model' }) as HTMLInputElement;
     expect(modelInput.value).toBe('anthropic/hermes-default');
 
@@ -619,14 +618,14 @@ describe('WorkspaceGateContent', () => {
       agy: { name: 'Antigravity', command: 'agy', args: [], icon: '🪐' },
     });
     renderGate({ initialPath: '/workspace/' });
-    await screen.findByRole('button', { name: 'Antigravity' });
+    await screen.findByRole('radio', { name: 'Antigravity' });
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Codex' })).toHaveClass('selected');
+      expect(screen.getByRole('radio', { name: 'Codex' })).toBeChecked();
     });
 
     fireEvent.keyDown(document.body, { key: 'a' });
 
-    expect(screen.getByRole('button', { name: 'Antigravity' })).toHaveClass('selected');
+    expect(screen.getByRole('radio', { name: 'Antigravity' })).toBeChecked();
   });
 
   it('does not trigger harness shortcuts while typing in the workspace input', async () => {
@@ -635,11 +634,11 @@ describe('WorkspaceGateContent', () => {
       agy: { name: 'Antigravity', command: 'agy', args: [], icon: '🪐' },
     });
     renderGate({ initialPath: '/workspace/' });
-    await screen.findByRole('button', { name: 'Antigravity' });
+    await screen.findByRole('radio', { name: 'Antigravity' });
 
     fireEvent.keyDown(screen.getByPlaceholderText('project name'), { key: 'a' });
 
-    expect(screen.getByRole('button', { name: 'Codex' })).toHaveClass('selected');
+    expect(screen.getByRole('radio', { name: 'Codex' })).toBeChecked();
   });
 
   it('prevents suggestion mousedown from stealing focus and applies suggestion click', async () => {
@@ -671,6 +670,121 @@ describe('WorkspaceGateContent', () => {
     await waitFor(() => {
       expect(screen.queryByText(suggestionPath)).toBeNull();
     });
+  });
+
+  it('switches location content and clears directory errors through the parent', async () => {
+    const onTargetChange = vi.fn();
+    const user = userEvent.setup();
+    vi.mocked(window.electronAPI.gitListWorktrees).mockResolvedValue({ success: true, worktrees: [
+      { path: '/repo', branch: 'main', isMain: true, isLocked: false, isPrunable: false },
+      { path: '/repo-worktrees/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false },
+    ] });
+    render(<WorkspaceGateContent onSubmit={mockOnSubmit} initialPath="/repo-worktrees/" onTargetChange={onTargetChange} />);
+    await user.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('This folder holds worktrees for repo');
+    const beforeSwitch = onTargetChange.mock.calls.length;
+    await user.click(screen.getByRole('radio', { name: 'SSH Remote' }));
+    expect(screen.getByRole('radio', { name: 'SSH Remote' })).toBeChecked();
+    expect(screen.queryByPlaceholderText('project name')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(onTargetChange.mock.calls.length).toBeGreaterThan(beforeSwitch);
+    await user.click(screen.getByRole('radio', { name: 'Local' }));
+    expect(screen.getByRole('radio', { name: 'Local' })).toBeChecked();
+    expect(screen.getByPlaceholderText('project name')).toBeInTheDocument();
+  });
+
+  it.each([['1', '1 terminal', 1], ['2', '2 terminals', 2], ['4', '4 terminals', 4]] as const)(
+    'preserves the global %s shortcut and launched terminal count with a radio focused', async (key, label, count) => {
+      const user = userEvent.setup();
+      renderGate({ initialPath: '/workspace/' });
+      await screen.findByRole('radio', { name: 'Codex' });
+      await user.click(screen.getByRole('radio', { name: 'Codex' }));
+      await user.keyboard(key);
+      expect(screen.getByRole('radio', { name: label })).toBeChecked();
+      await user.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+      expect(mockOnSubmit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ terminalCount: count }));
+    },
+  );
+
+  it('keeps harness shortcuts and the basic-terminal empty domain value', async () => {
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      codex: { name: 'Codex', command: 'codex', args: [], icon: 'codex' },
+      opencode: { name: 'OpenCode', command: 'opencode', args: [], icon: 'opencode' },
+      pi: { name: 'Pi', command: 'pi', args: [], icon: 'pi' },
+      agy: { name: 'Antigravity', command: 'agy', args: [], icon: 'agy' },
+    });
+    const user = userEvent.setup();
+    renderGate({ initialPath: '/workspace/' });
+    await screen.findByRole('radio', { name: 'Antigravity' });
+    await user.click(screen.getByRole('radio', { name: 'Codex' }));
+    for (const [key, name, harness] of [['b', 'Terminal', ''], ['o', 'OpenCode', 'opencode'], ['p', 'Pi', 'pi'], ['a', 'Antigravity', 'agy'], ['c', 'Codex', 'codex']]) {
+      await user.keyboard(key);
+      expect(screen.getByRole('radio', { name })).toBeChecked();
+      await user.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+      expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ harness }));
+    }
+    expect(mockOnSubmit).toHaveBeenCalledTimes(5);
+    await user.click(screen.getByRole('radio', { name: 'Terminal' }));
+    await user.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ harness: '', model: undefined }));
+  });
+
+  it('does not apply launcher shortcuts from editable targets, modified or prevented events', async () => {
+    renderGate({ initialPath: '/workspace/' });
+    await screen.findByRole('radio', { name: 'Codex' });
+    const input = screen.getByPlaceholderText('project name');
+    for (const key of ['1', '2', 'b']) fireEvent.keyDown(input, { key });
+    for (const modifier of ['ctrlKey', 'altKey', 'metaKey']) fireEvent.keyDown(document.body, { key: '1', [modifier]: true });
+    const prevented = new KeyboardEvent('keydown', { key: '1', bubbles: true, cancelable: true });
+    prevented.preventDefault();
+    fireEvent(document.body, prevented);
+    expect(screen.getByRole('radio', { name: '4 terminals' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Codex' })).toBeChecked();
+  });
+
+  it('navigates selectors by arrow keys without invoking launch shortcuts', async () => {
+    const user = userEvent.setup();
+    renderGate({ initialPath: '/workspace/' });
+    await user.click(screen.getByRole('radio', { name: '1 terminal' }));
+    // Radix schedules roving focus; release after that focus task completes.
+    await user.keyboard('{ArrowRight>}');
+    await waitFor(() => expect(screen.getByRole('radio', { name: '2 terminals' })).toBeChecked());
+    expect(screen.getByRole('radio', { name: '2 terminals' })).toHaveFocus();
+    await user.keyboard('{/ArrowRight}');
+    expect(mockOnSubmit).not.toHaveBeenCalled();
+  });
+
+  it('keeps configured models when switching harness and closes existing model overlays', async () => {
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      codex: { name: 'Codex', command: 'codex', args: [], icon: 'codex' },
+      pi: { name: 'Pi', command: 'pi', args: [], icon: 'pi' },
+    });
+    vi.mocked(window.electronAPI.getHarnessDefaults).mockResolvedValue({
+      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '', visible: true },
+      pi: { model: 'pi-model', favorites: ['pi-model'], flags: '', visible: true },
+    });
+    vi.mocked(window.electronAPI.getHarnessModels).mockImplementation(async (harness) => harness === 'pi'
+      ? [{ id: 'pi-model', label: 'Pi model' }] : [{ id: 'gpt-4', label: 'GPT-4' }]);
+    const user = userEvent.setup();
+    renderGate({ initialPath: '/workspace/' });
+    await screen.findByRole('radio', { name: 'Pi' });
+    await user.click(screen.getByTitle('Change model'));
+    expect(document.querySelector('.favorites-picker')).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: 'Pi' }));
+    expect(document.querySelector('.favorites-picker')).not.toBeInTheDocument();
+    expect(screen.getByTitle('Change model')).toHaveTextContent('Pi model');
+    await user.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ harness: 'pi', model: 'pi-model' }));
+    await user.click(screen.getByTitle('Change model'));
+    await user.click(screen.getByText('Browse all models'));
+    expect(document.querySelector('.discovery-modal')).toBeInTheDocument();
+    // All Models is modal; use the existing launcher shortcut from a non-editable control.
+    act(() => screen.getByRole('button', { name: 'Close All Models' }).focus());
+    await user.keyboard('c');
+    expect(document.querySelector('.discovery-modal')).not.toBeInTheDocument();
+    expect(screen.getByTitle('Change model')).toHaveTextContent('GPT-4');
+    await user.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ harness: 'codex', model: 'gpt-4' }));
   });
 
   // =========================================================================
@@ -722,7 +836,7 @@ describe('WorkspaceGateContent', () => {
     }
 
     async function selectRemote() {
-      fireEvent.click(screen.getByRole('button', { name: 'SSH Remote' }));
+      fireEvent.click(screen.getByRole('radio', { name: 'SSH Remote' }));
       await screen.findByRole('textbox', { name: 'Remote Directory Path' });
     }
 
@@ -769,19 +883,19 @@ describe('WorkspaceGateContent', () => {
       vi.mocked(window.electronAPI.getEnvironmentHarnessOptions).mockResolvedValueOnce({ codex: true }).mockReturnValueOnce(newDiscovery);
       renderGate();
       await selectRemote();
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Codex' })).toHaveClass('selected'));
+      await waitFor(() => expect(screen.getByRole('radio', { name: 'Codex' })).toBeChecked());
       fireEvent.click(screen.getByRole('button', { name: 'Manage SSH Targets' }));
       fireEvent.click(screen.getByRole('button', { name: 'Edit Alpha' }));
       fireEvent.change(screen.getByLabelText('SSH Target'), { target: { value: 'new-alpha.example' } });
       fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
       await waitFor(() => expect(window.electronAPI.getEnvironmentHarnessOptions).toHaveBeenCalledTimes(2));
       expect(window.electronAPI.getEnvironmentHarnessOptions).toHaveBeenLastCalledWith('alpha');
-      expect(screen.queryByRole('button', { name: 'Codex' })).toBeNull();
+      expect(screen.queryByRole('radio', { name: 'Codex' })).toBeNull();
       expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeDisabled();
       fireEvent.keyDown(screen.getByLabelText('Remote Directory Path'), { key: 'Enter' });
       expect(mockOnSubmit).not.toHaveBeenCalled();
       await act(async () => resolveNew({ pi: true }));
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Pi' })).toHaveClass('selected'));
+      await waitFor(() => expect(screen.getByRole('radio', { name: 'Pi' })).toBeChecked());
       fireEvent.click(screen.getByRole('button', { name: 'Close SSH target manager' }));
       fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
       expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({ environmentId: 'alpha', harness: 'pi' }));
@@ -800,10 +914,10 @@ describe('WorkspaceGateContent', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Edit Alpha' }));
       fireEvent.change(screen.getByLabelText('SSH Target'), { target: { value: 'new-alpha.example' } });
       fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Pi' })).toHaveClass('selected'));
+      await waitFor(() => expect(screen.getByRole('radio', { name: 'Pi' })).toBeChecked());
       await act(async () => resolveOld({ codex: true }));
-      expect(screen.queryByRole('button', { name: 'Codex' })).toBeNull();
-      expect(screen.getByRole('button', { name: 'Pi' })).toHaveClass('selected');
+      expect(screen.queryByRole('radio', { name: 'Codex' })).toBeNull();
+      expect(screen.getByRole('radio', { name: 'Pi' })).toBeChecked();
     });
 
     it('initializes each target separately and ignores a previous target home request', async () => {
@@ -834,7 +948,7 @@ describe('WorkspaceGateContent', () => {
       fireEvent.change(input, { target: { value: '/opt/custom-project' } });
       await act(async () => resolveHome({ homePath: '/home/alpha', initialPath: '/home/alpha/workspaces' }));
       expect(input.value).toBe('/opt/custom-project');
-      fireEvent.click(await screen.findByRole('button', { name: 'Pi' }));
+      fireEvent.click(await screen.findByRole('radio', { name: 'Pi' }));
       fireEvent.keyDown(input, { key: 'Enter' });
       expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({
         path: '/opt/custom-project', environmentId: 'alpha', environmentLabel: 'Alpha', harness: 'pi',

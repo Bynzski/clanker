@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { useVcsStore } from '../../store/vcsStore';
 import type { VcsProvider } from '../../../shared/types/vcs';
+import { Dialog, DialogContent, DialogTitle, DialogClose } from '../ui/Dialog';
+import { IconButton } from '../ui/IconButton';
 import './CredentialSettings.css';
 
 interface CredentialSettingsProps {
@@ -26,6 +28,9 @@ interface CredentialSettingsProps {
   isOpen: boolean;
   /** Callback when modal closes */
   onClose: () => void;
+  /** Compose focus events for a feature-level Popover → Dialog handoff. */
+  onOpenAutoFocus?: (event: Event) => void;
+  onCloseAutoFocus?: (event: Event) => void;
 }
 
 /**
@@ -56,7 +61,7 @@ function getProviderInfo(id: VcsProvider) {
   return PROVIDERS.find((p) => p.id === id) ?? PROVIDERS[0];
 }
 
-export default function CredentialSettings({ isOpen, onClose }: CredentialSettingsProps) {
+export default function CredentialSettings({ isOpen, onClose, onOpenAutoFocus, onCloseAutoFocus }: CredentialSettingsProps) {
   const {
     sshKey,
     storedPats,
@@ -236,16 +241,17 @@ export default function CredentialSettings({ isOpen, onClose }: CredentialSettin
     [removeStoredPat]
   );
 
-  if (!isOpen) return null;
-
   return (
-    <div className="credential-settings-overlay" onClick={onClose}>
-      <div className="credential-settings" onClick={(e) => e.stopPropagation()}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="credential-settings" overlayClassName="credential-settings-overlay"
+        aria-modal="true" aria-describedby={undefined} onOpenAutoFocus={onOpenAutoFocus} onCloseAutoFocus={onCloseAutoFocus}>
         <div className="credential-settings-header">
-          <h2>VCS Credentials</h2>
-          <button className="credential-settings-close" onClick={onClose} type="button">
-            <Plus size={18} style={{ transform: 'rotate(45deg)' }} />
-          </button>
+          <DialogTitle>VCS Credentials</DialogTitle>
+          <DialogClose asChild>
+            <IconButton className="credential-settings-close" aria-label="Close VCS Credentials">
+              <Plus size={18} style={{ transform: 'rotate(45deg)' }} />
+            </IconButton>
+          </DialogClose>
         </div>
 
         <div className="credential-settings-tabs">
@@ -498,7 +504,7 @@ export default function CredentialSettings({ isOpen, onClose }: CredentialSettin
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
