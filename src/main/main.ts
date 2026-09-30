@@ -36,10 +36,10 @@ import { WorkspaceRegistry } from './workspaceRegistry';
 import { registerSshEnvironmentIpc } from './ipc/sshEnvironmentIpc';
 import { resolveExistingDirectory } from './security';
 import { type StoreSchema } from '../shared/types/store';
-import { DEFAULT_THEME_ID, normalizeThemeId, getThemeMetadata } from '../shared/types/theme';
+import { DEFAULT_THEME_ID } from '../shared/types/theme';
 import { KNOWN_HARNESS_IDS } from '../shared/harnessIds';
 import { HARNESS_OPTIONS, getAvailableHarnessOptions, discoverHarnessModels } from './harnessCatalog';
-import { createMainWindow, getPreloadPath, isWindowAvailable } from './windowManager';
+import { createMainWindow, getPreloadPath, isWindowAvailable, resolveInitialWindowBackground } from './windowManager';
 import { registerSettingsIpc } from './ipc/settingsIpc';
 import { registerWindowIpc } from './ipc/windowIpc';
 import { registerAiCommitIpc } from './ipc/aiCommitIpc';
@@ -384,10 +384,7 @@ app.whenReady().then(() => {
     },
   });
 
-  function getInitialWindowBackground(): string {
-    const savedTheme = normalizeThemeId(store.get('theme'));
-    return getThemeMetadata(savedTheme).windowBackground;
-  }
+  // Function defined at module level
 
   // Create window
   ({ window: mainWindow } = createMainWindow({
@@ -395,7 +392,7 @@ app.whenReady().then(() => {
     gitService,
     fileWatcher,
     explorerWatcher,
-    backgroundColor: getInitialWindowBackground(),
+    backgroundColor: resolveInitialWindowBackground(store),
     onWindowClosed: cleanupWindowState,
     onRendererGone: cleanupWorkspaceResources,
   }));
@@ -411,7 +408,7 @@ app.whenReady().then(() => {
         gitService,
         fileWatcher,
         explorerWatcher,
-        backgroundColor: getInitialWindowBackground(),
+        backgroundColor: resolveInitialWindowBackground(store),
         onWindowClosed: cleanupWindowState,
         onRendererGone: cleanupWorkspaceResources,
       }));
@@ -451,4 +448,6 @@ app.on('before-quit', (event) => {
 });
 
 // Export shared state for test access
+export { resolveInitialWindowBackground };
+
 export { terminals, browserViews, activeBrowserWorkspaceId, activeBrowserTabIdsByWorkspace, lastBrowserBoundsByWorkspace, gitService, explorerWatcher, store, workspaceRegistry, environmentManager, killAllTerminals, GRACEFUL_TERMINATION_TIMEOUT_MS, annotationModeEnabled, annotationController };

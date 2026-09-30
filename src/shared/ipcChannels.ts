@@ -144,6 +144,7 @@ export const IS_MAXIMIZED_WINDOW = 'is-maximized-window';
 export const ZOOM_IN_WINDOW = 'zoom-in-window';
 export const ZOOM_OUT_WINDOW = 'zoom-out-window';
 export const RESET_ZOOM_WINDOW = 'reset-zoom-window';
+export const WINDOW_READY_TO_SHOW = 'window-ready-to-show';
 
 /* ============================================================================
  * Credentials
@@ -323,6 +324,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   ZOOM_IN_WINDOW,
   ZOOM_OUT_WINDOW,
   RESET_ZOOM_WINDOW,
+  WINDOW_READY_TO_SHOW,
   // Git
   GIT_START_POLLING,
   GIT_STOP_POLLING,

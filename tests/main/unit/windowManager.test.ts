@@ -6,7 +6,7 @@
 
 import { vi, describe, test, expect, afterEach } from 'vitest';
 import { BrowserWindow } from 'electron';
-import { createMainWindow } from '../../../src/main/windowManager';
+import { createMainWindow, resolveInitialWindowBackground } from '../../../src/main/windowManager';
 
 import { getThemeMetadata } from '../../../src/shared/types/theme';
 vi.mock('electron', () => ({ BrowserWindow: vi.fn(), Menu: { setApplicationMenu: vi.fn() } }));
@@ -166,7 +166,7 @@ describe('windowManager', () => {
       expect(typeof result.cleanup).toBe('function');
     });
 
-    test('uses dark theme window background by default', () => {
+    test('BrowserWindow starts hidden (show: false) by default', () => {
       const prevEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'development';
       const mockWin = {
@@ -187,6 +187,7 @@ describe('windowManager', () => {
         createMainWindow(deps);
         expect(BrowserWindow).toHaveBeenCalledWith(
           expect.objectContaining({
+            show: false,
             backgroundColor: '#0d1117',
           })
         );
@@ -217,6 +218,7 @@ describe('windowManager', () => {
         createMainWindow(deps);
         expect(BrowserWindow).toHaveBeenCalledWith(
           expect.objectContaining({
+            show: false,
             backgroundColor: '#ffffff',
           })
         );
@@ -225,7 +227,14 @@ describe('windowManager', () => {
       }
     });
 
-    test('recreated window uses the supplied theme background rather than hardcoded dark', () => {
+    test('resolveInitialWindowBackground resolves persisted themes correctly', () => {
+      expect(resolveInitialWindowBackground({ get: () => 'dark' })).toBe('#0d1117');
+      expect(resolveInitialWindowBackground({ get: () => 'light' })).toBe('#ffffff');
+      expect(resolveInitialWindowBackground({ get: () => 'invalid' })).toBe('#0d1117');
+      expect(resolveInitialWindowBackground({ get: () => undefined })).toBe('#0d1117');
+    });
+
+    test('window recreation through the activate path uses the current persisted theme', () => {
       const prevEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'development';
       const mockWin = {
@@ -238,29 +247,43 @@ describe('windowManager', () => {
       };
       vi.mocked(BrowserWindow).mockImplementation(function () { return mockWin as never; });
       try {
+        // Simulated electron-store holding mutable theme setting
+        let persistedTheme: string = 'dark';
+        const mockStore = {
+          get: vi.fn((key: string) => (key === 'theme' ? persistedTheme : undefined)),
+        };
+
         const baseDeps = {
           preloadPath: '/preload.js',
           gitService: { stopPolling: vi.fn() },
           fileWatcher: { unwatchAll: vi.fn() },
         };
 
+        // Initial window launch reads persisted dark theme
         createMainWindow({
           ...baseDeps,
-          backgroundColor: getThemeMetadata('dark').windowBackground,
+          backgroundColor: resolveInitialWindowBackground(mockStore),
         });
         expect(BrowserWindow).toHaveBeenLastCalledWith(
           expect.objectContaining({
             backgroundColor: '#0d1117',
+            show: false,
           })
         );
 
+        // Theme is changed while running to 'light'
+        persistedTheme = 'light';
+
+        // Window closed and app reactivated via app.on('activate')
+        // Recreate path queries resolveInitialWindowBackground(store)
         createMainWindow({
           ...baseDeps,
-          backgroundColor: getThemeMetadata('light').windowBackground,
+          backgroundColor: resolveInitialWindowBackground(mockStore),
         });
         expect(BrowserWindow).toHaveBeenLastCalledWith(
           expect.objectContaining({
             backgroundColor: '#ffffff',
+            show: false,
           })
         );
       } finally {

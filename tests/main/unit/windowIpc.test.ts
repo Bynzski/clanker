@@ -95,6 +95,9 @@ describe('registerWindowIpc', () => {
       maximize: vi.fn(),
       close: vi.fn(),
       isMaximized: vi.fn(() => false),
+      show: vi.fn(),
+      isVisible: vi.fn(() => false),
+      isDestroyed: vi.fn(() => false),
     };
 
     return {
@@ -122,6 +125,7 @@ describe('registerWindowIpc', () => {
       'zoom-in-window',
       'zoom-out-window',
       'reset-zoom-window',
+      'window-ready-to-show',
     ];
 
     expectedChannels.forEach(channel => {
@@ -129,13 +133,13 @@ describe('registerWindowIpc', () => {
     });
   });
 
-  test('registers exactly 7 window IPC channels', () => {
+  test('registers exactly 8 window IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerWindowIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(7);
+    expect(handleCalls.length).toBe(8);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -145,7 +149,7 @@ describe('registerWindowIpc', () => {
     registerWindowIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(14);
+    expect(handleCalls.length).toBe(16);
   });
 
   test('window channels do not overlap with settings channels', () => {
@@ -201,6 +205,9 @@ describe('registerWindowIpc — error-path: null main window', () => {
       maximize: vi.fn(),
       close: vi.fn(),
       isMaximized: vi.fn(() => false),
+      show: vi.fn(),
+      isVisible: vi.fn(() => false),
+      isDestroyed: vi.fn(() => false),
     };
 
     return {
@@ -326,6 +333,35 @@ describe('registerWindowIpc — error-path: null main window', () => {
     handler();
 
     expect(mockMainWindow.webContents.setZoomLevel).toHaveBeenCalledWith(0);
+  });
+
+  test('WINDOW_READY_TO_SHOW shows mainWindow only when ready signal is received', () => {
+    const { deps, mockMainWindow } = createMockDeps();
+    registerWindowIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'window-ready-to-show'
+    )?.[1] as () => void;
+    expect(handler).toBeDefined();
+
+    // Before signal, window is not shown
+    expect(mockMainWindow.show).not.toHaveBeenCalled();
+
+    // After signal arrives
+    handler();
+    expect(mockMainWindow.show).toHaveBeenCalledTimes(1);
+  });
+
+  test('WINDOW_READY_TO_SHOW is a no-op when mainWindow is null', () => {
+    const { deps } = createMockDepsWithNullWindow();
+    registerWindowIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'window-ready-to-show'
+    )?.[1] as () => void;
+    expect(handler).toBeDefined();
+
+    expect(() => handler()).not.toThrow();
   });
 });
 

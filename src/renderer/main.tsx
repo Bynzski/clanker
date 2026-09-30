@@ -2,7 +2,8 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles/global.css'
-import { useThemeStore } from './theme/themeStore'
+import { useThemeStore, applyThemeToDocument } from './theme/themeStore'
+import { DEFAULT_THEME_ID } from '../shared/types/theme'
 
 // Global exception handlers for renderer process
 window.addEventListener('unhandledrejection', (event) => {
@@ -19,8 +20,8 @@ window.addEventListener('error', (event) => {
   }
 });
 
-async function bootstrap() {
-  const root = document.getElementById('root');
+export async function bootstrap(rootElement?: HTMLElement | null): Promise<void> {
+  const root = rootElement ?? (typeof document !== 'undefined' ? document.getElementById('root') : null);
   if (!root) {
     throw new Error('Root element not found');
   }
@@ -29,6 +30,7 @@ async function bootstrap() {
     await useThemeStore.getState().initializeTheme();
   } catch (error) {
     console.error('[clanker-grid] Theme initialization error:', error);
+    applyThemeToDocument(DEFAULT_THEME_ID);
   }
 
   try {
@@ -40,7 +42,20 @@ async function bootstrap() {
   } catch (error) {
     console.error('React render error:', error);
     root.innerHTML = `<div style="color: white; padding: 20px;">Error: ${error}</div>`;
+  } finally {
+    if (typeof window !== 'undefined' && window.electronAPI?.windowReadyToShow) {
+      try {
+        await window.electronAPI.windowReadyToShow();
+      } catch (e) {
+        console.error('[clanker-grid] Failed to notify windowReadyToShow:', e);
+      }
+    }
   }
 }
 
-void bootstrap();
+if (typeof document !== 'undefined' && process.env.NODE_ENV !== 'test') {
+  const rootElement = document.getElementById('root');
+  if (rootElement) {
+    void bootstrap(rootElement);
+  }
+}

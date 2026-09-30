@@ -91,6 +91,7 @@ import {
   ZOOM_IN_WINDOW,
   ZOOM_OUT_WINDOW,
   RESET_ZOOM_WINDOW,
+  WINDOW_READY_TO_SHOW,
   GET_HARNESS_OPTIONS,
   GET_HARNESS_MODELS,
   GET_HARNESS_DEFAULTS,
@@ -346,6 +347,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   zoomInWindow: () => ipcRenderer.invoke(ZOOM_IN_WINDOW),
   zoomOutWindow: () => ipcRenderer.invoke(ZOOM_OUT_WINDOW),
   resetZoomWindow: () => ipcRenderer.invoke(RESET_ZOOM_WINDOW),
+  windowReadyToShow: () => ipcRenderer.invoke(WINDOW_READY_TO_SHOW),
   getWindowZoomFactor: () => webFrame.getZoomFactor(),
 
   // Harness

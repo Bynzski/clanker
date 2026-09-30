@@ -570,6 +570,7 @@ describe('preload.ts IPC Bridge Coverage Tests', () => {
         'toggleMaximizeWindow',
         'closeWindow',
         'isMaximizedWindow',
+        'windowReadyToShow',
       ];
 
       for (const method of windowMethods) {

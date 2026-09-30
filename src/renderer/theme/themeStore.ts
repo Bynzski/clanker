@@ -60,7 +60,3 @@ export const useThemeStore = create<ThemeStoreState>((set) => ({
   },
 }));
 
-// Apply default theme to document immediately upon module load if in browser
-if (typeof document !== 'undefined') {
-  applyThemeToDocument(DEFAULT_THEME_ID);
-}
