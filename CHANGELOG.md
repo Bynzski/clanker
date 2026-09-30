@@ -6,10 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-29
+
 ### Added
 
 - **SSH remote workspaces** — first-class environment and canonical-path identity, remote terminals, Explorer, Git, and harness discovery through system OpenSSH. Local and remote workspaces with the same path can coexist.
 - **SSH workspace directory chooser** — browse remote directories before opening a workspace, create new folders directly from the picker dialog, and use home/workspaces defaults and remote path suggestions.
+
+### Changed
+
+- **Linux-only release artifact** — `0.7.0` ships as a Linux AppImage. No Windows binary is produced for this release; Windows remains covered by CI validation.
 
 ### Fixed
 
@@ -296,7 +302,8 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Bynzski/clanker/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Bynzski/clanker/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Bynzski/clanker/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Bynzski/clanker/compare/v0.3.0...v0.4.0
