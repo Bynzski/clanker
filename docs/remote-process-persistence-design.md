@@ -4,6 +4,8 @@ Status: **Proposed for architecture review; runtime implementation has not start
 
 Tracks [issue #47, item 6](https://github.com/Bynzski/clanker/issues/47). That issue asks for a separate transport evaluation before changing the SSH PTY path. This document defines the proposed contract and the first implementation slices.
 
+Current removal-operation records persist safety reservations across desktop restart and reconcile host completion journals. They track filesystem operations, not surviving remote terminal processes. Native conversation recovery also starts a new process; neither mechanism implements this proposal.
+
 ## Recommendation
 
 Add an explicit **Keep running on host** option backed by a dedicated tmux server on the SSH host. Main owns its process registry and local attachments through `WorkspaceEnvironment`. Use system OpenSSH for every request. Preserve ordinary terminal launches as the default.
