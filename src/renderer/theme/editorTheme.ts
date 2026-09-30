@@ -50,9 +50,49 @@ const lightSyntax = HighlightStyle.define([
   { tag: tags.invalid, color: '#a32929' },
 ]);
 
+// GitHub Dark Dimmed syntax with readable comments and Clanker interactions.
+const slateUI = EditorView.theme({
+  '&': { color: '#adbac7', backgroundColor: '#22272e' },
+  '.cm-content': { caretColor: '#6cb6ff' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#6cb6ff' },
+  '.cm-gutters': { color: '#909dab', backgroundColor: '#22272e', borderRight: '1px solid #373e47' },
+  '.cm-activeLine': { backgroundColor: '#2d333b' },
+  '.cm-activeLineGutter': { color: '#cdd9e5', backgroundColor: '#2d333b' },
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': { backgroundColor: '#384e6b' },
+  '.cm-selectionMatch': { backgroundColor: '#344e3d' },
+  '.cm-searchMatch': { backgroundColor: '#574522', outline: '1px solid #daaa3f' },
+  '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: '#735722' },
+  '.cm-matchingBracket': { backgroundColor: '#344e3d' },
+  '.cm-nonmatchingBracket': { backgroundColor: '#643535' },
+  '.cm-panels, .cm-tooltip': { color: '#adbac7', backgroundColor: '#2d333b', border: '1px solid #444c56' },
+  '.cm-tooltip .cm-tooltip-arrow:before': { borderTopColor: '#444c56', borderBottomColor: '#444c56' },
+  '.cm-tooltip .cm-tooltip-arrow:after': { borderTopColor: '#2d333b', borderBottomColor: '#2d333b' },
+  '.cm-foldPlaceholder': { color: '#909dab', backgroundColor: '#2d333b', border: '1px solid #444c56' },
+}, { dark: true });
+
+const slateSyntax = HighlightStyle.define([
+  { tag: tags.comment, color: '#909dab', fontStyle: 'italic' },
+  { tag: [tags.string, tags.special(tags.string), tags.regexp], color: '#96d0ff' },
+  { tag: [tags.number, tags.bool, tags.null, tags.atom, tags.literal], color: '#6cb6ff' },
+  { tag: [tags.keyword, tags.modifier], color: '#f47067' },
+  { tag: [tags.variableName, tags.propertyName], color: '#adbac7' },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: '#dcbdfb' },
+  { tag: [tags.typeName, tags.className, tags.namespace], color: '#f69d50' },
+  { tag: tags.tagName, color: '#8ddb8c' },
+  { tag: [tags.attributeName, tags.definition(tags.propertyName)], color: '#6cb6ff' },
+  { tag: [tags.operator, tags.punctuation, tags.meta], color: '#adbac7' },
+  { tag: tags.heading, color: '#6cb6ff', fontWeight: 'bold' },
+  { tag: [tags.link, tags.url], color: '#96d0ff', textDecoration: 'underline' },
+  { tag: tags.emphasis, fontStyle: 'italic' },
+  { tag: tags.strong, fontWeight: 'bold' },
+  { tag: tags.strikethrough, textDecoration: 'line-through' },
+  { tag: tags.invalid, color: '#ff938a' },
+]);
+
 const EDITOR_THEMES: Readonly<Record<ThemeId, readonly Extension[]>> = {
   dark: Object.freeze([darkSurface, oneDark]),
   light: Object.freeze([lightUI, syntaxHighlighting(lightSyntax)]),
+  slate: Object.freeze([slateUI, syntaxHighlighting(slateSyntax)]),
 };
 
 /** A fresh extension list protects the canonical configuration from callers. */

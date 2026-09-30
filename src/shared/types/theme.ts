@@ -5,9 +5,9 @@
  * Both main and renderer processes import from this canonical module.
  */
 
-export type ThemeId = 'dark' | 'light';
+export type ThemeId = 'dark' | 'light' | 'slate';
 
-export const THEME_IDS: readonly ThemeId[] = ['dark', 'light'] as const;
+export const THEME_IDS: readonly ThemeId[] = ['dark', 'light', 'slate'] as const;
 
 export const DEFAULT_THEME_ID: ThemeId = 'dark';
 
@@ -30,6 +30,12 @@ export const THEME_METADATA: Readonly<Record<ThemeId, ThemeMetadata>> = {
     label: 'Light',
     colorScheme: 'light',
     windowBackground: '#f3f4f6',
+  },
+  slate: {
+    id: 'slate',
+    label: 'Slate',
+    colorScheme: 'dark',
+    windowBackground: '#22272e',
   },
 } as const;
 

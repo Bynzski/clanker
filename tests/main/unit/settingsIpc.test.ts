@@ -845,6 +845,10 @@ describe('GET_THEME and SET_THEME handlers', () => {
     expect(mockStore.set).toHaveBeenCalledWith('theme', 'light');
     expect(mockWindow.setBackgroundColor).toHaveBeenCalledWith('#f3f4f6');
 
+    await handler({}, 'slate');
+    expect(mockStore.set).toHaveBeenCalledWith('theme', 'slate');
+    expect(mockWindow.setBackgroundColor).toHaveBeenCalledWith('#22272e');
+
     await handler({}, 'dark');
     expect(mockStore.set).toHaveBeenCalledWith('theme', 'dark');
     expect(mockWindow.setBackgroundColor).toHaveBeenCalledWith('#121212');

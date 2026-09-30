@@ -115,6 +115,25 @@ describe('renderer semantic theme contract', () => {
     }
   });
 
+  it('provides readable Slate text, statuses, actions and focus', () => {
+    const slate = palette('slate');
+    for (const foreground of ['text-primary', 'text-secondary', 'text-muted', 'text-link',
+      'status-success', 'status-warning', 'status-error', 'status-info', 'status-merged',
+      'git-added', 'git-modified', 'git-deleted', 'git-renamed', 'git-untracked']) {
+      for (const background of ['surface-app', 'surface-raised', 'surface-elevated', 'surface-control']) {
+        expect(contrast(slate.get(`--${foreground}`)!, slate.get(`--${background}`)!), `${foreground} on ${background}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+    for (const [foreground, background] of [
+      ['control-primary-fg', 'control-primary-bg'], ['control-primary-fg-hover', 'control-primary-bg-hover'],
+      ['control-danger-fg', 'control-danger-bg'], ['text-inverse', 'control-success-bg'],
+      ['text-inverse', 'control-success-bg-hover'],
+    ]) {
+      expect(contrast(slate.get(`--${foreground}`)!, slate.get(`--${background}`)!), background).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrast(slate.get('--focus-ring')!, slate.get('--surface-app')!)).toBeGreaterThanOrEqual(3);
+  });
+
   it('provides readable Light text, statuses and filled actions', () => {
     const text = ['text-primary', 'text-secondary', 'text-muted', 'text-link', 'status-success',
       'status-warning', 'status-error', 'status-info', 'status-merged', 'git-added', 'git-modified',

@@ -21,6 +21,24 @@ reflect the capture machine; these are visual reference artifacts, not pixel-tes
 | Launch recipe editor | [PNG](dark/07-workspace-recipes.png) | [PNG](light/07-workspace-recipes.png) | Unsaved recipe populated from the two-terminal layout. |
 | VCS credentials | [PNG](dark/08-vcs-credentials.png) | [PNG](light/08-vcs-credentials.png) | SSH key status and credential management entry point. |
 
+## Slate theme follow-up
+
+The `slate/` captures show the new Slate palette from the working tree based on
+commit `b73c0c0`, at the same 1200 × 800 size. Slate was selected through the actual
+Appearance control and verified after a full Electron restart.
+
+| View | Slate |
+| --- | --- |
+| Start gate | [PNG](slate/01-start-gate.png) |
+| Harness configuration | [PNG](slate/02-harness-configuration.png) |
+| New session setup | [PNG](slate/03-new-session-ready.png) |
+| Running workspace | [PNG](slate/04-workspace-session.png) |
+| New workspace dialog | [PNG](slate/05-new-workspace-dialog.png) |
+| Settings menu | [PNG](slate/06-settings.png) |
+| Launch recipe editor | [PNG](slate/07-workspace-recipes.png) |
+| VCS credentials | [PNG](slate/08-vcs-credentials.png) |
+| Explorer and TypeScript editor | [PNG](slate/09-editor.png) |
+
 ## Capture workflow
 
 1. Run `npm run dev:renderer` to serve the renderer on port 1420.

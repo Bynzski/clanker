@@ -2,11 +2,21 @@
 
 ## Overview
 
-Clanker ships `dark` and `light` themes. Appearance is application-global and
+Clanker ships `dark`, `light`, and `slate` themes. Appearance is application-global and
 independent of workspace, layout, browser tabs, and terminal sessions. One shared
 theme identity drives native startup, application CSS, xterm, and CodeMirror.
 External webpages in WebContentsView are not recolored. System following and
 custom themes are not currently supported.
+
+## Slate
+
+Slate is a bundled dark theme inspired by [GitHub Dark Dimmed](https://github.com/primer/github-vscode-theme)
+and the [Primer color primitives](https://github.com/primer/primitives). It uses a
+`#22272e` canvas, `#2d333b` raised surfaces, muted blue accents, matching ANSI colors,
+and GitHub-inspired editor syntax. Small text and status colors are adjusted for
+readability; Slate is an adaptation rather than an exact copy of the upstream UI.
+Select **Slate** under Settings → Appearance → Theme. The preference persists
+across restarts and applies to cached terminals and open editors without replacing them.
 
 ## Canonical theme model
 
@@ -24,7 +34,7 @@ renderer-specific palette implementations:
 - `getThemeMetadata`: resolves metadata after normalization.
 
 Native backgrounds match the CSS application surface: Dark `#121212`, Light
-`#f3f4f6`. A future theme's color scheme may be Dark or Light independently of its ID.
+`#f3f4f6`, Slate `#22272e`. A future theme's color scheme may be Dark or Light independently of its ID.
 
 ## Persistence and IPC
 
@@ -88,7 +98,7 @@ not component CSS overrides.
 
 [`terminalTheme.ts`](../src/renderer/theme/terminalTheme.ts) owns an exhaustive,
 readonly xterm palette mapping and returns independent options objects. It imports
-xterm types and ThemeId, without depending on Zustand or TerminalPane. Both palettes
+xterm types and ThemeId, without depending on Zustand or TerminalPane. All palettes
 include default text/background, cursor, selection, and all 16 ANSI roles. Dark
 retains its original palette. Light uses readable darker hues, including its
 nominal white roles; ANSI applications may still choose explicit backgrounds,

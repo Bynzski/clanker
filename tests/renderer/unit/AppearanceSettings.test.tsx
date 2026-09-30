@@ -35,13 +35,13 @@ describe('Appearance settings integration', () => {
     render(<AppearanceSettings />);
     const workspace = useWorkspaceStore.getState();
     const select = screen.getByLabelText('Theme');
-    for (const theme of ['light', 'dark'] as const) {
+    for (const theme of ['light', 'slate', 'dark'] as const) {
       fireEvent.change(select, { target: { value: theme } });
       expect(setTheme).toHaveBeenLastCalledWith(theme);
       expect(select).toHaveValue(theme);
       expect(useThemeStore.getState().theme).toBe(theme);
       expect(document.documentElement.dataset.theme).toBe(theme);
-      expect(document.documentElement.style.colorScheme).toBe(theme);
+      expect(document.documentElement.style.colorScheme).toBe(THEME_METADATA[theme].colorScheme);
       expect(window.electronAPI.setTheme).toHaveBeenLastCalledWith(theme);
       expect(useWorkspaceStore.getState()).toBe(workspace);
       await act(async () => { await Promise.resolve(); });

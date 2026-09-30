@@ -20,15 +20,20 @@ describe('theme model', () => {
     expect(DEFAULT_THEME_ID).toBe('dark');
   });
 
-  it('includes dark and light in THEME_IDS', () => {
+  it('includes dark, light and slate in THEME_IDS', () => {
     expect(THEME_IDS).toContain('dark');
     expect(THEME_IDS).toContain('light');
-    expect(THEME_IDS).toHaveLength(2);
+    expect(THEME_IDS).toContain('slate');
+    expect(THEME_IDS).toHaveLength(3);
   });
 
   describe('isThemeId', () => {
     it('returns true for dark', () => {
       expect(isThemeId('dark')).toBe(true);
+    });
+
+    it('returns true for slate', () => {
+      expect(isThemeId('slate')).toBe(true);
     });
 
     it('returns true for light', () => {
@@ -51,6 +56,7 @@ describe('theme model', () => {
     it('returns the same ThemeId for valid inputs', () => {
       expect(normalizeThemeId('dark')).toBe('dark');
       expect(normalizeThemeId('light')).toBe('light');
+      expect(normalizeThemeId('slate')).toBe('slate');
     });
 
     it('normalizes invalid, legacy, or corrupt values to DEFAULT_THEME_ID', () => {
@@ -69,7 +75,7 @@ describe('theme model', () => {
         const meta = THEME_METADATA[id];
         expect(meta).toBeDefined();
         expect(meta.id).toBe(id);
-        expect(meta.colorScheme).toBe(id);
+        expect(meta.colorScheme).toBe(id === 'light' ? 'light' : 'dark');
         expect(typeof meta.windowBackground).toBe('string');
         expect(meta.windowBackground.startsWith('#')).toBe(true);
       }

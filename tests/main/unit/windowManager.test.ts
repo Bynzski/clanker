@@ -230,6 +230,7 @@ describe('windowManager', () => {
     test('resolveInitialWindowBackground resolves persisted themes correctly', () => {
       expect(resolveInitialWindowBackground({ get: () => 'dark' })).toBe('#121212');
       expect(resolveInitialWindowBackground({ get: () => 'light' })).toBe('#f3f4f6');
+      expect(resolveInitialWindowBackground({ get: () => 'slate' })).toBe('#22272e');
       expect(resolveInitialWindowBackground({ get: () => 'invalid' })).toBe('#121212');
       expect(resolveInitialWindowBackground({ get: () => undefined })).toBe('#121212');
     });

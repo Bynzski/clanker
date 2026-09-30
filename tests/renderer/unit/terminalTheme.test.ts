@@ -49,12 +49,17 @@ describe('terminal palette contract', () => {
     expect(contrast(palette[role]!, palette.background!)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('keeps default Light text, cursor and selected text visible', () => {
-    const palette = getTerminalTheme('light');
+  it.each(['light', 'slate'] as const)('keeps default %s text, cursor and selected text visible', (theme) => {
+    const palette = getTerminalTheme(theme);
     expect(contrast(palette.foreground!, palette.background!)).toBeGreaterThanOrEqual(7);
     expect(contrast(palette.cursor!, palette.background!)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(palette.selectionForeground!, palette.selectionBackground!)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(palette.selectionForeground!, palette.selectionInactiveBackground!)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it.each(ANSI_ROLES.filter((role) => role !== 'black'))('keeps Slate %s readable against its default background', (role) => {
+    const palette = getTerminalTheme('slate');
+    expect(contrast(palette[role]!, palette.background!)).toBeGreaterThanOrEqual(4.5);
   });
 
   it('returns independent option objects', () => {

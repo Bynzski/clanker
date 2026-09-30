@@ -39,7 +39,7 @@ describe('real CodeMirror theme transactions', () => {
     act(() => view.dispatch({ selection: EditorSelection.range(25, 47) }));
     view.scrollDOM.scrollTop = 160;
     const doc = view.state.doc, selection = view.state.selection;
-    for (const theme of ['light', 'dark'] as const) {
+    for (const theme of ['light', 'slate', 'dark'] as const) {
       act(() => useThemeStore.setState({ theme }));
       expect(live.views).toEqual([view]); expect(destroy).not.toHaveBeenCalled();
       expect(view.state.doc).toBe(doc); expect(view.state.selection).toBe(selection);
@@ -60,7 +60,7 @@ describe('real CodeMirror theme transactions', () => {
     const docs = [a.state.doc, b.state.doc], selections = [a.state.selection, b.state.selection];
     const collapsed = merge.dom.querySelectorAll('.cm-collapsedLines').length;
     expect(collapsed).toBeGreaterThan(0);
-    for (const theme of ['light', 'dark'] as const) {
+    for (const theme of ['light', 'slate', 'dark'] as const) {
       act(() => useThemeStore.setState({ theme }));
       expect(live.merges).toEqual([merge]); expect(destroy).not.toHaveBeenCalled();
       expect(merge.a).toBe(a); expect(merge.b).toBe(b); expect(merge.chunks).toBe(chunks);

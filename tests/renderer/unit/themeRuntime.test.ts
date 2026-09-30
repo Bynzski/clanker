@@ -15,10 +15,10 @@ afterEach(() => {
 });
 
 describe('renderer terminal theme subscription', () => {
-  it('synchronizes current state and installs only one subscription', () => {
-    useThemeStore.setState({ theme: 'light' });
+  it.each(['light', 'slate'] as const)('synchronizes %s and installs only one subscription', (theme) => {
+    useThemeStore.setState({ theme });
     stop = startTerminalThemeSync();
-    expect(terminal.options).toEqual({ theme: getTerminalTheme('light') });
+    expect(terminal.options).toEqual({ theme: getTerminalTheme(theme) });
     expect(startTerminalThemeSync()).toBe(stop);
     const setter = vi.fn();
     Object.defineProperty(terminal.options, 'theme', { set: setter, configurable: true });

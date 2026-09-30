@@ -165,6 +165,71 @@
   --scrollbar-thumb-hover: #8895a5;
 }
 
+/* Slate adapts GitHub Dark Dimmed to Clanker's semantic roles. */
+:root[data-theme="slate"] {
+  color-scheme: dark;
+  --logo-monochrome-filter: none;
+  --surface-app: #22272e;
+  --surface-raised: #2d333b;
+  --surface-elevated: #2d333b;
+  --surface-sunken: #1c2128;
+  --surface-control: #2d333b;
+  --surface-control-hover: #373e47;
+  --surface-tint: #cdd9e5;
+  --surface-inset-tint: #000;
+  --surface-header: rgba(205, 217, 229, 0.03);
+  --surface-hover: rgba(205, 217, 229, 0.06);
+  --surface-active: rgba(205, 217, 229, 0.12);
+  --surface-selected: rgba(65, 132, 228, 0.2);
+  --surface-preview: rgba(34, 39, 46, 0.94);
+  --surface-preview-active: rgba(45, 51, 59, 0.94);
+  --surface-loading-start: rgba(45, 51, 59, 0.96);
+  --surface-loading-end: rgba(28, 33, 40, 0.98);
+  --text-primary: #adbac7;
+  --text-secondary: #909dab;
+  --text-muted: #909dab;
+  --text-inverse: #fff;
+  --text-link: #6cb6ff;
+  --text-on-emphasis: #cdd9e5;
+  --border-default: #444c56;
+  --border-subtle: #373e47;
+  --border-strong: #768390;
+  --focus-ring: #539bf5;
+  --accent-interactive: #539bf5;
+  --accent-interactive-hover: #6cb6ff;
+  --control-primary-bg: #316dca;
+  --control-primary-bg-hover: #285eb5;
+  --control-primary-fg: #fff;
+  --control-primary-fg-hover: #fff;
+  --control-info-bg-hover: #285eb5;
+  --control-success-bg: #347d39;
+  --control-success-bg-hover: #2b6a30;
+  --control-danger-bg: #b52d2a;
+  --control-danger-fg: #fff;
+  --status-success: #6bc46d;
+  --status-warning: #daaa3f;
+  --status-error: #ff938a;
+  --status-info: #6cb6ff;
+  --status-merged: #b78bf5;
+  --status-success-emphasis: #8ddb8c;
+  --status-warning-emphasis: #eac55f;
+  --status-info-emphasis: #96d0ff;
+  --git-added: #6bc46d;
+  --git-modified: #daaa3f;
+  --git-deleted: #ff938a;
+  --git-renamed: #6cb6ff;
+  --git-untracked: #adbac7;
+  --overlay-backdrop: rgba(0, 0, 0, 0.6);
+  --shadow-color: #000;
+  --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-dialog: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --selection-bg: rgba(65, 132, 228, 0.3);
+  --selection-fg: #cdd9e5;
+  --scrollbar-track: #22272e;
+  --scrollbar-thumb: #545d68;
+  --scrollbar-thumb-hover: #768390;
+}
+
 * {
   margin: 0;
   padding: 0;
