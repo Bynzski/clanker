@@ -57,7 +57,7 @@ export class TaskSessionCoordinator {
     const all = this.persistence.getAllTaskSessions();
 
     const existing = all.find(
-      (t) => t.nativeSessionId === session.id && isSameWorkspaceIdentity(
+      (t) => t.harnessId === session.harness && t.nativeSessionId === session.id && isSameWorkspaceIdentity(
         { environmentId: t.environmentId || 'local', path: t.workspacePath },
         { environmentId: envId, path: normalized }
       ),

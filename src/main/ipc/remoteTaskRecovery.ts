@@ -21,7 +21,8 @@ export class RemoteTaskRecovery {
   canAssociate(record: TaskSessionRecord, sessionId: string, allTasks: TaskSessionRecord[]): boolean {
     const workspace = this.registry?.getWorkspaceByLocation(record.environmentId ?? 'local', record.workspacePath);
     const snapshot = workspace && this.completed.get(workspace);
-    return !!snapshot && findRemoteSessionCandidate(record, snapshot.sessions, allTasks)?.id === sessionId;
+    return !!snapshot && this.registry?.getWorkspace(snapshot.workspace.workspaceId) === snapshot.workspace
+      && findRemoteSessionCandidate(record, snapshot.sessions, allTasks)?.id === sessionId;
   }
 
   async evaluate(record: TaskSessionRecord, allTasks: TaskSessionRecord[] = []): Promise<TaskSessionRecord> {

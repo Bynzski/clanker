@@ -7,6 +7,20 @@ import { discoverSshSessions } from '../../../src/main/remote/sshSessionDiscover
 import type { SshCommandExecutor, SshExecOptions } from '../../../src/main/remote/sshCommandExecutor';
 
 describe('SSH session response validation', () => {
+  it('requests a bounded complete OpenCode list and fails closed if it exceeds the limit', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: JSON.stringify(Array(4097).fill({ id: 'old' })) });
+    await expect(discoverSshSessions({ exec } as unknown as SshCommandExecutor, 'host', '/ws', ['opencode'])).rejects.toThrow('scan limit exceeded');
+    expect(exec.mock.calls[0][2][1]).toContain("'--max-count' '4097'");
+    expect(exec).toHaveBeenCalledTimes(1);
+  });
+  it('rejects contradictory duplicate session IDs instead of selecting one', async () => {
+    const session = { harness: 'pi', id: 'same', cwd: '/ws', title: 'title', timestamp: 123, filePath: '/home/pi/a.jsonl' };
+    const exec = vi.fn().mockResolvedValue({ stdout: JSON.stringify([session, { ...session, filePath: '/home/pi/b.jsonl' }]) });
+    const executor = { exec } as unknown as SshCommandExecutor;
+    await expect(discoverSshSessions(executor, 'host', '/ws', ['pi'])).rejects.toThrow('Conflicting metadata');
+    exec.mockResolvedValueOnce({ stdout: JSON.stringify([session, session]) });
+    expect(await discoverSshSessions(executor, 'host', '/ws', ['pi'])).toEqual([session]);
+  });
   it('does not infer harness availability from local options or run unsupported discovery', async () => {
     const exec = vi.fn();
     expect(await discoverSshSessions({ exec } as unknown as SshCommandExecutor, 'host', '/ws', ['hermes'])).toEqual([]);

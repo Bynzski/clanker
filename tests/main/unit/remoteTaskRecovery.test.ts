@@ -77,4 +77,14 @@ describe('known remote task recovery', () => {
     expect(await f.recovery.evaluate({ ...f.record, stateReason: 'Failed to resume: bad flags' })).toMatchObject({ state: 'unavailable', stateReason: 'Failed to resume: bad flags' });
     expect(f.environment.discoverSessions).not.toHaveBeenCalled();
   });
+
+  it('rejects final association after the verified workspace registration is lost', async () => {
+    const f = fixture();
+    const record = { ...f.record, nativeSessionId: undefined, stoppedAt: 2,
+      remoteSessionBaseline: { cwd: f.session.cwd, hostTime: 1, localTime: 1, sessionIds: [] } };
+    expect(await f.recovery.evaluate(record, [record])).toMatchObject({ nativeSessionId: 'native', state: 'resumable' });
+    expect(f.recovery.canAssociate(record, 'native', [record])).toBe(true);
+    f.registry.getWorkspace.mockReturnValue(null as never);
+    expect(f.recovery.canAssociate(record, 'native', [record])).toBe(false);
+  });
 });

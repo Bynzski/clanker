@@ -163,7 +163,9 @@ export async function discoverSshSessions(executor: SshCommandExecutor, target: 
   if (!workspacePath.startsWith('/') || workspacePath.includes('\0') || posix.normalize(workspacePath) !== workspacePath || Buffer.byteLength(workspacePath) > 4096) throw new Error('Invalid remote workspace path');
   const scans: Promise<string>[] = [];
   if (harnesses.some((id) => id !== 'opencode')) scans.push(executor.exec(target, 'python3', ['-c', GUARDED_DISCOVER_SCRIPT, workspacePath, JSON.stringify(harnesses.filter((id) => id !== 'opencode'))], { timeoutMs: 20000, maxBuffer: 1024 * 1024 }).then((result) => result.stdout));
-  if (harnesses.includes('opencode')) scans.push(executor.exec(target, 'sh', ['-c', `${REMOTE_CLI_PATH_SETUP}\nexec ${quotePosixCommand('opencode', ['session', 'list', '--format', 'json'])}`], { cwd: workspacePath, timeoutMs: 20000, maxBuffer: 1024 * 1024 }).then(async (result) => {
+  // Ask for one beyond the scan limit. The CLI's default page is incomplete
+  // launch evidence: an older session updated later could otherwise look new.
+  if (harnesses.includes('opencode')) scans.push(executor.exec(target, 'sh', ['-c', `${REMOTE_CLI_PATH_SETUP}\nexec ${quotePosixCommand('opencode', ['session', 'list', '--format', 'json', '--max-count', '4097'])}`], { cwd: workspacePath, timeoutMs: 20000, maxBuffer: 1024 * 1024 }).then(async (result) => {
     let raw: unknown;
     try { raw = JSON.parse(result.stdout); }
     catch { raw = result.stdout.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)); }
@@ -173,7 +175,7 @@ export async function discoverSshSessions(executor: SshCommandExecutor, target: 
     return validated.stdout;
   }));
   const sessions: HarnessSession[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, HarnessSession>();
   for (const output of await Promise.all(scans)) {
     const entries: unknown = JSON.parse(output);
     if (!Array.isArray(entries)) throw new Error('Invalid remote session response');
@@ -186,8 +188,12 @@ export async function discoverSshSessions(executor: SshCommandExecutor, target: 
         || [session.modelId, session.provider, session.filePath].some((value) => value !== undefined && (typeof value !== 'string' || value.includes('\0')))) throw new Error('Invalid remote session response');
       if (!isPathContained(workspacePath, session.cwd)) continue;
       const key = `${session.harness}\0${session.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const previous = seen.get(key);
+      if (previous) {
+        if (JSON.stringify(previous) !== JSON.stringify(session)) throw new Error('Conflicting metadata for a remote session; select it after repairing the host session store');
+        continue;
+      }
+      seen.set(key, session);
       sessions.push(session);
       if (sessions.length > 512) throw new Error('Too many matching remote sessions (limit 512)');
     }
