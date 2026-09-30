@@ -81,4 +81,19 @@ describe('useBrowserOverlaySuppression', () => {
     unmount();
     expect(count('a')).toBe(1);
   });
+  it('does not release another workspace after the owner workspace is removed', () => {
+    const { unmount } = renderHook(() => useBrowserOverlaySuppression(true, 'a'));
+    act(() => useWorkspaceStore.setState({ workspaces: [createWorkspaceFixture({ id: 'b', browserOverlayCount: 1 })], activeWorkspaceId: 'b', browserOverlayCount: 1 }));
+    unmount();
+    expect(count('b')).toBe(1);
+    expect(useWorkspaceStore.getState().browserOverlayCount).toBe(1);
+  });
+
+  it('does not acquire suppression for an explicitly missing workspace', () => {
+    const { unmount } = renderHook(() => useBrowserOverlaySuppression(true, 'missing'));
+    expect(count('a')).toBe(0);
+    expect(useWorkspaceStore.getState().browserOverlayCount).toBe(0);
+    unmount();
+  });
+
 });

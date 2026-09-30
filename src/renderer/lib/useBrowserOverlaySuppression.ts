@@ -14,11 +14,13 @@ export function useBrowserOverlaySuppression(open: boolean, workspaceId?: string
 
   useLayoutEffect(() => {
     if (!open) return;
+    if (ownerId !== undefined && !useWorkspaceStore.getState().workspaces.some((workspace) => workspace.id === ownerId)) return;
     push(ownerId);
     return () => {
       // An undefined scope resolves at call time. Once a workspace is selected,
       // its snapshot replaces the legacy count; never pop that new workspace.
       if (ownerId === undefined && useWorkspaceStore.getState().activeWorkspaceId !== null) return;
+      if (ownerId !== undefined && !useWorkspaceStore.getState().workspaces.some((workspace) => workspace.id === ownerId)) return;
       pop(ownerId);
     };
   }, [open, ownerId, push, pop]);
