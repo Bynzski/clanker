@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { THEME_IDS, getThemeMetadata } from '../../../src/shared/types/theme';
+import { THEME_IDS, getThemeMetadata, type ThemeId } from '../../../src/shared/types/theme';
 
 const rendererRoot = resolve(__dirname, '../../../src/renderer');
 const globalCss = readFileSync(resolve(rendererRoot, 'styles/global.css'), 'utf8');
@@ -10,7 +10,7 @@ const rules = (css: string) => [...withoutComments(css).matchAll(/([^{}]+)\{([^{
 const declarations = (body: string) => new Map(
   [...body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map((match) => [match[1], match[2].trim()]),
 );
-function palette(theme: 'dark' | 'light') {
+function palette(theme: ThemeId) {
   const rule = rules(globalCss).find((match) => match[1].includes(`:root[data-theme="${theme}"]`));
   expect(rule, `${theme} palette must exist`).toBeDefined();
   return declarations(rule![2]);
@@ -50,11 +50,13 @@ describe('renderer semantic theme contract', () => {
     expect(getThemeMetadata(theme).windowBackground).toBe(palette(theme).get('--surface-app'));
   });
 
-  it('defines the same nonempty color contract in both palettes', () => {
-    expect([...light.keys()].sort()).toEqual([...dark.keys()].sort());
-    for (const token of coreTokens) {
-      expect(dark.get(`--${token}`), `dark ${token}`).toBeTruthy();
-      expect(light.get(`--${token}`), `light ${token}`).toBeTruthy();
+  it('defines the same nonempty color contract in every registered palette', () => {
+    for (const theme of THEME_IDS) {
+      const colors = palette(theme);
+      expect([...colors.keys()].sort()).toEqual([...dark.keys()].sort());
+      for (const token of coreTokens) {
+        expect(colors.get(`--${token}`), `${theme} ${token}`).toBeTruthy();
+      }
     }
   });
 

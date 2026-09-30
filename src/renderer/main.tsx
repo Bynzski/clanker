@@ -44,7 +44,7 @@ export async function bootstrap(rootElement?: HTMLElement | null): Promise<void>
     );
   } catch (error) {
     console.error('React render error:', error);
-    root.innerHTML = `<div style="color: white; padding: 20px;">Error: ${error}</div>`;
+    root.innerHTML = `<div style="color: var(--text-primary); padding: 20px;">Error: ${error}</div>`;
   } finally {
     if (typeof window !== 'undefined' && window.electronAPI?.windowReadyToShow) {
       try {

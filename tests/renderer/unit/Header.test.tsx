@@ -415,6 +415,23 @@ describe('Header', () => {
       expect(document.querySelector('.settings-dropdown')).toBeTruthy();
     });
 
+    it('places Appearance first and keeps Settings open while switching themes', async () => {
+      const { useThemeStore } = await import('../../../src/renderer/theme/themeStore');
+      useThemeStore.setState({ theme: 'dark' });
+      renderHeader();
+      fireEvent.click(screen.getByTitle('Settings'));
+      const dropdown = document.querySelector('.settings-dropdown');
+      expect(dropdown?.firstElementChild).toHaveAttribute('aria-label', 'Appearance');
+      const theme = screen.getByRole('combobox', { name: 'Theme' });
+      fireEvent.change(theme, { target: { value: 'light' } });
+      expect(theme).toHaveValue('light');
+      expect(document.querySelector('.settings-dropdown')).toBe(dropdown);
+      expect(screen.getByText('AI commit messages')).toBeVisible();
+      fireEvent.change(theme, { target: { value: 'dark' } });
+      expect(theme).toHaveValue('dark');
+      expect(document.querySelector('.settings-dropdown')).toBe(dropdown);
+    });
+
     it('persists harness visibility changes from settings', async () => {
       renderHeader();
       await waitFor(() => {
@@ -496,7 +513,8 @@ describe('Header', () => {
       fireEvent.click(screen.getByTitle('Settings'));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       const selects = screen.getAllByRole('combobox');
-      expect(selects.length).toBe(2); // Provider and Model selects
+      expect(selects.length).toBe(3); // Appearance, Provider and Model selects
+      expect(screen.getByRole('combobox', { name: 'Theme' })).toBeTruthy();
     });
 
     it('handles getAiCommitSettings failure gracefully', async () => {

@@ -5,6 +5,7 @@
  */
 
 import { vi, describe, test, expect, beforeEach } from 'vitest';
+import { SET_THEME } from '../../../src/shared/ipcChannels';
 import { testHome } from '../../_helpers/tempPaths';
 
 vi.mock('electron', () => ({
@@ -847,6 +848,18 @@ describe('GET_THEME and SET_THEME handlers', () => {
     await handler({}, 'dark');
     expect(mockStore.set).toHaveBeenCalledWith('theme', 'dark');
     expect(mockWindow.setBackgroundColor).toHaveBeenCalledWith('#121212');
+  });
+
+  test('SET_THEME commits rapid ordered requests synchronously, with the last identity winning', () => {
+    let persisted: unknown;
+    const store = { get: vi.fn(), set: vi.fn((_key: string, value: unknown) => { persisted = value; }) };
+    const window = { isDestroyed: () => false, setBackgroundColor: vi.fn() };
+    registerSettingsIpc({ getStore: () => store as never, getMainWindow: () => window as never });
+    const handler = mockIpcMain.handle.mock.calls.find(([channel]) => channel === SET_THEME)![1];
+    for (const theme of ['dark', 'light', 'dark']) expect(handler({}, theme)).toBeUndefined();
+    expect(store.set.mock.calls.map(([, theme]) => theme)).toEqual(['dark', 'light', 'dark']);
+    expect(persisted).toBe('dark');
+    expect(window.setBackgroundColor).toHaveBeenLastCalledWith('#121212');
   });
 
   test('SET_THEME rejects invalid values safely without persisting', async () => {
