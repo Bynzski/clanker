@@ -557,9 +557,9 @@ describe('taskSessionIpc handlers', () => {
     expect(second?.state).toBe('needs-selection');
     expect(second?.nativeSessionId).toBeUndefined();
   });
-  it.each(['verify', 'resume', 'update', 'delete'] as const)('handles remote task verification overlapping %s', async (action) => {
+  it.each(['verify', 'resume', 'update', 'delete', 'associate', 'claim-during-read', 'compete-during-read'] as const)('handles remote task verification overlapping %s', async (action) => {
     let finish!: (sessions: HarnessSession[]) => void;
-    const session: HarnessSession = { id: 'remote-native', harness: 'codex', cwd: '/host/repo', title: 'Host title', timestamp: 1 };
+    const session: HarnessSession = { id: 'remote-native', harness: 'codex', cwd: '/host/repo', title: 'Host title', timestamp: 8_005_000 };
     const discoverRemote = vi.fn().mockReturnValue(new Promise<HarnessSession[]>((resolve) => { finish = resolve; }));
     const workspace = {
       workspaceId: 'ssh-ws', location: { environmentId: 'vps', path: '/host/repo' },
@@ -585,7 +585,9 @@ describe('taskSessionIpc handlers', () => {
     });
     const record = persistence.saveTaskSession({
       id: 'remote-known', environmentId: 'vps', workspacePath: '/host/repo',
-      harnessId: 'codex', nativeSessionId: 'remote-native', title: 'Old title',
+      harnessId: 'codex', nativeSessionId: ['associate', 'claim-during-read', 'compete-during-read'].includes(action) ? undefined : 'remote-native', title: 'Old title',
+      createdAt: 1_000_000, updatedAt: 1_010_000, stoppedAt: 1_010_000,
+      remoteSessionBaseline: { cwd: '/host/repo', sessionIds: [], hostTime: 8_000_000, localTime: 1_000_000 },
       state: 'unavailable', stateReason: 'Awaiting verification',
     });
     const listing = handlers.get(TASK_SESSION_LIST)!(null, '/host/repo', 'vps');
@@ -593,12 +595,18 @@ describe('taskSessionIpc handlers', () => {
     if (action === 'resume') persistence.saveTaskSession({ ...record, state: 'running', terminalId: 'new-terminal' });
     if (action === 'update') persistence.saveTaskSession({ ...record, title: 'User title' });
     if (action === 'delete') persistence.deleteTaskSession(record.id);
+    if (action === 'claim-during-read') persistence.saveTaskSession({ ...record, id: 'peer', nativeSessionId: session.id });
+    if (action === 'compete-during-read') persistence.saveTaskSession({ ...record, id: 'peer' });
     finish([session]);
     const results = await listing as TaskSessionRecord[];
-    if (action === 'verify') {
+    if (action === 'verify' || action === 'associate') {
       expect(results).toMatchObject([{ state: 'resumable', title: 'Host title' }]);
       expect(results[0].stateReason).toBeUndefined();
       expect(persistence.getTaskSessionById(record.id)?.state).toBe('resumable');
+      expect(results[0].nativeSessionId).toBe('remote-native');
+    } else if (action === 'claim-during-read' || action === 'compete-during-read') {
+      expect(results).toMatchObject([{ state: 'needs-selection' }]);
+      expect(results[0].nativeSessionId).toBeUndefined();
     } else if (action === 'resume') {
       expect(results).toMatchObject([{ state: 'running', terminalId: 'new-terminal' }]);
     } else if (action === 'update') {

@@ -314,17 +314,19 @@ describe('terminalIpc — error-path: handler returns', () => {
     const validateWorkspacePath = vi.fn(async (dir: string) => ({
       valid: true, resolvedPath: dir === '/srv/project/link' ? '/etc' : dir,
     }));
+    const captureSessionBaseline = vi.fn().mockResolvedValue({ sessions: [{ id: 'existing', harness: 'codex' }], hostTime: 8_000_000 });
+    const onTerminalSpawned = vi.fn();
     const registered = {
       workspaceId: 'remote-tab',
       location: { path: '/srv/project', environmentId: 'dev-vps' },
-      environment: { resolveTerminalSpawn, validateWorkspacePath },
+      environment: { resolveTerminalSpawn, validateWorkspacePath, capabilities: { sessionDiscovery: true }, captureSessionBaseline },
     };
     opts.getStore = vi.fn().mockReturnValue({
       get: (key: string) => key === 'harnessDefaults'
         ? { codex: { flags: '--sandbox workspace-write', model: 'ignored-local-model' } }
         : false,
     }) as never;
-    const deps = { ...opts, getWorkspaceRegistry: () => ({
+    const deps = { ...opts, taskSessionCoordinator: { onTerminalSpawned }, getWorkspaceRegistry: () => ({
       getWorkspace: (id: string) => id === 'remote-tab' ? registered : null,
     }) };
     mockPtySpawn.mockReturnValue({
@@ -337,6 +339,9 @@ describe('terminalIpc — error-path: handler returns', () => {
       workingDir: '/srv/project/src', flags: '--sandbox workspace-write', harness: 'codex',
       model: undefined,
     }));
+    expect(captureSessionBaseline).toHaveBeenCalledWith('/srv/project', 'codex');
+    expect(captureSessionBaseline.mock.invocationCallOrder[0]).toBeLessThan(resolveTerminalSpawn.mock.invocationCallOrder[0]);
+    expect(onTerminalSpawned).toHaveBeenCalledWith(expect.any(String), '/srv/project', 'codex', undefined, 'dev-vps', expect.objectContaining({ cwd: '/srv/project/src', sessionIds: ['existing'], hostTime: 8_000_000, localTime: expect.any(Number) }));
     expect(mockPtySpawn).toHaveBeenCalledWith('ssh', ['-t', 'dev-vps', 'sh -c true'], expect.any(Object));
     expect(validateWorkspacePath).toHaveBeenCalledWith('/srv/project/src');
     expect([...opts.getTerminals().values()]).toEqual([expect.objectContaining({
@@ -361,6 +366,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     }) } as never);
     const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
     const pending = handler(null, '/srv/task', undefined, undefined, undefined, undefined, 'remote', 'ssh');
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
     reserved.mockReturnValue(true);
     finish({ spawnCmd: 'ssh', spawnArgs: [], cwd: process.cwd(), env: {} });
     await expect(pending).rejects.toThrow('being removed');

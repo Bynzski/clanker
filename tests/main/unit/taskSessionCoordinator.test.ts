@@ -30,6 +30,17 @@ describe('TaskSessionCoordinator', () => {
     coordinator = new TaskSessionCoordinator(persistence, mockDiscoverSessions);
   });
 
+  it('preserves the main-captured SSH baseline across exit and shutdown', async () => {
+    const baseline = { cwd: '/repo/sub', sessionIds: ['old'], hostTime: 8_000_000, localTime: 1_000_000 };
+    const exited = coordinator.onTerminalSpawned('remote-exit', '/repo', 'codex', undefined, 'vps', baseline);
+    await coordinator.onTerminalExited('remote-exit', 'vps');
+    expect(persistence.getTaskSessionById(exited.id)).toMatchObject({ remoteSessionBaseline: baseline, state: 'unavailable', stoppedAt: expect.any(Number) });
+    const shutdown = coordinator.onTerminalSpawned('remote-shutdown', '/repo', 'claude', undefined, 'vps', baseline);
+    coordinator.onAppShutdown();
+    expect(persistence.getTaskSessionById(shutdown.id)).toMatchObject({ remoteSessionBaseline: baseline, state: 'unavailable', stoppedAt: expect.any(Number) });
+    expect(mockDiscoverSessions).not.toHaveBeenCalled();
+  });
+
   it('tracks spawned terminal as running task session', () => {
     const task = coordinator.onTerminalSpawned(
       'term-1',

@@ -14,6 +14,7 @@ import {
   isSameWorkspaceIdentity,
   parseWorkspaceIdentity,
 } from '../shared/workspaceIdentity';
+import { sanitizeRemoteSessionBaseline } from './remote/remoteSessionCorrelation';
 import { LOCAL_ENVIRONMENT_ID, type SshEnvironmentConfig } from '../shared/types/environments';
 import { isValidWorkspaceEnvironmentId, validateSshEnvironmentConfig } from '../shared/sshValidation';
 import { normalizeTrustedAppBrowserUrl } from './security';
@@ -153,6 +154,7 @@ export function sanitizeTaskSessionRecord(input: unknown): TaskSessionRecord | n
   const createdAt = isFiniteNumber(input.createdAt) ? input.createdAt : now;
   const updatedAt = isFiniteNumber(input.updatedAt) ? input.updatedAt : now;
 
+  const remoteSessionBaseline = sanitizeRemoteSessionBaseline(input.remoteSessionBaseline, normalizedPath);
   const environmentId = isNonEmptyString(input.environmentId)
     ? input.environmentId.trim()
     : LOCAL_ENVIRONMENT_ID;
@@ -161,6 +163,7 @@ export function sanitizeTaskSessionRecord(input: unknown): TaskSessionRecord | n
     id: input.id.trim(),
     workspacePath: normalizedPath,
     environmentId,
+    ...(environmentId !== LOCAL_ENVIRONMENT_ID && remoteSessionBaseline ? { remoteSessionBaseline } : {}),
     harnessId: input.harnessId.trim(),
     title: isNonEmptyString(input.title) ? input.title.trim() : `${input.harnessId.trim()} Task`,
     ...(isNonEmptyString(input.modelId) ? { modelId: input.modelId.trim() } : {}),

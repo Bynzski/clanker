@@ -1,5 +1,5 @@
 import type { HarnessSession } from '../shared/types/session';
-import type { TaskSessionRecord, TaskRecoveryState } from '../shared/types/taskSessions';
+import type { TaskSessionRecord, TaskRecoveryState, RemoteSessionBaseline } from '../shared/types/taskSessions';
 import { normalizeWorkspacePath, isSameWorkspaceIdentity } from '../shared/workspaceIdentity';
 import type { WorkspacePersistenceService } from './workspacePersistence';
 import { discoverSessions } from './sessionHistory';
@@ -24,6 +24,7 @@ export class TaskSessionCoordinator {
     harnessId: string,
     modelId?: string,
     environmentId?: string,
+    remoteSessionBaseline?: RemoteSessionBaseline,
   ): TaskSessionRecord {
     const normalized = normalizeWorkspacePath(workspacePath);
     const envId = (environmentId && environmentId.trim()) ? environmentId.trim() : 'local';
@@ -35,6 +36,7 @@ export class TaskSessionCoordinator {
       id: taskId,
       workspacePath: normalized,
       environmentId: envId,
+      ...(envId !== 'local' && remoteSessionBaseline ? { remoteSessionBaseline } : {}),
       harnessId,
       ...(modelId ? { modelId } : {}),
       title,

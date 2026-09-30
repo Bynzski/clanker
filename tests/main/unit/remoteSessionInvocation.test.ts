@@ -68,11 +68,14 @@ describe('remote session invocation', () => {
     await expect(invokeRemoteSession(agy.deps, agy.workspace, agy.session, true)).rejects.toThrow('forking is not supported');
     expect(spawnPtyProcess).not.toHaveBeenCalled();
   });
-  it('records forks as new unassociated tasks rather than claiming the parent session', async () => {
+  it('records forks with a launch baseline rather than claiming the parent session', async () => {
     const f = fixture('pi');
+    const capture = vi.fn().mockResolvedValue({ sessions: [f.session], hostTime: 8_000_000 });
+    Object.assign(f.environment, { captureSessionBaseline: capture });
     await invokeRemoteSession(f.deps, f.workspace, f.session, true);
     expect(f.tasks.onSessionInvoked).not.toHaveBeenCalled();
-    expect(f.tasks.onTerminalSpawned).toHaveBeenCalledWith(expect.any(String), '/ws', 'pi', 'host-model', 'ssh-a');
+    expect(f.tasks.onTerminalSpawned).toHaveBeenCalledWith(expect.any(String), '/ws', 'pi', 'host-model', 'ssh-a', expect.objectContaining({ cwd: '/ws/sub', sessionIds: ['native-id'], hostTime: 8_000_000 }));
+    expect(capture).toHaveBeenCalledWith('/ws', 'pi');
   });
   it('rechecks registration and path reservations after preparation, releasing attention on refusal or spawn failure', async () => {
     for (const outcome of ['replaced', 'reserved', 'shutdown', 'spawn-error']) {

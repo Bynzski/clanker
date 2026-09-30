@@ -30,6 +30,7 @@ import {
   RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
 } from '../../shared/ipcChannels';
+import { captureRemoteSessionBaseline } from '../remote/remoteSessionCorrelation';
 import { spawnPtyProcess } from './ptySpawn';
 import { RecipeCommandStartup } from '../recipeCommandStartup';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
@@ -165,6 +166,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       const attentionToken = attentionRequested && harness ? agentAttentionBroker!.registerRemote(id, harness) : undefined;
       let releaseAttention: (() => Promise<void>) | undefined;
       try {
+        const remoteSessionBaseline = await captureRemoteSessionBaseline(resolvedWorkspace.environment, root, remoteWorkingDir, harness);
         const resolved = await resolvedWorkspace.environment.resolveTerminalSpawn({
           id,
           workingDir: remoteWorkingDir,
@@ -213,7 +215,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
             resolvedWorkspace.location.path,
             resolved.harnessId,
             model,
-            effectiveEnvironmentId
+            effectiveEnvironmentId,
+            remoteSessionBaseline
           );
         }
 

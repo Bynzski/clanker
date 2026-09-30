@@ -101,6 +101,7 @@ export interface WorkspaceEnvironment {
   probeAvailableHarnessIds(): Promise<string[]>;
   discoverHarnessModels?(harnessId: string): Promise<EnvironmentModelOption[]>;
   discoverSessions?(workspacePath: string): Promise<HarnessSession[]>;
+  captureSessionBaseline?(workspacePath: string, harnessId: string): Promise<{ sessions: HarnessSession[]; hostTime: number }>;
   resolveTerminalSpawn(params: TerminalSpawnRequest): Promise<TerminalSpawnResolved>;
 
   startPortForward?(localPort: number, remotePort: number, signal: AbortSignal, onExit: (error: string) => void): Promise<PortForwardHandle>;

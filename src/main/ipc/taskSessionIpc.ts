@@ -217,13 +217,17 @@ export function registerTaskSessionIpc(deps: RegisterTaskSessionIpcDeps): Worksp
           evaluated.push(record);
           continue;
         }
-        const recovered = await remoteRecovery.evaluate(record);
+        let recovered = await remoteRecovery.evaluate(record, persistence.getAllTaskSessions());
         // Host reads can overlap a resume, update, or deletion. Keep the newer record.
         const current = persistence.getTaskSessionById(record.id);
         if (!current) continue;
         if (JSON.stringify(current) !== JSON.stringify(record)) {
           evaluated.push(current);
           continue;
+        }
+        if (!record.nativeSessionId && recovered.nativeSessionId
+          && !remoteRecovery.canAssociate(record, recovered.nativeSessionId, persistence.getAllTaskSessions())) {
+          recovered = { ...record, terminalId: undefined, state: 'needs-selection', stateReason: undefined };
         }
         if (JSON.stringify(recovered) !== JSON.stringify(record)) {
           evaluated.push(persistence.saveTaskSession({ ...recovered, updatedAt: Date.now() }));

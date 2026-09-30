@@ -3,6 +3,7 @@ import type { HarnessSession } from '../../shared/types/session';
 import type { RegisteredWorkspace, WorkspaceRegistry } from '../workspaceRegistry';
 import { isPathContained } from '../remote/remotePaths';
 
+import { findRemoteSessionCandidate } from '../remote/remoteSessionCorrelation';
 import { SUPPORTED_RESUME_HARNESSES } from '../sessionLaunch';
 interface RemoteRecoverySnapshot {
   workspace: RegisteredWorkspace;
@@ -12,11 +13,18 @@ interface RemoteRecoverySnapshot {
 
 /** One host verification per registered workspace in a task-list request. */
 export class RemoteTaskRecovery {
+  private readonly completed = new Map<RegisteredWorkspace, RemoteRecoverySnapshot>();
   private readonly snapshots = new Map<RegisteredWorkspace, Promise<RemoteRecoverySnapshot>>();
 
   constructor(private readonly registry?: WorkspaceRegistry) {}
 
-  async evaluate(record: TaskSessionRecord): Promise<TaskSessionRecord> {
+  canAssociate(record: TaskSessionRecord, sessionId: string, allTasks: TaskSessionRecord[]): boolean {
+    const workspace = this.registry?.getWorkspaceByLocation(record.environmentId ?? 'local', record.workspacePath);
+    const snapshot = workspace && this.completed.get(workspace);
+    return !!snapshot && findRemoteSessionCandidate(record, snapshot.sessions, allTasks)?.id === sessionId;
+  }
+
+  async evaluate(record: TaskSessionRecord, allTasks: TaskSessionRecord[] = []): Promise<TaskSessionRecord> {
     const unavailable = (reason: string): TaskSessionRecord => ({
       ...record, terminalId: undefined, state: 'unavailable', stateReason: reason,
     });
@@ -29,7 +37,8 @@ export class RemoteTaskRecovery {
     if (!workspace.environment.capabilities.sessionDiscovery || !workspace.environment.discoverSessions) {
       return unavailable('Remote session discovery is not available');
     }
-    if (!record.nativeSessionId) return { ...record, terminalId: undefined, state: 'needs-selection', stateReason: undefined };
+    const needsSelection = (): TaskSessionRecord => ({ ...record, terminalId: undefined, state: 'needs-selection', stateReason: undefined });
+    if (!record.nativeSessionId && !record.remoteSessionBaseline) return needsSelection();
     try {
       let pending = this.snapshots.get(workspace);
       if (!pending) {
@@ -43,8 +52,14 @@ export class RemoteTaskRecovery {
         this.snapshots.set(workspace, pending);
       }
       const snapshot = await pending;
+      this.completed.set(workspace, snapshot);
       if (this.registry?.getWorkspace(workspace.workspaceId) !== snapshot.workspace) return unavailable('The SSH workspace closed while verifying its conversation');
       if (!(record.harnessId in snapshot.harnesses)) return unavailable(`Harness '${record.harnessId}' is not installed or available on the remote host`);
+      if (!record.nativeSessionId) {
+        const candidate = findRemoteSessionCandidate(record, snapshot.sessions, allTasks);
+        if (!candidate) return needsSelection();
+        return { ...record, terminalId: undefined, state: 'resumable', stateReason: undefined, nativeSessionId: candidate.id, nativeSessionPath: candidate.filePath, title: candidate.title || record.title };
+      }
       const session = snapshot.sessions.find((session) => session.harness === record.harnessId && session.id === record.nativeSessionId && isPathContained(workspace.location.path, session.cwd));
       if (!session) return unavailable('Native conversation session was not found on the remote host');
       return { ...record, terminalId: undefined, state: 'resumable', stateReason: undefined, nativeSessionPath: session.filePath, title: session.title || record.title };
