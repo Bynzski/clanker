@@ -54,6 +54,8 @@ export interface TerminalSpawnRequest {
   recipeCommand?: boolean;
   /** Main-generated per-launch credential; never supplied by the renderer. */
   attentionToken?: string;
+  /** Main-selected native session; never passed directly from renderer payloads. */
+  resumeSession?: { session: HarnessSession; fork: boolean; workspaceRoot: string };
 }
 
 export interface TerminalSpawnResolved {

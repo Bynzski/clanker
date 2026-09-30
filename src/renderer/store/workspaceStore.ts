@@ -374,7 +374,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     );
   }),
 
-  addTerminal: (unnamedTerminal) => set((state) => {
+  addTerminal: (unnamedTerminal, workspaceId) => set((current) => {
+    const scopedWorkspace = workspaceId ? resolveWorkspaceByScope(current, workspaceId) : null;
+    if (workspaceId && !scopedWorkspace) return current;
+    const state = scopedWorkspace ? { ...current, ...getActiveWorkspaceSnapshot(scopedWorkspace) } : current;
     const terminal = nameTerminal(unnamedTerminal, state.terminals);
     const nextTerminals = [...state.terminals, terminal];
     const paneExists = state.panes.some((pane) => pane.terminalId === terminal.id);
@@ -412,20 +415,23 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     const nextActiveTerminalId = terminal.id;
 
+    const updateWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
+      ...workspace,
+      terminals: nextTerminals,
+      panes: nextPanes,
+      activeTerminalId: nextActiveTerminalId,
+      layoutRoot: nextLayoutRoot,
+      layoutRevision: state.layoutRevision + 1,
+      model: state.model,
+    });
+    if (workspaceId) return patchWorkspaceById(current, workspaceId, updateWorkspace);
     const nextState = {
       terminals: nextTerminals,
       panes: nextPanes,
       activeTerminalId: nextActiveTerminalId,
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
-      ...syncActiveWorkspace(state, (workspace) => ({
-        ...workspace,
-        terminals: nextTerminals,
-        panes: nextPanes,
-        activeTerminalId: nextActiveTerminalId,
-        layoutRoot: nextLayoutRoot,
-        model: state.model,
-      })),
+      ...syncActiveWorkspace(state, updateWorkspace),
     };
     if (import.meta.env.DEV) {
       const warnings = validateWorkspaceConsistency(nextState);

@@ -23,6 +23,7 @@ import { HARNESS_OPTIONS } from '../harnessCatalog';
 import { buildHarnessSpawnArgs } from '../harnessLaunch';
 import { prepareSshAttention, remoteAttentionEnvironment, REMOTE_CLI_PATH_SETUP } from './sshAgentAttention';
 import { discoverSshSessions } from './sshSessionDiscovery';
+import { buildSessionCommand } from '../sessionLaunch';
 import type {
   FileListDirectoryRequest,
   FileListDirectoryResult,
@@ -682,15 +683,24 @@ export class SshEnvironment implements WorkspaceEnvironment {
 
   public async resolveTerminalSpawn(params: TerminalSpawnRequest): Promise<TerminalSpawnResolved> {
     const harnessConfig = params.harness ? HARNESS_OPTIONS[params.harness] : undefined;
-    const remoteScript = [
+    const remoteScript: string[] = [];
+    if (params.resumeSession) {
+      const { session, workspaceRoot } = params.resumeSession;
+      if (!harnessConfig || session.harness !== params.harness || session.cwd !== params.workingDir) throw new Error('Invalid remote session launch');
+      const check = `import os,sys\nroot,cwd,file,harness=sys.argv[1:]\nif not os.path.isdir(root) or os.path.realpath(root)!=root or not os.path.isdir(cwd) or os.path.realpath(cwd)!=cwd or not (cwd==root or cwd.startswith(root.rstrip('/')+'/')): sys.exit('Remote session directory is no longer within the workspace')\nif harness in ('pi','omp'):\n store=os.path.join(os.path.realpath(os.path.expanduser('~')),'.'+harness,'agent','sessions')\n if not file.endswith('.jsonl') or not os.path.isfile(file) or os.path.realpath(file)!=file or os.path.realpath(store)!=store or not file.startswith(store+'/'): sys.exit('Remote session file is no longer valid')\n`;
+      remoteScript.push(`${quotePosixCommand('python3', ['-c', check, workspaceRoot, session.cwd, session.filePath ?? '', session.harness])} || exit 1`);
+    }
+    remoteScript.push(
       `cd ${quotePosixArg(params.workingDir)} || exit 1`,
       REMOTE_CLI_PATH_SETUP,
       `for clanker_key in $(env | sed -n 's/^\\(CLANKER_\\(REMOTE_\\)\\{0,1\\}ATTENTION_[A-Za-z_0-9]*\\)=.*/\\1/p'); do unset "$clanker_key"; done`,
-    ];
+    );
 
     let attention: Awaited<ReturnType<typeof prepareSshAttention>> | undefined;
     if (harnessConfig && params.harness) {
-      let harnessArgs = buildHarnessSpawnArgs(harnessConfig, params.model, params.flags);
+      let harnessArgs = params.resumeSession
+        ? buildSessionCommand(params.resumeSession.session, params.resumeSession.fork, params.flags).args
+        : buildHarnessSpawnArgs(harnessConfig, params.model, params.flags);
       if (params.attentionToken) {
         attention = await prepareSshAttention(this.executor, this.target, params.harness, harnessArgs, params.attentionToken);
         harnessArgs = attention.args;

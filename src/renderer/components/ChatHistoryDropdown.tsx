@@ -38,10 +38,10 @@ interface HarnessGroupProps {
   onToggle: () => void;
   onSessionClick: (session: HarnessSession) => void;
   displayTitles: Map<string, string>;
-  readOnly: boolean;
+  launching: boolean;
 }
 
-function HarnessGroup({ harnessId, sessions, isExpanded, onToggle, onSessionClick, displayTitles, readOnly }: HarnessGroupProps) {
+function HarnessGroup({ harnessId, sessions, isExpanded, onToggle, onSessionClick, displayTitles, launching }: HarnessGroupProps) {
   const harnessOpt = HARNESS_OPTIONS.find((o) => o.id === harnessId);
 
   return (
@@ -71,7 +71,7 @@ function HarnessGroup({ harnessId, sessions, isExpanded, onToggle, onSessionClic
                 key={`${session.harness}-${session.id}`}
                 type="button"
                 className="chat-history-session"
-                disabled={readOnly}
+                disabled={launching}
                 onClick={() => onSessionClick(session)}
                 title={`${session.title}\n${session.cwd}`}
               >
@@ -102,7 +102,13 @@ export default function ChatHistoryDropdown({
 }: Props) {
   const addTerminal = useWorkspaceStore((state) => state.addTerminal);
   const setActiveTerminal = useWorkspaceStore((state) => state.setActiveTerminal);
+  const [launching, setLaunching] = useState(false);
+  const [sessionLaunchError, setSessionLaunchError] = useState('');
   const environmentId = useWorkspaceStore((state) => state.getWorkspaceById(workspaceId)?.environmentId ?? 'local');
+  const stillOwnsWorkspace = () => {
+    const current = useWorkspaceStore.getState().getWorkspaceById(workspaceId);
+    return current && (current.environmentId ?? 'local') === environmentId && current.workspacePath === workspacePath;
+  };
   const [tasks, setTasks] = useState<TaskSessionRecord[]>([]);
   const [resumeError, setResumeError] = useState<{ taskId: string; message: string } | null>(null);
 
@@ -137,18 +143,24 @@ export default function ChatHistoryDropdown({
       };
       if (!workspaceId) throw new Error('Workspace is not registered');
       const info = await window.electronAPI.invokeSession(workspaceId, sessionPayload);
+      if (!stillOwnsWorkspace()) {
+        await window.electronAPI.killTerminal(info.id);
+        throw new Error('The workspace closed while resuming');
+      }
       addTerminal({
         id: info.id,
         pid: info.pid,
-        workingDir: workspacePath,
+        workingDir: info.workingDir ?? workspacePath,
+        workspaceId,
+        environmentId,
         harnessId: sessionPayload.harness,
         attentionEnabled: info.attentionEnabled === true,
-      });
+      }, workspaceId);
       if (typeof window.electronAPI?.taskSessionList === 'function') {
         const updated = await window.electronAPI.taskSessionList(workspacePath, environmentId);
         setTasks(updated);
       }
-      onClose();
+      if (useWorkspaceStore.getState().activeWorkspaceId === workspaceId) onClose();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error('Failed to resume task:', err);
@@ -199,14 +211,23 @@ export default function ChatHistoryDropdown({
     onClose();
   };
   const handleSessionClick = async (session: HarnessSession) => {
-    if (environmentId !== 'local') return;
+    if (launching) return;
+    setLaunching(true);
+    setSessionLaunchError('');
     try {
       if (!workspaceId) throw new Error('Workspace is not registered');
       const info = await window.electronAPI.invokeSession(workspaceId, session);
-      addTerminal({ id: info.id, pid: info.pid, workingDir: workspacePath, harnessId: session.harness, attentionEnabled: info.attentionEnabled === true });
-      onClose();
+      if (!stillOwnsWorkspace()) {
+        await window.electronAPI.killTerminal(info.id);
+        throw new Error('The workspace closed while resuming');
+      }
+      addTerminal({ id: info.id, pid: info.pid, workingDir: info.workingDir ?? session.cwd, workspaceId, environmentId, harnessId: session.harness, attentionEnabled: info.attentionEnabled === true }, workspaceId);
+      if (useWorkspaceStore.getState().activeWorkspaceId === workspaceId) onClose();
     } catch (err) {
       console.error('Failed to invoke session:', err);
+      setSessionLaunchError(err instanceof Error ? err.message : 'Could not resume session');
+    } finally {
+      setLaunching(false);
     }
   };
 
@@ -230,7 +251,7 @@ export default function ChatHistoryDropdown({
 
   return (
     <div className="chat-history-dropdown">
-      {environmentId !== 'local' && <div className="chat-history-empty">Remote history is read-only. Remote resume is not available yet.</div>}
+      {sessionLaunchError && <div className="chat-history-empty" role="alert">{sessionLaunchError}</div>}
       <TaskRecoverySection
         tasks={tasks}
         discoveredSessions={sessions}
@@ -256,7 +277,7 @@ export default function ChatHistoryDropdown({
             onToggle={() => toggleHarness(harness)}
             onSessionClick={handleSessionClick}
             displayTitles={displayTitles}
-            readOnly={environmentId !== 'local'}
+            launching={launching}
           />
         ))
       )}

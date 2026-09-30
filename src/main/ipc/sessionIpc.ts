@@ -20,6 +20,7 @@ import { toNativePath } from '../../shared/pathNormalize';
 import { resolveExistingFileWithinDirectory } from '../security';
 import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
+import { invokeRemoteSession } from './remoteSessionInvocation';
 import {
   acquireAgyAttentionPlugin,
   attentionLaunchOptions,
@@ -31,7 +32,7 @@ import {
 const AGY_SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const AGY_MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 
-interface RegisterSessionIpcDeps {
+export interface RegisterSessionIpcDeps {
   getTerminals: () => Map<string, Terminal>;
   getMainWindow: () => BrowserWindow | null;
   getSafeWorkspacePath: (workingDir: string) => string;
@@ -70,7 +71,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       : null;
     if (!workspace) throw new Error('Workspace is not registered');
     if (workspace.location.environmentId !== 'local') {
-      throw new Error('Remote session invocation is not supported in this version');
+      return invokeRemoteSession(deps, workspace, session, fork);
     }
     const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
     const nativeSessionCwd = typeof session?.cwd === 'string'

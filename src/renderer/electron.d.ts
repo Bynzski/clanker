@@ -293,7 +293,7 @@ interface ElectronAPI {
 
   // Session history
   discoverSessions: (workspaceId: string) => Promise<HarnessSession[]>;
-  invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
+  invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean; workingDir?: string }>;
 
   // Workspace Recipes
   recipeGetAll: (workspacePath?: string) => Promise<WorkspaceRecipe[]>;

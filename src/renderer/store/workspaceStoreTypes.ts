@@ -115,7 +115,7 @@ export interface WorkspaceState {
   setWorkspacePath: (path: string) => void;
   setHarness: (harness: string) => void;
   setModel: (model: string) => void;
-  addTerminal: (terminal: Terminal) => void;
+  addTerminal: (terminal: Terminal, workspaceId?: string) => void;
   removeTerminal: (id: string) => void;
   setActiveTerminal: (id: string) => void;
   toggleBrowser: () => void;
