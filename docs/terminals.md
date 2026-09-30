@@ -93,12 +93,13 @@ The **Chat History** button (message icon) in the header opens a dropdown that d
 - Sessions are shown only for harness commands that are currently installed and available
 - Sessions display a stored title or first user message, relative timestamp, and harness type
 - Click any session to resume it in a new terminal (respects harness default flags from settings)
-- Sessions are cached for 60 seconds to avoid repeated file system scans
+- Local sessions are cached for 60 seconds to avoid repeated file system scans; SSH history is read from the registered host
 - Orphaned sessions (sessions not in the index) are automatically discovered and included
 
 **Workspace filtering:** The feature uses path-boundary matching to avoid false positives. For example, `/home/jay/dev/projects/foo` will match `/home/jay/dev/projects/foo/src` but not `/home/jay/dev/projects/foo-old`.
 
-**Remote session isolation:** Chat history discovery scans local filesystems only. When a remote workspace is active, its terminals exit, or the app shuts down, local session scanners are bypassed to prevent false correlation with local session files. Remote tasks are classified as `unavailable` with a diagnostic explanation. Native remote session recovery is unavailable in V1.
+**Remote session isolation:** SSH Chat history discovers supported harness conversations on the registered host and never scans desktop session files. Resume revalidates the selected conversation and its canonical working directory before opening an SSH terminal. Remote tasks become `unavailable` pending host verification after terminal exit or app shutdown; opening Chat history verifies known session IDs and restores valid tasks to `resumable`. New tasks associate automatically only when bounded pre-launch evidence identifies one conversation and one owner; other tasks require manual session selection. Hermes history and remote process persistence remain unavailable. See [SSH session history](workspaces.md#ssh-session-history) for supported harnesses and limits.
+
 ### Selecting a Harness
 
 1. Click the **Harness** pill in the header

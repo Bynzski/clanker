@@ -39,13 +39,13 @@ Linux-only releases are allowed at any semantic version when the artifact scope 
 
 ### 2. Build the Linux artifact (Linux host)
 
-1. Run `npm run build:dist`. The AppImage lands in `release/Clanker Grid-X.Y.Z.AppImage`; the `build:dist` script disables electron-builder publishing, so this step creates only a local artifact.
+1. Run `npm run build:dist -- --linux AppImage --x64` to select only the Linux x64 target explicitly. The AppImage lands in `release/Clanker Grid-X.Y.Z.AppImage`; the `build:dist` script disables electron-builder publishing, so this step creates only a local artifact.
 2. Smoke-test the AppImage on a clean/current Linux desktop: launch it, open a workspace, spawn a terminal, run a git operation, open the file explorer. If it does not launch, do not release.
 
 ### 3. Build the Windows artifacts (Windows host, full releases only)
 
 1. Check out the release commit from `main` on a Windows 10/11 machine with Git for Windows, Node.js 22+, and npm 10+ installed.
-2. Run `npm ci`. `electron-builder` triggers `@electron/rebuild` for `node-pty` against the Electron ABI on first install.
+2. Run `npm ci`. During the packaging step below, `electron-builder` triggers `@electron/rebuild` for `node-pty` against the Electron ABI.
 3. Run `npm run build:dist`. Two artifacts land in `release/`:
    - `Clanker Grid Setup X.Y.Z.exe` — NSIS installer
    - `Clanker Grid X.Y.Z.exe` — portable executable
@@ -61,7 +61,13 @@ git tag -a vX.Y.Z -m "Clanker Grid X.Y.Z"
 git push origin vX.Y.Z
 ```
 
-Attach all planned artifacts to a single GitHub release. Replace `X.Y.Z` in the commands below with the actual version. For a full release:
+Attach all planned artifacts to a single GitHub release. Replace `X.Y.Z` in the commands below with the actual version. Extract the release notes from the prepared changelog before publishing:
+
+```bash
+awk -v version="X.Y.Z" 'index($0, "## [" version "] - ") == 1 {flag=1;next} /^## \[/ {flag=0} flag' CHANGELOG.md > release/release-notes.md
+```
+
+Review that file, including the artifact scope. For a full release:
 
 ```
 gh release create vX.Y.Z \
@@ -69,7 +75,7 @@ gh release create vX.Y.Z \
   'release/Clanker Grid Setup X.Y.Z.exe' \
   'release/Clanker Grid X.Y.Z.exe' \
   --title "vX.Y.Z" \
-  --notes "$(awk '/^## \[X.Y.Z\]/{flag=1;next} /^## \[/{flag=0} flag' CHANGELOG.md)"
+  --notes-file release/release-notes.md
 ```
 
 If the Linux and Windows hosts are different machines, copy the Windows artifacts back to the Linux host before running `gh release create`, or run `gh release upload vX.Y.Z` from each host in turn.
@@ -82,7 +88,7 @@ For a Linux-only release, publish only the AppImage:
 gh release create vX.Y.Z \
   'release/Clanker Grid-X.Y.Z.AppImage' \
   --title "vX.Y.Z" \
-  --notes "$(awk '/^## \[X.Y.Z\]/{flag=1;next} /^## \[/{flag=0} flag' CHANGELOG.md)"
+  --notes-file release/release-notes.md
 ```
 
 Mention in the release notes that no Windows build was produced for this tag.

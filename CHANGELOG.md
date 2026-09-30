@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-30
+
+### Added
+
+- **SSH workspace roots** — configure a default directory per SSH target, with canonical-path resolution and automatic fallback when it is unavailable.
+- **Remote file monitoring** — Explorer and clean editor tabs refresh from bounded, batched SSH polling; unsaved buffers are preserved and flagged when remote files change.
+- **Remote worktrees** — discover, open, create, and inspect linked checkouts from an open SSH repository. Clean, inactive checkouts without submodules can be removed with a preserved recovery copy while keeping their branch.
+- **Remote Agent Attention** — opt in to native lifecycle badges for SSH Codex, Claude, OpenCode, Pi, OMP, Antigravity, and Hermes launches using terminal-scoped host credentials.
+- **SSH browser previews** — forward an explicit remote IPv4 loopback port into the workspace Browser, with connection checks, error reporting, and cleanup on stop or workspace/app closure.
+- **Remote session history and recovery** — discover and resume Codex, Claude, OpenCode, Pi, OMP, and Antigravity conversations on the owning host. Saved tasks verify known sessions and associate new conversations only when launch evidence identifies a unique owner; supported native forks create new tasks.
+- **Workspace tab reordering** — drag tabs or use Alt+Shift+Left/Right on a focused tab; the chosen order is retained when workspaces reopen.
+
+### Changed
+
+- **SSH workspace context** — workspace tabs and the status bar show the remote environment, and launch failures display their error details.
+- **Linux-only release artifact** — `0.8.0` ships as a Linux x64 AppImage. No Windows binary is produced for this release; Windows remains covered by CI validation.
+
+### Fixed
+
+- **Browser selection** — delayed tab creation, navigation, and bounds updates respect newer tab selections and workspace switches without bringing a background page into view.
+- **SSH resource cleanup** — renderer loss and app shutdown retire remote terminals, file polling, previews, and attention launch files; shutdown waits for started resource cleanup.
+- **Remote worktree recovery** — pending removal reservations survive restarts and protect equivalent SSH aliases until host completion is verified. Damaged recovery state preserves its evidence and blocks remote opens and worktree operations while allowing the app to start.
+- **Workspace tab controls** — dragging rename or close icons no longer starts a tab reorder.
+
 ## [0.7.0] - 2026-09-29
 
 ### Added
@@ -302,7 +326,8 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Bynzski/clanker/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Bynzski/clanker/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Bynzski/clanker/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Bynzski/clanker/compare/v0.4.0...v0.5.0

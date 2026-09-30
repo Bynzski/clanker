@@ -14,13 +14,13 @@ Clanker Grid is a single-window desktop app that brings your terminals, AI codin
 ## What it does
 
 - **Terminal grid** — multiple terminal panes in flexible split layouts, with proper copy/paste.
-- **AI harnesses** — launch Claude, Codex, OpenCode, or Pi straight into a pane, and resume past sessions from a searchable history.
+- **AI harnesses** — launch Claude, Codex, OpenCode, Pi, OMP, Antigravity, or Hermes straight into a pane. Search and resume supported harness conversations locally or on an SSH host.
 - **Git, built in** — branches, stashes, merges, diffs, remotes, and AI-assisted commits without leaving the app.
 - **VCS at a glance** — PR status, CI checks, and quick links from GitHub, GitLab, and Bitbucket.
 - **Embedded browser** — keep docs, dashboards, or your local app open right next to your code.
 - **Editor & file tree** — CodeMirror-backed editing with syntax highlighting and a familiar explorer.
-- **Multi-workspace** — every project gets its own tab; switch context without losing it.
-- **SSH workspaces** — open a remote Linux/POSIX directory with the built-in SSH directory chooser; terminals, Git, and installed AI harnesses run on that host, while Explorer displays its remote files in the desktop app.
+- **Multi-workspace** — every project gets its own tab; reorder tabs and switch context without losing it.
+- **SSH workspaces** — open a remote Linux/POSIX directory with the built-in SSH directory chooser; terminals, Git, and installed AI harnesses run on that host, while Explorer and the editor monitor its remote files. Manage remote worktrees, track agent attention, resume supported conversations, and preview an explicit server port in the desktop Browser.
 - **Credentials handled** — SSH key generation and encrypted PAT storage built in.
 
 ## Supported platforms
@@ -62,7 +62,7 @@ npm run build
 npm run build:dist
 ```
 
-On Linux this produces an AppImage in `release/`. On Windows it produces an NSIS installer and a portable executable in `release/`. There is no cross-compilation — each platform must be built on its own host. See [RELEASING.md](RELEASING.md) for the release flow, including Linux-only patch releases.
+On Linux this produces an AppImage in `release/`. On Windows it produces an NSIS installer and a portable executable in `release/`. There is no cross-compilation — each platform must be built on its own host. See [RELEASING.md](RELEASING.md) for the release flow, including Linux-only releases.
 
 ## Documentation
 

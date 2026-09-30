@@ -6,8 +6,8 @@ This document describes the unified architecture for reusable workspace launch r
 
 1. **Shared Durable Foundation**: Both features build on a single persistence mechanism (`electron-store`) and workspace identity composed of an environment ID and canonical path. Legacy records without an environment ID are local.
 2. **Explicit Execution Boundary**: Opening a workspace or inspecting a recipe **never automatically runs arbitrary shell commands**. All execution steps are visible to the user and require an explicit launch action.
-3. **No Phantom PTYs**: Clanker does not pretend previous PTY terminal processes survive an app restart. PTYs exit on app close; what survives is persistent metadata and, for local tasks, native AI conversation resume capability.
-4. **No Prompt Replay**: The user's original task prompt is never stored for the purpose of replaying it. Local resume reconnects to the harness's native conversation session using native CLI resume mechanisms.
+3. **No Phantom PTYs**: Clanker does not pretend previous PTY terminal processes survive an app restart. PTYs exit on app close; what survives is persistent metadata and native AI conversation resume capability for supported local and SSH harnesses.
+4. **No Prompt Replay**: The user's original task prompt is never stored for the purpose of replaying it. Resume reconnects to the harness's native conversation session using native CLI resume mechanisms on the owning environment.
 5. **Partial Failure Resilience**: Recipe execution never treats failure as all-or-nothing. If a step fails, prior successful terminals remain alive, and the failure is reported clearly.
 6. **Conservative Correlation**: Automatic session correlation operates on a strict false-negative preference. If multiple candidate sessions match a task, Clanker marks the task `needs-selection` rather than guessing or attaching the wrong conversation. A native session ID cannot be assigned to more than one task.
 
@@ -70,6 +70,7 @@ interface TaskSessionRecord {
   terminalId?: string; // Live PTY identifier in current process
   nativeSessionId?: string; // e.g. Codex thread ID, Claude session UUID
   nativeSessionPath?: string; // e.g. OMP/Pi session file path
+  remoteSessionBaseline?: { cwd: string; sessionIds: string[]; hostTime: number; localTime: number };
   state: TaskRecoveryState;
   stateReason?: string;
   createdAt: number;
@@ -95,7 +96,7 @@ Recipes are local-only in V1. Saving or launching a recipe for an SSH workspace 
 
 ## 5. Conservative Local Task Correlation & Discovery Caching
 
-Native session discovery and correlation in this section apply only to local workspaces. SSH tasks do not scan local session files and become `unavailable` when their terminal exits or the app shuts down, with reason `Remote session recovery is not supported in this version`.
+Native session discovery and correlation in this section apply to local workspaces. SSH tasks never scan desktop session files. They become `unavailable` pending host verification after terminal exit or shutdown; opening Chat history in the registered SSH workspace verifies their saved conversations. See [SSH task recovery](#10-ssh-task-recovery) for the remote rules.
 
 ### 5.1 Correlation Rules
 The `findUnambiguousSessionCandidate()` algorithm associates a native session with a task record only when all conditions are satisfied:
@@ -120,7 +121,7 @@ Discovery distinguishes between successful scans and transient I/O failures usin
 
 ## 6. Local Lifecycle & State Transitions
 
-The diagram below describes local tasks. Remote tasks transition from `running` to `unavailable` on terminal exit or app shutdown; remote native session recovery is not supported in V1.
+The diagram below describes local tasks. Remote tasks transition from `running` to `unavailable` on terminal exit or app shutdown until a task-list request verifies the host conversation; see [SSH task recovery](#10-ssh-task-recovery).
 
 ```
 (Harness Spawned / Resumed)
@@ -167,11 +168,13 @@ Clanker distinguishes between two different kinds of failure:
 
 ## 8. Shutdown Ordering
 
-In `src/main/main.ts`, the `app.on('before-quit')` sequence is strictly ordered:
-1. `setAppShuttingDown(true)` — blocks late PTY data and exit IPC emissions to closing windows.
-2. `taskSessionCoordinator?.onAppShutdown()` — transitions local `running` tasks to `resumable` or `needs-selection`, remote `running` tasks to `unavailable`, and sets `shuttingDown = true`.
-3. `killAllTerminals()` — kills PTY processes. Any resulting synchronous or asynchronous PTY exit callbacks immediately return `null` without launching redundant discovery loops.
-4. `agentAttentionBroker.close()` & `removeAttentionAdapterFiles()` — tears down attention adapters.
+In `src/main/main.ts`, `app.on('before-quit')` prevents the initial quit while cleanup runs:
+1. Close managed previews and stop remote file polling.
+2. `setAppShuttingDown(true)` and clear workspace registrations — block late PTY emissions and new workspace-scoped launches.
+3. `taskSessionCoordinator?.onAppShutdown()` — transitions local `running` tasks to `resumable` or `needs-selection`, remote `running` tasks to `unavailable` pending host verification, and sets `shuttingDown = true`.
+4. `killAllTerminals()` — starts terminal resource cleanup and kills PTYs. Exit callbacks skip redundant task discovery during shutdown.
+5. `agentAttentionBroker.close()` and `removeAttentionAdapterFiles()` — retire attention credentials and local adapters.
+6. Await preview child termination and `waitForTerminalCleanup()`, then call `app.quit()` again. Repeated quit requests share the pending cleanup.
 
 ---
 
@@ -180,3 +183,13 @@ In `src/main/main.ts`, the `app.on('before-quit')` sequence is strictly ordered:
 - **PTY Execution**: Commands and harnesses funneled strictly through the existing `spawnPtyProcess` machinery. No renderer-side `child_process` execution.
 - **Browser URLs**: Validated against `normalizeTrustedAppBrowserUrl` allowing only `http:`, `https:`, and trusted local `file:` schemes.
 - **IPC Boundaries**: All inputs crossing IPC are validated, type-checked, and normalized.
+
+## 10. SSH Task Recovery
+
+SSH task recovery uses the registered environment and canonical workspace root. Chat history reads host-installed Codex, Claude, OpenCode, Pi, OMP, and Antigravity metadata; Hermes history is unsupported. Resume re-discovers the chosen conversation, checks host harness availability and canonical session containment, rejects conflicting session-selection flags, and rechecks workspace registration and removal reservations before spawning the SSH PTY. Pi/OMP session files and the launch directory are checked again on the host. Supported native forks create a new task; Antigravity forking is unavailable.
+
+Opening Chat history verifies saved tasks with known native session IDs once per registered workspace per task-list request. Valid records become `resumable`; missing conversations or SSH errors remain `unavailable` with a reason and keep their IDs for retry. Late verification cannot overwrite changed or deleted records. Failed resume records require an explicit retry or manual reassociation.
+
+New launches and supported forks capture a bounded pre-launch session-ID baseline, canonical launch directory, and host clock. After terminal exit or shutdown, automatic association requires exactly one new conversation in that directory, within the launch/exit window adjusted for the host clock, excluding baseline IDs and existing claims. Timestamp granularity allows one second before the host baseline; session flushing allows up to two minutes after the desktop-observed exit. Competing task owners across the saved environment/harness records prevent assignment. Legacy tasks, failed baselines, missing exit evidence, and ambiguous matches require manual selection. Final persistence rechecks current task records and competing claims.
+
+Conversation recovery starts a new host process. Existing remote processes do not persist or reconnect after the SSH terminal or app closes. See [SSH session history](workspaces.md#ssh-session-history) for scan bounds and [the smoke-test guide](remote-vps-smoke-test.md) for live verification.

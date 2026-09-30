@@ -127,9 +127,9 @@ Each workspace can run one preview, with at most 16 managed previews across the 
 
 Managed previews use the registered workspace's SSH target, retain normal SSH host-key verification, and do not share an existing SSH control connection. Targets that already define port forwards in SSH configuration are rejected; use an alias without configured forwards. No remote helper is installed or daemon started: a foreground Python acknowledgement checks the service and ends with the SSH connection. Automatic port discovery, IPv6 destinations, privileged ports, and persisted forwarding rules remain deferred.
 
-### Features Intentionally Deferred / Unavailable Remotely in V1
+### Remote limits and refresh behavior
 
-To maintain reliability and safety, the following capabilities are local-only in V1:
+Remote capabilities have the following limits in V1:
 
 1. **Submodule Worktree Removal**: Remote worktrees containing submodules cannot be removed through Clanker. Other clean remote checkouts can be removed with a preserved file recovery copy; discovery, creation, and inspection are available from open SSH repositories.
 2. **Launch Recipes**: Creating, editing, or launching recipes for SSH workspaces is unavailable in V1. Legacy recipes without an environment ID remain local recipes.
@@ -143,6 +143,7 @@ To maintain reliability and safety, the following capabilities are local-only in
 ## Managing Tabs
 
 - **Switch workspaces**: Click a workspace tab
+- **Reorder**: Drag a tab onto another tab, or focus it and press `Alt+Shift+Left/Right`. The saved order is restored when workspaces reopen.
 - **Rename**: Double-click a tab name
 - **Close**: Click the × on a tab
 - **Attention badge**: Shows agents needing input or completed turns when agent attention is enabled
