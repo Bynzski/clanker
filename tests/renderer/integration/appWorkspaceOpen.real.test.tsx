@@ -125,7 +125,7 @@ describe('App workspace open integration', () => {
       registerOpenWorkspace, spawnTerminal,
     });
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: 'SSH Remote' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'SSH Remote' }));
     await waitFor(() => expect(document.querySelector('.ssh-env-select')).toBeTruthy());
     fireEvent.change(document.querySelector('input[placeholder^="/home/jay/Projects"]')!, {
       target: { value: '/home/jay/project' },
@@ -150,7 +150,7 @@ describe('App workspace open integration', () => {
       ] }),
     });
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: 'SSH Remote' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'SSH Remote' }));
     await waitFor(() => expect(document.querySelector('.ssh-env-select')).toBeTruthy());
     await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
     fireEvent.change(screen.getByLabelText('Remote Directory Path'), { target: { value: '/alias/task' } });

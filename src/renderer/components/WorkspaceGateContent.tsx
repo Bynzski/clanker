@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog, GitBranch, ArrowLeft, Settings } from 'lucide-react';
+import { FolderOpen, Folder, Loader2, Play, ChevronRight, ChevronDown, Check, Star, Search, X, AlertTriangle, Cog, GitBranch, ArrowLeft } from 'lucide-react';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../../shared/types/recipes';
 import type { SshEnvironmentConfig } from '../../shared/types/environments';
 import RecipeModal from './RecipeModal';
@@ -17,6 +17,10 @@ import { joinPaths } from '../lib/pathUtils';
 import RemoteWorkspacePath from './RemoteWorkspacePath';
 import SshEnvironmentManager from './SshEnvironmentManager';
 import RemoteWorktreePicker from './RemoteWorktreePicker';
+import { WorkspaceLocationPicker } from './gate/WorkspaceLocationPicker';
+import { HarnessPicker } from './gate/HarnessPicker';
+import { TerminalCountPicker, TERMINAL_PRESETS } from './gate/TerminalCountPicker';
+export { TERMINAL_PRESETS } from './gate/TerminalCountPicker';
 import './WorkspaceGate.css';
 
 export interface WorkspaceFormData {
@@ -60,11 +64,6 @@ function isEditableEventTarget(target: EventTarget | null): boolean {
     || target.tagName === 'SELECT';
 }
 
-export const TERMINAL_PRESETS = [
-  { count: 1, label: '1', description: 'Single terminal' },
-  { count: 2, label: '2', description: 'Two terminals' },
-  { count: 4, label: '4', description: 'Four terminals' },
-];
 
 function HermesModelName({ option }: { option: ModelOption }) {
   const { model, provider } = hermesModelDisplay(option);
@@ -750,22 +749,10 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         <p className="gate-subtitle">Developer Workspace Launcher</p>
       </div>
 
-      <div className="gate-location-selector">
-        <button
-          type="button"
-          className={`gate-location-btn ${locationKind === 'local' ? 'active' : ''}`}
-          onClick={() => { setLocationKind('local'); setDirectoryError(''); }}
-        >
-          Local
-        </button>
-        <button
-          type="button"
-          className={`gate-location-btn ${locationKind === 'ssh' ? 'active' : ''}`}
-          onClick={() => { setLocationKind('ssh'); setDirectoryError(''); }}
-        >
-          SSH Remote
-        </button>
-      </div>
+      <WorkspaceLocationPicker location={locationKind} onChange={(location) => {
+        setLocationKind(location);
+        setDirectoryError('');
+      }} />
 
       {locationKind === 'local' ? (
 
@@ -921,27 +908,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         </div>
       )}
 
-      <div className="harness-selector">
-        <div className="gate-section-header">
-          <span className="gate-section-label">Harness</span>
-          <button type="button" className="gate-settings-link" onClick={() => setWorkspaceMode('settings')}>
-            <Settings size={12} strokeWidth={2} /> Configure
-          </button>
-        </div>
-        <div className="harness-options">
-          {HARNESS_OPTIONS.filter((harness) => visibleHarnessIds.includes(harness.id)).map((harness) => (
-            <button
-              key={harness.id}
-              className={`harness-option ${selectedHarness === harness.id ? 'selected' : ''}`}
-              onClick={() => handleHarnessChange(harness.id)}
-              title={harness.id ? `Select ${harness.label}` : 'No harness (basic terminal)'}
-            >
-              <harness.Icon size={16} strokeWidth={2} className="harness-icon" />
-              <span className="harness-label">{harness.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      <HarnessPicker options={HARNESS_OPTIONS.filter((harness) => visibleHarnessIds.includes(harness.id))}
+        selectedHarness={selectedHarness} onSelect={handleHarnessChange} onConfigure={() => setWorkspaceMode('settings')} />
 
       {showModelSelector && (
         <div className="model-picker">
@@ -1166,21 +1134,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         </div>
       )}
 
-      <div className="grid-selector">
-        <span className="gate-section-label">Terminals</span>
-        <div className="grid-options">
-          {TERMINAL_PRESETS.map((preset, index) => (
-            <button
-              key={preset.count}
-              className={`grid-option ${selectedPreset === index ? 'selected' : ''}`}
-              onClick={() => setSelectedPreset(index)}
-              title={`Press ${preset.label} to select`}
-            >
-              <span className="grid-label">{preset.label} terminal{preset.count > 1 ? 's' : ''}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      <TerminalCountPicker selectedPreset={selectedPreset} onSelect={setSelectedPreset} />
 
       <div className="gate-launch-actions">
         <button className="gate-button" onClick={handleSubmit} disabled={locationKind === 'ssh' && !hasLoadedHarnessOptions}>

@@ -521,8 +521,8 @@
   background: color-mix(in srgb, var(--surface-tint) 4%, transparent);
 }
 
-.harness-option.selected,
-.grid-option.selected {
+.harness-option[data-state='checked'],
+.grid-option[data-state='checked'] {
   background: var(--surface-raised);
   color: var(--text-primary);
   border-color: var(--border-default);
@@ -537,7 +537,7 @@
   transition: color var(--transition);
 }
 
-.harness-option.selected .harness-icon {
+.harness-option[data-state='checked'] .harness-icon {
   color: var(--accent-interactive);
 }
 
@@ -1110,6 +1110,7 @@
 
 /* Location Selector: Local vs SSH Remote */
 .gate-location-selector {
+  border: none;
   display: flex;
   gap: 6px;
   background: var(--surface-control);
@@ -1134,10 +1135,11 @@
 }
 
 .gate-location-btn:hover {
+  background: transparent;
   color: var(--text-primary);
 }
 
-.gate-location-btn.active {
+.gate-location-btn[data-state='checked'] {
   background: var(--surface-app);
   color: var(--text-primary);
   box-shadow: 0 1px 3px color-mix(in srgb, var(--shadow-color) 20%, transparent);
