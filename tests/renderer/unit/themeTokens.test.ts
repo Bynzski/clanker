@@ -92,10 +92,10 @@ describe('renderer semantic theme contract', () => {
   });
 
   it('limits component color literals to provider identities', () => {
-    for (const file of cssFiles.filter((file) => !file.endsWith('/styles/global.css'))) {
+    for (const file of cssFiles.filter((file) => file !== resolve(rendererRoot, 'styles/global.css'))) {
       for (const rule of rules(readFileSync(file, 'utf8'))) {
         if (!/#[\da-f]{3,8}\b|rgba?\(|:\s*(?:white|black)\b/i.test(rule[2])) continue;
-        const providerIdentity = file.endsWith('/GitButton.css') && /\.provider-(?:bitbucket|gitlab)\b/.test(rule[1]);
+        const providerIdentity = file === resolve(rendererRoot, 'components/GitButton.css') && /\.provider-(?:bitbucket|gitlab)\b/.test(rule[1]);
         expect(providerIdentity, `${file}: ${rule[1].trim()}`).toBe(true);
       }
     }

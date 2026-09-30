@@ -51,6 +51,8 @@ When adding code that touches the filesystem, terminals, harness launch, credent
 - Path validation before file system access
 - Duplicate logic is a code smell — check existing modules before adding local logic
 
+For appearance changes, follow the [theming architecture guide](docs/theming.md), including the semantic token contract and state-preserving subsystem adapters.
+
 ## Project Structure
 
 ```

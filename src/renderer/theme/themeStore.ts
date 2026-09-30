@@ -59,4 +59,3 @@ export const useThemeStore = create<ThemeStoreState>((set) => ({
     return initialTheme;
   },
 }));
-

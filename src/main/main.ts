@@ -384,8 +384,6 @@ app.whenReady().then(() => {
     },
   });
 
-  // Function defined at module level
-
   // Create window
   ({ window: mainWindow } = createMainWindow({
     preloadPath,
