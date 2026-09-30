@@ -97,6 +97,7 @@ import { registerGitIpc } from '../../../src/main/ipc/gitIpc';
 import { GitService, type GitStatusResult } from '../../../src/main/gitService';
 import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
 import type { RemoteWorktreeRemovalPersistence } from '../../../src/main/remote/remoteWorktreeCoordinator';
+import { remoteRemovalPaths } from '../../../src/main/remote/sshWorktreeRemoval';
 import { ipcMain } from 'electron';
 
 describe('registerGitIpc', () => {
@@ -1022,6 +1023,63 @@ describe('Git IPC workspace identity routing', () => {
     await handle('git-get-history')(null, process.cwd(), 4);
     expect(local.execGit).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining(['log', '-n4']));
     expect(remote.execGit).not.toHaveBeenCalled();
+  });
+
+  const savedRemoval = {
+    operationId: '12345678-1234-1234-1234-123456789abc', environmentId: 'ssh', resourceId: 'ssh:host',
+    workspacePath: '/srv/repo', worktreePath: '/srv/task',
+  };
+
+  test.each([
+    ['damaged ID with plausible host paths', [{ ...savedRemoval, operationId: 'invalid' }]],
+    ['null collection', null],
+    ['object collection', {}],
+    ['unreadable persistence', new Error('Read failed')],
+    ['duplicate records', [savedRemoval, savedRemoval]],
+    ['conflicting reservations', [savedRemoval, { ...savedRemoval, operationId: 'abcdef01-1234-1234-1234-123456789abc' }]],
+  ])('blocks SSH registration before validation while preserving local access: %s', async (_label, evidence) => {
+    const write = vi.fn();
+    const read = () => {
+      if (evidence instanceof Error) throw evidence;
+      return evidence as ReturnType<RemoteWorktreeRemovalPersistence['read']>;
+    };
+    const { remote, local, registry, handle } = setup(undefined, { read, write });
+    for (const environmentId of ['ssh', ' ssh ']) {
+      expect(await handle('register-open-workspace')(null, 'blocked', '/srv/task', environmentId))
+        .toMatchObject({ success: false, error: expect.stringContaining('Manual recovery required') });
+      expect(registry.getWorkspace('blocked')).toBeNull();
+    }
+    expect(remote.validateWorkspacePath).not.toHaveBeenCalled();
+    expect(remote.execGit).not.toHaveBeenCalled();
+    for (const [index, environmentId] of [undefined, 'local', '', '  ', ' local '].entries()) {
+      const id = `local-${index}`;
+      expect(await handle('register-open-workspace')(null, id, process.cwd(), environmentId)).toMatchObject({ success: true });
+      expect(registry.getWorkspace(id)?.location.environmentId).toBe('local');
+    }
+    await handle('git-get-history')(null, process.cwd(), 4, 'local-0');
+    expect(local.execGit).toHaveBeenCalledWith(registry.getWorkspace('local-0')!.location.path, expect.arrayContaining(['log', '-n4']));
+    expect(write).not.toHaveBeenCalled();
+    if (Array.isArray(evidence) && evidence[0]?.operationId === savedRemoval.operationId) {
+      for (const record of evidence) {
+        for (const path of [record.worktreePath, ...Object.values(remoteRemovalPaths(record.worktreePath, record.operationId))]) {
+          expect(registry.isRemotePathReserved('ssh', path)).toBe(true);
+        }
+      }
+    }
+  });
+
+  test.each([{ evidence: [] }, { evidence: [savedRemoval] }])('keeps healthy persistence registration scoped to reserved paths: %j', async ({ evidence }) => {
+    const write = vi.fn();
+    const { remote, registry, handle } = setup(undefined, { read: () => evidence, write });
+    expect(await handle('register-open-workspace')(null, 'safe', workspacePath, 'ssh')).toMatchObject({ success: true });
+    expect(registry.getWorkspace('safe')?.location.environmentId).toBe('ssh');
+    expect(remote.validateWorkspacePath).toHaveBeenCalledExactlyOnceWith(workspacePath);
+    const result = await handle('register-open-workspace')(null, 'task', savedRemoval.worktreePath, 'ssh');
+    expect(result).toMatchObject(evidence.length
+      ? { success: false, error: expect.stringContaining('awaiting completion verification') }
+      : { success: true });
+    expect(registry.getWorkspace('task') !== null).toBe(evidence.length === 0);
+    expect(write).not.toHaveBeenCalled();
   });
 
   test('registers Git IPC despite damaged removal state, blocks remote worktrees, and keeps local Git usable', async () => {

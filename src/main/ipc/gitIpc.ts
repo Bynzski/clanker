@@ -239,6 +239,12 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
 
   registerGitHandler(REGISTER_OPEN_WORKSPACE, async (_, id: string, workspacePath: string, environmentId?: string) => {
     if (typeof id !== 'string' || !id.trim() || typeof workspacePath !== 'string') return getInvalidWorkspaceResult();
+    // Damaged evidence cannot establish which host paths are safe to reopen.
+    // Match registry defaults: omitted/blank environment IDs remain local.
+    if (typeof environmentId === 'string' && environmentId.trim() && environmentId.trim() !== 'local') {
+      const recoveryError = remoteWorktrees.getRecoveryError();
+      if (recoveryError) return { success: false, error: recoveryError };
+    }
 
     const reg = getWorkspaceRegistry?.();
     if (reg) {
