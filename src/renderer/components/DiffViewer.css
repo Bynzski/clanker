@@ -112,49 +112,18 @@
   min-height: 100%;
 }
 
-/* Preserve existing Dark editor overrides until subsystem theming (Stage 3). */
-.diff-viewer-merge-root .cm-editor {
-  height: 100%;
-  background: #121212 !important;
-  color: #e8e8e8;
-}
-
+/* Layout and the Clanker-owned gap outside the two editor themes. */
+.diff-viewer-merge-root .cm-editor { height: 100%; }
 .diff-viewer-merge-root .cm-scroller {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 20px;
-  background: #121212 !important;
 }
-
-.diff-viewer-merge-root .cm-content,
-.diff-viewer-merge-root .cm-mergeViewEditors,
-.diff-viewer-merge-root .cm-mergeView {
-  background: #121212 !important;
-}
-
-.diff-viewer-merge-root .cm-gutters {
-  background: #121212 !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
-  color: #70757d;
-}
-
-.diff-viewer-merge-root .cm-lineNumbers .cm-gutterElement {
-  color: #70757d;
-}
-
+.diff-viewer-merge-root .cm-mergeView,
 .diff-viewer-merge-root .cm-mergeGap {
-  background: #121212 !important;
+  background: var(--surface-app);
 }
-
-.diff-viewer-merge-root .cm-mergeGap .cm-mergeRevert {
-  display: none;
-}
-
-.diff-viewer-merge-root .cm-changedText,
-.diff-viewer-merge-root .cm-deletedText,
-.diff-viewer-merge-root .cm-deletedChunk .cm-deletedText {
-  background: transparent !important;
-}
+.diff-viewer-merge-root .cm-mergeGap .cm-mergeRevert { display: none; }
 
 /* State messages */
 .diff-viewer-loading,

@@ -89,13 +89,12 @@ describe('renderer semantic theme contract', () => {
     }
   });
 
-  it('limits component color literals to provider identities and deferred editor overrides', () => {
+  it('limits component color literals to provider identities', () => {
     for (const file of cssFiles.filter((file) => !file.endsWith('/styles/global.css'))) {
       for (const rule of rules(readFileSync(file, 'utf8'))) {
         if (!/#[\da-f]{3,8}\b|rgba?\(|:\s*(?:white|black)\b/i.test(rule[2])) continue;
-        const deferredEditor = /\/(?:EditorPane|DiffViewer)\.css$/.test(file) && rule[1].includes('.cm-');
         const providerIdentity = file.endsWith('/GitButton.css') && /\.provider-(?:bitbucket|gitlab)\b/.test(rule[1]);
-        expect(deferredEditor || providerIdentity, `${file}: ${rule[1].trim()}`).toBe(true);
+        expect(providerIdentity, `${file}: ${rule[1].trim()}`).toBe(true);
       }
     }
   });

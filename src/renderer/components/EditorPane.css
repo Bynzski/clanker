@@ -115,23 +115,17 @@
   overflow: hidden;
 }
 
-/* Preserve existing Dark editor overrides until subsystem theming (Stage 3). */
 .editor-content .cm-editor {
   height: 100%;
   width: 100%;
-  background: #121212;
 }
 
 .editor-content .cm-scroller {
   overflow: auto;
   height: 100%;
-  background: #121212;
 }
 
-.editor-content .cm-gutters {
-  background: #121212;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
-}
+
 
 .editor-empty-state {
   flex: 1;

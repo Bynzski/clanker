@@ -55,7 +55,7 @@ palette values are unchanged.
 | cyan | `#39c5cf` | `#176b78` |
 | white | `#e8e8e8` | `#525e6d` |
 | brightBlack | `#9b9b9b` | `#626d7b` |
-| brightRed | `#ffa198` | `#bc8cff` |
+| brightRed | `#ffa198` | `#bc3535` |
 | brightGreen | `#56d364` | `#28783d` |
 | brightYellow | `#e3b341` | `#886300` |
 | brightBlue | `#79c0ff` | `#286bc2` |
