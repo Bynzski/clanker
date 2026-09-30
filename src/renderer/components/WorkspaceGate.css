@@ -460,15 +460,6 @@
    Segmented selectors (Harness, Terminals)
    Pattern matches .harness-pills in Header.css
    ------------------------------------------------------------ */
-.harness-options,
-.grid-options {
-  gap: 2px;
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  padding: 2px;
-}
-
 .harness-options {
   display: flex;
   flex-wrap: wrap;
@@ -488,19 +479,7 @@
 
 .harness-option,
 .grid-option {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid transparent;
   border-radius: 3px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background var(--transition), color var(--transition), border-color var(--transition);
-  min-width: 0;
 }
 
 .harness-option {
@@ -513,20 +492,6 @@
   flex-direction: row;
   gap: 6px;
   padding: 6px 8px;
-}
-
-.harness-option:hover,
-.grid-option:hover {
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--surface-tint) 4%, transparent);
-}
-
-.harness-option[data-state='checked'],
-.grid-option[data-state='checked'] {
-  background: var(--surface-raised);
-  color: var(--text-primary);
-  border-color: var(--border-default);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--shadow-color) 20%, transparent);
 }
 
 .harness-icon {
@@ -927,20 +892,9 @@
    ------------------------------------------------------------ */
 .gate-button {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
   width: 100%;
-  height: 34px;
-  background: var(--control-primary-bg);
-  color: var(--control-primary-fg);
-  font-size: 12px;
-  font-weight: 600;
+  padding: 0;
   letter-spacing: 0.01em;
-  border: 1px solid var(--accent-interactive);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--transition), border-color var(--transition), color var(--transition);
   margin-top: 0;
 }
 
@@ -974,22 +928,15 @@
 .gate-worktree-forward {
   flex: 1;
   min-width: 64px;
-  height: 34px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
   gap: 1px;
   padding: 2px 4px;
-  color: var(--text-primary);
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
+  font-weight: 400;
 }
 
 .gate-worktree-forward span { font-size: 9px; line-height: 1; }
-.gate-worktree-forward:hover:not(:disabled) { border-color: var(--accent-interactive); color: var(--accent-interactive); }
+.gate-worktree-forward:hover:not(:disabled) { background: var(--surface-control); border-color: var(--accent-interactive); color: var(--accent-interactive); }
 .gate-worktree-forward:disabled { opacity: 0.42; cursor: not-allowed; }
 .gate-worktree-hint,
 .gate-directory-error { margin: 4px 0 0; font-size: 10px; }
@@ -1000,16 +947,6 @@
   .gate-view-worktree,
   .gate-view-return,
   .gate-view-settings { animation: none; }
-}
-
-.gate-button:hover {
-  background: var(--control-primary-bg-hover);
-  border-color: var(--control-primary-bg-hover);
-  color: var(--control-primary-fg-hover);
-}
-
-.gate-button:active {
-  transform: translateY(1px);
 }
 
 /* ------------------------------------------------------------

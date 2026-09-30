@@ -17,6 +17,7 @@ import { joinPaths } from '../lib/pathUtils';
 import RemoteWorkspacePath from './RemoteWorkspacePath';
 import SshEnvironmentManager from './SshEnvironmentManager';
 import RemoteWorktreePicker from './RemoteWorktreePicker';
+import { GateLaunchActions } from './gate/GateLaunchActions';
 import { WorkspaceLocationPicker } from './gate/WorkspaceLocationPicker';
 import { HarnessPicker } from './gate/HarnessPicker';
 import { TerminalCountPicker, TERMINAL_PRESETS } from './gate/TerminalCountPicker';
@@ -1136,22 +1137,16 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
 
       <TerminalCountPicker selectedPreset={selectedPreset} onSelect={setSelectedPreset} />
 
-      <div className="gate-launch-actions">
-        <button className="gate-button" onClick={handleSubmit} disabled={locationKind === 'ssh' && !hasLoadedHarnessOptions}>
-          <Play size={14} strokeWidth={2.5} fill="currentColor" />
-          Launch Workspace
-        </button>
-        <button className="gate-worktree-forward" type="button" aria-label="Worktree options" disabled={locationKind === 'ssh' ? !remoteRepositories.length : !worktreeReady} title={locationKind === 'ssh' ? 'Discover worktrees from an open repository on this SSH target' : worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first'} onClick={() => {
+      <GateLaunchActions launchDisabled={locationKind === 'ssh' && !hasLoadedHarnessOptions}
+        worktreeDisabled={locationKind === 'ssh' ? !remoteRepositories.length : !worktreeReady}
+        worktreeTitle={locationKind === 'ssh' ? 'Discover worktrees from an open repository on this SSH target' : worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first'}
+        onLaunch={handleSubmit} onWorktree={() => {
           if (locationKind === 'local' && !inputValue.trim()) {
             if (activeWorkspacePath) setInputValue(activeWorkspacePath);
           }
           setHasViewedWorktree(true);
           setWorkspaceMode('worktree');
-        }}>
-          <GitBranch size={13} strokeWidth={2} />
-          <span>Worktree</span>
-        </button>
-      </div>
+        }} />
       {openError && (
         <p className="gate-open-error" role="alert">
           <AlertTriangle size={14} strokeWidth={2} aria-hidden="true" />
