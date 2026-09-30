@@ -1,0 +1,54 @@
+.clanker-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: inherit;
+  font-weight: 600;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.clanker-button:where([data-size='sm']) {
+  height: 34px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.clanker-button:where([data-variant='primary']) {
+  background: var(--control-primary-bg);
+  color: var(--control-primary-fg);
+  border-color: var(--accent-interactive);
+}
+
+.clanker-button:where([data-variant='primary']:hover:not(:disabled)) {
+  background: var(--control-primary-bg-hover);
+  color: var(--control-primary-fg-hover);
+  border-color: var(--control-primary-bg-hover);
+}
+
+.clanker-button:where([data-variant='secondary']) {
+  background: var(--surface-control);
+  color: var(--text-primary);
+}
+
+.clanker-button:where([data-variant='secondary']:hover:not(:disabled)) {
+  background: var(--surface-control-hover);
+}
+
+.clanker-button:where([data-variant='danger']) {
+  background: var(--control-danger-bg);
+  color: var(--control-danger-fg);
+  border-color: var(--control-danger-bg);
+}
+
+.clanker-button:where([data-variant='danger']:hover:not(:disabled)) {
+  background: color-mix(in srgb, var(--control-danger-bg) 85%, var(--surface-inset-tint));
+}
+
+.clanker-button:where(:active:not(:disabled)) { transform: translateY(1px); }
+.clanker-button:disabled { cursor: not-allowed; opacity: 0.5; }
+.clanker-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.clanker-icon-button { width: 34px; padding: 0; flex-shrink: 0; }

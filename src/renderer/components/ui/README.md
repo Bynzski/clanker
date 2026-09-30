@@ -24,3 +24,20 @@ Nested content portals append above earlier dialogs at the same layer (1000).
 Radix owns focus scopes and topmost Escape/outside interaction handling. Legacy
 surfaces still have independent keyboard listeners/layers; review those when
 migrating them, rather than adding DOM-class exceptions here.
+
+## Buttons and single selection
+
+Use `Button` for actions (`primary`, `secondary`, or `danger`, currently size
+`sm`). It retains native button props and React 19 refs, defaults to
+`type="button"`, and supports a `className` extension. Use `IconButton` for
+icon-only actions; it shares Button behavior and requires `aria-label` or
+`aria-labelledby` rather than relying on a tooltip.
+
+Use compositional `SegmentedControl` / `SegmentedControlItem` for a one-of-N
+choice. Label the group with `aria-label` or `aria-labelledby`, give each item
+a stable string `value`, and use `value` / `onValueChange` or `defaultValue`.
+Radix RadioGroup owns roving focus, arrow-key selection, disabled behavior and
+radio semantics; `data-state="checked"` is the selected styling hook. Native
+buttons need no headless dependency. Clanker owns all primitive styling through
+semantic theme tokens; product classes can extend layout and preserve existing
+appearance. Complex interaction remains backed by headless primitives.
