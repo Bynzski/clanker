@@ -55,3 +55,9 @@ are needed. When handing a Popover off to a Dialog, prevent Popover close-auto-f
 at the feature boundary and explicitly focus the new dialog's intended control.
 Radix supplies runtime width/height variables for collision-aware sizing; these
 are positioning data, separate from Clanker's semantic theme tokens.
+
+Settings and Chat History are interactive panels: use Popover, not menu semantics.
+Use Dialog for modal workflows such as VCS Credentials. For a handoff with no
+parent lease, keep the outgoing Popover open until the Dialog's open-autofocus
+callback (its content lease is already acquired), then close it and prevent its
+close-autofocus. Restore focus to a deliberate surviving origin on Dialog close.

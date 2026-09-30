@@ -1,10 +1,7 @@
 .chat-history-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
   min-width: 260px;
   max-width: min(440px, calc(100vw - 16px));
-  max-height: 420px;
+  max-height: min(420px, var(--radix-popover-content-available-height, 420px));
   overflow-y: auto;
   background: var(--surface-elevated);
   border: 1px solid var(--border-default);
