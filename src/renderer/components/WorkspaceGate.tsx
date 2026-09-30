@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Minus, Square, X } from 'lucide-react';
+import { useCallback, useRef, useState } from 'react';
+import { X } from 'lucide-react';
+import WindowControls from './WindowControls';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import WorkspaceGateContent, { WorkspaceFormData } from './WorkspaceGateContent';
 import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
@@ -112,27 +113,6 @@ interface FullscreenGateProps {
 }
 
 function GateTitleBar() {
-  const [isMaximized, setIsMaximized] = useState(false);
-
-  useEffect(() => {
-    window.electronAPI.isMaximizedWindow()
-      .then(setIsMaximized)
-      .catch(() => setIsMaximized(false));
-  }, []);
-
-  const handleMinimize = () => {
-    window.electronAPI.minimizeWindow();
-  };
-
-  const handleToggleMaximize = async () => {
-    await window.electronAPI.toggleMaximizeWindow();
-    setIsMaximized((value) => !value);
-  };
-
-  const handleClose = () => {
-    window.electronAPI.closeWindow();
-  };
-
   return (
     <div className="workspace-gate-titlebar">
       <div className="workspace-gate-brand">
@@ -145,17 +125,8 @@ function GateTitleBar() {
         <span className="workspace-gate-title">Clanker Grid</span>
       </div>
 
-      <div className="workspace-gate-window-controls">
-        <button className="workspace-gate-window-btn" onClick={handleMinimize} aria-label="Minimize window" title="Minimize window">
-          <Minus size={14} strokeWidth={2} />
-        </button>
-        <button className="workspace-gate-window-btn" onClick={handleToggleMaximize} aria-label={isMaximized ? 'Restore window' : 'Maximize window'} title={isMaximized ? 'Restore window' : 'Maximize window'}>
-          <Square size={12} strokeWidth={2} />
-        </button>
-        <button className="workspace-gate-window-btn close" onClick={handleClose} aria-label="Close window" title="Close window">
-          <X size={14} strokeWidth={2} />
-        </button>
-      </div>
+      <WindowControls className="workspace-gate-window-controls"
+        buttonClassName="workspace-gate-window-btn" closeClassName="close" />
     </div>
   );
 }

@@ -54,34 +54,6 @@
   font-family: var(--font-mono);
 }
 
-.workspace-gate-window-controls {
-  display: flex;
-  align-items: stretch;
-  -webkit-app-region: no-drag;
-}
-
-.workspace-gate-window-btn {
-  width: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background-color 120ms ease-out, color 120ms ease-out;
-}
-
-.workspace-gate-window-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.workspace-gate-window-btn.close:hover {
-  background: var(--control-danger-bg);
-  color: var(--control-danger-fg);
-}
-
 /* ------------------------------------------------------------
    Shared content
    ------------------------------------------------------------ */

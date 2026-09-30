@@ -324,6 +324,8 @@ describe('WorkspaceGateFullscreen', () => {
       render(<WorkspaceGateFullscreen onWorkspaceSelect={vi.fn()} />);
       
       expect(document.querySelector('.workspace-gate-titlebar')).toBeTruthy();
+      expect(document.querySelector('.workspace-gate-window-controls')).toHaveClass('window-controls');
+      expect(screen.getByRole('button', { name: 'Maximize window' })).toHaveClass('window-controls-button', 'workspace-gate-window-btn');
     });
 
     it('renders workspace gate shell', () => {

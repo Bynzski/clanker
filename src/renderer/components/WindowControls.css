@@ -1,0 +1,33 @@
+.window-controls {
+  display: flex;
+  align-items: stretch;
+  -webkit-app-region: no-drag;
+  cursor: default;
+}
+
+.window-controls-button {
+  width: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+
+.window-controls-button:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.window-controls-close:hover {
+  background: var(--control-danger-bg);
+  color: var(--control-danger-fg);
+}
+
+.window-controls-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}

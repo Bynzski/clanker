@@ -65,31 +65,5 @@
 }
 
 .titlebar-controls {
-  display: flex;
-  align-items: stretch;
-  -webkit-app-region: no-drag;
-  cursor: default;
   margin-left: 4px;
-}
-
-.titlebar-control {
-  width: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background-color 120ms ease-out, color 120ms ease-out;
-}
-
-.titlebar-control:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
-.titlebar-control.close:hover {
-  background: var(--control-danger-bg);
-  color: var(--control-danger-fg);
 }

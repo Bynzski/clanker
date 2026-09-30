@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { Minus, Square, X } from 'lucide-react';
+import WindowControls from './WindowControls';
 import WorkspaceTabs from './WorkspaceTabs';
 import './TitleBar.css';
 
@@ -8,27 +7,6 @@ interface TitleBarProps {
 }
 
 export default function TitleBar({ onOpenWorkspace }: TitleBarProps) {
-  const [isMaximized, setIsMaximized] = useState(false);
-
-  useEffect(() => {
-    window.electronAPI.isMaximizedWindow()
-      .then(setIsMaximized)
-      .catch(() => setIsMaximized(false));
-  }, []);
-
-  const handleMinimize = () => {
-    window.electronAPI.minimizeWindow();
-  };
-
-  const handleToggleMaximize = async () => {
-    await window.electronAPI.toggleMaximizeWindow();
-    setIsMaximized((value) => !value);
-  };
-
-  const handleClose = () => {
-    window.electronAPI.closeWindow();
-  };
-
   return (
     <div className="titlebar">
       <div className="titlebar-left">
@@ -47,17 +25,7 @@ export default function TitleBar({ onOpenWorkspace }: TitleBarProps) {
         <WorkspaceTabs onOpenWorkspace={onOpenWorkspace} />
       </div>
 
-      <div className="titlebar-controls">
-        <button className="titlebar-control" onClick={handleMinimize} aria-label="Minimize window" title="Minimize window">
-          <Minus size={14} strokeWidth={2} />
-        </button>
-        <button className="titlebar-control" onClick={handleToggleMaximize} aria-label={isMaximized ? 'Restore window' : 'Maximize window'} title={isMaximized ? 'Restore window' : 'Maximize window'}>
-          <Square size={12} strokeWidth={2} />
-        </button>
-        <button className="titlebar-control close" onClick={handleClose} aria-label="Close window" title="Close window">
-          <X size={14} strokeWidth={2} />
-        </button>
-      </div>
+      <WindowControls className="titlebar-controls" buttonClassName="titlebar-control" closeClassName="close" />
     </div>
   );
 }
