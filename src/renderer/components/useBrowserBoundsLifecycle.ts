@@ -52,6 +52,12 @@ export function useBrowserBoundsLifecycle({
   const lastBoundsRef = useRef<BrowserBounds | null>(null);
   const firstBoundsSentRef = useRef(false);
 
+  useEffect(() => {
+    if (!workspaceId || !isActiveWorkspace || !browserVisible || browserOverlayCount > 0) return;
+    // Reconcile selection separately from geometry; late bounds cannot select a tab.
+    void window.electronAPI.browserActivate(workspaceId, activeTabId ?? undefined);
+  }, [workspaceId, activeTabId, isActiveWorkspace, browserVisible, browserOverlayCount]);
+
   const callBrowserSetBounds = useCallback((bounds: BrowserBounds) => {
     if (!workspaceId) return;
     if (activeTabId) {
@@ -152,9 +158,9 @@ export function useBrowserBoundsLifecycle({
   }, [scheduleBoundsUpdate]);
 
   useEffect(() => {
-    if (!browserVisible || !workspaceId) return;
+    if (!workspaceId) return;
 
-    if (!isActiveWorkspace) {
+    if (!isActiveWorkspace || !browserVisible) {
       if (rafRef.current != null) {
         window.cancelAnimationFrame(rafRef.current);
         rafRef.current = null;

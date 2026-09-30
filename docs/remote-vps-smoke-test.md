@@ -59,6 +59,14 @@ Remote Agent Attention checks (use installed harnesses in the unique fixture; an
 - After an attention-enabled Antigravity launch exits, launch Antigravity with attention disabled (including directly on the host). Confirm the persistent hooks return empty responses without Node errors or changed permission decisions.
 - Try conflicting hook settings (including Codex `-cnotify=[]` and `--config=notify=[]`) with attention enabled and confirm launch gives a clear error without overwriting configuration. Disable attention and confirm the original launch mode works. Close an agent terminal/workspace and verify its private launch files are cleaned when SSH is reachable. Restore harness defaults after these checks.
 
+SSH browser preview checks (use only a server started in the unique temporary fixture):
+
+- Start a temporary HTTP server bound to remote `127.0.0.1` on an unused port, for example `python3 -m http.server 3000 --bind 127.0.0.1` from the fixture. In that SSH workspace's Browser pane, set **Remote port** to 3000 and **Local port** to an unused desktop port such as 43000. Click **Start preview** and confirm the fixture content loads at `http://127.0.0.1:43000/`.
+- Try an occupied desktop port and a remote port with no server. Confirm clear errors appear and no working preview is reported. Correct the port and retry. Ensure a second workspace cannot claim the first preview's local port; another unused port should work independently.
+- If a separate test SSH account/server is available with forwarding disabled (`AllowTcpForwarding no`) or the fixture destination excluded by `PermitOpen`, confirm startup reports a forwarding error despite the fixture server being reachable directly on the host. Do not alter the shared VPS SSH policy for this check.
+- Switch workspaces or hide Browser and confirm the preview remains available. Use **Stop preview** and confirm the local listener is released. Restart it and close its workspace; also test closing while startup is pending. Confirm no preview SSH process or local listener remains. Test window close/app shutdown similarly.
+- Interrupt SSH, confirm the preview reports the failure, then restore connectivity and explicitly retry. Reopening the app must not silently recreate persisted preview URLs' tunnels. Stop the fixture server before cleanup; restore any temporary SSH alias configuration.
+
 Cleanup guard (run on the remote host after closing the temporary workspace). Replace the placeholder with the recorded absolute path; keep that value unchanged through the checks and deletion. The guard requires a canonical workspace root and a direct child with a strict temporary name. It rejects empty paths, symlink targets, and any path outside that root before `rm -rf`:
 
 ```sh

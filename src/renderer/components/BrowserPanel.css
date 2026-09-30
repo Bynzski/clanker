@@ -346,3 +346,10 @@
   background: #1d4ed8 !important;
   color: #fff !important;
 }
+
+.remote-preview-bar { flex-shrink: 0; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); font-size: 11px; }
+.remote-preview-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px; }
+.remote-preview-controls label { display: flex; align-items: center; gap: 4px; }
+.remote-preview-controls input { width: 70px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 3px; padding: 3px; }
+.remote-preview-controls button { color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 3px; padding: 4px 6px; cursor: pointer; }
+.remote-preview-controls button:disabled { opacity: 0.5; cursor: default; }

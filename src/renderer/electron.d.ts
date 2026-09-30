@@ -1,3 +1,4 @@
+import type { RemotePreviewRequest, RemotePreviewState, RemotePreviewResult, RemotePreviewUpdate } from '../shared/types/remotePreview';
 import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types/environments';
 import type { RemoteDirectoryListing } from '../shared/types/environments';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
@@ -119,6 +120,10 @@ interface ElectronAPI {
   resolveDroppedFilePath: (file: File, uriList?: string) => string;
 
   // Browser (WebContentsView)
+  remotePreviewGet: (request: { workspaceId: string }) => Promise<RemotePreviewState | null>;
+  remotePreviewStart: (request: RemotePreviewRequest) => Promise<RemotePreviewResult>;
+  remotePreviewStop: (request: { workspaceId: string }) => Promise<boolean>;
+  onRemotePreviewChanged: (callback: (update: RemotePreviewUpdate) => void) => () => void;
   browserHide: (workspaceId: string) => Promise<void>;
   /**
    * Phase 1: optional `tabId` is recorded as the active tab for the workspace
@@ -142,6 +147,7 @@ interface ElectronAPI {
   browserStop: (workspaceId: string) => Promise<void>;
   browserCreateTab: (workspaceId: string, tabId: string) => Promise<{ url: string; title: string }>;
   browserCloseTab: (workspaceId: string, tabId: string) => Promise<boolean>;
+  browserActivate: (workspaceId: string, tabId?: string) => Promise<boolean>;
   browserSwitchTab: (
     workspaceId: string,
     tabId: string,

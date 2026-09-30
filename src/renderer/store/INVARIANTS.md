@@ -120,6 +120,8 @@ xterm buffers, and native browser sessions remain warm across both states.
 - Tab IDs are renderer-generated and must be passed unchanged to main, so duplicates would corrupt the workspace → tab → `WebContentsView` map.
 - `browserUrl` predates the tab model; existing consumers (URL input, external links) read it directly. Treating it as the active-tab mirror keeps these consumers correct without forcing all of them to learn about tabs.
 - Inactive tab updates (e.g., a background load completing) must not redraw the URL bar or visible browser surface.
+- Browser activation explicitly synchronizes the renderer-selected tab with main. Only that workspace may show native views; remembered bounds and background tab actions cannot claim visibility. Bounds updates never replace an established tab selection.
+- Tab creation selects the new tab immediately in the store. Async create/navigation completions must respect later selections, closures, and workspace switches; close completions synchronize the current selection rather than a captured fallback.
 
 ### Editor Invariants
 

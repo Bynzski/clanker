@@ -55,6 +55,11 @@ export const WRITE_CLIPBOARD = 'write-clipboard';
  * Browser
  * ============================================================================ */
 
+export const REMOTE_PREVIEW_GET = 'remote-preview:get';
+export const REMOTE_PREVIEW_START = 'remote-preview:start';
+export const REMOTE_PREVIEW_STOP = 'remote-preview:stop';
+export const REMOTE_PREVIEW_CHANGED = 'remote-preview:changed';
+
 export const BROWSER_SET_BOUNDS = 'browser-set-bounds';
 export const BROWSER_HIDE = 'browser-hide';
 export const BROWSER_NAVIGATE = 'browser-navigate';
@@ -74,6 +79,7 @@ export const BROWSER_SAVE_URL = 'browser-save-url';
 export const BROWSER_CREATE_TAB = 'browser-create-tab';
 export const BROWSER_CLOSE_TAB = 'browser-close-tab';
 export const BROWSER_SWITCH_TAB = 'browser-switch-tab';
+export const BROWSER_ACTIVATE = 'browser-activate';
 export const BROWSER_MOVE_TAB = 'browser-move-tab';
 export const BROWSER_GET_TABS = 'browser-get-tabs';
 export const BROWSER_TAB_NAVIGATE = 'browser-tab-navigate';
@@ -277,6 +283,9 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
   // Browser
+  REMOTE_PREVIEW_GET,
+  REMOTE_PREVIEW_START,
+  REMOTE_PREVIEW_STOP,
   BROWSER_SET_BOUNDS,
   BROWSER_HIDE,
   BROWSER_NAVIGATE,
@@ -295,6 +304,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   BROWSER_CREATE_TAB,
   BROWSER_CLOSE_TAB,
   BROWSER_SWITCH_TAB,
+  BROWSER_ACTIVATE,
   BROWSER_MOVE_TAB,
   BROWSER_GET_TABS,
   BROWSER_TAB_NAVIGATE,
@@ -351,6 +361,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   TERMINAL_DATA,
   TERMINAL_EXIT,
   TERMINAL_RESIZED,
+  REMOTE_PREVIEW_CHANGED,
   BROWSER_URL_UPDATED,
   FIT_ALL_PANES,
   GIT_STATUS_UPDATE,

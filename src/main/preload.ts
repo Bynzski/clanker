@@ -10,6 +10,7 @@ import type { VcsProvider } from '../shared/types/vcs';
 import type { GitStatusResult } from '../shared/types/git';
 import type { HarnessSession } from '../shared/types/session';
 import type { AgentAttentionUpdate } from '../shared/types/agentAttention';
+import type { RemotePreviewRequest, RemotePreviewUpdate } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import {
   GET_APP_VERSION,
@@ -52,6 +53,10 @@ import {
   TERMINAL_READY,
   RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
+  REMOTE_PREVIEW_GET,
+  REMOTE_PREVIEW_START,
+  REMOTE_PREVIEW_STOP,
+  REMOTE_PREVIEW_CHANGED,
   BROWSER_HIDE,
   BROWSER_SET_BOUNDS,
   BROWSER_NAVIGATE,
@@ -68,6 +73,7 @@ import {
   BROWSER_CREATE_TAB,
   BROWSER_CLOSE_TAB,
   BROWSER_SWITCH_TAB,
+  BROWSER_ACTIVATE,
   BROWSER_MOVE_TAB,
   BROWSER_GET_TABS,
   BROWSER_TAB_NAVIGATE,
@@ -253,6 +259,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Browser (using WebContentsView)
+  remotePreviewGet: (request: { workspaceId: string }) => ipcRenderer.invoke(REMOTE_PREVIEW_GET, request),
+  remotePreviewStart: (request: RemotePreviewRequest) => ipcRenderer.invoke(REMOTE_PREVIEW_START, request),
+  remotePreviewStop: (request: { workspaceId: string }) => ipcRenderer.invoke(REMOTE_PREVIEW_STOP, request),
+  onRemotePreviewChanged: (callback: (update: RemotePreviewUpdate) => void) => {
+    const handler = (_: IpcRendererEvent, update: RemotePreviewUpdate) => callback(update);
+    ipcRenderer.on(REMOTE_PREVIEW_CHANGED, handler);
+    return () => ipcRenderer.removeListener(REMOTE_PREVIEW_CHANGED, handler);
+  },
   browserHide: (workspaceId: string) => ipcRenderer.invoke(BROWSER_HIDE, workspaceId),
   browserSetBounds: (
     workspaceId: string,
@@ -273,6 +287,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(BROWSER_CLOSE_TAB, workspaceId, tabId),
   browserSwitchTab: (workspaceId: string, tabId: string) =>
     ipcRenderer.invoke(BROWSER_SWITCH_TAB, workspaceId, tabId),
+  browserActivate: (workspaceId: string, tabId?: string) =>
+    ipcRenderer.invoke(BROWSER_ACTIVATE, workspaceId, tabId),
   browserMoveTab: (workspaceId: string, tabId: string, targetTabId: string, activeTabId: string) =>
     ipcRenderer.invoke(BROWSER_MOVE_TAB, workspaceId, tabId, targetTabId, activeTabId),
   browserGetTabs: (workspaceId: string) =>

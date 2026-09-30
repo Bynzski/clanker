@@ -11,6 +11,7 @@ import type { RemoteDirectoryListing, SshEnvironmentConfig, WorkspaceEnvironment
 import { SshCommandExecutor, SshExecutionError } from './sshCommandExecutor';
 import { quotePosixArg, quotePosixCommand } from './posixQuote';
 import { isPathContained } from './remotePaths';
+import { startSshPortForward } from './sshPortForward';
 import { snapshotSshFiles } from './sshFileSnapshot';
 import { createSshWorktree } from './sshWorktrees';
 import { inspectSshWorktree } from './sshWorktreeInspection';
@@ -663,6 +664,10 @@ export class SshEnvironment implements WorkspaceEnvironment {
       }
     }
     return options;
+  }
+
+  public startPortForward(localPort: number, remotePort: number, signal: AbortSignal, onExit: (error: string) => void) {
+    return startSshPortForward(this.target, localPort, remotePort, signal, onExit);
   }
 
   public async discoverHarnessModels(): Promise<EnvironmentModelOption[]> {

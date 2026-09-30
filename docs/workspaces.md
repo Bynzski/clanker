@@ -103,6 +103,16 @@ Antigravity installs an owned plugin at `~/.gemini/config/plugins/clanker-grid-r
 
 Local Hermes attention remains unsupported. Remote native session recovery and annotation handoff are separate capabilities and remain unavailable.
 
+### SSH browser previews
+
+Start a development server on the SSH host, then open the workspace's **Browser** pane. In **SSH preview**, enter its **Remote port** and an unused **Local port**, then click **Start preview**. Ports must be whole numbers from 1024 to 65535. Clanker checks the remote service and opens `http://127.0.0.1:<local-port>/` after the SSH tunnel is ready. Use **Open preview** to reopen that URL, or navigate to a path under it normally.
+
+The tunnel binds only to desktop `127.0.0.1` and reaches remote `127.0.0.1`; the service must listen on the host's IPv4 loopback or all IPv4 interfaces. Startup verifies that SSH permits a connection through the forward to the service. Server forwarding restrictions and later forwarding failures stop the preview and appear as errors; restore service/connectivity and use **Retry preview**. The initial URL uses HTTP; for a TLS service, change it to HTTPS after starting the tunnel.
+
+Each workspace can run one preview, with at most 16 managed previews across the app. Local port conflicts, SSH authentication/host-key errors, unavailable services, and connection failures appear in the preview controls. Choose another local port for a conflict or use **Retry preview** after fixing the error. **Stop preview**, workspace close, window close, and app shutdown release the connection. Switching workspaces or hiding Browser keeps the tunnel alive. Browser URLs may persist, but tunnels are never recreated automatically after reopening the app.
+
+Managed previews use the registered workspace's SSH target, retain normal SSH host-key verification, and do not share an existing SSH control connection. Targets that already define port forwards in SSH configuration are rejected; use an alias without configured forwards. No remote helper is installed or daemon started: a foreground Python acknowledgement checks the service and ends with the SSH connection. Automatic port discovery, IPv6 destinations, privileged ports, and persisted forwarding rules remain deferred.
+
 ### Features Intentionally Deferred / Unavailable Remotely in V1
 
 To maintain reliability and safety, the following capabilities are local-only in V1:
@@ -112,7 +122,7 @@ To maintain reliability and safety, the following capabilities are local-only in
 3. **Reveal in File Manager**: Disabled for remote paths, preventing passing remote paths to desktop OS file managers.
 4. **File Refresh**: One batched SSH poll checks the active workspace about every three seconds. It monitors up to 128 open editor files and 128 visible/expanded Explorer directories, scanning only direct directory children (up to 2,000 entries per directory). Changes refresh Explorer and reload clean editor tabs; dirty tabs keep their buffers and receive an external-change indicator. Polls do not overlap, back off after connection failures, and stop when their workspace closes. Parked workspaces are checked again when activated. Manual Refresh and the existing desktop-focus refresh remain available for larger directories and immediate updates.
 5. **Remote Native Session Discovery**: On remote terminal exit or app shutdown, local session history scanning is bypassed, and tasks are marked unavailable with a clear diagnostic explanation.
-6. **Automatic Port Forwarding**: VPS development servers listening on `localhost:3000` are remote to that machine. Automatic port forwarding is deferred to a future release.
+6. **Automatic Port Discovery**: Explicit workspace-scoped SSH browser previews are supported; automatic service discovery and persisted forwarding rules remain deferred.
 7. **Remote Process Persistence**: Remote PTY processes terminate on workspace closure or app exit; PTY daemons are not installed on the remote machine.
 8. **AI Commit Generation**: Disabled for SSH workspaces; manual Git commits work remotely. Local model/CLI discovery is never used to represent a remote host.
 

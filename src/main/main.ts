@@ -49,6 +49,9 @@ import { registerCredentialIpc } from './ipc/credentialIpc';
 import { registerFileIpc } from './ipc/fileIpc';
 import { FileWatcherService } from './fileWatcher';
 import { ExplorerWatcherService } from './explorerWatcher';
+import { registerRemotePreviewIpc } from './ipc/remotePreviewIpc';
+import { RemotePreviewManager } from './remote/remotePreviewManager';
+import { REMOTE_PREVIEW_CHANGED } from '../shared/ipcChannels';
 import { RemoteFileWatcher } from './remote/remoteFileWatcher';
 import { REMOTE_FILES_CHANGED } from '../shared/ipcChannels';
 import { registerVcsIpc } from './ipc/vcsIpc';
@@ -152,6 +155,7 @@ const killAllTerminals = () => {
 };
 
 const cleanupWindowState = () => {
+  remotePreviewManager.closeWorkspaces();
   remoteFileWatcher.close();
   void annotationController?.dispose();
   browserIpcController?.disposeAll();
@@ -170,6 +174,10 @@ const workspaceRegistry: WorkspaceRegistry = new WorkspaceRegistry(
   (id) => environmentManager.getEnvironment(id),
   { isWorktreeBeingRemoved: (p: string): boolean => gitService.isWorktreeBeingRemoved(p) }
 );
+
+const remotePreviewManager = new RemotePreviewManager(workspaceRegistry, (update) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(REMOTE_PREVIEW_CHANGED, update);
+});
 
 const gitService: GitService = new GitService(
   (status) => {
@@ -279,6 +287,7 @@ app.whenReady().then(() => {
     taskSessionCoordinator,
   });
 
+  registerRemotePreviewIpc(remotePreviewManager);
   browserIpcController = registerBrowserIpc({
     getMainWindow: () => mainWindow,
     getBrowserViews: () => browserViews,
@@ -302,7 +311,7 @@ app.whenReady().then(() => {
     getGitService: () => gitService,
     getMainWindow: () => mainWindow,
     getWorkspaceRegistry: () => workspaceRegistry,
-    onWorkspaceUnregistered: (id) => remoteFileWatcher.closeWorkspace(id),
+    onWorkspaceUnregistered: (id) => { remoteFileWatcher.closeWorkspace(id); void remotePreviewManager.stop(id); },
     getLiveRemoteTerminalPaths: (environmentId) => {
       const paths: string[] = [];
       const configurations = store.get('sshEnvironments') ?? [];
@@ -397,6 +406,7 @@ app.on('window-all-closed', () => {
 // Set shutdown flag BEFORE any window teardown begins
 // This prevents late PTY callbacks from sending to dead windows
 app.on('before-quit', () => {
+  remotePreviewManager.close();
   remoteFileWatcher.close();
   setAppShuttingDown(true);
   taskSessionCoordinator?.onAppShutdown();

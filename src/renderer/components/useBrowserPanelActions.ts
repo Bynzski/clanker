@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { createAndActivateBrowserTab } from '../lib/browserTabActions';
+import { createAndActivateBrowserTab, syncSelectedBrowserTab } from '../lib/browserTabActions';
 
 interface RemoveBrowserTabResult {
   removed: boolean;
@@ -103,13 +103,11 @@ export function useBrowserPanelActions({
     event.stopPropagation();
     if (!workspaceId || browserTabsCount <= 1) return;
 
-    const { removed, nextActiveTabId } = removeBrowserTab(tabId, workspaceId);
+    const { removed } = removeBrowserTab(tabId, workspaceId);
     if (!removed) return;
 
     await window.electronAPI.browserCloseTab(workspaceId, tabId);
-    if (nextActiveTabId) {
-      await window.electronAPI.browserSwitchTab(workspaceId, nextActiveTabId);
-    }
+    await syncSelectedBrowserTab(workspaceId);
     scheduleBoundsUpdate(true);
   }, [browserTabsCount, removeBrowserTab, scheduleBoundsUpdate, workspaceId]);
 

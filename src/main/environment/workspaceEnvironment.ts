@@ -17,6 +17,7 @@ import type {
 import type {
   WorkspaceEnvironmentId,
 } from '../../shared/types/environments';
+import type { PortForwardHandle } from '../remote/sshPortForward';
 import type { RemoteFileSnapshot, RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
 import type { GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeRemoveResult } from '../../shared/types/git';
 
@@ -97,6 +98,8 @@ export interface WorkspaceEnvironment {
   probeAvailableHarnessIds(): Promise<string[]>;
   discoverHarnessModels?(harnessId: string): Promise<EnvironmentModelOption[]>;
   resolveTerminalSpawn(params: TerminalSpawnRequest): Promise<TerminalSpawnResolved>;
+
+  startPortForward?(localPort: number, remotePort: number, signal: AbortSignal, onExit: (error: string) => void): Promise<PortForwardHandle>;
 
   dispose?(): Promise<void> | void;
 }
