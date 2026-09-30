@@ -53,3 +53,5 @@ using the same explicit/context/active workspace resolution. Nested portals shar
 layer 1000 and append above their parent; no feature-specific Escape listeners
 are needed. When handing a Popover off to a Dialog, prevent Popover close-auto-focus
 at the feature boundary and explicitly focus the new dialog's intended control.
+Radix supplies runtime width/height variables for collision-aware sizing; these
+are positioning data, separate from Clanker's semantic theme tokens.

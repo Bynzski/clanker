@@ -3,6 +3,8 @@ import { Minus, Square, X } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import WorkspaceGateContent, { WorkspaceFormData } from './WorkspaceGateContent';
 import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
+import { Dialog, DialogContent, DialogTitle, DialogClose } from './ui/Dialog';
+import { IconButton } from './ui/IconButton';
 import './WorkspaceGate.css';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../../shared/types/recipes';
 
@@ -28,34 +30,6 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
     openRequestRef.current += 1;
     setOpenError('');
   }, []);
-  const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
-  const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
-  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const overlayWorkspaceId = activeWorkspaceId ?? undefined;
-    pushBrowserOverlay(overlayWorkspaceId);
-    return () => popBrowserOverlay(overlayWorkspaceId);
-  }, [activeWorkspaceId, isOpen, pushBrowserOverlay, popBrowserOverlay]);
-
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen && !e.defaultPrevented
-        && !document.querySelector('.modal-content .discovery-modal, .modal-content .favorites-picker')) {
-        onClose();
-      }
-    };
-    
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
   const handleSubmit = async (data: WorkspaceFormData) => {
     clearOpenError();
     const requestId = openRequestRef.current;
@@ -95,16 +69,16 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="modal-content" overlayClassName="modal-overlay" aria-describedby={undefined}>
         <div className="modal-header">
-          <span className="modal-title">
+          <DialogTitle asChild><span className="modal-title">
             <img src="./titlebar-icon.png" alt="" width={16} height={16} className="modal-title-icon" />
             New Workspace
-          </span>
-          <button className="modal-close" onClick={onClose} title="Close (Esc)" aria-label="Close">
+          </span></DialogTitle>
+          <DialogClose asChild><IconButton className="modal-close" title="Close (Esc)" aria-label="Close">
             <X size={16} strokeWidth={2} />
-          </button>
+          </IconButton></DialogClose>
         </div>
         <WorkspaceGateContent
           onSubmit={handleSubmit}
@@ -118,8 +92,8 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
             return res;
           } : undefined}
         />
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
