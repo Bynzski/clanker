@@ -1,0 +1,17 @@
+.clanker-popover-content {
+  z-index: 1000;
+  padding: var(--space-xs);
+  max-width: min(90vw, var(--radix-popover-content-available-width));
+  max-height: var(--radix-popover-content-available-height);
+  overflow: auto;
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-popover);
+}
+
+.clanker-popover-content :focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

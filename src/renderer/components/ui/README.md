@@ -41,3 +41,15 @@ radio semantics; `data-state="checked"` is the selected styling hook. Native
 buttons need no headless dependency. Clanker owns all primitive styling through
 semantic theme tokens; product classes can extend layout and preserve existing
 appearance. Complex interaction remains backed by headless primitives.
+
+## Popover
+
+Use `Popover`, `PopoverTrigger`, `PopoverClose`, and `PopoverContent` for rich
+triggered surfaces. Content portals, owns its DOM element, and retains Radix
+side/alignment/collision and focus-event props. Radix handles dismissal and focus
+restoration; Clanker owns token-based appearance. Dialog and Popover content each
+automatically acquire one browser suppression lease for their mounted lifetime,
+using the same explicit/context/active workspace resolution. Nested portals share
+layer 1000 and append above their parent; no feature-specific Escape listeners
+are needed. When handing a Popover off to a Dialog, prevent Popover close-auto-focus
+at the feature boundary and explicitly focus the new dialog's intended control.
