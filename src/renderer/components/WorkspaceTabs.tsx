@@ -123,7 +123,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
   };
 
   const handleDragStart = (event: DragEvent<HTMLButtonElement>, workspaceId: string) => {
-    if (event.target instanceof HTMLElement && event.target.closest('.workspace-tab-edit, .workspace-tab-edit-trigger, .workspace-tab-close')) {
+    if (event.target instanceof Element && event.target.closest('.workspace-tab-edit, .workspace-tab-edit-trigger, .workspace-tab-close')) {
       event.preventDefault();
       return;
     }

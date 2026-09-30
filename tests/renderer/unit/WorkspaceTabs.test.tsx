@@ -164,13 +164,26 @@ describe('WorkspaceTabs', () => {
       expect(moveWorkspace).not.toHaveBeenCalled();
     });
 
-    it('does not start a drag from the close or rename controls', () => {
+    it.each([
+      ['Close workspace', false], ['Close workspace', true], ['Rename tab', false], ['Rename tab', true],
+    ])('does not start a drag from %s (SVG descendant: %s)', (label, svg) => {
       useWorkspaceStore.setState({ workspaces: [createMockWorkspace()], activeWorkspaceId: 'ws1' });
       render(<WorkspaceTabs />);
       const transfer = { effectAllowed: '', setData: vi.fn() };
-      fireEvent.dragStart(screen.getByLabelText('Close workspace'), { dataTransfer: transfer });
-      fireEvent.dragStart(screen.getByTitle('Rename tab'), { dataTransfer: transfer });
+      const control = label === 'Close workspace' ? screen.getByLabelText(label) : screen.getByTitle(label);
+      const target = svg ? control.querySelector('svg path')! : control;
+      expect(target).toBeTruthy();
+      expect(fireEvent.dragStart(target, { dataTransfer: transfer })).toBe(false);
       expect(transfer.setData).not.toHaveBeenCalled();
+    });
+
+    it('starts a drag from normal tab content', () => {
+      useWorkspaceStore.setState({ workspaces: [createMockWorkspace()], activeWorkspaceId: 'ws1' });
+      render(<WorkspaceTabs />);
+      const transfer = { effectAllowed: '', setData: vi.fn() };
+      fireEvent.dragStart(screen.getByText('Test Workspace'), { dataTransfer: transfer });
+      expect(transfer.setData).toHaveBeenCalledExactlyOnceWith('text/plain', 'ws1');
+      expect(transfer.effectAllowed).toBe('move');
     });
 
     it('leaves local tabs unmarked and labels SSH tabs with the configured environment', () => {
