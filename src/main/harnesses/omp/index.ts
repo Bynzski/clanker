@@ -9,6 +9,7 @@ export const ompProvider = defineHarness({
   descriptor: HARNESS_DESCRIPTORS.omp,
   models: { discover: async () => (await import('./models')).discoverModels() },
   sessions: {
+    discoveryOrder: 3,
     validateLocal,
     remote: remoteSessions,
     resume: { support: 'native', build: (session, flags) => buildInvocation(session, false, flags) },

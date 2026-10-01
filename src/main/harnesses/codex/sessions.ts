@@ -254,4 +254,3 @@ export async function discoverCodexSessions(workspacePath: string): Promise<Harn
 // ============================================================================
 // Pi session discovery
 // ============================================================================
-

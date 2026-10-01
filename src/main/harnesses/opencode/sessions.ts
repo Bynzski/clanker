@@ -79,4 +79,3 @@ export async function discoverOpenCodeSessions(workspacePath: string): Promise<H
 // ============================================================================
 // Codex session discovery
 // ============================================================================
-

@@ -76,7 +76,8 @@ list for malformed output; changing that legacy cache behavior is a follow-up.
 
 Session providers own parsing, native argument generation, selection flags and
 harness-specific validation. Shared aggregation normalizes IPC paths, limits
-file concurrency, sorts results and retains the bounded workspace cache.
+file concurrency, sorts results and retains the bounded workspace cache. Provider discovery-order
+metadata preserves the original ordering of equal-timestamp results and host scans.
 Missing stores legitimately yield no sessions; operational errors are retained
 per provider and partial failures are not cached as a complete scan. Agy uses
 its existing schema and global-workspace/title fallbacks; changed schemas fail.

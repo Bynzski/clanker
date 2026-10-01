@@ -112,4 +112,3 @@ export async function discoverOmpSessions(workspacePath: string): Promise<Harnes
 // ============================================================================
 // Claude Code session discovery
 // ============================================================================
-

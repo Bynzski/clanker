@@ -5,4 +5,3 @@ export function normalizeModelLine(line: string): string {
     .replace(/^\s*\d+[.)]\s*/, '')
     .trim();
 }
-

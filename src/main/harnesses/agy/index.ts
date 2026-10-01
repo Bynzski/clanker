@@ -15,6 +15,7 @@ export const agyProvider = defineHarness({
     { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)' },
   ] },
   sessions: {
+    discoveryOrder: 5,
     validateLocal,
     validateRemote,
     remote: remoteSessions,

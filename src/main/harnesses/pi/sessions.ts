@@ -130,4 +130,3 @@ export async function discoverPiSessions(workspacePath: string): Promise<Harness
 // ============================================================================
 // Oh My Pi session discovery
 // ============================================================================
-

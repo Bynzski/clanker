@@ -9,7 +9,8 @@ import { quotePosixCommand } from './posixQuote';
 import { posix } from 'node:path';
 
 export async function discoverSshSessions(executor: SshCommandExecutor, target: string, workspacePath: string, harnessIds: string[]): Promise<HarnessSession[]> {
-  const providers = getHarnessProviders().filter((provider) => harnessIds.includes(provider.descriptor.id) && provider.sessions?.remote);
+  const providers = getHarnessProviders().filter((provider) => harnessIds.includes(provider.descriptor.id) && provider.sessions?.remote)
+    .sort((a, b) => (a.sessions?.remote?.discoveryOrder ?? Infinity) - (b.sessions?.remote?.discoveryOrder ?? Infinity));
   const harnesses = providers.map((provider) => provider.descriptor.id);
   const script = remoteSessionScript(providers);
   if (!workspacePath.startsWith('/') || workspacePath.includes('\0') || posix.normalize(workspacePath) !== workspacePath || Buffer.byteLength(workspacePath) > 4096) throw new Error('Invalid remote workspace path');

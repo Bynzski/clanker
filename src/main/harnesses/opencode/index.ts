@@ -14,6 +14,7 @@ export const opencodeProvider = defineHarness({
     { id: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
   ] },
   sessions: {
+    discoveryOrder: 0,
     remote: remoteSessions,
     resume: { support: 'native', build: (session, flags) => buildInvocation(session, false, flags) },
     fork: { support: 'native', build: (session, flags) => buildInvocation(session, true, flags) },

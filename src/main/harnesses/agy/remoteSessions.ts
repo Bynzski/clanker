@@ -1,6 +1,7 @@
 import type { HarnessRemoteSessions } from '../types';
 
-export const remoteSessions: HarnessRemoteSessions = { scan: String.raw`db = os.path.join(home, '.gemini', 'antigravity-cli', 'conversation_summaries.db')
+export const remoteSessions: HarnessRemoteSessions = {
+  discoveryOrder: 4, scan: String.raw`db = os.path.join(home, '.gemini', 'antigravity-cli', 'conversation_summaries.db')
 if not os.path.lexists(db): return
 if os.path.realpath(db) != db: raise ValueError('Session database contains a symbolic link')
 with sqlite3.connect('file:' + urllib.parse.quote(db) + '?mode=ro', uri=True, timeout=2) as conn:

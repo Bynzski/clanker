@@ -9,6 +9,7 @@ export const codexProvider = defineHarness({
   descriptor: HARNESS_DESCRIPTORS.codex,
   models: { discover: async () => (await import('./models')).discoverModels() },
   sessions: {
+    discoveryOrder: 1,
     remote: remoteSessions,
     resume: { support: 'native', build: (session, flags) => buildInvocation(session, false, flags) },
     fork: { support: 'native', build: (session, flags) => buildInvocation(session, true, flags) },

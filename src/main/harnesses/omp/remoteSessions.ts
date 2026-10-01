@@ -2,6 +2,7 @@ import { jsonlScan } from '../remoteSessionSpec';
 import type { HarnessRemoteSessions } from '../types';
 
 export const remoteSessions: HarnessRemoteSessions = {
+  discoveryOrder: 3,
   fileStore: '.omp/agent/sessions',
   scan: jsonlScan({
   store: '.omp/agent/sessions',

@@ -9,7 +9,7 @@ export interface HarnessLaunchCapability {
   readonly args: string[];
   readonly modelArg: string;
   readonly env?: Record<string, string>;
-  readonly modelArgs?: (model: string) => string[] | undefined;
+  readonly modelArgs?: (model: string, modelArg?: string) => string[] | undefined;
   readonly localEnvironment?: (flags?: string) => Record<string, string>;
 }
 
@@ -57,6 +57,8 @@ export function classifyHarnessFailure(error: unknown, transport: 'local' | 'ssh
 }
 
 export interface HarnessSessionsCapability {
+  /** Preserve stable timestamp-tie ordering in existing history results. */
+  readonly discoveryOrder?: number;
   readonly validateLocal?: (session: HarnessSession) => HarnessSession;
   readonly validateRemote?: (session: HarnessSession) => boolean;
   discover(workspacePath: string): Promise<HarnessSession[]>;
@@ -75,6 +77,8 @@ export interface HarnessSessionOperation {
 }
 
 export interface HarnessRemoteSessions {
+  /** Host scan order also governs consumption of the shared metadata budget. */
+  readonly discoveryOrder?: number;
   /** Body of scan(harness), using the transport's bounded read/emit helpers. */
   readonly scan: string;
   readonly command?: { command: string; args: string[] };

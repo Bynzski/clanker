@@ -2,6 +2,7 @@ import { jsonlScan } from '../remoteSessionSpec';
 import type { HarnessRemoteSessions } from '../types';
 
 export const remoteSessions: HarnessRemoteSessions = {
+  discoveryOrder: 1,
   scan: jsonlScan({
   store: '.claude/projects',
   identity: String.raw`        cwd = cwd or text(event.get('cwd'))

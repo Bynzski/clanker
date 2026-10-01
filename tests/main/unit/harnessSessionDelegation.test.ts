@@ -25,3 +25,13 @@ it('aggregates registered discovery capabilities and retains independent failure
   await discoverSessionsDetailed('/workspace');
   for (const provider of providers) expect(provider.sessions!.discover).toHaveBeenCalledTimes(2);
 });
+
+it('preserves historical aggregation order for equal timestamps', async () => {
+  for (const provider of getHarnessProviders().filter((entry) => entry.sessions)) {
+    vi.spyOn(provider.sessions!, 'discover').mockResolvedValue([{
+      harness: provider.descriptor.id, id: 'fixture', title: 'title', cwd: '/workspace', timestamp: 1,
+    }]);
+  }
+  expect((await discoverSessionsDetailed('/workspace')).sessions.map((session) => session.harness))
+    .toEqual(['opencode', 'codex', 'pi', 'omp', 'claude', 'agy']);
+});

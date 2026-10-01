@@ -86,7 +86,8 @@ export async function discoverSessionsDetailed(
     return cached.discovery;
   }
 
-  const providers = getHarnessProviders().filter((provider) => provider.sessions?.discover);
+  const providers = getHarnessProviders().filter((provider) => provider.sessions?.discover)
+    .sort((a, b) => (a.sessions?.discoveryOrder ?? Infinity) - (b.sessions?.discoveryOrder ?? Infinity));
   const harnesses = providers.map((provider) => provider.descriptor.id);
   const results = await Promise.allSettled(providers.map((provider) => provider.sessions!.discover(normalizedPath)));
 
@@ -123,4 +124,3 @@ export function buildSessionInvokeArgs(session: HarnessSession, fork = false, us
   const launch = buildSessionCommand({ ...session, ...(session.filePath ? { filePath: toPosixPath(session.filePath) } : {}) }, fork, userFlags);
   return resolveHarnessSpawn(launch.command, launch.args, ensureHarnessWrapperScript());
 }
-

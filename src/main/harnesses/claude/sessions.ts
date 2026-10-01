@@ -176,4 +176,3 @@ export async function discoverClaudeSessions(workspacePath: string): Promise<Har
 // ============================================================================
 // Antigravity Session Discovery
 // ============================================================================
-

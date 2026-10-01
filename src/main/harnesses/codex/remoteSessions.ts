@@ -2,6 +2,7 @@ import { jsonlScan } from '../remoteSessionSpec';
 import type { HarnessRemoteSessions } from '../types';
 
 export const remoteSessions: HarnessRemoteSessions = {
+  discoveryOrder: 0,
   scan: jsonlScan({
   store: '.codex/sessions',
   identity: String.raw`        if kind == 'session_meta' and isinstance(payload, dict):

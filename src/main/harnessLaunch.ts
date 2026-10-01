@@ -59,7 +59,7 @@ export function buildHarnessSpawnArgs(
   }
 
   if (model) {
-    const modelArgs = findHarnessProvider(config.command)?.launch.modelArgs?.(model);
+    const modelArgs = findHarnessProvider(config.command)?.launch.modelArgs?.(model, config.modelArg);
     if (modelArgs) {
       args.unshift(...modelArgs);
       return args;

@@ -64,4 +64,3 @@ export async function readFirstLineJson<T>(filePath: string): Promise<T | null> 
     }
   });
 }
-
