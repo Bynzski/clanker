@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import HarnessDefaultsSection from '../../../../src/renderer/components/settings/HarnessDefaultsSection';
@@ -103,5 +105,45 @@ describe('Antigravity default settings', () => {
     expect(checkbox).not.toBeDisabled();
     fireEvent.click(checkbox);
     expect(handleSetHarnessAttention).toHaveBeenCalledWith('agy', true);
+  });
+});
+
+
+describe('compact favorite chip composition', () => {
+  it('keeps shared controls, wrapping, bounded width and label truncation while adding/removing favorites', () => {
+    const models = [{ id: 'candidate', label: 'A very long model label that should stay inside the settings popover' }];
+    const { container, props, rerender } = renderHermes('', models);
+    const style = document.createElement('style');
+    style.textContent = ['ui/Button.css', 'Header.css'].map((file) =>
+      readFileSync(resolve(__dirname, '../../../../src/renderer/components', file), 'utf8')).join('\n');
+    document.head.append(style);
+    container.classList.add('settings-dropdown');
+    try {
+      const candidate = container.querySelector('.harness-defaults-add-fav') as HTMLButtonElement;
+      expect(candidate).toHaveClass('clanker-button');
+      expect(getComputedStyle(candidate).height).toBe('20px');
+      expect(getComputedStyle(candidate).padding).toBe('2px 5px');
+      expect(getComputedStyle(candidate).fontSize).toBe('10px');
+      expect(getComputedStyle(container.querySelector('.harness-defaults-favorites')!).flexWrap).toBe('wrap');
+      expect(getComputedStyle(container).width).toBe('380px');
+      expect(getComputedStyle(container).maxWidth).toBe('calc(100vw - 16px)');
+      expect(getComputedStyle(container).minWidth).toBe('0px');
+      const label = candidate.querySelector('.harness-defaults-favorite-label')!;
+      expect(getComputedStyle(label).textOverflow).toBe('ellipsis');
+      expect(getComputedStyle(candidate).maxWidth).toBe('100%');
+      fireEvent.click(candidate);
+      expect(props.handleToggleFavorite).toHaveBeenLastCalledWith('hermes', 'candidate');
+      rerender(<HarnessDefaultsSection {...props} harnessDefaults={{ hermes: { ...props.harnessDefaults.hermes, favorites: ['candidate'] } }} />);
+      expect(container.querySelector('.harness-defaults-add-fav')).toBeNull();
+      const remove = screen.getByRole('button', { name: 'Remove from favorites' });
+      expect(remove).toHaveClass('clanker-icon-button');
+      expect(getComputedStyle(remove).height).toBe('14px');
+      expect(getComputedStyle(container.querySelector('.harness-defaults-favorite-tag')!).fontSize).toBe('10px');
+      fireEvent.click(remove);
+      expect(props.handleToggleFavorite).toHaveBeenLastCalledWith('hermes', 'candidate');
+      expect(props.handleToggleFavorite).toHaveBeenCalledTimes(2);
+    } finally {
+      style.remove();
+    }
   });
 });

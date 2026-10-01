@@ -9,10 +9,11 @@ import { getWorkspaceNameFromPath } from '../lib/workspaceLabels';
 interface Props {
   repoPath: string | null;
   openPaths: string[];
+  launchReady: boolean;
   onOpenPath: (path: string) => void;
 }
 
-export default function WorktreeLauncher({ repoPath, openPaths, onOpenPath }: Props) {
+export default function WorktreeLauncher({ repoPath, openPaths, launchReady, onOpenPath }: Props) {
   const [loadedRepo, setLoadedRepo] = useState('');
   const [baseRef, setBaseRef] = useState('');
   const [branchName, setBranchName] = useState('');
@@ -52,6 +53,7 @@ export default function WorktreeLauncher({ repoPath, openPaths, onOpenPath }: Pr
   };
 
   const createWorktree = async () => {
+    if (!launchReady) { setError('Select at least one terminal before creating and opening a worktree.'); return; }
     if (!ready) { setError('Load the repository first'); return; }
     setBusy(true);
     setError('');
@@ -125,7 +127,7 @@ export default function WorktreeLauncher({ repoPath, openPaths, onOpenPath }: Pr
           <label>Task branch
             <Input value={branchName} onChange={(event) => setBranchName(event.target.value)} placeholder="feature/my-task" />
           </label>
-          <Button type="button" onClick={() => void createWorktree()} disabled={busy || !branchName.trim()}>Create and open worktree</Button>
+          <Button type="button" onClick={() => void createWorktree()} disabled={busy || !launchReady || !branchName.trim()}>Create and open worktree</Button>
           <div className="gate-worktree-list-title">Existing worktrees</div>
           {worktrees.length === 0 && <span>No linked worktrees</span>}
           {worktrees.map((worktree) => (
@@ -135,7 +137,7 @@ export default function WorktreeLauncher({ repoPath, openPaths, onOpenPath }: Pr
                 <GitBranchIcon size={12} strokeWidth={2} aria-hidden="true" />
                 <span className="gate-worktree-branch">{worktree.branch || `Detached (${getWorkspaceNameFromPath(worktree.path)})`}</span>
               </span>
-              <Button type="button" onClick={() => onOpenPath(worktree.path)} disabled={worktree.isPrunable} title={worktree.isPrunable ? 'Checkout directory is missing' : undefined}>Open</Button>
+              <Button type="button" onClick={() => onOpenPath(worktree.path)} disabled={busy || !launchReady || worktree.isPrunable} title={worktree.isPrunable ? 'Checkout directory is missing' : undefined}>Open</Button>
               <Button type="button" onClick={() => void inspectRemoval(worktree)} disabled={busy || worktree.isLocked || worktree.isPrunable}>Remove…</Button>
             </div>
           ))}
