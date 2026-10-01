@@ -24,18 +24,13 @@ export function getAiCommitTimeoutMs(provider: AiCommitProvider): number {
 export const AI_COMMIT_COMMANDS = Object.fromEntries(
   getHarnessProviders().filter((provider) => provider.aiCommit).map((provider) => {
     const capability = provider.aiCommit!;
-    return [provider.descriptor.id, { command: capability.command, args: capability.args, modelArg: capability.modelArg }];
+    const invocation = capability.buildInvocation({ prompt: '' });
+    return [provider.descriptor.id, { command: invocation.command, args: invocation.args, modelArg: capability.modelArg }];
   }),
 ) as Record<AiCommitProvider, AiCommitCommandConfig>;
 
 export function buildAiCommitArgs(provider: AiCommitProvider, model: string | undefined): string[] {
-  const config = AI_COMMIT_COMMANDS[provider];
-  const args = [...config.args];
-
-  if (model) {
-    args.push(config.modelArg, model);
-  }
-  return args;
+  return findHarnessProvider(provider)?.aiCommit?.buildInvocation({ model, prompt: '' }).args ?? [];
 }
 
 export function buildCommitPrompt(context: CommitPromptContext): string {

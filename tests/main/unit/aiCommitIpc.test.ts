@@ -1,3 +1,7 @@
+import type { HarnessAiCommitCapability } from '../../../src/main/harnesses/types';
+import { EventEmitter } from 'node:events';
+import { spawn } from 'child_process';
+import { getHarnessProvider } from '../../../src/main/harnesses/registry';
 /**
  * AI Commit IPC Registration Tests
  *
@@ -275,4 +279,28 @@ describe('registerAiCommitIpc — error-path: workspace validation and commit ge
     const result = await handler(null, '/some/path');
     expect(result).toEqual({ success: false, error: 'No changes' });
   });
+});
+
+test('IPC executes the provider invocation without assuming stdin prompt transport', async () => {
+  const capability: HarnessAiCommitCapability = getHarnessProvider('codex').aiCommit;
+  const invocation = vi.spyOn(capability, 'buildInvocation').mockReturnValue({
+    command: 'different-cli', args: ['--prompt', 'provider prompt'], env: { PROVIDER_SETTING: 'set' }, timeoutMs: 12345,
+  });
+  const child = Object.assign(new EventEmitter(), {
+    stdout: new EventEmitter(), stderr: new EventEmitter(), kill: vi.fn(),
+    stdin: { end: vi.fn(() => queueMicrotask(() => { child.stdout.emit('data', 'fix: provider invocation'); child.emit('close', 0); })) },
+  });
+  vi.mocked(spawn).mockReturnValueOnce(child as unknown as ReturnType<typeof spawn>);
+  mockResolveExistingDirectory.mockReturnValue(testHome());
+  mockDiscoverHarnessModels.mockResolvedValue([{ id: 'selected-model', label: 'Selected' }]);
+  const store = { get: (key: string) => ({ aiCommitEnabled: true, aiCommitProvider: 'codex', aiCommitModel: 'selected-model' })[key as 'aiCommitEnabled'] };
+  registerAiCommitIpc({ getStore: () => store as never, getGitService: () => ({ getCommitPromptContext: async () => ({ success: true, currentBranch: 'main', changes: [], diffMode: 'working', diffSummary: 'context' }) }) as never });
+  try {
+    const calls = vi.mocked(ipcMain.handle).mock.calls;
+    const handler = calls[calls.length - 1][1];
+    expect(await handler({} as never, testHome())).toEqual({ success: true, message: 'fix: provider invocation' });
+    expect(invocation).toHaveBeenCalledWith({ model: 'selected-model', prompt: expect.stringContaining('context') });
+    expect(spawn).toHaveBeenLastCalledWith('different-cli', ['--prompt', 'provider prompt'], expect.objectContaining({ env: expect.objectContaining({ PROVIDER_SETTING: 'set', PATH: expect.any(String) }) }));
+    expect(child.stdin.end).toHaveBeenCalledWith(undefined);
+  } finally { invocation.mockRestore(); }
 });

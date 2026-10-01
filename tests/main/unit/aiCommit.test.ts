@@ -66,10 +66,10 @@ describe('AI_COMMIT_COMMANDS structure', () => {
 
   it('Antigravity uses disabled slash commands', () => {
     expect(AI_COMMIT_COMMANDS.agy).toEqual({
-      command: 'agy', args: ['--disable-slash-commands'], modelArg: '--model',
+      command: 'agy', args: ['--disable-slash-commands', '--input-format', 'stream-json', '--output-format', 'stream-json'], modelArg: '--model',
     });
     expect(buildAiCommitArgs('agy', 'gemini-3.8-flash-high')).toEqual([
-      '--disable-slash-commands', '--model', 'gemini-3.8-flash-high',
+      '--disable-slash-commands', '--model', 'gemini-3.8-flash-high', '--input-format', 'stream-json', '--output-format', 'stream-json',
     ]);
   });
 });
@@ -134,7 +134,7 @@ describe('buildAiCommitArgs', () => {
 
     it('includes model for agy', () => {
       const args = buildAiCommitArgs('agy', 'gemini-3.8-flash-high');
-      expect(args).toEqual(['--disable-slash-commands', '--model', 'gemini-3.8-flash-high']);
+      expect(args).toEqual(['--disable-slash-commands', '--model', 'gemini-3.8-flash-high', '--input-format', 'stream-json', '--output-format', 'stream-json']);
     });
 
     it('includes both exec and model for codex', () => {
