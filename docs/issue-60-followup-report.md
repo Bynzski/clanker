@@ -1,5 +1,11 @@
 # Issue #60 follow-up branch report
 
+> Historical intermediate report. The final issue #60 architecture and
+> verification state is documented in
+> [issue-60-final-hardening-report.md](issue-60-final-hardening-report.md).
+> Implementation details, versions and test counts below describe that snapshot,
+> not current integration guidance.
+
 Branch: `issue-60-harness-provider-registry`. No PR opened. Changes remain main
 process/provider/test/documentation work; renderer controls, icons and workflows
 are unchanged. The final SHA is reported with delivery (a report cannot contain

@@ -111,7 +111,9 @@ conflict. Local `prepare(context)` returns launch args/env and an owned lease, o
 null for that same conflict; operational preparation failures propagate.
 
 ```ts
-const prepared = provider.attention?.local?.prepare(context);
+// Main-process helper: src/main/agentAttentionAdapters.ts
+
+const prepared = prepareLocalAttention(provider.descriptor.id, context);
 try {
   // Shared launch engine applies prepared args/env and creates the PTY.
 } catch (error) {
@@ -120,6 +122,14 @@ try {
 }
 // Dispose again on terminal exit; successful disposal is idempotent.
 ```
+
+Shared orchestrators should use `prepareLocalAttention()` rather than calling
+`provider.attention.local.prepare()` directly. The shared preparation boundary
+owns configuration planning, lazy provider-resource creation and lifecycle
+acquisition. `provider.attention.local` describes provider behavior;
+`prepareLocalAttention()` is the canonical orchestration entry point. Callers
+should not manually call `prepareResources()`: resource files are prepared
+lazily in private provider directories.
 
 Launch IPC disposes leases on preparation/registration failure, setup or PTY
 failure, and terminal exit. Cleanup failures are logged without masking launch
@@ -189,8 +199,10 @@ emulated fork. SSH models/inference and local Hermes attention remain absent.
    execution and fail-closed ownership/credential checks.
 5. Add registry/delegation/fixture tests, exact launch/resume/fork argv contracts,
    failure cases, attention cleanup/concurrency tests and remote execution-count
-   checks. `harnessArchitecture.test.ts` guards shared feature orchestrators
-   against new harness-ID dispatch; identity comparisons and provider code remain
+   checks. `harnessArchitecture.test.ts` automatically scans shared main-process
+   TypeScript, including shared `harnesses/*.ts` infrastructure, against new
+   harness-ID dispatch. Only provider directories derived from `KNOWN_HARNESS_IDS`
+   and the exhaustive registry are excluded; scalar identity metadata remains
    allowed. Run focused tests, typecheck and lint; finish with `npm run validate`.
 
 For a future capability, extend `HarnessProvider` and implement it under the
@@ -200,7 +212,9 @@ units, allowance/rate/token/spend kinds, periods, resets and account/provider/mo
 scopes. There are no speculative quota probes or usage UI. Existing AI commit
 uses `buildInvocation({ model, prompt })` to return command, args, optional stdin,
 timeout and optional environment. Optional provider output parsing unwraps native
-CLI envelopes before shared commit-message normalization. Git context and prompts
+CLI envelopes before shared commit-message normalization. Compatibility command,
+args and timeout values derive from `buildInvocation()`; `modelArg` is descriptive
+legacy metadata, not executable authority. Git context and prompts
 stay shared; Windows resolution and desktop PATH remain in the executor. There
 is no remote inference or general inference framework.
 
@@ -319,7 +333,7 @@ agent attention, and AI commit message generation. The workspace gate assigns
 
 ## SSH attention transport
 
-`sshAgentAttention.ts` reuses the hook/extension event mappings from `agentAttentionAdapters.ts` with a tty observer transport. `remoteAttentionTransport.ts` extracts bounded OSC frames before normal PTY buffering/rendering. `AgentAttentionBroker` accepts remote credentials only from their registered terminal, independently of the desktop loopback listener. Unsupported native events remain unknown.
+`sshAgentAttention.ts` obtains the selected provider's resources and hook/extension configuration through its remote attention capability, with a tty observer transport. `remoteAttentionTransport.ts` extracts bounded OSC frames before normal PTY buffering/rendering. `AgentAttentionBroker` accepts remote credentials only from their registered terminal, independently of the desktop loopback listener. Unsupported native events remain unknown.
 
 Hermes uses its [observer hook contract](https://hermes-agent.nousresearch.com/docs/developer-guide/observer-hooks), including turn-scoped `pre_llm_call` / `post_llm_call` and advisory approval hooks. Its owned plugin is enabled via the native CLI, preserving other plugin configuration. OpenCode uses its [plugin events](https://opencode.ai/docs/plugins/); Claude uses its [command hook API](https://code.claude.com/docs/en/hooks). Shared Pi, OMP, Codex, and Antigravity mappings retain the contracts documented above.
 
@@ -331,7 +345,9 @@ Installed versions checked without model prompts: Codex 0.159.3, OpenCode
 1.18.34, Pi 0.87.1, OMP 18.4.4, Hermes 0.21.5 and Agy 1.2.14. Claude's shim
 exists but its native optional binary is missing. Local PTY startup/resume/fork
 checks and the saved SSH host checks are recorded in
-[the follow-up report](issue-60-followup-report.md).
+[the historical follow-up report](issue-60-followup-report.md). The final
+architecture and validation state is recorded in
+[the final hardening report](issue-60-final-hardening-report.md).
 
 AI commit uses Codex `exec` stdin, OpenCode `run` stdin, Pi `--print` stdin,
 and the existing OMP print/no-session/no-tools/no-extensions stdin contract.

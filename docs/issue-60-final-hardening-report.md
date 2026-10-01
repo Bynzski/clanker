@@ -12,7 +12,14 @@ Delivery includes the final SHA and clean/pushed working-tree verification.
 3. `bcc15c1` Optimize trusted Pi session resolution
 4. `6029076` Automatically guard shared harness orchestration
 5. `6ca1fa1` Clean provider compatibility metadata and docs
-6. Final documentation commit: this report and storage-scope clarification.
+6. `8cd48f8` Record final provider hardening validation and SSH smoke evidence
+
+Final pre-PR polish continues from `8cd48f8c8bd7e14f2cb7d1c160221caf8fba3982`:
+
+- `c4114dc` Guard shared harness infrastructure from capability dispatch.
+- Finalize issue 60 integration documentation (this report and canonical guidance).
+
+The delivery report supplies both polish commit SHAs, including its own final SHA.
 
 ## Architectural changes
 
@@ -27,7 +34,12 @@ Delivery includes the final SHA and clean/pushed working-tree verification.
   filename list exists. A synthetic provider contributes a nested Python file
   and environment key without changes to transport or cleanup. Persistent
   Agy/Hermes ownership and enable behavior are unchanged.
-- Local infrastructure creates the secure root, observer and command once.
+- Shared launch orchestration uses `prepareLocalAttention(harness, context)`,
+  which plans configuration, lazily creates provider resources and acquires the
+  provider lifecycle lease. Provider `local.prepare` describes implementation
+  behavior and must not be called directly by shared orchestrators; callers must
+  not manually invoke `prepareResources`.
+  Local infrastructure creates the secure root, observer and command once.
   Selected provider resources are prepared synchronously and cached only after
   complete preparation in a separate private subdirectory. Failure removes only
   that directory; other providers and the shared bridge remain valid. Failure
@@ -40,14 +52,18 @@ Delivery includes the final SHA and clean/pushed working-tree verification.
   consistency, then fully parses only that session and revalidates file/cwd.
   Renderer model/provider/title/cwd remain non-authoritative. Configured flat
   session roots, agent roots and stored `--session-dir` forms are retained.
-  A 2 MiB unrelated fixture is read only with the bounded header stream; only
-  the selected transcript receives a full metadata stream.
+  A 2 MiB unrelated fixture receives a header-only read; only the selected
+  transcript is fully parsed. The 8192-byte stream `highWaterMark` controls read
+  chunks, not a strict byte cap on the session header.
 - The TypeScript AST guard recursively discovers `src/main/**/*.ts`, excluding
-  provider implementation directories. It checks literal arrays/Sets/includes,
+  provider implementation directories derived from `KNOWN_HARNESS_IDS` and the
+  exhaustive `harnesses/registry.ts` record. Shared `harnesses/*.ts` infrastructure
+  (including future modules) is scanned. It checks literal arrays/Sets/includes,
   comparisons in either order, switch cases and quoted/unquoted dispatch keys.
   Scalar identity defaults, comments and descriptive strings remain valid.
-  Synthetic newly discovered `future/harnessUsage.ts` files are checked without
-  modifying a file allowlist. No parser dependency was added.
+  Synthetic newly discovered `future/harnessUsage.ts` and
+  `harnesses/usageRuntime.ts` files are checked without modifying a file allowlist;
+  all seven provider directories remain excluded. No parser dependency was added.
 - AI commit removed duplicate static command/args/timeout fields. Executable
   invocation and compatibility command/args/timeout all derive from
   `buildInvocation`. `modelArg` remains descriptive legacy catalog metadata;
@@ -59,15 +75,17 @@ Delivery includes the final SHA and clean/pushed working-tree verification.
 
 ## Validation and smoke evidence
 
-Focused slice tests passed: SSH attention 52; local attention/IPC 75; Pi
+Previous hardening slice tests passed: SSH attention 52; local attention/IPC 75; Pi
 trust/session fixtures/IPC 34; architecture 9; AI commit/model compatibility 169.
-Typecheck and lint passed per slice. Full `npm run validate` passed:
-branding, lint, typecheck, audit (zero vulnerabilities), build and **4,412 tests
+Final polish focused architecture and attention tests passed: **33 tests in
+3 files**, including 11 architecture cases (with equality/inequality coverage).
+Typecheck and lint passed. Final `npm run validate` passed:
+branding, lint, typecheck, audit (zero vulnerabilities), build and **4,414 tests
 in 209 files**. Existing history tie ordering and SSH discovery batching tests
 remain intact. All seven remote providers retain their preparation execution
 counts: one, except Hermes's existing second native plugin-enable execution.
 
-Safe live smoke checks used the already configured SSH account and persistent
+Prior runtime-hardening live smoke checks used the already configured SSH account and persistent
 `clanker-test` workspace fixture. OpenCode attention prepared in **one execution**,
 released in **one execution**, and its 0700 root/manifest contained only shared
 infrastructure and OpenCode resources. A separate read-only verification confirmed
@@ -78,7 +96,11 @@ completed cleanup. Verification probes are separate from product execution count
 No prompt or paid/model inference was submitted; no persistent fixture data was
 deleted. No extra product SSH round trips were introduced.
 
-Not verified live in this pass: other harnesses' real remote runtimes, native
+This final polish changed only tests and documentation, so no additional live
+SSH smoke or model inference was performed. The previous OpenCode smoke remains
+the runtime verification evidence; SSH batching and runtime code are unchanged.
+
+Not verified live during the runtime-hardening pass: other harnesses' real remote runtimes, native
 local model turns/input-request events, Windows/macOS execution, or model
 inference. Local and all-provider remote lifecycle/security tests cover those
 integration contracts; they are not claimed as live model evidence.
@@ -109,10 +131,35 @@ The provider model was not redesigned; manifests and private provider resource
 directories are the smallest shared mechanisms needed to enforce its existing
 ownership boundary. No UI, PTY or storage format rewrite was introduced.
 
+## Final documentation consistency review
+
+Reviewed all issue #60 documentation added/changed against `main`:
+`harness-integration.md`, `issue-60-followup-report.md` and this report. Also checked
+relevant guidance in `AGENTS.md`, `CONTRIBUTING.md`, `README.md`, `terminals.md` and
+`workspaces.md`. The intermediate follow-up report is clearly marked historical
+and superseded for current guidance; its test counts and implementation snapshot
+are preserved. Current guidance uses `prepareLocalAttention`, lazy private local
+resources, selected-provider remote resources, manifest cleanup, automatically
+discovered shared guard scope and invocation-derived AI commit metadata. OMP's
+18.3.4 baseline remains distinct from 18.4.4 revalidation. Candidate Pi reads are
+header-only, with no claim of a strict byte cap. No remaining issue #60 guidance
+requires eager preparation, central SSH filename lists or manual guard file lists.
+
+At the start of final polish, fetched `origin/main` matched local `main` at
+`fb0641d6a98e9491277c992504cba471b3e2b187`: 27 ahead / 0 behind. The two polish
+commits yield 29 ahead / 0 behind; delivery rechecks fetched main and pushed HEAD.
+No rebase or PR creation was performed. No correctness/security blocker was found;
+the branch is ready for the requested short merge-readiness verification.
+
 ## Exact materially changed files
+
+Final polish changed exactly four files: `tests/main/unit/harnessArchitecture.test.ts`,
+`docs/harness-integration.md`, `docs/issue-60-followup-report.md` and this report.
+The cumulative runtime-hardening and polish list follows.
 
 - `docs/harness-integration.md`
 - `docs/issue-60-final-hardening-report.md`
+- `docs/issue-60-followup-report.md`
 - `src/main/agentAttentionAdapters.ts`
 - `src/main/aiCommit.ts`
 - `src/main/harnessCatalog.ts`
