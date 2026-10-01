@@ -559,8 +559,12 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     Array.from({ length: counts[harness] ?? 0 }, () => ({ harness, model: locationKind === 'local' && harness ? rowModels[harness] || undefined : undefined })),
   );
 
+  const worktreeLaunchReady = !opening && hasLoadedHarnessOptions && terminalLaunches.length > 0;
+
   const launchPath = (path: string, envId = 'local', envLabel = 'Local') => {
-    if (!hasLoadedHarnessOptions || !terminalLaunches.length) return;
+    if (opening) { setDirectoryError('A workspace is already opening.'); return; }
+    if (!hasLoadedHarnessOptions) { setDirectoryError('Wait for terminal options to load before opening a workspace.'); return; }
+    if (!terminalLaunches.length) { setDirectoryError('Select at least one terminal before opening a workspace.'); return; }
     const first = terminalLaunches.find((launch) => launch.harness) ?? terminalLaunches[0];
     onSubmit({ path, terminalCount: terminalLaunches.length, harness: first.harness, model: first.model,
       terminalLaunches, environmentId: envId, environmentLabel: envLabel });
@@ -657,9 +661,10 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
 
   const showSuggestions = isFocused && suggestions.length > 0;
   const worktreeActionProps = {
-    worktreeDisabled: opening || !terminalLaunches.length || (locationKind === 'ssh' ? !remoteRepositories.length : !worktreeReady),
+    worktreeDisabled: opening || (locationKind === 'ssh' ? !remoteRepositories.length : !worktreeReady),
     worktreeTitle: locationKind === 'ssh' ? 'Discover worktrees from an open repository on this SSH target' : worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first',
     onWorktree: () => {
+      setDirectoryError('');
       setHasViewedWorktree(true);
       setWorkspaceMode('worktree');
     },
@@ -843,7 +848,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
           key={selectedSshEnvId}
           repositories={remoteRepositories}
           preferredWorkspaceId={activeWorkspaceId}
-          launchReady={hasLoadedHarnessOptions}
+          launchReady={worktreeLaunchReady}
           onOpenPath={(path) => launchPath(path, selectedSshEnvId, sshEnvironments.find((env) => env.id === selectedSshEnvId)?.label ?? 'Remote')}
         /> : <>
         <div className="gate-input-container">
@@ -861,8 +866,10 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
             </IconButton>
           </div>
         </div>
-        <WorktreeLauncher repoPath={selectedPath} openPaths={openPaths} onOpenPath={launchPath} />
+        <WorktreeLauncher launchReady={worktreeLaunchReady} repoPath={selectedPath} openPaths={openPaths} onOpenPath={launchPath} />
         </>}
+        {!terminalLaunches.length && <p role="status">Select at least one terminal in the workspace launcher before opening a worktree.</p>}
+        {directoryError && <p className="gate-directory-error" role="alert">{directoryError}</p>}
         <p className="gate-worktree-launch-summary">Opens with {launchHarnessOptions.filter((option) => counts[option.id]).map((option) => `${counts[option.id]} ${option.label}`).join(' · ')} · {terminalLaunches.length} terminals</p>
       </div>
       ) : (

@@ -58,6 +58,7 @@ describe('Workspace Gate visual rendering across themes', () => {
     document.documentElement.setAttribute('data-theme', theme);
     render(
       <WorktreeLauncher
+        launchReady
         repoPath="/projects/clanker"
         openPaths={[]}
         onOpenPath={vi.fn()}

@@ -118,7 +118,10 @@
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   padding: 8px 12px;
-  min-width: 240px;
+  width: 380px;
+  max-width: calc(100vw - 16px);
+  min-width: 0;
+  overflow-y: auto;
   z-index: 1000;
   box-shadow: var(--shadow-popover);
 }
@@ -378,7 +381,10 @@
   margin-left: 2px;
 }
 
-.harness-defaults-add-fav {
+.harness-defaults-add-fav.clanker-button {
+  height: 20px;
+  padding: 2px 5px;
+  font-size: 10px;
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -391,4 +397,3 @@
 }
 
 .header-chat-popover { padding: 0; border: 0; box-shadow: none; width: max-content; }
-.settings-dropdown { width: max-content; overflow-y: auto; }
