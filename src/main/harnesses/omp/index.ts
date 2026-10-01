@@ -1,6 +1,6 @@
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
-import { local, SOURCE, prepareResources } from './attention';
+import { local, prepareResources } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation, validateLocal } from './invocation';
 import { defineHarness, type HarnessProvider } from '../types';
@@ -17,7 +17,7 @@ export const ompProvider = defineHarness({
     selectionFlags: ['--resume', '-r', '--continue', '-c', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverOmpSessions(workspace),
   },
-  attention: { prepareResources, local, remote, sources: () => ({ 'omp.ts': SOURCE }) },
+  attention: { prepareResources, local, remote },
   aiCommit: { command: 'omp', args: ['--print', '--no-session', '--no-tools', '--no-extensions'], modelArg: '--model', timeoutMs: 60000,
     buildInvocation: ({ model, prompt }) => ({ command: 'omp', args: [...['--print', '--no-session', '--no-tools', '--no-extensions'], ...(model ? ['--model', model] : [])], stdin: prompt, timeoutMs: 60000 }),
   },

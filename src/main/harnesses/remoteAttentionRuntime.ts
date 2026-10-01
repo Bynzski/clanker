@@ -1,3 +1,4 @@
+import { REMOTE_RESOURCE_CLEANUP, REMOTE_RESOURCE_MANIFEST } from './remoteAttentionCleanup';
 import type { HarnessRemoteAttention } from './types';
 
 export function remoteAttentionScript(spec: HarnessRemoteAttention): string {
@@ -75,21 +76,54 @@ try:
 finally:
     os.close(fd)
 root = os.path.realpath(tempfile.mkdtemp(prefix='clanker-remote-attention-'))
+# A setgid TMPDIR can propagate special bits despite mkdtemp's private mode.
+os.chmod(root, 0o700)
+${REMOTE_RESOURCE_CLEANUP}
+manifest = dict(files=[], directories=[])
+def write_resource(name, content):
+    if len(manifest['files']) >= 128:
+        raise ValueError('Too many attention resources')
+    filename = resource_path(name)
+    if name == '${REMOTE_RESOURCE_MANIFEST}':
+        raise ValueError('Reserved attention resource path')
+    parent = os.path.dirname(filename)
+    pending = []
+    while parent != root:
+        pending.append(parent)
+        parent = os.path.dirname(parent)
+    for directory in reversed(pending):
+        relative = os.path.relpath(directory, root)
+        if relative not in manifest['directories']:
+            if len(manifest['directories']) >= 128:
+                raise ValueError('Too many attention resource directories')
+            os.mkdir(directory, 0o700)
+            os.chmod(directory, 0o700)
+            manifest['directories'].append(relative)
+    fd = os.open(filename, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    os.fchmod(fd, 0o600)
+    manifest['files'].append(name)
+    with os.fdopen(fd, 'w') as output:
+        output.write(content)
 try:
-    # A setgid TMPDIR can propagate special bits despite mkdtemp's private mode.
-    os.chmod(root, 0o700)
     for name, content in request['files'].items():
-        filename = os.path.join(root, name)
-        os.makedirs(os.path.dirname(filename), mode=0o700, exist_ok=True)
-        with open(filename, 'x') as output:
-            os.chmod(filename, 0o600)
-            output.write(content)
+        write_resource(name, content)
     command = os.path.join(root, 'command.mjs')
     env = {'CLANKER_REMOTE_ATTENTION_COMMAND': command}
 ${spec.configure}
+    fd = os.open(os.path.join(root, '${REMOTE_RESOURCE_MANIFEST}'), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'w') as output:
+        json.dump(manifest, output)
     print(json.dumps(dict(root=root, args=args, env=env)))
 except BaseException:
-    shutil.rmtree(root)
+    cleanup_resources(manifest)
+    try:
+        os.unlink(os.path.join(root, '${REMOTE_RESOURCE_MANIFEST}'))
+    except FileNotFoundError:
+        pass
+    try:
+        os.rmdir(root)
+    except OSError:
+        pass
     raise
 `;
 }

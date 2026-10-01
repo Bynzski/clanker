@@ -1,6 +1,6 @@
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
-import { local, SOURCE, prepareResources } from './attention';
+import { local, prepareResources } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import { defineHarness, type HarnessProvider } from '../types';
@@ -21,7 +21,7 @@ export const opencodeProvider = defineHarness({
     selectionFlags: ['--session', '-s', '--continue', '-c', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverOpenCodeSessions(workspace),
   },
-  attention: { prepareResources, local, remote, sources: (observer: string) => ({ 'opencode/observer.mjs': observer, 'opencode/plugins/clanker-attention.js': SOURCE }) },
+  attention: { prepareResources, local, remote },
   aiCommit: { command: 'opencode', args: ['run'], modelArg: '-m', timeoutMs: 90000,
     buildInvocation: ({ model, prompt }) => ({ command: 'opencode', args: [...['run'], ...(model ? ['-m', model] : [])], stdin: prompt, timeoutMs: 90000 }),
   },

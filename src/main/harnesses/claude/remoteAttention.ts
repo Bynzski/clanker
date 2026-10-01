@@ -8,8 +8,6 @@ export const remote: HarnessRemoteAttention = {
   configure: `    hook = {'hooks': [{'type': 'command', 'command': 'node ' + shlex.quote(command), 'timeout': 2}]}
     settings = {'hooks': {name: [hook] for name in ['UserPromptSubmit', 'Stop', 'PostToolUse', 'Notification', 'SessionEnd']}}
     settings_path = os.path.join(root, 'claude-settings.json')
-    with open(settings_path, 'x') as output:
-        os.chmod(settings_path, 0o600)
-        json.dump(settings, output)
+    write_resource('claude-settings.json', json.dumps(settings))
     args += ['--settings', settings_path]`,
 };

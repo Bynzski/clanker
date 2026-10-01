@@ -15,11 +15,6 @@ export function withoutAttentionEnvironment(env: NodeJS.ProcessEnv): Record<stri
     !entry[0].startsWith('CLANKER_ATTENTION_') && !entry[0].startsWith('CLANKER_REMOTE_ATTENTION_') && typeof entry[1] === 'string'));
 }
 
-export function attentionAdapterSources(observer: string): Record<string, string> {
-  return Object.assign({ 'observer.mjs': observer, 'command.mjs': COMMAND },
-    ...getHarnessProviders().map((provider) => provider.attention?.sources?.(observer) ?? {}));
-}
-
 export function ensureAttentionAdapterFiles(): AttentionAdapterFiles {
   if (files) return files;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-attention-'));

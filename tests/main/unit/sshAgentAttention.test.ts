@@ -1,3 +1,4 @@
+import * as registry from '../../../src/main/harnesses/registry';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, realpathSync, rmSync, readFileSync, chmodSync, mkdirSync, writeFileSync, symlinkSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -165,11 +166,89 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
     if (harness === 'opencode') expect(prepared.env.OPENCODE_CONFIG_DIR).toBe(join(root, 'opencode'));
     if (harness === 'pi' || harness === 'omp') expect(prepared.args.slice(-2)).toEqual(['--extension', join(root, `${harness}.ts`)]);
     if (harness === 'agy') expect(readFileSync(join(home, '.gemini/config/plugins/clanker-grid-remote-attention/hooks.json'), 'utf8')).toContain('$CLANKER_REMOTE_ATTENTION_COMMAND');
-    if (harness === 'hermes') expect(exec).toHaveBeenCalledTimes(2);
+    expect(exec).toHaveBeenCalledTimes(harness === 'hermes' ? 2 : 1);
+    const payload = JSON.parse(String(exec.mock.calls[0][3]?.input));
+    const expectedFiles = ['command.mjs', 'observer.mjs', ...(harness === 'pi' ? ['pi.ts'] : harness === 'omp' ? ['omp.ts'] : harness === 'opencode' ? ['opencode/observer.mjs', 'opencode/plugins/clanker-attention.js'] : [])];
+    expect(Object.keys(payload.files).sort()).toEqual(expectedFiles.sort());
     writeFileSync(join(root, 'preserve.txt'), 'unknown');
     await prepared.release();
     expect(readFileSync(join(root, 'preserve.txt'), 'utf8')).toBe('unknown');
     expect(() => readFileSync(join(root, 'command.mjs'))).toThrow();
+  });
+
+  it('prepares and cleans a synthetic provider resource and environment without transport changes', async () => {
+    const provider = registry.getHarnessProvider('pi');
+    const lookup = vi.spyOn(registry, 'findHarnessProvider').mockReturnValue({ ...provider, attention: { remote: {
+      requiresNode: false, validate: '',
+      resources: () => ({ 'future/nested/observer.py': '# new provider resource' }),
+      environmentKeys: ['FUTURE_PLUGIN_ROOT'],
+      configure: "    env['FUTURE_PLUGIN_ROOT'] = os.path.join(root, 'future')",
+    } } });
+    try {
+      const { executor, exec } = fixture();
+      const prepared = await prepareSshAttention(executor, 'host', 'pi', [], token);
+      const root = join(prepared.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..'); roots.push(root);
+      expect(readFileSync(join(root, 'future/nested/observer.py'), 'utf8')).toBe('# new provider resource');
+      expect(prepared.env.FUTURE_PLUGIN_ROOT).toBe(join(root, 'future'));
+      await prepared.release(); await prepared.release();
+      expect(existsSync(root)).toBe(false);
+      expect(exec).toHaveBeenCalledTimes(3); // one preparation, two idempotent cleanup executions
+    } finally { lookup.mockRestore(); }
+  });
+
+  it('rejects cleanup ownership mismatches before removing resources', async () => {
+    const { executor, exec } = fixture();
+    const prepared = await prepareSshAttention(executor, 'host', 'codex', [], token);
+    const root = join(prepared.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..'); roots.push(root);
+    const execute = exec.getMockImplementation()!;
+    // Simulate a different host UID without requiring privileged chown.
+    exec.mockImplementationOnce((target, command, args, options) => execute(target, command,
+      args.map((value) => value.split('os.geteuid()').join('(os.geteuid() + 1)')), options));
+    await expect(prepared.release()).rejects.toThrow();
+    expect(existsSync(join(root, 'command.mjs'))).toBe(true);
+    await prepared.release(); expect(existsSync(root)).toBe(false);
+  });
+
+  it('cleans the private launch manifest after plugin enabling fails, preserving the persistent plugin', async () => {
+    const { executor, exec, home } = fixture();
+    const execute = exec.getMockImplementation()!;
+    let launchRoot = '';
+    exec.mockImplementation(async (target, command, args, options) => {
+      if (args.some((value) => value.includes("exec 'hermes' 'plugins' 'enable'"))) throw new Error('enable failed');
+      const result = await execute(target, command, args, options);
+      if (options?.input) launchRoot = JSON.parse(result.stdout).root;
+      return result;
+    });
+    await expect(prepareSshAttention(executor, 'host', 'hermes', [], token)).rejects.toThrow('enable failed');
+    expect(exec).toHaveBeenCalledTimes(3);
+    expect(existsSync(launchRoot)).toBe(false);
+    expect(existsSync(join(home, '.hermes/plugins/clanker-grid-remote-attention/__init__.py'))).toBe(true);
+  });
+
+  it.each(['file-symlink', 'parent-symlink', 'manifest-symlink', 'file-mode', 'root-mode', 'manifest-traversal'])('fails closed during %s cleanup and permits safe recovery', async (tamper) => {
+    const { executor, home } = fixture();
+    const prepared = await prepareSshAttention(executor, 'host', 'opencode', [], token);
+    const root = join(prepared.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..'); roots.push(root);
+    const external = join(home, 'external'); mkdirSync(external);
+    const externalFile = join(external, 'keep'); writeFileSync(externalFile, 'preserve', { mode: 0o600 });
+    const manifest = join(root, '.clanker-resources.json'); const original = readFileSync(manifest, 'utf8');
+    if (tamper === 'file-symlink') { rmSync(join(root, 'command.mjs')); symlinkSync(externalFile, join(root, 'command.mjs')); }
+    if (tamper === 'parent-symlink') { rmSync(join(root, 'opencode'), { recursive: true }); symlinkSync(external, join(root, 'opencode')); }
+    if (tamper === 'manifest-symlink') { rmSync(manifest); symlinkSync(externalFile, manifest); }
+    if (tamper === 'file-mode') chmodSync(join(root, 'command.mjs'), 0o666);
+    if (tamper === 'root-mode') chmodSync(root, 0o777);
+    if (tamper === 'manifest-traversal') writeFileSync(manifest, JSON.stringify({ files: ['../external/keep'], directories: [] }));
+    await expect(prepared.release()).rejects.toThrow();
+    expect(readFileSync(externalFile, 'utf8')).toBe('preserve');
+    // No listed files are deleted before full manifest validation.
+    expect(existsSync(join(root, 'observer.mjs'))).toBe(true);
+    if (tamper === 'file-symlink') { rmSync(join(root, 'command.mjs')); }
+    if (tamper === 'parent-symlink') { rmSync(join(root, 'opencode')); }
+    if (tamper === 'manifest-symlink') { rmSync(manifest); writeFileSync(manifest, original, { mode: 0o600 }); }
+    if (tamper === 'file-mode') chmodSync(join(root, 'command.mjs'), 0o600);
+    if (tamper === 'root-mode') chmodSync(root, 0o700);
+    if (tamper === 'manifest-traversal') writeFileSync(manifest, original);
+    await prepared.release(); expect(existsSync(root)).toBe(false);
   });
 
   it.each([

@@ -110,12 +110,13 @@ export interface HarnessLocalAttention {
 export interface HarnessAttentionCapability {
   readonly prepareResources?: (files: AttentionAdapterFiles, observer: string) => void;
   readonly disposeResources?: () => void;
-  readonly sources?: (observer: string) => Record<string, string>;
   readonly local?: HarnessLocalAttention;
   readonly remote?: HarnessRemoteAttention;
 }
 
 export interface HarnessRemoteAttention {
+  readonly resources?: (observer: string) => Record<string, string>;
+  readonly environmentKeys?: readonly string[];
   readonly requiresNode: boolean;
   readonly validate: string;
   readonly configure: string;
