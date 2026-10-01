@@ -4,6 +4,14 @@
   gap: var(--space-md);
 }
 
+.workspace-launcher .gate-input-container > .suggestions-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+}
+
 .workspace-launcher .gate-view-directory .gate-header {
   padding-bottom: var(--space-sm);
 }
