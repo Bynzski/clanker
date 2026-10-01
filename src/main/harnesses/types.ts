@@ -125,8 +125,16 @@ export interface HarnessRemoteAttention {
   readonly enableCommand?: { command: string; args: string[] };
 }
 
-/** Existing stdin prompt execution; Git context and text cleanup remain shared. */
+/** Provider CLI invocation only; Git context and text cleanup remain shared. */
+export interface HarnessAiCommitInvocation {
+  command: string;
+  args: string[];
+  stdin?: string;
+  timeoutMs: number;
+  env?: Record<string, string>;
+}
 export interface HarnessAiCommitCapability {
+  buildInvocation(context: { model?: string; prompt: string }): HarnessAiCommitInvocation;
   readonly command: string;
   readonly args: string[];
   readonly modelArg: string;

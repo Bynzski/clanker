@@ -19,9 +19,7 @@ import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { resolveHarnessSpawn } from '../harnessLaunch';
 import { prependUserCliBinsToPath } from '../platformShell';
 import {
-  buildAiCommitArgs,
   buildCommitPrompt,
-  getAiCommitTimeoutMs,
   normalizeCommitMessageOutput,
   type AiCommitProvider,
 } from '../aiCommit';
@@ -39,7 +37,7 @@ interface RegisterAiCommitIpcDeps {
 function runCommandWithInput(
   command: string,
   args: string[],
-  input: string,
+  input: string | undefined,
   timeoutMs = 30000,
   extraEnv?: Record<string, string>,
   cwd?: string
@@ -87,7 +85,7 @@ function runCommandWithInput(
       resolve(stdout || stderr);
     });
 
-    child.stdin.end(input.endsWith('\n') ? input : `${input}\n`);
+    child.stdin.end(input === undefined ? undefined : input.endsWith('\n') ? input : `${input}\n`);
   });
 }
 
@@ -152,14 +150,10 @@ async function generateAiCommitMessage(
     diffSummary: context.diffSummary,
   });
 
-  const args = buildAiCommitArgs(provider, model);
+  const invocation = providerConfig.buildInvocation({ model, prompt });
   const output = await runCommandWithInput(
-    providerConfig.command,
-    args,
-    prompt,
-    getAiCommitTimeoutMs(provider),
-    undefined,
-    workspacePath
+    invocation.command, invocation.args, invocation.stdin, invocation.timeoutMs,
+    invocation.env, workspacePath,
   );
   const message = normalizeCommitMessageOutput(output);
 

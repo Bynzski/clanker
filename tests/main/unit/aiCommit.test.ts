@@ -124,12 +124,12 @@ describe('buildAiCommitArgs', () => {
 
     it('prepends model arg before harness args for opencode', () => {
       const args = buildAiCommitArgs('opencode', 'claude-3.5-sonnet');
-      expect(args).toEqual(['-m', 'claude-3.5-sonnet']);
+      expect(args).toEqual(['run', '-m', 'claude-3.5-sonnet']);
     });
 
     it('prepends model arg before harness args for pi', () => {
       const args = buildAiCommitArgs('pi', 'anthropic/sonnet');
-      expect(args).toEqual(['--model', 'anthropic/sonnet']);
+      expect(args).toEqual(['--print', '--model', 'anthropic/sonnet']);
     });
 
     it('includes model for agy', () => {
@@ -153,12 +153,12 @@ describe('buildAiCommitArgs', () => {
 
     it('returns empty array when no model provided for opencode', () => {
       const args = buildAiCommitArgs('opencode', undefined);
-      expect(args).toEqual([]);
+      expect(args).toEqual(['run']);
     });
 
     it('returns empty array when no model provided for pi', () => {
       const args = buildAiCommitArgs('pi', undefined);
-      expect(args).toEqual([]);
+      expect(args).toEqual(['--print']);
     });
 
     it('returns just harness args for empty string model', () => {

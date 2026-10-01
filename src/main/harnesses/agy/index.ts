@@ -26,6 +26,8 @@ export const agyProvider = defineHarness({
     discover: async (workspace: string) => (await import('./sessions')).discoverAgySessions(workspace),
   },
   attention: { disposeResources: disposeAllAgyAttention, local, remote },
-  aiCommit: { command: 'agy', args: ['--disable-slash-commands'], modelArg: '--model', timeoutMs: 60000 },
+  aiCommit: { command: 'agy', args: ['--disable-slash-commands'], modelArg: '--model', timeoutMs: 60000,
+    buildInvocation: ({ model, prompt }) => ({ command: 'agy', args: [...['--disable-slash-commands'], ...(model ? ['--model', model] : []), '--print', prompt], timeoutMs: 60000 }),
+  },
   launch: { command: 'agy', args: [], modelArg: '--model' },
 } satisfies HarnessProvider);

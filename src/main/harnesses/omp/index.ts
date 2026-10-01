@@ -18,6 +18,8 @@ export const ompProvider = defineHarness({
     discover: async (workspace: string) => (await import('./sessions')).discoverOmpSessions(workspace),
   },
   attention: { prepareResources, local, remote, sources: () => ({ 'omp.ts': SOURCE }) },
-  aiCommit: { command: 'omp', args: ['--print', '--no-session', '--no-tools', '--no-extensions'], modelArg: '--model', timeoutMs: 60000 },
+  aiCommit: { command: 'omp', args: ['--print', '--no-session', '--no-tools', '--no-extensions'], modelArg: '--model', timeoutMs: 60000,
+    buildInvocation: ({ model, prompt }) => ({ command: 'omp', args: [...['--print', '--no-session', '--no-tools', '--no-extensions'], ...(model ? ['--model', model] : [])], stdin: prompt, timeoutMs: 60000 }),
+  },
   launch: { command: 'omp', args: [], modelArg: '--model' },
 } satisfies HarnessProvider);
