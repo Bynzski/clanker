@@ -6,9 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-01
+
 ### Added
 
-- **Dark/Light appearance** — application-wide persisted themes for UI chrome, terminals, editors, and diffs, with live switching from Settings and synchronized startup appearance.
+- **Application appearance themes** — choose Dark, Light, or Slate in Settings; the selected theme applies to the interface, terminals, editors, and diffs and is restored at startup.
+
+### Changed
+
+- **Workspace launcher** — unified local and SSH workspace selection, with searchable location and model pickers and clearer launch readiness for worktrees.
+- **Application branding** — refreshed the app icon, title bar, and launcher identity.
+- **Linux-only release artifact** — `0.9.0` ships as a Linux x64 AppImage. No Windows binary is produced for this release; Windows remains covered by CI validation.
+
+### Fixed
+
+- **Workspace launch plans** — keyboard shortcuts preserve mixed harness and terminal selections when opening a workspace.
+- **Worktree launch readiness** — worktree management remains available without a terminal selection, while creating or opening a worktree clearly requires a ready terminal launch.
 
 ## [0.8.0] - 2026-09-30
 
@@ -330,7 +343,8 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Bynzski/clanker/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Bynzski/clanker/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Bynzski/clanker/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Bynzski/clanker/compare/v0.5.0...v0.6.0
