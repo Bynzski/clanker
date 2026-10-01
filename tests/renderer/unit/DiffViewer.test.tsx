@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { useThemeStore } from '../../../src/renderer/theme/themeStore';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
@@ -171,7 +172,8 @@ describe('DiffViewer', () => {
       expect(mockOnClose).toHaveBeenCalled();
     });
 
-    it('calls onClose when overlay clicked', () => {
+    it('calls onClose when overlay clicked', async () => {
+      const user = userEvent.setup();
       renderDiffViewer({
         oldContent: 'line1\n',
         newContent: 'line2\n',
@@ -180,7 +182,7 @@ describe('DiffViewer', () => {
       });
       const overlay = document.querySelector('.diff-viewer-overlay');
       expect(overlay).toBeTruthy();
-      fireEvent.click(overlay!);
+      await user.click(overlay!);
       expect(mockOnClose).toHaveBeenCalled();
     });
   });

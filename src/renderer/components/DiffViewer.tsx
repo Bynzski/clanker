@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, lineNumbers } from '@codemirror/view';
@@ -6,8 +6,9 @@ import { getEditorTheme } from '../theme/editorTheme';
 import { useThemeStore } from '../theme/themeStore';
 import { MergeView } from '@codemirror/merge';
 import { getLanguageExtension } from '../lib/editorLanguage';
+import { Dialog, DialogContent, DialogTitle, DialogClose } from './ui/Dialog';
+import { IconButton } from './ui/IconButton';
 import './DiffViewer.css';
-
 export interface DiffViewerProps {
   /** Content from HEAD (old version) */
   oldContent: string;
@@ -27,7 +28,9 @@ export interface DiffViewerProps {
   error: string | null;
   /** Close handler */
   onClose: () => void;
-}
+  /** Workspace identity for browser view suppression */
+  workspaceId?: string;
+};
 
 export default function DiffViewer({
   oldContent,
@@ -39,28 +42,28 @@ export default function DiffViewer({
   isLoading,
   error,
   onClose,
+  workspaceId,
 }: DiffViewerProps) {
   const theme = useThemeStore((state) => state.theme);
   const mergeViewRef = useRef<MergeView | null>(null);
   const themeARef = useRef(new Compartment());
   const themeBRef = useRef(new Compartment());
   const appliedThemeRef = useRef(theme);
-  const mergeRootRef = useRef<HTMLDivElement>(null);
+  const [mergeRoot, setMergeRoot] = useState<HTMLDivElement | null>(null);
   const languageExtension = useMemo(
     () => getLanguageExtension(newPath || oldPath || ''),
     [newPath, oldPath]
   );
 
   useEffect(() => {
-    const root = mergeRootRef.current;
-    if (!root || isLoading || Boolean(error) || isBinary || !hasDiff) {
+    if (!mergeRoot || isLoading || Boolean(error) || isBinary || !hasDiff) {
       return;
     }
 
-    root.replaceChildren();
+    mergeRoot.replaceChildren();
     const currentTheme = useThemeStore.getState().theme;
     const mergeView = new MergeView({
-      parent: root,
+      parent: mergeRoot,
       orientation: 'a-b',
       gutter: true,
       highlightChanges: true,
@@ -96,7 +99,7 @@ export default function DiffViewer({
       mergeViewRef.current = null;
       mergeView.destroy();
     };
-  }, [error, hasDiff, isBinary, isLoading, languageExtension, newContent, oldContent]);
+  }, [mergeRoot, error, hasDiff, isBinary, isLoading, languageExtension, newContent, oldContent]);
 
   useEffect(() => {
     const mergeView = mergeViewRef.current;
@@ -105,110 +108,57 @@ export default function DiffViewer({
     mergeView.b.dispatch({ effects: themeBRef.current.reconfigure(getEditorTheme(theme)) });
     appliedThemeRef.current = theme;
   }, [theme]);
+  const title = isLoading ? 'Loading diff...' : error ? 'Diff Error' : newPath;
 
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="diff-viewer-overlay" onClick={handleOverlayClick}>
-        <div className="diff-viewer-modal">
-          <div className="diff-viewer-header">
-            <h2>Loading diff...</h2>
-            <button className="diff-viewer-close" onClick={onClose} title="Close">
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        className="diff-viewer-modal"
+        overlayClassName="diff-viewer-overlay"
+        workspaceId={workspaceId}
+        aria-describedby={undefined}
+      >
+        <div className="diff-viewer-header">
+          <DialogTitle asChild>
+            <h2>{title}</h2>
+          </DialogTitle>
+          <DialogClose asChild>
+            <IconButton aria-label="Close" title="Close">
               <X size={18} />
-            </button>
-          </div>
+            </IconButton>
+          </DialogClose>
+        </div>
+
+        {isLoading ? (
           <div className="diff-viewer-loading">
             <span>Loading...</span>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="diff-viewer-overlay" onClick={handleOverlayClick}>
-        <div className="diff-viewer-modal">
-          <div className="diff-viewer-header">
-            <h2>Diff Error</h2>
-            <button className="diff-viewer-close" onClick={onClose} title="Close">
-              <X size={18} />
-            </button>
-          </div>
+        ) : error ? (
           <div className="diff-viewer-error">
             <span>{error}</span>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Binary file
-  if (isBinary) {
-    return (
-      <div className="diff-viewer-overlay" onClick={handleOverlayClick}>
-        <div className="diff-viewer-modal">
-          <div className="diff-viewer-header">
-            <h2>{newPath}</h2>
-            <button className="diff-viewer-close" onClick={onClose} title="Close">
-              <X size={18} />
-            </button>
-          </div>
+        ) : isBinary ? (
           <div className="diff-viewer-binary">
             <span>Binary file — diff not shown</span>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // No diff
-  if (!hasDiff) {
-    return (
-      <div className="diff-viewer-overlay" onClick={handleOverlayClick}>
-        <div className="diff-viewer-modal">
-          <div className="diff-viewer-header">
-            <h2>{newPath}</h2>
-            <button className="diff-viewer-close" onClick={onClose} title="Close">
-              <X size={18} />
-            </button>
-          </div>
+        ) : !hasDiff ? (
           <div className="diff-viewer-no-changes">
             <span>No changes</span>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="diff-viewer-overlay" onClick={handleOverlayClick}>
-      <div className="diff-viewer-modal">
-        <div className="diff-viewer-header">
-          <h2>{newPath}</h2>
-          <button className="diff-viewer-close" onClick={onClose} title="Close">
-            <X size={18} />
-          </button>
-        </div>
-        <div className="diff-viewer-body">
-          <div className="diff-viewer-pane-container">
-            <div className="diff-viewer-pane-headers">
-              <div className="diff-viewer-pane-header">{oldPath || '(new file)'}</div>
-              <div className="diff-viewer-pane-header">{newPath || '(deleted)'}</div>
-            </div>
-            <div className="diff-viewer-unified-content">
-              <div className="diff-viewer-merge-root" ref={mergeRootRef} />
+        ) : (
+          <div className="diff-viewer-body">
+            <div className="diff-viewer-pane-container">
+              <div className="diff-viewer-pane-headers">
+                <div className="diff-viewer-pane-header">{oldPath || '(new file)'}</div>
+                <div className="diff-viewer-pane-header">{newPath || '(deleted)'}</div>
+              </div>
+              <div className="diff-viewer-unified-content">
+                <div className="diff-viewer-merge-root" ref={setMergeRoot} />
+              </div>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

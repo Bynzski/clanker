@@ -131,15 +131,6 @@ const STAGED_MIGRATION_BACKLOG: Record<string, string[]> = {
     '.git-remotes-submit-btn',
     '.git-remotes-form-actions button',
   ],
-  'components/git/ProviderMenu.css': [
-    '.provider-menu-trigger',
-    '.provider-menu-dropdown',
-    '.provider-menu-content',
-    '.provider-menu-refresh',
-    '.provider-menu-link',
-    '.provider-menu-item',
-    '.provider-menu-quick-action',
-  ],
   'components/Header.css': [
     '.harness-pill',
     '.harness-defaults-favorite-tag',
