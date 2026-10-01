@@ -203,4 +203,46 @@ describe('RecipeModal', () => {
       expect(onDelete).toHaveBeenCalledWith('rec-test-1');
     });
   });
+
+  it('dismisses modal on Close button click and Escape key', () => {
+    const onClose = vi.fn();
+    render(
+      <RecipeModal
+        isOpen={true}
+        onClose={onClose}
+        initialRecipe={sampleRecipe}
+        onLaunchRecipe={vi.fn()}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'Full Stack Recipe' });
+    expect(dialog).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(dialog, { key: 'Escape', code: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('supports editing harness step select options and model override', () => {
+    render(
+      <RecipeModal
+        isOpen={true}
+        onClose={vi.fn()}
+        defaultLaunches={[{ id: 'step-1', type: 'harness', harnessId: 'codex', modelId: 'gpt-4o' }]}
+        onLaunchRecipe={vi.fn()}
+      />,
+    );
+
+    const select = screen.getByRole('combobox');
+    expect(select).toHaveValue('codex');
+    fireEvent.change(select, { target: { value: 'claude' } });
+    expect(select).toHaveValue('claude');
+
+    const modelInput = screen.getByPlaceholderText('Model override (optional)');
+    expect(modelInput).toHaveValue('gpt-4o');
+    fireEvent.change(modelInput, { target: { value: 'claude-3-7-sonnet' } });
+    expect(modelInput).toHaveValue('claude-3-7-sonnet');
+  });
 });

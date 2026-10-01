@@ -1,17 +1,21 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { ArrowLeft, Folder, FolderPlus, Loader2, X } from 'lucide-react';
 import type { RemoteDirectoryListing } from '../../shared/types/environments';
+import { Dialog, DialogContent, DialogTitle, DialogClose } from './ui/Dialog';
+import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
+import { Input } from './ui/Input';
 import './RemoteDirectoryChooser.css';
-
 interface Props {
   environmentId: string;
   initialPath: string;
   homePath: string;
+  triggerRef?: React.RefObject<HTMLElement | null>;
   onSelect: (path: string) => void;
   onClose: () => void;
 }
 
-export default function RemoteDirectoryChooser({ environmentId, initialPath, homePath, onSelect, onClose }: Props) {
+export default function RemoteDirectoryChooser({ environmentId, initialPath, homePath, triggerRef, onSelect, onClose }: Props) {
   const [listing, setListing] = useState<RemoteDirectoryListing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,6 +43,12 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
     dialogRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    const trigger = triggerRef?.current;
+    return () => {
+      trigger?.focus();
+    };
+  }, [triggerRef]);
   useEffect(() => {
     const previous = previousLocationRef.current;
     if (previous.environmentId === environmentId && previous.initialPath === initialPath) return;
@@ -118,43 +128,86 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
     }
   };
 
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (
+      (event.key === 'Backspace' || event.key === 'ArrowLeft') &&
+      !creating &&
+      listing?.parentPath &&
+      !(event.target instanceof HTMLInputElement)
+    ) {
+      event.preventDefault();
+      navigate(listing.parentPath);
+    }
+    if (event.key === 'Enter' && event.target === event.currentTarget && listing && !loading) {
+      event.preventDefault();
+      onSelect(listing.path);
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const items = Array.from(dialogRef.current?.querySelectorAll<HTMLButtonElement>('.remote-chooser-list > button') ?? []);
+      if (!items.length) return;
+      event.preventDefault();
+      const index = items.indexOf(document.activeElement as HTMLButtonElement);
+      const next =
+        index < 0
+          ? event.key === 'ArrowDown'
+            ? 0
+            : items.length - 1
+          : (index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+      items[next]?.focus();
+    }
+  };
+
   return (
-    <div className="remote-chooser-overlay" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) onClose();
-    }}>
-      <div ref={dialogRef} tabIndex={-1} className="remote-chooser" role="dialog" aria-modal="true" aria-label="Browse remote directories" onKeyDown={(event) => {
-        if (event.key === 'Escape') { event.stopPropagation(); onClose(); return; }
-        if ((event.key === 'Backspace' || event.key === 'ArrowLeft') && !creating && listing?.parentPath
-          && !(event.target instanceof HTMLInputElement)) {
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        ref={dialogRef}
+        tabIndex={-1}
+        className="remote-chooser"
+        overlayClassName="remote-chooser-overlay"
+        aria-describedby={undefined}
+        onOpenAutoFocus={(event) => {
           event.preventDefault();
-          navigate(listing.parentPath);
-        }
-        if (event.key === 'Enter' && event.target === event.currentTarget && listing && !loading) {
-          event.preventDefault();
-          onSelect(listing.path);
-        }
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-          const items = Array.from(dialogRef.current?.querySelectorAll<HTMLButtonElement>('.remote-chooser-list > button') ?? []);
-          if (!items.length) return;
-          event.preventDefault();
-          const index = items.indexOf(document.activeElement as HTMLButtonElement);
-          const next = index < 0
-            ? event.key === 'ArrowDown' ? 0 : items.length - 1
-            : (index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
-          items[next]?.focus();
-        }
-      }}>
+          dialogRef.current?.focus();
+        }}
+        onCloseAutoFocus={(event) => {
+          if (triggerRef?.current?.isConnected) {
+            event.preventDefault();
+            triggerRef.current.focus();
+          }
+        }}
+        onKeyDown={handleKeyDown}
+      >
         <div className="remote-chooser-header">
-          <strong>Browse remote directories</strong>
-          <button type="button" aria-label="Close remote browser" onClick={onClose}><X size={16} /></button>
+          <DialogTitle asChild>
+            <strong>Browse remote directories</strong>
+          </DialogTitle>
+          <DialogClose asChild>
+            <IconButton aria-label="Close remote browser"><X size={16} /></IconButton>
+          </DialogClose>
         </div>
         <div className="remote-chooser-toolbar">
-          <button type="button" aria-label="Parent directory" disabled={loading || creating || !listing?.parentPath} onClick={() => {
-            if (listing?.parentPath) navigate(listing.parentPath);
-          }}><ArrowLeft size={14} /> Parent</button>
-          <button type="button" onClick={() => navigate(homePath)} disabled={loading || creating || !homePath}>Home</button>
-          <button
-            type="button"
+          <Button
+            size="sm"
+            variant="secondary"
+            aria-label="Parent directory"
+            disabled={loading || creating || !listing?.parentPath}
+            onClick={() => {
+              if (listing?.parentPath) navigate(listing.parentPath);
+            }}
+          >
+            <ArrowLeft size={14} /> Parent
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => navigate(homePath)}
+            disabled={loading || creating || !homePath}
+          >
+            Home
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
             aria-label="New folder"
             disabled={loading || creating || !listing}
             onClick={() => {
@@ -164,7 +217,7 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
             }}
           >
             <FolderPlus size={14} /> New Folder
-          </button>
+          </Button>
           <span title={listing?.path ?? requestedPath}>{listing?.path ?? requestedPath}</span>
         </div>
         {isCreating && (
@@ -176,9 +229,9 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
             }}
           >
             <FolderPlus size={15} />
-            <input
+            <Input
               ref={newFolderInputRef}
-              type="text"
+              size="sm"
               className="remote-chooser-input"
               aria-label="New folder name"
               placeholder="Folder name"
@@ -197,10 +250,12 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
               disabled={creating}
               autoFocus
             />
-            <button type="submit" disabled={creating || !newFolderName.trim()}>
+            <Button size="sm" variant="primary" type="submit" disabled={creating || !newFolderName.trim()}>
               {creating ? <Loader2 className="spin" size={13} /> : 'Create'}
-            </button>
-            <button
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
               type="button"
               onClick={() => {
                 setIsCreating(false);
@@ -209,7 +264,7 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
               disabled={creating}
             >
               Cancel
-            </button>
+            </Button>
             {createError && <span className="remote-chooser-inline-error" role="alert">{createError}</span>}
           </form>
         )}
@@ -224,12 +279,24 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
           ))}
         </div>
         <div className="remote-chooser-actions">
-          <button type="button" onClick={onClose}>Cancel</button>
-          <button type="button" disabled={!listing || loading || creating} onClick={() => {
-            if (listing) onSelect(listing.path);
-          }}>Select this directory</button>
+          <DialogClose asChild>
+            <Button size="sm" variant="secondary" type="button">
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button
+            size="sm"
+            variant="primary"
+            type="button"
+            disabled={!listing || loading || creating}
+            onClick={() => {
+              if (listing) onSelect(listing.path);
+            }}
+          >
+            Select this directory
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
