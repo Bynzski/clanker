@@ -69,13 +69,21 @@ async function readPiSessionMetadata(filePath: string): Promise<{ modelId?: stri
   });
 }
 
+/** Identity lookup reads only the header, never transcript model/title records. */
+export async function readPiSessionHeader(filePath: string, workspacePath: string) {
+  const first = await readFirstLineJson<PiSessionFirst>(filePath);
+  if (!first || first.type !== 'session' || typeof first.cwd !== 'string' || !first.cwd
+    || typeof first.id !== 'string' || !first.id) return null;
+  if (workspacePath && !sessionMatchesWorkspace(workspacePath, first.cwd)) return null;
+  return { ...first, id: first.id, cwd: first.cwd };
+}
+
 export async function discoverPiSessionFile(
   filePath: string,
   workspacePath: string
 ): Promise<HarnessSession | null> {
-  const first = await readFirstLineJson<PiSessionFirst>(filePath);
-  if (!first || first.type !== 'session' || !first.cwd || !first.id) return null;
-  if (workspacePath && !sessionMatchesWorkspace(workspacePath, first.cwd)) return null;
+  const first = await readPiSessionHeader(filePath, workspacePath);
+  if (!first) return null;
 
   const { modelId, provider, title } = await readPiSessionMetadata(filePath);
   const sessionTitle = title ?? (modelId && provider ? `${provider}/${modelId}` : 'Pi session');

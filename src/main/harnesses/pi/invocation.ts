@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { resolveExistingFileWithinDirectory } from '../../security';
 import { HarnessCapabilityError } from '../types';
 import { invocationSessionRoot } from './sessionRoots';
-import { discoverPiSessionFile } from './sessions';
+import { discoverPiSessionFile, readPiSessionHeader } from './sessions';
 import type { HarnessSession } from '../../../shared/types/session';
 
 export function buildInvocation(session: HarnessSession, fork = false, userFlags?: string) {
@@ -24,7 +24,7 @@ export async function validateLocal(session: HarnessSession, context: { workspac
     entries = await fs.promises.readdir(root, { withFileTypes: true });
   } catch { throw invalid(); }
   const directories = flat ? [root] : entries.filter((entry) => entry.isDirectory()).map((entry) => path.join(root, entry.name));
-  const matches: HarnessSession[] = [];
+  const matches: Array<{ filePath: string; cwd: string }> = [];
   for (const directory of directories) {
     if (fs.realpathSync(directory) !== directory) throw invalid();
     for (const entry of await fs.promises.readdir(directory, { withFileTypes: true })) {
@@ -32,23 +32,31 @@ export async function validateLocal(session: HarnessSession, context: { workspac
       const candidate = path.join(directory, entry.name);
       const canonical = resolveExistingFileWithinDirectory(candidate, root);
       if (canonical !== candidate) throw invalid();
-      const trusted = await discoverPiSessionFile(canonical, context.workspacePath);
-      if (trusted?.id === session.id) matches.push(trusted);
+      const header = await readPiSessionHeader(canonical, context.workspacePath);
+      if (header?.id === session.id) matches.push({ filePath: canonical, cwd: header.cwd });
     }
   }
   if (matches.length !== 1) throw invalid();
-  const cwd = toNativePath(matches[0].cwd, process.platform);
-  try {
-    const workspace = fs.realpathSync(context.workspacePath);
-    const canonicalCwd = fs.realpathSync(cwd);
-    const relative = path.relative(workspace, canonicalCwd);
-    if (!path.isAbsolute(cwd) || path.resolve(cwd) !== cwd || canonicalCwd !== cwd
-      || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw invalid();
-  } catch { throw invalid(); }
+  const validateCwd = (value: string) => {
+    const cwd = toNativePath(value, process.platform);
+    try {
+      const workspace = fs.realpathSync(context.workspacePath);
+      const canonicalCwd = fs.realpathSync(cwd);
+      const relative = path.relative(workspace, canonicalCwd);
+      if (!path.isAbsolute(cwd) || path.resolve(cwd) !== cwd || canonicalCwd !== cwd
+        || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw invalid();
+    } catch { throw invalid(); }
+  };
+  validateCwd(matches[0].cwd);
   // A stale or forged path is rejected even if the ID still exists elsewhere.
   if (session.filePath) {
     const supplied = toNativePath(session.filePath, process.platform);
     if (path.resolve(supplied) !== supplied || supplied !== matches[0].filePath) throw invalid();
   }
-  return matches[0];
+  const selected = matches[0].filePath;
+  if (resolveExistingFileWithinDirectory(selected, root) !== selected) throw invalid();
+  const trusted = await discoverPiSessionFile(selected, context.workspacePath);
+  if (!trusted || trusted.id !== session.id || resolveExistingFileWithinDirectory(selected, root) !== selected) throw invalid();
+  validateCwd(trusted.cwd);
+  return trusted;
 }
