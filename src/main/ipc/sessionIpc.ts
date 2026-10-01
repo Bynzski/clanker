@@ -1,3 +1,7 @@
+import { disposeAttentionSafely } from '../harnesses/localAttention';
+import type { PreparedLocalAttention } from '../harnesses/types';
+import { findHarnessProvider } from '../harnesses/registry';
+import { supportsSessionOperation } from '../sessionLaunch';
 /**
  * Session History IPC Handlers
  *
@@ -5,7 +9,6 @@
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import Store from 'electron-store';
 import { type StoreSchema } from '../../shared/types/store';
@@ -16,21 +19,15 @@ import type { Terminal } from './terminalIpc';
 import type { HarnessSession } from '../../shared/types/session';
 import { defaultShell } from '../platformShell';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
-import { toNativePath } from '../../shared/pathNormalize';
-import { resolveExistingFileWithinDirectory } from '../security';
+import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { invokeRemoteSession } from './remoteSessionInvocation';
 import {
-  acquireAgyAttentionPlugin,
-  attentionLaunchOptions,
   ensureAttentionAdapterFiles,
-  releaseAgyAttentionPlugin,
+  prepareLocalAttention,
   withoutAttentionEnvironment,
 } from '../agentAttentionAdapters';
-
-const AGY_SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const AGY_MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 
 export interface RegisterSessionIpcDeps {
   getTerminals: () => Map<string, Terminal>;
@@ -86,7 +83,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     // The installed CLI is not enough to imply that its session format or
     // resume command is integrated. Do not route Hermes through Claude's
     // fallback invocation for renderer-supplied session payloads.
-    if (!['codex', 'claude', 'opencode', 'pi', 'omp', 'agy'].includes(session.harness)) {
+    if (!supportsSessionOperation(session.harness, fork === true, 'local')) {
       throw new Error(`${session.harness} session invocation is not supported`);
     }
     const terminals = getTerminals();
@@ -99,44 +96,17 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       throw new Error(`${session.harness} harness is not available`);
     }
 
-    // OMP resumes by path; reject renderer-supplied paths outside its session store.
-    const ompSessionPath = session.harness === 'omp' && session.filePath?.endsWith('.jsonl')
-      ? resolveExistingFileWithinDirectory(
-        toNativePath(session.filePath, process.platform),
-        path.join(os.homedir(), '.omp', 'agent', 'sessions'),
-      )
-      : null;
-    if (session.harness === 'omp' && !ompSessionPath) {
-      throw new Error('OMP session file is invalid');
-    }
-
-    let agySessionId = session.id;
-    let agyModelId = session.modelId;
-    if (session.harness === 'agy') {
-      if (typeof session.id !== 'string' || !AGY_SESSION_ID_PATTERN.test(session.id.trim())) {
-        throw new Error('Antigravity session ID is invalid');
-      }
-      agySessionId = session.id.trim();
-      if (session.modelId !== undefined) {
-        if (typeof session.modelId !== 'string'
-          || (session.modelId.trim() && !AGY_MODEL_ID_PATTERN.test(session.modelId.trim()))) {
-          throw new Error('Antigravity model ID is invalid');
-        }
-        agyModelId = session.modelId.trim() || undefined;
-      }
-    }
 
     // Look up per-harness default flags from store — same source as SPAWN_TERMINAL
     const harnessDefaults = store.get('harnessDefaults');
     const attentionEnabled = harnessDefaults[session.harness]?.attentionEnabled === true;
     const userFlags = harnessDefaults[session.harness]?.flags?.trim();
+    const validatedSession = await findHarnessProvider(session.harness)?.sessions?.validateLocal?.(session, { workspacePath: nativeWorkspacePath, userFlags }) ?? session;
 
     const nativeSession = {
-      ...session,
-      id: agySessionId,
-      modelId: agyModelId,
-      cwd: nativeSessionCwd,
-      ...(session.filePath ? { filePath: ompSessionPath ?? toNativePath(session.filePath, process.platform) } : {}),
+      ...validatedSession,
+      cwd: toNativePath(validatedSession.cwd, process.platform),
+      ...(validatedSession.filePath ? { filePath: toNativePath(validatedSession.filePath, process.platform) } : {}),
     };
 
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -145,44 +115,45 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     let spawnArgs = baseArgs;
     let attentionEnv: Record<string, string> = {};
     let attentionCommand: string | undefined;
+    let preparedAttention: PreparedLocalAttention | null = null;
     if (agentAttentionBroker) {
       try {
         const files = ensureAttentionAdapterFiles();
-        if (attentionEnabled && session.harness === 'agy') {
-          acquireAgyAttentionPlugin(id, files);
+        if (attentionEnabled) {
+          preparedAttention = prepareLocalAttention(session.harness, {
+            terminalId: id, args: baseArgs, env: { ...process.env, ...harnessEnv }, files,
+            platform: process.platform, sessionId: fork ? undefined : validatedSession.id,
+          }) ?? null;
         }
         attentionEnv = await agentAttentionBroker.register(id, session.harness);
         attentionCommand = files.command;
-        if (attentionEnabled) {
-          const options = attentionLaunchOptions(session.harness, baseArgs, { ...process.env, ...harnessEnv }, files, fork ? undefined : agySessionId);
-          if (options) {
-            attentionEnv = { ...attentionEnv, ...options.env };
-            spawnArgs = options.args;
-          }
+        if (preparedAttention) {
+          attentionEnv = { ...attentionEnv, ...preparedAttention.env };
+          spawnArgs = preparedAttention.args;
         }
       } catch {
-        releaseAgyAttentionPlugin(id);
+        disposeAttentionSafely(preparedAttention);
         agentAttentionBroker.release(id);
       }
     }
-    const cwd = getSafeWorkspacePath(nativeSession.cwd);
-    const userShell = defaultShell();
-
-    const env: { [key: string]: string } = {
-      ...withoutAttentionEnvironment(process.env),
-      ...withoutAttentionEnvironment(harnessEnv),
-      ...attentionEnv,
-      ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
-      CLANKER_GRID_FALLBACK_SHELL: userShell,
-      TERM: 'xterm-256color',
-      COLORTERM: 'truecolor',
-      TERM_PROGRAM: 'clanker-grid',
-      FORCE_COLOR: '1',
-    };
-
-    const launchLabel = `[clanker-grid] ${spawnArgs.join(' ')}`;
-
     try {
+      const cwd = getSafeWorkspacePath(nativeSession.cwd);
+      const userShell = defaultShell();
+
+      const env: { [key: string]: string } = {
+        ...withoutAttentionEnvironment(process.env),
+        ...withoutAttentionEnvironment(harnessEnv),
+        ...attentionEnv,
+        ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
+        CLANKER_GRID_FALLBACK_SHELL: userShell,
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+        TERM_PROGRAM: 'clanker-grid',
+        FORCE_COLOR: '1',
+      };
+
+      const launchLabel = `[clanker-grid] ${spawnArgs.join(' ')}`;
+
       const result = spawnPtyProcess({
       id,
       spawnCmd,
@@ -195,7 +166,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       launchLabel,
       harnessId: session.harness,
       onExit: () => {
-        releaseAgyAttentionPlugin(id);
+        disposeAttentionSafely(preparedAttention);
         agentAttentionBroker?.release(id);
         void taskSessionCoordinator?.onTerminalExited(id);
       },
@@ -203,12 +174,12 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       taskSessionCoordinator?.onSessionInvoked(id, {
         ...nativeSession,
         // The session record crosses into persistence and renderer matching;
-        // keep its original IPC-form path, not the native spawn cwd.
-        cwd: session.cwd,
+        // keep trusted metadata in IPC path form rather than native spawn form.
+        cwd: toPosixPath(validatedSession.cwd),
       });
       return { ...result, harnessId: session.harness, attentionEnabled };
     } catch (error) {
-      releaseAgyAttentionPlugin(id);
+      disposeAttentionSafely(preparedAttention);
       agentAttentionBroker?.release(id);
       throw error;
     }

@@ -49,7 +49,8 @@ export function resolveHarnessSpawn(
 export function buildHarnessSpawnArgs(
   config: HarnessConfig,
   model?: string,
-  userFlags?: string
+  userFlags?: string,
+  modelArgsForLaunch?: (model: string, modelArg?: string) => string[] | undefined,
 ): string[] {
   const args = [...config.args];
 
@@ -58,20 +59,10 @@ export function buildHarnessSpawnArgs(
   }
 
   if (model) {
-    if (config.command === 'hermes') {
-      const match = /^hermes-provider:([^:]+):([^:]+)$/.exec(model);
-      if (match) {
-        try {
-          const provider = decodeURIComponent(match[1]);
-          const selectedModel = decodeURIComponent(match[2]);
-          if (provider.trim() && selectedModel.trim()) {
-            args.unshift(config.modelArg ?? '-m', selectedModel, '--provider', provider);
-            return args;
-          }
-        } catch {
-          // Unrecognized legacy text remains a literal -m value.
-        }
-      }
+    const modelArgs = modelArgsForLaunch?.(model, config.modelArg);
+    if (modelArgs) {
+      args.unshift(...modelArgs);
+      return args;
     }
     args.unshift(config.modelArg ?? '--model', model);
   }

@@ -1,3 +1,4 @@
+import { getHarnessProvider } from '../../../src/main/harnesses/registry';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -45,20 +46,22 @@ const hermesConfig: HarnessConfig = {
   modelArg: '-m',
 };
 
+const buildHermesArgs = (config: HarnessConfig, model?: string, flags?: string) => buildHarnessSpawnArgs(config, model, flags, getHarnessProvider('hermes').launch.modelArgs);
+
 test('Hermes provider-aware selection launches its exact provider and decoded model', () => {
   assert.deepEqual(
-    buildHarnessSpawnArgs(hermesConfig, 'hermes-provider:custom%3Aroute:shared%2Fmodel%20%25', '--verbose'),
+    buildHermesArgs(hermesConfig, 'hermes-provider:custom%3Aroute:shared%2Fmodel%20%25', '--verbose'),
     ['-m', 'shared/model %', '--provider', 'custom:route', '--tui', '--verbose']
   );
   assert.deepEqual(
-    buildHarnessSpawnArgs(hermesConfig, 'hermes-provider:copilot:shared%2Fmodel'),
+    buildHermesArgs(hermesConfig, 'hermes-provider:copilot:shared%2Fmodel'),
     ['-m', 'shared/model', '--provider', 'copilot', '--tui']
   );
 });
 
 test('Hermes manual legacy model defaults remain literal and non-Hermes models never decode', () => {
-  assert.deepEqual(buildHarnessSpawnArgs(hermesConfig, 'shared/model'), ['-m', 'shared/model', '--tui']);
-  assert.deepEqual(buildHarnessSpawnArgs(hermesConfig, 'hermes-provider:broken:%ZZ'),
+  assert.deepEqual(buildHermesArgs(hermesConfig, 'shared/model'), ['-m', 'shared/model', '--tui']);
+  assert.deepEqual(buildHermesArgs(hermesConfig, 'hermes-provider:broken:%ZZ'),
     ['-m', 'hermes-provider:broken:%ZZ', '--tui']);
   assert.deepEqual(buildHarnessSpawnArgs(opencodeConfig, 'hermes-provider:copilot:shared%2Fmodel'),
     ['-m', 'hermes-provider:copilot:shared%2Fmodel']);
@@ -240,4 +243,9 @@ test('pi discovery should not invent fallback models when none are available', (
     output.toLowerCase().includes('no models available'),
     true
   );
+});
+
+test('provider model handling is independent of executable identity', () => {
+  assert.deepEqual(buildHermesArgs({ ...hermesConfig, command: 'different-executable' }, 'hermes-provider:copilot:shared%2Fmodel', '--verbose'),
+    ['-m', 'shared/model', '--provider', 'copilot', '--tui', '--verbose']);
 });

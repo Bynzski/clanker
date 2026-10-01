@@ -66,10 +66,10 @@ describe('AI_COMMIT_COMMANDS structure', () => {
 
   it('Antigravity uses disabled slash commands', () => {
     expect(AI_COMMIT_COMMANDS.agy).toEqual({
-      command: 'agy', args: ['--disable-slash-commands'], modelArg: '--model',
+      command: 'agy', args: ['--disable-slash-commands', '--input-format', 'stream-json', '--output-format', 'stream-json'], modelArg: '--model',
     });
     expect(buildAiCommitArgs('agy', 'gemini-3.8-flash-high')).toEqual([
-      '--disable-slash-commands', '--model', 'gemini-3.8-flash-high',
+      '--disable-slash-commands', '--model', 'gemini-3.8-flash-high', '--input-format', 'stream-json', '--output-format', 'stream-json',
     ]);
   });
 });
@@ -124,17 +124,17 @@ describe('buildAiCommitArgs', () => {
 
     it('prepends model arg before harness args for opencode', () => {
       const args = buildAiCommitArgs('opencode', 'claude-3.5-sonnet');
-      expect(args).toEqual(['-m', 'claude-3.5-sonnet']);
+      expect(args).toEqual(['run', '-m', 'claude-3.5-sonnet']);
     });
 
     it('prepends model arg before harness args for pi', () => {
       const args = buildAiCommitArgs('pi', 'anthropic/sonnet');
-      expect(args).toEqual(['--model', 'anthropic/sonnet']);
+      expect(args).toEqual(['--print', '--model', 'anthropic/sonnet']);
     });
 
     it('includes model for agy', () => {
       const args = buildAiCommitArgs('agy', 'gemini-3.8-flash-high');
-      expect(args).toEqual(['--disable-slash-commands', '--model', 'gemini-3.8-flash-high']);
+      expect(args).toEqual(['--disable-slash-commands', '--model', 'gemini-3.8-flash-high', '--input-format', 'stream-json', '--output-format', 'stream-json']);
     });
 
     it('includes both exec and model for codex', () => {
@@ -153,12 +153,12 @@ describe('buildAiCommitArgs', () => {
 
     it('returns empty array when no model provided for opencode', () => {
       const args = buildAiCommitArgs('opencode', undefined);
-      expect(args).toEqual([]);
+      expect(args).toEqual(['run']);
     });
 
     it('returns empty array when no model provided for pi', () => {
       const args = buildAiCommitArgs('pi', undefined);
-      expect(args).toEqual([]);
+      expect(args).toEqual(['--print']);
     });
 
     it('returns just harness args for empty string model', () => {

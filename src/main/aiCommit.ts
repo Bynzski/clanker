@@ -1,4 +1,5 @@
-export type AiCommitProvider = 'codex' | 'opencode' | 'pi' | 'omp' | 'agy';
+import { findHarnessProvider, getHarnessProviders, type HarnessWithCapability } from './harnesses/registry';
+export type AiCommitProvider = HarnessWithCapability<'aiCommit'>;
 
 export interface AiCommitCommandConfig {
   command: string;
@@ -16,58 +17,20 @@ export interface CommitPromptContext {
 }
 
 export function getAiCommitTimeoutMs(provider: AiCommitProvider): number {
-  switch (provider) {
-    case 'opencode':
-      return 90000;
-    case 'codex':
-      return 60000;
-    case 'pi':
-      return 45000;
-    case 'omp':
-      return 60000;
-    case 'agy':
-      return 60000;
-    default:
-      return 60000;
-  }
+  return findHarnessProvider(provider)?.aiCommit?.buildInvocation({ prompt: '' }).timeoutMs ?? 60000;
 }
 
-export const AI_COMMIT_COMMANDS: Record<AiCommitProvider, AiCommitCommandConfig> = {
-  codex: {
-    command: 'codex',
-    args: ['exec'],
-    modelArg: '-m',
-  },
-  opencode: {
-    command: 'opencode',
-    args: [],
-    modelArg: '-m',
-  },
-  pi: {
-    command: 'pi',
-    args: [],
-    modelArg: '--model',
-  },
-  omp: {
-    command: 'omp',
-    args: ['--print', '--no-session', '--no-tools', '--no-extensions'],
-    modelArg: '--model',
-  },
-  agy: {
-    command: 'agy',
-    args: ['--disable-slash-commands'],
-    modelArg: '--model',
-  },
-};
+/** Legacy data surface projected from provider capabilities. */
+export const AI_COMMIT_COMMANDS = Object.fromEntries(
+  getHarnessProviders().filter((provider) => provider.aiCommit).map((provider) => {
+    const capability = provider.aiCommit!;
+    const invocation = capability.buildInvocation({ prompt: '' });
+    return [provider.descriptor.id, { command: invocation.command, args: invocation.args, modelArg: capability.modelArg }];
+  }),
+) as Record<AiCommitProvider, AiCommitCommandConfig>;
 
 export function buildAiCommitArgs(provider: AiCommitProvider, model: string | undefined): string[] {
-  const config = AI_COMMIT_COMMANDS[provider];
-  const args = [...config.args];
-
-  if (model) {
-    args.push(config.modelArg, model);
-  }
-  return args;
+  return findHarnessProvider(provider)?.aiCommit?.buildInvocation({ model, prompt: '' }).args ?? [];
 }
 
 export function buildCommitPrompt(context: CommitPromptContext): string {

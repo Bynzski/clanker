@@ -59,7 +59,7 @@ export const HARNESS_OPTIONS: HarnessOption[] = [
   { id: 'agy', label: 'Antigravity', Icon: HARNESS_SVG_ICONS.agy },
 ];
 
-export const AI_COMMIT_PROVIDER_IDS = ['codex', 'opencode', 'pi', 'omp', 'agy'] as const;
+export { AI_COMMIT_HARNESS_IDS as AI_COMMIT_PROVIDER_IDS } from '../../shared/harnessDescriptors';
 
 export function resolveAvailableHarnessIds(
   options: Record<string, unknown>,

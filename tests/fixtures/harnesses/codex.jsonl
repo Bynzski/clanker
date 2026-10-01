@@ -1,0 +1,2 @@
+{"type":"session_meta","payload":{"id":"11111111-1111-1111-1111-111111111111","cwd":"$WORKSPACE","model":"codex-model","model_provider":"openai"}}
+{"type":"event_msg","payload":{"type":"user_message","message":"Codex fixture title"}}

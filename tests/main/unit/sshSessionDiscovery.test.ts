@@ -85,6 +85,9 @@ describe.skipIf(process.platform === 'win32' || !pythonAvailable)('remote sessio
     opencodeOutput = JSON.stringify([{ id: 'oc-id', title: 'OpenCode title', directory: root, updated: 100 }]);
     const sessions = await discoverSshSessions(executor, 'remote-host', root, ['codex', 'claude', 'pi', 'omp', 'agy', 'opencode']);
     expect(sessions).toHaveLength(6);
+    // All file-backed stores share one host execution; OpenCode retains its CLI + validation.
+    expect(exec).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(exec.mock.calls[0][2][3])).toEqual(['codex', 'claude', 'pi', 'omp', 'agy']);
     for (const [harness, title] of [['codex', 'Codex title'], ['claude', 'Claude title'], ['pi', 'Pi title'], ['omp', 'OMP title'], ['agy', 'AGY title'], ['opencode', 'OpenCode title']]) {
       expect(sessions).toContainEqual(expect.objectContaining({ harness, title }));
     }

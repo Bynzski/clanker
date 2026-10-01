@@ -1,3 +1,4 @@
+import { findHarnessProvider, getHarnessProvider, getHarnessProviders } from '../harnesses/registry';
 import * as path from 'path';
 import type {
   WorkspaceEnvironment,
@@ -640,10 +641,10 @@ export class SshEnvironment implements WorkspaceEnvironment {
   }
 
   public async probeAvailableHarnessIds(): Promise<string[]> {
-    const candidates = ['codex', 'claude', 'opencode', 'pi', 'omp', 'hermes', 'agy'];
+    const candidates = getHarnessProviders();
     const script = [
       REMOTE_CLI_PATH_SETUP,
-      ...candidates.map((cmd) => `command -v ${quotePosixArg(cmd)} >/dev/null 2>&1 && printf '%s\\n' ${quotePosixArg(cmd)}`),
+      ...candidates.map((provider) => `command -v ${quotePosixArg(provider.launch.command)} >/dev/null 2>&1 && printf '%s\\n' ${quotePosixArg(provider.descriptor.id)}`),
       ':', // An absent last candidate must not make the whole probe fail.
     ].join('\n');
 
@@ -696,8 +697,8 @@ export class SshEnvironment implements WorkspaceEnvironment {
     if (params.resumeSession) {
       const { session, workspaceRoot } = params.resumeSession;
       if (!harnessConfig || session.harness !== params.harness || session.cwd !== params.workingDir) throw new Error('Invalid remote session launch');
-      const check = `import os,sys\nroot,cwd,file,harness=sys.argv[1:]\nif not os.path.isdir(root) or os.path.realpath(root)!=root or not os.path.isdir(cwd) or os.path.realpath(cwd)!=cwd or not (cwd==root or cwd.startswith(root.rstrip('/')+'/')): sys.exit('Remote session directory is no longer within the workspace')\nif harness in ('pi','omp'):\n store=os.path.join(os.path.realpath(os.path.expanduser('~')),'.'+harness,'agent','sessions')\n if not file.endswith('.jsonl') or not os.path.isfile(file) or os.path.realpath(file)!=file or os.path.realpath(store)!=store or not file.startswith(store+'/'): sys.exit('Remote session file is no longer valid')\n`;
-      remoteScript.push(`${quotePosixCommand('python3', ['-c', check, workspaceRoot, session.cwd, session.filePath ?? '', session.harness])} || exit 1`);
+      const check = `import os,sys\nroot,cwd,file,session_store=sys.argv[1:]\nif not os.path.isdir(root) or os.path.realpath(root)!=root or not os.path.isdir(cwd) or os.path.realpath(cwd)!=cwd or not (cwd==root or cwd.startswith(root.rstrip('/')+'/')): sys.exit('Remote session directory is no longer within the workspace')\nif session_store:\n store=os.path.join(os.path.realpath(os.path.expanduser('~')),session_store)\n if not file.endswith('.jsonl') or not os.path.isfile(file) or os.path.realpath(file)!=file or os.path.realpath(store)!=store or not file.startswith(store+'/'): sys.exit('Remote session file is no longer valid')\n`;
+      remoteScript.push(`${quotePosixCommand('python3', ['-c', check, workspaceRoot, session.cwd, session.filePath ?? '', getHarnessProvider(session.harness).sessions?.remote?.fileStore ?? ''])} || exit 1`);
     }
     remoteScript.push(
       `cd ${quotePosixArg(params.workingDir)} || exit 1`,
@@ -708,8 +709,8 @@ export class SshEnvironment implements WorkspaceEnvironment {
     let attention: Awaited<ReturnType<typeof prepareSshAttention>> | undefined;
     if (harnessConfig && params.harness) {
       let harnessArgs = params.resumeSession
-        ? buildSessionCommand(params.resumeSession.session, params.resumeSession.fork, params.flags).args
-        : buildHarnessSpawnArgs(harnessConfig, params.model, params.flags);
+        ? buildSessionCommand(params.resumeSession.session, { operation: params.resumeSession.fork ? 'fork' : 'resume', transport: 'ssh', userFlags: params.flags }).args
+        : buildHarnessSpawnArgs(harnessConfig, params.model, params.flags, findHarnessProvider(params.harness)?.launch.modelArgs);
       if (params.attentionToken) {
         attention = await prepareSshAttention(this.executor, this.target, params.harness, harnessArgs, params.attentionToken);
         harnessArgs = attention.args;

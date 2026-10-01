@@ -1,3 +1,5 @@
+import { HarnessCapabilityError, classifyHarnessFailure } from '../harnesses/types';
+import { findHarnessProvider } from '../harnesses/registry';
 /**
  * AI Commit IPC Handlers
  *
@@ -17,10 +19,7 @@ import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { resolveHarnessSpawn } from '../harnessLaunch';
 import { prependUserCliBinsToPath } from '../platformShell';
 import {
-  AI_COMMIT_COMMANDS,
-  buildAiCommitArgs,
   buildCommitPrompt,
-  getAiCommitTimeoutMs,
   normalizeCommitMessageOutput,
   type AiCommitProvider,
 } from '../aiCommit';
@@ -38,7 +37,7 @@ interface RegisterAiCommitIpcDeps {
 function runCommandWithInput(
   command: string,
   args: string[],
-  input: string,
+  input: string | undefined,
   timeoutMs = 30000,
   extraEnv?: Record<string, string>,
   cwd?: string
@@ -59,7 +58,7 @@ function runCommandWithInput(
     let stderr = '';
     const timer = setTimeout(() => {
       child.kill();
-      reject(new Error(`Command timed out after ${timeoutMs}ms`));
+      reject(new HarnessCapabilityError('timeout', `Command timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
     child.stdout.on('data', (data) => {
@@ -72,13 +71,13 @@ function runCommandWithInput(
 
     child.on('error', (error) => {
       clearTimeout(timer);
-      reject(Object.assign(error, { stdout, stderr }));
+      reject(Object.assign(classifyHarnessFailure(error), { stdout, stderr }));
     });
 
     child.on('close', (code) => {
       clearTimeout(timer);
       if (code !== 0) {
-        const error = new Error(`Command failed with exit code ${code ?? 'unknown'}`);
+        const error = new HarnessCapabilityError('command-failed', `Command failed with exit code ${code ?? 'unknown'}`);
         reject(Object.assign(error, { stdout, stderr, code }));
         return;
       }
@@ -86,7 +85,7 @@ function runCommandWithInput(
       resolve(stdout || stderr);
     });
 
-    child.stdin.end(input.endsWith('\n') ? input : `${input}\n`);
+    child.stdin.end(input === undefined ? undefined : input.endsWith('\n') ? input : `${input}\n`);
   });
 }
 
@@ -127,7 +126,7 @@ async function generateAiCommitMessage(
   }
 
   const provider = store.get('aiCommitProvider');
-  const providerConfig = AI_COMMIT_COMMANDS[provider];
+  const providerConfig = findHarnessProvider(provider)?.aiCommit;
   if (!providerConfig) {
     return { success: false, error: 'Unsupported AI commit provider' };
   }
@@ -151,16 +150,12 @@ async function generateAiCommitMessage(
     diffSummary: context.diffSummary,
   });
 
-  const args = buildAiCommitArgs(provider, model);
+  const invocation = providerConfig.buildInvocation({ model, prompt });
   const output = await runCommandWithInput(
-    providerConfig.command,
-    args,
-    prompt,
-    getAiCommitTimeoutMs(provider),
-    undefined,
-    workspacePath
+    invocation.command, invocation.args, invocation.stdin, invocation.timeoutMs,
+    invocation.env, workspacePath,
   );
-  const message = normalizeCommitMessageOutput(output);
+  const message = normalizeCommitMessageOutput(providerConfig.parseOutput?.(output) ?? output);
 
   if (!message) {
     return { success: false, error: 'AI model returned an empty commit message' };

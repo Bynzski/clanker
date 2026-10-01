@@ -1,304 +1,82 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-
-export interface AttentionAdapterFiles {
-  command: string;
-  claudeSettings: string;
-  opencodeDirectory: string;
-  piExtension: string;
-  ompExtension: string;
-}
-
-interface ActiveAgyAttentionPlugin {
-  directory: string;
-  terminalIds: Set<string>;
-}
-
-const AGY_PLUGIN_NAME = 'clanker-grid-attention';
-const AGY_PLUGIN_OWNER_MARKER = '.clanker-grid-owner';
-const AGY_PLUGIN_OWNER = 'clanker-grid:agy-attention:v1\n';
+import { findHarnessProvider, getHarnessProviders } from './harnesses/registry';
+import type { AttentionAdapterFiles, LocalAttentionContext } from './harnesses/types';
+import { OBSERVER, COMMAND } from './harnesses/attentionSources';
+export { acquireAgyAttentionPlugin, releaseAgyAttentionPlugin, agyAttentionPlugin } from './harnesses/agy/attentionPlugin';
+export { claudeAttentionSettings } from './harnesses/claude/attention';
+export type { AttentionAdapterFiles } from './harnesses/types';
 
 let files: AttentionAdapterFiles | null = null;
-let activeAgyPlugin: ActiveAgyAttentionPlugin | null = null;
+const providerFiles = new Map<string, AttentionAdapterFiles>();
 
-/** Keep observer credentials scoped to the launch that registered them. */
 export function withoutAttentionEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
   return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] =>
     !entry[0].startsWith('CLANKER_ATTENTION_') && !entry[0].startsWith('CLANKER_REMOTE_ATTENTION_') && typeof entry[1] === 'string'));
 }
 
-const OBSERVER = `import net from 'node:net';
-export async function emit(event, sessionId, turnId) {
-  const port = Number(process.env.CLANKER_ATTENTION_PORT);
-  const token = process.env.CLANKER_ATTENTION_TOKEN;
-  const harness = process.env.CLANKER_ATTENTION_HARNESS;
-  if (!token || !harness || !Number.isInteger(port) || port < 1) return false;
-  const payload = JSON.stringify({ version: 1, token, harness, event,
-    ...(typeof sessionId === 'string' ? { sessionId: sessionId.slice(0, 128) } : {}),
-    ...(typeof turnId === 'string' ? { turnId: turnId.slice(0, 128) } : {}) });
-  return await new Promise((resolve) => {
-    const socket = net.createConnection({ host: '127.0.0.1', port }, () => socket.end(payload));
-    let acknowledged = false;
-    socket.on('data', (chunk) => { if (chunk.toString('utf8') === 'ok') acknowledged = true; });
-    socket.setTimeout(500, () => socket.destroy());
-    socket.on('error', () => resolve(false));
-    socket.on('close', () => resolve(acknowledged));
-  });
-}
-`;
-
-const COMMAND = `import { emit } from './observer.mjs';
-if (process.argv[2] === '--ended') {
-  process.exit(await emit('session_ended') ? 0 : 1);
-}
-let input = {};
-const agyHook = process.argv[2] && process.argv[2] !== '--ended' && !process.argv[2].startsWith('{')
-  ? process.argv[2]
-  : null;
-try {
-  if (process.argv[2] && !agyHook) input = JSON.parse(process.argv[2].slice(0, 65536));
-  else {
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of process.stdin) {
-      size += chunk.length;
-      if (size > 65536) break;
-      chunks.push(chunk);
-    }
-    input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  }
-} catch { /* malformed hook input is ignored */ }
-const hook = agyHook || input.hook_event_name;
-const notification = input.notification_type;
-const toolName = input.toolCall?.name;
-const isAskTool = toolName === 'ask_question' || toolName === 'ask_permission' || toolName === 'notify_user';
-const event = input.type === 'agent-turn-complete' || hook === 'Stop' ? 'turn_completed'
-  : hook === 'UserPromptSubmit' || (agyHook === 'PreInvocation' && input.invocationNum === 0) ? 'turn_started'
-  : (hook === 'Notification' && (notification === 'permission_prompt' || notification === 'agent_needs_input')) || (agyHook === 'PreToolUse' && isAskTool) ? 'input_requested'
-  : (hook === 'PostToolUse' && (!agyHook || isAskTool)) ? 'input_resolved'
-  : hook === 'SessionEnd' ? 'session_ended'
-  : null;
-const sessionId = input.conversationId || input.sessionId || input.session_id || input['thread-id'];
-const turnId = input.turn_id || input['turn-id'];
-if (event) await emit(event, sessionId, turnId);
-if (agyHook === 'PreToolUse' && isAskTool) {
-  process.stdout.write(JSON.stringify({ decision: 'allow' }) + '\\n');
-} else {
-  process.stdout.write('{}\\n');
-}
-`;
-const PI = `import { emit } from './observer.mjs';
-export default function (pi) {
-  pi.on('agent_start', (_event, ctx) => emit('turn_started', ctx.sessionManager?.getSessionId?.()));
-  pi.on('agent_settled', (_event, ctx) => emit('turn_completed', ctx.sessionManager?.getSessionId?.()));
-  pi.on('session_shutdown', (_event, ctx) => emit('session_ended', ctx.sessionManager?.getSessionId?.()));
-}
-`;
-
-const OMP = `import { emit } from './observer.mjs';
-export default function (omp) {
-  omp.on('agent_start', (_event, ctx) => emit('turn_started', ctx.sessionManager?.getSessionId?.()));
-  omp.on('agent_end', (_event, ctx) => emit('turn_completed', ctx.sessionManager?.getSessionId?.()));
-  omp.on('session_shutdown', (_event, ctx) => emit('session_ended', ctx.sessionManager?.getSessionId?.()));
-}
-`;
-
-const OPENCODE = `import { emit } from '../observer.mjs';
-let activeSession = process.env.CLANKER_ATTENTION_SESSION_ID || null;
-export const ClankerAttention = async () => ({
-  event: async ({ event }) => {
-    const type = event.type;
-    const props = event.properties || {};
-    const sessionId = props.sessionID || props.info?.id || props.session?.id;
-    if (typeof sessionId !== 'string') return;
-    if (!activeSession) activeSession = sessionId;
-    if (sessionId !== activeSession) return;
-    if (type === 'session.status' && props.status?.type === 'busy') await emit('turn_started', sessionId);
-    else if (type === 'session.idle') await emit('turn_completed', sessionId);
-    else if (type === 'permission.asked' || type === 'question.asked') await emit('input_requested', sessionId);
-    else if (type === 'permission.replied' || type === 'question.replied' || type === 'question.rejected') await emit('input_resolved', sessionId);
-    else if (type === 'session.deleted') await emit('session_ended', sessionId);
-  },
-});
-`;
-
-/** Share event mappings across local and SSH transports. No credentials are embedded. */
-export function attentionAdapterSources(observer: string): Record<string, string> {
-  return {
-    'observer.mjs': observer,
-    'command.mjs': COMMAND,
-    'pi.ts': PI,
-    'omp.ts': OMP,
-    'opencode/observer.mjs': observer,
-    'opencode/plugins/clanker-attention.js': OPENCODE,
-  };
-}
-
-function hookNodeExecutable(platform: NodeJS.Platform): string {
-  return platform === 'win32' ? 'node.exe' : 'node';
-}
-
-export function claudeAttentionSettings(command: string, platform: NodeJS.Platform): {
-  hooks: Record<string, Array<{ hooks: Array<{ type: string; command: string; args: string[]; timeout: number }> }>>;
-} {
-  const nodeCommand = hookNodeExecutable(platform);
-  const hooks = Object.fromEntries(['UserPromptSubmit', 'Stop', 'PostToolUse', 'Notification', 'SessionEnd'].map((name) => [
-    name, [{ hooks: [{ type: 'command', command: nodeCommand, args: [command], timeout: 2 }] }],
-  ]));
-  return { hooks };
-}
-
-export function agyAttentionPlugin(command: string, platform: NodeJS.Platform): {
-  pluginJson: { $schema: string; name: string; description: string };
-  hooksJson: Record<string, unknown>;
-} {
-  const nodeCommand = hookNodeExecutable(platform);
-  const interactionTools = 'ask_question|ask_permission|notify_user';
-  return {
-    pluginJson: {
-      $schema: 'https://antigravity.google/schemas/v1/plugin.json',
-      name: AGY_PLUGIN_NAME,
-      description: 'Clanker agent attention plugin',
-    },
-    hooksJson: {
-      'clanker-attention': {
-        PreInvocation: [{ type: 'command', command: `${nodeCommand} "${command}" PreInvocation`, timeout: 10 }],
-        PostInvocation: [{ type: 'command', command: `${nodeCommand} "${command}" PostInvocation`, timeout: 10 }],
-        PreToolUse: [{ matcher: interactionTools, hooks: [{ type: 'command', command: `${nodeCommand} "${command}" PreToolUse`, timeout: 10 }] }],
-        PostToolUse: [{ matcher: interactionTools, hooks: [{ type: 'command', command: `${nodeCommand} "${command}" PostToolUse`, timeout: 10 }] }],
-        Stop: [{ type: 'command', command: `${nodeCommand} "${command}" Stop`, timeout: 10 }],
-      },
-    },
-  };
-}
-
 export function ensureAttentionAdapterFiles(): AttentionAdapterFiles {
   if (files) return files;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-attention-'));
-  const opencodeDirectory = path.join(root, 'opencode');
-  fs.mkdirSync(path.join(opencodeDirectory, 'plugins'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'observer.mjs'), OBSERVER, { mode: 0o600 });
-  const command = path.join(root, 'command.mjs');
-  fs.writeFileSync(command, COMMAND, { mode: 0o600 });
-  const piExtension = path.join(root, 'pi.ts');
-  fs.writeFileSync(piExtension, PI, { mode: 0o600 });
-  const ompExtension = path.join(root, 'omp.ts');
-  fs.writeFileSync(ompExtension, OMP, { mode: 0o600 });
-  fs.writeFileSync(path.join(opencodeDirectory, 'observer.mjs'), OBSERVER, { mode: 0o600 });
-  fs.writeFileSync(path.join(opencodeDirectory, 'plugins', 'clanker-attention.js'), OPENCODE, { mode: 0o600 });
-  const claudeSettings = path.join(root, 'claude-settings.json');
-  fs.writeFileSync(claudeSettings, JSON.stringify(claudeAttentionSettings(command, process.platform)), { mode: 0o600 });
-  files = { command, claudeSettings, opencodeDirectory, piExtension, ompExtension };
-  return files;
-}
-
-function removeOwnedAgyAttentionPlugin(directory: string): void {
-  const marker = path.join(directory, AGY_PLUGIN_OWNER_MARKER);
   try {
-    if (fs.readFileSync(marker, 'utf8') !== AGY_PLUGIN_OWNER) return;
-  } catch {
-    return;
-  }
-  for (const filename of ['plugin.json', 'hooks.json', AGY_PLUGIN_OWNER_MARKER]) {
-    fs.rmSync(path.join(directory, filename), { force: true });
-  }
-  try {
-    fs.rmdirSync(directory);
-  } catch {
-    // Preserve unrecognized files rather than recursively deleting user data.
-  }
-}
-
-export function acquireAgyAttentionPlugin(
-  terminalId: string,
-  adapterFiles: AttentionAdapterFiles,
-  homeDir = os.homedir(),
-  platform: NodeJS.Platform = process.platform,
-): void {
-  const directory = path.join(homeDir, '.gemini', 'config', 'plugins', AGY_PLUGIN_NAME);
-  if (activeAgyPlugin) {
-    if (activeAgyPlugin.directory !== directory) {
-      throw new Error('Antigravity attention plugin is already active under a different home directory');
-    }
-    activeAgyPlugin.terminalIds.add(terminalId);
-    return;
-  }
-
-  if (fs.existsSync(directory)) {
-    const marker = path.join(directory, AGY_PLUGIN_OWNER_MARKER);
-    if (!fs.existsSync(marker) || fs.readFileSync(marker, 'utf8') !== AGY_PLUGIN_OWNER) {
-      throw new Error(`Refusing to overwrite an unowned Antigravity plugin at ${directory}`);
-    }
-  } else {
-    fs.mkdirSync(directory, { recursive: true });
-  }
-
-  try {
-    fs.writeFileSync(path.join(directory, AGY_PLUGIN_OWNER_MARKER), AGY_PLUGIN_OWNER, { mode: 0o600 });
-    const { pluginJson, hooksJson } = agyAttentionPlugin(adapterFiles.command, platform);
-    fs.writeFileSync(path.join(directory, 'plugin.json'), JSON.stringify(pluginJson, null, 2), { mode: 0o600 });
-    fs.writeFileSync(path.join(directory, 'hooks.json'), JSON.stringify(hooksJson, null, 2), { mode: 0o600 });
+    fs.writeFileSync(path.join(root, 'observer.mjs'), OBSERVER, { mode: 0o600 });
+    const command = path.join(root, 'command.mjs');
+    fs.writeFileSync(command, COMMAND, { mode: 0o600 });
+    const prepared = { command };
+    files = prepared;
+    return files;
   } catch (error) {
-    removeOwnedAgyAttentionPlugin(directory);
+    fs.rmSync(root, { recursive: true, force: true });
     throw error;
   }
-
-  activeAgyPlugin = { directory, terminalIds: new Set([terminalId]) };
 }
 
-export function releaseAgyAttentionPlugin(terminalId: string): void {
-  if (!activeAgyPlugin) return;
-  activeAgyPlugin.terminalIds.delete(terminalId);
-  if (activeAgyPlugin.terminalIds.size > 0) return;
-  removeOwnedAgyAttentionPlugin(activeAgyPlugin.directory);
-  activeAgyPlugin = null;
+/** Synchronous preparation is serialized by the main process. Cache only complete
+ * resources; each provider owns an isolated directory so rollback cannot damage
+ * another provider or invalidate the shared command bridge. */
+export function ensureProviderAttentionResources(harness: string, infrastructure = ensureAttentionAdapterFiles()): AttentionAdapterFiles {
+  const provider = findHarnessProvider(harness);
+  const prepare = provider?.attention?.prepareResources;
+  if (!provider || !prepare) return infrastructure;
+  if (infrastructure.command !== files?.command) throw new Error('Unknown local attention infrastructure');
+  const cached = providerFiles.get(provider.descriptor.id);
+  if (cached) return cached;
+  const resourceRoot = fs.mkdtempSync(path.join(path.dirname(infrastructure.command), `${provider.descriptor.id}-`));
+  const scoped = { command: infrastructure.command, resourceRoot };
+  try {
+    prepare(scoped, OBSERVER);
+    providerFiles.set(provider.descriptor.id, scoped);
+    return scoped;
+  } catch (error) {
+    fs.rmSync(resourceRoot, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+/** Canonical launch preparation keeps lazy resources and lifecycle acquisition
+ * together. Conflicting configuration needs neither files nor a lease. */
+export function prepareLocalAttention(harness: string, context: LocalAttentionContext) {
+  const local = findHarnessProvider(harness)?.attention?.local;
+  if (!local || local.plan(context).status === 'blocked') return null;
+  return local.prepare({ ...context, files: ensureProviderAttentionResources(harness, context.files) });
 }
 
 export function removeAttentionAdapterFiles(): void {
-  if (activeAgyPlugin) {
-    removeOwnedAgyAttentionPlugin(activeAgyPlugin.directory);
-    activeAgyPlugin = null;
-  }
+  for (const provider of getHarnessProviders()) provider.attention?.disposeResources?.();
   if (!files) return;
   fs.rmSync(path.dirname(files.command), { recursive: true, force: true });
   files = null;
+  providerFiles.clear();
 }
 
-
-/** Returns null when launch-time injection would replace user configuration. */
+/** Compatibility injection query. Resource ownership uses prepare() at launch. */
 export function attentionLaunchOptions(
-  harness: string,
-  args: string[],
-  env: NodeJS.ProcessEnv,
-  adapterFiles: AttentionAdapterFiles,
-  sessionId?: string,
-  platform: NodeJS.Platform = process.platform,
-): { args: string[]; env: Record<string, string> } | null {
-  if (harness === 'pi') return { args: [...args, '--extension', adapterFiles.piExtension], env: {} };
-  if (harness === 'omp') return { args: [...args, '--extension', adapterFiles.ompExtension], env: {} };
-  if (harness === 'agy') return { args, env: {} };
-  if (harness === 'claude') {
-    if (args.some((arg) => arg === '--bare' || arg === '--safe-mode' || arg.startsWith('--settings'))) return null;
-    return { args: [...args, '--settings', adapterFiles.claudeSettings], env: {} };
-  }
-  if (harness === 'opencode') {
-    if (env.OPENCODE_CONFIG_DIR || args.includes('--pure')) return null;
-    return { args, env: {
-      OPENCODE_CONFIG_DIR: adapterFiles.opencodeDirectory,
-      ...(sessionId ? { CLANKER_ATTENTION_SESSION_ID: sessionId } : {}),
-    } };
-  }
-  if (harness === 'codex') {
-    const configPath = path.join(env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml');
-    const config = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf8') : '';
-    if (/^\s*notify\s*=/m.test(config)
-      || args.some((arg) => /(?:^|\.)notify\s*=/.test(arg) || arg === '-p' || arg === '--profile')) return null;
-    const configArgs = ['-c', `notify=${JSON.stringify([hookNodeExecutable(platform), adapterFiles.command])}`];
-    const subcommandIndex = args.findIndex((arg) => arg === 'resume' || arg === 'fork');
-    return { args: subcommandIndex < 0
-      ? [...configArgs, ...args]
-      : [...args.slice(0, subcommandIndex), ...configArgs, ...args.slice(subcommandIndex)], env: {} };
-  }
-  return null;
+  harness: string, args: string[], env: NodeJS.ProcessEnv, adapterFiles: AttentionAdapterFiles,
+  sessionId?: string, platform: NodeJS.Platform = process.platform,
+) {
+  const context = { terminalId: '', args, env, files: adapterFiles, sessionId, platform };
+  const local = findHarnessProvider(harness)?.attention?.local;
+  if (!local?.options(context)) return null;
+  return local.options({ ...context, files: ensureProviderAttentionResources(harness, adapterFiles) });
 }

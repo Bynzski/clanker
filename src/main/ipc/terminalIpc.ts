@@ -1,3 +1,6 @@
+import { disposeAttentionSafely } from '../harnesses/localAttention';
+import type { PreparedLocalAttention } from '../harnesses/types';
+import { findHarnessProvider } from '../harnesses/registry';
 /**
  * Terminal IPC Handlers
  *
@@ -38,10 +41,8 @@ import { isPathContained } from '../remote/sshEnvironment';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import {
-  acquireAgyAttentionPlugin,
-  attentionLaunchOptions,
   ensureAttentionAdapterFiles,
-  releaseAgyAttentionPlugin,
+  prepareLocalAttention,
   withoutAttentionEnvironment,
 } from '../agentAttentionAdapters';
 
@@ -248,71 +249,70 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
 
     const harnessConfig = harness ? getHarnessOptions()[harness] : undefined;
     const harnessDefaults = store.get('harnessDefaults');
-    const attentionEnabled = Boolean(harnessConfig && harness && harness !== 'hermes' && harnessDefaults[harness]?.attentionEnabled);
+    const attentionEnabled = Boolean(harnessConfig && harness && findHarnessProvider(harness)?.attention?.local && harnessDefaults[harness]?.attentionEnabled);
     const userFlags = harness ? harnessDefaults[harness]?.flags : undefined;
-    const hermesYoloEnabled = harness === 'hermes'
-      && /(?:^|\s)--yolo(?:\s|$)/.test(userFlags ?? '');
     const effectiveModel = model || (harness ? harnessDefaults[harness]?.model || undefined : undefined);
     let harnessArgs = harnessConfig
-      ? buildHarnessSpawnArgs(harnessConfig, effectiveModel, userFlags)
+      ? buildHarnessSpawnArgs(harnessConfig, effectiveModel, userFlags, findHarnessProvider(harness)?.launch.modelArgs)
       : [];
     let attentionEnv: Record<string, string> = {};
     let attentionCommand: string | undefined;
+    let preparedAttention: PreparedLocalAttention | null = null;
     if (harnessConfig && harness && agentAttentionBroker) {
       try {
         const files = ensureAttentionAdapterFiles();
-        if (attentionEnabled && harness === 'agy') {
-          acquireAgyAttentionPlugin(id, files);
+        if (attentionEnabled) {
+          preparedAttention = prepareLocalAttention(harness, {
+            terminalId: id, args: harnessArgs, env: { ...process.env, ...harnessEnv }, files,
+            platform: process.platform,
+          }) ?? null;
         }
         attentionEnv = await agentAttentionBroker.register(id, harness);
         attentionCommand = files.command;
-        if (attentionEnabled) {
-          const options = attentionLaunchOptions(harness, harnessArgs, { ...process.env, ...harnessEnv }, files);
-          if (options) {
-            attentionEnv = { ...attentionEnv, ...options.env };
-            harnessArgs = options.args;
-          }
+        if (preparedAttention) {
+          attentionEnv = { ...attentionEnv, ...preparedAttention.env };
+          harnessArgs = preparedAttention.args;
         }
       } catch {
-        releaseAgyAttentionPlugin(id);
+        disposeAttentionSafely(preparedAttention);
         agentAttentionBroker.release(id);
       }
     }
-    const wrapperPath = harnessConfig ? ensureHarnessWrapperScriptPath() : null;
-    const harnessCmd = harnessConfig
-      ? resolveHarnessSpawn(harnessConfig.command, harnessArgs, wrapperPath)
-      : { spawnCmd: userShell, spawnArgs: shellArgs };
-
-    const env: { [key: string]: string } = {
-      ...withoutAttentionEnvironment(process.env),
-      PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
-      ...withoutAttentionEnvironment(harnessEnv),
-      ...attentionEnv,
-      // Hermes' TUI starts a backend child process; bridge its documented
-      // process-level bypass explicitly instead of relying on CLI propagation.
-      ...(harness === 'hermes' ? { HERMES_YOLO_MODE: hermesYoloEnabled ? '1' : '' } : {}),
-      ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
-      ...(harnessConfig ? { CLANKER_GRID_FALLBACK_SHELL: userShell } : {}),
-      TERM: 'xterm-256color',
-      COLORTERM: 'truecolor',
-      TERM_PROGRAM: 'clanker-grid',
-      FORCE_COLOR: '1',
-    };
-
-    let launchLabel: string | undefined;
-    const cleanInitialCommand = (!harness && typeof initialCommand === 'string' && initialCommand.trim())
-      ? initialCommand.trim().replace(/[\r\n]+/g, ' ')
-      : undefined;
-    const recipeCommandStartup = cleanInitialCommand && recipeCommand === true
-      ? new RecipeCommandStartup() : undefined;
-    if (harness && getHarnessOptions()[harness]) {
-      const config = getHarnessOptions()[harness];
-      launchLabel = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}`;
-    } else if (cleanInitialCommand) {
-      launchLabel = `[clanker-grid] ${cleanInitialCommand}`;
-    }
-
     try {
+      const wrapperPath = harnessConfig ? ensureHarnessWrapperScriptPath() : null;
+      const harnessCmd = harnessConfig
+        ? resolveHarnessSpawn(harnessConfig.command, harnessArgs, wrapperPath)
+        : { spawnCmd: userShell, spawnArgs: shellArgs };
+
+      const env: { [key: string]: string } = {
+        ...withoutAttentionEnvironment(process.env),
+        PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
+        ...withoutAttentionEnvironment(harnessEnv),
+        ...attentionEnv,
+        // Hermes' TUI starts a backend child process; bridge its documented
+        // process-level bypass explicitly instead of relying on CLI propagation.
+        ...(findHarnessProvider(harness)?.launch.localEnvironment?.(userFlags) ?? {}),
+        ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
+        ...(harnessConfig ? { CLANKER_GRID_FALLBACK_SHELL: userShell } : {}),
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+        TERM_PROGRAM: 'clanker-grid',
+        FORCE_COLOR: '1',
+      };
+
+      let launchLabel: string | undefined;
+      const cleanInitialCommand = (!harness && typeof initialCommand === 'string' && initialCommand.trim())
+        ? initialCommand.trim().replace(/[\r\n]+/g, ' ')
+        : undefined;
+      const recipeCommandStartup = cleanInitialCommand && recipeCommand === true
+        ? new RecipeCommandStartup() : undefined;
+      if (harness && getHarnessOptions()[harness]) {
+        const config = getHarnessOptions()[harness];
+        launchLabel = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}`;
+      } else if (cleanInitialCommand) {
+        launchLabel = `[clanker-grid] ${cleanInitialCommand}`;
+      }
+
       const result = spawnPtyProcess({
       id,
       spawnCmd: harnessCmd.spawnCmd,
@@ -328,7 +328,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         ? recipeCommandStartup.wrap(cleanInitialCommand, process.platform, userShell) : cleanInitialCommand,
       recipeCommandStartup,
       onExit: () => {
-        releaseAgyAttentionPlugin(id);
+        disposeAttentionSafely(preparedAttention);
         agentAttentionBroker?.release(id);
         void taskSessionCoordinator?.onTerminalExited(id);
       },
@@ -338,7 +338,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       }
       return { ...result, harnessId: harnessConfig ? harness : undefined, attentionEnabled };
     } catch (error) {
-      releaseAgyAttentionPlugin(id);
+      disposeAttentionSafely(preparedAttention);
       agentAttentionBroker?.release(id);
       throw error;
     }

@@ -1,3 +1,4 @@
+import { getHarnessProvider } from '../harnesses/registry';
 import { randomUUID } from 'node:crypto';
 import type { HarnessSession } from '../../shared/types/session';
 import type { RegisteredWorkspace } from '../workspaceRegistry';
@@ -7,21 +8,14 @@ import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport'
 import { captureRemoteSessionBaseline } from '../remote/remoteSessionCorrelation';
 import { spawnPtyProcess } from './ptySpawn';
 
-import { SUPPORTED_RESUME_HARNESSES } from '../sessionLaunch';
-const SELECTION_FLAGS: Record<string, string[]> = {
-  codex: ['resume', 'fork'], claude: ['--resume', '-r', '--continue', '-c', '--fork-session'],
-  opencode: ['--session', '-s', '--continue', '-c', '--fork'],
-  pi: ['--session', '--continue', '-c', '--resume', '-r', '--fork'],
-  omp: ['--resume', '-r', '--continue', '-c', '--fork'], agy: ['--conversation'],
-};
-
+import { SUPPORTED_RESUME_HARNESSES, supportsSessionOperation } from '../sessionLaunch';
 /** Re-read the host session instead of trusting renderer-supplied paths or models. */
 export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspace: RegisteredWorkspace, requested: HarnessSession, fork?: boolean) {
   const environment = workspace.environment;
   if (!environment?.capabilities.sessionDiscovery || !environment.discoverSessions) throw new Error('Remote session invocation is not supported by this environment');
   if (!requested || !SUPPORTED_RESUME_HARNESSES.has(requested.harness) || typeof requested.id !== 'string'
     || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(requested.id) || (fork !== undefined && typeof fork !== 'boolean')) throw new Error('Invalid remote session selection');
-  if (fork && requested.harness === 'agy') throw new Error('Antigravity session forking is not supported');
+  if (!supportsSessionOperation(requested.harness, fork === true, 'ssh')) throw new Error(`${getHarnessProvider(requested.harness).descriptor.name} session forking is not supported`);
   const registry = deps.getWorkspaceRegistry?.();
   const checkWorkspace = () => {
     if (deps.getIsShuttingDown() || registry?.getWorkspace(workspace.workspaceId) !== workspace
@@ -35,7 +29,7 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(session.id)
     || (session.modelId && !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(session.modelId))
     || (session.provider && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(session.provider))
-    || (session.harness === 'agy' && !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(session.id))) throw new Error('Invalid remote session metadata');
+    || (getHarnessProvider(session.harness).sessions?.validateRemote?.(session) === false)) throw new Error('Invalid remote session metadata');
   const options = await environment.getHarnessOptions();
   checkWorkspace();
   if (!options[session.harness]) throw new Error(`${session.harness} harness is not available on the remote host`);
@@ -46,7 +40,7 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
   const defaults = deps.getStore().get('harnessDefaults')[session.harness];
   const flags = defaults?.flags?.trim();
   const tokens = flags?.split(/\s+/) ?? [];
-  if (tokens.some((token) => SELECTION_FLAGS[session.harness].some((option) => token === option || token.startsWith(`${option}=`) || (option.length === 2 && token.startsWith(option))))) throw new Error('Harness default flags conflict with remote session selection');
+  if (tokens.some((token) => (getHarnessProvider(session.harness).sessions?.selectionFlags ?? []).some((option) => token === option || token.startsWith(`${option}=`) || (option.length === 2 && token.startsWith(option))))) throw new Error('Harness default flags conflict with remote session selection');
   const id = `term-${randomUUID()}`;
   const broker = deps.agentAttentionBroker;
   const attentionToken = defaults?.attentionEnabled && environment.capabilities.agentAttention && broker

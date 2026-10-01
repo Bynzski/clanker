@@ -1,129 +1,255 @@
 # Harness integration playbook
 
-Clanker treats a harness as an installed CLI running in a PTY. A new ID has to
-cross the shared type and settings boundary, appear in the renderer catalog, and
-have a main-process launch definition. Model discovery, chat history, agent
-attention, and AI commit are separate capabilities. Check each explicitly.
+Clanker requests harness operations through the canonical main-process provider
+registry in `src/main/harnesses/registry.ts`. CLI differences belong to providers;
+PTYs, Windows command resolution, shells, caching, workspace security, SSH
+execution and batching remain shared. The issue #60 migration preserves existing
+UI controls, icons, ordering and workflows. Noninteractive invocation corrections
+from the follow-up are documented below.
 
-Start with interactive launch, then add only capabilities the CLI can support.
-An integration is complete when the chosen capabilities pass their checks below
-and unsupported ones are recorded. Do not copy another harness's session parser,
-resume flags, or hook events without verifying the new CLI's contract.
+## Identity, descriptors and capabilities
 
-## Current path through the app
+- `src/shared/harnessIds.ts` defines `HarnessId`. Both the serializable descriptor
+  record (`src/shared/harnessDescriptors.ts`) and the implementation registry are
+  exhaustive records. Adding an ID without registering it fails typecheck.
+- Descriptors contain ID, name, icon key and legacy catalog icon. Their AI commit
+  metadata supplies the existing renderer picker and persisted provider type.
+  `defineHarness()` requires this metadata to agree with the implementation;
+  registry contract tests also check agreement. Main capability functions never
+  cross IPC. The renderer keeps its React/SVG icon catalog and presentation order.
+- `src/main/harnesses/<id>/index.ts` assembles one provider. `getHarnessProvider()`
+  requires a validated `HarnessId`; `findHarnessProvider()`/`isHarnessId()` are
+  explicit boundaries for raw persisted/IPC strings. Unknown IDs cannot silently
+  fall through to another harness.
+- Optional capabilities are absent when unsupported. Session operations describe
+  `support: 'native' | 'emulated'` and optional transport restrictions. Local Agy
+  fork is explicitly emulated resume; SSH Agy fork remains unsupported.
+- `harnessCatalog.ts`, `sessionHistory.ts`, `sessionLaunch.ts`,
+  `agentAttentionAdapters.ts` and `aiCommit.ts` retain compatibility APIs. Their
+  command catalogs/support sets are projections, not independent registrations.
 
-1. `src/shared/harnessIds.ts` lists accepted IDs. `src/main/main.ts` creates
-   default settings, and `src/main/harnessDefaultsValidation.ts` fills missing
-   entries and removes unknown IDs. `src/shared/types/store.ts` defines defaults.
-2. `src/main/harnessCatalog.ts` defines the command, model flag, environment,
-   installed-command detection, and model discovery. The renderer obtains
-   availability and models through `src/main/ipc/settingsIpc.ts` and preload.
-3. `src/renderer/lib/harnessOptions.ts` supplies labels and icons to the header,
-   workspace gate, terminal, settings, annotation handoff, and chat history.
-   Settings visibility filters the launch surfaces, but not chat history.
-   `src/renderer/components/ChatHistoryDropdown.tsx` takes its group order from
-   the same catalog.
-4. `src/main/ipc/terminalIpc.ts` reads the selected/default model and flags,
-   builds arguments through `src/main/harnessLaunch.ts`, and launches a PTY.
-   The POSIX wrapper returns to a shell on exit; Windows resolves CLI shims
-   through `cmd.exe /c`. Keep path and environment behavior consistent.
-5. `src/main/sessionHistory.ts` discovers and caches sessions, maps them to
-   `HarnessSession`, and builds resume/fork commands. `src/main/ipc/sessionIpc.ts`
-   validates the workspace path and launches the selected session.
-6. `src/main/agentAttentionAdapters.ts` optionally injects hooks. The broker
-   receives lifecycle events, but a harness without an adapter remains in the
-   unknown state when attention is enabled.
-7. AI commit is independently allowlisted in `src/shared/types/store.ts`,
-   `src/renderer/lib/harnessOptions.ts`, `src/main/aiCommit.ts`, and
-   `src/main/ipc/aiCommitIpc.ts`. A CLI needs a tested noninteractive invocation
-   and output format before it belongs in this list.
+```ts
+const provider = getHarnessProvider(harnessId);
+const models = await provider.models?.discover();
+const sessions = await provider.sessions?.discover(workspacePath);
+// Consumers use the canonical boundary to enforce operation + transport support.
+const invocation = buildSessionCommand(session, {
+  operation: 'resume', transport: 'local', userFlags: flags,
+});
+```
 
-## Implementation path
+Providers expose specifications as well as methods: a native CLI invocation and a
+host Python scan are different mechanisms. Do not add no-op capabilities or
+require every implementation to use one storage format.
 
-1. Write down the CLI contract first: executable and tested version, install
-   location on each available OS, interactive/model/list/resume/fork/print
-   commands, session storage roots and format, hook events, and commands that
-   can incur model charges. Use the installed CLI's help and matching version's
-   docs or source. Mark untested platforms and capabilities explicitly.
-2. Add the stable ID to `src/shared/harnessIds.ts`, the command and model flag
-   to `src/main/harnessCatalog.ts`, and the label and SVG icon to
-   `src/renderer/lib/harnessOptions.ts`. The generic defaults migration uses
-   `KNOWN_HARNESS_IDS`; confirm `src/main/main.ts` and
-   `src/main/harnessDefaultsValidation.ts` need no special case. This is the
-   minimum interactive launch integration.
-3. Add each supported optional capability using the file map below. For a
-   session that resumes by file path, validate the renderer-supplied path in
-   `src/main/ipc/sessionIpc.ts` before passing it to the CLI. Use
-   `resolveExistingFileWithinDirectory()` from `src/main/security.ts`, restrict
-   the expected file format, and resolve symlinks. Add the harness's branch to
-   `buildSessionInvokeArgs()` in `src/main/sessionHistory.ts`; its default
-   branch currently launches Claude and must not receive a new ID.
-4. Update the focused tests and user docs, then run the validation commands.
-   If a live model call or a supported OS cannot be tested, leave that gap in
-   the harness-specific notes instead of treating unit tests as a smoke test.
+## Current capabilities
 
-| Capability | Edit points | Verification |
-| --- | --- | --- |
-| Interactive launch and settings | `src/shared/harnessIds.ts`, `src/main/harnessCatalog.ts`, `src/renderer/lib/harnessOptions.ts`; inspect `src/main/ipc/terminalIpc.ts` and `src/main/harnessLaunch.ts` | Detection and defaults tests; launch from workspace gate and header with working directory, model, flags, and exit-to-shell behavior; check packaged app PATH and Windows shim where available. |
-| Model picker | `src/main/harnessCatalog.ts`, possibly `src/main/modelCache.ts` | Parser fixtures for valid, empty, malformed, and duplicate output; timeout/error/cache behavior; verify displayed selector is accepted by the CLI. |
-| Chat history | `src/shared/types/session.ts`, `src/main/sessionHistory.ts`, `src/main/ipc/sessionIpc.ts`, possibly `src/main/security.ts` | Missing/corrupt files, workspace filtering, large history, POSIX IPC paths, resume/fork arguments, outside-root and symlink rejection; live resume/fork if safe. |
-| Agent attention | `src/main/agentAttentionAdapters.ts`, `src/main/agentAttentionBroker.ts` if a new event mapping is needed | Adapter injection and event mapping tests; a live turn and shutdown; document events the CLI cannot report. |
-| AI commit | `src/shared/types/store.ts`, `src/renderer/lib/harnessOptions.ts`, `src/main/aiCommit.ts`, `src/main/ipc/aiCommitIpc.ts` | Model flag, prompt transport, exit/timeout/error, output cleanup, and Windows command resolution; live response only with approved model use. |
+All seven providers support local and SSH interactive launch. Model discovery and
+AI commit remain local-only. No provider implements usage yet.
 
-Before finishing, search for ID-specific branches (`rg -n "'codex'|'claude'|'opencode'|'pi'|'omp'" src`) and decide whether each applies to the new harness. Pay particular attention to the workspace gate's keyboard shortcuts in `src/renderer/components/WorkspaceGateContent.tsx`: they are explicit per harness, so either assign a nonconflicting shortcut or document that the new harness has none. The test API mocks in `tests/setup/electron.ts` and SVG mocks in `tests/setup/renderer.tsx` may need the new ID or icon.
+| Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
+| --- | --- | --- | --- | --- | --- | --- |
+| Codex | debug models | JSONL / JSONL | native | native | notify / notify | yes |
+| Claude | absent | JSONL / JSONL | native | native | settings hooks / settings hooks | absent |
+| OpenCode | models CLI + fallback | native CLI / native CLI | native | native | plugin / plugin | yes |
+| Pi | list-models | JSONL / JSONL | native | native | extension / extension | yes |
+| OMP | JSON catalog | JSONL / JSONL | native | native | extension / extension | yes |
+| Hermes | local TUI gateway | absent | absent | absent | absent / observer plugin | absent |
+| Agy | models CLI + fallback | SQLite / SQLite | emulated resume | absent | owned plugin / inert owned plugin | yes |
 
-## Checklist for every new harness
+OpenCode's own CLI selects its SQLite/legacy storage. Clanker currently has no
+SQLite-first/legacy filesystem reader for OpenCode to migrate. Its JSON and JSONL
+session-list responses are supported. Do not replace this boundary with a new
+storage reader as part of a provider change.
 
-1. **Confirm the local CLI contract.** Record executable name, version,
-   interactive invocation, model selector syntax, machine-readable model list,
-   session location and format, resume/fork behavior, noninteractive mode, and
-   optional lifecycle hooks. Test on each supported platform or record what
-   remains unverified. Never run a prompt just to probe support if it can incur
-   API usage or modify a workspace.
-2. **Register the identity and defaults.** Add one stable lowercase ID to
-   `KNOWN_HARNESS_IDS`; add a main catalog entry and renderer label/icon. Check
-   that existing persisted settings gain a default entry and unknown IDs still
-   get removed. Avoid renaming an ID after users have saved settings/sessions.
-3. **Check launch and detection.** Confirm the command is found in the desktop
-   app's PATH and spawns in a PTY in the requested working directory. Verify
-   model/flags argument order and fallback shell behavior on POSIX and Windows.
-   Keep any harness-specific environment settings scoped to that launch. A
-   noninteractive command needs the same Windows shim resolution and desktop
-   PATH handling as the interactive PTY path.
-4. **Add model discovery if available.** Use bounded time and output, parse the
-   CLI's machine-readable format, deduplicate stable model IDs, and provide an
-   empty or intentional fallback. Distinguish a valid empty catalog from
-   malformed output before caching it. Decide whether the CLI lists usable
-   models or its entire catalog before presenting them as choices.
-5. **Add session discovery and invocation if supported.** Parse only required
-   metadata; tolerate missing/corrupt files; filter by workspace with
-   `sessionMatchesWorkspace`; convert paths at IPC boundaries. Validate any
-   renderer-supplied session file path against its session store before launch,
-   resolving symlinks. Check profile, environment, XDG, and explicit session
-   directory overrides before assuming a single storage root. Bound concurrent
-   file reads for large histories. Add resume and fork commands only where
-   their behavior is established. Do not route a new ID through another
-   harness's default switch case.
-6. **Decide on attention.** If the CLI has a compatible extension or hook API,
-   add an isolated adapter with `turn_started`, `turn_completed`,
-   `input_requested`, `input_resolved`, and `session_ended` where supported.
-   Avoid replacing user hook configuration. If there is no adapter, keep the
-   attention toggle unavailable or document its unknown state.
-7. **Decide on AI commit separately.** Test model selection, stdin/argument
-   prompt delivery, noninteractive exit, timeout, and output normalization.
-   Only then add the provider to the shared type, renderer allowlist, command
-   table, and tests. AI commit is not implied by interactive launch support.
-8. **Cover and document the behavior.** Update catalog, launch, defaults,
-   renderer, session, attention, and AI commit tests for the capabilities added.
-   Update `docs/terminals.md`, `docs/configuration.md`, the test API mock
-   in `tests/setup/electron.ts`, and SVG mocks in `tests/setup/renderer.tsx`
-   as applicable. Run `npm run lint`,
-   `npm run typecheck`, and `npm run build`; finish with `npm run validate`.
+## Local execution and failure semantics
+
+`launch` owns executable, base args, model flag and harness environment. Hermes
+owns provider-qualified model decoding and its local TUI yolo environment bridge.
+Shared argv construction receives the selected provider model builder explicitly;
+it never derives a harness ID from an executable name. Serializable catalogs omit
+this function. Session invocation requires an explicit transport and rejects
+unsupported operation/transport pairs with `HarnessCapabilityError`.
+User flags (including reasoning/effort options) remain opaque, whitespace-split
+arguments in their existing order; this migration does not reinterpret them.
+The common launcher retains the POSIX wrapper, fallback shell, Windows
+`cmd.exe /c` resolution, cwd and PTY behavior.
+
+Model capabilities retain native parsers, intentional fallback lists, TTL and
+explicit-refresh behavior. Discovery implementations load lazily. The shared
+cache protects explicit refreshes from stale warmup completion. Detailed model
+results retain a typed failure while the existing picker still receives its
+current array/fallback. Codex's provider reports malformed model output as a typed parse failure. Its
+compatibility wrapper and exported parser preserve the historical empty-list/cache
+behavior through explicit compatibility metadata; changing that behavior is a
+follow-up. Detailed results are a discriminated `success` result with independent
+`cacheable` policy. A parse failure is always `success: false`; only the Codex
+compatibility policy may cache its historical empty result.
+
+Session providers own parsing, native argument generation, selection flags and
+harness-specific validation. Shared aggregation normalizes IPC paths, limits
+file concurrency, sorts results and retains the bounded workspace cache. Provider discovery-order
+metadata preserves the original ordering of equal-timestamp results and host scans.
+Missing stores legitimately yield no sessions; operational errors are retained
+per provider and partial failures are not cached as a complete scan. Agy uses
+its existing schema and global-workspace/title fallbacks; changed schemas fail.
+
+`HarnessCapabilityError` distinguishes unsupported, binary unavailable, not
+configured, command failure, timeout, parse failure, storage/schema change and
+transport failure, preserving the original cause. `classifyHarnessFailure()`
+classifies known boundary errors; it does not claim to understand every native
+CLI's authentication diagnostics. Providers may throw a more specific typed
+error. Never turn an operational failure into an absent capability. Compatibility
+wrappers may retain today's public fallback/error messages without adding UI.
+
+## Attention lifecycle
+
+Attention is transport-specific: `provider.attention.local` and `.remote` are
+separate capabilities. Local `plan()` distinguishes ready injection from a typed
+configuration conflict. The legacy injection wrapper still returns null for a
+conflict. Local `prepare(context)` returns launch args/env and an owned lease, or
+null for that same conflict; operational preparation failures propagate.
+
+```ts
+// Main-process helper: src/main/agentAttentionAdapters.ts
+
+const prepared = prepareLocalAttention(provider.descriptor.id, context);
+try {
+  // Shared launch engine applies prepared args/env and creates the PTY.
+} catch (error) {
+  prepared?.dispose();
+  throw error;
+}
+// Dispose again on terminal exit; successful disposal is idempotent.
+```
+
+Shared orchestrators should use `prepareLocalAttention()` rather than calling
+`provider.attention.local.prepare()` directly. The shared preparation boundary
+owns configuration planning, lazy provider-resource creation and lifecycle
+acquisition. `provider.attention.local` describes provider behavior;
+`prepareLocalAttention()` is the canonical orchestration entry point. Callers
+should not manually call `prepareResources()`: resource files are prepared
+lazily in private provider directories.
+
+Launch IPC disposes leases on preparation/registration failure, setup or PTY
+failure, and terminal exit. Cleanup failures are logged without masking launch
+errors or preventing broker retirement; failed disposal remains retryable.
+Agy's owned plugin retains reference counting and ownership checks. Each
+preparation gets a distinct lease, including repeated preparations for one
+terminal, so out-of-order disposal cannot retire another user's plugin. Unknown
+files remain untouched. The shared layer creates only the secure temp root,
+observer and command bridge. Providers contribute `attention.prepareResources`
+for their settings/extensions/plugin directories; `AttentionAdapterFiles` has only
+generic command/resource-root paths. Generic infrastructure is created once;
+only the selected provider prepares resources, cached in its own private directory.
+Failed preparation removes that directory and remains retryable without damaging
+other providers or generic infrastructure. Optional `disposeResources` owns provider shutdown
+cleanup, including Agy plugin retirement. The app removes the shared root afterward.
+
+Native hook payload normalization for Codex/Claude/Agy and credential transport
+are shared. Pi, OMP and OpenCode contribute their extension/plugin sources from
+providers. Do not confuse installed adapter source files with supported native
+events: Pi uses `agent_settled`, OMP uses `agent_end`, and Hermes has only its
+current SSH observer support.
+
+## SSH ownership and batching
+
+Providers contribute `sessions.remote` specifications (storage roots, event
+parsing, optional native CLI command and resume file-store confinement). The
+shared host runtime supplies bounded file reads, result emission and canonical
+workspace matching. The SSH orchestration layer owns target selection, execution,
+timeouts, response limits, duplicate checks and transport errors.
+
+File-backed providers are gathered in one host execution. OpenCode keeps its
+native list request with `--max-count 4097` plus host canonical-path validation.
+All six session providers together still use three executions, not one execution
+per provider. Registry-derived host binary probing remains one shell command.
+
+Attention providers contribute host configuration guards, launch injection,
+runtime requirements, selected-provider temporary resources, allowed environment
+keys, owned plugin payloads and optional plugin-enable commands.
+SSH owns secure directory installation, locking, temporary files, fresh
+terminal-scoped credentials, OSC transport and cleanup. Persistent owned Agy and
+Hermes observer plugins remain inert without launch credentials; per-launch
+files are recorded in a private manifest. Cleanup validates manifest paths,
+ownership, modes and non-symlink file types before removing only listed resources;
+unknown files are preserved. Adding a provider requires no central filename list. Concurrent cleanup
+requests coalesce; subsequent cleanup can retry after unknown files are removed.
+
+Intentional transport differences remain: remote scans are recursive and bounded;
+local scans keep their existing formats/limits/fallbacks. Pi and OMP history
+aggregation retains conventional roots. Trusted Pi invocation separately resolves
+configured agent/session roots and stored session-directory flags. SSH Agy requires canonical workspace evidence and
+rejects fork, whereas local discovery keeps its global-session fallback and
+emulated fork. SSH models/inference and local Hermes attention remain absent.
+
+## Adding a harness or capability
+
+1. Verify the installed CLI contract without making a billable model call. Record
+   native commands, storage formats, supported platforms and unverified behavior.
+2. Add its `HarnessId` and serializable descriptor, then implement/register one
+   provider. Defaults migration uses the canonical ID list. Keep React icons in
+   the renderer; adding an icon or keyboard shortcut is presentation work.
+3. Implement only genuinely supported capabilities in that provider. Preserve
+   native semantics and specify native/emulated session operations and transport
+   restrictions. Keep workspace/path validation authoritative at IPC/transport
+   boundaries, with harness-specific session validation in the provider.
+4. For SSH, contribute bounded host specifications and configuration guards.
+   Extend shared transport mechanisms only when needed; preserve batched
+   execution and fail-closed ownership/credential checks.
+5. Add registry/delegation/fixture tests, exact launch/resume/fork argv contracts,
+   failure cases, attention cleanup/concurrency tests and remote execution-count
+   checks. `harnessArchitecture.test.ts` automatically scans shared main-process
+   TypeScript, including shared `harnesses/*.ts` infrastructure, against new
+   harness-ID dispatch. Only provider directories derived from `KNOWN_HARNESS_IDS`
+   and the exhaustive registry are excluded; scalar identity metadata remains
+   allowed. Run focused tests, typecheck and lint; finish with `npm run validate`.
+
+For a future capability, extend `HarnessProvider` and implement it under the
+relevant provider. Do not add a new central harness switch/support allowlist.
+`usage` is already an optional extension point with timestamped measurements,
+units, allowance/rate/token/spend kinds, periods, resets and account/provider/model
+scopes. There are no speculative quota probes or usage UI. Existing AI commit
+uses `buildInvocation({ model, prompt })` to return command, args, optional stdin,
+timeout and optional environment. Optional provider output parsing unwraps native
+CLI envelopes before shared commit-message normalization. Compatibility command,
+args and timeout values derive from `buildInvocation()`; `modelArg` is descriptive
+legacy metadata, not executable authority. Git context and prompts
+stay shared; Windows resolution and desktop PATH remain in the executor. There
+is no remote inference or general inference framework.
+
+## Preserved limitations and follow-ups
+
+- Pi: history still scans conventional paths and first-line session headers.
+  Invocation re-resolves identity from trusted storage with canonical file checks,
+  honoring `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR` and stored
+  `--session-dir` flags. Renderer paths are never authority. Custom-root history
+  and SSH parity remain follow-ups; the provider-owned root resolver is the seam.
+- OMP: this checkout assumes `~/.omp/agent/sessions` locally and over SSH. Home,
+  coding-agent, profile, XDG and session-dir overrides are not integrated despite
+  upstream support. The migration isolates these roots without expanding them.
+- Agy: fixed SQLite schema, version-sensitive model list and no native fork.
+  AI commit now uses documented JSON stdin/output, avoiding Windows shell quoting
+  and argument-size limits. Native attention hooks still need real-turn smoke
+  testing. Global plugin ownership is process-local: Clanker currently has no
+  `requestSingleInstanceLock`. Concurrent app processes can overwrite/remove
+  another process's owned plugin; address single-instance policy or ownership
+  separately without introducing a lease framework here.
+- OpenCode: local session-list pagination remains its CLI default; SSH explicitly
+  requests the extra row to reject truncation. SQLite/legacy storage is CLI-owned.
+- Hermes: local attention/history/inference remain unsupported; remote attention
+  requires its default profile. Provider-qualified models and refresh behavior
+  remain intact.
+- Failure classification intentionally preserves raw causes when native errors
+  cannot be categorized more precisely. Existing Codex malformed-model compatibility fallback
+  and Pi/OpenCode permissive text parsing need separate compatibility decisions.
+- Persistent SSH plugins fail closed on partial or unknown installations; recovery
+  from an interrupted host setup remains a future lifecycle enhancement.
 
 ## Oh My Pi (`omp`) implementation notes
 
-Review environment (September 2026): `/home/jay/.local/bin/omp`, version
-`18.3.4`. This path and version are observations from the development machine,
+Original integration baseline: OMP 18.3.4 (September 2026),
+`/home/jay/.local/bin/omp`. Issue #60 revalidation: OMP 18.4.4 (October 2026). This path and version are observations from the development machine,
 not installation requirements. OMP uses a separate `omp` ID so its defaults,
 attention events, and session history do not collide with Pi.
 
@@ -198,7 +324,7 @@ Review environment (September 2026): `/home/jay/.local/bin/agy`, version
 | Models | `agy models` emits spinner on stderr and clean tab-separated `<id>\t<label>` on stdout | Parse stdout lines by tab, deduplicate IDs, fallback to static Gemini list on error or timeout (8s). |
 | Sessions | SQLite database at `~/.gemini/antigravity-cli/conversation_summaries.db`; table `conversation_summaries` | Integrated via Node 22/Electron 41 native `node:sqlite` in read-only mode. All workspace URIs are decoded and matched using `sessionMatchesWorkspace`; unset paths retain the global-session fallback, while malformed metadata is skipped. Resume invokes `agy --conversation <id>` with canonical UUID and model-selector validation; fork is unsupported by the CLI and runs resume. |
 | Attention | Native hooks via an owned plugin at `~/.gemini/config/plugins/clanker-grid-attention/hooks.json` | The plugin exists only while an attention-enabled Antigravity terminal is active. It maps `PreInvocation` (when `invocationNum == 0`) to `turn_started`, `PreToolUse` on `ask_question`, `ask_permission`, or `notify_user` to `input_requested`, matching `PostToolUse` events to `input_resolved`, `Stop` to `turn_completed`, and wrapper exit to `session_ended`. The matcher excludes all other tools so their native permission checks remain authoritative. Clanker refuses to overwrite an unowned directory and removes only files carrying its ownership marker. |
-| AI commit | Piped stdin with `--disable-slash-commands`, `--model <selector>` | Integrated. Noninteractive piped invocation delivers the commit prompt via stdin, outputs the generated commit message, and is normalized by `normalizeCommitMessageOutput`. Timeout: 60s. |
+| AI commit | `--disable-slash-commands --input-format stream-json --output-format stream-json`, optional `--model` | Send one `user` JSON message on stdin and close it. The Agy provider extracts the single successful result response before shared normalization. Timeout: 60s. |
 
 This integration includes CLI detection, persisted defaults, visibility,
 flags, model discovery, interactive launch, session history discovery/resume,
@@ -207,8 +333,49 @@ agent attention, and AI commit message generation. The workspace gate assigns
 
 ## SSH attention transport
 
-`sshAgentAttention.ts` reuses the hook/extension event mappings from `agentAttentionAdapters.ts` with a tty observer transport. `remoteAttentionTransport.ts` extracts bounded OSC frames before normal PTY buffering/rendering. `AgentAttentionBroker` accepts remote credentials only from their registered terminal, independently of the desktop loopback listener. Unsupported native events remain unknown.
+`sshAgentAttention.ts` obtains the selected provider's resources and hook/extension configuration through its remote attention capability, with a tty observer transport. `remoteAttentionTransport.ts` extracts bounded OSC frames before normal PTY buffering/rendering. `AgentAttentionBroker` accepts remote credentials only from their registered terminal, independently of the desktop loopback listener. Unsupported native events remain unknown.
 
 Hermes uses its [observer hook contract](https://hermes-agent.nousresearch.com/docs/developer-guide/observer-hooks), including turn-scoped `pre_llm_call` / `post_llm_call` and advisory approval hooks. Its owned plugin is enabled via the native CLI, preserving other plugin configuration. OpenCode uses its [plugin events](https://opencode.ai/docs/plugins/); Claude uses its [command hook API](https://code.claude.com/docs/en/hooks). Shared Pi, OMP, Codex, and Antigravity mappings retain the contracts documented above.
 
 Tests exercise all seven adapters with synthetic lifecycle events over real pseudo-terminals, configuration conflicts, ownership checks, and terminal credential/cleanup routing. Those checks do not make model calls or establish compatibility with every installed CLI version. Live remote agent turns remain a separate smoke check.
+
+## Follow-up CLI contract verification (October 2026)
+
+Installed versions checked without model prompts: Codex 0.159.3, OpenCode
+1.18.34, Pi 0.87.1, OMP 18.4.4, Hermes 0.21.5 and Agy 1.2.14. Claude's shim
+exists but its native optional binary is missing. Local PTY startup/resume/fork
+checks and the saved SSH host checks are recorded in
+[the historical follow-up report](issue-60-followup-report.md). The final
+architecture and validation state is recorded in
+[the final hardening report](issue-60-final-hardening-report.md).
+
+AI commit uses Codex `exec` stdin, OpenCode `run` stdin, Pi `--print` stdin,
+and the existing OMP print/no-session/no-tools/no-extensions stdin contract.
+OpenCode's [v1.18.34 run source](https://github.com/anomalyco/opencode/blob/v1.18.34/packages/opencode/src/cli/cmd/run.ts)
+reads piped input; its bare executable starts a TUI. Pi's installed print-mode
+help and main implementation confirm explicit print mode. OMP's
+[v18.4.4 main source](https://github.com/can1357/oh-my-pi/blob/v18.4.4/packages/coding-agent/src/main.ts)
+reads piped text before headless execution. Codex `exec --help` documents stdin.
+
+Agy's [headless contract](https://www.antigravity.google/docs/cli/headless/)
+supports JSON stdin with one result per prompt and exit after EOF. Installed
+`--print` requires a prompt argument and rejects an empty prompt; passing plain
+stdin does not satisfy that explicit print contract. JSON input avoids embedding
+Git content in `cmd.exe` arguments. `agy models` and native `--print /help` were
+checked without inference. Installed effort help includes `max`, while the
+current web reference lists fewer values; user flags remain opaque. Conversation
+resume exists; no native fork is documented or exposed. The supported manual
+plugin root remains `~/.gemini/config/plugins`; no path migration was made.
+
+Pi 0.87.1 documents `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR` and
+`--session-dir` (the explicit directory wins). Default sessions sit beneath an
+encoded cwd directory; explicit session directories are flat. Invocation lookup
+models those layouts without expanding existing history discovery.
+
+OMP's [v18.4.4 directory resolver](https://github.com/can1357/oh-my-pi/blob/v18.4.4/packages/utils/src/dirs.ts)
+uses `PI_CODING_AGENT_DIR`, `PI_CONFIG_DIR`, `OMP_PROFILE` (with legacy
+`PI_PROFILE`) and existence-dependent XDG relocation, with stricter named-profile
+rules. Neither `OMP_HOME` nor `OMP_CODING_AGENT_DIR` appears in that resolver;
+do not canonize those names without version-specific evidence. OMP storage
+integration remains conventional locally and on SSH. Future storage work should
+extend provider root specifications and keep host environment resolution on-host.

@@ -19,9 +19,10 @@ import type { ThemeId } from './theme';
 /**
  * AI commit provider allowlist.
  * Inlined here to keep shared/types/ self-contained and avoid a main→shared import.
- * aiCommit.ts defines and exports its own AiCommitProvider for internal use.
+ * The canonical descriptor metadata supplies persisted and renderer IDs; main
+ * derives its internal provider type from registered implementations.
  */
-export type AiCommitProvider = 'codex' | 'opencode' | 'pi' | 'omp' | 'agy';
+export type AiCommitProvider = import('../harnessDescriptors').AiCommitHarnessId;
 
 /**
  * Per-harness default settings.
