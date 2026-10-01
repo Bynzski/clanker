@@ -39,9 +39,9 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
 | 15 | **Searchable Choices** | `SearchablePicker.tsx`, `SearchablePicker.css` | **A** | Uses shared `Popover`, `--radius-sm` on rows/choices, token-based surfaces and focus rings. | Retain as canonical primitive reference. | No risk; already aligned. |
 | 16 | **Launch Recipe Modal** | `RecipeModal.tsx`, `RecipeModal.css` | **A** | **Migrated (Stage 2):** Uses shared `Dialog`, `Button`, `IconButton`, `Input`, `Select`, `Field`, `FieldLabel`. 8px shell, 6px fields/buttons/cards, and 4px step controls eliminated; intentional 12px pill badge retained. | Completed. | Fully validated in create, edit, preview, launch, and delete states. |
 | 17 | **VCS Credentials** | `CredentialSettings.tsx`, `CredentialSettings.css` | **A/B** | Uses shared `Dialog` and `IconButton`; standard `--radius-sm` on dialog, inputs, tabs, cards; intentional 999px pill for status chip. | Retain as canonical design-system reference; normalize minor input styling to shared `Input`. | Low risk; already mostly aligned. |
-| 18 | **Commit Dialog** | `CommitDialog.tsx`, `CommitDialog.css` | **C/D** | Hand-rolled `.commit-dialog-overlay` with custom ESC listener; shell and inputs use `--radius-sm`, but button/textarea/list styling are local; file status tag uses 3px. | Migrate overlay to shared `Dialog`; use shared `Textarea` and `Button`; keep file status tag as intentional pill/badge. | Medium risk; verify commit generation, diff staging, keyboard shortcuts. |
+| 18 | **Commit Dialog** | `CommitDialog.tsx`, `CommitDialog.css` | **A** | **Migrated (Stage 4):** Uses shared `Dialog`, `Textarea`, `Button`, `IconButton`; manual lease & Escape lifecycle removed; file status tag remains badge; zero backlog entries remaining. | Completed. | Fully validated including nested DiffViewer interaction. |
 | 19 | **Confirmation / Alert Dialogs** | `ConfirmCloseDialog.tsx`, `ConfirmCloseDialog.css` | **A/B** | Uses shared `AlertDialog`; dialog and buttons use `--radius-sm`; minor duplicate button CSS (`.confirm-close-btn-*`). | Retain AlertDialog foundation; migrate buttons to shared `Button` variants (`variant="danger"`, etc.). | Low risk; verify close workspace / app prompt. |
-| 20 | **Git Delete Branch Dialog** | `GitDeleteBranchDialog.tsx`, `GitButton.css` | **C** | Hand-rolled `.git-delete-overlay`; dialog shell uses `border-radius: var(--radius-lg)` (8px); uses duplicate `.header-btn` classes. | Migrate to shared `AlertDialog`; normalize shell to `--radius-sm`; use shared `Button` (`variant="danger"`). | Low risk; straightforward confirmation dialog. |
+| 20 | **Git Delete Branch Dialog** | `GitDeleteBranchDialog.tsx`, `GitButton.css` | **A** | **Migrated (Stage 4):** Uses shared `AlertDialog`, `Button`, with `onBackdropCancel`; `--radius-lg` shell eliminated; normal->force delete transition preserved. | Completed. | Fully validated in normal and force delete states. |
 | 21 | **File Explorer** | `FileExplorer/index.tsx`, `FileTree.tsx`, `FileExplorer.css` | **B** | Action buttons and filter clear use `--radius-sm`; splitter uses 999px (intentional pill); git dot uses 50% (circle); inline rename input uses 3px. | Normalize inline rename input to `--radius-sm` (shared `Input`); retain splitter pill and git circle. | Low risk; verify tree node renaming and drag-and-drop. |
 | 22 | **File Explorer Context Menu** | `ContextMenu.tsx`, `ContextMenu.css` | **B/C** | Hand-rolled `.context-menu-overlay`; menu shell uses `--radius-sm`; items use token-based hover. | Retain `--radius-sm`; verify whether headless Radix Menu is needed or if current lightweight component suffices with normalized styling. | Low risk; verify outside click and sub-options. |
 | 23 | **Browser Panel & Toolbar** | `BrowserPanel.tsx`, `BrowserPanel.css` | **B** | Panel container uses `border-radius: var(--radius-md)`; nav buttons use 6px radius; drag handle uses 3px dots; annotate button uses 3px. | Normalize panel container and toolbar buttons to `--radius-sm` (or `IconButton`); drag handle dot pattern is intentional. | Medium risk; verify native `WebContentsView` bounds and clipping. |
@@ -50,14 +50,14 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
 | 26 | **Remote Preview Bar** | `RemotePreviewBar.tsx`, `BrowserPanel.css` | **B/D** | Port inputs and start/stop buttons use hardcoded 3px radius. | Normalize inputs to shared `Input` and buttons to shared `Button` (`--radius-sm`). | Low risk; verify SSH port forwarding preview lifecycle. |
 | 27 | **Annotation Handoff Dialog** | `AnnotationHandoffDialog.tsx`, `AnnotationHandoffDialog.css` | **A** | **Migrated (Stage 2):** Uses shared `Dialog`, `Button`, `IconButton`, `Textarea`. `--radius-md` shell and 5px textarea/buttons eliminated; zero exceptions remaining. | Completed. | Fully validated with Escape and focus restoration tests. |
 | 28 | **Editor Chrome & Tab Bar** | `EditorPane.tsx`, `EditorPane.css`, `EditorTabBar.tsx`, `EditorTabBar.css` | **B** | Editor pane uses `border-radius: var(--radius-md)`; action buttons use 4px; fallback close uses 4px; tab bar uses 2px; tab close uses 4px; unsaved dot uses 50%. | Normalize pane border to `--radius-sm` (or keep consistent with terminal pane); normalize action and close buttons to `--radius-sm`; retain unsaved dot as circle. | Low risk; test tab switching and CodeMirror sizing. |
-| 29 | **Diff Viewer Chrome** | `DiffViewer.tsx`, `DiffViewer.css` | **C** | Hand-rolled `.diff-viewer-overlay` with custom ESC listener; modal shell uses `--radius-sm`; close button uses `--radius-sm`. | Migrate overlay to shared `Dialog`; use shared `IconButton` for close button. | Medium risk; verify CodeMirror merge view layout inside Dialog. |
+| 29 | **Diff Viewer Chrome** | `DiffViewer.tsx`, `DiffViewer.css` | **A** | **Migrated (Stage 4):** Uses single shared `Dialog` shell across all five states, `IconButton`, `workspaceId` wire-through; nested Dialog with topmost Escape validated. | Completed. | Fully validated standalone and inside CommitDialog. |
 | 30 | **Terminal Pane Chrome** | `TerminalPane.tsx`, `TerminalPane.css` | **B** | Status dot uses 50% (circle); close button uses 4px. | Normalize close button to `--radius-sm` (`IconButton`); retain status dot circle. | Low risk; verify xterm instance layout. |
 | 31 | **Notes Pane** | `NotesPane.tsx`, `NotesPane.css` | **B/D** | Notes pane uses `border-radius: var(--radius-md)`; action buttons use 4px; raw `<textarea className="notes-editor">`. | Normalize pane border and buttons to `--radius-sm`; normalize textarea to shared `Textarea` styling. | Low risk; verify note persistence. |
 | 32 | **Chat History Popover** | `ChatHistoryDropdown.tsx`, `ChatHistoryDropdown.css` | **A/B** | Uses Radix `Popover`; shell uses `--radius-sm`; session count badge uses 8px (intentional pill counter). | Retain Popover shell and `--radius-sm`; document 8px session count badge as intentional pill counter. | Low risk; already aligned. |
-| 33 | **Git Menu & Popover** | `GitButton.tsx`, `GitRepoMenu.tsx`, `GitButton.css` | **B/C** | `.git-menu` uses `border-radius: var(--radius-md)`; status pills use 999px; ahead badge uses 9px. | Normalize `.git-menu` shell to `--radius-sm` (or Popover primitive); retain status pills as intentional. | Medium risk; verify git actions (fetch, pull, push, branch checkout). |
+| 33 | **Git Menu & Popover** | `GitButton.tsx`, `GitRepoMenu.tsx`, `GitButton.css` | **A/B** | **Aligned (Stage 4):** `.git-menu` normalized from `var(--radius-md)` to `var(--radius-sm)`; delete branch dialog migrated to AlertDialog; status pills (999px) retained. | Completed. | Zero backlog entries remaining in GitButton.css. |
 | 34 | **Git Sections: Branches, Stash, Merge** | `GitBranchesSection.*`, `GitStashSection.*`, `GitMergeSection.*` | **A/B** | Lists and inputs use `--radius-sm`; branch tags use 999px (pills); merge info uses `--radius-sm`. | Mostly aligned; normalize raw `<select>` and inputs to shared form primitives. | Low risk; already close to canonical geometry. |
 | 35 | **Git Sections: Remotes** | `GitRemotesSection.tsx`, `GitRemotesSection.css` | **B/D** | Remote count badge uses 10px (pill); add button uses 4px; remote items use 4px; form inputs use 4px; actions use 4px; tag uses 12px (pill). | Normalize rectangular cards, buttons, and inputs from 4px to `--radius-sm` (2px); retain 10px/12px badges as intentional pills. | Low risk; verify remote URL add/edit. |
-| 36 | **Provider Badge & Menu** | `ProviderBadge.tsx/css`, `ProviderMenu.tsx/css` | **B/C** | Badge uses 4px/10px (pill); provider menu trigger uses 6px; dropdown content uses 8px; menu items use 4px. | Normalize menu trigger, dropdown content, and items to `--radius-sm`; keep provider badge as intentional status pill. | Low risk; verify PR/MR link clicks. |
+| 36 | **Provider Badge & Menu** | `ProviderBadge.tsx/css`, `ProviderMenu.tsx/css` | **A/B** | **Aligned (Stage 4):** Menu trigger, dropdown content, refresh button, and link items normalized from 6px/8px/4px to `var(--radius-sm)`; provider status badges (4px/10px) retained. | Completed. | Zero backlog entries remaining in ProviderMenu.css. |
 | 37 | **Task Recovery Section** | `TaskRecoverySection.tsx`, `TaskRecoverySection.css` | **B** | Badge uses 10px (pill); card uses 6px; status chip uses 4px (pill); pulse uses 50% (circle); fork button uses 4px; item uses 4px. | Normalize cards, fork buttons, and items from 4px/6px to `--radius-sm`; retain badge/status pills and pulse circle. | Low risk; verify remote task resumption. |
 | 38 | **Dynamic Pane Layout & Dock Targets** | `DynamicPaneLayout.tsx`, `DynamicPaneLayout.css`, `DockEdgeTargets.tsx` | **B/E** | Splitter handles use 999px (intentional pill); pane tag uses 4px (pill); dock targets and previews use `var(--radius-md)`; drag ghost uses 8px. | Retain splitter pills (Class E); normalize dock targets and drag ghost to `--radius-sm` / `--radius-md` tokens. | Low risk; verify pane drag and drop docking. |
 | 39 | **Error Boundary** | `ErrorBoundary.tsx`, `ErrorBoundary.css` | **B** | Error details card uses `var(--radius-md, 8px)`; retry button uses 6px. | Normalize details card to `--radius-sm` and button to shared `Button` (`--radius-sm`). | Low risk; unhandled crash fallback screen. |
@@ -66,7 +66,7 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
 
 ## 3. Summary by Alignment Classification
 
-- **Class A (Already aligned / Migrated):** 14 areas (grew from 7 in Stage 2)
+- **Class A (Already aligned / Migrated):** 17 areas (grew from 14 in Stage 3)
   - Title Bar & Window Controls (#2)
   - Status Bar (#4)
   - Workspace Gate Fullscreen Launcher (#7) — *Aligned in Stage 3*
@@ -80,8 +80,11 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
   - Searchable Choices primitive (#15)
   - Launch Recipe Modal (#16) — *Migrated in Stage 2*
   - VCS Credentials (#17)
+  - Commit Dialog (#18) — *Migrated in Stage 4*
+  - Git Delete Branch Dialog (#20) — *Migrated in Stage 4*
   - Annotation Handoff Dialog (#27) — *Migrated in Stage 2*
-- **Class B (Uses primitives/tokens, local styling drift):** 17 areas (reduced from 24 in Stage 3)
+  - Diff Viewer Chrome (#29) — *Migrated in Stage 4*
+- **Class B (Uses primitives/tokens, local styling drift):** 15 areas (reduced from 17 in Stage 4)
   - Application Shell (#1)
   - Workspace Tabs (#3)
   - Header Controls & Harness Pills (#5)
@@ -96,18 +99,13 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
   - Terminal Pane Chrome (#30)
   - Notes Pane (#31)
   - Chat History Popover (#32)
-  - Git Menu & Popover (#33)
   - Git Branches, Stash, Merge (#34)
   - Git Remotes Section (#35)
-  - Provider Badge & Menu (#36)
   - Task Recovery Section (#37)
   - Dynamic Pane Layout (#38)
   - Error Boundary (#39)
-- **Class C (Should migrate to shared primitive):** 4 areas (reduced from 7 in Stage 2)
-  - Commit Dialog (#18) → shared `Dialog`
-  - Git Delete Branch Dialog (#20) → shared `AlertDialog`
-  - Diff Viewer Chrome (#29) → shared `Dialog`
-  - Provider Menu (#36) / Git Menu (#33) → shared overlay / Popover
+- **Class C (Should migrate to shared primitive):** 1 area (reduced from 4 in Stage 4)
+  - File Explorer Context Menu (#22) → evaluate shared Menu / Popover
 - **Class D (Requires shared form-control primitive):** Recurring across 12 areas
   - Standard `Input`: RecipeModal, RemoteDirectoryChooser, SshEnvironmentManager, WorktreeLauncher, BrowserUrlInput, NotesPane, GitRemotes, HeaderSettings, WorkspaceTabs, CommitDialog
   - Standard `Textarea`: AnnotationHandoffDialog, CommitDialog, NotesPane

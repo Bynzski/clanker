@@ -5,8 +5,11 @@ import type { AiCommitSettings } from '../types/shared';
 import DiffViewer from './DiffViewer';
 import type { DiffViewerState } from './git/diffTypes';
 import { initialDiffViewerState } from './git/diffTypes';
+import { Dialog, DialogContent, DialogTitle, DialogClose } from './ui/Dialog';
+import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
+import { Textarea } from './ui/Textarea';
 import './CommitDialog.css';
-
 interface GitStatus {
   path: string;
   status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed';
@@ -38,9 +41,6 @@ export default function CommitDialog({
 }: CommitDialogProps) {
   const [message, setMessage] = useState('');
   const [aiSettings, setAiSettings] = useState<AiCommitSettings | null>(null);
-  const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
-  const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
-  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const isRemoteWorkspace = useWorkspaceStore((state) => {
     const workspace = state.workspaces.find((entry) => entry.id === (workspaceId ?? state.activeWorkspaceId));
     return workspace ? !!workspace.environmentId && workspace.environmentId !== 'local' : !!workspaceId;
@@ -53,7 +53,6 @@ export default function CommitDialog({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [unstagingPaths, setUnstagingPaths] = useState<Set<string>>(new Set());
   const [diffState, setDiffState] = useState<DiffViewerState>(initialDiffViewerState);
-
   // Reset state when dialog opens
   useEffect(() => {
     if (isOpen) {
@@ -64,8 +63,6 @@ export default function CommitDialog({
       setIsUnstaging(false);
       setCommitStatus(null);
       setUnstagingPaths(new Set());
-      // Focus the input after a brief delay
-      setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isOpen]);
 
@@ -97,30 +94,6 @@ export default function CommitDialog({
     };
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    if (!activeWorkspaceId) {
-      return;
-    }
-
-    pushBrowserOverlay(activeWorkspaceId);
-    return () => popBrowserOverlay(activeWorkspaceId);
-  }, [activeWorkspaceId, isOpen, pushBrowserOverlay, popBrowserOverlay]);
-
-  // Handle escape key
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,11 +128,6 @@ export default function CommitDialog({
     }
   };
 
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
 
   const handleGenerateMessage = async () => {
     if (!workspacePath || isGenerating || isRemoteWorkspace) {
@@ -306,13 +274,26 @@ export default function CommitDialog({
 
   return (
     <>
-    <div className="commit-dialog-overlay" onClick={handleOverlayClick}>
-      <div className="commit-dialog">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        className="commit-dialog"
+        overlayClassName="commit-dialog-overlay"
+        workspaceId={workspaceId}
+        aria-describedby={undefined}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          inputRef.current?.focus();
+        }}
+      >
         <div className="commit-dialog-header">
-          <h2>Create Commit</h2>
-          <button className="commit-dialog-close" onClick={onClose} title="Close">
-            <X size={18} />
-          </button>
+          <DialogTitle asChild>
+            <h2>Create Commit</h2>
+          </DialogTitle>
+          <DialogClose asChild>
+            <IconButton aria-label="Close" title="Close">
+              <X size={18} />
+            </IconButton>
+          </DialogClose>
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -325,7 +306,9 @@ export default function CommitDialog({
                   Commit Message
                 </label>
                 {aiCommitEnabled && hasChanges && !isRemoteWorkspace && (
-                  <button
+                  <Button
+                    size="sm"
+                    variant="secondary"
                     type="button"
                     className="commit-ai-btn"
                     onClick={() => void handleGenerateMessage()}
@@ -338,12 +321,13 @@ export default function CommitDialog({
                       <Sparkles size={12} />
                     )}
                     <span>Generate</span>
-                  </button>
+                  </Button>
                 )}
               </div>
-              <textarea
+              <Textarea
                 ref={inputRef}
                 id="commit-message"
+                variant="mono"
                 className="commit-message-input"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
@@ -362,24 +346,28 @@ export default function CommitDialog({
                 </span>
                 <div className="commit-files-header-actions">
                   {hasStagedChanges && (
-                    <button
+                    <Button
+                      size="sm"
+                      variant="secondary"
                       type="button"
                       className="commit-unstage-btn"
                       onClick={() => void handleUnstageAll()}
                       disabled={isBusy}
                     >
                       {isUnstaging ? 'Unstaging...' : 'Unstage All'}
-                    </button>
+                    </Button>
                   )}
                   {hasUnstagedChanges && (
-                    <button
+                    <Button
+                      size="sm"
+                      variant="secondary"
                       type="button"
                       className="commit-stage-btn"
                       onClick={onStageAll}
                       disabled={isBusy}
                     >
                       Stage All
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -394,15 +382,16 @@ export default function CommitDialog({
                       <span className="commit-file-path" title={change.path}>
                         {change.path}
                       </span>
-                      <button
-                        type="button"
+                      <IconButton
+                        size="sm"
                         className="commit-file-diff-action"
                         onClick={() => void handleViewFileDiff(change.path, change.staged ? 'staged' : 'working')}
                         disabled={isBusy}
+                        aria-label={`View diff for ${change.path}`}
                         title="View diff"
                       >
                         <Eye size={12} />
-                      </button>
+                      </IconButton>
                       {change.staged && (
                         <>
                           <span className="commit-file-staged" title="Staged">
@@ -438,18 +427,20 @@ export default function CommitDialog({
               )}
             </div>
             <div className="commit-dialog-actions">
-              <button
+              <Button
+                size="sm"
+                variant="secondary"
                 type="button"
-                className="header-btn"
                 onClick={onClose}
                 disabled={isBusy}
               >
                 Cancel
-              </button>
+              </Button>
               {hasUnstagedChanges ? (
-                <button
+                <Button
+                  size="sm"
+                  variant="primary"
                   type="submit"
-                  className="header-btn header-btn-primary"
                   disabled={isBusy || !message.trim()}
                 >
                   {isCommitting ? (
@@ -460,11 +451,12 @@ export default function CommitDialog({
                   ) : (
                     'Stage All & Commit'
                   )}
-                </button>
+                </Button>
               ) : (
-                <button
+                <Button
+                  size="sm"
+                  variant="primary"
                   type="submit"
-                  className="header-btn header-btn-primary"
                   disabled={isBusy || !message.trim()}
                 >
                   {isCommitting ? (
@@ -475,13 +467,13 @@ export default function CommitDialog({
                   ) : (
                     'Commit'
                   )}
-                </button>
+                </Button>
               )}
             </div>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
     {diffState.isOpen && (
       <DiffViewer
         oldContent={diffState.oldContent}
@@ -492,6 +484,7 @@ export default function CommitDialog({
         hasDiff={diffState.hasDiff}
         isLoading={diffState.isLoading}
         error={diffState.error}
+        workspaceId={workspaceId}
         onClose={handleCloseDiff}
       />
     )}

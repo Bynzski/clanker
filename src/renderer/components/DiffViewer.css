@@ -1,28 +1,18 @@
 /* Diff Viewer — side-by-side modal */
 
 .diff-viewer-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: var(--overlay-backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 1001; /* Above commit dialog (1000) */
 }
 
-.diff-viewer-modal {
-  background: var(--surface-elevated);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+.clanker-dialog-content.diff-viewer-modal {
+  z-index: 1001;
   width: 90vw;
   max-width: 1200px;
   height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-dialog);
+  padding: 0;
+  overflow: hidden;
 }
 
 .diff-viewer-header {
@@ -44,22 +34,6 @@
   white-space: nowrap;
 }
 
-.diff-viewer-close {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.diff-viewer-close:hover {
-  background: var(--surface-control);
-  color: var(--text-primary);
-}
 
 .diff-viewer-body {
   flex: 1;

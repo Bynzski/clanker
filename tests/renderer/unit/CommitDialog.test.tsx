@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import CommitDialog from '../../../src/renderer/components/CommitDialog';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
@@ -76,12 +77,12 @@ describe('CommitDialog', () => {
     expect(mockOnClose).toHaveBeenCalled();
   });
 
-  it('calls onClose when overlay is clicked', () => {
+  it('calls onClose when overlay is clicked', async () => {
+    const user = userEvent.setup();
     renderDialog();
     const overlay = document.querySelector('.commit-dialog-overlay');
     expect(overlay).toBeTruthy();
-    // Simulate clicking the overlay background itself (not child)
-    fireEvent.click(overlay!);
+    await user.click(overlay!);
     expect(mockOnClose).toHaveBeenCalled();
   });
 
@@ -212,12 +213,12 @@ describe('CommitDialog', () => {
   // Commit flow
   // =========================================================================
   it('shows error when submitting empty message', async () => {
-    const { container } = renderDialog({
+    renderDialog({
       changes: [
         { path: 'file.ts', status: 'modified' as const, staged: true },
       ],
     });
-    const form = container.querySelector('form');
+    const form = document.querySelector('form');
     expect(form).toBeTruthy();
     fireEvent.submit(form!);
     await waitFor(() => {
@@ -606,5 +607,40 @@ describe('CommitDialog', () => {
     // Eye button should be disabled
     const eyeButton = screen.getByTitle('View diff');
     expect(eyeButton).toBeDisabled();
+  });
+
+  it('opens nested DiffViewer, handles topmost Escape dismissal, and reference-counts browser overlay leases', async () => {
+    const onClose = vi.fn();
+    renderDialog({
+      isOpen: true,
+      onClose,
+      workspaceId: 'workspace-1',
+      changes: [{ path: 'src/main.ts', status: 'modified' as const, staged: true }],
+    });
+
+    // CommitDialog is open -> 1 lease active
+    expect(screen.getByRole('dialog', { name: 'Create Commit' })).toBeInTheDocument();
+    expect(useWorkspaceStore.getState().workspaces[0].browserOverlayCount).toBe(1);
+
+    // Open DiffViewer by clicking View diff
+    const eyeButton = screen.getByTitle('View diff');
+    fireEvent.click(eyeButton);
+
+    // DiffViewer opens as topmost dialog -> 2 leases active
+    const diffDialog = await screen.findByRole('dialog', { name: 'file.ts' });
+    expect(diffDialog).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Create Commit' })).toBeInTheDocument();
+    expect(useWorkspaceStore.getState().workspaces[0].browserOverlayCount).toBe(2);
+
+    // Press Escape -> closes ONLY DiffViewer, CommitDialog stays open
+    fireEvent.keyDown(diffDialog, { key: 'Escape', code: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'file.ts' })).toBeNull();
+    });
+    expect(screen.getByRole('dialog', { name: 'Create Commit' })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Lease decrements back to 1 (browser remains suppressed by parent CommitDialog)
+    expect(useWorkspaceStore.getState().workspaces[0].browserOverlayCount).toBe(1);
   });
 });
