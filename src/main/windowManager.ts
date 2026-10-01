@@ -5,7 +5,7 @@
  * Extracted from main.ts per S2.6.
  */
 
-import { BrowserWindow, Menu } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
 import * as path from 'path';
 
 import { DEFAULT_THEME_ID, normalizeThemeId, getThemeMetadata } from '../shared/types/theme';
@@ -62,15 +62,13 @@ export function getRendererUrl(query: Record<string, string | null | undefined>)
 }
 
 /**
- * Get the path to the application icon based on environment.
- * In dev: src/assets/icons/icon-512.png
- * In prod: process.resourcesPath/icon.png (copied by electron-builder from extraResources)
+ * Resolve loose development/build assets from the app root, and the packaged
+ * extraResource outside app.asar. This also supports `npm start` after a build.
  */
 export function getIconPath(): string {
-  if (process.env.NODE_ENV === 'development') {
-    return path.join(__dirname, '../../assets/icons/icon_512x512.png');
-  }
-  return path.join(process.resourcesPath, 'icon.png');
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'icon.png')
+    : path.join(app.getAppPath(), 'src/assets/branding/generated/clanker-app-512.png');
 }
 
 /**

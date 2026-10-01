@@ -5,11 +5,12 @@
  */
 
 import { vi, describe, test, expect, afterEach } from 'vitest';
-import { BrowserWindow } from 'electron';
-import { createMainWindow, resolveInitialWindowBackground } from '../../../src/main/windowManager';
+import * as path from 'node:path';
+import { app, BrowserWindow } from 'electron';
+import { createMainWindow, getIconPath, resolveInitialWindowBackground } from '../../../src/main/windowManager';
 
 import { getThemeMetadata } from '../../../src/shared/types/theme';
-vi.mock('electron', () => ({ BrowserWindow: vi.fn(), Menu: { setApplicationMenu: vi.fn() } }));
+vi.mock('electron', () => ({ app: { get isPackaged() { return false; }, getAppPath: () => process.cwd() }, BrowserWindow: vi.fn(), Menu: { setApplicationMenu: vi.fn() } }));
 
 test('renderer loss stops file/git watchers and releases workspace resources without waiting for window close', () => {
   const nodeEnv = process.env.NODE_ENV;
@@ -110,33 +111,19 @@ describe('windowManager', () => {
     });
   });
 
-  describe('getIconPath (pure logic)', () => {
-    // Replicate the pure logic from windowManager.ts
-    function getIconPath(): string {
-      if (process.env.NODE_ENV === 'development') {
-        return 'mock/build/icon.png';
-      }
-      // In production (mocked)
-      return 'mock/resources/icon.png';
-    }
+  describe('getIconPath', () => {
+    afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-    const originalNodeEnv = process.env.NODE_ENV;
-
-    afterEach(() => {
-      process.env.NODE_ENV = originalNodeEnv;
+    test('unpackaged icon exists from the application root, independent of NODE_ENV', async () => {
+      const { existsSync } = await import('node:fs');
+      expect(getIconPath()).toBe(path.join(process.cwd(), 'src/assets/branding/generated/clanker-app-512.png'));
+      expect(existsSync(getIconPath())).toBe(true);
     });
 
-    test('returns development path in development mode', () => {
-      process.env.NODE_ENV = 'development';
-      const result = getIconPath();
-      expect(result.includes('build')).toBe(true);
-      expect(result.includes('icon.png')).toBe(true);
-    });
-
-    test('returns production path in production mode', () => {
-      process.env.NODE_ENV = 'production';
-      const result = getIconPath();
-      expect(result.includes('icon.png')).toBe(true);
+    test('packaged icon matches the extraResources destination', () => {
+      vi.spyOn(app, 'isPackaged', 'get').mockReturnValue(true);
+      vi.stubGlobal('process', { ...process, resourcesPath: '/packaged/resources' });
+      expect(getIconPath()).toBe(path.join(process.resourcesPath, 'icon.png'));
     });
   });
 

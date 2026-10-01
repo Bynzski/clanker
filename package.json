@@ -24,11 +24,13 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "diagnose:gpu": "electron scripts/gpu-smoke.cjs",
-    "validate": "npm run lint && npm run typecheck && npm run security-check && npm run build && npm run test",
+    "validate": "npm run branding:check && npm run lint && npm run typecheck && npm run security-check && npm run build && npm run test",
     "security-check": "npm audit --audit-level=high",
     "build:dist": "npm run build && electron-builder --publish never",
     "start": "electron .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "branding:generate": "node scripts/generate-branding.cjs",
+    "branding:check": "node scripts/check-branding.cjs"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.5",
@@ -76,6 +78,7 @@
     "globals": "^16.4.0",
     "husky": "^9.1.7",
     "jsdom": "^29.0.2",
+    "sharp": "0.35.5",
     "typescript": "6.0.2",
     "typescript-eslint": "^8.46.1",
     "vite": "^8.0.8",
@@ -88,12 +91,11 @@
       "output": "release"
     },
     "files": [
-      "dist/**/*",
-      "src/assets/icons/**/*"
+      "dist/**/*"
     ],
     "extraResources": [
       {
-        "from": "src/assets/icons/icon_512x512.png",
+        "from": "src/assets/branding/generated/clanker-app-512.png",
         "to": "icon.png"
       }
     ],
@@ -101,21 +103,21 @@
       "target": [
         "AppImage"
       ],
-      "icon": "src/assets/icons/icon_512x512.png"
+      "icon": "src/assets/branding/generated/clanker-app-512.png"
     },
     "win": {
       "target": [
         "nsis",
         "portable"
       ],
-      "icon": "src/assets/icons/icon.ico"
+      "icon": "src/assets/branding/generated/clanker-app.ico"
     },
     "mac": {
       "target": [
         "dmg",
         "zip"
       ],
-      "icon": "src/assets/icons/icon.icns",
+      "icon": "src/assets/branding/generated/clanker-app.icns",
       "category": "public.app-category.developer-tools"
     },
     "nsis": {

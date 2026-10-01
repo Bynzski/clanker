@@ -1,3 +1,4 @@
+import { clankerUi18, clankerUi36 } from '../lib/branding';
 import WindowControls from './WindowControls';
 import WorkspaceTabs from './WorkspaceTabs';
 import './TitleBar.css';
@@ -12,8 +13,9 @@ export default function TitleBar({ onOpenWorkspace }: TitleBarProps) {
       <div className="titlebar-left">
         <div className="titlebar-brand">
           <img
-            src="./titlebar-icon.png"
-            alt="Clanker Grid icon"
+            src={clankerUi18}
+            srcSet={`${clankerUi18} 1x, ${clankerUi36} 2x`}
+            alt=""
             width={18}
             height={18}
           />

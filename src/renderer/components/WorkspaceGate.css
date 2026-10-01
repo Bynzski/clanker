@@ -195,7 +195,7 @@
 .gate-brand-icon {
   width: 64px;
   height: 64px;
-  filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--shadow-color) 40%, transparent));
+  object-fit: contain;
 }
 
 .gate-title {
