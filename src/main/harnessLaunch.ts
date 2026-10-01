@@ -1,4 +1,3 @@
-import { findHarnessProvider } from './harnesses/registry';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -50,7 +49,8 @@ export function resolveHarnessSpawn(
 export function buildHarnessSpawnArgs(
   config: HarnessConfig,
   model?: string,
-  userFlags?: string
+  userFlags?: string,
+  modelArgsForLaunch?: (model: string, modelArg?: string) => string[] | undefined,
 ): string[] {
   const args = [...config.args];
 
@@ -59,7 +59,7 @@ export function buildHarnessSpawnArgs(
   }
 
   if (model) {
-    const modelArgs = findHarnessProvider(config.command)?.launch.modelArgs?.(model, config.modelArg);
+    const modelArgs = modelArgsForLaunch?.(model, config.modelArg);
     if (modelArgs) {
       args.unshift(...modelArgs);
       return args;

@@ -252,7 +252,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const userFlags = harness ? harnessDefaults[harness]?.flags : undefined;
     const effectiveModel = model || (harness ? harnessDefaults[harness]?.model || undefined : undefined);
     let harnessArgs = harnessConfig
-      ? buildHarnessSpawnArgs(harnessConfig, effectiveModel, userFlags)
+      ? buildHarnessSpawnArgs(harnessConfig, effectiveModel, userFlags, findHarnessProvider(harness)?.launch.modelArgs)
       : [];
     let attentionEnv: Record<string, string> = {};
     let attentionCommand: string | undefined;

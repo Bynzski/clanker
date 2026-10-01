@@ -1,3 +1,4 @@
+import { findHarnessProvider } from '../harnesses/registry';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type {
@@ -118,7 +119,7 @@ export class LocalEnvironment implements WorkspaceEnvironment {
 
     let harnessArgs: string[] = [];
     if (harnessConfig) {
-      harnessArgs = buildHarnessSpawnArgs(harnessConfig, params.model);
+      harnessArgs = buildHarnessSpawnArgs(harnessConfig, params.model, undefined, findHarnessProvider(params.harness)?.launch.modelArgs);
     }
 
     const harnessCmd = harnessConfig

@@ -38,7 +38,7 @@ describe.skipIf(process.platform === 'win32' || !pythonAvailable)('SSH native se
     const resolved = await environment.resolveTerminalSpawn({ id: 'term', workingDir: cwd, harness, flags: '--verbose', resumeSession: { session: selected, fork: false, workspaceRoot: root } });
     expect(resolved.spawnCmd).toBe('ssh');
     expect(run(resolved.spawnArgs).status).toBe(0);
-    expect(readFileSync(join(home, 'captured'), 'utf8').trim().split('\n')).toEqual([cwd, ...buildSessionCommand(selected, false, '--verbose').args]);
+    expect(readFileSync(join(home, 'captured'), 'utf8').trim().split('\n')).toEqual([cwd, ...buildSessionCommand(selected, { operation: 'resume', transport: 'ssh', userFlags: '--verbose' }).args]);
   });
   it('refuses a directory or session file changed to an escaping symlink after preparation', async () => {
     const selected = session('pi');

@@ -1,4 +1,4 @@
-import { getHarnessProvider, getHarnessProviders } from '../harnesses/registry';
+import { findHarnessProvider, getHarnessProvider, getHarnessProviders } from '../harnesses/registry';
 import * as path from 'path';
 import type {
   WorkspaceEnvironment,
@@ -709,8 +709,8 @@ export class SshEnvironment implements WorkspaceEnvironment {
     let attention: Awaited<ReturnType<typeof prepareSshAttention>> | undefined;
     if (harnessConfig && params.harness) {
       let harnessArgs = params.resumeSession
-        ? buildSessionCommand(params.resumeSession.session, params.resumeSession.fork, params.flags).args
-        : buildHarnessSpawnArgs(harnessConfig, params.model, params.flags);
+        ? buildSessionCommand(params.resumeSession.session, { operation: params.resumeSession.fork ? 'fork' : 'resume', transport: 'ssh', userFlags: params.flags }).args
+        : buildHarnessSpawnArgs(harnessConfig, params.model, params.flags, findHarnessProvider(params.harness)?.launch.modelArgs);
       if (params.attentionToken) {
         attention = await prepareSshAttention(this.executor, this.target, params.harness, harnessArgs, params.attentionToken);
         harnessArgs = attention.args;

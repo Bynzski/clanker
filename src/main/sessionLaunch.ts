@@ -14,9 +14,9 @@ export function supportsSessionOperation(harness: unknown, fork: boolean, transp
 }
 
 /** Pure provider CLI arguments, shared by local and SSH session launches. */
-export function buildSessionCommand(session: HarnessSession, fork = false, userFlags?: string) {
+export function buildSessionCommand(session: HarnessSession, options: { operation: 'resume' | 'fork'; transport: 'local' | 'ssh'; userFlags?: string }) {
   const capability = getHarnessProvider(session.harness).sessions;
-  const operation = fork ? capability?.fork : capability?.resume;
-  if (!operation) throw new HarnessCapabilityError('unsupported', `${session.harness} session invocation is not supported`);
-  return operation.build(session, userFlags);
+  const operation = capability?.[options.operation];
+  if (!operation || (operation.transports && !operation.transports.includes(options.transport))) throw new HarnessCapabilityError('unsupported', `${session.harness} session invocation is not supported`);
+  return operation.build(session, options.userFlags);
 }

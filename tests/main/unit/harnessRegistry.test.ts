@@ -79,3 +79,11 @@ it('retains failure categories and native causes without claiming unsupported', 
   const configured = new HarnessCapabilityError('not-configured', 'Authentication required', native);
   expect(classifyHarnessFailure(configured)).toBe(configured);
 });
+
+it('enforces operation transports at the canonical invocation boundary', async () => {
+  const { buildSessionCommand } = await import('../../../src/main/sessionLaunch');
+  const session = { harness: 'agy' as const, id: 'native-id', title: '', cwd: '/ws', timestamp: 0 };
+  expect(buildSessionCommand(session, { operation: 'fork', transport: 'local' })).toEqual({ command: 'agy', args: ['--conversation', 'native-id'] });
+  expect(() => buildSessionCommand(session, { operation: 'fork', transport: 'ssh' })).toThrow(expect.objectContaining({ kind: 'unsupported' }));
+  expect(() => buildSessionCommand({ ...session, harness: 'hermes' }, { operation: 'resume', transport: 'local' })).toThrow(expect.objectContaining({ kind: 'unsupported' }));
+});

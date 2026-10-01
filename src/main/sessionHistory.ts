@@ -121,6 +121,6 @@ export async function discoverSessionsDetailed(
 }
 
 export function buildSessionInvokeArgs(session: HarnessSession, fork = false, userFlags?: string): { spawnCmd: string; spawnArgs: string[] } {
-  const launch = buildSessionCommand({ ...session, ...(session.filePath ? { filePath: toPosixPath(session.filePath) } : {}) }, fork, userFlags);
+  const launch = buildSessionCommand({ ...session, ...(session.filePath ? { filePath: toPosixPath(session.filePath) } : {}) }, { operation: fork ? 'fork' : 'resume', transport: 'local', userFlags });
   return resolveHarnessSpawn(launch.command, launch.args, ensureHarnessWrapperScript());
 }
