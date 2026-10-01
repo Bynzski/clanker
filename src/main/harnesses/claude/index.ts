@@ -1,6 +1,6 @@
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
-import { local } from './attention';
+import { local, prepareResources } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import { defineHarness, type HarnessProvider } from '../types';
@@ -15,6 +15,6 @@ export const claudeProvider = defineHarness({
     selectionFlags: ['--resume', '-r', '--continue', '-c', '--fork-session'],
     discover: async (workspace: string) => (await import('./sessions')).discoverClaudeSessions(workspace),
   },
-  attention: { local, remote },
+  attention: { prepareResources, local, remote },
   launch: { command: 'claude', args: [], modelArg: '--model' },
 } satisfies HarnessProvider);

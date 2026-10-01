@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type { AttentionAdapterFiles } from '../types';
 import { localAttention } from '../localAttention';
 
 export const SOURCE = `import { emit } from './observer.mjs';
@@ -10,5 +13,9 @@ export default function (pi) {
 
 
 export const local = localAttention(({ args, files: adapterFiles }) => {
-  return { args: [...args, '--extension', adapterFiles.piExtension], env: {} };
+  return { args: [...args, '--extension', path.join(path.dirname(adapterFiles.command), 'pi.ts')], env: {} };
 });
+
+export function prepareResources(files: AttentionAdapterFiles): void {
+  fs.writeFileSync(path.join(path.dirname(files.command), 'pi.ts'), SOURCE, { mode: 0o600 });
+}

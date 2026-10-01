@@ -73,3 +73,10 @@ describe('provider attention leases', () => {
     expect(release).toHaveBeenCalledTimes(2);
   });
 });
+
+it('shared attention resources contain only the generic command bridge', () => {
+  expect(Object.keys(context().files)).toEqual(['command']);
+  for (const id of ['claude', 'pi', 'omp', 'opencode'] as const) {
+    expect(getHarnessProvider(id).attention.prepareResources).toBeTypeOf('function');
+  }
+});

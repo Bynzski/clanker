@@ -1,6 +1,6 @@
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
-import { local, SOURCE } from './attention';
+import { local, SOURCE, prepareResources } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import { defineHarness, type HarnessProvider } from '../types';
@@ -16,7 +16,7 @@ export const piProvider = defineHarness({
     selectionFlags: ['--session', '--continue', '-c', '--resume', '-r', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverPiSessions(workspace),
   },
-  attention: { local, remote, sources: () => ({ 'pi.ts': SOURCE }) },
+  attention: { prepareResources, local, remote, sources: () => ({ 'pi.ts': SOURCE }) },
   aiCommit: { command: 'pi', args: [], modelArg: '--model', timeoutMs: 45000 },
   launch: { command: 'pi', args: [], modelArg: '--model' },
 } satisfies HarnessProvider);

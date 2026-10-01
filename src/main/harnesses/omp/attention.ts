@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type { AttentionAdapterFiles } from '../types';
 import { localAttention } from '../localAttention';
 
 export const SOURCE = `import { emit } from './observer.mjs';
@@ -10,5 +13,9 @@ export default function (omp) {
 
 
 export const local = localAttention(({ args, files: adapterFiles }) => {
-  return { args: [...args, '--extension', adapterFiles.ompExtension], env: {} };
+  return { args: [...args, '--extension', path.join(path.dirname(adapterFiles.command), 'omp.ts')], env: {} };
 });
+
+export function prepareResources(files: AttentionAdapterFiles): void {
+  fs.writeFileSync(path.join(path.dirname(files.command), 'omp.ts'), SOURCE, { mode: 0o600 });
+}

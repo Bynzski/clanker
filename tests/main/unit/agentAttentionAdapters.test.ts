@@ -22,14 +22,14 @@ describe('agent attention launch adapters', () => {
 
   it('adds Pi and Claude observers without removing existing flags', () => {
     expect(attentionLaunchOptions('pi', ['--model', 'x', '--no-extensions'], {}, files)?.args)
-      .toEqual(['--model', 'x', '--no-extensions', '--extension', files.piExtension]);
+      .toEqual(['--model', 'x', '--no-extensions', '--extension', path.join(path.dirname(files.command), 'pi.ts')]);
     expect(attentionLaunchOptions('omp', ['--model', 'x'], {}, files)?.args)
-      .toEqual(['--model', 'x', '--extension', files.ompExtension]);
-    expect(fs.readFileSync(files.ompExtension, 'utf8')).toContain("omp.on('agent_end'");
+      .toEqual(['--model', 'x', '--extension', path.join(path.dirname(files.command), 'omp.ts')]);
+    expect(fs.readFileSync(path.join(path.dirname(files.command), 'omp.ts'), 'utf8')).toContain("omp.on('agent_end'");
     expect(attentionLaunchOptions('claude', ['--model', 'x'], {}, files)?.args)
-      .toEqual(['--model', 'x', '--settings', files.claudeSettings]);
+      .toEqual(['--model', 'x', '--settings', path.join(path.dirname(files.command), 'claude-settings.json')]);
     expect(attentionLaunchOptions('claude', ['--settings', 'custom.json'], {}, files)).toBeNull();
-    const settings = JSON.parse(fs.readFileSync(files.claudeSettings, 'utf8')) as { hooks: Record<string, unknown> };
+    const settings = JSON.parse(fs.readFileSync(path.join(path.dirname(files.command), 'claude-settings.json'), 'utf8')) as { hooks: Record<string, unknown> };
     expect(Object.keys(settings.hooks)).toContain('Notification');
   });
 
@@ -87,7 +87,7 @@ describe('agent attention launch adapters', () => {
     expect(attentionLaunchOptions('opencode', [], { OPENCODE_CONFIG_DIR: '/custom' }, files)).toBeNull();
     expect(attentionLaunchOptions('opencode', ['--pure'], {}, files)).toBeNull();
     expect(attentionLaunchOptions('opencode', ['--model', 'x'], {}, files)?.env.OPENCODE_CONFIG_DIR)
-      .toBe(files.opencodeDirectory);
+      .toBe(path.join(path.dirname(files.command), 'opencode'));
   });
 
   it('does not inherit attention credentials from an earlier launch', () => {

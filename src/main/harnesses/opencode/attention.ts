@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type { AttentionAdapterFiles } from '../types';
 import { localAttention } from '../localAttention';
 
 export const SOURCE = `import { emit } from '../observer.mjs';
@@ -23,8 +26,15 @@ export const ClankerAttention = async () => ({
 export const local = localAttention(({ args, env, files: adapterFiles, sessionId }) => {
     if (env.OPENCODE_CONFIG_DIR || args.includes('--pure')) return null;
     return { args, env: {
-      OPENCODE_CONFIG_DIR: adapterFiles.opencodeDirectory,
+      OPENCODE_CONFIG_DIR: path.join(path.dirname(adapterFiles.command), 'opencode'),
       ...(sessionId ? { CLANKER_ATTENTION_SESSION_ID: sessionId } : {}),
     } };
 
 });
+
+export function prepareResources(files: AttentionAdapterFiles, observer: string): void {
+  const directory = path.join(path.dirname(files.command), 'opencode');
+  fs.mkdirSync(path.join(directory, 'plugins'), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(directory, 'observer.mjs'), observer, { mode: 0o600 });
+  fs.writeFileSync(path.join(directory, 'plugins', 'clanker-attention.js'), SOURCE, { mode: 0o600 });
+}

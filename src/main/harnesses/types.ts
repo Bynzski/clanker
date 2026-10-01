@@ -89,10 +89,7 @@ export interface HarnessRemoteSessions {
 
 export interface AttentionAdapterFiles {
   command: string;
-  claudeSettings: string;
-  opencodeDirectory: string;
-  piExtension: string;
-  ompExtension: string;
+
 }
 export interface AttentionLaunchOptions { args: string[]; env: Record<string, string> }
 export interface PreparedLocalAttention extends AttentionLaunchOptions { dispose(): void }
@@ -111,6 +108,8 @@ export interface HarnessLocalAttention {
   prepare(context: LocalAttentionContext): PreparedLocalAttention | null;
 }
 export interface HarnessAttentionCapability {
+  readonly prepareResources?: (files: AttentionAdapterFiles, observer: string) => void;
+  readonly disposeResources?: () => void;
   readonly sources?: (observer: string) => Record<string, string>;
   readonly local?: HarnessLocalAttention;
   readonly remote?: HarnessRemoteAttention;
