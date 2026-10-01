@@ -41,10 +41,10 @@ function createHarnessLogoIcon(src: string, monochrome = false): ElementType<Har
 const HARNESS_SVG_ICONS = {
   codex: createHarnessLogoIcon(codexLogoUrl, true),
   claude: createHarnessLogoIcon(claudeLogoUrl),
-  opencode: createHarnessLogoIcon(opencodeLogoUrl),
+  opencode: createHarnessLogoIcon(opencodeLogoUrl, true),
   pi: createHarnessLogoIcon(piLogoUrl, true),
   omp: createHarnessLogoIcon(ompLogoUrl, true),
-  hermes: createHarnessLogoIcon(hermesLogoUrl),
+  hermes: createHarnessLogoIcon(hermesLogoUrl, true),
   agy: createHarnessLogoIcon(agyLogoUrl, true),
 } as const;
 

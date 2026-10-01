@@ -61,3 +61,16 @@ Use Dialog for modal workflows such as VCS Credentials. For a handoff with no
 parent lease, keep the outgoing Popover open until the Dialog's open-autofocus
 callback (its content lease is already acquired), then close it and prevent its
 close-autofocus. Restore focus to a deliberate surviving origin on Dialog close.
+
+## Searchable choices
+
+Use `SearchablePicker` for a searchable dropdown with a selected value and optional
+favorite actions. It composes `Popover`, accepts a native trigger via `asChild`,
+and owns search, favorite-first alphabetical ordering, arrow-key navigation,
+selection dismissal, and search focus. Provider/identifier search text can differ
+from the visible label. Choices and star actions are separate native buttons.
+
+Keep catalogs and persistence in the caller. Return the persistence promise from
+`onToggleFavorite`; the picker prevents overlapping changes, retains focus after
+reordering, and surfaces failed saves. The optional footer supports focused actions
+such as refreshing a catalog. Tokens and reduced-motion support live in its CSS.

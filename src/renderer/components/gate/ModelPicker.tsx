@@ -5,9 +5,12 @@ import type { ModelOption } from '../../types/shared';
 import { hermesModelDisplay, hermesModelLabel } from '../../lib/hermesModelDisplay';
 import { Popover, PopoverTrigger, PopoverContent } from '../ui/Popover';
 import { Dialog, DialogContent, DialogTitle, DialogClose } from '../ui/Dialog';
+import { SearchablePicker } from '../ui/SearchablePicker';
 import { IconButton } from '../ui/IconButton';
 
 interface ModelPickerProps {
+  fullscreen?: boolean;
+  compact?: boolean;
   harness: string;
   model: string;
   models: ModelOption[];
@@ -15,14 +18,21 @@ interface ModelPickerProps {
   favorites: string[];
   savedHermesModel: string;
   refreshing: boolean;
+  loading?: boolean;
   favoritesOpen: boolean;
   discoveryOpen: boolean;
   onFavoritesOpenChange: (open: boolean) => void;
   onDiscoveryOpenChange: (open: boolean) => void;
   onSelect: (model: string) => void;
-  onToggleFavorite: (model: string) => void;
+  onToggleFavorite: (model: string) => void | Promise<void>;
   onRefreshHermes: () => void;
   isUnresolved: (model: string) => boolean;
+}
+
+// The compact row needs the model name; menus and launch values retain provider identity.
+function selectedModelName(option: ModelOption): string {
+  const { model } = hermesModelDisplay(option);
+  return model.slice(model.lastIndexOf('/') + 1) || model;
 }
 
 function HermesModelName({ option }: { option: ModelOption }) {
@@ -34,7 +44,7 @@ function HermesModelName({ option }: { option: ModelOption }) {
 }
 
 /** Model data and persistence stay in the Gate; only search and focus are local. */
-export function ModelPicker({ harness, model, models, sortedModels, favorites, savedHermesModel, refreshing,
+function LegacyModelPicker({ fullscreen = false, harness, model, models, sortedModels, favorites, savedHermesModel, refreshing,
   favoritesOpen, discoveryOpen, onFavoritesOpenChange, onDiscoveryOpenChange, onSelect, onToggleFavorite,
   onRefreshHermes, isUnresolved }: ModelPickerProps) {
   const [search, setSearch] = useState('');
@@ -93,7 +103,7 @@ export function ModelPicker({ harness, model, models, sortedModels, favorites, s
             <ChevronDown size={12} strokeWidth={2.5} className="model-pill-caret" />
           </button>
         </PopoverTrigger>
-        <PopoverContent className="favorites-picker" aria-label="Favorite models" align="start"
+        <PopoverContent className={`favorites-picker ${fullscreen ? 'start-gate-favorites' : ''}`} aria-label="Favorite models" align="start"
           onCloseAutoFocus={(event) => { if (handingOff.current) event.preventDefault(); }}>
           {!favorites.length ? <div className="favorites-empty"><span className="favorites-empty-text">
             {hermes && selectedOption ? label(selectedOption) : model ? selectedOption?.label ?? 'Default model' : 'No default set'}
@@ -172,5 +182,53 @@ export function ModelPicker({ harness, model, models, sortedModels, favorites, s
         </DialogContent>
       </Dialog>
     </>}
+  </div>;
+}
+
+
+/** Fullscreen harness rows share one searchable surface; other Gate views retain their layout. */
+export function ModelPicker(props: ModelPickerProps) {
+  if (!props.compact) return <LegacyModelPicker {...props} />;
+  return <SearchableModelPicker {...props} open={props.favoritesOpen} onOpenChange={props.onFavoritesOpenChange} />;
+}
+
+type SearchableModelPickerProps = Pick<ModelPickerProps, 'harness' | 'model' | 'models' | 'favorites' | 'savedHermesModel' | 'refreshing' | 'loading' | 'onSelect' | 'onToggleFavorite' | 'onRefreshHermes' | 'isUnresolved'> & {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+};
+
+export function SearchableModelPicker(props: SearchableModelPickerProps) {
+  const selectedOption = props.models.find((option) => option.id === props.model);
+  const hermes = props.harness === 'hermes';
+  const items = props.models.map((option) => ({
+    id: option.id, label: hermes ? hermesModelLabel(option) : option.label,
+    unavailable: props.isUnresolved(option.id),
+  }));
+  const missingIds = new Set([...props.favorites, ...(props.model ? [props.model] : [])]);
+  for (const id of missingIds) {
+    if (!items.some((item) => item.id === id)) items.push({ id,
+      label: hermes ? hermesModelLabel({ id, label: id }) : id, unavailable: props.isUnresolved(id),
+    });
+  }
+  const fullLabel = selectedOption ? hermes ? hermesModelLabel(selectedOption) : selectedOption.label : props.model;
+  return <div className="model-picker">
+    <SearchablePicker label="Models" items={items} value={props.model} favorites={props.favorites}
+      open={props.open} onOpenChange={props.onOpenChange} onSelect={props.onSelect}
+      onToggleFavorite={props.onToggleFavorite} emptyText={props.refreshing || props.loading ? 'Discovering models…' : 'No models found'}
+      trigger={<button type="button" className="model-pill" title={fullLabel || 'Harness default'} aria-label={`${props.harness} model`}>
+        <span className={`model-pill-label ${props.isUnresolved(props.model) ? 'unresolved' : ''}`}>
+          {props.model ? selectedModelName(selectedOption ?? { id: props.model, label: props.model }) : 'Harness default'}
+        </span>
+        {props.isUnresolved(props.model) && <AlertTriangle size={12} aria-label="Model unavailable" />}
+        <ChevronDown size={12} className="model-pill-caret" aria-hidden="true" />
+      </button>}
+      footer={hermes ? <>
+        <button type="button" className="favorites-browse-link" onClick={() => { props.onSelect(props.savedHermesModel); props.onOpenChange(false); }}>
+          {props.savedHermesModel ? 'Use saved default' : 'Use Hermes default'}
+        </button>
+        <button type="button" className="favorites-browse-link" disabled={props.refreshing} onClick={props.onRefreshHermes}>
+          {props.refreshing ? 'Refreshing…' : 'Refresh Hermes models'}
+        </button>
+      </> : undefined} />
   </div>;
 }
