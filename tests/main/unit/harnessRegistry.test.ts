@@ -1,3 +1,4 @@
+import { buildSessionCommand } from '../../../src/main/sessionLaunch';
 import { describe, expect, it } from 'vitest';
 import { KNOWN_HARNESS_IDS } from '../../../src/shared/harnessIds';
 import { findHarnessProvider, getHarnessProvider, getHarnessProviders, isHarnessId } from '../../../src/main/harnesses/registry';
@@ -47,9 +48,14 @@ it.each([
   ['agy', ['--conversation', 'native-id', '--model', 'model', '--extra'], ['--conversation', 'native-id', '--model', 'model', '--extra']],
 ] as const)('preserves exact %s resume/fork invocation', (id, resume, fork) => {
   const session = { harness: id, id: 'native-id', title: 'title', cwd: '/ws', timestamp: 0, modelId: 'model', provider: 'provider', filePath: '/store/session.jsonl' };
-  const capability = getHarnessProvider(id).sessions!;
-  expect(capability.resume!.build(session, '--extra')).toEqual({ command: id, args: [...resume] });
-  expect(capability.fork!.build(session, '--extra')).toEqual({ command: id, args: [...fork] });
+  for (const transport of ['local', 'ssh'] as const) {
+    expect(buildSessionCommand(session, { operation: 'resume', transport, userFlags: '--extra' })).toEqual({ command: id, args: [...resume] });
+    if (id === 'agy' && transport === 'ssh') {
+      expect(() => buildSessionCommand(session, { operation: 'fork', transport, userFlags: '--extra' })).toThrow(expect.objectContaining({ kind: 'unsupported' }));
+    } else {
+      expect(buildSessionCommand(session, { operation: 'fork', transport, userFlags: '--extra' })).toEqual({ command: id, args: [...fork] });
+    }
+  }
 });
 
 it('preserves launch metadata, environments and opaque reasoning flags for every harness', async () => {

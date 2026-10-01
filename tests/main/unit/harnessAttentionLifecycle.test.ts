@@ -80,3 +80,13 @@ it('shared attention resources contain only the generic command bridge', () => {
     expect(getHarnessProvider(id).attention.prepareResources).toBeTypeOf('function');
   }
 });
+
+it('rolls back provider resource preparation without caching partial files', () => {
+  const before = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('clanker-attention-'));
+  const capability = getHarnessProvider('pi').attention;
+  const prepare = vi.spyOn(capability, 'prepareResources').mockImplementationOnce(() => { throw new Error('resource preparation failed'); });
+  expect(() => ensureAttentionAdapterFiles()).toThrow('resource preparation failed');
+  expect(fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('clanker-attention-'))).toEqual(before);
+  expect(ensureAttentionAdapterFiles().command).toBeTypeOf('string');
+  prepare.mockRestore();
+});

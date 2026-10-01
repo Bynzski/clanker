@@ -102,6 +102,14 @@ describe('registerSessionIpc', () => {
     mockSpawnPtyProcess.mockReset();
   });
 
+  it('rejects forged Pi files before command construction or spawning', async () => {
+    const handlers = registerHandlers(vi.fn(() => ({ pi: { name: 'Pi', command: 'pi', args: [], icon: 'π' } })));
+    const session: HarnessSession = { id: 'forged-missing-id', harness: 'pi', title: '', cwd: '/workspace', timestamp: 0, filePath: '/workspace/arbitrary.jsonl' };
+    await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toMatchObject({ kind: 'not-configured' });
+    expect(mockBuildSessionInvokeArgs).not.toHaveBeenCalled();
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+  });
+
   it('rejects an OMP session without a JSONL file path', async () => {
     const handlers = registerHandlers(vi.fn(() => ({
       omp: { name: 'Oh My Pi', command: 'omp', args: [], icon: 'π' },

@@ -155,7 +155,7 @@ async function generateAiCommitMessage(
     invocation.command, invocation.args, invocation.stdin, invocation.timeoutMs,
     invocation.env, workspacePath,
   );
-  const message = normalizeCommitMessageOutput(output);
+  const message = normalizeCommitMessageOutput(providerConfig.parseOutput?.(output) ?? output);
 
   if (!message) {
     return { success: false, error: 'AI model returned an empty commit message' };

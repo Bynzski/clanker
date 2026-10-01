@@ -134,6 +134,7 @@ export interface HarnessAiCommitInvocation {
   env?: Record<string, string>;
 }
 export interface HarnessAiCommitCapability {
+  parseOutput?(output: string): string;
   buildInvocation(context: { model?: string; prompt: string }): HarnessAiCommitInvocation;
   readonly command: string;
   readonly args: string[];
