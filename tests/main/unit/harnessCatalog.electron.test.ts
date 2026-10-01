@@ -70,7 +70,7 @@ describe('discoverHarnessModels cache integration', () => {
     const { discoverHarnessModelsDetailed, HARNESS_OPTIONS } = await import('../../../src/main/harnessCatalog');
     const { getHarnessProvider } = await import('../../../src/main/harnesses/registry');
     const discover = vi.spyOn(getHarnessProvider('pi').models!, 'discover').mockResolvedValue([{ id: 'fixture', label: 'Fixture' }]);
-    expect(await discoverHarnessModelsDetailed('pi')).toEqual({ models: [{ id: 'fixture', label: 'Fixture' }], discovered: true });
+    expect(await discoverHarnessModelsDetailed('pi')).toEqual({ models: [{ id: 'fixture', label: 'Fixture' }], success: true, cacheable: true });
     expect(discover).toHaveBeenCalledWith(false);
     expect((await discoverHarnessModelsDetailed('claude')).failure?.kind).toBe('unsupported');
     expect((await discoverHarnessModelsDetailed('unknown')).failure?.kind).toBe('unsupported');
@@ -80,10 +80,22 @@ describe('discoverHarnessModels cache integration', () => {
     expect((await discoverHarnessModelsDetailed('pi')).failure?.kind).toBe('timeout');
     mockExecFile.mockImplementation((_command, _args, _options, callback) => callback(null, '{', ''));
     expect((await discoverHarnessModelsDetailed('omp')).failure?.kind).toBe('parse-failure');
-    expect(await discoverHarnessModelsDetailed('codex')).toMatchObject({ models: [], discovered: true, failure: { kind: 'parse-failure' } });
+    expect(await discoverHarnessModelsDetailed('codex')).toMatchObject({ models: [], success: false, cacheable: true, failure: { kind: 'parse-failure' } });
     await expect(getHarnessProvider('codex').models!.discover()).rejects.toMatchObject({ kind: 'parse-failure' });
     // The IPC compatibility catalog must never contain provider methods.
     expect(structuredClone(HARNESS_OPTIONS)).toEqual(HARNESS_OPTIONS);
+  });
+
+  it('distinguishes valid empty discovery from parse failure and uncached fallback', async () => {
+    const { discoverHarnessModelsDetailed } = await import('../../../src/main/harnessCatalog');
+    const { getHarnessProvider } = await import('../../../src/main/harnesses/registry');
+    vi.spyOn(getHarnessProvider('pi').models, 'discover').mockResolvedValue([]);
+    expect(await discoverHarnessModelsDetailed('pi')).toEqual({ models: [], success: true, cacheable: true });
+    vi.spyOn(getHarnessProvider('opencode').models, 'discover').mockRejectedValue(new SyntaxError('bad models'));
+    expect(await discoverHarnessModelsDetailed('opencode')).toEqual({
+      models: getHarnessProvider('opencode').models.fallback, success: false, cacheable: false,
+      failure: expect.objectContaining({ kind: 'parse-failure' }),
+    });
   });
 
   it('returns cached models immediately without CLI calls on cache hit', async () => {

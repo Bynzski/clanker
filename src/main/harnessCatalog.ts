@@ -36,23 +36,22 @@ export { parseOmpModels } from './harnesses/omp/models';
 export { parseCodexDebugModels } from './harnesses/codex/models';
 export { parseHermesModelOptions } from './harnesses/hermes/models';
 
-interface DiscoveryResult {
-  models: ModelOption[];
-  discovered: boolean;
-  failure?: HarnessCapabilityError;
-}
+export type DiscoveryResult = { models: ModelOption[]; cacheable: boolean } & (
+  { success: true; failure?: never } | { success: false; failure: HarnessCapabilityError }
+);
 
 export async function discoverHarnessModelsDetailed(harness: string, refresh = false): Promise<DiscoveryResult> {
   const capability = findHarnessProvider(harness)?.models;
-  if (!capability) return { models: [], discovered: false, failure: new HarnessCapabilityError('unsupported', `${harness} model discovery is not supported`) };
+  if (!capability) return { models: [], success: false, cacheable: false, failure: new HarnessCapabilityError('unsupported', `${harness} model discovery is not supported`) };
   try {
-    return { models: await capability.discover(refresh), discovered: true };
+    return { models: await capability.discover(refresh), success: true, cacheable: true };
   } catch (error) {
     const failure = classifyHarnessFailure(error);
     return {
       models: capability.fallback ?? [],
-      // This is the legacy cacheability flag, not the absence of a failure.
-      discovered: capability.compatibility?.cacheParseFailureAsEmpty === true && failure.kind === 'parse-failure',
+      success: false,
+      // Compatibility caching is independent of operation success.
+      cacheable: capability.compatibility?.cacheParseFailureAsEmpty === true && failure.kind === 'parse-failure',
       failure,
     };
   }
@@ -77,12 +76,12 @@ export async function discoverHarnessModels(harness: string, refresh = false): P
     return [];
   }
 
-  const { models, discovered } = await discoverHarnessModelsDetailed(harness, explicitRefresh);
-  const result = discovered
+  const { models, cacheable } = await discoverHarnessModelsDetailed(harness, explicitRefresh);
+  const result = cacheable
     ? models
     : (cached ?? (models.length > 0 ? models : (findHarnessProvider(harness)?.models?.fallback ?? [])));
 
-  if (discovered) {
+  if (cacheable) {
     // Persist only successful discovery results so a transient failure cannot
     // replace a good cache entry with fallback data.
     if (explicitRefresh) catalogEpochs.set(harness, (catalogEpochs.get(harness) ?? 0) + 1);
@@ -104,8 +103,8 @@ function refreshCacheSilently(harness: string): void {
   const epoch = catalogEpochs.get(harness) ?? 0;
   // Run discovery async without blocking
   discoverHarnessModelsDetailed(harness)
-    .then(({ models, discovered }) => {
-      if (discovered && epoch === (catalogEpochs.get(harness) ?? 0)) {
+    .then(({ models, cacheable }) => {
+      if (cacheable && epoch === (catalogEpochs.get(harness) ?? 0)) {
         persistentModelCache.set(harness, models);
       }
     })
