@@ -28,14 +28,14 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
 | 4 | **Status Bar** | `StatusBar.tsx`, `StatusBar.css` | **A** | Minimal, compact chrome. Environment pill uses `border-radius: var(--radius-sm)`. | Retain as canonical reference. | No risk; already aligned. |
 | 5 | **Header Controls & Harness Pills** | `Header.tsx`, `Header.css`, `HeaderRightControls.tsx` | **B** | Harness pills group uses `--radius-sm`, but individual pills use 3px; `.header-btn` defines local primary/danger variants that duplicate `Button`; favorite tags use 3px. | Normalize `.harness-pill`, favorite tags, and add-fav trigger to `--radius-sm`; migrate duplicate button rules to `Button`. | Low risk; verify header dropdown triggers remain aligned. |
 | 6 | **Header Settings Popover** | `HeaderRightControls.tsx`, `Header.css`, `AppearanceSettings.tsx`, `HarnessDefaultsSection.tsx` | **B/D** | Uses Radix `Popover` primitive and `--radius-sm`. Contains raw `<select>` and `<input>` with local `.settings-select` / `.settings-input` classes. | Adopt shared `Select` / `Input` styling from form-control layer; retain Popover shell. | Low risk; test theme switching and harness flags. |
-| 7 | **Workspace Gate: Fullscreen Launcher** | `WorkspaceGate.tsx`, `WorkspaceGateContent.tsx`, `WorkspaceGate.css`, `WorkspaceLauncher.css` | **B** | Directory picker card uses `--radius-sm`; history dropdown uses `--radius-sm` with 3px items; grid terminals use 3px; directory badge uses 8px (pill). | Normalize 3px items to `--radius-sm`; keep directory badge as intentional pill counter. | Medium risk; large orchestrator component. Preserve state. |
-| 8 | **Workspace Gate: Modal Flow** | `WorkspaceGate.tsx` (`WorkspaceGateModal`), `WorkspaceGate.css` | **A/B** | Composes shared `DialogContent.modal-content`; uses `--radius-sm`. | Retain shared Dialog foundation; eliminate any leftover local modal CSS overrides. | Low risk; verify ESC and backdrop behavior. |
-| 9 | **Workspace Gate: Location Selector** | `WorkspaceLocationPicker.tsx`, `WorkspaceTargetPicker.tsx`, `WorkspaceTargetPicker.css` | **B** | `.gate-location-selector` uses `--radius-md`; target picker trigger and dropdown use `--radius-md`. | Normalize `.gate-location-selector` and `.gate-target-*` to `--radius-sm`. | Low risk; segmented selection already uses Radix under the hood. |
-| 10 | **Workspace Gate: Worktree Subflows** | `WorktreeLauncher.tsx`, `RemoteWorktreePicker.tsx`, `RemoteWorktreeCreate.tsx`, `RemoteWorktreeInspect.tsx`, `WorkspaceGate.css` | **B/D** | Base ref and branch inputs have 5px radius (`.gate-worktree-base`, `.gate-worktree-branch`); confirm card has 5px radius; `.gate-worktree-forward` has `--radius-md`. | Normalize worktree inputs to shared `Input` (`--radius-sm`); normalize confirm box and forward button to `--radius-sm`. | Medium risk; verify SSH worktree creation/inspection lifecycle. |
-| 11 | **SSH Environment Manager** | `SshEnvironmentManager.tsx`, `WorkspaceGate.css` | **B/D** | Uses shared `Dialog`, but modal shell explicitly specifies `border-radius: var(--radius-md)`; form inputs and action buttons use local styling. | Normalize dialog shell to `--radius-sm`; migrate inputs to shared `Input` and buttons to shared `Button`. | Low risk; verify SSH target creation, edit, test, delete flows. |
+| 7 | **Workspace Gate: Fullscreen Launcher** | `WorkspaceGate.tsx`, `WorkspaceGateContent.tsx`, `WorkspaceGate.css`, `WorkspaceLauncher.css` | **A** | **Aligned (Stage 3):** Standardized directory cards, suggestion items, harness options, grid options to `var(--radius-sm)`; intentional pill counters retained. | Completed. | Fully validated across launcher layouts and terminal selection. |
+| 8 | **Workspace Gate: Modal Flow** | `WorkspaceGate.tsx` (`WorkspaceGateModal`), `WorkspaceGate.css` | **A** | **Aligned (Stage 3):** Composes shared `DialogContent.modal-content`; normalized entrance and shell to `var(--radius-sm)`. | Completed. | Fully validated with Escape and backdrop dismissal. |
+| 9 | **Workspace Gate: Location Selector** | `WorkspaceLocationPicker.tsx`, `WorkspaceTargetPicker.tsx`, `WorkspaceTargetPicker.css` | **A** | **Aligned (Stage 3):** `.gate-location-selector` and `WorkspaceTargetPicker` trigger/content normalized to `var(--radius-sm)`. | Completed. | Retains headless Popover and segmented choice behavior. |
+| 10 | **Workspace Gate: Worktree Subflows** | `WorktreeLauncher.tsx`, `RemoteWorktreePicker.tsx`, `RemoteWorktreeCreate.tsx`, `RemoteWorktreeInspect.tsx`, `WorkspaceGate.css` | **A** | **Aligned (Stage 3):** Inputs, action buttons, forward button, and confirmation boxes normalized from 5px to `var(--radius-sm)`. | Completed. | Fully validated in creation, inspection, and removal flows. |
+| 11 | **SSH Environment Manager** | `SshEnvironmentManager.tsx`, `WorkspaceGate.css` | **A** | **Migrated (Stage 3):** Uses shared `Dialog` (shell normalized to `var(--radius-sm)`), shared `Input`, `Field`, `FieldLabel`, `Button`, `IconButton`. | Completed. | Fully validated with add, edit, test, delete, and focus restoration. |
 | 12 | **Remote Directory Chooser** | `RemoteDirectoryChooser.tsx`, `RemoteDirectoryChooser.css` | **A** | **Migrated (Stage 2):** Uses shared `Dialog`, `Input`, `Button`, `IconButton`. 8px shell, 5px button, and 4px input eliminated; zero exceptions remaining. | Completed. | Fully validated with dedicated interaction test suite. |
-| 13 | **Model Picker & Favorites** | `ModelPicker.tsx`, `WorkspaceGate.css` | **B** | Uses Radix `Popover`; trigger uses `--radius-sm`; items and manage button use 3px radius; star buttons use 3px radius. | Normalize dropdown items, manage buttons, and star buttons to `--radius-sm`. | Low risk; verify favorite toggle and keyboard navigation. |
-| 14 | **Model Discovery Modal** | `ModelPicker.tsx`, `WorkspaceGate.css` | **B** | Uses shared `Dialog`; content shell uses `--radius-sm`; list items use 3px; clear-search button uses 3px. | Normalize 3px item/clear button to `--radius-sm`; search input to shared `Input`. | Low risk; verify model search and selection. |
+| 13 | **Model Picker & Favorites** | `ModelPicker.tsx`, `WorkspaceGate.css` | **A** | **Aligned (Stage 3):** Popover items, browse link, and star buttons normalized to `var(--radius-sm)`. | Completed. | Fully validated in favorite toggle and navigation. |
+| 14 | **Model Discovery Modal** | `ModelPicker.tsx`, `WorkspaceGate.css` | **A** | **Aligned (Stage 3):** Uses shared `Dialog`; content shell, discovery items, close button, and star buttons normalized to `var(--radius-sm)`. | Completed. | Fully validated in model search and selection. |
 | 15 | **Searchable Choices** | `SearchablePicker.tsx`, `SearchablePicker.css` | **A** | Uses shared `Popover`, `--radius-sm` on rows/choices, token-based surfaces and focus rings. | Retain as canonical primitive reference. | No risk; already aligned. |
 | 16 | **Launch Recipe Modal** | `RecipeModal.tsx`, `RecipeModal.css` | **A** | **Migrated (Stage 2):** Uses shared `Dialog`, `Button`, `IconButton`, `Input`, `Select`, `Field`, `FieldLabel`. 8px shell, 6px fields/buttons/cards, and 4px step controls eliminated; intentional 12px pill badge retained. | Completed. | Fully validated in create, edit, preview, launch, and delete states. |
 | 17 | **VCS Credentials** | `CredentialSettings.tsx`, `CredentialSettings.css` | **A/B** | Uses shared `Dialog` and `IconButton`; standard `--radius-sm` on dialog, inputs, tabs, cards; intentional 999px pill for status chip. | Retain as canonical design-system reference; normalize minor input styling to shared `Input`. | Low risk; already mostly aligned. |
@@ -66,26 +66,26 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
 
 ## 3. Summary by Alignment Classification
 
-- **Class A (Already aligned / Migrated):** 7 areas
+- **Class A (Already aligned / Migrated):** 14 areas (grew from 7 in Stage 2)
   - Title Bar & Window Controls (#2)
   - Status Bar (#4)
+  - Workspace Gate Fullscreen Launcher (#7) — *Aligned in Stage 3*
+  - Workspace Gate Modal Flow (#8) — *Aligned in Stage 3*
+  - Workspace Gate Location Selector (#9) — *Aligned in Stage 3*
+  - Workspace Gate Worktree Subflows (#10) — *Aligned in Stage 3*
+  - SSH Environment Manager (#11) — *Migrated in Stage 3*
   - Remote Directory Chooser (#12) — *Migrated in Stage 2*
+  - Model Picker & Favorites (#13) — *Aligned in Stage 3*
+  - Model Discovery Modal (#14) — *Aligned in Stage 3*
   - Searchable Choices primitive (#15)
   - Launch Recipe Modal (#16) — *Migrated in Stage 2*
   - VCS Credentials (#17)
   - Annotation Handoff Dialog (#27) — *Migrated in Stage 2*
-- **Class B (Uses primitives/tokens, local styling drift):** 24 areas
+- **Class B (Uses primitives/tokens, local styling drift):** 17 areas (reduced from 24 in Stage 3)
   - Application Shell (#1)
   - Workspace Tabs (#3)
   - Header Controls & Harness Pills (#5)
   - Header Settings Popover (#6)
-  - Workspace Gate Fullscreen Launcher (#7)
-  - Workspace Gate Modal Flow (#8)
-  - Workspace Gate Location Selector (#9)
-  - Workspace Gate Worktree Subflows (#10)
-  - SSH Environment Manager (#11)
-  - Model Picker & Favorites (#13)
-  - Model Discovery Modal (#14)
   - Confirmation / Alert Dialogs (#19)
   - File Explorer (#21)
   - File Explorer Context Menu (#22)

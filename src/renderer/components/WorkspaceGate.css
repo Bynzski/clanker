@@ -108,7 +108,7 @@
 .gate-worktree-back,
 .gate-worktrees button {
   border: 1px solid var(--border-default);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   padding: 6px 9px;
   color: var(--text-secondary);
   background: var(--surface-raised);
@@ -160,7 +160,7 @@
   min-width: 0;
   padding: 7px;
   border: 1px solid var(--border-default);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--surface-raised);
   color: var(--text-primary);
 }
@@ -178,7 +178,7 @@
 .gate-worktree-project { flex: 0 1 auto; max-width: 85px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .gate-worktree-branch { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
 .gate-worktree-error { color: var(--status-error); margin: 0; overflow-wrap: anywhere; }
-.gate-worktree-confirm { padding: 8px; border: 1px solid var(--status-error); border-radius: 5px; overflow-wrap: anywhere; }
+.gate-worktree-confirm { padding: 8px; border: 1px solid var(--status-error); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
 .gate-worktree-confirm p { margin: 0 0 8px; }
 .gate-worktree-confirm button + button { margin-left: 6px; }
 
@@ -392,7 +392,7 @@
   padding: 6px 8px;
   cursor: pointer;
   text-align: left;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   transition: background var(--transition);
 }
 
@@ -451,7 +451,7 @@
 
 .harness-option,
 .grid-option {
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .harness-option {
@@ -570,7 +570,7 @@
   align-items: center;
   gap: var(--space-sm);
   padding: 6px 8px 6px 30px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background var(--transition);
   position: relative;
@@ -602,7 +602,7 @@
   border: none;
   color: var(--status-warning);
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   transition: background var(--transition);
 }
 
@@ -641,7 +641,7 @@
   background: transparent;
   border: none;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   transition: background var(--transition);
   margin-top: 2px;
 }
@@ -688,7 +688,7 @@
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   transition: background var(--transition), color var(--transition);
 }
 
@@ -745,7 +745,7 @@
   align-items: center;
   gap: var(--space-sm);
   padding: 6px 8px 6px 30px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background var(--transition);
   position: relative;
@@ -773,7 +773,7 @@
   color: var(--text-secondary);
   opacity: 0.4;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   transition: opacity var(--transition), color var(--transition), background var(--transition);
 }
 
@@ -1024,7 +1024,7 @@
   gap: 6px;
   background: var(--surface-control);
   padding: 3px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   width: 100%;
   max-width: 440px;
   margin: 0 auto;
@@ -1128,20 +1128,16 @@
   z-index: 1100;
 }
 
-.ssh-manager-modal {
+.clanker-dialog-content.ssh-manager-modal {
+  z-index: 1100;
   background: var(--surface-app);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  width: 480px;
-  max-width: 90vw;
+  width: min(480px, 90vw);
   max-height: 85vh;
   display: flex;
   flex-direction: column;
+  padding: 0;
   overflow: hidden;
-  box-shadow: 0 8px 32px color-mix(in srgb, var(--shadow-color) 45%, transparent);
 }
-
-.clanker-dialog-content.ssh-manager-modal { z-index: 1100; }
 
 .ssh-manager-header {
   display: flex;
@@ -1187,38 +1183,10 @@
   text-transform: uppercase;
 }
 
-.ssh-form-input {
-  padding: 6px 10px;
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: 13px;
-}
-
 .ssh-form-actions {
   display: flex;
   gap: 8px;
   margin-top: 6px;
-}
-
-.ssh-form-actions button {
-  padding: 6px 12px;
-  font-size: 12px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  border: none;
-}
-
-.ssh-btn-save {
-  background: var(--control-primary-bg);
-  color: var(--control-primary-fg);
-}
-
-.ssh-btn-test {
-  background: var(--surface-control);
-  color: var(--text-primary);
-  border: 1px solid var(--border-default) !important;
 }
 
 .ssh-env-item {

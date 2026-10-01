@@ -19,9 +19,8 @@
   padding: 0 7px;
   background: var(--surface-control);
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  font-family: inherit;
   font-size: 11px;
   text-align: left;
   cursor: pointer;
@@ -37,7 +36,6 @@
 .gate-target-popover {
   width: 280px;
   padding: var(--space-xs);
-  border-radius: var(--radius-md);
   animation: gate-target-reveal 140ms ease-out;
 }
 

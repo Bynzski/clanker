@@ -2,9 +2,12 @@ import { useRef, useState } from 'react';
 import { Pencil, X } from 'lucide-react';
 import type { SshEnvironmentConfig } from '../../shared/types/environments';
 import { validateSshEnvironmentConfig } from '../../shared/sshValidation';
-import { Dialog, DialogContent, DialogTitle } from './ui/Dialog';
+import { Dialog, DialogContent, DialogTitle, DialogClose } from './ui/Dialog';
+import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
+import { Input } from './ui/Input';
+import { Field, FieldLabel } from './ui/Field';
 import './WorkspaceGate.css';
-
 interface Props {
   environments: SshEnvironmentConfig[];
   initialEnvironment?: SshEnvironmentConfig;
@@ -77,30 +80,32 @@ export default function SshEnvironmentManager({ environments, initialEnvironment
       onOpenAutoFocus={(event) => { event.preventDefault(); labelRef.current?.focus(); }}>
       <div className="ssh-manager-header">
         <DialogTitle asChild><span className="ssh-manager-title">Manage SSH Targets</span></DialogTitle>
-        <button type="button" className="modal-close" onClick={onClose} disabled={!!busy} aria-label="Close SSH target manager"><X size={16} /></button>
+        <DialogClose asChild>
+          <IconButton aria-label="Close SSH target manager" disabled={!!busy}><X size={16} /></IconButton>
+        </DialogClose>
       </div>
       <div className="ssh-manager-body">
         <form className="ssh-manager-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           <span className="gate-section-label">{editingId ? 'Edit SSH Environment' : 'Add New SSH Environment'}</span>
-          <div className="ssh-form-row">
-            <label htmlFor="ssh-target-label">Label</label>
-            <input ref={labelRef} id="ssh-target-label" className="ssh-form-input" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. dev-vps" disabled={!!busy} />
-          </div>
-          <div className="ssh-form-row">
-            <label htmlFor="ssh-target-address">SSH Target</label>
-            <input id="ssh-target-address" className="ssh-form-input" value={target} onChange={(event) => { setTarget(event.target.value); setStatus(null); }} placeholder="e.g. user@192.168.1.100 or vps-host" disabled={!!busy} />
-          </div>
-          <div className="ssh-form-row">
-            <label htmlFor="ssh-target-root">Default workspace root (optional)</label>
-            <input id="ssh-target-root" className="ssh-form-input" value={root} onChange={(event) => setRoot(event.target.value)} placeholder="e.g. /srv/repos" aria-describedby="ssh-root-help" disabled={!!busy} spellCheck={false} />
+          <Field className="ssh-form-row">
+            <FieldLabel htmlFor="ssh-target-label">Label</FieldLabel>
+            <Input ref={labelRef} id="ssh-target-label" size="sm" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. dev-vps" disabled={!!busy} />
+          </Field>
+          <Field className="ssh-form-row">
+            <FieldLabel htmlFor="ssh-target-address">SSH Target</FieldLabel>
+            <Input id="ssh-target-address" size="sm" value={target} onChange={(event) => { setTarget(event.target.value); setStatus(null); }} placeholder="e.g. user@192.168.1.100 or vps-host" disabled={!!busy} />
+          </Field>
+          <Field className="ssh-form-row">
+            <FieldLabel htmlFor="ssh-target-root" optional>Default workspace root</FieldLabel>
+            <Input id="ssh-target-root" size="sm" value={root} onChange={(event) => setRoot(event.target.value)} placeholder="e.g. /srv/repos" aria-describedby="ssh-root-help" disabled={!!busy} spellCheck={false} />
             <span id="ssh-root-help" className="ssh-env-target">Absolute remote path. If unavailable or blank, use ~/workspaces or ~.</span>
-          </div>
+          </Field>
           {status && <p role="status" className={status.success ? 'ssh-manager-success' : 'ssh-manager-error'}>{status.message}</p>}
           {error && <p role="alert" className="ssh-manager-error">{error}</p>}
           <div className="ssh-form-actions">
-            <button type="button" className="ssh-btn-test" onClick={() => void test()} disabled={!!busy}>{busy === 'test' ? 'Testing...' : 'Test Connection'}</button>
-            <button type="submit" className="ssh-btn-save" disabled={!!busy}>{busy === 'save' ? 'Saving...' : editingId ? 'Save Changes' : 'Save Target'}</button>
-            {editingId && <button type="button" className="ssh-btn-test" onClick={reset} disabled={!!busy}>Cancel Edit</button>}
+            <Button size="sm" variant="secondary" onClick={() => void test()} disabled={!!busy}>{busy === 'test' ? 'Testing...' : 'Test Connection'}</Button>
+            <Button size="sm" variant="primary" type="submit" disabled={!!busy}>{busy === 'save' ? 'Saving...' : editingId ? 'Save Changes' : 'Save Target'}</Button>
+            {editingId && <Button size="sm" variant="secondary" onClick={reset} disabled={!!busy}>Cancel Edit</Button>}
           </div>
         </form>
         <div className="ssh-saved-list">

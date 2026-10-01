@@ -196,7 +196,7 @@
 .workspace-launcher .gate-recipe-play:disabled { opacity: .35; cursor: default; }
 
 .workspace-launcher .gate-directory-actions { display: flex; align-items: center; gap: 2px; min-width: 0; max-width: 65%; }
-.workspace-launcher .gate-view-directory .gate-directory-actions .gate-worktree-forward { flex: none; min-width: 0; height: 26px; padding: 0 6px; border: 0; border-radius: var(--radius-md); }
+.workspace-launcher .gate-view-directory .gate-directory-actions .gate-worktree-forward { flex: none; min-width: 0; height: 26px; padding: 0 6px; border: 0; border-radius: var(--radius-sm); }
 .workspace-launcher .gate-workspace-chooser > .gate-section-header { align-items: center; gap: 8px; }
 .workspace-launcher .gate-workspace-chooser > .gate-section-header .gate-base-path { flex: 1; }
 
