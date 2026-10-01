@@ -1,17 +1,19 @@
 import ts from 'typescript';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { KNOWN_HARNESS_IDS } from '../../../src/shared/harnessIds';
 
-// Deliberately scoped: identity matching, renderer presentation, and provider
-// internals are valid. Shared feature orchestrators must not dispatch on IDs.
-const orchestrators = [
-  'harnessCatalog.ts', 'harnessLaunch.ts', 'sessionHistory.ts', 'sessionLaunch.ts',
-  'agentAttentionAdapters.ts', 'aiCommit.ts', 'ipc/terminalIpc.ts', 'ipc/sessionIpc.ts',
-  'ipc/remoteSessionInvocation.ts', 'ipc/aiCommitIpc.ts',
-  'remote/sshSessionDiscovery.ts', 'remote/sshAgentAttention.ts', 'remote/sshEnvironment.ts',
-];
+// Provider implementations own harness dispatch. Scan every other main module,
+// including future orchestrators; scalar identity defaults remain valid.
+function discoverSharedMainFiles(root: string): string[] {
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const path = resolve(root, entry.name);
+    if (entry.isDirectory()) return entry.name === 'harnesses' ? [] : discoverSharedMainFiles(path);
+    return entry.isFile() && entry.name.endsWith('.ts') ? [path] : [];
+  });
+}
 function dispatchLiterals(source: string): string[] {
   const tree = ts.createSourceFile('orchestrator.ts', source, ts.ScriptTarget.Latest, true);
   const violations: string[] = [];
@@ -20,7 +22,8 @@ function dispatchLiterals(source: string): string[] {
     if (ts.isStringLiteralLike(node) && ids.has(node.text)) {
       const parent = node.parent;
       if (ts.isArrayLiteralExpression(parent) || ts.isCaseClause(parent)
-        || ts.isBinaryExpression(parent) || ts.isPropertyAssignment(parent)) violations.push(node.text);
+        || (ts.isBinaryExpression(parent) && [ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(parent.operatorToken.kind))
+        || (ts.isPropertyAssignment(parent) && parent.name === node)) violations.push(node.text);
     }
     if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name) && ids.has(node.name.text)) violations.push(node.name.text);
     ts.forEachChild(node, visit);
@@ -29,16 +32,33 @@ function dispatchLiterals(source: string): string[] {
   return violations;
 }
 describe('harness architecture boundaries', () => {
-  it.each(orchestrators)('%s does not rebuild a harness dispatch matrix', (file) => {
-    expect(dispatchLiterals(readFileSync(resolve('src/main', file), 'utf8'))).toEqual([]);
+  it('automatically checks every shared main module for harness dispatch', () => {
+    for (const file of discoverSharedMainFiles(resolve('src/main'))) {
+      expect(dispatchLiterals(readFileSync(file, 'utf8')), file).toEqual([]);
+    }
   });
   it.each([
+    "const supported = ['codex', 'pi'];",
     "['codex', 'pi'].includes(harness)",
+    "if (harness === 'codex') launch()",
     "const supported = new Set(['codex', 'pi']); supported.has(harness)",
     "if ('codex' === harness) launch()",
     "switch(harness) { case 'pi': launch() }",
     "const dispatch = { codex: launch, 'pi': launch }",
   ])('rejects literal capability dispatch: %s', (source) => {
-    expect(dispatchLiterals(source).length).toBeGreaterThan(0);
+    const root = mkdtempSync(resolve(tmpdir(), 'clanker-architecture-'));
+    try {
+      mkdirSync(resolve(root, 'future'));
+      const file = resolve(root, 'future/harnessUsage.ts');
+      writeFileSync(file, source);
+      mkdirSync(resolve(root, 'harnesses'));
+      writeFileSync(resolve(root, 'harnesses/provider.ts'), source);
+      const discovered = discoverSharedMainFiles(root);
+      expect(discovered).toEqual([file]);
+      expect(dispatchLiterals(readFileSync(discovered[0], 'utf8')).length).toBeGreaterThan(0);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+  it('allows scalar identity metadata, comments and descriptive text', () => {
+    expect(dispatchLiterals("const defaults = { aiCommitProvider: 'codex' }; // pi\nconst description = 'Codex and Pi';")).toEqual([]);
   });
 });
