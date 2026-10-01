@@ -42,7 +42,7 @@
   font-size: 13px;
   letter-spacing: 0.02em;
   border: 1px dashed color-mix(in srgb, var(--accent-interactive) 18%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background:
     radial-gradient(circle at top, color-mix(in srgb, var(--status-info) 8%, transparent), transparent 45%),
     linear-gradient(180deg, var(--surface-preview), var(--surface-loading-end));
@@ -126,7 +126,7 @@
   color: var(--text-primary);
   background: var(--surface-control);
   border: 1px solid var(--border-default);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.15s ease;
 }

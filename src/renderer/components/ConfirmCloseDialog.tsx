@@ -1,4 +1,5 @@
 import { AlertDialog, AlertDialogContent, AlertDialogTitle, AlertDialogDescription, AlertDialogCancel } from './ui/AlertDialog';
+import { Button } from './ui/Button';
 import './ConfirmCloseDialog.css';
 
 export interface ConfirmCloseDialogOption {
@@ -34,17 +35,18 @@ export default function ConfirmCloseDialog({
         <div className="confirm-close-footer">
           {/* Actions own closing (including async saves); do not route them through onCancel. */}
           {options.map((option, index) => (
-            <button
+            <Button
               key={index}
-              type="button"
-              className={`confirm-close-btn confirm-close-btn-${option.variant}`}
+              size="sm"
+              variant={option.variant}
+              className={`confirm-close-btn-${option.variant}`}
               onClick={option.action}
             >
               {option.label}
-            </button>
+            </Button>
           ))}
           <AlertDialogCancel asChild>
-            <button type="button" className="confirm-close-btn confirm-close-btn-secondary">Cancel</button>
+            <Button size="sm" variant="secondary">Cancel</Button>
           </AlertDialogCancel>
         </div>
       </AlertDialogContent>

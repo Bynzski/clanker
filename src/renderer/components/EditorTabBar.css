@@ -23,7 +23,7 @@
 
 .editor-tab-bar::-webkit-scrollbar-thumb {
   background: var(--surface-control);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
 }
 
 .editor-tab {
@@ -77,7 +77,7 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
   opacity: 0;
   transition: opacity 100ms ease-out, background 100ms ease-out, color 100ms ease-out;

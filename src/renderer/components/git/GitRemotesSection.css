@@ -38,7 +38,7 @@
   width: 24px;
   height: 24px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -83,7 +83,7 @@
   gap: 4px;
   padding: 6px 12px;
   border: 1px dashed var(--border-default);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
   font-size: 12px;
@@ -102,7 +102,7 @@
   justify-content: space-between;
   padding: 8px 10px;
   background: var(--surface-raised);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   transition: background 0.15s ease;
 }
 
@@ -147,7 +147,7 @@
   width: 24px;
   height: 24px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -171,7 +171,7 @@
   gap: 10px;
   padding: 10px;
   background: var(--surface-raised);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .git-remotes-form-info {
@@ -209,7 +209,7 @@
   padding: 8px 10px;
   padding-right: 32px;
   border: 1px solid var(--border-default);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--surface-app);
   color: var(--text-primary);
   font-size: 13px;
@@ -274,7 +274,7 @@
   gap: 6px;
   padding: 6px 8px;
   background: color-mix(in srgb, var(--status-error) 10%, transparent);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--status-error);
   font-size: 11px;
 }
@@ -286,7 +286,7 @@
   gap: 6px;
   padding: 8px 12px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--control-primary-bg);
   color: var(--control-primary-fg);
   font-size: 12px;
