@@ -83,19 +83,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 150ms ease-out;
-  padding: 0;
   flex-shrink: 0;
-}
-
-.editor-pane-close-btn:hover {
-  background: color-mix(in srgb, var(--status-error) 20%, transparent);
-  color: var(--status-error);
 }
 
 .editor-content-area {
@@ -162,21 +150,6 @@
   font-size: 11px;
   color: var(--text-secondary);
   flex: 1;
-}
-
-.editor-reload-banner-btn {
-  font-size: 11px;
-  padding: 2px 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: background 150ms ease-out;
-}
-
-.editor-reload-banner-btn:hover {
-  background: color-mix(in srgb, var(--surface-tint) 8%, transparent);
 }
 
 .editor-reload-banner-btn--secondary {

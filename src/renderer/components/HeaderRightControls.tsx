@@ -1,3 +1,4 @@
+import { Select } from './ui/Select';
 import { ChevronDown, LayoutGrid, MessageSquare, ScrollText, Settings, Undo2 } from 'lucide-react';
 import type { HarnessSession } from '../../shared/types/session';
 import type { ModelOption } from '../types/shared';
@@ -92,7 +93,7 @@ export default function HeaderRightControls({
 }: HeaderRightControlsProps) {
   return (
     <div className="header-right">
-      <button
+      <IconButton
         className="header-btn header-btn-icon"
         type="button"
         onClick={undoLayout}
@@ -101,9 +102,9 @@ export default function HeaderRightControls({
         aria-label="Undo layout change"
       >
         <Undo2 size={15} strokeWidth={2} />
-      </button>
+      </IconButton>
       {onOpenRecipes && (
-        <button
+        <IconButton
           className="header-btn header-btn-icon"
           type="button"
           onClick={onOpenRecipes}
@@ -111,9 +112,9 @@ export default function HeaderRightControls({
           aria-label="Workspace Launch Recipes"
         >
           <ScrollText size={15} strokeWidth={2} />
-        </button>
+        </IconButton>
       )}
-      <button
+      <IconButton
         className="header-btn header-btn-icon"
         type="button"
         onClick={fitAllPanes}
@@ -121,7 +122,7 @@ export default function HeaderRightControls({
         aria-label="Fit all panes"
       >
         <LayoutGrid size={15} strokeWidth={2} />
-      </button>
+      </IconButton>
       <Popover open={showChatHistory} onOpenChange={onChatHistoryOpenChange}>
         <PopoverTrigger asChild>
           <IconButton
@@ -165,7 +166,7 @@ export default function HeaderRightControls({
 
             <div className="settings-row">
               <span className="settings-row-label">Provider</span>
-              <select
+              <Select
                 className="settings-select"
                 aria-label="AI commit provider"
                 value={aiCommitProvider}
@@ -181,12 +182,12 @@ export default function HeaderRightControls({
                     </option>
                   ))
                 )}
-              </select>
+              </Select>
             </div>
 
             <div className="settings-row">
               <span className="settings-row-label">Model</span>
-              <select
+              <Select
                 className="settings-select"
                 aria-label="AI commit model"
                 value={aiCommitModel}
@@ -207,12 +208,12 @@ export default function HeaderRightControls({
                     ))}
                   </>
                 )}
-              </select>
+              </Select>
             </div>
           </div>
-          <button type="button" className="settings-dropdown-action" onClick={onOpenCredentialModal}>
+          <Button type="button" className="settings-dropdown-action" onClick={onOpenCredentialModal}>
             Manage VCS credentials
-          </button>
+          </Button>
 
           {harnessDefaults && (
             <HarnessDefaultsSection

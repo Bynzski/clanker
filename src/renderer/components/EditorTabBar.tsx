@@ -1,3 +1,4 @@
+import { IconButton } from './ui/IconButton';
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -100,30 +101,36 @@ export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) 
           const isActive = tab.id === activeEditorTabId;
 
           return (
-            <button
+            <div
+              tabIndex={isInteractive ? 0 : -1}
               key={tab.id}
               className={`editor-tab ${isActive ? 'active' : ''}`}
               role="tab"
               aria-selected={isActive}
               onClick={() => handleTabClick(tab.id)}
               title={tab.filePath}
-              disabled={!isInteractive}
+              aria-disabled={!isInteractive}
+              onKeyDown={(event) => {
+                if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                  event.preventDefault();
+                  handleTabClick(tab.id);
+                }
+              }}
             >
               {tab.isDirty && (
                 <span className="editor-tab-dirty" aria-label="Unsaved changes" />
               )}
               <span className="editor-tab-name">{tab.fileName}</span>
-              <span
+              <IconButton
                 className="editor-tab-close"
                 onClick={(e) => handleCloseClick(tab.id, e)}
-                role="button"
                 aria-label={`Close ${tab.fileName}`}
                 title={`Close ${tab.fileName}`}
-                aria-disabled={!isInteractive}
+                disabled={!isInteractive}
               >
                 <X size={12} strokeWidth={2} />
-              </span>
-            </button>
+              </IconButton>
+            </div>
           );
         })}
       </div>

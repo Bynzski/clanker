@@ -1,3 +1,5 @@
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
 import { useId, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Check, ChevronDown, Loader2, Monitor, Plus, Search, Server, Settings } from 'lucide-react';
@@ -64,7 +66,7 @@ export function WorkspaceTargetPicker({ value, environments, localRoot, settings
           onOpenAutoFocus={(event) => { event.preventDefault(); searchRef.current?.focus(); }}>
           <div className="gate-target-search">
             <Search size={13} aria-hidden="true" />
-            <input ref={searchRef} type="search" role="searchbox" aria-label="Search locations" aria-controls={resultsId}
+            <Input ref={searchRef} type="search" role="searchbox" aria-label="Search locations" aria-controls={resultsId}
               placeholder="Search locations" value={query} onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => navigate(event)} />
           </div>
@@ -84,7 +86,7 @@ export function WorkspaceTargetPicker({ value, environments, localRoot, settings
             </button>)}
           </div>
           <div className="gate-target-actions">
-          <button ref={settingsRef} type="button" className="gate-target-settings"
+          <Button ref={settingsRef} type="button" className="gate-target-settings"
             aria-label={value === 'local' ? 'Set working directory for This PC' : `Settings for ${name}`}
             disabled={disabled || settingsBusy || (value !== 'local' && !selected)}
             onKeyDown={(event) => navigate(event, targets.length)} onClick={() => {
@@ -94,8 +96,8 @@ export function WorkspaceTargetPicker({ value, environments, localRoot, settings
               onSettings();
             }}>
             <Settings size={14} aria-hidden="true" /> {value === 'local' ? 'Set working directory…' : 'Server settings…'}
-          </button>
-          <button ref={addRef} type="button" className="gate-target-add" onKeyDown={(event) => navigate(event, targets.length + 1)}
+          </Button>
+          <Button ref={addRef} type="button" className="gate-target-add" onKeyDown={(event) => navigate(event, targets.length + 1)}
             onClick={() => {
               handingOff.current = true;
               triggerRef.current?.focus();
@@ -103,7 +105,7 @@ export function WorkspaceTargetPicker({ value, environments, localRoot, settings
               onAddServer();
             }}>
             <Plus size={14} aria-hidden="true" /> Add server…
-          </button>
+          </Button>
           </div>
         </PopoverContent>
       </Popover>

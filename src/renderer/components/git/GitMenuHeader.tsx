@@ -1,3 +1,5 @@
+import { Button } from '../ui/Button';
+import { IconButton } from '../ui/IconButton';
 import { ArrowDown, ArrowUp, RefreshCw, X } from 'lucide-react';
 import type { GitOperationState, VcsProvider } from './types';
 import { getProviderLabel } from './gitButtonViewModels';
@@ -57,14 +59,14 @@ export function GitMenuHeader({
             {getProviderLabel(provider)}
           </span>
 
-          <button
+          <IconButton aria-label="Close"
             type="button"
             className="git-menu-close"
             onClick={onClose}
             title="Close"
           >
             <X size={15} />
-          </button>
+          </IconButton>
         </div>
       </div>
 
@@ -85,14 +87,14 @@ export function GitMenuHeader({
       </div>
 
       <div className="git-menu-actions">
-        <button
+        <Button variant="primary"
           type="button"
           className="header-btn header-btn-primary git-menu-action"
           onClick={onOpenCommitDialog}
         >
           Commit Changes
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className="header-btn git-menu-action"
           onClick={onRefresh}
@@ -100,7 +102,7 @@ export function GitMenuHeader({
         >
           <RefreshCw size={13} className={isBusy ? 'spin' : ''} />
           Refresh
-        </button>
+        </Button>
       </div>
     </>
   );

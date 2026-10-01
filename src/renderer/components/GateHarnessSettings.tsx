@@ -1,3 +1,4 @@
+import { Button } from './ui/Button';
 import { ArrowLeft, Settings } from 'lucide-react';
 import HarnessDefaultsSection from './settings/HarnessDefaultsSection';
 import { useHeaderSettings } from './useHeaderSettings';
@@ -19,9 +20,9 @@ export default function GateHarnessSettings({ selectedHarness, onSelectHarness, 
 
   return (
     <div className="gate-view gate-view-settings">
-      <button className="gate-worktree-back" type="button" onClick={() => onBack(settings.harnessDefaults)}>
+      <Button className="gate-worktree-back" type="button" onClick={() => onBack(settings.harnessDefaults)}>
         <ArrowLeft size={14} strokeWidth={2} /> Back to workspace
-      </button>
+      </Button>
       <div className="gate-worktree-heading">
         <Settings size={18} strokeWidth={2} />
         <div>

@@ -1,3 +1,5 @@
+import { IconButton } from './ui/IconButton';
+import { Input } from './ui/Input';
 import { useState, useRef, useEffect } from 'react';
 import type { DragEvent, KeyboardEvent, MouseEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -122,7 +124,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
     }
   };
 
-  const handleDragStart = (event: DragEvent<HTMLButtonElement>, workspaceId: string) => {
+  const handleDragStart = (event: DragEvent<HTMLDivElement>, workspaceId: string) => {
     if (event.target instanceof Element && event.target.closest('.workspace-tab-edit, .workspace-tab-edit-trigger, .workspace-tab-close')) {
       event.preventDefault();
       return;
@@ -133,7 +135,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
     event.dataTransfer.setData('text/plain', workspaceId);
   };
 
-  const handleDragOver = (event: DragEvent<HTMLButtonElement>, targetId: string) => {
+  const handleDragOver = (event: DragEvent<HTMLDivElement>, targetId: string) => {
     const draggedId = draggedWorkspaceIdRef.current;
     if (!draggedId || draggedId === targetId) return;
     const fromIndex = workspaces.findIndex((workspace) => workspace.id === draggedId);
@@ -144,7 +146,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
     setDropTarget({ id: targetId, side: fromIndex < targetIndex ? 'right' : 'left' });
   };
 
-  const handleDrop = (event: DragEvent<HTMLButtonElement>, targetId: string) => {
+  const handleDrop = (event: DragEvent<HTMLDivElement>, targetId: string) => {
     event.preventDefault();
     const draggedId = draggedWorkspaceIdRef.current;
     draggedWorkspaceIdRef.current = null;
@@ -158,7 +160,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
     window.setTimeout(() => { suppressClickRef.current = false; }, 0);
   };
 
-  const handleReorderKey = (event: KeyboardEvent<HTMLButtonElement>, workspaceId: string, index: number) => {
+  const handleReorderKey = (event: KeyboardEvent<HTMLDivElement>, workspaceId: string, index: number) => {
     if (event.target !== event.currentTarget || !event.altKey || !event.shiftKey) return;
     const targetIndex = event.key === 'ArrowLeft' ? index - 1 : event.key === 'ArrowRight' ? index + 1 : -1;
     const target = workspaces[targetIndex];
@@ -182,7 +184,8 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
           : workspace.name || projectName;
 
         return (
-          <button
+          <div
+            tabIndex={0}
             key={workspace.id}
             className={`workspace-tab ${isActive ? 'active' : ''}${dropTarget?.id === workspace.id ? ` drop-${dropTarget.side}` : ''}`}
             role="tab"
@@ -195,12 +198,18 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
             onDragLeave={() => setDropTarget((current) => current?.id === workspace.id ? null : current)}
             onDrop={(event) => handleDrop(event, workspace.id)}
             onDragEnd={handleDragEnd}
-            onKeyDown={(event) => handleReorderKey(event, workspace.id, index)}
+            onKeyDown={(event) => {
+              handleReorderKey(event, workspace.id, index);
+              if (event.target === event.currentTarget && !isEditing && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault();
+                selectWorkspace(workspace.id);
+              }
+            }}
             onClick={() => { if (!isEditing && !suppressClickRef.current) selectWorkspace(workspace.id); }}
           >
             {isEditing ? (
               <div className="workspace-tab-edit" onClick={(e) => e.stopPropagation()}>
-                <input
+                <Input
                   ref={inputRef}
                   type="text"
                   className="workspace-tab-edit-input"
@@ -209,13 +218,13 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                   onKeyDown={handleKeyDown}
                   onBlur={saveEdit}
                 />
-                <button
+                <IconButton aria-label="Save"
                   className="workspace-tab-edit-btn"
                   onClick={(e) => { e.stopPropagation(); saveEdit(); }}
                   title="Save"
                 >
                   <Check size={14} strokeWidth={2} />
-                </button>
+                </IconButton>
               </div>
             ) : (
               <>
@@ -226,13 +235,13 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                   {remoteLabel && <span className="workspace-tab-remote" title={remoteLabel}>{remoteLabel}</span>}
                   <span className="workspace-tab-name">{tabLabel}</span>
                 </span>
-                <button
+                <IconButton aria-label="Rename tab"
                   className="workspace-tab-edit-trigger"
                   onClick={(e) => startEditing(workspace.id, editName, e)}
                   title="Rename tab"
                 >
                   <Edit2 size={12} strokeWidth={2} />
-                </button>
+                </IconButton>
               </>
             )}
             {workspace.isLinkedWorktree && (
@@ -250,20 +259,19 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                 {counts.needsInput > 0 ? `! ${counts.needsInput}` : `✓ ${counts.completed}`}
               </span>
             )}
-            <span
+            <IconButton
               className="workspace-tab-close"
               onClick={(event) => handleClose(workspace.id, event)}
-              role="button"
               aria-label="Close workspace"
               title="Close workspace"
             >
               <X size={14} strokeWidth={2} />
-            </span>
-          </button>
+            </IconButton>
+          </div>
         );
       })}
       {nextTarget && (
-        <button
+        <IconButton
           type="button"
           className="workspace-tab-jump"
           aria-label="Jump to next agent needing attention"
@@ -274,18 +282,18 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
           }}
         >
           <BellRing size={14} strokeWidth={2} />
-        </button>
+        </IconButton>
       )}
       {onOpenWorkspace && (
-        <button
+        <IconButton
           type="button"
-          className="workspace-tab workspace-tab-new"
+          className="workspace-tab-new"
           onClick={onOpenWorkspace}
           aria-label="Open Workspace"
           title="Open Workspace"
         >
           <Plus size={14} strokeWidth={2.5} />
-        </button>
+        </IconButton>
       )}
     </div>
   );

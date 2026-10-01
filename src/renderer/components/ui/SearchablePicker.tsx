@@ -1,3 +1,5 @@
+import { IconButton } from './IconButton';
+import { Input } from './Input';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactElement, ReactNode } from 'react';
 import { AlertTriangle, Check, Search, Star } from 'lucide-react';
@@ -88,7 +90,7 @@ export function SearchablePicker({ label, trigger, items, value, open, onOpenCha
       onOpenAutoFocus={(event) => { event.preventDefault(); searchRef.current?.focus(); }}>
       <div className="searchable-picker-search">
         <Search size={14} aria-hidden="true" />
-        <input ref={searchRef} type="text" role="searchbox" aria-label={`Search ${label.toLowerCase()}`} aria-controls={resultsId}
+        <Input ref={searchRef} type="text" role="searchbox" aria-label={`Search ${label.toLowerCase()}`} aria-controls={resultsId}
           placeholder={`Search ${label.toLowerCase()}…`} value={search} onChange={(event) => setSearch(event.target.value)}
           onKeyDown={(event) => navigate(event)} />
       </div>
@@ -104,10 +106,10 @@ export function SearchablePicker({ label, trigger, items, value, open, onOpenCha
               {item.unavailable && <AlertTriangle size={12} aria-label="Unavailable" />}
               {value === item.id && <Check size={12} aria-hidden="true" />}
             </button>
-            {onToggleFavorite && <button type="button" className="searchable-picker-star" aria-pressed={favorite}
+            {onToggleFavorite && <IconButton type="button" className="searchable-picker-star" aria-pressed={favorite}
               aria-label={`${favorite ? 'Remove' : 'Add'} ${item.label} ${favorite ? 'from' : 'to'} favorites`}
               disabled={savingFavorite} ref={(button) => { if (button) stars.current.set(item.id, button); else stars.current.delete(item.id); }}
-              onClick={() => { void toggleFavorite(item.id); }}><Star size={12} fill={favorite ? 'currentColor' : 'none'} aria-hidden="true" /></button>}
+              onClick={() => { void toggleFavorite(item.id); }}><Star size={12} fill={favorite ? 'currentColor' : 'none'} aria-hidden="true" /></IconButton>}
           </div>;
         })}
       </div>

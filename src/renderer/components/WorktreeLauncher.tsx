@@ -1,3 +1,5 @@
+import { Input } from './ui/Input';
+import { Button } from './ui/Button';
 import { useState } from 'react';
 import type { GitBranch, GitWorktree } from '../../shared/types/git';
 import { GitBranch as GitBranchIcon } from 'lucide-react';
@@ -113,17 +115,17 @@ export default function WorktreeLauncher({ repoPath, openPaths, onOpenPath }: Pr
 
   return (
     <div className="gate-worktrees">
-      <button type="button" onClick={() => void loadRepository()} disabled={busy}>Load repository</button>
+      <Button type="button" onClick={() => void loadRepository()} disabled={busy}>Load repository</Button>
       {ready && (
         <>
           <label>Base ref
-            <input value={baseRef} onChange={(event) => setBaseRef(event.target.value)} list="gate-branch-options" />
+            <Input value={baseRef} onChange={(event) => setBaseRef(event.target.value)} list="gate-branch-options" />
             <datalist id="gate-branch-options">{branchOptions.map((branch) => <option key={branch} value={branch} />)}</datalist>
           </label>
           <label>Task branch
-            <input value={branchName} onChange={(event) => setBranchName(event.target.value)} placeholder="feature/my-task" />
+            <Input value={branchName} onChange={(event) => setBranchName(event.target.value)} placeholder="feature/my-task" />
           </label>
-          <button type="button" onClick={() => void createWorktree()} disabled={busy || !branchName.trim()}>Create and open worktree</button>
+          <Button type="button" onClick={() => void createWorktree()} disabled={busy || !branchName.trim()}>Create and open worktree</Button>
           <div className="gate-worktree-list-title">Existing worktrees</div>
           {worktrees.length === 0 && <span>No linked worktrees</span>}
           {worktrees.map((worktree) => (
@@ -133,8 +135,8 @@ export default function WorktreeLauncher({ repoPath, openPaths, onOpenPath }: Pr
                 <GitBranchIcon size={12} strokeWidth={2} aria-hidden="true" />
                 <span className="gate-worktree-branch">{worktree.branch || `Detached (${getWorkspaceNameFromPath(worktree.path)})`}</span>
               </span>
-              <button type="button" onClick={() => onOpenPath(worktree.path)} disabled={worktree.isPrunable} title={worktree.isPrunable ? 'Checkout directory is missing' : undefined}>Open</button>
-              <button type="button" onClick={() => void inspectRemoval(worktree)} disabled={busy || worktree.isLocked || worktree.isPrunable}>Remove…</button>
+              <Button type="button" onClick={() => onOpenPath(worktree.path)} disabled={worktree.isPrunable} title={worktree.isPrunable ? 'Checkout directory is missing' : undefined}>Open</Button>
+              <Button type="button" onClick={() => void inspectRemoval(worktree)} disabled={busy || worktree.isLocked || worktree.isPrunable}>Remove…</Button>
             </div>
           ))}
         </>
@@ -143,8 +145,8 @@ export default function WorktreeLauncher({ repoPath, openPaths, onOpenPath }: Pr
       {ready && pendingRemoval && (
         <div className="gate-worktree-confirm" role="dialog" aria-label="Confirm worktree removal">
           <p>Remove checkout at <strong>{pendingRemoval.path}</strong> on branch <strong>{pendingRemoval.branch || 'Detached'}</strong>? The branch remains.</p>
-          <button type="button" onClick={() => setPendingRemoval(null)}>Cancel</button>
-          <button type="button" onClick={() => void removeWorktree()} disabled={busy}>Remove this worktree</button>
+          <Button type="button" onClick={() => setPendingRemoval(null)}>Cancel</Button>
+          <Button type="button" onClick={() => void removeWorktree()} disabled={busy}>Remove this worktree</Button>
         </div>
       )}
     </div>

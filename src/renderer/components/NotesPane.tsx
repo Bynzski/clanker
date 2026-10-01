@@ -1,3 +1,5 @@
+import { Textarea } from './ui/Textarea';
+import { IconButton } from './ui/IconButton';
 import { useMemo, useRef, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -59,7 +61,7 @@ export default function NotesPane({ workspaceId }: { workspaceId?: string }) {
           <span className="notes-pane-title">Notes</span>
           <span className="notes-pane-spacer" />
         </div>
-        <button
+        <IconButton
           className="notes-pane-close-btn"
           onClick={handleClosePane}
           title="Close notes"
@@ -67,9 +69,9 @@ export default function NotesPane({ workspaceId }: { workspaceId?: string }) {
           disabled={!isInteractive}
         >
           <X size={12} strokeWidth={2} />
-        </button>
+        </IconButton>
       </div>
-      <textarea
+      <Textarea variant="mono"
         key={storageKey}
         className="notes-editor"
         defaultValue={initialContent}

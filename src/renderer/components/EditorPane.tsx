@@ -1,3 +1,5 @@
+import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
 import { useEffect, useRef, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { EditorState, StateEffect, Compartment, type Extension } from '@codemirror/state';
@@ -255,7 +257,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             <span className="editor-pane-title">Editor</span>
             <span className="editor-pane-spacer" />
           </div>
-          <button
+          <IconButton
             className="editor-pane-close-btn"
             onClick={handleClosePane}
             title="Close editor"
@@ -263,7 +265,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             disabled={!isInteractive}
           >
             <X size={12} strokeWidth={2} />
-          </button>
+          </IconButton>
         </div>
 
         <EditorTabBar workspaceId={workspaceId} />
@@ -273,7 +275,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             <span className="editor-reload-banner-text">
               This file has been modified externally.
             </span>
-            <button
+            <Button
               className="editor-reload-banner-btn"
               disabled={!isInteractive}
               onClick={() => {
@@ -288,8 +290,8 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
               }}
             >
               Reload
-            </button>
-            <button
+            </Button>
+            <Button
               className="editor-reload-banner-btn editor-reload-banner-btn--secondary"
               disabled={!isInteractive}
               onClick={() => {
@@ -304,7 +306,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
               }}
             >
               Keep Mine
-            </button>
+            </Button>
           </div>
         )}
         {activeTab?.isDeleted && (
@@ -312,7 +314,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             <span className="editor-reload-banner-text">
               This file has been deleted.
             </span>
-            <button
+            <Button
               className="editor-reload-banner-btn"
               disabled={!isInteractive}
               onClick={() => {
@@ -327,8 +329,8 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
               }}
             >
               Close
-            </button>
-            <button
+            </Button>
+            <Button
               className="editor-reload-banner-btn editor-reload-banner-btn--secondary"
               disabled={!isInteractive}
               onClick={() => {
@@ -343,7 +345,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
               }}
             >
               Save
-            </button>
+            </Button>
           </div>
         )}
 

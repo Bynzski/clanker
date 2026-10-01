@@ -1,3 +1,5 @@
+import { Button } from './ui/Button';
+import { Input } from './ui/Input';
 import { useEffect, useRef, useState } from 'react';
 import { isPreviewPort, type RemotePreviewState } from '../../shared/types/remotePreview';
 
@@ -69,11 +71,11 @@ export default function RemotePreviewBar({ workspaceId, onOpen, onLayoutChange }
   return <div className="remote-preview-bar">
     <div className="remote-preview-controls">
       <span>SSH preview</span>
-      <label>Remote port <input aria-label="Remote preview port" type="number" min="1024" max="65535" value={remotePort} disabled={locked} onChange={(event) => setRemotePort(event.target.value)} /></label>
-      <label>Local port <input aria-label="Local preview port" type="number" min="1024" max="65535" value={localPort} disabled={locked} onChange={(event) => setLocalPort(event.target.value)} /></label>
-      <button type="button" disabled={Boolean(locked)} onClick={() => void start()}>{forward?.status === 'error' ? 'Retry preview' : 'Start preview'}</button>
-      {forward && <button type="button" disabled={busy || forward.status === 'stopping'} onClick={() => void stop()}>Stop preview</button>}
-      {forward?.status === 'active' && <button type="button" onClick={() => void onOpen(forward.url)}>Open preview</button>}
+      <label>Remote port <Input aria-label="Remote preview port" type="number" min="1024" max="65535" value={remotePort} disabled={locked} onChange={(event) => setRemotePort(event.target.value)} /></label>
+      <label>Local port <Input aria-label="Local preview port" type="number" min="1024" max="65535" value={localPort} disabled={locked} onChange={(event) => setLocalPort(event.target.value)} /></label>
+      <Button type="button" disabled={Boolean(locked)} onClick={() => void start()}>{forward?.status === 'error' ? 'Retry preview' : 'Start preview'}</Button>
+      {forward && <Button type="button" disabled={busy || forward.status === 'stopping'} onClick={() => void stop()}>Stop preview</Button>}
+      {forward?.status === 'active' && <Button type="button" onClick={() => void onOpen(forward.url)}>Open preview</Button>}
       {forward && <span role="status">{forward.status === 'active' ? `${forward.url} → remote 127.0.0.1:${forward.remotePort}` : forward.status}</span>}
     </div>
     {error && <div className="browser-annotation-error" role="alert">{error}</div>}

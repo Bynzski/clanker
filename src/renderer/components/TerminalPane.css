@@ -113,8 +113,7 @@
   gap: 4px;
 }
 
-.terminal-action,
-.terminal-pane .terminal-close {
+.terminal-action {
   width: 22px;
   height: 22px;
   background: transparent;
@@ -124,6 +123,12 @@
   padding: 0;
   border: none;
   cursor: pointer;
+}
+
+.terminal-pane .terminal-close {
+  width: 22px;
+  height: 22px;
+  line-height: 1;
 }
 
 .terminal-action {
@@ -143,10 +148,6 @@
 .terminal-action:hover {
   background: var(--surface-control);
   color: var(--text-primary);
-}
-
-.terminal-pane .terminal-close:hover {
-  color: var(--accent-interactive);
 }
 
 .terminal-content {

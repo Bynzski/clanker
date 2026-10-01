@@ -1,3 +1,4 @@
+import { Input } from '../ui/Input';
 import type React from 'react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -302,7 +303,7 @@ const TreeNode = memo(function TreeNode({ workspaceId, entry, depth, onLoadDirec
           <TreeNodeIcon entry={entry} isExpanded={isExpanded} />
         </span>
         {isRenaming ? (
-          <input
+          <Input
             ref={renameInputRef}
             className="tree-node-input"
             value={renameValue}
@@ -405,7 +406,7 @@ function CreateInput({ type, depth, onCommit, onCancel }: {
         })()}
       </span>
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <input
+        <Input
           ref={inputRef}
           className="tree-node-input"
           value={name}

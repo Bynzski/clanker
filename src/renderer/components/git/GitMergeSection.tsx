@@ -1,3 +1,5 @@
+import { Select } from '../ui/Select';
+import { Button } from '../ui/Button';
 import { Loader2 } from 'lucide-react';
 import type { GitOperationState } from './types';
 import './GitMergeSection.css';
@@ -52,18 +54,18 @@ export function GitMergeSection({
               ))}
             </div>
           )}
-          <button
+          <Button variant="danger"
             type="button"
             className="git-operation-abort"
             onClick={onAbortOperation}
             disabled={isBusy}
           >
             Abort {operationState.mode === 'rebase' ? 'Rebase' : 'Merge'}
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="git-merge-form">
-          <select
+          <Select
             className="git-merge-select"
             value={mergeTargetBranch}
             onChange={(event) => onSetMergeTargetBranch(event.target.value)}
@@ -78,8 +80,8 @@ export function GitMergeSection({
                 </option>
               ))
             )}
-          </select>
-          <button
+          </Select>
+          <Button
             type="button"
             className="header-btn git-create-branch-submit"
             onClick={onMergeBranch}
@@ -87,7 +89,7 @@ export function GitMergeSection({
           >
             {activeAction?.startsWith('merge:') ? <Loader2 size={13} className="spin" /> : null}
             Merge
-          </button>
+          </Button>
         </div>
       )}
     </div>

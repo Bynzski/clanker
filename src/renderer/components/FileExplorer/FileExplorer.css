@@ -86,18 +86,8 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
   -webkit-app-region: no-drag;
   flex-shrink: 0;
-}
-
-.file-explorer-close:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
 }
 
 .file-explorer-actions {
@@ -113,17 +103,6 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background 120ms ease-out, color 120ms ease-out;
-}
-
-.file-explorer-action:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
 }
 
 .file-explorer-action.active {
@@ -148,17 +127,6 @@
 .file-explorer-filter-input {
   flex: 1;
   min-width: 0;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--text-primary);
-  font: inherit;
-  font-size: 12px;
-  padding: 2px 0;
-}
-
-.file-explorer-filter-input::placeholder {
-  color: var(--text-muted);
 }
 
 .file-explorer-filter-clear {
@@ -167,17 +135,7 @@
   justify-content: center;
   width: 18px;
   height: 18px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
   flex-shrink: 0;
-}
-
-.file-explorer-filter-clear:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
 }
 
 .file-explorer-content {
@@ -257,17 +215,7 @@
 .tree-node-input {
   flex: 1;
   min-width: 0;
-  background: var(--surface-app);
-  border: 1px solid var(--accent-interactive);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font: inherit;
   padding: 1px 4px;
-  outline: none;
-}
-
-.tree-node-input:focus {
-  border-color: var(--focus-ring);
 }
 
 .tree-node-creating {

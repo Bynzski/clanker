@@ -1,3 +1,4 @@
+import { Input } from './ui/Input';
 import type { ChangeEventHandler, FocusEventHandler, KeyboardEventHandler } from 'react';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 
@@ -26,7 +27,7 @@ export default function BrowserUrlInput({
 }: BrowserUrlInputProps) {
   return (
     <div className="browser-url-container">
-      <input
+      <Input variant="mono"
         type="text"
         className="browser-url-input"
         value={inputUrl}

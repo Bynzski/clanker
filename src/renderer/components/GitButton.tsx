@@ -1,3 +1,4 @@
+import { Button } from './ui/Button';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, GitBranch as GitBranchIcon } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -640,7 +641,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
   return (
     <>
       <div className="git-menu-container" ref={menuRef}>
-        <button
+        <Button
           className="header-btn git-btn"
           onClick={handleToggleMenu}
           title={currentBranch ? `Git - ${currentBranch}` : 'Git - View changes and branches'}
@@ -650,7 +651,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
             <span className="git-badge">{changeCount > 99 ? '99+' : changeCount}</span>
           )}
           <ChevronDown size={12} strokeWidth={2.5} />
-        </button>
+        </Button>
 
         {isMenuOpen && (
           <GitRepoMenu

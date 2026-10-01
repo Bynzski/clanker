@@ -52,20 +52,10 @@
 .gate-target-search input {
   min-width: 0;
   width: 100%;
-  padding: 2px 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: 12px;
 }
-
-.gate-target-search input::placeholder { color: var(--text-muted); }
 .gate-target-list { max-height: min(240px, 32vh); overflow-y: auto; padding: 2px; }
 
-.gate-target-option,
-.gate-target-settings,
-.gate-target-add {
+.gate-target-option {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -82,17 +72,24 @@
   cursor: pointer;
 }
 
+.gate-target-settings,
+.gate-target-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  min-height: 30px;
+  text-align: left;
+}
+
 .gate-target-option[aria-pressed='true'] { background: var(--surface-active); color: var(--text-primary); }
-.gate-target-option:hover,
-.gate-target-settings:hover:not(:disabled),
-.gate-target-add:hover { background: var(--surface-control-hover); color: var(--text-primary); }
+.gate-target-option:hover { background: var(--surface-control-hover); color: var(--text-primary); }
 .gate-target-option > svg { flex-shrink: 0; }
 .gate-target-identity { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; color: var(--text-primary); }
 .gate-target-identity > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gate-target-identity .gate-target-detail { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
 .gate-target-check { color: var(--text-secondary); }
 .gate-target-actions { margin-top: var(--space-xs); padding-top: var(--space-xs); border-top: 1px solid var(--border-subtle); }
-.gate-target-settings:disabled { opacity: 0.5; cursor: not-allowed; }
 .gate-target-empty { padding: 6px; margin: 0; font-size: 11px; color: var(--text-muted); }
 
 @keyframes gate-target-reveal {

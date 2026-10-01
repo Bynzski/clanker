@@ -586,6 +586,9 @@ describe('WorkspaceTabs', () => {
         fireEvent.change(input, { target: { value: 'New Name' } });
       });
       
+      expect(input).toHaveClass('clanker-input');
+      expect(screen.getByRole('button', { name: 'Save' })).toHaveClass('clanker-icon-button');
+
       // Press Enter
       await act(async () => {
         fireEvent.keyDown(input, { key: 'Enter' });

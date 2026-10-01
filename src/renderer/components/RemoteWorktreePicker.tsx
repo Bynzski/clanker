@@ -1,3 +1,5 @@
+import { Button } from './ui/Button';
+import { Select } from './ui/Select';
 import { useEffect, useState } from 'react';
 import type { GitWorktree } from '../../shared/types/git';
 import type { WorkspaceTab } from '../store/workspaceTypes';
@@ -44,10 +46,10 @@ export default function RemoteWorktreePicker({ repositories, preferredWorkspaceI
   const worktrees = currentResult?.worktrees ?? [];
   return <div className="gate-worktrees remote-worktree-picker">
     <label htmlFor="remote-worktree-repository">Open SSH repository</label>
-    <select id="remote-worktree-repository" className="ssh-env-select" value={workspaceId} disabled={creating} onChange={(event) => setSelectedId(event.target.value)}>
+    <Select id="remote-worktree-repository" className="ssh-env-select" value={workspaceId} disabled={creating} onChange={(event) => setSelectedId(event.target.value)}>
       {repositories.map((entry) => <option key={entry.id} value={entry.id}>{entry.name} — {entry.workspacePath}</option>)}
-    </select>
-    <button type="button" onClick={() => setRefresh((value) => value + 1)} disabled={loading || creating}>Refresh worktrees</button>
+    </Select>
+    <Button type="button" onClick={() => setRefresh((value) => value + 1)} disabled={loading || creating}>Refresh worktrees</Button>
     {loading && <p role="status">Loading remote worktrees…</p>}
     {error && <p className="gate-worktree-error" role="alert">{error}</p>}
     {removalNotice?.workspaceId === workspaceId && <p role="status">{removalNotice.message}</p>}
@@ -60,7 +62,7 @@ export default function RemoteWorktreePicker({ repositories, preferredWorkspaceI
         <span className="gate-worktree-branch">{worktree.branch || 'Detached'}{worktree.isMain ? ' · Main' : ''}</span>
         <span className="gate-worktree-project">{worktree.path}{worktree.isLocked ? ' · Locked' : ''}{worktree.isPrunable ? ' · Missing' : ''}</span>
       </span>
-      <button type="button" onClick={() => onOpenPath(worktree.path)} disabled={loading || creating || !launchReady || worktree.isPrunable} title={worktree.isPrunable ? 'Checkout directory is missing' : undefined}>Open</button>
+      <Button type="button" onClick={() => onOpenPath(worktree.path)} disabled={loading || creating || !launchReady || worktree.isPrunable} title={worktree.isPrunable ? 'Checkout directory is missing' : undefined}>Open</Button>
       </div>
       {!worktree.isMain && <RemoteWorktreeInspect key={`${workspaceId}:${workspacePath}:${refresh}`} workspaceId={repository.id} workspacePath={repository.workspacePath}
         worktreePath={worktree.path} disabled={creating || loading} onBusyChange={setCreating} onRemoved={(removed) => {

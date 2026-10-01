@@ -1,3 +1,4 @@
+import { IconButton } from '../ui/IconButton';
 import { useState } from 'react';
 import { Minus, Plus } from 'lucide-react';
 import type { HarnessOption } from '../../lib/harnessOptions';
@@ -43,9 +44,9 @@ function HarnessRow({ option, total, ...props }: Props & { option: HarnessOption
       {option.id && props.remote && <span className="gate-host-model" title="Uses the model configured on this server">Host default</span>}
     </div>
     <div className="gate-harness-count" role="group" aria-label={`${option.label} terminals`}>
-      <button type="button" aria-label={`Remove ${option.label} terminal`} disabled={props.disabled || count === 0} onClick={() => props.onCount(option.id, count - 1)}><Minus size={12} /></button>
+      <IconButton type="button" aria-label={`Remove ${option.label} terminal`} disabled={props.disabled || count === 0} onClick={() => props.onCount(option.id, count - 1)}><Minus size={12} /></IconButton>
       <output aria-label={`${option.label} terminal count`}>{count}</output>
-      <button type="button" aria-label={`Add ${option.label} terminal`} disabled={props.disabled || total >= MAX_GATE_TERMINALS} onClick={() => props.onCount(option.id, count + 1)}><Plus size={12} /></button>
+      <IconButton type="button" aria-label={`Add ${option.label} terminal`} disabled={props.disabled || total >= MAX_GATE_TERMINALS} onClick={() => props.onCount(option.id, count + 1)}><Plus size={12} /></IconButton>
     </div>
   </div>;
 }

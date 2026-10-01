@@ -270,7 +270,7 @@ export default function RemoteDirectoryChooser({ environmentId, initialPath, hom
         )}
         <div className="remote-chooser-list">
           {loading && <p role="status"><Loader2 className="spin" size={15} /> Loading directories…</p>}
-          {error && <p role="alert">{error} <button type="button" onClick={() => navigate(requestedPath)}>Retry</button></p>}
+          {error && <p role="alert">{error} <Button type="button" onClick={() => navigate(requestedPath)}>Retry</Button></p>}
           {!loading && !error && listing?.directories.length === 0 && <p>No subdirectories</p>}
           {!loading && !error && listing?.directories.map((directory) => (
             <button type="button" key={directory.path} disabled={creating} onClick={() => navigate(directory.path)}>

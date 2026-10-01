@@ -118,8 +118,8 @@ export default function SshEnvironmentManager({ environments, initialEnvironment
               {config.defaultWorkspaceRoot && <span className="ssh-env-target" title={config.defaultWorkspaceRoot}>{config.defaultWorkspaceRoot}</span>}
             </div>
             <div className="ssh-env-actions">
-              <button type="button" className="ssh-env-edit-btn" onClick={() => edit(config)} disabled={!!busy} aria-label={`Edit ${config.label}`}><Pencil size={14} /></button>
-              <button type="button" className="ssh-env-delete-btn" onClick={() => void remove(config.id)} disabled={!!busy} aria-label={`Delete ${config.label}`}><X size={14} /></button>
+              <IconButton type="button" className="ssh-env-edit-btn" onClick={() => edit(config)} disabled={!!busy} aria-label={`Edit ${config.label}`}><Pencil size={14} /></IconButton>
+              <IconButton variant="danger" type="button" className="ssh-env-delete-btn" onClick={() => void remove(config.id)} disabled={!!busy} aria-label={`Delete ${config.label}`}><X size={14} /></IconButton>
             </div>
           </div>)}
         </div>

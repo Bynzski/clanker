@@ -52,34 +52,13 @@
   min-height: 80px;
   resize: vertical;
 }
-.commit-message-input::placeholder {
-  color: var(--text-muted);
-}
 
 .commit-ai-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--surface-tint) 4%, transparent);
-  border: 1px solid var(--border-default);
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 600;
   letter-spacing: 0.02em;
-  transition: all var(--transition);
   white-space: nowrap;
-}
-
-.commit-ai-btn:hover:not(:disabled) {
-  background: var(--surface-control-hover);
-  color: var(--text-primary);
-}
-
-.commit-ai-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
 }
 
 .commit-files-section {
@@ -104,22 +83,6 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
-}
-
-.commit-stage-btn {
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  color: var(--text-secondary);
-  font-size: 10px;
-  padding: 3px 7px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.commit-stage-btn:hover {
-  background: var(--surface-control-hover);
-  color: var(--text-primary);
 }
 
 .commit-files-list {
@@ -191,41 +154,8 @@
   font-size: 10px;
 }
 
-.commit-unstage-btn {
-  background: color-mix(in srgb, var(--git-modified) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--git-modified) 30%, transparent);
-  color: var(--git-modified);
-  font-size: 10px;
-  padding: 3px 7px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.commit-unstage-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--git-modified) 22%, transparent);
-}
-
 .commit-file-unstage {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 10px;
-  padding: 1px 4px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all var(--transition);
   white-space: nowrap;
-}
-
-.commit-file-unstage:hover:not(:disabled) {
-  color: var(--git-modified);
-  background: color-mix(in srgb, var(--git-modified) 12%, transparent);
-}
-
-.commit-file-unstage:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .commit-dialog-footer {
@@ -271,24 +201,7 @@
 }
 
 .commit-file-diff-action {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  padding: 2px 4px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition);
-}
-
-.commit-file-diff-action:hover:not(:disabled) {
-  color: var(--text-secondary);
-  background: var(--surface-control);
-}
-
-.commit-file-diff-action:disabled {
-  opacity: 0.4;
-  cursor: default;
 }

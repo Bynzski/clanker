@@ -354,17 +354,6 @@
   display: flex;
   gap: 10px;
 }
-
-.recipe-launch-btn {
-  background: var(--control-success-bg);
-  border-color: var(--control-success-bg);
-  color: var(--text-inverse);
-}
-
-.recipe-launch-btn:hover:not(:disabled) {
-  background: var(--control-success-bg-hover);
-  border-color: var(--control-success-bg-hover);
-}
 .spin {
   animation: spin 1s linear infinite;
 }

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
@@ -263,7 +263,17 @@ describe('EditorPane', () => {
       render(<EditorPane workspaceId="ws-1" />);
 
       expect(document.querySelector('.editor-panel')).toHaveAttribute('data-workspace-interactive', 'false');
-      expect(document.querySelector('.editor-tab')).toBeDisabled();
+      const tab = document.querySelector('.editor-tab')!;
+      expect(tab).toHaveAttribute('aria-disabled', 'true');
+      expect(tab).toHaveAttribute('tabindex', '-1');
+      expect(screen.getByRole('button', { name: 'Close alpha.ts', hidden: true })).toBeDisabled();
+      const selectTab = vi.spyOn(useWorkspaceStore.getState(), 'setActiveEditorTab');
+      const closeTab = vi.spyOn(useWorkspaceStore.getState(), 'closeEditorTab');
+      fireEvent.click(tab);
+      fireEvent.keyDown(tab, { key: 'Enter' });
+      fireEvent.click(screen.getByRole('button', { name: 'Close alpha.ts', hidden: true }));
+      expect(selectTab).not.toHaveBeenCalled();
+      expect(closeTab).not.toHaveBeenCalled();
     });
 
     it('editor panel container', () => {

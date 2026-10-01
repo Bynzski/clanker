@@ -1,3 +1,4 @@
+import { Button } from './ui/Button';
 import { useEffect, useRef, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
 import { Globe, NotebookPen, PanelLeft, PanelLeftClose } from 'lucide-react';
@@ -188,7 +189,7 @@ export default function Header() {
   return (
     <header className="header">
       <div className="header-center">
-        <button
+        <Button
           type="button"
           className={`header-btn ${explorerVisible ? 'active' : ''}`}
           onClick={() => setExplorerVisible(!explorerVisible)}
@@ -196,7 +197,7 @@ export default function Header() {
         >
           {explorerVisible ? <PanelLeftClose size={15} strokeWidth={2} /> : <PanelLeft size={15} strokeWidth={2} />}
           Explorer
-        </button>
+        </Button>
 
         <div className="harness-pills">
           {HARNESS_OPTIONS.filter((opt) => visibleHarnessIds.includes(opt.id)).map(opt => {
@@ -216,15 +217,15 @@ export default function Header() {
           })}
         </div>
 
-        <button type="button" className={`header-btn ${browserVisible ? 'active' : ''}`} onClick={handleToggleBrowser} title="Toggle browser panel">
+        <Button type="button" className={`header-btn ${browserVisible ? 'active' : ''}`} onClick={handleToggleBrowser} title="Toggle browser panel">
           <Globe size={15} strokeWidth={2} />
           Browser
-        </button>
+        </Button>
 
-        <button type="button" className={`header-btn ${notesVisible ? 'active' : ''}`} onClick={handleToggleNotes} title="Toggle notes panel">
+        <Button type="button" className={`header-btn ${notesVisible ? 'active' : ''}`} onClick={handleToggleNotes} title="Toggle notes panel">
           <NotebookPen size={15} strokeWidth={2} />
           Notes
-        </button>
+        </Button>
 
         {workspacePath && (
           <GitButton key={focusedWorkspace?.id} workspacePath={workspacePath} workspaceId={focusedWorkspace?.id} />

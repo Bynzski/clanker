@@ -1,3 +1,7 @@
+import { IconButton } from '../ui/IconButton';
+import { Button } from '../ui/Button';
+import { Select } from '../ui/Select';
+import { Input } from '../ui/Input';
 import { useState } from 'react';
 import { AlertTriangle, ChevronRight, Star } from 'lucide-react';
 import { HARNESS_OPTIONS } from '../../lib/harnessOptions';
@@ -118,7 +122,7 @@ export default function HarnessDefaultsSection({
                 </label>
                 <div className="harness-defaults-field">
                   <span className="harness-defaults-field-label">Extra flags</span>
-                  <input
+                  <Input
                     type="text"
                     className="settings-select"
                     value={defaults?.flags ?? ''}
@@ -130,7 +134,7 @@ export default function HarnessDefaultsSection({
                 <div className="harness-defaults-field">
                   <span className="harness-defaults-field-label">Default model</span>
                   {harnessId === 'claude' || (harnessId === 'hermes' && models.length === 0) ? (
-                    <input
+                    <Input
                       type="text"
                       className="settings-select"
                       aria-label={`${option?.label ?? harnessId} default model`}
@@ -141,7 +145,7 @@ export default function HarnessDefaultsSection({
                   ) : (
                     <>
                       {harnessId === 'hermes' && isHermesManual ? (
-                        <input
+                        <Input
                           type="text"
                           className="settings-select"
                           aria-label="Hermes custom model"
@@ -150,7 +154,7 @@ export default function HarnessDefaultsSection({
                           placeholder="Enter custom model"
                         />
                       ) : (
-                        <select
+                        <Select
                           className="settings-select"
                           aria-label={`${option?.label ?? harnessId} default model`}
                           value={currentModelId}
@@ -172,24 +176,24 @@ export default function HarnessDefaultsSection({
                           {harnessId === 'hermes' && currentModelId && !models.some((entry) => entry.id === currentModelId) && (
                             <option value={currentModelId}>{currentModelId}</option>
                           )}
-                        </select>
+                        </Select>
                       )}
                       {harnessId === 'hermes' && (
-                        <button type="button" onClick={() => setIsHermesManual((manual) => !manual)}>
+                        <Button type="button" onClick={() => setIsHermesManual((manual) => !manual)}>
                           {isHermesManual ? 'Browse Hermes models' : 'Enter custom model'}
-                        </button>
+                        </Button>
                       )}
                     </>
                   )}
                 </div>
                 {harnessId === 'hermes' && (
-                  <button
+                  <Button
                     type="button"
                     onClick={() => void loadHarnessModels('hermes', true)}
                     disabled={isModelsLoading}
                   >
                     {isModelsLoading ? 'Refreshing Hermes models…' : 'Refresh Hermes models'}
-                  </button>
+                  </Button>
                 )}
 
                 {((defaults?.favorites?.length ?? 0) > 0 || models.length > 0) && (
@@ -216,14 +220,14 @@ export default function HarnessDefaultsSection({
                               <AlertTriangle size={10} strokeWidth={2} className="unresolved-icon" />
                             )}
                             <span className="harness-defaults-favorite-label">{favoriteLabel}</span>
-                            <button
+                            <IconButton aria-label="Remove from favorites"
                               type="button"
                               className="harness-defaults-remove-fav"
                               onClick={() => void handleToggleFavorite(harnessId, favoriteId)}
                               title="Remove from favorites"
                             >
                               ×
-                            </button>
+                            </IconButton>
                           </span>
                         );
                       })}
@@ -231,7 +235,7 @@ export default function HarnessDefaultsSection({
                         .filter((entry) => !(defaults?.favorites ?? []).includes(entry.id))
                         .slice(0, 5)
                         .map((entry) => (
-                          <button
+                          <Button
                             key={entry.id}
                             type="button"
                             className="harness-defaults-add-fav"
@@ -242,7 +246,7 @@ export default function HarnessDefaultsSection({
                             <span className="harness-defaults-favorite-label">
                               {harnessId === 'hermes' ? hermesModelLabel(entry) : entry.label}
                             </span>
-                          </button>
+                          </Button>
                         ))}
                     </div>
                   </div>

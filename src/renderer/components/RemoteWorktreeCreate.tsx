@@ -1,3 +1,5 @@
+import { Button } from './ui/Button';
+import { Input } from './ui/Input';
 import { useEffect, useRef, useState } from 'react';
 
 interface Props {
@@ -38,10 +40,10 @@ export default function RemoteWorktreeCreate({ workspaceId, workspacePath, launc
 
   return <div className="gate-worktree-create">
     <label htmlFor="remote-worktree-base">Base ref</label>
-    <input id="remote-worktree-base" value={base} onChange={(event) => setBase(event.target.value)} disabled={busy} placeholder="HEAD, branch, tag, or commit" />
+    <Input id="remote-worktree-base" value={base} onChange={(event) => setBase(event.target.value)} disabled={busy} placeholder="HEAD, branch, tag, or commit" />
     <label htmlFor="remote-worktree-branch">Worktree branch</label>
-    <input id="remote-worktree-branch" value={branch} onChange={(event) => setBranch(event.target.value)} disabled={busy} placeholder="task/my-change" />
-    <button type="button" disabled={busy || !launchReady || !branch.trim()} onClick={() => void create()}>{busy ? 'Creating remote worktree…' : 'Create and open worktree'}</button>
+    <Input id="remote-worktree-branch" value={branch} onChange={(event) => setBranch(event.target.value)} disabled={busy} placeholder="task/my-change" />
+    <Button type="button" disabled={busy || !launchReady || !branch.trim()} onClick={() => void create()}>{busy ? 'Creating remote worktree…' : 'Create and open worktree'}</Button>
     <p>The checkout is created beside the repository in its worktrees folder. An existing branch keeps its current commit.</p>
     {error && <p role="alert" className="gate-worktree-error">{error}</p>}
   </div>;

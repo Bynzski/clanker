@@ -1491,6 +1491,9 @@ describe('BrowserPanel', () => {
       render(<BrowserPanel layoutVersion={1} />);
       const input = screen.getByPlaceholderText('Enter URL...');
 
+      expect(input).toHaveClass('clanker-input');
+      input.focus();
+      expect(input).toHaveFocus();
       fireEvent.focus(input);
       fireEvent.change(input, { target: { value: 'lo' } });
       fireEvent.change(input, { target: { value: 'local' } });

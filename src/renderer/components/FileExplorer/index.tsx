@@ -1,3 +1,6 @@
+import { Input } from '../ui/Input';
+import { Button } from '../ui/Button';
+import { IconButton } from '../ui/IconButton';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw, Search, X } from 'lucide-react';
@@ -563,15 +566,15 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
       <div className="file-explorer-header">
         <span className="file-explorer-title">Explorer</span>
         <div className="file-explorer-actions">
-          <button
+          <IconButton aria-label="Refresh"
             type="button"
             className="file-explorer-action"
             onClick={handleRefresh}
             title="Refresh"
           >
             <RefreshCw size={14} strokeWidth={2} />
-          </button>
-          <button
+          </IconButton>
+          <IconButton aria-label="New File"
             type="button"
             className="file-explorer-action"
             onClick={() => startCreating(
@@ -581,8 +584,8 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
             title="New File"
           >
             <FilePlus size={14} strokeWidth={2} />
-          </button>
-          <button
+          </IconButton>
+          <IconButton aria-label="New Folder"
             type="button"
             className="file-explorer-action"
             onClick={() => startCreating(
@@ -592,28 +595,28 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
             title="New Folder"
           >
             <FolderPlus size={14} strokeWidth={2} />
-          </button>
-          <button
+          </IconButton>
+          <Button
             type="button"
             className={`file-explorer-action ${showHiddenFiles ? 'active' : ''}`}
             onClick={() => setShowHiddenFiles(!showHiddenFiles, resolvedWorkspaceId ?? undefined)}
             title={showHiddenFiles ? 'Hide dotfiles' : 'Show dotfiles'}
           >
             {showHiddenFiles ? <Eye size={14} strokeWidth={2} /> : <EyeOff size={14} strokeWidth={2} />}
-          </button>
-          <button
+          </Button>
+          <IconButton aria-label="Close Explorer"
             type="button"
             className="file-explorer-close"
             onClick={() => setExplorerVisible(false, resolvedWorkspaceId ?? undefined)}
             title="Close Explorer"
           >
             <PanelLeftClose size={16} strokeWidth={2} />
-          </button>
+          </IconButton>
         </div>
       </div>
       <div className="file-explorer-filter">
         <Search size={12} strokeWidth={2} className="file-explorer-filter-icon" aria-hidden="true" />
-        <input
+        <Input
           ref={filterInputRef}
           type="text"
           className="file-explorer-filter-input"
@@ -624,7 +627,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
           aria-label="Filter files"
         />
         {filterQuery.length > 0 ? (
-          <button
+          <IconButton
             type="button"
             className="file-explorer-filter-clear"
             onClick={() => setFilterQuery('')}
@@ -632,7 +635,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
             aria-label="Clear filter"
           >
             <X size={12} strokeWidth={2} />
-          </button>
+          </IconButton>
         ) : null}
       </div>
       <div className="file-explorer-content">

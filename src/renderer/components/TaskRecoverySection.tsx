@@ -1,3 +1,5 @@
+import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
 import { useState } from 'react';
 import {
   Trash2,
@@ -137,18 +139,18 @@ export default function TaskRecoverySection({
 
                 <div className="task-recovery-actions">
                   {task.state === 'running' && task.terminalId && onFocusTerminal && (
-                    <button
+                    <IconButton aria-label="Focus terminal"
                       type="button"
                       className="task-action-btn focus-btn"
                       onClick={() => onFocusTerminal(task.terminalId!)}
                       title="Focus terminal"
                     >
                       <CheckCircle size={13} />
-                    </button>
+                    </IconButton>
                   )}
 
                   {task.state === 'resumable' && (
-                    <button
+                    <Button
                       type="button"
                       className="task-action-btn resume-btn"
                       onClick={() => void handleResume(task)}
@@ -157,11 +159,11 @@ export default function TaskRecoverySection({
                     >
                       <RotateCcw size={12} className={isResuming ? 'spin' : ''} />
                       Resume
-                    </button>
+                    </Button>
                   )}
 
                   {task.state === 'unavailable' && task.nativeSessionId && /(?:failed to resume|resume failed)/i.test(task.stateReason ?? '') && (
-                    <button
+                    <Button
                       type="button"
                       className="task-action-btn resume-btn"
                       onClick={() => void handleResume(task)}
@@ -170,10 +172,10 @@ export default function TaskRecoverySection({
                     >
                       <RotateCcw size={12} className={isResuming ? 'spin' : ''} />
                       Retry
-                    </button>
+                    </Button>
                   )}
                   {canReassociate && (
-                    <button
+                    <Button
                       type="button"
                       className="task-action-btn select-session-btn"
                       onClick={() => setSelectingSessionTaskId(isSelecting ? null : task.id)}
@@ -181,10 +183,10 @@ export default function TaskRecoverySection({
                     >
                       <span>Select Session</span>
                       <ChevronDown size={11} />
-                    </button>
+                    </Button>
                   )}
 
-                  <button
+                  <IconButton
                     type="button"
                     className="task-action-btn delete-btn"
                     onClick={() => void onDeleteTask(task.id)}
@@ -192,7 +194,7 @@ export default function TaskRecoverySection({
                     aria-label="Delete task"
                   >
                     <Trash2 size={12} />
-                  </button>
+                  </IconButton>
                 </div>
               </div>
               {resumeError?.taskId === task.id && (

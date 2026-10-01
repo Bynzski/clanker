@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button';
 import { Download, Upload } from 'lucide-react';
 import type { RemoteAction } from './gitButtonTypes';
 
@@ -30,7 +31,7 @@ export function GitRemoteActionsSection({
         <span>Remote</span>
       </div>
       <div className="git-menu-remote-actions">
-        <button
+        <Button
           type="button"
           className="header-btn git-menu-action"
           onClick={onFetch}
@@ -38,8 +39,8 @@ export function GitRemoteActionsSection({
         >
           <Download size={13} className={remoteAction === 'fetch' ? 'spin' : ''} />
           {remoteAction === 'fetch' ? 'Fetching...' : 'Fetch'}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className="header-btn git-menu-action"
           onClick={onPull}
@@ -48,9 +49,9 @@ export function GitRemoteActionsSection({
         >
           <Download size={13} className={remoteAction === 'pull' ? 'spin' : ''} />
           {remoteAction === 'pull' ? 'Pulling...' : 'Pull'}
-        </button>
+        </Button>
         {!upstream && currentBranch && (
-          <button
+          <Button
             type="button"
             className="header-btn git-menu-action"
             onClick={onPublish}
@@ -59,9 +60,9 @@ export function GitRemoteActionsSection({
           >
             <Upload size={13} className={remoteAction === 'publish' ? 'spin' : ''} />
             {remoteAction === 'publish' ? 'Publishing...' : 'Publish branch'}
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           type="button"
           className="header-btn git-menu-action"
           onClick={onPush}
@@ -70,7 +71,7 @@ export function GitRemoteActionsSection({
         >
           <Upload size={13} className={remoteAction === 'push' ? 'spin' : ''} />
           {remoteAction === 'push' ? 'Pushing...' : 'Push'}
-        </button>
+        </Button>
       </div>
     </div>
   );

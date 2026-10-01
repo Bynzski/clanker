@@ -1,3 +1,5 @@
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import type { GitBranch } from './types';
 import type { PullRequestContext, DeepLink, ProviderContext } from '../../store/vcsStore';
@@ -107,7 +109,7 @@ export function GitBranchesSection({
             onCreateBranch(event);
           }}
         >
-          <input
+          <Input variant="mono"
             ref={createBranchInputRef}
             className="git-create-branch-input"
             value={newBranchName}
@@ -115,14 +117,14 @@ export function GitBranchesSection({
             placeholder={currentBranch ? `From ${currentBranch}` : 'Branch name'}
             disabled={isBusy}
           />
-          <button
+          <Button
             type="submit"
             className="header-btn git-create-branch-submit"
             disabled={isBusy || newBranchName.trim().length === 0}
           >
             {activeAction === 'create' ? <Loader2 size={13} className="spin" /> : <Plus size={13} />}
             Create
-          </button>
+          </Button>
         </form>
       </div>
 
@@ -148,7 +150,7 @@ export function GitBranchesSection({
                   {branch.isCurrent && <span className="git-branch-current">Current</span>}
                 </div>
                 <div className="git-branch-actions">
-                  <button
+                  <Button
                     type="button"
                     className="git-branch-action"
                     onClick={() => onSwitchBranch(branch.name)}
@@ -158,8 +160,8 @@ export function GitBranchesSection({
                       <Loader2 size={12} className="spin" />
                     ) : null}
                     Switch
-                  </button>
-                  <button
+                  </Button>
+                  <Button variant="danger"
                     type="button"
                     className="git-branch-action danger"
                     onClick={() => onDeleteBranch(branch.name)}
@@ -171,7 +173,7 @@ export function GitBranchesSection({
                       <Trash2 size={12} />
                     )}
                     Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}

@@ -1,3 +1,4 @@
+import { IconButton } from './ui/IconButton';
 import { useRef, useState } from 'react';
 import type { DragEvent, KeyboardEvent, MouseEvent } from 'react';
 import { Plus, X } from 'lucide-react';
@@ -91,7 +92,7 @@ export default function BrowserTabStrip({
             >
               <span className="browser-tab-label">{getBrowserTabLabel(tab)}</span>
             </button>
-            <button
+            <IconButton
               className="browser-tab-close"
               type="button"
               onClick={(event) => onCloseTab(event, tab.id)}
@@ -100,13 +101,13 @@ export default function BrowserTabStrip({
               aria-label={`Close ${getBrowserTabLabel(tab)}`}
             >
               <X size={12} strokeWidth={2} />
-            </button>
+            </IconButton>
           </div>
         ))}
       </div>
-      <button className="browser-tab-add" type="button" onClick={onNewTab} title="New tab" aria-label="New tab">
+      <IconButton className="browser-tab-add" type="button" onClick={onNewTab} title="New tab" aria-label="New tab">
         <Plus size={14} strokeWidth={2} />
-      </button>
+      </IconButton>
     </div>
   );
 }
