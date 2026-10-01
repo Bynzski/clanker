@@ -69,7 +69,7 @@ async function readPiSessionMetadata(filePath: string): Promise<{ modelId?: stri
   });
 }
 
-async function discoverPiSessionFile(
+export async function discoverPiSessionFile(
   filePath: string,
   workspacePath: string
 ): Promise<HarnessSession | null> {

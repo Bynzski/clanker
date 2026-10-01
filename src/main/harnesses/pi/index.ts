@@ -2,7 +2,7 @@ import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
 import { local, SOURCE, prepareResources } from './attention';
 import { remoteSessions } from './remoteSessions';
-import { buildInvocation } from './invocation';
+import { buildInvocation, validateLocal } from './invocation';
 import { defineHarness, type HarnessProvider } from '../types';
 
 export const piProvider = defineHarness({
@@ -10,6 +10,7 @@ export const piProvider = defineHarness({
   models: { discover: async () => (await import('./models')).discoverModels() },
   sessions: {
     discoveryOrder: 2,
+    validateLocal,
     remote: remoteSessions,
     resume: { support: 'native', build: (session, flags) => buildInvocation(session, false, flags) },
     fork: { support: 'native', build: (session, flags) => buildInvocation(session, true, flags) },

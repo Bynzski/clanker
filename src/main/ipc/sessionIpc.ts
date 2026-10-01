@@ -95,16 +95,16 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       throw new Error(`${session.harness} harness is not available`);
     }
 
-    const validatedSession = findHarnessProvider(session.harness)?.sessions?.validateLocal?.(session) ?? session;
 
     // Look up per-harness default flags from store — same source as SPAWN_TERMINAL
     const harnessDefaults = store.get('harnessDefaults');
     const attentionEnabled = harnessDefaults[session.harness]?.attentionEnabled === true;
     const userFlags = harnessDefaults[session.harness]?.flags?.trim();
+    const validatedSession = await findHarnessProvider(session.harness)?.sessions?.validateLocal?.(session, { workspacePath: nativeWorkspacePath, userFlags }) ?? session;
 
     const nativeSession = {
       ...validatedSession,
-      cwd: nativeSessionCwd,
+      cwd: toNativePath(validatedSession.cwd, process.platform),
       ...(validatedSession.filePath ? { filePath: toNativePath(validatedSession.filePath, process.platform) } : {}),
     };
 

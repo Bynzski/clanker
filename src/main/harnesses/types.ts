@@ -61,7 +61,7 @@ export function classifyHarnessFailure(error: unknown, transport: 'local' | 'ssh
 export interface HarnessSessionsCapability {
   /** Preserve stable timestamp-tie ordering in existing history results. */
   readonly discoveryOrder?: number;
-  readonly validateLocal?: (session: HarnessSession) => HarnessSession;
+  readonly validateLocal?: (session: HarnessSession, context: { workspacePath: string; userFlags?: string }) => HarnessSession | Promise<HarnessSession>;
   readonly validateRemote?: (session: HarnessSession) => boolean;
   discover(workspacePath: string): Promise<HarnessSession[]>;
   readonly resume?: HarnessSessionOperation;
