@@ -1,0 +1,124 @@
+/* Shared Form Control Layer */
+.clanker-input,
+.clanker-textarea,
+.clanker-select {
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--surface-control);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.clanker-input::placeholder,
+.clanker-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.clanker-input:focus-visible,
+.clanker-textarea:focus-visible,
+.clanker-select:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-color: var(--focus-ring);
+}
+
+.clanker-input:disabled,
+.clanker-textarea:disabled,
+.clanker-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.clanker-input:read-only,
+.clanker-textarea:read-only {
+  cursor: default;
+}
+
+.clanker-input[aria-invalid='true'],
+.clanker-textarea[aria-invalid='true'],
+.clanker-select[aria-invalid='true'] {
+  border-color: var(--status-error);
+}
+
+.clanker-input[aria-invalid='true']:focus-visible,
+.clanker-textarea[aria-invalid='true']:focus-visible,
+.clanker-select[aria-invalid='true']:focus-visible {
+  outline-color: var(--status-error);
+}
+
+/* Sizing and variants */
+.clanker-input:where([data-size='sm']),
+.clanker-select:where([data-size='sm']) {
+  height: 28px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.clanker-input:where([data-size='md']),
+.clanker-select:where([data-size='md']) {
+  height: 34px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.clanker-input:where([data-variant='mono']),
+.clanker-textarea:where([data-variant='mono']) {
+  font-family: var(--font-mono);
+}
+
+.clanker-textarea {
+  padding: 8px 10px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.clanker-select {
+  cursor: pointer;
+  padding-right: 24px;
+}
+
+.clanker-select option {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+/* Field layout */
+.clanker-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.clanker-field-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.clanker-form-message {
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.clanker-form-message:where([data-variant='description']) {
+  color: var(--text-muted);
+}
+
+.clanker-form-message:where([data-variant='error']) {
+  color: var(--status-error);
+}
+
+/* InputGroup for icon + input or button + input */
+.clanker-input-group {
+  display: flex;
+  align-items: center;
+  position: relative;
+  width: 100%;
+}
+
+.clanker-input-group > .clanker-input {
+  width: 100%;
+}

@@ -1,3 +1,21 @@
+# Clanker Geometry Contract
+
+Clanker's visual language is compact, dense, developer-tool and terminal-oriented.
+All structural geometry is centrally owned through design tokens in `styles/global.css`:
+
+- `--radius-sm` (`2px`): **the standard radius for all ordinary rectangular UI**.
+  Dialogs, popovers, panels, cards, inputs, selects, textareas, buttons, dropdown triggers,
+  segmented controls, list items, and context menus must resolve through `--radius-sm`.
+- `--radius-md` (`4px`) and `--radius-lg` (`8px`): **exceptional, not defaults**.
+  Used only for specific nested compositions or elevated overlays where explicit hierarchy demands it.
+- **Pills, counters, and circles**: Status chips, badge counters, and indicator dots
+  may intentionally use pill (`999px` / `10px`–`12px`) or circular (`50%`) geometry.
+- **No arbitrary numeric radii in feature CSS**: Feature styles must never introduce
+  one-off values such as `3px`, `4px`, `5px`, `6px`, or `8px`. All radius styling must consume
+  `var(--radius-*)` tokens or legitimate pill/circle affordances.
+- Feature classes may customize layout, flex behavior, dimensions, and composition,
+  but should not recreate or override primitive border, radius, surface, or focus styling.
+
 # Dialog foundation
 
 Import feature UI from `Dialog` or `AlertDialog` in this directory. The exported
@@ -41,6 +59,24 @@ radio semantics; `data-state="checked"` is the selected styling hook. Native
 buttons need no headless dependency. Clanker owns all primitive styling through
 semantic theme tokens; product classes can extend layout and preserve existing
 appearance. Complex interaction remains backed by headless primitives.
+
+## Form controls and fields
+
+Import standard form controls from `Input`, `Textarea`, `Select`, and `Field` in
+this directory. Common controls centrally own:
+
+- Surface (`var(--surface-control)` or `var(--surface-app)`)
+- Border (`var(--border-default)`)
+- Standard radius (`var(--radius-sm)`)
+- Typography and sizing (compact, monospace where appropriate)
+- Placeholder treatment (`var(--text-muted)`)
+- Focus-visible ring (`var(--focus-ring)`)
+- Disabled and read-only treatment
+- Error state (`aria-invalid="true"`, `var(--status-error)`)
+
+Use `Field` to group a `FieldLabel`, control (`Input`, `Textarea`, `Select`), and
+optional `FormMessage`. Use `InputGroup` for input controls that contain leading
+or trailing icons or inline action buttons.
 
 ## Popover
 
