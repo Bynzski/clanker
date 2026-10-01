@@ -14,5 +14,6 @@ export const piProvider = {
     selectionFlags: ['--session', '--continue', '-c', '--resume', '-r', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverPiSessions(workspace) },
   attention: { local, remote, sources: () => ({ 'pi.ts': SOURCE }) },
+  aiCommit: { command: 'pi', args: [], modelArg: '--model', timeoutMs: 45000 },
   launch: { command: 'pi', args: [], modelArg: '--model' },
 } satisfies HarnessProvider;

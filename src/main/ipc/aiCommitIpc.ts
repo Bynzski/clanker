@@ -1,3 +1,4 @@
+import { findHarnessProvider } from '../harnesses/registry';
 /**
  * AI Commit IPC Handlers
  *
@@ -17,7 +18,6 @@ import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { resolveHarnessSpawn } from '../harnessLaunch';
 import { prependUserCliBinsToPath } from '../platformShell';
 import {
-  AI_COMMIT_COMMANDS,
   buildAiCommitArgs,
   buildCommitPrompt,
   getAiCommitTimeoutMs,
@@ -127,7 +127,7 @@ async function generateAiCommitMessage(
   }
 
   const provider = store.get('aiCommitProvider');
-  const providerConfig = AI_COMMIT_COMMANDS[provider];
+  const providerConfig = findHarnessProvider(provider)?.aiCommit;
   if (!providerConfig) {
     return { success: false, error: 'Unsupported AI commit provider' };
   }

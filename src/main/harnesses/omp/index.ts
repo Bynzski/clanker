@@ -14,5 +14,6 @@ export const ompProvider = {
     selectionFlags: ['--resume', '-r', '--continue', '-c', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverOmpSessions(workspace) },
   attention: { local, remote, sources: () => ({ 'omp.ts': SOURCE }) },
+  aiCommit: { command: 'omp', args: ['--print', '--no-session', '--no-tools', '--no-extensions'], modelArg: '--model', timeoutMs: 60000 },
   launch: { command: 'omp', args: [], modelArg: '--model' },
 } satisfies HarnessProvider;

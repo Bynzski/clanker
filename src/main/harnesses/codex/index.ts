@@ -14,5 +14,6 @@ export const codexProvider = {
     selectionFlags: ['resume', 'fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverCodexSessions(workspace) },
   attention: { local, remote },
+  aiCommit: { command: 'codex', args: ['exec'], modelArg: '-m', timeoutMs: 60000 },
   launch: { command: 'codex', args: [], modelArg: '-m' },
 } satisfies HarnessProvider;

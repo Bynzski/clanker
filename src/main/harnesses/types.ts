@@ -25,6 +25,7 @@ export interface HarnessProvider {
   readonly models?: HarnessModelsCapability;
   readonly sessions?: HarnessSessionsCapability;
   readonly attention?: HarnessAttentionCapability;
+  readonly aiCommit?: HarnessAiCommitCapability;
 }
 
 export type CapabilitySupport = 'native' | 'emulated';
@@ -114,4 +115,12 @@ export interface HarnessRemoteAttention {
     parts: string[]; files: Record<string, string>; upgradeFile?: string; legacyFile?: string;
   };
   readonly enableCommand?: { command: string; args: string[] };
+}
+
+/** Existing stdin prompt execution; Git context and text cleanup remain shared. */
+export interface HarnessAiCommitCapability {
+  readonly command: string;
+  readonly args: string[];
+  readonly modelArg: string;
+  readonly timeoutMs: number;
 }

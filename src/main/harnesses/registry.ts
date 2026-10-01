@@ -35,3 +35,8 @@ export function findHarnessProvider(value: unknown): HarnessProvider | undefined
 export function getHarnessProviders(): readonly HarnessProvider[] {
   return KNOWN_HARNESS_IDS.map(getHarnessProvider);
 }
+
+/** Capability-aware IDs derive from implementations, not a support allowlist. */
+export type HarnessWithCapability<Capability extends keyof HarnessProvider> = {
+  [Id in HarnessId]: Capability extends keyof typeof providers[Id] ? Id : never
+}[HarnessId];

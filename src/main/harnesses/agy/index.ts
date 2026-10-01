@@ -20,5 +20,6 @@ export const agyProvider = {
     selectionFlags: ['--conversation'],
     discover: async (workspace: string) => (await import('./sessions')).discoverAgySessions(workspace) },
   attention: { local, remote },
+  aiCommit: { command: 'agy', args: ['--disable-slash-commands'], modelArg: '--model', timeoutMs: 60000 },
   launch: { command: 'agy', args: [], modelArg: '--model' },
 } satisfies HarnessProvider;
