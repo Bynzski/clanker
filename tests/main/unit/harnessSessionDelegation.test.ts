@@ -20,7 +20,7 @@ it('aggregates registered discovery capabilities and retains independent failure
   expect(result.sessions.map((session) => session.timestamp)).toEqual([4, 3, 2, 1, 0]);
   expect(result.harnessStatus.agy).toEqual({ status: 'error', error: error.message, failure: error });
   expect(result.harnessStatus.hermes).toBeUndefined();
-  for (const provider of providers) expect(provider.sessions!.discover).toHaveBeenCalledWith('/workspace');
+  for (const provider of providers) expect(provider.sessions!.discover).toHaveBeenCalledWith(process.platform === 'win32' ? '\\workspace' : '/workspace');
   // Partial failures must not be cached as a complete empty/successful scan.
   await discoverSessionsDetailed('/workspace');
   for (const provider of providers) expect(provider.sessions!.discover).toHaveBeenCalledTimes(2);

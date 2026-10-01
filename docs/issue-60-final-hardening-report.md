@@ -151,6 +151,16 @@ commits yield 29 ahead / 0 behind; delivery rechecks fetched main and pushed HEA
 No rebase or PR creation was performed. No correctness/security blocker was found;
 the branch is ready for the requested short merge-readiness verification.
 
+## PR CI platform correction
+
+PR #66's first Ubuntu validation passed; Windows CI exposed three incorrect
+platform assumptions in new tests. The targeted correction asserts the existing
+`cmd.exe /c` resolution, native Windows discovery path separators and POSIX-only
+mode checking (Windows uses inherited NTFS ACLs). Runtime code and POSIX permission
+assertions are unchanged. Focused tests and full local validation are rerun before
+pushing; both GitHub platform checks must pass before squash merge. This is test
+portability work, not an architecture or behavior change.
+
 ## Exact materially changed files
 
 Final polish changed exactly four files: `tests/main/unit/harnessArchitecture.test.ts`,
@@ -185,8 +195,10 @@ The cumulative runtime-hardening and polish list follows.
 - `src/main/ipc/terminalIpc.ts`
 - `src/main/remote/sshAgentAttention.ts`
 - `tests/main/unit/agentAttentionAdapters.test.ts`
+- `tests/main/unit/aiCommitIpc.test.ts`
 - `tests/main/unit/harnessAiCommitInvocation.test.ts`
 - `tests/main/unit/harnessArchitecture.test.ts`
 - `tests/main/unit/harnessAttentionLifecycle.test.ts`
 - `tests/main/unit/harnessPiSessionTrust.test.ts`
+- `tests/main/unit/harnessSessionDelegation.test.ts`
 - `tests/main/unit/sshAgentAttention.test.ts`

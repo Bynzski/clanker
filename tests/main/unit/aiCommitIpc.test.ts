@@ -300,7 +300,7 @@ test('IPC executes the provider invocation without assuming stdin prompt transpo
     const handler = calls[calls.length - 1][1];
     expect(await handler({} as never, testHome())).toEqual({ success: true, message: 'fix: provider invocation' });
     expect(invocation).toHaveBeenCalledWith({ model: 'selected-model', prompt: expect.stringContaining('context') });
-    expect(spawn).toHaveBeenLastCalledWith('different-cli', ['--prompt', 'provider prompt'], expect.objectContaining({ env: expect.objectContaining({ PROVIDER_SETTING: 'set', PATH: expect.any(String) }) }));
+    expect(spawn).toHaveBeenLastCalledWith(process.platform === 'win32' ? 'cmd.exe' : 'different-cli', [...(process.platform === 'win32' ? ['/c', 'different-cli'] : []), '--prompt', 'provider prompt'], expect.objectContaining({ env: expect.objectContaining({ PROVIDER_SETTING: 'set', PATH: expect.any(String) }) }));
     expect(child.stdin.end).toHaveBeenCalledWith(undefined);
   } finally { invocation.mockRestore(); }
 });

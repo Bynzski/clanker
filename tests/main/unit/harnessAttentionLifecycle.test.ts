@@ -102,7 +102,8 @@ it('isolates provider failure, keeps shared infrastructure intact, and retries l
     expect(prepareLocalAttention('pi', ctx)).not.toBeNull();
     const scoped = ensureProviderAttentionResources('pi', ctx.files);
     expect(fs.existsSync(path.join(scoped.resourceRoot!, 'pi.ts'))).toBe(true);
-    expect(fs.statSync(scoped.resourceRoot!).mode & 0o777).toBe(0o700);
+    // Windows inherits NTFS ACLs; POSIX mode bits do not describe that protection.
+    if (process.platform !== 'win32') expect(fs.statSync(scoped.resourceRoot!).mode & 0o777).toBe(0o700);
   } finally { prepare.mockRestore(); other.mockRestore(); }
 });
 
