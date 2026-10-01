@@ -5,7 +5,7 @@
   height: 100%;
   background: var(--surface-app);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   position: relative;
 }
@@ -102,7 +102,7 @@
   color: var(--text-secondary);
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 150ms ease-out;
   flex-shrink: 0;
@@ -215,7 +215,7 @@
   color: var(--text-secondary);
   background: transparent;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
@@ -243,7 +243,7 @@
   padding: 0 10px;
   background: var(--surface-app);
   border: 1px solid var(--border-default);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: 12px;
   font-family: var(--font-mono);
@@ -265,7 +265,7 @@
   overflow-y: auto;
   padding: 5px;
   border: 1px solid var(--border-strong);
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: var(--surface-elevated);
   box-shadow: 0 18px 42px color-mix(in srgb, var(--shadow-color) 44%, transparent), inset 0 1px 0 color-mix(in srgb, var(--surface-tint) 6%, transparent);
   backdrop-filter: blur(14px);
@@ -280,7 +280,7 @@
   color: var(--text-primary);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   text-align: left;
 }
@@ -318,7 +318,7 @@
   font-size: 12px;
   font-weight: 500;
   border: none;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 150ms ease-out;
   flex-shrink: 0;
@@ -350,6 +350,6 @@
 .remote-preview-bar { flex-shrink: 0; background: var(--surface-raised); border-bottom: 1px solid var(--border-default); font-size: 11px; }
 .remote-preview-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px; }
 .remote-preview-controls label { display: flex; align-items: center; gap: 4px; }
-.remote-preview-controls input { width: 70px; color: var(--text-primary); background: var(--surface-app); border: 1px solid var(--border-default); border-radius: 3px; padding: 3px; }
-.remote-preview-controls button { color: var(--text-primary); background: var(--surface-app); border: 1px solid var(--border-default); border-radius: 3px; padding: 4px 6px; cursor: pointer; }
+.remote-preview-controls input { width: 70px; color: var(--text-primary); background: var(--surface-app); border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: 3px; }
+.remote-preview-controls button { color: var(--text-primary); background: var(--surface-app); border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: 4px 6px; cursor: pointer; }
 .remote-preview-controls button:disabled { opacity: 0.5; cursor: default; }

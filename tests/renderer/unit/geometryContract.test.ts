@@ -84,78 +84,6 @@ const INTENTIONAL_EXCEPTIONS: Record<string, string[]> = {
   'components/WorkspaceTabs.css': ['.workspace-tab-attention'],
 };
 
-/**
- * Legacy feature-owned styling backlog from Issue #64 audit.
- * As stages 2-5 migrate components to shared primitives, entries are removed from here.
- */
-const STAGED_MIGRATION_BACKLOG: Record<string, string[]> = {
-  'App.css': ['.main-content-loading', '.workspace-error-fallback button'],
-  'components/BrowserPanel.css': [
-    '.browser-nav-btn',
-    '.browser-tab-close',
-    '.browser-url-input',
-    '.browser-url-suggestions',
-    '.browser-url-suggestion-item',
-    '.browser-history-suggestions',
-    '.browser-history-suggestion',
-    '.browser-go-btn',
-    '.browser-annotate-btn',
-    '.remote-preview-controls input',
-    '.remote-preview-controls button',
-  ],
-  'components/DynamicPaneLayout.css': ['.drag-ghost', '.pane-drag-preview'],
-  'components/EditorPane.css': [
-    '.editor-btn',
-    '.editor-pane button',
-    '.editor-fallback-close',
-    '.editor-pane-lock-btn',
-    '.editor-pane-close-btn',
-    '.editor-reload-banner-btn',
-  ],
-  'components/EditorTabBar.css': ['.editor-tabs', '.editor-tab-close'],
-  'components/ErrorBoundary.css': ['.error-boundary button', '.error-boundary-retry'],
-  'components/git/GitRemotesSection.css': [
-    '.git-remotes-add-btn',
-    '.git-remotes-cancel-btn',
-    '.git-remotes-add-dashed',
-    '.git-remotes-empty-add-btn',
-    '.git-remote-item',
-    '.git-remote-action-btn',
-    '.git-remotes-item',
-    '.git-remotes-item-btn',
-    '.git-remotes-form',
-    '.git-remotes-input',
-    '.git-remotes-input-row input',
-    '.git-remotes-form-error',
-    '.git-remotes-error',
-    '.git-remotes-submit-btn',
-    '.git-remotes-form-actions button',
-  ],
-  'components/Header.css': [
-    '.harness-pill',
-    '.harness-defaults-favorite-tag',
-    '.harness-defaults-add-fav',
-  ],
-  'components/NotesPane.css': ['.notes-btn', '.notes-pane-close-btn'],
-  'components/TaskRecoverySection.css': [
-    '.task-recovery-card',
-    '.task-action-btn',
-    '.task-recovery-fork-btn',
-    '.task-session-picker',
-    '.task-session-picker-item',
-    '.task-recovery-item',
-    '.task-recovery-item button',
-    '.task-recovery-error',
-  ],
-  'components/TerminalPane.css': ['.terminal-pane-close', '.terminal-action'],
-  'components/WorkspaceTabs.css': [
-    '.workspace-tab-close',
-    '.workspace-tab-edit-trigger',
-    '.workspace-tab-edit-input',
-    '.workspace-tab-edit-btn',
-  ],
-  'components/FileExplorer/FileExplorer.css': ['.tree-node-input'],
-};
 
 function matchesAnySelector(ruleSelector: string, allowedSelectors: string[]) {
   const ruleParts = ruleSelector.split(',').map((s) => s.trim());
@@ -229,7 +157,6 @@ describe('Clanker Geometry & Design System Contract', () => {
       const content = readFileSync(file, 'utf8');
 
       const fileExceptions = INTENTIONAL_EXCEPTIONS[relPath] ?? [];
-      const fileBacklog = STAGED_MIGRATION_BACKLOG[relPath] ?? [];
 
       for (const rule of rules(content)) {
         const selector = rule[1].trim();
@@ -243,11 +170,6 @@ describe('Clanker Geometry & Design System Contract', () => {
 
           // 2. Documented intentional Class E exception?
           if (matchesAnySelector(selector, fileExceptions)) {
-            continue;
-          }
-
-          // 3. Staged migration backlog item?
-          if (matchesAnySelector(selector, fileBacklog)) {
             continue;
           }
 

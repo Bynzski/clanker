@@ -259,7 +259,7 @@
   min-width: 0;
   background: var(--surface-app);
   border: 1px solid var(--accent-interactive);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   font: inherit;
   padding: 1px 4px;
