@@ -1,3 +1,4 @@
+import type { HarnessSession } from '../../shared/types/session';
 import type { HarnessId } from '../../shared/harnessIds';
 
 /** Serializable identity. React icons remain in the renderer catalog. */
@@ -22,6 +23,7 @@ export interface HarnessProvider {
   readonly descriptor: HarnessDescriptor;
   readonly launch: HarnessLaunchCapability;
   readonly models?: HarnessModelsCapability;
+  readonly sessions?: HarnessSessionsCapability;
 }
 
 export type CapabilitySupport = 'native' | 'emulated';
@@ -50,4 +52,8 @@ export function classifyHarnessFailure(error: unknown): HarnessCapabilityError {
     : details?.killed || (error instanceof Error && /timed out|timeout/i.test(error.message)) ? 'timeout'
     : 'command-failed';
   return new HarnessCapabilityError(kind, error instanceof Error ? error.message : String(error), error);
+}
+
+export interface HarnessSessionsCapability {
+  discover(workspacePath: string): Promise<HarnessSession[]>;
 }

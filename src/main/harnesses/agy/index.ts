@@ -9,5 +9,6 @@ export const agyProvider = {
     { id: 'gemini-3.1-pro-high', label: 'Gemini 3.1 Pro (High)' },
     { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)' },
   ] },
+  sessions: { discover: async (workspace: string) => (await import('./sessions')).discoverAgySessions(workspace) },
   launch: { command: 'agy', args: [], modelArg: '--model' },
 } satisfies HarnessProvider;
