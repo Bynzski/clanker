@@ -11,6 +11,7 @@ export interface SearchablePickerItem {
   label: string;
   searchText?: string;
   unavailable?: boolean;
+  canFavorite?: boolean;
 }
 
 interface Props {
@@ -106,7 +107,7 @@ export function SearchablePicker({ label, trigger, items, value, open, onOpenCha
               {item.unavailable && <AlertTriangle size={12} aria-label="Unavailable" />}
               {value === item.id && <Check size={12} aria-hidden="true" />}
             </button>
-            {onToggleFavorite && <IconButton type="button" className="searchable-picker-star" aria-pressed={favorite}
+            {onToggleFavorite && item.canFavorite !== false && <IconButton type="button" className="searchable-picker-star" aria-pressed={favorite}
               aria-label={`${favorite ? 'Remove' : 'Add'} ${item.label} ${favorite ? 'from' : 'to'} favorites`}
               disabled={savingFavorite} ref={(button) => { if (button) stars.current.set(item.id, button); else stars.current.delete(item.id); }}
               onClick={() => { void toggleFavorite(item.id); }}><Star size={12} fill={favorite ? 'currentColor' : 'none'} aria-hidden="true" /></IconButton>}

@@ -1,9 +1,8 @@
-import { IconButton } from '../ui/IconButton';
 import { Button } from '../ui/Button';
-import { Select } from '../ui/Select';
+import { ModelSearchPicker } from '../ModelSearchPicker';
 import { Input } from '../ui/Input';
 import { useState } from 'react';
-import { AlertTriangle, ChevronRight, Star } from 'lucide-react';
+import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { HARNESS_OPTIONS } from '../../lib/harnessOptions';
 import { hermesModelLabel } from '../../lib/hermesModelDisplay';
 import { HARNESS_FLAGS_PLACEHOLDER } from '../../lib/harnessFlags';
@@ -40,6 +39,7 @@ export default function HarnessDefaultsSection({
   handleSetDefaultModel,
   handleToggleFavorite,
 }: HarnessDefaultsSectionProps) {
+  const [modelPickerOpen, setModelPickerOpen] = useState<string | null>(null);
   const [isHermesManual, setIsHermesManual] = useState(false);
   return (
     <div className="settings-section">
@@ -76,6 +76,7 @@ export default function HarnessDefaultsSection({
                 type="button"
                 className={`harness-defaults-header ${isExpanded ? 'expanded' : ''}`}
                 onClick={() => {
+                  setModelPickerOpen(null);
                   if (!isExpanded) {
                     setExpandedHarness(harnessId);
                     void loadHarnessModels(harnessId);
@@ -149,44 +150,34 @@ export default function HarnessDefaultsSection({
                           type="text"
                           className="settings-select"
                           aria-label="Hermes custom model"
+                          autoFocus
                           value={models.some((entry) => entry.id === currentModelId) ? '' : currentModelId}
                           onChange={(e) => void handleSetDefaultModel(harnessId, e.target.value)}
                           placeholder="Enter custom model"
                         />
                       ) : (
-                        <Select
-                          className="settings-select"
-                          aria-label={`${option?.label ?? harnessId} default model`}
-                          value={currentModelId}
-                          onChange={(e) => void handleSetDefaultModel(harnessId, e.target.value)}
-                          disabled={isModelsLoading}
-                        >
-                          <option value="">Use harness default</option>
-                          {isModelsLoading && models.length === 0 ? (
-                            <option value="">Loading...</option>
-                          ) : models.length === 0 ? (
-                            <option value="">No models available</option>
-                          ) : (
-                            models.map((entry) => (
-                              <option key={entry.id} value={entry.id}>
-                                {harnessId === 'hermes' ? hermesModelLabel(entry) : entry.label}
-                              </option>
-                            ))
-                          )}
-                          {harnessId === 'hermes' && currentModelId && !models.some((entry) => entry.id === currentModelId) && (
-                            <option value={currentModelId}>{currentModelId}</option>
-                          )}
-                        </Select>
+                        <ModelSearchPicker harness={harnessId} model={currentModelId} models={models}
+                          favorites={defaults?.favorites ?? []} savedHermesModel={currentModelId}
+                          refreshing={isModelsLoading} loading={isModelsLoading} disabled={isModelsLoading}
+                          fullWidth includeDefault triggerLabel={`${option?.label ?? harnessId} default model`}
+                          open={modelPickerOpen === harnessId}
+                          onOpenChange={(open) => setModelPickerOpen(open ? harnessId : null)}
+                          onSelect={(model) => void handleSetDefaultModel(harnessId, model)}
+                          onToggleFavorite={(model) => handleToggleFavorite(harnessId, model)}
+                          onRefreshHermes={() => { setModelPickerOpen(null); void loadHarnessModels('hermes', true); }}
+                          onEnterCustom={harnessId === 'hermes' ? () => setIsHermesManual(true) : undefined}
+                          isUnresolved={(model) => harnessId !== 'hermes' && !!model && !models.some((entry) => entry.id === model)}
+                        />
                       )}
-                      {harnessId === 'hermes' && (
-                        <Button type="button" onClick={() => setIsHermesManual((manual) => !manual)}>
-                          {isHermesManual ? 'Browse Hermes models' : 'Enter custom model'}
+                      {harnessId === 'hermes' && isHermesManual && (
+                        <Button type="button" onClick={() => setIsHermesManual(false)}>
+                          Browse Hermes models
                         </Button>
                       )}
                     </>
                   )}
                 </div>
-                {harnessId === 'hermes' && (
+                {harnessId === 'hermes' && (isHermesManual || models.length === 0) && (
                   <Button
                     type="button"
                     onClick={() => void loadHarnessModels('hermes', true)}
@@ -194,62 +185,6 @@ export default function HarnessDefaultsSection({
                   >
                     {isModelsLoading ? 'Refreshing Hermes models…' : 'Refresh Hermes models'}
                   </Button>
-                )}
-
-                {((defaults?.favorites?.length ?? 0) > 0 || models.length > 0) && (
-                  <div className="harness-defaults-field">
-                    <span className="harness-defaults-field-label">Favorites</span>
-                    <div className="harness-defaults-favorites">
-                      {(defaults?.favorites ?? []).map((favoriteId) => {
-                        const favoriteEntry = models.find((entry) => entry.id === favoriteId);
-                        const favoriteLabel = favoriteEntry
-                          ? (harnessId === 'hermes' ? hermesModelLabel(favoriteEntry) : favoriteEntry.label)
-                          : favoriteId;
-                        const isUnresolved = harnessId !== 'hermes' && !models.some((entry) => entry.id === favoriteId);
-                        return (
-                          <span
-                            key={favoriteId}
-                            className={`harness-defaults-favorite-tag ${isUnresolved ? 'unresolved' : ''}`}
-                            title={
-                              isUnresolved
-                                ? 'This model is no longer available — click X to remove'
-                                : favoriteLabel
-                            }
-                          >
-                            {isUnresolved && (
-                              <AlertTriangle size={10} strokeWidth={2} className="unresolved-icon" />
-                            )}
-                            <span className="harness-defaults-favorite-label">{favoriteLabel}</span>
-                            <IconButton aria-label="Remove from favorites"
-                              type="button"
-                              className="harness-defaults-remove-fav"
-                              onClick={() => void handleToggleFavorite(harnessId, favoriteId)}
-                              title="Remove from favorites"
-                            >
-                              ×
-                            </IconButton>
-                          </span>
-                        );
-                      })}
-                      {models
-                        .filter((entry) => !(defaults?.favorites ?? []).includes(entry.id))
-                        .slice(0, 5)
-                        .map((entry) => (
-                          <Button
-                            key={entry.id}
-                            type="button"
-                            className="harness-defaults-add-fav"
-                            onClick={() => void handleToggleFavorite(harnessId, entry.id)}
-                            title={`Add ${harnessId === 'hermes' ? hermesModelLabel(entry) : entry.label} to favorites`}
-                          >
-                            <Star size={10} strokeWidth={2} />
-                            <span className="harness-defaults-favorite-label">
-                              {harnessId === 'hermes' ? hermesModelLabel(entry) : entry.label}
-                            </span>
-                          </Button>
-                        ))}
-                    </div>
-                  </div>
                 )}
               </div>
             )}

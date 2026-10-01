@@ -196,8 +196,7 @@
 /* Form sections */
 .gate-input-container,
 .harness-selector,
-.grid-selector,
-.model-picker {
+.grid-selector {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -440,52 +439,6 @@
 /* ------------------------------------------------------------
    Model picker
    ------------------------------------------------------------ */
-.model-pill {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 30px;
-  padding: 0 10px;
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: background var(--transition), border-color var(--transition);
-}
-
-.model-pill:hover {
-  border-color: var(--text-secondary);
-  background: var(--surface-control-hover);
-}
-
-.model-pill-label {
-  flex: 1;
-  text-align: left;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.model-pill-label.unresolved {
-  color: var(--status-warning);
-  opacity: 0.85;
-}
-
-.model-pill-warning {
-  color: var(--status-warning);
-  flex: 0 0 auto;
-}
-
-.model-pill-caret {
-  color: var(--text-secondary);
-  flex: 0 0 auto;
-}
-
 /* Portaled favorites use the trigger width and Radix collision bounds. */
 .favorites-picker {
   width: var(--radix-popover-trigger-width);
@@ -566,13 +519,6 @@
 .favorites-check {
   color: var(--accent-interactive);
   flex: 0 0 auto;
-}
-
-.favorites-browse-link {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 2px;
 }
 
 /* Searchable All Models dialog */
