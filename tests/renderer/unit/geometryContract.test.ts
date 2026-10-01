@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const rendererRoot = resolve(__dirname, '../../../src/renderer');
@@ -153,7 +153,7 @@ describe('Clanker Geometry & Design System Contract', () => {
     const violations: string[] = [];
 
     for (const file of cssFiles) {
-      const relPath = file.replace(rendererRoot + '/', '');
+      const relPath = relative(rendererRoot, file).replace(/\\/g, '/');
       const content = readFileSync(file, 'utf8');
 
       const fileExceptions = INTENTIONAL_EXCEPTIONS[relPath] ?? [];
