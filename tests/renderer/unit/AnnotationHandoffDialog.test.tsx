@@ -77,4 +77,16 @@ describe('AnnotationHandoffDialog', () => {
     expect(await screen.findByText(/status unverified/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
   });
+
+  it('dismisses when close button is clicked or Escape key is pressed', async () => {
+    const onClose = vi.fn();
+    render(<AnnotationHandoffDialog sourceWorkspaceId="workspace-1" initialMessage="Annotation" onClose={onClose} />);
+    expect(screen.getByRole('dialog', { name: 'Send annotation to agent' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape', code: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
 });

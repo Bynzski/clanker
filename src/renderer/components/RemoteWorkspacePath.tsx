@@ -125,6 +125,6 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
       </li>)}
     </ul>}
     {chooserOpen && <RemoteDirectoryChooser environmentId={environmentId} initialPath={path.startsWith('/') ? path : basePath || homePath || '/'}
-      homePath={homePath} onSelect={(chosen) => { choose(chosen); closeChooser(); }} onClose={closeChooser} />}
+      homePath={homePath} triggerRef={browseButtonRef} onSelect={(chosen) => { choose(chosen); closeChooser(); }} onClose={closeChooser} />}
   </>;
 }

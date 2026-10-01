@@ -90,10 +90,6 @@ const INTENTIONAL_EXCEPTIONS: Record<string, string[]> = {
  */
 const STAGED_MIGRATION_BACKLOG: Record<string, string[]> = {
   'App.css': ['.main-content-loading', '.workspace-error-fallback button'],
-  'components/AnnotationHandoffDialog.css': [
-    '.annotation-handoff-dialog textarea',
-    '.annotation-handoff-dialog button',
-  ],
   'components/BrowserPanel.css': [
     '.browser-nav-btn',
     '.browser-tab-close',
@@ -150,31 +146,6 @@ const STAGED_MIGRATION_BACKLOG: Record<string, string[]> = {
     '.harness-defaults-add-fav',
   ],
   'components/NotesPane.css': ['.notes-btn', '.notes-pane-close-btn'],
-  'components/RecipeModal.css': [
-    '.recipe-modal',
-    '.recipe-modal-close',
-    '.recipe-error-banner',
-    '.recipe-launch-results-banner',
-    '.recipe-input',
-    '.recipe-step-drag',
-    '.recipe-step-remove',
-    '.recipe-add-btn',
-    '.recipe-remove-step-btn',
-    '.recipe-harness-option',
-    '.recipe-terminal-count-option',
-    '.recipe-step-number',
-    '.recipe-json-preview',
-    '.recipe-preview-workspace',
-    '.recipe-preview-steps',
-    '.recipe-preview-code',
-    '.recipe-preview-browser',
-    '.recipe-btn',
-  ],
-  'components/RemoteDirectoryChooser.css': [
-    '.remote-chooser',
-    '.remote-chooser button',
-    '.remote-chooser-new-folder input',
-  ],
   'components/TaskRecoverySection.css': [
     '.task-recovery-card',
     '.task-action-btn',

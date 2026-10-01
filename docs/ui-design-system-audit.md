@@ -33,11 +33,11 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
 | 9 | **Workspace Gate: Location Selector** | `WorkspaceLocationPicker.tsx`, `WorkspaceTargetPicker.tsx`, `WorkspaceTargetPicker.css` | **B** | `.gate-location-selector` uses `--radius-md`; target picker trigger and dropdown use `--radius-md`. | Normalize `.gate-location-selector` and `.gate-target-*` to `--radius-sm`. | Low risk; segmented selection already uses Radix under the hood. |
 | 10 | **Workspace Gate: Worktree Subflows** | `WorktreeLauncher.tsx`, `RemoteWorktreePicker.tsx`, `RemoteWorktreeCreate.tsx`, `RemoteWorktreeInspect.tsx`, `WorkspaceGate.css` | **B/D** | Base ref and branch inputs have 5px radius (`.gate-worktree-base`, `.gate-worktree-branch`); confirm card has 5px radius; `.gate-worktree-forward` has `--radius-md`. | Normalize worktree inputs to shared `Input` (`--radius-sm`); normalize confirm box and forward button to `--radius-sm`. | Medium risk; verify SSH worktree creation/inspection lifecycle. |
 | 11 | **SSH Environment Manager** | `SshEnvironmentManager.tsx`, `WorkspaceGate.css` | **B/D** | Uses shared `Dialog`, but modal shell explicitly specifies `border-radius: var(--radius-md)`; form inputs and action buttons use local styling. | Normalize dialog shell to `--radius-sm`; migrate inputs to shared `Input` and buttons to shared `Button`. | Low risk; verify SSH target creation, edit, test, delete flows. |
-| 12 | **Remote Directory Chooser** | `RemoteDirectoryChooser.tsx`, `RemoteDirectoryChooser.css` | **C/D** | Hand-rolled `.remote-chooser-overlay` with custom ESC listener; 8px dialog shell; 5px buttons; 4px new-folder input. | Migrate overlay to shared `Dialog`; normalize shell to `--radius-sm`; use shared `Button` and `Input`. | Medium risk; ensure keyboard navigation (Enter/ESC) and browser suppression lease are preserved. |
+| 12 | **Remote Directory Chooser** | `RemoteDirectoryChooser.tsx`, `RemoteDirectoryChooser.css` | **A** | **Migrated (Stage 2):** Uses shared `Dialog`, `Input`, `Button`, `IconButton`. 8px shell, 5px button, and 4px input eliminated; zero exceptions remaining. | Completed. | Fully validated with dedicated interaction test suite. |
 | 13 | **Model Picker & Favorites** | `ModelPicker.tsx`, `WorkspaceGate.css` | **B** | Uses Radix `Popover`; trigger uses `--radius-sm`; items and manage button use 3px radius; star buttons use 3px radius. | Normalize dropdown items, manage buttons, and star buttons to `--radius-sm`. | Low risk; verify favorite toggle and keyboard navigation. |
 | 14 | **Model Discovery Modal** | `ModelPicker.tsx`, `WorkspaceGate.css` | **B** | Uses shared `Dialog`; content shell uses `--radius-sm`; list items use 3px; clear-search button uses 3px. | Normalize 3px item/clear button to `--radius-sm`; search input to shared `Input`. | Low risk; verify model search and selection. |
 | 15 | **Searchable Choices** | `SearchablePicker.tsx`, `SearchablePicker.css` | **A** | Uses shared `Popover`, `--radius-sm` on rows/choices, token-based surfaces and focus rings. | Retain as canonical primitive reference. | No risk; already aligned. |
-| 16 | **Launch Recipe Modal** | `RecipeModal.tsx`, `RecipeModal.css` | **C/D** | Major outlier: hand-rolled `.recipe-modal-overlay`; 8px dialog shell; 12px badge; 6px inputs/selects; 6px cards/banners; 6px action buttons; 4px secondary buttons. | Migrate to shared `Dialog`; replace custom buttons with `Button` / `IconButton`; replace form controls with shared `Input` / `Select`; normalize banners to `--radius-sm`. | Medium risk; multi-step modal with edit, run, and error states. Verify browser suppression lease. |
+| 16 | **Launch Recipe Modal** | `RecipeModal.tsx`, `RecipeModal.css` | **A** | **Migrated (Stage 2):** Uses shared `Dialog`, `Button`, `IconButton`, `Input`, `Select`, `Field`, `FieldLabel`. 8px shell, 6px fields/buttons/cards, and 4px step controls eliminated; intentional 12px pill badge retained. | Completed. | Fully validated in create, edit, preview, launch, and delete states. |
 | 17 | **VCS Credentials** | `CredentialSettings.tsx`, `CredentialSettings.css` | **A/B** | Uses shared `Dialog` and `IconButton`; standard `--radius-sm` on dialog, inputs, tabs, cards; intentional 999px pill for status chip. | Retain as canonical design-system reference; normalize minor input styling to shared `Input`. | Low risk; already mostly aligned. |
 | 18 | **Commit Dialog** | `CommitDialog.tsx`, `CommitDialog.css` | **C/D** | Hand-rolled `.commit-dialog-overlay` with custom ESC listener; shell and inputs use `--radius-sm`, but button/textarea/list styling are local; file status tag uses 3px. | Migrate overlay to shared `Dialog`; use shared `Textarea` and `Button`; keep file status tag as intentional pill/badge. | Medium risk; verify commit generation, diff staging, keyboard shortcuts. |
 | 19 | **Confirmation / Alert Dialogs** | `ConfirmCloseDialog.tsx`, `ConfirmCloseDialog.css` | **A/B** | Uses shared `AlertDialog`; dialog and buttons use `--radius-sm`; minor duplicate button CSS (`.confirm-close-btn-*`). | Retain AlertDialog foundation; migrate buttons to shared `Button` variants (`variant="danger"`, etc.). | Low risk; verify close workspace / app prompt. |
@@ -48,7 +48,7 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
 | 24 | **Browser URL Field & Suggestions** | `BrowserUrlInput.tsx`, `BrowserPanel.css` | **B/D** | URL input uses 3px radius; suggestions dropdown uses 12px; suggestion items use 9px. | Normalize URL input to shared `Input` (`--radius-sm`); normalize suggestions dropdown and items to `--radius-sm`. | Low risk; test URL autocomplete and keyboard navigation. |
 | 25 | **Browser Tab Strip** | `BrowserTabStrip.tsx`, `BrowserPanel.css` | **E/B** | Tab uses intentional curved tab shape (`border-radius: 7px 7px 2px 2px`); tab close button uses 5px. | Document browser tab geometry as intentional bespoke tab design (Class E); normalize close button to standard `IconButton` / `--radius-sm`. | Low risk; tab drag/close behavior must remain intact. |
 | 26 | **Remote Preview Bar** | `RemotePreviewBar.tsx`, `BrowserPanel.css` | **B/D** | Port inputs and start/stop buttons use hardcoded 3px radius. | Normalize inputs to shared `Input` and buttons to shared `Button` (`--radius-sm`). | Low risk; verify SSH port forwarding preview lifecycle. |
-| 27 | **Annotation Handoff Dialog** | `AnnotationHandoffDialog.tsx`, `AnnotationHandoffDialog.css` | **C/D** | Hand-rolled `.annotation-handoff-overlay`; shell uses `border-radius: var(--radius-md)`; textarea uses 5px; buttons use 5px. | Migrate overlay to shared `Dialog`; normalize shell to `--radius-sm`; use shared `Textarea` and `Button`. | Medium risk; verify annotation text insertion into active harness terminal. |
+| 27 | **Annotation Handoff Dialog** | `AnnotationHandoffDialog.tsx`, `AnnotationHandoffDialog.css` | **A** | **Migrated (Stage 2):** Uses shared `Dialog`, `Button`, `IconButton`, `Textarea`. `--radius-md` shell and 5px textarea/buttons eliminated; zero exceptions remaining. | Completed. | Fully validated with Escape and focus restoration tests. |
 | 28 | **Editor Chrome & Tab Bar** | `EditorPane.tsx`, `EditorPane.css`, `EditorTabBar.tsx`, `EditorTabBar.css` | **B** | Editor pane uses `border-radius: var(--radius-md)`; action buttons use 4px; fallback close uses 4px; tab bar uses 2px; tab close uses 4px; unsaved dot uses 50%. | Normalize pane border to `--radius-sm` (or keep consistent with terminal pane); normalize action and close buttons to `--radius-sm`; retain unsaved dot as circle. | Low risk; test tab switching and CodeMirror sizing. |
 | 29 | **Diff Viewer Chrome** | `DiffViewer.tsx`, `DiffViewer.css` | **C** | Hand-rolled `.diff-viewer-overlay` with custom ESC listener; modal shell uses `--radius-sm`; close button uses `--radius-sm`. | Migrate overlay to shared `Dialog`; use shared `IconButton` for close button. | Medium risk; verify CodeMirror merge view layout inside Dialog. |
 | 30 | **Terminal Pane Chrome** | `TerminalPane.tsx`, `TerminalPane.css` | **B** | Status dot uses 50% (circle); close button uses 4px. | Normalize close button to `--radius-sm` (`IconButton`); retain status dot circle. | Low risk; verify xterm instance layout. |
@@ -66,11 +66,14 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
 
 ## 3. Summary by Alignment Classification
 
-- **Class A (Already aligned):** 4 areas
+- **Class A (Already aligned / Migrated):** 7 areas
   - Title Bar & Window Controls (#2)
   - Status Bar (#4)
+  - Remote Directory Chooser (#12) — *Migrated in Stage 2*
   - Searchable Choices primitive (#15)
+  - Launch Recipe Modal (#16) — *Migrated in Stage 2*
   - VCS Credentials (#17)
+  - Annotation Handoff Dialog (#27) — *Migrated in Stage 2*
 - **Class B (Uses primitives/tokens, local styling drift):** 24 areas
   - Application Shell (#1)
   - Workspace Tabs (#3)
@@ -100,12 +103,9 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
   - Task Recovery Section (#37)
   - Dynamic Pane Layout (#38)
   - Error Boundary (#39)
-- **Class C (Should migrate to shared primitive):** 7 areas
-  - Remote Directory Chooser (#12) → shared `Dialog`
-  - Launch Recipe Modal (#16) → shared `Dialog`
+- **Class C (Should migrate to shared primitive):** 4 areas (reduced from 7 in Stage 2)
   - Commit Dialog (#18) → shared `Dialog`
   - Git Delete Branch Dialog (#20) → shared `AlertDialog`
-  - Annotation Handoff Dialog (#27) → shared `Dialog`
   - Diff Viewer Chrome (#29) → shared `Dialog`
   - Provider Menu (#36) / Git Menu (#33) → shared overlay / Popover
 - **Class D (Requires shared form-control primitive):** Recurring across 12 areas

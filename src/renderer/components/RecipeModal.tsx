@@ -20,8 +20,13 @@ import type {
   PersistedRecipeLayout,
 } from '../../shared/types/recipes';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
+import { Dialog, DialogContent, DialogTitle, DialogClose } from './ui/Dialog';
+import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
+import { Input } from './ui/Input';
+import { Select } from './ui/Select';
+import { Field, FieldLabel } from './ui/Field';
 import './RecipeModal.css';
-
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -222,18 +227,19 @@ export default function RecipeModal({
   };
 
   return (
-    <div className="recipe-modal-overlay" onClick={onClose}>
-      <div className="recipe-modal" onClick={(e) => e.stopPropagation()}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="recipe-modal" overlayClassName="recipe-modal-overlay" aria-describedby={undefined}>
         <div className="recipe-modal-header">
           <div className="recipe-modal-title-group">
-            <h2>{isEditing ? (initialRecipe ? 'Edit Launch Recipe' : 'New Launch Recipe') : name}</h2>
+            <DialogTitle asChild>
+              <h2>{isEditing ? (initialRecipe ? 'Edit Launch Recipe' : 'New Launch Recipe') : name}</h2>
+            </DialogTitle>
             {!isEditing && <span className="recipe-badge">{launches.length} steps</span>}
           </div>
-          <button type="button" className="recipe-modal-close" onClick={onClose} aria-label="Close">
-            <X size={18} />
-          </button>
+          <DialogClose asChild>
+            <IconButton aria-label="Close"><X size={18} /></IconButton>
+          </DialogClose>
         </div>
-
         <div className="recipe-modal-body">
           {recipeUnavailable && (
             <div className="recipe-error-banner">
@@ -270,67 +276,58 @@ export default function RecipeModal({
 
           {isEditing ? (
             <div className="recipe-form">
-              <div className="recipe-field">
-                <label htmlFor="recipe-name">Recipe Name</label>
-                <input
+              <Field className="recipe-field">
+                <FieldLabel htmlFor="recipe-name">Recipe Name</FieldLabel>
+                <Input
                   id="recipe-name"
-                  type="text"
-                  className="recipe-input"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Full Stack Dev"
                 />
-              </div>
+              </Field>
 
-              <div className="recipe-field">
-                <label htmlFor="recipe-workspace-path">Workspace Path</label>
-                <input
+              <Field className="recipe-field">
+                <FieldLabel htmlFor="recipe-workspace-path">Workspace Path</FieldLabel>
+                <Input
                   id="recipe-workspace-path"
-                  type="text"
-                  className="recipe-input"
                   value={workspacePath}
                   onChange={(e) => setWorkspacePath(e.target.value)}
                   placeholder="/path/to/project"
                 />
-              </div>
+              </Field>
 
-              <div className="recipe-field">
-                <label htmlFor="recipe-desc">Description (optional)</label>
-                <input
+              <Field className="recipe-field">
+                <FieldLabel htmlFor="recipe-desc" optional>Description</FieldLabel>
+                <Input
                   id="recipe-desc"
-                  type="text"
-                  className="recipe-input"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Short note about this setup"
                 />
-              </div>
+              </Field>
 
-              <div className="recipe-field">
-                <label htmlFor="recipe-browser">Browser Preview URL (optional)</label>
-                <input
+              <Field className="recipe-field">
+                <FieldLabel htmlFor="recipe-browser" optional>Browser Preview URL</FieldLabel>
+                <Input
                   id="recipe-browser"
-                  type="text"
-                  className="recipe-input"
                   value={browserUrl}
                   onChange={(e) => setBrowserUrl(e.target.value)}
                   placeholder="http://localhost:3000"
                 />
-              </div>
-
+              </Field>
               <div className="recipe-steps-section">
                 <div className="recipe-steps-header">
                   <label>Launch Steps</label>
                   <div className="recipe-add-step-buttons">
-                    <button type="button" className="recipe-add-btn" onClick={handleAddShellStep}>
+                    <Button size="sm" variant="secondary" className="recipe-add-btn" onClick={handleAddShellStep}>
                       <Plus size={14} /> Shell
-                    </button>
-                    <button type="button" className="recipe-add-btn" onClick={handleAddCommandStep}>
+                    </Button>
+                    <Button size="sm" variant="secondary" className="recipe-add-btn" onClick={handleAddCommandStep}>
                       <Plus size={14} /> Command
-                    </button>
-                    <button type="button" className="recipe-add-btn" onClick={handleAddHarnessStep}>
+                    </Button>
+                    <Button size="sm" variant="secondary" className="recipe-add-btn" onClick={handleAddHarnessStep}>
                       <Plus size={14} /> Agent
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
@@ -341,9 +338,9 @@ export default function RecipeModal({
                       {step.type === 'command' ? (
                         <div className="recipe-step-inputs">
                           <TermIcon size={14} className="recipe-step-type-icon" />
-                          <input
-                            type="text"
-                            className="recipe-input step-input"
+                          <Input
+                            size="sm"
+                            className="step-input"
                             value={step.command}
                             onChange={(e) => handleStepChange(index, { ...step, command: e.target.value })}
                             placeholder="Shell command (e.g. npm run dev)"
@@ -357,8 +354,9 @@ export default function RecipeModal({
                       ) : (
                         <div className="recipe-step-inputs">
                           <Bot size={14} className="recipe-step-type-icon" />
-                          <select
-                            className="recipe-select step-select"
+                          <Select
+                            size="sm"
+                            className="step-select"
                             value={step.harnessId}
                             onChange={(e) => handleStepChange(index, { ...step, harnessId: e.target.value })}
                           >
@@ -367,24 +365,23 @@ export default function RecipeModal({
                                 {opt.label}
                               </option>
                             ))}
-                          </select>
-                          <input
-                            type="text"
-                            className="recipe-input step-input"
+                          </Select>
+                          <Input
+                            size="sm"
+                            className="step-input"
                             value={step.modelId ?? ''}
                             onChange={(e) => handleStepChange(index, { ...step, modelId: e.target.value })}
                             placeholder="Model override (optional)"
                           />
                         </div>
                       )}
-                      <button
-                        type="button"
+                      <IconButton
                         className="recipe-remove-step-btn"
                         onClick={() => handleRemoveStep(index)}
                         aria-label="Remove step"
                       >
                         <X size={14} />
-                      </button>
+                      </IconButton>
                     </div>
                   ))}
                   {launches.length === 0 && (
@@ -461,51 +458,52 @@ export default function RecipeModal({
           {isEditing ? (
             <div className="recipe-footer-actions">
               {initialRecipe && (
-                <button
-                  type="button"
-                  className="recipe-btn recipe-btn-secondary"
+                <Button
+                  size="sm"
+                  variant="secondary"
                   onClick={() => setIsEditing(false)}
                 >
                   Cancel
-                </button>
+                </Button>
               )}
-              <button type="button" className="recipe-btn recipe-btn-primary" onClick={handleSave} disabled={recipeUnavailable}>
+              <Button size="sm" variant="primary" onClick={handleSave} disabled={recipeUnavailable}>
                 Save Recipe
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="recipe-footer-actions space-between">
-              <button
-                type="button"
-                className="recipe-btn recipe-btn-danger"
+              <Button
+                size="sm"
+                variant="danger"
                 onClick={handleDelete}
                 title="Delete this recipe"
               >
                 <Trash2 size={14} /> Delete
-              </button>
+              </Button>
               <div className="recipe-footer-right">
-                <button
-                  type="button"
-                  className="recipe-btn recipe-btn-secondary"
+                <Button
+                  size="sm"
+                  variant="secondary"
                   onClick={() => setIsEditing(true)}
                   disabled={recipeUnavailable}
                 >
                   <Edit2 size={14} /> Edit
-                </button>
-                <button
-                  type="button"
-                  className="recipe-btn recipe-btn-primary launch"
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="recipe-launch-btn"
                   onClick={handleLaunch}
                   disabled={isLaunching || recipeUnavailable}
                 >
                   {isLaunching ? <Loader2 size={14} className="spin" /> : <Play size={14} />}
                   Launch Recipe
-                </button>
+                </Button>
               </div>
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
