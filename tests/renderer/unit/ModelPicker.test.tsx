@@ -7,8 +7,8 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 
 const models = [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }, { id: 'g', label: 'Gamma' }];
-function Demo({ compact = false, options = models, harness = 'codex', initial = 'a', empty = false, onSelect = () => {}, onToggle = () => {}, onRefresh = () => {} }: {
-  compact?: boolean; options?: typeof models; harness?: string; initial?: string; empty?: boolean; onSelect?: (value: string) => void;
+function Demo({ compact = false, loading = false, options = models, harness = 'codex', initial = 'a', empty = false, onSelect = () => {}, onToggle = () => {}, onRefresh = () => {} }: {
+  compact?: boolean; loading?: boolean; options?: typeof models; harness?: string; initial?: string; empty?: boolean; onSelect?: (value: string) => void;
   onToggle?: (value: string) => void; onRefresh?: () => void;
 }) {
   const [model, setModel] = useState(initial);
@@ -16,7 +16,7 @@ function Demo({ compact = false, options = models, harness = 'codex', initial = 
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
   return <ModelPicker compact={compact} harness={harness} model={model} models={empty ? [] : options} sortedModels={empty ? [] : options}
-    favorites={favorites} savedHermesModel="g" refreshing={false} favoritesOpen={favoritesOpen} discoveryOpen={discoveryOpen}
+    favorites={favorites} savedHermesModel="g" refreshing={false} loading={loading} favoritesOpen={favoritesOpen} discoveryOpen={discoveryOpen}
     onFavoritesOpenChange={setFavoritesOpen} onDiscoveryOpenChange={setDiscoveryOpen}
     onSelect={(value) => { setModel(value); onSelect(value); }} onToggleFavorite={(value) => {
       onToggle(value); setFavorites((current) => current.includes(value) ? current.filter((id) => id !== value) : [...current, value]);
@@ -69,6 +69,37 @@ describe('ModelPicker', () => {
     expect(trigger.querySelector('.model-pill-label')?.textContent).toBe('missing-model');
     expect(trigger).toHaveAttribute('title', 'provider/missing-model');
     expect(within(trigger).getByLabelText('Model unavailable')).toBeInTheDocument();
+  });
+
+  it('keeps compact Gate search, stars, keyboard selection and trigger focus after extraction', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    const onToggle = vi.fn();
+    render(<Demo compact onSelect={onSelect} onToggle={onToggle} />);
+    const trigger = screen.getByRole('button', { name: 'codex model' });
+    await user.click(trigger);
+    expect(screen.getByRole('searchbox')).toHaveFocus();
+    await user.click(screen.getByRole('button', { name: 'Add Gamma to favorites' }));
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith('g');
+    expect(screen.getByRole('dialog', { name: 'Models' })).toBeInTheDocument();
+    await user.click(screen.getByRole('searchbox'));
+    await user.type(screen.getByRole('searchbox'), 'Gamma');
+    await user.keyboard('{ArrowUp}');
+    expect(screen.getByRole('button', { name: 'Gamma' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('g');
+    expect(trigger).toHaveTextContent('Gamma');
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it('preserves the compact Gate default trigger while discovering an empty catalog', async () => {
+    const user = userEvent.setup();
+    render(<Demo compact loading initial="" empty />);
+    const trigger = screen.getByRole('button', { name: 'codex model' });
+    expect(trigger).toBeEnabled();
+    expect(trigger).toHaveTextContent('Harness default');
+    await user.click(trigger);
+    expect(screen.getByRole('status')).toHaveTextContent('Discovering models…');
   });
 
   it('opens favorites, exposes selection, selects by keyboard and restores the trigger', async () => {

@@ -7,7 +7,7 @@ import type { ModelOption } from '../../types/shared';
 import { hermesModelDisplay, hermesModelLabel } from '../../lib/hermesModelDisplay';
 import { Popover, PopoverTrigger, PopoverContent } from '../ui/Popover';
 import { Dialog, DialogContent, DialogTitle, DialogClose } from '../ui/Dialog';
-import { SearchablePicker } from '../ui/SearchablePicker';
+import { ModelSearchPicker } from '../ModelSearchPicker';
 import { IconButton } from '../ui/IconButton';
 
 interface ModelPickerProps {
@@ -29,12 +29,6 @@ interface ModelPickerProps {
   onToggleFavorite: (model: string) => void | Promise<void>;
   onRefreshHermes: () => void;
   isUnresolved: (model: string) => boolean;
-}
-
-// The compact row needs the model name; menus and launch values retain provider identity.
-function selectedModelName(option: ModelOption): string {
-  const { model } = hermesModelDisplay(option);
-  return model.slice(model.lastIndexOf('/') + 1) || model;
 }
 
 function HermesModelName({ option }: { option: ModelOption }) {
@@ -191,46 +185,5 @@ function LegacyModelPicker({ fullscreen = false, harness, model, models, sortedM
 /** Fullscreen harness rows share one searchable surface; other Gate views retain their layout. */
 export function ModelPicker(props: ModelPickerProps) {
   if (!props.compact) return <LegacyModelPicker {...props} />;
-  return <SearchableModelPicker {...props} open={props.favoritesOpen} onOpenChange={props.onFavoritesOpenChange} />;
-}
-
-type SearchableModelPickerProps = Pick<ModelPickerProps, 'harness' | 'model' | 'models' | 'favorites' | 'savedHermesModel' | 'refreshing' | 'loading' | 'onSelect' | 'onToggleFavorite' | 'onRefreshHermes' | 'isUnresolved'> & {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-};
-
-export function SearchableModelPicker(props: SearchableModelPickerProps) {
-  const selectedOption = props.models.find((option) => option.id === props.model);
-  const hermes = props.harness === 'hermes';
-  const items = props.models.map((option) => ({
-    id: option.id, label: hermes ? hermesModelLabel(option) : option.label,
-    unavailable: props.isUnresolved(option.id),
-  }));
-  const missingIds = new Set([...props.favorites, ...(props.model ? [props.model] : [])]);
-  for (const id of missingIds) {
-    if (!items.some((item) => item.id === id)) items.push({ id,
-      label: hermes ? hermesModelLabel({ id, label: id }) : id, unavailable: props.isUnresolved(id),
-    });
-  }
-  const fullLabel = selectedOption ? hermes ? hermesModelLabel(selectedOption) : selectedOption.label : props.model;
-  return <div className="model-picker">
-    <SearchablePicker label="Models" items={items} value={props.model} favorites={props.favorites}
-      open={props.open} onOpenChange={props.onOpenChange} onSelect={props.onSelect}
-      onToggleFavorite={props.onToggleFavorite} emptyText={props.refreshing || props.loading ? 'Discovering models…' : 'No models found'}
-      trigger={<button type="button" className="model-pill" title={fullLabel || 'Harness default'} aria-label={`${props.harness} model`}>
-        <span className={`model-pill-label ${props.isUnresolved(props.model) ? 'unresolved' : ''}`}>
-          {props.model ? selectedModelName(selectedOption ?? { id: props.model, label: props.model }) : 'Harness default'}
-        </span>
-        {props.isUnresolved(props.model) && <AlertTriangle size={12} aria-label="Model unavailable" />}
-        <ChevronDown size={12} className="model-pill-caret" aria-hidden="true" />
-      </button>}
-      footer={hermes ? <>
-        <Button type="button" className="favorites-browse-link" onClick={() => { props.onSelect(props.savedHermesModel); props.onOpenChange(false); }}>
-          {props.savedHermesModel ? 'Use saved default' : 'Use Hermes default'}
-        </Button>
-        <Button type="button" className="favorites-browse-link" disabled={props.refreshing} onClick={props.onRefreshHermes}>
-          {props.refreshing ? 'Refreshing…' : 'Refresh Hermes models'}
-        </Button>
-      </> : undefined} />
-  </div>;
+  return <ModelSearchPicker {...props} open={props.favoritesOpen} onOpenChange={props.onFavoritesOpenChange} />;
 }

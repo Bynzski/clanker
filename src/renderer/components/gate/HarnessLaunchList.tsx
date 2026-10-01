@@ -5,7 +5,7 @@ import type { HarnessOption } from '../../lib/harnessOptions';
 import type { ModelOption } from '../../types/shared';
 import type { HarnessDefaultsMap } from '../../../shared/types/store';
 import { MAX_GATE_TERMINALS } from '../../lib/workspaceLaunchPlan';
-import { SearchableModelPicker } from './ModelPicker';
+import { ModelSearchPicker } from '../ModelSearchPicker';
 
 interface Props {
   options: HarnessOption[];
@@ -35,7 +35,7 @@ function HarnessRow({ option, total, ...props }: Props & { option: HarnessOption
     onPointerDownCapture={() => { if (!props.disabled) props.onInteract(option.id); }}>
     <div className="gate-harness-name"><option.Icon size={16} /><span>{option.label}</span></div>
     <div className="gate-harness-model">
-      {option.id && !props.remote && <SearchableModelPicker harness={option.id} model={model} models={models}
+      {option.id && !props.remote && <ModelSearchPicker harness={option.id} model={model} models={models}
         favorites={favorites} savedHermesModel={props.defaults?.hermes?.model ?? ''}
         refreshing={props.refreshing} loading={props.modelsLoading} open={pickerOpen}
         onOpenChange={setPickerOpen}
