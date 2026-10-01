@@ -16,6 +16,14 @@ Run `npm ci`, then `npm run branding:generate` to regenerate the checked-in
 resampling. Normal builds consume these files without requiring regeneration.
 Keep originals and generated files together in reviews.
 
+`npm run branding:check` (also included in `npm run validate`) generates into an
+OS temporary directory, compares every expected file byte-for-byte and rejects
+missing, changed or unexpected derivatives. The check never writes repository
+assets and removes temporary output on success or failure. If it reports drift,
+run `npm run branding:generate`, remove unexpected entries, and review/commit
+the updated derivatives.
+Generation and checking share the same pipeline; neither runs during normal builds.
+
 The application PNGs retain the source's square canvas and complete outer frame.
 The compact mark uses a centered 1004 px square from the 1254 px source to reduce
 excess transparent padding while preserving the rounded frame. UI derivatives

@@ -4,11 +4,10 @@ const path = require('node:path');
 const sharp = require('sharp');
 
 const root = path.join(__dirname, '../src/assets/branding');
-const output = path.join(root, 'generated');
 const sizes = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
 
-async function resize(source, size, destination, extract) {
-  let image = sharp(path.join(root, source));
+async function resize(sourceRoot, output, source, size, destination, extract) {
+  let image = sharp(path.join(sourceRoot, source));
   if (extract) image = image.extract(extract);
   const png = await image.resize(size, size, {
     fit: 'contain', background: '#00000000', kernel: sharp.kernel.lanczos3,
@@ -17,16 +16,16 @@ async function resize(source, size, destination, extract) {
   return png;
 }
 
-async function generate() {
+async function generate(sourceRoot = root, output = path.join(sourceRoot, 'generated')) {
   await fs.mkdir(output, { recursive: true });
   const app = new Map();
   for (const size of sizes) {
-    app.set(size, await resize('clanker-app-icon.png', size, `clanker-app-${size}.png`));
+    app.set(size, await resize(sourceRoot, output, 'clanker-app-icon.png', size, `clanker-app-${size}.png`));
   }
   // Remove excess transparent margin around the compact mark, retaining the
   // complete rounded frame and padding. No stretching or artwork repainting.
   for (const size of [16, 18, 20, 24, 32, 36, 40, 48]) {
-    await resize('clanker-ui-icon.png', size, `clanker-ui-${size}.png`, {
+    await resize(sourceRoot, output, 'clanker-ui-icon.png', size, `clanker-ui-${size}.png`, {
       left: 125, top: 125, width: 1004, height: 1004,
     });
   }
@@ -63,7 +62,12 @@ async function generate() {
   icns.write('icns');
   icns.writeUInt32BE(8 + chunks.reduce((sum, chunk) => sum + chunk.length, 0), 4);
   await fs.writeFile(path.join(output, 'clanker-app.icns'), Buffer.concat([icns, ...chunks]));
-  console.log('Generated Clanker application and compact UI icons.');
 }
 
-generate().catch((error) => { console.error(error); process.exitCode = 1; });
+module.exports = { generate };
+
+if (require.main === module) {
+  generate().then(() => {
+    console.log('Generated Clanker application and compact UI icons.');
+  }).catch((error) => { console.error(error); process.exitCode = 1; });
+}
