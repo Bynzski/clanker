@@ -40,6 +40,8 @@ export interface HarnessModelsCapability {
   discover(refresh?: boolean): Promise<ModelOption[]>;
   readonly fallback?: ModelOption[];
   readonly explicitRefresh?: boolean;
+  /** Preserve legacy caching at the wrapper, while providers report parse errors. */
+  readonly compatibility?: { cacheParseFailureAsEmpty?: boolean };
 }
 
 export function classifyHarnessFailure(error: unknown, transport: 'local' | 'ssh' = 'local'): HarnessCapabilityError {

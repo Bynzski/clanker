@@ -48,7 +48,13 @@ export async function discoverHarnessModelsDetailed(harness: string, refresh = f
   try {
     return { models: await capability.discover(refresh), discovered: true };
   } catch (error) {
-    return { models: capability.fallback ?? [], discovered: false, failure: classifyHarnessFailure(error) };
+    const failure = classifyHarnessFailure(error);
+    return {
+      models: capability.fallback ?? [],
+      // This is the legacy cacheability flag, not the absence of a failure.
+      discovered: capability.compatibility?.cacheParseFailureAsEmpty === true && failure.kind === 'parse-failure',
+      failure,
+    };
   }
 }
 

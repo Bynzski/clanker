@@ -80,6 +80,8 @@ describe('discoverHarnessModels cache integration', () => {
     expect((await discoverHarnessModelsDetailed('pi')).failure?.kind).toBe('timeout');
     mockExecFile.mockImplementation((_command, _args, _options, callback) => callback(null, '{', ''));
     expect((await discoverHarnessModelsDetailed('omp')).failure?.kind).toBe('parse-failure');
+    expect(await discoverHarnessModelsDetailed('codex')).toMatchObject({ models: [], discovered: true, failure: { kind: 'parse-failure' } });
+    await expect(getHarnessProvider('codex').models!.discover()).rejects.toMatchObject({ kind: 'parse-failure' });
     // The IPC compatibility catalog must never contain provider methods.
     expect(structuredClone(HARNESS_OPTIONS)).toEqual(HARNESS_OPTIONS);
   });

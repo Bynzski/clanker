@@ -7,7 +7,10 @@ import { defineHarness, type HarnessProvider } from '../types';
 
 export const codexProvider = defineHarness({
   descriptor: HARNESS_DESCRIPTORS.codex,
-  models: { discover: async () => (await import('./models')).discoverModels() },
+  models: {
+    discover: async () => (await import('./models')).discoverModels(),
+    compatibility: { cacheParseFailureAsEmpty: true },
+  },
   sessions: {
     discoveryOrder: 1,
     remote: remoteSessions,

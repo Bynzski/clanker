@@ -71,8 +71,11 @@ Model capabilities retain native parsers, intentional fallback lists, TTL and
 explicit-refresh behavior. Discovery implementations load lazily. The shared
 cache protects explicit refreshes from stale warmup completion. Detailed model
 results retain a typed failure while the existing picker still receives its
-current array/fallback. Codex's permissive JSON parser still returns an empty
-list for malformed output; changing that legacy cache behavior is a follow-up.
+current array/fallback. Codex's provider reports malformed model output as a typed parse failure. Its
+compatibility wrapper and exported parser preserve the historical empty-list/cache
+behavior through explicit compatibility metadata; changing that behavior is a
+follow-up. A detailed result can therefore contain a failure even when its legacy
+`discovered` cacheability flag is true.
 
 Session providers own parsing, native argument generation, selection flags and
 harness-specific validation. Shared aggregation normalizes IPC paths, limits
@@ -198,7 +201,7 @@ Git orchestration.
   requires its default profile. Provider-qualified models and refresh behavior
   remain intact.
 - Failure classification intentionally preserves raw causes when native errors
-  cannot be categorized more precisely. Existing Codex malformed-model fallback
+  cannot be categorized more precisely. Existing Codex malformed-model compatibility fallback
   and Pi/OpenCode permissive text parsing need separate compatibility decisions.
 - Persistent SSH plugins fail closed on partial or unknown installations; recovery
   from an interrupted host setup remains a future lifecycle enhancement.
