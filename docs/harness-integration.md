@@ -167,9 +167,9 @@ unknown files are preserved. Adding a provider requires no central filename list
 requests coalesce; subsequent cleanup can retry after unknown files are removed.
 
 Intentional transport differences remain: remote scans are recursive and bounded;
-local scans keep their existing formats/limits/fallbacks. Both Pi and OMP currently
-use conventional session roots; neither local implementation in this checkout
-resolves storage overrides. SSH Agy requires canonical workspace evidence and
+local scans keep their existing formats/limits/fallbacks. Pi and OMP history
+aggregation retains conventional roots. Trusted Pi invocation separately resolves
+configured agent/session roots and stored session-directory flags. SSH Agy requires canonical workspace evidence and
 rejects fork, whereas local discovery keeps its global-session fallback and
 emulated fork. SSH models/inference and local Hermes attention remain absent.
 
