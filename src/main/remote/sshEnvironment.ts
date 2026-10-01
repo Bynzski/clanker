@@ -1,3 +1,4 @@
+import { getHarnessProviders } from '../harnesses/registry';
 import * as path from 'path';
 import type {
   WorkspaceEnvironment,
@@ -640,7 +641,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
   }
 
   public async probeAvailableHarnessIds(): Promise<string[]> {
-    const candidates = ['codex', 'claude', 'opencode', 'pi', 'omp', 'hermes', 'agy'];
+    const candidates = getHarnessProviders().map((provider) => provider.descriptor.id);
     const script = [
       REMOTE_CLI_PATH_SETUP,
       ...candidates.map((cmd) => `command -v ${quotePosixArg(cmd)} >/dev/null 2>&1 && printf '%s\\n' ${quotePosixArg(cmd)}`),

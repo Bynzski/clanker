@@ -1,3 +1,4 @@
+import { findHarnessProvider } from './harnesses/registry';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -58,20 +59,10 @@ export function buildHarnessSpawnArgs(
   }
 
   if (model) {
-    if (config.command === 'hermes') {
-      const match = /^hermes-provider:([^:]+):([^:]+)$/.exec(model);
-      if (match) {
-        try {
-          const provider = decodeURIComponent(match[1]);
-          const selectedModel = decodeURIComponent(match[2]);
-          if (provider.trim() && selectedModel.trim()) {
-            args.unshift(config.modelArg ?? '-m', selectedModel, '--provider', provider);
-            return args;
-          }
-        } catch {
-          // Unrecognized legacy text remains a literal -m value.
-        }
-      }
+    const modelArgs = findHarnessProvider(config.command)?.launch.modelArgs?.(model);
+    if (modelArgs) {
+      args.unshift(...modelArgs);
+      return args;
     }
     args.unshift(config.modelArg ?? '--model', model);
   }

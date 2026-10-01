@@ -1,3 +1,4 @@
+import { getHarnessProviders } from './harnesses/registry';
 import { app } from 'electron';
 import { execFile, spawn } from 'child_process';
 import * as fs from 'fs';
@@ -19,63 +20,12 @@ export interface ModelOption {
   label: string;
 }
 
-export const HARNESS_OPTIONS: Record<string, HarnessConfig> = {
-  codex: {
-    name: 'Codex',
-    command: 'codex',
-    args: [],
-    icon: '🧠',
-    modelArg: '-m',
-  },
-  opencode: {
-    name: 'OpenCode',
-    command: 'opencode',
-    args: [],
-    icon: '⚡',
-    modelArg: '-m',
-    env: {
-      OPENCODE_PERMISSION: JSON.stringify({
-        bash: { '*': 'allow' },
-        edit: 'allow',
-      }),
-    },
-  },
-  pi: {
-    name: 'Pi',
-    command: 'pi',
-    args: [],
-    icon: 'π',
-    modelArg: '--model',
-  },
-  omp: {
-    name: 'Oh My Pi',
-    command: 'omp',
-    args: [],
-    icon: 'π',
-    modelArg: '--model',
-  },
-  claude: {
-    name: 'Claude',
-    command: 'claude',
-    args: [],
-    icon: '✨',
-    modelArg: '--model',
-  },
-  hermes: {
-    name: 'Hermes',
-    command: 'hermes',
-    args: ['--tui'],
-    icon: '☿',
-    modelArg: '-m',
-  },
-  agy: {
-    name: 'Antigravity',
-    command: 'agy',
-    args: [],
-    icon: '🪐',
-    modelArg: '--model',
-  },
-};
+/** Compatibility catalog derived from the canonical providers. */
+export const HARNESS_OPTIONS: Record<string, HarnessConfig> = Object.fromEntries(
+  getHarnessProviders().map(({ descriptor, launch }) => [descriptor.id, {
+    ...launch, name: descriptor.name, icon: descriptor.legacyIcon,
+  }]),
+);
 
 const MODEL_DISCOVERY_FALLBACKS: Record<string, ModelOption[]> = {
   opencode: [

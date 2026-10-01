@@ -14,6 +14,8 @@ export interface HarnessLaunchCapability {
   readonly args: string[];
   readonly modelArg: string;
   readonly env?: Record<string, string>;
+  readonly modelArgs?: (model: string) => string[] | undefined;
+  readonly localEnvironment?: (flags?: string) => Record<string, string>;
 }
 
 export interface HarnessProvider {
