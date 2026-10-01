@@ -4,7 +4,8 @@ Clanker requests harness operations through the canonical main-process provider
 registry in `src/main/harnesses/registry.ts`. CLI differences belong to providers;
 PTYs, Windows command resolution, shells, caching, workspace security, SSH
 execution and batching remain shared. The issue #60 migration preserves existing
-UI controls, icons, ordering, workflows and CLI behavior.
+UI controls, icons, ordering and workflows. Noninteractive invocation corrections
+from the follow-up are documented below.
 
 ## Identity, descriptors and capabilities
 
@@ -31,7 +32,10 @@ UI controls, icons, ordering, workflows and CLI behavior.
 const provider = getHarnessProvider(harnessId);
 const models = await provider.models?.discover();
 const sessions = await provider.sessions?.discover(workspacePath);
-const invocation = provider.sessions?.resume?.build(session, flags);
+// Consumers use the canonical boundary to enforce operation + transport support.
+const invocation = buildSessionCommand(session, {
+  operation: 'resume', transport: 'local', userFlags: flags,
+});
 ```
 
 Providers expose specifications as well as methods: a native CLI invocation and a
@@ -62,6 +66,10 @@ storage reader as part of a provider change.
 
 `launch` owns executable, base args, model flag and harness environment. Hermes
 owns provider-qualified model decoding and its local TUI yolo environment bridge.
+Shared argv construction receives the selected provider model builder explicitly;
+it never derives a harness ID from an executable name. Serializable catalogs omit
+this function. Session invocation requires an explicit transport and rejects
+unsupported operation/transport pairs with `HarnessCapabilityError`.
 User flags (including reasoning/effort options) remain opaque, whitespace-split
 arguments in their existing order; this migration does not reinterpret them.
 The common launcher retains the POSIX wrapper, fallback shell, Windows
@@ -74,8 +82,9 @@ results retain a typed failure while the existing picker still receives its
 current array/fallback. Codex's provider reports malformed model output as a typed parse failure. Its
 compatibility wrapper and exported parser preserve the historical empty-list/cache
 behavior through explicit compatibility metadata; changing that behavior is a
-follow-up. A detailed result can therefore contain a failure even when its legacy
-`discovered` cacheability flag is true.
+follow-up. Detailed results are a discriminated `success` result with independent
+`cacheable` policy. A parse failure is always `success: false`; only the Codex
+compatibility policy may cache its historical empty result.
 
 Session providers own parsing, native argument generation, selection flags and
 harness-specific validation. Shared aggregation normalizes IPC paths, limits
@@ -118,8 +127,12 @@ errors or preventing broker retirement; failed disposal remains retryable.
 Agy's owned plugin retains reference counting and ownership checks. Each
 preparation gets a distinct lease, including repeated preparations for one
 terminal, so out-of-order disposal cannot retire another user's plugin. Unknown
-files remain untouched. Shared adapter temp-file creation rolls back partial
-writes. The app shutdown path retains the global adapter cleanup.
+files remain untouched. The shared layer creates only the secure temp root,
+observer and command bridge. Providers contribute `attention.prepareResources`
+for their settings/extensions/plugin directories; `AttentionAdapterFiles` has only
+a generic command path. Failed provider resource preparation rolls back the whole
+temp root before caching it. Optional `disposeResources` owns provider shutdown
+cleanup, including Agy plugin retirement. The app removes the shared root afterward.
 
 Native hook payload normalization for Codex/Claude/Agy and credential transport
 are shared. Pi, OMP and OpenCode contribute their extension/plugin sources from
@@ -180,21 +193,29 @@ relevant provider. Do not add a new central harness switch/support allowlist.
 `usage` is already an optional extension point with timestamped measurements,
 units, allowance/rate/token/spend kinds, periods, resets and account/provider/model
 scopes. There are no speculative quota probes or usage UI. Existing AI commit
-owns only stdin invocation metadata; a future general noninteractive inference
-capability can reuse its shared executor while Git prompt construction stays in
-Git orchestration.
+uses `buildInvocation({ model, prompt })` to return command, args, optional stdin,
+timeout and optional environment. Optional provider output parsing unwraps native
+CLI envelopes before shared commit-message normalization. Git context and prompts
+stay shared; Windows resolution and desktop PATH remain in the executor. There
+is no remote inference or general inference framework.
 
 ## Preserved limitations and follow-ups
 
-- Pi: conventional paths and first-line session headers; configurable agent and
-  session directories remain undiscovered. Local resume file validation is also
-  weaker than OMP's current check; address that in a dedicated security change.
+- Pi: history still scans conventional paths and first-line session headers.
+  Invocation re-resolves identity from trusted storage with canonical file checks,
+  honoring `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR` and stored
+  `--session-dir` flags. Renderer paths are never authority. Custom-root history
+  and SSH parity remain follow-ups; the provider-owned root resolver is the seam.
 - OMP: this checkout assumes `~/.omp/agent/sessions` locally and over SSH. Home,
   coding-agent, profile, XDG and session-dir overrides are not integrated despite
   upstream support. The migration isolates these roots without expanding them.
-- Agy: fixed SQLite schema, version-sensitive model list, no native fork, existing
-  piped AI commit invocation and native hooks. Do not imply native fork or add
-  reasoning/headless compatibility guesses. Audit upstream contracts separately.
+- Agy: fixed SQLite schema, version-sensitive model list and no native fork.
+  AI commit now uses documented JSON stdin/output, avoiding Windows shell quoting
+  and argument-size limits. Native attention hooks still need real-turn smoke
+  testing. Global plugin ownership is process-local: Clanker currently has no
+  `requestSingleInstanceLock`. Concurrent app processes can overwrite/remove
+  another process's owned plugin; address single-instance policy or ownership
+  separately without introducing a lease framework here.
 - OpenCode: local session-list pagination remains its CLI default; SSH explicitly
   requests the extra row to reject truncation. SQLite/legacy storage is CLI-owned.
 - Hermes: local attention/history/inference remain unsupported; remote attention
@@ -284,7 +305,7 @@ Review environment (September 2026): `/home/jay/.local/bin/agy`, version
 | Models | `agy models` emits spinner on stderr and clean tab-separated `<id>\t<label>` on stdout | Parse stdout lines by tab, deduplicate IDs, fallback to static Gemini list on error or timeout (8s). |
 | Sessions | SQLite database at `~/.gemini/antigravity-cli/conversation_summaries.db`; table `conversation_summaries` | Integrated via Node 22/Electron 41 native `node:sqlite` in read-only mode. All workspace URIs are decoded and matched using `sessionMatchesWorkspace`; unset paths retain the global-session fallback, while malformed metadata is skipped. Resume invokes `agy --conversation <id>` with canonical UUID and model-selector validation; fork is unsupported by the CLI and runs resume. |
 | Attention | Native hooks via an owned plugin at `~/.gemini/config/plugins/clanker-grid-attention/hooks.json` | The plugin exists only while an attention-enabled Antigravity terminal is active. It maps `PreInvocation` (when `invocationNum == 0`) to `turn_started`, `PreToolUse` on `ask_question`, `ask_permission`, or `notify_user` to `input_requested`, matching `PostToolUse` events to `input_resolved`, `Stop` to `turn_completed`, and wrapper exit to `session_ended`. The matcher excludes all other tools so their native permission checks remain authoritative. Clanker refuses to overwrite an unowned directory and removes only files carrying its ownership marker. |
-| AI commit | Piped stdin with `--disable-slash-commands`, `--model <selector>` | Integrated. Noninteractive piped invocation delivers the commit prompt via stdin, outputs the generated commit message, and is normalized by `normalizeCommitMessageOutput`. Timeout: 60s. |
+| AI commit | `--disable-slash-commands --input-format stream-json --output-format stream-json`, optional `--model` | Send one `user` JSON message on stdin and close it. The Agy provider extracts the single successful result response before shared normalization. Timeout: 60s. |
 
 This integration includes CLI detection, persisted defaults, visibility,
 flags, model discovery, interactive launch, session history discovery/resume,
@@ -298,3 +319,42 @@ agent attention, and AI commit message generation. The workspace gate assigns
 Hermes uses its [observer hook contract](https://hermes-agent.nousresearch.com/docs/developer-guide/observer-hooks), including turn-scoped `pre_llm_call` / `post_llm_call` and advisory approval hooks. Its owned plugin is enabled via the native CLI, preserving other plugin configuration. OpenCode uses its [plugin events](https://opencode.ai/docs/plugins/); Claude uses its [command hook API](https://code.claude.com/docs/en/hooks). Shared Pi, OMP, Codex, and Antigravity mappings retain the contracts documented above.
 
 Tests exercise all seven adapters with synthetic lifecycle events over real pseudo-terminals, configuration conflicts, ownership checks, and terminal credential/cleanup routing. Those checks do not make model calls or establish compatibility with every installed CLI version. Live remote agent turns remain a separate smoke check.
+
+## Follow-up CLI contract verification (October 2026)
+
+Installed versions checked without model prompts: Codex 0.159.3, OpenCode
+1.18.34, Pi 0.87.1, OMP 18.4.4, Hermes 0.21.5 and Agy 1.2.14. Claude's shim
+exists but its native optional binary is missing. Local PTY startup/resume/fork
+checks and the saved SSH host checks are recorded in
+[the follow-up report](issue-60-followup-report.md).
+
+AI commit uses Codex `exec` stdin, OpenCode `run` stdin, Pi `--print` stdin,
+and the existing OMP print/no-session/no-tools/no-extensions stdin contract.
+OpenCode's [v1.18.34 run source](https://github.com/anomalyco/opencode/blob/v1.18.34/packages/opencode/src/cli/cmd/run.ts)
+reads piped input; its bare executable starts a TUI. Pi's installed print-mode
+help and main implementation confirm explicit print mode. OMP's
+[v18.4.4 main source](https://github.com/can1357/oh-my-pi/blob/v18.4.4/packages/coding-agent/src/main.ts)
+reads piped text before headless execution. Codex `exec --help` documents stdin.
+
+Agy's [headless contract](https://www.antigravity.google/docs/cli/headless/)
+supports JSON stdin with one result per prompt and exit after EOF. Installed
+`--print` requires a prompt argument and rejects an empty prompt; passing plain
+stdin does not satisfy that explicit print contract. JSON input avoids embedding
+Git content in `cmd.exe` arguments. `agy models` and native `--print /help` were
+checked without inference. Installed effort help includes `max`, while the
+current web reference lists fewer values; user flags remain opaque. Conversation
+resume exists; no native fork is documented or exposed. The supported manual
+plugin root remains `~/.gemini/config/plugins`; no path migration was made.
+
+Pi 0.87.1 documents `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR` and
+`--session-dir` (the explicit directory wins). Default sessions sit beneath an
+encoded cwd directory; explicit session directories are flat. Invocation lookup
+models those layouts without expanding existing history discovery.
+
+OMP's [v18.4.4 directory resolver](https://github.com/can1357/oh-my-pi/blob/v18.4.4/packages/utils/src/dirs.ts)
+uses `PI_CODING_AGENT_DIR`, `PI_CONFIG_DIR`, `OMP_PROFILE` (with legacy
+`PI_PROFILE`) and existence-dependent XDG relocation, with stricter named-profile
+rules. Neither `OMP_HOME` nor `OMP_CODING_AGENT_DIR` appears in that resolver;
+do not canonize those names without version-specific evidence. OMP storage
+integration remains conventional locally and on SSH. Future storage work should
+extend provider root specifications and keep host environment resolution on-host.
