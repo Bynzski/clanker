@@ -1,7 +1,12 @@
+import { buildInvocation } from './invocation';
 import type { HarnessProvider } from '../types';
 
 export const claudeProvider = {
   descriptor: { id: 'claude', name: 'Claude', iconKey: 'claude', legacyIcon: '✨' },
-  sessions: { discover: async (workspace: string) => (await import('./sessions')).discoverClaudeSessions(workspace) },
+  sessions: {
+    resume: { support: 'native', build: (session, flags) => buildInvocation(session, false, flags) },
+    fork: { support: 'native', build: (session, flags) => buildInvocation(session, true, flags) },
+    selectionFlags: ['--resume', '-r', '--continue', '-c', '--fork-session'],
+    discover: async (workspace: string) => (await import('./sessions')).discoverClaudeSessions(workspace) },
   launch: { command: 'claude', args: [], modelArg: '--model' },
 } satisfies HarnessProvider;

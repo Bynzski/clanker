@@ -56,4 +56,15 @@ export function classifyHarnessFailure(error: unknown): HarnessCapabilityError {
 
 export interface HarnessSessionsCapability {
   discover(workspacePath: string): Promise<HarnessSession[]>;
+  readonly resume?: HarnessSessionOperation;
+  readonly fork?: HarnessSessionOperation;
+  readonly selectionFlags?: readonly string[];
+
+}
+
+export interface HarnessSessionOperation {
+  readonly support: CapabilitySupport;
+  /** Omission means both transports. Agy's emulated fork is local only. */
+  readonly transports?: readonly ('local' | 'ssh')[];
+  build(session: HarnessSession, userFlags?: string): { command: string; args: string[] };
 }

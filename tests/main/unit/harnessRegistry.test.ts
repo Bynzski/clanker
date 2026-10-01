@@ -18,3 +18,12 @@ describe('canonical harness registry', () => {
     expect(() => getHarnessProvider('unknown')).toThrow('Unknown harness');
   });
 });
+
+it('represents native, emulated and unsupported session operations honestly', () => {
+  for (const id of ['codex', 'claude', 'opencode', 'pi', 'omp'] as const) {
+    expect(getHarnessProvider(id).sessions?.resume?.support).toBe('native');
+    expect(getHarnessProvider(id).sessions?.fork?.support).toBe('native');
+  }
+  expect(getHarnessProvider('agy').sessions?.fork).toMatchObject({ support: 'emulated', transports: ['local'] });
+  expect(getHarnessProvider('hermes').sessions).toBeUndefined();
+});

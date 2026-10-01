@@ -1,3 +1,4 @@
+import { supportsSessionOperation } from '../sessionLaunch';
 /**
  * Session History IPC Handlers
  *
@@ -86,7 +87,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     // The installed CLI is not enough to imply that its session format or
     // resume command is integrated. Do not route Hermes through Claude's
     // fallback invocation for renderer-supplied session payloads.
-    if (!['codex', 'claude', 'opencode', 'pi', 'omp', 'agy'].includes(session.harness)) {
+    if (!supportsSessionOperation(session.harness, fork === true, 'local')) {
       throw new Error(`${session.harness} session invocation is not supported`);
     }
     const terminals = getTerminals();

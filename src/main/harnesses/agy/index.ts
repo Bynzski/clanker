@@ -1,3 +1,4 @@
+import { buildInvocation } from './invocation';
 import type { HarnessProvider } from '../types';
 
 export const agyProvider = {
@@ -9,6 +10,10 @@ export const agyProvider = {
     { id: 'gemini-3.1-pro-high', label: 'Gemini 3.1 Pro (High)' },
     { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)' },
   ] },
-  sessions: { discover: async (workspace: string) => (await import('./sessions')).discoverAgySessions(workspace) },
+  sessions: {
+    resume: { support: 'native', build: (session, flags) => buildInvocation(session, false, flags) },
+    fork: { support: 'emulated', build: (session, flags) => buildInvocation(session, true, flags), transports: ['local'] },
+    selectionFlags: ['--conversation'],
+    discover: async (workspace: string) => (await import('./sessions')).discoverAgySessions(workspace) },
   launch: { command: 'agy', args: [], modelArg: '--model' },
 } satisfies HarnessProvider;

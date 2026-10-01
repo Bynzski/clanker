@@ -1,3 +1,4 @@
+import { buildInvocation } from './invocation';
 import type { HarnessProvider } from '../types';
 
 export const opencodeProvider = {
@@ -8,6 +9,10 @@ export const opencodeProvider = {
     { id: 'openai/gpt-4o', label: 'GPT-4o' },
     { id: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
   ] },
-  sessions: { discover: async (workspace: string) => (await import('./sessions')).discoverOpenCodeSessions(workspace) },
+  sessions: {
+    resume: { support: 'native', build: (session, flags) => buildInvocation(session, false, flags) },
+    fork: { support: 'native', build: (session, flags) => buildInvocation(session, true, flags) },
+    selectionFlags: ['--session', '-s', '--continue', '-c', '--fork'],
+    discover: async (workspace: string) => (await import('./sessions')).discoverOpenCodeSessions(workspace) },
   launch: { command: 'opencode', args: [], modelArg: '-m', env: { OPENCODE_PERMISSION: JSON.stringify({ bash: { '*': 'allow' }, edit: 'allow' }) } },
 } satisfies HarnessProvider;
