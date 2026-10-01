@@ -8,11 +8,16 @@ import { KNOWN_HARNESS_IDS } from '../../../src/shared/harnessIds';
 // Provider implementations own harness dispatch. Scan every other main module,
 // including future orchestrators; scalar identity defaults remain valid.
 function discoverSharedMainFiles(root: string): string[] {
-  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
-    const path = resolve(root, entry.name);
-    if (entry.isDirectory()) return entry.name === 'harnesses' ? [] : discoverSharedMainFiles(path);
-    return entry.isFile() && entry.name.endsWith('.ts') ? [path] : [];
-  });
+  const providerDirectories = new Set(KNOWN_HARNESS_IDS.map((id) => resolve(root, 'harnesses', id)));
+  const registry = resolve(root, 'harnesses/registry.ts');
+  function scan(directory: string): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = resolve(directory, entry.name);
+      if (entry.isDirectory()) return providerDirectories.has(path) ? [] : scan(path);
+      return entry.isFile() && entry.name.endsWith('.ts') && path !== registry ? [path] : [];
+    });
+  }
+  return scan(root);
 }
 function dispatchLiterals(source: string): string[] {
   const tree = ts.createSourceFile('orchestrator.ts', source, ts.ScriptTarget.Latest, true);
@@ -41,6 +46,8 @@ describe('harness architecture boundaries', () => {
     "const supported = ['codex', 'pi'];",
     "['codex', 'pi'].includes(harness)",
     "if (harness === 'codex') launch()",
+    "if (harness !== 'codex') launch()",
+    "if ('codex' != harness) launch()",
     "const supported = new Set(['codex', 'pi']); supported.has(harness)",
     "if ('codex' === harness) launch()",
     "switch(harness) { case 'pi': launch() }",
@@ -52,10 +59,18 @@ describe('harness architecture boundaries', () => {
       const file = resolve(root, 'future/harnessUsage.ts');
       writeFileSync(file, source);
       mkdirSync(resolve(root, 'harnesses'));
-      writeFileSync(resolve(root, 'harnesses/provider.ts'), source);
+      const shared = resolve(root, 'harnesses/usageRuntime.ts');
+      writeFileSync(shared, "const supported = ['codex', 'agy'];");
+      writeFileSync(resolve(root, 'harnesses/registry.ts'), source);
+      for (const id of KNOWN_HARNESS_IDS) {
+        mkdirSync(resolve(root, 'harnesses', id));
+        writeFileSync(resolve(root, 'harnesses', id, 'index.ts'), source);
+      }
       const discovered = discoverSharedMainFiles(root);
-      expect(discovered).toEqual([file]);
-      expect(dispatchLiterals(readFileSync(discovered[0], 'utf8')).length).toBeGreaterThan(0);
+      expect(discovered.sort()).toEqual([file, shared].sort());
+      for (const path of discovered) {
+        expect(dispatchLiterals(readFileSync(path, 'utf8')), path).not.toEqual([]);
+      }
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
   it('allows scalar identity metadata, comments and descriptive text', () => {
