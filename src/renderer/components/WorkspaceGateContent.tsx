@@ -1,3 +1,4 @@
+import { clankerApp128 } from '../lib/branding';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FolderOpen, Folder, Loader2, Play, ChevronRight, AlertTriangle, Cog, GitBranch, ArrowLeft } from 'lucide-react';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../../shared/types/recipes';
@@ -684,7 +685,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
       {workspaceMode === 'directory' ? (
       <div className={`gate-view gate-view-directory ${hasViewedWorktree ? 'gate-view-return' : ''}`}>
       {fullscreen && <div className="gate-header">
-        <img src="./robot-icon.png" alt="Clanker Grid" width="64" height="64" className="gate-brand-icon" />
+        <img src={clankerApp128} alt="" width="64" height="64" className="gate-brand-icon" />
         <h1 className="gate-title">Clanker Grid</h1>
         <p className="gate-subtitle">Developer Workspace Launcher</p>
       </div>}

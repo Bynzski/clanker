@@ -1,4 +1,4 @@
-![Clanker Grid](docs/hero.png)
+<p align="center"><img src="src/assets/branding/clanker-wordmark.png" alt="Clanker Grid" width="560" /></p>
 
 # Clanker Grid
 

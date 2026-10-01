@@ -1,3 +1,4 @@
+import { clankerUi16, clankerUi18, clankerUi32, clankerUi36 } from '../lib/branding';
 import { X } from 'lucide-react';
 import WindowControls from './WindowControls';
 import WorkspaceGateContent from './WorkspaceGateContent';
@@ -24,7 +25,7 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
       <DialogContent className="modal-content" overlayClassName="modal-overlay" aria-describedby={undefined}>
         <div className="modal-header">
           <DialogTitle asChild><span className="modal-title">
-            <img src="./titlebar-icon.png" alt="" width={16} height={16} className="modal-title-icon" />
+            <img src={clankerUi16} srcSet={`${clankerUi16} 1x, ${clankerUi32} 2x`} alt="" width={16} height={16} className="modal-title-icon" />
             New Workspace
           </span></DialogTitle>
           <DialogClose asChild><IconButton className="modal-close" title="Close (Esc)" aria-label="Close">
@@ -42,8 +43,9 @@ function GateTitleBar() {
     <div className="workspace-gate-titlebar">
       <div className="workspace-gate-brand">
         <img
-          src="./titlebar-icon.png"
-          alt="Clanker Grid icon"
+          src={clankerUi18}
+          srcSet={`${clankerUi18} 1x, ${clankerUi36} 2x`}
+          alt=""
           width={18}
           height={18}
         />
