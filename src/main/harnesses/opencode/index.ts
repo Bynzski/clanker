@@ -1,11 +1,12 @@
+import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
 import { local, SOURCE } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
-import type { HarnessProvider } from '../types';
+import { defineHarness, type HarnessProvider } from '../types';
 
-export const opencodeProvider = {
-  descriptor: { id: 'opencode', name: 'OpenCode', iconKey: 'opencode', legacyIcon: '⚡' },
+export const opencodeProvider = defineHarness({
+  descriptor: HARNESS_DESCRIPTORS.opencode,
   models: { discover: async () => (await import('./models')).discoverModels(), fallback: [
     { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
     { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
@@ -17,8 +18,9 @@ export const opencodeProvider = {
     resume: { support: 'native', build: (session, flags) => buildInvocation(session, false, flags) },
     fork: { support: 'native', build: (session, flags) => buildInvocation(session, true, flags) },
     selectionFlags: ['--session', '-s', '--continue', '-c', '--fork'],
-    discover: async (workspace: string) => (await import('./sessions')).discoverOpenCodeSessions(workspace) },
+    discover: async (workspace: string) => (await import('./sessions')).discoverOpenCodeSessions(workspace),
+  },
   attention: { local, remote, sources: (observer: string) => ({ 'opencode/observer.mjs': observer, 'opencode/plugins/clanker-attention.js': SOURCE }) },
   aiCommit: { command: 'opencode', args: [], modelArg: '-m', timeoutMs: 90000 },
   launch: { command: 'opencode', args: [], modelArg: '-m', env: { OPENCODE_PERMISSION: JSON.stringify({ bash: { '*': 'allow' }, edit: 'allow' }) } },
-} satisfies HarnessProvider;
+} satisfies HarnessProvider);

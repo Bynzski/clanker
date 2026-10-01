@@ -641,10 +641,10 @@ export class SshEnvironment implements WorkspaceEnvironment {
   }
 
   public async probeAvailableHarnessIds(): Promise<string[]> {
-    const candidates = getHarnessProviders().map((provider) => provider.descriptor.id);
+    const candidates = getHarnessProviders();
     const script = [
       REMOTE_CLI_PATH_SETUP,
-      ...candidates.map((cmd) => `command -v ${quotePosixArg(cmd)} >/dev/null 2>&1 && printf '%s\\n' ${quotePosixArg(cmd)}`),
+      ...candidates.map((provider) => `command -v ${quotePosixArg(provider.launch.command)} >/dev/null 2>&1 && printf '%s\\n' ${quotePosixArg(provider.descriptor.id)}`),
       ':', // An absent last candidate must not make the whole probe fail.
     ].join('\n');
 

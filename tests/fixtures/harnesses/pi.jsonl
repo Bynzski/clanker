@@ -1,0 +1,3 @@
+{"type":"session","id":"pi-fixture","cwd":"$WORKSPACE","timestamp":"2026-09-27T10:00:00Z"}
+{"type":"model_change","provider":"provider","modelId":"pi-model"}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Pi fixture title"}]}}

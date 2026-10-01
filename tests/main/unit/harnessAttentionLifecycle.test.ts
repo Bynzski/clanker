@@ -60,6 +60,7 @@ describe('provider attention leases', () => {
   it('does not acquire resources when user configuration prevents injection', () => {
     const ctx = context();
     expect(getHarnessProvider('claude').attention!.local!.prepare({ ...ctx, args: ['--bare'] })).toBeNull();
+    expect(getHarnessProvider('claude').attention!.local!.plan({ ...ctx, args: ['--bare'] })).toMatchObject({ status: 'blocked', failure: { kind: 'not-configured' } });
     const acquire = vi.fn();
     expect(localAttention(() => null, acquire).prepare(ctx)).toBeNull();
     expect(acquire).not.toHaveBeenCalled();

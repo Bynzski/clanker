@@ -27,3 +27,55 @@ it('represents native, emulated and unsupported session operations honestly', ()
   expect(getHarnessProvider('agy').sessions?.fork).toMatchObject({ support: 'emulated', transports: ['local'] });
   expect(getHarnessProvider('hermes').sessions).toBeUndefined();
 });
+
+it('keeps serializable descriptors aligned with implemented AI commit capabilities', async () => {
+  const { AI_COMMIT_HARNESS_IDS, HARNESS_DESCRIPTORS } = await import('../../../src/shared/harnessDescriptors');
+  expect(getHarnessProviders().filter((provider) => provider.aiCommit).map((provider) => provider.descriptor.id)).toEqual(AI_COMMIT_HARNESS_IDS);
+  for (const provider of getHarnessProviders()) {
+    expect(provider.descriptor).toBe(HARNESS_DESCRIPTORS[provider.descriptor.id]);
+    expect(structuredClone(provider.descriptor)).toEqual(provider.descriptor);
+    expect(provider.usage).toBeUndefined();
+  }
+});
+
+it.each([
+  ['codex', ['resume', 'native-id', '-m', 'model', '--extra'], ['fork', 'native-id', '-m', 'model', '--extra']],
+  ['claude', ['--resume', 'native-id', '--model', 'model', '--extra'], ['--resume', 'native-id', '--fork-session', '--model', 'model', '--extra']],
+  ['opencode', ['--session', 'native-id', '--extra'], ['--session', 'native-id', '--fork', '--extra']],
+  ['pi', ['--session', '/store/session.jsonl', '--model', 'provider/model', '--extra'], ['--fork', '/store/session.jsonl', '--model', 'provider/model', '--extra']],
+  ['omp', ['--resume', '/store/session.jsonl', '--model', 'model', '--extra'], ['--fork', '/store/session.jsonl', '--model', 'model', '--extra']],
+  ['agy', ['--conversation', 'native-id', '--model', 'model', '--extra'], ['--conversation', 'native-id', '--model', 'model', '--extra']],
+] as const)('preserves exact %s resume/fork invocation', (id, resume, fork) => {
+  const session = { harness: id, id: 'native-id', title: 'title', cwd: '/ws', timestamp: 0, modelId: 'model', provider: 'provider', filePath: '/store/session.jsonl' };
+  const capability = getHarnessProvider(id).sessions!;
+  expect(capability.resume!.build(session, '--extra')).toEqual({ command: id, args: [...resume] });
+  expect(capability.fork!.build(session, '--extra')).toEqual({ command: id, args: [...fork] });
+});
+
+it('preserves launch metadata, environments and opaque reasoning flags for every harness', async () => {
+  const { buildHarnessSpawnArgs, resolveHarnessSpawn } = await import('../../../src/main/harnessLaunch');
+  for (const id of KNOWN_HARNESS_IDS) {
+    const provider = getHarnessProvider(id);
+    const config = { ...provider.launch, name: provider.descriptor.name, icon: provider.descriptor.legacyIcon };
+    const args = buildHarnessSpawnArgs(config, 'model', '--reasoning high --effort max');
+    expect(args).toEqual([provider.launch.modelArg, 'model', ...(id === 'hermes' ? ['--tui'] : []), '--reasoning', 'high', '--effort', 'max']);
+    expect(resolveHarnessSpawn(provider.launch.command, args, '/wrapper')).toEqual({ spawnCmd: '/wrapper', spawnArgs: [id, ...args] });
+  }
+  expect(getHarnessProvider('opencode').launch.env).toEqual({ OPENCODE_PERMISSION: '{"bash":{"*":"allow"},"edit":"allow"}' });
+  expect(getHarnessProvider('hermes').launch.localEnvironment?.('--yolo')).toEqual({ HERMES_YOLO_MODE: '1' });
+  expect(getHarnessProvider('hermes').launch.localEnvironment?.('')).toEqual({ HERMES_YOLO_MODE: '' });
+});
+
+it('retains failure categories and native causes without claiming unsupported', async () => {
+  const { classifyHarnessFailure, HarnessCapabilityError } = await import('../../../src/main/harnesses/types');
+  const native = new Error('failed');
+  expect(classifyHarnessFailure(native)).toMatchObject({ kind: 'command-failed', cause: native });
+  const transport = Object.assign(new Error('SSH authentication failed'), { exitCode: 255 });
+  expect(classifyHarnessFailure(transport, 'ssh')).toMatchObject({ kind: 'transport-failure', cause: transport });
+  const command = Object.assign(new Error('host command failed'), { exitCode: 1 });
+  expect(classifyHarnessFailure(command, 'ssh').kind).toBe('command-failed');
+  expect(classifyHarnessFailure(new SyntaxError('invalid JSON')).kind).toBe('parse-failure');
+  expect(classifyHarnessFailure(new Error('no such column: workspace_uris')).kind).toBe('storage-changed');
+  const configured = new HarnessCapabilityError('not-configured', 'Authentication required', native);
+  expect(classifyHarnessFailure(configured)).toBe(configured);
+});

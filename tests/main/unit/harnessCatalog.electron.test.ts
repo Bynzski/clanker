@@ -66,6 +66,24 @@ describe('discoverHarnessModels cache integration', () => {
     vi.restoreAllMocks();
   });
 
+  it('delegates to the selected provider and retains unsupported versus failure results', async () => {
+    const { discoverHarnessModelsDetailed, HARNESS_OPTIONS } = await import('../../../src/main/harnessCatalog');
+    const { getHarnessProvider } = await import('../../../src/main/harnesses/registry');
+    const discover = vi.spyOn(getHarnessProvider('pi').models!, 'discover').mockResolvedValue([{ id: 'fixture', label: 'Fixture' }]);
+    expect(await discoverHarnessModelsDetailed('pi')).toEqual({ models: [{ id: 'fixture', label: 'Fixture' }], discovered: true });
+    expect(discover).toHaveBeenCalledWith(false);
+    expect((await discoverHarnessModelsDetailed('claude')).failure?.kind).toBe('unsupported');
+    expect((await discoverHarnessModelsDetailed('unknown')).failure?.kind).toBe('unsupported');
+    discover.mockRejectedValueOnce(Object.assign(new Error('binary missing'), { code: 'ENOENT' }));
+    expect((await discoverHarnessModelsDetailed('pi')).failure?.kind).toBe('binary-unavailable');
+    discover.mockRejectedValueOnce(Object.assign(new Error('command timed out'), { killed: true }));
+    expect((await discoverHarnessModelsDetailed('pi')).failure?.kind).toBe('timeout');
+    mockExecFile.mockImplementation((_command, _args, _options, callback) => callback(null, '{', ''));
+    expect((await discoverHarnessModelsDetailed('omp')).failure?.kind).toBe('parse-failure');
+    // The IPC compatibility catalog must never contain provider methods.
+    expect(structuredClone(HARNESS_OPTIONS)).toEqual(HARNESS_OPTIONS);
+  });
+
   it('returns cached models immediately without CLI calls on cache hit', async () => {
     const cachedModels = [
       { id: 'cached-model-1', label: 'Cached Model 1' },

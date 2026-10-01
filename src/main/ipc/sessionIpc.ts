@@ -1,3 +1,4 @@
+import { disposeAttentionSafely } from '../harnesses/localAttention';
 import type { PreparedLocalAttention } from '../harnesses/types';
 import { findHarnessProvider } from '../harnesses/registry';
 import { supportsSessionOperation } from '../sessionLaunch';
@@ -8,7 +9,6 @@ import { supportsSessionOperation } from '../sessionLaunch';
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import Store from 'electron-store';
 import { type StoreSchema } from '../../shared/types/store';
@@ -20,7 +20,6 @@ import type { HarnessSession } from '../../shared/types/session';
 import { defaultShell } from '../platformShell';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { toNativePath } from '../../shared/pathNormalize';
-import { resolveExistingFileWithinDirectory } from '../security';
 import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { invokeRemoteSession } from './remoteSessionInvocation';
@@ -28,9 +27,6 @@ import {
   ensureAttentionAdapterFiles,
   withoutAttentionEnvironment,
 } from '../agentAttentionAdapters';
-
-const AGY_SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const AGY_MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 
 export interface RegisterSessionIpcDeps {
   getTerminals: () => Map<string, Terminal>;
@@ -99,32 +95,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       throw new Error(`${session.harness} harness is not available`);
     }
 
-    // OMP resumes by path; reject renderer-supplied paths outside its session store.
-    const ompSessionPath = session.harness === 'omp' && session.filePath?.endsWith('.jsonl')
-      ? resolveExistingFileWithinDirectory(
-        toNativePath(session.filePath, process.platform),
-        path.join(os.homedir(), '.omp', 'agent', 'sessions'),
-      )
-      : null;
-    if (session.harness === 'omp' && !ompSessionPath) {
-      throw new Error('OMP session file is invalid');
-    }
-
-    let agySessionId = session.id;
-    let agyModelId = session.modelId;
-    if (session.harness === 'agy') {
-      if (typeof session.id !== 'string' || !AGY_SESSION_ID_PATTERN.test(session.id.trim())) {
-        throw new Error('Antigravity session ID is invalid');
-      }
-      agySessionId = session.id.trim();
-      if (session.modelId !== undefined) {
-        if (typeof session.modelId !== 'string'
-          || (session.modelId.trim() && !AGY_MODEL_ID_PATTERN.test(session.modelId.trim()))) {
-          throw new Error('Antigravity model ID is invalid');
-        }
-        agyModelId = session.modelId.trim() || undefined;
-      }
-    }
+    const validatedSession = findHarnessProvider(session.harness)?.sessions?.validateLocal?.(session) ?? session;
 
     // Look up per-harness default flags from store — same source as SPAWN_TERMINAL
     const harnessDefaults = store.get('harnessDefaults');
@@ -132,11 +103,9 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     const userFlags = harnessDefaults[session.harness]?.flags?.trim();
 
     const nativeSession = {
-      ...session,
-      id: agySessionId,
-      modelId: agyModelId,
+      ...validatedSession,
       cwd: nativeSessionCwd,
-      ...(session.filePath ? { filePath: ompSessionPath ?? toNativePath(session.filePath, process.platform) } : {}),
+      ...(validatedSession.filePath ? { filePath: toNativePath(validatedSession.filePath, process.platform) } : {}),
     };
 
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -152,7 +121,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
         if (attentionEnabled) {
           preparedAttention = findHarnessProvider(session.harness)?.attention?.local?.prepare({
             terminalId: id, args: baseArgs, env: { ...process.env, ...harnessEnv }, files,
-            platform: process.platform, sessionId: fork ? undefined : agySessionId,
+            platform: process.platform, sessionId: fork ? undefined : validatedSession.id,
           }) ?? null;
         }
         attentionEnv = await agentAttentionBroker.register(id, session.harness);
@@ -162,28 +131,28 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
           spawnArgs = preparedAttention.args;
         }
       } catch {
-        preparedAttention?.dispose();
+        disposeAttentionSafely(preparedAttention);
         agentAttentionBroker.release(id);
       }
     }
-    const cwd = getSafeWorkspacePath(nativeSession.cwd);
-    const userShell = defaultShell();
-
-    const env: { [key: string]: string } = {
-      ...withoutAttentionEnvironment(process.env),
-      ...withoutAttentionEnvironment(harnessEnv),
-      ...attentionEnv,
-      ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
-      CLANKER_GRID_FALLBACK_SHELL: userShell,
-      TERM: 'xterm-256color',
-      COLORTERM: 'truecolor',
-      TERM_PROGRAM: 'clanker-grid',
-      FORCE_COLOR: '1',
-    };
-
-    const launchLabel = `[clanker-grid] ${spawnArgs.join(' ')}`;
-
     try {
+      const cwd = getSafeWorkspacePath(nativeSession.cwd);
+      const userShell = defaultShell();
+
+      const env: { [key: string]: string } = {
+        ...withoutAttentionEnvironment(process.env),
+        ...withoutAttentionEnvironment(harnessEnv),
+        ...attentionEnv,
+        ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
+        CLANKER_GRID_FALLBACK_SHELL: userShell,
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+        TERM_PROGRAM: 'clanker-grid',
+        FORCE_COLOR: '1',
+      };
+
+      const launchLabel = `[clanker-grid] ${spawnArgs.join(' ')}`;
+
       const result = spawnPtyProcess({
       id,
       spawnCmd,
@@ -196,7 +165,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       launchLabel,
       harnessId: session.harness,
       onExit: () => {
-        preparedAttention?.dispose();
+        disposeAttentionSafely(preparedAttention);
         agentAttentionBroker?.release(id);
         void taskSessionCoordinator?.onTerminalExited(id);
       },
@@ -209,7 +178,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       });
       return { ...result, harnessId: session.harness, attentionEnabled };
     } catch (error) {
-      preparedAttention?.dispose();
+      disposeAttentionSafely(preparedAttention);
       agentAttentionBroker?.release(id);
       throw error;
     }

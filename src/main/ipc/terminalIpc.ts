@@ -1,3 +1,4 @@
+import { disposeAttentionSafely } from '../harnesses/localAttention';
 import type { PreparedLocalAttention } from '../harnesses/types';
 import { findHarnessProvider } from '../harnesses/registry';
 /**
@@ -272,45 +273,45 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           harnessArgs = preparedAttention.args;
         }
       } catch {
-        preparedAttention?.dispose();
+        disposeAttentionSafely(preparedAttention);
         agentAttentionBroker.release(id);
       }
     }
-    const wrapperPath = harnessConfig ? ensureHarnessWrapperScriptPath() : null;
-    const harnessCmd = harnessConfig
-      ? resolveHarnessSpawn(harnessConfig.command, harnessArgs, wrapperPath)
-      : { spawnCmd: userShell, spawnArgs: shellArgs };
-
-    const env: { [key: string]: string } = {
-      ...withoutAttentionEnvironment(process.env),
-      PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
-      ...withoutAttentionEnvironment(harnessEnv),
-      ...attentionEnv,
-      // Hermes' TUI starts a backend child process; bridge its documented
-      // process-level bypass explicitly instead of relying on CLI propagation.
-      ...(findHarnessProvider(harness)?.launch.localEnvironment?.(userFlags) ?? {}),
-      ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
-      ...(harnessConfig ? { CLANKER_GRID_FALLBACK_SHELL: userShell } : {}),
-      TERM: 'xterm-256color',
-      COLORTERM: 'truecolor',
-      TERM_PROGRAM: 'clanker-grid',
-      FORCE_COLOR: '1',
-    };
-
-    let launchLabel: string | undefined;
-    const cleanInitialCommand = (!harness && typeof initialCommand === 'string' && initialCommand.trim())
-      ? initialCommand.trim().replace(/[\r\n]+/g, ' ')
-      : undefined;
-    const recipeCommandStartup = cleanInitialCommand && recipeCommand === true
-      ? new RecipeCommandStartup() : undefined;
-    if (harness && getHarnessOptions()[harness]) {
-      const config = getHarnessOptions()[harness];
-      launchLabel = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}`;
-    } else if (cleanInitialCommand) {
-      launchLabel = `[clanker-grid] ${cleanInitialCommand}`;
-    }
-
     try {
+      const wrapperPath = harnessConfig ? ensureHarnessWrapperScriptPath() : null;
+      const harnessCmd = harnessConfig
+        ? resolveHarnessSpawn(harnessConfig.command, harnessArgs, wrapperPath)
+        : { spawnCmd: userShell, spawnArgs: shellArgs };
+
+      const env: { [key: string]: string } = {
+        ...withoutAttentionEnvironment(process.env),
+        PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
+        ...withoutAttentionEnvironment(harnessEnv),
+        ...attentionEnv,
+        // Hermes' TUI starts a backend child process; bridge its documented
+        // process-level bypass explicitly instead of relying on CLI propagation.
+        ...(findHarnessProvider(harness)?.launch.localEnvironment?.(userFlags) ?? {}),
+        ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
+        ...(harnessConfig ? { CLANKER_GRID_FALLBACK_SHELL: userShell } : {}),
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+        TERM_PROGRAM: 'clanker-grid',
+        FORCE_COLOR: '1',
+      };
+
+      let launchLabel: string | undefined;
+      const cleanInitialCommand = (!harness && typeof initialCommand === 'string' && initialCommand.trim())
+        ? initialCommand.trim().replace(/[\r\n]+/g, ' ')
+        : undefined;
+      const recipeCommandStartup = cleanInitialCommand && recipeCommand === true
+        ? new RecipeCommandStartup() : undefined;
+      if (harness && getHarnessOptions()[harness]) {
+        const config = getHarnessOptions()[harness];
+        launchLabel = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}`;
+      } else if (cleanInitialCommand) {
+        launchLabel = `[clanker-grid] ${cleanInitialCommand}`;
+      }
+
       const result = spawnPtyProcess({
       id,
       spawnCmd: harnessCmd.spawnCmd,
@@ -326,7 +327,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         ? recipeCommandStartup.wrap(cleanInitialCommand, process.platform, userShell) : cleanInitialCommand,
       recipeCommandStartup,
       onExit: () => {
-        preparedAttention?.dispose();
+        disposeAttentionSafely(preparedAttention);
         agentAttentionBroker?.release(id);
         void taskSessionCoordinator?.onTerminalExited(id);
       },
@@ -336,7 +337,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       }
       return { ...result, harnessId: harnessConfig ? harness : undefined, attentionEnabled };
     } catch (error) {
-      preparedAttention?.dispose();
+      disposeAttentionSafely(preparedAttention);
       agentAttentionBroker?.release(id);
       throw error;
     }

@@ -1,3 +1,4 @@
+import { HarnessCapabilityError, classifyHarnessFailure } from '../harnesses/types';
 import { findHarnessProvider } from '../harnesses/registry';
 /**
  * AI Commit IPC Handlers
@@ -59,7 +60,7 @@ function runCommandWithInput(
     let stderr = '';
     const timer = setTimeout(() => {
       child.kill();
-      reject(new Error(`Command timed out after ${timeoutMs}ms`));
+      reject(new HarnessCapabilityError('timeout', `Command timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
     child.stdout.on('data', (data) => {
@@ -72,13 +73,13 @@ function runCommandWithInput(
 
     child.on('error', (error) => {
       clearTimeout(timer);
-      reject(Object.assign(error, { stdout, stderr }));
+      reject(Object.assign(classifyHarnessFailure(error), { stdout, stderr }));
     });
 
     child.on('close', (code) => {
       clearTimeout(timer);
       if (code !== 0) {
-        const error = new Error(`Command failed with exit code ${code ?? 'unknown'}`);
+        const error = new HarnessCapabilityError('command-failed', `Command failed with exit code ${code ?? 'unknown'}`);
         reject(Object.assign(error, { stdout, stderr, code }));
         return;
       }

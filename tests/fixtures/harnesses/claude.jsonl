@@ -1,0 +1,2 @@
+{"type":"user","cwd":"$WORKSPACE","timestamp":"2026-09-27T10:00:00Z","message":{"content":"Claude fixture title"}}
+{"type":"assistant","message":{"model":"claude-model"}}

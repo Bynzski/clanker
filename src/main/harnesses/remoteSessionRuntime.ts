@@ -68,8 +68,8 @@ def files(store):
 
 export function remoteSessionScript(providers: readonly HarnessProvider[]): string {
   const scans = providers.filter((provider) => provider.sessions?.remote);
-  const definitions = scans.map((provider) => `def scan_${provider.descriptor.id}(harness):\n${provider.sessions!.remote!.scan.split('\n').map((line) => `    ${line}`).join('\n')}`).join('\n');
-  const dispatch = scans.map((provider) => `${JSON.stringify(provider.descriptor.id)}: scan_${provider.descriptor.id}`).join(', ');
+  const definitions = scans.map((provider, index) => `def scan_${index}(harness):\n${provider.sessions!.remote!.scan.split('\n').map((line) => `    ${line}`).join('\n')}`).join('\n');
+  const dispatch = scans.map((provider, index) => `${JSON.stringify(provider.descriptor.id)}: scan_${index}`).join(', ');
   const script = `${RUNTIME}\n${definitions}\nscanners = {${dispatch}}\nfor harness in harnesses:\n    scanners[harness](harness)\nprint(json.dumps(sessions, ensure_ascii=True))`;
   return `try:\n${script.split('\n').map((line) => `    ${line}`).join('\n')}\nexcept Exception as error:\n    sys.exit('Remote session discovery failed: ' + str(error))\n`;
 }

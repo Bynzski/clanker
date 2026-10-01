@@ -1,3 +1,4 @@
+import { classifyHarnessFailure } from '../harnesses/types';
 import { getHarnessProviders } from '../harnesses/registry';
 import { remoteSessionScript } from '../harnesses/remoteSessionRuntime';
 import type { HarnessSession } from '../../shared/types/session';
@@ -20,18 +21,18 @@ export async function discoverSshSessions(executor: SshCommandExecutor, target: 
   for (const provider of providers.filter((entry) => entry.sessions?.remote?.command)) {
     const command = provider.sessions!.remote!.command!;
     scans.push(executor.exec(target, 'sh', ['-c', `${REMOTE_CLI_PATH_SETUP}\nexec ${quotePosixCommand(command.command, command.args)}`], { cwd: workspacePath, timeoutMs: 20000, maxBuffer: 1024 * 1024 }).then(async (result) => {
-    let raw: unknown;
-    try { raw = JSON.parse(result.stdout); }
-    catch { raw = result.stdout.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)); }
-    const entries = Array.isArray(raw) ? raw : [raw];
-    if (entries.length > 4096) throw new Error('Remote OpenCode session scan limit exceeded');
-    const validated = await executor.exec(target, 'python3', ['-c', script, workspacePath, JSON.stringify([provider.descriptor.id])], { input: JSON.stringify(entries), timeoutMs: 10000, maxBuffer: 1024 * 1024 });
-    return validated.stdout;
-  }));
+      let raw: unknown;
+      try { raw = JSON.parse(result.stdout); }
+      catch { raw = result.stdout.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)); }
+      const entries = Array.isArray(raw) ? raw : [raw];
+      if (entries.length > 4096) throw new Error(`Remote ${provider.descriptor.name} session scan limit exceeded`);
+      const validated = await executor.exec(target, 'python3', ['-c', script, workspacePath, JSON.stringify([provider.descriptor.id])], { input: JSON.stringify(entries), timeoutMs: 10000, maxBuffer: 1024 * 1024 });
+      return validated.stdout;
+    }));
   }
   const sessions: HarnessSession[] = [];
   const seen = new Map<string, HarnessSession>();
-  for (const output of await Promise.all(scans)) {
+  for (const output of await Promise.all(scans).catch((error) => { throw classifyHarnessFailure(error, 'ssh'); })) {
     const entries: unknown = JSON.parse(output);
     if (!Array.isArray(entries)) throw new Error('Invalid remote session response');
     for (const item of entries) {

@@ -23,7 +23,7 @@ export function isHarnessId(value: unknown): value is HarnessId {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(providers, value);
 }
 
-export function getHarnessProvider(id: HarnessId): HarnessProvider {
+export function getHarnessProvider<Id extends HarnessId>(id: Id): HarnessProvider & typeof providers[Id] {
   if (!isHarnessId(id)) throw new Error(`Unknown harness: ${String(id)}`);
   return providers[id];
 }

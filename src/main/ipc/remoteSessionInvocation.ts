@@ -29,7 +29,7 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(session.id)
     || (session.modelId && !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(session.modelId))
     || (session.provider && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(session.provider))
-    || (session.harness === 'agy' && !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(session.id))) throw new Error('Invalid remote session metadata');
+    || (getHarnessProvider(session.harness).sessions?.validateRemote?.(session) === false)) throw new Error('Invalid remote session metadata');
   const options = await environment.getHarnessOptions();
   checkWorkspace();
   if (!options[session.harness]) throw new Error(`${session.harness} harness is not available on the remote host`);

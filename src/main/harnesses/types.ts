@@ -1,13 +1,7 @@
 import type { HarnessSession } from '../../shared/types/session';
-import type { HarnessId } from '../../shared/harnessIds';
 
-/** Serializable identity. React icons remain in the renderer catalog. */
-export interface HarnessDescriptor {
-  readonly id: HarnessId;
-  readonly name: string;
-  readonly iconKey: HarnessId;
-  readonly legacyIcon: string;
-}
+import type { HarnessDescriptor } from '../../shared/harnessDescriptors';
+export type { HarnessDescriptor } from '../../shared/harnessDescriptors';
 
 /** CLI identity only; PTYs, wrappers, shells and transports remain shared. */
 export interface HarnessLaunchCapability {
@@ -26,6 +20,7 @@ export interface HarnessProvider {
   readonly sessions?: HarnessSessionsCapability;
   readonly attention?: HarnessAttentionCapability;
   readonly aiCommit?: HarnessAiCommitCapability;
+  readonly usage?: HarnessUsageCapability;
 }
 
 export type CapabilitySupport = 'native' | 'emulated';
@@ -47,16 +42,23 @@ export interface HarnessModelsCapability {
   readonly explicitRefresh?: boolean;
 }
 
-export function classifyHarnessFailure(error: unknown): HarnessCapabilityError {
+export function classifyHarnessFailure(error: unknown, transport: 'local' | 'ssh' = 'local'): HarnessCapabilityError {
   if (error instanceof HarnessCapabilityError) return error;
-  const details = error as { code?: string; killed?: boolean } | null;
-  const kind = details?.code === 'ENOENT' ? 'binary-unavailable'
-    : details?.killed || (error instanceof Error && /timed out|timeout/i.test(error.message)) ? 'timeout'
-    : 'command-failed';
-  return new HarnessCapabilityError(kind, error instanceof Error ? error.message : String(error), error);
+  const details = error as { code?: string; killed?: boolean; exitCode?: number; stderr?: string } | null;
+  const message = error instanceof Error ? error.message : String(error);
+  const diagnostic = `${message} ${details?.stderr ?? ''}`;
+  const kind: HarnessFailureKind = error instanceof SyntaxError ? 'parse-failure'
+    : details?.killed || /timed out|timeout/i.test(message) ? 'timeout'
+    : /no such (?:table|column)|database schema/i.test(diagnostic) ? 'storage-changed'
+    : /cannot replace|requires the default|Refusing to overwrite/i.test(diagnostic) ? 'not-configured'
+    : transport === 'ssh' && (details?.exitCode === undefined || details.exitCode === 255) ? 'transport-failure'
+    : details?.code === 'ENOENT' ? 'binary-unavailable' : 'command-failed';
+  return new HarnessCapabilityError(kind, message, error);
 }
 
 export interface HarnessSessionsCapability {
+  readonly validateLocal?: (session: HarnessSession) => HarnessSession;
+  readonly validateRemote?: (session: HarnessSession) => boolean;
   discover(workspacePath: string): Promise<HarnessSession[]>;
   readonly resume?: HarnessSessionOperation;
   readonly fork?: HarnessSessionOperation;
@@ -98,6 +100,7 @@ export interface LocalAttentionContext {
   homeDir?: string;
 }
 export interface HarnessLocalAttention {
+  plan(context: LocalAttentionContext): AttentionPlan;
   options(context: LocalAttentionContext): AttentionLaunchOptions | null;
   prepare(context: LocalAttentionContext): PreparedLocalAttention | null;
 }
@@ -124,3 +127,31 @@ export interface HarnessAiCommitCapability {
   readonly modelArg: string;
   readonly timeoutMs: number;
 }
+
+/** No provider implements usage yet. Measurements need not share units or periods. */
+export interface HarnessUsageCapability {
+  get(context: { transport: 'local' | 'ssh'; accountId?: string; modelId?: string }): Promise<HarnessUsageSnapshot>;
+}
+export interface HarnessUsageSnapshot {
+  observedAt: number;
+  measurements: Array<{
+    kind: 'allowance' | 'rate-limit' | 'tokens' | 'spend' | 'other';
+    unit: string;
+    used?: number;
+    remaining?: number;
+    limit?: number;
+    resetsAt?: number;
+    period?: { startsAt?: number; endsAt?: number; label?: string };
+    scope?: { accountId?: string; providerId?: string; modelId?: string };
+    description?: string;
+  }>;
+}
+
+export type AttentionPlan = { status: 'ready'; options: AttentionLaunchOptions }
+  | { status: 'blocked'; failure: HarnessCapabilityError };
+
+/** Metadata cannot advertise AI commit without an implementation, or vice versa. */
+export function defineHarness<Provider extends HarnessProvider>(provider: Provider & (
+  Provider['descriptor'] extends { aiCommit: unknown }
+    ? { aiCommit: HarnessAiCommitCapability } : { aiCommit?: never }
+)): Provider { return provider; }

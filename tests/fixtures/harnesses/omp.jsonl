@@ -1,0 +1,3 @@
+{"type":"title","title":"OMP fixture title"}
+{"type":"session","id":"omp-fixture","cwd":"$WORKSPACE","timestamp":"2026-09-27T10:00:00Z"}
+{"type":"model_change","model":"provider/omp-model"}
