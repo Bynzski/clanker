@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FolderOpen, Folder, Loader2, Play, ChevronRight, AlertTriangle, Cog, GitBranch, ArrowLeft } from 'lucide-react';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../../shared/types/recipes';
 import type { SshEnvironmentConfig } from '../../shared/types/environments';
-import RecipeModal from './RecipeModal';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds, resolveVisibleHarnessIds } from '../lib/harnessOptions';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
@@ -16,24 +15,28 @@ import { joinPaths } from '../lib/pathUtils';
 import RemoteWorkspacePath from './RemoteWorkspacePath';
 import SshEnvironmentManager from './SshEnvironmentManager';
 import RemoteWorktreePicker from './RemoteWorktreePicker';
-import { ModelPicker } from './gate/ModelPicker';
-import { GateLaunchActions } from './gate/GateLaunchActions';
-import { WorkspaceLocationPicker } from './gate/WorkspaceLocationPicker';
-import { HarnessPicker } from './gate/HarnessPicker';
-import { TerminalCountPicker, TERMINAL_PRESETS } from './gate/TerminalCountPicker';
-export { TERMINAL_PRESETS } from './gate/TerminalCountPicker';
+import { GateLaunchActions, GateWorktreeAction } from './gate/GateLaunchActions';
+import { WorkspaceTargetPicker } from './gate/WorkspaceTargetPicker';
+import { HarnessLaunchList } from './gate/HarnessLaunchList';
+import { recipeTerminalCounts, type WorkspaceTerminalLaunch } from '../lib/workspaceLaunchPlan';
 import './WorkspaceGate.css';
+import './WorkspaceLauncher.css';
 
 export interface WorkspaceFormData {
   path: string;
   terminalCount: number;
   harness: string;
   model?: string;
+  terminalLaunches?: WorkspaceTerminalLaunch[];
   environmentId?: string;
   environmentLabel?: string;
 }
 
 interface ContentProps {
+  /** Controls branding only; the launcher form is identical in both shells. */
+  fullscreen?: boolean;
+  opening?: boolean;
+  launchingRecipeId?: string;
   initialPath?: string;
   onSubmit: (data: WorkspaceFormData) => void;
   onLaunchRecipe?: (recipe: WorkspaceRecipe) => Promise<RecipeLaunchResult | null | void>;
@@ -51,7 +54,7 @@ function withTrailingSlash(path: string): string {
 
 function resolveWorkspacePath(input: string, baseDirectory: string): string | null {
   const trimmed = input.trim();
-  if (!trimmed) return null;
+  if (!trimmed) return baseDirectory ? withTrailingSlash(baseDirectory) : null;
   const normalized = trimmed.replace(/\\/g, '/');
   const resolved = isAbsoluteWorkspacePath(normalized) ? normalized : baseDirectory ? baseDirectory + normalized : '';
   return resolved ? withTrailingSlash(resolved) : null;
@@ -66,10 +69,8 @@ function isEditableEventTarget(target: EventTarget | null): boolean {
 }
 
 
-export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRecipe, openError, onTargetChange }: ContentProps) {
+export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRecipe, openError, onTargetChange, fullscreen = true, opening = false, launchingRecipeId }: ContentProps) {
   const [savedRecipes, setSavedRecipes] = useState<WorkspaceRecipe[]>([]);
-  const [selectedRecipeForModal, setSelectedRecipeForModal] = useState<WorkspaceRecipe | null>(null);
-  const [showRecipeModal, setShowRecipeModal] = useState(false);
   const [inputValue, setInputValue] = useState(initialPath || '');
   const [baseDirectory, setBaseDirectory] = useState<string>('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -77,26 +78,18 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   const [isLoading, setIsLoading] = useState(false);
   const [isBaseLoading, setIsBaseLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const [selectedPreset, setSelectedPreset] = useState(2); // Default to 2 (index 2)
+  const [terminalCounts, setTerminalCounts] = useState<Record<string, number> | null>(null);
+  const [recipePreset, setRecipePreset] = useState<string | null>(null);
   const [selectedHarness, setSelectedHarness] = useState('codex'); // Default to codex
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
   const [hasLoadedHarnessOptions, setHasLoadedHarnessOptions] = useState(false);
   const [harnessDefaults, setHarnessDefaults] = useState<HarnessDefaultsMap | null>(null);
-  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
-  const [favorites, setFavorites] = useState<string[]>([]);
   const [allModels, setAllModels] = useState<Record<string, ModelOption[]>>({});
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [isRefreshingHermesModels, setIsRefreshingHermesModels] = useState(false);
   const refreshedHermesModelsRef = useRef<ModelOption[] | null>(null);
-  // Compact picker state
-  const [showFavoritesPicker, setShowFavoritesPicker] = useState(false);
-  const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
   const [modelOverrides, setModelOverrides] = useState<Record<string, string>>({});
   const [locationKind, setLocationKind] = useState<'local' | 'ssh'>('local');
-  const defaultModel = locationKind === 'ssh' ? '' : modelOverrides[selectedHarness] ?? harnessDefaults?.[selectedHarness]?.model ?? '';
-  const setDefaultModel = (modelId: string) => {
-    setModelOverrides((overrides) => ({ ...overrides, [selectedHarness]: modelId }));
-  };
   const [workspaceMode, setWorkspaceMode] = useState<'directory' | 'worktree' | 'settings'>('directory');
   const [hasViewedWorktree, setHasViewedWorktree] = useState(false);
   const [repoCheck, setRepoCheck] = useState<{ path: string; isRepo: boolean } | null>(null);
@@ -107,24 +100,28 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     .filter((workspace) => !workspace.environmentId || workspace.environmentId === 'local')
     .map((workspace) => workspace.workspacePath);
   const selectedPath = resolveWorkspacePath(inputValue, baseDirectory);
-  const activeWorkspace = openWorkspaces.find((workspace) => workspace.id === activeWorkspaceId);
-  const activeWorkspacePath = activeWorkspace && (!activeWorkspace.environmentId || activeWorkspace.environmentId === 'local')
-    ? activeWorkspace.workspacePath
-    : null;
-  const repoCandidatePath = selectedPath ?? (!inputValue.trim() ? activeWorkspacePath : null);
+  const repoCandidatePath = selectedPath;
   const worktreeReady = !!repoCandidatePath && repoCheck?.path === repoCandidatePath && repoCheck.isRepo;
   const [sshEnvironments, setSshEnvironments] = useState<SshEnvironmentConfig[]>([]);
   const [selectedSshEnvId, setSelectedSshEnvId] = useState<string>('');
+  const selectedSshEnvironment = sshEnvironments.find((environment) => environment.id === selectedSshEnvId);
   const selectedSshTarget = locationKind === 'ssh'
-    ? sshEnvironments.find((environment) => environment.id === selectedSshEnvId)?.target
+    ? selectedSshEnvironment?.target
     : undefined;
   const remoteRepositories = openWorkspaces.filter((workspace) => workspace.environmentId === selectedSshEnvId);
   const [remotePath, setRemotePath] = useState('');
+  const remoteLocationKey = JSON.stringify([selectedSshEnvId, selectedSshEnvironment]);
+  const [remoteBase, setRemoteBase] = useState<{ key: string; path: string } | null>(null);
+  const remoteBaseDirectory = remoteBase?.key === remoteLocationKey ? remoteBase?.path ?? '' : '';
+  const updateRemoteBaseDirectory = useCallback((path: string) => {
+    setRemoteBase({ key: remoteLocationKey, path });
+  }, [remoteLocationKey]);
   const updateRemotePath = useCallback((path: string) => {
     setRemotePath(path);
     setDirectoryError('');
   }, []);
   const [showSshManager, setShowSshManager] = useState(false);
+  const [editingSshEnvId, setEditingSshEnvId] = useState<string | null>(null);
 
   useEffect(() => {
     onTargetChange?.();
@@ -154,26 +151,31 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     [availableHarnessIds, harnessDefaults],
   );
 
+  const favoriteSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const toggleFavorite = useCallback(
-    async (harnessId: string, modelId: string) => {
-      const updatedDefaults = await window.electronAPI.getHarnessDefaults();
-      const currentFavorites = [...(updatedDefaults[harnessId]?.favorites || [])];
-      const index = currentFavorites.indexOf(modelId);
-      if (index === -1) {
-        currentFavorites.push(modelId);
-      } else {
-        currentFavorites.splice(index, 1);
-      }
-      const updated = {
-        ...updatedDefaults,
-        [harnessId]: {
-          ...updatedDefaults[harnessId],
-          favorites: currentFavorites,
-        },
-      };
-      await window.electronAPI.setHarnessDefaults(updated);
-      setHarnessDefaults(updated);
-      setFavorites(currentFavorites);
+    (harnessId: string, modelId: string) => {
+      // Changing harness menus must not race another read-modify-write of defaults.
+      const save = favoriteSaveQueue.current.catch(() => {}).then(async () => {
+        const updatedDefaults = await window.electronAPI.getHarnessDefaults();
+        const currentFavorites = [...(updatedDefaults[harnessId]?.favorites || [])];
+        const index = currentFavorites.indexOf(modelId);
+        if (index === -1) {
+          currentFavorites.push(modelId);
+        } else {
+          currentFavorites.splice(index, 1);
+        }
+        const updated = {
+          ...updatedDefaults,
+          [harnessId]: {
+            ...updatedDefaults[harnessId],
+            favorites: currentFavorites,
+          },
+        };
+        await window.electronAPI.setHarnessDefaults(updated);
+        setHarnessDefaults(updated);
+      });
+      favoriteSaveQueue.current = save;
+      return save;
     },
     []
   );
@@ -203,14 +205,10 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         setHarnessDefaults(defaults);
       })
       .catch(() => {
-        if (!cancelled) setFavorites([]);
+        // Use harness-owned defaults when settings are unavailable.
       });
     return () => { cancelled = true; };
   }, []);
-
-  useEffect(() => {
-    setFavorites(harnessDefaults?.[selectedHarness]?.favorites ?? []);
-  }, [harnessDefaults, selectedHarness]);
 
   useEffect(() => {
     if (!hasLoadedHarnessOptions) {
@@ -274,13 +272,14 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   // Load harnesses and pre-load models for all available harnesses
   useEffect(() => {
     let cancelled = false;
+    setTerminalCounts(null);
+    setRecipePreset(null);
     setHasLoadedHarnessOptions(false);
     setModelsLoaded(false);
     if (locationKind === 'ssh') {
       setAvailableHarnessIds(['']);
       setSelectedHarness('');
     }
-    setModelOptions([]);
     setAllModels({});
 
 
@@ -336,13 +335,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
             ? { ...modelsMap, hermes: refreshedHermesModelsRef.current }
             : modelsMap);
           setModelsLoaded(true);
-          // Set initial model options for the default harness
-          const defaultHarness = availableIds.includes('codex') ? 'codex' : availableIds.find((id) => id !== '') || '';
-          if (defaultHarness && modelsMap[defaultHarness]) {
-            setModelOptions(defaultHarness === 'hermes'
-              ? refreshedHermesModelsRef.current ?? modelsMap[defaultHarness]
-              : modelsMap[defaultHarness]);
-          }
+
         }
       } catch {
         if (!cancelled) {
@@ -360,23 +353,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     };
   }, [locationKind, selectedSshEnvId, selectedSshTarget]);
 
-  // Update model options when harness changes (using pre-loaded models)
-  useEffect(() => {
-    if (!selectedHarness) {
-      setModelOptions([]);
-      setShowFavoritesPicker(false);
-      setShowDiscoveryModal(false);
-      return;
-    }
-
-    const harnessModels = allModels[selectedHarness];
-    if (harnessModels) {
-      setModelOptions(harnessModels);
-    } else if (modelsLoaded) {
-      // Models were loaded but this harness has none
-      setModelOptions([]);
-    }
-  }, [selectedHarness, allModels, modelsLoaded]);
   const refreshHermesModels = async () => {
     setIsRefreshingHermesModels(true);
     try {
@@ -525,11 +501,10 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   };
 
   const handleHarnessChange = useCallback((harness: string) => {
+    setTerminalCounts((counts) => counts ? { [harness]: visibleHarnessIds.reduce((sum, id) => sum + (counts[id] ?? 0), 0) } : null);
+    setRecipePreset(null);
     setSelectedHarness(harness);
-    setModelOptions(allModels[harness] ?? []);
-    setShowFavoritesPicker(false);
-    setShowDiscoveryModal(false);
-  }, [allModels]);
+  }, [visibleHarnessIds]);
 
   useEffect(() => {
     const handleLauncherShortcut = (event: KeyboardEvent) => {
@@ -538,9 +513,9 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
 
       const key = event.key.toLowerCase();
       let handler: (() => void) | undefined;
-      if (key === '1') handler = () => setSelectedPreset(0);
-      else if (key === '2') handler = () => setSelectedPreset(1);
-      else if (key === '4') handler = () => setSelectedPreset(2);
+      if (key === '1') handler = () => { setTerminalCounts({ [selectedHarness]: 1 }); setRecipePreset(null); };
+      else if (key === '2') handler = () => { setTerminalCounts({ [selectedHarness]: 2 }); setRecipePreset(null); };
+      else if (key === '4') handler = () => { setTerminalCounts({ [selectedHarness]: 4 }); setRecipePreset(null); };
       else if (key === 'b' && selectedHarness !== '') handler = () => handleHarnessChange('');
       else if (key === 'c' && visibleHarnessIds.includes('codex')) handler = () => handleHarnessChange('codex');
       else if (key === 'o' && visibleHarnessIds.includes('opencode')) handler = () => handleHarnessChange('opencode');
@@ -557,30 +532,33 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     return () => window.removeEventListener('keydown', handleLauncherShortcut);
   }, [handleHarnessChange, selectedHarness, visibleHarnessIds]);
 
+  const counts = terminalCounts ?? {};
+  const launchHarnessOptions = useMemo(() => HARNESS_OPTIONS
+    .filter((option) => visibleHarnessIds.includes(option.id))
+    .sort((a, b) => Number(a.id === '') - Number(b.id === '')), [visibleHarnessIds]);
+  const rowModels = Object.fromEntries(visibleHarnessIds.map((id) => [id,
+    modelOverrides[id] ?? (harnessDefaults?.[id]?.model || (id === 'hermes' ? '' : allModels[id]?.[0]?.id ?? '')),
+  ]));
+  const terminalLaunches: WorkspaceTerminalLaunch[] = launchHarnessOptions.flatMap(({ id: harness }) =>
+    Array.from({ length: counts[harness] ?? 0 }, () => ({ harness, model: locationKind === 'local' && harness ? rowModels[harness] || undefined : undefined })),
+  );
+
   const launchPath = (path: string, envId = 'local', envLabel = 'Local') => {
-    const preset = TERMINAL_PRESETS[selectedPreset];
-    // Hermes keeps its own default when no explicit model is chosen.
-    const launchModel = envId === 'local'
-      ? defaultModel || (selectedHarness === 'hermes' ? undefined : modelOptions[0]?.id)
-      : undefined;
-    onSubmit({
-      path,
-      terminalCount: preset.count,
-      harness: selectedHarness,
-      model: selectedHarness ? launchModel : undefined,
-      environmentId: envId,
-      environmentLabel: envLabel,
-    });
+    if (!hasLoadedHarnessOptions || !terminalLaunches.length) return;
+    const first = terminalLaunches.find((launch) => launch.harness) ?? terminalLaunches[0];
+    onSubmit({ path, terminalCount: terminalLaunches.length, harness: first.harness, model: first.model,
+      terminalLaunches, environmentId: envId, environmentLabel: envLabel });
   };
 
   const handleSubmit = () => {
+    if (opening || (!hasLoadedHarnessOptions || !terminalLaunches.length)) return;
     if (locationKind === 'ssh') {
       if (!hasLoadedHarnessOptions) return;
       if (!selectedSshEnvId) {
         setDirectoryError('Please select or add an SSH environment first');
         return;
       }
-      const trimmed = remotePath.trim();
+      const trimmed = remotePath.trim() || remoteBaseDirectory;
       if (!trimmed) {
         setDirectoryError('Please enter a remote workspace path');
         return;
@@ -662,66 +640,56 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   };
 
   const showSuggestions = isFocused && suggestions.length > 0;
-  const showModelSelector = selectedHarness !== '';
+  const worktreeActionProps = {
+    worktreeDisabled: opening || !terminalLaunches.length || (locationKind === 'ssh' ? !remoteRepositories.length : !worktreeReady),
+    worktreeTitle: locationKind === 'ssh' ? 'Discover worktrees from an open repository on this SSH target' : worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first',
+    onWorktree: () => {
+      setHasViewedWorktree(true);
+      setWorkspaceMode('worktree');
+    },
+  };
 
-  // Determine if the current default model is unresolved
-  const isModelUnresolved = useCallback((modelId: string): boolean => {
-    if (!modelId || selectedHarness === 'hermes') return false;
-    return !modelOptions.some((m) => m.id === modelId);
-  }, [modelOptions, selectedHarness]);
-
-  // Sort models: favorites first, then alphabetically
-  const sortedModelOptions = useMemo(() => {
-    if (!modelOptions.length) return [];
-    return [...modelOptions].sort((a, b) => {
-      const aFav = favorites.includes(a.id);
-      const bFav = favorites.includes(b.id);
-      if (aFav && !bFav) return -1;
-      if (!aFav && bFav) return 1;
-      return a.label.localeCompare(b.label);
-    });
-  }, [modelOptions, favorites]);
+  const targetPicker = <WorkspaceTargetPicker
+    value={locationKind === 'local' ? 'local' : selectedSshEnvId}
+    environments={sshEnvironments} localRoot={baseDirectory} settingsBusy={isBaseLoading} disabled={opening}
+    onSelect={(id) => {
+      setLocationKind(id === 'local' ? 'local' : 'ssh');
+      if (id !== 'local' && id !== selectedSshEnvId) {
+        setRemotePath('');
+        setSelectedSshEnvId(id);
+      }
+      setDirectoryError('');
+    }}
+    onAddServer={() => { setEditingSshEnvId(null); setShowSshManager(true); }}
+    onSettings={() => {
+      if (locationKind === 'local') void handleOpenBaseDirectory();
+      else { setEditingSshEnvId(selectedSshEnvId); setShowSshManager(true); }
+    }}
+  />;
 
   return (
-    <div className="gate-content">
+    <div className="gate-content workspace-launcher">
       {workspaceMode === 'directory' ? (
-      <div className={`gate-view ${hasViewedWorktree ? 'gate-view-return' : ''}`}>
-      <div className="gate-header">
+      <div className={`gate-view gate-view-directory ${hasViewedWorktree ? 'gate-view-return' : ''}`}>
+      {fullscreen && <div className="gate-header">
         <img src="./robot-icon.png" alt="Clanker Grid" width="64" height="64" className="gate-brand-icon" />
         <h1 className="gate-title">Clanker Grid</h1>
         <p className="gate-subtitle">Developer Workspace Launcher</p>
+      </div>}
+
+      <div className="gate-workspace-chooser">
+      <div className="gate-section-header">
+        <div className="gate-directory-actions">
+          {targetPicker}
+          <GateWorktreeAction {...worktreeActionProps} />
+        </div>
+        {(locationKind === 'local' ? baseDirectory : remoteBaseDirectory) &&
+          <span className="gate-base-path" title="Starting directory">{locationKind === 'local' ? baseDirectory : withTrailingSlash(remoteBaseDirectory)}</span>}
       </div>
-
-      <WorkspaceLocationPicker location={locationKind} onChange={(location) => {
-        setLocationKind(location);
-        setDirectoryError('');
-      }} />
-
       {locationKind === 'local' ? (
 
       <div className="gate-input-container">
-        <div className="gate-section-header">
-          <span className="gate-section-label">Workspace</span>
-          {baseDirectory && (
-            <span className="gate-base-path" title={`Base: ${baseDirectory}`}>
-              {baseDirectory}
-            </span>
-          )}
-        </div>
         <div className="input-wrapper">
-          <button
-            className="cog-button cog-button-left"
-            onClick={handleOpenBaseDirectory}
-            disabled={isBaseLoading}
-            title="Set base directory"
-            aria-label="Set base directory"
-          >
-            {isBaseLoading ? (
-              <Loader2 size={18} className="spin" />
-            ) : (
-              <Cog size={18} strokeWidth={2} />
-            )}
-          </button>
           <input
             ref={inputRef}
             type="text"
@@ -734,7 +702,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
             onKeyDown={handleInputKeyDown}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-            placeholder="project name"
+            placeholder="workspace directory"
+            aria-label="Workspace directory"
             spellCheck={false}
             autoComplete="off"
             autoCapitalize="off"
@@ -774,106 +743,65 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
       </div>
       ) : (
       <div className="gate-input-container">
-        <div className="gate-section-header">
-          <span className="gate-section-label">SSH Remote Environment</span>
-          <button
-            type="button"
-            className="gate-manage-ssh-link"
-            onClick={() => {
-              setShowSshManager(true);
-            }}
-          >
-            Manage SSH Targets
-          </button>
-        </div>
-
-        {sshEnvironments.length > 0 ? (
-          <div className="ssh-env-picker">
-            <select
-              className="ssh-env-select"
-              value={selectedSshEnvId}
-              onChange={(e) => { setRemotePath(''); setDirectoryError(''); setSelectedSshEnvId(e.target.value); }}
-            >
-              {sshEnvironments.map((env) => (
-                <option key={env.id} value={env.id}>
-                  {env.label} ({env.target})
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <div className="ssh-no-environments">
-            <span>No saved SSH environments.</span>
-            <button
-              type="button"
-              className="gate-add-ssh-btn"
-              onClick={() => {
-                setShowSshManager(true);
-              }}
-            >
-              + Add SSH Environment
-            </button>
-          </div>
-        )}
-
-        <div className="gate-section-header" style={{ marginTop: '10px' }}>
-          <span className="gate-section-label">Remote Directory Path</span>
-        </div>
         {selectedSshEnvId && (
-          <RemoteWorkspacePath key={JSON.stringify([selectedSshEnvId, sshEnvironments.find((env) => env.id === selectedSshEnvId)])} environmentId={selectedSshEnvId}
+          <RemoteWorkspacePath key={remoteLocationKey} environmentId={selectedSshEnvId}
+            relativeToBase onBaseDirectoryChange={updateRemoteBaseDirectory}
             path={remotePath} onPathChange={updateRemotePath} onSubmit={handleSubmit} />
         )}
       </div>
       )}
+      </div>
       {locationKind === 'local' && savedRecipes.length > 0 && (
-        <div className="gate-recipes-section">
-          <div className="gate-section-header">
-            <span className="gate-section-label">Launch Recipes</span>
-          </div>
+        <div className="gate-recipes-section" role="group" aria-label="Launch recipes">
           <div className="gate-recipes-chips">
             {savedRecipes.map((r) => (
+              <div key={r.id} className="gate-recipe-preset">
               <button
-                key={r.id}
                 type="button"
                 className="gate-recipe-chip"
+                aria-pressed={recipePreset === r.id}
+                disabled={opening || !hasLoadedHarnessOptions}
                 onClick={() => {
-                  setSelectedRecipeForModal(r);
-                  setShowRecipeModal(true);
+                  try {
+                    setTerminalCounts(recipeTerminalCounts(r, visibleHarnessIds));
+                    setRecipePreset(r.id);
+                    setDirectoryError('');
+                  } catch (error) { setDirectoryError(error instanceof Error ? error.message : 'Could not apply recipe counts.'); }
                 }}
-                title={`Inspect & Launch "${r.name}" (${r.launches.length} steps)`}
+                title={`Fill terminal counts from "${r.name}"; commands, paths and browser settings are not applied`}
               >
-                <Play size={10} className="gate-recipe-chip-icon" />
                 <span className="gate-recipe-chip-name">{r.name}</span>
-                <span className="gate-recipe-chip-count">{r.launches.length}</span>
+                <span className="gate-recipe-chip-count">{Math.max(r.launches.length, r.terminalCount ?? 0, 1)}</span>
               </button>
+              <button type="button" className="gate-recipe-play" disabled={opening || !onLaunchRecipe}
+                aria-label={`Launch recipe ${r.name}`} aria-busy={launchingRecipeId === r.id}
+                title={`Launch "${r.name}" in ${r.workspacePath}`}
+                onClick={() => { void onLaunchRecipe?.(r); }}>
+                {launchingRecipeId === r.id ? <Loader2 size={11} className="spin" aria-hidden="true" /> : <Play size={11} fill="currentColor" aria-hidden="true" />}
+              </button>
+              </div>
             ))}
           </div>
         </div>
       )}
 
-      <HarnessPicker options={HARNESS_OPTIONS.filter((harness) => visibleHarnessIds.includes(harness.id))}
-        selectedHarness={selectedHarness} onSelect={handleHarnessChange} onConfigure={() => setWorkspaceMode('settings')} />
+      <HarnessLaunchList
+        options={launchHarnessOptions}
+        counts={counts} models={allModels} modelsLoading={!modelsLoaded} selectedModels={rowModels} defaults={harnessDefaults}
+        remote={locationKind === 'ssh'} disabled={opening || !hasLoadedHarnessOptions} refreshing={isRefreshingHermesModels}
+        onCount={(harness, count) => { setTerminalCounts({ ...counts, [harness]: count }); setRecipePreset(null); }}
+        onModel={(harness, model) => setModelOverrides((previous) => ({ ...previous, [harness]: model }))}
+        onFavorite={toggleFavorite}
+        onRefresh={() => { void refreshHermesModels(); }}
+      />
 
-      {showModelSelector && <ModelPicker harness={selectedHarness} model={defaultModel} models={modelOptions}
-        sortedModels={sortedModelOptions} favorites={favorites} savedHermesModel={harnessDefaults?.hermes?.model ?? ''}
-        refreshing={isRefreshingHermesModels} favoritesOpen={showFavoritesPicker} discoveryOpen={showDiscoveryModal}
-        onFavoritesOpenChange={setShowFavoritesPicker} onDiscoveryOpenChange={setShowDiscoveryModal}
-        onSelect={setDefaultModel} isUnresolved={isModelUnresolved}
-        onToggleFavorite={(model) => { void toggleFavorite(selectedHarness, model); }}
-        onRefreshHermes={() => { void refreshHermesModels(); }} />}
-
-      <TerminalCountPicker selectedPreset={selectedPreset} onSelect={setSelectedPreset} />
-
-      <GateLaunchActions launchDisabled={locationKind === 'ssh' && !hasLoadedHarnessOptions}
-        worktreeDisabled={locationKind === 'ssh' ? !remoteRepositories.length : !worktreeReady}
-        worktreeTitle={locationKind === 'ssh' ? 'Discover worktrees from an open repository on this SSH target' : worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first'}
-        onLaunch={handleSubmit} onWorktree={() => {
-          if (locationKind === 'local' && !inputValue.trim()) {
-            if (activeWorkspacePath) setInputValue(activeWorkspacePath);
-          }
-          setHasViewedWorktree(true);
-          setWorkspaceMode('worktree');
-        }} />
+      <GateLaunchActions showWorktree={false} onLaunch={handleSubmit} opening={opening} launchDisabled={(!hasLoadedHarnessOptions || !terminalLaunches.length) || locationKind === 'local' && !selectedPath || locationKind === 'ssh' && (!hasLoadedHarnessOptions || (!remoteBaseDirectory && !remotePath.startsWith('/')))}
+        {...worktreeActionProps} />
+      <div className="gate-settings-footer">
+        <button type="button" className="gate-settings-link" disabled={opening} onClick={() => setWorkspaceMode('settings')}>
+          <Cog size={12} aria-hidden="true" /> Settings
+        </button>
+      </div>
       {openError && (
         <p className="gate-open-error" role="alert">
           <AlertTriangle size={14} strokeWidth={2} aria-hidden="true" />
@@ -921,7 +849,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         </div>
         <WorktreeLauncher repoPath={selectedPath} openPaths={openPaths} onOpenPath={launchPath} />
         </>}
-        <p className="gate-worktree-launch-summary">Opens with {selectedHarness ? HARNESS_OPTIONS.find((option) => option.id === selectedHarness)?.label ?? selectedHarness : 'Terminal'} · {TERMINAL_PRESETS[selectedPreset].count} terminals</p>
+        <p className="gate-worktree-launch-summary">Opens with {launchHarnessOptions.filter((option) => counts[option.id]).map((option) => `${counts[option.id]} ${option.label}`).join(' · ')} · {terminalLaunches.length} terminals</p>
       </div>
       ) : (
         <GateHarnessSettings
@@ -930,51 +858,23 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
           onBack={returnFromSettings}
         />
       )}
-      <RecipeModal
-        isOpen={showRecipeModal}
-        onClose={() => setShowRecipeModal(false)}
-        initialRecipe={selectedRecipeForModal}
-        defaultWorkspacePath={selectedPath ?? inputValue}
-        workspaceEnvironmentId={locationKind === 'ssh' ? selectedSshEnvId || 'ssh' : 'local'}
-        onLaunchRecipe={async (recipe) => {
-          if (onLaunchRecipe) {
-            return onLaunchRecipe(recipe);
-          }
-          const harnessStep = recipe.launches.find((l) => l.type === 'harness');
-          onSubmit({
-            path: recipe.workspacePath,
-            terminalCount: recipe.terminalCount ?? (recipe.launches.length || 1),
-            harness: harnessStep?.harnessId ?? '',
-            model: harnessStep?.modelId,
-          });
-        }}
-        onRecipeSaved={(saved) => {
-          setSavedRecipes((prev) => {
-            const idx = prev.findIndex((p) => p.id === saved.id);
-            if (idx >= 0) {
-              const copy = [...prev];
-              copy[idx] = saved;
-              return copy;
-            }
-            return [...prev, saved];
-          });
-        }}
-        onRecipeDeleted={(id) => {
-          setSavedRecipes((prev) => prev.filter((p) => p.id !== id));
-        }}
-      />
       {showSshManager && <SshEnvironmentManager
         environments={sshEnvironments}
+        initialEnvironment={sshEnvironments.find((env) => env.id === editingSshEnvId)}
         onClose={() => setShowSshManager(false)}
         onSaved={(config) => {
           setSshEnvironments((previous) => [...previous.filter((env) => env.id !== config.id), config]);
           setRemotePath('');
           setSelectedSshEnvId(config.id);
+          setLocationKind('ssh'); setShowSshManager(false);
         }}
         onDeleted={(id) => {
           const remaining = sshEnvironments.filter((env) => env.id !== id);
           setSshEnvironments(remaining);
-          if (selectedSshEnvId === id) { setRemotePath(''); setSelectedSshEnvId(remaining[0]?.id ?? ''); }
+          if (selectedSshEnvId === id) {
+            setRemotePath(''); setSelectedSshEnvId(remaining[0]?.id ?? '');
+            setLocationKind('local'); setShowSshManager(false);
+          }
         }}
       />}
 

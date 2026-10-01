@@ -7,20 +7,20 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 
 const models = [{ id: 'a', label: 'Alpha' }, { id: 'b', label: 'Beta' }, { id: 'g', label: 'Gamma' }];
-function Demo({ harness = 'codex', initial = 'a', empty = false, onSelect = () => {}, onToggle = () => {}, onRefresh = () => {} }: {
-  harness?: string; initial?: string; empty?: boolean; onSelect?: (value: string) => void;
+function Demo({ compact = false, options = models, harness = 'codex', initial = 'a', empty = false, onSelect = () => {}, onToggle = () => {}, onRefresh = () => {} }: {
+  compact?: boolean; options?: typeof models; harness?: string; initial?: string; empty?: boolean; onSelect?: (value: string) => void;
   onToggle?: (value: string) => void; onRefresh?: () => void;
 }) {
   const [model, setModel] = useState(initial);
-  const [favorites, setFavorites] = useState(['a', 'b']);
+  const [favorites, setFavorites] = useState(empty ? [] : ['a', 'b']);
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
-  return <ModelPicker harness={harness} model={model} models={empty ? [] : models} sortedModels={empty ? [] : models}
+  return <ModelPicker compact={compact} harness={harness} model={model} models={empty ? [] : options} sortedModels={empty ? [] : options}
     favorites={favorites} savedHermesModel="g" refreshing={false} favoritesOpen={favoritesOpen} discoveryOpen={discoveryOpen}
     onFavoritesOpenChange={setFavoritesOpen} onDiscoveryOpenChange={setDiscoveryOpen}
     onSelect={(value) => { setModel(value); onSelect(value); }} onToggleFavorite={(value) => {
       onToggle(value); setFavorites((current) => current.includes(value) ? current.filter((id) => id !== value) : [...current, value]);
-    }} onRefreshHermes={onRefresh} isUnresolved={(value) => harness !== 'hermes' && !!value && !models.some((item) => item.id === value)} />;
+    }} onRefreshHermes={onRefresh} isUnresolved={(value) => harness !== 'hermes' && !!value && !options.some((item) => item.id === value)} />;
 }
 beforeEach(() => {
   installElectronApiMock();
@@ -33,6 +33,44 @@ async function browse(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('ModelPicker', () => {
+  it.each([
+    ['opencode/big-pickle', 'opencode/big-pickle', 'big-pickle'],
+    ['google-antigravity/gemini-3.1-pro', 'google-antigravity/gemini-3.1-pro', 'gemini-3.1-pro'],
+    ['openrouter/anthropic/claude-sonnet-4-6', 'openrouter/anthropic/claude-sonnet-4-6', 'claude-sonnet-4-6'],
+    ['openai/gpt-6', 'GPT-6', 'GPT-6'],
+  ])('shortens selected %s while keeping provider names in the menu and selection value', async (id, label, name) => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(<Demo compact harness="opencode" initial={id} options={[{ id, label }]} onSelect={onSelect} />);
+    const trigger = screen.getByRole('button', { name: 'opencode model' });
+    expect(trigger.querySelector('.model-pill-label')?.textContent).toBe(name);
+    expect(trigger).toHaveAttribute('title', label);
+    await user.click(trigger);
+    await user.click(screen.getByRole('button', { name: label }));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(id);
+  });
+
+  it('uses searchable catalog results for Hermes without a custom field or Browse modal', async () => {
+    const user = userEvent.setup();
+    const onRefresh = vi.fn();
+    render(<Demo compact harness="hermes" initial="" empty onRefresh={onRefresh} />);
+    await user.click(screen.getByRole('button', { name: 'hermes model' }));
+    expect(screen.getByRole('searchbox', { name: 'Search models' })).toHaveFocus();
+    expect(screen.getByRole('status')).toHaveTextContent('No models found');
+    expect(screen.queryByRole('textbox', { name: 'Hermes model' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Browse all models' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Refresh Hermes models' }));
+    expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it('shortens a saved model identifier when it is absent from the catalog', () => {
+    render(<Demo compact harness="opencode" initial="provider/missing-model" empty />);
+    const trigger = screen.getByRole('button', { name: 'opencode model' });
+    expect(trigger.querySelector('.model-pill-label')?.textContent).toBe('missing-model');
+    expect(trigger).toHaveAttribute('title', 'provider/missing-model');
+    expect(within(trigger).getByLabelText('Model unavailable')).toBeInTheDocument();
+  });
+
   it('opens favorites, exposes selection, selects by keyboard and restores the trigger', async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();

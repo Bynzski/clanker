@@ -1,3 +1,4 @@
+import type { WorkspaceTerminalLaunch } from './lib/workspaceLaunchPlan';
 import { Suspense, lazy, useEffect, useState } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import { migrateLegacyFavorites } from './lib/harnessDefaultsMigration';
@@ -132,7 +133,8 @@ function App() {
     model?: string,
     closeGate = true,
     environmentId?: string,
-    environmentLabel?: string
+    environmentLabel?: string,
+    terminalLaunches?: WorkspaceTerminalLaunch[]
   ) => {
     const effectiveEnvironmentId = environmentId || 'local';
     const effectiveEnvironmentLabel = environmentLabel || (effectiveEnvironmentId !== 'local' ? effectiveEnvironmentId : 'Local');
@@ -160,18 +162,20 @@ function App() {
         ? (isRemote ? window.electronAPI.gitListWorktrees(canonicalPath, workspaceId) : window.electronAPI.gitListWorktrees(canonicalPath)).catch(() => null)
         : Promise.resolve(null);
 
-      for (let i = 0; i < terminalCount; i++) {
+      for (let i = 0; i < (terminalLaunches?.length ?? terminalCount); i++) {
         try {
+          const launchHarness = terminalLaunches?.[i].harness ?? harness;
+          const launchModel = terminalLaunches ? terminalLaunches[i].model : model;
           const info = isRemote
-            ? await window.electronAPI.spawnTerminal(canonicalPath, harness, model, undefined, undefined, workspaceId, effectiveEnvironmentId)
-            : await window.electronAPI.spawnTerminal(canonicalPath, harness, model);
+            ? await window.electronAPI.spawnTerminal(canonicalPath, launchHarness, launchModel, undefined, undefined, workspaceId, effectiveEnvironmentId)
+            : await window.electronAPI.spawnTerminal(canonicalPath, launchHarness, launchModel);
           terminals.push({
             id: info.id,
             pid: info.pid,
             workingDir: canonicalPath,
             workspaceId,
             environmentId: effectiveEnvironmentId,
-            harnessId: info.harnessId ?? harness ?? null,
+            harnessId: info.harnessId ?? launchHarness ?? null,
             attentionEnabled: info.attentionEnabled === true,
           });
           panes.push({ id: crypto.randomUUID(), terminalId: info.id });
@@ -241,7 +245,7 @@ function App() {
       error: 'Launch recipes are not supported for SSH workspaces in this version.' }],
   });
 
-  const handleLaunchRecipe = async (recipe: WorkspaceRecipe): Promise<RecipeLaunchResult> => {
+  const handleLaunchRecipe = async (recipe: WorkspaceRecipe, keepGateOpen = true): Promise<RecipeLaunchResult> => {
     if (recipe.environmentId && recipe.environmentId !== 'local') {
       const result = unsupportedRemoteRecipe(recipe);
       setRecipeFailure(result);
@@ -250,7 +254,7 @@ function App() {
 
     let targetWorkspaceId: string | null = null;
     const currentWorkspaces = useWorkspaceStore.getState().workspaces;
-    if (currentWorkspaces.length === 0) {
+    if (currentWorkspaces.length === 0 && keepGateOpen) {
       setShowWorkspaceGate(true);
     }
 
@@ -327,7 +331,7 @@ function App() {
 
   if (workspaces.length === 0) {
     return (
-      <WorkspaceGateFullscreen onWorkspaceSelect={handleWorkspaceSelect} onLaunchRecipe={handleLaunchRecipe} />
+      <WorkspaceGateFullscreen onWorkspaceSelect={handleWorkspaceSelect} onLaunchRecipe={(recipe) => handleLaunchRecipe(recipe, false)} />
     );
   }
 

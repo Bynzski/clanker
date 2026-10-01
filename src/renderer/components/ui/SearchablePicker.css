@@ -1,0 +1,20 @@
+.clanker-searchable-picker { width: 320px; display: flex; flex-direction: column; overflow: hidden; padding: 4px; font-size: 12px; animation: searchable-picker-reveal 140ms ease-out; }
+.searchable-picker-search { display: flex; align-items: center; gap: 7px; padding: 8px; color: var(--text-muted); border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
+.searchable-picker-search input { flex: 1; min-width: 0; border: 0; padding: 2px 0; background: transparent; color: var(--text-primary); font: inherit; }
+.searchable-picker-search input::placeholder { color: var(--text-muted); }
+.searchable-picker-results { max-height: 300px; overflow-y: auto; min-height: 0; padding: 4px 0; }
+.searchable-picker-row { display: flex; align-items: center; min-width: 0; border-radius: var(--radius-sm); }
+.searchable-picker-row[data-selected='true'] { background: var(--surface-active); }
+.searchable-picker-choice, .searchable-picker-star { display: flex; align-items: center; gap: 6px; height: 32px; border: 0; background: transparent; color: var(--text-secondary); font: inherit; border-radius: var(--radius-sm); cursor: pointer; }
+.searchable-picker-choice { flex: 1; min-width: 0; padding: 0 8px; text-align: left; }
+.searchable-picker-choice svg { flex-shrink: 0; }
+.searchable-picker-label { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.searchable-picker-star { width: 28px; justify-content: center; flex-shrink: 0; padding: 0; }
+.searchable-picker-star[aria-pressed='true'] { color: var(--text-primary); }
+.searchable-picker-choice:hover, .searchable-picker-star:hover:not(:disabled) { color: var(--text-primary); background: var(--surface-control-hover); }
+.searchable-picker-star:disabled { opacity: .5; cursor: default; }
+.searchable-picker-empty { padding: 16px 8px; color: var(--text-muted); }
+.searchable-picker-error { margin: 0; padding: 8px; color: var(--status-error); }
+.searchable-picker-footer { padding: 4px; border-top: 1px solid var(--border-subtle); flex-shrink: 0; }
+@keyframes searchable-picker-reveal { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .clanker-searchable-picker, .clanker-searchable-picker * { animation: none; transition: none; } }

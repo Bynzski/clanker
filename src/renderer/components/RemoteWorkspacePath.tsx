@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Folder, FolderOpen, Loader2 } from 'lucide-react';
 import RemoteDirectoryChooser from './RemoteDirectoryChooser';
+import { joinPaths, normalizePath, relativePath } from '../lib/pathUtils';
 import './RemoteDirectoryChooser.css';
 
 interface Props {
@@ -8,10 +9,14 @@ interface Props {
   path: string;
   onPathChange: (path: string) => void;
   onSubmit: () => void;
+  relativeToBase?: boolean;
+  onBaseDirectoryChange?: (path: string) => void;
 }
 
-export default function RemoteWorkspacePath({ environmentId, path, onPathChange, onSubmit }: Props) {
+export default function RemoteWorkspacePath({ environmentId, path, onPathChange, onSubmit, relativeToBase = false, onBaseDirectoryChange }: Props) {
   const [homePath, setHomePath] = useState('');
+  const [basePath, setBasePath] = useState('');
+  const [absoluteInput, setAbsoluteInput] = useState(false);
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeError, setHomeError] = useState('');
   const [chooserOpen, setChooserOpen] = useState(false);
@@ -20,6 +25,7 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
   const [focused, setFocused] = useState(false);
   const requestRef = useRef(0);
   const editedRef = useRef(false);
+  const manualValueRef = useRef('');
   const inputRef = useRef<HTMLInputElement>(null);
   const browseButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -30,25 +36,35 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
 
   useEffect(() => {
     let active = true;
+    onBaseDirectoryChange?.('');
     void window.electronAPI.sshGetHomeDirectory(environmentId).then(({ homePath: home, initialPath }) => {
       if (!active) return;
       setHomePath(home);
+      const base = normalizePath(initialPath || home);
+      setBasePath(base);
+      onBaseDirectoryChange?.(base);
       setHomeError('');
-      if (!editedRef.current) onPathChange(initialPath || home);
+      if (relativeToBase) {
+        if (!editedRef.current) onPathChange('');
+        else if (manualValueRef.current && !manualValueRef.current.startsWith('/')) {
+          onPathChange(joinPaths(base, manualValueRef.current));
+        }
+      } else if (!editedRef.current) onPathChange(initialPath || home);
     }).catch((reason: unknown) => {
       if (active) setHomeError(reason instanceof Error ? reason.message : String(reason));
     }).finally(() => {
       if (active) setHomeLoading(false);
     });
     return () => { active = false; };
-  }, [environmentId, onPathChange]);
+  }, [environmentId, onPathChange, relativeToBase, onBaseDirectoryChange]);
 
   useEffect(() => {
     const request = ++requestRef.current;
-    if (!focused || !path.startsWith('/')) return;
-    const slash = path.lastIndexOf('/');
-    const directory = path.endsWith('/') ? path : path.slice(0, slash + 1) || '/';
-    const filter = path.endsWith('/') ? '' : path.slice(slash + 1).toLocaleLowerCase();
+    const suggestionPath = path || (relativeToBase && basePath ? `${basePath.replace(/\/$/, '')}/` : '');
+    if (!focused || !suggestionPath.startsWith('/')) return;
+    const slash = suggestionPath.lastIndexOf('/');
+    const directory = suggestionPath.endsWith('/') ? suggestionPath : suggestionPath.slice(0, slash + 1) || '/';
+    const filter = suggestionPath.endsWith('/') ? '' : suggestionPath.slice(slash + 1).toLocaleLowerCase();
     const timer = setTimeout(() => {
       void window.electronAPI.sshListDirectories(environmentId, directory).then((listing) => {
         if (request !== requestRef.current) return;
@@ -58,20 +74,30 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
       });
     }, 200);
     return () => { clearTimeout(timer); };
-  }, [environmentId, focused, path]);
+  }, [environmentId, focused, path, relativeToBase, basePath]);
 
   const choose = (chosenPath: string) => {
     editedRef.current = true;
+    manualValueRef.current = chosenPath;
+    setAbsoluteInput(false);
     requestRef.current++;
     onPathChange(chosenPath);
     setSuggestions([]);
     setSelectedIndex(-1);
   };
+  const waitingForBase = homeLoading && (!path || (relativeToBase && !path.startsWith('/')));
 
   return <>
     <div className="input-wrapper remote-path-input">
       <input ref={inputRef} type="text" className="gate-input" aria-label="Remote Directory Path"
-        value={path} onChange={(event) => { editedRef.current = true; requestRef.current++; setSuggestions([]); setSelectedIndex(-1); onPathChange(event.target.value); }}
+        value={relativeToBase && basePath && !absoluteInput && path.startsWith('/') ? relativePath(basePath, path) || '.' : path}
+        onChange={(event) => {
+          const value = event.target.value;
+          setAbsoluteInput(value.startsWith('/'));
+          editedRef.current = true; manualValueRef.current = value; requestRef.current++;
+          setSuggestions([]); setSelectedIndex(-1);
+          onPathChange(relativeToBase && basePath && value && !value.startsWith('/') ? joinPaths(basePath, value) : value);
+        }}
         onFocus={() => { setSuggestions([]); setFocused(true); }} onBlur={() => { requestRef.current++; setSuggestions([]); setFocused(false); }}
         onKeyDown={(event) => {
           if (event.key === 'Escape' && suggestions.length) { event.preventDefault(); setSuggestions([]); inputRef.current?.blur(); }
@@ -83,22 +109,22 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
             else onSubmit();
           }
         }}
-        placeholder="/home/jay/Projects/clanker" spellCheck={false} autoComplete="off" autoCapitalize="off" />
+        placeholder={relativeToBase ? 'workspace directory' : 'Absolute remote directory'} spellCheck={false} autoComplete="off" autoCapitalize="off" />
       <button ref={browseButtonRef} type="button" className="cog-button" aria-label="Browse remote directories" title="Browse remote directories"
-        disabled={!environmentId || homeLoading && !path} onClick={() => setChooserOpen(true)}>
-        {homeLoading && !path ? <Loader2 size={18} className="spin" /> : <FolderOpen size={18} />}
+        disabled={!environmentId || waitingForBase} onClick={() => setChooserOpen(true)}>
+        {waitingForBase ? <Loader2 size={18} className="spin" /> : <FolderOpen size={18} />}
       </button>
     </div>
-    {homeError && <p role="alert" className="gate-directory-error">Could not load remote home: {homeError}. Enter a path manually.</p>}
+    {homeError && <p role="alert" className="gate-directory-error">Could not load remote home: {homeError}. Enter an absolute path manually.</p>}
     {focused && suggestions.length > 0 && <ul className="suggestions-list remote-suggestions">
       {suggestions.map((entry, index) => <li key={entry.path}>
         <button type="button" className={`suggestion-item ${selectedIndex === index ? 'selected' : ''}`}
           onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setSelectedIndex(index)} onClick={() => choose(entry.path)}>
-          <Folder size={14} className="suggestion-icon" /> <span className="suggestion-path">{entry.path}</span>
+          <Folder size={14} className="suggestion-icon" /> <span className="suggestion-path" title={entry.path}>{relativeToBase && basePath ? `${relativePath(basePath, entry.path)}/` : entry.path}</span>
         </button>
       </li>)}
     </ul>}
-    {chooserOpen && <RemoteDirectoryChooser environmentId={environmentId} initialPath={path.startsWith('/') ? path : homePath || '/'}
+    {chooserOpen && <RemoteDirectoryChooser environmentId={environmentId} initialPath={path.startsWith('/') ? path : basePath || homePath || '/'}
       homePath={homePath} onSelect={(chosen) => { choose(chosen); closeChooser(); }} onClose={closeChooser} />}
   </>;
 }

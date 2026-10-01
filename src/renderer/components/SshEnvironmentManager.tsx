@@ -1,24 +1,27 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pencil, X } from 'lucide-react';
 import type { SshEnvironmentConfig } from '../../shared/types/environments';
 import { validateSshEnvironmentConfig } from '../../shared/sshValidation';
+import { Dialog, DialogContent, DialogTitle } from './ui/Dialog';
 import './WorkspaceGate.css';
 
 interface Props {
   environments: SshEnvironmentConfig[];
+  initialEnvironment?: SshEnvironmentConfig;
   onSaved: (config: SshEnvironmentConfig) => void;
   onDeleted: (id: string) => void;
   onClose: () => void;
 }
 
-export default function SshEnvironmentManager({ environments, onSaved, onDeleted, onClose }: Props) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [label, setLabel] = useState('');
-  const [target, setTarget] = useState('');
-  const [root, setRoot] = useState('');
+export default function SshEnvironmentManager({ environments, initialEnvironment, onSaved, onDeleted, onClose }: Props) {
+  const [editingId, setEditingId] = useState<string | null>(initialEnvironment?.id ?? null);
+  const [label, setLabel] = useState(initialEnvironment?.label ?? '');
+  const [target, setTarget] = useState(initialEnvironment?.target ?? '');
+  const [root, setRoot] = useState(initialEnvironment?.defaultWorkspaceRoot ?? '');
   const [error, setError] = useState('');
   const [status, setStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState<'test' | 'save' | 'delete' | null>(null);
+  const labelRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setEditingId(null); setLabel(''); setTarget(''); setRoot(''); setError(''); setStatus(null);
@@ -67,10 +70,13 @@ export default function SshEnvironmentManager({ environments, onSaved, onDeleted
     } finally { setBusy(null); }
   };
 
-  return <div className="ssh-manager-overlay" onClick={() => { if (!busy) onClose(); }}>
-    <div className="ssh-manager-modal" role="dialog" aria-modal="true" aria-label="Manage SSH Targets" onClick={(event) => event.stopPropagation()}>
+  return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
+    <DialogContent className="ssh-manager-modal" overlayClassName="ssh-manager-overlay" aria-describedby={undefined}
+      onEscapeKeyDown={(event) => { if (busy) event.preventDefault(); }}
+      onPointerDownOutside={(event) => { if (busy) event.preventDefault(); }}
+      onOpenAutoFocus={(event) => { event.preventDefault(); labelRef.current?.focus(); }}>
       <div className="ssh-manager-header">
-        <span className="ssh-manager-title">Manage SSH Targets</span>
+        <DialogTitle asChild><span className="ssh-manager-title">Manage SSH Targets</span></DialogTitle>
         <button type="button" className="modal-close" onClick={onClose} disabled={!!busy} aria-label="Close SSH target manager"><X size={16} /></button>
       </div>
       <div className="ssh-manager-body">
@@ -78,7 +84,7 @@ export default function SshEnvironmentManager({ environments, onSaved, onDeleted
           <span className="gate-section-label">{editingId ? 'Edit SSH Environment' : 'Add New SSH Environment'}</span>
           <div className="ssh-form-row">
             <label htmlFor="ssh-target-label">Label</label>
-            <input id="ssh-target-label" className="ssh-form-input" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. dev-vps" disabled={!!busy} />
+            <input ref={labelRef} id="ssh-target-label" className="ssh-form-input" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. dev-vps" disabled={!!busy} />
           </div>
           <div className="ssh-form-row">
             <label htmlFor="ssh-target-address">SSH Target</label>
@@ -113,6 +119,6 @@ export default function SshEnvironmentManager({ environments, onSaved, onDeleted
           </div>)}
         </div>
       </div>
-    </div>
-  </div>;
+    </DialogContent>
+  </Dialog>;
 }

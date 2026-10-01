@@ -1141,6 +1141,8 @@
   box-shadow: 0 8px 32px color-mix(in srgb, var(--shadow-color) 45%, transparent);
 }
 
+.clanker-dialog-content.ssh-manager-modal { z-index: 1100; }
+
 .ssh-manager-header {
   display: flex;
   align-items: center;

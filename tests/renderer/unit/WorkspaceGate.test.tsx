@@ -9,8 +9,8 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 
 // Mock WorkspaceGateContent
 vi.mock('../../../src/renderer/components/WorkspaceGateContent', () => ({
-  default: ({ onSubmit, openError, onTargetChange }: { onSubmit: (data: { path: string; terminalCount: number; harness: string; model?: string; environmentId?: string; environmentLabel?: string }) => void; openError?: string; onTargetChange?: () => void }) => (
-    <div data-testid="workspace-gate-content">
+  default: ({ onSubmit, openError, onTargetChange, opening }: { opening?: boolean; onSubmit: (data: { path: string; terminalCount: number; harness: string; model?: string; environmentId?: string; environmentLabel?: string }) => void; openError?: string; onTargetChange?: () => void }) => (
+    <div data-testid="workspace-gate-content" aria-busy={opening}>
       <button onClick={() => onSubmit({ path: '/test', terminalCount: 2, harness: 'test' })}>
         Submit
       </button>
@@ -416,6 +416,28 @@ describe('WorkspaceGateFullscreen', () => {
   // Workspace Selection
   // =========================================================================
   describe('workspace selection', () => {
+    it('keeps opening feedback until settlement, blocks duplicate submits, and allows retry', async () => {
+      let finish!: (opened: boolean) => void;
+      const onWorkspaceSelect = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+      render(<WorkspaceGateFullscreen onWorkspaceSelect={onWorkspaceSelect} />);
+
+      fireEvent.click(screen.getByText('Submit'));
+      expect(screen.getByTestId('workspace-gate-content')).toHaveAttribute('aria-busy', 'true');
+      fireEvent.click(screen.getByText('Submit'));
+      fireEvent.click(screen.getByText('Change target'));
+      fireEvent.click(screen.getByText('Submit remote'));
+      expect(onWorkspaceSelect).toHaveBeenCalledTimes(1);
+
+      await act(async () => { finish(false); });
+      expect(screen.getByTestId('workspace-gate-content')).toHaveAttribute('aria-busy', 'false');
+      expect(screen.queryByRole('alert')).toBeNull();
+      fireEvent.click(screen.getByText('Submit'));
+      expect(onWorkspaceSelect).toHaveBeenCalledTimes(2);
+      await act(async () => { finish(false); });
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.getByTestId('workspace-gate-content')).toHaveAttribute('aria-busy', 'false');
+    });
+
     it('places a failed open inside the fullscreen launcher form and clears it before retrying', async () => {
       const onWorkspaceSelect = vi.fn().mockResolvedValue(false);
       render(<WorkspaceGateFullscreen onWorkspaceSelect={onWorkspaceSelect} />);
