@@ -16,6 +16,7 @@ interface Props {
   remote: boolean;
   disabled: boolean;
   refreshing: boolean;
+  onInteract: (harness: string) => void;
   onCount: (harness: string, count: number) => void;
   onModel: (harness: string, model: string) => void;
   onFavorite: (harness: string, model: string) => void | Promise<void>;
@@ -28,7 +29,9 @@ function HarnessRow({ option, total, ...props }: Props & { option: HarnessOption
   const models = props.models[option.id] ?? [];
   const favorites = props.defaults?.[option.id]?.favorites ?? [];
   const model = props.selectedModels[option.id] ?? '';
-  return <div className={`gate-harness-row ${count ? 'has-terminals' : ''}`}>
+  return <div className={`gate-harness-row ${count ? 'has-terminals' : ''}`} data-harness-id={option.id}
+    onFocusCapture={() => { if (!props.disabled) props.onInteract(option.id); }}
+    onPointerDownCapture={() => { if (!props.disabled) props.onInteract(option.id); }}>
     <div className="gate-harness-name"><option.Icon size={16} /><span>{option.label}</span></div>
     <div className="gate-harness-model">
       {option.id && !props.remote && <SearchableModelPicker harness={option.id} model={model} models={models}

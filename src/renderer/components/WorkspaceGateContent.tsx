@@ -18,7 +18,7 @@ import RemoteWorktreePicker from './RemoteWorktreePicker';
 import { GateLaunchActions, GateWorktreeAction } from './gate/GateLaunchActions';
 import { WorkspaceTargetPicker } from './gate/WorkspaceTargetPicker';
 import { HarnessLaunchList } from './gate/HarnessLaunchList';
-import { recipeTerminalCounts, type WorkspaceTerminalLaunch } from '../lib/workspaceLaunchPlan';
+import { MAX_GATE_TERMINALS, recipeTerminalCounts, type WorkspaceTerminalLaunch } from '../lib/workspaceLaunchPlan';
 import './WorkspaceGate.css';
 import './WorkspaceLauncher.css';
 
@@ -80,7 +80,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   const [isFocused, setIsFocused] = useState(false);
   const [terminalCounts, setTerminalCounts] = useState<Record<string, number> | null>(null);
   const [recipePreset, setRecipePreset] = useState<string | null>(null);
-  const [selectedHarness, setSelectedHarness] = useState('codex'); // Default to codex
+  const [selectedHarness, setSelectedHarness] = useState('codex'); // Last interacted row / explicit harness shortcut.
   const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
   const [hasLoadedHarnessOptions, setHasLoadedHarnessOptions] = useState(false);
   const [harnessDefaults, setHarnessDefaults] = useState<HarnessDefaultsMap | null>(null);
@@ -508,15 +508,27 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
 
   useEffect(() => {
     const handleLauncherShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey
+      if (opening || !hasLoadedHarnessOptions || workspaceMode !== 'directory'
+        || event.target instanceof HTMLElement && event.target.closest('.clanker-popover-content')
+        || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey
         || isEditableEventTarget(event.target)) return;
 
       const key = event.key.toLowerCase();
       let handler: (() => void) | undefined;
-      if (key === '1') handler = () => { setTerminalCounts({ [selectedHarness]: 1 }); setRecipePreset(null); };
-      else if (key === '2') handler = () => { setTerminalCounts({ [selectedHarness]: 2 }); setRecipePreset(null); };
-      else if (key === '4') handler = () => { setTerminalCounts({ [selectedHarness]: 4 }); setRecipePreset(null); };
-      else if (key === 'b' && selectedHarness !== '') handler = () => handleHarnessChange('');
+      if (key === '1' || key === '2' || key === '4') {
+        const focusedRow = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('[data-harness-id]') : null;
+        const harness = focusedRow?.dataset.harnessId ?? selectedHarness;
+        if (!visibleHarnessIds.includes(harness)) return;
+        handler = () => {
+          setTerminalCounts((previous) => {
+            const counts = previous ?? {};
+            const otherTotal = visibleHarnessIds.reduce((sum, id) => sum + (id === harness ? 0 : counts[id] ?? 0), 0);
+            return { ...counts, [harness]: Math.min(Number(key), Math.max(0, MAX_GATE_TERMINALS - otherTotal)) };
+          });
+          setRecipePreset(null);
+        };
+      }
+      else if (key === 'b' && visibleHarnessIds.includes('')) handler = () => handleHarnessChange('');
       else if (key === 'c' && visibleHarnessIds.includes('codex')) handler = () => handleHarnessChange('codex');
       else if (key === 'o' && visibleHarnessIds.includes('opencode')) handler = () => handleHarnessChange('opencode');
       else if (key === 'p' && visibleHarnessIds.includes('pi')) handler = () => handleHarnessChange('pi');
@@ -530,7 +542,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
 
     window.addEventListener('keydown', handleLauncherShortcut);
     return () => window.removeEventListener('keydown', handleLauncherShortcut);
-  }, [handleHarnessChange, selectedHarness, visibleHarnessIds]);
+  }, [handleHarnessChange, selectedHarness, visibleHarnessIds, opening, hasLoadedHarnessOptions, workspaceMode]);
 
   const counts = terminalCounts ?? {};
   const launchHarnessOptions = useMemo(() => HARNESS_OPTIONS
@@ -789,6 +801,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         options={launchHarnessOptions}
         counts={counts} models={allModels} modelsLoading={!modelsLoaded} selectedModels={rowModels} defaults={harnessDefaults}
         remote={locationKind === 'ssh'} disabled={opening || !hasLoadedHarnessOptions} refreshing={isRefreshingHermesModels}
+        onInteract={setSelectedHarness}
         onCount={(harness, count) => { setTerminalCounts({ ...counts, [harness]: count }); setRecipePreset(null); }}
         onModel={(harness, model) => setModelOverrides((previous) => ({ ...previous, [harness]: model }))}
         onFavorite={toggleFavorite}
@@ -809,9 +822,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         </p>
       )}
       {directoryError && <p className="gate-directory-error" role="alert">{directoryError}</p>}
-      {!isFocused && repoCandidatePath && repoCheck?.path === repoCandidatePath && !repoCheck.isRepo && (
-        <p className="gate-worktree-hint">Worktrees require a Git repository or linked checkout.</p>
-      )}
       </div>
       ) : workspaceMode === 'worktree' ? (
       <div className="gate-view gate-view-worktree">

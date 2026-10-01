@@ -55,10 +55,13 @@ describe('WorkspaceGateContent', () => {
     } as unknown as typeof window.electronAPI;
   });
 
-  function renderGate(overrides: { initialPath?: string; fullscreen?: boolean } = {}) {
+  async function renderGate(overrides: { initialPath?: string; fullscreen?: boolean } = {}) {
     const view = render(<WorkspaceGateContent onSubmit={mockOnSubmit} {...overrides} />);
     // Path/worktree fixtures request a plan explicitly; startup-state tests omit it.
-    if (overrides.fullscreen === undefined) fireEvent.keyDown(window, { key: '4' });
+    if (overrides.fullscreen === undefined) {
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Add Terminal terminal' })).toBeEnabled());
+      fireEvent.keyDown(window, { key: '4' });
+    }
     return view;
   }
 
@@ -69,7 +72,7 @@ describe('WorkspaceGateContent', () => {
   }
 
   it('starts fullscreen with zero terminals, puts Terminal last, and shows Settings below Launch', async () => {
-    renderGate({ fullscreen: true, initialPath: '/repo' });
+    await renderGate({ fullscreen: true, initialPath: '/repo' });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Add Codex terminal' })).toBeEnabled());
     expect(screen.getByLabelText('Codex terminal count')).toHaveTextContent('0');
     expect(screen.getByLabelText('Terminal terminal count')).toHaveTextContent('0');
@@ -96,7 +99,7 @@ describe('WorkspaceGateContent', () => {
 
   it('shows the actual saved model, allows a different model, and disables an empty launch plan', async () => {
     vi.mocked(window.electronAPI.getHarnessDefaults).mockResolvedValue({ codex: { model: 'gpt-3.5', flags: '', favorites: [] } });
-    renderGate({ fullscreen: true, initialPath: '/repo' });
+    await renderGate({ fullscreen: true, initialPath: '/repo' });
     const picker = await screen.findByRole('button', { name: 'codex model' });
     await waitFor(() => expect(picker).toHaveTextContent('GPT-3.5'));
     fireEvent.click(picker);
@@ -131,7 +134,7 @@ describe('WorkspaceGateContent', () => {
       if (++writes === 1) await pending;
       defaults = updated;
     });
-    renderGate({ fullscreen: true });
+    await renderGate({ fullscreen: true });
     await waitFor(() => expect(screen.getByRole('button', { name: 'codex model' })).toHaveTextContent('GPT-4'));
     await user.click(screen.getByRole('button', { name: 'codex model' }));
     await user.click(screen.getByRole('button', { name: 'Add GPT-4 to favorites' }));
@@ -168,14 +171,14 @@ describe('WorkspaceGateContent', () => {
   // =========================================================================
   // Rendering
   // =========================================================================
-  it('renders the title and subtitle', () => {
-    renderGate();
+  it('renders the title and subtitle', async () => {
+    await renderGate();
     expect(screen.getByText('Clanker Grid')).toBeTruthy();
     expect(screen.getByText('Developer Workspace Launcher')).toBeTruthy();
   });
 
-  it('renders the Launch Workspace button', () => {
-    renderGate();
+  it('renders the Launch Workspace button', async () => {
+    await renderGate();
     expect(screen.getByText('Launch Workspace')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Worktree options' })).toBeTruthy();
   });
@@ -198,7 +201,7 @@ describe('WorkspaceGateContent', () => {
 
   it('sets the fullscreen This PC working directory and resolves relative workspace entries beneath it', async () => {
     vi.mocked(window.electronAPI.openBaseDirectoryDialog).mockResolvedValue('/opt/workspaces');
-    renderGate({ fullscreen: true });
+    await renderGate({ fullscreen: true });
     await waitFor(() => expect(screen.getByText(TEST_PROJECTS.replace(/\\/g, '/') + '/')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Choose location: This PC' }));
     fireEvent.click(screen.getByRole('button', { name: 'Set working directory for This PC' }));
@@ -215,7 +218,7 @@ describe('WorkspaceGateContent', () => {
     };
     window.electronAPI.getHarnessDefaults = vi.fn().mockImplementation(async () => defaults);
     window.electronAPI.setHarnessDefaults = vi.fn().mockImplementation(async (next) => { defaults = next; });
-    renderGate({ initialPath: '/repo/' });
+    await renderGate({ initialPath: '/repo/' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(screen.getByText('Harness settings')).toBeTruthy();
@@ -229,10 +232,13 @@ describe('WorkspaceGateContent', () => {
     expect(screen.getByRole('button', { name: 'Settings' })).toBeTruthy();
   });
 
-  it('does not flash the non-repository hint while typing a workspace path', async () => {
+  it('explains unavailable worktrees on the action without a passive launch warning', async () => {
     window.electronAPI.gitGetBranchState = vi.fn().mockResolvedValue({ success: false, isRepo: false });
-    renderGate({ initialPath: '/not-a-repo/' });
-    expect(await screen.findByText('Worktrees require a Git repository or linked checkout.')).toBeTruthy();
+    await renderGate({ initialPath: '/not-a-repo/' });
+    await waitFor(() => expect(window.electronAPI.gitGetBranchState).toHaveBeenCalledWith('/not-a-repo/'));
+    expect(screen.getByRole('button', { name: 'Worktree options' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Worktree options' })).toHaveAttribute('title', 'Choose a Git repository or linked checkout first');
+    expect(screen.queryByText('Worktrees require a Git repository or linked checkout.')).toBeNull();
 
     const input = screen.getByPlaceholderText('workspace directory');
     fireEvent.focus(input);
@@ -243,7 +249,7 @@ describe('WorkspaceGateContent', () => {
   });
 
   it('opens the worktree view and returns to the workspace launcher', async () => {
-    renderGate({ initialPath: '/repo/' });
+    await renderGate({ initialPath: '/repo/' });
     await openWorktreeOptions();
     expect(screen.getByText('Task worktree')).toBeTruthy();
     expect(screen.queryByText('Launch Workspace')).toBeNull();
@@ -257,7 +263,7 @@ describe('WorkspaceGateContent', () => {
     window.electronAPI.gitGetBranchState = vi.fn().mockResolvedValue({ success: true, isRepo: true, currentBranch: 'main', branches: [{ name: 'main', isCurrent: true }] });
     window.electronAPI.gitListWorktrees = vi.fn().mockResolvedValue({ success: true, worktrees: [] });
     window.electronAPI.gitCreateWorktree = vi.fn().mockResolvedValue({ success: true, worktree: { path: '/repo-worktrees/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false } });
-    renderGate({ initialPath: '/repo/' });
+    await renderGate({ initialPath: '/repo/' });
     await openWorktreeOptions();
     fireEvent.click(screen.getByText('Load repository'));
     await screen.findByText('Task branch');
@@ -273,7 +279,7 @@ describe('WorkspaceGateContent', () => {
     window.electronAPI.gitListWorktrees = vi.fn().mockResolvedValue({ success: true, worktrees: [worktree] });
     window.electronAPI.gitInspectWorktree = vi.fn().mockResolvedValue({ success: true, worktree, hasChanges: false });
     window.electronAPI.gitRemoveWorktree = vi.fn().mockResolvedValue({ success: true });
-    renderGate({ initialPath: '/repo/' });
+    await renderGate({ initialPath: '/repo/' });
     await openWorktreeOptions();
     fireEvent.click(screen.getByText('Load repository'));
     const identity = await screen.findByTitle(worktree.path);
@@ -293,7 +299,7 @@ describe('WorkspaceGateContent', () => {
     const worktree = { path: '/repo-worktrees/missing', branch: 'missing', isMain: false, isLocked: false, isPrunable: true };
     window.electronAPI.gitGetBranchState = vi.fn().mockResolvedValue({ success: true, isRepo: true, currentBranch: 'main', branches: [] });
     window.electronAPI.gitListWorktrees = vi.fn().mockResolvedValue({ success: true, worktrees: [worktree] });
-    renderGate({ initialPath: '/repo/' });
+    await renderGate({ initialPath: '/repo/' });
     await openWorktreeOptions();
     fireEvent.click(screen.getByText('Load repository'));
     expect(await screen.findByTitle(worktree.path)).toHaveTextContent('missing');
@@ -324,8 +330,8 @@ describe('WorkspaceGateContent', () => {
       { name: 'test-worktrees', isDirectory: true },
     ]);
 
-    renderGate({ initialPath: `${container}/` });
-    await screen.findByText('Worktrees require a Git repository or linked checkout.');
+    await renderGate({ initialPath: `${container}/` });
+    await waitFor(() => expect(window.electronAPI.gitListWorktrees).toHaveBeenCalled());
     expect(screen.getByRole('button', { name: 'Worktree options' })).toBeDisabled();
     fireEvent.click(screen.getByText('Launch Workspace'));
     expect(await screen.findByRole('alert')).toHaveTextContent('This folder holds worktrees for test');
@@ -361,7 +367,7 @@ describe('WorkspaceGateContent', () => {
         ] };
     });
 
-    renderGate({ initialPath: `${projects}/test-` });
+    await renderGate({ initialPath: `${projects}/test-` });
     fireEvent.focus(screen.getByPlaceholderText('workspace directory'));
     expect(await screen.findByText(`${projects}/${visibleName}/`)).toBeTruthy();
     expect(screen.queryByText(`${projects}/test-00-worktrees/`)).toBeNull();
@@ -369,8 +375,8 @@ describe('WorkspaceGateContent', () => {
 
 
 
-  it('uses initialPath when provided', () => {
-    renderGate({ initialPath: TEST_PROJECT + path.sep });
+  it('uses initialPath when provided', async () => {
+    await renderGate({ initialPath: TEST_PROJECT + path.sep });
     const input = screen.getByPlaceholderText('workspace directory') as HTMLInputElement;
     expect(input.value).toBe(TEST_PROJECT + path.sep);
   });
@@ -384,7 +390,7 @@ describe('WorkspaceGateContent', () => {
   // Harness selection
   // =========================================================================
   it('shows available harnesses from electron API', async () => {
-    renderGate();
+    await renderGate();
     await waitFor(() => {
       // Only codex is enabled in our mock, plus the terminal-only option
       expect(screen.getByText('Codex')).toBeTruthy();
@@ -405,7 +411,7 @@ describe('WorkspaceGateContent', () => {
       pi: { model: '', favorites: [], flags: '', visible: true },
     });
 
-    renderGate();
+    await renderGate();
 
     await waitFor(() => {
       expect(screen.getByText('Claude')).toBeTruthy();
@@ -432,7 +438,7 @@ describe('WorkspaceGateContent', () => {
   // Form submission
   // =========================================================================
   it('calls onSubmit with correct data', async () => {
-    renderGate({ initialPath: '/workspace/' });
+    await renderGate({ initialPath: '/workspace/' });
     await waitFor(() => {
       const input = screen.getByPlaceholderText('workspace directory') as HTMLInputElement;
       expect(input.value).toBe('/workspace/');
@@ -448,7 +454,7 @@ describe('WorkspaceGateContent', () => {
   });
 
   it('appends trailing slash to path on submit', async () => {
-    renderGate({ initialPath: '/workspace' });
+    await renderGate({ initialPath: '/workspace' });
     await waitFor(() => {
       const input = screen.getByPlaceholderText('workspace directory') as HTMLInputElement;
       expect(input.value).toBe('/workspace');
@@ -460,7 +466,7 @@ describe('WorkspaceGateContent', () => {
   });
 
   it('accepts UNC-style absolute paths on submit', async () => {
-    renderGate({ initialPath: '//server/share/repo' });
+    await renderGate({ initialPath: '//server/share/repo' });
     await waitFor(() => {
       const input = screen.getByPlaceholderText('workspace directory') as HTMLInputElement;
       expect(input.value).toBe('//server/share/repo');
@@ -471,15 +477,19 @@ describe('WorkspaceGateContent', () => {
     );
   });
 
-  it.each([true, false])('opens the configured base with a blank field in fullscreen=%s', async (fullscreen) => {
-    renderGate({ fullscreen });
+  it.each([true, false])('opens the configured base with a blank field without a worktree hint in fullscreen=%s', async (fullscreen) => {
+    vi.mocked(window.electronAPI.gitGetBranchState).mockResolvedValue({ success: false, isRepo: false });
+    await renderGate({ fullscreen });
     await screen.findByText(TEST_PROJECTS.replace(/\\/g, '/') + '/');
     await chooseBasicTerminal();
     const input = screen.getByLabelText('Workspace directory');
+    await waitFor(() => expect(window.electronAPI.gitGetBranchState).toHaveBeenCalledWith(TEST_PROJECTS.replace(/\\/g, '/') + '/'));
+    expect(screen.queryByText('Worktrees require a Git repository or linked checkout.')).toBeNull();
     expect(input).toHaveValue('');
     fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
     expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ path: TEST_PROJECTS.replace(/\\/g, '/') + '/', environmentId: 'local' }));
     fireEvent.change(input, { target: { value: '   ' } });
+    expect(screen.queryByText('Worktrees require a Git repository or linked checkout.')).toBeNull();
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(mockOnSubmit).toHaveBeenCalledTimes(2);
     expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ path: TEST_PROJECTS.replace(/\\/g, '/') + '/' }));
@@ -487,7 +497,7 @@ describe('WorkspaceGateContent', () => {
 
   it('does not launch a blank field without a configured base', async () => {
     vi.mocked(window.electronAPI.getBaseDirectory).mockResolvedValue('');
-    renderGate({ fullscreen: true });
+    await renderGate({ fullscreen: true });
     await chooseBasicTerminal();
     expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeDisabled();
     fireEvent.keyDown(screen.getByLabelText('Workspace directory'), { key: 'Enter' });
@@ -495,7 +505,7 @@ describe('WorkspaceGateContent', () => {
   });
 
   it('resolves relative input against the base directory on submit', async () => {
-    renderGate({ initialPath: 'my-project' });
+    await renderGate({ initialPath: 'my-project' });
     // Wait for base to load before submitting
     await waitFor(() => {
       expect(window.electronAPI.getBaseDirectory).toHaveBeenCalled();
@@ -512,7 +522,7 @@ describe('WorkspaceGateContent', () => {
   // Directory picker
   // =========================================================================
   it('opens directory picker when browse button is clicked', async () => {
-    renderGate({ initialPath: '/workspace/' });
+    await renderGate({ initialPath: '/workspace/' });
     const browseBtn = screen.getByTitle('Browse directories');
     fireEvent.click(browseBtn);
     expect(window.electronAPI.openDirectoryDialog).toHaveBeenCalled();
@@ -520,7 +530,7 @@ describe('WorkspaceGateContent', () => {
 
   it('updates path when directory is selected', async () => {
     vi.mocked(window.electronAPI.openDirectoryDialog).mockResolvedValue('/selected/dir');
-    renderGate({ initialPath: '/workspace/' });
+    await renderGate({ initialPath: '/workspace/' });
     fireEvent.click(screen.getByTitle('Browse directories'));
     await waitFor(() => {
       const input = screen.getByPlaceholderText('workspace directory') as HTMLInputElement;
@@ -532,7 +542,7 @@ describe('WorkspaceGateContent', () => {
   // Keyboard shortcuts
   // =========================================================================
   it('submits on Enter key', async () => {
-    renderGate({ initialPath: '/workspace/' });
+    await renderGate({ initialPath: '/workspace/' });
     await waitFor(() => {
       const input = screen.getByPlaceholderText('workspace directory') as HTMLInputElement;
       expect(input.value).toBe('/workspace/');
@@ -547,7 +557,7 @@ describe('WorkspaceGateContent', () => {
       codex: { name: 'Codex', command: 'codex', args: [], icon: '🧠' },
       agy: { name: 'Antigravity', command: 'agy', args: [], icon: '🪐' },
     });
-    renderGate({ initialPath: '/workspace/' });
+    await renderGate({ initialPath: '/workspace/' });
     await screen.findByRole('button', { name: 'Add Antigravity terminal' });
     await waitFor(() => {
       expect(screen.getByLabelText('Codex terminal count')).toHaveTextContent('4');
@@ -563,7 +573,7 @@ describe('WorkspaceGateContent', () => {
       codex: { name: 'Codex', command: 'codex', args: [], icon: '🧠' },
       agy: { name: 'Antigravity', command: 'agy', args: [], icon: '🪐' },
     });
-    renderGate({ initialPath: '/workspace/' });
+    await renderGate({ initialPath: '/workspace/' });
     await screen.findByRole('button', { name: 'Add Antigravity terminal' });
 
     fireEvent.keyDown(screen.getByPlaceholderText('workspace directory'), { key: 'a' });
@@ -580,7 +590,7 @@ describe('WorkspaceGateContent', () => {
       return [];
     });
 
-    renderGate();
+    await renderGate();
 
     const input = screen.getByPlaceholderText('workspace directory') as HTMLInputElement;
     fireEvent.focus(input);
@@ -630,7 +640,7 @@ describe('WorkspaceGateContent', () => {
   it.each([['1', '1 terminal', 1], ['2', '2 terminals', 2], ['4', '4 terminals', 4]] as const)(
     'preserves the global %s shortcut and launched terminal count with a button focused', async (key, _label, count) => {
       const user = userEvent.setup();
-      renderGate({ initialPath: '/workspace/' });
+      await renderGate({ initialPath: '/workspace/' });
       await screen.findByRole('button', { name: 'Add Codex terminal' });
       screen.getByRole('button', { name: 'Add Codex terminal' }).focus();
       await user.keyboard(key);
@@ -640,6 +650,61 @@ describe('WorkspaceGateContent', () => {
     },
   );
 
+  it.each([true, false])('numeric shortcuts edit the focused/last-interacted row and preserve a mixed plan in fullscreen=%s', async (fullscreen) => {
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      codex: { name: 'Codex', command: 'codex', args: [], icon: 'codex' },
+      pi: { name: 'Pi', command: 'pi', args: [], icon: 'pi' },
+    });
+    const user = userEvent.setup();
+    await renderGate({ fullscreen, initialPath: '/workspace/' });
+    const codex = await screen.findByRole('button', { name: 'Add Codex terminal' });
+    await waitFor(() => expect(codex).toBeEnabled());
+    await user.click(codex);
+    await user.click(screen.getByRole('button', { name: 'Add Pi terminal' }));
+    await user.keyboard('2');
+    expect(screen.getByLabelText('Pi terminal count')).toHaveTextContent('2');
+    expect(screen.getByLabelText('Codex terminal count')).toHaveTextContent('1');
+    // Focus alone chooses a row, including the empty harness ID for plain shells.
+    screen.getByRole('button', { name: 'Add Terminal terminal' }).focus();
+    await user.keyboard('2');
+    expect(screen.getByLabelText('Terminal terminal count')).toHaveTextContent('2');
+    expect(screen.getByLabelText('Pi terminal count')).toHaveTextContent('2');
+    await user.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ terminalCount: 5,
+      terminalLaunches: [expect.objectContaining({ harness: 'codex' }),
+        expect.objectContaining({ harness: 'pi' }), expect.objectContaining({ harness: 'pi' }),
+        expect.objectContaining({ harness: '' }), expect.objectContaining({ harness: '' })] }));
+    // Outside the list, numbers retain the last interacted row rather than Codex.
+    await user.keyboard('4');
+    expect(screen.getByLabelText('Terminal terminal count')).toHaveTextContent('4');
+    expect(screen.getByLabelText('Codex terminal count')).toHaveTextContent('1');
+    expect(screen.getByLabelText('Pi terminal count')).toHaveTextContent('2');
+    // B explicitly collapses a mixed plan even when Terminal was last used.
+    await user.keyboard('b');
+    expect(screen.getByLabelText('Terminal terminal count')).toHaveTextContent('7');
+    expect(screen.getByLabelText('Codex terminal count')).toHaveTextContent('0');
+    expect(screen.getByLabelText('Pi terminal count')).toHaveTextContent('0');
+  });
+
+  it('bounds numeric row counts by the remaining capacity without reducing other rows', async () => {
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
+      codex: { name: 'Codex', command: 'codex', args: [], icon: 'codex' },
+      pi: { name: 'Pi', command: 'pi', args: [], icon: 'pi' },
+    });
+    const user = userEvent.setup();
+    await renderGate({ fullscreen: true, initialPath: '/workspace/' });
+    const codex = await screen.findByRole('button', { name: 'Add Codex terminal' });
+    await waitFor(() => expect(codex).toBeEnabled());
+    for (let i = 0; i < 15; i++) await user.click(codex);
+    await user.click(screen.getByRole('button', { name: 'Add Pi terminal' }));
+    screen.getByRole('button', { name: 'Remove Pi terminal' }).focus();
+    await user.keyboard('4');
+    expect(screen.getByLabelText('Codex terminal count')).toHaveTextContent('15');
+    expect(screen.getByLabelText('Pi terminal count')).toHaveTextContent('1');
+    await user.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+    expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ terminalCount: 16 }));
+  });
+
   it('keeps harness shortcuts and the basic-terminal empty domain value', async () => {
     vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({
       codex: { name: 'Codex', command: 'codex', args: [], icon: 'codex' },
@@ -648,7 +713,7 @@ describe('WorkspaceGateContent', () => {
       agy: { name: 'Antigravity', command: 'agy', args: [], icon: 'agy' },
     });
     const user = userEvent.setup();
-    renderGate({ initialPath: '/workspace/' });
+    await renderGate({ initialPath: '/workspace/' });
     await screen.findByRole('button', { name: 'Add Antigravity terminal' });
     screen.getByRole('button', { name: 'Add Codex terminal' }).focus();
     for (const [key, name, harness] of [['b', 'Terminal', ''], ['o', 'OpenCode', 'opencode'], ['p', 'Pi', 'pi'], ['a', 'Antigravity', 'agy'], ['c', 'Codex', 'codex']]) {
@@ -664,7 +729,7 @@ describe('WorkspaceGateContent', () => {
   });
 
   it('does not apply launcher shortcuts from editable targets, modified or prevented events', async () => {
-    renderGate({ initialPath: '/workspace/' });
+    await renderGate({ initialPath: '/workspace/' });
     await screen.findByRole('button', { name: 'Add Codex terminal' });
     const input = screen.getByPlaceholderText('workspace directory');
     for (const key of ['1', '2', 'b']) fireEvent.keyDown(input, { key });
@@ -710,16 +775,19 @@ describe('WorkspaceGateContent', () => {
       }));
     }
 
-    async function selectRemote() {
+    async function selectRemote(withPlan = true) {
       fireEvent.click(screen.getByRole('button', { name: 'Choose location: This PC' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Alpha, alpha.example' }));
       await screen.findByRole('textbox', { name: 'Remote Directory Path' });
-      fireEvent.keyDown(window, { key: '4' });
+      if (withPlan) {
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Add Terminal terminal' })).toBeEnabled());
+        fireEvent.keyDown(window, { key: '4' });
+      }
     }
 
     it('uses one fullscreen location picker, searches servers, and preserves the local directory', async () => {
       setupRemote();
-      renderGate({ fullscreen: true });
+      await renderGate({ fullscreen: true });
       const localInput = screen.getByRole('textbox', { name: 'Workspace directory' });
       fireEvent.change(localInput, { target: { value: 'my-workspace' } });
       expect(screen.queryByRole('radio', { name: 'SSH Remote' })).toBeNull();
@@ -736,7 +804,7 @@ describe('WorkspaceGateContent', () => {
     it('opens the selected server settings directly and applies its saved working directory', async () => {
       setupRemote();
       window.electronAPI.sshEnvironmentSave = vi.fn().mockImplementation(async (config) => ({ success: true, config }));
-      renderGate({ fullscreen: true });
+      await renderGate({ fullscreen: true });
       fireEvent.click(screen.getByRole('button', { name: 'Choose location: This PC' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Alpha, alpha.example' }));
       await waitFor(() => expect(screen.getByText('/home/alpha/workspaces/')).toBeTruthy());
@@ -754,7 +822,7 @@ describe('WorkspaceGateContent', () => {
 
     it.each([true, false])('opens the host-resolved SSH base with a blank field in fullscreen=%s', async (fullscreen) => {
       setupRemote();
-      renderGate({ fullscreen });
+      await renderGate({ fullscreen });
       await selectRemote();
       await screen.findByText('/home/alpha/workspaces/');
       await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
@@ -768,7 +836,7 @@ describe('WorkspaceGateContent', () => {
 
     it('resolves fullscreen SSH workspace names beneath the displayed host-resolved root', async () => {
       setupRemote();
-      renderGate({ fullscreen: true });
+      await renderGate({ fullscreen: true });
       fireEvent.click(screen.getByRole('button', { name: 'Choose location: This PC' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Alpha, alpha.example' }));
       await screen.findByText('/home/alpha/workspaces/');
@@ -791,7 +859,7 @@ describe('WorkspaceGateContent', () => {
       setupRemote();
       let finish!: (result: { homePath: string; initialPath: string }) => void;
       vi.mocked(window.electronAPI.sshGetHomeDirectory).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
-      renderGate({ fullscreen: true });
+      await renderGate({ fullscreen: true });
       fireEvent.click(screen.getByRole('button', { name: 'Choose location: This PC' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Alpha, alpha.example' }));
       await chooseBasicTerminal();
@@ -812,7 +880,7 @@ describe('WorkspaceGateContent', () => {
       const alphaResult = new Promise<{ homePath: string; initialPath: string }>((resolve) => { finishAlpha = resolve; });
       vi.mocked(window.electronAPI.sshGetHomeDirectory).mockImplementation((id) => id === 'alpha'
         ? alphaResult : Promise.resolve({ homePath: '/home/beta', initialPath: '/canonical/beta' }));
-      renderGate({ fullscreen: true });
+      await renderGate({ fullscreen: true });
       fireEvent.click(screen.getByRole('button', { name: 'Choose location: This PC' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Alpha, alpha.example' }));
       fireEvent.click(screen.getByRole('button', { name: 'Choose location: Alpha' }));
@@ -833,7 +901,7 @@ describe('WorkspaceGateContent', () => {
         path: directory, parentPath: '/home/alpha', directories: directory === '/home/alpha/workspaces'
           ? [{ name: 'clanker-test', path: '/home/alpha/workspaces/clanker-test' }] : [],
       }));
-      renderGate({ fullscreen: true });
+      await renderGate({ fullscreen: true });
       fireEvent.click(screen.getByRole('button', { name: 'Choose location: This PC' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Alpha, alpha.example' }));
       await screen.findByText('/home/alpha/workspaces/');
@@ -848,7 +916,7 @@ describe('WorkspaceGateContent', () => {
     it('adds a server from This PC and selects it without an intermediate SSH view', async () => {
       setupRemote();
       window.electronAPI.sshEnvironmentSave = vi.fn().mockImplementation(async (config) => ({ success: true, config }));
-      renderGate({ fullscreen: true });
+      await renderGate({ fullscreen: true });
       fireEvent.click(screen.getByRole('button', { name: 'Choose location: This PC' }));
       fireEvent.click(screen.getByRole('button', { name: 'Add server…' }));
       fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'New server' } });
@@ -867,7 +935,7 @@ describe('WorkspaceGateContent', () => {
       const local = createWorkspaceFixture({ id: 'local-repo', environmentId: 'local', workspacePath: '/repo' });
       useWorkspaceStore.setState({ workspaces: [source, otherHost, local], activeWorkspaceId: otherHost.id });
       vi.mocked(window.electronAPI.gitListWorktrees).mockResolvedValue({ success: true, worktrees: [{ path: '/remote-task', branch: 'task', isMain: false, isLocked: false, isPrunable: false }] });
-      renderGate();
+      await renderGate();
       await selectRemote();
       fireEvent.click(screen.getByRole('button', { name: 'Worktree options' }));
       await screen.findByText('/remote-task');
@@ -887,7 +955,7 @@ describe('WorkspaceGateContent', () => {
       let resolveNew!: (value: { pi: boolean }) => void;
       const newDiscovery = new Promise<{ pi: boolean }>((resolve) => { resolveNew = resolve; });
       vi.mocked(window.electronAPI.getEnvironmentHarnessOptions).mockResolvedValueOnce({ codex: true }).mockReturnValueOnce(newDiscovery);
-      renderGate();
+      await renderGate();
       await selectRemote();
       await waitFor(() => expect(screen.getByRole('button', { name: 'Add Codex terminal' })).toBeEnabled());
       fireEvent.click(screen.getByRole('button', { name: 'Choose location: Alpha' }));
@@ -915,8 +983,8 @@ describe('WorkspaceGateContent', () => {
       let resolveOld!: (value: { codex: boolean }) => void;
       const oldDiscovery = new Promise<{ codex: boolean }>((resolve) => { resolveOld = resolve; });
       vi.mocked(window.electronAPI.getEnvironmentHarnessOptions).mockReturnValueOnce(oldDiscovery).mockResolvedValueOnce({ pi: true });
-      renderGate();
-      await selectRemote();
+      await renderGate();
+      await selectRemote(false);
       await waitFor(() => expect(window.electronAPI.getEnvironmentHarnessOptions).toHaveBeenCalledTimes(1));
       fireEvent.click(screen.getByRole('button', { name: 'Choose location: Alpha' }));
       fireEvent.click(screen.getByRole('button', { name: 'Settings for Alpha' }));
@@ -936,7 +1004,7 @@ describe('WorkspaceGateContent', () => {
       vi.mocked(window.electronAPI.sshGetHomeDirectory).mockImplementation((id) => id === 'alpha'
         ? alphaHome
         : Promise.resolve({ homePath: '/home/beta', initialPath: '/home/beta/workspaces' }));
-      renderGate();
+      await renderGate();
       await selectRemote();
       await waitFor(() => expect(window.electronAPI.sshGetHomeDirectory).toHaveBeenCalledWith('alpha'));
       fireEvent.click(document.querySelector('.gate-target-trigger')!);
@@ -952,7 +1020,7 @@ describe('WorkspaceGateContent', () => {
       let resolveHome!: (value: { homePath: string; initialPath: string }) => void;
       const home = new Promise<{ homePath: string; initialPath: string }>((resolve) => { resolveHome = resolve; });
       vi.mocked(window.electronAPI.sshGetHomeDirectory).mockImplementation(() => home);
-      renderGate();
+      await renderGate();
       await selectRemote();
       const input = screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement;
       fireEvent.change(input, { target: { value: '/opt/custom-project' } });
@@ -972,7 +1040,7 @@ describe('WorkspaceGateContent', () => {
       vi.mocked(window.electronAPI.sshListDirectories).mockImplementation((id, directory) => id === 'alpha'
         ? old
         : Promise.resolve({ path: directory, parentPath: '/home/beta', directories: [{ name: 'new', path: '/home/beta/new' }] }));
-      renderGate();
+      await renderGate();
       await selectRemote();
       const input = screen.getByRole('textbox', { name: 'Remote Directory Path' });
       await waitFor(() => expect((input as HTMLInputElement).value).toBe(''));
@@ -1001,7 +1069,7 @@ describe('WorkspaceGateContent', () => {
         path: '/home/alpha/workspaces', parentPath: '/home/alpha',
         directories: [{ name: 'clanker-test', path: '/home/alpha/workspaces/clanker-test' }],
       });
-      renderGate();
+      await renderGate();
       await selectRemote();
       const input = screen.getByRole('textbox', { name: 'Remote Directory Path' });
       fireEvent.focus(input);
@@ -1023,7 +1091,7 @@ describe('WorkspaceGateContent', () => {
             ? [{ name: 'project', path: '/canonical/project' }, { name: 'srv', path: '/srv' }]
             : [{ name: 'project', path: '/canonical/project' }] });
       });
-      renderGate();
+      await renderGate();
       await selectRemote();
       await waitFor(() => expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe(''));
       fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
@@ -1058,7 +1126,7 @@ describe('WorkspaceGateContent', () => {
         return { path: '/home/alpha/workspaces', parentPath: '/home/alpha', directories: [] };
       });
       vi.mocked(window.electronAPI.sshCreateDirectory).mockResolvedValue({ path: '/home/alpha/workspaces/my-app' });
-      renderGate();
+      await renderGate();
       await selectRemote();
       await waitFor(() => expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe(''));
       fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
@@ -1080,7 +1148,7 @@ describe('WorkspaceGateContent', () => {
       vi.mocked(window.electronAPI.sshListDirectories).mockImplementation((_id, path) => path === '/home/alpha/workspaces'
         ? Promise.resolve({ path, parentPath: '/home/alpha', directories: [{ name: 'old', path: '/old' }, { name: 'new', path: '/new' }] })
         : path === '/old' ? old : Promise.resolve({ path: '/new', parentPath: '/', directories: [] }));
-      renderGate();
+      await renderGate();
       await selectRemote();
       await waitFor(() => expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe(''));
       fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
@@ -1099,7 +1167,7 @@ describe('WorkspaceGateContent', () => {
       const alpha = new Promise<{ path: string; parentPath: string; directories: { name: string; path: string }[] }>((resolve) => { resolveAlpha = resolve; });
       vi.mocked(window.electronAPI.sshListDirectories).mockImplementation((id, path) => id === 'alpha'
         ? alpha : Promise.resolve({ path, parentPath: '/home/beta', directories: [] }));
-      renderGate();
+      await renderGate();
       await selectRemote();
       await waitFor(() => expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe(''));
       fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
@@ -1116,7 +1184,7 @@ describe('WorkspaceGateContent', () => {
       setupRemote();
       let resolveCreate!: (value: { path: string }) => void;
       vi.mocked(window.electronAPI.sshCreateDirectory).mockImplementation(() => new Promise((resolve) => { resolveCreate = resolve; }));
-      renderGate();
+      await renderGate();
       await selectRemote();
       await waitFor(() => expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe(''));
       const browse = screen.getByRole('button', { name: 'Browse remote directories' });
@@ -1137,7 +1205,7 @@ describe('WorkspaceGateContent', () => {
 
     it('closes the chooser on Escape without changing manually typed path', async () => {
       setupRemote();
-      renderGate();
+      await renderGate();
       await selectRemote();
       const input = screen.getByRole('textbox', { name: 'Remote Directory Path' });
       fireEvent.change(input, { target: { value: '/manual/path' } });
