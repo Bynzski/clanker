@@ -249,6 +249,8 @@ describe('Hermes gateway discovery', () => {
     // The normal cache hit may refresh in the background, but its request must
     // still use the fast nonblocking catalog, not an authenticated refresh.
     expect(JSON.parse(request.trim().split('\n').pop()!).params).toEqual({});
+    // Provider implementations load lazily; wait until the warmup has sent its request.
+    await vi.waitFor(() => expect(spawnGateway).toHaveBeenCalledTimes(2));
     request = '';
     const fresh = await discoverHarnessModels('hermes', true);
     expect(JSON.parse(request).params).toEqual({ refresh: true });

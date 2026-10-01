@@ -21,6 +21,7 @@ export interface HarnessLaunchCapability {
 export interface HarnessProvider {
   readonly descriptor: HarnessDescriptor;
   readonly launch: HarnessLaunchCapability;
+  readonly models?: HarnessModelsCapability;
 }
 
 export type CapabilitySupport = 'native' | 'emulated';
@@ -33,4 +34,20 @@ export class HarnessCapabilityError extends Error {
     super(message);
     this.name = 'HarnessCapabilityError';
   }
+}
+
+export interface ModelOption { id: string; label: string }
+export interface HarnessModelsCapability {
+  discover(refresh?: boolean): Promise<ModelOption[]>;
+  readonly fallback?: ModelOption[];
+  readonly explicitRefresh?: boolean;
+}
+
+export function classifyHarnessFailure(error: unknown): HarnessCapabilityError {
+  if (error instanceof HarnessCapabilityError) return error;
+  const details = error as { code?: string; killed?: boolean } | null;
+  const kind = details?.code === 'ENOENT' ? 'binary-unavailable'
+    : details?.killed || (error instanceof Error && /timed out|timeout/i.test(error.message)) ? 'timeout'
+    : 'command-failed';
+  return new HarnessCapabilityError(kind, error instanceof Error ? error.message : String(error), error);
 }
