@@ -19,7 +19,7 @@ import type { Terminal } from './terminalIpc';
 import type { HarnessSession } from '../../shared/types/session';
 import { defaultShell } from '../platformShell';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
-import { toNativePath } from '../../shared/pathNormalize';
+import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { invokeRemoteSession } from './remoteSessionInvocation';
@@ -173,8 +173,8 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       taskSessionCoordinator?.onSessionInvoked(id, {
         ...nativeSession,
         // The session record crosses into persistence and renderer matching;
-        // keep its original IPC-form path, not the native spawn cwd.
-        cwd: session.cwd,
+        // keep trusted metadata in IPC path form rather than native spawn form.
+        cwd: toPosixPath(validatedSession.cwd),
       });
       return { ...result, harnessId: session.harness, attentionEnabled };
     } catch (error) {

@@ -37,6 +37,14 @@ export async function validateLocal(session: HarnessSession, context: { workspac
     }
   }
   if (matches.length !== 1) throw invalid();
+  const cwd = toNativePath(matches[0].cwd, process.platform);
+  try {
+    const workspace = fs.realpathSync(context.workspacePath);
+    const canonicalCwd = fs.realpathSync(cwd);
+    const relative = path.relative(workspace, canonicalCwd);
+    if (!path.isAbsolute(cwd) || path.resolve(cwd) !== cwd || canonicalCwd !== cwd
+      || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw invalid();
+  } catch { throw invalid(); }
   // A stale or forged path is rejected even if the ID still exists elsewhere.
   if (session.filePath) {
     const supplied = toNativePath(session.filePath, process.platform);

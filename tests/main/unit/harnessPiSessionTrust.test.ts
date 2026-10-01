@@ -46,3 +46,14 @@ it('honors trusted explicit session directory before environment configuration',
   vi.stubEnv('PI_CODING_AGENT_SESSION_DIR', '/missing');
   expect(await validateLocal(session, { ...context, userFlags: `--session-dir=${store}` })).toMatchObject({ filePath: session.filePath });
 });
+
+it('rejects session metadata with an escaping cwd traversal or symlink', async () => {
+  const { root, file, session, context } = fixture();
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-pi-outside-'));
+  roots.push(outside);
+  fs.writeFileSync(file, JSON.stringify({ type: 'session', id: 'trusted', cwd: `${root}/../${path.basename(outside)}` }) + '\n');
+  await expect(validateLocal(session, context)).rejects.toMatchObject({ kind: 'not-configured' });
+  const link = path.join(root, 'cwd-link'); fs.symlinkSync(outside, link, 'dir');
+  fs.writeFileSync(file, JSON.stringify({ type: 'session', id: 'trusted', cwd: link }) + '\n');
+  await expect(validateLocal(session, context)).rejects.toMatchObject({ kind: 'not-configured' });
+});
