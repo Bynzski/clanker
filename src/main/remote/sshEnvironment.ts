@@ -1,3 +1,4 @@
+import { discoverSshWebServices, type RemoteWebEndpoint } from './sshPortDiscovery';
 import { findHarnessProvider, getHarnessProvider, getHarnessProviders } from '../harnesses/registry';
 import * as path from 'path';
 import type {
@@ -668,6 +669,10 @@ export class SshEnvironment implements WorkspaceEnvironment {
       }
     }
     return options;
+  }
+
+  public discoverWebServices(signal?: AbortSignal, hints?: RemoteWebEndpoint[]) {
+    return discoverSshWebServices(this.executor, this.target, signal, hints);
   }
 
   public startPortForward(localPort: number, remotePort: number, signal: AbortSignal, onExit: (error: string) => void) {
