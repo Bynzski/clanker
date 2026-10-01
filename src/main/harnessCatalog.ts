@@ -82,8 +82,8 @@ export async function discoverHarnessModels(harness: string, refresh = false): P
     : (cached ?? (models.length > 0 ? models : (findHarnessProvider(harness)?.models?.fallback ?? [])));
 
   if (cacheable) {
-    // Persist only successful discovery results so a transient failure cannot
-    // replace a good cache entry with fallback data.
+    // Persist explicitly cacheable results, including Codex's legacy empty
+    // parse-failure result. Uncacheable transient failures retain the cache.
     if (explicitRefresh) catalogEpochs.set(harness, (catalogEpochs.get(harness) ?? 0) + 1);
     persistentModelCache.set(harness, result);
   }

@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { AI_COMMIT_COMMANDS, getAiCommitTimeoutMs } from '../../../src/main/aiCommit';
 import { getHarnessProvider } from '../../../src/main/harnesses/registry';
 
 it.each([
@@ -27,4 +28,13 @@ it('Agy streams one JSON prompt without putting Git content in arguments', () =>
   for (const output of ['', '{', '{}', '{"event":"result","result":{"status":"ERROR"}}']) {
     expect(() => capability.parseOutput!(output)).toThrow(expect.objectContaining({ kind: 'parse-failure' }));
   }
+});
+
+it.each(['codex', 'opencode', 'pi', 'omp', 'agy'] as const)('%s legacy metadata is derived from canonical invocation', (id) => {
+  const capability = getHarnessProvider(id).aiCommit;
+  const invocation = capability.buildInvocation({ prompt: '' });
+  expect(AI_COMMIT_COMMANDS[id]).toEqual({ command: invocation.command, args: invocation.args, modelArg: capability.modelArg });
+  expect(getAiCommitTimeoutMs(id)).toBe(invocation.timeoutMs);
+  const modeled = capability.buildInvocation({ prompt: '', model: 'selected-model' });
+  expect(modeled.args[modeled.args.indexOf('selected-model') - 1]).toBe(capability.modelArg);
 });

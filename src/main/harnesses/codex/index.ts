@@ -20,7 +20,7 @@ export const codexProvider = defineHarness({
     discover: async (workspace: string) => (await import('./sessions')).discoverCodexSessions(workspace),
   },
   attention: { local, remote },
-  aiCommit: { command: 'codex', args: ['exec'], modelArg: '-m', timeoutMs: 60000,
+  aiCommit: { modelArg: '-m',
     buildInvocation: ({ model, prompt }) => ({ command: 'codex', args: [...['exec'], ...(model ? ['-m', model] : [])], stdin: prompt, timeoutMs: 60000 }),
   },
   launch: { command: 'codex', args: [], modelArg: '-m' },

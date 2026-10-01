@@ -3,7 +3,7 @@ import { HarnessCapabilityError, type HarnessAiCommitCapability } from '../types
 /** Stream input avoids putting Git content through cmd.exe argument quoting or
  * command-line size limits. EOF closes the single-turn stream. */
 export const aiCommit: HarnessAiCommitCapability = {
-  command: 'agy', args: ['--disable-slash-commands'], modelArg: '--model', timeoutMs: 60000,
+  modelArg: '--model',
   buildInvocation: ({ model, prompt }) => ({
     command: 'agy',
     args: ['--disable-slash-commands', ...(model ? ['--model', model] : []), '--input-format', 'stream-json', '--output-format', 'stream-json'],

@@ -22,7 +22,7 @@ export const opencodeProvider = defineHarness({
     discover: async (workspace: string) => (await import('./sessions')).discoverOpenCodeSessions(workspace),
   },
   attention: { prepareResources, local, remote },
-  aiCommit: { command: 'opencode', args: ['run'], modelArg: '-m', timeoutMs: 90000,
+  aiCommit: { modelArg: '-m',
     buildInvocation: ({ model, prompt }) => ({ command: 'opencode', args: [...['run'], ...(model ? ['-m', model] : [])], stdin: prompt, timeoutMs: 90000 }),
   },
   launch: { command: 'opencode', args: [], modelArg: '-m', env: { OPENCODE_PERMISSION: JSON.stringify({ bash: { '*': 'allow' }, edit: 'allow' }) } },

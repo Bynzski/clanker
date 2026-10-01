@@ -130,8 +130,10 @@ terminal, so out-of-order disposal cannot retire another user's plugin. Unknown
 files remain untouched. The shared layer creates only the secure temp root,
 observer and command bridge. Providers contribute `attention.prepareResources`
 for their settings/extensions/plugin directories; `AttentionAdapterFiles` has only
-a generic command path. Failed provider resource preparation rolls back the whole
-temp root before caching it. Optional `disposeResources` owns provider shutdown
+generic command/resource-root paths. Generic infrastructure is created once;
+only the selected provider prepares resources, cached in its own private directory.
+Failed preparation removes that directory and remains retryable without damaging
+other providers or generic infrastructure. Optional `disposeResources` owns provider shutdown
 cleanup, including Agy plugin retirement. The app removes the shared root afterward.
 
 Native hook payload normalization for Codex/Claude/Agy and credential transport
@@ -154,11 +156,14 @@ All six session providers together still use three executions, not one execution
 per provider. Registry-derived host binary probing remains one shell command.
 
 Attention providers contribute host configuration guards, launch injection,
-runtime requirements, owned plugin payloads and optional plugin-enable commands.
+runtime requirements, selected-provider temporary resources, allowed environment
+keys, owned plugin payloads and optional plugin-enable commands.
 SSH owns secure directory installation, locking, temporary files, fresh
 terminal-scoped credentials, OSC transport and cleanup. Persistent owned Agy and
 Hermes observer plugins remain inert without launch credentials; per-launch
-files are cleaned without recursively deleting host data. Concurrent cleanup
+files are recorded in a private manifest. Cleanup validates manifest paths,
+ownership, modes and non-symlink file types before removing only listed resources;
+unknown files are preserved. Adding a provider requires no central filename list. Concurrent cleanup
 requests coalesce; subsequent cleanup can retry after unknown files are removed.
 
 Intentional transport differences remain: remote scans are recursive and bounded;
@@ -229,8 +234,8 @@ is no remote inference or general inference framework.
 
 ## Oh My Pi (`omp`) implementation notes
 
-Review environment (September 2026): `/home/jay/.local/bin/omp`, version
-`18.3.4`. This path and version are observations from the development machine,
+Original integration baseline: OMP 18.3.4 (September 2026),
+`/home/jay/.local/bin/omp`. Issue #60 revalidation: OMP 18.4.4 (October 2026). This path and version are observations from the development machine,
 not installation requirements. OMP uses a separate `omp` ID so its defaults,
 attention events, and session history do not collide with Pi.
 

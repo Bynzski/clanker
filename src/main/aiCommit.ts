@@ -17,7 +17,7 @@ export interface CommitPromptContext {
 }
 
 export function getAiCommitTimeoutMs(provider: AiCommitProvider): number {
-  return findHarnessProvider(provider)?.aiCommit?.timeoutMs ?? 60000;
+  return findHarnessProvider(provider)?.aiCommit?.buildInvocation({ prompt: '' }).timeoutMs ?? 60000;
 }
 
 /** Legacy data surface projected from provider capabilities. */

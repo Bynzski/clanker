@@ -138,10 +138,8 @@ export interface HarnessAiCommitInvocation {
 export interface HarnessAiCommitCapability {
   parseOutput?(output: string): string;
   buildInvocation(context: { model?: string; prompt: string }): HarnessAiCommitInvocation;
-  readonly command: string;
-  readonly args: string[];
+  /** Descriptive model flag for the legacy catalog; execution uses buildInvocation. */
   readonly modelArg: string;
-  readonly timeoutMs: number;
 }
 
 /** No provider implements usage yet. Measurements need not share units or periods. */
