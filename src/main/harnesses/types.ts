@@ -58,6 +58,7 @@ export interface HarnessSessionsCapability {
   discover(workspacePath: string): Promise<HarnessSession[]>;
   readonly resume?: HarnessSessionOperation;
   readonly fork?: HarnessSessionOperation;
+  readonly remote?: HarnessRemoteSessions;
   readonly selectionFlags?: readonly string[];
 
 }
@@ -67,4 +68,11 @@ export interface HarnessSessionOperation {
   /** Omission means both transports. Agy's emulated fork is local only. */
   readonly transports?: readonly ('local' | 'ssh')[];
   build(session: HarnessSession, userFlags?: string): { command: string; args: string[] };
+}
+
+export interface HarnessRemoteSessions {
+  /** Body of scan(harness), using the transport's bounded read/emit helpers. */
+  readonly scan: string;
+  readonly command?: { command: string; args: string[] };
+  readonly fileStore?: string;
 }

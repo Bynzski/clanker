@@ -1,3 +1,4 @@
+import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import type { HarnessProvider } from '../types';
 
@@ -11,6 +12,7 @@ export const agyProvider = {
     { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)' },
   ] },
   sessions: {
+    remote: remoteSessions,
     resume: { support: 'native', build: (session, flags) => buildInvocation(session, false, flags) },
     fork: { support: 'emulated', build: (session, flags) => buildInvocation(session, true, flags), transports: ['local'] },
     selectionFlags: ['--conversation'],

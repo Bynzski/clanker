@@ -1,4 +1,4 @@
-import { getHarnessProviders } from '../harnesses/registry';
+import { getHarnessProvider, getHarnessProviders } from '../harnesses/registry';
 import * as path from 'path';
 import type {
   WorkspaceEnvironment,
@@ -697,8 +697,8 @@ export class SshEnvironment implements WorkspaceEnvironment {
     if (params.resumeSession) {
       const { session, workspaceRoot } = params.resumeSession;
       if (!harnessConfig || session.harness !== params.harness || session.cwd !== params.workingDir) throw new Error('Invalid remote session launch');
-      const check = `import os,sys\nroot,cwd,file,harness=sys.argv[1:]\nif not os.path.isdir(root) or os.path.realpath(root)!=root or not os.path.isdir(cwd) or os.path.realpath(cwd)!=cwd or not (cwd==root or cwd.startswith(root.rstrip('/')+'/')): sys.exit('Remote session directory is no longer within the workspace')\nif harness in ('pi','omp'):\n store=os.path.join(os.path.realpath(os.path.expanduser('~')),'.'+harness,'agent','sessions')\n if not file.endswith('.jsonl') or not os.path.isfile(file) or os.path.realpath(file)!=file or os.path.realpath(store)!=store or not file.startswith(store+'/'): sys.exit('Remote session file is no longer valid')\n`;
-      remoteScript.push(`${quotePosixCommand('python3', ['-c', check, workspaceRoot, session.cwd, session.filePath ?? '', session.harness])} || exit 1`);
+      const check = `import os,sys\nroot,cwd,file,session_store=sys.argv[1:]\nif not os.path.isdir(root) or os.path.realpath(root)!=root or not os.path.isdir(cwd) or os.path.realpath(cwd)!=cwd or not (cwd==root or cwd.startswith(root.rstrip('/')+'/')): sys.exit('Remote session directory is no longer within the workspace')\nif session_store:\n store=os.path.join(os.path.realpath(os.path.expanduser('~')),session_store)\n if not file.endswith('.jsonl') or not os.path.isfile(file) or os.path.realpath(file)!=file or os.path.realpath(store)!=store or not file.startswith(store+'/'): sys.exit('Remote session file is no longer valid')\n`;
+      remoteScript.push(`${quotePosixCommand('python3', ['-c', check, workspaceRoot, session.cwd, session.filePath ?? '', getHarnessProvider(session.harness).sessions?.remote?.fileStore ?? ''])} || exit 1`);
     }
     remoteScript.push(
       `cd ${quotePosixArg(params.workingDir)} || exit 1`,

@@ -1,3 +1,4 @@
+import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import type { HarnessProvider } from '../types';
 
@@ -10,6 +11,7 @@ export const opencodeProvider = {
     { id: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
   ] },
   sessions: {
+    remote: remoteSessions,
     resume: { support: 'native', build: (session, flags) => buildInvocation(session, false, flags) },
     fork: { support: 'native', build: (session, flags) => buildInvocation(session, true, flags) },
     selectionFlags: ['--session', '-s', '--continue', '-c', '--fork'],
