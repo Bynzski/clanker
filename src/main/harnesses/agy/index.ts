@@ -1,3 +1,5 @@
+import { remote } from './remoteAttention';
+import { local } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import type { HarnessProvider } from '../types';
@@ -17,5 +19,6 @@ export const agyProvider = {
     fork: { support: 'emulated', build: (session, flags) => buildInvocation(session, true, flags), transports: ['local'] },
     selectionFlags: ['--conversation'],
     discover: async (workspace: string) => (await import('./sessions')).discoverAgySessions(workspace) },
+  attention: { local, remote },
   launch: { command: 'agy', args: [], modelArg: '--model' },
 } satisfies HarnessProvider;

@@ -24,7 +24,7 @@ function fixture(extraEnv: Record<string, string> = {}) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'clanker-attention-test-')));
   roots.push(home);
   const exec = vi.fn(async (_target: string, command: string, args: string[], options?: { input?: string | Buffer }) => {
-    if (args.some((arg) => arg.includes('exec hermes plugins enable'))) return { stdout: '', stderr: '', exitCode: 0 };
+    if (args.some((arg) => arg.includes("exec 'hermes' 'plugins' 'enable'"))) return { stdout: '', stderr: '', exitCode: 0 };
     const result = spawnSync(command === 'sh' ? '/bin/sh' : command, args, { input: options?.input, encoding: 'utf8',
       env: { ...process.env, HOME: home, HERMES_HOME: '', HERMES_PROFILE: '', OPENCODE_CONFIG_DIR: '', CODEX_HOME: '', ...extraEnv } });
     if (result.status !== 0) throw new Error(result.stderr);

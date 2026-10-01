@@ -23,7 +23,8 @@ export interface ModelOption {
 /** Compatibility catalog derived from the canonical providers. */
 export const HARNESS_OPTIONS: Record<string, HarnessConfig> = Object.fromEntries(
   getHarnessProviders().map(({ descriptor, launch }) => [descriptor.id, {
-    ...launch, name: descriptor.name, icon: descriptor.legacyIcon,
+    command: launch.command, args: launch.args, modelArg: launch.modelArg,
+    ...(launch.env ? { env: launch.env } : {}), name: descriptor.name, icon: descriptor.legacyIcon,
   }]),
 );
 

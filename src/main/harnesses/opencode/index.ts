@@ -1,3 +1,5 @@
+import { remote } from './remoteAttention';
+import { local, SOURCE } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import type { HarnessProvider } from '../types';
@@ -16,5 +18,6 @@ export const opencodeProvider = {
     fork: { support: 'native', build: (session, flags) => buildInvocation(session, true, flags) },
     selectionFlags: ['--session', '-s', '--continue', '-c', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverOpenCodeSessions(workspace) },
+  attention: { local, remote, sources: (observer: string) => ({ 'opencode/observer.mjs': observer, 'opencode/plugins/clanker-attention.js': SOURCE }) },
   launch: { command: 'opencode', args: [], modelArg: '-m', env: { OPENCODE_PERMISSION: JSON.stringify({ bash: { '*': 'allow' }, edit: 'allow' }) } },
 } satisfies HarnessProvider;

@@ -24,6 +24,7 @@ export interface HarnessProvider {
   readonly launch: HarnessLaunchCapability;
   readonly models?: HarnessModelsCapability;
   readonly sessions?: HarnessSessionsCapability;
+  readonly attention?: HarnessAttentionCapability;
 }
 
 export type CapabilitySupport = 'native' | 'emulated';
@@ -75,4 +76,42 @@ export interface HarnessRemoteSessions {
   readonly scan: string;
   readonly command?: { command: string; args: string[] };
   readonly fileStore?: string;
+}
+
+export interface AttentionAdapterFiles {
+  command: string;
+  claudeSettings: string;
+  opencodeDirectory: string;
+  piExtension: string;
+  ompExtension: string;
+}
+export interface AttentionLaunchOptions { args: string[]; env: Record<string, string> }
+export interface PreparedLocalAttention extends AttentionLaunchOptions { dispose(): void }
+export interface LocalAttentionContext {
+  terminalId: string;
+  args: string[];
+  env: NodeJS.ProcessEnv;
+  files: AttentionAdapterFiles;
+  sessionId?: string;
+  platform: NodeJS.Platform;
+  homeDir?: string;
+}
+export interface HarnessLocalAttention {
+  options(context: LocalAttentionContext): AttentionLaunchOptions | null;
+  prepare(context: LocalAttentionContext): PreparedLocalAttention | null;
+}
+export interface HarnessAttentionCapability {
+  readonly sources?: (observer: string) => Record<string, string>;
+  readonly local?: HarnessLocalAttention;
+  readonly remote?: HarnessRemoteAttention;
+}
+
+export interface HarnessRemoteAttention {
+  readonly requiresNode: boolean;
+  readonly validate: string;
+  readonly configure: string;
+  readonly plugin?: () => {
+    parts: string[]; files: Record<string, string>; upgradeFile?: string; legacyFile?: string;
+  };
+  readonly enableCommand?: { command: string; args: string[] };
 }

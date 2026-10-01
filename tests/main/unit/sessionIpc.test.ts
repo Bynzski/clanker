@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getHarnessProvider } from '../../../src/main/harnesses/registry';
+import { removeAttentionAdapterFiles } from '../../../src/main/agentAttentionAdapters';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HarnessSession } from '../../../src/shared/types/session';
 import { SESSION_DISCOVER, SESSION_INVOKE } from '../../../src/shared/ipcChannels';
 import { toNativePath } from '../../../src/shared/pathNormalize';
@@ -49,6 +51,7 @@ function registerHandlers(
       ? { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } }
       : null,
   }) as never,
+  attentionEnabled = false,
 ): Map<string, Handler> {
   const handlers = new Map<string, Handler>();
   mockHandle.mockImplementation((channel: string, handler: Handler) => {
@@ -62,7 +65,7 @@ function registerHandlers(
     getIsShuttingDown: () => false,
     getStore: () => ({
       get: vi.fn(() => ({
-        codex: { flags: ' --yolo ' },
+        codex: { flags: ' --yolo ', attentionEnabled },
       })),
     }) as never,
     getHarnessOptions,
@@ -337,4 +340,18 @@ describe('registerSessionIpc', () => {
     }
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
+});
+
+afterAll(() => removeAttentionAdapterFiles());
+it('disposes prepared provider attention if PTY creation fails', async () => {
+  const dispose = vi.fn();
+  const prepare = vi.spyOn(getHarnessProvider('codex').attention!.local!, 'prepare')
+    .mockReturnValue({ args: ['codex', 'resume', 'codex-session'], env: {}, dispose });
+  const broker = { register: vi.fn().mockResolvedValue({}), release: vi.fn() } as never;
+  const handlers = registerHandlers(vi.fn(() => ({ codex: { command: 'codex', args: [], name: 'Codex', icon: '' } })), broker, undefined, true);
+  mockBuildSessionInvokeArgs.mockReturnValue({ spawnCmd: 'wrapper', spawnArgs: ['codex', 'resume', 'codex-session'] });
+  mockSpawnPtyProcess.mockImplementation(() => { throw new Error('PTY failed'); });
+  await expect(handlers.get(SESSION_INVOKE)!({}, 'local-ws', codexSession)).rejects.toThrow('PTY failed');
+  expect(prepare).toHaveBeenCalledOnce();
+  expect(dispose).toHaveBeenCalledOnce();
 });

@@ -1,3 +1,4 @@
+import type { PreparedLocalAttention } from '../harnesses/types';
 import { findHarnessProvider } from '../harnesses/registry';
 /**
  * Terminal IPC Handlers
@@ -39,10 +40,7 @@ import { isPathContained } from '../remote/sshEnvironment';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import {
-  acquireAgyAttentionPlugin,
-  attentionLaunchOptions,
   ensureAttentionAdapterFiles,
-  releaseAgyAttentionPlugin,
   withoutAttentionEnvironment,
 } from '../agentAttentionAdapters';
 
@@ -249,7 +247,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
 
     const harnessConfig = harness ? getHarnessOptions()[harness] : undefined;
     const harnessDefaults = store.get('harnessDefaults');
-    const attentionEnabled = Boolean(harnessConfig && harness && harness !== 'hermes' && harnessDefaults[harness]?.attentionEnabled);
+    const attentionEnabled = Boolean(harnessConfig && harness && findHarnessProvider(harness)?.attention?.local && harnessDefaults[harness]?.attentionEnabled);
     const userFlags = harness ? harnessDefaults[harness]?.flags : undefined;
     const effectiveModel = model || (harness ? harnessDefaults[harness]?.model || undefined : undefined);
     let harnessArgs = harnessConfig
@@ -257,23 +255,24 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       : [];
     let attentionEnv: Record<string, string> = {};
     let attentionCommand: string | undefined;
+    let preparedAttention: PreparedLocalAttention | null = null;
     if (harnessConfig && harness && agentAttentionBroker) {
       try {
         const files = ensureAttentionAdapterFiles();
-        if (attentionEnabled && harness === 'agy') {
-          acquireAgyAttentionPlugin(id, files);
+        if (attentionEnabled) {
+          preparedAttention = findHarnessProvider(harness)?.attention?.local?.prepare({
+            terminalId: id, args: harnessArgs, env: { ...process.env, ...harnessEnv }, files,
+            platform: process.platform,
+          }) ?? null;
         }
         attentionEnv = await agentAttentionBroker.register(id, harness);
         attentionCommand = files.command;
-        if (attentionEnabled) {
-          const options = attentionLaunchOptions(harness, harnessArgs, { ...process.env, ...harnessEnv }, files);
-          if (options) {
-            attentionEnv = { ...attentionEnv, ...options.env };
-            harnessArgs = options.args;
-          }
+        if (preparedAttention) {
+          attentionEnv = { ...attentionEnv, ...preparedAttention.env };
+          harnessArgs = preparedAttention.args;
         }
       } catch {
-        releaseAgyAttentionPlugin(id);
+        preparedAttention?.dispose();
         agentAttentionBroker.release(id);
       }
     }
@@ -327,7 +326,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         ? recipeCommandStartup.wrap(cleanInitialCommand, process.platform, userShell) : cleanInitialCommand,
       recipeCommandStartup,
       onExit: () => {
-        releaseAgyAttentionPlugin(id);
+        preparedAttention?.dispose();
         agentAttentionBroker?.release(id);
         void taskSessionCoordinator?.onTerminalExited(id);
       },
@@ -337,7 +336,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       }
       return { ...result, harnessId: harnessConfig ? harness : undefined, attentionEnabled };
     } catch (error) {
-      releaseAgyAttentionPlugin(id);
+      preparedAttention?.dispose();
       agentAttentionBroker?.release(id);
       throw error;
     }

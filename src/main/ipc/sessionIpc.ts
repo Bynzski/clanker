@@ -1,3 +1,5 @@
+import type { PreparedLocalAttention } from '../harnesses/types';
+import { findHarnessProvider } from '../harnesses/registry';
 import { supportsSessionOperation } from '../sessionLaunch';
 /**
  * Session History IPC Handlers
@@ -23,10 +25,7 @@ import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { invokeRemoteSession } from './remoteSessionInvocation';
 import {
-  acquireAgyAttentionPlugin,
-  attentionLaunchOptions,
   ensureAttentionAdapterFiles,
-  releaseAgyAttentionPlugin,
   withoutAttentionEnvironment,
 } from '../agentAttentionAdapters';
 
@@ -146,23 +145,24 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     let spawnArgs = baseArgs;
     let attentionEnv: Record<string, string> = {};
     let attentionCommand: string | undefined;
+    let preparedAttention: PreparedLocalAttention | null = null;
     if (agentAttentionBroker) {
       try {
         const files = ensureAttentionAdapterFiles();
-        if (attentionEnabled && session.harness === 'agy') {
-          acquireAgyAttentionPlugin(id, files);
+        if (attentionEnabled) {
+          preparedAttention = findHarnessProvider(session.harness)?.attention?.local?.prepare({
+            terminalId: id, args: baseArgs, env: { ...process.env, ...harnessEnv }, files,
+            platform: process.platform, sessionId: fork ? undefined : agySessionId,
+          }) ?? null;
         }
         attentionEnv = await agentAttentionBroker.register(id, session.harness);
         attentionCommand = files.command;
-        if (attentionEnabled) {
-          const options = attentionLaunchOptions(session.harness, baseArgs, { ...process.env, ...harnessEnv }, files, fork ? undefined : agySessionId);
-          if (options) {
-            attentionEnv = { ...attentionEnv, ...options.env };
-            spawnArgs = options.args;
-          }
+        if (preparedAttention) {
+          attentionEnv = { ...attentionEnv, ...preparedAttention.env };
+          spawnArgs = preparedAttention.args;
         }
       } catch {
-        releaseAgyAttentionPlugin(id);
+        preparedAttention?.dispose();
         agentAttentionBroker.release(id);
       }
     }
@@ -196,7 +196,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       launchLabel,
       harnessId: session.harness,
       onExit: () => {
-        releaseAgyAttentionPlugin(id);
+        preparedAttention?.dispose();
         agentAttentionBroker?.release(id);
         void taskSessionCoordinator?.onTerminalExited(id);
       },
@@ -209,7 +209,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       });
       return { ...result, harnessId: session.harness, attentionEnabled };
     } catch (error) {
-      releaseAgyAttentionPlugin(id);
+      preparedAttention?.dispose();
       agentAttentionBroker?.release(id);
       throw error;
     }

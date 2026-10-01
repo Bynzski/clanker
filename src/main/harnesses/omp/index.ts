@@ -1,3 +1,5 @@
+import { remote } from './remoteAttention';
+import { local, SOURCE } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import type { HarnessProvider } from '../types';
@@ -11,5 +13,6 @@ export const ompProvider = {
     fork: { support: 'native', build: (session, flags) => buildInvocation(session, true, flags) },
     selectionFlags: ['--resume', '-r', '--continue', '-c', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverOmpSessions(workspace) },
+  attention: { local, remote, sources: () => ({ 'omp.ts': SOURCE }) },
   launch: { command: 'omp', args: [], modelArg: '--model' },
 } satisfies HarnessProvider;
