@@ -77,10 +77,7 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
   opacity: 0;
-  transition: opacity 100ms ease-out, background 100ms ease-out, color 100ms ease-out;
   flex-shrink: 0;
 }
 
@@ -88,11 +85,8 @@
   opacity: 1;
 }
 
-.editor-tab-close:hover {
-  background: color-mix(in srgb, var(--surface-tint) 10%, transparent);
-  color: var(--text-primary);
-}
-
 .editor-tab.active .editor-tab-close {
   opacity: 1;
 }
+
+.editor-tab[aria-disabled='true'] { opacity: 0.5; cursor: not-allowed; }

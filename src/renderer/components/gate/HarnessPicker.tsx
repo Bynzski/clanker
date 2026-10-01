@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button';
 import { Settings } from 'lucide-react';
 import type { HarnessOption } from '../../lib/harnessOptions';
 import { SegmentedControl, SegmentedControlItem } from '../ui/SegmentedControl';
@@ -16,9 +17,9 @@ export function HarnessPicker({ options, selectedHarness, onSelect, onConfigure 
     <div className="harness-selector">
       <div className="gate-section-header">
         <span className="gate-section-label">Harness</span>
-        <button type="button" className="gate-settings-link" onClick={onConfigure}>
+        <Button type="button" className="gate-settings-link" onClick={onConfigure}>
           <Settings size={12} strokeWidth={2} /> Configure
-        </button>
+        </Button>
       </div>
       <SegmentedControl aria-label="Harness" className="harness-options" value={selectedHarness || BASIC_TERMINAL_VALUE}
         onValueChange={(value) => onSelect(value === BASIC_TERMINAL_VALUE ? '' : value)}>

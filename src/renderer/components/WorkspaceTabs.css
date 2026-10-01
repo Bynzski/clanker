@@ -118,10 +118,6 @@
   justify-content: center;
   flex-shrink: 0;
   width: 29px;
-  border: 0;
-  background: transparent;
-  color: var(--status-warning-emphasis);
-  cursor: pointer;
 }
 
 .workspace-tab-count {
@@ -150,10 +146,7 @@
   width: 16px;
   height: 16px;
   margin-left: 2px;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
   flex-shrink: 0;
-  transition: all var(--transition);
   opacity: 0;
 }
 
@@ -161,28 +154,16 @@
   opacity: 1;
 }
 
-.workspace-tab-close:hover {
-  background: color-mix(in srgb, var(--surface-tint) 10%, transparent);
-  color: var(--text-primary);
-}
-
 .workspace-tab.active .workspace-tab-close {
   opacity: 1;
 }
 
 .workspace-tab-new {
+  flex: 0 0 auto;
   min-width: 30px;
   justify-content: center;
   padding-left: 8px;
   padding-right: 8px;
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--surface-tint) 2%, transparent);
-  cursor: pointer;
-}
-
-.workspace-tab-new:hover {
-  color: var(--text-primary);
-  background: var(--surface-control);
 }
 
 .workspace-tab-edit-trigger {
@@ -191,23 +172,12 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
   opacity: 0;
   flex-shrink: 0;
-  transition: all var(--transition);
 }
 
 .workspace-tab:hover .workspace-tab-edit-trigger {
   opacity: 1;
-}
-
-.workspace-tab-edit-trigger:hover {
-  background: color-mix(in srgb, var(--surface-tint) 10%, transparent);
-  color: var(--text-primary);
 }
 
 .workspace-tab-edit {
@@ -221,14 +191,6 @@
 .workspace-tab-edit-input {
   flex: 1;
   min-width: 60px;
-  padding: 3px 7px;
-  border: 1px solid var(--accent-interactive);
-  border-radius: var(--radius-sm);
-  background: var(--surface-app);
-  color: var(--text-primary);
-  font-size: 11px;
-  font-weight: 500;
-  outline: none;
 }
 
 .workspace-tab-edit-btn {
@@ -237,15 +199,5 @@
   justify-content: center;
   width: 18px;
   height: 18px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--control-primary-bg);
-  color: var(--control-primary-fg);
-  cursor: pointer;
   flex-shrink: 0;
-}
-
-.workspace-tab-edit-btn:hover {
-  background: var(--accent-interactive-hover);
 }

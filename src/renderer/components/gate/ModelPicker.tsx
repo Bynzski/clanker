@@ -1,3 +1,5 @@
+import { Input } from '../ui/Input';
+import { Button } from '../ui/Button';
 import { useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { AlertTriangle, Check, ChevronDown, Search, Star, X } from 'lucide-react';
@@ -90,8 +92,8 @@ function LegacyModelPicker({ fullscreen = false, harness, model, models, sortedM
   return <div className="model-picker">
     <span className="gate-section-label">Model</span>
     <span id={warningId} hidden>Model is unavailable</span>
-    {hermes && !models.length && <button type="button" className="gate-model-refresh" disabled={refreshing} onClick={onRefreshHermes}>{refreshLabel}</button>}
-    {hermes && !models.length ? <input type="text" className="settings-select" aria-label="Hermes model" placeholder="Use Hermes default"
+    {hermes && !models.length && <Button type="button" className="gate-model-refresh" disabled={refreshing} onClick={onRefreshHermes}>{refreshLabel}</Button>}
+    {hermes && !models.length ? <Input type="text" className="settings-select" aria-label="Hermes model" placeholder="Use Hermes default"
       value={model} onChange={(event) => onSelect(event.target.value)} /> : <>
       <Popover open={favoritesOpen} onOpenChange={onFavoritesOpenChange}>
         <PopoverTrigger asChild>
@@ -119,7 +121,7 @@ function LegacyModelPicker({ fullscreen = false, harness, model, models, sortedM
                 </span>
                 {model === id && <Check size={12} strokeWidth={2.5} className="favorites-check" />}
               </button>
-              <button type="button" className="favorites-star-btn favorited" title="Remove from favorites"
+              <IconButton type="button" className="favorites-star-btn favorited" title="Remove from favorites"
                 aria-label={`Remove ${accessibleName} from favorites`} onClick={() => {
                   onToggleFavorite(id);
                   // The removed star may unmount after persistence; keep focus in the surface.
@@ -127,22 +129,22 @@ function LegacyModelPicker({ fullscreen = false, harness, model, models, sortedM
                   (next ? favoriteChoicesRef.current.get(next) : browseRef.current)?.focus();
                 }}>
                 <Star size={12} fill="currentColor" />
-              </button>
+              </IconButton>
             </div>;
           })}
-          {hermes && <button type="button" className="favorites-browse-link" onClick={() => select(savedHermesModel, false)}>
+          {hermes && <Button type="button" className="favorites-browse-link" onClick={() => select(savedHermesModel, false)}>
             {savedHermesModel ? 'Use saved default' : 'Use Hermes default'}
-          </button>}
-          <button ref={browseRef} type="button" className="favorites-browse-link" onClick={() => {
+          </Button>}
+          <Button ref={browseRef} type="button" className="favorites-browse-link" onClick={() => {
             // Prevent the outgoing Popover from refocusing its trigger over the new Dialog.
             handingOff.current = true;
             setSearch('');
             onFavoritesOpenChange(false);
             onDiscoveryOpenChange(true);
-          }}>Browse all models</button>
+          }}>Browse all models</Button>
         </PopoverContent>
       </Popover>
-      {hermes && <input type="text" className="settings-select" aria-label="Hermes model" placeholder="Enter custom model"
+      {hermes && <Input type="text" className="settings-select" aria-label="Hermes model" placeholder="Enter custom model"
         value={models.some((option) => option.id === model) ? '' : model} onChange={(event) => onSelect(event.target.value)} />}
       <Dialog open={discoveryOpen} onOpenChange={onDiscoveryOpenChange}>
         <DialogContent className="discovery-modal" aria-describedby={undefined}
@@ -153,12 +155,12 @@ function LegacyModelPicker({ fullscreen = false, harness, model, models, sortedM
           }}>
           <div className="discovery-header">
             <DialogTitle asChild><span className="discovery-title">All Models</span></DialogTitle>
-            {hermes && <button type="button" className="discovery-refresh" onClick={onRefreshHermes} disabled={refreshing}>{refreshLabel}</button>}
+            {hermes && <Button type="button" className="discovery-refresh" onClick={onRefreshHermes} disabled={refreshing}>{refreshLabel}</Button>}
             <DialogClose asChild><IconButton className="discovery-close" aria-label="Close All Models"><X size={14} /></IconButton></DialogClose>
           </div>
           <div className="discovery-search-wrap">
             <Search size={14} className="discovery-search-icon" />
-            <input ref={searchRef} type="text" role="searchbox" aria-label="Search models" aria-controls={resultsId}
+            <Input ref={searchRef} type="text" role="searchbox" aria-label="Search models" aria-controls={resultsId}
               className="discovery-search-input" placeholder="Search models..." value={search}
               onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => navigate(event)} />
           </div>
@@ -172,10 +174,10 @@ function LegacyModelPicker({ fullscreen = false, harness, model, models, sortedM
                   <span className={`discovery-model-label ${hermes ? 'hermes-model-label' : ''}`}>{label(option)}</span>
                   {model === option.id && <Check size={12} strokeWidth={2.5} className="discovery-check" />}
                 </button>
-                <button type="button" className={`discovery-star-btn ${favorite ? 'favorited' : ''}`}
+                <IconButton type="button" className={`discovery-star-btn ${favorite ? 'favorited' : ''}`}
                   title={favorite ? 'Remove from favorites' : 'Add to favorites'}
                   aria-label={`${favorite ? 'Remove' : 'Add'} ${name(option)} ${favorite ? 'from' : 'to'} favorites`}
-                  onClick={() => onToggleFavorite(option.id)}><Star size={12} fill={favorite ? 'currentColor' : 'none'} /></button>
+                  onClick={() => onToggleFavorite(option.id)}><Star size={12} fill={favorite ? 'currentColor' : 'none'} /></IconButton>
               </div>;
             })}
           </div>
@@ -223,12 +225,12 @@ export function SearchableModelPicker(props: SearchableModelPickerProps) {
         <ChevronDown size={12} className="model-pill-caret" aria-hidden="true" />
       </button>}
       footer={hermes ? <>
-        <button type="button" className="favorites-browse-link" onClick={() => { props.onSelect(props.savedHermesModel); props.onOpenChange(false); }}>
+        <Button type="button" className="favorites-browse-link" onClick={() => { props.onSelect(props.savedHermesModel); props.onOpenChange(false); }}>
           {props.savedHermesModel ? 'Use saved default' : 'Use Hermes default'}
-        </button>
-        <button type="button" className="favorites-browse-link" disabled={props.refreshing} onClick={props.onRefreshHermes}>
+        </Button>
+        <Button type="button" className="favorites-browse-link" disabled={props.refreshing} onClick={props.onRefreshHermes}>
           {props.refreshing ? 'Refreshing…' : 'Refresh Hermes models'}
-        </button>
+        </Button>
       </> : undefined} />
   </div>;
 }

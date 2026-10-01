@@ -1,3 +1,4 @@
+import { Button } from '../ui/Button';
 import { Loader2 } from 'lucide-react';
 import type { DiffMode, GitDiffResult, GitHistoryEntry } from './types';
 import './GitHistorySection.css';
@@ -35,22 +36,22 @@ export function GitHistorySection({
       </div>
 
       <div className="git-history-toolbar">
-        <button
+        <Button
           type="button"
           className={`git-history-toggle ${selectedDiffMode === 'working' ? 'active' : ''}`}
           onClick={() => onSelectWorkingDiff('working')}
           disabled={isBusy}
         >
           Working Tree
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className={`git-history-toggle ${selectedDiffMode === 'staged' ? 'active' : ''}`}
           onClick={() => onSelectWorkingDiff('staged')}
           disabled={isBusy}
         >
           Staged
-        </button>
+        </Button>
       </div>
 
       {isLoadingHistory ? (

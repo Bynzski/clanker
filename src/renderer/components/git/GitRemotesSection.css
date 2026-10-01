@@ -37,18 +37,6 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.git-remotes-add-btn:hover,
-.git-remotes-cancel-btn:hover {
-  background: var(--surface-control);
-  color: var(--text-primary);
 }
 
 .git-remotes-list {
@@ -81,19 +69,6 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 12px;
-  border: 1px dashed var(--border-default);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.git-remotes-empty-add-btn:hover {
-  border-color: var(--accent-interactive);
-  color: var(--accent-interactive);
 }
 
 .git-remote-item {
@@ -146,22 +121,6 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.git-remote-action-btn:hover {
-  background: var(--surface-control-hover);
-  color: var(--text-primary);
-}
-
-.git-remote-action-btn-danger:hover {
-  background: color-mix(in srgb, var(--status-error) 15%, transparent);
-  color: var(--status-error);
 }
 
 /* Form styles */
@@ -184,16 +143,7 @@
   font-family: var(--font-mono, monospace);
 }
 
-.git-remotes-form-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .git-remotes-form-field label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -206,30 +156,7 @@
 
 .git-remotes-input {
   width: 100%;
-  padding: 8px 10px;
   padding-right: 32px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--surface-app);
-  color: var(--text-primary);
-  font-size: 13px;
-  font-family: var(--font-mono, monospace);
-  transition: border-color 0.15s ease;
-}
-
-.git-remotes-input:focus {
-  outline: none;
-  border-color: var(--focus-ring);
-}
-
-.git-remotes-input:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.git-remotes-input::placeholder {
-  color: var(--text-muted);
-  font-size: 11px;
 }
 
 .git-remotes-input-icon {
@@ -275,8 +202,6 @@
   padding: 6px 8px;
   background: color-mix(in srgb, var(--status-error) 10%, transparent);
   border-radius: var(--radius-sm);
-  color: var(--status-error);
-  font-size: 11px;
 }
 
 .git-remotes-submit-btn {
@@ -284,24 +209,6 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 12px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--control-primary-bg);
-  color: var(--control-primary-fg);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.git-remotes-submit-btn:hover:not(:disabled) {
-  background: var(--status-info);
-}
-
-.git-remotes-submit-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 /* Spin animation for loader */

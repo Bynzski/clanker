@@ -1,3 +1,5 @@
+import { IconButton } from '../ui/IconButton';
+import { Button } from '../ui/Button';
 /**
  * ProviderMenu Component
  * Dropdown menu with quick links to provider pages.
@@ -95,7 +97,7 @@ export default function ProviderMenu({
 
   return (
     <div className="provider-menu-container" ref={menuRef}>
-      <button
+      <Button
         type="button"
         className="provider-menu-trigger"
         onClick={() => setIsOpen(!isOpen)}
@@ -111,7 +113,7 @@ export default function ProviderMenu({
             <ChevronDown size={12} className={`provider-menu-chevron ${isOpen ? 'open' : ''}`} />
           </>
         )}
-      </button>
+      </Button>
 
       {isOpen && provider && (
         <div className="provider-menu-dropdown">
@@ -120,14 +122,14 @@ export default function ProviderMenu({
             <span className="provider-repo-name">
               {provider.owner}/{provider.repo}
             </span>
-            <button
+            <IconButton aria-label="Refresh"
               type="button"
               className="provider-menu-refresh"
               onClick={handleRefresh}
               title="Refresh"
             >
               <Loader2 size={12} />
-            </button>
+            </IconButton>
           </div>
 
           {/* Error state */}

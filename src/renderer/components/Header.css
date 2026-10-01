@@ -57,54 +57,17 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 500;
-  transition: all var(--transition);
 }
 
 .header-btn-icon {
   justify-content: center;
   width: 28px;
-  padding: 4px;
-}
-
-.header-btn:hover {
-  background: var(--surface-control-hover);
-  color: var(--text-primary);
-  border-color: var(--text-secondary);
 }
 
 .header-btn.active {
   background: var(--surface-control-hover);
   color: var(--text-primary);
   border-color: var(--text-secondary);
-}
-
-.header-btn-primary {
-  background: var(--control-primary-bg);
-  border-color: var(--accent-interactive);
-  color: var(--control-primary-fg);
-}
-
-.header-btn-primary:hover {
-  background: var(--control-primary-bg-hover);
-  border-color: var(--control-primary-bg-hover);
-  color: var(--control-primary-fg-hover);
-}
-
-.header-btn-danger {
-  color: var(--text-secondary);
-}
-
-.header-btn-danger:hover {
-  background: var(--control-danger-bg);
-  border-color: var(--status-error);
-  color: var(--control-danger-fg);
 }
 
 /* Direct terminal launch buttons */
@@ -146,32 +109,8 @@
   flex-shrink: 0;
 }
 
-/* Legacy styles for compatibility */
-.layout-select,
-.harness-select {
-  padding: 4px 8px;
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: 13px;
-  cursor: pointer;
-  outline: none;
-}
-
-.layout-select:hover,
-.harness-select:hover {
-  border-color: var(--text-secondary);
-}
-
-.layout-select option,
-.harness-select option {
-  background: var(--surface-raised);
-  color: var(--text-primary);
-}
-
 /* Interactive Header panels are positioned by Popover. */
-.header-btn.clanker-button { height: auto; font-weight: 500; gap: 5px; }
+.header-btn.clanker-button { height: 28px; gap: 5px; }
 .header-btn.clanker-icon-button { width: 28px; }
 
 .settings-dropdown {
@@ -235,38 +174,12 @@
 .settings-select {
   flex: 1;
   min-width: 0;
-  padding: 4px 8px;
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: 11px;
-  outline: none;
-}
-
-.settings-select:disabled {
-  opacity: 0.55;
-  cursor: default;
 }
 
 .settings-dropdown-action {
   width: 100%;
   margin-top: 10px;
-  padding: 6px 10px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--surface-control);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
   text-align: left;
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.settings-dropdown-action:hover {
-  background: var(--surface-control-hover);
-  color: var(--text-primary);
 }
 
 /* Harness Defaults Section */
@@ -458,19 +371,11 @@
 }
 
 .harness-defaults-remove-fav {
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--text-muted);
-  font-size: 12px;
-  padding: 0 1px;
   line-height: 1;
   margin-left: 2px;
-}
-
-.harness-defaults-remove-fav:hover {
-  color: var(--status-error);
 }
 
 .harness-defaults-add-fav {
@@ -479,20 +384,6 @@
   gap: 3px;
   min-width: 0;
   max-width: 100%;
-  padding: 2px 5px;
-  background: none;
-  border: 1px dashed var(--border-default);
-  border-radius: var(--radius-sm);
-  font-size: 10px;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.harness-defaults-add-fav:hover {
-  background: var(--surface-control);
-  border-color: var(--text-secondary);
-  color: var(--text-secondary);
 }
 
 .harness-defaults-add-fav svg {

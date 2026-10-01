@@ -10,8 +10,8 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
 
 | Class | Definition |
 |---|---|
-| **A** | **Already aligned** with shared design system (uses shared tokens/primitives, `--radius-sm` geometry, no local drift). |
-| **B** | **Uses shared primitives or tokens, but still has local styling drift** (e.g. 3px/4px/5px radii, custom button/input styling alongside primitives). |
+| **A** | **Aligned**: ordinary controls render the appropriate shared primitive and leave its standard appearance/state contract centralized, or have an explicitly documented specialized reason to remain native. Geometry tokens alone do not establish primitive adoption. |
+| **B** | **Uses shared primitives or tokens, but still has local styling drift or duplicate control contracts** (e.g. 3px/4px/5px radii, custom button/input styling alongside primitives). |
 | **C** | **Should migrate to an existing shared primitive** (e.g. hand-rolled modal overlays, custom dialog backdrops, duplicate button variants). |
 | **D** | **Requires a missing shared primitive or canonical control style** (e.g. shared `Input`, `Textarea`, `Select`, `Field`, `InputGroup`). |
 | **E** | **Intentionally bespoke and should remain so** (e.g. browser tab trapezoidal curvature, terminal canvas, CodeMirror gutters, splitter pills). |
@@ -22,100 +22,65 @@ This audit reviews every user-visible renderer screen, dialog, panel, control, a
 
 | # | Area / Subsystem | Files | Class | Current Pattern & Finding | Proposed Action | Risk & Behavior Notes |
 |---|---|---|:---:|---|---|---|
-| 1 | **Application Shell** | `App.tsx`, `App.css` | **A** | **Aligned (Stage 5):** Loading placeholder (`.main-content-loading`) and workspace error fallback button normalized to `var(--radius-sm)`. | Completed. | Full shell and error fallback verified. |
-| 2 | **Title Bar & Window Controls** | `TitleBar.tsx`, `TitleBar.css`, `WindowControls.tsx`, `WindowControls.css` | **A** | Zero radius literals; uses semantic tokens and shared `WindowControls` across normal titlebar and gate. | Retain as canonical reference. | No risk; already aligned. |
-| 3 | **Workspace Tabs** | `WorkspaceTabs.tsx`, `WorkspaceTabs.css` | **A** | **Aligned (Stage 5):** Close button, rename trigger, inline rename input, and save button normalized from 3px to `var(--radius-sm)`; attention badge retained as intentional pill. | Completed. | Fully validated in drag/reorder, rename, and close. |
+| 1 | **Application Shell** | `App.tsx`, `App.css` | **A/E** | **Stage 5B actual adoption:** Recipe error dismissal uses Button; Reload in the crash fallback intentionally avoids shared UI dependencies. Shell geometry remains token aligned. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 2 | **Title Bar & Window Controls** | `TitleBar.tsx`, `TitleBar.css`, `WindowControls.tsx`, `WindowControls.css` | **E** | **Stage 5B actual adoption:** Canonical WindowControls intentionally owns OS caption hit targets and close emphasis, shared by titlebar and gate. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 3 | **Workspace Tabs** | `WorkspaceTabs.tsx`, `WorkspaceTabs.css` | **A/E** | **Stage 5B actual adoption:** Input for inline rename; IconButton for save, rename, close, attention jump and new workspace. Specialized draggable tab wrapper owns tab shape and selection. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
 | 4 | **Status Bar** | `StatusBar.tsx`, `StatusBar.css` | **A** | Minimal, compact chrome. Environment pill uses `border-radius: var(--radius-sm)`. | Retain as canonical reference. | No risk; already aligned. |
-| 5 | **Header Controls & Harness Pills** | `Header.tsx`, `Header.css`, `HeaderRightControls.tsx` | **A** | **Aligned (Stage 5):** Harness pills, favorite tags, and add-favorite trigger normalized from 3px to `var(--radius-sm)`. | Completed. | Dropdown triggers and harness pills verified. |
-| 6 | **Header Settings Popover** | `HeaderRightControls.tsx`, `Header.css`, `AppearanceSettings.tsx`, `HarnessDefaultsSection.tsx` | **A** | **Aligned (Stage 5):** Uses Radix `Popover` primitive; settings inputs and selects use `var(--radius-sm)`. | Completed. | Theme switching and harness settings verified. |
-| 7 | **Workspace Gate: Fullscreen Launcher** | `WorkspaceGate.tsx`, `WorkspaceGateContent.tsx`, `WorkspaceGate.css`, `WorkspaceLauncher.css` | **A** | **Aligned (Stage 3):** Standardized directory cards, suggestion items, harness options, grid options to `var(--radius-sm)`; intentional pill counters retained. | Completed. | Fully validated across launcher layouts and terminal selection. |
+| 5 | **Header Controls & Harness Pills** | `Header.tsx`, `Header.css`, `HeaderRightControls.tsx` | **A/E** | **Stage 5B actual adoption:** Header actions use Button/IconButton. Harness identity/launch pills remain specialized product controls with documented composition. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 6 | **Header Settings Popover** | `HeaderRightControls.tsx`, `Header.css`, `AppearanceSettings.tsx`, `HarnessDefaultsSection.tsx` | **A/E** | **Stage 5B actual adoption:** AI provider/model and theme render Select. Harness flags and manual models render Input; model refresh/browse and favorites actions use Button/IconButton. Native checkboxes and harness disclosure rows are intentional. Radix Popover retains focus ownership. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 7 | **Workspace Gate: Fullscreen Launcher** | `WorkspaceGate.tsx`, `WorkspaceGateContent.tsx`, `WorkspaceGate.css`, `WorkspaceLauncher.css` | **A/E** | **Stage 5B actual adoption:** Directory fields render Input; browsing/launch actions render IconButton/Button. Recipe summary chips and directory suggestion rows remain product owned. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
 | 8 | **Workspace Gate: Modal Flow** | `WorkspaceGate.tsx` (`WorkspaceGateModal`), `WorkspaceGate.css` | **A** | **Aligned (Stage 3):** Composes shared `DialogContent.modal-content`; normalized entrance and shell to `var(--radius-sm)`. | Completed. | Fully validated with Escape and backdrop dismissal. |
-| 9 | **Workspace Gate: Location Selector** | `WorkspaceLocationPicker.tsx`, `WorkspaceTargetPicker.tsx`, `WorkspaceTargetPicker.css` | **A** | **Aligned (Stage 3):** `.gate-location-selector` and `WorkspaceTargetPicker` trigger/content normalized to `var(--radius-sm)`. | Completed. | Retains headless Popover and segmented choice behavior. |
-| 10 | **Workspace Gate: Worktree Subflows** | `WorktreeLauncher.tsx`, `RemoteWorktreePicker.tsx`, `RemoteWorktreeCreate.tsx`, `RemoteWorktreeInspect.tsx`, `WorkspaceGate.css` | **A** | **Aligned (Stage 3):** Inputs, action buttons, forward button, and confirmation boxes normalized from 5px to `var(--radius-sm)`. | Completed. | Fully validated in creation, inspection, and removal flows. |
-| 11 | **SSH Environment Manager** | `SshEnvironmentManager.tsx`, `WorkspaceGate.css` | **A** | **Migrated (Stage 3):** Uses shared `Dialog` (shell normalized to `var(--radius-sm)`), shared `Input`, `Field`, `FieldLabel`, `Button`, `IconButton`. | Completed. | Fully validated with add, edit, test, delete, and focus restoration. |
-| 12 | **Remote Directory Chooser** | `RemoteDirectoryChooser.tsx`, `RemoteDirectoryChooser.css` | **A** | **Migrated (Stage 2):** Uses shared `Dialog`, `Input`, `Button`, `IconButton`. 8px shell, 5px button, and 4px input eliminated; zero exceptions remaining. | Completed. | Fully validated with dedicated interaction test suite. |
-| 13 | **Model Picker & Favorites** | `ModelPicker.tsx`, `WorkspaceGate.css` | **A** | **Aligned (Stage 3):** Popover items, browse link, and star buttons normalized to `var(--radius-sm)`. | Completed. | Fully validated in favorite toggle and navigation. |
+| 9 | **Workspace Gate: Location Selector** | `WorkspaceLocationPicker.tsx`, `WorkspaceTargetPicker.tsx`, `WorkspaceTargetPicker.css` | **A/E** | **Stage 5B actual adoption:** Location search renders Input; settings/add actions use Button. Composite location trigger and identity/detail option rows are specialized. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 10 | **Workspace Gate: Worktree Subflows** | `WorktreeLauncher.tsx`, `RemoteWorktreePicker.tsx`, `RemoteWorktreeCreate.tsx`, `RemoteWorktreeInspect.tsx`, `WorkspaceGate.css` | **A** | **Stage 5B actual adoption:** Local and remote worktree base/branch fields use Input; repository selection uses Select; load/refresh/open/create/remove/cancel actions use Button. No worktree lifecycle logic changed. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 11 | **SSH Environment Manager** | `SshEnvironmentManager.tsx`, `WorkspaceGate.css` | **A** | **Stage 5B actual adoption:** SSH editor retains shared form primitives; environment edit/delete actions now render IconButton. Environment card layout remains product owned. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 12 | **Remote Directory Chooser** | `RemoteDirectoryChooser.tsx`, `RemoteDirectoryChooser.css` | **A/E** | **Stage 5B actual adoption:** Remote chooser retry renders Button; directory navigation rows remain specialized. Dialog/form controls retain existing shared primitives. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 13 | **Model Picker & Favorites** | `ModelPicker.tsx`, `WorkspaceGate.css` | **A/E** | **Stage 5B actual adoption:** Manual model/search fields use Input; refresh/browse actions use Button and favorite actions use IconButton. Composite model trigger and metadata option rows intentionally remain native. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
 | 14 | **Model Discovery Modal** | `ModelPicker.tsx`, `WorkspaceGate.css` | **A** | **Aligned (Stage 3):** Uses shared `Dialog`; content shell, discovery items, close button, and star buttons normalized to `var(--radius-sm)`. | Completed. | Fully validated in model search and selection. |
-| 15 | **Searchable Choices** | `SearchablePicker.tsx`, `SearchablePicker.css` | **A** | Uses shared `Popover`, `--radius-sm` on rows/choices, token-based surfaces and focus rings. | Retain as canonical primitive reference. | No risk; already aligned. |
+| 15 | **Searchable Choices** | `SearchablePicker.tsx`, `SearchablePicker.css` | **A/E** | **Stage 5B actual adoption:** SearchablePicker composes Input and IconButton for search/favorites. Its native choice row is a shared composite picker implementation with selected state and label composition. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
 | 16 | **Launch Recipe Modal** | `RecipeModal.tsx`, `RecipeModal.css` | **A** | **Migrated (Stage 2):** Uses shared `Dialog`, `Button`, `IconButton`, `Input`, `Select`, `Field`, `FieldLabel`. 8px shell, 6px fields/buttons/cards, and 4px step controls eliminated; intentional 12px pill badge retained. | Completed. | Fully validated in create, edit, preview, launch, and delete states. |
 | 17 | **VCS Credentials** | `CredentialSettings.tsx`, `CredentialSettings.css` | **A** | Uses shared `Dialog` and `IconButton`; standard `var(--radius-sm)` on dialog, inputs, tabs, cards; intentional 999px pill for status chip. | Retained as canonical design-system reference. | No risk; already aligned. |
 | 18 | **Commit Dialog** | `CommitDialog.tsx`, `CommitDialog.css` | **A** | **Migrated (Stage 4):** Uses shared `Dialog`, `Textarea`, `Button`, `IconButton`; manual lease & Escape lifecycle removed; file status tag remains badge; zero backlog entries remaining. | Completed. | Fully validated including nested DiffViewer interaction. |
 | 19 | **Confirmation / Alert Dialogs** | `ConfirmCloseDialog.tsx`, `ConfirmCloseDialog.css` | **A** | **Aligned (Stage 5):** Uses shared `AlertDialog`, `AlertDialogContent`, and shared `Button` variants; redundant button CSS removed. | Completed. | Fully validated in close prompt flows. |
 | 20 | **Git Delete Branch Dialog** | `GitDeleteBranchDialog.tsx`, `GitButton.css` | **A** | **Migrated (Stage 4):** Uses shared `AlertDialog`, `Button`, with `onBackdropCancel`; `--radius-lg` shell eliminated; normal->force delete transition preserved. | Completed. | Fully validated in normal and force delete states. |
-| 21 | **File Explorer** | `FileExplorer/index.tsx`, `FileTree.tsx`, `FileExplorer.css` | **A** | **Aligned (Stage 5):** Inline rename input normalized from 3px to `var(--radius-sm)`; action buttons use `var(--radius-sm)`; splitter pill and git dot circle retained. | Completed. | Tree node renaming and filtering verified. |
-| 22 | **File Explorer Context Menu** | `ContextMenu.tsx`, `ContextMenu.css` | **A** | **Aligned (Stage 5):** Lightweight specialized context menu uses `var(--radius-sm)`, elevated surface, border, and shadow; correct `role="menu"` / `menuitem`, Escape dismissal, and outside click. | Retained as specialized aligned menu. | Low risk; fully tested. |
-| 23 | **Browser Panel & Toolbar** | `BrowserPanel.tsx`, `BrowserPanel.css` | **A** | **Aligned (Stage 5):** Panel container, nav buttons, and annotate button normalized to `var(--radius-sm)`; drag handle dot texture retained. | Completed. | WebContentsView frame bounds verified. |
-| 24 | **Browser URL Field & Suggestions** | `BrowserUrlInput.tsx`, `BrowserPanel.css` | **A** | **Aligned (Stage 5):** URL input, Go button, suggestions popup, and suggestion items normalized to `var(--radius-sm)`. | Completed. | URL autocomplete and keyboard selection verified. |
-| 25 | **Browser Tab Strip** | `BrowserTabStrip.tsx`, `BrowserPanel.css` | **E/A** | **Aligned (Stage 5):** Tab uses intentional curved trapezoid shape (`border-radius: 7px 7px 2px 2px`, Class E); tab add and close buttons normalized to `var(--radius-sm)`. | Completed. | Tab add/close behavior verified. |
-| 26 | **Remote Preview Bar** | `RemotePreviewBar.tsx`, `BrowserPanel.css` | **A** | **Aligned (Stage 5):** Port inputs and start/stop/open buttons normalized from 3px to `var(--radius-sm)`. | Completed. | SSH port forwarding preview verified. |
+| 21 | **File Explorer** | `FileExplorer/index.tsx`, `FileTree.tsx`, `FileExplorer.css` | **A/E** | **Stage 5B actual adoption:** Inline rename/create and filter render Input; toolbar and clear/close actions render IconButton. Tree entry rows retain indentation, expansion, context menu and inline editing. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 22 | **File Explorer Context Menu** | `ContextMenu.tsx`, `ContextMenu.css` | **E** | **Stage 5B actual adoption:** Existing context menu item model owns menuitem semantics, destructive emphasis, keyboard/outside dismissal and compact row composition. Intentionally specialized; not ordinary buttons. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 23 | **Browser Panel & Toolbar** | `BrowserPanel.tsx`, `BrowserPanel.css` | **A** | **Stage 5B actual adoption:** Browser navigation/external/annotation actions use IconButton and Go uses primary Button. CSS retains toolbar dimensions and annotation active emphasis. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 24 | **Browser URL Field & Suggestions** | `BrowserUrlInput.tsx`, `BrowserPanel.css` | **A/E** | **Stage 5B actual adoption:** BrowserUrlInput actually imports/renders mono Input. URL listbox options remain native specialized selection rows; autocomplete handlers and relationships are unchanged. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 25 | **Browser Tab Strip** | `BrowserTabStrip.tsx`, `BrowserPanel.css` | **A/E** | **Stage 5B actual adoption:** Browser tab close/add render IconButton. Native selection and curved draggable tab geometry remain specialized. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 26 | **Remote Preview Bar** | `RemotePreviewBar.tsx`, `BrowserPanel.css` | **A** | **Stage 5B actual adoption:** Remote/local ports actually render number Input; start/retry, stop and open render Button. Port bounds, validation, busy/locked states and forwarding lifecycle remain unchanged. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
 | 27 | **Annotation Handoff Dialog** | `AnnotationHandoffDialog.tsx`, `AnnotationHandoffDialog.css` | **A** | **Migrated (Stage 2):** Uses shared `Dialog`, `Button`, `IconButton`, `Textarea`. `--radius-md` shell and 5px textarea/buttons eliminated; zero exceptions remaining. | Completed. | Fully validated with Escape and focus restoration tests. |
-| 28 | **Editor Chrome & Tab Bar** | `EditorPane.tsx`, `EditorPane.css`, `EditorTabBar.tsx`, `EditorTabBar.css` | **A** | **Aligned (Stage 5):** Editor panel container, lock button, close button, reload banner button, tab bar scrollbar thumb, and tab close button normalized to `var(--radius-sm)`; unsaved dot circle retained. | Completed. | Tab switching, saving, and sizing verified. |
+| 28 | **Editor Chrome & Tab Bar** | `EditorPane.tsx`, `EditorPane.css`, `EditorTabBar.tsx`, `EditorTabBar.css` | **A/E** | **Stage 5B actual adoption:** Editor close/reload actions and tab close render IconButton/Button. Specialized tab wrapper keeps file selection, dirty marker and geometry; CodeMirror remains independent. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
 | 29 | **Diff Viewer Chrome** | `DiffViewer.tsx`, `DiffViewer.css` | **A** | **Migrated (Stage 4):** Uses single shared `Dialog` shell across all five states, `IconButton`, `workspaceId` wire-through; nested Dialog with topmost Escape validated. | Completed. | Fully validated standalone and inside CommitDialog. |
-| 30 | **Terminal Pane Chrome** | `TerminalPane.tsx`, `TerminalPane.css` | **A** | **Aligned (Stage 5):** Terminal action buttons and close button normalized from 4px to `var(--radius-sm)`; status dot circle retained. | Completed. | Terminal layout and xterm instance cache verified. |
-| 31 | **Notes Pane** | `NotesPane.tsx`, `NotesPane.css` | **A** | **Aligned (Stage 5):** Notes panel container and close button normalized to `var(--radius-sm)`; drag handle dot texture retained. | Completed. | Note persistence and pane close verified. |
-| 32 | **Chat History Popover** | `ChatHistoryDropdown.tsx`, `ChatHistoryDropdown.css` | **A** | Uses Radix `Popover`; shell uses `var(--radius-sm)`; session count badge uses 8px (intentional pill counter). | Retained as aligned popover. | Low risk; already aligned. |
-| 33 | **Git Menu & Popover** | `GitButton.tsx`, `GitRepoMenu.tsx`, `GitButton.css` | **A** | **Aligned (Stage 4):** `.git-menu` normalized from `var(--radius-md)` to `var(--radius-sm)`; delete branch dialog migrated to AlertDialog; status pills (999px) retained. | Completed. | Zero backlog entries remaining in GitButton.css. |
-| 34 | **Git Sections: Branches, Stash, Merge** | `GitBranchesSection.*`, `GitStashSection.*`, `GitMergeSection.*` | **A** | **Aligned (Stage 5):** Lists, inputs, selects, and merge info use `var(--radius-sm)`; branch tags (999px) retained. | Completed. | Fully validated in branch/stash/merge operations. |
-| 35 | **Git Sections: Remotes** | `GitRemotesSection.tsx`, `GitRemotesSection.css` | **A** | **Aligned (Stage 5):** Remote cards, add buttons, item action buttons, form inputs, and submit buttons normalized from 4px to `var(--radius-sm)`; count and suggestion badges retained as pills. | Completed. | Zero backlog entries remaining in GitRemotesSection.css. |
-| 36 | **Provider Badge & Menu** | `ProviderBadge.tsx/css`, `ProviderMenu.tsx/css` | **A** | **Aligned (Stage 4):** Menu trigger, dropdown content, refresh button, and link items normalized from 6px/8px/4px to `var(--radius-sm)`; provider status badges (4px/10px) retained. | Completed. | Zero backlog entries remaining in ProviderMenu.css. |
-| 37 | **Task Recovery Section** | `TaskRecoverySection.tsx`, `TaskRecoverySection.css` | **A** | **Aligned (Stage 5):** Task items, action buttons, session picker, and session items normalized from 6px/4px/3px to `var(--radius-sm)`; count and status badges retained as pills. | Completed. | Zero backlog entries remaining in TaskRecoverySection.css. |
+| 30 | **Terminal Pane Chrome** | `TerminalPane.tsx`, `TerminalPane.css` | **A/E** | **Stage 5B actual adoption:** Terminal close renders IconButton; terminal header, drag texture, status indicator and xterm remain specialized product composition. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 31 | **Notes Pane** | `NotesPane.tsx`, `NotesPane.css` | **A** | **Stage 5B actual adoption:** Notes actually renders mono Textarea and close IconButton. CSS keeps pane sizing, resize policy, writing-area padding and borderless composition; typography, placeholder, focus and disabled/read-only contract are shared. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 32 | **Chat History Popover** | `ChatHistoryDropdown.tsx`, `ChatHistoryDropdown.css` | **A/E** | **Stage 5B actual adoption:** Radix Popover owns overlay/focus; expandable harness groups and conversation metadata rows intentionally remain specialized native selection controls. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 33 | **Git Menu & Popover** | `GitButton.tsx`, `GitRepoMenu.tsx`, `GitButton.css` | **A/E** | **Stage 5B actual adoption:** Git trigger and ordinary menu actions use Button/IconButton; shared Popover/AlertDialog remains. Git status badges and section/list composition remain product owned. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 34 | **Git Sections: Branches, Stash, Merge** | `GitBranchesSection.*`, `GitStashSection.*`, `GitMergeSection.*` | **A/E** | **Stage 5B actual adoption:** Branch/stash fields render Input; merge selection renders Select; standard actions render Button/IconButton. Native stash checkbox and commit selection rows remain specialized. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 35 | **Git Sections: Remotes** | `GitRemotesSection.tsx`, `GitRemotesSection.css` | **A/E** | **Stage 5B actual adoption:** RemoteNameInput and URL render mono Input; Field/FieldLabel/InputGroup/FormMessage compose forms. Submit/add use Button and rename/remove/add/cancel glyph actions use IconButton. Remote cards, validation icons and quick-name suggestion pills remain product owned. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 36 | **Provider Badge & Menu** | `ProviderBadge.tsx/css`, `ProviderMenu.tsx/css` | **A/E** | **Stage 5B actual adoption:** Provider trigger/refresh use Button/IconButton. PR status badges and deep-link menu rows remain specialized existing product/menu models. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
+| 37 | **Task Recovery Section** | `TaskRecoverySection.tsx`, `TaskRecoverySection.css` | **A/E** | **Stage 5B actual adoption:** Task actions use Button/IconButton; conversation association option rows and task metadata/status badges remain specialized. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
 | 38 | **Dynamic Pane Layout & Dock Targets** | `DynamicPaneLayout.tsx`, `DynamicPaneLayout.css`, `DockEdgeTargets.tsx` | **A/E** | **Aligned (Stage 5):** Drag preview normalized from 8px to `var(--radius-sm)`; dock targets use `var(--radius-md)`; splitter pills (999px) and drag handle dot textures retained as Class E. | Completed. | Docking and drag preview verified. |
-| 39 | **Error Boundary** | `ErrorBoundary.tsx`, `ErrorBoundary.css` | **A** | **Aligned (Stage 5):** Error fallback details card and retry button normalized to `var(--radius-sm)`. | Completed. | Crash fallback verified. |
+| 39 | **Error Boundary** | `ErrorBoundary.tsx`, `ErrorBoundary.css` | **E** | **Stage 5B actual adoption:** Crash recovery retry intentionally retains native button markup and tokenized CSS to avoid shared-control dependencies during UI failure. This is an explicit exception, not shared Button adoption. | Complete; specialized controls documented in raw-control inventory. | Focused behavior suites and final validation. |
 
 ---
 
-## 3. Summary by Alignment Classification
+## 3. Stage 5B correction and final control inventory
 
-- **Class A (Already aligned / Migrated):** 36 areas
-  - Application Shell (#1) — *Aligned in Stage 5*
-  - Title Bar & Window Controls (#2)
-  - Workspace Tabs (#3) — *Aligned in Stage 5*
-  - Status Bar (#4)
-  - Header Controls & Harness Pills (#5) — *Aligned in Stage 5*
-  - Header Settings Popover (#6) — *Aligned in Stage 5*
-  - Workspace Gate Fullscreen Launcher (#7) — *Aligned in Stage 3*
-  - Workspace Gate Modal Flow (#8) — *Aligned in Stage 3*
-  - Workspace Gate Location Selector (#9) — *Aligned in Stage 3*
-  - Workspace Gate Worktree Subflows (#10) — *Aligned in Stage 3*
-  - SSH Environment Manager (#11) — *Migrated in Stage 3*
-  - Remote Directory Chooser (#12) — *Migrated in Stage 2*
-  - Model Picker & Favorites (#13) — *Aligned in Stage 3*
-  - Model Discovery Modal (#14) — *Aligned in Stage 3*
-  - Searchable Choices primitive (#15)
-  - Launch Recipe Modal (#16) — *Migrated in Stage 2*
-  - VCS Credentials (#17)
-  - Commit Dialog (#18) — *Migrated in Stage 4*
-  - Confirmation / Alert Dialogs (#19) — *Aligned in Stage 5*
-  - Git Delete Branch Dialog (#20) — *Migrated in Stage 4*
-  - File Explorer (#21) — *Aligned in Stage 5*
-  - File Explorer Context Menu (#22) — *Aligned in Stage 5*
-  - Browser Panel & Toolbar (#23) — *Aligned in Stage 5*
-  - Browser URL Field & Suggestions (#24) — *Aligned in Stage 5*
-  - Remote Preview Bar (#26) — *Aligned in Stage 5*
-  - Annotation Handoff Dialog (#27) — *Migrated in Stage 2*
-  - Editor Chrome & Tab Bar (#28) — *Aligned in Stage 5*
-  - Diff Viewer Chrome (#29) — *Migrated in Stage 4*
-  - Terminal Pane Chrome (#30) — *Aligned in Stage 5*
-  - Notes Pane (#31) — *Aligned in Stage 5*
-  - Chat History Popover (#32)
-  - Git Menu & Popover (#33) — *Aligned in Stage 4*
-  - Git Branches, Stash, Merge (#34) — *Aligned in Stage 5*
-  - Git Remotes Section (#35) — *Aligned in Stage 5*
-  - Provider Badge & Menu (#36) — *Aligned in Stage 4*
-  - Task Recovery Section (#37) — *Aligned in Stage 5*
-  - Dynamic Pane Layout & Dock Targets (#38) — *Aligned in Stage 5*
-  - Error Boundary (#39) — *Aligned in Stage 5*
-- **Class B (Uses primitives/tokens, local styling drift):** 0 areas
-- **Class C (Should migrate to shared primitive):** 0 areas
-- **Class D (Requires shared form-control primitive):** 0 areas (completed via `ui/Input`, `ui/Textarea`, `ui/Select`, `ui/Field`)
-- **Class E (Intentionally bespoke):** 3 distinct patterns
-  - Browser tab trapezoid rounding (`border-radius: 7px 7px 2px 2px` in `BrowserPanel.css`, Area #25)
-  - Splitter bar grab handles (`border-radius: 999px` in `DynamicPaneLayout.css`, `FileExplorer.css`)
-  - Circular status dots / activity pulses (`border-radius: 50%` in `TerminalPane.css`, `EditorTabBar.css`, `FileExplorer.css`, `TaskRecoverySection.css`)
-- **STAGED_MIGRATION_BACKLOG:** 0 entries (completely removed from `geometryContract.test.ts`)
+Stage 5 completed geometry alignment. Its previous Class A findings overstated shared-control adoption by treating tokenized radii as sufficient. The table above now distinguishes actual shared primitives (A) from explicitly specialized composition (E). Mixed areas are A/E; no ordinary feature field is justified merely because it looks aligned.
+
+The baseline scan found **208 raw JSX sites**: 34 inputs, 2 textareas, 7 selects, and 165 buttons. **158 ordinary sites** migrated to existing shared primitives. Two tab selectors now use semantic div wrappers to avoid nested buttons, and two former span close actions additionally render IconButton.
+
+The final scan has **48 raw sites**: 7 inputs, 1 textarea, 1 select, and 39 buttons. This includes four canonical primitive implementations, six native checkbox/radio sites, three canonical OS caption buttons, two crash fallback buttons, and 33 specialized product/menu/picker buttons. Every source site and reason, including the before-migration classification, appears in [the raw-control inventory](ui-raw-control-inventory.md).
+
+Standard field surface, border, radius, typography, placeholder, focus, disabled/read-only styling and standard button appearance now come from the shared control layer. Feature CSS retains required dimensions, flex/grid composition, spacing, positioning and explicit product selection emphasis. Notes retains borderless pane composition. Product rows, cards, badges, tabs and context menu models remain feature owned.
+
+A focused CSS contract test guards the known ordinary field classes against reintroducing standard appearance/state declarations. Behavior tests verify actual shared class rendering alongside existing event/ref behavior. There is no raw-tag ban. The geometry enforcement and its intentional-exception list remain unchanged; no radius exception was added.
+
 ---
 
-## 4. Complete Inventory of Hard-Coded Radius Patterns
+## 4. Historical pre-migration inventory of hard-coded radius patterns
+
+This section records the original geometry findings, not current source locations or outstanding work. The current geometry contract passes; Stage 5B does not reopen the geometry migration.
 
 A systematic sweep of all `.css` files under `src/renderer/` identified the following non-standard radius patterns:
 
@@ -135,7 +100,7 @@ A systematic sweep of all `.css` files under `src/renderer/` identified the foll
 
 ---
 
-## 5. Architectural Recommendations for Stage 1 Foundation
+## 5. Historical architectural recommendations for Stage 1 foundation
 
 1. **Geometry Contract in `README.md`**:
    - Establish `--radius-sm` (2px) as the authoritative default for all rectangular Clanker UI.
@@ -158,7 +123,7 @@ A systematic sweep of all `.css` files under `src/renderer/` identified the foll
 
 ---
 
-## 6. Recommended Migration Sequence for Subsequent Stages
+## 6. Historical migration sequence
 
 1. **Stage 2: Foundation proof & obvious dialog outliers**
    - Migrate `RecipeModal` (Class C/D) to shared `Dialog`, `Button`, and shared form controls.

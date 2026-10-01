@@ -37,20 +37,6 @@
 .git-create-branch-input {
   flex: 1;
   min-width: 0;
-  padding: 8px 10px;
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: 12px;
-}
-
-.git-create-branch-input:focus {
-  border-color: var(--focus-ring);
-}
-
-.git-create-branch-input::placeholder {
-  color: var(--text-muted);
 }
 
 .git-create-branch-submit {

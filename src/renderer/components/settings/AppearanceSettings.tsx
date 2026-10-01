@@ -1,3 +1,4 @@
+import { Select } from '../ui/Select';
 import { useId } from 'react';
 import { THEME_IDS, THEME_METADATA, isThemeId } from '../../../shared/types/theme';
 import { useThemeStore } from '../../theme/themeStore';
@@ -12,7 +13,7 @@ export default function AppearanceSettings() {
       <div className="settings-section-title">Appearance</div>
       <div className="settings-row">
         <label className="settings-row-label" htmlFor={selectId}>Theme</label>
-        <select
+        <Select
           id={selectId}
           className="settings-select"
           value={theme}
@@ -24,7 +25,7 @@ export default function AppearanceSettings() {
           {THEME_IDS.map((id) => (
             <option key={id} value={id}>{THEME_METADATA[id].label}</option>
           ))}
-        </select>
+        </Select>
       </div>
     </section>
   );

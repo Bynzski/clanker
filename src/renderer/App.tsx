@@ -1,3 +1,4 @@
+import { Button } from './components/ui/Button';
 import type { WorkspaceTerminalLaunch } from './lib/workspaceLaunchPlan';
 import { Suspense, lazy, useEffect, useState } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -347,7 +348,7 @@ function App() {
               <li key={step.id}>{step.error ?? `${step.type} failed`}</li>
             ))}</ul>
           </div>
-          <button type="button" onClick={() => setRecipeFailure(null)} aria-label="Dismiss recipe error">Dismiss</button>
+          <Button type="button" onClick={() => setRecipeFailure(null)} aria-label="Dismiss recipe error">Dismiss</Button>
         </div>
       )}
       <div className="main-content">

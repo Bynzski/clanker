@@ -62,24 +62,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 150ms ease-out;
-  padding: 0;
   flex-shrink: 0;
-}
-
-.notes-pane-close-btn:hover {
-  background: color-mix(in srgb, var(--status-error) 20%, transparent);
-  color: var(--status-error);
-}
-
-.notes-pane-close-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
 }
 
 .notes-editor {
@@ -87,17 +70,8 @@
   min-height: 0;
   width: 100%;
   resize: none;
-  border: none;
-  outline: none;
+  /* The editor fills the pane; focus and text styling remain shared. */
   padding: 12px 14px;
-  background: var(--surface-app);
-  color: var(--text-primary);
-  font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-}
-
-.notes-editor::placeholder {
-  color: var(--text-secondary);
-  opacity: 0.6;
 }
 
 .notes-panel--hidden {

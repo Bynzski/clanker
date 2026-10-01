@@ -704,7 +704,28 @@ describe('S8: Inline create/rename UI', () => {
     await waitFor(() => {
       expect(input).toBeInTheDocument();
       expect(input).toHaveFocus();
+      expect(input).toHaveClass('clanker-input');
     });
+  });
+
+  it('commits the shared inline rename field on blur', async () => {
+    setActiveWorkspace({ workspacePath: '/workspace' });
+    const fileRename = vi.fn().mockResolvedValue({ success: true });
+    installElectronApiMock({ fileRename, fileListDirectory: vi.fn().mockResolvedValue({
+      success: true, entries: [createEntry('index.ts', '/workspace/index.ts', false)],
+    }) });
+    render(<FileExplorer />);
+    fireEvent.contextMenu(await screen.findByText('index.ts'));
+    fireEvent.click(await screen.findByText('Rename'));
+    const input = document.querySelector('.tree-node-input') as HTMLInputElement;
+    expect(input).toHaveClass('clanker-input');
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(input.selectionStart).toBe(input.value.length);
+    fireEvent.change(input, { target: { value: 'main.ts' } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(fileRename).toHaveBeenCalledWith(expect.objectContaining({
+      oldPath: '/workspace/index.ts', newPath: '/workspace/main.ts',
+    })));
   });
 
   it('commits rename on Enter key', async () => {

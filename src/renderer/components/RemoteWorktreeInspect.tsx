@@ -1,3 +1,4 @@
+import { Button } from './ui/Button';
 import { useEffect, useRef, useState } from 'react';
 import type { GitWorktree, GitWorktreeRemoveResult } from '../../shared/types/git';
 
@@ -58,14 +59,14 @@ export default function RemoteWorktreeInspect({ workspaceId, workspacePath, work
     }
   };
   return <div className="remote-worktree-inspect">
-    <button type="button" disabled={busy || disabled} onClick={() => void inspect()} aria-label={`Inspect ${worktreePath}`}>{removing ? 'Removing…' : busy ? 'Inspecting…' : 'Inspect'}</button>
-    {onRemoved && <button type="button" disabled={busy || disabled} onClick={() => void inspect(true)} aria-label={`Remove ${worktreePath}`}>Remove…</button>}
+    <Button type="button" disabled={busy || disabled} onClick={() => void inspect()} aria-label={`Inspect ${worktreePath}`}>{removing ? 'Removing…' : busy ? 'Inspecting…' : 'Inspect'}</Button>
+    {onRemoved && <Button type="button" disabled={busy || disabled} onClick={() => void inspect(true)} aria-label={`Remove ${worktreePath}`}>Remove…</Button>}
     {message && <p role="status">{message}</p>}
     {error && <p role="alert" className="gate-worktree-error">{error}</p>}
     {pendingRemoval && <div role="dialog" aria-label="Confirm remote worktree removal" className="gate-worktree-confirm">
       <p>Remove checkout at <strong>{pendingRemoval.path}</strong> on branch <strong>{pendingRemoval.branch || 'Detached'}</strong> from this SSH target? Files are moved to a recovery folder beside the checkout. The branch remains.</p>
-      <button type="button" onClick={() => setPendingRemoval(null)} disabled={busy}>Cancel</button>
-      <button type="button" onClick={() => void remove()} disabled={busy || disabled}>Remove this worktree</button>
+      <Button type="button" onClick={() => setPendingRemoval(null)} disabled={busy}>Cancel</Button>
+      <Button type="button" onClick={() => void remove()} disabled={busy || disabled}>Remove this worktree</Button>
     </div>}
   </div>;
 }

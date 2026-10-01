@@ -1,3 +1,7 @@
+import { Field, FieldLabel, InputGroup, FormMessage } from '../ui/Field';
+import { IconButton } from '../ui/IconButton';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
 /**
  * GitRemotesSection Component
  * UI for managing git remotes (add, remove, rename).
@@ -50,8 +54,8 @@ const REMOTE_NAME_SUGGESTIONS = ['origin', 'upstream', 'github', 'gitlab', 'bitb
 
 function RemoteNameInput({ id, value, placeholder, disabled, inputRef, showError, showSuccess, onChange, onEnter, onEscape }: RemoteNameInputProps) {
   return (
-    <div className="git-remotes-input-row">
-      <input
+    <InputGroup className="git-remotes-input-row">
+      <Input size="md" variant="mono"
         ref={inputRef}
         id={id}
         type="text"
@@ -60,6 +64,7 @@ function RemoteNameInput({ id, value, placeholder, disabled, inputRef, showError
         placeholder={placeholder}
         className="git-remotes-input"
         disabled={disabled}
+        isInvalid={showError}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
@@ -74,17 +79,17 @@ function RemoteNameInput({ id, value, placeholder, disabled, inputRef, showError
       ) : showSuccess ? (
         <Check size={14} className="git-remotes-input-icon git-remotes-input-icon-success" />
       ) : null}
-    </div>
+    </InputGroup>
   );
 }
 
 function RemoteFormError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <div className="git-remotes-form-error">
+    <FormMessage variant="error" className="git-remotes-form-error">
       <AlertCircle size={12} />
       <span>{message}</span>
-    </div>
+    </FormMessage>
   );
 }
 
@@ -106,10 +111,10 @@ function RemoteList({
           <Network size={24} strokeWidth={1.5} />
           <p>No remotes configured</p>
           <span className="git-remotes-hint">Add a remote to connect to a repository host</span>
-          <button type="button" className="git-remotes-empty-add-btn" onClick={onAdd}>
+          <Button type="button" className="git-remotes-empty-add-btn" onClick={onAdd}>
             <Plus size={12} />
             Add remote
-          </button>
+          </Button>
         </div>
       ) : (
         remotes.map((remote) => (
@@ -121,17 +126,17 @@ function RemoteList({
               </span>
             </div>
             <div className="git-remote-actions">
-              <button type="button" className="git-remote-action-btn" onClick={() => onEdit(remote)} title="Rename remote">
+              <IconButton aria-label="Rename remote" type="button" className="git-remote-action-btn" onClick={() => onEdit(remote)} title="Rename remote">
                 <Edit2 size={12} />
-              </button>
-              <button
+              </IconButton>
+              <IconButton aria-label="Remove remote" variant="danger"
                 type="button"
                 className="git-remote-action-btn git-remote-action-btn-danger"
                 onClick={() => onRemove(remote.name)}
                 title="Remove remote"
               >
                 <Trash2 size={12} />
-              </button>
+              </IconButton>
             </div>
           </div>
         ))
@@ -340,24 +345,24 @@ export default function GitRemotesSection({
           <span className="git-remotes-count">{remotes.length}</span>
         </div>
         {mode === 'list' && (
-          <button
+          <IconButton aria-label="Add remote"
             type="button"
             className="git-remotes-add-btn"
             onClick={() => setMode('add')}
             title="Add remote"
           >
             <Plus size={14} />
-          </button>
+          </IconButton>
         )}
         {mode !== 'list' && (
-          <button
+          <IconButton aria-label="Cancel"
             type="button"
             className="git-remotes-cancel-btn"
             onClick={resetForm}
             title="Cancel"
           >
             <X size={14} />
-          </button>
+          </IconButton>
         )}
       </div>
 
@@ -372,8 +377,8 @@ export default function GitRemotesSection({
 
       {mode === 'add' && (
         <div className="git-remotes-form">
-          <div className="git-remotes-form-field">
-            <label htmlFor="remote-name">Name</label>
+          <Field className="git-remotes-form-field">
+            <FieldLabel htmlFor="remote-name">Name</FieldLabel>
             <RemoteNameInput
               id="remote-name"
               value={form.name}
@@ -403,12 +408,12 @@ export default function GitRemotesSection({
                   </button>
                 ))}
             </div>
-          </div>
+          </Field>
 
-          <div className="git-remotes-form-field">
-            <label htmlFor="remote-url">URL</label>
-            <div className="git-remotes-input-row">
-              <input
+          <Field className="git-remotes-form-field">
+            <FieldLabel htmlFor="remote-url">URL</FieldLabel>
+            <InputGroup className="git-remotes-input-row">
+              <Input size="md" variant="mono"
                 id="remote-url"
                 type="text"
                 value={form.url}
@@ -431,12 +436,12 @@ export default function GitRemotesSection({
                   }
                 }}
               />
-            </div>
-          </div>
+            </InputGroup>
+          </Field>
 
           <RemoteFormError message={formErrorMessage} />
 
-          <button
+          <Button variant="primary"
             type="button"
             className="git-remotes-submit-btn"
             onClick={handleAddRemote}
@@ -453,7 +458,7 @@ export default function GitRemotesSection({
                 Add Remote
               </>
             )}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -464,8 +469,8 @@ export default function GitRemotesSection({
             <strong>{editingRemote}</strong>
           </div>
 
-          <div className="git-remotes-form-field">
-            <label htmlFor="remote-new-name">New Name</label>
+          <Field className="git-remotes-form-field">
+            <FieldLabel htmlFor="remote-new-name">New Name</FieldLabel>
             <RemoteNameInput
               id="remote-new-name"
               value={form.name}
@@ -478,11 +483,11 @@ export default function GitRemotesSection({
               onEnter={submitRenameOnEnter}
               onEscape={resetForm}
             />
-          </div>
+          </Field>
 
           <RemoteFormError message={formErrorMessage} />
 
-          <button
+          <Button variant="primary"
             type="button"
             className="git-remotes-submit-btn"
             onClick={handleRenameRemote}
@@ -499,7 +504,7 @@ export default function GitRemotesSection({
                 Rename Remote
               </>
             )}
-          </button>
+          </Button>
         </div>
       )}
     </div>

@@ -1,3 +1,4 @@
+import { IconButton } from './ui/IconButton';
 import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import type { ILink, ILinkProvider } from '@xterm/xterm';
@@ -723,9 +724,9 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
             )}
           </div>
           <div className="terminal-header-actions">
-            <button className="terminal-close" onClick={handleClose} title="Close terminal" disabled={!isInteractive}>
+            <IconButton aria-label="Close terminal" className="terminal-close" onClick={handleClose} title="Close terminal" disabled={!isInteractive}>
               ×
-            </button>
+            </IconButton>
           </div>
         </div>
       )}

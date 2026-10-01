@@ -1,3 +1,5 @@
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
 import { Loader2 } from 'lucide-react';
 import type { GitStash } from './types';
 import './GitStashSection.css';
@@ -41,7 +43,7 @@ export function GitStashSection({
       </div>
 
       <div className="git-stash-form">
-        <input
+        <Input variant="mono"
           className="git-stash-input"
           value={stashMessage}
           onChange={(event) => onSetStashMessage(event.target.value)}
@@ -57,7 +59,7 @@ export function GitStashSection({
           />
           <span>Untracked</span>
         </label>
-        <button
+        <Button
           type="button"
           className="header-btn git-create-branch-submit"
           onClick={onStash}
@@ -65,20 +67,20 @@ export function GitStashSection({
         >
           {activeAction === 'stash' ? <Loader2 size={13} className="spin" /> : null}
           Stash
-        </button>
+        </Button>
       </div>
 
       <div className="git-stash-toolbar">
         <span>{stashes.length > 0 ? 'Available stashes' : 'No stashes found'}</span>
         {stashes.length > 0 && (
-          <button
+          <Button
             type="button"
             className="git-stash-clear"
             onClick={onClearStashes}
             disabled={isBusy}
           >
             Clear All
-          </button>
+          </Button>
         )}
       </div>
 
@@ -95,30 +97,30 @@ export function GitStashSection({
                 <span className="git-stash-message">{stash.message}</span>
               </div>
               <div className="git-stash-actions">
-                <button
+                <Button
                   type="button"
                   className="git-branch-action"
                   onClick={() => onApplyStash(stash.ref)}
                   disabled={isBusy}
                 >
                   Apply
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   className="git-branch-action"
                   onClick={() => onPopStash(stash.ref)}
                   disabled={isBusy}
                 >
                   Pop
-                </button>
-                <button
+                </Button>
+                <Button variant="danger"
                   type="button"
                   className="git-branch-action danger"
                   onClick={() => onDropStash(stash.ref)}
                   disabled={isBusy}
                 >
                   Drop
-                </button>
+                </Button>
               </div>
             </div>
           ))}

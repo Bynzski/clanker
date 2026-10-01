@@ -1,3 +1,5 @@
+import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type {
   ChangeEventHandler,
@@ -95,18 +97,18 @@ function BrowserToolbar({
 }: BrowserToolbarProps) {
   return (
     <div className="browser-toolbar">
-      <button className="browser-nav-btn" onClick={handleBack} disabled={!canGoBack} title="Back">
+      <IconButton aria-label="Back" className="browser-nav-btn" onClick={handleBack} disabled={!canGoBack} title="Back">
         <ArrowLeft size={16} strokeWidth={2} />
-      </button>
-      <button className="browser-nav-btn" onClick={handleForward} disabled={!canGoForward} title="Forward">
+      </IconButton>
+      <IconButton aria-label="Forward" className="browser-nav-btn" onClick={handleForward} disabled={!canGoForward} title="Forward">
         <ArrowRight size={16} strokeWidth={2} />
-      </button>
-      <button className="browser-nav-btn" onClick={handleRefresh} title="Refresh">
+      </IconButton>
+      <IconButton aria-label="Refresh" className="browser-nav-btn" onClick={handleRefresh} title="Refresh">
         <RotateCw size={16} strokeWidth={2} />
-      </button>
-      <button className="browser-nav-btn browser-stop" onClick={handleStop} title="Stop">
+      </IconButton>
+      <IconButton aria-label="Stop" className="browser-nav-btn browser-stop" onClick={handleStop} title="Stop">
         <X size={16} strokeWidth={2} />
-      </button>
+      </IconButton>
 
       <BrowserUrlInput
         inputUrl={inputUrl}
@@ -120,21 +122,21 @@ function BrowserToolbar({
         onSuggestionClick={handleSuggestionClick}
       />
 
-      <button className="browser-go-btn" onClick={() => void submitUrl()}>
+      <Button variant="primary" className="browser-go-btn" onClick={() => void submitUrl()}>
         Go
-      </button>
+      </Button>
 
-      <button className="browser-nav-btn browser-external" onClick={handleOpenExternal} title="Open in system browser">
+      <IconButton aria-label="Open in system browser" className="browser-nav-btn browser-external" onClick={handleOpenExternal} title="Open in system browser">
         <ExternalLink size={16} strokeWidth={2} />
-      </button>
+      </IconButton>
 
-      <button
+      <IconButton aria-label={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}
         className={`browser-nav-btn ${annotationActive ? 'browser-annotation-active' : ''}`}
         onClick={handleAnnotationToggle}
         title={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}
       >
         <MousePointer2 size={16} strokeWidth={2} />
-      </button>
+      </IconButton>
     </div>
   );
 }

@@ -19,8 +19,6 @@
 }
 
 .recipe-workspace-error ul { margin: 4px 0 0; padding-left: 18px; }
-.recipe-workspace-error button { color: inherit; background: transparent; border: 0; cursor: pointer; }
-
 .main-content {
   flex: 1;
   display: flex;

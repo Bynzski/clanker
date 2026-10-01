@@ -397,7 +397,7 @@ export default function CommitDialog({
                           <span className="commit-file-staged" title="Staged">
                             <Check size={12} />
                           </span>
-                          <button
+                          <Button
                             type="button"
                             className="commit-file-unstage"
                             onClick={() => void handleUnstageFile(change.path)}
@@ -405,7 +405,7 @@ export default function CommitDialog({
                             title="Unstage this file"
                           >
                             {unstagingPaths.has(change.path) ? '...' : 'unstage'}
-                          </button>
+                          </Button>
                         </>
                       )}
                     </div>

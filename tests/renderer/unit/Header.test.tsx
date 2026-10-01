@@ -521,6 +521,24 @@ describe('Header', () => {
       expect(screen.getByRole('combobox', { name: 'Theme' })).toBeTruthy();
     });
 
+    it('uses shared settings selects and persists provider/model selection', async () => {
+      (window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ codex: true, pi: true });
+      renderHeader();
+      fireEvent.click(await screen.findByTitle('Settings'));
+      fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
+      const provider = screen.getByRole('combobox', { name: 'AI commit provider' });
+      const model = screen.getByRole('combobox', { name: 'AI commit model' });
+      expect(provider).toHaveClass('clanker-select');
+      expect(model).toHaveClass('clanker-select');
+      expect(screen.getByRole('button', { name: 'Manage VCS credentials' })).toHaveClass('clanker-button');
+      await screen.findByRole('option', { name: 'Pi' });
+      fireEvent.change(provider, { target: { value: 'pi' } });
+      await waitFor(() => expect(window.electronAPI.setAiCommitProvider).toHaveBeenCalledWith('pi'));
+      await waitFor(() => expect(model).toBeEnabled());
+      fireEvent.change(model, { target: { value: 'gpt-4' } });
+      await waitFor(() => expect(window.electronAPI.setAiCommitModel).toHaveBeenCalledWith('gpt-4'));
+    });
+
     it('handles getAiCommitSettings failure gracefully', async () => {
       (window.electronAPI.getAiCommitSettings as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Failed to load'));
       renderHeader();
@@ -570,6 +588,7 @@ describe('Header', () => {
       // Should show loading state
       await waitFor(() => {
         expect(screen.getByText('Loading models...')).toBeTruthy();
+        expect(screen.getByRole('combobox', { name: 'AI commit model' })).toBeDisabled();
       });
       // Resolve the promise
       await act(async () => {

@@ -1,3 +1,5 @@
+import { IconButton } from './ui/IconButton';
+import { Input } from './ui/Input';
 import { useEffect, useRef, useState } from 'react';
 import { Folder, FolderOpen, Loader2 } from 'lucide-react';
 import RemoteDirectoryChooser from './RemoteDirectoryChooser';
@@ -89,7 +91,7 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
 
   return <>
     <div className="input-wrapper remote-path-input">
-      <input ref={inputRef} type="text" className="gate-input" aria-label="Remote Directory Path"
+      <Input variant="mono" ref={inputRef} type="text" className="gate-input" aria-label="Remote Directory Path"
         value={relativeToBase && basePath && !absoluteInput && path.startsWith('/') ? relativePath(basePath, path) || '.' : path}
         onChange={(event) => {
           const value = event.target.value;
@@ -110,10 +112,10 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
           }
         }}
         placeholder={relativeToBase ? 'workspace directory' : 'Absolute remote directory'} spellCheck={false} autoComplete="off" autoCapitalize="off" />
-      <button ref={browseButtonRef} type="button" className="cog-button" aria-label="Browse remote directories" title="Browse remote directories"
+      <IconButton ref={browseButtonRef} type="button" className="cog-button" aria-label="Browse remote directories" title="Browse remote directories"
         disabled={!environmentId || waitingForBase} onClick={() => setChooserOpen(true)}>
         {waitingForBase ? <Loader2 size={18} className="spin" /> : <FolderOpen size={18} />}
-      </button>
+      </IconButton>
     </div>
     {homeError && <p role="alert" className="gate-directory-error">Could not load remote home: {homeError}. Enter an absolute path manually.</p>}
     {focused && suggestions.length > 0 && <ul className="suggestions-list remote-suggestions">

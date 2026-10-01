@@ -1,3 +1,6 @@
+import { IconButton } from './ui/IconButton';
+import { Button } from './ui/Button';
+import { Input } from './ui/Input';
 import { clankerApp128 } from '../lib/branding';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FolderOpen, Folder, Loader2, Play, ChevronRight, AlertTriangle, Cog, GitBranch, ArrowLeft } from 'lucide-react';
@@ -703,7 +706,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
 
       <div className="gate-input-container">
         <div className="input-wrapper">
-          <input
+          <Input variant="mono"
             ref={inputRef}
             type="text"
             className="gate-input"
@@ -721,7 +724,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
             autoComplete="off"
             autoCapitalize="off"
           />
-          <button
+          <IconButton
             className="cog-button"
             onClick={handleOpenDirectory}
             disabled={isLoading}
@@ -733,7 +736,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
             ) : (
               <FolderOpen size={18} strokeWidth={2} />
             )}
-          </button>
+          </IconButton>
         </div>
         
         {showSuggestions && (
@@ -786,12 +789,12 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
                 <span className="gate-recipe-chip-name">{r.name}</span>
                 <span className="gate-recipe-chip-count">{Math.max(r.launches.length, r.terminalCount ?? 0, 1)}</span>
               </button>
-              <button type="button" className="gate-recipe-play" disabled={opening || !onLaunchRecipe}
+              <IconButton type="button" className="gate-recipe-play" disabled={opening || !onLaunchRecipe}
                 aria-label={`Launch recipe ${r.name}`} aria-busy={launchingRecipeId === r.id}
                 title={`Launch "${r.name}" in ${r.workspacePath}`}
                 onClick={() => { void onLaunchRecipe?.(r); }}>
                 {launchingRecipeId === r.id ? <Loader2 size={11} className="spin" aria-hidden="true" /> : <Play size={11} fill="currentColor" aria-hidden="true" />}
-              </button>
+              </IconButton>
               </div>
             ))}
           </div>
@@ -812,9 +815,9 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
       <GateLaunchActions showWorktree={false} onLaunch={handleSubmit} opening={opening} launchDisabled={(!hasLoadedHarnessOptions || !terminalLaunches.length) || locationKind === 'local' && !selectedPath || locationKind === 'ssh' && (!hasLoadedHarnessOptions || (!remoteBaseDirectory && !remotePath.startsWith('/')))}
         {...worktreeActionProps} />
       <div className="gate-settings-footer">
-        <button type="button" className="gate-settings-link" disabled={opening} onClick={() => setWorkspaceMode('settings')}>
+        <Button type="button" className="gate-settings-link" disabled={opening} onClick={() => setWorkspaceMode('settings')}>
           <Cog size={12} aria-hidden="true" /> Settings
-        </button>
+        </Button>
       </div>
       {openError && (
         <p className="gate-open-error" role="alert">
@@ -826,9 +829,9 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
       </div>
       ) : workspaceMode === 'worktree' ? (
       <div className="gate-view gate-view-worktree">
-        <button className="gate-worktree-back" type="button" onClick={() => setWorkspaceMode('directory')}>
+        <Button className="gate-worktree-back" type="button" onClick={() => setWorkspaceMode('directory')}>
           <ArrowLeft size={14} strokeWidth={2} /> Back to workspace
-        </button>
+        </Button>
         <div className="gate-worktree-heading">
           <GitBranch size={18} strokeWidth={2} />
           <div>
@@ -849,13 +852,13 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
             {baseDirectory && <span className="gate-base-path" title={`Base: ${baseDirectory}`}>{baseDirectory}</span>}
           </div>
           <div className="input-wrapper">
-            <button className="cog-button cog-button-left" onClick={handleOpenBaseDirectory} disabled={isBaseLoading} title="Set base directory" aria-label="Set base directory">
+            <IconButton className="cog-button cog-button-left" onClick={handleOpenBaseDirectory} disabled={isBaseLoading} title="Set base directory" aria-label="Set base directory">
               {isBaseLoading ? <Loader2 size={18} className="spin" /> : <Cog size={18} strokeWidth={2} />}
-            </button>
-            <input id="gate-worktree-repo" type="text" className="gate-input" value={inputValue} onChange={(event) => setInputValue(event.target.value)} placeholder="repository directory" spellCheck={false} autoComplete="off" autoCapitalize="off" />
-            <button className="cog-button" onClick={handleOpenDirectory} disabled={isLoading} title="Browse repositories" aria-label="Browse repositories">
+            </IconButton>
+            <Input variant="mono" id="gate-worktree-repo" type="text" className="gate-input" value={inputValue} onChange={(event) => setInputValue(event.target.value)} placeholder="repository directory" spellCheck={false} autoComplete="off" autoCapitalize="off" />
+            <IconButton className="cog-button" onClick={handleOpenDirectory} disabled={isLoading} title="Browse repositories" aria-label="Browse repositories">
               {isLoading ? <Loader2 size={18} className="spin" /> : <FolderOpen size={18} strokeWidth={2} />}
-            </button>
+            </IconButton>
           </div>
         </div>
         <WorktreeLauncher repoPath={selectedPath} openPaths={openPaths} onOpenPath={launchPath} />

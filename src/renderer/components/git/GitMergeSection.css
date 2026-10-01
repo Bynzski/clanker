@@ -44,16 +44,6 @@
   justify-content: center;
   gap: 4px;
   align-self: flex-start;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--status-error) 12%, transparent);
-  color: var(--status-error);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.git-operation-abort:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--status-error) 20%, transparent);
 }
 
 .git-merge-form {
@@ -65,10 +55,4 @@
 .git-merge-select {
   flex: 1;
   min-width: 0;
-  padding: 8px 10px;
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: 12px;
 }

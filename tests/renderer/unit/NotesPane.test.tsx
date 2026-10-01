@@ -70,6 +70,8 @@ describe('NotesPane', () => {
     setupWorkspace();
     render(<NotesPane workspaceId="ws-notes" />);
 
+    expect(screen.getByPlaceholderText('Notes...')).toHaveClass('clanker-textarea');
+    expect(screen.getByRole('button', { name: 'Close notes' })).toHaveClass('clanker-icon-button');
     fireEvent.change(screen.getByPlaceholderText('Notes...'), {
       target: { value: 'local scratch note' },
     });

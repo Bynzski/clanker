@@ -1,3 +1,5 @@
+import { IconButton } from '../ui/IconButton';
+import { Button } from '../ui/Button';
 import { ChevronDown, GitBranch as GitBranchIcon, Loader2, X } from 'lucide-react';
 
 interface GitInitMenuProps {
@@ -25,7 +27,7 @@ export function GitInitMenu({
 }: GitInitMenuProps) {
   return (
     <>
-      <button
+      <Button
         className="header-btn git-btn"
         onClick={onToggleMenu}
         title="Initialize Git Repository"
@@ -33,7 +35,7 @@ export function GitInitMenu({
         <GitBranchIcon size={15} strokeWidth={2} />
         <span>Init Git</span>
         <ChevronDown size={12} strokeWidth={2.5} />
-      </button>
+      </Button>
 
       {isMenuOpen && (
         <div className="git-menu" role="menu">
@@ -42,14 +44,14 @@ export function GitInitMenu({
               <div className="git-menu-label">Initialize Repository</div>
               <div className="git-menu-branch">No git repository found</div>
             </div>
-            <button
+            <IconButton aria-label="Close"
               type="button"
               className="git-menu-close"
               onClick={onClose}
               title="Close"
             >
               <X size={15} />
-            </button>
+            </IconButton>
           </div>
 
           <div className="git-menu-section">
@@ -84,7 +86,7 @@ export function GitInitMenu({
           {initError && <div className="git-menu-error">{initError}</div>}
 
           <div className="git-menu-actions">
-            <button
+            <Button variant="primary"
               type="button"
               className="header-btn header-btn-primary git-menu-action"
               onClick={onInitialize}
@@ -92,7 +94,7 @@ export function GitInitMenu({
             >
               {isInitializing && <Loader2 size={13} className="spin" />}
               {isInitializing ? 'Initializing...' : 'Initialize Repository'}
-            </button>
+            </Button>
           </div>
 
           <p className="git-init-hint">

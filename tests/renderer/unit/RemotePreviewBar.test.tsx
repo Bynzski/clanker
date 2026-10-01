@@ -26,6 +26,36 @@ describe('RemotePreviewBar', () => {
     await waitFor(() => expect(window.electronAPI.remotePreviewStop).toHaveBeenCalledWith({ workspaceId: 'ssh-a' }));
     await waitFor(() => expect(screen.queryByText('Stop preview')).toBeNull());
   });
+  it('uses shared port fields and locks controls during start/stop, then opens the active preview', async () => {
+    let finishStart!: (result: RemotePreviewResult) => void;
+    let finishStop!: (result: boolean) => void;
+    vi.mocked(window.electronAPI.remotePreviewStart).mockReturnValue(new Promise((resolve) => { finishStart = resolve; }));
+    vi.mocked(window.electronAPI.remotePreviewStop).mockReturnValue(new Promise((resolve) => { finishStop = resolve; }));
+    const { onOpen } = fixture();
+    for (const label of ['Remote preview port', 'Local preview port']) {
+      const input = screen.getByLabelText(label);
+      expect(input).toHaveClass('clanker-input');
+      expect(input).toHaveAttribute('min', '1024');
+      expect(input).toHaveAttribute('max', '65535');
+    }
+    fireEvent.change(screen.getByLabelText('Remote preview port'), { target: { value: '5000' } });
+    fireEvent.change(screen.getByLabelText('Local preview port'), { target: { value: '4000' } });
+    const start = screen.getByRole('button', { name: 'Start preview' });
+    expect(start).toHaveClass('clanker-button');
+    fireEvent.click(start);
+    expect(start).toBeDisabled();
+    expect(screen.getByLabelText('Remote preview port')).toBeDisabled();
+    expect(screen.getByLabelText('Local preview port')).toBeDisabled();
+    expect(window.electronAPI.remotePreviewStart).toHaveBeenCalledWith({ workspaceId: 'ssh-a', remotePort: 5000, localPort: 4000 });
+    await act(async () => finishStart({ success: true, forward: { ...active, remotePort: 5000 } }));
+    onOpen.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Open preview' }));
+    expect(onOpen).toHaveBeenCalledWith(active.url);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop preview' }));
+    expect(screen.getByRole('button', { name: 'Stop preview' })).toBeDisabled();
+    await act(async () => finishStop(true));
+    expect(screen.getByLabelText('Remote preview port')).toBeEnabled();
+  });
   it('shows conflicts without navigation and permits retry with another local port', async () => {
     vi.mocked(window.electronAPI.remotePreviewStart).mockResolvedValue({ success: false, forward: { ...active, status: 'error', error: 'Address already in use' }, error: 'Address already in use' });
     const { onOpen } = fixture();
@@ -34,6 +64,10 @@ describe('RemotePreviewBar', () => {
     expect(onOpen).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Local preview port')).toBeEnabled();
     expect(screen.getByText('Retry preview')).toBeEnabled();
+    vi.mocked(window.electronAPI.remotePreviewStart).mockResolvedValue({ success: true, forward: { ...active, localPort: 4001, url: 'http://127.0.0.1:4001/' } });
+    fireEvent.change(screen.getByLabelText('Local preview port'), { target: { value: '4001' } });
+    fireEvent.click(screen.getByText('Retry preview'));
+    await waitFor(() => expect(onOpen).toHaveBeenCalledWith('http://127.0.0.1:4001/'));
   });
   it('validates ports and ignores events belonging to other workspaces', async () => {
     const { notify } = fixture();
