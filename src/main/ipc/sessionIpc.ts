@@ -25,6 +25,7 @@ import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { invokeRemoteSession } from './remoteSessionInvocation';
 import {
   ensureAttentionAdapterFiles,
+  prepareLocalAttention,
   withoutAttentionEnvironment,
 } from '../agentAttentionAdapters';
 
@@ -119,7 +120,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       try {
         const files = ensureAttentionAdapterFiles();
         if (attentionEnabled) {
-          preparedAttention = findHarnessProvider(session.harness)?.attention?.local?.prepare({
+          preparedAttention = prepareLocalAttention(session.harness, {
             terminalId: id, args: baseArgs, env: { ...process.env, ...harnessEnv }, files,
             platform: process.platform, sessionId: fork ? undefined : validatedSession.id,
           }) ?? null;

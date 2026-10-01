@@ -42,6 +42,7 @@ import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport'
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import {
   ensureAttentionAdapterFiles,
+  prepareLocalAttention,
   withoutAttentionEnvironment,
 } from '../agentAttentionAdapters';
 
@@ -261,7 +262,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       try {
         const files = ensureAttentionAdapterFiles();
         if (attentionEnabled) {
-          preparedAttention = findHarnessProvider(harness)?.attention?.local?.prepare({
+          preparedAttention = prepareLocalAttention(harness, {
             terminalId: id, args: harnessArgs, env: { ...process.env, ...harnessEnv }, files,
             platform: process.platform,
           }) ?? null;

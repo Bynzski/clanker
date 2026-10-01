@@ -13,9 +13,10 @@ export default function (omp) {
 
 
 export const local = localAttention(({ args, files: adapterFiles }) => {
-  return { args: [...args, '--extension', path.join(path.dirname(adapterFiles.command), 'omp.ts')], env: {} };
+  return { args: [...args, '--extension', path.join(adapterFiles.resourceRoot ?? path.dirname(adapterFiles.command), 'omp.ts')], env: {} };
 });
 
-export function prepareResources(files: AttentionAdapterFiles): void {
-  fs.writeFileSync(path.join(path.dirname(files.command), 'omp.ts'), SOURCE, { mode: 0o600 });
+export function prepareResources(files: AttentionAdapterFiles, observer: string): void {
+  fs.writeFileSync(path.join(files.resourceRoot ?? path.dirname(files.command), 'observer.mjs'), observer, { mode: 0o600 });
+  fs.writeFileSync(path.join(files.resourceRoot ?? path.dirname(files.command), 'omp.ts'), SOURCE, { mode: 0o600 });
 }

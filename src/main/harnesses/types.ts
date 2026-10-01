@@ -89,7 +89,8 @@ export interface HarnessRemoteSessions {
 
 export interface AttentionAdapterFiles {
   command: string;
-
+  /** Private per-provider resource directory; command bridge remains shared. */
+  resourceRoot?: string;
 }
 export interface AttentionLaunchOptions { args: string[]; env: Record<string, string> }
 export interface PreparedLocalAttention extends AttentionLaunchOptions { dispose(): void }

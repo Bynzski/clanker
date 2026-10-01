@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { getHarnessProvider } from '../../../src/main/harnesses/registry';
 import { localAttention } from '../../../src/main/harnesses/localAttention';
-import { ensureAttentionAdapterFiles, removeAttentionAdapterFiles } from '../../../src/main/agentAttentionAdapters';
+import { ensureAttentionAdapterFiles, ensureProviderAttentionResources, prepareLocalAttention, removeAttentionAdapterFiles } from '../../../src/main/agentAttentionAdapters';
 import type { LocalAttentionContext } from '../../../src/main/harnesses/types';
 
 const failure = vi.hoisted(() => ({ hooks: false }));
@@ -81,12 +81,45 @@ it('shared attention resources contain only the generic command bridge', () => {
   }
 });
 
-it('rolls back provider resource preparation without caching partial files', () => {
-  const before = fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('clanker-attention-'));
+it('isolates provider failure, keeps shared infrastructure intact, and retries lazily', () => {
+  const ctx = context();
   const capability = getHarnessProvider('pi').attention;
-  const prepare = vi.spyOn(capability, 'prepareResources').mockImplementationOnce(() => { throw new Error('resource preparation failed'); });
-  expect(() => ensureAttentionAdapterFiles()).toThrow('resource preparation failed');
-  expect(fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('clanker-attention-'))).toEqual(before);
-  expect(ensureAttentionAdapterFiles().command).toBeTypeOf('string');
-  prepare.mockRestore();
+  const prepare = vi.spyOn(capability, 'prepareResources').mockImplementation((scoped) => { fs.writeFileSync(path.join(scoped.resourceRoot!, 'partial.ts'), 'partial', { mode: 0o600 }); throw new Error('Pi resource failure'); });
+  const other = vi.spyOn(getHarnessProvider('opencode').attention, 'prepareResources');
+  try {
+    expect(ensureAttentionAdapterFiles()).toBe(ctx.files);
+    expect(prepareLocalAttention('codex', { ...ctx, env: { CODEX_HOME: '/nonexistent' } })).not.toBeNull();
+    expect(prepare).not.toHaveBeenCalled(); expect(other).not.toHaveBeenCalled();
+    const validOther = ensureProviderAttentionResources('opencode', ctx.files);
+    const before = fs.readdirSync(path.dirname(ctx.files.command)).sort();
+    expect(() => prepareLocalAttention('pi', ctx)).toThrow('Pi resource failure');
+    expect(fs.readdirSync(path.dirname(ctx.files.command)).sort()).toEqual(before);
+    expect(ensureProviderAttentionResources('opencode', ctx.files)).toBe(validOther);
+    expect(fs.existsSync(path.join(validOther.resourceRoot!, 'opencode/plugins/clanker-attention.js'))).toBe(true);
+    expect(other).toHaveBeenCalledTimes(1);
+    expect(prepareLocalAttention('codex', { ...ctx, env: { CODEX_HOME: '/nonexistent' } })).not.toBeNull();
+    prepare.mockRestore();
+    expect(prepareLocalAttention('pi', ctx)).not.toBeNull();
+    const scoped = ensureProviderAttentionResources('pi', ctx.files);
+    expect(fs.existsSync(path.join(scoped.resourceRoot!, 'pi.ts'))).toBe(true);
+    expect(fs.statSync(scoped.resourceRoot!).mode & 0o777).toBe(0o700);
+  } finally { prepare.mockRestore(); other.mockRestore(); }
+});
+
+it.each(['claude', 'opencode', 'pi', 'omp'] as const)('prepares %s resources once per root and shares only infrastructure', async (id) => {
+  const ctx = context();
+  const prepare = vi.spyOn(getHarnessProvider(id).attention, 'prepareResources');
+  try {
+    const [first, second] = await Promise.all([
+      Promise.resolve().then(() => ensureProviderAttentionResources(id, ctx.files)),
+      Promise.resolve().then(() => ensureProviderAttentionResources(id, ctx.files)),
+    ]);
+    expect(first).toBe(second); expect(first.command).toBe(ctx.files.command);
+    expect(first.resourceRoot).not.toBe(path.dirname(ctx.files.command));
+    expect(prepare).toHaveBeenCalledTimes(1);
+    removeAttentionAdapterFiles();
+    const fresh = ensureProviderAttentionResources(id);
+    expect(fresh.resourceRoot).not.toBe(first.resourceRoot);
+    expect(prepare).toHaveBeenCalledTimes(2);
+  } finally { prepare.mockRestore(); }
 });
