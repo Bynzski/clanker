@@ -86,6 +86,10 @@ src/
 │   │   ├── annotationController.ts # Annotation lifecycle
 │   │   ├── annotationRuntime.ts    # Injected JS runtime
 │   │   └── annotationIpc.ts         # Annotation IPC handlers
+│   ├── accounts/           # Optional Codex/Claude managed accounts (main-owned)
+│   │   ├── harnessAccountService.ts # IDs, selection, persistence, auth flows, launch binding
+│   │   ├── accountHomes.ts         # Owned account directories + path safety
+│   │   └── accountExecution.ts     # Account-bound command executors
 │   ├── credential/         # SSH key and PAT management
 │   │   ├── credentialService.ts    # PAT encrypted storage
 │   │   └── sshKeyService.ts        # SSH key generation
@@ -154,6 +158,10 @@ All operations via `src/main/gitService.ts`, scoped to the registered workspace.
 - **SSH browser previews:** Browser leases trigger bounded workspace-aware HTTP/HTTPS listener discovery, shared across resolved SSH hosts, with a short adaptive startup burst then minute-scale backoff. Trusted remote terminal loopback URLs accelerate active discovery. One workspace-owned service opens automatically; multiple/unscoped services require selection. Main allocates loopback-only desktop ports and owns up to four forwards per workspace/sixteen globally. Remote IPv4/IPv6 loopback and wildcard listeners are normalized; ports remain 1024–65535. SSH transport readiness is separate from service health, so delayed startup/restarts recover on the same tunnel. Owned system OpenSSH `-N` children preserve host-key checks and strip attention credentials; policy rejection/disconnect is a distinct transport error. No helper installation or remote daemon. Configured SSH forwards are rejected. Stop/workspace close/window close/renderer loss/shutdown clean up; switching/hiding suspends discovery and keeps forwards alive. Quit waits for child termination and terminal resource cleanup. Forwarding rules are not persisted.
 - **Live testing:** Follow `docs/remote-vps-smoke-test.md`; destructive checks use a unique temporary fixture and preserve `clanker-test`.
 - **Remote session history:** Read-only discovery uses the registered SSH environment and host-installed harnesses, never desktop history. Codex/Claude/Pi/OMP JSONL metadata and Antigravity's read-only SQLite database are scanned on-host; OpenCode uses its native JSON/JSONL session-list command with an explicit 4,097-row request, rejecting results above 4,096 rather than accepting its default page. Conflicting duplicate session metadata fails discovery. Canonical workspace containment applies to session cwd, including symlink resolution. Scans are bounded to 16 MiB of JSONL metadata (256 KiB per session file, 4 MiB for Codex's title index), 4,096 directories/8,192 entries per store, 4,096 database/CLI rows, 512 matching results, and 1 MiB per SSH response. Discovery errors are shown; late responses from closed/replaced/switched workspaces are discarded. Remote resume rediscovers the selected ID/harness on the host and uses only authoritative metadata; conflicting selection flags fail closed. A pure CLI argument builder is shared with local invocation. Before PTY creation main rechecks registration/shutdown/removal reservations; the remote launch script rechecks canonical root/cwd and Pi/OMP session-store files. Resume preserves remote attention filtering/cleanup and environment-scoped identity. Supported native forks create a new host conversation; Antigravity forking fails closed. Hermes history and remote process persistence remain unsupported.
+
+### Harness Accounts (optional)
+
+Codex and Claude may have manually selected *managed accounts* (`provider.accounts`, see `docs/harness-integration.md` "Accounts capability"). The native/default account is synthetic and sets no environment variable. Account metadata lives in main's own store (never `harnessDefaults`); homes are derived in main under `<userData>/harness-accounts/`; the renderer only sends opaque IDs over `harness-accounts:*` IPC. Selection is `environment + harness` and affects future launches only; resume/fork use the account that owns the session (re-verified in main). No automatic routing or fallback. SSH environments report managed accounts as unavailable in v1.
 
 ### State Management
 

@@ -46,7 +46,8 @@ require every implementation to use one storage format.
 
 All seven providers support local and SSH interactive launch. Model discovery and
 AI commit remain local-only. Only Codex, Claude, OMP, Hermes and Agy implement `usage` so far (see
-"Usage capability"); OpenCode and Pi remain without it.
+"Usage capability"); OpenCode and Pi remain without it. Only Codex and Claude implement the
+optional `accounts` capability (see "Accounts capability").
 
 | Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -402,6 +403,149 @@ args and timeout values derive from `buildInvocation()`; `modelArg` is descripti
 legacy metadata, not executable authority. Git context and prompts
 stay shared; Windows resolution and desktop PATH remain in the executor. There
 is no remote inference or general inference framework.
+
+## Accounts capability
+
+Accounts are an **optional capability layered onto the provider registry**, not a parallel framework
+and not a redesign around accounts. The governing requirement: *a user with one normal Codex or
+Claude account never has to know the feature exists.* Selection is deliberate and manual. There is
+no automatic routing, no quota-based switching, no fallback to another account, no
+workspace-to-account routing and no model-to-account routing.
+
+### Contract
+
+`HarnessDescriptor.accounts?: { support }` is canonical metadata, like `usage` and `aiCommit`, and
+`defineHarness()` rejects metadata without an implementation (and the reverse). Only Codex and Claude
+advertise it. `provider.accounts` (`HarnessAccountsCapability`) owns exactly the provider-specific parts:
+
+| Provider owns | Shared code owns |
+| --- | --- |
+| authentication protocol/commands (`authenticate`, `verify`, `logout`) | opaque account IDs, selection, persistence |
+| the account-environment variable (`environment(home)`) | owned-directory allocation and path safety |
+| provider-side verification and sign-out cleanup | environment scoping and IPC validation |
+| session discovery against a managed home (`discoverSessions(workspace, home)`) | launch binding, session provenance, usage orchestration, UI-safe projections |
+
+Nothing in shared code names `CODEX_HOME`, `CLAUDE_CONFIG_DIR` or a harness (tests enforce this). A
+future provider adds `accounts` to its descriptor and implementation; `HarnessAccountService` needs no
+edit.
+
+### Default (native) account
+
+The default account is a synthetic projection (`id: 'default'`), never a stored record. It sets **no**
+environment variable (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` stay exactly as the user's own environment has
+them), creates no directory, auth file or prompt, and changes no launch, resume/fork or usage behavior.
+It cannot be removed. A user who never chooses *Add account* sees only `Account · Default` and an
+unobtrusive *Add account* action.
+
+### Managed accounts and selection
+
+`HarnessAccountService` (`src/main/accounts/`) is the single owner. Its metadata lives in a dedicated
+store (`harness-accounts`), **not** in `harnessDefaults` (which the renderer reads and writes):
+
+```text
+StoredHarnessAccount { id, harness, environmentId, kind: 'managed', label?, createdAt, email?, plan?, status? }
+selections: "<environment>\0<harness>" -> managed account id   (absent = default)
+```
+
+No provider tokens, OAuth URLs, raw auth responses or renderer-supplied paths are ever persisted.
+Selection is `environment + harness -> account`, remembered across restarts. Removing the selected
+account falls back to the default account. Labels are free text and not unique; the opaque ID is the
+identity. Status is `connected | needs-auth | unknown`; a failed probe only marks an account
+`needs-auth` and never deletes it.
+
+**Selection affects future launches only.** A running terminal keeps the environment it was spawned
+with; a launch against a `needs-auth` or missing account fails with a safe message and never falls
+back to another account.
+
+### Managed directory ownership
+
+`AccountHomeStore` derives `<userData>/harness-accounts/<harness>/<acct_<32 hex>>/` entirely in main
+from a validated harness name and an opaque ID (`^acct_[0-9a-f]{32}$`). The renderer only ever names
+an ID, which main resolves to an owned path; it can never supply `CODEX_HOME`, `CLAUDE_CONFIG_DIR` or
+any path. Directories are created `0700` where the platform supports modes. Every use lstat/realpath
+verifies a real directory strictly inside the real owned root; symlinks anywhere on the chain, traversal
+and identity mismatches fail closed. Removal deletes only a verified owned directory and refuses any
+provider-native home (`~/.codex`, `~/.claude`) even if misconfigured. **Removing an account never
+means deleting the user's provider-native configuration**, and native auth is never copied into a
+managed home. If a managed directory cannot be proven safe it is retained (metadata is still dropped).
+
+### Authentication flows
+
+Flows are owned by the service (opaque flow IDs, one per account, at most four at once, a 5-minute
+bound, cancelled on window close/renderer loss/quit). Progress is a narrow main→renderer event keyed
+by flow ID: `starting | waiting-for-browser | connected | failed | cancelled`. Provider output is never
+forwarded: failures map to fixed product messages. A new account is persisted only after verified
+sign-in; failed or cancelled adds delete their directory. Sign-in URLs are opened by main (http/https
+only) and never round-trip through the renderer. Removal first cancels the account's flow, then asks
+the provider to sign out (secure-store cleanup), then removes metadata and the owned directory;
+existing terminals are not killed.
+
+**Codex** uses the structured app-server API (verified against codex-cli 0.160.0's generated schema):
+`initialize`, `initialized`, `account/login/start {type:"chatgpt"}` → `{loginId, authUrl}`, the
+`account/login/completed` notification **matching that `loginId`**, then `account/read` under the same
+`CODEX_HOME`; only a usable ChatGPT account counts. Cancel sends `account/login/cancel` for the active
+login before the process is reaped; delete uses `account/logout`. Credentials may live in a file, the OS
+keyring or another secure store: Codex derives that namespace from the canonical `CODEX_HOME`, so one
+isolated home per account isolates accounts in every mode. Clanker never reads, parses, swaps or forces
+the format of `auth.json`, and it does not use Codex's internal `account/sessions/*` types.
+
+**Claude** uses the supported CLI surface (claude 2.1.288) with `CLAUDE_CONFIG_DIR` set to the owned
+home: `claude auth login --claudeai` (the CLI opens the browser; stdout/stderr, which can contain the
+sign-in URL, are drained and discarded), then `claude auth status --json` for machine-readable
+verification (a signed-out status exits 1 with valid JSON, so stdout decides). It never types `/login`,
+scrapes the TUI or stores OAuth tokens. `auth status` can refresh credentials, so it runs only at
+lifecycle points (after login), never on a timer.
+
+### One launch-preparation seam
+
+`prepareHarnessAccountContext()` / `HarnessAccountService.resolveBinding()` is the only place account
+environment is produced. Fresh terminals (`terminalIpc`) and resume/fork (`sessionIpc`) call it once and
+merge `binding.mergeEnvironment(harnessEnv)` into the same environment that feeds attention preparation
+(Codex attention follows the managed `CODEX_HOME`). Usage and auth go through
+`bindHarnessExecution()`, which wraps an environment's executor so providers receive only bound
+executors and never a path, SSH target or variable. The default binding is a no-op and passes requests
+through untouched.
+
+### Session provenance
+
+Managed homes hold their own native history. Codex/Claude discovery now take a trusted root (default:
+the native home) so **one parser** serves native and every managed home; the service aggregates them
+and stamps `HarnessSession.accountId` (absent for default; never a path). The renderer's `accountId` is
+a claim only: for resume/fork main resolves the account, **rediscovers the session inside that
+account's own storage** and launches that authoritative copy (cwd/model/file path are not trusted) with
+that account's binding. Resume/fork always use the account that owns the session, never the currently
+selected one; a rewritten `accountId` cannot move a session to another account; a removed or
+disconnected owner is a safe explicit error. A session without provenance resumes under the native
+account. The local session cache key is the workspace path plus, only when managed accounts exist, the
+account-set generation (bumped on add/remove/reconnect), so stale provenance is never served and
+default-only caching is unchanged.
+
+### Usage
+
+Usage consumes the existing `HarnessUsageContext.accountId` seam and does not own accounts. The cache,
+in-flight map and backoff are keyed by `environment + harness + account` (default keeps the bare
+harness key), so one account's failure or backoff never suppresses another. Managed probes run through
+an account-bound executor (`app-server` under the managed `CODEX_HOME`; the Claude control-protocol
+probe under the managed `CLAUDE_CONFIG_DIR`). With managed accounts, a harness returns one entry per
+account (selected first) carrying `account: { id, name, selected }` (Clanker's opaque ID only); a
+default-only user gets the unchanged single entry. Probe outcomes may mark a managed account
+`connected`/`needs-auth`. Selecting from the Usage panel calls the account service.
+
+### SSH (v1)
+
+Every SSH environment keeps its own native provider authentication, and *SSH + default account*
+behaves exactly as before. Managed accounts are **not available for SSH environments yet**: `list`
+returns `managedSupported: false` with a safe reason, add/reconnect are rejected, and no local path or
+credential is ever applied to, copied to or synced with a remote host. The capability stays
+transport-aware (it runs through the environment's executor) so remote managed accounts can follow.
+
+### Deliberately out of scope
+
+AI commit keeps its own settings and default behavior; model discovery is not account-specific (a
+launch can fail normally if a model is unavailable to the chosen account); OpenCode, Pi, OMP, Hermes and
+Agy have no account capability. IPC is `harness-accounts:*` (list, select, add-start, reconnect,
+auth-cancel, remove, rename, plus the auth-state event): plain strings only, validated in main, with
+fixed product messages as the only error text.
 
 ## Usage capability
 
