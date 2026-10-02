@@ -1,5 +1,5 @@
 import { Select } from './ui/Select';
-import { ChevronDown, LayoutGrid, MessageSquare, ScrollText, Settings, Undo2 } from 'lucide-react';
+import { ChevronDown, Gauge, LayoutGrid, MessageSquare, ScrollText, Settings, Undo2 } from 'lucide-react';
 import type { HarnessSession } from '../../shared/types/session';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
@@ -7,6 +7,8 @@ import { Popover, PopoverTrigger, PopoverContent } from './ui/Popover';
 import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 import ChatHistoryDropdown from './ChatHistoryDropdown';
+import UsageDropdown from './UsageDropdown';
+import type { UseHarnessUsageResult } from './useHarnessUsage';
 import AppearanceSettings from './settings/AppearanceSettings';
 import HarnessDefaultsSection from './settings/HarnessDefaultsSection';
 
@@ -23,6 +25,9 @@ interface HeaderRightControlsProps {
   workspacePath: string;
   workspaceId: string | null;
   onCloseChatHistory: () => void;
+  showUsage: boolean;
+  onUsageOpenChange: (open: boolean) => void;
+  usage: UseHarnessUsageResult;
   settingsTriggerRef: React.RefObject<HTMLButtonElement | null>;
   onSettingsCloseAutoFocus: (event: Event) => void;
   showSettings: boolean;
@@ -64,6 +69,9 @@ export default function HeaderRightControls({
   workspacePath,
   workspaceId,
   onCloseChatHistory,
+  showUsage,
+  onUsageOpenChange,
+  usage,
   settingsTriggerRef,
   onSettingsCloseAutoFocus,
   showSettings,
@@ -141,6 +149,26 @@ export default function HeaderRightControls({
             workspacePath={workspacePath || '/'}
             workspaceId={workspaceId}
             onClose={onCloseChatHistory}
+          />
+        </PopoverContent>
+      </Popover>
+      <Popover open={showUsage} onOpenChange={onUsageOpenChange}>
+        <PopoverTrigger asChild>
+          <Button className={`header-btn ${showUsage ? 'active' : ''}`} aria-label="Usage" title="Usage">
+            <Gauge size={15} strokeWidth={2} />
+            Usage
+            <ChevronDown size={12} strokeWidth={2} />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="usage-popover" aria-label="Usage" workspaceId={workspaceId ?? undefined}>
+          <UsageDropdown
+            entries={usage.entries}
+            pending={usage.pending}
+            refreshing={usage.refreshing}
+            now={usage.now}
+            canRefresh={usage.canManualRefresh}
+            nextManualRefreshAt={usage.nextManualRefreshAt}
+            onRefresh={() => usage.refreshAll(true)}
           />
         </PopoverContent>
       </Popover>

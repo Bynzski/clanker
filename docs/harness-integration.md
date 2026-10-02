@@ -586,8 +586,45 @@ remains unsupported until core Pi exposes a structured quota interface suitable 
 execution.
 
 IPC: `HARNESS_USAGE_GET` (`getHarnessUsage(workspaceId, { harnessIds?, force? })`)
-returns `{ workspaceId, entries }` for all (or the requested) harnesses. The header
-UI is not built yet.
+returns `{ workspaceId, entries }` for all (or the requested) harnesses.
+
+### Usage header control (renderer)
+
+A **Usage** button (gauge icon, label, chevron) sits between Chat history and Settings in the header. It is
+a controlled Radix Popover like its siblings: same positioning, Escape/outside dismissal, focus
+restoration to the trigger, a `BrowserOverlayLease` while open, and mutual exclusion with Chat history
+and Settings in every direction (the Settings-to-Credentials handoff is untouched). Switching the
+focused workspace closes it and bumps an ownership generation, so late responses from the old workspace
+never render and reopening queries the new workspace id (the renderer sends only `workspaceId`).
+
+The panel always lists every canonical harness from `HARNESS_OPTIONS` (not filtered by launcher
+visibility, support or installation), so unsupported and not-installed states are visible. Reads are
+**progressive**: opening issues one `getHarnessUsage(workspaceId, { harnessIds: [id] })` per harness,
+concurrently, and each row updates as its own answer arrives (a slow provider shows "Checking usage…"
+while others already show data). Reopening keeps previously rendered values and issues ordinary reads
+immediately; main's cache decides whether to probe. The main service shares one in-flight availability
+check across these concurrent per-harness calls (and still treats an empty/failed answer as
+inconclusive). While open, an ordinary (non-forced) read repeats about every 60 s, skipping harnesses
+already in flight, and a 30 s clock drives countdowns; both stop on close, unmount or workspace switch.
+There is no background polling while closed. The Refresh button sends `force: true` per harness; main's
+hard provider minimums, backoff, `retryAfterMs` and the 10 s floor stay authoritative. The renderer uses
+only the returned `refreshableAt` for UX: Refresh is disabled while a forced refresh runs, and while every
+refreshable provider is still inside its window ("Refresh available in Ns"). An IPC rejection never shows
+raw text: it becomes "Usage could not be read", and a prior good reading is kept and flagged stale.
+
+Rendering: percent windows show remaining first ("72% remaining", or "N% used" when only that is
+known; overage is shown as the true value while the bar clamps) with a progress bar of USED quota
+(`role="progressbar"` with `aria-valuetext`); other units render as `used / limit unit`, `remaining`, etc.,
+a bar only when a denominator exists, and money formatting only for the `usd` unit. Resets read "resets
+in 1h 42m / 3d 6h", a short date when far away, or "reset due"; "checked ..." uses `checkedAt` (not
+`observedAt`). Entries with `stale` keep their measurements, show a Stale badge and the current safe
+status text; `ok` with no measurements reads "No active usage limits reported". Measurements are
+grouped within a harness by display-safe provider, account label and plan (never the model); a single
+group puts plan/account beside the harness name, several groups get subheaders using a presentation-only
+provider display-name formatter (it never affects dispatch, correlation or caching). Only an exact
+leading "<harness> · " is stripped from a harness's own labels. State lives in `useHarnessUsage`;
+`UsageDropdown` is presentational and styled by `UsageDropdown.css` using existing tokens and the
+low-radius system.
 
 ## Preserved limitations and follow-ups
 

@@ -24,7 +24,7 @@ const renderHeader = () => render(<Header />);
       }));
     });
 
-    it.each(['Settings', 'Chat history'])('%s acquires a lease, dismisses on Escape and restores trigger focus', async (name) => {
+    it.each(['Settings', 'Chat history', 'Usage'])('%s acquires a lease, dismisses on Escape and restores trigger focus', async (name) => {
       const user = userEvent.setup();
       renderHeader();
       const trigger = screen.getByRole('button', { name });
@@ -39,7 +39,7 @@ const renderHeader = () => render(<Header />);
       await waitFor(() => expect(trigger).toHaveFocus());
     });
 
-    it.each(['Settings', 'Chat history'])('%s dismisses on outside interaction', async (name) => {
+    it.each(['Settings', 'Chat history', 'Usage'])('%s dismisses on outside interaction', async (name) => {
       const user = userEvent.setup();
       renderHeader();
       await user.click(screen.getByRole('button', { name }));
@@ -48,7 +48,7 @@ const renderHeader = () => render(<Header />);
       expect(count()).toBe(0);
     });
 
-    it.each(['Settings', 'Chat history'])('%s releases only its own lease on unmount', async (name) => {
+    it.each(['Settings', 'Chat history', 'Usage'])('%s releases only its own lease on unmount', async (name) => {
       const user = userEvent.setup();
       useWorkspaceStore.getState().pushBrowserOverlay('ws-1');
       const { unmount } = renderHeader();
@@ -96,6 +96,58 @@ const renderHeader = () => render(<Header />);
       expect(screen.queryByRole('dialog', { name: 'Chat history' })).not.toBeInTheDocument();
       expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
       expect(count()).toBe(1);
+    });
+
+    it('makes Chat history, Usage and Settings mutually exclusive in every direction, keeping exactly one lease', async () => {
+      const user = userEvent.setup();
+      renderHeader();
+      const names = ['Chat history', 'Usage', 'Settings'];
+      const counts: number[] = [];
+      const unsubscribe = useWorkspaceStore.subscribe(() => counts.push(count()));
+      try {
+        for (const [from, to] of [[0, 1], [1, 2], [2, 0], [0, 2], [2, 1], [1, 0]]) {
+          await user.click(screen.getByRole('button', { name: names[from] }));
+          expect(screen.getByRole('dialog', { name: names[from] })).toBeInTheDocument();
+          await user.click(screen.getByRole('button', { name: names[to] }));
+          for (const name of names) {
+            if (name === names[to]) expect(screen.getByRole('dialog', { name })).toBeInTheDocument();
+            else expect(screen.queryByRole('dialog', { name })).not.toBeInTheDocument();
+          }
+          expect(count()).toBe(1);
+          await user.click(screen.getByRole('button', { name: names[to] }));
+          expect(count()).toBe(0);
+        }
+      } finally { unsubscribe(); }
+      // A handoff never stacks two leases for the same overlay.
+      expect(Math.max(...counts)).toBeLessThanOrEqual(1);
+    });
+
+    it('requests nothing before Usage opens, then queries only the focused workspace id', async () => {
+      const user = userEvent.setup();
+      renderHeader();
+      expect(window.electronAPI.getHarnessUsage).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('button', { name: 'Usage' }));
+      expect(window.electronAPI.getHarnessUsage).toHaveBeenCalled();
+      for (const call of vi.mocked(window.electronAPI.getHarnessUsage).mock.calls) expect(call[0]).toBe('ws-1');
+    });
+
+    it('closes Usage and balances its lease on workspace switch, ignoring a stale response, and queries the new workspace id', async () => {
+      const user = userEvent.setup();
+      let finish!: (response: import('../../../src/shared/types/harnessUsage').HarnessUsageResponse) => void;
+      vi.mocked(window.electronAPI.getHarnessUsage).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+      useWorkspaceStore.setState((state) => ({ workspaces: [...state.workspaces, createWorkspaceFixture({ id: 'ws-2', lifecycle: 'parked' })] }));
+      renderHeader();
+      await user.click(screen.getByRole('button', { name: 'Usage' }));
+      expect(count()).toBe(1);
+      act(() => useWorkspaceStore.getState().selectWorkspace('ws-2'));
+      expect(count()).toBe(0);
+      expect(screen.queryByRole('dialog', { name: 'Usage' })).not.toBeInTheDocument();
+      await act(async () => finish({ workspaceId: 'ws-1', entries: [{ harnessId: 'codex', status: 'ok', checkedAt: Date.now(), measurements: [{ kind: 'rate-limit', unit: 'percent', used: 5, remaining: 95, limit: 100, label: 'Codex · OLD WORKSPACE' }] }] }));
+      vi.mocked(window.electronAPI.getHarnessUsage).mockClear();
+      await user.click(screen.getByRole('button', { name: 'Usage' }));
+      expect(screen.queryByText('OLD WORKSPACE')).not.toBeInTheDocument();
+      for (const call of vi.mocked(window.electronAPI.getHarnessUsage).mock.calls) expect(call[0]).toBe('ws-2');
+      expect(vi.mocked(window.electronAPI.getHarnessUsage).mock.calls.length).toBeGreaterThan(0);
     });
 
     it.each([0, 1])('hands Settings off to Credentials without releasing browser suppression (other owners: %s)', async (otherOwners) => {

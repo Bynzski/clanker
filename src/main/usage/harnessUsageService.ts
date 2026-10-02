@@ -112,6 +112,7 @@ export class HarnessUsageService {
   private readonly cache = new WeakMap<WorkspaceEnvironment, Map<string, UsageRecord>>();
   private readonly flights = new WeakMap<WorkspaceEnvironment, Map<string, Promise<UsageRecord | 'not-installed'>>>();
   private readonly availability = new WeakMap<WorkspaceEnvironment, { ids: ReadonlySet<string>; at: number }>();
+  private readonly availabilityFlights = new WeakMap<WorkspaceEnvironment, Promise<ReadonlySet<string> | undefined>>();
   private readonly controllers = new Set<AbortController>();
   private readonly now: () => number;
   private readonly listProviders: () => readonly HarnessProvider[];
@@ -199,12 +200,20 @@ export class HarnessUsageService {
     const known = this.availability.get(environment);
     if (known && !force && this.now() - known.at < USAGE_AVAILABILITY_TTL_MS) return Promise.resolve(known.ids);
     if (!environment.probeAvailableHarnessIds) return Promise.resolve(undefined);
-    return environment.probeAvailableHarnessIds().then((ids) => {
+    // Per-harness requests arrive concurrently; they all share the check that is already running
+    // (forced or not: it started just now, so it is as fresh as a new one would be).
+    const running = this.availabilityFlights.get(environment);
+    if (running) return running;
+    const flight = environment.probeAvailableHarnessIds().then((ids) => {
       if (!Array.isArray(ids) || ids.length === 0) return undefined;
       const set = new Set(ids.filter((id): id is string => typeof id === 'string'));
       this.availability.set(environment, { ids: set, at: this.now() });
       return set;
-    }, () => undefined);
+    }, () => undefined).finally(() => {
+      if (this.availabilityFlights.get(environment) === flight) this.availabilityFlights.delete(environment);
+    });
+    this.availabilityFlights.set(environment, flight);
+    return flight;
   }
 
   private async probe(environment: WorkspaceEnvironment, provider: HarnessProvider, previous: UsageRecord | undefined): Promise<UsageRecord> {

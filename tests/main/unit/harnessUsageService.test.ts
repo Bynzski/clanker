@@ -109,6 +109,54 @@ describe('HarnessUsageService delegation', () => {
   });
 });
 
+describe('shared availability flight across per-harness requests', () => {
+  const probeEnv = (impl: () => Promise<string[]>) => {
+    const env = fakeEnv('ssh') as ReturnType<typeof fakeEnv> & { probeAvailableHarnessIds: ReturnType<typeof vi.fn> };
+    env.probeAvailableHarnessIds = vi.fn(impl);
+    return env;
+  };
+  const three = () => [withUsage('codex', { get: vi.fn(async () => snapshot()) }), withUsage('claude', { get: vi.fn(async () => snapshot()) }), withUsage('pi', { get: vi.fn(async () => snapshot()) })];
+
+  it('concurrent per-harness requests cause one availability probe while provider probes stay independent', async () => {
+    const env = probeEnv(async () => ['codex', 'claude', 'pi']);
+    const { registry, register } = registryFor(env); await register();
+    const providers = three();
+    const service = new HarnessUsageService(registry, { providers: () => providers });
+    const results = await Promise.all(['codex', 'claude', 'pi'].map((id) => service.get('ws', { harnessIds: [id] })));
+    expect(env.probeAvailableHarnessIds).toHaveBeenCalledTimes(1);
+    expect(results.map((r) => r.entries.map((e) => [e.harnessId, e.status]))).toEqual([[['codex', 'ok']], [['claude', 'ok']], [['pi', 'ok']]]);
+    for (const provider of providers) expect(provider.usage!.get).toHaveBeenCalledTimes(1);
+  });
+  it('concurrent forced requests share one availability refresh, and force bypasses a stale cached answer', async () => {
+    let now = 0;
+    const env = probeEnv(async () => ['codex', 'claude', 'pi']);
+    const { registry, register } = registryFor(env); await register();
+    const service = new HarnessUsageService(registry, { now: () => now, providers: three });
+    await service.get('ws');
+    expect(env.probeAvailableHarnessIds).toHaveBeenCalledTimes(1);
+    now += 15_000;
+    await Promise.all(['codex', 'claude', 'pi'].map((id) => service.get('ws', { harnessIds: [id], force: true })));
+    expect(env.probeAvailableHarnessIds).toHaveBeenCalledTimes(2);
+  });
+  it('a failed or empty shared flight is inconclusive, lets provider probes run, and does not poison later checks', async () => {
+    for (const impl of [async () => { throw new Error('ssh down'); }, async () => [] as string[]]) {
+      const calls = { n: 0 };
+      const env = probeEnv(async () => { calls.n++; return calls.n === 1 ? impl() : ['codex']; });
+      const { registry, register } = registryFor(env, 'w');
+      await register();
+      const workspaceId = 'w';
+      const providers = three();
+      const service = new HarnessUsageService(registry, { providers: () => providers });
+      const first = await Promise.all(['codex', 'claude'].map((h) => service.get(workspaceId, { harnessIds: [h] })));
+      expect(first.every((r) => r.entries[0].status === 'ok')).toBe(true);
+      expect(calls.n).toBe(1);
+      const later = await service.get(workspaceId, { harnessIds: ['pi'] });
+      expect(calls.n).toBe(2); // the failed flight was removed, so the next request checks again
+      expect(later.entries[0].status).toBe('not-installed'); // the second answer ('codex' only) is authoritative
+    }
+  });
+});
+
 describe('client identity', () => {
   it('passes the desktop version to providers, read lazily at probe time', async () => {
     const env = fakeEnv('local');
