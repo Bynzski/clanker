@@ -6,7 +6,7 @@ import { getHarnessProvider } from '../../../../src/main/harnesses/registry';
 import type { HarnessAccountsCapability, HarnessProvider } from '../../../../src/main/harnesses/types';
 import type { HarnessSession } from '../../../../src/shared/types/session';
 import { AccountHomeStore } from '../../../../src/main/accounts/accountHomes';
-import { MemoryAccountStorage } from '../../../../src/main/accounts/accountStorage';
+import { MemoryAccountStorage, type HarnessAccountRegistryState } from '../../../../src/main/accounts/accountStorage';
 import { HarnessAccountService, type HarnessAccountServiceOptions } from '../../../../src/main/accounts/harnessAccountService';
 import type { WorkspaceEnvironment } from '../../../../src/main/environment/workspaceEnvironment';
 
@@ -46,6 +46,19 @@ export interface Harness {
   openExternal: ReturnType<typeof vi.fn>;
   authEvents: unknown[];
   nextId: () => string;
+  /** A fresh service over the same storage, homes and providers (an app restart). */
+  restart: () => HarnessAccountService;
+}
+
+/** Storage whose writes can be made to fail, the way a full disk or locked config file would. */
+export class FlakyStorage extends MemoryAccountStorage {
+  public failing = false;
+  public saves = 0;
+  save(state: HarnessAccountRegistryState): void {
+    if (this.failing) throw new Error('EACCES: permission denied, open \'/home/me/.config/clanker/harness-accounts.json\'');
+    this.saves++;
+    super.save(state);
+  }
 }
 
 /** Real codex/claude providers with their account capabilities replaced by controllable fakes. */
@@ -70,14 +83,14 @@ export function createHarness(options: { storage?: MemoryAccountStorage; capabil
     executeHarnessCommand: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
     openHarnessCommandSession: vi.fn(),
   } as unknown as WorkspaceEnvironment;
-  const service = new HarnessAccountService({
+  const build = () => new HarnessAccountService({
     storage, homes, getLocalEnvironment: () => environment, openExternal,
     onAuthState: (event) => { authEvents.push(event); },
     findProvider: (harness) => (typeof harness === 'string' ? providers[harness] : undefined),
     randomId: nextId,
     ...({} as Partial<HarnessAccountServiceOptions>),
   });
-  return { root, homes, storage, service, capabilities, openExternal, authEvents, nextId };
+  return { root, homes, storage, service: build(), capabilities, openExternal, authEvents, nextId, restart: build };
 }
 
 /** Resolves once the auth flow with this ID reaches a terminal state. */

@@ -33,6 +33,7 @@ import type {
 
 export const AUTH_FLOW_TIMEOUT_MS = 5 * 60_000;
 export const MAX_ACTIVE_AUTH_FLOWS = 4;
+const ADD_CLEANUP_TIMEOUT_MS = 15_000;
 const HARD_STOP_GRACE_MS = 3000;
 export const MAX_MANAGED_ACCOUNTS_PER_HARNESS = 16;
 const MAX_TEXT = 120;
@@ -145,6 +146,7 @@ export class HarnessAccountService {
     this.findProvider = options.findProvider ?? findHarnessProvider;
     this.authTimeoutMs = options.authTimeoutMs ?? AUTH_FLOW_TIMEOUT_MS;
     this.state = this.loadState();
+    this.recoverOrphanedHomes();
   }
 
   /** Bumps whenever the managed account set (or an account's credentials) changes. */
@@ -192,13 +194,12 @@ export class HarnessAccountService {
     const { env, id } = this.validateScope(environmentId, harness);
     if (typeof accountId !== 'string') throw safeInvalid();
     const key = selectionKey(env, id);
-    if (accountId === DEFAULT_HARNESS_ACCOUNT_ID) {
-      delete this.state.selections[key];
-    } else {
-      if (!this.findManaged(env, id, accountId)) throw new HarnessAccountError('not-found', 'That account is not available for this harness.');
-      this.state.selections[key] = accountId;
+    if (accountId !== DEFAULT_HARNESS_ACCOUNT_ID && !this.findManaged(env, id, accountId)) {
+      throw new HarnessAccountError('not-found', 'That account is not available for this harness.');
     }
-    this.persist();
+    this.commit((next) => {
+      if (accountId === DEFAULT_HARNESS_ACCOUNT_ID) delete next.selections[key]; else next.selections[key] = accountId;
+    });
     return this.list(env, id);
   }
 
@@ -208,8 +209,10 @@ export class HarnessAccountService {
     if (!record) throw new HarnessAccountError('not-found', 'That account is not available for this harness.');
     if (label !== undefined && typeof label !== 'string') throw safeInvalid();
     const clean = sanitizeText(label, HARNESS_ACCOUNT_LABEL_MAX);
-    if (clean) record.label = clean; else delete record.label;
-    this.persist();
+    this.commit((next) => {
+      const target = next.accounts.find((candidate) => candidate.id === record.id)!;
+      if (clean) target.label = clean; else delete target.label;
+    });
     return this.list(env, id);
   }
 
@@ -406,17 +409,20 @@ export class HarnessAccountService {
     let home: string;
     try { home = this.options.homes.ensure(id, record.id); }
     catch { throw new HarnessAccountError('failed', `${this.accountName(record)} could not be removed because its storage could not be verified.`); }
-    await this.signOutBeforeDelete(capability, record, home);
+    await this.proveSignedOut(capability, home, this.accountName(record), 30_000);
 
-    this.state.accounts = this.state.accounts.filter((candidate) => candidate.id !== record.id);
-    for (const [key, value] of Object.entries(this.state.selections)) if (value === record.id) delete this.state.selections[key];
-    this.persist();
+    // Order matters for recoverability: delete the verified home first, then drop the record. If either
+    // step fails the account identity (and selection) is kept, and a retry can prove sign-out again
+    // (recreating the same trusted home if needed) and finish the cleanup.
     try {
       this.options.homes.remove(id, record.id);
-    } catch (error) {
-      // An unproven target is never deleted; the metadata is already gone.
-      if (!(error instanceof UnsafeAccountPathError)) throw new HarnessAccountError('failed', 'The account was removed, but its storage could not be fully deleted.');
+    } catch {
+      throw new HarnessAccountError('failed', `${this.accountName(record)} was signed out, but its storage could not be deleted. Try again.`);
     }
+    this.commit((next) => {
+      next.accounts = next.accounts.filter((candidate) => candidate.id !== record.id);
+      for (const [key, value] of Object.entries(next.selections)) if (value === record.id) delete next.selections[key];
+    });
     this.changed({ type: 'removed', accountId: record.id, harness: id });
     return this.list(env, id);
   }
@@ -425,16 +431,17 @@ export class HarnessAccountService {
   // Internals
   // ---------------------------------------------------------------------------------------------
 
-  private async signOutBeforeDelete(capability: HarnessAccountsCapability, record: StoredHarnessAccount, home: string): Promise<void> {
+  /** Resolves only when provider logout succeeded or the provider proved nothing is signed in. */
+  private async proveSignedOut(capability: HarnessAccountsCapability, home: string, name: string, timeoutMs: number): Promise<void> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const execution = bindHarnessExecution(this.options.getLocalEnvironment(), capability.environment(home), controller.signal);
     try {
       await capability.logout({ executor: execution.executor, sessionExecutor: execution.sessionExecutor, signal: controller.signal, clientInfo: this.clientInfo() });
     } catch (error) {
       // Only a definitive "already signed out" proves there is nothing left to clean up.
       if (classifyHarnessFailure(error).kind !== 'unauthenticated') {
-        throw new HarnessAccountError('failed', `${this.accountName(record)} could not be signed out, so it was not removed. Try again.`);
+        throw new HarnessAccountError('failed', `${name} could not be signed out, so it was not removed. Try again.`);
       }
     } finally {
       clearTimeout(timer);
@@ -459,7 +466,7 @@ export class HarnessAccountService {
   private async runFlow(flow: AuthFlow, capability: HarnessAccountsCapability, harnessName: string, label?: string): Promise<void> {
     const timer = setTimeout(() => { flow.timedOut = true; this.abortFlow(flow, false); }, this.authTimeoutMs);
     let execution: ReturnType<typeof bindHarnessExecution> | undefined;
-    let authenticated = false;
+    let retainedHome = false;
     try {
       const home = this.options.homes.resolve(flow.harness, flow.accountId);
       execution = bindHarnessExecution(this.options.getLocalEnvironment(), capability.environment(home), flow.hard.signal);
@@ -468,35 +475,42 @@ export class HarnessAccountService {
         openUrl: (url) => this.openAuthUrl(flow, url),
         waitingForBrowser: () => this.setFlowState(flow, { status: 'waiting-for-browser' }),
       });
-      authenticated = true;
-      if (flow.controller.signal.aborted || this.disposed) throw new HarnessCapabilityError('aborted', 'Sign-in was cancelled');
+      // Deterministic winner: `authenticate` returning means the provider verified the account, so a
+      // cancel/shutdown that races after that point does not undo a completed sign-in; it commits.
       const record = this.commitAccount(flow, identity, label);
       this.setFlowState(flow, { status: 'connected', account: this.project(record, this.selectedId(flow.environmentId, flow.harness)) });
     } catch (error) {
-      if (authenticated && flow.adding && execution) await this.bestEffortLogout(capability, execution);
-      if (flow.adding) this.discardAddedHome(flow);
-      if (flow.cancelled || this.disposed) this.setFlowState(flow, { status: 'cancelled' });
+      if (flow.adding) retainedHome = !(await this.discardAddedHome(flow, capability, error));
+      if (error instanceof HarnessAccountError) this.setFlowState(flow, { status: 'failed', message: error.message });
+      else if (flow.cancelled || this.disposed) this.setFlowState(flow, { status: 'cancelled' });
       else this.setFlowState(flow, { status: 'failed', message: this.safeAuthMessage(error, harnessName, flow.timedOut) });
     } finally {
       clearTimeout(timer);
       await execution?.disposeSessions();
       flow.hard.abort();
       if (this.flows.get(flow.accountId) === flow) this.flows.delete(flow.accountId);
+      // A home we could not prove clean is kept and surfaced as a reconnectable account.
+      if (retainedHome) this.recoverOrphanedHomes();
     }
   }
 
-  private async bestEffortLogout(capability: HarnessAccountsCapability, execution: ReturnType<typeof bindHarnessExecution>): Promise<void> {
+  /**
+   * Rolls back a failed or abandoned add. Credentials may already sit in the provider's secure store,
+   * so the owned home is deleted only after provider sign-out succeeded or proved nothing is signed in
+   * (skipped only when the provider CLI never ran). Returns whether the home was deleted.
+   */
+  private async discardAddedHome(flow: AuthFlow, capability: HarnessAccountsCapability, error: unknown): Promise<boolean> {
+    const neverRan = error instanceof HarnessCapabilityError && error.kind === 'binary-unavailable';
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 15_000);
-      try {
-        await capability.logout({ executor: execution.executor, sessionExecutor: execution.sessionExecutor, signal: controller.signal, clientInfo: this.clientInfo() });
-      } finally { clearTimeout(timer); }
-    } catch { /* the owned home is deleted next regardless */ }
-  }
-
-  private discardAddedHome(flow: AuthFlow): void {
-    try { this.options.homes.remove(flow.harness, flow.accountId); } catch { /* unproven targets are never deleted */ }
+      if (!neverRan) {
+        const home = this.options.homes.resolve(flow.harness, flow.accountId);
+        await this.proveSignedOut(capability, home, 'This account', ADD_CLEANUP_TIMEOUT_MS);
+      }
+      this.options.homes.remove(flow.harness, flow.accountId);
+      return true;
+    } catch {
+      return false; // unproven cleanup or unsafe storage: keep the home recoverable
+    }
   }
 
   private commitAccount(flow: AuthFlow, identity: HarnessAccountIdentity, label?: string): StoredHarnessAccount {
@@ -507,19 +521,19 @@ export class HarnessAccountService {
         id: flow.accountId, harness: flow.harness, environmentId: flow.environmentId, kind: 'managed',
         ...(label ? { label } : {}), createdAt: this.now(), ...(email ? { email } : {}), ...(plan ? { plan } : {}), status: 'connected',
       };
-      this.state.accounts.push(record);
-      this.persist();
+      this.commit((next) => { next.accounts.push(record); });
       this.changed({ type: 'added', accountId: record.id, harness: record.harness });
       return record;
     }
-    const record = this.findManaged(flow.environmentId, flow.harness, flow.accountId);
-    if (!record) throw new HarnessCapabilityError('aborted', 'The account was removed');
-    if (email) record.email = email; else delete record.email;
-    if (plan) record.plan = plan; else delete record.plan;
-    record.status = 'connected';
-    this.persist();
-    this.changed({ type: 'reconnected', accountId: record.id, harness: record.harness });
-    return record;
+    if (!this.findManaged(flow.environmentId, flow.harness, flow.accountId)) throw new HarnessCapabilityError('aborted', 'The account was removed');
+    this.commit((next) => {
+      const target = next.accounts.find((candidate) => candidate.id === flow.accountId)!;
+      if (email) target.email = email; else delete target.email;
+      if (plan) target.plan = plan; else delete target.plan;
+      target.status = 'connected';
+    });
+    this.changed({ type: 'reconnected', accountId: flow.accountId, harness: flow.harness });
+    return this.findManaged(flow.environmentId, flow.harness, flow.accountId)!;
   }
 
   private openAuthUrl(flow: AuthFlow, rawUrl: string): void {
@@ -609,10 +623,12 @@ export class HarnessAccountService {
     return record.label ?? record.email ?? 'This account';
   }
 
+  /** Background marking never throws: if it cannot be saved, the committed status simply stays. */
   private setStatus(record: StoredHarnessAccount, status: HarnessAccountStatus): void {
     if (record.status === status) return;
-    record.status = status;
-    this.persist();
+    try {
+      this.commit((next) => { const target = next.accounts.find((candidate) => candidate.id === record.id); if (target) target.status = status; });
+    } catch { /* conservative: previous status remains; no storage detail escapes */ }
   }
 
   private changed(change: HarnessAccountChange): void {
@@ -622,8 +638,39 @@ export class HarnessAccountService {
     }
   }
 
-  private persist(): void {
-    this.options.storage.save({ accounts: this.state.accounts.map((record) => ({ ...record })), selections: { ...this.state.selections } });
+  /**
+   * The only way registry state changes: build the next state from a copy, persist it, and publish it
+   * in memory only after the save succeeded. A failed save leaves the previous state untouched and is
+   * reported as a fixed message (raw storage errors can carry paths and never cross this boundary).
+   */
+  private commit(mutate: (next: HarnessAccountRegistryState) => void): void {
+    const next: HarnessAccountRegistryState = { accounts: this.state.accounts.map((record) => ({ ...record })), selections: { ...this.state.selections } };
+    mutate(next);
+    try {
+      this.options.storage.save(next);
+    } catch {
+      throw new HarnessAccountError('failed', 'Account settings could not be saved. Try again.');
+    }
+    this.state = next;
+  }
+
+  /**
+   * Homes that exist under the owned root with no registry entry (a verified sign-in whose record could
+   * not be saved and whose cleanup could not be proven, or a crash after sign-in) become `needs-auth`
+   * records, so the user can reconnect or remove them instead of the credentials being orphaned. Only
+   * validated owned homes with content are recovered, and none is ever treated as authenticated.
+   */
+  public recoverOrphanedHomes(): void {
+    const recovered: StoredHarnessAccount[] = [];
+    for (const home of this.options.homes.listOwnedHomes()) {
+      if (home.empty || this.flows.has(home.id) || this.state.accounts.some((record) => record.id === home.id)) continue;
+      const provider = this.findProvider(home.harness);
+      if (!provider?.accounts) continue;
+      recovered.push({ id: home.id, harness: provider.descriptor.id, environmentId: LOCAL_ENVIRONMENT_ID, kind: 'managed', createdAt: this.now(), status: 'needs-auth' });
+    }
+    if (recovered.length === 0) return;
+    try { this.commit((next) => { next.accounts.push(...recovered); }); } catch { return; }
+    for (const record of recovered) this.changed({ type: 'added', accountId: record.id, harness: record.harness });
   }
 
   /** Tolerant load: anything malformed or foreign is dropped rather than trusted. */

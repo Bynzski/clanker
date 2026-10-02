@@ -75,6 +75,33 @@ export class AccountHomeStore {
     return this.verify(harness, accountId);
   }
 
+  /**
+   * Every well-formed home under the owned root (real directories only, never links), for recovery of
+   * homes that have no registry entry. Nothing outside the root is ever scanned.
+   */
+  public listOwnedHomes(): Array<{ harness: string; id: string; empty: boolean }> {
+    const found: Array<{ harness: string; id: string; empty: boolean }> = [];
+    try {
+      this.assertNotSymlink(this.root, false);
+      for (const harness of fs.readdirSync(this.root)) {
+        if (!HARNESS_DIRECTORY_PATTERN.test(harness)) continue;
+        const harnessDir = this.pathApi.join(this.root, harness);
+        try {
+          this.assertNotSymlink(harnessDir, false);
+          for (const id of fs.readdirSync(harnessDir)) {
+            if (!MANAGED_ACCOUNT_ID_PATTERN.test(id)) continue;
+            const home = this.pathApi.join(harnessDir, id);
+            try {
+              this.assertNotSymlink(home, false);
+              found.push({ harness, id, empty: fs.readdirSync(home).length === 0 });
+            } catch { /* unsafe or unreadable entries are not recovered */ }
+          }
+        } catch { /* skip unsafe harness directory */ }
+      }
+    } catch { /* no owned root yet, or it is unsafe: nothing to recover */ }
+    return found;
+  }
+
   public exists(harness: string, accountId: string): boolean {
     try { return fs.lstatSync(this.homePath(harness, accountId)).isDirectory(); } catch { return false; }
   }

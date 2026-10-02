@@ -484,6 +484,28 @@ harness and pass a one-shot renderer hint to the existing account row: Usage own
 A selected managed account whose home is unusable stays visible in Usage as the active account
 ("Not signed in") and is never replaced by default; launches refuse it the same way.
 
+### Durable state and cleanup sequencing
+
+Registry changes are transactional: `commit()` builds the next state from a copy, saves it, and only
+then publishes it in memory and emits change events. A failed save leaves the previous state (and
+every published record) untouched and surfaces the fixed message "Account settings could not be
+saved"; raw storage errors never cross IPC, and background status marking (Usage) swallows them.
+
+- **Add:** `authenticate()` returning means the provider verified the account, so a cancel/shutdown that
+  races after that point does not undo it (success wins); a cancel before it wins. If the new record
+  cannot be saved, or the add fails/cancels after the provider CLI ran, the owned home is deleted only
+  after provider logout succeeded or proved `unauthenticated`; otherwise it is kept.
+- **Orphan recovery:** a kept home (and, at startup, any validated owned `<harness>/acct_<32hex>` home
+  with content and no registry entry, excluding in-flight adds) becomes a local `needs-auth` record, so
+  the user can reconnect or remove it. Nothing outside the owned root is scanned, nothing is treated as
+  authenticated, and no secrets are stored.
+- **Remove:** prove sign-out → delete the verified home → save the registry without the account → emit
+  `removed`. A failure at any step keeps the account ID, metadata and selection and emits nothing; a
+  retry recreates the trusted home if needed, re-proves sign-out and finishes. An unsafe home found at
+  deletion time fails the removal.
+- **Reconnect:** the refreshed identity/status is saved atomically or not at all; an existing account's
+  home is never rolled back.
+
 ### Authentication flows
 
 Flows are owned by the service (opaque flow IDs, one per account, at most four at once, a 5-minute
