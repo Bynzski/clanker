@@ -120,3 +120,4 @@
 
 .usage-use { cursor: pointer; border: 1px solid var(--border-default); background: transparent; }
 .usage-use:hover { background: var(--surface-control); }
+.usage-account-actions { display: flex; gap: 6px; padding: 0 12px 8px; }

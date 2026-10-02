@@ -28,6 +28,9 @@ interface HarnessDefaultsSectionProps {
   handleToggleFavorite: (harnessId: string, modelId: string) => Promise<void>;
   /** Environment whose accounts are managed here; defaults to the local machine. */
   accountEnvironmentId?: string;
+  /** Renderer-only handoff from Usage, delivered only to the matching harness's account row. */
+  accountIntent?: { harness: string; intent: 'manage' | 'add' } | null;
+  onAccountIntentConsumed?: () => void;
 }
 
 export default function HarnessDefaultsSection({
@@ -45,6 +48,8 @@ export default function HarnessDefaultsSection({
   handleSetDefaultModel,
   handleToggleFavorite,
   accountEnvironmentId,
+  accountIntent,
+  onAccountIntentConsumed,
 }: HarnessDefaultsSectionProps) {
   const [modelPickerOpen, setModelPickerOpen] = useState<string | null>(null);
   const [isHermesManual, setIsHermesManual] = useState(false);
@@ -140,7 +145,8 @@ export default function HarnessDefaultsSection({
                   </label>
                 )}
                 {'accounts' in HARNESS_DESCRIPTORS[harnessId as keyof typeof HARNESS_DESCRIPTORS] && (
-                  <HarnessAccountsRow harnessId={harnessId} harnessLabel={option?.label ?? harnessId} environmentId={accountEnvironmentId} />
+                  <HarnessAccountsRow harnessId={harnessId} harnessLabel={option?.label ?? harnessId} environmentId={accountEnvironmentId}
+                    intent={accountIntent?.harness === harnessId ? accountIntent.intent : undefined} onIntentConsumed={onAccountIntentConsumed} />
                 )}
                 <div className="harness-defaults-field">
                   <span className="harness-defaults-field-label">Extra flags</span>

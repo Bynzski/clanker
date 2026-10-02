@@ -11,25 +11,33 @@ export function accountErrorMessage(error: unknown): string {
 const isTerminal = (state: AccountAuthState | undefined) =>
   state?.status === 'connected' || state?.status === 'failed' || state?.status === 'cancelled';
 
-export interface ActiveAccountFlow { flowId: string; accountId?: string; state: AccountAuthState }
+export interface ActiveAccountFlow { flowId: string; accountId?: string; state: AccountAuthState; scope: string }
 
 /**
  * Renderer view of one environment+harness account list. All identity, paths and credentials stay in
- * main; this only holds safe projections and an opaque flow ID. A sign-in still pending when the UI
- * goes away is cancelled, so no browser flow or provider process is left behind.
+ * main; this only holds safe projections and an opaque flow ID. A flow remembers the scope that created
+ * it: when the scope changes (or the UI goes away) a nonterminal flow is cancelled before anything
+ * from the new scope is shown, and events or results belonging to an old scope are ignored.
  */
 export function useHarnessAccounts(environmentId: string, harness: string, enabled: boolean) {
+  const scope = `${environmentId}\u0000${harness}`;
   const [list, setList] = useState<HarnessAccountList | null>(null);
   const [flow, setFlow] = useState<ActiveAccountFlow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // Events can arrive before the start request resolves, so the latest state per flow is buffered.
   const states = useRef(new Map<string, AccountAuthState>());
+  const cancelled = useRef(new Set<string>());
   const flowRef = useRef<ActiveAccountFlow | null>(null);
-  flowRef.current = flow;
-  const scope = `${environmentId}\u0000${harness}`;
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
+
+  /** Idempotent, and never for a flow that already reached a terminal state. */
+  const cancelFlow = useCallback((active: ActiveAccountFlow | null) => {
+    if (!active || isTerminal(active.state) || isTerminal(states.current.get(active.flowId)) || cancelled.current.has(active.flowId)) return;
+    cancelled.current.add(active.flowId);
+    void window.electronAPI.cancelHarnessAccountAuth(active.flowId).catch(() => undefined);
+  }, []);
 
   const refresh = useCallback(async () => {
     const owner = scopeRef.current;
@@ -41,18 +49,28 @@ export function useHarnessAccounts(environmentId: string, harness: string, enabl
     }
   }, [environmentId, harness]);
 
+  // The effect that owns a scope also owns its cleanup: switching scope, disabling and unmounting all
+  // cancel the old scope's pending flow here, before the new scope's list is requested.
   useEffect(() => {
     if (!enabled) return;
     setList(null);
     setFlow(null);
     setError(null);
+    flowRef.current = null;
     void refresh();
-  }, [enabled, refresh]);
+    return () => {
+      cancelFlow(flowRef.current);
+      flowRef.current = null;
+    };
+  }, [enabled, refresh, cancelFlow]);
 
   const settle = useCallback((flowId: string, state: AccountAuthState) => {
     states.current.set(flowId, state);
-    if (flowRef.current?.flowId !== flowId) return;
-    setFlow({ ...flowRef.current, state });
+    const active = flowRef.current;
+    if (!active || active.flowId !== flowId || active.scope !== scopeRef.current) return;
+    const next = { ...active, state };
+    flowRef.current = next;
+    setFlow(next);
     if (isTerminal(state)) void refresh();
   }, [refresh]);
 
@@ -63,52 +81,51 @@ export function useHarnessAccounts(environmentId: string, harness: string, enabl
     });
   }, [enabled, environmentId, harness, settle]);
 
-  useEffect(() => () => {
-    const active = flowRef.current;
-    if (active && !isTerminal(active.state)) void window.electronAPI.cancelHarnessAccountAuth(active.flowId).catch(() => undefined);
-  }, []);
-
   const run = useCallback(async (action: () => Promise<HarnessAccountList | void>) => {
+    const owner = scopeRef.current;
     setBusy(true);
     setError(null);
     try {
       const next = await action();
-      if (next) setList(next);
+      if (next && scopeRef.current === owner) setList(next);
     } catch (reason) {
-      setError(accountErrorMessage(reason));
+      if (scopeRef.current === owner) setError(accountErrorMessage(reason));
     } finally {
       setBusy(false);
     }
   }, []);
 
   const begin = useCallback(async (start: () => Promise<{ flowId: string; state: AccountAuthState }>, accountId?: string) => {
+    const owner = scopeRef.current;
     setBusy(true);
     setError(null);
     try {
       const started = await start();
       const state = states.current.get(started.flowId) ?? started.state;
-      const next: ActiveAccountFlow = { flowId: started.flowId, accountId, state };
+      const next: ActiveAccountFlow = { flowId: started.flowId, accountId, state, scope: owner };
+      if (scopeRef.current !== owner) { cancelFlow(next); return; } // the scope changed while starting
       flowRef.current = next;
       setFlow(next);
       if (isTerminal(state)) void refresh();
     } catch (reason) {
-      setError(accountErrorMessage(reason));
+      if (scopeRef.current === owner) setError(accountErrorMessage(reason));
     } finally {
       setBusy(false);
     }
-  }, [refresh]);
+  }, [refresh, cancelFlow]);
+
+  // Never expose state that belongs to a previous scope, even for the render before effects run.
+  const visibleList = list && list.environmentId === environmentId && list.harness === harness ? list : null;
+  const visibleFlow = flow && flow.scope === scope ? flow : null;
 
   return {
-    list, flow, error, busy,
+    list: visibleList, flow: visibleFlow, error, busy,
     select: (accountId: string) => run(() => window.electronAPI.selectHarnessAccount(environmentId, harness, accountId)),
     remove: (accountId: string) => run(() => window.electronAPI.removeHarnessAccount(environmentId, harness, accountId)),
     rename: (accountId: string, label: string) => run(() => window.electronAPI.renameHarnessAccount(environmentId, harness, accountId, label)),
     add: (label?: string) => begin(() => window.electronAPI.startHarnessAccountAdd(environmentId, harness, label || undefined)),
     reconnect: (accountId: string) => begin(() => window.electronAPI.reconnectHarnessAccount(environmentId, harness, accountId), accountId),
-    cancel: () => {
-      const active = flowRef.current;
-      if (active) void window.electronAPI.cancelHarnessAccountAuth(active.flowId).catch(() => undefined);
-    },
-    dismissFlow: () => setFlow(null),
+    cancel: () => cancelFlow(flowRef.current),
+    dismissFlow: () => { flowRef.current = null; setFlow(null); },
   };
 }

@@ -74,7 +74,7 @@ describe('HarnessAccountsRow', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Sign-in failed. Try again.');
   });
 
-  it('cancels a pending sign-in on request and when the UI goes away', async () => {
+  it('cancels a pending sign-in once on request (unmount does not repeat it)', async () => {
     vi.mocked(window.electronAPI.listHarnessAccounts).mockResolvedValue(list([def()]));
     vi.mocked(window.electronAPI.startHarnessAccountAdd).mockResolvedValue({ flowId: 'flow_9', state: { status: 'waiting-for-browser' } });
     const view = render(<HarnessAccountsRow harnessId="codex" harnessLabel="Codex" />);
@@ -82,9 +82,8 @@ describe('HarnessAccountsRow', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
     expect(window.electronAPI.cancelHarnessAccountAuth).toHaveBeenCalledWith('flow_9');
-    vi.mocked(window.electronAPI.cancelHarnessAccountAuth).mockClear();
-    view.unmount();
-    expect(window.electronAPI.cancelHarnessAccountAuth).toHaveBeenCalledWith('flow_9');
+    view.unmount(); // already cancelled: unmount must not cancel it a second time
+    expect(window.electronAPI.cancelHarnessAccountAuth).toHaveBeenCalledExactlyOnceWith('flow_9');
   });
 
   it('shows the explicit SSH limitation instead of an Add account button', async () => {

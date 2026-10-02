@@ -10,6 +10,8 @@ interface Props {
   entries: Record<string, HarnessUsageEntry | undefined>;
   otherAccounts?: Record<string, HarnessUsageEntry[] | undefined>;
   onSelectAccount?: (harnessId: string, accountId: string) => void;
+  /** Hands off to the existing Settings account surface; Usage owns no account lifecycle. */
+  onManageAccounts?: (harnessId: string, intent: 'manage' | 'add') => void;
   pending: Record<string, boolean>;
   refreshing: boolean;
   now: number;
@@ -35,7 +37,7 @@ function refreshTitle(refreshing: boolean, canRefresh: boolean, nextAt: number |
   return 'Refresh usage';
 }
 
-export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSelectAccount, pending, refreshing, now, canRefresh, nextManualRefreshAt, onRefresh }: Props) {
+export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSelectAccount, onManageAccounts, pending, refreshing, now, canRefresh, nextManualRefreshAt, onRefresh }: Props) {
   const title = refreshTitle(refreshing, canRefresh, nextManualRefreshAt, now);
   return (
     <div className="usage-dropdown">
@@ -63,6 +65,12 @@ export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSe
                 onUse={other.account && onSelectAccount ? () => onSelectAccount(id, other.account!.id) : undefined}
               />
             ))}
+            {onManageAccounts && (otherAccounts?.[id]?.length ?? 0) > 0 && (
+              <div className="usage-account-actions">
+                <button type="button" className="usage-badge usage-use" onClick={() => onManageAccounts(id, 'add')} aria-label={`Add ${option.label} account`}>Add account</button>
+                <button type="button" className="usage-badge usage-use" onClick={() => onManageAccounts(id, 'manage')} aria-label={`Manage ${option.label} accounts`}>Manage accounts</button>
+              </div>
+            )}
           </div>
         );
       })}

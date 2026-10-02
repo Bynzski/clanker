@@ -39,9 +39,13 @@ export default function Header() {
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [sessionDiscoveryError, setSessionDiscoveryError] = useState('');
   const [showUsage, setShowUsage] = useState(false);
+  // The focused workspace's own environment scopes account management; local only when there is none.
+  const accountEnvironmentId = focusedWorkspace?.environmentId || 'local';
+  const [accountIntent, setAccountIntent] = useState<{ harness: string; intent: 'manage' | 'add' } | null>(null);
   const sessionRequest = useRef(0);
   useEffect(() => {
     sessionRequest.current++;
+    setAccountIntent(null);
     setShowUsage(false);
     setShowChatHistory(false);
     setChatSessions([]);
@@ -90,7 +94,7 @@ export default function Header() {
       (USAGE_HARNESS_IDS as readonly string[]).includes(id) && harnessDefaults?.[id]?.usageVisible !== false),
     [harnessDefaults, harnessDefaultsStatus],
   );
-  const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage, harnessIds: usageHarnessIds, environmentId: focusedWorkspace?.environmentId ?? 'local' });
+  const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage, harnessIds: usageHarnessIds, environmentId: accountEnvironmentId });
 
   const handleAddTerminal = async (harnessId: string) => {
     try {
@@ -154,6 +158,15 @@ export default function Header() {
       setShowUsage(false);
       void handleChatHistoryOpenChange(false);
     }
+  };
+  /** Usage -> Settings handoff: close Usage, open Settings, expand that harness; its account row does the rest. */
+  const handleManageAccounts = (harnessId: string, intent: 'manage' | 'add') => {
+    setShowUsage(false);
+    void handleChatHistoryOpenChange(false);
+    setAccountIntent({ harness: harnessId, intent });
+    setExpandedHarness(harnessId);
+    void loadHarnessModels(harnessId);
+    setShowSettings(true);
   };
   const handleUsageOpenChange = (open: boolean) => {
     setShowUsage(open);
@@ -269,6 +282,10 @@ export default function Header() {
         sessionDiscoveryError={sessionDiscoveryError}
         workspacePath={workspacePath || '/'}
         workspaceId={focusedWorkspace?.id ?? null}
+        environmentId={accountEnvironmentId}
+        accountIntent={accountIntent}
+        onAccountIntentConsumed={() => setAccountIntent(null)}
+        onManageAccounts={handleManageAccounts}
         onCloseChatHistory={() => void handleChatHistoryOpenChange(false)}
         showUsage={showUsage}
         usageReady={harnessDefaultsStatus === 'ready'}

@@ -1,4 +1,5 @@
 import { Select } from './ui/Select';
+import { useRef } from 'react';
 import { ChevronDown, Gauge, LayoutGrid, MessageSquare, ScrollText, Settings, Undo2 } from 'lucide-react';
 import type { HarnessSession } from '../../shared/types/session';
 import type { ModelOption } from '../types/shared';
@@ -24,6 +25,11 @@ interface HeaderRightControlsProps {
   sessionDiscoveryError?: string;
   workspacePath: string;
   workspaceId: string | null;
+  /** Environment of the focused workspace; scopes account management. Absent only when there is none. */
+  environmentId?: string;
+  accountIntent?: { harness: string; intent: 'manage' | 'add' } | null;
+  onAccountIntentConsumed?: () => void;
+  onManageAccounts?: (harnessId: string, intent: 'manage' | 'add') => void;
   onCloseChatHistory: () => void;
   showUsage: boolean;
   /** False until persisted harness preferences have loaded; the control is disabled meanwhile. */
@@ -71,6 +77,10 @@ export default function HeaderRightControls({
   sessionDiscoveryError,
   workspacePath,
   workspaceId,
+  environmentId,
+  accountIntent,
+  onAccountIntentConsumed,
+  onManageAccounts,
   onCloseChatHistory,
   showUsage,
   usageReady,
@@ -104,6 +114,7 @@ export default function HeaderRightControls({
   handleSetDefaultModel,
   handleToggleFavorite,
 }: HeaderRightControlsProps) {
+  const usageHandoff = useRef(false);
   return (
     <div className="header-right">
       <IconButton
@@ -164,12 +175,18 @@ export default function HeaderRightControls({
             <ChevronDown size={12} strokeWidth={2} />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="usage-popover" aria-label="Usage" workspaceId={workspaceId ?? undefined}>
+        <PopoverContent align="end" className="usage-popover" aria-label="Usage" workspaceId={workspaceId ?? undefined}
+          onCloseAutoFocus={(event) => {
+            // On a Usage -> Settings handoff, restoring focus to the Usage trigger would count as an
+            // outside interaction and dismiss the Settings popover that is opening.
+            if (usageHandoff.current) { event.preventDefault(); usageHandoff.current = false; }
+          }}>
           <UsageDropdown
             harnessIds={usage.harnessIds}
             entries={usage.entries}
             otherAccounts={usage.otherAccounts}
             onSelectAccount={usage.selectAccount}
+            onManageAccounts={onManageAccounts && ((harnessId, intent) => { usageHandoff.current = true; onManageAccounts(harnessId, intent); })}
             pending={usage.pending}
             refreshing={usage.refreshing}
             now={usage.now}
@@ -265,6 +282,9 @@ export default function HeaderRightControls({
               handleSetHarnessUsageVisible={handleSetHarnessUsageVisible}
               handleSetDefaultModel={handleSetDefaultModel}
               handleToggleFavorite={handleToggleFavorite}
+              accountEnvironmentId={environmentId}
+              accountIntent={accountIntent}
+              onAccountIntentConsumed={onAccountIntentConsumed}
             />
           )}
         </PopoverContent>

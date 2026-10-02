@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { useHarnessAccounts } from '../useHarnessAccounts';
@@ -9,6 +9,9 @@ interface Props {
   harnessLabel: string;
   /** Account selection is scoped to environment + harness. */
   environmentId?: string;
+  /** One-shot renderer-only hint from the Usage panel; consumed once by this row. */
+  intent?: 'manage' | 'add';
+  onIntentConsumed?: () => void;
 }
 
 function accountName(account: SafeHarnessAccount): string {
@@ -25,11 +28,29 @@ function accountDetail(account: SafeHarnessAccount): string {
  * Compact accounts area. With only the native account it is one quiet line and an "Add account"
  * action; nothing else appears until a managed account exists. Selection applies to new launches only.
  */
-export default function HarnessAccountsRow({ harnessId, harnessLabel, environmentId = 'local' }: Props) {
+export default function HarnessAccountsRow({ harnessId, harnessLabel, environmentId = 'local', intent, onIntentConsumed }: Props) {
   const accounts = useHarnessAccounts(environmentId, harnessId, true);
   const [adding, setAdding] = useState(false);
   const [label, setLabel] = useState('');
   const { list, flow, error, busy } = accounts;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const managedSupported = list?.managedSupported === true;
+  const listReady = list !== null;
+  // Add opens the existing inline add state (only where managed accounts are supported); Manage just
+  // brings the account area into view. The hint is applied once per delivery (derived during render)
+  // and then handed back so the parent can clear it.
+  const [appliedIntent, setAppliedIntent] = useState<typeof intent>(undefined);
+  if (intent && listReady && appliedIntent !== intent) {
+    setAppliedIntent(intent);
+    if (intent === 'add' && managedSupported) setAdding(true);
+  } else if (!intent && appliedIntent) {
+    setAppliedIntent(undefined);
+  }
+  useEffect(() => {
+    if (!intent || !listReady) return;
+    rootRef.current?.scrollIntoView?.({ block: 'nearest' });
+    onIntentConsumed?.();
+  }, [intent, listReady, onIntentConsumed]);
   if (!list) return null;
 
   const pending = flow !== null && flow.state.status !== 'connected' && flow.state.status !== 'failed' && flow.state.status !== 'cancelled';
@@ -37,7 +58,7 @@ export default function HarnessAccountsRow({ harnessId, harnessLabel, environmen
   const flowMessage = flow?.state.status === 'failed' ? flow.state.message : flow?.state.status === 'cancelled' ? 'Sign-in cancelled.' : null;
 
   return (
-    <div className="harness-defaults-field harness-accounts" aria-label={`${harnessLabel} accounts`}>
+    <div ref={rootRef} className="harness-defaults-field harness-accounts" aria-label={`${harnessLabel} accounts`}>
       <span className="harness-defaults-field-label">{multiple ? 'Accounts' : 'Account'}</span>
       <ul className="harness-accounts-list">
         {list.accounts.map((account) => (
