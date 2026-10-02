@@ -290,9 +290,9 @@ describe('terminalIpc — error-path: handler returns', () => {
     try {
       const result = await handler(null, '/srv/project', 'opencode', undefined, undefined, undefined, 'remote', 'host');
       expect(result.attentionEnabled).toBe(true);
-      const raw = JSON.stringify({ version: 1, token, harness: 'opencode', event: 'input_requested' });
+      const raw = JSON.stringify({ version: 1, token, harness: 'opencode', event: 'turn_started', scope: 'root', sessionId: 'session-a', turnId: '1' });
       onData('ordinary output' + REMOTE_ATTENTION_PREFIX + Buffer.from(raw).toString('base64') + '\x07');
-      expect(updates).toHaveBeenCalledWith({ terminalId: result.id, event: 'input_requested' });
+      expect(updates).toHaveBeenCalledWith({ terminalId: result.id, event: 'turn_started' });
       expect(opts.getTerminals().get(result.id)?.startupBuffer).toEqual(['ordinary output']);
       onExit({ exitCode: 0 });
       expect(releaseAttention).toHaveBeenCalledTimes(1);

@@ -53,12 +53,12 @@ def cleanup_resources(manifest):
             pass
 `;
 // String.raw keeps Python escapes; the manifest name is shared infrastructure.
-export const REMOTE_END_AND_CLEANUP = `import base64, json, os, stat, sys
+export const REMOTE_END_AND_CLEANUP = `import base64, json, os, re, stat, sys
 root, token, harness = sys.argv[1:]
 try:
     fd = os.open('/dev/tty', os.O_WRONLY | os.O_NOCTTY | os.O_NONBLOCK)
     try:
-        raw = json.dumps(dict(version=1, token=token, harness=harness, event='session_ended')).encode()
+        raw = json.dumps(dict(version=1, token=token, harness=harness, event='agent_exited')).encode()
         os.write(fd, b'\\x1b]777;clanker-attention;' + base64.b64encode(raw) + b'\\x07')
     finally:
         os.close(fd)
@@ -78,6 +78,16 @@ try:
     if len(data) > 65536:
         raise ValueError('Invalid attention resource manifest')
     cleanup_resources(json.loads(data))
+    # Per-terminal bridge state (state, poison marker, temporaries, a crashed holder's lock) is
+    # private launch state, not user data. Only exact names are removed, never recursively.
+    for name in sorted(os.listdir(root)):
+        if re.fullmatch(r'\\.clanker-state-[0-9a-f]{16}\\.(?:json|poison)(?:\\.[0-9]+\\.tmp)?', name):
+            os.unlink(checked_resource(name))
+        elif re.fullmatch(r'\\.clanker-state-[0-9a-f]{16}\\.json\\.lock', name):
+            holder = checked_resource(name + '/owner')
+            if os.path.lexists(holder):
+                os.unlink(holder)
+            os.rmdir(checked_resource(name, True))
     if os.listdir(root) == ['${REMOTE_RESOURCE_MANIFEST}']:
         os.unlink(manifest_path)
         os.rmdir(root)

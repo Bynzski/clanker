@@ -5,6 +5,9 @@ export function remoteAttentionScript(spec: HarnessRemoteAttention): string {
   return `import fcntl, json, os, re, shlex, shutil, stat, sys, tempfile
 request = json.load(sys.stdin)
 harness, args = request['harness'], request['args']
+root_session_id = request.get('rootSessionId')
+if root_session_id is not None and not re.fullmatch(r'[A-Za-z0-9._:-]{1,128}', str(root_session_id)):
+    sys.exit('Invalid trusted root session identity')
 home = os.path.realpath(os.environ['HOME'])
 if ${spec.requiresNode ? 'True' : 'False'} and not shutil.which('node'):
     sys.exit('Remote Agent Attention requires Node.js on this host')
@@ -46,7 +49,7 @@ def owned_plugin(parts, sources):
                 sys.exit('Unsafe remote attention plugin file: ' + filename)
             with open(filename) as existing:
                 previous = existing.read(65537)
-                if previous != content and not (name == request.get('upgradeFile') and previous == request.get('legacyPluginFile')):
+                if previous != content and not (name == request.get('upgradeFile') and previous in request.get('legacyPluginFiles', [])):
                     sys.exit('Refusing to overwrite an unowned or different remote attention plugin: ' + filename)
             if previous != content:
                 # Upgrade only the exact prior owned hook payload, with an atomic replacement.

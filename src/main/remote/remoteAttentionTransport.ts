@@ -1,3 +1,5 @@
+import { OBSERVER_FIELDS } from '../harnesses/attentionSources';
+
 /** Lifecycle-only OSC frames travel on the existing SSH PTY, never a listener or forward. */
 export const REMOTE_ATTENTION_PREFIX = '\x1b]777;clanker-attention;';
 const MAX_FRAME_LENGTH = 4096;
@@ -38,13 +40,12 @@ export function createRemoteAttentionFilter(receive: (json: string) => void): (d
 }
 
 export const REMOTE_ATTENTION_OBSERVER = `import fs from 'node:fs';
-export async function emit(event, sessionId, turnId) {
+${OBSERVER_FIELDS}
+export async function emit(event, fields) {
   const token = process.env.CLANKER_REMOTE_ATTENTION_TOKEN;
   const harness = process.env.CLANKER_REMOTE_ATTENTION_HARNESS;
   if (!token || !harness) return false;
-  const payload = JSON.stringify({version: 1, token, harness, event,
-    ...(typeof sessionId === 'string' ? {sessionId: sessionId.slice(0, 128)} : {}),
-    ...(typeof turnId === 'string' ? {turnId: turnId.slice(0, 128)} : {})});
+  const payload = JSON.stringify({version: 1, token, harness, ...envelope(event, fields)});
   if (Buffer.byteLength(payload) > 2048) return false;
   let fd;
   try {

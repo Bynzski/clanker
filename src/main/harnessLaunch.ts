@@ -112,7 +112,7 @@ set +e
 exit_code=$?
 set -e
 
-# Retire the agent before this PTY becomes a shell. If the lifecycle signal
+# Retire the agent (agent_exited, not a native session boundary) before this PTY becomes a shell. If the lifecycle signal
 # cannot run, close the terminal instead of leaving a shell marked as an agent.
 if [ -n "\${CLANKER_ATTENTION_COMMAND:-}" ]; then
   if ! command -v node >/dev/null 2>&1; then

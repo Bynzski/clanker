@@ -17,7 +17,7 @@ export const piProvider = defineHarness({
     selectionFlags: ['--session', '--continue', '-c', '--resume', '-r', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverPiSessions(workspace),
   },
-  attention: { prepareResources, local, remote },
+  attention: { resumePreservesSessionId: true, prepareResources, local, remote },
   aiCommit: { modelArg: '--model',
     buildInvocation: ({ model, prompt }) => ({ command: 'pi', args: [...['--print'], ...(model ? ['--model', model] : [])], stdin: prompt, timeoutMs: 45000 }),
   },

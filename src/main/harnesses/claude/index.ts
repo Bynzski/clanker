@@ -1,6 +1,6 @@
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
-import { local, prepareResources } from './attention';
+import { local, prepareResources, INTERPRETER } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import { claudeUsage } from './usage';
@@ -16,7 +16,8 @@ export const claudeProvider = defineHarness({
     selectionFlags: ['--resume', '-r', '--continue', '-c', '--fork-session'],
     discover: async (workspace: string) => (await import('./sessions')).discoverClaudeSessions(workspace),
   },
-  attention: { prepareResources, local, remote },
+  // Claude may assign a new session ID on resume, so a resumed ID is never pre-seeded.
+  attention: { interpreter: INTERPRETER, prepareResources, local, remote },
   usage: claudeUsage,
   launch: { command: 'claude', args: [], modelArg: '--model' },
 } satisfies HarnessProvider);

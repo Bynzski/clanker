@@ -50,7 +50,7 @@ AI commit remain local-only. Only Codex, Claude, OMP, Hermes and Agy implement `
 
 | Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
 | --- | --- | --- | --- | --- | --- | --- |
-| Codex | debug models | JSONL / JSONL | native | native | notify / notify | yes |
+| Codex | debug models | JSONL / JSONL | native | native | native hooks / native hooks | yes |
 | Claude | absent | JSONL / JSONL | native | native | settings hooks / settings hooks | absent |
 | OpenCode | models CLI + fallback | native CLI / native CLI | native | native | plugin / plugin | yes |
 | Pi | list-models | JSONL / JSONL | native | native | extension / extension | yes |
@@ -147,11 +147,197 @@ Failed preparation removes that directory and remains retryable without damaging
 other providers or generic infrastructure. Optional `disposeResources` owns provider shutdown
 cleanup, including Agy plugin retirement. The app removes the shared root afterward.
 
-Native hook payload normalization for Codex/Claude/Agy and credential transport
-are shared. Pi, OMP and OpenCode contribute their extension/plugin sources from
-providers. Do not confuse installed adapter source files with supported native
-events: Pi uses `agent_settled`, OMP uses `agent_end`, and Hermes has only its
-current SSH observer support.
+### Lifecycle contract
+
+```text
+native harness event
+  -> provider-owned interpretation (src/main/harnesses/<id>/attention*)
+  -> root/child + session/turn provenance
+  -> canonical lifecycle event
+  -> AgentAttentionBroker correlation (main process)
+  -> approved AgentAttentionUpdate -> renderer projection
+```
+
+A terminal token proves *which terminal* emitted an event. It never proves that
+the event belongs to the root user-facing session or its current foreground turn.
+Providers own native semantics: which event is a root start, how root versus
+child is proven, which event means the foreground is settled, and how a real
+user-input wait is recognized. Hook-command providers (Codex, Claude, Agy) supply
+an `attention.interpreter` module; the shared `command.mjs` bridge only reads the
+bounded hook payload, calls that interpreter and forwards its sanitized result.
+Pi, OMP and OpenCode contribute extension/plugin sources; Hermes contributes its
+host observer plugin. The broker contains no harness-name switch.
+
+The wire envelope carries `event`, `scope` (`root` or `child`, provider-asserted),
+`sessionId`, `turnId`, optional `inputId` (matches a wait to its resolution),
+`continuesSessionId` (only on `session_continued`) and a diagnostic-only
+`nativeEvent`. Prompts, responses, tool arguments and results never enter it, and
+the renderer receives only the approved lifecycle event name.
+
+`AgentAttentionBroker` is the sole lifecycle authority. Per terminal it tracks the
+bound root session, the active turn, a bounded list of retired turns, pending
+input and lifecycle. Invariants:
+
+- Only a provider-asserted root `turn_started` binds an unbound registration. A
+  completion or input event never establishes a root.
+- Events whose `scope` is `child`, or is missing (unknown subject), cannot change
+  state (`ignored-child` / `rejected-ambiguous`). Once a root is bound, another
+  session cannot mutate it (`rejected-mismatch`).
+- **Turn identity is mandatory.** Every start, input and completion event carries
+  a `turnId`: the native turn ID where the harness has one (Codex `turn_id`,
+  Claude `prompt_id`, Hermes `turn_id`), otherwise a provider-owned epoch the
+  adapter keeps for one foreground turn (Pi, OMP and OpenCode in the extension;
+  Agy in the bridge's per-terminal store). An event without one is
+  `rejected-ambiguous`; there is no uncorrelated fallback.
+- Completion and input events need the live turn: only the active `turnId` can
+  settle it, and a completed or superseded turn is retired, so a late completion
+  from turn A can never settle turn B and a retired turn cannot restart
+  (`ignored-stale`). After Clanker itself submits a prompt, nothing can settle
+  the turn until the native start event names it.
+- `input_resolved` only clears an outstanding wait, and when the wait has an
+  `inputId` the resolution must carry the same one.
+- `session_continued` (`sessionId` = new, `continuesSessionId` = old) moves the
+  bound root to a continuation the provider has proven (for example context
+  compression) without touching turn, input or lifecycle state. It must name the
+  currently bound root, otherwise it is rejected. It is not a session boundary and
+  not an agent exit.
+
+`session_ended` (native in-TUI boundary: clear, switch, delete) clears the root,
+turn and pending input, returns the terminal to unbound and **keeps** the
+registration so another session can bind in the same PTY. `agent_exited` is
+emitted only by Clanker's wrapper (`command.mjs --ended`) or SSH cleanup when the
+harness process itself exits to the fallback shell: it retires the registration,
+so handoff becomes unavailable and the shell is an ordinary shell. PTY exit/kill
+remains the unconditional final release.
+
+Set `CLANKER_DEBUG_ATTENTION=1` to log one bounded diagnostic per accepted-envelope
+event: harness, terminal ID, native event class, truncated session/turn IDs,
+semantic and the decision (`accepted`, `ignored-child`, `ignored-stale`,
+`rejected-mismatch`, `rejected-ambiguous`). No payload content or credentials are
+logged. There is no debounce or delay anywhere: a wrong event is wrong whenever it
+arrives, and terminal text is never parsed.
+
+### Hook-bridge state transactions
+
+Hook commands are separate short-lived processes, and some interpreters (Codex, Claude,
+Agy) keep bounded per-terminal state. The shared `command.mjs` bridge therefore runs each
+read -> interpret -> write -> deliver transaction under an exclusive per-terminal lock.
+Delivery is inside the critical path so the broker observes transitions in state order (an
+event derived from state a hook produced can never be overtaken by a later hook's event);
+delivery is bounded and a failed delivery counts as a failed transaction. The lock is an atomically created directory (`.clanker-state-<hash>.json.lock`,
+no `flock`, so it also works on Windows) holding a `pid:nonce` owner record; state is
+replaced by an atomic temp-file rename. Waiting is bounded (about 1.2 s; Clanker-owned Codex and Claude hooks use a 3 s timeout) and is synchronization only: elapsed time never decides agent state. A holder
+that is dead, or older than the stale bound, is replaced by an atomic rename only if its
+owner record is unchanged; a live holder is never broken.
+
+Fail closed. If the transaction cannot be established (lock not acquired in time, state
+unreadable, corrupt, oversized or unwritable) the interpreter runs against empty state, a
+private poison marker is created, and no `input_resolved` is delivered until a turn
+boundary (`turn_started`, `turn_completed`, `turn_interrupted`, `session_ended`) is
+delivered by a healthy transaction. Evidence of a possible human wait is still delivered.
+State, poison, temporaries and a crashed holder's lock are private launch files: local
+cleanup removes the whole launch root, and SSH cleanup removes exactly those names (never
+recursively) before the root. Codex bounded structures: completed-call bookkeeping
+(32 calls, 64 done ids) may be trimmed because that can only leave a wait unmatched or
+unresolved (fail closed); live waits (16) are never trimmed: past the cap the state is
+`overflow` and no individual `PostToolUse` resolves anything until `Stop`, `Interrupt`,
+session end or a new turn.
+
+### Trusted resume identity
+
+`trustedRootSessionId()` returns the native session ID Clanker itself validated
+for a non-fork resume, and only for providers that declare
+`attention.resumePreservesSessionId`. The local path (`sessionIpc`) and the SSH
+path (`invokeRemoteSession`, from the host-rediscovered session) pass it to
+`broker.register()/registerRemote()`; SSH also forwards it to
+`prepareSshAttention()` (`AttentionPreparationContext.rootSessionId`) so provider
+host configuration can use it (OpenCode). Forks, fresh launches, renderer-supplied
+IDs and providers whose resume may assign a new ID (Claude) start unbound.
+
+### Authoritative events per provider
+
+Fields below are the native ones the adapter relies on (identity = which field proves
+the root session; turn = the turn identity; child = how child scope is proven).
+
+| Provider | Root start (identity / turn) | Input wait / resolution | Completion (Ready) | Never completes / child scope | Session boundary |
+| --- | --- | --- | --- | --- | --- |
+| Codex | `UserPromptSubmit` (`session_id` / `turn_id`) | `PermissionRequest` (no `tool_use_id`) correlated with `PreToolUse`/`PostToolUse` calls (see below) | root `Stop`; root `Interrupt` ends the turn without a completion (`turn_interrupted`) | `SubagentStop`, events with `agent_id`, other threads, legacy `notify` | `SessionEnd` |
+| Claude | `UserPromptSubmit` (`session_id` / `prompt_id`) | `PermissionRequest` (no `tool_use_id`) = turn-level wait / `PostToolBatch` for the same prompt | root `Stop` with empty `background_tasks` and `session_crons`, or `StopFailure` (settled, not necessarily successful) | events with `agent_id`; `Stop` with background work; `Notification` is not used (no turn or request identity) | `SessionEnd` |
+| OpenCode | `session.status` busy of a verified top-level session (parentage from `client.session.get`, or the trusted resumed ID) / plugin epoch | `permission.asked`/`question.asked` (`id`) / `*.replied`, `question.rejected` (`requestID`) | verified-root `session.status` idle (the legacy `session.idle` duplicate is absorbed by the closed epoch) | sessions with a `parentID`; sessions with unknown parentage | `session.deleted` |
+| Pi | `agent_start` (`ctx.sessionManager` session ID / extension epoch) | not reported | `agent_settled` | `agent_end` and lower-level events | `session_shutdown` |
+| OMP | `agent_start` where `ctx.agent.kind === 'main'` (session ID / extension epoch) | not reported | main `session_stop` (OMP defers it until agent-owned background jobs are idle); it is the terminal foreground completion | `agent_end` is not terminal completion; `ctx.agent.kind === 'sub'` sessions (and unknown kinds) never settle the pane | `session_shutdown` (main) |
+| Agy | `PreInvocation` #0 (`conversationId` binds as root / bridge-store epoch) | ask tools `PreToolUse` / `PostToolUse` of the same tool | `Stop` with `fullyIdle === true` for the root conversation | `Stop` with `fullyIdle` false/absent, other conversations | none native |
+| Hermes (SSH) | `pre_llm_call` with empty `parent_session_id` (`session_id` / `turn_id`) | `pre_approval_request` / `post_approval_response`, human surfaces only, tied by `turn_id`, request identity `tool_call_id` (else `pattern_key`) | `post_llm_call` of a turn that began as a root turn | child turns (`pre_llm_call` with a `parent_session_id`, remembered by `turn_id` and session); turns never seen start; `surface="smart"` approvals | `on_session_finalize` for the root |
+
+Claude permission lifecycle. `PermissionRequest` carries `tool_name`/`tool_input` but no
+`tool_use_id`, so there is no exact request identity. The interpreter records, in the
+bridge's private per-terminal store, that the current `prompt_id` has an outstanding
+permission wait (a boolean; the tool input never leaves the hook, is never stored, sent
+or logged) and reports one `input_requested` with the constant `inputId` `permission`.
+Only `PostToolBatch` (fired once after every call of a parallel batch has resolved)
+reports `input_resolved`; per-tool `PostToolUse` is deliberately not subscribed, so an
+unrelated parallel tool finishing cannot clear the wait. A denied call resolves with its
+batch. Cost: after approval the pane stays Needs Input until the batch finishes. Child
+(`agent_id`) permission and batch events are ignored. `StopFailure` (turn ended on an API
+error) settles the foreground like `Stop`: Ready/settled does not imply a successful
+model response, and the error text is never forwarded. Claude has no user-interrupt hook,
+so an interrupted turn stays Running until the next prompt or `Stop`.
+
+Codex permission correlation. `PermissionRequest` has `turn_id`, `tool_name` and
+`tool_input` but no `tool_use_id`; `PreToolUse` and `PostToolUse` carry `tool_use_id`.
+The interpreter remembers each `PreToolUse` as `{tool_use_id, 16-hex fingerprint of
+tool_name + canonical tool_input}` and binds a `PermissionRequest` to every unfinished
+call with the same fingerprint (identical parallel calls form one group). A wait resolves
+only when all of its calls have a `PostToolUse`; the broker sees one `input_requested`
+for the first wait and one `input_resolved` once none remain. A request that matches no
+started call, or a call the user denies (no `PostToolUse`), fails closed: the wait lasts
+until `Stop`, `Interrupt` or session end. Only ids and fingerprints are stored. Whether
+`PreToolUse` and `PermissionRequest` carry byte-identical `tool_input` for every tool has
+not been verified live; a mismatch degrades to the fail-closed behavior. Root `Interrupt`
+maps to the generic `turn_interrupted`: it retires the turn and any wait, keeps the root
+bound and leaves the terminal available, without a Turn complete alert; a later `Stop`
+of that turn is stale.
+
+Hermes details. `post_llm_call` does not carry `parent_session_id`, and approval hooks
+carry `session_key` (a gateway/TUI key that can be a stale compression parent), not a
+normal root session ID. The plugin therefore remembers each `pre_llm_call` turn as root
+or child and ties `post_llm_call` and approvals back to it by `turn_id`; an unseen turn
+is dropped (fail closed). Hermes can rotate `agent.session_id` on context compression,
+which no plugin hook announces. The plugin reports a legitimate rotation as
+`session_continued` only when native data proves it: the turn began under the bound root
+(`turn_id` is `<session at turn start>:<task>:<id>`) or Hermes's own state records a
+`compression` lineage from the root (a child row whose parent ended with
+`end_reason='compression'`; delegation children do not qualify). An arbitrary new
+session ID is not trusted. Limitation: if the lineage cannot be read (state database
+unavailable) a rotation between turns, such as manual `/compress`, fails closed.
+`subagent_start`/`subagent_stop` are not needed: child turns announce themselves through
+`pre_llm_call`.
+
+Codex hooks are injected with `-c hooks.<Event>=…` as session-flag hooks. Upstream
+dispatches internal memory-consolidation Stops only to managed hooks (user, project,
+session-flag and plugin hooks are filtered out), so they cannot become Ready. A user
+`[hooks]` table, hooks for these events in `config.toml`/`hooks.json`, a `profile`
+setting, a profile flag or a `hooks.`/`profile` override is a conflict and attention
+stays unavailable; the local and SSH parsers accept the same forms. Codex runs
+non-managed hooks only after the user reviews them (`/hooks`), and the trust is keyed
+by the hook definition, so POSIX hooks reference the launch's command and interpreter
+through `$CLANKER_ATTENTION_COMMAND`/`$CLANKER_ATTENTION_INTERPRETER` (remote:
+`CLANKER_REMOTE_ATTENTION_*`) and the definition is identical for every launch: one
+review persists. Until reviewed no events arrive and the pane stays unknown.
+
+### Remaining limitations
+
+- A provider that does not report a native boundary on an in-TUI session switch
+  (Agy has no end event; Codex `SessionEnd` currently reports reason `other`)
+  stays bound to the old root and fails closed (unknown) until the harness
+  restarts. Pi, OMP, Claude, OpenCode and Hermes report one.
+- An interrupted turn with no settle event stays Running rather than Ready.
+- Claude work resumed by a background wake-up after a settled `Stop` is not
+  re-marked Running until the next prompt. Claude events need `prompt_id`
+  (Claude Code 2.1.196 or newer); without it nothing is reported.
+- Codex hooks, OMP `ctx.agent`, OpenCode `client.session.get` and Hermes hook
+  kwargs follow upstream documentation; they have not been verified against live
+  billable sessions here.
 
 ## SSH ownership and batching
 
@@ -693,7 +879,7 @@ attention events, and session history do not collide with Pi.
 | Models | `omp models --json` returns a `models` array with `selector`, `name`, `kind`, and provider fields; 561 chat entries on this installation | Use `selector` as the ID and accept chat entries only. The catalog can contain models without available credentials, so selection can still fail at launch. |
 | Sessions | Default profile: `~/.omp/agent/sessions/<project>/*.jsonl`; sampled file begins with `title`, then `session` (`id`, `cwd`, `timestamp`); `model_change` uses `model` | Stream metadata extraction with at most 16 files open per batch. Pi's first-line parser is incompatible. Current discovery reads only the default root. |
 | Resume/fork | `omp --resume <path>` and `omp --fork <path>` | Use a saved `.jsonl` path after checking it stays inside the default OMP session store. Fork is present in the installed CLI's session resolution code even though top-level help omits it. |
-| Attention | `--extension <path>` with `agent_start`, `agent_end`, and `session_shutdown` events | The dedicated extension maps the agent loop start/end and session shutdown to Clanker's running, turn complete, and ended statuses. It does not report input requests or guarantee all background work has settled. |
+| Attention | `--extension <path>` with `agent_start`, `agent_settled`, and `session_shutdown` events | The dedicated extension maps agent start to running, `agent_settled` (no retry, compaction or queued continuation left) to turn complete, and session shutdown to a session boundary. It does not report input requests. |
 | AI commit | `--print --no-session --no-tools --no-extensions` | The commit pipeline pipes the prompt through stdin. OMP 18.3.4's source reads piped input as the initial prompt. No billable model request was made during verification. |
 
 The code and tests cover registration, parsing, session invocation arguments,
@@ -757,7 +943,7 @@ Review environment (September 2026): `/home/jay/.local/bin/agy`, version
 | Interactive launch | `agy`; `--model=<selector>` | Registered as a harness using the common PTY launch path. |
 | Models | `agy models` emits spinner on stderr and clean tab-separated `<id>\t<label>` on stdout | Parse stdout lines by tab, deduplicate IDs, fallback to static Gemini list on error or timeout (8s). |
 | Sessions | SQLite database at `~/.gemini/antigravity-cli/conversation_summaries.db`; table `conversation_summaries` | Integrated via Node 22/Electron 41 native `node:sqlite` in read-only mode. All workspace URIs are decoded and matched using `sessionMatchesWorkspace`; unset paths retain the global-session fallback, while malformed metadata is skipped. Resume invokes `agy --conversation <id>` with canonical UUID and model-selector validation; fork is unsupported by the CLI and runs resume. |
-| Attention | Native hooks via an owned plugin at `~/.gemini/config/plugins/clanker-grid-attention/hooks.json` | The plugin exists only while an attention-enabled Antigravity terminal is active. It maps `PreInvocation` (when `invocationNum == 0`) to `turn_started`, `PreToolUse` on `ask_question`, `ask_permission`, or `notify_user` to `input_requested`, matching `PostToolUse` events to `input_resolved`, `Stop` to `turn_completed`, and wrapper exit to `session_ended`. The matcher excludes all other tools so their native permission checks remain authoritative. Clanker refuses to overwrite an unowned directory and removes only files carrying its ownership marker. |
+| Attention | Native hooks via an owned plugin at `~/.gemini/config/plugins/clanker-grid-attention/hooks.json` | The plugin exists only while an attention-enabled Antigravity terminal is active. It maps `PreInvocation` (when `invocationNum == 0`) to `turn_started`, `PreToolUse` on `ask_question`, `ask_permission`, or `notify_user` to `input_requested`, matching `PostToolUse` events to `input_resolved`, `Stop` with `fullyIdle === true` for the bound root conversation to `turn_completed`, and wrapper exit to `agent_exited`. The matcher excludes all other tools so their native permission checks remain authoritative. Clanker refuses to overwrite an unowned directory and removes only files carrying its ownership marker. |
 | AI commit | `--disable-slash-commands --input-format stream-json --output-format stream-json`, optional `--model` | Send one `user` JSON message on stdin and close it. The Agy provider extracts the single successful result response before shared normalization. Timeout: 60s. |
 
 This integration includes CLI detection, persisted defaults, visibility,

@@ -1,12 +1,25 @@
+/** Shared observer helpers. Providers own the meaning of native events; shared
+ * code only bounds and forwards the sanitized canonical envelope. */
+export const OBSERVER_FIELDS = `const IDENTIFIERS = ['sessionId', 'turnId', 'inputId', 'continuesSessionId'];
+function envelope(event, fields) {
+  const extra = {};
+  for (const key of IDENTIFIERS) {
+    if (typeof fields?.[key] === 'string' && fields[key]) extra[key] = fields[key].slice(0, 128);
+  }
+  if (fields?.scope === 'root' || fields?.scope === 'child') extra.scope = fields.scope;
+  if (typeof fields?.nativeEvent === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(fields.nativeEvent)) extra.nativeEvent = fields.nativeEvent;
+  return { event, ...extra };
+}
+`;
+
 export const OBSERVER = `import net from 'node:net';
-export async function emit(event, sessionId, turnId) {
+${OBSERVER_FIELDS}
+export async function emit(event, fields) {
   const port = Number(process.env.CLANKER_ATTENTION_PORT);
   const token = process.env.CLANKER_ATTENTION_TOKEN;
   const harness = process.env.CLANKER_ATTENTION_HARNESS;
   if (!token || !harness || !Number.isInteger(port) || port < 1) return false;
-  const payload = JSON.stringify({ version: 1, token, harness, event,
-    ...(typeof sessionId === 'string' ? { sessionId: sessionId.slice(0, 128) } : {}),
-    ...(typeof turnId === 'string' ? { turnId: turnId.slice(0, 128) } : {}) });
+  const payload = JSON.stringify({ version: 1, token, harness, ...envelope(event, fields) });
   return await new Promise((resolve) => {
     const socket = net.createConnection({ host: '127.0.0.1', port }, () => socket.end(payload));
     let acknowledged = false;
@@ -18,43 +31,157 @@ export async function emit(event, sessionId, turnId) {
 }
 `;
 
-export const COMMAND = `import { emit } from './observer.mjs';
+/** Generic hook bridge. `command.mjs --ended` reports that the harness process exited. Otherwise
+ * argv[2] is the provider-owned interpreter module, which maps the native hook payload to a
+ * canonical lifecycle event (or nothing) and may keep bounded per-terminal state.
+ *
+ * Every hook is its own short-lived process, so the bridge runs the whole transaction
+ * (read -> interpret -> write -> DELIVER the resulting event) under an exclusive per-terminal
+ * lock. Delivery is inside the critical path on purpose: an event derived from state this hook
+ * produced can then never be overtaken by a later hook's event, so the broker observes
+ * transitions in state order. The lock is an atomically created directory (portable, no flock)
+ * holding a pid:nonce owner record, released in a finally; a holder that is dead or older than the
+ * bound is stale and is replaced only if its record is unchanged. Waiting is bounded and is
+ * synchronization only; elapsed time never decides agent state. Delivery itself is bounded
+ * (loopback ack timeout, non-blocking tty write), and the lock wait plus delivery fit inside the
+ * 3 s hook timeouts Clanker configures.
+ *
+ * Fail closed: if the transaction cannot be established (lock, unreadable/corrupt/oversized or
+ * unwritable state) the interpreter runs against empty state, a private poison marker is set, and
+ * no input_resolved is delivered until a turn boundary (start, completion, interrupt, session end)
+ * is delivered. A failed delivery counts as a failed transaction (the broker may not have seen the
+ * transition). Evidence of a possible human wait is never discarded in favour of Running. */
+export const COMMAND = `import { createHash, randomBytes } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { emit } from './observer.mjs';
 if (process.argv[2] === '--ended') {
-  process.exit(await emit('session_ended') ? 0 : 1);
+  process.exit(await emit('agent_exited') ? 0 : 1);
 }
 let input = {};
-const agyHook = process.argv[2] && process.argv[2] !== '--ended' && !process.argv[2].startsWith('{')
-  ? process.argv[2]
-  : null;
 try {
-  if (process.argv[2] && !agyHook) input = JSON.parse(process.argv[2].slice(0, 65536));
-  else {
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of process.stdin) {
-      size += chunk.length;
-      if (size > 65536) break;
-      chunks.push(chunk);
-    }
-    input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of process.stdin) {
+    size += chunk.length;
+    if (size > 65536) break;
+    chunks.push(chunk);
   }
+  input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
 } catch { /* malformed hook input is ignored */ }
-const hook = agyHook || input.hook_event_name;
-const notification = input.notification_type;
-const toolName = input.toolCall?.name;
-const isAskTool = toolName === 'ask_question' || toolName === 'ask_permission' || toolName === 'notify_user';
-const event = input.type === 'agent-turn-complete' || hook === 'Stop' ? 'turn_completed'
-  : hook === 'UserPromptSubmit' || (agyHook === 'PreInvocation' && input.invocationNum === 0) ? 'turn_started'
-  : (hook === 'Notification' && (notification === 'permission_prompt' || notification === 'agent_needs_input')) || (agyHook === 'PreToolUse' && isAskTool) ? 'input_requested'
-  : (hook === 'PostToolUse' && (!agyHook || isAskTool)) ? 'input_resolved'
-  : hook === 'SessionEnd' ? 'session_ended'
-  : null;
-const sessionId = input.conversationId || input.sessionId || input.session_id || input['thread-id'];
-const turnId = input.turn_id || input['turn-id'];
-if (event) await emit(event, sessionId, turnId);
-if (agyHook === 'PreToolUse' && isAskTool) {
-  process.stdout.write(JSON.stringify({ decision: 'allow' }) + '\\n');
-} else {
-  process.stdout.write('{}\\n');
+
+const STATE_LIMIT = 32768;
+const LOCK_WAIT_MS = 1200;
+const LOCK_STALE_MS = 10000;
+const token = process.env.CLANKER_ATTENTION_TOKEN || process.env.CLANKER_REMOTE_ATTENTION_TOKEN || '';
+const base = path.join(path.dirname(process.argv[1]), '.clanker-state-' + createHash('sha256').update(token).digest('hex').slice(0, 16));
+const statePath = base + '.json';
+const lockPath = statePath + '.lock';
+const poisonPath = base + '.poison';
+const nonce = process.pid + ':' + randomBytes(8).toString('hex');
+
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
+const owner = () => { try { return fs.readFileSync(path.join(lockPath, 'owner'), 'utf8'); } catch { return null; } };
+function staleOwner() {
+  const record = owner();
+  let age = 0;
+  try { age = Date.now() - fs.statSync(lockPath).mtimeMs; } catch { return null; }
+  const pid = Number((record ?? '').split(':')[0]);
+  return record === null ? (age > LOCK_STALE_MS ? '' : null) : (!Number.isInteger(pid) || !alive(pid) || age > LOCK_STALE_MS ? record : null);
 }
+async function acquire() {
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      fs.mkdirSync(lockPath, { mode: 0o700 });
+      fs.writeFileSync(path.join(lockPath, 'owner'), nonce, { mode: 0o600 });
+      return true;
+    } catch (error) {
+      if (error.code !== 'EEXIST') return false;
+    }
+    const stale = staleOwner();
+    // Replace a dead/expired holder only if its record is unchanged, by an atomic rename.
+    if (stale !== null && owner() === (stale === '' ? null : stale)) {
+      try { fs.renameSync(lockPath, lockPath + '.stale-' + nonce.replace(':', '-')); } catch { /* another waiter won */ }
+      try { fs.unlinkSync(path.join(lockPath + '.stale-' + nonce.replace(':', '-'), 'owner')); } catch { /* absent */ }
+      try { fs.rmdirSync(lockPath + '.stale-' + nonce.replace(':', '-')); } catch { /* absent */ }
+      continue;
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 5 + Math.floor(Math.random() * 10)));
+  }
+}
+function release() {
+  if (owner() !== nonce) return;
+  try { fs.unlinkSync(path.join(lockPath, 'owner')); } catch { /* already gone */ }
+  try { fs.rmdirSync(lockPath); } catch { /* already gone */ }
+}
+
+let failed = false;
+const store = {
+  read() {
+    try {
+      const text = fs.readFileSync(statePath, 'utf8');
+      if (text.length > STATE_LIMIT) throw new Error('oversized');
+      const value = JSON.parse(text);
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid');
+      return value;
+    } catch (error) {
+      if (error.code !== 'ENOENT') failed = true;
+      return {};
+    }
+  },
+  write(value) {
+    const temporary = statePath + '.' + process.pid + '.tmp';
+    try {
+      const text = JSON.stringify(value);
+      if (text.length > STATE_LIMIT) throw new Error('oversized');
+      fs.writeFileSync(temporary, text, { mode: 0o600 });
+      // Windows refuses to replace a file another process (an indexer, a reader) briefly holds open.
+      for (let attempt = 0; ; attempt++) {
+        try { fs.renameSync(temporary, statePath); break; } catch (error) {
+          if (attempt >= 4 || !['EPERM', 'EBUSY', 'EACCES'].includes(error.code)) throw error;
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+        }
+      }
+      return true;
+    } catch {
+      failed = true;
+      try { fs.unlinkSync(temporary); } catch { /* not created */ }
+      return false;
+    }
+  },
+};
+const degraded = { read: () => ({}), write: () => false };
+
+let result = null;
+let interpreter = null;
+try { interpreter = await import(pathToFileURL(process.argv[2]).href); } catch { /* an unreadable interpreter emits nothing */ }
+const boundary = ['turn_started', 'turn_completed', 'turn_interrupted', 'session_ended'];
+if (interpreter) {
+  const locked = await acquire();
+  if (!locked) failed = true;
+  try {
+    // One critical path per terminal: the state transition AND delivery of its event happen
+    // under the lock, so an event derived from state this hook produced can never overtake it.
+    // Delivery is bounded (loopback ack timeout / non-blocking tty write).
+    try { result = interpreter.default(input, process.argv[3], locked ? store : degraded); } catch { /* an interpreter error emits nothing */ }
+    const poisoned = fs.existsSync(poisonPath);
+    let event = result?.event;
+    if (event?.type === 'input_resolved' && (failed || poisoned)) event = undefined;
+    if (event) {
+      const { type, ...fields } = event;
+      let delivered = false;
+      try { delivered = await emit(type, fields); } catch { /* counts as undelivered */ }
+      // The broker may not have seen this transition: stay conservative until a boundary lands.
+      if (!delivered) failed = true;
+      else if (boundary.includes(type) && !failed) { try { fs.unlinkSync(poisonPath); } catch { /* none set */ } }
+    }
+    if (failed && !poisoned) { try { fs.writeFileSync(poisonPath, '', { flag: 'wx', mode: 0o600 }); } catch { /* best effort */ } }
+  } finally {
+    if (locked) release();
+  }
+}
+process.stdout.write(JSON.stringify(result?.output ?? {}) + '\\n');
 `;

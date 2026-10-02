@@ -1,5 +1,6 @@
+import * as path from 'node:path';
 import { HarnessCapabilityError } from './types';
-import type { HarnessLocalAttention, LocalAttentionContext, AttentionLaunchOptions } from './types';
+import type { AttentionAdapterFiles, HarnessLocalAttention, LocalAttentionContext, AttentionLaunchOptions } from './types';
 
 export function hookNodeExecutable(platform: NodeJS.Platform): string {
   return platform === 'win32' ? 'node.exe' : 'node';
@@ -36,4 +37,9 @@ export function disposeAttentionSafely(prepared: { dispose(): void } | null): vo
   try { prepared?.dispose(); } catch (error) {
     console.error('[clanker-grid] attention cleanup failed:', error);
   }
+}
+
+/** Provider-owned lifecycle interpreter, written beside a provider's private resources. */
+export function interpreterPath(files: AttentionAdapterFiles): string {
+  return path.join(files.resourceRoot ?? path.dirname(files.command), 'interpreter.mjs');
 }

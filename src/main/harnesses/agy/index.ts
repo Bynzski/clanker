@@ -3,6 +3,7 @@ import { disposeAllAgyAttention } from './attentionPlugin';
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
 import { local } from './attention';
+import { INTERPRETER } from './attentionPlugin';
 import { remoteSessions } from './remoteSessions';
 import { agyUsage } from './usage';
 import { buildInvocation, validateLocal, validateRemote } from './invocation';
@@ -27,7 +28,7 @@ export const agyProvider = defineHarness({
     selectionFlags: ['--conversation'],
     discover: async (workspace: string) => (await import('./sessions')).discoverAgySessions(workspace),
   },
-  attention: { disposeResources: disposeAllAgyAttention, local, remote },
+  attention: { interpreter: INTERPRETER, resumePreservesSessionId: true, disposeResources: disposeAllAgyAttention, local, remote },
   aiCommit,
   usage: agyUsage,
   launch: { command: 'agy', args: [], modelArg: '--model' },

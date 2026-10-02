@@ -285,7 +285,8 @@ describe('registerSessionIpc', () => {
     const result = await handlers.get(SESSION_INVOKE)?.({}, 'local-ws', codexSession, true);
 
     expect(result).toEqual({ id: 'term-1', pid: 123, harnessId: 'codex', attentionEnabled: false });
-    expect(broker.register).toHaveBeenCalledWith(expect.any(String), 'codex');
+    // A fork creates a new native session: the old ID is never pre-seeded.
+    expect(broker.register).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: undefined });
     expect(mockBuildSessionInvokeArgs).toHaveBeenCalledWith(
       { ...codexSession, cwd: nativeWorkspacePath },
       true,
@@ -390,4 +391,25 @@ it('disposes prepared provider attention if PTY creation fails', async () => {
   await expect(handlers.get(SESSION_INVOKE)!({}, 'local-ws', codexSession)).rejects.toThrow('PTY failed');
   expect(prepare).toHaveBeenCalledOnce();
   expect(dispose).toHaveBeenCalledOnce();
+});
+
+describe('trusted resume identity for local attention', () => {
+  const resume = async (session: HarnessSession, fork: boolean) => {
+    mockHandle.mockReset();
+    mockBuildSessionInvokeArgs.mockReturnValue({ spawnCmd: session.harness, spawnArgs: ['resume', session.id] });
+    mockSpawnPtyProcess.mockReturnValue({ id: 'term-1', pid: 123 });
+    const broker = { register: vi.fn().mockResolvedValue({}), release: vi.fn() };
+    const handlers = registerHandlers(vi.fn(() => ({
+      [session.harness]: { name: session.harness, command: session.harness, args: [], icon: '' },
+    })), broker as never);
+    await handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session, fork);
+    return broker.register.mock.calls[0];
+  };
+  it('seeds the validated native ID for a non-fork resume only', async () => {
+    expect(await resume(codexSession, false)).toEqual([expect.any(String), 'codex', { rootSessionId: 'codex-session' }]);
+    expect((await resume(codexSession, true))[2]).toEqual({ rootSessionId: undefined });
+  });
+  it('does not seed when a provider may re-identify the resumed session', async () => {
+    expect((await resume(claudeSession, false))[2]).toEqual({ rootSessionId: undefined });
+  });
 });
