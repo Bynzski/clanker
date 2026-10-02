@@ -1,111 +1,75 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RemotePreviewManager } from '../../../src/main/remote/remotePreviewManager';
+import { PreviewTransportError, type PortForwardHandle } from '../../../src/main/remote/sshPortForward';
 import type { WorkspaceRegistry, RegisteredWorkspace } from '../../../src/main/workspaceRegistry';
-import type { PortForwardHandle } from '../../../src/main/remote/sshPortForward';
-
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((res) => { resolve = res; }); return { promise, resolve }; }
 function fixture() {
-  const close = vi.fn().mockResolvedValue(undefined);
-  const startPortForward = vi.fn().mockResolvedValue({ close });
+  const close = vi.fn().mockResolvedValue(undefined), startPortForward = vi.fn().mockResolvedValue({ close });
   const workspace = { workspaceId: 'ssh-a', location: { environmentId: 'host', path: '/same' }, environment: { kind: 'ssh', startPortForward } } as unknown as RegisteredWorkspace;
-  const workspaces = new Map([['ssh-a', workspace], ['ssh-b', { ...workspace, workspaceId: 'ssh-b' }],
-    ['local', { ...workspace, workspaceId: 'local', environment: { kind: 'local' } } as RegisteredWorkspace]]);
-  const notify = vi.fn();
-  const manager = new RemotePreviewManager({ getWorkspace: (id: string) => workspaces.get(id) ?? null } as WorkspaceRegistry, notify);
-  return { manager, startPortForward, close, workspace, workspaces, notify };
+  const workspaces = new Map([['ssh-a', workspace], ['ssh-b', { ...workspace, workspaceId: 'ssh-b' }], ['local', { ...workspace, workspaceId: 'local', environment: { kind: 'local' } } as RegisteredWorkspace]]);
+  const notify = vi.fn(), allocate = vi.fn().mockImplementation(async (preferred: number, reserved: Set<number>) => reserved.has(preferred) || !preferred ? 4000 + reserved.size : preferred), probe = vi.fn().mockResolvedValue(false);
+  const manager = new RemotePreviewManager({ getWorkspace: (id: string) => workspaces.get(id) ?? null } as WorkspaceRegistry, notify, { allocate, probe });
+  return { manager, startPortForward, close, workspace, workspaces, notify, allocate, probe };
 }
-const request = { workspaceId: 'ssh-a', localPort: 4000, remotePort: 3000 };
-
+const request = { workspaceId: 'ssh-a', remotePort: 3000 };
+afterEach(() => vi.useRealTimers());
 describe('RemotePreviewManager', () => {
-  it('routes through the registered SSH environment and rejects local, unknown and invalid requests', async () => {
-    const { manager, startPortForward } = fixture();
-    for (const invalid of [{ ...request, workspaceId: 'local' }, { ...request, workspaceId: 'unknown' },
-      { ...request, localPort: 0 }, { ...request, remotePort: 65536 }, { ...request, remotePort: 3000.1 }]) {
-      expect((await manager.start(invalid)).success).toBe(false);
-    }
-    expect(startPortForward).not.toHaveBeenCalled();
-    expect(await manager.start(request)).toEqual({ success: true, forward: { ...request, status: 'active', url: 'http://127.0.0.1:4000/' } });
-    expect(startPortForward).toHaveBeenCalledWith(4000, 3000, expect.any(AbortSignal), expect.any(Function));
-    await manager.stop('ssh-a');
+  it('allocates the local port in main and supports distinct services and workspaces', async () => {
+    const f = fixture();
+    for (const bad of [{ ...request, workspaceId: 'local' }, { ...request, workspaceId: 'unknown' }, { ...request, remotePort: 80 }, { ...request, remoteHost: '0.0.0.0' as never }, { ...request, protocol: 'ftp' as never }]) expect((await f.manager.start(bad)).success).toBe(false);
+    const result = await f.manager.start(request);
+    expect(result.forward).toMatchObject({ localPort: 3000, remotePort: 3000, status: 'waiting', url: 'http://127.0.0.1:3000/' });
+    await f.manager.start({ ...request, remotePort: 6006, remoteHost: '::1', protocol: 'https' });
+    await f.manager.start({ ...request, workspaceId: 'ssh-b' });
+    expect(f.manager.getAll('ssh-a')).toHaveLength(2);
+    expect(f.manager.get('ssh-b')?.localPort).not.toBe(3000);
+    expect(f.startPortForward).toHaveBeenCalledWith(expect.any(Number), 6006, expect.any(AbortSignal), expect.any(Function), '::1');
+    await f.manager.close(); expect(f.close).toHaveBeenCalledTimes(3);
   });
-  it('reserves a local port across startup and stop, then releases it after cleanup', async () => {
-    const { manager, startPortForward, close } = fixture();
-    const pending = deferred<PortForwardHandle>();
-    const closing = deferred<void>();
-    startPortForward.mockReturnValueOnce(pending.promise);
-    close.mockReturnValueOnce(closing.promise);
-    const started = manager.start(request);
-    expect((await manager.start({ ...request, workspaceId: 'ssh-b' })).error).toContain('already used');
-    pending.resolve({ close });
-    await started;
-    const stopped = manager.stop('ssh-a');
-    await Promise.resolve();
-    expect(manager.get('ssh-a')?.status).toBe('stopping');
-    expect((await manager.start({ ...request, workspaceId: 'ssh-b' })).success).toBe(false);
-    closing.resolve();
-    await stopped;
-    expect(manager.get('ssh-a')).toBeNull();
-    expect((await manager.start({ ...request, workspaceId: 'ssh-b' })).success).toBe(true);
-    await manager.stop('ssh-b');
+  it('retries a port-allocation race after OpenSSH bind conflict', async () => {
+    const f = fixture();
+    f.startPortForward.mockRejectedValueOnce(new PreviewTransportError('bind-conflict', 'Local port conflict'));
+    expect((await f.manager.start(request)).success).toBe(true);
+    expect(f.allocate.mock.calls.map(([preferred]) => preferred)).toEqual([3000, 0]);
+    expect(f.startPortForward.mock.calls[0][0]).not.toBe(f.startPortForward.mock.calls[1][0]);
+    await f.manager.close();
   });
-  it('cancels pending starts on workspace close and closes handles returned late', async () => {
-    const { manager, startPortForward, close, workspaces } = fixture();
-    const pending = deferred<PortForwardHandle>();
-    startPortForward.mockReturnValueOnce(pending.promise);
-    const started = manager.start(request);
-    const signal = startPortForward.mock.calls[0][2] as AbortSignal;
-    const stopped = manager.stop('ssh-a');
-    workspaces.delete('ssh-a');
-    expect(signal.aborted).toBe(true);
-    pending.resolve({ close });
-    expect((await started).success).toBe(false);
-    await stopped;
-    expect(close).toHaveBeenCalled();
-    expect(manager.get('ssh-a')).toBeNull();
+  it('survives delayed service startup and restarts without replacing the SSH child', async () => {
+    vi.useFakeTimers(); const f = fixture();
+    f.probe.mockResolvedValueOnce(false).mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValue(true);
+    await f.manager.start(request); await vi.advanceTimersByTimeAsync(0);
+    expect(f.manager.get('ssh-a')?.status).toBe('waiting');
+    await vi.advanceTimersByTimeAsync(2000); expect(f.manager.get('ssh-a')?.status).toBe('active');
+    await vi.advanceTimersByTimeAsync(5000); expect(f.manager.get('ssh-a')?.status).toBe('waiting');
+    await vi.advanceTimersByTimeAsync(2000); expect(f.manager.get('ssh-a')?.status).toBe('active');
+    expect(f.startPortForward).toHaveBeenCalledTimes(1); expect(f.close).not.toHaveBeenCalled(); await f.manager.close();
   });
-  it('rejects a replaced registration and exposes SSH errors with explicit retry', async () => {
-    const { manager, startPortForward, close, workspaces, workspace } = fixture();
-    const pending = deferred<PortForwardHandle>();
-    startPortForward.mockReturnValueOnce(pending.promise);
-    const started = manager.start(request);
-    workspaces.set('ssh-a', { ...workspace });
-    pending.resolve({ close });
-    expect((await started).success).toBe(false);
-    expect(close).toHaveBeenCalled();
-    expect((await manager.start(request)).success).toBe(true);
-    const onExit = startPortForward.mock.calls[1][3] as (error: string) => void;
-    onExit('SSH disconnected');
-    expect(manager.get('ssh-a')).toMatchObject({ status: 'error', error: 'SSH disconnected' });
-    expect((await manager.start(request)).success).toBe(true);
-    await manager.stop('ssh-a');
+  it('coalesces duplicate starts and closes handles returned after workspace shutdown', async () => {
+    const f = fixture(), pending = deferred<PortForwardHandle>(); f.startPortForward.mockReturnValueOnce(pending.promise);
+    const first = f.manager.start(request), second = f.manager.start(request);
+    await Promise.resolve(); await Promise.resolve();
+    const signal = f.startPortForward.mock.calls[0][2] as AbortSignal;
+    const stop = f.manager.closeWorkspace('ssh-a'); f.workspaces.delete('ssh-a');
+    expect(signal.aborted).toBe(true); pending.resolve({ close: f.close });
+    expect((await first).success).toBe(false); expect((await second).success).toBe(false); await stop;
+    expect(f.close).toHaveBeenCalled(); expect(f.manager.get('ssh-a')).toBeNull();
   });
-  it('cleans all forwards on shutdown and refuses subsequent starts', async () => {
-    const { manager, close } = fixture();
-    await manager.start(request);
-    manager.close();
-    await manager.stop('ssh-a');
-    expect(close).toHaveBeenCalled();
-    expect((await manager.start(request)).success).toBe(false);
+  it('waits for child termination and ignores late exit/health callbacks', async () => {
+    const f = fixture(), closing = deferred<void>(), health = deferred<boolean>(); f.close.mockReturnValue(closing.promise); f.probe.mockReturnValue(health.promise);
+    await f.manager.start(request); const exit = f.startPortForward.mock.calls[0][3] as (error: string) => void;
+    let drained = false; const stop = f.manager.close().then(() => { drained = true; });
+    await Promise.resolve(); expect(drained).toBe(false);
+    closing.resolve(); await stop; health.resolve(true); await Promise.resolve(); exit('late');
+    expect(f.manager.get('ssh-a')).toBeNull(); expect((await f.manager.start(request)).success).toBe(false);
   });
-
-  it('waits for pending startup and child termination on shutdown, ignoring stale exit callbacks', async () => {
-    const { manager, startPortForward, close } = fixture();
-    const starting = deferred<PortForwardHandle>();
-    const closing = deferred<void>();
-    startPortForward.mockReturnValueOnce(starting.promise);
-    close.mockReturnValueOnce(closing.promise);
-    const started = manager.start(request);
-    const staleExit = startPortForward.mock.calls[0][3] as (error: string) => void;
-    let drained = false;
-    const shutdown = manager.close().then(() => { drained = true; });
-    starting.resolve({ close });
-    await Promise.resolve();
-    expect(drained).toBe(false);
-    expect(manager.get('ssh-a')?.status).toBe('stopping');
-    closing.resolve();
-    await shutdown;
-    expect((await started).success).toBe(false);
-    staleExit('late disconnect');
-    expect(manager.get('ssh-a')).toBeNull();
+  it('rejects replaced registrations and reports transport errors without killing other services', async () => {
+    const f = fixture(), pending = deferred<PortForwardHandle>(); f.startPortForward.mockReturnValueOnce(pending.promise);
+    const first = f.manager.start(request); await Promise.resolve(); await Promise.resolve();
+    f.workspaces.set('ssh-a', { ...f.workspace }); pending.resolve({ close: f.close });
+    expect((await first).success).toBe(false); expect(f.close).toHaveBeenCalled();
+    await f.manager.start(request); await f.manager.start({ ...request, remotePort: 6006 });
+    const exit = f.startPortForward.mock.calls[1][3] as (error: string) => void; exit('SSH server rejected TCP forwarding');
+    expect(f.manager.getAll('ssh-a')[0]).toMatchObject({ status: 'error', error: 'SSH server rejected TCP forwarding' });
+    expect(f.manager.getAll('ssh-a')[1].status).toBe('waiting'); await f.manager.close();
   });
 });

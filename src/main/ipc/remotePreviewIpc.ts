@@ -12,7 +12,9 @@ export function registerRemotePreviewIpc(manager: RemotePreviewManager): void {
   ipcMain.handle(REMOTE_PREVIEW_START, (_, request: RemotePreviewRequest) => manager.start(request));
   ipcMain.handle(REMOTE_PREVIEW_STOP, async (_, request: unknown) => {
     if (!request || typeof request !== 'object' || !('workspaceId' in request) || typeof request.workspaceId !== 'string') return false;
-    await manager.stop(request.workspaceId);
+    const serviceId = 'serviceId' in request ? request.serviceId : undefined;
+    if (serviceId !== undefined && (typeof serviceId !== 'string' || serviceId.length > 256)) return false;
+    await manager.stop(request.workspaceId, serviceId);
     return true;
   });
 }

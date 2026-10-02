@@ -675,8 +675,8 @@ export class SshEnvironment implements WorkspaceEnvironment {
     return discoverSshWebServices(this.executor, this.target, signal, hints);
   }
 
-  public startPortForward(localPort: number, remotePort: number, signal: AbortSignal, onExit: (error: string) => void) {
-    return startSshPortForward(this.target, localPort, remotePort, signal, onExit);
+  public startPortForward(localPort: number, remotePort: number, signal: AbortSignal, onExit: (error: string) => void, remoteHost?: '127.0.0.1' | '::1') {
+    return startSshPortForward(this.target, localPort, remotePort, signal, onExit, remoteHost);
   }
 
   public async discoverSessions(workspacePath: string) {

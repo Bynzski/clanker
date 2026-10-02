@@ -108,7 +108,7 @@ export interface WorkspaceEnvironment {
 
   discoverWebServices?(signal?: AbortSignal, hints?: RemoteWebEndpoint[]): Promise<RemoteWebService[]>;
 
-  startPortForward?(localPort: number, remotePort: number, signal: AbortSignal, onExit: (error: string) => void): Promise<PortForwardHandle>;
+  startPortForward?(localPort: number, remotePort: number, signal: AbortSignal, onExit: (error: string) => void, remoteHost?: '127.0.0.1' | '::1'): Promise<PortForwardHandle>;
 
   dispose?(): Promise<void> | void;
 }
