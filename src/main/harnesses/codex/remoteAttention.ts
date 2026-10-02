@@ -33,5 +33,5 @@ for name, pattern in (('config.toml', r'^\\s*\\[hooks\\]|^\\s*\\[\\[?hooks\\.(?:
     env['CLANKER_REMOTE_ATTENTION_INTERPRETER'] = interpreter
     for name in reversed(${EVENTS}):
         hook_command = ${STABLE}.replace('NAME', name)
-        args = ['-c', 'hooks.' + name + '=[{hooks=[{type="command",command=' + json.dumps(hook_command) + ',timeout=2}]}]'] + args`,
+        args = ['-c', 'hooks.' + name + '=[{hooks=[{type="command",command=' + json.dumps(hook_command) + ',timeout=3}]}]'] + args`,
 };

@@ -7,7 +7,7 @@ export const remote: HarnessRemoteAttention = {
     sys.exit('Remote attention cannot replace custom Claude settings')
 `,
   configure: `    interpreter = os.path.join(root, 'interpreter.mjs')
-    settings = {'hooks': {name: [{'hooks': [{'type': 'command', 'command': 'node ' + shlex.quote(command) + ' ' + shlex.quote(interpreter) + ' ' + name, 'timeout': 2}]}] for name in ${JSON.stringify([...CLAUDE_HOOK_EVENTS])}}}
+    settings = {'hooks': {name: [{'hooks': [{'type': 'command', 'command': 'node ' + shlex.quote(command) + ' ' + shlex.quote(interpreter) + ' ' + name, 'timeout': 3}]}] for name in ${JSON.stringify([...CLAUDE_HOOK_EVENTS])}}}
     settings_path = os.path.join(root, 'claude-settings.json')
     write_resource('claude-settings.json', json.dumps(settings))
     args += ['--settings', settings_path]`,

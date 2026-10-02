@@ -135,7 +135,7 @@ export function codexHookOverrides(command: string, interpreter: string, platfor
     const hookCommand = platform === 'win32'
       ? `${hookNodeExecutable(platform)} "${command}" "${interpreter}" ${name}`
       : CODEX_STABLE_HOOK_COMMAND(name);
-    return ['-c', `hooks.${name}=[{hooks=[{type="command",command=${JSON.stringify(hookCommand)},timeout=2}]}]`];
+    return ['-c', `hooks.${name}=[{hooks=[{type="command",command=${JSON.stringify(hookCommand)},timeout=3}]}]`];
   });
 }
 

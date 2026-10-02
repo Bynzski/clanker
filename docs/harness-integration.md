@@ -221,11 +221,12 @@ arrives, and terminal text is never parsed.
 
 Hook commands are separate short-lived processes, and some interpreters (Codex, Claude,
 Agy) keep bounded per-terminal state. The shared `command.mjs` bridge therefore runs each
-read -> interpret -> write transaction under an exclusive per-terminal lock, and releases
-it before delivery. The lock is an atomically created directory (`.clanker-state-<hash>.json.lock`,
+read -> interpret -> write -> deliver transaction under an exclusive per-terminal lock.
+Delivery is inside the critical path so the broker observes transitions in state order (an
+event derived from state a hook produced can never be overtaken by a later hook's event);
+delivery is bounded and a failed delivery counts as a failed transaction. The lock is an atomically created directory (`.clanker-state-<hash>.json.lock`,
 no `flock`, so it also works on Windows) holding a `pid:nonce` owner record; state is
-replaced by an atomic temp-file rename. Waiting is bounded (about 1.2 s, under the hook
-timeouts) and is synchronization only: elapsed time never decides agent state. A holder
+replaced by an atomic temp-file rename. Waiting is bounded (about 1.2 s; Clanker-owned Codex and Claude hooks use a 3 s timeout) and is synchronization only: elapsed time never decides agent state. A holder
 that is dead, or older than the stale bound, is replaced by an atomic rename only if its
 owner record is unchanged; a live holder is never broken.
 

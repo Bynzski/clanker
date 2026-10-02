@@ -19,10 +19,10 @@ afterEach(() => {
 
 const SLEEP = `const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);`;
 
-async function bridge(extraFiles: Record<string, string> = {}) {
+async function bridge(extraFiles: Record<string, string> = {}, observer = OBSERVER) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-bridge-'));
   dirs.push(dir);
-  fs.writeFileSync(path.join(dir, 'observer.mjs'), OBSERVER);
+  fs.writeFileSync(path.join(dir, 'observer.mjs'), observer);
   fs.writeFileSync(path.join(dir, 'command.mjs'), COMMAND);
   fs.writeFileSync(path.join(dir, 'codex.mjs'), getHarnessProvider('codex').attention.interpreter!);
   // Holds every PermissionRequest transaction open after its read, so two processes overlap
@@ -51,8 +51,15 @@ export default (input, hook, store) => inner(input, hook, {
     child.once('error', reject);
     child.once('close', resolve);
   });
+  const waitForState = async (ready: (value: { waits: unknown[] }) => boolean) => {
+    for (let attempt = 0; attempt < 400; attempt++) {
+      try { if (ready(JSON.parse(fs.readFileSync(`${stateBase}.json`, 'utf8')))) return; } catch { /* not written yet */ }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error('state never reached the expected shape');
+  };
   const state = () => JSON.parse(fs.readFileSync(`${stateBase}.json`, 'utf8')) as { waits: Array<{ ids: string[] }>; calls: unknown[] };
-  return { dir, broker, updates, diagnostics, run, state, stateBase };
+  return { dir, broker, updates, diagnostics, run, state, stateBase, waitForState };
 }
 
 const turn = { session_id: 's', turn_id: 't1' };
@@ -146,5 +153,52 @@ describe('attention bridge state transactions', () => {
     expect(fs.existsSync(`${stateBase}.poison`)).toBe(true);
     await run('echo.mjs', 'x', { type: 'input_resolved' });
     expect(updates).toEqual(['turn_started', 'input_requested']);
+  });
+
+  // A delivery that is slow for one event must not let the next transaction's event overtake it.
+  const slowFor = (event: string) => OBSERVER.replace('export async function emit(event, fields) {',
+    `export async function emit(event, fields) {\n  if (event === ${JSON.stringify(event)}) await new Promise((resolve) => setTimeout(resolve, 350));`);
+
+  it('delivers input_requested before the input_resolved derived from its state, even when delivery is slow', async () => {
+    const { run, updates, broker, waitForState } = await bridge({}, slowFor('input_requested'));
+    await run('codex.mjs', 'UserPromptSubmit', turn);
+    await run('codex.mjs', 'PreToolUse', { ...turn, tool_use_id: 'a', ...bash('SECRET-A') });
+    const request = run('codex.mjs', 'PermissionRequest', { ...turn, ...bash('SECRET-A') });
+    // Start the resolving hook once the permission state exists but its event is still in flight.
+    await waitForState((state) => state.waits.length === 1);
+    const resolve = run('codex.mjs', 'PostToolUse', { ...turn, tool_use_id: 'a', ...bash('SECRET-A'), tool_response: 'SECRET' });
+    expect(await Promise.all([request, resolve])).toEqual([0, 0]);
+    expect(updates).toEqual(['turn_started', 'input_requested', 'input_resolved']);
+    expect(broker.handoffState('term')).toBe('running');
+  });
+
+  it('delivers turn_started before the turn_completed that follows it', async () => {
+    const { run, updates, broker, waitForState } = await bridge({}, slowFor('turn_started'));
+    const start = run('codex.mjs', 'UserPromptSubmit', turn);
+    await waitForState(() => true);
+    const stop = run('codex.mjs', 'Stop', turn);
+    expect(await Promise.all([start, stop])).toEqual([0, 0]);
+    expect(updates).toEqual(['turn_started', 'turn_completed']);
+    expect(broker.handoffState('term')).toBe('ready');
+  });
+
+  it.each([
+    ['returns false', 'return false;'],
+    ['throws', "throw new Error('transport down');"],
+  ])('treats a delivery that %s as a failed transaction: poison, no later resolution, no lock left', async (_name, failure) => {
+    const observer = OBSERVER.replace('export async function emit(event, fields) {',
+      `export async function emit(event, fields) {\n  if (event === 'input_requested') { ${failure} }`);
+    const { run, updates, broker, stateBase, dir } = await bridge({}, observer);
+    await run('codex.mjs', 'UserPromptSubmit', turn);
+    await run('codex.mjs', 'PreToolUse', { ...turn, tool_use_id: 'a', ...bash('x') });
+    await run('codex.mjs', 'PermissionRequest', { ...turn, ...bash('x') });
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(true);
+    expect(fs.readdirSync(dir).some((name) => name.endsWith('.lock'))).toBe(false);
+    await run('codex.mjs', 'PostToolUse', { ...turn, tool_use_id: 'a', ...bash('x'), tool_response: 'r' });
+    expect(updates).toEqual(['turn_started']); // the broker never saw the wait, and nothing resolved later
+    expect(broker.handoffState('term')).toBe('running');
+    await run('codex.mjs', 'Stop', turn);
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
+    expect(updates).toEqual(['turn_started', 'turn_completed']);
   });
 });

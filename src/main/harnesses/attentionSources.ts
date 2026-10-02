@@ -35,17 +35,22 @@ export async function emit(event, fields) {
  * argv[2] is the provider-owned interpreter module, which maps the native hook payload to a
  * canonical lifecycle event (or nothing) and may keep bounded per-terminal state.
  *
- * Every hook is its own short-lived process, so the bridge runs the whole state transaction
- * (read -> interpret -> write) under an exclusive per-terminal lock, then releases it BEFORE the
- * slower delivery. The lock is an atomically created directory (portable, no flock) holding a
- * pid:nonce owner record; a holder that is dead or older than the bound is stale and is replaced
- * only if its record is unchanged. Waiting is bounded (hooks time out after seconds) and is
- * synchronization only; elapsed time never decides agent state.
+ * Every hook is its own short-lived process, so the bridge runs the whole transaction
+ * (read -> interpret -> write -> DELIVER the resulting event) under an exclusive per-terminal
+ * lock. Delivery is inside the critical path on purpose: an event derived from state this hook
+ * produced can then never be overtaken by a later hook's event, so the broker observes
+ * transitions in state order. The lock is an atomically created directory (portable, no flock)
+ * holding a pid:nonce owner record, released in a finally; a holder that is dead or older than the
+ * bound is stale and is replaced only if its record is unchanged. Waiting is bounded and is
+ * synchronization only; elapsed time never decides agent state. Delivery itself is bounded
+ * (loopback ack timeout, non-blocking tty write), and the lock wait plus delivery fit inside the
+ * 3 s hook timeouts Clanker configures.
  *
  * Fail closed: if the transaction cannot be established (lock, unreadable/corrupt/oversized or
  * unwritable state) the interpreter runs against empty state, a private poison marker is set, and
  * no input_resolved is delivered until a turn boundary (start, completion, interrupt, session end)
- * is delivered. Evidence of a possible human wait is never discarded in favour of Running. */
+ * is delivered. A failed delivery counts as a failed transaction (the broker may not have seen the
+ * transition). Evidence of a possible human wait is never discarded in favour of Running. */
 export const COMMAND = `import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -147,24 +152,30 @@ const degraded = { read: () => ({}), write: () => false };
 let result = null;
 let interpreter = null;
 try { interpreter = await import(pathToFileURL(process.argv[2]).href); } catch { /* an unreadable interpreter emits nothing */ }
+const boundary = ['turn_started', 'turn_completed', 'turn_interrupted', 'session_ended'];
 if (interpreter) {
   const locked = await acquire();
   if (!locked) failed = true;
   try {
-    result = interpreter.default(input, process.argv[3], locked ? store : degraded);
-  } catch { /* an interpreter error emits nothing */ } finally {
+    // One critical path per terminal: the state transition AND delivery of its event happen
+    // under the lock, so an event derived from state this hook produced can never overtake it.
+    // Delivery is bounded (loopback ack timeout / non-blocking tty write).
+    try { result = interpreter.default(input, process.argv[3], locked ? store : degraded); } catch { /* an interpreter error emits nothing */ }
+    const poisoned = fs.existsSync(poisonPath);
+    let event = result?.event;
+    if (event?.type === 'input_resolved' && (failed || poisoned)) event = undefined;
+    if (event) {
+      const { type, ...fields } = event;
+      let delivered = false;
+      try { delivered = await emit(type, fields); } catch { /* counts as undelivered */ }
+      // The broker may not have seen this transition: stay conservative until a boundary lands.
+      if (!delivered) failed = true;
+      else if (boundary.includes(type) && !failed) { try { fs.unlinkSync(poisonPath); } catch { /* none set */ } }
+    }
+    if (failed && !poisoned) { try { fs.writeFileSync(poisonPath, '', { flag: 'wx', mode: 0o600 }); } catch { /* best effort */ } }
+  } finally {
     if (locked) release();
   }
-}
-const poisoned = fs.existsSync(poisonPath);
-const boundary = ['turn_started', 'turn_completed', 'turn_interrupted', 'session_ended'];
-let event = result?.event;
-if (failed && !poisoned) { try { fs.writeFileSync(poisonPath, '', { flag: 'wx', mode: 0o600 }); } catch { /* best effort */ } }
-if (event?.type === 'input_resolved' && (failed || poisoned)) event = undefined;
-if (event && boundary.includes(event.type) && !failed) { try { fs.unlinkSync(poisonPath); } catch { /* none set */ } }
-if (event) {
-  const { type, ...fields } = event;
-  await emit(type, fields);
 }
 process.stdout.write(JSON.stringify(result?.output ?? {}) + '\\n');
 `;

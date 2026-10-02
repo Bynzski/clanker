@@ -69,7 +69,7 @@ export function claudeAttentionSettings(command: string, platform: NodeJS.Platfo
 } {
   const nodeCommand = hookNodeExecutable(platform);
   const hooks = Object.fromEntries(CLAUDE_HOOK_EVENTS.map((name) => [
-    name, [{ hooks: [{ type: 'command', command: nodeCommand, args: [command, interpreter, name], timeout: 2 }] }],
+    name, [{ hooks: [{ type: 'command', command: nodeCommand, args: [command, interpreter, name], timeout: 3 }] }],
   ]));
   return { hooks };
 }
