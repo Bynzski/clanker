@@ -625,7 +625,7 @@ refreshable provider is still inside its window ("Refresh available in Ns"). An 
 raw text: it becomes "Usage could not be read", and a prior good reading is kept and flagged stale.
 
 Rendering: percent windows show remaining first ("72% remaining", or "N% used" when only that is
-known; overage is shown as the true value while the bar clamps) with a progress bar of USED quota
+known; overage is shown as the true value while the bar empties) with a progress bar of REMAINING capacity (amber at 10% or less)
 (`role="progressbar"` with `aria-valuetext`); other units render as `used / limit unit`, `remaining`, etc.,
 a bar only when a denominator exists, and money formatting only for the `usd` unit. Resets read "resets
 in 1h 42m / 3d 6h", a short date when far away, or "reset due"; "checked ..." uses `checkedAt` (not

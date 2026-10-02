@@ -61,17 +61,28 @@ describe('UsageDropdown', () => {
     expect(within(codex).getByText('resets in 3d 6h')).toBeInTheDocument();
     expect(within(codex).getByText('checked just now')).toBeInTheDocument();
     const bar = within(codex).getByRole('progressbar', { name: 'Codex 5 hour' });
-    expect(bar).toHaveAttribute('aria-valuenow', '28');
+    expect(bar).toHaveAttribute('aria-valuenow', '72');
+    expect(bar.firstElementChild).toHaveStyle({ width: '72%' });
+    expect(bar).not.toHaveClass('low');
     expect(bar).toHaveAttribute('aria-valuetext', '72% remaining');
     expect(within(codex).queryByText(/Codex ·/)).not.toBeInTheDocument(); // single group: no subheader, no duplicated prefix
   });
 
-  it('keeps over-100 usage readable and clamps only the bar', () => {
+  it('keeps over-100 usage readable while the bar is empty', () => {
     renderPanel({ claude: entry('claude', { measurements: [pct('Claude · weekly', 130)] }) });
     expect(within(section('Claude')).getByText('130% used')).toBeInTheDocument();
     const bar = within(section('Claude')).getByRole('progressbar');
-    expect(bar).toHaveAttribute('aria-valuenow', '100');
-    expect(bar.firstElementChild).toHaveStyle({ width: '100%' });
+    expect(bar).toHaveAttribute('aria-valuenow', '0');
+    expect(bar.firstElementChild).toHaveStyle({ width: '0%' });
+    expect(bar).toHaveClass('low');
+  });
+
+  it('full bar at 100% remaining; a 1% row is an amber sliver; 10% is the warning boundary', () => {
+    renderPanel({ claude: entry('claude', { measurements: [pct('Claude · a', 0), pct('Claude · b', 99), pct('Claude · c', 90), pct('Claude · d', 89)] }) });
+    const bars = within(section('Claude')).getAllByRole('progressbar');
+    expect(bars[0].firstElementChild).toHaveStyle({ width: '100%' });
+    expect(bars[1].firstElementChild).toHaveStyle({ width: '1%' });
+    expect(bars.map((bar) => bar.classList.contains('low'))).toEqual([false, true, true, false]);
   });
 
   it('renders absolute units, with money only for USD', () => {

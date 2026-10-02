@@ -6,21 +6,32 @@ const m = (overrides: Partial<HarnessUsageMeasurementView>): HarnessUsageMeasure
 const NOW = Date.UTC(2026, 9, 2, 12, 0, 0);
 
 describe('measurement formatting', () => {
-  it('shows percent remaining first, and fills the bar with USED quota', () => {
+  it('shows percent remaining first, and fills the bar with REMAINING capacity', () => {
     const view = describeMeasurement(m({ used: 28, remaining: 72, limit: 100, label: '5 hour' }), 'Codex');
     expect(view.value).toBe('72% remaining');
-    expect(view.ratio).toBeCloseTo(0.28);
-    expect(view.percentNow).toBe(28);
+    expect(view.ratio).toBeCloseTo(0.72);
+    expect(view.percentNow).toBe(72);
   });
   it('falls back to percent used', () => {
     expect(describeMeasurement(m({ used: 28 }), 'X').value).toBe('28% used');
-    expect(describeMeasurement(m({ remaining: 40 }), 'X')).toMatchObject({ value: '40% remaining', ratio: 0.6 });
+    expect(describeMeasurement(m({ remaining: 40 }), 'X')).toMatchObject({ value: '40% remaining', ratio: 0.4 });
   });
   it('keeps overage visible in the text while the bar clamps', () => {
     const view = describeMeasurement(m({ used: 130, remaining: 0, limit: 100 }), 'X');
     expect(view.value).toBe('130% used');
-    expect(view.ratio).toBe(1);
-    expect(view.percentNow).toBe(100);
+    expect(view.ratio).toBe(0);
+    expect(view.percentNow).toBe(0);
+  });
+  it('pins the remaining-capacity ratio for every depletion level', () => {
+    const ratio = (used: number, remaining?: number) => describeMeasurement(m({ used, ...(remaining !== undefined ? { remaining } : {}) }), 'X').ratio;
+    expect(ratio(0, 100)).toBe(1);
+    expect(ratio(28, 72)).toBeCloseTo(0.72);
+    expect(ratio(99, 1)).toBeCloseTo(0.01);
+    expect(ratio(100, 0)).toBe(0);
+    expect(ratio(130, 0)).toBe(0);
+    expect(ratio(28)).toBeCloseTo(0.72); // remaining derived from used
+    expect(describeMeasurement(m({ unit: 'usd', used: 4.2, limit: 20 }), 'X').ratio).toBeCloseTo(0.79);
+    expect(describeMeasurement(m({ unit: 'credits', used: 3, limit: 10 }), 'X').ratio).toBeCloseTo(0.7);
   });
   it('formats money only for the usd unit and never infers a currency', () => {
     expect(describeMeasurement(m({ unit: 'usd', used: 4.2, limit: 20 }), 'X').value).toBe('$4.20 / $20.00 used');
@@ -29,10 +40,10 @@ describe('measurement formatting', () => {
     expect(credits).not.toContain('$');
   });
   it('renders generic units with and without a denominator', () => {
-    expect(describeMeasurement(m({ unit: 'requests', used: 320, limit: 1000 }), 'X')).toMatchObject({ value: '320 / 1,000 requests used', ratio: 0.32 });
+    expect(describeMeasurement(m({ unit: 'requests', used: 320, limit: 1000 }), 'X')).toMatchObject({ value: '320 / 1,000 requests used', ratio: 0.68 });
     expect(describeMeasurement(m({ unit: 'tokens', remaining: 680 }), 'X')).toMatchObject({ value: '680 tokens remaining' });
     expect(describeMeasurement(m({ unit: 'tokens', remaining: 680 }), 'X').ratio).toBeUndefined();
-    expect(describeMeasurement(m({ unit: 'requests', limit: 50, remaining: 20 }), 'X')).toMatchObject({ value: '30 / 50 requests used', ratio: 0.6 });
+    expect(describeMeasurement(m({ unit: 'requests', limit: 50, remaining: 20 }), 'X')).toMatchObject({ value: '30 / 50 requests used', ratio: 0.4 });
     expect(describeMeasurement(m({ unit: 'minutes', limit: 50 }), 'X').value).toBe('50 minutes limit');
     expect(describeMeasurement(m({ unit: 'weird' }), 'X').value).toBe('No data');
   });

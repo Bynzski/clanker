@@ -91,7 +91,7 @@ function HarnessSection({ label, Icon, entry, checking, now }: {
                   <span className="usage-measurement-value">{view.value}</span>
                 </div>
                 {view.ratio !== undefined && (
-                  <div className={`usage-bar ${view.ratio >= 0.9 ? 'high' : ''}`} role="progressbar" aria-label={`${label} ${view.label}`}
+                  <div className={`usage-bar ${view.ratio <= 0.1 ? 'low' : ''}`} role="progressbar" aria-label={`${label} ${view.label}`}
                     aria-valuemin={0} aria-valuemax={100} aria-valuenow={view.percentNow} aria-valuetext={view.value}>
                     <div className="usage-bar-fill" style={{ width: `${view.ratio * 100}%` }} />
                   </div>

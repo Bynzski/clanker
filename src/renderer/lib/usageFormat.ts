@@ -30,9 +30,9 @@ export interface MeasurementDisplay {
   label: string;
   /** Right-aligned value text, e.g. "72% remaining". */
   value: string;
-  /** Fill ratio of USED quota, clamped to 0..1; undefined when no meaningful denominator exists. */
+  /** Fill ratio of REMAINING capacity (full = nothing used), clamped to 0..1; undefined without a meaningful denominator. */
   ratio?: number;
-  /** Used percentage for aria-valuenow (not clamped in the text, clamped to 0..100 here). */
+  /** Remaining percentage for aria-valuenow, clamped to 0..100 (the text itself is never clamped). */
   percentNow?: number;
   resetsAt?: number;
 }
@@ -50,11 +50,11 @@ export function describeMeasurement(measurement: HarnessUsageMeasurementView, ha
   const base = { label, resetsAt: measurement.resetsAt };
 
   if (unit.toLowerCase() === 'percent') {
-    const usedPercent = used ?? (remaining !== undefined ? 100 - remaining : undefined);
     const value = used !== undefined && used > 100 ? `${formatPercent(used)}% used`
       : remaining !== undefined ? `${formatPercent(remaining)}% remaining`
       : used !== undefined ? `${formatPercent(used)}% used` : 'No data';
-    const ratio = usedPercent === undefined ? undefined : Math.min(1, Math.max(0, usedPercent / 100));
+    const remainingPercent = remaining ?? (used !== undefined ? 100 - used : undefined);
+    const ratio = remainingPercent === undefined ? undefined : Math.min(1, Math.max(0, remainingPercent / 100));
     return { ...base, value, ratio, percentNow: ratio === undefined ? undefined : Math.round(ratio * 100) };
   }
 
@@ -68,7 +68,8 @@ export function describeMeasurement(measurement: HarnessUsageMeasurementView, ha
   else if (usedAmount !== undefined) value = `${fmt(usedAmount)}${suffix} used`;
   else if (limit !== undefined) value = `${fmt(limit)}${suffix} limit`;
   else value = 'No data';
-  const ratio = usedAmount !== undefined && limit !== undefined && limit > 0 ? Math.min(1, Math.max(0, usedAmount / limit)) : undefined;
+  const remainingAmount = remaining ?? (limit !== undefined && used !== undefined ? limit - used : undefined);
+  const ratio = remainingAmount !== undefined && limit !== undefined && limit > 0 ? Math.min(1, Math.max(0, remainingAmount / limit)) : undefined;
   return { ...base, value, ratio, percentNow: ratio === undefined ? undefined : Math.round(ratio * 100) };
 }
 
