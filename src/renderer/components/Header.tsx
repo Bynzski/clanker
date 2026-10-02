@@ -64,6 +64,7 @@ export default function Header() {
     aiCommitModels,
     isLoadingAiCommitModels,
     harnessDefaults,
+    harnessDefaultsStatus,
     visibleHarnessIds,
     expandedHarness,
     setExpandedHarness,
@@ -83,10 +84,11 @@ export default function Header() {
   } = useHeaderSettings({ harness, setHarness, environmentId: focusedWorkspace?.environmentId });
   // Only harnesses with a usage capability AND an enabled "Show in Usage" preference are ever requested.
   // Membership comes from descriptors; order follows the launcher's presentation order.
+  // Fail closed: nothing is probed until the persisted preferences have loaded successfully.
   const usageHarnessIds = useMemo(
-    () => HARNESS_OPTIONS.map((option) => option.id).filter((id) =>
+    () => harnessDefaultsStatus !== 'ready' ? [] : HARNESS_OPTIONS.map((option) => option.id).filter((id) =>
       (USAGE_HARNESS_IDS as readonly string[]).includes(id) && harnessDefaults?.[id]?.usageVisible !== false),
-    [harnessDefaults],
+    [harnessDefaults, harnessDefaultsStatus],
   );
   const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage, harnessIds: usageHarnessIds });
 
@@ -269,6 +271,7 @@ export default function Header() {
         workspaceId={focusedWorkspace?.id ?? null}
         onCloseChatHistory={() => void handleChatHistoryOpenChange(false)}
         showUsage={showUsage}
+        usageReady={harnessDefaultsStatus === 'ready'}
         onUsageOpenChange={handleUsageOpenChange}
         usage={usage}
         settingsTriggerRef={settingsTriggerRef}

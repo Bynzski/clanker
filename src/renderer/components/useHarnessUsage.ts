@@ -118,7 +118,11 @@ export function useHarnessUsage({ workspaceId, open, harnessIds }: { workspaceId
   }, [open, workspaceId, refreshAll, ids]);
 
   const nextManualRefreshAt = useMemo(() => {
-    const times = ids.map((id) => entries[id]?.refreshableAt).filter((time): time is number => typeof time === 'number');
+    const resolved = ids.map((id) => entries[id]).filter((entry): entry is HarnessUsageEntry => entry !== undefined);
+    // A resolved entry without refreshableAt (e.g. not-installed) can always be re-checked by a forced
+    // refresh; unresolved/initial-loading entries do not count.
+    if (resolved.some((entry) => typeof entry.refreshableAt !== 'number')) return undefined;
+    const times = resolved.map((entry) => entry.refreshableAt as number);
     if (times.length === 0) return undefined;
     return times.some((time) => time <= now) ? undefined : Math.min(...times);
   }, [entries, now, ids]);

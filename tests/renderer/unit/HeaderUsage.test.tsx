@@ -36,8 +36,14 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); });
 
+/** Persisted preferences load asynchronously; the Usage control is disabled until they have. */
+const renderReady = async () => {
+  const view = render(<Header />);
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  return view;
+};
 const openUsage = async () => {
-  render(<Header />);
+  await renderReady();
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
 };
 const panel = () => screen.getByRole('dialog', { name: 'Usage' });
@@ -82,7 +88,7 @@ describe('Usage panel loading', () => {
 describe('Usage polling', () => {
   it('polls about once a minute with ordinary reads while open, skipping harnesses still in flight, and stops on close', async () => {
     vi.useFakeTimers();
-    render(<Header />);
+    await renderReady();
     expect(calls()).toHaveLength(0);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
     expect(calls()).toHaveLength(5);
@@ -101,7 +107,7 @@ describe('Usage polling', () => {
 
   it('restarts on reopen with an immediate request and stops on unmount', async () => {
     vi.useFakeTimers();
-    const { unmount } = render(<Header />);
+    const { unmount } = await renderReady();
     const trigger = screen.getByRole('button', { name: 'Usage' });
     await act(async () => { fireEvent.click(trigger); });
     for (const d of pending.splice(0)) await respond(d, okEntry(d.harnessId, `${d.harnessId} · x`, 1)); // nothing left in flight
@@ -118,7 +124,7 @@ describe('Usage polling', () => {
   it('stops polling the old workspace when the workspace switches', async () => {
     vi.useFakeTimers();
     useWorkspaceStore.setState((state) => ({ workspaces: [...state.workspaces, createWorkspaceFixture({ id: 'ws-2', lifecycle: 'parked' })] }));
-    render(<Header />);
+    await renderReady();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
     act(() => useWorkspaceStore.getState().selectWorkspace('ws-2'));
     const before = calls().length;
@@ -147,7 +153,7 @@ describe('Usage manual refresh', () => {
 
   it('uses refreshableAt to disable a pointless refresh and enables it once a provider becomes eligible', async () => {
     vi.useFakeTimers();
-    render(<Header />);
+    await renderReady();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
     const soon = Date.now() + 40_000;
     for (const d of pending.splice(0)) await respond(d, okEntry(d.harnessId, `${d.harnessId} · x`, 1, { refreshableAt: d.harnessId === 'codex' ? soon : soon + 120_000 }));
@@ -155,6 +161,21 @@ describe('Usage manual refresh', () => {
     expect(button).toBeDisabled();
     expect(button.getAttribute('title')).toMatch(/^Refresh available in \d+s$/);
     await act(async () => { vi.advanceTimersByTime(41_000); });
+    expect(within(panel()).getByRole('button', { name: 'Refresh usage' })).toBeEnabled();
+  });
+
+  it('a resolved not-installed entry without refreshableAt makes Refresh available even while others are inside their window', async () => {
+    vi.useFakeTimers();
+    await renderReady();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
+    const later = Date.now() + 60_000;
+    // Hermes is still unresolved: it must not count as refreshable.
+    for (const d of pending.filter((candidate) => candidate.harnessId !== 'hermes' && candidate.harnessId !== 'agy')) {
+      await respond(d, okEntry(d.harnessId, `${d.harnessId} · x`, 1, { refreshableAt: later }));
+    }
+    await respond(pending.find((d) => d.harnessId === 'agy')!, okEntry('agy', 'agy · x', 1, { refreshableAt: later }));
+    expect(within(panel()).getByRole('button', { name: 'Refresh usage' })).toBeDisabled();
+    await respond(pending.find((d) => d.harnessId === 'hermes')!, { harnessId: 'hermes', status: 'not-installed', measurements: [], error: 'Not installed in this environment' });
     expect(within(panel()).getByRole('button', { name: 'Refresh usage' })).toBeEnabled();
   });
 
@@ -183,8 +204,7 @@ describe('Usage provider selection (Show in Usage)', () => {
   it('usageVisible=false removes the harness from the panel and from initial, polled and forced requests', async () => {
     vi.useFakeTimers();
     useDefaults({ codex: { usageVisible: false }, hermes: { usageVisible: false } });
-    render(<Header />);
-    await act(async () => { await Promise.resolve(); });
+    await renderReady();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
     expect(requestedIds()).toEqual(['claude', 'omp', 'agy']);
     expect(within(panel()).queryByRole('region', { name: 'Codex' })).not.toBeInTheDocument();
@@ -197,8 +217,7 @@ describe('Usage provider selection (Show in Usage)', () => {
 
   it('keeps the Usage control available and makes no requests when every provider is disabled', async () => {
     useDefaults(Object.fromEntries(['codex', 'claude', 'omp', 'hermes', 'agy'].map((id) => [id, { usageVisible: false }])));
-    render(<Header />);
-    await act(async () => { await Promise.resolve(); });
+    await renderReady();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
     expect(within(panel()).getByText('No usage providers selected')).toBeInTheDocument();
     expect(within(panel()).getByText('Enable providers in Settings → Harness Defaults.')).toBeInTheDocument();
@@ -210,7 +229,7 @@ describe('Usage provider selection (Show in Usage)', () => {
   it('toggling Show in Usage in Settings persists through setHarnessDefaults and drops the harness from the next Usage opening', async () => {
     vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({ codex: { name: 'Codex', command: 'codex', args: [], icon: 'terminal' } });
     const user = userEvent.setup();
-    render(<Header />);
+    await renderReady();
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.click(await within(screen.getByRole('dialog', { name: 'Settings' })).findByRole('button', { name: 'Codex' }));
     await user.click(screen.getByRole('checkbox', { name: 'Show Codex in Usage' }));
@@ -221,6 +240,36 @@ describe('Usage provider selection (Show in Usage)', () => {
     await user.click(screen.getByRole('button', { name: 'Usage' }));
     expect(requestedIds()).toEqual(['claude', 'omp', 'hermes', 'agy']);
     expect(within(panel()).queryByRole('region', { name: 'Codex' })).not.toBeInTheDocument();
+  });
+
+  it('never probes a persisted-hidden provider during the startup race, and fails closed if defaults cannot load', async () => {
+    const user = userEvent.setup();
+    let finish!: (value: never) => void;
+    vi.mocked(window.electronAPI.getHarnessDefaults).mockReturnValueOnce(new Promise((resolve) => { finish = resolve as never; }));
+    render(<Header />);
+    const trigger = screen.getByRole('button', { name: 'Usage' });
+    expect(trigger).toBeDisabled(); // neutral: not-yet-known preferences are not "no providers selected"
+    await user.click(trigger);
+    expect(screen.queryByRole('dialog', { name: 'Usage' })).not.toBeInTheDocument();
+    expect(calls()).toHaveLength(0);
+    await act(async () => finish(defaults({ codex: { usageVisible: false } }) as never));
+    expect(trigger).toBeEnabled();
+    await user.click(trigger);
+    expect(requestedIds()).toEqual(['claude', 'omp', 'hermes', 'agy']);
+    expect(requestedIds()).not.toContain('codex');
+    expect(within(panel()).queryByText('No usage providers selected')).not.toBeInTheDocument();
+  });
+
+  it('fails closed (no probes at all) when harness defaults fail to load', async () => {
+    const user = userEvent.setup();
+    vi.mocked(window.electronAPI.getHarnessDefaults).mockRejectedValueOnce(new Error('store unavailable'));
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<Header />);
+    await act(async () => { await Promise.resolve(); });
+    await user.click(screen.getByRole('button', { name: 'Usage' }));
+    expect(screen.queryByRole('dialog', { name: 'Usage' })).not.toBeInTheDocument();
+    expect(calls()).toHaveLength(0);
+    spy.mockRestore();
   });
 
   it('the header trigger is compact (icon only) but still named Usage; the popover keeps its USAGE heading', async () => {

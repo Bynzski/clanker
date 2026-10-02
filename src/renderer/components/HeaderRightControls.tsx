@@ -26,6 +26,8 @@ interface HeaderRightControlsProps {
   workspaceId: string | null;
   onCloseChatHistory: () => void;
   showUsage: boolean;
+  /** False until persisted harness preferences have loaded; the control is disabled meanwhile. */
+  usageReady: boolean;
   onUsageOpenChange: (open: boolean) => void;
   usage: UseHarnessUsageResult;
   settingsTriggerRef: React.RefObject<HTMLButtonElement | null>;
@@ -71,6 +73,7 @@ export default function HeaderRightControls({
   workspaceId,
   onCloseChatHistory,
   showUsage,
+  usageReady,
   onUsageOpenChange,
   usage,
   settingsTriggerRef,
@@ -156,7 +159,7 @@ export default function HeaderRightControls({
       </Popover>
       <Popover open={showUsage} onOpenChange={onUsageOpenChange}>
         <PopoverTrigger asChild>
-          <Button className={`header-btn ${showUsage ? 'active' : ''}`} aria-label="Usage" title="Usage">
+          <Button className={`header-btn ${showUsage ? 'active' : ''}`} aria-label="Usage" title="Usage" disabled={!usageReady && !showUsage}>
             <Gauge size={15} strokeWidth={2} />
             <ChevronDown size={12} strokeWidth={2} />
           </Button>
