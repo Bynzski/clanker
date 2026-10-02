@@ -10,6 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Automatic SSH browser previews** — discover workspace-owned remote HTTP/HTTPS services, allocate desktop loopback forwards automatically, and open a single unambiguous service in the embedded Browser. Multiple services and manual forwarding are available from a compact Browser control.
 
+### Changed
+
+- **Conversation History replaces Workspace Tasks** — Chat History now contains only harness-native conversations. The durable per-launch task records introduced in `0.6.0` no longer exist: local and SSH harness launches and native resumes write no application-level task state, and any `taskSessions` data persisted by earlier builds is deleted once at startup. Resuming an old conversation is unchanged — open Chat History, expand a harness, and select the conversation.
+
 ### Fixed
 
 - **SSH preview recovery and isolation** — development servers can stop and restart without recreating healthy SSH tunnels. Private SSH workspace Browser sessions prevent loopback cookies and storage from leaking between unrelated remote workspaces.

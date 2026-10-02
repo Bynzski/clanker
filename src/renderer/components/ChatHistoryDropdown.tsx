@@ -1,9 +1,6 @@
 import { useState } from 'react';
-import { useEffect } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { HarnessSession } from '../../shared/types/session';
-import type { TaskSessionRecord } from '../../shared/types/taskSessions';
-import TaskRecoverySection from './TaskRecoverySection';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import { getSessionDisplayTitles } from '../lib/sessionTitles';
 import './ChatHistoryDropdown.css';
@@ -101,7 +98,6 @@ export default function ChatHistoryDropdown({
   onClose,
 }: Props) {
   const addTerminal = useWorkspaceStore((state) => state.addTerminal);
-  const setActiveTerminal = useWorkspaceStore((state) => state.setActiveTerminal);
   const [launching, setLaunching] = useState(false);
   const [sessionLaunchError, setSessionLaunchError] = useState('');
   const environmentId = useWorkspaceStore((state) => state.getWorkspaceById(workspaceId)?.environmentId ?? 'local');
@@ -109,107 +105,7 @@ export default function ChatHistoryDropdown({
     const current = useWorkspaceStore.getState().getWorkspaceById(workspaceId);
     return current && (current.environmentId ?? 'local') === environmentId && current.workspacePath === workspacePath;
   };
-  const [tasks, setTasks] = useState<TaskSessionRecord[]>([]);
-  const [resumeError, setResumeError] = useState<{ taskId: string; message: string } | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (typeof window.electronAPI?.taskSessionList === 'function') {
-      window.electronAPI.taskSessionList(workspacePath, environmentId)
-        .then((res) => {
-          if (!cancelled) setTasks(res);
-        })
-        .catch((err) => {
-          console.error('Failed to load task sessions:', err);
-        });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [workspacePath, environmentId]);
-
-  const handleResumeTask = async (task: TaskSessionRecord) => {
-    if (!task.nativeSessionId) return;
-    setResumeError(null);
-    try {
-      const sessionPayload: HarnessSession = {
-        id: task.nativeSessionId,
-        harness: task.harnessId as HarnessSession['harness'],
-        title: task.title,
-        cwd: task.workspacePath,
-        timestamp: task.updatedAt,
-        modelId: task.modelId,
-        filePath: task.nativeSessionPath,
-      };
-      if (!workspaceId) throw new Error('Workspace is not registered');
-      const info = await window.electronAPI.invokeSession(workspaceId, sessionPayload);
-      if (!stillOwnsWorkspace()) {
-        await window.electronAPI.killTerminal(info.id);
-        throw new Error('The workspace closed while resuming');
-      }
-      addTerminal({
-        id: info.id,
-        pid: info.pid,
-        workingDir: info.workingDir ?? workspacePath,
-        workspaceId,
-        environmentId,
-        harnessId: sessionPayload.harness,
-        attentionEnabled: info.attentionEnabled === true,
-      }, workspaceId);
-      if (typeof window.electronAPI?.taskSessionList === 'function') {
-        const updated = await window.electronAPI.taskSessionList(workspacePath, environmentId);
-        setTasks(updated);
-      }
-      if (useWorkspaceStore.getState().activeWorkspaceId === workspaceId) onClose();
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error('Failed to resume task:', err);
-      setResumeError({ taskId: task.id, message: errorMsg });
-      if (typeof window.electronAPI?.taskSessionUpdate === 'function') {
-        try {
-          await window.electronAPI.taskSessionUpdate({
-            id: task.id,
-            state: 'unavailable',
-            stateReason: `Failed to resume: ${errorMsg}`,
-          });
-          const updated = await window.electronAPI.taskSessionList(workspacePath, environmentId);
-          setTasks(updated);
-        } catch {
-          // Ignore secondary update error
-        }
-      }
-    }
-  };
-
-  const handleAssociateSession = async (task: TaskSessionRecord, session: HarnessSession) => {
-    if (typeof window.electronAPI?.taskSessionUpdate === 'function') {
-      await window.electronAPI.taskSessionUpdate({
-        id: task.id,
-        nativeSessionId: session.id,
-        nativeSessionPath: session.filePath,
-        state: 'resumable',
-        stateReason: '',
-      });
-      const updated = await window.electronAPI.taskSessionList(workspacePath, environmentId);
-      setTasks(updated);
-    }
-  };
-
-  const handleDeleteTask = async (taskId: string) => {
-    try {
-      if (typeof window.electronAPI?.taskSessionDelete === 'function') {
-        await window.electronAPI.taskSessionDelete(taskId);
-        setTasks((prev) => prev.filter((t) => t.id !== taskId));
-      }
-    } catch (err) {
-      console.error('Failed to delete task:', err);
-    }
-  };
-
-  const handleFocusTerminal = (terminalId: string) => {
-    setActiveTerminal(terminalId);
-    onClose();
-  };
   const handleSessionClick = async (session: HarnessSession) => {
     if (launching) return;
     setLaunching(true);
@@ -252,15 +148,6 @@ export default function ChatHistoryDropdown({
   return (
     <div className="chat-history-dropdown">
       {sessionLaunchError && <div className="chat-history-empty" role="alert">{sessionLaunchError}</div>}
-      <TaskRecoverySection
-        tasks={tasks}
-        discoveredSessions={sessions}
-        onResumeTask={handleResumeTask}
-        onAssociateSession={handleAssociateSession}
-        onDeleteTask={handleDeleteTask}
-        onFocusTerminal={handleFocusTerminal}
-        resumeError={resumeError}
-      />
       {isLoading ? (
         <div className="chat-history-empty">Loading sessions...</div>
       ) : discoveryError ? (

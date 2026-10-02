@@ -19,16 +19,15 @@ function fixture(harness: HarnessSession['harness'] = 'codex') {
   const workspace = { workspaceId: 'remote-ws', location: { environmentId: 'ssh-a', path: '/ws' }, environment } as unknown as RegisteredWorkspace;
   const registry = { getWorkspace: vi.fn().mockReturnValue(workspace), isRemotePathReserved: vi.fn().mockReturnValue(false) };
   const broker = { registerRemote: vi.fn().mockReturnValue('a'.repeat(64)), release: vi.fn(), receiveRemote: vi.fn() };
-  const tasks = { onSessionInvoked: vi.fn(), onTerminalSpawned: vi.fn(), onTerminalExited: vi.fn() };
   const defaults: { flags?: string; attentionEnabled?: boolean } = { flags: '--verbose', attentionEnabled: true };
   const deps = {
     getWorkspaceRegistry: () => registry, getIsShuttingDown: vi.fn().mockReturnValue(false),
     getTerminals: () => new Map(), getMainWindow: () => null,
     getStore: () => ({ get: () => ({ [harness]: defaults }) }),
     getHarnessOptions: vi.fn(() => { throw new Error('Desktop harnesses must not be consulted'); }),
-    agentAttentionBroker: broker, taskSessionCoordinator: tasks,
+    agentAttentionBroker: broker,
   } as unknown as RegisterSessionIpcDeps;
-  return { session, environment, workspace, registry, broker, tasks, deps, release, defaults };
+  return { session, environment, workspace, registry, broker, deps, release, defaults };
 }
 beforeEach(() => { vi.mocked(spawnPtyProcess).mockReset().mockImplementation((options) => ({ id: options.id, pid: 123 })); });
 
@@ -61,12 +60,10 @@ describe('remote session invocation', () => {
     expect(f.environment.discoverSessions).toHaveBeenCalledWith('/ws');
     expect(f.environment.resolveTerminalSpawn).toHaveBeenCalledWith(expect.objectContaining({ workingDir: '/ws/sub', harness, attentionToken: 'a'.repeat(64), resumeSession: { session: f.session, fork: false, workspaceRoot: '/ws' } }));
     expect(spawnPtyProcess).toHaveBeenCalledWith(expect.objectContaining({ spawnCmd: 'ssh', workspaceId: 'remote-ws', environmentId: 'ssh-a', remoteWorkingDir: '/ws/sub', filterData: expect.any(Function) }));
-    expect(f.tasks.onSessionInvoked).toHaveBeenCalledWith(result.id, expect.objectContaining({ cwd: '/ws', environmentId: 'ssh-a', id: f.session.id }));
     expect(result).toMatchObject({ workingDir: '/ws/sub', attentionEnabled: true });
     vi.mocked(spawnPtyProcess).mock.calls[0][0].onExit?.(result.id);
     expect(f.broker.release).toHaveBeenCalledWith(result.id);
     expect(f.release).toHaveBeenCalled();
-    expect(f.tasks.onTerminalExited).toHaveBeenCalledWith(result.id, 'ssh-a');
   });
   it('refuses unsupported, missing, unavailable, invalid and escaping sessions before spawning', async () => {
     const f = fixture();
@@ -90,14 +87,15 @@ describe('remote session invocation', () => {
     await expect(invokeRemoteSession(agy.deps, agy.workspace, agy.session, true)).rejects.toThrow('forking is not supported');
     expect(spawnPtyProcess).not.toHaveBeenCalled();
   });
-  it('records forks with a launch baseline rather than claiming the parent session', async () => {
+  it('forks without recording any durable task-session state', async () => {
     const f = fixture('pi');
-    const capture = vi.fn().mockResolvedValue({ sessions: [f.session], hostTime: 8_000_000 });
-    Object.assign(f.environment, { captureSessionBaseline: capture });
+    const storeSet = vi.fn();
+    f.deps.getStore = () => ({ get: () => ({ pi: f.defaults }), set: storeSet }) as never;
     await invokeRemoteSession(f.deps, f.workspace, f.session, true);
-    expect(f.tasks.onSessionInvoked).not.toHaveBeenCalled();
-    expect(f.tasks.onTerminalSpawned).toHaveBeenCalledWith(expect.any(String), '/ws', 'pi', 'host-model', 'ssh-a', expect.objectContaining({ cwd: '/ws/sub', sessionIds: ['native-id'], hostTime: 8_000_000 }));
-    expect(capture).toHaveBeenCalledWith('/ws', 'pi');
+    expect(f.environment.resolveTerminalSpawn).toHaveBeenCalledWith(expect.objectContaining({
+      resumeSession: { session: f.session, fork: true, workspaceRoot: '/ws' },
+    }));
+    expect(storeSet.mock.calls.map(([key]) => key)).not.toContain('taskSessions');
   });
   it('rechecks registration and path reservations after preparation, releasing attention on refusal or spawn failure', async () => {
     for (const outcome of ['replaced', 'reserved', 'shutdown', 'spawn-error']) {

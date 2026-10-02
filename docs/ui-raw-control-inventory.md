@@ -4,7 +4,7 @@ Baseline: `fe511064b835d07869f9adbbb9773b683e0c109b` on `ui/64-design-system-ali
 
 Before: **208** sites (34 input, 2 textarea, 7 select, 165 button). **158** ordinary raw controls migrated. Two specialized tab selectors now use semantic div wrappers to avoid nesting shared action buttons inside buttons; two span close controls additionally migrated to IconButton.
 
-Final: **48** raw sites (7 input, 1 textarea, 1 select, 39 button). There are no raw ordinary field implementations outside canonical primitives; the only retained ordinary actions are documented crash recovery and canonical OS caption controls.
+Final: **47** raw sites (7 input, 1 textarea, 1 select, 38 button). There are no raw ordinary field implementations outside canonical primitives; the only retained ordinary actions are documented crash recovery and canonical OS caption controls. The removed Workspace Tasks section accounted for one retained button.
 
 ## Native semantic controls intentionally retained
 
@@ -42,7 +42,6 @@ Final: **48** raw sites (7 input, 1 textarea, 1 select, 39 button). There are no
 | [components/Header.tsx:206](../src/renderer/components/Header.tsx#L206) | `button`: harness-pill | Harness launcher pill combines harness identity/icon with launch action in the product header. |
 | [components/RemoteDirectoryChooser.tsx:276](../src/renderer/components/RemoteDirectoryChooser.tsx#L276) | `button`: button | Remote directory navigation row displaying folder identity; ordinary retry uses Button. |
 | [components/RemoteWorkspacePath.tsx:123](../src/renderer/components/RemoteWorkspacePath.tsx#L123) | `button`: suggestion-item  | Directory autocomplete option with path composition and selected index navigation. |
-| [components/TaskRecoverySection.tsx:218](../src/renderer/components/TaskRecoverySection.tsx#L218) | `button`: task-session-picker-item | Session association selection row with conversation metadata. |
 | [components/WindowControls.tsx:51](../src/renderer/components/WindowControls.tsx#L51) | `button`: button | Canonical OS caption controls shared by titlebar and gate: caption hit targets and platform close emphasis. |
 | [components/WindowControls.tsx:55](../src/renderer/components/WindowControls.tsx#L55) | `button`: button | Canonical OS caption controls shared by titlebar and gate: caption hit targets and platform close emphasis. |
 | [components/WindowControls.tsx:59](../src/renderer/components/WindowControls.tsx#L59) | `button`: button | Canonical OS caption controls shared by titlebar and gate: caption hit targets and platform close emphasis. |
@@ -148,12 +147,6 @@ These line numbers refer to the baseline commit. Migrations use shared primitive
 | `components/RemoteWorktreePicker.tsx:63` | `button`: button | Migrated to Button |
 | `components/SshEnvironmentManager.tsx:121` | `button`: ssh-env-edit-btn | Migrated to IconButton |
 | `components/SshEnvironmentManager.tsx:122` | `button`: ssh-env-delete-btn | Migrated to IconButton |
-| `components/TaskRecoverySection.tsx:140` | `button`: task-action-btn focus-btn | Migrated to IconButton |
-| `components/TaskRecoverySection.tsx:151` | `button`: task-action-btn resume-btn | Migrated to Button |
-| `components/TaskRecoverySection.tsx:164` | `button`: task-action-btn resume-btn | Migrated to Button |
-| `components/TaskRecoverySection.tsx:176` | `button`: task-action-btn select-session-btn | Migrated to Button |
-| `components/TaskRecoverySection.tsx:187` | `button`: task-action-btn delete-btn | Migrated to IconButton |
-| `components/TaskRecoverySection.tsx:216` | `button`: task-session-picker-item | Session association selection row with conversation metadata. |
 | `components/TerminalPane.tsx:726` | `button`: terminal-close | Migrated to IconButton |
 | `components/WindowControls.tsx:51` | `button`: button | Canonical OS caption controls shared by titlebar and gate: caption hit targets and platform close emphasis. |
 | `components/WindowControls.tsx:55` | `button`: button | Canonical OS caption controls shared by titlebar and gate: caption hit targets and platform close emphasis. |

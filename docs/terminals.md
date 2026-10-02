@@ -114,7 +114,7 @@ The **Chat History** button (message icon) in the header opens a dropdown that d
 
 **Workspace filtering:** The feature uses path-boundary matching to avoid false positives. For example, `/home/jay/dev/projects/foo` will match `/home/jay/dev/projects/foo/src` but not `/home/jay/dev/projects/foo-old`.
 
-**Remote session isolation:** SSH Chat history discovers supported harness conversations on the registered host and never scans desktop session files. Resume revalidates the selected conversation and its canonical working directory before opening an SSH terminal. Remote tasks become `unavailable` pending host verification after terminal exit or app shutdown; opening Chat history verifies known session IDs and restores valid tasks to `resumable`. New tasks associate automatically only when bounded pre-launch evidence identifies one conversation and one owner; other tasks require manual session selection. Hermes history and remote process persistence remain unavailable. See [SSH session history](workspaces.md#ssh-session-history) for supported harnesses and limits.
+**Remote session isolation:** SSH Chat history discovers supported harness conversations on the registered host and never scans desktop session files. Resume revalidates the selected conversation and its canonical working directory before opening an SSH terminal. Clanker keeps no record of a launch, so history always reflects the host's own current metadata; a conversation finished through Clanker appears there like any other. Hermes history and remote process persistence remain unavailable. See [SSH session history](workspaces.md#ssh-session-history) for supported harnesses and limits.
 
 ### Selecting a Harness
 

@@ -926,11 +926,11 @@ describe('preload.ts IPC Bridge Coverage Tests', () => {
     });
   });
 
-  describe('Task Sessions API', () => {
-    test('has taskSessionList, taskSessionDelete, taskSessionUpdate methods', () => {
-      assert.ok(extractedInvokeMethods.some(m => m.method === 'taskSessionList'), 'taskSessionList should exist');
-      assert.ok(extractedInvokeMethods.some(m => m.method === 'taskSessionDelete'), 'taskSessionDelete should exist');
-      assert.ok(extractedInvokeMethods.some(m => m.method === 'taskSessionUpdate'), 'taskSessionUpdate should exist');
+  describe('Workspace Tasks removal', () => {
+    test('exposes no task-session IPC surface', () => {
+      const taskMethods = extractedInvokeMethods.filter((m) => m.method.startsWith('taskSession'));
+      assert.deepEqual(taskMethods, [], 'task-session preload methods should be removed');
+      assert.ok(!/task-session:/.test(preloadSource), 'task-session channels should be removed');
     });
   });
   });

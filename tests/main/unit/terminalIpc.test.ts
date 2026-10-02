@@ -314,19 +314,17 @@ describe('terminalIpc — error-path: handler returns', () => {
     const validateWorkspacePath = vi.fn(async (dir: string) => ({
       valid: true, resolvedPath: dir === '/srv/project/link' ? '/etc' : dir,
     }));
-    const captureSessionBaseline = vi.fn().mockResolvedValue({ sessions: [{ id: 'existing', harness: 'codex' }], hostTime: 8_000_000 });
-    const onTerminalSpawned = vi.fn();
     const registered = {
       workspaceId: 'remote-tab',
       location: { path: '/srv/project', environmentId: 'dev-vps' },
-      environment: { resolveTerminalSpawn, validateWorkspacePath, capabilities: { sessionDiscovery: true }, captureSessionBaseline },
+      environment: { resolveTerminalSpawn, validateWorkspacePath, capabilities: { sessionDiscovery: true } },
     };
     opts.getStore = vi.fn().mockReturnValue({
       get: (key: string) => key === 'harnessDefaults'
         ? { codex: { flags: '--sandbox workspace-write', model: 'ignored-local-model' } }
         : false,
     }) as never;
-    const deps = { ...opts, taskSessionCoordinator: { onTerminalSpawned }, getWorkspaceRegistry: () => ({
+    const deps = { ...opts, getWorkspaceRegistry: () => ({
       getWorkspace: (id: string) => id === 'remote-tab' ? registered : null,
     }) };
     mockPtySpawn.mockReturnValue({
@@ -339,9 +337,6 @@ describe('terminalIpc — error-path: handler returns', () => {
       workingDir: '/srv/project/src', flags: '--sandbox workspace-write', harness: 'codex',
       model: undefined,
     }));
-    expect(captureSessionBaseline).toHaveBeenCalledWith('/srv/project', 'codex');
-    expect(captureSessionBaseline.mock.invocationCallOrder[0]).toBeLessThan(resolveTerminalSpawn.mock.invocationCallOrder[0]);
-    expect(onTerminalSpawned).toHaveBeenCalledWith(expect.any(String), '/srv/project', 'codex', undefined, 'dev-vps', expect.objectContaining({ cwd: '/srv/project/src', sessionIds: ['existing'], hostTime: 8_000_000, localTime: expect.any(Number) }));
     expect(mockPtySpawn).toHaveBeenCalledWith('ssh', ['-t', 'dev-vps', 'sh -c true'], expect.any(Object));
     expect(validateWorkspacePath).toHaveBeenCalledWith('/srv/project/src');
     expect([...opts.getTerminals().values()]).toEqual([expect.objectContaining({
@@ -371,6 +366,43 @@ describe('terminalIpc — error-path: handler returns', () => {
     finish({ spawnCmd: 'ssh', spawnArgs: [], cwd: process.cwd(), env: {} });
     await expect(pending).rejects.toThrow('being removed');
     expect(mockPtySpawn).not.toHaveBeenCalled();
+  });
+
+  test('records no durable task-session state for local or SSH harness launches', async () => {
+    const { opts } = createMockDeps();
+    const storeSet = vi.fn();
+    const resolveTerminalSpawn = vi.fn().mockResolvedValue({
+      spawnCmd: 'ssh', spawnArgs: ['-t', 'dev-vps', 'sh -c true'],
+      cwd: process.cwd(), env: {}, harnessId: 'codex', attentionEnabled: false,
+    });
+    const registered = {
+      workspaceId: 'remote-tab',
+      location: { path: '/srv/project', environmentId: 'dev-vps' },
+      environment: {
+        resolveTerminalSpawn,
+        validateWorkspacePath: vi.fn(async (dir: string) => ({ valid: true, resolvedPath: dir })),
+      },
+    };
+    registerTerminalIpc({
+      ...opts,
+      getStore: vi.fn().mockReturnValue({
+        get: (key: string) => (key === 'harnessDefaults' ? { codex: { model: '', favorites: [], flags: '' } } : false),
+        set: storeSet,
+      }) as never,
+      getHarnessOptions: vi.fn().mockReturnValue({ codex: { name: 'Codex', command: 'codex', args: [], icon: '' } }),
+      getWorkspaceRegistry: () => ({
+        getWorkspace: (id: string) => (id === 'remote-tab' ? registered : null),
+        getWorkspaceByLocation: () => null,
+      }),
+    } as never);
+    mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn() });
+    const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+
+    await handler(null, '/test/workspace', 'codex');
+    await handler(null, '/srv/project', 'codex', undefined, undefined, undefined, 'remote-tab', 'dev-vps');
+
+    expect(mockPtySpawn).toHaveBeenCalledTimes(2);
+    expect(storeSet.mock.calls.map(([key]) => key)).not.toContain('taskSessions');
   });
 
   test('a recipe command is written only at TERMINAL_READY and its PTY exit marker is reported', async () => {

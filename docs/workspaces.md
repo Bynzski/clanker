@@ -113,7 +113,7 @@ Renderer crashes release workspace registrations, polling, terminals, and previe
 
 Open **Chat history** in an SSH workspace to browse that host's sessions for the workspace and its subdirectories. Clanker discovers installed Codex, Claude, OpenCode, Pi, OMP, and Antigravity harnesses and reads their native metadata remotely. Desktop history is never used for an SSH workspace. Antigravity requires a conversation with an explicit matching workspace path. Hermes session history remains unsupported.
 
-Click a remote history entry to resume its conversation in a new SSH terminal in the same environment. Clanker re-reads the host session before launching and validates the workspace, working directory, installed harness, and session file. A missing session, conflicting session-selection flags in harness defaults, or a closed/removed workspace produces an error. Switching workspaces while a resume is pending attaches the terminal to the original workspace; closing that workspace cancels or cleans up the launch. After exit or shutdown, open Chat history to verify saved tasks with known native session IDs against the registered host. Valid tasks become **Resumable**; unavailable sessions or SSH failures show a reason and retain metadata for retry. Newly launched tasks can associate a new host conversation automatically when their pre-launch session baseline and exact working directory identify a unique owner. Existing conversations, ambiguous matches, and missing launch evidence require manual selection. SSH/discovery failures appear in the history menu; close and reopen it to retry. Switching workspaces closes the menu and discards pending results from the previous workspace.
+Click a remote history entry to resume its conversation in a new SSH terminal in the same environment. Clanker re-reads the host session before launching and validates the workspace, working directory, installed harness, and session file. A missing session, conflicting session-selection flags in harness defaults, or a closed/removed workspace produces an error. Switching workspaces while a resume is pending attaches the terminal to the original workspace; closing that workspace cancels or cleans up the launch. Clanker keeps no record of the launch itself, so the history shown is always the host's own current metadata. SSH/discovery failures appear in the history menu; close and reopen it to retry. Switching workspaces closes the menu and discards pending results from the previous workspace.
 
 Discovery uses bounded metadata reads and omits messages beyond the first 256 KiB of each JSONL file. OpenCode requests up to 4,097 rows to detect histories beyond the 4,096-row scan limit; it does not rely on the CLI default page. Conflicting metadata for the same harness/session ID reports an error. Large histories can exceed the scan/result limits and report an error. Custom session-store locations are not supported in this slice.
 
@@ -230,43 +230,26 @@ Workspace launch recipes allow saving repeatable development workspace configura
 - **Launch Safety**: Explicit recipe slots require an empty workspace. A populated target is left untouched and the launch returns a clear error. Legacy recipes without slots still fill missing plain terminals up to `terminalCount`.
 - **Startup and Preview Results**: Command steps report an immediate exit when observed through the existing PTY; long-running commands are marked started after a short observation window. Local preview ports are checked before command launch for a busy port and retried briefly after launch for readiness. Recipe browser navigation observes `loadURL()` failure.
 
-## Agent Task & Session Recovery
+## Conversation History & Resume
 
-Clanker tracks agent coding tasks and harness sessions durably to survive application restarts, workspace closures, and terminal exits.
+Chat History lists each harness's own conversations for the active workspace. Clanker keeps no durable record of a launch: the entries you see are the harness-native session metadata that already exists on the environment that owns them.
 
 ### Runtime vs. Process Separation
 
-Clanker makes a strict distinction between process persistence and metadata recovery:
 - **PTY processes do not survive application restarts**. Clanker does not implement terminal daemons or pretend disconnected PTYs are alive.
-- **Task metadata is persistent**. What survives restart is:
-  - The workspace identity
-  - The task description and timestamps
-  - The harness and model used
-  - The harness-native conversation session ID and path
-
-### Recovery States
-
-When a workspace is restored or the task list is opened, previous tasks are classified into distinct states:
-
-| State | Meaning | Available Action |
-|-------|---------|------------------|
-| **Running** | The PTY is currently active in this running Clanker process. | Jump to terminal |
-| **Resumable** | The previous PTY has exited or the app restarted, but a native conversation session was recorded on disk. | **Resume** |
-| **Needs Session** | Task metadata exists, but Clanker cannot safely correlate a unique native conversation ID. | Select from discovered sessions |
-| **Unavailable** | The task cannot be resumed (e.g. workspace directory was deleted, harness is uninstalled, session was deleted from disk, resume invocation failed, or the remote conversation could not be verified). | Inspect reason / Retry / Delete where supported |
-
-### Remote Process Persistence Proposal
-
-SSH process persistence/reconnect is not implemented. The [architecture proposal](remote-process-persistence-design.md) evaluates transports and recommends opt-in tmux sessions with separate process and attachment lifetimes. It defines disconnect/stop behavior, worktree protections, and the Agent Attention release gate; this is a design for review, not an available launch setting.
+- **Conversations do survive**, because the harness writes them, not Clanker. Resuming always starts a fresh process attached to that native conversation.
+- **Remote Process Persistence Proposal**: SSH process persistence/reconnect is not implemented. The [architecture proposal](remote-process-persistence-design.md) evaluates transports and recommends opt-in tmux sessions with separate process and attachment lifetimes. It defines disconnect/stop behavior, worktree protections, and the Agent Attention release gate; this is a design for review, not an available launch setting.
 
 ### Native Conversation Resume
 
-Clicking **Resume** attaches a new PTY process directly to the AI harness's existing native conversation (e.g., `codex resume <id>`, `claude --resume <id>`, `opencode --session <id>`, `pi --session <path>`, `omp --resume <path>`, `agy --conversation <id>`).
+Selecting a history entry attaches a new PTY process directly to the AI harness's existing native conversation (e.g., `codex resume <id>`, `claude --resume <id>`, `opencode --session <id>`, `pi --session <path>`, `omp --resume <path>`, `agy --conversation <id>`).
 
-Native conversation resume is supported locally and over SSH for the six harnesses above. After a remote terminal exits or the app shuts down, its saved task awaits host verification. Open its SSH workspace and Chat history: tasks with known IDs become **Resumable** when the host confirms the conversation and installed harness. SSH failures retain the ID and show a reason; reopen the menu after restoring connectivity to retry verification. Explicit resume failures remain visible until **Retry**. For new launches and supported forks, Clanker records existing host session IDs and the host clock before spawning. When the task list opens after exit or shutdown, it can associate a new conversation only if exactly one matching session belongs to exactly one task, using the exact launch directory and a bounded lifetime window. Previously existing or already owned IDs are excluded. Legacy tasks, failed pre-launch scans, and ambiguous matches show **Needs Session** for manual association. This does not reconnect the original process.
+Native conversation resume is supported locally and over SSH for the harnesses above. Main re-validates the workspace, working directory, installed harness, and harness-specific session metadata before spawning; a missing session, conflicting session-selection flags, or a closed/removed workspace produces an error in the dropdown rather than an empty history. Supported native forks create a new conversation on the host. This never reconnects the original process.
 
-- **No Prompt Replay**: The user's original prompt is never replayed or re-executed upon restart.
-- **Graceful Failure**: If a session was deleted from disk, a harness is removed, or resume invocation fails, Clanker marks the task `unavailable` with an explanatory reason without affecting the workspace or losing metadata. The UI provides a **Retry** option to retry failed resume attempts or attach an alternative session.
+- **No Prompt Replay**: The user's original prompt is never replayed or re-executed.
+- **Scoped Launch**: The resumed terminal is attached to the workspace that owns the conversation. Switching workspaces mid-resume does not move it, and closing that workspace kills the orphaned terminal.
+
+See [Workspace Launch Recipes and Native Conversation History](recipes.md#6-conversation-history) for the discovery, resume, and provider-capability contracts.
 
 SSH Browser tabs share a private in-memory session per workspace. Cookies/storage are isolated from other SSH workspaces and local browsing. Ordinary browsing inside an SSH workspace also uses that private session; closing the workspace clears it. Local Browser sessions retain existing persistent global logins.
 

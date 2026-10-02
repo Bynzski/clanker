@@ -10,7 +10,6 @@ import {
   WorkspacePersistenceService,
   sanitizeWorkspaceRecipe,
   sanitizeRecipeLaunchStep,
-  sanitizeTaskSessionRecord,
 } from '../../../src/main/workspacePersistence';
 
 class MemoryStore {
@@ -198,57 +197,8 @@ describe('sanitizeWorkspaceRecipe', () => {
     expect(sanitizeWorkspaceRecipe({ id: '1', name: '', workspacePath: '/path' })).toBeNull();
     expect(sanitizeWorkspaceRecipe({ id: '1', name: 'Test', workspacePath: '' })).toBeNull();
   });
-});
 
-describe('sanitizeTaskSessionRecord', () => {
-  it('sanitizes valid task session record', () => {
-    const record = sanitizeTaskSessionRecord({
-      id: 'task-1',
-      workspacePath: '/home/user/project/',
-      harnessId: 'codex',
-      modelId: 'gpt-5',
-      title: 'Fix issue 42',
-      terminalId: 'term-123',
-      nativeSessionId: 'sess-abc',
-      state: 'running',
-      createdAt: 1000,
-      updatedAt: 2000,
-    });
-
-    expect(record).toEqual({
-      id: 'task-1',
-      workspacePath: '/home/user/project',
-      environmentId: 'local',
-      harnessId: 'codex',
-      modelId: 'gpt-5',
-      title: 'Fix issue 42',
-      terminalId: 'term-123',
-      nativeSessionId: 'sess-abc',
-      state: 'running',
-      createdAt: 1000,
-      updatedAt: 2000,
-      version: 1,
-    });
-  });
-
-  it('defaults invalid state to unavailable', () => {
-    const record = sanitizeTaskSessionRecord({
-      id: 'task-1',
-      workspacePath: '/project',
-      harnessId: 'claude',
-      state: 'bogus-state',
-    });
-    expect(record?.state).toBe('unavailable');
-  });
-
-  it('rejects records missing required fields', () => {
-    expect(sanitizeTaskSessionRecord(null)).toBeNull();
-    expect(sanitizeTaskSessionRecord({})).toBeNull();
-    expect(sanitizeTaskSessionRecord({ id: '1', workspacePath: '' })).toBeNull();
-    expect(sanitizeTaskSessionRecord({ id: '1', workspacePath: '/p', harnessId: '' })).toBeNull();
-  });
-
-  it('migrates path-only task sessions and recipes to local environment', () => {
+  it('migrates path-only recipes to the local environment', () => {
     const recipe = sanitizeWorkspaceRecipe({
       id: 'rec-legacy',
       name: 'Legacy Recipe',
@@ -256,40 +206,19 @@ describe('sanitizeTaskSessionRecord', () => {
       launches: [],
     });
     expect(recipe?.environmentId).toBe('local');
-
-    const task = sanitizeTaskSessionRecord({
-      id: 'task-legacy',
-      workspacePath: '/home/user/legacy',
-      harnessId: 'codex',
-    });
-    expect(task?.environmentId).toBe('local');
   });
 
-  it('preserves non-local environmentId when present', () => {
-    const recipe = sanitizeWorkspaceRecipe({
+  it('preserves a non-local environmentId and rejects ambiguous ones', () => {
+    expect(sanitizeWorkspaceRecipe({
       id: 'rec-remote',
       name: 'Remote Recipe',
       workspacePath: '/home/jay/remote',
       environmentId: 'vps-1',
       launches: [],
-    });
-    expect(recipe?.environmentId).toBe('vps-1');
+    })?.environmentId).toBe('vps-1');
 
-    const task = sanitizeTaskSessionRecord({
-      id: 'task-remote',
-      workspacePath: '/home/jay/remote',
-      environmentId: 'vps-1',
-      harnessId: 'claude',
-    });
-    expect(task?.environmentId).toBe('vps-1');
-  });
-
-  it('rejects ambiguous environment IDs instead of assigning a record to another workspace', () => {
     expect(sanitizeWorkspaceRecipe({
       id: 'r1', name: 'Recipe', workspacePath: '/repo', environmentId: 'host::other', launches: [],
-    })).toBeNull();
-    expect(sanitizeTaskSessionRecord({
-      id: 't1', harnessId: 'codex', workspacePath: '/repo', environmentId: 'host::other',
     })).toBeNull();
   });
 });
@@ -305,12 +234,9 @@ describe('WorkspacePersistenceService', () => {
 
   it('returns empty lists for empty or invalid store', () => {
     expect(service.getAllRecipes()).toEqual([]);
-    expect(service.getAllTaskSessions()).toEqual([]);
 
     memoryStore.set('workspaceRecipes', 'not-an-array');
-    memoryStore.set('taskSessions', { invalid: true });
     expect(service.getAllRecipes()).toEqual([]);
-    expect(service.getAllTaskSessions()).toEqual([]);
   });
 
   it('saves and updates recipes with path normalization', () => {
@@ -377,61 +303,6 @@ describe('WorkspacePersistenceService', () => {
     expect(service.deleteRecipe('r1')).toBe(false);
     expect(service.getAllRecipes().length).toBe(1);
     expect(service.getRecipeById('r2')?.id).toBe('r2');
-  });
-
-  it('saves and updates task sessions', () => {
-    const saved = service.saveTaskSession({
-      id: 't1',
-      workspacePath: '/home/user/repo/',
-      harnessId: 'codex',
-      title: 'Build feature',
-      state: 'running',
-    });
-
-    expect(saved.workspacePath).toBe('/home/user/repo');
-    expect(service.getAllTaskSessions().length).toBe(1);
-
-    // Update state to resumable
-    service.saveTaskSession({
-      ...saved,
-      state: 'resumable',
-      terminalId: undefined,
-      nativeSessionId: 'sess-123',
-    });
-
-    const all = service.getAllTaskSessions();
-    expect(all.length).toBe(1);
-    expect(all[0].state).toBe('resumable');
-    expect(all[0].nativeSessionId).toBe('sess-123');
-  });
-
-  it('filters task sessions by workspace path', () => {
-    service.saveTaskSession({ id: 't1', workspacePath: '/repo1', harnessId: 'codex', state: 'resumable' });
-    service.saveTaskSession({ id: 't2', workspacePath: '/repo2', harnessId: 'claude', state: 'resumable' });
-
-    const sessions = service.getTaskSessionsForWorkspace('/repo1/');
-    expect(sessions.length).toBe(1);
-    expect(sessions[0].id).toBe('t1');
-  });
-
-  it('loads legacy task sessions as local without mixing same-path remote sessions', () => {
-    memoryStore.set('taskSessions', [
-      { id: 'legacy', workspacePath: '/repo', harnessId: 'codex' },
-      { id: 'host-a-upper', workspacePath: '/Repo', environmentId: 'host-a', harnessId: 'codex' },
-      { id: 'host-a-lower', workspacePath: '/repo', environmentId: 'host-a', harnessId: 'codex' },
-      { id: 'host-b', workspacePath: '/repo', environmentId: 'host-b', harnessId: 'codex' },
-    ]);
-    expect(service.getTaskSessionsForWorkspace('/repo').map((r) => [r.id, r.environmentId])).toEqual([['legacy', 'local']]);
-    expect(service.getTaskSessionsForWorkspace('/Repo', 'host-a').map((r) => r.id)).toEqual(['host-a-upper']);
-    expect(service.getTaskSessionsForWorkspace('host-a::/repo').map((r) => r.id)).toEqual(['host-a-lower']);
-    expect(service.getTaskSessionsForWorkspace('/repo', 'host-b').map((r) => r.id)).toEqual(['host-b']);
-  });
-
-  it('deletes task session by ID', () => {
-    service.saveTaskSession({ id: 't1', workspacePath: '/repo', harnessId: 'codex', state: 'resumable' });
-    expect(service.deleteTaskSession('t1')).toBe(true);
-    expect(service.deleteTaskSession('t1')).toBe(false);
-    expect(service.getAllTaskSessions()).toEqual([]);
   });
 
   it('manages saved SSH environments and rejects invalid targets', () => {

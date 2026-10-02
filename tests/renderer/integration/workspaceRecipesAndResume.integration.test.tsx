@@ -7,7 +7,6 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import type { WorkspaceRecipe } from '../../../src/shared/types/recipes';
-import type { TaskSessionRecord } from '../../../src/shared/types/taskSessions';
 
 function resetStore() {
   useWorkspaceStore.setState({
@@ -20,7 +19,7 @@ function resetStore() {
   });
 }
 
-describe('Workspace Recipes and Task Recovery Integration', () => {
+describe('Workspace Recipes and Conversation Resume Integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStore();
@@ -259,21 +258,8 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
     });
   });
 
-  describe('Task Recovery Workflow (#43)', () => {
-    it('restores previous tasks after restart and resumes via native session invoke without replaying prompts', async () => {
-      const recoveredTask: TaskSessionRecord = {
-        id: 'task-refactor',
-        workspacePath: '/projects/my-app',
-        harnessId: 'codex',
-        modelId: 'gpt-5',
-        title: 'Refactor Auth Service',
-        nativeSessionId: 'codex-sess-999',
-        state: 'resumable',
-        createdAt: 1000,
-        updatedAt: 2000,
-        version: 1,
-      };
-
+  describe('Conversation History Workflow', () => {
+    it('resumes a native conversation from Chat history without replaying prompts', async () => {
       const invokeSessionMock = vi.fn().mockResolvedValue({
         id: 'term-new-resume',
         pid: 3001,
@@ -281,14 +267,18 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
       });
 
       installElectronApiMock({
-        taskSessionList: vi.fn().mockResolvedValue([recoveredTask]),
         invokeSession: invokeSessionMock,
-        discoverSessions: vi.fn().mockResolvedValue([]),
+        discoverSessions: vi.fn().mockResolvedValue([{
+          id: 'codex-sess-999',
+          harness: 'codex',
+          title: 'Refactor Auth Service',
+          cwd: '/projects/my-app',
+          timestamp: 2000,
+        }]),
         getLastWorkspace: vi.fn().mockResolvedValue('/projects/my-app'),
         spawnTerminal: vi.fn().mockResolvedValue({ id: 'term-1', pid: 1001 }),
       });
 
-      // Render workspace
       useWorkspaceStore.getState().addWorkspace(createWorkspaceFixture({
         id: 'ws-active',
         name: 'my-app',
@@ -302,19 +292,12 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
 
       render(<App />);
 
-      // Open Chat History / Task Recovery dropdown
       const chatBtn = screen.getByRole('button', { name: /chat history/i });
       fireEvent.click(chatBtn);
 
-      // Verify the prior task is displayed with 'Resumable' state
-      expect(await screen.findByText('Refactor Auth Service')).toBeInTheDocument();
-      expect(screen.getByText('Resumable')).toBeInTheDocument();
+      fireEvent.click(await screen.findByRole('button', { name: /Codex/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Refactor Auth Service/i }));
 
-      // Click Resume
-      const resumeBtn = screen.getByRole('button', { name: /resume/i });
-      fireEvent.click(resumeBtn);
-
-      // Verify invokeSession is called with the native conversation session and NO prompt re-execution
       await waitFor(() => {
         expect(invokeSessionMock).toHaveBeenCalledWith(
           'ws-active',
@@ -326,45 +309,28 @@ describe('Workspace Recipes and Task Recovery Integration', () => {
         );
       });
 
-      // Verify the new terminal is added to the workspace
-      const storeState = useWorkspaceStore.getState();
-      const activeWorkspace = storeState.workspaces.find((w) => w.id === 'ws-active');
+      const activeWorkspace = useWorkspaceStore.getState().workspaces.find((w) => w.id === 'ws-active');
       expect(activeWorkspace?.terminals.some((t) => t.id === 'term-new-resume')).toBe(true);
+      expect(screen.queryByText('Workspace Tasks')).toBeNull();
     });
-    it('handles deleted native sessions by displaying unavailable status and explanation', async () => {
-      const deletedTask: TaskSessionRecord = {
-        id: 'task-deleted',
-        workspacePath: '/projects/my-app',
-        harnessId: 'codex',
-        nativeSessionId: 'deleted-session-id',
-        title: 'Deleted Task',
-        state: 'unavailable',
-        stateReason: 'Native conversation session was not found on disk',
-        createdAt: 1000,
-        updatedAt: 2000,
-        version: 1,
-      };
 
+    it('reports an empty native history without a task list', async () => {
       installElectronApiMock({
-        taskSessionList: vi.fn().mockResolvedValue([deletedTask]),
         discoverSessions: vi.fn().mockResolvedValue([]),
         getLastWorkspace: vi.fn().mockResolvedValue('/projects/my-app'),
       });
 
       useWorkspaceStore.getState().addWorkspace(createWorkspaceFixture({
-        id: 'ws-active-2',
+        id: 'ws-empty',
         name: 'my-app',
         workspacePath: '/projects/my-app',
       }));
 
       render(<App />);
+      fireEvent.click(screen.getByRole('button', { name: /chat history/i }));
 
-      const chatBtn = screen.getByRole('button', { name: /chat history/i });
-      fireEvent.click(chatBtn);
-
-      expect(await screen.findByText('Deleted Task')).toBeInTheDocument();
-      expect(screen.getByText('Unavailable')).toBeInTheDocument();
-      expect(screen.getByText(/Native conversation session was not found on disk/i)).toBeInTheDocument();
+      expect(await screen.findByText('No sessions for this workspace')).toBeInTheDocument();
+      expect(screen.queryByText('Workspace Tasks')).toBeNull();
     });
   });
 });

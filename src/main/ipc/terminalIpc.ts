@@ -16,7 +16,6 @@ import { type StoreSchema } from '../../shared/types/store';
 import { buildHarnessSpawnArgs, ensureHarnessWrapperScript, resolveHarnessSpawn } from '../harnessLaunch';
 import { defaultShell, prependUserCliBinsToPath } from '../platformShell';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
-import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
 import {
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
@@ -33,10 +32,9 @@ import {
   RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
 } from '../../shared/ipcChannels';
-import { captureRemoteSessionBaseline } from '../remote/remoteSessionCorrelation';
 import { spawnPtyProcess } from './ptySpawn';
 import { RecipeCommandStartup } from '../recipeCommandStartup';
-import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
+import { toNativePath } from '../../shared/pathNormalize';
 import { isPathContained } from '../remote/sshEnvironment';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
@@ -80,7 +78,6 @@ interface RegisterTerminalIpcDeps {
   ensureHarnessWrapperScript?: () => string | null;
   getAppShuttingDown?: () => boolean;
   agentAttentionBroker?: AgentAttentionBroker;
-  taskSessionCoordinator?: TaskSessionCoordinator;
   createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
 }
 
@@ -103,7 +100,6 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     getHarnessOptions,
     ensureHarnessWrapperScript: ensureHarnessWrapperScriptPath = ensureHarnessWrapperScript,
     agentAttentionBroker,
-    taskSessionCoordinator,
   } = deps;
 
   const ok = () => ({ success: true as const });
@@ -169,7 +165,6 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       const attentionToken = attentionRequested && harness ? agentAttentionBroker!.registerRemote(id, harness) : undefined;
       let releaseAttention: (() => Promise<void>) | undefined;
       try {
-        const remoteSessionBaseline = await captureRemoteSessionBaseline(resolvedWorkspace.environment, root, remoteWorkingDir, harness);
         const resolved = await resolvedWorkspace.environment.resolveTerminalSpawn({
           id,
           workingDir: remoteWorkingDir,
@@ -206,24 +201,11 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           onOutput: deps.createRemoteOutputObserver?.(resolvedWorkspace.workspaceId),
           filterData: resolved.attentionEnabled && agentAttentionBroker
             ? createRemoteAttentionFilter((raw) => agentAttentionBroker.receiveRemote(id, raw)) : undefined,
-          onExit: () => {
+          onExit: async () => {
             agentAttentionBroker?.release(id);
-            return Promise.all([
-              releaseAttention?.(), taskSessionCoordinator?.onTerminalExited(id, effectiveEnvironmentId),
-            ]).then(() => undefined);
+            await releaseAttention?.();
           },
         });
-
-        if (resolved.harnessId) {
-          taskSessionCoordinator?.onTerminalSpawned(
-            id,
-            resolvedWorkspace.location.path,
-            resolved.harnessId,
-            model,
-            effectiveEnvironmentId,
-            remoteSessionBaseline
-          );
-        }
 
         return {
           id: result.id,
@@ -332,12 +314,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       onExit: () => {
         disposeAttentionSafely(preparedAttention);
         agentAttentionBroker?.release(id);
-        void taskSessionCoordinator?.onTerminalExited(id);
       },
       });
-      if (harnessConfig && harness) {
-        taskSessionCoordinator?.onTerminalSpawned(id, toPosixPath(cwd), harness, effectiveModel);
-      }
       return { ...result, harnessId: harnessConfig ? harness : undefined, attentionEnabled };
     } catch (error) {
       disposeAttentionSafely(preparedAttention);

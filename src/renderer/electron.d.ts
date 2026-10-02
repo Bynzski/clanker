@@ -3,7 +3,6 @@ import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types
 import type { RemoteDirectoryListing } from '../shared/types/environments';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { WorkspaceRecipe, RecipePreviewProbeResult } from '../../shared/types/recipes';
-import type { TaskSessionRecord } from '../../shared/types/taskSessions';
 import type { FileListDirectoryRequest, FileListDirectoryResult, ExplorerTreeChangedEvent } from '../../shared/types/fileExplorer';
 import type { FileReadRequest, FileWriteRequest, FileChangedEvent, FileWatchRequest, FileReadResult, FileWriteResult } from '../../shared/types/editor';
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest, FileOperationResult } from '../../shared/types/fileOperations';
@@ -308,10 +307,6 @@ interface ElectronAPI {
   recipeSave: (recipe: WorkspaceRecipe) => Promise<WorkspaceRecipe>;
   recipeDelete: (recipeId: string) => Promise<boolean>;
 
-  // Task Sessions
-  taskSessionList: (workspacePath?: string, environmentId?: string) => Promise<TaskSessionRecord[]>;
-  taskSessionDelete: (taskId: string) => Promise<boolean>;
-  taskSessionUpdate: (updates: { id: string; title?: string; nativeSessionId?: string; nativeSessionPath?: string; state?: string; stateReason?: string }) => Promise<TaskSessionRecord | null>;
   // Browser annotation
   annotationEnable: (workspaceId: string) => Promise<{ success: boolean; error?: string }>;
   annotationDisable: () => Promise<{ success: boolean }>;
