@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { HarnessCapabilityError } from '../../../../src/main/harnesses/types';
 import { HarnessAccountError } from '../../../../src/main/accounts/harnessAccountService';
-import { UnsafeAccountPathError } from '../../../../src/main/accounts/accountHomes';
+import { AccountHomeStore, UnsafeAccountPathError } from '../../../../src/main/accounts/accountHomes';
 import { FlakyStorage, addAccount, createHarness, settleFlow, type Harness } from './accountFixtures';
 
 const SAVE_FAILED = 'Account settings could not be saved. Try again.';
@@ -179,18 +179,97 @@ describe('cancel versus completed sign-in', () => {
     expect(fs.readdirSync(path.join(accountsRoot(), 'codex'))).toEqual([]);
   });
 
-  it('once authenticate has returned successfully the account commits even if cancel or shutdown raced it', async () => {
+  it('cancel first wins even when the provider ignores the abort and later resolves successfully', async () => {
     let release!: () => void;
-    h.capabilities.codex.authenticate.mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve({ email: 'e@example.test' }); }));
-    const started = h.service.startAdd('local', 'codex', 'Kept');
-    await vi.waitFor(() => expect(h.capabilities.codex.authenticate).toHaveBeenCalled());
-    h.service.cancelAuth(started.flowId); // soft cancel; the provider finishes anyway
+    h.capabilities.codex.authenticate.mockImplementationOnce(async () => {
+      const [home] = fs.readdirSync(path.join(accountsRoot(), 'codex'));
+      fs.writeFileSync(path.join(accountsRoot(), 'codex', home, 'credentials'), 'secret');
+      await new Promise<void>((resolve) => { release = resolve; });
+      return { email: 'late@example.test' };
+    });
+    const listener = vi.fn();
+    h.service.onAccountsChanged(listener);
+    const started = h.service.startAdd('local', 'codex', 'Late');
+    await vi.waitFor(() => expect(release).toBeDefined());
+    h.service.cancelAuth(started.flowId);
     release();
+    expect(await settleFlow(h, started.flowId)).toEqual({ status: 'cancelled' });
+    expect(h.service.managedAccounts('local')).toEqual([]);
+    expect(listener).not.toHaveBeenCalled();
+    expect(h.capabilities.codex.logout).toHaveBeenCalledTimes(1); // proven-signout cleanup ran
+    expect(fs.readdirSync(path.join(accountsRoot(), 'codex'))).toEqual([]);
+  });
+
+  it('success first wins: a cancel issued after the commit boundary cannot undo the sign-in', async () => {
+    h.capabilities.codex.authenticate.mockResolvedValueOnce({ email: 'e@example.test' });
+    let flowId = '';
+    // The 'added' event fires synchronously after the commit, so this cancel is strictly later.
+    h.service.onAccountsChanged(() => h.service.cancelAuth(flowId));
+    const started = h.service.startAdd('local', 'codex', 'Kept');
+    flowId = started.flowId;
     const state = await settleFlow(h, started.flowId) as { status: string };
     expect(state.status).toBe('connected');
-    expect(h.service.managedAccounts('local').map((r) => r.label)).toEqual(['Kept']);
+    const [record] = h.service.managedAccounts('local');
+    expect(record.label).toBe('Kept');
     expect(h.capabilities.codex.logout).not.toHaveBeenCalled();
-    expect(fs.existsSync(path.join(accountsRoot(), 'codex', h.service.managedAccounts('local')[0].id))).toBe(true);
+    expect(fs.existsSync(homeDir(record.id))).toBe(true);
+  });
+
+  it('timeout first wins: no account, a timeout failure, and proven-signout cleanup', async () => {
+    const quick = createHarness({ authTimeoutMs: 20 });
+    quick.capabilities.codex.authenticate.mockImplementationOnce(async () => {
+      const root = path.join(quick.root, 'harness-accounts', 'codex');
+      const [home] = fs.readdirSync(root);
+      fs.writeFileSync(path.join(root, home, 'credentials'), 'secret');
+      await new Promise((resolve) => setTimeout(resolve, 60)); // outlives the timeout and ignores the abort
+      return { email: 'late@example.test' };
+    });
+    const started = quick.service.startAdd('local', 'codex');
+    const state = await settleFlow(quick, started.flowId);
+    expect(state).toEqual({ status: 'failed', message: 'Sign-in timed out. Try again.' });
+    expect(quick.service.managedAccounts('local')).toEqual([]);
+    expect(quick.capabilities.codex.logout).toHaveBeenCalledTimes(1);
+    expect(fs.readdirSync(path.join(quick.root, 'harness-accounts', 'codex'))).toEqual([]);
+    fs.rmSync(quick.root, { recursive: true, force: true });
+  });
+
+  it('shutdown first wins: nothing is committed and dispose waits for the cleanup', async () => {
+    let release!: () => void;
+    h.capabilities.codex.authenticate.mockImplementationOnce(async () => {
+      const [home] = fs.readdirSync(path.join(accountsRoot(), 'codex'));
+      fs.writeFileSync(path.join(accountsRoot(), 'codex', home, 'credentials'), 'secret');
+      await new Promise<void>((resolve) => { release = resolve; });
+      return { email: 'late@example.test' };
+    });
+    const started = h.service.startAdd('local', 'codex');
+    await vi.waitFor(() => expect(release).toBeDefined());
+    const disposed = h.service.dispose();
+    release(); // the provider ignored the abort and finished during teardown
+    await disposed;
+    expect(await settleFlow(h, started.flowId)).toEqual({ status: 'cancelled' });
+    expect(h.service.managedAccounts('local')).toEqual([]);
+    expect(storage.state).toBeUndefined();
+    expect(h.capabilities.codex.logout).toHaveBeenCalledTimes(1);
+    expect(fs.readdirSync(path.join(accountsRoot(), 'codex'))).toEqual([]);
+  });
+
+  it('a cancelled add whose provider returned late keeps the home when sign-out cannot be proven', async () => {
+    let release!: () => void;
+    h.capabilities.codex.authenticate.mockImplementationOnce(async () => {
+      const [home] = fs.readdirSync(path.join(accountsRoot(), 'codex'));
+      fs.writeFileSync(path.join(accountsRoot(), 'codex', home, 'credentials'), 'secret');
+      await new Promise<void>((resolve) => { release = resolve; });
+      return {};
+    });
+    h.capabilities.codex.logout.mockRejectedValueOnce(new HarnessCapabilityError('command-failed', 'cannot'));
+    const started = h.service.startAdd('local', 'codex');
+    await vi.waitFor(() => expect(release).toBeDefined());
+    h.service.cancelAuth(started.flowId);
+    release();
+    expect(await settleFlow(h, started.flowId)).toEqual({ status: 'cancelled' });
+    expect(fs.readdirSync(path.join(accountsRoot(), 'codex'))).toHaveLength(1);
+    await vi.waitFor(() => expect(h.service.managedAccounts('local')).toHaveLength(1));
+    expect(h.service.managedAccounts('local')[0].status).toBe('needs-auth');
   });
 });
 
@@ -205,6 +284,33 @@ describe('reconnect persistence', () => {
     expect(JSON.stringify(h.service.managedAccounts('local'))).toBe(before);
     expect(fs.existsSync(homeDir(a.id))).toBe(true);
     expect(h.capabilities.codex.logout).not.toHaveBeenCalled(); // an existing account's home is never rolled back
+  });
+});
+
+describe('reconnect cancellation', () => {
+  it('cancel before the provider resolves leaves identity, status and home untouched even if the provider ignores the abort', async () => {
+    const a = await addAccount(h, 'codex', 'A');
+    h.service.reportStatus(a.id, 'needs-auth');
+    fs.writeFileSync(path.join(homeDir(a.id), 'marker'), 'x');
+    const before = JSON.stringify(h.service.managedAccounts('local'));
+    const beforeDurable = durable();
+    let release!: () => void;
+    h.capabilities.codex.authenticate.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { release = resolve; });
+      return { email: 'new@example.test', plan: 'Max' };
+    });
+    const listener = vi.fn();
+    h.service.onAccountsChanged(listener);
+    const flow = h.service.reconnect('local', 'codex', a.id);
+    await vi.waitFor(() => expect(release).toBeDefined());
+    h.service.cancelAuth(flow.flowId);
+    release();
+    expect(await settleFlow(h, flow.flowId)).toEqual({ status: 'cancelled' });
+    expect(JSON.stringify(h.service.managedAccounts('local'))).toBe(before);
+    expect(durable()).toBe(beforeDurable);
+    expect(listener).not.toHaveBeenCalled();
+    expect(fs.readFileSync(path.join(homeDir(a.id), 'marker'), 'utf8')).toBe('x');
+    expect(h.capabilities.codex.logout).not.toHaveBeenCalled();
   });
 });
 
@@ -314,6 +420,17 @@ describe('orphaned-home recovery', () => {
     storage.failing = true;
     expect(() => h.restart()).not.toThrow();
     expect(h.restart().managedAccounts('local')).toEqual([]);
+  });
+
+  it('a candidate rejected by the canonical verification is never recovered', () => {
+    const base = path.join(h.root, 'verify-check');
+    const rejected = `acct_${'e'.repeat(32)}`;
+    const accepted = `acct_${'f'.repeat(32)}`;
+    const probe = new AccountHomeStore(base);
+    for (const id of [rejected, accepted]) fs.writeFileSync(path.join(probe.ensure('codex', id), 'x'), 'x');
+    expect(probe.listOwnedHomes().map((entry) => entry.id).sort()).toEqual([rejected, accepted].sort());
+    const guarded = new AccountHomeStore(base, { protectedPaths: [path.join(base, 'codex', rejected)] });
+    expect(guarded.listOwnedHomes().map((entry) => entry.id)).toEqual([accepted]);
   });
 
   it('default-only users: no recovery, no records, no directories created', () => {

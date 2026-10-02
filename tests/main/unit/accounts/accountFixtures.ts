@@ -62,7 +62,7 @@ export class FlakyStorage extends MemoryAccountStorage {
 }
 
 /** Real codex/claude providers with their account capabilities replaced by controllable fakes. */
-export function createHarness(options: { storage?: MemoryAccountStorage; capabilities?: Partial<Harness['capabilities']> } = {}): Harness {
+export function createHarness(options: { storage?: MemoryAccountStorage; authTimeoutMs?: number; capabilities?: Partial<Harness['capabilities']> } = {}): Harness {
   const root = tempRoot();
   const homes = new AccountHomeStore(path.join(root, 'harness-accounts'));
   const storage = options.storage ?? new MemoryAccountStorage();
@@ -88,6 +88,7 @@ export function createHarness(options: { storage?: MemoryAccountStorage; capabil
     onAuthState: (event) => { authEvents.push(event); },
     findProvider: (harness) => (typeof harness === 'string' ? providers[harness] : undefined),
     randomId: nextId,
+    ...(options.authTimeoutMs ? { authTimeoutMs: options.authTimeoutMs } : {}),
     ...({} as Partial<HarnessAccountServiceOptions>),
   });
   return { root, homes, storage, service: build(), capabilities, openExternal, authEvents, nextId, restart: build };

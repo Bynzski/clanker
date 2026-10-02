@@ -475,8 +475,13 @@ export class HarnessAccountService {
         openUrl: (url) => this.openAuthUrl(flow, url),
         waitingForBrowser: () => this.setFlowState(flow, { status: 'waiting-for-browser' }),
       });
-      // Deterministic winner: `authenticate` returning means the provider verified the account, so a
-      // cancel/shutdown that races after that point does not undo a completed sign-in; it commits.
+      // Winner rule, with no await between this check and the commit: a flow that was cancelled, timed
+      // out, shut down or scope-cancelled before `authenticate` returned never commits, whether or not
+      // the provider honoured the abort. Once past this line success owns the result and a later
+      // cancel is moot. (An add that loses here is rolled back below with proven credential cleanup.)
+      if (flow.controller.signal.aborted || flow.cancelled || flow.timedOut || this.disposed) {
+        throw new HarnessCapabilityError('aborted', 'Sign-in was cancelled');
+      }
       const record = this.commitAccount(flow, identity, label);
       this.setFlowState(flow, { status: 'connected', account: this.project(record, this.selectedId(flow.environmentId, flow.harness)) });
     } catch (error) {

@@ -81,24 +81,18 @@ export class AccountHomeStore {
    */
   public listOwnedHomes(): Array<{ harness: string; id: string; empty: boolean }> {
     const found: Array<{ harness: string; id: string; empty: boolean }> = [];
-    try {
-      this.assertNotSymlink(this.root, false);
-      for (const harness of fs.readdirSync(this.root)) {
-        if (!HARNESS_DIRECTORY_PATTERN.test(harness)) continue;
-        const harnessDir = this.pathApi.join(this.root, harness);
+    const names = (directory: string): string[] => { try { return fs.readdirSync(directory); } catch { return []; } };
+    for (const harness of names(this.root)) {
+      if (!HARNESS_DIRECTORY_PATTERN.test(harness)) continue;
+      for (const id of names(this.pathApi.join(this.root, harness))) {
+        if (!MANAGED_ACCOUNT_ID_PATTERN.test(id)) continue;
         try {
-          this.assertNotSymlink(harnessDir, false);
-          for (const id of fs.readdirSync(harnessDir)) {
-            if (!MANAGED_ACCOUNT_ID_PATTERN.test(id)) continue;
-            const home = this.pathApi.join(harnessDir, id);
-            try {
-              this.assertNotSymlink(home, false);
-              found.push({ harness, id, empty: fs.readdirSync(home).length === 0 });
-            } catch { /* unsafe or unreadable entries are not recovered */ }
-          }
-        } catch { /* skip unsafe harness directory */ }
+          // The canonical check (symlinks, realpath equality, containment, protected homes) decides.
+          const real = this.verify(harness, id);
+          found.push({ harness, id, empty: fs.readdirSync(real).length === 0 });
+        } catch { /* a candidate that fails verification is never recovered */ }
       }
-    } catch { /* no owned root yet, or it is unsafe: nothing to recover */ }
+    }
     return found;
   }
 
