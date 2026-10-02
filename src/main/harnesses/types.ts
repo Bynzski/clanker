@@ -161,6 +161,8 @@ export interface HarnessUsageContext {
   readonly signal: AbortSignal;
   readonly accountId?: string;
   readonly modelId?: string;
+  /** Desktop application identity for protocols that ask clients to introduce themselves. */
+  readonly clientInfo?: { readonly name: string; readonly title: string; readonly version: string };
 }
 export interface HarnessUsageRefreshPolicy {
   /** Ordinary cache freshness for a successful probe; a manual refresh may bypass it. */

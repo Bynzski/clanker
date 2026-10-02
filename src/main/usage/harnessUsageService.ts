@@ -38,6 +38,8 @@ export interface HarnessUsageServiceOptions {
   now?: () => number;
   /** Injectable for tests; production uses the canonical registry. */
   providers?: () => readonly HarnessProvider[];
+  /** Desktop application version, supplied by main (providers never touch Electron). */
+  clientVersion?: () => string;
 }
 
 /**
@@ -113,10 +115,12 @@ export class HarnessUsageService {
   private readonly controllers = new Set<AbortController>();
   private readonly now: () => number;
   private readonly listProviders: () => readonly HarnessProvider[];
+  private readonly clientVersion: () => string;
 
   constructor(private readonly registry: UsageWorkspaceLookup, options: HarnessUsageServiceOptions = {}) {
     this.now = options.now ?? Date.now;
     this.listProviders = options.providers ?? getHarnessProviders;
+    this.clientVersion = options.clientVersion ?? (() => 'unknown');
   }
 
   public async get(workspaceId: string, request: HarnessUsageRequest = {}): Promise<HarnessUsageResponse> {
@@ -226,7 +230,7 @@ export class HarnessUsageService {
     let record: UsageRecord;
     try {
       const raw = await Promise.race([
-        capability.get({ executor, ...(sessionExecutor ? { sessionExecutor } : {}), transport: environment.kind, signal: controller.signal }),
+        capability.get({ executor, ...(sessionExecutor ? { sessionExecutor } : {}), transport: environment.kind, signal: controller.signal, clientInfo: { name: 'clanker-grid', title: 'Clanker Grid', version: this.clientVersion() } }),
         new Promise<never>((_, reject) => {
           deadline = setTimeout(() => {
             controller.abort();

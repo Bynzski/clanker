@@ -45,8 +45,8 @@ require every implementation to use one storage format.
 ## Current capabilities
 
 All seven providers support local and SSH interactive launch. Model discovery and
-AI commit remain local-only. Only OMP, Hermes and Agy implement `usage` so far (see
-"Usage capability"); Codex, Claude, OpenCode and Pi remain without it.
+AI commit remain local-only. Only Codex, OMP, Hermes and Agy implement `usage` so far (see
+"Usage capability"); Claude, OpenCode and Pi remain without it.
 
 | Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -360,13 +360,56 @@ the session seam yet.
 
 ### Usage adapters
 
-All three adapters live beside their provider (`omp/usage.ts`, `hermes/usage.ts`,
-`agy/usage.ts`), run
+All four adapters live beside their provider (`codex/usage.ts`, `omp/usage.ts`,
+`hermes/usage.ts`, `agy/usage.ts`); OMP, Hermes and Agy run
 only through `context.executor.run()`, never branch on transport, and expose a pure
 parser (`parseOmpUsage`, `parseHermesUsage`). Fixtures are in
 `tests/main/unit/harnessUsageProviders.test.ts` with fake identities; no CI test calls a
 real account. The parsers state the upstream assumptions they rely on in their header
 comments (verified against upstream source and live output, Oct 2026).
+
+**Codex** — the only stateful adapter: `codex app-server` over `context.sessionExecutor`
+(never `executor.run()`, auth files, backend HTTP, `codex exec` or the TUI). With no session
+seam it is `unsupported`. Plain `codex app-server` (stdio is the default listener) is used rather
+than `--listen stdio://` because it works on every version and matches upstream's own test client;
+no version gate is needed. The session runs with a 30 s timeout (the service deadline stays 45 s)
+and the JSON-RPC conversation (newline-delimited, no `jsonrpc` field) lives entirely in
+`codex/usage.ts`; there is no shared JSON-RPC client. Handshake: `initialize` (client info
+`clanker-grid`/`Clanker Grid`/app version from main, `capabilities: null`) -> read its response
+(ignoring notifications, server requests and unrelated ids, bounded to 2000 ignored messages) ->
+`initialized` notification -> `account/read {refreshToken:false}` -> `account/rateLimits/read
+{excludeResetCreditDetails:true}`. `supportsLunaReserve` is deliberately not sent: it lets the
+backend record experiment exposure, which a passive read must not do. Account: ChatGPT continues;
+`account:null` with `requiresOpenaiAuth` -> `unauthenticated` (no limit read); `apiKey`,
+`amazonBedrock` or no auth required -> `unsupported`; an unknown future type is tried and is
+`unsupported` if limits cannot be read. Server errors `-32600` "codex account authentication
+required..." / "chatgpt authentication required..." map to `unauthenticated` / `unsupported`
+(only with that code and prefix); everything else is `command-failed`; the raw server text and
+stderr never leave the provider. Compatibility: if the new params draw `-32600`/`-32602` (and not
+one of those auth errors) the read is retried once with `params: null` and a new id, as the Codex
+TUI does; no other error, EOF, parse or transport failure retries. Data is accepted only after the
+response arrives AND `closeInput()` + `wait()` return exit code 0; a non-zero exit, transport
+failure, timeout, overflow or abort fails the probe, and the session is always disposed in
+`finally` (the service also reaps leftovers). Normalization: `rateLimitsByLimitId` (every meter
+family) is the source when non-empty, otherwise the legacy `rateLimits`, never both. Each
+`primary`/`secondary` window is a `rate-limit`/`percent` measurement: used = `usedPercent`
+(overage kept), remaining = max(0, 100 - used), limit 100. `windowDurationMins` is authoritative
+(300 -> "5 hour", 10080 -> "weekly", otherwise N week/day/hour/min; never inferred from
+primary/secondary); `resetsAt` is Unix **seconds** and is multiplied by 1000 (values >= 1e11 are
+rejected as probable milliseconds rather than trusted); `period` = label, `endsAt`, and `startsAt =
+endsAt - duration`. Labels are `<limitName | limitId | map key> · <duration>` ("Codex · 5 hour",
+"Spark · weekly"). Scope: `providerId: "openai-codex"`; `accountId` from the response's `accountId`
+(kept in main, stripped for the renderer; never derived from email, no cross-harness dedupe yet);
+`accountLabel` from the ChatGPT account email; `planLabel` from the meter's `planType`, else the
+account's; `modelId` from `normalModelSlug`. `observedAt` is probe completion time. Omitted on
+purpose because the shared model cannot represent them safely: `ordinaryUsageAllowed`,
+`spendControlReached`, `rateLimitReachedType`, `rateLimitUpsell`, reset credits, and `credits`
+(repeated in every snapshot, unit unspecified, `unlimited` has no numeric form).
+`individualLimit` keeps only `remainingPercent` as an `allowance` percent (its `limit`/`used`
+strings have no stated currency, so no monetary measurement). Malformed meters are skipped while
+valid ones survive; if any was malformed and none remains, `parse-failure`. Refresh: cache 60 s,
+hard minimum 60 s, failure backoff 120 s (each probe spawns app-server, locally or over SSH).
+`account/rateLimits/updated` notifications are ignored because the session is short-lived.
 
 **OMP** — `omp usage --json` (never `omp usage invalidate`; `force` only bypasses
 Clanker's cache). One report per credential, so several providers and several

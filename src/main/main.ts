@@ -187,7 +187,7 @@ const workspaceRegistry: WorkspaceRegistry = new WorkspaceRegistry(
   { isWorktreeBeingRemoved: (p: string): boolean => gitService.isWorktreeBeingRemoved(p) }
 );
 
-const harnessUsageService = new HarnessUsageService(workspaceRegistry);
+const harnessUsageService = new HarnessUsageService(workspaceRegistry, { clientVersion: () => app.getVersion() });
 
 const remotePreviewManager = new RemotePreviewManager(workspaceRegistry, (update) => {
   if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(REMOTE_PREVIEW_CHANGED, update);

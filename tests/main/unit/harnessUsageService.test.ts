@@ -58,7 +58,8 @@ describe('HarnessUsageService delegation', () => {
     const service = new HarnessUsageService(registry, { providers: () => [withUsage('codex', { get })] });
     const [entry] = (await service.get('ws')).entries;
     expect(entry).toMatchObject({ harnessId: 'codex', status: 'ok', observedAt: 1000 });
-    expect(Object.keys(get.mock.calls[0][0]).sort()).toEqual(['executor', 'signal', 'transport']);
+    expect(Object.keys(get.mock.calls[0][0]).sort()).toEqual(['clientInfo', 'executor', 'signal', 'transport']);
+    expect(get.mock.calls[0][0].clientInfo).toEqual({ name: 'clanker-grid', title: 'Clanker Grid', version: 'unknown' });
     expect(get.mock.calls[0][0].transport).toBe('local');
     expect(env.executeHarnessCommand).toHaveBeenCalledWith({ command: 'probe', args: ['--json'] }, expect.any(AbortSignal));
   });
@@ -105,6 +106,19 @@ describe('HarnessUsageService delegation', () => {
     const { registry, register } = registryFor(env); await register();
     const service = new HarnessUsageService(registry, { providers: () => [withUsage('codex', { get: async () => snapshot() })] });
     expect((await service.get('ws')).entries[0].status).toBe('unavailable');
+  });
+});
+
+describe('client identity', () => {
+  it('passes the desktop version to providers, read lazily at probe time', async () => {
+    const env = fakeEnv('local');
+    const { registry, register } = registryFor(env); await register();
+    const get = vi.fn(async (...args: unknown[]) => { void args; return snapshot(); });
+    let version = '1.0.0';
+    const service = new HarnessUsageService(registry, { clientVersion: () => version, providers: () => [withUsage('codex', { get })] });
+    version = '2.0.0';
+    await service.get('ws');
+    expect((get.mock.calls[0][0] as { clientInfo: unknown }).clientInfo).toEqual({ name: 'clanker-grid', title: 'Clanker Grid', version: '2.0.0' });
   });
 });
 

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ChildProcess } from 'child_process';
 
@@ -167,6 +167,5 @@ describe('shared execution code stays protocol- and harness-neutral', () => {
       expect(source, file).not.toMatch(/jsonrpc|rateLimits|account\/|["']initialized?["']|app-server/i);
       for (const id of KNOWN_HARNESS_IDS) expect(source, `${file}:${id}`).not.toMatch(new RegExp(`['"\`]${id}['"\`]`));
     }
-    expect(readdirSync(resolve(__dirname, '../../../src/main/harnesses/codex'))).not.toContain('usage.ts');
   });
 });
