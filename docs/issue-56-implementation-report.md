@@ -15,7 +15,7 @@ Branch: `issue-56-ssh-browser-auto-preview`. This change does not include issue 
 
 Focused tests passed for discovery, host HTTP/HTTPS probes, lease/backoff/cancellation, port allocation, forwarding policy/errors, restart recovery, cleanup retry/caps, IPC validation, filtered PTY signals, Browser/tab lifecycle and localhost normalization.
 
-Final `npm run validate`: **4,445 tests across 214 files**; branding, lint, typecheck, audit and build passed, with zero audit vulnerabilities.
+Original five-commit validation baseline: **4,445 tests across 214 files**; branding, lint, typecheck, audit and build passed, with zero audit vulnerabilities.
 
 Safe live SSH checks used the established test host and a unique empty temporary directory. Foreground fixture HTTP servers exercised real `ss`/PID/cwd ownership, IPv4 and IPv6 discovery, an occupied preferred desktop port, a tunnel established before the service was running, delayed startup, same-tunnel server restart, two simultaneous forwards, awaited child cleanup and local listener release. Fixture servers and the temporary directory were removed; `clanker-test/README.md` was preserved. No model inference was submitted.
 
@@ -37,3 +37,7 @@ All Browser tabs in a registered SSH workspace now use a private, in-memory Chro
 New discovery leases never bootstrap from cached ownership. The last lease for a workspace clears its published inventory even if a sibling workspace keeps the shared host scanner alive. Results target the consumer identities captured by their scan; removed/recreated consumers require a fresh scan. The active Browser bootstraps only through WATCH, not a racing GET. Forward lifecycle state remains available independently of discovery inventory.
 
 `ssh-preview-session-smoke.cjs` passed against actual Electron/Chromium: cross-workspace cookies/localStorage were absent, same-workspace tabs shared state, and differing localhost ports did not provide cookie isolation on their own. Targeted unit/renderer tests, typecheck and lint passed. The script uses a disposable profile and local fixture, without disabling sandboxing or certificate security.
+
+## Compact remote preview menu
+
+SSH Browser now adds only a small server icon/status dot to the existing toolbar. The shared Radix popover contains selection, Open/Stop, Detect services, manual remote-port/protocol forwarding and detailed messages. The happy path never opens the popup. Local Browser has no remote control. The shared overlay lease hides native Browser content only while the popup is open; controls consume no permanent Browser row. Escape, outside click, hidden-pane behavior, compact waiting/error states and automatic recovery are covered by renderer tests.

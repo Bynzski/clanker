@@ -1,15 +1,17 @@
+import userEvent from '@testing-library/user-event';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installElectronApiMock } from '../../setup/electron';
-import RemotePreviewBar from '../../../src/renderer/components/RemotePreviewBar';
+import RemotePreviewControl from '../../../src/renderer/components/RemotePreviewControl';
 import type { RemotePreviewUpdate, RemotePreviewResult, RemoteWebService } from '../../../src/shared/types/remotePreview';
 const active = { workspaceId: 'ssh-a', remotePort: 5173, remoteHost: '127.0.0.1' as const, protocol: 'http' as const, localPort: 4000, serviceId: 'vite', status: 'active' as const, url: 'http://127.0.0.1:4000/' };
 const service: RemoteWebService = { remoteHost: '127.0.0.1', remotePort: 5173, protocol: 'http', source: 'listener', processName: 'node', confidence: 'workspace' };
 beforeEach(() => installElectronApiMock());
-function fixture() {
+function fixture(showMenu = true) {
   const onOpen = vi.fn().mockResolvedValue(undefined), onLayoutChange = vi.fn(); let notify!: (update: RemotePreviewUpdate) => void;
   vi.mocked(window.electronAPI.onRemotePreviewChanged).mockImplementation((callback) => { notify = callback; return vi.fn(); });
-  const view = render(<RemotePreviewBar workspaceId="ssh-a" onOpen={onOpen} onLayoutChange={onLayoutChange} />);
+  const view = render(<RemotePreviewControl workspaceId="ssh-a" onOpen={onOpen} />);
+  if (showMenu) fireEvent.click(screen.getByRole('button', { name: 'Remote preview' }));
   return { ...view, onOpen, onLayoutChange, notify: (update: Partial<RemotePreviewUpdate>) => act(() => notify({ workspaceId: 'ssh-a', forward: null, forwards: [], services: [], ...update })) };
 }
 describe('detected SSH previews', () => {
@@ -72,7 +74,7 @@ describe('detected SSH previews', () => {
     f.unmount(); await act(async () => resolve({ success: true, forward: active })); expect(f.onOpen).not.toHaveBeenCalled();
   });
   it('suspends discovery when Browser becomes irrelevant and does not reopen hidden tabs', async () => {
-    const f = fixture(); f.rerender(<RemotePreviewBar workspaceId="ssh-a" enabled={false} onOpen={f.onOpen} onLayoutChange={f.onLayoutChange} />);
+    const f = fixture(); f.rerender(<RemotePreviewControl workspaceId="ssh-a" enabled={false} onOpen={f.onOpen} />);
     f.notify({ services: [service], forwards: [active] }); expect(f.onOpen).not.toHaveBeenCalled();
     expect(window.electronAPI.remotePreviewWatch).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }));
   });
@@ -80,10 +82,10 @@ describe('detected SSH previews', () => {
 it('opens a selected service that became ready while Browser was hidden on return', async () => {
   vi.mocked(window.electronAPI.remotePreviewStart).mockResolvedValue({ success: true, forward: { ...active, status: 'waiting' } });
   const f = fixture(); f.notify({ services: [service] }); await waitFor(() => expect(window.electronAPI.remotePreviewStart).toHaveBeenCalled());
-  f.rerender(<RemotePreviewBar workspaceId="ssh-a" enabled={false} onOpen={f.onOpen} onLayoutChange={f.onLayoutChange} />);
+  f.rerender(<RemotePreviewControl workspaceId="ssh-a" enabled={false} onOpen={f.onOpen} />);
   f.notify({ services: [service], forwards: [active] }); expect(f.onOpen).not.toHaveBeenCalled();
   vi.mocked(window.electronAPI.remotePreviewWatch).mockResolvedValue({ workspaceId: 'ssh-a', forward: active, forwards: [active], services: [service] });
-  f.rerender(<RemotePreviewBar workspaceId="ssh-a" enabled onOpen={f.onOpen} onLayoutChange={f.onLayoutChange} />);
+  f.rerender(<RemotePreviewControl workspaceId="ssh-a" enabled onOpen={f.onOpen} />);
   await waitFor(() => expect(f.onOpen).toHaveBeenCalledExactlyOnceWith(active.url));
   expect(window.electronAPI.remotePreviewStart).toHaveBeenCalledTimes(1);
 });
@@ -92,10 +94,48 @@ it('never bootstraps automatic forwarding from GET and discards a late disabled 
   let finish!: (snapshot: RemotePreviewUpdate) => void;
   vi.mocked(window.electronAPI.remotePreviewWatch).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
   const f = fixture();
-  f.rerender(<RemotePreviewBar workspaceId="ssh-a" enabled={false} onOpen={f.onOpen} onLayoutChange={f.onLayoutChange} />);
+  f.rerender(<RemotePreviewControl workspaceId="ssh-a" enabled={false} onOpen={f.onOpen} />);
   await act(async () => finish({ workspaceId: 'ssh-a', forward: null, services: [service] }));
-  f.rerender(<RemotePreviewBar workspaceId="ssh-a" enabled onOpen={f.onOpen} onLayoutChange={f.onLayoutChange} />);
+  f.rerender(<RemotePreviewControl workspaceId="ssh-a" enabled onOpen={f.onOpen} />);
   await act(async () => {});
   expect(window.electronAPI.remotePreviewGet).not.toHaveBeenCalled();
   expect(window.electronAPI.remotePreviewStart).not.toHaveBeenCalled(); expect(f.onOpen).not.toHaveBeenCalled();
+});
+it('shows only a tiny toolbar control by default, and uses the shared dismissible popup', async () => {
+  const f = fixture(false);
+  expect(screen.queryByRole('dialog')).toBeNull(); expect(screen.queryByText('Web services')).toBeNull();
+  expect(document.querySelector('.remote-preview-bar')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Remote preview' }));
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(screen.getByText('Detect services')).toBeInTheDocument();
+  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'Remote preview' }));
+  await act(async () => {});
+  await userEvent.setup().click(document.body);
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull()); f.unmount();
+});
+it('auto-opens the happy path without displaying controls and represents waiting/errors compactly', async () => {
+  vi.mocked(window.electronAPI.remotePreviewStart).mockResolvedValue({ success: true, forward: { ...active, status: 'waiting' } });
+  const f = fixture(false); f.notify({ services: [service] });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Remote preview' })).toHaveAttribute('title', 'Waiting for remote web service'));
+  expect(screen.queryByRole('dialog')).toBeNull(); expect(screen.queryByText('Stop')).toBeNull();
+  f.notify({ services: [service], forwards: [active] });
+  await waitFor(() => expect(f.onOpen).toHaveBeenCalled());
+  expect(screen.getByRole('button', { name: 'Remote preview' })).toHaveAttribute('title', 'Remote preview ready');
+  expect(screen.queryByText('Detect services')).toBeNull();
+  f.notify({ services: [service], forwards: [{ ...active, status: 'error', error: 'SSH connection lost' }] });
+  expect(screen.getByRole('button', { name: 'Remote preview' })).toHaveAttribute('title', 'Remote preview error');
+  fireEvent.click(screen.getByRole('button', { name: 'Remote preview' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('SSH connection lost'); expect(screen.getByText('Stop')).toBeInTheDocument();
+});
+it('waits for fresh ownership before reopening a surviving active automatic forward on return', async () => {
+  vi.mocked(window.electronAPI.remotePreviewStart).mockResolvedValue({ success: true, forward: active });
+  const f = fixture(false); f.notify({ services: [service] }); await waitFor(() => expect(f.onOpen).toHaveBeenCalledTimes(1));
+  f.rerender(<RemotePreviewControl workspaceId="ssh-a" enabled={false} onOpen={f.onOpen} />);
+  vi.mocked(window.electronAPI.remotePreviewWatch).mockResolvedValue({ workspaceId: 'ssh-a', forward: active, forwards: [active], services: [] });
+  f.rerender(<RemotePreviewControl workspaceId="ssh-a" enabled onOpen={f.onOpen} />); await act(async () => {});
+  expect(f.onOpen).toHaveBeenCalledTimes(1); expect(window.electronAPI.remotePreviewStart).toHaveBeenCalledTimes(1);
+  f.notify({ forwards: [active], services: [] }); expect(f.onOpen).toHaveBeenCalledTimes(1);
+  f.notify({ forwards: [active], services: [service] }); await waitFor(() => expect(f.onOpen).toHaveBeenCalledTimes(2));
 });

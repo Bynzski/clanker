@@ -119,7 +119,7 @@ Discovery uses bounded metadata reads and omits messages beyond the first 256 Ki
 
 ### SSH browser previews
 
-Start a development server on the SSH host, then open the workspace's **Browser** pane. **Web services** discovers HTTP/HTTPS listeners. A single workspace-owned service forwards and opens automatically; choose **Open** for multiple services or an unscoped listener. **Detect services** requests a fresh scan. **Forward port manually…** is a fallback asking only for the remote port and protocol. Clanker chooses the desktop port, preferring the matching port when available and retrying conflicts automatically.
+Start a development server on the SSH host, then open the workspace's **Browser** pane. The small **Remote preview** server icon in the existing toolbar exposes detected HTTP/HTTPS services. Its menu is closed by default; there is no permanent preview panel. A single workspace-owned service forwards and opens automatically; choose **Open** for multiple services or an unscoped listener. **Detect services** requests a fresh scan. **Forward port manually…** is a fallback asking only for the remote port and protocol. Clanker chooses the desktop port, preferring the matching port when available and retrying conflicts automatically.
 
 Workspace ownership comes from the listener process's canonical working directory, or a loopback URL printed by that workspace's SSH terminal. A port number alone never establishes ownership. Listener discovery uses `ss`, then `lsof`, or eight conventional development ports when neither utility exists. It probes at most 32 loopback endpoints, four at a time, with short deadlines and bounded output. IPv4/IPv6 loopback and wildcard listeners are supported; the desktop listener always binds to `127.0.0.1`.
 
@@ -127,7 +127,7 @@ Discovery is demand-driven by the visible, active Browser. Workspaces on the sam
 
 SSH transport readiness and web-service readiness are separate. **Waiting for remote service** means the tunnel is established but the application is unavailable. Delayed startup and server restarts recover automatically on the same tunnel and reopen the selected preview. A newly detected workspace-owned port can replace the previous automatic preview. SSH forwarding policy rejection, authentication/host-key failures and disconnects are transport errors; restore connectivity/policy and choose **Open** again. Low-level SSH diagnostics are not displayed in Browser.
 
-Each workspace supports four independent forwards, with at most 16 across the app. **Stop**, workspace close, window close, renderer loss and app shutdown release connections. Browser URLs may persist, but forwarding rules do not. Managed previews retain normal host-key verification and reject targets with preconfigured forwards. They use system OpenSSH `-N` and bounded ephemeral discovery commands: no Clanker daemon, installed helper or persistent remote service is introduced. Privileged ports and persisted forwarding rules remain unsupported.
+Each workspace supports four independent forwards, with at most 16 across the app. **Stop** in the preview menu, workspace close, window close, renderer loss and app shutdown release connections. Browser URLs may persist, but forwarding rules do not. Managed previews retain normal host-key verification and reject targets with preconfigured forwards. They use system OpenSSH `-N` and bounded ephemeral discovery commands: no Clanker daemon, installed helper or persistent remote service is introduced. Privileged ports and persisted forwarding rules remain unsupported.
 
 ### Remote limits and refresh behavior
 
@@ -267,3 +267,5 @@ Native conversation resume is supported locally and over SSH for the six harness
 
 - **No Prompt Replay**: The user's original prompt is never replayed or re-executed upon restart.
 - **Graceful Failure**: If a session was deleted from disk, a harness is removed, or resume invocation fails, Clanker marks the task `unavailable` with an explanatory reason without affecting the workspace or losing metadata. The UI provides a **Retry** option to retry failed resume attempts or attach an alternative session.
+
+SSH Browser tabs share a private in-memory session per workspace. Cookies/storage are isolated from other SSH workspaces and local browsing. Ordinary browsing inside an SSH workspace also uses that private session; closing the workspace clears it. Local Browser sessions retain existing persistent global logins.
