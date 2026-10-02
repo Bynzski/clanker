@@ -301,6 +301,7 @@ app.whenReady().then(() => {
 
   registerRemotePreviewIpc(remotePreviewManager);
   browserIpcController = registerBrowserIpc({
+    getWorkspaceEnvironmentKind: (id) => workspaceRegistry.getWorkspace(id)?.environment.kind ?? null,
     getMainWindow: () => mainWindow,
     getBrowserViews: () => browserViews,
     getActiveBrowserWorkspaceId: () => activeBrowserWorkspaceId,
@@ -327,7 +328,7 @@ app.whenReady().then(() => {
     getGitService: () => gitService,
     getMainWindow: () => mainWindow,
     getWorkspaceRegistry: () => workspaceRegistry,
-    onWorkspaceUnregistered: (id) => { remoteFileWatcher.closeWorkspace(id); void remotePreviewManager.closeWorkspace(id); },
+    onWorkspaceUnregistered: (id) => { browserIpcController?.disposeWorkspace(id); remoteFileWatcher.closeWorkspace(id); void remotePreviewManager.closeWorkspace(id); },
     getLiveRemoteTerminalPaths: (environmentId) => {
       const paths: string[] = [];
       const configurations = store.get('sshEnvironments') ?? [];

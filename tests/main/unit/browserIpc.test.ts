@@ -57,6 +57,7 @@ vi.mock('electron', () => ({
     setApplicationMenu: vi.fn(),
   }),
   WebContentsView: class MockWebContentsView {
+    constructor(public options: { webPreferences: { partition: string } }) {}
     setVisible = vi.fn();
     setBounds = vi.fn();
     webContents = {
@@ -107,6 +108,7 @@ vi.mock('electron', () => ({
 import { ipcMain, Menu } from 'electron';
 import {
   registerBrowserIpc,
+  createBrowserViewForTab,
   applyBrowserViewZoomAction,
   clampBrowserZoomLevel,
   getBrowserKeyboardZoomShortcutAction,
@@ -164,6 +166,16 @@ describe('registerBrowserIpc', () => {
     attachedContextMenuHandler = null;
     attachedDidNavigateHandler = null;
     __resetBrowserHistoryServiceForTests(new BrowserHistoryService(new MemoryHistoryStore()));
+  });
+
+  test('routes actual SSH tab creation into private scopes and fails closed for unregistered workspaces', () => {
+    const { deps } = createMockDeps();
+    const scoped = { ...deps, getWorkspaceEnvironmentKind: (id: string) => id === 'missing' ? null : id === 'local' ? 'local' as const : 'ssh' as const };
+    const partition = (id: string, tab: string) => (createBrowserViewForTab(id, tab, scoped)?.view as unknown as { options: { webPreferences: { partition: string } } }).options.webPreferences.partition;
+    expect(partition('a', 'one')).toBe(partition('a', 'two'));
+    expect(partition('a', 'one')).not.toBe(partition('b', 'one'));
+    expect(partition('local', 'one')).toBe('persist:browser-global');
+    expect(createBrowserViewForTab('missing', 'one', scoped)).toBeNull();
   });
 
   test('registers browser context-menu and keyboard shortcut handlers', () => {

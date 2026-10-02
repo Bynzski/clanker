@@ -21,6 +21,7 @@ export default function RemotePreviewBar({ workspaceId, onOpen, onLayoutChange, 
   active.current = enabled; open.current = onOpen;
   const apply = useRef<(snapshot: RemotePreviewUpdate) => void>(() => {});
   apply.current = (snapshot) => {
+    snapshot = active.current ? snapshot : { ...snapshot, services: [] };
     latest.current = snapshot; setState(snapshot);
     const forward = snapshot.forwards?.find((entry) => key(entry) === selection.current);
     if (active.current && forward?.status === 'active' && previousStatus.current !== 'active') {
@@ -30,7 +31,7 @@ export default function RemotePreviewBar({ workspaceId, onOpen, onLayoutChange, 
     previousStatus.current = active.current ? forward?.status ?? null : null;
   };
   useEffect(() => {
-    const current = ++generation.current; const startRevision = revision.current;
+    const current = ++generation.current;
     latest.current = { workspaceId, forward: null, services: [], forwards: [] }; setState(latest.current);
     selection.current = ''; autoChoice.current = ''; manualChoice.current = false; previousStatus.current = null;
     setSelected(''); setError(''); setBusy(false);
@@ -38,19 +39,17 @@ export default function RemotePreviewBar({ workspaceId, onOpen, onLayoutChange, 
       if (generation.current !== current || snapshot.workspaceId !== workspaceId) return;
       revision.current++; apply.current(snapshot);
     });
-    void window.electronAPI.remotePreviewGet({ workspaceId }).then((snapshot) => {
-      if (snapshot && generation.current === current && revision.current === startRevision) apply.current(snapshot);
-    }).catch(() => { if (generation.current === current) setError('Could not load remote services'); });
     return () => { generation.current = current + 1; unsubscribe(); };
   }, [workspaceId]);
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) { setState((snapshot) => ({ ...snapshot, services: [] })); return; }
+    let cancelled = false;
     const current = generation.current, startRevision = revision.current;
     void window.electronAPI.remotePreviewWatch({ workspaceId, consumerId: consumer.current, enabled: true }).then((snapshot) => {
-      if (snapshot && generation.current === current && revision.current === startRevision) apply.current(snapshot);
+      if (!cancelled && snapshot && generation.current === current && revision.current === startRevision) apply.current(snapshot);
     }).catch(() => { if (generation.current === current) setError('Could not discover remote services'); });
     const token = consumer.current;
-    return () => { void window.electronAPI.remotePreviewWatch({ workspaceId, consumerId: token, enabled: false }).catch(() => undefined); };
+    return () => { cancelled = true; void window.electronAPI.remotePreviewWatch({ workspaceId, consumerId: token, enabled: false }).catch(() => undefined); };
   }, [workspaceId, enabled]);
   const start = useRef<(service: ServiceTarget) => Promise<void>>(async () => {});
   start.current = async (service) => {

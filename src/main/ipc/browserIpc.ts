@@ -39,6 +39,7 @@ import {
   BROWSER_HISTORY_CLEAR,
   FIT_ALL_PANES,
 } from '../../shared/ipcChannels';
+import { BrowserSessionScopes } from '../browserSessionScope';
 import { getBrowserHistoryService } from '../browserHistory';
 import { probeRecipePreview } from '../recipePreview';
 
@@ -51,12 +52,14 @@ export interface BrowserViewEntry {
 export type BrowserWorkspaceViews = Map<string, BrowserViewEntry>;
 export type BrowserViewsByWorkspace = Map<string, BrowserWorkspaceViews>;
 
+const browserSessionScopes = new BrowserSessionScopes();
 const tabOrderByWorkspace = new Map<string, string[]>();
 const activeTabIdsByWorkspace = new Map<string, string>();
 const lastBrowserBoundsByWorkspace = new Map<string, Rectangle>();
 
 interface RegisterBrowserIpcDeps {
   getMainWindow: () => BrowserWindow | null;
+  getWorkspaceEnvironmentKind?: (workspaceId: string) => 'local' | 'ssh' | null;
   getBrowserViews: () => BrowserViewsByWorkspace;
   getActiveBrowserWorkspaceId: () => string | null;
   setActiveBrowserWorkspaceId: (id: string | null) => void;
@@ -64,6 +67,7 @@ interface RegisterBrowserIpcDeps {
 }
 
 export interface BrowserIpcController {
+  disposeWorkspace(workspaceId: string): void;
   /** Close every native browser view and clear process-lifetime tab bookkeeping. */
   disposeAll(): void;
 }
@@ -272,14 +276,17 @@ function createBrowserViewForTab(
   const mainWindow = deps.getMainWindow();
   if (!mainWindow || !tabId) return null;
 
+  const kind = deps.getWorkspaceEnvironmentKind ? deps.getWorkspaceEnvironmentKind(workspaceId) : 'local';
+  if (!kind) return null; // Never let an unregistered SSH workspace fall into the global session.
   const view = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
-      partition: 'persist:browser-global',
+      partition: browserSessionScopes.partition(workspaceId, kind),
     },
   });
 
+  if (kind === 'ssh') browserSessionScopes.attach(workspaceId, view.webContents.session);
   attachBrowserSecurityHandlers(view);
   attachBrowserShortcutHandlers(view, () => {
     const win = deps.getMainWindow();
@@ -417,6 +424,7 @@ function destroyWorkspaceBrowserViews(workspaceId: string, deps: RegisterBrowser
   }
 
   deps.getBrowserViews().delete(workspaceId);
+  browserSessionScopes.dispose(workspaceId);
   tabOrderByWorkspace.delete(workspaceId);
   activeTabIdsByWorkspace.delete(workspaceId);
   lastBrowserBoundsByWorkspace.delete(workspaceId);
@@ -713,6 +721,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
   ipcMain.on(FIT_ALL_PANES, () => { });
 
   return {
+    disposeWorkspace: (workspaceId) => destroyWorkspaceBrowserViews(workspaceId, deps),
     disposeAll(): void {
       const workspaceIds = new Set([
         ...deps.getBrowserViews().keys(),
@@ -724,7 +733,8 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
         destroyWorkspaceBrowserViews(workspaceId, deps);
       }
       deps.getBrowserViews().clear();
-      tabOrderByWorkspace.clear();
+      browserSessionScopes.disposeAll();
+  tabOrderByWorkspace.clear();
       activeTabIdsByWorkspace.clear();
       lastBrowserBoundsByWorkspace.clear();
       deps.setActiveBrowserWorkspaceId(null);
@@ -734,6 +744,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
 
 /** Test-only: clear all in-memory tab tracking state. */
 export function __resetBrowserTabState(): void {
+  browserSessionScopes.disposeAll();
   tabOrderByWorkspace.clear();
   activeTabIdsByWorkspace.clear();
   lastBrowserBoundsByWorkspace.clear();

@@ -31,6 +31,7 @@ it('aborts the last consumer, ignores stale results and never resurrects a close
   const f = fixture(); let resolve!: (value: typeof service[]) => void;
   f.discover.mockReturnValue(new Promise((res) => { resolve = res; }));
   f.discovery.setConsumer('a', 'browser', true);
+  await Promise.resolve();
   const signal = f.discover.mock.calls[0][0] as AbortSignal;
   f.discovery.closeWorkspace('a'); f.workspaces.delete('a');
   const count = f.notify.mock.calls.length;
@@ -46,5 +47,22 @@ it('terminal hints accelerate retained discovery without creating a scanner for 
   expect(f.discover).toHaveBeenCalledWith(expect.any(AbortSignal), [expect.objectContaining({ remotePort: 5173 })]);
   f.discovery.hint('a', { ...service, remotePort: 5174 }); await vi.advanceTimersByTimeAsync(0);
   expect(f.discover).toHaveBeenCalledTimes(2);
+  f.discovery.close();
+});
+
+it('clears inactive ownership and rejects the old lease result even when another workspace retains the host', async () => {
+  vi.useFakeTimers(); const f = fixture();
+  f.discovery.setConsumer('a', 'browser', true); f.discovery.setConsumer('b', 'browser', true);
+  await vi.advanceTimersByTimeAsync(0);
+  let resolve!: (value: typeof service[]) => void;
+  f.discover.mockReturnValueOnce(new Promise((res) => { resolve = res; }));
+  f.discovery.refresh('a'); await Promise.resolve();
+  f.discovery.setConsumer('a', 'browser', false);
+  expect(f.notify).toHaveBeenCalledWith('a', []);
+  f.discovery.setConsumer('a', 'browser', true);
+  f.notify.mockClear(); resolve([service]); await vi.advanceTimersByTimeAsync(0);
+  expect(f.notify.mock.calls.filter(([id]) => id === 'a')).toEqual([]);
+  f.discover.mockResolvedValue([]); await vi.advanceTimersByTimeAsync(750);
+  expect(f.notify).toHaveBeenCalledWith('a', [], undefined);
   f.discovery.close();
 });

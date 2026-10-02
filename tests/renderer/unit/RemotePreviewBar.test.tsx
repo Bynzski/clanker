@@ -87,3 +87,15 @@ it('opens a selected service that became ready while Browser was hidden on retur
   await waitFor(() => expect(f.onOpen).toHaveBeenCalledExactlyOnceWith(active.url));
   expect(window.electronAPI.remotePreviewStart).toHaveBeenCalledTimes(1);
 });
+it('never bootstraps automatic forwarding from GET and discards a late disabled lease snapshot', async () => {
+  vi.mocked(window.electronAPI.remotePreviewGet).mockResolvedValue({ workspaceId: 'ssh-a', forward: null, services: [service] });
+  let finish!: (snapshot: RemotePreviewUpdate) => void;
+  vi.mocked(window.electronAPI.remotePreviewWatch).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+  const f = fixture();
+  f.rerender(<RemotePreviewBar workspaceId="ssh-a" enabled={false} onOpen={f.onOpen} onLayoutChange={f.onLayoutChange} />);
+  await act(async () => finish({ workspaceId: 'ssh-a', forward: null, services: [service] }));
+  f.rerender(<RemotePreviewBar workspaceId="ssh-a" enabled onOpen={f.onOpen} onLayoutChange={f.onLayoutChange} />);
+  await act(async () => {});
+  expect(window.electronAPI.remotePreviewGet).not.toHaveBeenCalled();
+  expect(window.electronAPI.remotePreviewStart).not.toHaveBeenCalled(); expect(f.onOpen).not.toHaveBeenCalled();
+});

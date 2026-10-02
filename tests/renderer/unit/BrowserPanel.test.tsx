@@ -1292,7 +1292,7 @@ describe('BrowserPanel', () => {
 
       expect(screen.getByLabelText('Remote preview port')).toHaveValue(3100);
       expect(screen.getByRole('alert')).toHaveTextContent('Address already in use');
-      expect(window.electronAPI.remotePreviewGet).toHaveBeenCalledTimes(1);
+      expect(window.electronAPI.remotePreviewGet).not.toHaveBeenCalled();
       expect(window.electronAPI.onRemotePreviewChanged).toHaveBeenCalledTimes(1);
     });
 
@@ -1314,7 +1314,7 @@ describe('BrowserPanel', () => {
 
       expect(mockBrowserTabNavigate).toHaveBeenCalledExactlyOnceWith('workspace-1', 'tab-b', 'http://127.0.0.1:3000/');
       expect(screen.getByRole('button', { name: /^Open$/ })).toBeInTheDocument();
-      expect(window.electronAPI.remotePreviewGet).toHaveBeenCalledTimes(1);
+      expect(window.electronAPI.remotePreviewGet).not.toHaveBeenCalled();
     });
 
     it('renders browser tabs in the pane header', () => {
