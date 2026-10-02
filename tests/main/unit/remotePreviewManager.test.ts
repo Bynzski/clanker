@@ -73,3 +73,18 @@ describe('RemotePreviewManager', () => {
     expect(f.manager.getAll('ssh-a')[1].status).toBe('waiting'); await f.manager.close();
   });
 });
+it('keeps ownership on cleanup failure and permits a later cleanup retry', async () => {
+  const f = fixture(); await f.manager.start(request);
+  f.close.mockRejectedValueOnce(new Error('temporary cleanup failure'));
+  await expect(f.manager.stop('ssh-a')).rejects.toThrow('temporary cleanup failure');
+  expect(f.manager.get('ssh-a')?.status).toBe('stopping');
+  await f.manager.stop('ssh-a'); expect(f.manager.get('ssh-a')).toBeNull();
+  expect(f.close).toHaveBeenCalledTimes(2); await f.manager.close();
+});
+it('enforces a per-workspace cap without restricting a second workspace to one service', async () => {
+  const f = fixture();
+  for (const port of [3000, 3001, 3002, 3003]) expect((await f.manager.start({ ...request, remotePort: port })).success).toBe(true);
+  expect((await f.manager.start({ ...request, remotePort: 3004 })).success).toBe(false);
+  expect((await f.manager.start({ ...request, workspaceId: 'ssh-b', remotePort: 3004 })).success).toBe(true);
+  await f.manager.close();
+});

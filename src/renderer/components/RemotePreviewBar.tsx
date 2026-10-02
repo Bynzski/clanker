@@ -27,7 +27,7 @@ export default function RemotePreviewBar({ workspaceId, onOpen, onLayoutChange, 
       const current = generation.current;
       void open.current(forward.url).catch(() => { if (generation.current === current) setError('Could not open remote preview'); });
     }
-    previousStatus.current = forward?.status ?? null;
+    previousStatus.current = active.current ? forward?.status ?? null : null;
   };
   useEffect(() => {
     const current = ++generation.current; const startRevision = revision.current;

@@ -77,3 +77,13 @@ describe('detected SSH previews', () => {
     expect(window.electronAPI.remotePreviewWatch).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }));
   });
 });
+it('opens a selected service that became ready while Browser was hidden on return', async () => {
+  vi.mocked(window.electronAPI.remotePreviewStart).mockResolvedValue({ success: true, forward: { ...active, status: 'waiting' } });
+  const f = fixture(); f.notify({ services: [service] }); await waitFor(() => expect(window.electronAPI.remotePreviewStart).toHaveBeenCalled());
+  f.rerender(<RemotePreviewBar workspaceId="ssh-a" enabled={false} onOpen={f.onOpen} onLayoutChange={f.onLayoutChange} />);
+  f.notify({ services: [service], forwards: [active] }); expect(f.onOpen).not.toHaveBeenCalled();
+  vi.mocked(window.electronAPI.remotePreviewWatch).mockResolvedValue({ workspaceId: 'ssh-a', forward: active, forwards: [active], services: [service] });
+  f.rerender(<RemotePreviewBar workspaceId="ssh-a" enabled onOpen={f.onOpen} onLayoutChange={f.onLayoutChange} />);
+  await waitFor(() => expect(f.onOpen).toHaveBeenCalledExactlyOnceWith(active.url));
+  expect(window.electronAPI.remotePreviewStart).toHaveBeenCalledTimes(1);
+});

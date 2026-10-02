@@ -116,7 +116,7 @@ export class RemotePreviewManager {
       await entry.pending; await entry.handle?.close();
       this.reserved.delete(entry.state.localPort);
       if (this.entries.get(serviceId) === entry) { this.entries.delete(serviceId); this.emit(workspaceId); }
-    })(); return entry.stopping;
+    })().catch((error: unknown) => { entry.stopping = undefined; throw error; }); return entry.stopping;
   }
   async closeWorkspace(workspaceId: string): Promise<void> {
     this.discovery.closeWorkspace(workspaceId); this.services.delete(workspaceId); await this.stop(workspaceId);

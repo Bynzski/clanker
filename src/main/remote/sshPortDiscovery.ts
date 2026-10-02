@@ -62,6 +62,29 @@ def listeners():
     else:
         rows = [metadata('127.0.0.1', port, source='fallback') for port in FALLBACK]
     return rows
+def probe(row):
+    for protocol in ('http', 'https'):
+        deadline = time.monotonic() + 0.7
+        try:
+            with socket.create_connection((row['remoteHost'], row['remotePort']), timeout=0.7) as connection:
+                connection.settimeout(max(0.001, deadline-time.monotonic()))
+                if protocol == 'https':
+                    context = ssl._create_unverified_context()
+                    connection = context.wrap_socket(connection, server_hostname='localhost')
+                with connection:
+                    connection.settimeout(max(0.001, deadline-time.monotonic()))
+                    connection.sendall(b'HEAD / HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n')
+                    status = b''
+                    while len(status) < 512 and time.monotonic() < deadline:
+                        connection.settimeout(max(0.001, deadline-time.monotonic()))
+                        chunk = connection.recv(512-len(status))
+                        if not chunk: break
+                        status += chunk
+                        if b'\n' in status: break
+                    if re.match(br'^HTTP/1\.[01] [0-9]{3}\b', status):
+                        return dict(row, protocol=protocol)
+        except (OSError, ssl.SSLError): pass
+    return None
 request = json.load(sys.stdin)
 rows = listeners()
 # Explicit terminal URLs are additional bounded candidates, never a port sweep.
@@ -73,20 +96,6 @@ for row in rows:
     key = (row['remoteHost'], row['remotePort'])
     if key not in unique or row.get('cwd'): unique[key] = row
     if len(unique) >= LIMIT: break
-def probe(row):
-    for protocol in ('http', 'https'):
-        try:
-            with socket.create_connection((row['remoteHost'], row['remotePort']), timeout=0.7) as connection:
-                connection.settimeout(0.7)
-                if protocol == 'https':
-                    context = ssl._create_unverified_context()
-                    connection = context.wrap_socket(connection, server_hostname='localhost')
-                with connection:
-                    connection.sendall(b'HEAD / HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n')
-                    if re.match(br'^HTTP/1\.[01] [0-9]{3}\b', connection.recv(512)):
-                        return dict(row, protocol=protocol)
-        except (OSError, ssl.SSLError): pass
-    return None
 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
     print(json.dumps([result for result in pool.map(probe, unique.values()) if result]))
 `;
