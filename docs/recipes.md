@@ -84,7 +84,7 @@ Chat History lists the harness's own conversations. Nothing about a launch is st
 
 ### 6.1 Local discovery
 
-`SESSION_DISCOVER` calls `discoverSessions()` (`src/main/sessionHistory.ts`) for the selected local workspace. Discovery scans each supported harness's native store, keeps only sessions whose canonical `cwd` belongs to the workspace, sorts by timestamp, and returns the combined list. The renderer groups the result per harness and renders one collapsible group per installed harness. Local discovery uses a short-lived in-memory cache; harness sessions are re-read when the cache expires or when discovery is forced.
+`SESSION_DISCOVER` calls `discoverSessions()` (`src/main/sessionHistory.ts`) for the selected local workspace. Discovery scans each supported harness's native store, keeps only sessions whose canonical `cwd` belongs to the workspace, filters to currently available harnesses, sorts by timestamp, and returns the combined list. The renderer groups the returned sessions by harness and renders one collapsible group per harness with discovered sessions; an installed harness with no discovered sessions has no group. Local discovery uses a short-lived in-memory cache; harness sessions are re-read when the cache expires or when discovery is forced.
 
 ### 6.2 Resume
 
@@ -106,7 +106,7 @@ Remote resume re-reads the host session and never trusts renderer-supplied paths
 
 ### 6.4 Provider capabilities
 
-Harness session support is expressed through provider capabilities (`src/main/harnesses/`), introduced in #60: `sessions.validateLocal`, `sessions.validateRemote`, `sessions.remote`, `sessions.selectionFlags`, and `supportsSessionOperation()`. New harnesses integrate by extending `baseProvider.ts` rather than by adding feature flags in the IPC layer.
+Harness session support is expressed through provider capabilities (`src/main/harnesses/`), introduced in #60: `sessions.validateLocal`, `sessions.validateRemote`, `sessions.remote`, `sessions.selectionFlags`, and `supportsSessionOperation()`. Shared identity and descriptor contracts (`src/shared/harnessIds.ts`, `src/shared/harnessDescriptors.ts`) stay authoritative; a new harness is assembled in `src/main/harnesses/<id>/index.ts` and registered in the canonical registry `src/main/harnesses/registry.ts` rather than through a central feature switch in the IPC layer. See [Harness integration playbook](harness-integration.md#adding-a-harness-or-capability).
 
 ---
 
