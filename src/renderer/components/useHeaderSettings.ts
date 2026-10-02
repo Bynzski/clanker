@@ -27,6 +27,8 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
   const [isLoadingAiCommitModels, setIsLoadingAiCommitModels] = useState(false);
   const [hasLoadedAiCommitSettings, setHasLoadedAiCommitSettings] = useState(false);
   const [harnessDefaults, setHarnessDefaultsState] = useState<HarnessDefaultsMap | null>(null);
+  /** Persisted preferences (e.g. Show in Usage) are only trustworthy once this is 'ready'. */
+  const [harnessDefaultsStatus, setHarnessDefaultsStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [expandedHarness, setExpandedHarness] = useState<string | null>(null);
   const [harnessModelCache, setHarnessModelCache] = useState<Record<string, ModelOption[]>>({});
   const [harnessModelLoading, setHarnessModelLoading] = useState<Record<string, boolean>>({});
@@ -92,8 +94,10 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
       try {
         const defaults = await window.electronAPI.getHarnessDefaults();
         setHarnessDefaultsState(defaults);
+        setHarnessDefaultsStatus('ready');
       } catch (err) {
         console.error('Failed to load harness defaults:', err);
+        setHarnessDefaultsStatus('failed');
       }
     };
     void loadHarnessDefaults();
@@ -245,6 +249,20 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     }
   };
 
+  const handleSetHarnessUsageVisible = async (harnessId: string, usageVisible: boolean) => {
+    if (!harnessDefaults) return;
+    const newDefaults = {
+      ...harnessDefaults,
+      [harnessId]: { ...harnessDefaults[harnessId], usageVisible },
+    };
+    setHarnessDefaultsState(newDefaults);
+    try {
+      await window.electronAPI.setHarnessDefaults(newDefaults);
+    } catch (err) {
+      console.error('Failed to save usage visibility:', err);
+    }
+  };
+
   const handleSetDefaultModel = async (harnessId: string, modelId: string) => {
     if (!harnessDefaults) return;
     const newDefaults = {
@@ -312,6 +330,7 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
   );
 
   return {
+    harnessDefaultsStatus,
     availableHarnessIds,
     visibleHarnessIds,
     showSettings,
@@ -334,6 +353,7 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     handleSetHarnessFlags,
     handleSetHarnessVisible,
     handleSetHarnessAttention,
+    handleSetHarnessUsageVisible,
     handleSetDefaultModel,
     handleToggleFavorite,
     loadHarnessModels,

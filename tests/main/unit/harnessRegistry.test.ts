@@ -35,8 +35,28 @@ it('keeps serializable descriptors aligned with implemented AI commit capabiliti
   for (const provider of getHarnessProviders()) {
     expect(provider.descriptor).toBe(HARNESS_DESCRIPTORS[provider.descriptor.id]);
     expect(structuredClone(provider.descriptor)).toEqual(provider.descriptor);
-    expect(provider.usage).toBeUndefined();
   }
+});
+
+it('keeps descriptor usage metadata and provider implementations in lockstep', async () => {
+  const { defineHarness } = await import('../../../src/main/harnesses/types');
+  const { HARNESS_DESCRIPTORS, USAGE_HARNESS_IDS } = await import('../../../src/shared/harnessDescriptors');
+  for (const provider of getHarnessProviders()) {
+    expect('usage' in provider.descriptor, provider.descriptor.id).toBe(provider.usage !== undefined);
+  }
+  expect([...USAGE_HARNESS_IDS]).toEqual(getHarnessProviders().filter((provider) => provider.usage).map((provider) => provider.descriptor.id));
+  // Type-level: advertising usage without an implementation (or the reverse) does not compile.
+  const launch = { command: 'x', args: [], modelArg: '' };
+  // @ts-expect-error descriptor advertises usage but the provider has none
+  defineHarness({ descriptor: HARNESS_DESCRIPTORS.claude, launch });
+  // @ts-expect-error provider implements usage but its descriptor does not advertise it
+  defineHarness({ descriptor: HARNESS_DESCRIPTORS.pi, launch, usage: { get: async () => ({ observedAt: 0, measurements: [] }) } });
+});
+
+it('implements usage only for the providers with a verified structured interface', () => {
+  const withUsage = getHarnessProviders().filter((provider) => provider.usage).map((provider) => provider.descriptor.id);
+  expect(withUsage).toEqual(['codex', 'omp', 'claude', 'hermes', 'agy']);
+  for (const id of ['opencode', 'pi'] as const) expect(getHarnessProvider(id).usage).toBeUndefined();
 });
 
 it.each([

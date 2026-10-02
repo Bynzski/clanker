@@ -7,6 +7,7 @@ import { HARNESS_OPTIONS } from '../../lib/harnessOptions';
 import { hermesModelLabel } from '../../lib/hermesModelDisplay';
 import { HARNESS_FLAGS_PLACEHOLDER } from '../../lib/harnessFlags';
 import { KNOWN_HARNESS_IDS } from '../../../shared/harnessIds';
+import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import type { HarnessDefaultsMap } from '../../../shared/types/store';
 import type { ModelOption } from '../../types/shared';
 
@@ -21,6 +22,7 @@ interface HarnessDefaultsSectionProps {
   handleSetHarnessFlags: (harnessId: string, flags: string) => Promise<void>;
   handleSetHarnessVisible: (harnessId: string, visible: boolean) => Promise<void>;
   handleSetHarnessAttention: (harnessId: string, enabled: boolean) => Promise<void>;
+  handleSetHarnessUsageVisible: (harnessId: string, visible: boolean) => Promise<void>;
   handleSetDefaultModel: (harnessId: string, modelId: string) => Promise<void>;
   handleToggleFavorite: (harnessId: string, modelId: string) => Promise<void>;
 }
@@ -36,6 +38,7 @@ export default function HarnessDefaultsSection({
   handleSetHarnessFlags,
   handleSetHarnessVisible,
   handleSetHarnessAttention,
+  handleSetHarnessUsageVisible,
   handleSetDefaultModel,
   handleToggleFavorite,
 }: HarnessDefaultsSectionProps) {
@@ -121,6 +124,17 @@ export default function HarnessDefaultsSection({
                     aria-label={`Agent attention for ${option?.label ?? harnessId}`}
                   />
                 </label>
+                {'usage' in HARNESS_DESCRIPTORS[harnessId as keyof typeof HARNESS_DESCRIPTORS] && (
+                  <label className="harness-defaults-attention-toggle">
+                    <span className="harness-defaults-field-label">Show in Usage</span>
+                    <input
+                      type="checkbox"
+                      checked={defaults?.usageVisible !== false}
+                      onChange={(event) => void handleSetHarnessUsageVisible(harnessId, event.target.checked)}
+                      aria-label={`Show ${option?.label ?? harnessId} in Usage`}
+                    />
+                  </label>
+                )}
                 <div className="harness-defaults-field">
                   <span className="harness-defaults-field-label">Extra flags</span>
                   <Input

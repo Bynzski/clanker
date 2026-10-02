@@ -27,6 +27,8 @@ import {
   discoverHarnessModels,
 } from '../harnessCatalog';
 import { defaultShell, prependUserCliBinsToPath } from '../platformShell';
+import { executeLocalHarnessCommand, openLocalHarnessSession } from './localCommandExecutor';
+import type { HarnessCommandRequest } from '../harnesses/commandExecution';
 import { buildHarnessSpawnArgs, resolveHarnessSpawn } from '../harnessLaunch';
 
 const execFileAsync = promisify(execFile);
@@ -98,6 +100,14 @@ export class LocalEnvironment implements WorkspaceEnvironment {
         GIT_TERMINAL_PROMPT: '0',
       },
     });
+  }
+
+  public executeHarnessCommand(request: HarnessCommandRequest, signal?: AbortSignal) {
+    return executeLocalHarnessCommand(request, signal);
+  }
+
+  public openHarnessCommandSession(request: HarnessCommandRequest, signal?: AbortSignal) {
+    return openLocalHarnessSession(request, signal);
   }
 
   public async getHarnessOptions(): Promise<Record<string, EnvironmentHarnessOption>> {

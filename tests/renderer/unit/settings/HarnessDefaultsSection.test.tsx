@@ -25,6 +25,7 @@ function renderSettings({ harness = 'hermes', model = '', options = catalog, fav
     handleSetHarnessFlags: vi.fn().mockResolvedValue(undefined),
     handleSetHarnessVisible: vi.fn().mockResolvedValue(undefined),
     handleSetHarnessAttention: vi.fn().mockResolvedValue(undefined),
+    handleSetHarnessUsageVisible: vi.fn().mockResolvedValue(undefined),
     handleSetDefaultModel: vi.fn().mockResolvedValue(undefined),
     handleToggleFavorite: vi.fn().mockResolvedValue(undefined),
   };

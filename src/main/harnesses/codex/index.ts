@@ -3,6 +3,7 @@ import { remote } from './remoteAttention';
 import { local } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
+import { codexUsage } from './usage';
 import { defineHarness, type HarnessProvider } from '../types';
 
 export const codexProvider = defineHarness({
@@ -20,6 +21,7 @@ export const codexProvider = defineHarness({
     discover: async (workspace: string) => (await import('./sessions')).discoverCodexSessions(workspace),
   },
   attention: { local, remote },
+  usage: codexUsage,
   aiCommit: { modelArg: '-m',
     buildInvocation: ({ model, prompt }) => ({ command: 'codex', args: [...['exec'], ...(model ? ['-m', model] : [])], stdin: prompt, timeoutMs: 60000 }),
   },

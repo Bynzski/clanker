@@ -1,4 +1,5 @@
 import type { HarnessSession } from '../../shared/types/session';
+import type { HarnessCommandExecutor, HarnessCommandSessionExecutor } from './commandExecution';
 
 import type { HarnessDescriptor } from '../../shared/harnessDescriptors';
 export type { HarnessDescriptor } from '../../shared/harnessDescriptors';
@@ -24,12 +25,13 @@ export interface HarnessProvider {
 }
 
 export type CapabilitySupport = 'native' | 'emulated';
-export type HarnessFailureKind = 'unsupported' | 'binary-unavailable' | 'not-configured'
-  | 'command-failed' | 'timeout' | 'parse-failure' | 'storage-changed' | 'transport-failure';
+export type HarnessFailureKind = 'unsupported' | 'binary-unavailable' | 'not-configured' | 'unauthenticated'
+  | 'command-failed' | 'timeout' | 'output-limit' | 'input-limit' | 'aborted' | 'parse-failure' | 'storage-changed' | 'transport-failure';
 
 /** Compatibility surfaces may hide failures; providers retain the cause. */
 export class HarnessCapabilityError extends Error {
-  constructor(readonly kind: HarnessFailureKind, message: string, readonly cause?: unknown) {
+  /** `retryAfterMs` lets a provider demand a longer hard backoff than its policy. */
+  constructor(readonly kind: HarnessFailureKind, message: string, readonly cause?: unknown, readonly retryAfterMs?: number) {
     super(message);
     this.name = 'HarnessCapabilityError';
   }
@@ -142,30 +144,75 @@ export interface HarnessAiCommitCapability {
   readonly modelArg: string;
 }
 
-/** No provider implements usage yet. Measurements need not share units or periods. */
+/**
+ * Usage is a provider decision (WHAT to run, HOW to parse it) executed by the
+ * workspace environment (WHERE/HOW). Providers receive only a bound executor:
+ * never an SSH target, environment object, credential path or Electron handle.
+ * Measurements need not share units, periods or a fixed window set.
+ */
+export interface HarnessUsageContext {
+  /** Runs bounded commands in the registered workspace's own environment. */
+  readonly executor: HarnessCommandExecutor;
+  /** Bounded interactive stdio sessions for stateful line protocols; absent if the environment has none. */
+  readonly sessionExecutor?: HarnessCommandSessionExecutor;
+  /** Descriptive only; providers must not fork execution by transport. */
+  readonly transport: 'local' | 'ssh';
+  /** Aborted on shutdown or when the service gives up on the provider. */
+  readonly signal: AbortSignal;
+  readonly accountId?: string;
+  readonly modelId?: string;
+  /** Desktop application identity for protocols that ask clients to introduce themselves. */
+  readonly clientInfo?: { readonly name: string; readonly title: string; readonly version: string };
+}
+export interface HarnessUsageRefreshPolicy {
+  /** Ordinary cache freshness for a successful probe; a manual refresh may bypass it. */
+  readonly cacheTtlMs?: number;
+  /**
+   * Hard limit: the upstream source must not be queried more often than this,
+   * even for a manual refresh. Measured from the previous probe attempt.
+   */
+  readonly minimumProbeIntervalMs?: number;
+  /** Hard limit after a failed probe; manual refresh cannot shorten it. */
+  readonly failureBackoffMs?: number;
+}
 export interface HarnessUsageCapability {
-  get(context: { transport: 'local' | 'ssh'; accountId?: string; modelId?: string }): Promise<HarnessUsageSnapshot>;
+  get(context: HarnessUsageContext): Promise<HarnessUsageSnapshot>;
+  /** Conservative provider-specific limits; the service applies defaults. */
+  readonly refresh?: HarnessUsageRefreshPolicy;
+}
+export interface HarnessUsageMeasurement {
+  kind: 'allowance' | 'rate-limit' | 'tokens' | 'spend' | 'other';
+  /** Arbitrary unit, e.g. 'percent', 'tokens', 'usd', 'requests'. */
+  unit: string;
+  used?: number;
+  remaining?: number;
+  limit?: number;
+  /** Epoch milliseconds. */
+  resetsAt?: number;
+  period?: { startsAt?: number; endsAt?: number; label?: string };
+  /**
+   * Source harness -> provider -> account -> measurement. `accountId` is an
+   * opaque grouping key kept in main; only `accountLabel`/`planLabel` are
+   * display-safe and cross IPC. Do not invent identity that is not reliable.
+   */
+  scope?: { accountId?: string; accountLabel?: string; planLabel?: string; providerId?: string; modelId?: string };
+  /** Short display label supplied by the provider, e.g. '5 hour'. */
+  label?: string;
+  description?: string;
 }
 export interface HarnessUsageSnapshot {
   observedAt: number;
-  measurements: Array<{
-    kind: 'allowance' | 'rate-limit' | 'tokens' | 'spend' | 'other';
-    unit: string;
-    used?: number;
-    remaining?: number;
-    limit?: number;
-    resetsAt?: number;
-    period?: { startsAt?: number; endsAt?: number; label?: string };
-    scope?: { accountId?: string; providerId?: string; modelId?: string };
-    description?: string;
-  }>;
+  measurements: HarnessUsageMeasurement[];
 }
 
 export type AttentionPlan = { status: 'ready'; options: AttentionLaunchOptions }
   | { status: 'blocked'; failure: HarnessCapabilityError };
 
-/** Metadata cannot advertise AI commit without an implementation, or vice versa. */
+/** Metadata cannot advertise AI commit or usage without an implementation, or vice versa. */
 export function defineHarness<Provider extends HarnessProvider>(provider: Provider & (
   Provider['descriptor'] extends { aiCommit: unknown }
     ? { aiCommit: HarnessAiCommitCapability } : { aiCommit?: never }
+) & (
+  Provider['descriptor'] extends { usage: unknown }
+    ? { usage: HarnessUsageCapability } : { usage?: never }
 )): Provider { return provider; }

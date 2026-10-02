@@ -59,6 +59,8 @@ import { REMOTE_FILES_CHANGED } from '../shared/ipcChannels';
 import { registerVcsIpc } from './ipc/vcsIpc';
 import { registerAnnotationIpc } from './annotation/annotationIpc';
 import { registerSessionIpc } from './ipc/sessionIpc';
+import { registerUsageIpc } from './ipc/usageIpc';
+import { HarnessUsageService } from './usage/harnessUsageService';
 import { registerRecipeIpc } from './ipc/recipeIpc';
 import { registerTaskSessionIpc } from './ipc/taskSessionIpc';
 import { TaskSessionCoordinator } from './taskSessionCoordinator';
@@ -184,6 +186,8 @@ const workspaceRegistry: WorkspaceRegistry = new WorkspaceRegistry(
   (id) => environmentManager.getEnvironment(id),
   { isWorktreeBeingRemoved: (p: string): boolean => gitService.isWorktreeBeingRemoved(p) }
 );
+
+const harnessUsageService = new HarnessUsageService(workspaceRegistry, { clientVersion: () => app.getVersion() });
 
 const remotePreviewManager = new RemotePreviewManager(workspaceRegistry, (update) => {
   if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(REMOTE_PREVIEW_CHANGED, update);
@@ -365,6 +369,8 @@ app.whenReady().then(() => {
     getWorkspaceRegistry: () => workspaceRegistry,
   });
 
+  registerUsageIpc({ getUsageService: () => harnessUsageService });
+
   registerSessionIpc({
     getTerminals: () => terminals,
     getMainWindow: () => mainWindow,
@@ -436,6 +442,7 @@ app.on('before-quit', (event) => {
   const previewsClosed = remotePreviewManager.close();
   remoteFileWatcher.close();
   setAppShuttingDown(true);
+  harnessUsageService.dispose();
   workspaceRegistry.clear();
   taskSessionCoordinator?.onAppShutdown();
   killAllTerminals();

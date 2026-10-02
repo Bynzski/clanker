@@ -3,6 +3,7 @@ import { remote } from './remoteAttention';
 import { local, prepareResources } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation, validateLocal } from './invocation';
+import { ompUsage } from './usage';
 import { defineHarness, type HarnessProvider } from '../types';
 
 export const ompProvider = defineHarness({
@@ -18,6 +19,7 @@ export const ompProvider = defineHarness({
     discover: async (workspace: string) => (await import('./sessions')).discoverOmpSessions(workspace),
   },
   attention: { prepareResources, local, remote },
+  usage: ompUsage,
   aiCommit: { modelArg: '--model',
     buildInvocation: ({ model, prompt }) => ({ command: 'omp', args: [...['--print', '--no-session', '--no-tools', '--no-extensions'], ...(model ? ['--model', model] : [])], stdin: prompt, timeoutMs: 60000 }),
   },

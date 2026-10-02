@@ -58,37 +58,7 @@ export class SshCommandExecutor {
     options: SshExecOptions = {}
   ): Promise<SshExecResult> {
     if (options.signal?.aborted) throw new Error('Remote SSH command aborted');
-    const targetValidation = validateSshTarget(target);
-    if (!targetValidation.valid || !targetValidation.target) {
-      throw new Error(targetValidation.error || 'Invalid SSH target');
-    }
-
-    const validTarget = targetValidation.target;
-    const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
-    const maxBuffer = options.maxBuffer ?? this.defaultMaxBuffer;
-
-    let remoteCommand = quotePosixCommand(command, args);
-    if (options.remoteEnv && Object.keys(options.remoteEnv).length > 0) {
-      const envPrefix = Object.entries(options.remoteEnv)
-        .map(([key, value]) => {
-          if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(key) || key.startsWith('CLANKER_ATTENTION_') || key.startsWith('CLANKER_REMOTE_ATTENTION_')) {
-            throw new Error('Invalid remote environment variable name');
-          }
-          return `${key}=${quotePosixArg(value)}`;
-        })
-        .join(' ');
-      remoteCommand = `${envPrefix} ${remoteCommand}`;
-    }
-    if (options.cwd) {
-      remoteCommand = `cd ${quotePosixArg(options.cwd)} && ${remoteCommand}`;
-    }
-
-    const sshArgs = [
-      '-o', 'BatchMode=yes',
-      '-o', 'ConnectTimeout=10',
-      validTarget,
-      remoteCommand,
-    ];
+    const { sshArgs, env, timeoutMs, maxBuffer } = this.buildInvocation(target, command, args, options);
 
     const { promise, resolve, reject } = createResolvers<SshExecResult>();
 
@@ -96,7 +66,7 @@ export class SshCommandExecutor {
     try {
       child = spawn('ssh', sshArgs, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: withoutAttentionEnvironment({ ...process.env, ...options.env }),
+        env,
       });
     } catch (err) {
       reject(new Error(`Failed to spawn ssh: ${err instanceof Error ? err.message : String(err)}`));
@@ -229,6 +199,53 @@ export class SshCommandExecutor {
       // and shutdown drains must not start new work/quit during kill escalation.
       if (killed) await closed;
     });
+  }
+
+  /**
+   * Shared by one-shot and interactive execution: target validation, OpenSSH options, quoted
+   * remote command, cwd, remote environment, and attention-credential filtering.
+   */
+  private buildInvocation(target: string, command: string, args: string[], options: SshExecOptions) {
+    const targetValidation = validateSshTarget(target);
+    if (!targetValidation.valid || !targetValidation.target) {
+      throw new Error(targetValidation.error || 'Invalid SSH target');
+    }
+    const validTarget = targetValidation.target;
+    const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
+    const maxBuffer = options.maxBuffer ?? this.defaultMaxBuffer;
+
+    let remoteCommand = quotePosixCommand(command, args);
+    if (options.remoteEnv && Object.keys(options.remoteEnv).length > 0) {
+      const envPrefix = Object.entries(options.remoteEnv)
+        .map(([key, value]) => {
+          if (!/^[A-Za-z_][A-Za-z_0-9]*$/.test(key) || key.startsWith('CLANKER_ATTENTION_') || key.startsWith('CLANKER_REMOTE_ATTENTION_')) {
+            throw new Error('Invalid remote environment variable name');
+          }
+          return `${key}=${quotePosixArg(value)}`;
+        })
+        .join(' ');
+      remoteCommand = `${envPrefix} ${remoteCommand}`;
+    }
+    if (options.cwd) {
+      remoteCommand = `cd ${quotePosixArg(options.cwd)} && ${remoteCommand}`;
+    }
+
+    const sshArgs = [
+      '-o', 'BatchMode=yes',
+      '-o', 'ConnectTimeout=10',
+      validTarget,
+      remoteCommand,
+    ];
+    return { sshArgs, env: withoutAttentionEnvironment({ ...process.env, ...options.env }), timeoutMs, maxBuffer };
+  }
+
+  /**
+   * Starts an OpenSSH client with piped stdio for an interactive bounded session. Returned only to
+   * environment code that wraps it in a bounded session; providers never receive the process.
+   */
+  public spawnInteractive(target: string, command: string, args: string[] = [], options: SshExecOptions = {}): ChildProcess {
+    const { sshArgs, env } = this.buildInvocation(target, command, args, options);
+    return spawn('ssh', sshArgs, { stdio: ['pipe', 'pipe', 'pipe'], env });
   }
 
   /**

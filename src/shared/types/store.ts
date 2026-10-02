@@ -39,6 +39,8 @@ export interface HarnessDefaults {
   visible: boolean;
   /** Opt in to per-turn attention signals for launches of this harness. */
   attentionEnabled?: boolean;
+  /** Show this harness in the Usage panel (only meaningful for harnesses with a usage capability). Default true. */
+  usageVisible?: boolean;
 }
 
 /** Map of harness ID → defaults. */

@@ -20,6 +20,7 @@ import type {
 import type { RemoteWebService } from '../../shared/types/remotePreview';
 import type { RemoteWebEndpoint } from '../remote/sshPortDiscovery';
 import type { PortForwardHandle } from '../remote/sshPortForward';
+import type { ExecuteHarnessCommand, OpenHarnessCommandSession } from '../harnesses/commandExecution';
 import type { HarnessSession } from '../../shared/types/session';
 import type { RemoteFileSnapshot, RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
 import type { GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeRemoveResult } from '../../shared/types/git';
@@ -104,6 +105,14 @@ export interface WorkspaceEnvironment {
   discoverHarnessModels?(harnessId: string): Promise<EnvironmentModelOption[]>;
   discoverSessions?(workspacePath: string): Promise<HarnessSession[]>;
   captureSessionBaseline?(workspacePath: string, harnessId: string): Promise<{ sessions: HarnessSession[]; hostTime: number }>;
+  /**
+   * Bounded command execution in this environment (local process or the saved
+   * SSH target). Harness capabilities such as usage run through this; they never
+   * receive transport details. Absent means the environment cannot run probes.
+   */
+  executeHarnessCommand?: ExecuteHarnessCommand;
+  /** Interactive bounded stdio session in this environment (stateful line protocols). */
+  openHarnessCommandSession?: OpenHarnessCommandSession;
   resolveTerminalSpawn(params: TerminalSpawnRequest): Promise<TerminalSpawnResolved>;
 
   discoverWebServices?(signal?: AbortSignal, hints?: RemoteWebEndpoint[]): Promise<RemoteWebService[]>;
