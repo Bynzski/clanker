@@ -22,6 +22,7 @@ import { CODEX_APP_SERVER_COMMAND } from './usage';
 const MAX_MESSAGES = 4000;
 const SESSION_TIMEOUT_MS = 5 * 60_000;
 const SHORT_SESSION_TIMEOUT_MS = 30_000;
+const CANCEL_BOUND_MS = 1500;
 
 type Json = Record<string, unknown>;
 const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -29,47 +30,85 @@ const str = (value: unknown): string | undefined => (typeof value === 'string' &
 
 class RpcFailure extends Error {}
 
-/** Minimal JSON-RPC peer that keeps notifications, unlike the usage probe's response-only reader. */
+const abortedError = () => new HarnessCapabilityError('aborted', 'Sign-in was cancelled');
+
+/**
+ * Minimal JSON-RPC peer with exactly one reader. A single pump owns `readLine()` for the whole life of
+ * the process and routes responses to their requests and notifications to a queue, so requests,
+ * cancellation and notification waits never read the stream themselves and can never steal each
+ * other's messages. Waits are abort-aware and simply stop waiting; nothing is left reading.
+ */
 class AppServerClient {
   private nextId = 1;
+  private readonly pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   private readonly notifications: Json[] = [];
+  private readonly wake = new Set<() => void>();
+  private failure?: Error;
   private seen = 0;
-  constructor(private readonly session: HarnessCommandSession) {}
 
-  private async nextMessage(): Promise<Json> {
-    if (++this.seen > MAX_MESSAGES) throw new HarnessCapabilityError('command-failed', 'codex app-server sent too many messages');
-    for (;;) {
-      const line = await this.session.readLine();
-      if (line === null) throw new HarnessCapabilityError('command-failed', 'codex app-server closed unexpectedly');
-      if (!line.trim()) continue;
-      let message: unknown;
-      try { message = JSON.parse(line); } catch (error) { throw new HarnessCapabilityError('parse-failure', 'codex app-server sent invalid JSON', error); }
-      if (!isObject(message)) throw new HarnessCapabilityError('parse-failure', 'codex app-server sent a non-object message');
-      return message;
+  constructor(private readonly session: HarnessCommandSession) {
+    void this.pump();
+  }
+
+  private async pump(): Promise<void> {
+    try {
+      for (;;) {
+        const line = await this.session.readLine();
+        if (line === null) throw new HarnessCapabilityError('command-failed', 'codex app-server closed unexpectedly');
+        if (!line.trim()) continue;
+        if (++this.seen > MAX_MESSAGES) throw new HarnessCapabilityError('command-failed', 'codex app-server sent too many messages');
+        let message: unknown;
+        try { message = JSON.parse(line); } catch (error) { throw new HarnessCapabilityError('parse-failure', 'codex app-server sent invalid JSON', error); }
+        if (!isObject(message)) throw new HarnessCapabilityError('parse-failure', 'codex app-server sent a non-object message');
+        this.route(message);
+      }
+    } catch (error) {
+      this.failure = error instanceof Error ? error : new Error(String(error));
+      for (const request of this.pending.values()) request.reject(this.failure);
+      this.pending.clear();
+      for (const wake of [...this.wake]) wake();
     }
   }
 
-  async request(method: string, params?: unknown): Promise<unknown> {
-    const id = this.nextId++;
-    await this.session.writeLine(JSON.stringify({ id, method, ...(params !== undefined ? { params } : {}) }));
-    for (;;) {
-      const message = await this.nextMessage();
-      if (typeof message.method === 'string') { if (message.id === undefined) this.notifications.push(message); continue; }
-      if (message.id !== id) continue;
-      if (isObject(message.error)) throw new RpcFailure(typeof message.error.message === 'string' ? message.error.message : 'rpc error');
-      return message.result;
+  private route(message: Json): void {
+    if (typeof message.method === 'string') {
+      if (message.id === undefined) { this.notifications.push(message); for (const wake of [...this.wake]) wake(); }
+      return; // server-initiated requests are never answered or acted on
     }
+    const request = typeof message.id === 'number' ? this.pending.get(message.id) : undefined;
+    if (!request) return;
+    this.pending.delete(message.id as number);
+    if (isObject(message.error)) request.reject(new RpcFailure(typeof message.error.message === 'string' ? message.error.message : 'rpc error'));
+    else request.resolve(message.result);
+  }
+
+  async request(method: string, params?: unknown): Promise<unknown> {
+    if (this.failure) throw this.failure;
+    const id = this.nextId++;
+    const response = new Promise<unknown>((resolve, reject) => { this.pending.set(id, { resolve, reject }); });
+    try {
+      await this.session.writeLine(JSON.stringify({ id, method, ...(params !== undefined ? { params } : {}) }));
+    } catch (error) {
+      this.pending.delete(id);
+      throw error;
+    }
+    return response;
   }
 
   notify(method: string): Promise<void> { return this.session.writeLine(JSON.stringify({ method })); }
 
-  /** First notification of `method` accepted by `match`; others are kept for later waits. */
-  async waitForNotification(method: string, match: (params: Json) => boolean): Promise<Json> {
+  /** First notification of `method` accepted by `match`; others stay queued. Stops waiting on abort. */
+  async waitForNotification(method: string, match: (params: Json) => boolean, signal: AbortSignal): Promise<Json> {
     for (;;) {
+      if (signal.aborted) throw abortedError();
       const index = this.notifications.findIndex((entry) => entry.method === method && isObject(entry.params) && match(entry.params));
       if (index >= 0) return this.notifications.splice(index, 1)[0].params as Json;
-      const message = await this.nextMessage();
-      if (typeof message.method === 'string' && message.id === undefined) this.notifications.push(message);
+      if (this.failure) throw this.failure;
+      await new Promise<void>((resolve) => {
+        const done = () => { this.wake.delete(done); signal.removeEventListener('abort', done); resolve(); };
+        this.wake.add(done);
+        signal.addEventListener('abort', done, { once: true });
+      });
     }
   }
 
@@ -80,9 +119,9 @@ class AppServerClient {
 }
 
 function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(new HarnessCapabilityError('aborted', 'Sign-in was cancelled'));
+  if (signal.aborted) return Promise.reject(abortedError());
   return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(new HarnessCapabilityError('aborted', 'Sign-in was cancelled'));
+    const onAbort = () => reject(abortedError());
     signal.addEventListener('abort', onAbort, { once: true });
     promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
   });
@@ -123,7 +162,7 @@ async function authenticate(context: HarnessAccountAuthContext): Promise<Harness
     context.openUrl(str(started.authUrl)!);
     context.waitingForBrowser();
     // Only the completion that carries this login's own ID counts.
-    const completed = await raceAbort(client.waitForNotification('account/login/completed', (params) => params.loginId === loginId), context.signal);
+    const completed = await client.waitForNotification('account/login/completed', (params) => params.loginId === loginId, context.signal);
     if (completed.success !== true) throw new HarnessCapabilityError('unauthenticated', 'codex sign-in did not complete');
     const identity = await raceAbort(readChatGptAccount(client), context.signal);
     await session.closeInput().catch(() => undefined);
@@ -131,10 +170,13 @@ async function authenticate(context: HarnessAccountAuthContext): Promise<Harness
   } catch (error) {
     if (loginId && context.signal.aborted) {
       // Best effort: ask Codex to drop the pending login before the process is reaped.
+      // The pump is the only reader, so the cancel response cannot be consumed by an abandoned wait.
+      let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         client.request('account/login/cancel', { loginId }).catch(() => undefined),
-        new Promise((resolve) => setTimeout(resolve, 1500)),
+        new Promise((resolve) => { timer = setTimeout(resolve, CANCEL_BOUND_MS); }),
       ]);
+      clearTimeout(timer);
     }
     throw toFailure(error);
   } finally {

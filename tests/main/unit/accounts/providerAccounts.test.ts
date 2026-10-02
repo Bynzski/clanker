@@ -16,6 +16,7 @@ function fakeAppServer(handler: (message: Json, push: (message: Json) => void) =
   const lines: string[] = [];
   const readers: Array<(line: string | null) => void> = [];
   let closed = false;
+  const reads = { active: 0, max: 0 };
   const push = (message: Json) => {
     const line = JSON.stringify(message);
     const reader = readers.shift();
@@ -23,15 +24,20 @@ function fakeAppServer(handler: (message: Json, push: (message: Json) => void) =
   };
   const session: HarnessCommandSession = {
     writeLine: vi.fn(async (line: string) => { const message = JSON.parse(line) as Json; written.push(message); handler(message, push); }),
-    readLine: vi.fn(() => new Promise<string | null>((resolve) => {
-      const next = lines.shift();
-      if (next !== undefined) resolve(next); else if (closed) resolve(null); else readers.push(resolve);
-    })),
+    readLine: vi.fn(() => {
+      reads.active++;
+      reads.max = Math.max(reads.max, reads.active);
+      return new Promise<string | null>((resolve) => {
+        const finish = (line: string | null) => { reads.active--; resolve(line); };
+        const next = lines.shift();
+        if (next !== undefined) finish(next); else if (closed) finish(null); else readers.push(finish);
+      });
+    }),
     closeInput: vi.fn(async () => undefined),
     wait: vi.fn(async () => ({ stderr: '', exitCode: 0 })),
     dispose: vi.fn(async () => { closed = true; for (const reader of readers.splice(0)) reader(null); }),
   };
-  return { session, written, push };
+  return { session, written, push, reads };
 }
 
 const clientInfo = { name: 'clanker-grid', title: 'Clanker Grid', version: 'test' };
@@ -110,6 +116,79 @@ describe('Codex managed account authentication (app-server)', () => {
     await expect(pending).rejects.toMatchObject({ kind: 'aborted' });
     const cancel = server.written.find((m) => m.method === 'account/login/cancel');
     expect(cancel?.params).toEqual({ loginId: 'login-42' });
+    expect(server.session.dispose).toHaveBeenCalled();
+    // The cancel was answered and the answer reached its request: nothing was left waiting or stolen.
+    expect(server.written.filter((m) => m.method === 'account/login/cancel')).toHaveLength(1);
+  });
+
+  it('never has more than one concurrent reader, including across cancellation', async () => {
+    const full = fakeAppServer(standard());
+    const ctx = context({ session: full.session });
+    const pending = codexAccounts.authenticate(ctx);
+    await vi.waitFor(() => expect(ctx.waitingForBrowser).toHaveBeenCalled());
+    for (const method of ['account/updated', 'remoteControl/status/changed', 'account/login/completed']) {
+      full.push({ method, params: method === 'account/login/completed' ? { loginId: 'login-1', success: true } : {} });
+    }
+    await pending;
+    expect(full.reads.max).toBe(1);
+
+    const cancelled = fakeAppServer(standard('login-7'));
+    const controller = new AbortController();
+    const cancelCtx = context({ session: cancelled.session, signal: controller.signal });
+    const abortedLogin = codexAccounts.authenticate(cancelCtx);
+    await vi.waitFor(() => expect(cancelCtx.waitingForBrowser).toHaveBeenCalled());
+    cancelled.push({ method: 'account/updated', params: {} });
+    controller.abort();
+    await expect(abortedLogin).rejects.toMatchObject({ kind: 'aborted' });
+    expect(cancelled.reads.max).toBe(1);
+    expect(cancelled.written.map((m) => m.method)).toContain('account/login/cancel');
+  });
+
+  it('a completion that races ahead of the login/start response is not lost', async () => {
+    const server = fakeAppServer((message, push) => {
+      if (message.method === 'account/login/start') {
+        push({ method: 'account/login/completed', params: { loginId: 'login-1', success: true } });
+        push({ id: message.id, result: { type: 'chatgpt', loginId: 'login-1', authUrl: 'https://auth.example.test/x' } });
+      } else standard()(message, push);
+    });
+    await expect(codexAccounts.authenticate(context({ session: server.session }))).resolves.toEqual({ email: 'me@example.test', plan: 'plus' });
+  });
+
+  it('still reaps the app-server when the cancel RPC itself fails or never answers', async () => {
+    const failing = fakeAppServer((message, push) => {
+      if (message.method === 'account/login/cancel') push({ id: message.id, error: { code: -1, message: 'nope /home/x' } });
+      else standard('login-9')(message, push);
+    });
+    const controller = new AbortController();
+    const ctx = context({ session: failing.session, signal: controller.signal });
+    const pending = codexAccounts.authenticate(ctx);
+    await vi.waitFor(() => expect(ctx.waitingForBrowser).toHaveBeenCalled());
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ kind: 'aborted' });
+    expect(failing.session.dispose).toHaveBeenCalled();
+
+    vi.useFakeTimers();
+    try {
+      const silent = fakeAppServer((message, push) => { if (message.method !== 'account/login/cancel') standard('login-9')(message, push); });
+      const second = new AbortController();
+      const silentCtx = context({ session: silent.session, signal: second.signal });
+      const stuck = codexAccounts.authenticate(silentCtx).catch((error: unknown) => error);
+      await vi.waitFor(() => expect(silentCtx.waitingForBrowser).toHaveBeenCalled());
+      second.abort();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(await stuck).toMatchObject({ kind: 'aborted' });
+      expect(silent.session.dispose).toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('cancelling before a login ID exists just stops and reaps the app-server', async () => {
+    const server = fakeAppServer((message, push) => { if (message.method === 'initialize') push({ id: message.id, result: {} }); });
+    const controller = new AbortController();
+    const pending = codexAccounts.authenticate(context({ session: server.session, signal: controller.signal }));
+    await vi.waitFor(() => expect(server.written.some((m) => m.method === 'account/login/start')).toBe(true));
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ kind: 'aborted' });
+    expect(server.written.some((m) => m.method === 'account/login/cancel')).toBe(false);
     expect(server.session.dispose).toHaveBeenCalled();
   });
 
@@ -232,7 +311,14 @@ describe('Claude managed account authentication (CLI)', () => {
     const run = vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 }));
     await claudeAccounts.logout({ ...context({}), executor: { run } });
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ command: 'claude', args: ['auth', 'logout'] }));
-    await expect(claudeAccounts.logout({ ...context({}), executor: { run: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 2 })) } })).rejects.toMatchObject({ kind: 'command-failed' });
+  });
+
+  it('a failed logout is accepted only when status proves nothing is signed in', async () => {
+    const make = (statusOut: string) => ({ ...context({}), executor: { run: vi.fn(async (request: HarnessCommandRequest) =>
+      request.args?.[1] === 'logout' ? { stdout: '', stderr: '', exitCode: 2 } : { stdout: statusOut, stderr: '', exitCode: 1 }) } });
+    await expect(claudeAccounts.logout(make(status({ loggedIn: false })))).resolves.toBeUndefined();
+    await expect(claudeAccounts.logout(make(status()))).rejects.toMatchObject({ kind: 'command-failed' });
+    await expect(claudeAccounts.logout(make('garbage'))).rejects.toMatchObject({ kind: 'parse-failure' });
   });
 });
 

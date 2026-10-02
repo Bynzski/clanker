@@ -57,6 +57,8 @@ export interface ResolvedHarnessAccountBinding {
   /** Main-only. Empty for the native/default account, which must run exactly as it always has. */
   readonly environment: Readonly<Record<string, string>>;
   mergeEnvironment<T extends Record<string, string | undefined>>(base: T): T & Record<string, string>;
+  /** Set only on placeholders from `listBindings`; such a binding is never usable for execution. */
+  readonly unusable?: true;
   /** Managed accounts only: the provider's own discovery run against the trusted managed home. */
   discoverSessions?(workspacePath: string): Promise<HarnessSession[]>;
 }
@@ -226,6 +228,8 @@ export class HarnessAccountService {
     const { environmentId, harness } = input;
     const accountId = input.accountId ?? this.selectedId(environmentId, harness);
     if (accountId === DEFAULT_HARNESS_ACCOUNT_ID) return defaultBinding(environmentId, harness, this.selectedId(environmentId, harness) === accountId);
+    // Managed accounts are local-only in v1; a remote identity never resolves a local home.
+    if (environmentId !== LOCAL_ENVIRONMENT_ID) throw new HarnessAccountError('unsupported', SSH_UNSUPPORTED);
     const record = this.findManaged(environmentId, harness, accountId);
     if (!record) throw new HarnessAccountError('not-found', 'That account was removed or is no longer available. Pick another account in Settings → Harness Defaults.');
     const capability = this.capabilityFor(harness);
@@ -260,7 +264,14 @@ export class HarnessAccountService {
     const ids = [DEFAULT_HARNESS_ACCOUNT_ID, ...this.managedFor(environmentId, harness).map((record) => record.id)];
     const bindings: ResolvedHarnessAccountBinding[] = [];
     for (const id of ids) {
-      try { bindings.push(this.resolveBinding({ environmentId, harness, accountId: id })); } catch { /* an unusable account has no usage to show */ }
+      try {
+        bindings.push(this.resolveBinding({ environmentId, harness, accountId: id }));
+      } catch {
+        // An unusable managed account stays visible (never silently replaced by default): usage
+        // reports it as needing sign-in instead of probing it.
+        const record = this.findManaged(environmentId, harness, id);
+        if (record) bindings.push(unusableBinding(environmentId, harness, this.project(record, selected)));
+      }
     }
     return bindings.sort((a, b) => Number(b.id === selected) - Number(a.id === selected));
   }
@@ -386,10 +397,16 @@ export class HarnessAccountService {
     const active = this.flows.get(record.id);
     if (active) { this.abortFlow(active, true); await active.done.catch(() => undefined); }
 
+    // Credentials may live in the provider's secure store rather than the managed directory, so
+    // deletion is allowed only once provider-supported sign-out succeeded or proved nothing is left.
+    // Anything else (no CLI, no logout support, timeout, failure, unverifiable storage) keeps the
+    // account, its ID, its selection and its home exactly as they were.
     const capability = this.capabilityFor(id);
-    let home: string | undefined;
-    try { home = this.options.homes.resolve(id, record.id); } catch { home = undefined; }
-    if (capability && home) await this.signOutBeforeDelete(capability, record, home);
+    if (!capability) throw new HarnessAccountError('unsupported', 'Accounts are not available for this harness.');
+    let home: string;
+    try { home = this.options.homes.ensure(id, record.id); }
+    catch { throw new HarnessAccountError('failed', `${this.accountName(record)} could not be removed because its storage could not be verified.`); }
+    await this.signOutBeforeDelete(capability, record, home);
 
     this.state.accounts = this.state.accounts.filter((candidate) => candidate.id !== record.id);
     for (const [key, value] of Object.entries(this.state.selections)) if (value === record.id) delete this.state.selections[key];
@@ -415,10 +432,9 @@ export class HarnessAccountService {
     try {
       await capability.logout({ executor: execution.executor, sessionExecutor: execution.sessionExecutor, signal: controller.signal, clientInfo: this.clientInfo() });
     } catch (error) {
-      const failure = classifyHarnessFailure(error);
-      // Nothing to sign out of (or no CLI to do it with) must not make an account undeletable.
-      if (failure.kind !== 'unauthenticated' && failure.kind !== 'binary-unavailable' && failure.kind !== 'unsupported') {
-        throw new HarnessAccountError('failed', `${this.accountName(record)} could not be signed out. Try again.`);
+      // Only a definitive "already signed out" proves there is nothing left to clean up.
+      if (classifyHarnessFailure(error).kind !== 'unauthenticated') {
+        throw new HarnessAccountError('failed', `${this.accountName(record)} could not be signed out, so it was not removed. Try again.`);
       }
     } finally {
       clearTimeout(timer);
@@ -622,7 +638,8 @@ export class HarnessAccountService {
       const value = entry as Record<string, unknown>;
       const provider = this.findProvider(value.harness);
       if (!provider?.accounts || typeof value.id !== 'string' || !MANAGED_ACCOUNT_ID_PATTERN.test(value.id) || seen.has(value.id)) continue;
-      if (typeof value.environmentId !== 'string' || !value.environmentId || value.kind !== 'managed') continue;
+      // Managed accounts are local-only in v1: a record scoped to any other environment is not trusted.
+      if (value.environmentId !== LOCAL_ENVIRONMENT_ID || value.kind !== 'managed') continue;
       seen.add(value.id);
       const label = sanitizeText(value.label, HARNESS_ACCOUNT_LABEL_MAX);
       const email = sanitizeText(value.email);
@@ -641,6 +658,13 @@ export class HarnessAccountService {
     }
     return { accounts, selections };
   }
+}
+
+function unusableBinding(environmentId: WorkspaceEnvironmentId, harness: HarnessId, safe: SafeHarnessAccount): ResolvedHarnessAccountBinding {
+  return {
+    id: safe.id, kind: 'managed', harness, environmentId, environment: Object.freeze({}), safe: { ...safe, status: 'needs-auth' },
+    unusable: true, mergeEnvironment: () => { throw new HarnessAccountError('needs-auth', 'This account cannot be used until it is reconnected.'); },
+  };
 }
 
 function defaultBinding(environmentId: WorkspaceEnvironmentId, harness: HarnessId, selected: boolean): ResolvedHarnessAccountBinding {

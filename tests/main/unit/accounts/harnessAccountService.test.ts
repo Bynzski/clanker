@@ -285,17 +285,58 @@ describe('removal', () => {
     expect(h.capabilities.codex.logout).not.toHaveBeenCalled();
   });
 
-  it('tolerates an already-signed-out account but surfaces a real sign-out failure', async () => {
+  it('removes after a successful logout, and after a definitive "already signed out"', async () => {
     const a = await addAccount(h, 'codex', 'A');
-    h.capabilities.codex.logout.mockRejectedValueOnce(new HarnessCapabilityError('unauthenticated', 'x'));
     await expect(h.service.remove('local', 'codex', a.id)).resolves.toBeDefined();
+    expect(h.capabilities.codex.logout).toHaveBeenCalledTimes(1);
+    expect(h.service.managedAccounts('local')).toEqual([]);
     const b = await addAccount(h, 'codex', 'B');
-    h.capabilities.codex.logout.mockRejectedValueOnce(new HarnessCapabilityError('command-failed', 'raw secret'));
-    await expect(h.service.remove('local', 'codex', b.id)).rejects.toThrow('could not be signed out');
-    expect(h.service.managedAccounts('local', 'codex').map((r) => r.id)).toEqual([b.id]);
+    h.capabilities.codex.logout.mockRejectedValueOnce(new HarnessCapabilityError('unauthenticated', 'x'));
+    await expect(h.service.remove('local', 'codex', b.id)).resolves.toBeDefined();
+    expect(h.service.managedAccounts('local')).toEqual([]);
+    expect(fs.readdirSync(path.join(accountsRoot(), 'codex'))).toEqual([]);
   });
 
-  it('retains an unsafe directory instead of deleting it, but still drops the account', async () => {
+  it.each(['binary-unavailable', 'unsupported', 'timeout', 'command-failed', 'transport-failure', 'aborted'] as const)(
+    'fails closed on %s: metadata, ID, selection, home and listeners are all untouched, with a fixed message', async (kind) => {
+      const account = await addAccount(h, 'codex', 'Work');
+      h.service.select('local', 'codex', account.id);
+      const nativeHome = path.join(h.root, '.codex');
+      fs.mkdirSync(nativeHome);
+      fs.writeFileSync(path.join(nativeHome, 'auth.json'), 'native');
+      const home = h.homes.resolve('codex', account.id);
+      fs.writeFileSync(path.join(home, 'marker'), 'x');
+      const listener = vi.fn();
+      h.service.onAccountsChanged(listener);
+      const generation = h.service.generation;
+      const before = JSON.stringify(h.storage.state);
+      h.capabilities.codex.logout.mockRejectedValueOnce(new HarnessCapabilityError(kind, 'raw https://leak token=SECRET /home/me'));
+
+      const error = await h.service.remove('local', 'codex', account.id).catch((e: Error) => e);
+      expect(error).toBeInstanceOf(HarnessAccountError);
+      expect((error as Error).message).toBe('Work could not be signed out, so it was not removed. Try again.');
+      expect((error as Error).message).not.toMatch(/SECRET|leak|\/home/);
+      expect(h.service.managedAccounts('local').map((r) => r.id)).toEqual([account.id]);
+      expect(h.service.getSelectedAccountId('local', 'codex')).toBe(account.id);
+      expect(fs.readFileSync(path.join(home, 'marker'), 'utf8')).toBe('x');
+      expect(JSON.stringify(h.storage.state)).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      expect(h.service.generation).toBe(generation);
+      expect(fs.readFileSync(path.join(nativeHome, 'auth.json'), 'utf8')).toBe('native');
+      // The account is still fully usable and can be removed once cleanup works.
+      expect(h.service.resolveBinding({ environmentId: 'local', harness: 'codex', forLaunch: true }).id).toBe(account.id);
+      await expect(h.service.remove('local', 'codex', account.id)).resolves.toBeDefined();
+    });
+
+  it('recreates a missing home so the provider can still prove sign-out', async () => {
+    const account = await addAccount(h, 'codex', 'A');
+    fs.rmSync(path.join(accountsRoot(), 'codex', account.id), { recursive: true });
+    await h.service.remove('local', 'codex', account.id);
+    expect(h.capabilities.codex.logout).toHaveBeenCalledTimes(1);
+    expect(h.service.managedAccounts('local')).toEqual([]);
+  });
+
+  it('refuses to remove an account whose storage cannot be verified (symlinked home) and deletes nothing', async () => {
     const account = await addAccount(h, 'codex', 'A');
     const home = path.join(accountsRoot(), 'codex', account.id);
     const victim = path.join(h.root, 'victim');
@@ -303,8 +344,9 @@ describe('removal', () => {
     fs.writeFileSync(path.join(victim, 'keep'), 'x');
     fs.rmSync(home, { recursive: true });
     try { fs.symlinkSync(victim, home, 'junction'); } catch { return; }
-    await h.service.remove('local', 'codex', account.id);
-    expect(h.service.managedAccounts('local')).toEqual([]);
+    await expect(h.service.remove('local', 'codex', account.id)).rejects.toThrow('storage could not be verified');
+    expect(h.capabilities.codex.logout).not.toHaveBeenCalled();
+    expect(h.service.managedAccounts('local')).toHaveLength(1);
     expect(fs.readFileSync(path.join(victim, 'keep'), 'utf8')).toBe('x');
   });
 
@@ -351,7 +393,23 @@ describe('SSH environments (v1)', () => {
   it('a local account cannot be used or selected for an SSH environment', async () => {
     const account = await addAccount(h, 'codex', 'W');
     expect(() => h.service.select('ssh-1', 'codex', account.id)).toThrow('not available');
-    expect(() => h.service.resolveBinding({ environmentId: 'ssh-1', harness: 'codex', accountId: account.id, forLaunch: true })).toThrow('removed or is no longer available');
+    expect(() => h.service.resolveBinding({ environmentId: 'ssh-1', harness: 'codex', accountId: account.id, forLaunch: true })).toThrow('not available for SSH environments');
+  });
+
+  it('a persisted managed record scoped to an SSH environment is dropped on load and never resolves a local path', async () => {
+    const id = `acct_${'f'.repeat(32)}`;
+    const forged = createHarness({ storage: new MemoryAccountStorage({
+      accounts: [{ id, harness: 'codex', environmentId: 'ssh-1', kind: 'managed', createdAt: 1, label: 'Remote' }],
+      selections: { 'ssh-1\u0000codex': id },
+    }) });
+    expect(forged.service.managedAccounts('ssh-1')).toEqual([]);
+    expect(forged.service.list('ssh-1', 'codex').accounts.map((a) => a.id)).toEqual(['default']);
+    expect(forged.service.getSelectedAccountId('ssh-1', 'codex')).toBe('default');
+    expect(() => forged.service.resolveBinding({ environmentId: 'ssh-1', harness: 'codex', accountId: id, forLaunch: true })).toThrow('not available for SSH environments');
+    expect(forged.service.discoverySource('ssh-1')).toBeUndefined();
+    expect(forged.service.resolveBinding({ environmentId: 'ssh-1', harness: 'codex', forLaunch: true })).toMatchObject({ kind: 'default', environment: {} });
+    expect(fs.existsSync(path.join(forged.root, 'harness-accounts'))).toBe(false);
+    fs.rmSync(forged.root, { recursive: true, force: true });
   });
 });
 

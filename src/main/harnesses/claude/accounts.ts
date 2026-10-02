@@ -68,7 +68,12 @@ async function authenticate(context: HarnessAccountAuthContext): Promise<Harness
 
 async function logout(context: HarnessAccountExecutionContext): Promise<void> {
   const result = await context.executor.run({ command: 'claude', args: ['auth', 'logout'], timeoutMs: 20_000 });
-  if (result.exitCode !== 0) throw new HarnessCapabilityError('command-failed', 'claude auth logout failed');
+  if (result.exitCode === 0) return;
+  // A failed logout is acceptable only if status proves nothing is signed in (it throws `unauthenticated`).
+  await verify(context).then(
+    () => { throw new HarnessCapabilityError('command-failed', 'claude auth logout failed'); },
+    (error: unknown) => { if (!(error instanceof HarnessCapabilityError && error.kind === 'unauthenticated')) throw error; },
+  );
 }
 
 export const claudeAccounts: HarnessAccountsCapability = {

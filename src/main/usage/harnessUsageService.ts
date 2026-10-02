@@ -227,6 +227,8 @@ export class HarnessUsageService {
     if (!provider.usage) return plainEntry(harnessId, 'unsupported');
     if (!environment.executeHarnessCommand) return plainEntry(harnessId, 'unavailable');
 
+    // An unusable managed account is reported, never probed and never replaced by another account.
+    if (binding?.unusable) return plainEntry(harnessId, 'unauthenticated');
     const key = usageKey(harnessId, binding);
     const cached = this.cache.get(environment)?.get(key);
     if (this.mustServeCache(cached, force, this.now())) return toEntry(cached);

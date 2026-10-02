@@ -135,6 +135,18 @@ describe('with managed accounts', () => {
     expect(get).toHaveBeenCalledTimes(2); // default stayed cached
   });
 
+  it('a selected account whose home is broken stays visible as the active account and is never replaced by default', async () => {
+    const work = await addAccount(h, 'codex', 'Work');
+    h.service.select('local', 'codex', work.id);
+    fs.rmSync(h.homes.resolve('codex', work.id), { recursive: true });
+    const { service, get } = await setup();
+    const { entries } = await service.get('ws');
+    expect(entries.map((e) => [e.account?.id, e.account?.selected, e.status])).toEqual([[work.id, true, 'unauthenticated'], ['default', false, 'ok']]);
+    expect(get).toHaveBeenCalledTimes(1); // only the default account was probed; the broken one never was
+    expect(get.mock.calls[0][0].accountId).toBeUndefined();
+    expect(() => h.service.resolveBinding({ environmentId: 'local', harness: 'codex', forLaunch: true })).toThrow('needs to be reconnected'); // launches refuse, with no fallback
+  });
+
   it('SSH environments never see local managed accounts', async () => {
     await addAccount(h, 'codex', 'Work');
     const { service, get, environment } = await setup({ kind: 'ssh' });
