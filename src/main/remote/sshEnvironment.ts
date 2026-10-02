@@ -23,7 +23,7 @@ export { isPathContained } from './remotePaths';
 import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
 import { HARNESS_OPTIONS } from '../harnessCatalog';
 import { buildHarnessSpawnArgs } from '../harnessLaunch';
-import { executeSshHarnessCommand } from './sshHarnessCommand';
+import { executeSshHarnessCommand, openSshHarnessSession } from './sshHarnessCommand';
 import type { HarnessCommandRequest } from '../harnesses/commandExecution';
 import { prepareSshAttention, remoteAttentionEnvironment, REMOTE_CLI_PATH_SETUP } from './sshAgentAttention';
 import { discoverSshSessions } from './sshSessionDiscovery';
@@ -645,6 +645,10 @@ export class SshEnvironment implements WorkspaceEnvironment {
 
   public executeHarnessCommand(request: HarnessCommandRequest, signal?: AbortSignal) {
     return executeSshHarnessCommand(this.executor, this.target, request, signal);
+  }
+
+  public openHarnessCommandSession(request: HarnessCommandRequest, signal?: AbortSignal) {
+    return openSshHarnessSession(this.executor, this.target, request, signal);
   }
 
   public async probeAvailableHarnessIds(): Promise<string[]> {

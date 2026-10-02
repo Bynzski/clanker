@@ -1,6 +1,6 @@
 import { getHarnessProviders } from '../harnesses/registry';
 import { HarnessCapabilityError, classifyHarnessFailure, type HarnessProvider, type HarnessUsageSnapshot } from '../harnesses/types';
-import type { HarnessCommandExecutor } from '../harnesses/commandExecution';
+import type { HarnessCommandExecutor, HarnessCommandSession, HarnessCommandSessionExecutor } from '../harnesses/commandExecution';
 import type { WorkspaceEnvironment } from '../environment/workspaceEnvironment';
 import type { RegisteredWorkspace } from '../workspaceRegistry';
 import type {
@@ -210,13 +210,23 @@ export class HarnessUsageService {
     const controller = new AbortController();
     this.controllers.add(controller);
     const executor: HarnessCommandExecutor = { run: (command) => execute(command, controller.signal) };
+    // Sessions opened by the provider are always reaped when the probe ends, however it ends.
+    const sessions = new Set<HarnessCommandSession>();
+    const openSession = environment.openHarnessCommandSession?.bind(environment);
+    const sessionExecutor: HarnessCommandSessionExecutor | undefined = openSession ? {
+      open: async (command) => {
+        const session = await openSession(command, controller.signal);
+        sessions.add(session);
+        return session;
+      },
+    } : undefined;
     const policy = capability.refresh;
     const hardMinimum = Math.max(policy?.minimumProbeIntervalMs ?? 0, 0);
     let deadline: ReturnType<typeof setTimeout> | undefined;
     let record: UsageRecord;
     try {
       const raw = await Promise.race([
-        capability.get({ executor, transport: environment.kind, signal: controller.signal }),
+        capability.get({ executor, ...(sessionExecutor ? { sessionExecutor } : {}), transport: environment.kind, signal: controller.signal }),
         new Promise<never>((_, reject) => {
           deadline = setTimeout(() => {
             controller.abort();
@@ -235,7 +245,9 @@ export class HarnessUsageService {
       const failure = classifyHarnessFailure(error, environment.kind);
       const status = statusFor(failure);
       const checkedAt = this.now();
-      const backoff = Math.max(policy?.failureBackoffMs ?? DEFAULT_USAGE_FAILURE_BACKOFF_MS, MIN_TTL_MS, hardMinimum, failure.retryAfterMs ?? 0);
+      // retryAfterMs is provider-controlled: only a finite positive number may lengthen the backoff.
+      const demanded = typeof failure.retryAfterMs === 'number' && Number.isFinite(failure.retryAfterMs) && failure.retryAfterMs > 0 ? failure.retryAfterMs : 0;
+      const backoff = Math.max(policy?.failureBackoffMs ?? DEFAULT_USAGE_FAILURE_BACKOFF_MS, MIN_TTL_MS, hardMinimum, demanded);
       record = {
         harnessId, status, checkedAt, error: STATUS_TEXT[status],
         freshUntil: checkedAt + backoff,
@@ -247,6 +259,8 @@ export class HarnessUsageService {
     } finally {
       if (deadline) clearTimeout(deadline);
       this.controllers.delete(controller);
+      controller.abort();
+      await Promise.allSettled([...sessions].map((session) => session.dispose()));
     }
     let perEnvironment = this.cache.get(environment);
     if (!perEnvironment) this.cache.set(environment, perEnvironment = new Map());

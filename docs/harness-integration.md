@@ -46,7 +46,7 @@ require every implementation to use one storage format.
 
 All seven providers support local and SSH interactive launch. Model discovery and
 AI commit remain local-only. Only OMP, Hermes and Agy implement `usage` so far (see
-"Usage capability"); Codex, Claude, OpenCode, Pi and Agy remain without it.
+"Usage capability"); Codex, Claude, OpenCode and Pi remain without it.
 
 | Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -314,9 +314,54 @@ request fails rather than returning data to another workspace. Snapshots are
 validated and copied field by field; renderer errors are fixed per-category text,
 never raw stderr.
 
+### Two execution forms
+
+Both are environment-owned (provider decides *what*, environment decides *where/how*), validated by
+the same `normalizeHarnessCommand()` rules, and enforce timeout, output bounds and cancellation.
+
+1. **One-shot bounded command** — `context.executor.run(request)` returns
+   `{ stdout, stderr, exitCode }` after the process ends. Use it for everything simple (OMP,
+   Hermes, Agy).
+2. **Interactive bounded stdio session** — `context.sessionExecutor?.open(request)` returns a
+   `HarnessCommandSession` for stateful, line-oriented protocols (for example a JSON-RPC
+   handshake over stdio). It is deliberately a separate seam, not an overload of `run()`.
+   `sessionExecutor` is absent when the environment cannot provide one.
+
+Stateful protocols must use the session seam, never a shell pipeline, an "all lines in one stdin
+string" trick, EOF-shutdown races, arbitrary sleeps, a provider-spawned child, or a local-only path.
+The provider owns the protocol (framing, request ids, matching responses, ignoring unrelated
+notifications); the session layer only moves UTF-8 lines and knows no protocol or harness.
+
+`HarnessCommandSession`: `writeLine(line)` (appends one `\n`; rejects after `closeInput`/failure,
+for lines containing CR/LF/NUL, and past the total input cap with `input-limit`),
+`readLine()` (next stdout line with LF/CRLF stripped, `null` on clean EOF, never filters,
+rejects on timeout/abort/output overflow/transport failure), `closeInput()` (idempotent, ends
+stdin without declaring success), `wait()` (`{ stderr, exitCode }` after the process is reaped; a
+non-zero program exit is a result), `dispose()` (idempotent, safe in `finally`, terminates and
+awaits reaping). Providers receive no `ChildProcess`, PID, SSH target/argv, descriptors, executable
+path, environment object or Electron object.
+
+Limits: the request timeout (default 10 s, max 30 s) bounds the whole session lifetime; stdout and
+stderr are each capped cumulatively by `maxOutputBytes` (default 256 KiB, max 1 MiB), which also
+bounds an unterminated line, so no unbounded buffering; total input is capped at 64 KiB. Exceeding
+them terminates and reaps the process (`output-limit`/`input-limit`/`timeout`). The usage
+`AbortSignal` terminates the process (SIGTERM, then SIGKILL after 1 s) and `HarnessUsageService`
+disposes every session a provider opened when the probe ends, however it ends.
+
+Local sessions reuse `planLocalLaunch()` (the one-shot executor's PATH handling, attention-credential
+stripping, Windows PATH/PATHEXT resolution, direct `.exe`/`.com` launch, escaped `.cmd`/`.bat`
+through `cmd.exe /d /s /c` with unsafe arguments rejected, `windowsHide`, never `shell`). SSH
+sessions share `SshCommandExecutor.buildInvocation()` (target validation, BatchMode/ConnectTimeout,
+quoting, PATH setup, cwd, remote env, attention filtering) with `exec()`; the OpenSSH client is
+wrapped by the same session core and an exit of 255 or signal death is a `transport-failure`,
+not a program exit (the documented 255 ambiguity is unchanged; 127 is not interpreted). There is no
+remote-to-local fallback. The interactive PTY terminal launcher is untouched. No provider uses
+the session seam yet.
+
 ### Usage adapters
 
-Both adapters live beside their provider (`omp/usage.ts`, `hermes/usage.ts`), run
+All three adapters live beside their provider (`omp/usage.ts`, `hermes/usage.ts`,
+`agy/usage.ts`), run
 only through `context.executor.run()`, never branch on transport, and expose a pure
 parser (`parseOmpUsage`, `parseHermesUsage`). Fixtures are in
 `tests/main/unit/harnessUsageProviders.test.ts` with fake identities; no CI test calls a
@@ -382,7 +427,8 @@ output is exactly one `X.Y.Z`/`vX.Y.Z` line that is >= 1.1.11; older, prerelease
 (`1.1.11-rc.1`), noisy, ambiguous or unparseable output fails closed with `unsupported` and
 `/usage` is never issued. *Second guard:* a reply is accepted only when `conversation_id` is
 empty, `num_turns` is 0 and every `usage.*_tokens` is 0 (absent counts as zero; anything else
-is evidence a model turn ran). Otherwise it is rejected as `unsupported` with a one-hour hard
+is evidence a model turn ran). Otherwise it is rejected as `command-failed` (the integration is supported; this is an
+unexpected safety failure) with a one-hour hard
 backoff (`HarnessCapabilityError.retryAfterMs`, honored by the service even for manual refresh).
 Envelope consumed: `status: "SUCCESS"`, `command.name === "usage"`,
 `command.data.groups[].buckets[]`; the human `response` text is never parsed and group names
@@ -402,7 +448,8 @@ probe completed. Tolerance: no envelope, a wrong command name or missing `groups
 malformed and nothing usable remains, `parse-failure`. Strict JSON is tried first; otherwise
 only whole-line `{...}` candidates that look like envelopes are considered, and conflicting
 valid envelopes or JSON embedded in prose are rejected. Errors: a non-SUCCESS envelope is
-`unauthenticated` only when its own `error`/`message`/`response` text matches a narrow phrase
+`unauthenticated` only when its own structured `error`/`error.message`/`message`/`error_message`
+text (never the human `response`) matches a narrow phrase
 list (authentication required, not authenticated, login required, credentials/token
 revoked, token expired); everything else, including "authentication failed or timed out",
 network errors and non-zero exits without an envelope, is a generic `command-failed`. stderr is

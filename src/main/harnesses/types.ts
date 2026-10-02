@@ -1,5 +1,5 @@
 import type { HarnessSession } from '../../shared/types/session';
-import type { HarnessCommandExecutor } from './commandExecution';
+import type { HarnessCommandExecutor, HarnessCommandSessionExecutor } from './commandExecution';
 
 import type { HarnessDescriptor } from '../../shared/harnessDescriptors';
 export type { HarnessDescriptor } from '../../shared/harnessDescriptors';
@@ -26,7 +26,7 @@ export interface HarnessProvider {
 
 export type CapabilitySupport = 'native' | 'emulated';
 export type HarnessFailureKind = 'unsupported' | 'binary-unavailable' | 'not-configured' | 'unauthenticated'
-  | 'command-failed' | 'timeout' | 'output-limit' | 'aborted' | 'parse-failure' | 'storage-changed' | 'transport-failure';
+  | 'command-failed' | 'timeout' | 'output-limit' | 'input-limit' | 'aborted' | 'parse-failure' | 'storage-changed' | 'transport-failure';
 
 /** Compatibility surfaces may hide failures; providers retain the cause. */
 export class HarnessCapabilityError extends Error {
@@ -153,6 +153,8 @@ export interface HarnessAiCommitCapability {
 export interface HarnessUsageContext {
   /** Runs bounded commands in the registered workspace's own environment. */
   readonly executor: HarnessCommandExecutor;
+  /** Bounded interactive stdio sessions for stateful line protocols; absent if the environment has none. */
+  readonly sessionExecutor?: HarnessCommandSessionExecutor;
   /** Descriptive only; providers must not fork execution by transport. */
   readonly transport: 'local' | 'ssh';
   /** Aborted on shutdown or when the service gives up on the provider. */

@@ -405,11 +405,11 @@ describe('Antigravity model-turn guard', () => {
     ['the issue regression fixture', { conversation_id: 'some-id', num_turns: 1, usage: { input_tokens: 10, output_tokens: 5 } }],
   ])('rejects a reply showing %s and demands a long backoff', (_name, overrides) => {
     const error = (() => { try { agy(envelope(groups, overrides)); } catch (e) { return e as { kind: string; retryAfterMs?: number }; } })();
-    expect(error).toMatchObject({ kind: 'unsupported' });
+    expect(error).toMatchObject({ kind: 'command-failed' });
     expect(error!.retryAfterMs).toBeGreaterThanOrEqual(3_600_000);
   });
   it('rejects a model-turn style reply that has no command block', () => {
-    expect(() => agy({ conversation_id: 'c', status: 'SUCCESS', response: 'Hello', num_turns: 1, usage: { input_tokens: 4 } })).toThrow(expect.objectContaining({ kind: 'unsupported' }));
+    expect(() => agy({ conversation_id: 'c', status: 'SUCCESS', response: 'Hello', num_turns: 1, usage: { input_tokens: 4 } })).toThrow(expect.objectContaining({ kind: 'command-failed' }));
   });
   it('accepts absent turn fields', () => {
     const rest: Record<string, unknown> = { ...envelope(groups) };
@@ -433,6 +433,12 @@ describe('Antigravity status and error classification', () => {
     const error = await failing({ status: 'ERROR', error: message });
     expect(error).toMatchObject({ kind: 'command-failed' });
     expect(error.message).not.toContain(message);
+  });
+  it('never classifies auth from the human response field', async () => {
+    expect(await failing({ status: 'ERROR', response: 'Authentication required. Run agy auth to log in.' })).toMatchObject({ kind: 'command-failed' });
+    expect(await failing({ status: 'ERROR', response: 'not authenticated', message: 'internal error' })).toMatchObject({ kind: 'command-failed' });
+    expect(await failing({ status: 'ERROR', error_message: 'login required' })).toMatchObject({ kind: 'unauthenticated' });
+    expect(await failing({ status: 'ERROR', message: 'login required', response: 'x' })).toMatchObject({ kind: 'unauthenticated' });
   });
   it('never inspects stderr and does not leak it', async () => {
     const error = await failing('', 1);

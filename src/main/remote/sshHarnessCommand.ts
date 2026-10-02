@@ -1,8 +1,10 @@
 import { HarnessCapabilityError } from '../harnesses/types';
+import { normalizeSessionRequest, openBoundedSession } from '../environment/boundedSession';
 import {
   normalizeHarnessCommand,
   type HarnessCommandRequest,
   type HarnessCommandResult,
+  type HarnessCommandSession,
 } from '../harnesses/commandExecution';
 import { quotePosixCommand } from './posixQuote';
 import { REMOTE_CLI_PATH_SETUP } from './sshAgentAttention';
@@ -45,4 +47,32 @@ export async function executeSshHarnessCommand(
     if (/exceeded limit/i.test(message)) throw new HarnessCapabilityError('output-limit', message, error);
     throw new HarnessCapabilityError('transport-failure', message, error);
   }
+}
+
+/**
+ * Remote interactive bounded session. Same target, quoting, PATH setup and credential
+ * filtering as one-shot execution (SshCommandExecutor.buildInvocation); the OpenSSH client is
+ * wrapped in the shared bounded session so a broken transport cannot pass as a program exit.
+ */
+export async function openSshHarnessSession(
+  executor: SshCommandExecutor, target: string, request: HarnessCommandRequest, signal?: AbortSignal,
+): Promise<HarnessCommandSession> {
+  const command = normalizeSessionRequest(request);
+  if (signal?.aborted) throw new HarnessCapabilityError('aborted', 'Session aborted');
+  const script = `${REMOTE_CLI_PATH_SETUP}\nexec ${quotePosixCommand(command.command, command.args)}`;
+  let child;
+  try {
+    child = executor.spawnInteractive(target, 'sh', ['-c', script], { cwd: command.cwd, remoteEnv: command.env });
+  } catch (error) {
+    throw new HarnessCapabilityError('transport-failure', error instanceof Error ? error.message : String(error), error);
+  }
+  return openBoundedSession({
+    child, timeoutMs: command.timeoutMs, maxOutputBytes: command.maxOutputBytes, signal,
+    mapExit: (code) => {
+      // Same documented ambiguity as one-shot execution: 255 is OpenSSH's own failure code.
+      if (code === null || code === 255) throw new HarnessCapabilityError('transport-failure', 'SSH connection failed or was terminated');
+      return code;
+    },
+    mapSpawnError: (error) => new HarnessCapabilityError('transport-failure', `SSH process error: ${error.message}`, error),
+  });
 }

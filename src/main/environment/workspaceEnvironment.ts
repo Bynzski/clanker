@@ -20,7 +20,7 @@ import type {
 import type { RemoteWebService } from '../../shared/types/remotePreview';
 import type { RemoteWebEndpoint } from '../remote/sshPortDiscovery';
 import type { PortForwardHandle } from '../remote/sshPortForward';
-import type { ExecuteHarnessCommand } from '../harnesses/commandExecution';
+import type { ExecuteHarnessCommand, OpenHarnessCommandSession } from '../harnesses/commandExecution';
 import type { HarnessSession } from '../../shared/types/session';
 import type { RemoteFileSnapshot, RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
 import type { GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeRemoveResult } from '../../shared/types/git';
@@ -111,6 +111,8 @@ export interface WorkspaceEnvironment {
    * receive transport details. Absent means the environment cannot run probes.
    */
   executeHarnessCommand?: ExecuteHarnessCommand;
+  /** Interactive bounded stdio session in this environment (stateful line protocols). */
+  openHarnessCommandSession?: OpenHarnessCommandSession;
   resolveTerminalSpawn(params: TerminalSpawnRequest): Promise<TerminalSpawnResolved>;
 
   discoverWebServices?(signal?: AbortSignal, hints?: RemoteWebEndpoint[]): Promise<RemoteWebService[]>;

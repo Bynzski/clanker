@@ -323,6 +323,54 @@ describe('provider-demanded backoff', () => {
   });
 });
 
+describe('retryAfterMs normalization', () => {
+  it.each([[NaN], [Infinity], [-Infinity], [-5], [0]])('ignores a non-positive/non-finite demand (%s) instead of corrupting cache timing', async (demand) => {
+    let now = 1_000_000; const env = fakeEnv('local');
+    const { registry, register } = registryFor(env); await register();
+    const get = vi.fn(async () => { throw new HarnessCapabilityError('command-failed', 'x', undefined, demand); });
+    const service = new HarnessUsageService(registry, { now: () => now, providers: () => [withUsage('codex', { get, refresh: { failureBackoffMs: 60_000 } })] });
+    const entry = (await service.get('ws')).entries[0];
+    expect(Number.isFinite(entry.nextRefreshAt)).toBe(true);
+    expect(entry.nextRefreshAt).toBe(now + 60_000);
+    expect(entry.refreshableAt).toBe(now + 60_000);
+    now += 61_000; await service.get('ws', { force: true });
+    expect(get).toHaveBeenCalledTimes(2); // backoff expired normally; Infinity did not freeze the provider
+  });
+});
+
+describe('interactive sessions', () => {
+  const sessionEnv = () => {
+    const env = fakeEnv('local') as unknown as Record<string, unknown> & ReturnType<typeof fakeEnv>;
+    const open = vi.fn();
+    const sessions: Array<{ dispose: ReturnType<typeof vi.fn> }> = [];
+    open.mockImplementation(async () => { const session = { dispose: vi.fn(async () => {}) }; sessions.push(session); return session; });
+    env.openHarnessCommandSession = open;
+    return { env, sessions, open };
+  };
+  it('exposes the environment session seam to providers and reaps leaked sessions after the probe', async () => {
+    const { env, sessions, open } = sessionEnv();
+    const { registry, register } = registryFor(env); await register();
+    const get = vi.fn(async (ctx) => { await ctx.sessionExecutor.open({ command: 'tool' }); return snapshot(); }); // never disposes
+    await new HarnessUsageService(registry, { providers: () => [withUsage('codex', { get })] }).get('ws');
+    expect(open).toHaveBeenCalledWith({ command: 'tool' }, expect.any(AbortSignal));
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].dispose).toHaveBeenCalledTimes(1);
+  });
+  it('reaps sessions even when the probe fails, and omits the executor when the environment has none', async () => {
+    const { env, sessions } = sessionEnv();
+    const { registry, register } = registryFor(env); await register();
+    const failing = vi.fn(async (ctx) => { await ctx.sessionExecutor.open({ command: 'tool' }); throw new HarnessCapabilityError('timeout', 'x'); });
+    await new HarnessUsageService(registry, { providers: () => [withUsage('codex', { get: failing })] }).get('ws');
+    expect(sessions[0].dispose).toHaveBeenCalledTimes(1);
+
+    const plain = fakeEnv('ssh');
+    const other = registryFor(plain, 'other'); await other.register();
+    const seen = vi.fn(async (ctx) => { expect('sessionExecutor' in ctx).toBe(false); return snapshot(); });
+    await new HarnessUsageService(other.registry, { providers: () => [withUsage('codex', { get: seen })] }).get('other');
+    expect(seen).toHaveBeenCalled();
+  });
+});
+
 describe('opaque account identity', () => {
   it('is retained in main but never returned to the renderer', async () => {
     const env = fakeEnv('local');

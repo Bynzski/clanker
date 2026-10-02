@@ -16,10 +16,10 @@ import { parseOffsetTimestamp } from '../usageParsing';
  *   description, window ("5h"|"weekly"|...), remaining_fraction (0..1), reset_time (RFC3339),
  *   disabled? }] }] } } }`. `disabled` is omitted when false.
  * - A genuine read-only usage reply has an empty conversation_id, zero turns and zero tokens.
- *   Anything else is evidence a model turn ran and is rejected (second guard after the version
+ *   Anything else is evidence a model turn ran and is rejected as command-failed (second guard after the version
  *   gate) with a long hard backoff so Clanker does not repeat it.
  * - Error envelopes are not specified; auth is classified only from a narrow phrase list in the
- *   envelope's own error/message fields (phrases taken from agy's strings: "authentication
+ *   envelope's own structured error/message fields (never the human `response`) (phrases taken from agy's strings: "authentication
  *   required", "not authenticated", token expired/revoked...). Generic failures stay generic.
  *   stderr is never inspected. This is best-effort and unverified against a live error envelope.
  */
@@ -81,13 +81,13 @@ function assertNoModelTurn(envelope: Json): void {
     && isObject(usage)
     && Object.values(usage).every(isZeroOrAbsent);
   if (!clean) {
-    throw new HarnessCapabilityError('unsupported', 'agy /usage appears to have run a model turn; refusing it as usage data', undefined, TURN_DETECTED_BACKOFF_MS);
+    throw new HarnessCapabilityError('command-failed', 'agy /usage appears to have run a model turn; refusing it as usage data', undefined, TURN_DETECTED_BACKOFF_MS);
   }
 }
 
 function classifyErrorEnvelope(envelope: Json): HarnessCapabilityError {
   const error = envelope.error;
-  const messages = [envelope.message, envelope.error_message, isObject(error) ? error.message : error, envelope.response]
+  const messages = [envelope.message, envelope.error_message, isObject(error) ? error.message : error]
     .filter((value): value is string => typeof value === 'string');
   if (messages.some((message) => AUTH_REJECTION.test(message))) return new HarnessCapabilityError('unauthenticated', 'agy reports the account is not signed in');
   return new HarnessCapabilityError('command-failed', 'agy usage reported a failure');
