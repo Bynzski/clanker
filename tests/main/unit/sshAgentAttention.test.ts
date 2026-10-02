@@ -160,7 +160,7 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
     expect(prepared.env.CLANKER_ATTENTION_PORT).toBeUndefined();
     expect(readFileSync(join(root, 'observer.mjs'), 'utf8')).toContain('/dev/tty');
     if (harness === 'codex') {
-      expect(prepared.args.filter((arg) => arg.startsWith('hooks.')).map((arg) => arg.split('=')[0])).toEqual(['hooks.UserPromptSubmit', 'hooks.PermissionRequest', 'hooks.PostToolUse', 'hooks.Stop', 'hooks.SubagentStop', 'hooks.SessionEnd']);
+      expect(prepared.args.filter((arg) => arg.startsWith('hooks.')).map((arg) => arg.split('=')[0])).toEqual(['hooks.UserPromptSubmit', 'hooks.PreToolUse', 'hooks.PermissionRequest', 'hooks.PostToolUse', 'hooks.Stop', 'hooks.SubagentStop', 'hooks.Interrupt', 'hooks.SessionEnd']);
       expect(prepared.args.join(' ')).not.toContain('notify=');
       expect(prepared.args.join(' ')).toContain(JSON.stringify('node "$CLANKER_REMOTE_ATTENTION_COMMAND" "$CLANKER_REMOTE_ATTENTION_INTERPRETER" Stop').slice(1, -1));
       expect(prepared.args.join(' ')).not.toContain(root);
@@ -499,6 +499,53 @@ for (const name of ['agent_start', 'agent_settled', 'agent_end', 'session_stop',
   });
 });
 
+
+// The permission lifecycle keeps correlation state in the bridge store, so run the real command
+// bridge over a tty exactly as a remote host would, with no model call.
+describe.skipIf(process.platform === 'win32')('remote permission lifecycle through the real bridge', () => {
+  async function frames(harness: 'claude' | 'codex', steps: Array<[string, object]>) {
+    const { executor } = fixture();
+    const prepared = await prepareSshAttention(executor, 'host', harness, [], token);
+    const root = join(prepared.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..');
+    roots.push(root);
+    const run = ([hook, input]: [string, object]) => `printf '%s' '${JSON.stringify(input)}' | "${process.execPath}" "${join(root, 'command.mjs')}" "${join(root, 'interpreter.mjs')}" ${hook}`;
+    const stdout = execFileSync('python3', ['-c', CAPTURE_TTY, 'sh', '-c', steps.map(run).join(' && ')], {
+      encoding: 'utf8', env: { ...process.env, ...prepared.env }, timeout: 20000,
+    });
+    const events: Array<{ event: string; turnId?: string; inputId?: string }> = [];
+    createRemoteAttentionFilter((raw) => events.push(JSON.parse(raw)))(stdout);
+    expect(stdout).not.toContain('SECRET');
+    await prepared.release();
+    return events;
+  }
+  it('Claude: PermissionRequest (no tool_use_id) waits until PostToolBatch', async () => {
+    const common = { session_id: 's', prompt_id: 'p1' };
+    const events = await frames('claude', [
+      ['UserPromptSubmit', common],
+      ['PermissionRequest', { ...common, tool_name: 'Bash', tool_input: { command: 'SECRET' } }],
+      ['PermissionRequest', { ...common, tool_name: 'Bash', tool_input: { command: 'SECRET' } }],
+      ['PostToolBatch', { ...common, tool_calls: [{ tool_name: 'Bash', tool_use_id: 't1', tool_input: { command: 'SECRET' }, tool_response: 'SECRET' }] }],
+      ['PostToolBatch', common],
+      ['StopFailure', { ...common, error: 'rate_limit', error_details: 'SECRET' }],
+    ]);
+    expect(events.map((event) => event.event)).toEqual(['turn_started', 'input_requested', 'input_resolved', 'turn_completed']);
+    expect(new Set(events.map((event) => event.turnId))).toEqual(new Set(['p1']));
+  });
+  it('Codex: an unrelated PostToolUse does not resolve the waiting call', async () => {
+    const turn = { session_id: 's', turn_id: 't1' };
+    const bash = (command: string) => ({ tool_name: 'Bash', tool_input: { command } });
+    const events = await frames('codex', [
+      ['UserPromptSubmit', turn],
+      ['PreToolUse', { ...turn, tool_use_id: 'a', ...bash('SECRET-A') }],
+      ['PreToolUse', { ...turn, tool_use_id: 'b', ...bash('ls') }],
+      ['PermissionRequest', { ...turn, ...bash('SECRET-A') }],
+      ['PostToolUse', { ...turn, tool_use_id: 'b', ...bash('ls'), tool_response: 'SECRET' }],
+      ['PostToolUse', { ...turn, tool_use_id: 'a', ...bash('SECRET-A'), tool_response: 'SECRET' }],
+      ['Interrupt', turn],
+    ]);
+    expect(events.map((event) => event.event)).toEqual(['turn_started', 'input_requested', 'input_resolved', 'turn_interrupted']);
+  });
+});
 
 describe.skipIf(process.platform === 'win32')('SSH attention launch wrapper', () => {
   it('delivers hook events, retires attention, cleans launch files, and leaves a credential-free fallback shell', async () => {

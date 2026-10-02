@@ -5,23 +5,85 @@ import * as path from 'node:path';
 
 /** Native Codex lifecycle hooks. Legacy `notify` is deliberately unused: it can report
  * hidden auxiliary completions and carries no root/subagent distinction. */
-export const CODEX_HOOK_EVENTS = ['UserPromptSubmit', 'PermissionRequest', 'PostToolUse', 'Stop', 'SubagentStop', 'SessionEnd'] as const;
+export const CODEX_HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PermissionRequest', 'PostToolUse', 'Stop', 'SubagentStop', 'Interrupt', 'SessionEnd'] as const;
 
-/** Provider-owned meaning of native hook events. Root `Stop` settles the turn;
- * `SubagentStop` is reported as child scope and can never settle the pane. */
-export const INTERPRETER = `export default function interpret(input, hook) {
-  const sessionId = typeof input.session_id === 'string' ? input.session_id : undefined;
-  const turnId = typeof input.turn_id === 'string' ? input.turn_id : undefined;
+/** Provider-owned meaning of native hook events (fields per the Codex hooks source).
+ * - root identity `session_id`; turn identity `turn_id`; child scope: `SubagentStop` or `agent_id`.
+ * - Settled: root `Stop`. User cancel: root `Interrupt` (`turn_interrupted`, never a completion).
+ * - Input wait: `PermissionRequest` has `turn_id`, `tool_name`, `tool_input` and NO `tool_use_id`,
+ *   while `PreToolUse` and `PostToolUse` carry `tool_use_id`. The interpreter correlates them in
+ *   the bridge store, keeping only bounded derived data (tool_use_ids and a 16-hex fingerprint of
+ *   tool_name + canonical tool_input; the input itself is never stored, sent or logged):
+ *     PreToolUse        -> remember {tool_use_id, fingerprint}
+ *     PermissionRequest -> a wait on every remembered, unfinished call with the same fingerprint
+ *                          (identical parallel calls form one group); no match = an unresolvable
+ *                          wait, which fails closed until the turn ends
+ *     PostToolUse       -> mark the call done; a wait resolves only when ALL its calls are done
+ *   The broker sees one `input_requested` for the first wait and one `input_resolved` once no wait
+ *   remains, so an unrelated tool finishing cannot clear a real wait. A call the user denies runs
+ *   no PostToolUse, so its wait lasts until Stop or Interrupt. */
+export const INTERPRETER = `import { createHash } from 'node:crypto';
+const text = (value) => typeof value === 'string' && value ? value : undefined;
+const canonical = (value) => value === null || typeof value !== 'object' ? JSON.stringify(value)
+  : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']'
+  : '{' + Object.keys(value).sort().map((key) => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
+const fingerprint = (input) => createHash('sha256').update(String(input.tool_name) + '\\0' + canonical(input.tool_input ?? null)).digest('hex').slice(0, 16);
+const keep = (list, limit) => list.slice(-limit);
+export default function interpret(input, hook, store) {
+  const sessionId = text(input.session_id);
+  const turnId = text(input.turn_id);
   const scope = hook === 'SubagentStop' || input.agent_id ? 'child' : 'root';
-  const toolName = typeof input.tool_name === 'string' ? input.tool_name : undefined;
   const event = (type, fields) => ({ event: { type, scope, sessionId, nativeEvent: hook, ...fields } });
+  if (scope === 'child') {
+    // Child activity is reported only so the broker can record why it was ignored; it never touches state.
+    const mapped = { SubagentStop: 'turn_completed', PermissionRequest: 'input_requested', PostToolUse: 'input_resolved' }[hook];
+    return mapped ? event(mapped, { turnId, inputId: 'w0' }) : null;
+  }
+  const stored = store.read();
+  const current = turnId !== undefined && stored.turn === turnId;
+  const state = current ? stored : { turn: turnId, calls: [], done: [], waits: [], seq: stored.seq ?? 0 };
+  const save = () => { if (current || hook === 'UserPromptSubmit') store.write(state); };
+  const reset = () => store.write({ turn: undefined, calls: [], done: [], waits: [], seq: state.seq });
   switch (hook) {
-    case 'UserPromptSubmit': return event('turn_started', { turnId });
-    case 'PermissionRequest': return event('input_requested', { turnId, inputId: toolName });
-    case 'PostToolUse': return event('input_resolved', { turnId, inputId: toolName });
+    case 'UserPromptSubmit':
+      save();
+      return event('turn_started', { turnId });
+    case 'PreToolUse':
+      if (!current || !text(input.tool_use_id)) return null;
+      state.calls = keep([...state.calls, { id: input.tool_use_id, fp: fingerprint(input) }], 32);
+      save();
+      return null;
+    case 'PermissionRequest': {
+      if (!current) return event('input_requested', { turnId, inputId: 'w0' });
+      const fp = fingerprint(input);
+      const ids = state.calls.filter((call) => call.fp === fp && !state.done.includes(call.id)).map((call) => call.id);
+      const first = state.waits.length === 0;
+      state.waits = keep([...state.waits, { ids }], 16);
+      if (first) state.input = 'w' + (state.seq += 1);
+      save();
+      return first ? event('input_requested', { turnId, inputId: state.input }) : null;
+    }
+    case 'PostToolUse': {
+      const id = text(input.tool_use_id);
+      if (!current || !id) return null;
+      const had = state.waits.length > 0;
+      state.done = keep([...state.done, id], 64);
+      state.waits = state.waits.filter((wait) => wait.ids.length === 0 || !wait.ids.every((call) => state.done.includes(call)));
+      const resolved = had && state.waits.length === 0;
+      const inputId = state.input;
+      if (resolved) state.input = undefined;
+      save();
+      return resolved ? event('input_resolved', { turnId, inputId }) : null;
+    }
     case 'Stop':
-    case 'SubagentStop': return event('turn_completed', { turnId });
-    case 'SessionEnd': return event('session_ended');
+      if (current) reset();
+      return event('turn_completed', { turnId });
+    case 'Interrupt':
+      if (current) reset();
+      return event('turn_interrupted', { turnId });
+    case 'SessionEnd':
+      reset();
+      return event('session_ended');
     default: return null;
   }
 }

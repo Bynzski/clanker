@@ -117,12 +117,15 @@ export interface HarnessLocalAttention {
 /** Canonical lifecycle event a provider interpreter asks the shared bridge to forward. */
 export interface AttentionInterpretation {
   event?: {
-    type: 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'session_ended';
+    type: 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'turn_interrupted'
+      | 'session_ended' | 'session_continued';
     /** Provider-proven subject. Anything not explicitly 'root' fails closed in the broker. */
     scope?: 'root' | 'child';
     sessionId?: string;
     turnId?: string;
     inputId?: string;
+    /** Only for `session_continued`: the bound root session this one continues. */
+    continuesSessionId?: string;
     /** Native event class, for diagnostics only. */
     nativeEvent?: string;
   };

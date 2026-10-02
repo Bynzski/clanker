@@ -33,7 +33,7 @@ describe('agent attention launch adapters', () => {
       .toEqual(['--model', 'x', '--settings', path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'claude-settings.json')]);
     expect(attentionLaunchOptions('claude', ['--settings', 'custom.json'], {}, files)).toBeNull();
     const settings = JSON.parse(fs.readFileSync(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'claude-settings.json'), 'utf8')) as { hooks: Record<string, unknown> };
-    expect(Object.keys(settings.hooks)).toEqual(['UserPromptSubmit', 'PermissionRequest', 'PostToolUse', 'PostToolUseFailure', 'PermissionDenied', 'Stop', 'SessionEnd']);
+    expect(Object.keys(settings.hooks)).toEqual(['UserPromptSubmit', 'PermissionRequest', 'PostToolBatch', 'Stop', 'StopFailure', 'SessionEnd']);
     expect(JSON.stringify(settings)).toContain(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'interpreter.mjs'));
   });
 
@@ -108,11 +108,11 @@ describe('agent attention launch adapters', () => {
     expect(result?.args[0]).toBe('codex');
     expect(result?.args.slice(-2)).toEqual(['resume', 'abc']);
     const overrides = result!.args.filter((arg) => arg !== '-c' && arg.startsWith('hooks.'));
-    expect(overrides.map((arg) => arg.split('=')[0])).toEqual(['hooks.UserPromptSubmit', 'hooks.PermissionRequest', 'hooks.PostToolUse', 'hooks.Stop', 'hooks.SubagentStop', 'hooks.SessionEnd']);
+    expect(overrides.map((arg) => arg.split('=')[0])).toEqual(['hooks.UserPromptSubmit', 'hooks.PreToolUse', 'hooks.PermissionRequest', 'hooks.PostToolUse', 'hooks.Stop', 'hooks.SubagentStop', 'hooks.Interrupt', 'hooks.SessionEnd']);
     expect(result!.args.join(' ')).not.toContain('notify=');
     // The definition is identical for every launch (Codex hook trust is keyed by it); the launch
     // resources arrive through the environment.
-    expect(overrides[3]).toContain(JSON.stringify('node "$CLANKER_ATTENTION_COMMAND" "$CLANKER_ATTENTION_INTERPRETER" Stop').slice(1, -1));
+    expect(overrides[4]).toContain(JSON.stringify('node "$CLANKER_ATTENTION_COMMAND" "$CLANKER_ATTENTION_INTERPRETER" Stop').slice(1, -1));
     expect(result?.args.join(' ')).not.toContain(files.command);
     expect(attentionLaunchOptions('codex', ['codex'], { CODEX_HOME: '/nonexistent' }, files)?.env).toEqual({ CLANKER_ATTENTION_INTERPRETER: interpreter });
     const windows = attentionLaunchOptions('codex', [], { CODEX_HOME: '/nonexistent' }, files, undefined, 'win32');

@@ -1,6 +1,6 @@
 /** Shared observer helpers. Providers own the meaning of native events; shared
  * code only bounds and forwards the sanitized canonical envelope. */
-export const OBSERVER_FIELDS = `const IDENTIFIERS = ['sessionId', 'turnId', 'inputId'];
+export const OBSERVER_FIELDS = `const IDENTIFIERS = ['sessionId', 'turnId', 'inputId', 'continuesSessionId'];
 function envelope(event, fields) {
   const extra = {};
   for (const key of IDENTIFIERS) {

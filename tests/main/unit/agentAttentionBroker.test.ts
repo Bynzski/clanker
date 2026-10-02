@@ -173,6 +173,26 @@ describe('AgentAttentionBroker root-session and turn correlation', () => {
   });
 });
 
+describe('AgentAttentionBroker turn interruption', () => {
+  it('retires the active turn and wait without a completion, keeps the root, and allows a new turn', () => {
+    const { broker, send, updates } = setup();
+    send('turn_started', { sessionId: 'A', turnId: 'T1' });
+    send('input_requested', { sessionId: 'A', turnId: 'T1', inputId: 'w1' });
+    expect(send('turn_interrupted', { sessionId: 'B', turnId: 'T1' })).toBe('rejected-mismatch');
+    expect(send('turn_interrupted', { sessionId: 'A', turnId: 'T0' })).toBe('ignored-stale');
+    expect(send('turn_interrupted', { sessionId: 'A', turnId: 'T1', scope: 'child' })).toBe('ignored-child');
+    expect(broker.handoffState('term-a')).toBe('needs_input');
+    expect(send('turn_interrupted', { sessionId: 'A', turnId: 'T1' })).toBe('accepted');
+    expect(broker.isReady('term-a')).toBe(false);
+    expect(broker.canHandoff('term-a')).toBe(true);
+    expect(send('turn_completed', { sessionId: 'A', turnId: 'T1' })).toBe('ignored-stale');
+    expect(send('input_resolved', { sessionId: 'A', turnId: 'T1', inputId: 'w1' })).toBe('ignored-stale');
+    expect(send('turn_started', { sessionId: 'B', turnId: 'T2' })).toBe('rejected-mismatch'); // root stays bound
+    expect(send('turn_started', { sessionId: 'A', turnId: 'T2' })).toBe('accepted');
+    expect(updates.map((update) => update.event)).toEqual(['turn_started', 'input_requested', 'turn_interrupted', 'turn_started']);
+  });
+});
+
 describe('AgentAttentionBroker session continuation', () => {
   it('moves the bound root to a continuation session without changing foreground state', () => {
     const { broker, send, updates } = setup();

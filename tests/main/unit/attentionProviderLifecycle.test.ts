@@ -38,7 +38,7 @@ function rig(harness: string, rootSessionId?: string) {
   const feed = (wire: Wire | null | undefined) => {
     if (wire) broker.receiveRemote('term', JSON.stringify({ version: 1, token, harness, ...wire }));
   };
-  return { broker, updates, decisions, feed, state: () => broker.handoffState('term') };
+  return { broker, updates, decisions, feed, state: () => broker.handoffState('term'), updatesOf: () => updates.map((update) => update.event) };
 }
 
 async function importSource(source: string, location = 'source.mjs') {
@@ -69,9 +69,11 @@ async function interpreter(harness: 'codex' | 'claude' | 'agy') {
 }
 
 describe('Codex lifecycle', () => {
-  // Native hook fields: root identity `session_id`; turn identity `turn_id`; child scope: the
-  // SubagentStop event (or `agent_id`); settled: root `Stop`. The `-c` hooks run as session-flag
-  // hooks, which upstream excludes from internal memory-consolidation Stop dispatch.
+  // Native hook fields (Codex hooks source): root identity `session_id`; turn identity `turn_id`;
+  // child scope: `SubagentStop` or `agent_id`; settled: root `Stop`; user cancel: root `Interrupt`.
+  // `PreToolUse`/`PostToolUse` carry `tool_use_id`; `PermissionRequest` carries `turn_id`,
+  // `tool_name`, `tool_input` and NO `tool_use_id`. Permission correlation is Clanker-derived
+  // (see the interpreter): PreToolUse ids + a fingerprint of tool_name/tool_input.
   it('stays Running through hidden, child and subagent completions until the root Stop', async () => {
     const hook = await interpreter('codex');
     const { feed, state, decisions } = rig('codex');
@@ -84,25 +86,109 @@ describe('Codex lifecycle', () => {
     feed(hook('Stop', { session_id: 'root', turn_id: 'previous-turn' }));
     expect(state()).toBe('running');
     expect(decisions).toEqual(['accepted', 'rejected-mismatch', 'ignored-child', 'ignored-child', 'ignored-stale']);
-    feed(hook('PostToolUse', { session_id: 'root', turn_id: 't1', tool_name: 'Bash' }));
-    expect(state()).toBe('running');
     feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
     expect(state()).toBe('ready');
   });
-  it('treats PermissionRequest as input and only the matching tool completion as resolution', async () => {
+
+  const bash = (command: string) => ({ tool_name: 'Bash', tool_input: { command } });
+  const pre = (id: string, tool: object, turn = 't1') => ({ session_id: 'root', turn_id: turn, tool_use_id: id, ...tool });
+  const ask = (tool: object, turn = 't1') => ({ session_id: 'root', turn_id: turn, ...tool }); // no tool_use_id
+  const post = (id: string, tool: object, turn = 't1') => ({ session_id: 'root', turn_id: turn, tool_use_id: id, tool_response: 'PRIVATE', ...tool });
+
+  it('keeps Needs Input when an unrelated Bash call finishes, and resolves when the waiting call does', async () => {
     const hook = await interpreter('codex');
     const { feed, state } = rig('codex');
     feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
-    feed(hook('PermissionRequest', { session_id: 'root', turn_id: 't1', tool_name: 'apply_patch' }));
+    hook('PreToolUse', pre('call-a', bash('rm -rf build')));
+    hook('PreToolUse', pre('call-b', bash('ls')));
+    feed(hook('PermissionRequest', ask(bash('rm -rf build'))));
     expect(state()).toBe('needs_input');
-    feed(hook('PostToolUse', { session_id: 'root', turn_id: 't1', tool_name: 'Bash' }));
+    feed(hook('PostToolUse', post('call-b', bash('ls'))));
     expect(state()).toBe('needs_input');
-    feed(hook('PostToolUse', { session_id: 'root', turn_id: 't1', tool_name: 'apply_patch' }));
+    feed(hook('PostToolUse', post('call-a', bash('rm -rf build'))));
     expect(state()).toBe('running');
+  });
+  it('does not let parallel identical calls resolve each other: the group resolves when every call is done', async () => {
+    const hook = await interpreter('codex');
+    const { feed, state } = rig('codex');
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
+    hook('PreToolUse', pre('call-a', bash('make test')));
+    hook('PreToolUse', pre('call-b', bash('make test')));
+    feed(hook('PermissionRequest', ask(bash('make test'))));
+    feed(hook('PostToolUse', post('call-a', bash('make test'))));
+    expect(state()).toBe('needs_input');
+    feed(hook('PostToolUse', post('call-b', bash('make test'))));
+    expect(state()).toBe('running');
+  });
+  it('tracks several outstanding waits and resolves only after the last one', async () => {
+    const hook = await interpreter('codex');
+    const { feed, state, updatesOf } = rig('codex');
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
+    hook('PreToolUse', pre('call-a', bash('one')));
+    hook('PreToolUse', pre('call-b', bash('two')));
+    feed(hook('PermissionRequest', ask(bash('one'))));
+    expect(hook('PermissionRequest', ask(bash('two')))).toBeNull(); // the first wait stays authoritative
+    feed(hook('PostToolUse', post('call-a', bash('one'))));
+    expect(state()).toBe('needs_input');
+    feed(hook('PostToolUse', post('call-b', bash('two'))));
+    expect(state()).toBe('running');
+    expect(updatesOf()).toEqual(['turn_started', 'input_requested', 'input_resolved']);
+  });
+  it('fails closed when a permission request cannot be matched to a started call', async () => {
+    const hook = await interpreter('codex');
+    const { feed, state } = rig('codex');
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
+    hook('PreToolUse', pre('call-a', bash('one')));
+    feed(hook('PermissionRequest', ask(bash('something else'))));
+    feed(hook('PostToolUse', post('call-a', bash('one'))));
+    expect(state()).toBe('needs_input'); // not cleared by an unrelated finish
+    feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
+    expect(state()).toBe('ready');
+  });
+  it('never stores or sends tool input or responses', async () => {
+    const module = await importSource(getHarnessProvider('codex').attention.interpreter!);
+    const written: string[] = [];
+    let stored: Record<string, unknown> = {};
+    const store = { read: () => structuredClone(stored), write: (value: Record<string, unknown>) => { stored = structuredClone(value); written.push(JSON.stringify(value)); } };
+    const outputs = [
+      module.default({ session_id: 'root', turn_id: 't1' }, 'UserPromptSubmit', store),
+      module.default(pre('call-a', bash('SECRET-COMMAND')), 'PreToolUse', store),
+      module.default(ask(bash('SECRET-COMMAND')), 'PermissionRequest', store),
+      module.default(post('call-a', bash('SECRET-COMMAND')), 'PostToolUse', store),
+    ];
+    expect(JSON.stringify(outputs) + written.join('')).not.toMatch(/SECRET-COMMAND|PRIVATE/);
+  });
+  it('ignores permission events from a stale turn and subagents', async () => {
+    const hook = await interpreter('codex');
+    const { feed, state, decisions } = rig('codex');
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
+    feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't2' }));
+    feed(hook('PermissionRequest', ask(bash('old'), 't1')));
+    expect(decisions[decisions.length - 1]).toBe('ignored-stale');
+    feed(hook('PermissionRequest', { ...ask(bash('child')), agent_id: 'worker' }));
+    expect(decisions[decisions.length - 1]).toBe('ignored-child');
+    expect(state()).toBe('running');
+  });
+  it('treats a user Interrupt as neither Ready nor Running, keeps the root, and allows a new turn', async () => {
+    const hook = await interpreter('codex');
+    const { feed, state, updatesOf } = rig('codex');
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
+    hook('PreToolUse', pre('call-a', bash('one')));
+    feed(hook('PermissionRequest', ask(bash('one'))));
+    feed(hook('Interrupt', { session_id: 'root', turn_id: 't0' })); // stale
+    expect(state()).toBe('needs_input');
+    feed(hook('Interrupt', { session_id: 'root', turn_id: 't1' }));
+    expect(state()).toBe('unverified');
+    feed(hook('Stop', { session_id: 'root', turn_id: 't1' })); // cannot settle a cancelled turn
+    expect(state()).toBe('unverified');
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't2' }));
+    expect(state()).toBe('running');
+    expect(updatesOf()).toEqual(['turn_started', 'input_requested', 'turn_interrupted', 'turn_started']);
   });
   it('ignores legacy notify payloads and unrelated native events', async () => {
     const hook = await interpreter('codex');
-    expect(hook('PreToolUse', { session_id: 'root' })).toBeNull();
+    expect(hook('PostCompact', { session_id: 'root' })).toBeNull();
     expect(hook('', { type: 'agent-turn-complete', 'thread-id': 'root' })).toBeNull();
   });
   it('rebinds after SessionEnd and rejects late events from the old session', async () => {
@@ -121,58 +207,93 @@ describe('Codex lifecycle', () => {
 });
 
 describe('Claude lifecycle', () => {
-  // Native hook fields: root identity `session_id`; turn identity `prompt_id`; child scope: presence
-  // of `agent_id`; input wait: PermissionRequest `tool_use_id`; settled: root `Stop` with empty
-  // `background_tasks` / `session_crons`. `Notification` carries no turn or request identity.
+  // Native hook fields (Claude Code hooks reference): root identity `session_id`; turn identity
+  // `prompt_id` (common field); child scope: `agent_id`; PermissionRequest has `tool_name` and
+  // `tool_input` but NO `tool_use_id`; PostToolUse has `tool_use_id`; PostToolBatch has `tool_calls`
+  // (the resolved batch); settled: `Stop` with empty `background_tasks`/`session_crons`, or
+  // `StopFailure` (`error`, `error_details`, `last_assistant_message`). The permission wait is
+  // Clanker-derived turn-level state (inputId 'permission'), resolved only by PostToolBatch.
   const common = { session_id: 'root', prompt_id: 'prompt-1', transcript_path: '/t.jsonl', cwd: '/w', permission_mode: 'default' };
+  const request = (extra: object = {}) => ({ ...common, hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'SECRET' }, ...extra });
+  const batch = (extra: object = {}) => ({ ...common, hook_event_name: 'PostToolBatch', tool_calls: [{ tool_name: 'Bash', tool_input: { command: 'SECRET' }, tool_use_id: 'toolu_1', tool_response: 'SECRET' }], ...extra });
 
   it('ignores child events and background-active Stop; a clean root Stop settles', async () => {
     const hook = await interpreter('claude');
     const { feed, state, decisions } = rig('claude');
     feed(hook('UserPromptSubmit', { ...common, hook_event_name: 'UserPromptSubmit', prompt: 'private' }));
-    const child = { ...common, agent_id: 'agent-1', agent_type: 'Explore' };
-    feed(hook('PostToolUse', { ...child, tool_name: 'Read', tool_use_id: 'toolu_c1' }));
-    feed(hook('PermissionRequest', { ...child, tool_name: 'Bash', tool_use_id: 'toolu_c2' }));
+    const child = { agent_id: 'agent-1', agent_type: 'Explore' };
+    feed(hook('PermissionRequest', request(child)));
+    feed(hook('PostToolBatch', batch(child)));
+    feed(hook('StopFailure', { ...common, ...child, error: 'rate_limit' }));
     expect(state()).toBe('running');
-    expect(decisions.slice(1)).toEqual(['ignored-child', 'ignored-child']);
+    expect(decisions.slice(1)).toEqual(['ignored-child', 'ignored-child', 'ignored-child']);
     expect(hook('Stop', { ...common, background_tasks: [{ id: 'bg' }] })).toBeNull();
     expect(hook('Stop', { ...common, session_crons: [{ id: 'cron' }] })).toBeNull();
     feed(hook('Stop', { ...common, background_tasks: [], session_crons: [], stop_reason: 'end_turn' }));
     expect(state()).toBe('ready');
   });
-  it('enters Needs Input from the root PermissionRequest and only its own tool_use_id resolves it', async () => {
+  it('enters Needs Input on the real PermissionRequest shape, survives unrelated tool completions, and resolves with the batch', async () => {
     const hook = await interpreter('claude');
     const { feed, state } = rig('claude');
     feed(hook('UserPromptSubmit', common));
-    feed(hook('PostToolUse', { ...common, tool_name: 'Read', tool_use_id: 'toolu_other' }));
-    expect(state()).toBe('running');
-    feed(hook('PermissionRequest', { ...common, tool_name: 'Bash', tool_use_id: 'toolu_1', tool_input: { command: 'private' } }));
+    expect(request()).not.toHaveProperty('tool_use_id');
+    feed(hook('PermissionRequest', request()));
     expect(state()).toBe('needs_input');
-    feed(hook('PostToolUse', { ...common, tool_name: 'Bash', tool_use_id: 'toolu_unrelated' }));
+    // An unrelated parallel tool finishing fires PostToolUse, which is not subscribed.
+    expect(CLAUDE_HOOK_EVENTS).not.toContain('PostToolUse');
+    expect(hook('PostToolUse', { ...common, tool_name: 'Read', tool_use_id: 'toolu_other' })).toBeNull();
     expect(state()).toBe('needs_input');
-    feed(hook('PostToolUse', { ...common, tool_name: 'Bash', tool_use_id: 'toolu_1' }));
+    feed(hook('PostToolBatch', batch()));
     expect(state()).toBe('running');
   });
-  it('resolves a wait on denial or tool failure of the same request', async () => {
+  it('only resolves a wait that exists, and only for the current prompt', async () => {
+    const hook = await interpreter('claude');
+    const { feed, state, decisions } = rig('claude');
+    feed(hook('UserPromptSubmit', common));
+    expect(hook('PostToolBatch', batch())).toBeNull(); // no outstanding wait
+    feed(hook('PermissionRequest', request()));
+    expect(hook('PermissionRequest', request())).toBeNull(); // duplicate request: still one wait
+    expect(hook('PostToolBatch', batch({ prompt_id: 'prompt-0' }))).toBeNull(); // stale prompt: dropped by the adapter
+    expect(decisions[decisions.length - 1]).toBe('accepted');
+    expect(state()).toBe('needs_input');
+    feed(hook('PostToolBatch', batch()));
+    expect(state()).toBe('running');
+  });
+  it('settles on StopFailure for the current prompt and ignores a stale one', async () => {
+    const hook = await interpreter('claude');
+    const { feed, state, decisions } = rig('claude');
+    feed(hook('UserPromptSubmit', { ...common, prompt_id: 'p1' }));
+    feed(hook('StopFailure', { ...common, prompt_id: 'p0', error: 'rate_limit', error_details: 'PRIVATE', last_assistant_message: 'API Error' }));
+    expect(state()).toBe('running');
+    expect(decisions[decisions.length - 1]).toBe('ignored-stale');
+    const failure = hook('StopFailure', { ...common, prompt_id: 'p1', error: 'overloaded', error_details: 'PRIVATE' });
+    expect(JSON.stringify(failure)).not.toContain('PRIVATE');
+    feed(failure);
+    expect(state()).toBe('ready'); // settled; says nothing about success
+  });
+  it('clears a pending wait when the turn settles, so the next prompt starts clean', async () => {
     const hook = await interpreter('claude');
     const { feed, state } = rig('claude');
-    feed(hook('UserPromptSubmit', common));
-    for (const name of ['PermissionDenied', 'PostToolUseFailure']) {
-      feed(hook('PermissionRequest', { ...common, tool_name: 'Bash', tool_use_id: 'toolu_1' }));
-      expect(state()).toBe('needs_input');
-      feed(hook(name, { ...common, tool_name: 'Bash', tool_use_id: 'toolu_1' }));
-      expect(state()).toBe('running');
-    }
+    feed(hook('UserPromptSubmit', { ...common, prompt_id: 'p1' }));
+    feed(hook('PermissionRequest', request({ prompt_id: 'p1' })));
+    feed(hook('StopFailure', { ...common, prompt_id: 'p1', error: 'unknown' }));
+    expect(state()).toBe('ready');
+    feed(hook('UserPromptSubmit', { ...common, prompt_id: 'p2' }));
+    expect(hook('PostToolBatch', batch({ prompt_id: 'p2' }))).toBeNull();
+    feed(hook('PermissionRequest', request({ prompt_id: 'p2' })));
+    expect(state()).toBe('needs_input');
   });
-  it('does not treat notifications as a root input wait, and drops events with no turn or request identity', async () => {
+  it('never forwards tool input or responses', async () => {
+    const hook = await interpreter('claude');
+    expect(JSON.stringify([hook('PermissionRequest', request()), hook('PostToolBatch', batch())])).not.toContain('SECRET');
+  });
+  it('does not treat notifications as a root input wait, and drops events with no prompt identity', async () => {
     const hook = await interpreter('claude');
     const { feed, state } = rig('claude');
     feed(hook('UserPromptSubmit', common));
     expect(hook('Notification', { ...common, notification_type: 'agent_needs_input', message: 'x' })).toBeNull();
     expect(hook('Notification', { ...common, notification_type: 'permission_prompt' })).toBeNull();
     expect(CLAUDE_HOOK_EVENTS).not.toContain('Notification');
-    expect(hook('PermissionRequest', { ...common, tool_name: 'Bash' })).toBeNull();
-    expect(state()).toBe('running');
     // Without prompt_id the event cannot be tied to a turn: the broker fails closed.
     feed(hook('Stop', { ...common, prompt_id: undefined }));
     expect(state()).toBe('running');

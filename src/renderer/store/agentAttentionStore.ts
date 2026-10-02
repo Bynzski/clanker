@@ -31,7 +31,8 @@ export const useAgentAttentionStore = create<AgentAttentionState>((set) => ({
         lifecycle = 'running';
         break;
       case 'turn_completed': lifecycle = 'turn_complete'; break;
-      // Main already decided these are authoritative boundaries; the pane has no known state.
+      // Main already decided these are authoritative; the pane has no foreground state to show.
+      case 'turn_interrupted':
       case 'session_ended':
       case 'agent_exited': lifecycle = 'unknown'; break;
     }

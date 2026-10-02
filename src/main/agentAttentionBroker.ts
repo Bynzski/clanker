@@ -5,7 +5,7 @@ import type { AgentAttentionEvent, AgentAttentionUpdate } from '../shared/types/
 /** Wire events. `session_continued` is an identity transition and never a renderer update. */
 type WireEvent = AgentAttentionEvent | 'session_continued';
 const EVENTS = new Set<WireEvent>([
-  'turn_started', 'input_requested', 'input_resolved', 'turn_completed', 'session_ended', 'session_continued', 'agent_exited',
+  'turn_started', 'input_requested', 'input_resolved', 'turn_completed', 'turn_interrupted', 'session_ended', 'session_continued', 'agent_exited',
 ]);
 const MAX_RETIRED_TURNS = 32;
 const MAX_MESSAGE_BYTES = 2048;
@@ -13,7 +13,8 @@ const EVENT_FIELDS = new Set(['version', 'token', 'harness', 'event', 'sessionId
 const NATIVE_EVENT = /^[A-Za-z0-9_.:-]{1,64}$/;
 const DIAGNOSTIC_ID_LENGTH = 64;
 
-type Lifecycle = 'unbound' | 'running' | 'needs_input' | 'ready';
+/** `idle`: root bound, no foreground turn (for example after a user interrupt). */
+type Lifecycle = 'unbound' | 'idle' | 'running' | 'needs_input' | 'ready';
 /** Provider-asserted subject of an event. Anything other than an explicit root fails closed. */
 type Scope = 'root' | 'child';
 
@@ -171,7 +172,7 @@ export class AgentAttentionBroker {
   handoffState(terminalId: string): 'unverified' | 'ready' | 'running' | 'needs_input' | 'unavailable' {
     const registration = this.current(terminalId);
     if (!registration) return 'unavailable';
-    return registration.lifecycle === 'unbound' ? 'unverified' : registration.lifecycle;
+    return registration.lifecycle === 'unbound' || registration.lifecycle === 'idle' ? 'unverified' : registration.lifecycle;
   }
 
   canHandoff(terminalId: string): boolean {
@@ -317,6 +318,14 @@ export class AgentAttentionBroker {
         this.emit(registration, 'input_resolved');
         return 'accepted';
       }
+      case 'turn_interrupted':
+        // Retire the turn and any wait without a completion: no Ready alert for a cancelled turn.
+        this.retire(registration, turnId);
+        registration.activeTurnId = undefined;
+        registration.pendingInput = undefined;
+        registration.lifecycle = 'idle';
+        this.emit(registration, 'turn_interrupted');
+        return 'accepted';
       case 'turn_completed':
         this.retire(registration, turnId);
         registration.activeTurnId = undefined;

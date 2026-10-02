@@ -91,8 +91,8 @@ Enable **Agent attention** in the harness defaults before launching a new SSH ag
 
 | Harness | Native events used |
 | --- | --- |
-| Codex | Native hooks: prompt submission, permission requests, tool completion, root stop (subagent stop is ignored), and session end. Codex asks you to review the hooks once (`/hooks`) before it runs them. |
-| Claude | Prompt submission, permission requests, tool completion/failure/denial of the same request, root stop (only when no background work is pending), and session end. Needs Claude Code 2.1.196+ for prompt IDs. |
+| Codex | Native hooks: prompt submission, permission requests correlated with tool start/completion, root stop (subagent stop is ignored), user interrupt, and session end. Codex asks you to review the hooks once (`/hooks`) before it runs them. |
+| Claude | Prompt submission, permission requests (resolved when the tool batch completes), root stop (only when no background work is pending) or stop-on-API-error, and session end. Needs Claude Code 2.1.196+ for prompt IDs. |
 | OpenCode | Busy/idle of the verified top-level session (child sessions are ignored), permission/question requests and replies, and session deletion. |
 | Pi | Agent start, agent settled, and session shutdown. |
 | OMP | Main-agent start, main-session stop (after background jobs drain), and session shutdown. |

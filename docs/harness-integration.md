@@ -235,13 +235,42 @@ the root session; turn = the turn identity; child = how child scope is proven).
 
 | Provider | Root start (identity / turn) | Input wait / resolution | Completion (Ready) | Never completes / child scope | Session boundary |
 | --- | --- | --- | --- | --- | --- |
-| Codex | `UserPromptSubmit` (`session_id` / `turn_id`) | `PermissionRequest` / `PostToolUse` of the same `tool_name` | root `Stop` | `SubagentStop`, events with `agent_id`, other threads, legacy `notify` | `SessionEnd` |
-| Claude | `UserPromptSubmit` (`session_id` / `prompt_id`) | `PermissionRequest` / `PostToolUse`, `PostToolUseFailure` or `PermissionDenied` of the same `tool_use_id` | root `Stop` with empty `background_tasks` and `session_crons` | events with `agent_id`; `Stop` with background work; `Notification` is not used (no turn or request identity) | `SessionEnd` |
+| Codex | `UserPromptSubmit` (`session_id` / `turn_id`) | `PermissionRequest` (no `tool_use_id`) correlated with `PreToolUse`/`PostToolUse` calls (see below) | root `Stop`; root `Interrupt` ends the turn without a completion (`turn_interrupted`) | `SubagentStop`, events with `agent_id`, other threads, legacy `notify` | `SessionEnd` |
+| Claude | `UserPromptSubmit` (`session_id` / `prompt_id`) | `PermissionRequest` (no `tool_use_id`) = turn-level wait / `PostToolBatch` for the same prompt | root `Stop` with empty `background_tasks` and `session_crons`, or `StopFailure` (settled, not necessarily successful) | events with `agent_id`; `Stop` with background work; `Notification` is not used (no turn or request identity) | `SessionEnd` |
 | OpenCode | `session.status` busy of a verified top-level session (parentage from `client.session.get`, or the trusted resumed ID) / plugin epoch | `permission.asked`/`question.asked` (`id`) / `*.replied`, `question.rejected` (`requestID`) | verified-root `session.status` idle (the legacy `session.idle` duplicate is absorbed by the closed epoch) | sessions with a `parentID`; sessions with unknown parentage | `session.deleted` |
 | Pi | `agent_start` (`ctx.sessionManager` session ID / extension epoch) | not reported | `agent_settled` | `agent_end` and lower-level events | `session_shutdown` |
 | OMP | `agent_start` where `ctx.agent.kind === 'main'` (session ID / extension epoch) | not reported | main `session_stop` (OMP defers it until agent-owned background jobs are idle); it is the terminal foreground completion | `agent_end` is not terminal completion; `ctx.agent.kind === 'sub'` sessions (and unknown kinds) never settle the pane | `session_shutdown` (main) |
 | Agy | `PreInvocation` #0 (`conversationId` binds as root / bridge-store epoch) | ask tools `PreToolUse` / `PostToolUse` of the same tool | `Stop` with `fullyIdle === true` for the root conversation | `Stop` with `fullyIdle` false/absent, other conversations | none native |
 | Hermes (SSH) | `pre_llm_call` with empty `parent_session_id` (`session_id` / `turn_id`) | `pre_approval_request` / `post_approval_response`, human surfaces only, tied by `turn_id`, request identity `tool_call_id` (else `pattern_key`) | `post_llm_call` of a turn that began as a root turn | child turns (`pre_llm_call` with a `parent_session_id`, remembered by `turn_id` and session); turns never seen start; `surface="smart"` approvals | `on_session_finalize` for the root |
+
+Claude permission lifecycle. `PermissionRequest` carries `tool_name`/`tool_input` but no
+`tool_use_id`, so there is no exact request identity. The interpreter records, in the
+bridge's private per-terminal store, that the current `prompt_id` has an outstanding
+permission wait (a boolean; the tool input never leaves the hook, is never stored, sent
+or logged) and reports one `input_requested` with the constant `inputId` `permission`.
+Only `PostToolBatch` (fired once after every call of a parallel batch has resolved)
+reports `input_resolved`; per-tool `PostToolUse` is deliberately not subscribed, so an
+unrelated parallel tool finishing cannot clear the wait. A denied call resolves with its
+batch. Cost: after approval the pane stays Needs Input until the batch finishes. Child
+(`agent_id`) permission and batch events are ignored. `StopFailure` (turn ended on an API
+error) settles the foreground like `Stop`: Ready/settled does not imply a successful
+model response, and the error text is never forwarded. Claude has no user-interrupt hook,
+so an interrupted turn stays Running until the next prompt or `Stop`.
+
+Codex permission correlation. `PermissionRequest` has `turn_id`, `tool_name` and
+`tool_input` but no `tool_use_id`; `PreToolUse` and `PostToolUse` carry `tool_use_id`.
+The interpreter remembers each `PreToolUse` as `{tool_use_id, 16-hex fingerprint of
+tool_name + canonical tool_input}` and binds a `PermissionRequest` to every unfinished
+call with the same fingerprint (identical parallel calls form one group). A wait resolves
+only when all of its calls have a `PostToolUse`; the broker sees one `input_requested`
+for the first wait and one `input_resolved` once none remain. A request that matches no
+started call, or a call the user denies (no `PostToolUse`), fails closed: the wait lasts
+until `Stop`, `Interrupt` or session end. Only ids and fingerprints are stored. Whether
+`PreToolUse` and `PermissionRequest` carry byte-identical `tool_input` for every tool has
+not been verified live; a mismatch degrades to the fail-closed behavior. Root `Interrupt`
+maps to the generic `turn_interrupted`: it retires the turn and any wait, keeps the root
+bound and leaves the terminal available, without a Turn complete alert; a later `Stop`
+of that turn is stale.
 
 Hermes details. `post_llm_call` does not carry `parent_session_id`, and approval hooks
 carry `session_key` (a gateway/TUI key that can be a stale compression parent), not a

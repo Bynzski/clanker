@@ -5,6 +5,8 @@ export type AgentAttentionEvent =
   | 'input_requested'
   | 'input_resolved'
   | 'turn_completed'
+  /** The user cancelled the foreground turn: no completion, root stays bound, input stays possible. */
+  | 'turn_interrupted'
   /** Native root-session boundary; the agent process and its PTY remain alive. */
   | 'session_ended'
   /** The harness process exited to the fallback shell; attention is retired. */

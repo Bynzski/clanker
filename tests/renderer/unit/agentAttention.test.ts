@@ -61,6 +61,9 @@ describe('agent pane names and attention', () => {
     store.applyUpdate({ terminalId: 'a', event: 'turn_started' }, false);
     store.applyUpdate({ terminalId: 'a', event: 'turn_completed' }, false);
     expect(useAgentAttentionStore.getState().byTerminalId.a).toMatchObject({ lifecycle: 'turn_complete', unseen: true });
+    store.applyUpdate({ terminalId: 'a', event: 'turn_started' }, false);
+    store.applyUpdate({ terminalId: 'a', event: 'turn_interrupted' }, false);
+    expect(useAgentAttentionStore.getState().byTerminalId.a).toMatchObject({ lifecycle: 'unknown', unseen: false });
     // A native session boundary and harness exit both leave the pane with no known state.
     store.applyUpdate({ terminalId: 'a', event: 'session_ended' }, false);
     expect(useAgentAttentionStore.getState().byTerminalId.a).toMatchObject({ lifecycle: 'unknown', unseen: false });
