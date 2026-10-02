@@ -1,10 +1,13 @@
 export interface RemotePreviewRequest {
   workspaceId: string;
   remotePort: number;
-  localPort: number;
+  remoteHost?: '127.0.0.1' | '::1';
+  protocol?: 'http' | 'https';
 }
 export interface RemotePreviewState extends RemotePreviewRequest {
-  status: 'starting' | 'active' | 'stopping' | 'error';
+  localPort: number;
+  serviceId?: string;
+  status: 'starting' | 'waiting' | 'active' | 'stopping' | 'error';
   url: string;
   error?: string;
 }
@@ -16,7 +19,29 @@ export interface RemotePreviewResult {
 export interface RemotePreviewUpdate {
   workspaceId: string;
   forward: RemotePreviewState | null;
+  forwards?: RemotePreviewState[];
+  services?: RemoteWebService[];
+  error?: string;
 }
 export function isPreviewPort(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1024 && value <= 65535;
+}
+
+/** Discovered service identity is independent of any desktop forward. */
+export interface RemoteWebService {
+  remoteHost: '127.0.0.1' | '::1';
+  remotePort: number;
+  protocol: 'http' | 'https';
+  pid?: number;
+  processName?: string;
+  cwd?: string;
+  source: 'listener' | 'fallback' | 'terminal-output';
+  confidence?: 'workspace' | 'unscoped';
+}
+
+export interface RemotePreviewWatchRequest {
+  workspaceId: string;
+  consumerId: string;
+  enabled: boolean;
+  refresh?: boolean;
 }

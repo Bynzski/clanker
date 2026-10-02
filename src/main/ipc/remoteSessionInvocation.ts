@@ -61,6 +61,7 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
       terminals: deps.getTerminals(), mainWindow: deps.getMainWindow(), getIsShuttingDown: deps.getIsShuttingDown,
       launchLabel: resolved.launchLabel, harnessId: session.harness, workspaceId: workspace.workspaceId,
       environmentId: workspace.location.environmentId, remoteWorkingDir: session.cwd,
+      onOutput: deps.createRemoteOutputObserver?.(workspace.workspaceId),
       filterData: resolved.attentionEnabled && broker ? createRemoteAttentionFilter((raw) => broker.receiveRemote(id, raw)) : undefined,
       onExit: () => {
         broker?.release(id);

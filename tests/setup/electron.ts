@@ -39,6 +39,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     terminalReady: createAsyncMock({ success: true }),
     writeClipboard: createAsyncMock({ success: true }),
     resolveDroppedFilePath: vi.fn(() => ''),
+    remotePreviewWatch: createAsyncMock(null),
     remotePreviewGet: createAsyncMock(null),
     remotePreviewStart: createAsyncMock({ success: false, forward: null, error: 'Unavailable' }),
     remotePreviewStop: createAsyncMock(true),

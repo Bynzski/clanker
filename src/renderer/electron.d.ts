@@ -1,4 +1,4 @@
-import type { RemotePreviewRequest, RemotePreviewState, RemotePreviewResult, RemotePreviewUpdate } from '../shared/types/remotePreview';
+import type { RemotePreviewRequest, RemotePreviewWatchRequest, RemotePreviewResult, RemotePreviewUpdate } from '../shared/types/remotePreview';
 import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types/environments';
 import type { RemoteDirectoryListing } from '../shared/types/environments';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
@@ -124,9 +124,10 @@ interface ElectronAPI {
   resolveDroppedFilePath: (file: File, uriList?: string) => string;
 
   // Browser (WebContentsView)
-  remotePreviewGet: (request: { workspaceId: string }) => Promise<RemotePreviewState | null>;
+  remotePreviewWatch: (request: RemotePreviewWatchRequest) => Promise<RemotePreviewUpdate | null>;
+  remotePreviewGet: (request: { workspaceId: string }) => Promise<RemotePreviewUpdate | null>;
   remotePreviewStart: (request: RemotePreviewRequest) => Promise<RemotePreviewResult>;
-  remotePreviewStop: (request: { workspaceId: string }) => Promise<boolean>;
+  remotePreviewStop: (request: { workspaceId: string; serviceId?: string }) => Promise<boolean>;
   onRemotePreviewChanged: (callback: (update: RemotePreviewUpdate) => void) => () => void;
   browserHide: (workspaceId: string) => Promise<void>;
   /**

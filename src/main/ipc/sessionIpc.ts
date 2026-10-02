@@ -38,6 +38,7 @@ export interface RegisterSessionIpcDeps {
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
   agentAttentionBroker?: AgentAttentionBroker;
   taskSessionCoordinator?: TaskSessionCoordinator;
+  createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
   getWorkspaceRegistry?: () => WorkspaceRegistry;
 }
 

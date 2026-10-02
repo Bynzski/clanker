@@ -72,7 +72,7 @@ From the gate or workspace tabs:
 - For **Local**, enter a local directory path or use the operating-system folder picker
 - For **SSH Remote**, add a target in **Manage SSH Targets** if needed, select it, and browse directories over SSH or enter an absolute POSIX path. **New Folder** in the remote chooser creates a directory on the remote host. Clanker starts at `$HOME/workspaces` when it exists and is accessible, otherwise at `$HOME`.
 
-Remote workspaces require system OpenSSH access to a Linux/POSIX host and Python 3 on that host. The SSH account must have permission to access the selected directory. Remote harnesses must be installed on the host; the launcher shows harnesses discovered there. Remote worktree management, optional host-side Agent Attention, and explicit SSH browser previews are supported. Remote session history and native conversation recovery are available for supported harnesses. Remote recipes, persistent processes, and automatic port discovery remain unavailable. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh) for setup and the complete limitations list.
+Remote workspaces require system OpenSSH access to a Linux/POSIX host and Python 3 on that host. The SSH account must have permission to access the selected directory. Remote harnesses must be installed on the host; the launcher shows harnesses discovered there. Remote worktree management, optional host-side Agent Attention, and automatic SSH web service previews are supported. Remote session history and native conversation recovery are available for supported harnesses. Remote recipes and persistent processes remain unavailable. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh) for setup and the complete limitations list.
 
 ## Navigation
 

@@ -10,7 +10,7 @@ import type { VcsProvider } from '../shared/types/vcs';
 import type { GitStatusResult } from '../shared/types/git';
 import type { HarnessSession } from '../shared/types/session';
 import type { AgentAttentionUpdate } from '../shared/types/agentAttention';
-import type { RemotePreviewRequest, RemotePreviewUpdate } from '../shared/types/remotePreview';
+import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchRequest } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { ThemeId } from '../shared/types/theme';
 import {
@@ -56,6 +56,7 @@ import {
   TERMINAL_READY,
   RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
+  REMOTE_PREVIEW_WATCH,
   REMOTE_PREVIEW_GET,
   REMOTE_PREVIEW_START,
   REMOTE_PREVIEW_STOP,
@@ -265,9 +266,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Browser (using WebContentsView)
+  remotePreviewWatch: (request: RemotePreviewWatchRequest) => ipcRenderer.invoke(REMOTE_PREVIEW_WATCH, request),
   remotePreviewGet: (request: { workspaceId: string }) => ipcRenderer.invoke(REMOTE_PREVIEW_GET, request),
   remotePreviewStart: (request: RemotePreviewRequest) => ipcRenderer.invoke(REMOTE_PREVIEW_START, request),
-  remotePreviewStop: (request: { workspaceId: string }) => ipcRenderer.invoke(REMOTE_PREVIEW_STOP, request),
+  remotePreviewStop: (request: { workspaceId: string; serviceId?: string }) => ipcRenderer.invoke(REMOTE_PREVIEW_STOP, request),
   onRemotePreviewChanged: (callback: (update: RemotePreviewUpdate) => void) => {
     const handler = (_: IpcRendererEvent, update: RemotePreviewUpdate) => callback(update);
     ipcRenderer.on(REMOTE_PREVIEW_CHANGED, handler);

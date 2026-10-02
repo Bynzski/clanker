@@ -37,6 +37,7 @@ export interface SpawnPtyOptions {
   remoteWorkingDir?: string;
   recipeCommandStartup?: RecipeCommandStartup;
   onExit?: (id: string) => void | Promise<void>;
+  onOutput?: (data: string) => void;
   filterData?: (data: string) => string;
 }
 
@@ -105,6 +106,8 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     if (!term) return;
     data = opts.filterData?.(data) ?? data;
     if (!data) return;
+    try { opts.onOutput?.(data); }
+    catch (error) { console.warn('[clanker-grid] terminal output observer failed:', error); }
     term.recipeCommandStartup?.onData(data);
 
     if (!term.startupBufferReady) {

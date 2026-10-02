@@ -57,6 +57,7 @@ export const WRITE_CLIPBOARD = 'write-clipboard';
  * Browser
  * ============================================================================ */
 
+export const REMOTE_PREVIEW_WATCH = 'remote-preview:watch';
 export const REMOTE_PREVIEW_GET = 'remote-preview:get';
 export const REMOTE_PREVIEW_START = 'remote-preview:start';
 export const REMOTE_PREVIEW_STOP = 'remote-preview:stop';
@@ -288,6 +289,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
   // Browser
+  REMOTE_PREVIEW_WATCH,
   REMOTE_PREVIEW_GET,
   REMOTE_PREVIEW_START,
   REMOTE_PREVIEW_STOP,

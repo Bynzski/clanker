@@ -17,6 +17,8 @@ import type {
 import type {
   WorkspaceEnvironmentId,
 } from '../../shared/types/environments';
+import type { RemoteWebService } from '../../shared/types/remotePreview';
+import type { RemoteWebEndpoint } from '../remote/sshPortDiscovery';
 import type { PortForwardHandle } from '../remote/sshPortForward';
 import type { HarnessSession } from '../../shared/types/session';
 import type { RemoteFileSnapshot, RemoteFileSnapshotTargets } from '../../shared/types/remoteFileWatch';
@@ -104,7 +106,9 @@ export interface WorkspaceEnvironment {
   captureSessionBaseline?(workspacePath: string, harnessId: string): Promise<{ sessions: HarnessSession[]; hostTime: number }>;
   resolveTerminalSpawn(params: TerminalSpawnRequest): Promise<TerminalSpawnResolved>;
 
-  startPortForward?(localPort: number, remotePort: number, signal: AbortSignal, onExit: (error: string) => void): Promise<PortForwardHandle>;
+  discoverWebServices?(signal?: AbortSignal, hints?: RemoteWebEndpoint[]): Promise<RemoteWebService[]>;
+
+  startPortForward?(localPort: number, remotePort: number, signal: AbortSignal, onExit: (error: string) => void, remoteHost?: '127.0.0.1' | '::1'): Promise<PortForwardHandle>;
 
   dispose?(): Promise<void> | void;
 }

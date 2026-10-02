@@ -587,6 +587,13 @@ describe('BrowserPanel', () => {
       expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', 'https://example.com');
     });
 
+    it.each(['localhost:3000', '127.0.0.1:5173', '[::1]:8080', 'localhost', 'localhost/path'])('defaults developer loopback input %s to HTTP', (inputUrl) => {
+      render(<BrowserPanel {...defaultProps} />);
+      fireEvent.change(screen.getByPlaceholderText('Enter URL...'), { target: { value: inputUrl } });
+      fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+      expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', `http://${inputUrl}`);
+    });
+
     it('preserves http protocol if already specified', () => {
       render(<BrowserPanel {...defaultProps} />);
 
@@ -1263,6 +1270,7 @@ describe('BrowserPanel', () => {
           id: 'workspace-1', environmentId: 'ssh-a', lifecycle: 'active', browserPane, browserVisible: true,
         })],
       });
+      window.electronAPI.remotePreviewWatch = vi.fn().mockResolvedValue(null);
       window.electronAPI.remotePreviewGet = vi.fn().mockResolvedValue(null);
       window.electronAPI.remotePreviewStart = vi.fn();
       window.electronAPI.onRemotePreviewChanged = vi.fn(() => vi.fn());
@@ -1274,17 +1282,22 @@ describe('BrowserPanel', () => {
       render(<BrowserPanel layoutVersion={1} />);
       await act(async () => {});
 
+      fireEvent.click(screen.getByRole('button', { name: 'Remote preview' }));
+      fireEvent.click(screen.getByText('Forward port manually…'));
       fireEvent.change(screen.getByLabelText('Remote preview port'), { target: { value: '3100' } });
-      fireEvent.change(screen.getByLabelText('Local preview port'), { target: { value: '4300' } });
-      fireEvent.click(screen.getByText('Start preview'));
+      if (!screen.queryByLabelText('Remote preview port')) {
+        fireEvent.click(screen.getByRole('button', { name: 'Remote preview' }));
+        fireEvent.click(screen.getByText('Forward port manually…'));
+      }
+      fireEvent.click(screen.getByText('Forward and open'));
       await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Address already in use'));
       fireEvent.click(screen.getByRole('tab', { name: 'example.com' }));
       await waitFor(() => expect(screen.getByRole('tab', { name: 'example.com' })).toHaveAttribute('aria-selected', 'true'));
 
+      if (!screen.queryByRole('dialog')) fireEvent.click(screen.getByRole('button', { name: 'Remote preview' }));
       expect(screen.getByLabelText('Remote preview port')).toHaveValue(3100);
-      expect(screen.getByLabelText('Local preview port')).toHaveValue(4300);
       expect(screen.getByRole('alert')).toHaveTextContent('Address already in use');
-      expect(window.electronAPI.remotePreviewGet).toHaveBeenCalledTimes(1);
+      expect(window.electronAPI.remotePreviewGet).not.toHaveBeenCalled();
       expect(window.electronAPI.onRemotePreviewChanged).toHaveBeenCalledTimes(1);
     });
 
@@ -1294,7 +1307,11 @@ describe('BrowserPanel', () => {
       vi.mocked(window.electronAPI.remotePreviewStart).mockReturnValue(new Promise((resolve) => { resolveStart = resolve; }));
       render(<BrowserPanel layoutVersion={1} />);
       await act(async () => {});
-      fireEvent.click(screen.getByText('Start preview'));
+      if (!screen.queryByLabelText('Remote preview port')) {
+        fireEvent.click(screen.getByRole('button', { name: 'Remote preview' }));
+        fireEvent.click(screen.getByText('Forward port manually…'));
+      }
+      fireEvent.click(screen.getByText('Forward and open'));
       fireEvent.click(screen.getByRole('tab', { name: 'example.com' }));
       await waitFor(() => expect(screen.getByRole('tab', { name: 'example.com' })).toHaveAttribute('aria-selected', 'true'));
 
@@ -1304,8 +1321,18 @@ describe('BrowserPanel', () => {
       }));
 
       expect(mockBrowserTabNavigate).toHaveBeenCalledExactlyOnceWith('workspace-1', 'tab-b', 'http://127.0.0.1:3000/');
-      expect(screen.getByText('Open preview')).toBeInTheDocument();
-      expect(window.electronAPI.remotePreviewGet).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Remote preview' })).toBeInTheDocument();
+      expect(window.electronAPI.remotePreviewGet).not.toHaveBeenCalled();
+    });
+
+    it('keeps local Browser free of remote controls and places the SSH affordance in the existing toolbar', () => {
+      setupStore({ browserPane: createTabbedPane() });
+      const local = render(<BrowserPanel layoutVersion={1} />);
+      expect(screen.queryByRole('button', { name: 'Remote preview' })).toBeNull(); local.unmount();
+      setupRemoteBrowser(); render(<BrowserPanel layoutVersion={1} />);
+      expect(screen.getByRole('button', { name: 'Remote preview' }).closest('.browser-toolbar')).not.toBeNull();
+      expect(document.querySelectorAll('.browser-toolbar')).toHaveLength(1);
+      expect(document.querySelector('.remote-preview-bar')).toBeNull(); expect(screen.queryByRole('dialog')).toBeNull();
     });
 
     it('renders browser tabs in the pane header', () => {
@@ -1460,7 +1487,7 @@ describe('BrowserPanel', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
 
       await waitFor(() => {
-        expect(mockBrowserTabNavigate).toHaveBeenCalledWith('workspace-1', 'tab-a', 'https://localhost:3000');
+        expect(mockBrowserTabNavigate).toHaveBeenCalledWith('workspace-1', 'tab-a', 'http://localhost:3000');
       });
     });
   });

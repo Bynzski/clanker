@@ -81,6 +81,7 @@ interface RegisterTerminalIpcDeps {
   getAppShuttingDown?: () => boolean;
   agentAttentionBroker?: AgentAttentionBroker;
   taskSessionCoordinator?: TaskSessionCoordinator;
+  createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
 }
 
 let appShuttingDown = false;
@@ -202,6 +203,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           workspaceId: resolvedWorkspace.workspaceId,
           environmentId: effectiveEnvironmentId,
           remoteWorkingDir,
+          onOutput: deps.createRemoteOutputObserver?.(resolvedWorkspace.workspaceId),
           filterData: resolved.attentionEnabled && agentAttentionBroker
             ? createRemoteAttentionFilter((raw) => agentAttentionBroker.receiveRemote(id, raw)) : undefined,
           onExit: () => {

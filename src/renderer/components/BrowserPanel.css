@@ -273,7 +273,13 @@
   color: var(--control-primary-fg) !important;
 }
 
-.remote-preview-bar { flex-shrink: 0; background: var(--surface-raised); border-bottom: 1px solid var(--border-default); font-size: 11px; }
+.remote-preview-trigger { position: relative; }
+.remote-preview-dot { position: absolute; right: 2px; bottom: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); }
+.remote-preview-trigger[data-status="ready"] .remote-preview-dot { background: var(--status-success); }
+.remote-preview-trigger[data-status="waiting"] .remote-preview-dot { background: var(--status-warning); }
+.remote-preview-trigger[data-status="error"] .remote-preview-dot { background: var(--status-error); }
+.remote-preview-trigger[data-status="available"] .remote-preview-dot { background: var(--status-info); }
+.remote-preview-menu { width: min(360px, 90vw); font-size: 11px; }
 .remote-preview-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px; }
 .remote-preview-controls label { display: flex; align-items: center; gap: 4px; }
 .remote-preview-controls input { width: 70px; }

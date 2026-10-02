@@ -2,6 +2,7 @@ import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type {
+  ReactNode,
   ChangeEventHandler,
   FocusEventHandler,
   KeyboardEventHandler,
@@ -12,7 +13,7 @@ import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import { useScopedWorkspace } from './WorkspaceScope';
 import { useDragHandle } from './dragHandleContext';
 import './BrowserPanel.css';
-import RemotePreviewBar from './RemotePreviewBar';
+import RemotePreviewControl from './RemotePreviewControl';
 import BrowserUrlInput from './BrowserUrlInput';
 import BrowserTabStrip from './BrowserTabStrip';
 import AnnotationHandoffDialog from './AnnotationHandoffDialog';
@@ -49,10 +50,12 @@ function normalizeBrowserInputUrl(rawUrl: string): string {
     return `file:///${navigateUrl.replace(/\\/g, '/')}`;
   }
 
+  if (/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:[/?#]|$)/i.test(navigateUrl)) return `http://${navigateUrl}`;
   return `https://${navigateUrl}`;
 }
 
 interface BrowserToolbarProps {
+  remotePreviewControl?: ReactNode;
   canGoBack: boolean;
   canGoForward: boolean;
   handleBack: () => void;
@@ -75,6 +78,7 @@ interface BrowserToolbarProps {
 }
 
 function BrowserToolbar({
+  remotePreviewControl,
   canGoBack,
   canGoForward,
   handleBack,
@@ -130,6 +134,7 @@ function BrowserToolbar({
         <ExternalLink size={16} strokeWidth={2} />
       </IconButton>
 
+      {remotePreviewControl}
       <IconButton aria-label={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}
         className={`browser-nav-btn ${annotationActive ? 'browser-annotation-active' : ''}`}
         onClick={handleAnnotationToggle}
@@ -430,10 +435,10 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
         handleOpenExternal={handleOpenExternal}
         annotationActive={annotationActive}
         handleAnnotationToggle={handleAnnotationToggle}
+        remotePreviewControl={workspace?.environmentId && workspace.environmentId !== 'local' ? <RemotePreviewControl
+          key={workspace.id} workspaceId={workspace.id} enabled={isActiveWorkspace && Boolean(workspace.browserVisible)} onOpen={handleNavigate}
+        /> : undefined}
       />
-      {workspace?.environmentId && workspace.environmentId !== 'local' && <RemotePreviewBar
-        key={workspace.id} workspaceId={workspace.id} onOpen={handleNavigate} onLayoutChange={scheduleBoundsUpdate}
-      />}
       {handoffError && <div className="browser-annotation-error" role="alert">{handoffError}</div>}
       <div className="browser-content-shell">
         <div className="browser-content" ref={contentRef} />
