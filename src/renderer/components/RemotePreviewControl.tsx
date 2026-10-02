@@ -20,6 +20,8 @@ export default function RemotePreviewControl({ workspaceId, onOpen, enabled = tr
   const consumer = useRef(`browser-${crypto.randomUUID()}`);
   const generation = useRef(0), revision = useRef(0);
   const latest = useRef(state), selection = useRef(''), autoChoice = useRef(''), manualChoice = useRef(false);
+  const verifiedChoice = useRef('');
+  if (!enabled) verifiedChoice.current = '';
   const opening = useRef<string | null>(null), previousStatus = useRef<string | null>(null);
   const active = useRef(enabled), open = useRef(onOpen);
   active.current = enabled; open.current = onOpen;
@@ -28,7 +30,9 @@ export default function RemotePreviewControl({ workspaceId, onOpen, enabled = tr
     snapshot = active.current ? snapshot : { ...snapshot, services: [] };
     latest.current = snapshot; setState(snapshot);
     const forward = snapshot.forwards?.find((entry) => key(entry) === selection.current);
-    const canOpen = manualChoice.current || snapshot.services?.some((service) => service.confidence === 'workspace' && key(service) === selection.current);
+    if (snapshot.services?.some((service) => service.confidence === 'workspace' && key(service) === selection.current)) verifiedChoice.current = selection.current;
+    // Ownership survives a temporary disappearance within this lease, but never a hidden/replaced lease.
+    const canOpen = manualChoice.current || (selection.current !== '' && verifiedChoice.current === selection.current);
     if (active.current && canOpen && forward?.status === 'active' && previousStatus.current !== 'active') {
       const current = generation.current;
       void open.current(forward.url).catch(() => { if (generation.current === current) setError('Could not open remote preview'); });
@@ -38,7 +42,7 @@ export default function RemotePreviewControl({ workspaceId, onOpen, enabled = tr
   useEffect(() => {
     const current = ++generation.current;
     latest.current = { workspaceId, forward: null, services: [], forwards: [] }; setState(latest.current);
-    selection.current = ''; autoChoice.current = ''; manualChoice.current = false; previousStatus.current = null;
+    selection.current = ''; verifiedChoice.current = ''; autoChoice.current = ''; manualChoice.current = false; previousStatus.current = null;
     setMenuOpen(false); setSelected(''); setError(''); setBusy(false);
     const unsubscribe = window.electronAPI.onRemotePreviewChanged((snapshot) => {
       if (generation.current !== current || snapshot.workspaceId !== workspaceId) return;

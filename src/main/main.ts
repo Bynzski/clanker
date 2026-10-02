@@ -301,6 +301,7 @@ app.whenReady().then(() => {
 
   registerRemotePreviewIpc(remotePreviewManager);
   browserIpcController = registerBrowserIpc({
+    onBrowserNavigation: (id, url, code) => remotePreviewManager.reportBrowserNavigation(id, url, code),
     getWorkspaceEnvironmentKind: (id) => workspaceRegistry.getWorkspace(id)?.environment.kind ?? null,
     getMainWindow: () => mainWindow,
     getBrowserViews: () => browserViews,

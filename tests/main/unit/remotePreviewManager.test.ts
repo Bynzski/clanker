@@ -88,3 +88,31 @@ it('enforces a per-workspace cap without restricting a second workspace to one s
   expect((await f.manager.start({ ...request, workspaceId: 'ssh-b', remotePort: 3004 })).success).toBe(true);
   await f.manager.close();
 });
+it('reports managed Browser certificate errors without turning TLS trust into SSH failure', async () => {
+  const f = fixture(); await f.manager.start({ ...request, protocol: 'https' });
+  const forward = f.manager.get('ssh-a')!;
+  f.manager.reportBrowserNavigation('ssh-b', forward.url, -202); expect(f.manager.get('ssh-a')?.error).toBeUndefined();
+  f.manager.reportBrowserNavigation('ssh-a', 'https://example.com', -202); expect(f.manager.get('ssh-a')?.error).toBeUndefined();
+  f.manager.reportBrowserNavigation('ssh-a', forward.url, -202);
+  expect(f.manager.get('ssh-a')).toMatchObject({ status: 'waiting', error: expect.stringContaining('certificate rejected') });
+  expect(f.close).not.toHaveBeenCalled(); f.manager.reportBrowserNavigation('ssh-a', forward.url);
+  expect(f.manager.get('ssh-a')?.error).toBeUndefined();
+  f.manager.reportBrowserNavigation('ssh-a', forward.url, -324);
+  expect(f.manager.get('ssh-a')).toMatchObject({ status: 'waiting', error: undefined });
+  expect(f.close).not.toHaveBeenCalled(); await f.manager.close();
+});
+it('exposes an empty discovery bootstrap after the last Browser lease disappears', async () => {
+  const f = fixture(); const services = [{ remoteHost: '127.0.0.1', remotePort: 5173, protocol: 'http', source: 'listener', cwd: '/same' }];
+  const discover = vi.fn().mockResolvedValue(services);
+  Object.assign(f.workspace.environment, { discoverWebServices: discover });
+  f.manager.discovery.setConsumer('ssh-a', 'browser', true); await Promise.resolve(); await Promise.resolve();
+  expect(f.manager.snapshot('ssh-a').services).toEqual([expect.objectContaining({ confidence: 'workspace' })]);
+  f.manager.discovery.setConsumer('ssh-a', 'browser', false);
+  expect(f.manager.snapshot('ssh-a').services).toEqual([]);
+  const fresh = deferred<[]>(); discover.mockReturnValue(fresh.promise);
+  f.manager.discovery.setConsumer('ssh-a', 'browser', true);
+  expect(f.manager.snapshot('ssh-a').services).toEqual([]);
+  f.manager.discovery.setConsumer('ssh-a', 'browser', false); fresh.resolve([]);
+  await Promise.resolve(); await Promise.resolve(); expect(f.manager.snapshot('ssh-a').services).toEqual([]);
+  await f.manager.close();
+});

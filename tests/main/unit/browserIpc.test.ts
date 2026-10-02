@@ -9,6 +9,7 @@ import { testHome } from '../../_helpers/tempPaths';
 
 let attachedBeforeInputEventHandler: ((event: { preventDefault: () => void }, input: { control?: boolean; meta?: boolean; alt?: boolean; shift?: boolean; key?: string; code?: string; type?: string }) => void) | null = null;
 let attachedContextMenuHandler: ((event: unknown, params: { x: number; y: number }) => void) | null = null;
+let attachedDidFailLoadHandler: ((event: unknown, code: number, description: string, url: string, isMainFrame: boolean) => void) | null = null;
 let attachedDidNavigateHandler: ((event: unknown, url: string) => void) | null = null;
 
 // Mock electron module
@@ -73,6 +74,7 @@ vi.mock('electron', () => ({
         if (eventName === 'context-menu') {
           attachedContextMenuHandler = handler as typeof attachedContextMenuHandler;
         }
+        if (eventName === 'did-fail-load') attachedDidFailLoadHandler = handler as unknown as typeof attachedDidFailLoadHandler;
         if (eventName === 'did-navigate') {
           attachedDidNavigateHandler = handler as unknown as typeof attachedDidNavigateHandler;
         }
@@ -166,6 +168,16 @@ describe('registerBrowserIpc', () => {
     attachedContextMenuHandler = null;
     attachedDidNavigateHandler = null;
     __resetBrowserHistoryServiceForTests(new BrowserHistoryService(new MemoryHistoryStore()));
+  });
+
+  test('reports main-frame navigation failures without bypassing certificate security or exposing diagnostics', () => {
+    const { deps } = createMockDeps(); const onBrowserNavigation = vi.fn();
+    createBrowserViewForTab('tls', 'one', { ...deps, onBrowserNavigation });
+    attachedDidFailLoadHandler?.({}, -202, 'raw TLS diagnostic', 'https://127.0.0.1:4000/', true);
+    expect(onBrowserNavigation).toHaveBeenCalledExactlyOnceWith('tls', 'https://127.0.0.1:4000/', -202);
+    attachedDidFailLoadHandler?.({}, -3, 'aborted', 'https://127.0.0.1:4000/', true);
+    attachedDidFailLoadHandler?.({}, -202, 'iframe', 'https://127.0.0.1:4000/', false);
+    expect(onBrowserNavigation).toHaveBeenCalledTimes(1);
   });
 
   test('routes actual SSH tab creation into private scopes and fails closed for unregistered workspaces', () => {

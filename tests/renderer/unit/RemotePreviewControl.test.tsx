@@ -139,3 +139,10 @@ it('waits for fresh ownership before reopening a surviving active automatic forw
   f.notify({ forwards: [active], services: [] }); expect(f.onOpen).toHaveBeenCalledTimes(1);
   f.notify({ forwards: [active], services: [service] }); await waitFor(() => expect(f.onOpen).toHaveBeenCalledTimes(2));
 });
+it('recovers immediately when inventory temporarily omits the service within the same active lease', async () => {
+  vi.mocked(window.electronAPI.remotePreviewStart).mockResolvedValue({ success: true, forward: active });
+  const f = fixture(false); f.notify({ services: [service] }); await waitFor(() => expect(f.onOpen).toHaveBeenCalledTimes(1));
+  f.notify({ services: [], forwards: [{ ...active, status: 'waiting' }] });
+  f.notify({ services: [], forwards: [active] }); await waitFor(() => expect(f.onOpen).toHaveBeenCalledTimes(2));
+  expect(window.electronAPI.remotePreviewStart).toHaveBeenCalledTimes(1);
+});

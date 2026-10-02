@@ -39,6 +39,23 @@ export class RemotePreviewManager {
   snapshot(workspaceId: string): RemotePreviewUpdate {
     return { workspaceId, forward: this.get(workspaceId), forwards: this.getAll(workspaceId), services: this.services.get(workspaceId)?.services ?? [], error: this.services.get(workspaceId)?.error };
   }
+  /** Browser TLS trust remains Chromium-owned; report only failures for this
+   * workspace's managed origins, separately from SSH/service readiness. */
+  reportBrowserNavigation(workspaceId: string, url: string, errorCode?: number): void {
+    let origin: string;
+    try { origin = new URL(url).origin; } catch { return; }
+    for (const entry of this.entries.values()) {
+      if (entry.workspace.workspaceId !== workspaceId || !entry.state.url || entry.state.status === 'error' || entry.state.status === 'stopping'
+        || new URL(entry.state.url).origin !== origin || this.registry.getWorkspace(workspaceId) !== entry.workspace) continue;
+      if (errorCode !== undefined && [-101, -102, -104, -118, -324].includes(errorCode)) {
+        entry.state = { ...entry.state, status: 'waiting', error: undefined }; this.emit(workspaceId); continue;
+      }
+      const error = errorCode === undefined ? undefined : errorCode <= -200 && errorCode >= -299
+        ? 'Remote HTTPS certificate rejected. Use HTTP or a certificate trusted by Browser and valid for 127.0.0.1.'
+        : 'Could not load remote preview. Check the application and try Open again.';
+      if (entry.state.error !== error) { entry.state = { ...entry.state, error }; this.emit(workspaceId); }
+    }
+  }
   private emit(workspaceId: string): void { this.notify(this.snapshot(workspaceId)); }
   async start(request: RemotePreviewRequest): Promise<RemotePreviewResult> {
     const fail = (error: string): RemotePreviewResult => ({ success: false, forward: this.get(request?.workspaceId), error });
