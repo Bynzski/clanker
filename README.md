@@ -20,7 +20,7 @@ Clanker Grid is a single-window desktop app that brings your terminals, AI codin
 - **Embedded browser** — keep docs, dashboards, or your local app open right next to your code.
 - **Editor & file tree** — CodeMirror-backed editing with syntax highlighting and a familiar explorer.
 - **Multi-workspace** — every project gets its own tab; reorder tabs and switch context without losing it.
-- **SSH workspaces** — open a remote Linux/POSIX directory with the built-in SSH directory chooser; terminals, Git, and installed AI harnesses run on that host, while Explorer and the editor monitor its remote files. Manage remote worktrees, track agent attention, resume supported conversations, and preview an explicit server port in the desktop Browser.
+- **SSH workspaces** — open a remote Linux/POSIX directory with the built-in SSH directory chooser; terminals, Git, and installed AI harnesses run on that host, while Explorer and the editor monitor its remote files. Manage remote worktrees, track agent attention, resume supported conversations, and preview workspace-owned web services in the embedded Browser with automatic discovery and desktop loopback forwarding. Manual forwarding remains available as a fallback.
 - **Credentials handled** — SSH key generation and encrypted PAT storage built in.
 
 ## Supported platforms
@@ -30,7 +30,7 @@ Clanker Grid is a single-window desktop app that brings your terminals, AI codin
 
 macOS, ARM64, and WSL are not produced in this release. WSL users should run the Linux AppImage.
 
-SSH workspaces connect from the desktop app to remote Linux/POSIX hosts. Remote Windows hosts and automatic port forwarding are unavailable in V1; see [SSH Workspaces](docs/workspaces.md#remote-workspaces-ssh).
+SSH workspaces connect from the desktop app to remote Linux/POSIX hosts. Automatic web preview forwarding requires no Clanker daemon or helper on the host. Remote Windows hosts remain unsupported; see [SSH Workspaces](docs/workspaces.md#remote-workspaces-ssh).
 
 ## Install
 

@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Automatic SSH browser previews** — discover workspace-owned remote HTTP/HTTPS services, allocate desktop loopback forwards automatically, and open a single unambiguous service in the embedded Browser. Multiple services and manual forwarding are available from a compact Browser control.
+
+### Fixed
+
+- **SSH preview recovery and isolation** — development servers can stop and restart without recreating healthy SSH tunnels. Private SSH workspace Browser sessions prevent loopback cookies and storage from leaking between unrelated remote workspaces.
+
 ## [0.9.0] - 2026-10-01
 
 ### Added
