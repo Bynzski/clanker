@@ -180,6 +180,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
 
     // Session history
     discoverSessions: createAsyncMock([]),
+    getHarnessUsage: createAsyncMock({ workspaceId: '', entries: [] }),
     invokeSession: createAsyncMock({ id: 'term-session-1', pid: 2001 }),
 
     // Workspace Recipes

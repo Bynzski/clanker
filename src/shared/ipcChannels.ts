@@ -206,6 +206,12 @@ export const SESSION_DISCOVER = 'session-discover';
 export const SESSION_INVOKE = 'session-invoke';
 
 /* ============================================================================
+ * Harness Usage
+ * ============================================================================ */
+
+export const HARNESS_USAGE_GET = 'harness-usage:get';
+
+/* ============================================================================
  * Workspace Recipes
  * ============================================================================ */
 
@@ -419,6 +425,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   // Session history
   SESSION_DISCOVER,
   SESSION_INVOKE,
+  // Harness usage
+  HARNESS_USAGE_GET,
   // Workspace Recipes
   RECIPE_GET_ALL,
   RECIPE_SAVE,

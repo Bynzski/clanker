@@ -168,6 +168,8 @@ import {
   // Session history
   SESSION_DISCOVER,
   SESSION_INVOKE,
+  // Harness usage
+  HARNESS_USAGE_GET,
   // Workspace Recipes
   RECIPE_GET_ALL,
   RECIPE_SAVE,
@@ -353,6 +355,8 @@ const ALL_CHANNELS = [
   // Session history
   SESSION_DISCOVER,
   SESSION_INVOKE,
+  // Harness usage
+  HARNESS_USAGE_GET,
   // Workspace Recipes
   RECIPE_GET_ALL,
   RECIPE_SAVE,

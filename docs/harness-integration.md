@@ -45,7 +45,8 @@ require every implementation to use one storage format.
 ## Current capabilities
 
 All seven providers support local and SSH interactive launch. Model discovery and
-AI commit remain local-only. No provider implements usage yet.
+AI commit remain local-only. No provider implements `usage` yet; the execution
+seam below exists so the first adapters need only protocol and parser code.
 
 | Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -207,9 +208,7 @@ emulated fork. SSH models/inference and local Hermes attention remain absent.
 
 For a future capability, extend `HarnessProvider` and implement it under the
 relevant provider. Do not add a new central harness switch/support allowlist.
-`usage` is already an optional extension point with timestamped measurements,
-units, allowance/rate/token/spend kinds, periods, resets and account/provider/model
-scopes. There are no speculative quota probes or usage UI. Existing AI commit
+`usage` is an optional extension point; see "Usage capability" below. Existing AI commit
 uses `buildInvocation({ model, prompt })` to return command, args, optional stdin,
 timeout and optional environment. Optional provider output parsing unwraps native
 CLI envelopes before shared commit-message normalization. Compatibility command,
@@ -217,6 +216,82 @@ args and timeout values derive from `buildInvocation()`; `modelArg` is descripti
 legacy metadata, not executable authority. Git context and prompts
 stay shared; Windows resolution and desktop PATH remain in the executor. There
 is no remote inference or general inference framework.
+
+## Usage capability
+
+Future usage support means **implementing `provider.usage`** in
+`src/main/harnesses/<id>/` (for example `codex/usage.ts`) and assigning it in that
+provider's `index.ts`. Do not add the harness to a central allowlist, switch or
+adapter map; `harnessArchitecture.test.ts` scans shared main code for that.
+
+```text
+renderer --workspaceId--> usageIpc --> HarnessUsageService
+                                          | WorkspaceRegistry.getWorkspace(id)
+                                          v
+                          provider.usage.get({ executor, transport, signal })
+                                          | executor.run(request)
+                                          v
+                          WorkspaceEnvironment.executeHarnessCommand
+                           /                                     \
+              executeLocalHarnessCommand              executeSshHarnessCommand
+              (bounded child process)                 (SshCommandExecutor + saved target)
+```
+
+Ownership: the **provider decides what to execute and how to parse it**; the
+**environment decides where and how it runs**. A provider receives only
+`HarnessUsageContext` (`executor`, descriptive `transport`, `signal`, optional
+`accountId`/`modelId`). It never sees an SSH target, an environment object,
+Electron, credential paths or renderer input, and must not spawn processes or
+write separate local/remote implementations. Authentication stays with the
+harness CLI (ask the CLI to make its own authenticated request; do not read auth
+files or scrape a TUI).
+
+`HarnessCommandRequest` (`harnesses/commandExecution.ts`) is the transport-neutral
+request: bare `command`, `args`, optional `cwd`, `env`, `stdin`, `timeoutMs`
+(default 10 s, max 30 s) and `maxOutputBytes` per stream (default 256 KiB, max
+1 MiB). Both transports share `normalizeHarnessCommand()` validation (no path-like
+executables, NUL bytes, invalid env names or `CLANKER_ATTENTION_*` variables).
+Non-zero exits return `{ stdout, stderr, exitCode }`; use `requireSuccess()` when a
+zero exit is required. Timeout, output overflow, cancellation, a missing binary
+(local `ENOENT`, remote shell status 127) and SSH transport failure (255) throw
+`HarnessCapabilityError` (`timeout`, `output-limit`, `aborted`, `binary-unavailable`,
+`transport-failure`). Providers should throw `unauthenticated` when the CLI
+reports a signed-out state, `parse-failure` for unrecognised output, and tolerate
+schema drift.
+
+Local execution reuses the desktop PATH augmentation and Windows `cmd.exe /c`
+resolution of the existing command helpers and strips attention credentials.
+Remote execution always goes through `SshCommandExecutor` for the registered
+environment's target, with the same remote CLI PATH setup as other host probes.
+An environment without `executeHarnessCommand` yields `unavailable`; there is no
+fallback to the local machine.
+
+`HarnessUsageSnapshot` keeps the #60 measurement model (kind, arbitrary unit,
+used/remaining/limit, reset, period, scope). Additions: measurement `label`, and
+`scope.accountLabel`/`planLabel` for display. `scope.accountId` is an opaque
+grouping key kept in main and stripped before IPC. Percent-only sources use
+`unit: 'percent'`. Nothing assumes 5-hour/weekly/monthly windows, and nothing sums
+quota across harnesses; the same subscription can appear via several harnesses
+(source harness -> provider -> account -> measurement), and identity must not be
+invented when no reliable key exists.
+
+`HarnessUsageService` (`src/main/usage/`) resolves capabilities generically from
+the registry and takes an authoritative `workspaceId` (resolved through
+`WorkspaceRegistry`; the renderer cannot supply targets, paths or credentials).
+Providers without `usage` report `unsupported`. Probes are isolated per
+provider, bounded by a 45 s deadline and cancelled on shutdown. Results are cached
+per environment object (local and SSH accounts never mix), deduplicated while in
+flight, and refreshed only after the provider's `refresh` policy (defaults: 5 min
+after success, 60 s after failure; floor 10 s). `force` bypasses the cache but not a
+10 s floor. A failed refresh keeps the last good reading flagged `stale`. There is
+no background polling. If the workspace closes or is replaced during a request, the
+request fails rather than returning data to another workspace. Snapshots are
+validated and copied field by field; renderer errors are fixed per-category text,
+never raw stderr.
+
+IPC: `HARNESS_USAGE_GET` (`getHarnessUsage(workspaceId, { harnessIds?, force? })`)
+returns `{ workspaceId, entries }` for all (or the requested) harnesses. The header
+UI is not built yet.
 
 ## Preserved limitations and follow-ups
 

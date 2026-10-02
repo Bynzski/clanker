@@ -9,6 +9,7 @@ import type { HarnessDefaultsMap } from '../shared/types/store';
 import type { VcsProvider } from '../shared/types/vcs';
 import type { GitStatusResult } from '../shared/types/git';
 import type { HarnessSession } from '../shared/types/session';
+import type { HarnessUsageRequest } from '../shared/types/harnessUsage';
 import type { AgentAttentionUpdate } from '../shared/types/agentAttention';
 import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchRequest } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
@@ -163,6 +164,7 @@ import {
   ANNOTATION_PREPARE_SEND,
   SESSION_DISCOVER,
   SESSION_INVOKE,
+  HARNESS_USAGE_GET,
   RECIPE_GET_ALL,
   RECIPE_SAVE,
   RECIPE_DELETE,
@@ -492,6 +494,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(SESSION_DISCOVER, workspaceId),
   invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean) =>
     ipcRenderer.invoke(SESSION_INVOKE, workspaceId, session, fork),
+
+  // Harness usage (workspaceId is the only reference; main resolves the environment)
+  getHarnessUsage: (workspaceId: string, request?: HarnessUsageRequest) =>
+    ipcRenderer.invoke(HARNESS_USAGE_GET, workspaceId, request),
 
   // Workspace Recipes
   recipeGetAll: (workspacePath?: string) =>
