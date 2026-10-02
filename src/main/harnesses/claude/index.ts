@@ -3,6 +3,7 @@ import { remote } from './remoteAttention';
 import { local, prepareResources } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
+import { claudeUsage } from './usage';
 import { defineHarness, type HarnessProvider } from '../types';
 
 export const claudeProvider = defineHarness({
@@ -16,5 +17,6 @@ export const claudeProvider = defineHarness({
     discover: async (workspace: string) => (await import('./sessions')).discoverClaudeSessions(workspace),
   },
   attention: { prepareResources, local, remote },
+  usage: claudeUsage,
   launch: { command: 'claude', args: [], modelArg: '--model' },
 } satisfies HarnessProvider);

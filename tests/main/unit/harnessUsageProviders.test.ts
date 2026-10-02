@@ -245,7 +245,7 @@ describe('providers execute only through context.executor', () => {
 });
 
 describe('through the usage service with the canonical registry', () => {
-  it('OMP, Hermes and Agy report data; Codex is unsupported without a session seam; the other three have no usage, and renderer data has no account IDs', async () => {
+  it('OMP, Hermes and Agy report data; Codex and Claude are unsupported without a session seam; the other two have no usage, and renderer data has no account IDs', async () => {
     const { HarnessUsageService } = await import('../../../src/main/usage/harnessUsageService');
     const executeHarnessCommand = vi.fn(async (request: { command: string }) => ({
       stdout: request.command === 'agy' ? ((request as { args?: string[] }).args?.[0] === '--version' ? '1.2.14' : JSON.stringify(envelope(groups)))
@@ -253,7 +253,7 @@ describe('through the usage service with the canonical registry', () => {
         : JSON.stringify({ provider: 'p', fetched_at: '2026-10-02T13:34:15+00:00', windows: [{ label: 'S', used_percent: 5 }] }),
       stderr: '', exitCode: 0,
     }));
-    const environment = { id: 'local', kind: 'local', executeHarnessCommand, probeAvailableHarnessIds: async () => ['codex', 'omp', 'hermes', 'agy'] };
+    const environment = { id: 'local', kind: 'local', executeHarnessCommand, probeAvailableHarnessIds: async () => ['codex', 'claude', 'omp', 'hermes', 'agy'] };
     const workspace = { workspaceId: 'w', location: { environmentId: 'local', path: '/w' }, environment };
     const service = new HarnessUsageService({ getWorkspace: () => workspace } as never);
     const response = await service.get('w');

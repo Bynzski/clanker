@@ -45,8 +45,8 @@ require every implementation to use one storage format.
 ## Current capabilities
 
 All seven providers support local and SSH interactive launch. Model discovery and
-AI commit remain local-only. Only Codex, OMP, Hermes and Agy implement `usage` so far (see
-"Usage capability"); Claude, OpenCode and Pi remain without it.
+AI commit remain local-only. Only Codex, Claude, OMP, Hermes and Agy implement `usage` so far (see
+"Usage capability"); OpenCode and Pi remain without it.
 
 | Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -360,8 +360,8 @@ the session seam yet.
 
 ### Usage adapters
 
-All four adapters live beside their provider (`codex/usage.ts`, `omp/usage.ts`,
-`hermes/usage.ts`, `agy/usage.ts`); OMP, Hermes and Agy run
+All five adapters live beside their provider (`codex/usage.ts`, `claude/usage.ts`,
+`omp/usage.ts`, `hermes/usage.ts`, `agy/usage.ts`); OMP, Hermes and Agy run
 only through `context.executor.run()`, never branch on transport, and expose a pure
 parser (`parseOmpUsage`, `parseHermesUsage`). Fixtures are in
 `tests/main/unit/harnessUsageProviders.test.ts` with fake identities; no CI test calls a
@@ -410,6 +410,52 @@ strings have no stated currency, so no monetary measurement). Malformed meters a
 valid ones survive; if any was malformed and none remains, `parse-failure`. Refresh: cache 60 s,
 hard minimum 60 s, failure backoff 120 s (each probe spawns app-server, locally or over SSH).
 `account/rateLimits/updated` notifications are ignored because the session is short-lived.
+
+**Claude** — Claude Code's stream-json *control* protocol through `context.sessionExecutor`
+(stateful, like Codex). The Agent SDK is deliberately not a dependency: instantiating it would spawn
+a local Claude Code and bypass SSH environments, so the provider speaks the same wire protocol
+inside the selected workspace environment (verified against claude 2.1.287, SDK 0.3.287 types and
+transport argv, T3 Code's probe, and live runs). Argv, in the SDK's order: `claude --output-format
+stream-json --verbose --input-format stream-json` (no `--print`; verified), plus the SDK's probe
+isolation: `--no-session-persistence`, `--settings {"disableAllHooks":true}` (no user, project,
+local or Clanker attention hooks), `--mcp-config {"mcpServers":{}}` with `--strict-mcp-config` (no
+configured MCP servers), and env `ENABLE_CLAUDEAI_MCP_SERVERS=false`,
+`CLAUDE_CODE_AUTO_CONNECT_IDE=0`, `CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL=1` (no connected claude.ai MCP
+or IDE discovery). `--bare` is not used because it skips OAuth/keychain; auth and account selection
+(`CLAUDE_CONFIG_DIR`, API keys, Bedrock/Vertex) are Claude Code's own and never touched, and no auth
+file is read. **No model turn:** only two `control_request` frames are ever written — `initialize`,
+then (after its response) `get_usage` with `skip_behaviors:true` (documented in the SDK types; skips
+the local transcript scan) — never a `user` message or prompt. Inbound `assistant`/`user`/`result`/
+`stream_event` frames (structural evidence of a turn) or any inbound `control_request` (permission,
+hook or MCP asks) fail the probe, and nothing is ever granted. Unrelated frames and control responses
+for other ids are ignored; a matching control error is `command-failed` (text never exposed). Live,
+the whole probe takes under a second and emits only `control_response` frames. Account (from the
+`initialize` response, structured fields only): `apiProvider` other than `firstParty` or an
+`apiKeySource` -> `unsupported`; `tokenSource:"none"` with no email/subscription (the live-verified
+signed-out shape) -> `unauthenticated`; otherwise continue (absent/ambiguous info is not claimed as
+signed out and `get_usage` decides). `get_usage`: `rate_limits_available:false` (API key, Bedrock,
+Vertex, missing scope) -> `unsupported`, never an empty `ok`; `true` with an object of limits proceeds;
+non-boolean or missing limits -> `parse-failure`. Windows (`utilization` is already 0-100, not a
+fraction like streamed `rate_limit_event`s) become `rate-limit`/`percent` rows: `five_hour` ->
+"Claude · 5 hour" (300 min), `seven_day` -> "Claude · weekly" (10080 min), and the documented named
+families `seven_day_oauth_apps`, `seven_day_opus` (modelId `opus`), `seven_day_sonnet` (modelId
+`sonnet`) as distinct rows. `model_scoped[]` entries become weekly rows labelled by `display_name`
+("Claude · weekly · Fable"); `display_name` is presentation text, so no `modelId` is invented, and a
+family already reported as a named field is not duplicated. `resets_at` must be ISO with an offset
+(otherwise omitted); `startsAt` is derived only for the 5-hour/weekly windows. Plan: the usage
+`subscription_type` (else the init `subscriptionType`, with a leading "Claude " dropped) title-cased
+(`pro`->Pro, `max`, `team`, `enterprise`, other values keep their words); email is the
+`accountLabel` only — there is no stable account id, so none is invented. Deliberately not
+normalized: `session` cost/model usage and `behaviors` (session/transcript data, not quota),
+`extra_usage` (utilization scale unverified and money is in minor units), and the undocumented
+codename windows and `limits[]` the live response also carries. The control API is explicitly
+experimental, so the parser is isolated, tolerant of additive fields, skips individually malformed
+windows while valid ones survive (all malformed -> `parse-failure`). As with Codex, data is returned
+only after `closeInput()` + `wait()` exit 0 and the session is always disposed. Session bounds:
+30 s, 512 KiB (a live probe is ~38 KB). Refresh: cache 60 s, hard minimum 60 s, failure backoff 180 s.
+Streamed `rate_limit_event` updates and persistent sessions are out of scope. The adapter uses
+`providerId: "anthropic-claude"` as specified; OMP reports the same service as `anthropic`, so a
+future correlation step must map between them.
 
 **OMP** — `omp usage --json` (never `omp usage invalidate`; `force` only bypasses
 Clanker's cache). One report per credential, so several providers and several
