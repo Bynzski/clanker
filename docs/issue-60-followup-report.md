@@ -77,8 +77,10 @@ its own commit SHA).
 | Agy | CLI + fallback | SQLite / SQLite | emulated / unsupported | owned plugin / inert owned plugin | JSON stdin/result, 60s |
 
 All have interactive launch; all integrated history capabilities have resume.
-Models and inference remain local-only. Usage remains an extensible, unimplemented
-contract. No new capabilities or controls were invented.
+Models and inference remained local-only in this snapshot. Usage was then an extensible, unimplemented
+contract. No new capabilities or controls were invented in issue #60. Issue #55 subsequently implemented
+local/SSH usage for Codex, Claude, OMP, Hermes, and Antigravity and added the header popover; see the
+current [usage integration guide](harness-integration.md#usage-capability).
 
 ## Preserved behavior and differences
 

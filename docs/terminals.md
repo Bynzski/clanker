@@ -74,6 +74,22 @@ Each harness can have a global default model set in the header settings dropdown
 
 Hidden harnesses are launch-surface preferences only. They can still resume previous chats when the underlying harness command is installed and available.
 
+### Subscription usage
+
+Click the **Usage** gauge icon between Chat History and Settings to check subscription usage and quota for the active workspace. Codex, Claude, Oh My Pi, Hermes, and Antigravity are supported. OpenCode and Pi are omitted because they do not expose a safe canonical harness-level quota interface. Supported providers remain listed when not installed or unavailable, with a status explaining the result.
+
+For local workspaces, probes use the local harness CLI and its authentication. For SSH workspaces, they use the registered host's installed CLI and authentication; there is no fallback to desktop accounts. Clanker usage adapters do not read credential/auth files. Antigravity requires a safely recognized stable CLI version of at least 1.1.11; older or ambiguous versions are not probed. Claude's probe disables hooks, MCP, and IDE integration and does not start a model turn.
+
+- Providers load independently, so a slow or failing provider does not delay other rows.
+- Quota windows show remaining capacity, reset times, and when they were checked. Progress bars represent remaining capacity.
+- Opening requests current readings, subject to caching. Polling runs about every 60 seconds while open and stops when closed or when switching workspaces.
+- **Refresh** requests fresh readings subject to provider minimum intervals and failure backoff. It is disabled while any selected provider request is in flight or all resolved entries are waiting for their next allowed refresh. Entries without a refresh deadline can be rechecked once loading finishes.
+- Failed refreshes preserve last-good measurements with a **Stale** marker. Switching workspaces clears the previous workspace's readings and discards late responses.
+
+In **Settings → Harness Defaults**, expand a supported harness and toggle **Show in Usage**. This is enabled by default and independent of launch visibility. Hidden usage providers are not queried; disabling every provider leaves the popover available with “No usage providers selected”. The trigger waits for saved preferences to load before allowing the popover to open.
+
+Local probes were live-tested during issue #55. Full authenticated Codex/Claude usage on a real SSH host remains a non-blocking smoke-test follow-up: the available host did not have those CLIs installed/authenticated. See the [usage integration guide](harness-integration.md#usage-capability) for provider protocols, security boundaries, and execution limits.
+
 ### Session History
 
 The **Chat History** button (message icon) in the header opens a dropdown that discovers and displays past AI harness sessions from all supported harnesses:

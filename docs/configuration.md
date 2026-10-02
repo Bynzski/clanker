@@ -14,7 +14,7 @@ Access via the header toolbar gear icon.
 
 ### Harness Defaults
 
-Per-harness global defaults for AI harnesses. Configured in the header settings dropdown under **Harness Defaults**. These apply when launching a terminal from that harness's header button.
+Per-harness global preferences for AI harnesses. Configured in the header settings dropdown under **Harness Defaults**. Launch defaults apply when launching a terminal from that harness's header button; **Show in Usage** controls the Usage popover.
 
 Each harness (Codex, OpenCode, Pi, Oh My Pi, Claude, Hermes, Antigravity) has its own settings:
 
@@ -25,6 +25,9 @@ Each harness (Codex, OpenCode, Pi, Oh My Pi, Claude, Hermes, Antigravity) has it
 | Default Model | Model ID pre-selected when launching with this harness | Empty (harness picks) |
 | Favorites | Pinned model IDs shown in the compact model picker | Empty |
 | Agent attention | Show supported harness turn and input status on new panes | Disabled |
+| Show in Usage | Include a supported harness in the Usage popover and its usage requests | Enabled |
+
+**Show in Usage** is available for Codex, Claude, Oh My Pi, Hermes, and Antigravity. It is independent of **Visible**: hiding a launch button does not hide its usage row. Disabling **Show in Usage** removes that provider from usage reads, polling, and manual refresh. See [Subscription usage](terminals.md#subscription-usage).
 
 Hermes discovers provider-aware models from the local Hermes TUI gateway when its standard Python installation is available. Model IDs appear before their providers so subscription variants stay distinguishable. Choose a provider/model in the default picker, or enter a custom model ID; leaving the field empty uses Hermes's own default. Favorites work in the workspace gate. The initial list may be served from Hermes's cache: use **Refresh Hermes models** in settings or the gate to query live connector catalogs. If discovery is unavailable, the manual model field remains usable. Agent attention supports SSH Hermes launches through a host observer plugin; local Hermes attention remains unavailable. Hermes is not an AI commit provider.
 
@@ -35,7 +38,7 @@ Antigravity discovers available models via `agy models`. The model list supports
 1. Open the settings dropdown from the gear icon
 2. Scroll to the **Harness Defaults** section
 3. Click a harness row to expand its settings
-4. Toggle visibility and agent attention, edit extra flags text, set a default model, or manage favorites
+4. Toggle visibility, agent attention, or **Show in Usage** where supported; edit extra flags text, set a default model, or manage favorites
 
 All changes persist immediately to `electron-store`.
 

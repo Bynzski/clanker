@@ -595,7 +595,9 @@ a controlled Radix Popover like its siblings: same positioning, Escape/outside d
 restoration to the trigger, a `BrowserOverlayLease` while open, and mutual exclusion with Chat history
 and Settings in every direction (the Settings-to-Credentials handoff is untouched). Switching the
 focused workspace closes it and bumps an ownership generation, so late responses from the old workspace
-never render and reopening queries the new workspace id (the renderer sends only `workspaceId`).
+never render and reopening queries the new workspace id (the renderer identifies the environment only
+by `workspaceId`, with bounded harness-selection and refresh options). The trigger is disabled until
+persisted harness preferences have loaded, so initial reads respect saved provider visibility.
 
 Only harnesses with a verified usage capability appear in the panel. Support is canonical descriptor
 metadata (`usage: { support }` in `HARNESS_DESCRIPTORS`, enforced against `provider.usage` by
@@ -620,8 +622,11 @@ inconclusive). While open, an ordinary (non-forced) read repeats about every 60 
 already in flight, and a 30 s clock drives countdowns; both stop on close, unmount or workspace switch.
 There is no background polling while closed. The Refresh button sends `force: true` per harness; main's
 hard provider minimums, backoff, `retryAfterMs` and the 10 s floor stay authoritative. The renderer uses
-only the returned `refreshableAt` for UX: Refresh is disabled while a forced refresh runs, and while every
-refreshable provider is still inside its window ("Refresh available in Ns"). An IPC rejection never shows
+only the returned `refreshableAt` for UX: Refresh is disabled while any selected harness request is in
+flight (initial, polling, or forced), when no providers are selected, and while all resolved entries have
+future refresh deadlines ("Refresh available in Ns"). A resolved entry without `refreshableAt`, such as
+`not-installed`, permits a forced recheck once loading finishes; unresolved entries do not count toward
+refresh eligibility. An IPC rejection never shows
 raw text: it becomes "Usage could not be read", and a prior good reading is kept and flagged stale.
 
 Rendering: percent windows show remaining first ("72% remaining", or "N% used" when only that is
@@ -637,6 +642,15 @@ provider display-name formatter (it never affects dispatch, correlation or cachi
 leading "<harness> · " is stripped from a harness's own labels. State lives in `useHarnessUsage`;
 `UsageDropdown` is presentational and styled by `UsageDropdown.css` using existing tokens and the
 low-radius system.
+
+### Issue #55 validation and follow-up
+
+The reviewed feature HEAD `fcba2e9a9b7f452cecc9a5746856633626798e9c` passed
+`npm run validate` (branding check, lint, typecheck, security audit, build, and 229 test files / 4,847 tests).
+[PR #70](https://github.com/Bynzski/clanker/pull/70) merged the feature with passing Ubuntu and Windows
+validation checks. Local usage probes were live-tested. Full authenticated Codex/Claude usage over a real
+SSH host remains a non-blocking smoke-test follow-up because the available host did not have those CLIs
+installed/authenticated; automated transport tests are not evidence of that live authentication path.
 
 ## Preserved limitations and follow-ups
 

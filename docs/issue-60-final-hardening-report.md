@@ -1,5 +1,8 @@
 # Issue #60 final hardening report
 
+> Historical issue #60 snapshot. Issue #55 subsequently implemented local/SSH harness usage and its
+> header control; see the current [usage integration guide](harness-integration.md#usage-capability).
+
 Branch: `issue-60-harness-provider-registry`, starting SHA
 `eb1c8a0b973556b2fd50e5da1da26eb6797dad9c`. No PR opened. Renderer code,
 controls, icons, availability presentation and workflows are unchanged.
@@ -112,7 +115,7 @@ local and SSH history/resume/native fork; Agy has history/resume, local emulated
 fork and unsupported SSH fork. Hermes history remains absent. Local attention
 exists for all except Hermes; SSH attention exists for all seven. AI commit
 remains local-only for Codex/OpenCode/Pi/OMP/Agy. Remote model discovery and AI
-commit remain absent; usage remains an unimplemented extension contract.
+commit remained absent in this snapshot; usage was an unimplemented extension contract until issue #55.
 
 Remaining follow-ups, deliberately unchanged:
 
