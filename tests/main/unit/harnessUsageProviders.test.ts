@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { getHarnessProvider } from '../../../src/main/harnesses/registry';
 import { parseOmpUsage, OMP_USAGE_COMMAND } from '../../../src/main/harnesses/omp/usage';
@@ -464,5 +464,37 @@ describe('Antigravity noisy stdout', () => {
     const other = JSON.stringify(envelope([{ name: 'Other', buckets: [bucket('z', '5h', 0.1)] }]));
     expect(() => agy(null, `${good}\n${other}`)).toThrow(expect.objectContaining({ kind: 'parse-failure' }));
     expect(agy(null, `${good}\n${good}`).measurements).toHaveLength(4);
+  });
+});
+
+describe('provider identity convention and intentionally absent usage', () => {
+  it('direct sources use the quota namespace, matching OMP, with no translation', async () => {
+    const { parseCodexRateLimits } = await import('../../../src/main/harnesses/codex/usage');
+    const { parseClaudeUsage } = await import('../../../src/main/harnesses/claude/usage');
+    const claude = parseClaudeUsage({ rate_limits_available: true, subscription_type: 'pro', rate_limits: { five_hour: { utilization: 1, resets_at: null } } });
+    const codex = parseCodexRateLimits({ rateLimits: { limitId: 'codex', primary: { usedPercent: 1, windowDurationMins: 300, resetsAt: 1_790_000_000 } } }, { kind: 'chatgpt' });
+    const agyM = agy(envelope([{ name: 'G', buckets: [bucket('w', 'weekly', 0.5)] }])).measurements;
+    expect(claude[0].scope?.providerId).toBe('anthropic');
+    expect(codex[0].scope?.providerId).toBe('openai-codex');
+    expect(agyM[0].scope?.providerId).toBe('google-antigravity');
+    // OMP names the same services identically, taken straight from its own report.
+    const ompIds = omp({ reports: ['anthropic', 'openai-codex', 'google-antigravity'].map((provider) => ({ provider, limits: [{ id: 'x', label: 'x', scope: { provider }, amount: { unit: 'percent', used: 1, limit: 100 } }] })) })
+      .measurements.map((m) => m.scope?.providerId);
+    expect(ompIds).toEqual([claude[0].scope?.providerId, codex[0].scope?.providerId, agyM[0].scope?.providerId]);
+  });
+  it('the renderer still receives providerId', () => {
+    const snapshot = validateUsageSnapshot({ observedAt: 1, measurements: [{ kind: 'rate-limit', unit: 'percent', used: 1, scope: { providerId: 'anthropic', accountId: 'opaque' } }] });
+    expect(toRendererMeasurements(snapshot)[0].scope).toEqual({ providerId: 'anthropic' });
+  });
+  it('OpenCode and Pi deliberately have no usage capability, and no usage module or credential/HTTP path was added', () => {
+    expect(getHarnessProvider('opencode').usage).toBeUndefined();
+    expect(getHarnessProvider('pi').usage).toBeUndefined();
+    for (const id of ['opencode', 'pi']) {
+      const dir = resolve(__dirname, `../../../src/main/harnesses/${id}`);
+      expect(readdirSync(dir)).not.toContain('usage.ts');
+      for (const file of readdirSync(dir)) {
+        expect(readFileSync(resolve(dir, file), 'utf8'), `${id}/${file}`).not.toMatch(/zen\/go\/v1\/usage|opencode\.ai\/zen/);
+      }
+    }
   });
 });

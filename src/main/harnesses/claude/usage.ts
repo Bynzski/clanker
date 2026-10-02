@@ -46,7 +46,8 @@ export const CLAUDE_USAGE_ENV = {
   CLAUDE_CODE_AUTO_CONNECT_IDE: '0',
   CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: '1',
 } as const;
-const PROVIDER_ID = 'anthropic-claude';
+/** The quota namespace (as OMP reports it), not the harness: source harness -> provider -> account. */
+const PROVIDER_ID = 'anthropic';
 const MAX_IGNORED_MESSAGES = 2000;
 const SESSION_MINUTES = 300;
 const WEEK_MINUTES = 10_080;

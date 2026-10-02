@@ -206,7 +206,7 @@ describe('Claude usage normalization', () => {
     expect(five).toEqual({
       kind: 'rate-limit', unit: 'percent', used: 42, remaining: 58, limit: 100, resetsAt: Date.parse('2026-10-02T15:30:00.357Z'),
       period: { label: '5 hour', endsAt: Date.parse('2026-10-02T15:30:00.357Z'), startsAt: Date.parse('2026-10-02T15:30:00.357Z') - 300 * 60_000 },
-      scope: { providerId: 'anthropic-claude', accountLabel: 'alice@example.invalid', planLabel: 'Pro' }, label: 'Claude · 5 hour',
+      scope: { providerId: 'anthropic', accountLabel: 'alice@example.invalid', planLabel: 'Pro' }, label: 'Claude · 5 hour',
     });
     expect(week).toMatchObject({ label: 'Claude · weekly', used: 6, remaining: 94, period: { label: 'weekly' } });
   });

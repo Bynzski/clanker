@@ -454,8 +454,14 @@ windows while valid ones survive (all malformed -> `parse-failure`). As with Cod
 only after `closeInput()` + `wait()` exit 0 and the session is always disposed. Session bounds:
 30 s, 512 KiB (a live probe is ~38 KB). Refresh: cache 60 s, hard minimum 60 s, failure backoff 180 s.
 Streamed `rate_limit_event` updates and persistent sessions are out of scope. The adapter uses
-`providerId: "anthropic-claude"` as specified; OMP reports the same service as `anthropic`, so a
-future correlation step must map between them.
+`providerId: "anthropic"`, the quota namespace OMP also uses (see "Provider identity" below).
+
+**Provider identity.** `scope.providerId` names the underlying quota/provider namespace, never the source
+harness: source harness -> provider -> account -> measurement. Overlapping direct and aggregator
+sources use the same value with no translation table: direct Codex and OMP's Codex report
+`openai-codex`, direct Agy and OMP's Antigravity report `google-antigravity`, direct Claude and OMP's
+Anthropic report `anthropic`. A regression test pins the verified names. No cross-harness
+deduplication exists yet; this only keeps the data model consistent for later correlation.
 
 **OMP** — `omp usage --json` (never `omp usage invalidate`; `force` only bypasses
 Clanker's cache). One report per credential, so several providers and several
@@ -546,6 +552,38 @@ never inspected, and raw vendor text never reaches the renderer. The error-envel
 unspecified upstream, so this classification is best effort and unverified against a live
 error. Refresh: cache 60 s, hard minimum 120 s (each probe is a live vendor quota request with
 no local cache), failure backoff 300 s; every probe also repeats the cheap version check.
+
+### Intentionally unsupported: OpenCode and Pi
+
+Implemented: Codex, Claude, OMP, Hermes, Agy. OpenCode and Pi have no `usage` capability. Absence is
+the canonical registry representation, not a pending task: their upstream contracts do not meet
+Clanker's integration boundary (structured, non-turn, credential-owning, runnable through the
+environment in local and SSH workspaces). A capability that only throws `unsupported` is never
+added, and local history is never presented as an allowance.
+
+**OpenCode** (checked against 1.18.34 and `anomalyco/opencode`). The official OpenCode Go server
+endpoint `GET https://opencode.ai/zen/go/v1/usage` exists and reports rolling, weekly and monthly
+windows, but it authenticates with the user's OpenCode API key (`Authorization: Bearer ...`). No CLI
+command exposes it through OpenCode's own credential handling: the commands are `run`, `serve`,
+`models`, `providers`, `stats`, `export`, `session`, `db` and `debug` (none returns quota; the hidden
+`account` commands only manage console login). `opencode stats` is local token/cost history over
+stored sessions, not server quota, and OpenCode is multi-provider, so Go quota would not describe
+Zen pay-as-you-go balance or credentials for other providers configured through OpenCode. Using the
+endpoint would require Clanker to read `auth.json`/environment keys and call the API itself, which it
+does not do, and a Go-only adapter would make a harness-wide capability look more universal than it
+is. OpenCode remains unsupported until a canonical CLI or server capability exposes quota without
+credential extraction.
+
+**Pi** (checked against 1.0.0 and the upstream coding-agent source). Pi is a multi-provider harness
+(Anthropic, OpenAI/Codex, OpenRouter, Copilot, Z.ai, OpenCode Go, Kimi, ...) with no single quota
+namespace and no core quota snapshot. Its CLI exposes `pi auth check --json` (readiness only: `status`,
+`provider`, `authType`), `pi auth print-api-key` / `print-bearer-token` and `--credentials` (which hand
+out credentials and are never used), and local session totals (`usage-totals`: tokens, context, cost),
+none of which is subscription quota. Community `/usage`/`/quotas` extensions each read Pi's auth
+storage and call vendor APIs themselves, which shows quota can be built on top of Pi but is not a Pi
+interface; Clanker will not read Pi credential stores or rebuild that provider-credential stack. Pi
+remains unsupported until core Pi exposes a structured quota interface suitable for local and SSH
+execution.
 
 IPC: `HARNESS_USAGE_GET` (`getHarnessUsage(workspaceId, { harnessIds?, force? })`)
 returns `{ workspaceId, entries }` for all (or the requested) harnesses. The header
