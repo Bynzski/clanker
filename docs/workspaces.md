@@ -87,21 +87,21 @@ Remote harness commands are discovered and executed on the remote host using its
 
 ### Remote Agent Attention
 
-Enable **Agent attention** in the harness defaults before launching a new SSH agent terminal. The existing pane and workspace badges show native lifecycle events. Events contain only lifecycle names and bounded session/turn IDs; prompts, tool arguments, and model output are excluded. They use the existing SSH terminal connection, with a fresh credential bound to that terminal. No desktop listener secret, additional listener, port forward, or remote daemon is used.
+Enable **Agent attention** in the harness defaults before launching a new SSH agent terminal. The existing pane and workspace badges show native lifecycle events. Main decides which events are authoritative: each is correlated to the terminal's root agent session and current foreground turn, so subagent, child-session, background and stale completions never show Turn complete. Events contain only lifecycle names and bounded session/turn IDs; prompts, tool arguments, and model output are excluded. They use the existing SSH terminal connection, with a fresh credential bound to that terminal. No desktop listener secret, additional listener, port forward, or remote daemon is used.
 
 | Harness | Native events used |
 | --- | --- |
-| Codex | Turn completion through `notify`; harness exit through the wrapper. Start and input-request events are unavailable. |
-| Claude | Prompt submission, stop, permission/input notifications, tool completion, and session end. |
-| OpenCode | Session busy/idle, permission/question requests and replies, and session deletion. |
+| Codex | Native hooks: prompt submission, permission requests, tool completion, root stop (subagent stop is ignored), and session end. |
+| Claude | Prompt submission, permission requests, input notifications, tool completion, root stop (only when no background work is pending), and session end. |
+| OpenCode | Busy/idle of the verified top-level session (child sessions are ignored), permission/question requests and replies, and session deletion. |
 | Pi | Agent start, agent settled, and session shutdown. |
-| OMP | Agent start, agent end, and session shutdown. |
-| Antigravity | Initial invocation, interactive ask-tool requests/replies, and stop. |
-| Hermes | Turn start/completion and approval requests/replies through observer hooks. |
+| OMP | Main-agent start, main-session stop (after background jobs drain), and session shutdown. |
+| Antigravity | Initial invocation, interactive ask-tool requests/replies, and stop only when fully idle for the root conversation. |
+| Hermes | Root turn start/completion, human approval requests/replies (smart approvals and child sessions are ignored), and session finalize through observer hooks. |
 
-All harnesses also retire attention on harness exit before the fallback shell. Missing native events remain unknown; terminal output is never interpreted as an agent state. Codex, Claude, Pi, OMP, and Antigravity require Node.js on the host for hooks. OpenCode uses its own JavaScript runtime; Hermes uses Python and must support its observer plugin API.
+A native session change in a live agent (clear, switch) keeps attention registered and lets the new session bind; harness exit retires attention before the fallback shell. Resuming a session seeds its host-validated ID for providers that keep it; forks start unbound. Missing native events remain unknown; terminal output is never interpreted as an agent state. Codex, Claude, Pi, OMP, and Antigravity require Node.js on the host for hooks. OpenCode uses its own JavaScript runtime; Hermes uses Python and must support its observer plugin API.
 
-Clanker refuses launches with attention enabled when hook configuration conflicts: Codex custom notify/profile settings, Claude explicit settings/bare/safe mode, OpenCode a custom config directory/pure mode/attached server, Pi/OMP disabled extensions, or Hermes custom profiles. Disable attention to use those launch modes. Existing user hook files are preserved.
+Clanker refuses launches with attention enabled when hook configuration conflicts: Codex profiles or existing hook configuration, Claude explicit settings/bare/safe mode, OpenCode a custom config directory/pure mode/attached server, Pi/OMP disabled extensions, or Hermes custom profiles. Disable attention to use those launch modes. Existing user hook files are preserved.
 
 Antigravity installs an owned plugin at `~/.gemini/config/plugins/clanker-grid-remote-attention`; Hermes installs one at `~/.hermes/plugins/clanker-grid-remote-attention` and enables it with `hermes plugins enable`. These plugins remain installed and are inert without Clanker's per-launch environment. Antigravity hooks return an empty response when the launch credentials are absent; Clanker upgrades the exact prior owned hook configuration and refuses unrelated edits. Clanker refuses unowned/conflicting files and writable-by-other-users plugin folders. Hermes settings retain the enabled plugin entry; to uninstall, disable it through Hermes before removing that owned plugin directory. Other launch files use private temporary folders and are cleaned after exit where SSH remains available; interrupted connections can leave private temporary folders for manual cleanup.
 

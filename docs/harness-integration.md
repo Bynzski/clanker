@@ -50,7 +50,7 @@ AI commit remain local-only. Only Codex, Claude, OMP, Hermes and Agy implement `
 
 | Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
 | --- | --- | --- | --- | --- | --- | --- |
-| Codex | debug models | JSONL / JSONL | native | native | notify / notify | yes |
+| Codex | debug models | JSONL / JSONL | native | native | native hooks / native hooks | yes |
 | Claude | absent | JSONL / JSONL | native | native | settings hooks / settings hooks | absent |
 | OpenCode | models CLI + fallback | native CLI / native CLI | native | native | plugin / plugin | yes |
 | Pi | list-models | JSONL / JSONL | native | native | extension / extension | yes |
@@ -147,11 +147,104 @@ Failed preparation removes that directory and remains retryable without damaging
 other providers or generic infrastructure. Optional `disposeResources` owns provider shutdown
 cleanup, including Agy plugin retirement. The app removes the shared root afterward.
 
-Native hook payload normalization for Codex/Claude/Agy and credential transport
-are shared. Pi, OMP and OpenCode contribute their extension/plugin sources from
-providers. Do not confuse installed adapter source files with supported native
-events: Pi uses `agent_settled`, OMP uses `agent_end`, and Hermes has only its
-current SSH observer support.
+### Lifecycle contract
+
+```text
+native harness event
+  -> provider-owned interpretation (src/main/harnesses/<id>/attention*)
+  -> root/child + session/turn provenance
+  -> canonical lifecycle event
+  -> AgentAttentionBroker correlation (main process)
+  -> approved AgentAttentionUpdate -> renderer projection
+```
+
+A terminal token proves *which terminal* emitted an event. It never proves that
+the event belongs to the root user-facing session or its current foreground turn.
+Providers own native semantics: which event is a root start, how root versus
+child is proven, which event means the foreground is settled, and how a real
+user-input wait is recognized. Hook-command providers (Codex, Claude, Agy) supply
+an `attention.interpreter` module; the shared `command.mjs` bridge only reads the
+bounded hook payload, calls that interpreter and forwards its sanitized result.
+Pi, OMP and OpenCode contribute extension/plugin sources; Hermes contributes its
+host observer plugin. The broker contains no harness-name switch.
+
+The wire envelope carries `event`, `scope` (`root` or `child`, provider-asserted),
+`sessionId`, optional `turnId`, optional `inputId` (matches a wait to its
+resolution) and a diagnostic-only `nativeEvent`. Prompts, responses, tool
+arguments and results never enter it, and the renderer receives only the approved
+lifecycle event name.
+
+`AgentAttentionBroker` is the sole lifecycle authority. Per terminal it tracks the
+bound root session, active turn, last completed turn, a broker-owned generation,
+pending input and lifecycle. Invariants:
+
+- Only a provider-asserted root `turn_started` binds an unbound registration. A
+  completion or input event never establishes a root.
+- Events whose `scope` is `child`, or is missing (unknown subject), cannot change
+  state (`ignored-child` / `rejected-ambiguous`). Once a root is bound, another
+  session cannot mutate it (`rejected-mismatch`).
+- Completion and input events need a live foreground turn. Native turn IDs reject
+  stale turns; the last completed turn ID and the generation stop an earlier turn
+  from settling a newer or Clanker-submitted turn (`ignored-stale`).
+- `input_resolved` only clears an outstanding wait, and when both sides carry an
+  `inputId` they must match.
+
+`session_ended` (native in-TUI boundary: clear, switch, delete) clears the root,
+turn and pending input, returns the terminal to unbound and **keeps** the
+registration so another session can bind in the same PTY. `agent_exited` is
+emitted only by Clanker's wrapper (`command.mjs --ended`) or SSH cleanup when the
+harness process itself exits to the fallback shell: it retires the registration,
+so handoff becomes unavailable and the shell is an ordinary shell. PTY exit/kill
+remains the unconditional final release.
+
+Set `CLANKER_DEBUG_ATTENTION=1` to log one bounded diagnostic per accepted-envelope
+event: harness, terminal ID, native event class, truncated session/turn IDs,
+generation, semantic and the decision (`accepted`, `ignored-child`,
+`ignored-stale`, `rejected-mismatch`, `rejected-ambiguous`). No payload content or
+credentials are logged. There is no debounce or delay anywhere: a wrong event is
+wrong whenever it arrives, and terminal text is never parsed.
+
+### Trusted resume identity
+
+`trustedRootSessionId()` returns the native session ID Clanker itself validated
+for a non-fork resume, and only for providers that declare
+`attention.resumePreservesSessionId`. The local path (`sessionIpc`) and the SSH
+path (`invokeRemoteSession`, from the host-rediscovered session) pass it to
+`broker.register()/registerRemote()`; SSH also forwards it to
+`prepareSshAttention()` (`AttentionPreparationContext.rootSessionId`) so provider
+host configuration can use it (OpenCode). Forks, fresh launches, renderer-supplied
+IDs and providers whose resume may assign a new ID (Claude) start unbound.
+
+### Authoritative events per provider
+
+| Provider | Root start | Input wait / resolution | Completion (Ready) | Never completes | Session boundary |
+| --- | --- | --- | --- | --- | --- |
+| Codex | `UserPromptSubmit` | `PermissionRequest` / matching `PostToolUse` | root `Stop` | `SubagentStop`, any event with `agent_id`, other threads, legacy `notify` | `SessionEnd` |
+| Claude | `UserPromptSubmit` | `PermissionRequest` (and `Notification` `agent_needs_input`) / matching `PostToolUse` | root `Stop` with no `background_tasks`/`session_crons` | events carrying `agent_id`; `Stop` with background work | `SessionEnd` |
+| OpenCode | `session.status` busy of a verified top-level session | `permission.asked`/`question.asked` / `*.replied`, `question.rejected` | verified-root `session.status` idle (legacy `session.idle` accepted as a duplicate) | child sessions; sessions with unknown parentage | `session.deleted` |
+| Pi | `agent_start` | not reported | `agent_settled` | `agent_end` and lower-level events | `session_shutdown` |
+| OMP | `agent_start` of `ctx.agent.kind === 'main'` | not reported | main `session_stop` (deferred until background jobs are idle) | `agent_end`, subagent sessions | `session_shutdown` (main) |
+| Agy | `PreInvocation` #0 (conversation binds as root) | ask tools `PreToolUse` / `PostToolUse` | `Stop` with `fullyIdle === true` for the root conversation | `Stop` with `fullyIdle` false/absent, other conversations | none native |
+| Hermes (SSH) | `pre_llm_call` (no `parent_session_id`) | `pre_approval_request` / `post_approval_response`, human surfaces only | root `post_llm_call` | child sessions; `surface="smart"` approvals | `on_session_finalize` |
+
+Codex hooks are injected with `-c hooks.<Event>=…`; a user `[hooks]` table, hooks
+for these events in `config.toml`/`hooks.json`, a profile, or a `hooks.` override
+is a conflict and attention stays unavailable. Codex may require hook trust
+review before it runs non-managed hooks; until trusted, no events arrive and the
+pane stays unknown rather than misleading.
+
+### Remaining limitations
+
+- A provider that does not report a native boundary on an in-TUI session switch
+  (Agy has no end event; Codex `SessionEnd` currently reports reason `other`)
+  stays bound to the old root and fails closed (unknown) until the harness
+  restarts. Pi, OMP, Claude, OpenCode and Hermes report one.
+- An interrupted turn with no settle event stays Running rather than Ready.
+- Claude work resumed by a background wake-up after a settled `Stop` is not
+  re-marked Running until the next prompt.
+- Codex hooks, OMP `ctx.agent`, OpenCode `client.session.get` and Hermes hook
+  kwargs follow upstream documentation; they have not been verified against live
+  billable sessions here.
 
 ## SSH ownership and batching
 
@@ -693,7 +786,7 @@ attention events, and session history do not collide with Pi.
 | Models | `omp models --json` returns a `models` array with `selector`, `name`, `kind`, and provider fields; 561 chat entries on this installation | Use `selector` as the ID and accept chat entries only. The catalog can contain models without available credentials, so selection can still fail at launch. |
 | Sessions | Default profile: `~/.omp/agent/sessions/<project>/*.jsonl`; sampled file begins with `title`, then `session` (`id`, `cwd`, `timestamp`); `model_change` uses `model` | Stream metadata extraction with at most 16 files open per batch. Pi's first-line parser is incompatible. Current discovery reads only the default root. |
 | Resume/fork | `omp --resume <path>` and `omp --fork <path>` | Use a saved `.jsonl` path after checking it stays inside the default OMP session store. Fork is present in the installed CLI's session resolution code even though top-level help omits it. |
-| Attention | `--extension <path>` with `agent_start`, `agent_end`, and `session_shutdown` events | The dedicated extension maps the agent loop start/end and session shutdown to Clanker's running, turn complete, and ended statuses. It does not report input requests or guarantee all background work has settled. |
+| Attention | `--extension <path>` with `agent_start`, `agent_settled`, and `session_shutdown` events | The dedicated extension maps agent start to running, `agent_settled` (no retry, compaction or queued continuation left) to turn complete, and session shutdown to a session boundary. It does not report input requests. |
 | AI commit | `--print --no-session --no-tools --no-extensions` | The commit pipeline pipes the prompt through stdin. OMP 18.3.4's source reads piped input as the initial prompt. No billable model request was made during verification. |
 
 The code and tests cover registration, parsing, session invocation arguments,
@@ -757,7 +850,7 @@ Review environment (September 2026): `/home/jay/.local/bin/agy`, version
 | Interactive launch | `agy`; `--model=<selector>` | Registered as a harness using the common PTY launch path. |
 | Models | `agy models` emits spinner on stderr and clean tab-separated `<id>\t<label>` on stdout | Parse stdout lines by tab, deduplicate IDs, fallback to static Gemini list on error or timeout (8s). |
 | Sessions | SQLite database at `~/.gemini/antigravity-cli/conversation_summaries.db`; table `conversation_summaries` | Integrated via Node 22/Electron 41 native `node:sqlite` in read-only mode. All workspace URIs are decoded and matched using `sessionMatchesWorkspace`; unset paths retain the global-session fallback, while malformed metadata is skipped. Resume invokes `agy --conversation <id>` with canonical UUID and model-selector validation; fork is unsupported by the CLI and runs resume. |
-| Attention | Native hooks via an owned plugin at `~/.gemini/config/plugins/clanker-grid-attention/hooks.json` | The plugin exists only while an attention-enabled Antigravity terminal is active. It maps `PreInvocation` (when `invocationNum == 0`) to `turn_started`, `PreToolUse` on `ask_question`, `ask_permission`, or `notify_user` to `input_requested`, matching `PostToolUse` events to `input_resolved`, `Stop` to `turn_completed`, and wrapper exit to `session_ended`. The matcher excludes all other tools so their native permission checks remain authoritative. Clanker refuses to overwrite an unowned directory and removes only files carrying its ownership marker. |
+| Attention | Native hooks via an owned plugin at `~/.gemini/config/plugins/clanker-grid-attention/hooks.json` | The plugin exists only while an attention-enabled Antigravity terminal is active. It maps `PreInvocation` (when `invocationNum == 0`) to `turn_started`, `PreToolUse` on `ask_question`, `ask_permission`, or `notify_user` to `input_requested`, matching `PostToolUse` events to `input_resolved`, `Stop` with `fullyIdle === true` for the bound root conversation to `turn_completed`, and wrapper exit to `agent_exited`. The matcher excludes all other tools so their native permission checks remain authoritative. Clanker refuses to overwrite an unowned directory and removes only files carrying its ownership marker. |
 | AI commit | `--disable-slash-commands --input-format stream-json --output-format stream-json`, optional `--model` | Send one `user` JSON message on stdin and close it. The Agy provider extracts the single successful result response before shared normalization. Timeout: 60s. |
 
 This integration includes CLI detection, persisted defaults, visibility,
