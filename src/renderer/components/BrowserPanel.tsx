@@ -49,6 +49,7 @@ function normalizeBrowserInputUrl(rawUrl: string): string {
     return `file:///${navigateUrl.replace(/\\/g, '/')}`;
   }
 
+  if (/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:[/?#]|$)/i.test(navigateUrl)) return `http://${navigateUrl}`;
   return `https://${navigateUrl}`;
 }
 
@@ -432,7 +433,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
         handleAnnotationToggle={handleAnnotationToggle}
       />
       {workspace?.environmentId && workspace.environmentId !== 'local' && <RemotePreviewBar
-        key={workspace.id} workspaceId={workspace.id} onOpen={handleNavigate} onLayoutChange={scheduleBoundsUpdate}
+        key={workspace.id} workspaceId={workspace.id} enabled={isActiveWorkspace && Boolean(workspace.browserVisible)} onOpen={handleNavigate} onLayoutChange={scheduleBoundsUpdate}
       />}
       {handoffError && <div className="browser-annotation-error" role="alert">{handoffError}</div>}
       <div className="browser-content-shell">

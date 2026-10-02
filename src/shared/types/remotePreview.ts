@@ -1,8 +1,6 @@
 export interface RemotePreviewRequest {
   workspaceId: string;
   remotePort: number;
-  /** Legacy input is ignored; desktop allocation is always main-owned. */
-  localPort?: number;
   remoteHost?: '127.0.0.1' | '::1';
   protocol?: 'http' | 'https';
 }
@@ -39,4 +37,11 @@ export interface RemoteWebService {
   cwd?: string;
   source: 'listener' | 'fallback' | 'terminal-output';
   confidence?: 'workspace' | 'unscoped';
+}
+
+export interface RemotePreviewWatchRequest {
+  workspaceId: string;
+  consumerId: string;
+  enabled: boolean;
+  refresh?: boolean;
 }
