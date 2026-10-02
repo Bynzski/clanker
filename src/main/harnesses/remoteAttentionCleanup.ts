@@ -78,10 +78,16 @@ try:
     if len(data) > 65536:
         raise ValueError('Invalid attention resource manifest')
     cleanup_resources(json.loads(data))
-    # Per-terminal epoch state written by the hook bridge is private launch state, not user data.
-    for name in os.listdir(root):
-        if re.fullmatch(r'\\.clanker-state-[0-9a-f]{16}\\.json', name):
+    # Per-terminal bridge state (state, poison marker, temporaries, a crashed holder's lock) is
+    # private launch state, not user data. Only exact names are removed, never recursively.
+    for name in sorted(os.listdir(root)):
+        if re.fullmatch(r'\\.clanker-state-[0-9a-f]{16}\\.(?:json|poison)(?:\\.[0-9]+\\.tmp)?', name):
             os.unlink(checked_resource(name))
+        elif re.fullmatch(r'\\.clanker-state-[0-9a-f]{16}\\.json\\.lock', name):
+            holder = checked_resource(name + '/owner')
+            if os.path.lexists(holder):
+                os.unlink(holder)
+            os.rmdir(checked_resource(name, True))
     if os.listdir(root) == ['${REMOTE_RESOURCE_MANIFEST}']:
         os.unlink(manifest_path)
         os.rmdir(root)

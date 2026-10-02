@@ -217,6 +217,31 @@ semantic and the decision (`accepted`, `ignored-child`, `ignored-stale`,
 logged. There is no debounce or delay anywhere: a wrong event is wrong whenever it
 arrives, and terminal text is never parsed.
 
+### Hook-bridge state transactions
+
+Hook commands are separate short-lived processes, and some interpreters (Codex, Claude,
+Agy) keep bounded per-terminal state. The shared `command.mjs` bridge therefore runs each
+read -> interpret -> write transaction under an exclusive per-terminal lock, and releases
+it before delivery. The lock is an atomically created directory (`.clanker-state-<hash>.json.lock`,
+no `flock`, so it also works on Windows) holding a `pid:nonce` owner record; state is
+replaced by an atomic temp-file rename. Waiting is bounded (about 1.2 s, under the hook
+timeouts) and is synchronization only: elapsed time never decides agent state. A holder
+that is dead, or older than the stale bound, is replaced by an atomic rename only if its
+owner record is unchanged; a live holder is never broken.
+
+Fail closed. If the transaction cannot be established (lock not acquired in time, state
+unreadable, corrupt, oversized or unwritable) the interpreter runs against empty state, a
+private poison marker is created, and no `input_resolved` is delivered until a turn
+boundary (`turn_started`, `turn_completed`, `turn_interrupted`, `session_ended`) is
+delivered by a healthy transaction. Evidence of a possible human wait is still delivered.
+State, poison, temporaries and a crashed holder's lock are private launch files: local
+cleanup removes the whole launch root, and SSH cleanup removes exactly those names (never
+recursively) before the root. Codex bounded structures: completed-call bookkeeping
+(32 calls, 64 done ids) may be trimmed because that can only leave a wait unmatched or
+unresolved (fail closed); live waits (16) are never trimmed: past the cap the state is
+`overflow` and no individual `PostToolUse` resolves anything until `Stop`, `Interrupt`,
+session end or a new turn.
+
 ### Trusted resume identity
 
 `trustedRootSessionId()` returns the native session ID Clanker itself validated

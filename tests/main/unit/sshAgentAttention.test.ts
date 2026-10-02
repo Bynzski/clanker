@@ -365,8 +365,25 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
       encoding: 'utf8', env: { ...process.env, ...prepared.env }, timeout: 10000,
     });
     expect(readdirSync(root).some((name) => name.startsWith('.clanker-state-'))).toBe(true);
+    // Artifacts a crashed or failed transaction can leave behind are private launch state too.
+    const base = join(root, '.clanker-state-0123456789abcdef');
+    for (const suffix of ['.poison', '.json.4242.tmp']) { writeFileSync(base + suffix, '', { mode: 0o600 }); chmodSync(base + suffix, 0o600); }
+    mkdirSync(`${base}.json.lock`, { mode: 0o700 });
+    chmodSync(`${base}.json.lock`, 0o700);
+    writeFileSync(join(`${base}.json.lock`, 'owner'), '1:abc', { mode: 0o600 });
+    chmodSync(join(`${base}.json.lock`, 'owner'), 0o600);
     await prepared.release();
     expect(existsSync(root)).toBe(false);
+  });
+
+  it('keeps launch state it does not own when cleaning bridge artifacts', async () => {
+    const { executor } = fixture();
+    const prepared = await prepareSshAttention(executor, 'host', 'agy', [], token);
+    const root = join(prepared.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..');
+    roots.push(root);
+    writeFileSync(join(root, '.clanker-state-nothex.json'), 'user');
+    await prepared.release();
+    expect(readFileSync(join(root, '.clanker-state-nothex.json'), 'utf8')).toBe('user');
   });
 
   it('upgrades the exact previous owned Antigravity hooks and refuses other edits', async () => {

@@ -31,12 +31,22 @@ export async function emit(event, fields) {
 }
 `;
 
-/** Generic hook bridge. The interpreter receives `(input, hook, store)`;
- * `store` is a tiny per-terminal JSON state for epoch bookkeeping.
- * `command.mjs --ended` reports that the harness process
- * exited. Otherwise argv[2] is the provider-owned interpreter module, which maps
- * the native hook payload to a canonical lifecycle event (or nothing). */
-export const COMMAND = `import { createHash } from 'node:crypto';
+/** Generic hook bridge. `command.mjs --ended` reports that the harness process exited. Otherwise
+ * argv[2] is the provider-owned interpreter module, which maps the native hook payload to a
+ * canonical lifecycle event (or nothing) and may keep bounded per-terminal state.
+ *
+ * Every hook is its own short-lived process, so the bridge runs the whole state transaction
+ * (read -> interpret -> write) under an exclusive per-terminal lock, then releases it BEFORE the
+ * slower delivery. The lock is an atomically created directory (portable, no flock) holding a
+ * pid:nonce owner record; a holder that is dead or older than the bound is stale and is replaced
+ * only if its record is unchanged. Waiting is bounded (hooks time out after seconds) and is
+ * synchronization only; elapsed time never decides agent state.
+ *
+ * Fail closed: if the transaction cannot be established (lock, unreadable/corrupt/oversized or
+ * unwritable state) the interpreter runs against empty state, a private poison marker is set, and
+ * no input_resolved is delivered until a turn boundary (start, completion, interrupt, session end)
+ * is delivered. Evidence of a possible human wait is never discarded in favour of Running. */
+export const COMMAND = `import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -55,31 +65,105 @@ try {
   }
   input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
 } catch { /* malformed hook input is ignored */ }
-// Hook commands are separate short-lived processes. Interpreters that need a foreground-turn
-// epoch keep it in a private per-terminal file beside this bridge (removed with the launch root).
+
+const STATE_LIMIT = 32768;
+const LOCK_WAIT_MS = 1200;
+const LOCK_STALE_MS = 10000;
 const token = process.env.CLANKER_ATTENTION_TOKEN || process.env.CLANKER_REMOTE_ATTENTION_TOKEN || '';
-const statePath = path.join(path.dirname(process.argv[1]), '.clanker-state-' + createHash('sha256').update(token).digest('hex').slice(0, 16) + '.json');
+const base = path.join(path.dirname(process.argv[1]), '.clanker-state-' + createHash('sha256').update(token).digest('hex').slice(0, 16));
+const statePath = base + '.json';
+const lockPath = statePath + '.lock';
+const poisonPath = base + '.poison';
+const nonce = process.pid + ':' + randomBytes(8).toString('hex');
+
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
+const owner = () => { try { return fs.readFileSync(path.join(lockPath, 'owner'), 'utf8'); } catch { return null; } };
+function staleOwner() {
+  const record = owner();
+  let age = 0;
+  try { age = Date.now() - fs.statSync(lockPath).mtimeMs; } catch { return null; }
+  const pid = Number((record ?? '').split(':')[0]);
+  return record === null ? (age > LOCK_STALE_MS ? '' : null) : (!Number.isInteger(pid) || !alive(pid) || age > LOCK_STALE_MS ? record : null);
+}
+async function acquire() {
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      fs.mkdirSync(lockPath, { mode: 0o700 });
+      fs.writeFileSync(path.join(lockPath, 'owner'), nonce, { mode: 0o600 });
+      return true;
+    } catch (error) {
+      if (error.code !== 'EEXIST') return false;
+    }
+    const stale = staleOwner();
+    // Replace a dead/expired holder only if its record is unchanged, by an atomic rename.
+    if (stale !== null && owner() === (stale === '' ? null : stale)) {
+      try { fs.renameSync(lockPath, lockPath + '.stale-' + nonce.replace(':', '-')); } catch { /* another waiter won */ }
+      try { fs.unlinkSync(path.join(lockPath + '.stale-' + nonce.replace(':', '-'), 'owner')); } catch { /* absent */ }
+      try { fs.rmdirSync(lockPath + '.stale-' + nonce.replace(':', '-')); } catch { /* absent */ }
+      continue;
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 5 + Math.floor(Math.random() * 10)));
+  }
+}
+function release() {
+  if (owner() !== nonce) return;
+  try { fs.unlinkSync(path.join(lockPath, 'owner')); } catch { /* already gone */ }
+  try { fs.rmdirSync(lockPath); } catch { /* already gone */ }
+}
+
+let failed = false;
 const store = {
   read() {
     try {
-      const value = JSON.parse(fs.readFileSync(statePath, 'utf8').slice(0, 4096));
-      return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-    } catch { return {}; }
+      const text = fs.readFileSync(statePath, 'utf8');
+      if (text.length > STATE_LIMIT) throw new Error('oversized');
+      const value = JSON.parse(text);
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid');
+      return value;
+    } catch (error) {
+      if (error.code !== 'ENOENT') failed = true;
+      return {};
+    }
   },
   write(value) {
+    const temporary = statePath + '.' + process.pid + '.tmp';
     try {
       const text = JSON.stringify(value);
-      if (text.length <= 4096) fs.writeFileSync(statePath, text, { mode: 0o600 });
-    } catch { /* an unwritable store fails closed: later events lack a live turn */ }
+      if (text.length > STATE_LIMIT) throw new Error('oversized');
+      fs.writeFileSync(temporary, text, { mode: 0o600 });
+      fs.renameSync(temporary, statePath);
+      return true;
+    } catch {
+      failed = true;
+      try { fs.unlinkSync(temporary); } catch { /* not created */ }
+      return false;
+    }
   },
 };
+const degraded = { read: () => ({}), write: () => false };
+
 let result = null;
-try {
-  const interpreter = await import(pathToFileURL(process.argv[2]).href);
-  result = interpreter.default(input, process.argv[3], store);
-} catch { /* an unreadable interpreter emits nothing */ }
-if (result?.event) {
-  const { type, ...fields } = result.event;
+let interpreter = null;
+try { interpreter = await import(pathToFileURL(process.argv[2]).href); } catch { /* an unreadable interpreter emits nothing */ }
+if (interpreter) {
+  const locked = await acquire();
+  if (!locked) failed = true;
+  try {
+    result = interpreter.default(input, process.argv[3], locked ? store : degraded);
+  } catch { /* an interpreter error emits nothing */ } finally {
+    if (locked) release();
+  }
+}
+const poisoned = fs.existsSync(poisonPath);
+const boundary = ['turn_started', 'turn_completed', 'turn_interrupted', 'session_ended'];
+let event = result?.event;
+if (failed && !poisoned) { try { fs.writeFileSync(poisonPath, '', { flag: 'wx', mode: 0o600 }); } catch { /* best effort */ } }
+if (event?.type === 'input_resolved' && (failed || poisoned)) event = undefined;
+if (event && boundary.includes(event.type) && !failed) { try { fs.unlinkSync(poisonPath); } catch { /* none set */ } }
+if (event) {
+  const { type, ...fields } = event;
   await emit(type, fields);
 }
 process.stdout.write(JSON.stringify(result?.output ?? {}) + '\\n');

@@ -21,13 +21,20 @@ export const CODEX_HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PermissionR
  *     PostToolUse       -> mark the call done; a wait resolves only when ALL its calls are done
  *   The broker sees one `input_requested` for the first wait and one `input_resolved` once no wait
  *   remains, so an unrelated tool finishing cannot clear a real wait. A call the user denies runs
- *   no PostToolUse, so its wait lasts until Stop or Interrupt. */
+ *   no PostToolUse, so its wait lasts until Stop or Interrupt. More than 16 live waits put the
+ *   state in overflow: nothing resolves until the turn ends (live waits are never dropped).
+ *   The bridge serializes each read/interpret/write transaction per terminal. */
 export const INTERPRETER = `import { createHash } from 'node:crypto';
 const text = (value) => typeof value === 'string' && value ? value : undefined;
 const canonical = (value) => value === null || typeof value !== 'object' ? JSON.stringify(value)
   : Array.isArray(value) ? '[' + value.map(canonical).join(',') + ']'
   : '{' + Object.keys(value).sort().map((key) => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
 const fingerprint = (input) => createHash('sha256').update(String(input.tool_name) + '\\0' + canonical(input.tool_input ?? null)).digest('hex').slice(0, 16);
+// Bounds. calls (32) and done (64) hold completed-call bookkeeping: dropping the oldest can only
+// leave a wait unmatched or unresolved, which fails closed (Needs Input until the turn ends).
+// waits (16) hold live human waits and are NEVER trimmed: past the cap the state goes to
+// 'overflow', where no individual PostToolUse may resolve anything until the turn ends.
+const MAX_WAITS = 16;
 const keep = (list, limit) => list.slice(-limit);
 export default function interpret(input, hook, store) {
   const sessionId = text(input.session_id);
@@ -57,8 +64,9 @@ export default function interpret(input, hook, store) {
       if (!current) return event('input_requested', { turnId, inputId: 'w0' });
       const fp = fingerprint(input);
       const ids = state.calls.filter((call) => call.fp === fp && !state.done.includes(call.id)).map((call) => call.id);
-      const first = state.waits.length === 0;
-      state.waits = keep([...state.waits, { ids }], 16);
+      const first = state.waits.length === 0 && !state.overflow;
+      if (state.waits.length >= MAX_WAITS) state.overflow = true;
+      else state.waits = [...state.waits, { ids }];
       if (first) state.input = 'w' + (state.seq += 1);
       save();
       return first ? event('input_requested', { turnId, inputId: state.input }) : null;
@@ -69,7 +77,7 @@ export default function interpret(input, hook, store) {
       const had = state.waits.length > 0;
       state.done = keep([...state.done, id], 64);
       state.waits = state.waits.filter((wait) => wait.ids.length === 0 || !wait.ids.every((call) => state.done.includes(call)));
-      const resolved = had && state.waits.length === 0;
+      const resolved = had && state.waits.length === 0 && !state.overflow;
       const inputId = state.input;
       if (resolved) state.input = undefined;
       save();

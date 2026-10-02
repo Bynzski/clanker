@@ -145,6 +145,42 @@ describe('Codex lifecycle', () => {
     feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
     expect(state()).toBe('ready');
   });
+  describe('wait capacity', () => {
+    const CAPACITY = 16;
+    async function overflowed() {
+      const hook = await interpreter('codex');
+      const harness = rig('codex');
+      harness.feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't1' }));
+      const ids = Array.from({ length: CAPACITY + 1 }, (_, index) => `call-${index}`);
+      ids.forEach((id) => hook('PreToolUse', pre(id, bash(`command-${id}`))));
+      ids.forEach((id) => harness.feed(hook('PermissionRequest', ask(bash(`command-${id}`)))));
+      return { hook, ids, ...harness };
+    }
+    it('never drops a live wait: beyond capacity nothing resolves from individual completions', async () => {
+      const { hook, ids, feed, state } = await overflowed();
+      expect(state()).toBe('needs_input');
+      // Every retained call (the oldest 16 waits) completes, and so does the overflowed one.
+      for (const id of ids) feed(hook('PostToolUse', post(id, bash(`command-${id}`))));
+      expect(state()).toBe('needs_input');
+    });
+    it.each([
+      ['Stop', 'ready'], ['Interrupt', 'unverified'], ['SessionEnd', 'unverified'],
+    ])('clears overflow on %s', async (name, expected) => {
+      const { hook, feed, state } = await overflowed();
+      feed(hook(name, { session_id: 'root', turn_id: 't1' }));
+      expect(state()).toBe(expected);
+    });
+    it('clears overflow for a new foreground turn', async () => {
+      const { hook, feed, state } = await overflowed();
+      feed(hook('Stop', { session_id: 'root', turn_id: 't1' }));
+      feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 't2' }));
+      hook('PreToolUse', pre('next', bash('one'), 't2'));
+      feed(hook('PermissionRequest', ask(bash('one'), 't2')));
+      expect(state()).toBe('needs_input');
+      feed(hook('PostToolUse', post('next', bash('one'), 't2')));
+      expect(state()).toBe('running');
+    });
+  });
   it('never stores or sends tool input or responses', async () => {
     const module = await importSource(getHarnessProvider('codex').attention.interpreter!);
     const written: string[] = [];
