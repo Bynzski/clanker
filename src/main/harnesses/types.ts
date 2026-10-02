@@ -30,7 +30,8 @@ export type HarnessFailureKind = 'unsupported' | 'binary-unavailable' | 'not-con
 
 /** Compatibility surfaces may hide failures; providers retain the cause. */
 export class HarnessCapabilityError extends Error {
-  constructor(readonly kind: HarnessFailureKind, message: string, readonly cause?: unknown) {
+  /** `retryAfterMs` lets a provider demand a longer hard backoff than its policy. */
+  constructor(readonly kind: HarnessFailureKind, message: string, readonly cause?: unknown, readonly retryAfterMs?: number) {
     super(message);
     this.name = 'HarnessCapabilityError';
   }

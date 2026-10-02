@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { getHarnessProvider } from '../../../src/main/harnesses/registry';
 import { parseOmpUsage, OMP_USAGE_COMMAND } from '../../../src/main/harnesses/omp/usage';
+import { parseAgyUsage, parseAgyVersion, isSafeAgyVersion, AGY_USAGE_COMMAND, AGY_VERSION_COMMAND } from '../../../src/main/harnesses/agy/usage';
 import { parseHermesUsage, parseHermesTimestamp, HERMES_USAGE_COMMAND } from '../../../src/main/harnesses/hermes/usage';
 import { validateUsageSnapshot, toRendererMeasurements } from '../../../src/main/usage/usageSnapshot';
 import type { HarnessCommandExecutor, HarnessCommandResult } from '../../../src/main/harnesses/commandExecution';
@@ -133,6 +134,14 @@ describe('OMP usage parser', () => {
       { reports: [{ provider: 'p', limits: [{ id: 'x', label: 'x', scope: {}, window: 'weekly', amount: { unit: 'percent', used: 1 } }] }] },
     ]) expect(() => omp(value), JSON.stringify(value)).toThrow(expect.objectContaining({ kind: 'parse-failure' }));
   });
+  it('does not turn scope.tier into a plan label (tier can name a model/quota meter)', () => {
+    const report = { provider: 'openai-codex', limits: [{ id: 'c:spark', label: 'Spark', scope: { provider: 'openai-codex', accountId: 'acct-fake-1', tier: 'spark', modelId: 'model-fake' },
+      window: { id: '5h', label: '5 hours' }, amount: { unit: 'percent', used: 5, limit: 100 } }] };
+    const m = omp({ reports: [report] }).measurements[0];
+    expect(m.scope).toEqual({ providerId: 'openai-codex', accountId: 'acct-fake-1', modelId: 'model-fake' });
+    expect(JSON.stringify(m)).not.toContain('spark');
+    expect(omp({ reports: [{ ...report, metadata: { planType: 'pro' } }] }).measurements[0].scope?.planLabel).toBe('pro');
+  });
   it('produces output the shared validator accepts', () => {
     expect(() => validateUsageSnapshot(snapshot)).not.toThrow();
   });
@@ -236,20 +245,218 @@ describe('providers execute only through context.executor', () => {
 });
 
 describe('through the usage service with the canonical registry', () => {
-  it('OMP and Hermes report data, the other five are unsupported, and renderer data has no account IDs', async () => {
+  it('OMP, Hermes and Agy report data, the other four are unsupported, and renderer data has no account IDs', async () => {
     const { HarnessUsageService } = await import('../../../src/main/usage/harnessUsageService');
     const executeHarnessCommand = vi.fn(async (request: { command: string }) => ({
-      stdout: request.command === 'omp' ? JSON.stringify(sample)
+      stdout: request.command === 'agy' ? ((request as { args?: string[] }).args?.[0] === '--version' ? '1.2.14' : JSON.stringify(envelope(groups)))
+        : request.command === 'omp' ? JSON.stringify(sample)
         : JSON.stringify({ provider: 'p', fetched_at: '2026-10-02T13:34:15+00:00', windows: [{ label: 'S', used_percent: 5 }] }),
       stderr: '', exitCode: 0,
     }));
-    const environment = { id: 'local', kind: 'local', executeHarnessCommand, probeAvailableHarnessIds: async () => ['omp', 'hermes'] };
+    const environment = { id: 'local', kind: 'local', executeHarnessCommand, probeAvailableHarnessIds: async () => ['omp', 'hermes', 'agy'] };
     const workspace = { workspaceId: 'w', location: { environmentId: 'local', path: '/w' }, environment };
     const service = new HarnessUsageService({ getWorkspace: () => workspace } as never);
     const response = await service.get('w');
     const status = Object.fromEntries(response.entries.map((entry) => [entry.harnessId, entry.status]));
-    expect(status).toEqual({ codex: 'unsupported', opencode: 'unsupported', pi: 'unsupported', omp: 'ok', claude: 'unsupported', hermes: 'ok', agy: 'unsupported' });
+    expect(status).toEqual({ codex: 'unsupported', opencode: 'unsupported', pi: 'unsupported', omp: 'ok', claude: 'unsupported', hermes: 'ok', agy: 'ok' });
     expect(JSON.stringify(response)).not.toContain('acct-fake');
     expect(service.getCachedSnapshots('w').find((entry) => entry.harnessId === 'omp')!.snapshot.measurements[0].scope?.accountId).toBe('acct-fake-1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Antigravity
+// ---------------------------------------------------------------------------
+const bucket = (id: string, window: string, fraction: unknown, reset: unknown = '2026-10-07T08:08:35Z', extra: object = {}) =>
+  ({ id, name: window === '5h' ? 'Five Hour Limit Remaining' : 'Weekly Limit Remaining', description: 'x', window, remaining_fraction: fraction, reset_time: reset, ...extra });
+const envelope = (groups: unknown, overrides: object = {}) => ({
+  conversation_id: '', status: 'SUCCESS', response: 'Gemini Models\tWeekly Limit Remaining 83%', duration_seconds: 0, num_turns: 0,
+  usage: { input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 0 },
+  command: { name: 'usage', data: { description: 'Usage', groups, future: 1 } }, futureTop: true, ...overrides,
+});
+const groups = [
+  { name: 'Gemini Models', description: 'Gemini Flash, Gemini Pro', buckets: [bucket('gemini-weekly', 'weekly', 0.83), bucket('gemini-5h', '5h', 1, '2026-10-02T18:46:53Z')] },
+  { name: 'Claude and GPT models', description: 'Claude, GPT', buckets: [bucket('3p-weekly', 'weekly', 0.4412519931793213), bucket('3p-5h', '5h', 0)] },
+];
+const agy = (value: unknown, text?: string) => parseAgyUsage(text ?? JSON.stringify(value), () => 777);
+
+describe('Antigravity version gate', () => {
+  it.each([['1.1.11', true], ['1.1.12', true], ['1.2.14\n', true], ['v1.2.12', true], ['2.0.0', true], ['10.0.0', true],
+    ['1.1.10', false], ['1.0.99', false], ['0.9.99', false],
+    ['1.1.11-rc.1', false], ['1.1.11-beta', false], ['1.1.11+build', false],
+    ['', false], ['agy', false], ['1.1', false], ['1.1.x', false], ['go1.22.0\n1.1.11', false], ['agy version 1.2.14', false], ['1.2.14\n1.0.0', false], ['Node v20.1.1', false]])(
+    'version output %j -> safe=%s', (output, safe) => {
+      expect(isSafeAgyVersion(parseAgyVersion(output))).toBe(safe);
+    });
+
+  const run = (versionOut: string, exitCode = 0) => {
+    const calls: Array<{ command: string; args: string[] }> = [];
+    const executor = { run: vi.fn(async (request: { command: string; args?: string[] }) => {
+      calls.push({ command: request.command, args: request.args ?? [] });
+      return request.args?.[0] === '--version' ? { stdout: versionOut, stderr: '', exitCode } : { stdout: JSON.stringify(envelope(groups)), stderr: '', exitCode: 0 };
+    }) };
+    return { calls, get: () => getHarnessProvider('agy').usage!.get({ executor, transport: 'local', signal: new AbortController().signal }) };
+  };
+
+  it.each(['1.1.10', '1.1.11-rc.1', 'garbage', '', '1.2.14 and 0.1.0', 'v1.1'])('never runs /usage for unsafe or unverified version %j', async (versionOut) => {
+    const { calls, get } = run(versionOut);
+    await expect(get()).rejects.toMatchObject({ kind: 'unsupported' });
+    expect(calls).toEqual([{ ...AGY_VERSION_COMMAND, args: ['--version'] }]);
+    expect(calls.some((call) => call.args.some((arg) => arg.includes('/usage')))).toBe(false);
+  });
+  it('never runs /usage when --version itself fails', async () => {
+    const { calls, get } = run('1.2.14', 1);
+    await expect(get()).rejects.toMatchObject({ kind: 'command-failed' });
+    expect(calls).toHaveLength(1);
+  });
+  it.each(['1.1.11', '1.2.14\n'])('runs --version then exactly the verified usage command for %j', async (versionOut) => {
+    const { calls, get } = run(versionOut);
+    const snapshot = await get();
+    expect(calls).toEqual([{ command: 'agy', args: ['--version'] }, { command: 'agy', args: ['--output-format', 'json', '-p=/usage'] }]);
+    expect(AGY_USAGE_COMMAND.args).toEqual(['--output-format', 'json', '-p=/usage']);
+    expect(snapshot.measurements).toHaveLength(4);
+  });
+  it('is identical for local and SSH and carries no cwd/env/stdin', async () => {
+    const results = [];
+    for (const transport of ['local', 'ssh'] as const) {
+      const seen: Record<string, unknown>[] = [];
+      const executor = { run: async (request: Record<string, unknown>) => { seen.push(request); return { stdout: (request.args as string[])[0] === '--version' ? '1.2.14' : JSON.stringify(envelope(groups)), stderr: '', exitCode: 0 }; } };
+      results.push(await getHarnessProvider('agy').usage!.get({ executor: executor as never, transport, signal: new AbortController().signal }));
+      for (const request of seen) expect(Object.keys(request).sort()).toEqual(['args', 'command', 'maxOutputBytes', 'timeoutMs']);
+    }
+    expect(results[1].measurements).toEqual(results[0].measurements);
+    const source = readFileSync(resolve(__dirname, '../../../src/main/harnesses/agy/usage.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+    expect(source).not.toMatch(/child_process|electron|SshEnvironment|transport|\.agy|credentials?\.json|auth\.json/);
+  });
+});
+
+describe('Antigravity envelope parser', () => {
+  it('normalizes groups/buckets, keeping identical windows in different groups distinct', () => {
+    const snapshot = agy(envelope(groups));
+    expect(snapshot.observedAt).toBe(777);
+    expect(snapshot.measurements.map((m) => m.label)).toEqual([
+      'Gemini Models · Weekly Limit Remaining', 'Gemini Models · Five Hour Limit Remaining',
+      'Claude and GPT models · Weekly Limit Remaining', 'Claude and GPT models · Five Hour Limit Remaining',
+    ]);
+    expect(snapshot.measurements[0]).toEqual({
+      kind: 'rate-limit', unit: 'percent', used: 17, remaining: 83, limit: 100, resetsAt: Date.parse('2026-10-07T08:08:35Z'),
+      period: { label: 'weekly', endsAt: Date.parse('2026-10-07T08:08:35Z'), startsAt: Date.parse('2026-10-07T08:08:35Z') - 604_800_000 },
+      scope: { providerId: 'google-antigravity' }, label: 'Gemini Models · Weekly Limit Remaining',
+    });
+    expect(snapshot.measurements[1].period).toMatchObject({ label: '5 hour', startsAt: Date.parse('2026-10-02T18:46:53Z') - 18_000_000 });
+    expect(snapshot.measurements[3]).toMatchObject({ remaining: 0, used: 100 });
+    expect(snapshot.measurements[2]).toMatchObject({ remaining: 44.1252, used: 55.8748 });
+  });
+  it('clamps fractions, preserves unknown windows, tolerates a missing/invalid reset, and never invents identity', () => {
+    const m = agy(envelope([{ name: 'G', buckets: [
+      bucket('a', 'weekly', 1.4), bucket('b', 'weekly', -0.2), bucket('c', 'monthly', 0.5, null), bucket('d', '5h', 0.5, '2026-10-07T08:08:35'), bucket('e', 'weekly', 0.5, 'soon'),
+      bucket('f', 'fortnightly', 0.25, '2026-10-07T08:08:35Z'),
+    ] }])).measurements;
+    expect(m.map((x) => x.remaining)).toEqual([100, 0, 50, 50, 50, 25]);
+    expect(m[2]).toMatchObject({ period: { label: 'monthly' } });
+    expect(m[2]).not.toHaveProperty('resetsAt');
+    expect(m[2].period).not.toHaveProperty('startsAt');
+    expect(m[3].resetsAt).toBeUndefined(); // timezone-less is never read as local time
+    expect(m[4].resetsAt).toBeUndefined();
+    expect(m[5]).toMatchObject({ period: { label: 'fortnightly' }, resetsAt: Date.parse('2026-10-07T08:08:35Z') });
+    for (const x of m) expect(x.scope).toEqual({ providerId: 'google-antigravity' });
+  });
+  it('supports a tier with weekly-only data', () => {
+    expect(agy(envelope([{ name: 'G', buckets: [bucket('w', 'weekly', 0.5)] }])).measurements).toHaveLength(1);
+  });
+  it('skips disabled buckets rather than reporting full capacity', () => {
+    const snapshot = agy(envelope([{ name: 'G', buckets: [bucket('a', 'weekly', 1, undefined, { disabled: true }), bucket('b', '5h', 0.6)] }]));
+    expect(snapshot.measurements).toHaveLength(1);
+    expect(snapshot.measurements[0].remaining).toBe(60);
+    expect(agy(envelope([{ name: 'G', buckets: [bucket('a', 'weekly', 1, undefined, { disabled: true })] }])).measurements).toEqual([]);
+  });
+  it('skips fraction-less buckets and ignores unknown fields', () => {
+    const snapshot = agy(envelope([{ name: 'G', extra: 1, buckets: [{ id: 'x', window: 'weekly', future: 1 }, bucket('b', '5h', 0.6, undefined, { newField: { a: 1 } })] }]));
+    expect(snapshot.measurements).toHaveLength(1);
+    expect(JSON.stringify(snapshot)).not.toMatch(/newField|future|extra|response/);
+  });
+  it('keeps valid data beside malformed groups/buckets but rejects all-malformed output', () => {
+    expect(agy(envelope([42, { name: 'bad' }, { name: 'G', buckets: ['x', bucket('b', '5h', 'half'), bucket('ok', '5h', 0.5)] }])).measurements).toHaveLength(1);
+    for (const bad of [[42], [{ name: 'bad' }], [{ name: 'G', buckets: [bucket('b', '5h', 'half')] }], [{ name: 'G', buckets: [bucket('b', 5 as unknown as string, 0.5)] }]]) {
+      expect(() => agy(envelope(bad)), JSON.stringify(bad)).toThrow(expect.objectContaining({ kind: 'parse-failure' }));
+    }
+  });
+  it('rejects structurally wrong envelopes', () => {
+    for (const value of [
+      envelope(groups, { command: undefined }), envelope(groups, { command: { name: 'quota', data: { groups } } }), envelope(groups, { command: { name: 'usage' } }),
+      envelope(groups, { command: { name: 'usage', data: { groups: {} } } }), [], 'x', null,
+    ]) expect(() => agy(value), JSON.stringify(value)).toThrow(expect.objectContaining({ kind: 'parse-failure' }));
+    expect(() => agy(null, '')).toThrow(expect.objectContaining({ kind: 'parse-failure' }));
+  });
+  it('does not parse the human response text', () => {
+    expect(() => agy(envelope(undefined, { response: 'Gemini Models\tWeekly 83%' }))).toThrow(expect.objectContaining({ kind: 'parse-failure' }));
+  });
+});
+
+describe('Antigravity model-turn guard', () => {
+  it.each([
+    ['conversation id', { conversation_id: 'conv-fake-1' }],
+    ['turn count', { num_turns: 1 }],
+    ['input tokens', { usage: { input_tokens: 10, output_tokens: 5, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 15 } }],
+    ['only output tokens', { usage: { output_tokens: 1 } }],
+    ['cache tokens', { usage: { cache_read_tokens: 3 } }],
+    ['non-numeric turns', { num_turns: '0' }],
+    ['non-object usage', { usage: 5 }],
+    ['the issue regression fixture', { conversation_id: 'some-id', num_turns: 1, usage: { input_tokens: 10, output_tokens: 5 } }],
+  ])('rejects a reply showing %s and demands a long backoff', (_name, overrides) => {
+    const error = (() => { try { agy(envelope(groups, overrides)); } catch (e) { return e as { kind: string; retryAfterMs?: number }; } })();
+    expect(error).toMatchObject({ kind: 'unsupported' });
+    expect(error!.retryAfterMs).toBeGreaterThanOrEqual(3_600_000);
+  });
+  it('rejects a model-turn style reply that has no command block', () => {
+    expect(() => agy({ conversation_id: 'c', status: 'SUCCESS', response: 'Hello', num_turns: 1, usage: { input_tokens: 4 } })).toThrow(expect.objectContaining({ kind: 'unsupported' }));
+  });
+  it('accepts absent turn fields', () => {
+    const rest: Record<string, unknown> = { ...envelope(groups) };
+    for (const key of ['conversation_id', 'num_turns', 'usage']) delete rest[key];
+    expect(agy(rest).measurements).toHaveLength(4);
+  });
+});
+
+describe('Antigravity status and error classification', () => {
+  const failing = (value: unknown, exitCode = 0) => getHarnessProvider('agy').usage!.get({
+    executor: { run: async (r: { args?: string[] }) => (r.args?.[0] === '--version' ? { stdout: '1.2.14', stderr: 'token=sk-secret', exitCode: 0 } : { stdout: typeof value === 'string' ? value : JSON.stringify(value), stderr: 'token=sk-secret', exitCode }) } as never,
+    transport: 'ssh', signal: new AbortController().signal,
+  }).catch((e) => e);
+
+  it.each(['Authentication required. Run agy auth to log in.', 'not authenticated: no stored credentials found', 'Login required', 'Your credentials have been revoked', 'credential revoked', 'token revoked', 'token expired and refresh token is not set'])(
+    'classifies the structured auth rejection %j', async (message) => {
+      expect(await failing({ status: 'ERROR', error: message })).toMatchObject({ kind: 'unauthenticated' });
+      expect(await failing({ status: 'ERROR', error: { message } }, 1)).toMatchObject({ kind: 'unauthenticated' });
+    });
+  it.each(['authentication failed or timed out', 'network error', 'request failed', 'internal error'])('keeps generic failure %j generic', async (message) => {
+    const error = await failing({ status: 'ERROR', error: message });
+    expect(error).toMatchObject({ kind: 'command-failed' });
+    expect(error.message).not.toContain(message);
+  });
+  it('never inspects stderr and does not leak it', async () => {
+    const error = await failing('', 1);
+    expect(error).toMatchObject({ kind: 'command-failed' });
+    expect(JSON.stringify(error.message)).not.toContain('sk-secret');
+  });
+  it('treats a non-SUCCESS envelope as a failure even with exit 0', async () => {
+    expect(await failing({ status: 'FAILURE', response: 'boom', command: { name: 'usage', data: { groups } } })).toMatchObject({ kind: 'command-failed' });
+  });
+});
+
+describe('Antigravity noisy stdout', () => {
+  const good = JSON.stringify(envelope(groups));
+  it('selects the single valid envelope among log lines', () => {
+    expect(agy(null, `2026/10/02 INFO starting\n${good}\nWARN done`).measurements).toHaveLength(4);
+    expect(agy(null, `noise {"a":1}\n{"unrelated":true}\n${good}\n`).measurements).toHaveLength(4);
+  });
+  it('does not accept JSON fragments embedded in prose', () => {
+    expect(() => agy(null, `prefix ${good} suffix`)).toThrow(expect.objectContaining({ kind: 'parse-failure' }));
+    expect(() => agy(null, 'just logs\nand more logs')).toThrow(expect.objectContaining({ kind: 'parse-failure' }));
+  });
+  it('fails on conflicting valid envelopes but accepts a repeated identical one', () => {
+    const other = JSON.stringify(envelope([{ name: 'Other', buckets: [bucket('z', '5h', 0.1)] }]));
+    expect(() => agy(null, `${good}\n${other}`)).toThrow(expect.objectContaining({ kind: 'parse-failure' }));
+    expect(agy(null, `${good}\n${good}`).measurements).toHaveLength(4);
   });
 });

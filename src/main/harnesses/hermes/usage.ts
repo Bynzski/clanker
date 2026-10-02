@@ -1,5 +1,6 @@
 import { HarnessCapabilityError, type HarnessUsageCapability, type HarnessUsageMeasurement, type HarnessUsageSnapshot } from '../types';
 import { parseJsonOutput } from '../commandExecution';
+import { parseOffsetTimestamp } from '../usageParsing';
 
 /**
  * Hermes usage via `hermes usage --json` (verified against NousResearch/hermes-agent
@@ -28,16 +29,7 @@ export const HERMES_USAGE_COMMAND = { command: 'hermes', args: ['usage', '--json
 type Json = Record<string, unknown>;
 const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
 const str = (value: unknown): string | undefined => (typeof value === 'string' && value.trim() ? value : undefined);
-const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/i;
-
-/** ISO-8601 with an explicit offset -> epoch ms; anything else is undefined (never local time). */
-export function parseHermesTimestamp(value: unknown): number | undefined {
-  if (typeof value !== 'string' || !ISO_WITH_OFFSET.test(value.trim())) return undefined;
-  // JS Date reliably handles at most millisecond precision; Python emits microseconds.
-  const normalized = value.trim().replace(' ', 'T').replace(/(\.\d{3})\d+/, '$1');
-  const time = Date.parse(normalized);
-  return Number.isFinite(time) ? time : undefined;
-}
+export const parseHermesTimestamp = parseOffsetTimestamp;
 
 export function parseHermesUsage(stdout: string): HarnessUsageSnapshot {
   const root = parseJsonOutput(stdout, 'hermes usage --json');

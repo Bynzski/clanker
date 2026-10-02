@@ -45,7 +45,7 @@ require every implementation to use one storage format.
 ## Current capabilities
 
 All seven providers support local and SSH interactive launch. Model discovery and
-AI commit remain local-only. Only OMP and Hermes implement `usage` so far (see
+AI commit remain local-only. Only OMP, Hermes and Agy implement `usage` so far (see
 "Usage capability"); Codex, Claude, OpenCode, Pi and Agy remain without it.
 
 | Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
@@ -336,7 +336,8 @@ and reset come only from `window.*` (never from `primary`/`secondary` ids):
 `resetsAt`, `period{label, endsAt, startsAt = resetsAt - durationMs}`. Scope:
 `providerId` from the limit/report provider; `accountId` only from
 `scope.accountId`/`metadata.accountId`; `accountLabel` from `metadata.email`;
-`planLabel` from `metadata.planType`; `modelId` when present. No identity is
+`planLabel` only from documented plan metadata (`metadata.planType`/`plan`) — never
+`scope.tier`, which also names model/quota meters such as Codex `spark`; `modelId` when present. No identity is
 synthesised, and nothing is deduplicated across harnesses (the same Codex account
 appears via OMP and Hermes). Copies of one quota sharing `scope.sharedGroup` within a
 report are collapsed. `accountsWithoutUsage`, `disabledCredentials`, `capacity`,
@@ -370,6 +371,45 @@ non-null `used_percent` outside 0-100 / not a number is `parse-failure`; an inva
 failure backoff 300 s. Hermes makes a live provider request on every call with no cache
 of its own, so it gets no faster than the popover needs; exit 1 is often a permanent
 "not configured" state, so a long failure backoff avoids respawning Python every minute.
+
+**Antigravity (`agy`)** — `agy --version`, then `agy --output-format json -p=/usage`
+(the `-p=` form binds the prompt so later flags can never become the print prompt). Both go
+through `context.executor.run()`; the adapter has no transport branching, cwd, env or
+credential access. *Why the version check comes first:* before agy **1.1.11** `-p /usage` is
+not a command and is sent to the model as a normal prompt, which would create a real
+conversation and spend quota. The probe therefore runs only when the whole `--version`
+output is exactly one `X.Y.Z`/`vX.Y.Z` line that is >= 1.1.11; older, prerelease
+(`1.1.11-rc.1`), noisy, ambiguous or unparseable output fails closed with `unsupported` and
+`/usage` is never issued. *Second guard:* a reply is accepted only when `conversation_id` is
+empty, `num_turns` is 0 and every `usage.*_tokens` is 0 (absent counts as zero; anything else
+is evidence a model turn ran). Otherwise it is rejected as `unsupported` with a one-hour hard
+backoff (`HarnessCapabilityError.retryAfterMs`, honored by the service even for manual refresh).
+Envelope consumed: `status: "SUCCESS"`, `command.name === "usage"`,
+`command.data.groups[].buckets[]`; the human `response` text is never parsed and group names
+are never matched. Each enabled bucket with a numeric `remaining_fraction` becomes a
+`rate-limit` / `percent` measurement: remaining = clamp(fraction, 0, 1) x 100, used =
+100 - remaining, limit 100, `resetsAt` from an RFC3339 `reset_time` with explicit offset
+(missing/invalid/timezone-less resets are omitted, never read as local time), label
+`<group> · <bucket name>`, `period.label` from the vendor `window` (`5h` -> "5 hour",
+`weekly` -> "weekly", unknown windows kept verbatim) and `startsAt` only for those two known
+durations. **Disabled buckets are skipped** (the tier does not meter them, so they must not
+appear as 100% left); a tier with only disabled buckets is an `ok` empty snapshot. Groups are
+preserved in the label, so "Gemini Models" and "Claude and GPT models" weekly/5h buckets stay
+distinct. Scope is only `providerId: "google-antigravity"` (matching OMP's provider id for
+later correlation); no account, project or plan is invented, and `observedAt` is when the
+probe completed. Tolerance: no envelope, a wrong command name or missing `groups` is
+`parse-failure`; malformed groups/buckets are skipped while valid ones survive; if anything was
+malformed and nothing usable remains, `parse-failure`. Strict JSON is tried first; otherwise
+only whole-line `{...}` candidates that look like envelopes are considered, and conflicting
+valid envelopes or JSON embedded in prose are rejected. Errors: a non-SUCCESS envelope is
+`unauthenticated` only when its own `error`/`message`/`response` text matches a narrow phrase
+list (authentication required, not authenticated, login required, credentials/token
+revoked, token expired); everything else, including "authentication failed or timed out",
+network errors and non-zero exits without an envelope, is a generic `command-failed`. stderr is
+never inspected, and raw vendor text never reaches the renderer. The error-envelope shape is
+unspecified upstream, so this classification is best effort and unverified against a live
+error. Refresh: cache 60 s, hard minimum 120 s (each probe is a live vendor quota request with
+no local cache), failure backoff 300 s; every probe also repeats the cheap version check.
 
 IPC: `HARNESS_USAGE_GET` (`getHarnessUsage(workspaceId, { harnessIds?, force? })`)
 returns `{ workspaceId, entries }` for all (or the requested) harnesses. The header

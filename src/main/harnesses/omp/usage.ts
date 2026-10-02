@@ -93,7 +93,9 @@ function toMeasurement(limit: Json, report: Json, metadata: Json): HarnessUsageM
   const windowLabel = str(window?.label);
   const notes = Array.isArray(limit.notes) ? limit.notes.filter((note): note is string => typeof note === 'string') : [];
   const accountId = str(scope.accountId) ?? str(metadata.accountId);
-  const planLabel = str(metadata.planType) ?? str(metadata.plan) ?? str(scope.tier);
+  // Only documented plan metadata. `scope.tier` also names model/quota meters (e.g. Codex
+  // 'spark'), so it is deliberately not a plan fallback.
+  const planLabel = str(metadata.planType) ?? str(metadata.plan);
   const accountLabel = str(metadata.email);
   const label = str(limit.label) ?? windowLabel;
 

@@ -4,6 +4,7 @@ import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
 import { local } from './attention';
 import { remoteSessions } from './remoteSessions';
+import { agyUsage } from './usage';
 import { buildInvocation, validateLocal, validateRemote } from './invocation';
 import { defineHarness, type HarnessProvider } from '../types';
 
@@ -28,5 +29,6 @@ export const agyProvider = defineHarness({
   },
   attention: { disposeResources: disposeAllAgyAttention, local, remote },
   aiCommit,
+  usage: agyUsage,
   launch: { command: 'agy', args: [], modelArg: '--model' },
 } satisfies HarnessProvider);

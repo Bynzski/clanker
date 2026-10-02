@@ -235,7 +235,7 @@ export class HarnessUsageService {
       const failure = classifyHarnessFailure(error, environment.kind);
       const status = statusFor(failure);
       const checkedAt = this.now();
-      const backoff = Math.max(policy?.failureBackoffMs ?? DEFAULT_USAGE_FAILURE_BACKOFF_MS, MIN_TTL_MS, hardMinimum);
+      const backoff = Math.max(policy?.failureBackoffMs ?? DEFAULT_USAGE_FAILURE_BACKOFF_MS, MIN_TTL_MS, hardMinimum, failure.retryAfterMs ?? 0);
       record = {
         harnessId, status, checkedAt, error: STATUS_TEXT[status],
         freshUntil: checkedAt + backoff,

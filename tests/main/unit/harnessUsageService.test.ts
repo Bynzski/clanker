@@ -42,13 +42,13 @@ beforeEach(() => { localExec.mockReset(); localExec.mockResolvedValue({ stdout: 
 afterEach(() => { vi.useRealTimers(); });
 
 describe('HarnessUsageService delegation', () => {
-  it('represents providers without usage as explicitly unsupported (every real provider except OMP/Hermes)', async () => {
+  it('represents providers without usage as explicitly unsupported (every real provider except OMP/Hermes/Agy)', async () => {
     const env = fakeEnv('local');
     const { registry, register } = registryFor(env); await register();
     const response = await new HarnessUsageService(registry).get('ws');
     expect(response.entries.map((e) => e.harnessId)).toEqual(getHarnessProviders().map((p) => p.descriptor.id));
-    for (const entry of response.entries.filter((e) => !['omp', 'hermes'].includes(e.harnessId))) expect(entry).toMatchObject({ status: 'unsupported', measurements: [] });
-    expect(env.executeHarnessCommand).toHaveBeenCalledTimes(2); // only the two real adapters probe
+    for (const entry of response.entries.filter((e) => !['omp', 'hermes', 'agy'].includes(e.harnessId))) expect(entry).toMatchObject({ status: 'unsupported', measurements: [] });
+    expect(env.executeHarnessCommand).toHaveBeenCalledTimes(3); // only the real adapters probe (agy stops after its version check)
   });
 
   it('calls provider.usage.get generically with only an executor, transport and signal', async () => {
@@ -305,6 +305,20 @@ describe('hard provider limits vs ordinary cache freshness', () => {
     const { service, get, advance } = await setup(undefined);
     await service.get('ws'); advance(USAGE_FORCE_FLOOR_MS);
     await Promise.all([service.get('ws', { force: true }), service.get('ws', { force: true })]);
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('provider-demanded backoff', () => {
+  it('a failure can require a longer hard backoff than the policy, even under force', async () => {
+    let now = 1_000_000; const env = fakeEnv('local');
+    const { registry, register } = registryFor(env); await register();
+    const get = vi.fn(async () => { throw new HarnessCapabilityError('unsupported', 'x', undefined, 3_600_000); });
+    const service = new HarnessUsageService(registry, { now: () => now, providers: () => [withUsage('codex', { get })] });
+    await service.get('ws');
+    for (let i = 0; i < 5; i++) { now += 600_000; await service.get('ws', { force: true }); }
+    expect(get).toHaveBeenCalledTimes(1);
+    now += 700_000; await service.get('ws', { force: true });
     expect(get).toHaveBeenCalledTimes(2);
   });
 });
