@@ -4,7 +4,7 @@ import { mkdtempSync, realpathSync, rmSync, readFileSync, chmodSync, mkdirSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { agyAttentionPlugin } from '../../../src/main/agentAttentionAdapters';
+import { legacyHooks } from '../../../src/main/harnesses/agy/remoteAttention';
 import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
 import { createRemoteAttentionFilter, REMOTE_ATTENTION_PREFIX } from '../../../src/main/remote/remoteAttentionTransport';
 import { prepareSshAttention, HERMES_REMOTE_ATTENTION_PLUGIN } from '../../../src/main/remote/sshAgentAttention';
@@ -63,17 +63,17 @@ sys.stdout.buffer.write(output)
 describe('SSH attention event boundary', () => {
   it('isolates remote credentials from the loopback listener, other terminals, and retired launches', async () => {
     const updates = vi.fn();
-    const broker = new AgentAttentionBroker(updates);
+    const broker = new AgentAttentionBroker(updates, () => undefined);
     brokers.push(broker);
     const remoteToken = broker.registerRemote('ssh-a', 'opencode');
     const local = await broker.register('local-a', 'opencode');
-    const raw = JSON.stringify({ version: 1, token: remoteToken, harness: 'opencode', event: 'turn_completed' });
+    const raw = JSON.stringify({ version: 1, token: remoteToken, harness: 'opencode', event: 'turn_started', scope: 'root', sessionId: 'session-a' });
     broker.receive(raw);
     broker.receiveRemote('ssh-b', raw);
-    broker.receiveRemote('ssh-a', JSON.stringify({ version: 1, token: local.CLANKER_ATTENTION_TOKEN, harness: 'opencode', event: 'turn_completed' }));
+    broker.receiveRemote('ssh-a', JSON.stringify({ version: 1, token: local.CLANKER_ATTENTION_TOKEN, harness: 'opencode', event: 'turn_started', scope: 'root', sessionId: 'session-a' }));
     expect(updates).not.toHaveBeenCalled();
     broker.receiveRemote('ssh-a', raw);
-    expect(updates).toHaveBeenCalledExactlyOnceWith({ terminalId: 'ssh-a', event: 'turn_completed' });
+    expect(updates).toHaveBeenCalledExactlyOnceWith({ terminalId: 'ssh-a', event: 'turn_started' });
     broker.release('ssh-a');
     broker.receiveRemote('ssh-a', raw);
     expect(updates).toHaveBeenCalledTimes(1);
@@ -158,7 +158,11 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
     expect(prepared.env.CLANKER_REMOTE_ATTENTION_TOKEN).toBe(token);
     expect(prepared.env.CLANKER_ATTENTION_PORT).toBeUndefined();
     expect(readFileSync(join(root, 'observer.mjs'), 'utf8')).toContain('/dev/tty');
-    if (harness === 'codex') expect(prepared.args[1]).toContain('notify=');
+    if (harness === 'codex') {
+      expect(prepared.args.filter((arg) => arg.startsWith('hooks.')).map((arg) => arg.split('=')[0])).toEqual(['hooks.UserPromptSubmit', 'hooks.PermissionRequest', 'hooks.PostToolUse', 'hooks.Stop', 'hooks.SubagentStop', 'hooks.SessionEnd']);
+      expect(prepared.args.join(' ')).not.toContain('notify=');
+      expect(prepared.args.join(' ')).toContain(`${root}/interpreter.mjs`);
+    }
     if (harness === 'claude') {
       const settings = JSON.parse(readFileSync(join(root, 'claude-settings.json'), 'utf8'));
       expect(settings.hooks.Stop[0].hooks[0].command).toContain(`${root}/command.mjs`);
@@ -168,7 +172,7 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
     if (harness === 'agy') expect(readFileSync(join(home, '.gemini/config/plugins/clanker-grid-remote-attention/hooks.json'), 'utf8')).toContain('$CLANKER_REMOTE_ATTENTION_COMMAND');
     expect(exec).toHaveBeenCalledTimes(harness === 'hermes' ? 2 : 1);
     const payload = JSON.parse(String(exec.mock.calls[0][3]?.input));
-    const expectedFiles = ['command.mjs', 'observer.mjs', ...(harness === 'pi' ? ['pi.ts'] : harness === 'omp' ? ['omp.ts'] : harness === 'opencode' ? ['opencode/observer.mjs', 'opencode/plugins/clanker-attention.js'] : [])];
+    const expectedFiles = ['command.mjs', 'observer.mjs', ...(['codex', 'claude', 'agy'].includes(harness) ? ['interpreter.mjs'] : []), ...(harness === 'pi' ? ['pi.ts'] : harness === 'omp' ? ['omp.ts'] : harness === 'opencode' ? ['opencode/observer.mjs', 'opencode/plugins/clanker-attention.js'] : [])];
     expect(Object.keys(payload.files).sort()).toEqual(expectedFiles.sort());
     writeFileSync(join(root, 'preserve.txt'), 'unknown');
     await prepared.release();
@@ -262,13 +266,13 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
   });
 
   it.each([
-    ['-c', 'notify=[]'], ['--config', 'notify=[]'], ['-cnotify=[]'], ['--config=notify=[]'],
-    ['-cprofiles.custom.notify=[]'], ['--config=profiles.custom.notify=[]'],
-    ['-c', ' notify = []'], ['-cprofile="custom"'], ['--config=profile="custom"'], ['-pcustom'],
+    ['-c', 'hooks.Stop=[]'], ['--config', 'hooks.Stop=[]'], ['-chooks.Stop=[]'], ['--config=hooks.Stop=[]'],
+    ['-cprofiles.custom.hooks.Stop=[]'], ['--config=profiles.custom.hooks.Stop=[]'],
+    ['-c', ' hooks.Stop = []'], ['-cprofile="custom"'], ['--config=profile="custom"'], ['-pcustom'],
   ])('rejects Codex hook/profile overrides in %j', async (...args) => {
     const { executor } = fixture();
     await expect(prepareSshAttention(executor, 'host', 'codex', args, token))
-      .rejects.toThrow('cannot replace a Codex profile or notify command');
+      .rejects.toThrow('cannot replace a Codex profile or hook configuration');
   });
 
   it.each([['-csandbox_mode="read-only"'], ['--config', 'model_reasoning_effort="high"']])('preserves unrelated Codex overrides in %j', async (...args) => {
@@ -276,7 +280,7 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
     const prepared = await prepareSshAttention(executor, 'host', 'codex', args, token);
     const root = join(prepared.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..');
     roots.push(root);
-    expect(prepared.args.slice(2)).toEqual(args);
+    expect(prepared.args.slice(-args.length)).toEqual(args);
     await prepared.release();
   });
 
@@ -320,7 +324,7 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
     }
     expect(() => readFileSync(marker)).toThrow();
     const hook = hooks['clanker-attention'].Stop[0].command;
-    const stdout = execFileSync('python3', ['-c', CAPTURE_TTY, 'sh', '-c', `printf '%s' '{}' | ${hook}`], {
+    const stdout = execFileSync('python3', ['-c', CAPTURE_TTY, 'sh', '-c', `printf '%s' '{"conversationId":"c1","fullyIdle":true}' | ${hook}`], {
       encoding: 'utf8', env: { ...process.env, ...prepared.env }, timeout: 10000,
     });
     const events: Array<{ event: string }> = [];
@@ -335,10 +339,16 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
     roots.push(join(prepared.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..'));
     const pluginPath = join(home, '.gemini/config/plugins/clanker-grid-remote-attention/hooks.json');
     const guarded = readFileSync(pluginPath, 'utf8');
-    writeFileSync(pluginPath, JSON.stringify(agyAttentionPlugin('$CLANKER_REMOTE_ATTENTION_COMMAND', 'linux').hooksJson));
+    for (const previous of [legacyHooks(false), legacyHooks(true)]) {
+      expect(previous).not.toBe(guarded);
+      writeFileSync(pluginPath, previous);
+      const refreshed = await prepareSshAttention(executor, 'host', 'agy', [], token);
+      roots.push(join(refreshed.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..'));
+      expect(readFileSync(pluginPath, 'utf8')).toBe(guarded);
+      await refreshed.release();
+    }
     const upgraded = await prepareSshAttention(executor, 'host', 'agy', [], token);
     roots.push(join(upgraded.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..'));
-    expect(readFileSync(pluginPath, 'utf8')).toBe(guarded);
     writeFileSync(pluginPath, 'user modification');
     await expect(prepareSshAttention(executor, 'host', 'agy', [], token)).rejects.toThrow('Refusing to overwrite');
     expect(readFileSync(pluginPath, 'utf8')).toBe('user modification');
@@ -346,11 +356,15 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
     await upgraded.release();
   });
 
-  it('preserves existing Codex notify configuration and unowned/shared writable plugin directories', async () => {
+  it('preserves existing Codex hook configuration and unowned/shared writable plugin directories', async () => {
     const { executor, home } = fixture();
     mkdirSync(join(home, '.codex'));
-    writeFileSync(join(home, '.codex/config.toml'), 'notify = ["custom"]\n');
-    await expect(prepareSshAttention(executor, 'host', 'codex', [], token)).rejects.toThrow('host Codex notify');
+    writeFileSync(join(home, '.codex/config.toml'), '[[hooks.Stop]]\n');
+    await expect(prepareSshAttention(executor, 'host', 'codex', [], token)).rejects.toThrow('host Codex hook');
+    writeFileSync(join(home, '.codex/config.toml'), '');
+    writeFileSync(join(home, '.codex/hooks.json'), '{"hooks":{"SubagentStop":[]}}');
+    await expect(prepareSshAttention(executor, 'host', 'codex', [], token)).rejects.toThrow('host Codex hook');
+    rmSync(join(home, '.codex/hooks.json'));
     mkdirSync(join(home, '.gemini'));
     chmodSync(join(home, '.gemini'), 0o777);
     await expect(prepareSshAttention(executor, 'host', 'agy', [], token)).rejects.toThrow('Unsafe');
@@ -362,45 +376,75 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
     expect(readFileSync(filename, 'utf8')).toBe('user plugin');
   });
 
-  it('delivers real OpenCode lifecycle and permission events over a tty without forwarding payloads', async () => {
+  it('delivers real OpenCode root lifecycle and permission events over a tty without forwarding payloads', async () => {
     const { executor } = fixture();
     const prepared = await prepareSshAttention(executor, 'host', 'opencode', [], token);
     const root = join(prepared.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..');
     roots.push(root);
     const runner = join(root, 'runner.mjs');
     writeFileSync(runner, `import { ClankerAttention } from './opencode/plugins/clanker-attention.js';
-const plugin = await ClankerAttention();
+const sessions = { 'session-a': {id:'session-a'}, 'session-b': {id:'session-b', parentID:'session-a'} };
+const plugin = await ClankerAttention({ client: { session: { get: async ({ path }) => ({ data: sessions[path.id] }) } } });
 for (const [type, properties] of [
   ['session.status', {sessionID:'session-a', status:{type:'busy'}}],
-  ['permission.asked', {sessionID:'session-a', prompt:'PRIVATE CONTENT'}],
-  ['permission.replied', {sessionID:'session-a'}],
+  ['permission.asked', {sessionID:'session-a', id:'perm-1', prompt:'PRIVATE CONTENT'}],
+  ['permission.replied', {sessionID:'session-a', requestID:'perm-1'}],
   ['session.idle', {sessionID:'session-b'}],
   ['session.idle', {sessionID:'session-a'}],
+  ['session.idle', {sessionID:'unknown-session'}],
 ]) await plugin.event({event:{type, properties}});
 `);
     const stdout = execFileSync('python3', ['-c', CAPTURE_TTY, process.execPath, runner], {
       encoding: 'utf8', env: { ...process.env, ...prepared.env }, timeout: 10000,
     });
-    const events: Array<{ event: string }> = [];
+    const events: Array<{ event: string; scope?: string }> = [];
     createRemoteAttentionFilter((raw) => events.push(JSON.parse(raw)))(stdout);
-    expect(events.map((event) => event.event)).toEqual(['turn_started', 'input_requested', 'input_resolved', 'turn_completed']);
+    expect(events.map((event) => [event.event, event.scope])).toEqual([
+      ['turn_started', 'root'], ['input_requested', 'root'], ['input_resolved', 'root'], ['turn_completed', 'child'], ['turn_completed', 'root'],
+    ]);
     expect(stdout).not.toContain('PRIVATE CONTENT');
     await prepared.release();
   });
 
-  it('maps Hermes observer hooks to advisory events and excludes sensitive callback fields', () => {
+  it('carries trusted resume identity to the host, and only when one is supplied', async () => {
+    const { executor, exec } = fixture();
+    const seeded = await prepareSshAttention(executor, 'host', 'opencode', [], token, { rootSessionId: 'ses_resume.1' });
+    roots.push(join(seeded.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..'));
+    expect(seeded.env.CLANKER_ATTENTION_SESSION_ID).toBe('ses_resume.1');
+    expect(JSON.parse(String(exec.mock.calls[0][3]?.input)).rootSessionId).toBe('ses_resume.1');
+    await seeded.release();
+    const fresh = await prepareSshAttention(executor, 'host', 'opencode', [], token);
+    roots.push(join(fresh.env.CLANKER_REMOTE_ATTENTION_COMMAND, '..'));
+    expect(fresh.env.CLANKER_ATTENTION_SESSION_ID).toBeUndefined();
+    await fresh.release();
+    await expect(prepareSshAttention(executor, 'host', 'opencode', [], token, { rootSessionId: 'bad id; rm' })).rejects.toThrow();
+  });
+
+  it('maps Hermes root hooks, ignores smart approvals, marks child sessions, and excludes sensitive fields', () => {
     const script = HERMES_REMOTE_ATTENTION_PLUGIN + `
 class Context:
     def register_hook(self, name, callback):
-        callback(session_id='session-a', turn_id='turn-a', user_message='PRIVATE CONTENT')
+        calls = {
+            'pre_llm_call': [dict(session_id='root', user_message='PRIVATE CONTENT'), dict(session_id='child', parent_session_id='root')],
+            'post_llm_call': [dict(session_id='child', parent_session_id='root', assistant_response='PRIVATE CONTENT'), dict(session_id='root', assistant_response='PRIVATE CONTENT')],
+            'pre_approval_request': [dict(session_id='root', surface='smart'), dict(session_id='root', surface='cli', command='PRIVATE CONTENT')],
+            'post_approval_response': [dict(session_id='root', surface='smart'), dict(session_id='root', surface='cli')],
+            'on_session_finalize': [dict(session_id='root')],
+        }
+        for kwargs in calls.get(name, []):
+            callback(**kwargs)
 register(Context())
 `;
     const stdout = execFileSync('python3', ['-c', CAPTURE_TTY, 'python3', '-c', script], {
       encoding: 'utf8', env: { ...process.env, CLANKER_REMOTE_ATTENTION_TOKEN: token, CLANKER_REMOTE_ATTENTION_HARNESS: 'hermes' }, timeout: 10000,
     });
-    const events: Array<{ event: string }> = [];
+    const events: Array<{ event: string; scope: string; sessionId: string }> = [];
     createRemoteAttentionFilter((raw) => events.push(JSON.parse(raw)))(stdout);
-    expect(events.map((event) => event.event)).toEqual(['turn_started', 'turn_completed', 'input_requested', 'input_resolved']);
+    expect(events.map((event) => [event.event, event.scope, event.sessionId])).toEqual([
+      ['turn_started', 'root', 'root'], ['turn_started', 'child', 'child'],
+      ['turn_completed', 'child', 'child'], ['turn_completed', 'root', 'root'],
+      ['input_requested', 'root', 'root'], ['input_resolved', 'root', 'root'], ['session_ended', 'root', 'root'],
+    ]);
     expect(stdout).not.toContain('PRIVATE CONTENT');
   });
 });
@@ -418,22 +462,24 @@ describe.skipIf(process.platform === 'win32')('remote hook and extension deliver
       writeFileSync(runner, `import install from './${harness}.ts';
 const callbacks = {};
 install({on:(name, callback) => {callbacks[name] = callback;}});
-const ctx = {sessionManager:{getSessionId:()=>'session-a'}};
-for (const name of ['agent_start', '${harness === 'pi' ? 'agent_settled' : 'agent_end'}', 'session_shutdown']) await callbacks[name]({}, ctx);
+const ctx = {sessionManager:{getSessionId:()=>'session-a'}, agent:{kind:'main'}};
+// agent_end is deliberately not a completion for OMP and must stay unobserved.
+for (const name of ['agent_start', 'agent_settled', 'agent_end', 'session_stop', 'session_shutdown']) if (callbacks[name]) await callbacks[name]({}, ctx);
 `);
       args = [runner];
     } else {
-      const input = harness === 'codex' ? { type: 'agent-turn-complete', 'thread-id': 'session-a' }
-        : { hook_event_name: 'Stop', session_id: 'session-a' };
-      args = [join(root, 'command.mjs'), JSON.stringify(input)];
+      const input = harness === 'agy' ? { conversationId: 'session-a', fullyIdle: true } : { session_id: 'session-a', turn_id: 'turn-a' };
+      // Hook payloads arrive on stdin; the pty stays the controlling terminal for the frame.
+      args = [`printf '%s' '${JSON.stringify(input)}' | "${process.execPath}" "${join(root, 'command.mjs')}" "${join(root, 'interpreter.mjs')}" Stop`];
     }
-    const stdout = execFileSync('python3', ['-c', CAPTURE_TTY, process.execPath, ...args], {
+    const stdout = execFileSync('python3', ['-c', CAPTURE_TTY, ...(harness === 'pi' || harness === 'omp' ? [process.execPath, ...args] : ['sh', '-c', ...args])], {
       encoding: 'utf8', env: { ...process.env, ...prepared.env }, timeout: 10000,
     });
-    const events: Array<{ event: string }> = [];
+    const events: Array<{ event: string; scope?: string; sessionId?: string }> = [];
     createRemoteAttentionFilter((raw) => events.push(JSON.parse(raw)))(stdout);
     expect(events.map((event) => event.event)).toEqual(harness === 'pi' || harness === 'omp'
       ? ['turn_started', 'turn_completed', 'session_ended'] : ['turn_completed']);
+    expect(events.every((event) => event.scope === 'root' && event.sessionId === 'session-a')).toBe(true);
     await prepared.release();
   });
 });
@@ -445,7 +491,7 @@ describe.skipIf(process.platform === 'win32')('SSH attention launch wrapper', ()
     mkdirSync(join(home, 'bin'));
     const fakeHarness = join(home, 'bin/opencode');
     writeFileSync(fakeHarness, `#!/bin/sh
-exec node --input-type=module -e 'const {ClankerAttention}=await import(process.env.OPENCODE_CONFIG_DIR+"/plugins/clanker-attention.js"); const plugin=await ClankerAttention(); await plugin.event({event:{type:"session.idle",properties:{sessionID:"test-session"}}});'
+exec node --input-type=module -e 'const {ClankerAttention}=await import(process.env.OPENCODE_CONFIG_DIR+"/plugins/clanker-attention.js"); const plugin=await ClankerAttention({client:{session:{get:async()=>({data:{id:"test-session"}})}}}); await plugin.event({event:{type:"session.idle",properties:{sessionID:"test-session"}}});'
 `, { mode: 0o700 });
     const fallback = join(home, 'fallback-shell');
     writeFileSync(fallback, `#!/bin/sh
@@ -460,7 +506,7 @@ printf 'fallback-ready'
     });
     const events: Array<{ event: string }> = [];
     const visible = createRemoteAttentionFilter((raw) => events.push(JSON.parse(raw)))(stdout);
-    expect(events.map((event) => event.event)).toEqual(['turn_completed', 'session_ended']);
+    expect(events.map((event) => event.event)).toEqual(['turn_completed', 'agent_exited']);
     expect(visible).toContain('fallback-ready');
     expect(visible).not.toContain('credentials-leaked');
     expect(visible).not.toContain(token);

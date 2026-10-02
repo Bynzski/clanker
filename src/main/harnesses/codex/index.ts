@@ -1,6 +1,6 @@
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
 import { remote } from './remoteAttention';
-import { local } from './attention';
+import { local, INTERPRETER } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import { codexUsage } from './usage';
@@ -20,7 +20,7 @@ export const codexProvider = defineHarness({
     selectionFlags: ['resume', 'fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverCodexSessions(workspace),
   },
-  attention: { local, remote },
+  attention: { interpreter: INTERPRETER, resumePreservesSessionId: true, local, remote },
   usage: codexUsage,
   aiCommit: { modelArg: '-m',
     buildInvocation: ({ model, prompt }) => ({ command: 'codex', args: [...['exec'], ...(model ? ['-m', model] : [])], stdin: prompt, timeoutMs: 60000 }),

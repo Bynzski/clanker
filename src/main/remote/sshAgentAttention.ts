@@ -1,4 +1,5 @@
 import { findHarnessProvider } from '../harnesses/registry';
+import type { AttentionPreparationContext } from '../harnesses/types';
 import { remoteAttentionScript } from '../harnesses/remoteAttentionRuntime';
 export { HERMES_REMOTE_ATTENTION_PLUGIN } from '../harnesses/hermes/remoteAttention';
 import * as path from 'node:path';
@@ -19,13 +20,16 @@ export const REMOTE_CLI_PATH_SETUP = [
 
 export async function prepareSshAttention(
   executor: SshCommandExecutor, target: string, harness: string, args: string[], token: string,
+  context: AttentionPreparationContext = {},
 ): Promise<{ args: string[]; env: Record<string, string>; endCommand: string; release: () => Promise<void> }> {
   const capability = findHarnessProvider(harness)?.attention?.remote;
   if (!capability || !/^[a-f0-9]{64}$/.test(token)) throw new Error('Unsupported remote attention registration');
   const plugin = capability.plugin?.();
+  const interpreter = findHarnessProvider(harness)?.attention?.interpreter;
   const result = await executor.exec(target, 'sh', ['-c', `${REMOTE_CLI_PATH_SETUP}\nexec ${quotePosixCommand('python3', ['-c', remoteAttentionScript(capability)])}`], {
-    input: JSON.stringify({ harness, args, files: { 'observer.mjs': REMOTE_ATTENTION_OBSERVER, 'command.mjs': COMMAND, ...capability.resources?.(REMOTE_ATTENTION_OBSERVER) },
-      ...(plugin ? { plugin, upgradeFile: plugin.upgradeFile, legacyPluginFile: plugin.legacyFile } : {}) }),
+    input: JSON.stringify({ harness, args, files: { 'observer.mjs': REMOTE_ATTENTION_OBSERVER, 'command.mjs': COMMAND, ...(interpreter ? { 'interpreter.mjs': interpreter } : {}), ...capability.resources?.(REMOTE_ATTENTION_OBSERVER) },
+      ...(context.rootSessionId ? { rootSessionId: context.rootSessionId } : {}),
+      ...(plugin ? { plugin, upgradeFile: plugin.upgradeFile, legacyPluginFiles: plugin.legacyFiles } : {}) }),
     timeoutMs: 15000, maxBuffer: 64 * 1024,
   });
   const response = JSON.parse(result.stdout) as { root: string; args: string[]; env: Record<string, string> };

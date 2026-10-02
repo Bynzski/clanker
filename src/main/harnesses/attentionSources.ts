@@ -1,12 +1,25 @@
+/** Shared observer helpers. Providers own the meaning of native events; shared
+ * code only bounds and forwards the sanitized canonical envelope. */
+export const OBSERVER_FIELDS = `const IDENTIFIERS = ['sessionId', 'turnId', 'inputId'];
+function envelope(event, fields) {
+  const extra = {};
+  for (const key of IDENTIFIERS) {
+    if (typeof fields?.[key] === 'string' && fields[key]) extra[key] = fields[key].slice(0, 128);
+  }
+  if (fields?.scope === 'root' || fields?.scope === 'child') extra.scope = fields.scope;
+  if (typeof fields?.nativeEvent === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(fields.nativeEvent)) extra.nativeEvent = fields.nativeEvent;
+  return { event, ...extra };
+}
+`;
+
 export const OBSERVER = `import net from 'node:net';
-export async function emit(event, sessionId, turnId) {
+${OBSERVER_FIELDS}
+export async function emit(event, fields) {
   const port = Number(process.env.CLANKER_ATTENTION_PORT);
   const token = process.env.CLANKER_ATTENTION_TOKEN;
   const harness = process.env.CLANKER_ATTENTION_HARNESS;
   if (!token || !harness || !Number.isInteger(port) || port < 1) return false;
-  const payload = JSON.stringify({ version: 1, token, harness, event,
-    ...(typeof sessionId === 'string' ? { sessionId: sessionId.slice(0, 128) } : {}),
-    ...(typeof turnId === 'string' ? { turnId: turnId.slice(0, 128) } : {}) });
+  const payload = JSON.stringify({ version: 1, token, harness, ...envelope(event, fields) });
   return await new Promise((resolve) => {
     const socket = net.createConnection({ host: '127.0.0.1', port }, () => socket.end(payload));
     let acknowledged = false;
@@ -18,43 +31,33 @@ export async function emit(event, sessionId, turnId) {
 }
 `;
 
-export const COMMAND = `import { emit } from './observer.mjs';
+/** Generic hook bridge. `command.mjs --ended` reports that the harness process
+ * exited. Otherwise argv[2] is the provider-owned interpreter module, which maps
+ * the native hook payload to a canonical lifecycle event (or nothing). */
+export const COMMAND = `import { pathToFileURL } from 'node:url';
+import { emit } from './observer.mjs';
 if (process.argv[2] === '--ended') {
-  process.exit(await emit('session_ended') ? 0 : 1);
+  process.exit(await emit('agent_exited') ? 0 : 1);
 }
 let input = {};
-const agyHook = process.argv[2] && process.argv[2] !== '--ended' && !process.argv[2].startsWith('{')
-  ? process.argv[2]
-  : null;
 try {
-  if (process.argv[2] && !agyHook) input = JSON.parse(process.argv[2].slice(0, 65536));
-  else {
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of process.stdin) {
-      size += chunk.length;
-      if (size > 65536) break;
-      chunks.push(chunk);
-    }
-    input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of process.stdin) {
+    size += chunk.length;
+    if (size > 65536) break;
+    chunks.push(chunk);
   }
+  input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
 } catch { /* malformed hook input is ignored */ }
-const hook = agyHook || input.hook_event_name;
-const notification = input.notification_type;
-const toolName = input.toolCall?.name;
-const isAskTool = toolName === 'ask_question' || toolName === 'ask_permission' || toolName === 'notify_user';
-const event = input.type === 'agent-turn-complete' || hook === 'Stop' ? 'turn_completed'
-  : hook === 'UserPromptSubmit' || (agyHook === 'PreInvocation' && input.invocationNum === 0) ? 'turn_started'
-  : (hook === 'Notification' && (notification === 'permission_prompt' || notification === 'agent_needs_input')) || (agyHook === 'PreToolUse' && isAskTool) ? 'input_requested'
-  : (hook === 'PostToolUse' && (!agyHook || isAskTool)) ? 'input_resolved'
-  : hook === 'SessionEnd' ? 'session_ended'
-  : null;
-const sessionId = input.conversationId || input.sessionId || input.session_id || input['thread-id'];
-const turnId = input.turn_id || input['turn-id'];
-if (event) await emit(event, sessionId, turnId);
-if (agyHook === 'PreToolUse' && isAskTool) {
-  process.stdout.write(JSON.stringify({ decision: 'allow' }) + '\\n');
-} else {
-  process.stdout.write('{}\\n');
+let result = null;
+try {
+  const interpreter = await import(pathToFileURL(process.argv[2]).href);
+  result = interpreter.default(input, process.argv[3]);
+} catch { /* an unreadable interpreter emits nothing */ }
+if (result?.event) {
+  const { type, ...fields } = result.event;
+  await emit(type, fields);
 }
+process.stdout.write(JSON.stringify(result?.output ?? {}) + '\\n');
 `;

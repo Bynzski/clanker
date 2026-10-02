@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { findHarnessProvider, getHarnessProviders } from './harnesses/registry';
 import type { AttentionAdapterFiles, LocalAttentionContext } from './harnesses/types';
+import type { HarnessSession } from '../shared/types/session';
 import { OBSERVER, COMMAND } from './harnesses/attentionSources';
 export { acquireAgyAttentionPlugin, releaseAgyAttentionPlugin, agyAttentionPlugin } from './harnesses/agy/attentionPlugin';
 export { claudeAttentionSettings } from './harnesses/claude/attention';
@@ -38,14 +39,16 @@ export function ensureAttentionAdapterFiles(): AttentionAdapterFiles {
 export function ensureProviderAttentionResources(harness: string, infrastructure = ensureAttentionAdapterFiles()): AttentionAdapterFiles {
   const provider = findHarnessProvider(harness);
   const prepare = provider?.attention?.prepareResources;
-  if (!provider || !prepare) return infrastructure;
+  const interpreter = provider?.attention?.interpreter;
+  if (!provider || (!prepare && !interpreter)) return infrastructure;
   if (infrastructure.command !== files?.command) throw new Error('Unknown local attention infrastructure');
   const cached = providerFiles.get(provider.descriptor.id);
   if (cached) return cached;
   const resourceRoot = fs.mkdtempSync(path.join(path.dirname(infrastructure.command), `${provider.descriptor.id}-`));
   const scoped = { command: infrastructure.command, resourceRoot };
   try {
-    prepare(scoped, OBSERVER);
+    if (interpreter) fs.writeFileSync(path.join(resourceRoot, 'interpreter.mjs'), interpreter, { mode: 0o600 });
+    prepare?.(scoped, OBSERVER);
     providerFiles.set(provider.descriptor.id, scoped);
     return scoped;
   } catch (error) {
@@ -73,10 +76,18 @@ export function removeAttentionAdapterFiles(): void {
 /** Compatibility injection query. Resource ownership uses prepare() at launch. */
 export function attentionLaunchOptions(
   harness: string, args: string[], env: NodeJS.ProcessEnv, adapterFiles: AttentionAdapterFiles,
-  sessionId?: string, platform: NodeJS.Platform = process.platform,
+  rootSessionId?: string, platform: NodeJS.Platform = process.platform,
 ) {
-  const context = { terminalId: '', args, env, files: adapterFiles, sessionId, platform };
+  const context = { terminalId: '', args, env, files: adapterFiles, rootSessionId, platform };
   const local = findHarnessProvider(harness)?.attention?.local;
   if (!local?.options(context)) return null;
   return local.options({ ...context, files: ensureProviderAttentionResources(harness, adapterFiles) });
+}
+
+/** Native session identity Clanker itself validated for a non-fork resume. A fork creates
+ * a new native session, and a provider whose resume may re-identify the session cannot be
+ * pre-seeded; both start unbound. Renderer-supplied IDs never reach this function. */
+export function trustedRootSessionId(harness: string, session: Pick<HarnessSession, 'id'>, fork: boolean): string | undefined {
+  if (fork || !findHarnessProvider(harness)?.attention?.resumePreservesSessionId) return undefined;
+  return /^[A-Za-z0-9._:-]{1,128}$/.test(session.id) ? session.id : undefined;
 }

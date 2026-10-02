@@ -6,8 +6,6 @@ export interface TerminalAttention {
   lifecycle: AgentLifecycle;
   unseen: boolean;
   updatedAt: number;
-  sessionId?: string;
-  turnId?: string;
 }
 
 interface AgentAttentionState {
@@ -24,11 +22,6 @@ export const useAgentAttentionStore = create<AgentAttentionState>((set) => ({
   byTerminalId: {},
   applyUpdate: (update, foreground) => set((state) => {
     const previous = state.byTerminalId[update.terminalId] ?? UNKNOWN;
-    if (previous.sessionId && update.sessionId && previous.sessionId !== update.sessionId) {
-      // Completion-only adapters can establish a new TUI session without a start event.
-      // Resolution and end events cannot establish the new session's state.
-      if (update.event === 'input_resolved' || update.event === 'session_ended') return state;
-    }
     let lifecycle: AgentLifecycle;
     switch (update.event) {
       case 'turn_started': lifecycle = 'running'; break;
@@ -38,14 +31,12 @@ export const useAgentAttentionStore = create<AgentAttentionState>((set) => ({
         lifecycle = 'running';
         break;
       case 'turn_completed': lifecycle = 'turn_complete'; break;
-      case 'session_ended': lifecycle = 'unknown'; break;
+      // Main already decided these are authoritative boundaries; the pane has no known state.
+      case 'session_ended':
+      case 'agent_exited': lifecycle = 'unknown'; break;
     }
     const unseen = (lifecycle === 'needs_input' || lifecycle === 'turn_complete') && !foreground;
-    return { byTerminalId: { ...state.byTerminalId, [update.terminalId]: {
-      lifecycle, unseen, updatedAt: Date.now(),
-      ...(update.sessionId ? { sessionId: update.sessionId } : previous.sessionId ? { sessionId: previous.sessionId } : {}),
-      ...(update.turnId ? { turnId: update.turnId } : {}),
-    } } };
+    return { byTerminalId: { ...state.byTerminalId, [update.terminalId]: { lifecycle, unseen, updatedAt: Date.now() } } };
   }),
   acknowledge: (terminalId) => set((state) => {
     const current = state.byTerminalId[terminalId];

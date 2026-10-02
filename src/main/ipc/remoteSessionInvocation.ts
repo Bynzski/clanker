@@ -6,6 +6,7 @@ import type { RegisterSessionIpcDeps } from './sessionIpc';
 import { isPathContained } from '../remote/remotePaths';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import { spawnPtyProcess } from './ptySpawn';
+import { trustedRootSessionId } from '../agentAttentionAdapters';
 
 import { SUPPORTED_RESUME_HARNESSES, supportsSessionOperation } from '../sessionLaunch';
 /** Re-read the host session instead of trusting renderer-supplied paths or models. */
@@ -42,12 +43,14 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
   if (tokens.some((token) => (getHarnessProvider(session.harness).sessions?.selectionFlags ?? []).some((option) => token === option || token.startsWith(`${option}=`) || (option.length === 2 && token.startsWith(option))))) throw new Error('Harness default flags conflict with remote session selection');
   const id = `term-${randomUUID()}`;
   const broker = deps.agentAttentionBroker;
+  // The rediscovered host session is the only authority for a resumed root identity.
+  const attentionRootSessionId = trustedRootSessionId(session.harness, session, fork === true);
   const attentionToken = defaults?.attentionEnabled && environment.capabilities.agentAttention && broker
-    ? broker.registerRemote(id, session.harness) : undefined;
+    ? broker.registerRemote(id, session.harness, { rootSessionId: attentionRootSessionId }) : undefined;
   let releaseAttention: (() => Promise<void>) | undefined;
   try {
     const resolved = await environment.resolveTerminalSpawn({
-      id, workingDir: session.cwd, harness: session.harness, flags, attentionToken,
+      id, workingDir: session.cwd, harness: session.harness, flags, attentionToken, attentionRootSessionId,
       resumeSession: { session, fork: fork === true, workspaceRoot: workspace.location.path },
     });
     releaseAttention = resolved.releaseAttention;

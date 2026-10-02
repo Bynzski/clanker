@@ -58,7 +58,7 @@ root, token, harness = sys.argv[1:]
 try:
     fd = os.open('/dev/tty', os.O_WRONLY | os.O_NOCTTY | os.O_NONBLOCK)
     try:
-        raw = json.dumps(dict(version=1, token=token, harness=harness, event='session_ended')).encode()
+        raw = json.dumps(dict(version=1, token=token, harness=harness, event='agent_exited')).encode()
         os.write(fd, b'\\x1b]777;clanker-attention;' + base64.b64encode(raw) + b'\\x07')
     finally:
         os.close(fd)

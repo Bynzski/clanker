@@ -3,11 +3,17 @@ import * as path from 'node:path';
 import type { AttentionAdapterFiles } from '../types';
 import { localAttention } from '../localAttention';
 
+/** Completion is the main session's `session_stop`, which OMP defers until agent-owned
+ * background jobs are idle and never emits for task/subagent sessions. `agent_end` is
+ * not a terminal completion. Hooks are rebound to subagent sessions, so the subject
+ * comes from `ctx.agent.kind`; an unknown kind is never reported as root. */
 export const SOURCE = `import { emit } from './observer.mjs';
+const kind = (ctx) => ctx.agent?.kind === 'main' ? 'root' : ctx.agent?.kind === 'sub' ? 'child' : undefined;
+const report = (type, nativeEvent, scope) => (_event, ctx) => emit(type, { scope: scope(ctx), sessionId: ctx.sessionManager?.getSessionId?.(), nativeEvent });
 export default function (omp) {
-  omp.on('agent_start', (_event, ctx) => emit('turn_started', ctx.sessionManager?.getSessionId?.()));
-  omp.on('agent_end', (_event, ctx) => emit('turn_completed', ctx.sessionManager?.getSessionId?.()));
-  omp.on('session_shutdown', (_event, ctx) => emit('session_ended', ctx.sessionManager?.getSessionId?.()));
+  omp.on('agent_start', report('turn_started', 'agent_start', kind));
+  omp.on('session_stop', report('turn_completed', 'session_stop', (ctx) => ctx.agent?.kind === 'sub' ? 'child' : 'root'));
+  omp.on('session_shutdown', report('session_ended', 'session_shutdown', kind));
 }
 `;
 

@@ -96,12 +96,16 @@ export interface AttentionAdapterFiles {
 }
 export interface AttentionLaunchOptions { args: string[]; env: Record<string, string> }
 export interface PreparedLocalAttention extends AttentionLaunchOptions { dispose(): void }
-export interface LocalAttentionContext {
+/** Transport-neutral launch context for attention preparation. */
+export interface AttentionPreparationContext {
+  /** Main-validated native session a non-fork resume continues; never renderer-supplied. */
+  rootSessionId?: string;
+}
+export interface LocalAttentionContext extends AttentionPreparationContext {
   terminalId: string;
   args: string[];
   env: NodeJS.ProcessEnv;
   files: AttentionAdapterFiles;
-  sessionId?: string;
   platform: NodeJS.Platform;
   homeDir?: string;
 }
@@ -110,7 +114,28 @@ export interface HarnessLocalAttention {
   options(context: LocalAttentionContext): AttentionLaunchOptions | null;
   prepare(context: LocalAttentionContext): PreparedLocalAttention | null;
 }
+/** Canonical lifecycle event a provider interpreter asks the shared bridge to forward. */
+export interface AttentionInterpretation {
+  event?: {
+    type: 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'session_ended';
+    /** Provider-proven subject. Anything not explicitly 'root' fails closed in the broker. */
+    scope?: 'root' | 'child';
+    sessionId?: string;
+    turnId?: string;
+    inputId?: string;
+    /** Native event class, for diagnostics only. */
+    nativeEvent?: string;
+  };
+  /** Hook stdout; hosts may require a decision payload. Defaults to `{}`. */
+  output?: Record<string, unknown>;
+}
+
 export interface HarnessAttentionCapability {
+  /** ESM source: `export default (input, hook) => AttentionInterpretation`. It owns native
+   * lifecycle semantics for hook-command providers; the shared bridge only forwards its result. */
+  readonly interpreter?: string;
+  /** Whether a non-fork resume keeps its native session ID, so the validated ID may seed the root. */
+  readonly resumePreservesSessionId?: boolean;
   readonly prepareResources?: (files: AttentionAdapterFiles, observer: string) => void;
   readonly disposeResources?: () => void;
   readonly local?: HarnessLocalAttention;
@@ -124,7 +149,7 @@ export interface HarnessRemoteAttention {
   readonly validate: string;
   readonly configure: string;
   readonly plugin?: () => {
-    parts: string[]; files: Record<string, string>; upgradeFile?: string; legacyFile?: string;
+    parts: string[]; files: Record<string, string>; upgradeFile?: string; legacyFiles?: readonly string[];
   };
   readonly enableCommand?: { command: string; args: string[] };
 }

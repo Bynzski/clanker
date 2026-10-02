@@ -21,7 +21,7 @@ export const opencodeProvider = defineHarness({
     selectionFlags: ['--session', '-s', '--continue', '-c', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverOpenCodeSessions(workspace),
   },
-  attention: { prepareResources, local, remote },
+  attention: { resumePreservesSessionId: true, prepareResources, local, remote },
   aiCommit: { modelArg: '-m',
     buildInvocation: ({ model, prompt }) => ({ command: 'opencode', args: [...['run'], ...(model ? ['-m', model] : [])], stdin: prompt, timeoutMs: 90000 }),
   },

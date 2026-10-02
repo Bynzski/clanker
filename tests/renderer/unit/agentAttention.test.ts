@@ -56,16 +56,18 @@ describe('agent pane names and attention', () => {
       .toEqual({ workspaceId: 'workspace', terminalId: 'b' });
   });
 
-  it('accepts a completion-only event from a new session in the same terminal', () => {
+  it('projects main-approved lifecycle updates without session correlation of its own', () => {
     const store = useAgentAttentionStore.getState();
-    store.applyUpdate({ terminalId: 'a', sessionId: 'old', event: 'turn_completed' }, false);
-    store.acknowledge('a');
-    store.applyUpdate({ terminalId: 'a', sessionId: 'new', event: 'turn_completed' }, false);
-    expect(useAgentAttentionStore.getState().byTerminalId.a).toMatchObject({
-      sessionId: 'new', lifecycle: 'turn_complete', unseen: true,
-    });
-    store.applyUpdate({ terminalId: 'a', sessionId: 'old', event: 'session_ended' }, false);
-    expect(useAgentAttentionStore.getState().byTerminalId.a.sessionId).toBe('new');
+    store.applyUpdate({ terminalId: 'a', event: 'turn_started' }, false);
+    store.applyUpdate({ terminalId: 'a', event: 'turn_completed' }, false);
+    expect(useAgentAttentionStore.getState().byTerminalId.a).toMatchObject({ lifecycle: 'turn_complete', unseen: true });
+    // A native session boundary and harness exit both leave the pane with no known state.
+    store.applyUpdate({ terminalId: 'a', event: 'session_ended' }, false);
+    expect(useAgentAttentionStore.getState().byTerminalId.a).toMatchObject({ lifecycle: 'unknown', unseen: false });
+    store.applyUpdate({ terminalId: 'a', event: 'turn_started' }, false);
+    store.applyUpdate({ terminalId: 'a', event: 'agent_exited' }, false);
+    expect(useAgentAttentionStore.getState().byTerminalId.a.lifecycle).toBe('unknown');
+    expect(Object.keys(useAgentAttentionStore.getState().byTerminalId.a)).not.toContain('sessionId');
   });
 
   it('follows the visible layout after panes are swapped', () => {

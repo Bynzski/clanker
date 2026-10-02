@@ -26,18 +26,21 @@ describe('agent attention launch adapters', () => {
       .toEqual(['--model', 'x', '--no-extensions', '--extension', path.join(ensureProviderAttentionResources('pi', files).resourceRoot!, 'pi.ts')]);
     expect(attentionLaunchOptions('omp', ['--model', 'x'], {}, files)?.args)
       .toEqual(['--model', 'x', '--extension', path.join(ensureProviderAttentionResources('omp', files).resourceRoot!, 'omp.ts')]);
-    expect(fs.readFileSync(path.join(ensureProviderAttentionResources('omp', files).resourceRoot!, 'omp.ts'), 'utf8')).toContain("omp.on('agent_end'");
+    const omp = fs.readFileSync(path.join(ensureProviderAttentionResources('omp', files).resourceRoot!, 'omp.ts'), 'utf8');
+    expect(omp).toContain("omp.on('session_stop'");
+    expect(omp).not.toContain("omp.on('agent_end'");
     expect(attentionLaunchOptions('claude', ['--model', 'x'], {}, files)?.args)
       .toEqual(['--model', 'x', '--settings', path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'claude-settings.json')]);
     expect(attentionLaunchOptions('claude', ['--settings', 'custom.json'], {}, files)).toBeNull();
     const settings = JSON.parse(fs.readFileSync(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'claude-settings.json'), 'utf8')) as { hooks: Record<string, unknown> };
-    expect(Object.keys(settings.hooks)).toContain('Notification');
+    expect(Object.keys(settings.hooks)).toEqual(['UserPromptSubmit', 'PermissionRequest', 'Stop', 'PostToolUse', 'Notification', 'SessionEnd']);
+    expect(JSON.stringify(settings)).toContain(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'interpreter.mjs'));
   });
 
   it('configures Antigravity launch options and limits hooks to interaction tools', () => {
     const options = attentionLaunchOptions('agy', ['--model', 'gemini-3.8-flash-high'], {}, files);
     expect(options).toEqual({ args: ['--model', 'gemini-3.8-flash-high'], env: {} });
-    const plugin = agyAttentionPlugin(files.command, 'linux');
+    const plugin = agyAttentionPlugin(files.command, path.join(ensureProviderAttentionResources('agy', files).resourceRoot!, 'interpreter.mjs'), 'linux');
     expect(plugin.pluginJson.name).toBe('clanker-grid-attention');
     const hooks = plugin.hooksJson['clanker-attention'] as Record<string, Array<{ matcher?: string }>>;
     expect(Object.keys(hooks)).toEqual(['PreInvocation', 'PostInvocation', 'PreToolUse', 'PostToolUse', 'Stop']);
@@ -99,35 +102,65 @@ describe('agent attention launch adapters', () => {
     })).toEqual({ PATH: '/bin' });
   });
 
-  it('places Codex config before resume and skips an explicit profile', () => {
+  it('uses native Codex hooks instead of legacy notify, placed before resume, and skips conflicts', () => {
+    const interpreter = path.join(ensureProviderAttentionResources('codex', files).resourceRoot!, 'interpreter.mjs');
     const result = attentionLaunchOptions('codex', ['codex', 'resume', 'abc'], { CODEX_HOME: '/nonexistent' }, files);
-    expect(result?.args.slice(0, 4)).toEqual(['codex', '-c', expect.stringContaining('notify='), 'resume']);
+    expect(result?.args[0]).toBe('codex');
+    expect(result?.args.slice(-2)).toEqual(['resume', 'abc']);
+    const overrides = result!.args.filter((arg) => arg !== '-c' && arg.startsWith('hooks.'));
+    expect(overrides.map((arg) => arg.split('=')[0])).toEqual(['hooks.UserPromptSubmit', 'hooks.PermissionRequest', 'hooks.PostToolUse', 'hooks.Stop', 'hooks.SubagentStop', 'hooks.SessionEnd']);
+    expect(result!.args.join(' ')).not.toContain('notify=');
+    expect(overrides[3]).toContain(JSON.stringify(`node "${files.command}" "${interpreter}" Stop`).slice(1, -1));
     expect(attentionLaunchOptions('codex', ['-p', 'custom'], { CODEX_HOME: '/nonexistent' }, files)).toBeNull();
+    expect(attentionLaunchOptions('codex', ['-c', 'hooks.Stop=[]'], { CODEX_HOME: '/nonexistent' }, files)).toBeNull();
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-codex-home-'));
+    try {
+      fs.writeFileSync(path.join(home, 'config.toml'), '[[hooks.SubagentStop]]\n');
+      expect(attentionLaunchOptions('codex', [], { CODEX_HOME: home }, files)).toBeNull();
+      fs.writeFileSync(path.join(home, 'config.toml'), 'notify = ["legacy"]\n[hooks.state]\n');
+      expect(attentionLaunchOptions('codex', [], { CODEX_HOME: home }, files)).not.toBeNull();
+      fs.writeFileSync(path.join(home, 'config.toml'), '');
+      fs.writeFileSync(path.join(home, 'hooks.json'), '{"hooks":{"Stop":[]}}');
+      expect(attentionLaunchOptions('codex', [], { CODEX_HOME: home }, files)).toBeNull();
+    } finally { fs.rmSync(home, { recursive: true, force: true }); }
   });
 
   it('uses an executable and preserves a Windows script path as one argument', () => {
     const windowsCommand = 'C:\\Users\\Jane Doe\\AppData\\Local\\Temp\\attention\\command.mjs';
-    const claude = claudeAttentionSettings(windowsCommand, 'win32');
-    expect(claude.hooks.Stop[0].hooks[0]).toMatchObject({ command: 'node.exe', args: [windowsCommand] });
-    const codex = attentionLaunchOptions('codex', ['resume', 'abc'], { CODEX_HOME: '/nonexistent' }, { ...files, command: windowsCommand }, undefined, 'win32');
-    expect(codex?.args[1]).toBe(`notify=${JSON.stringify(['node.exe', windowsCommand])}`);
+    const windowsInterpreter = 'C:\\Users\\Jane Doe\\AppData\\Local\\Temp\\attention\\codex\\interpreter.mjs';
+    const claude = claudeAttentionSettings(windowsCommand, 'win32', windowsInterpreter);
+    expect(claude.hooks.Stop[0].hooks[0]).toMatchObject({ command: 'node.exe', args: [windowsCommand, windowsInterpreter, 'Stop'] });
+  });
+
+  const interpreterFor = (id: string) => path.join(ensureProviderAttentionResources(id, files).resourceRoot!, 'interpreter.mjs');
+  const runHook = (env: Record<string, string>, harness: string, hook: string, payload: Record<string, unknown>): Promise<{ code: number; stdout: string }> => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [files.command, interpreterFor(harness), hook], { env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    child.stdout.on('data', (data) => { stdout += data.toString(); });
+    child.stdin.end(JSON.stringify(payload));
+    child.once('error', reject);
+    child.once('close', (code) => resolve({ code: code ?? 0, stdout }));
   });
 
   it('delivers a command hook event without forwarding prompt text', async () => {
     const received: Array<{ terminalId: string; event: string }> = [];
-    const broker = new AgentAttentionBroker((update) => received.push(update));
+    const broker = new AgentAttentionBroker((update) => received.push(update), () => undefined);
     try {
       const env = await broker.register('term-hook', 'claude');
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn(process.execPath, [files.command], {
-          env: { ...process.env, ...env },
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
-        child.stdin.end(JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'private text' }));
-        child.once('error', reject);
-        child.once('close', (code) => code === 0 ? resolve() : reject(new Error(`hook exited ${code}`)));
-      });
-      expect(received).toEqual([{ terminalId: 'term-hook', event: 'turn_started', sessionId: 's1' }]);
+      const result = await runHook(env, 'claude', 'UserPromptSubmit', { session_id: 's1', prompt: 'private text' });
+      expect(result.code).toBe(0);
+      expect(received).toEqual([{ terminalId: 'term-hook', event: 'turn_started' }]);
+    } finally {
+      broker.close();
+    }
+  });
+
+  it('ignores a hook payload when its provider interpreter yields nothing and still answers the host', async () => {
+    const broker = new AgentAttentionBroker(() => { throw new Error('unexpected update'); }, () => undefined);
+    try {
+      const env = await broker.register('term-hook', 'codex');
+      const result = await runHook(env, 'codex', 'PreToolUse', { session_id: 's1' });
+      expect(result).toEqual({ code: 0, stdout: '{}\n' });
     } finally {
       broker.close();
     }
@@ -135,64 +168,41 @@ describe('agent attention launch adapters', () => {
 
   it('delivers Antigravity lifecycle events and decisions accurately', async () => {
     const received: Array<{ terminalId: string; event: string }> = [];
-    const broker = new AgentAttentionBroker((update) => received.push(update));
+    const broker = new AgentAttentionBroker((update) => received.push(update), () => undefined);
     try {
       const env = await broker.register('term-agy', 'agy');
+      const run = (hook: string, payload: Record<string, unknown>) => runHook(env, 'agy', hook, payload);
 
-      // Helper to run command.mjs with hook event arg and stdin JSON
-      const runHook = (hookArg: string, payload: Record<string, unknown>): Promise<{ code: number; stdout: string }> => {
-        return new Promise((resolve, reject) => {
-          const child = spawn(process.execPath, [files.command, hookArg], {
-            env: { ...process.env, ...env },
-            stdio: ['pipe', 'pipe', 'pipe'],
-          });
-          let stdout = '';
-          child.stdout.on('data', (d) => { stdout += d.toString(); });
-          child.stdin.end(JSON.stringify(payload));
-          child.once('error', reject);
-          child.once('close', (code) => resolve({ code: code ?? 0, stdout }));
-        });
-      };
-
-      // 1. PreInvocation with invocationNum = 0 -> turn_started
-      const r1 = await runHook('PreInvocation', { conversationId: 'c1', invocationNum: 0 });
+      const r1 = await run('PreInvocation', { conversationId: 'c1', invocationNum: 0 });
       expect(r1.code).toBe(0);
       expect(JSON.parse(r1.stdout)).toEqual({});
-      expect(received).toEqual([{ terminalId: 'term-agy', event: 'turn_started', sessionId: 'c1' }]);
+      expect(received).toEqual([{ terminalId: 'term-agy', event: 'turn_started' }]);
 
-      // 2. PreInvocation with invocationNum = 1 -> no new event
       received.length = 0;
-      const r2 = await runHook('PreInvocation', { conversationId: 'c1', invocationNum: 1 });
-      expect(r2.code).toBe(0);
+      await run('PreInvocation', { conversationId: 'c1', invocationNum: 1 });
       expect(received).toEqual([]);
 
-      // 3. PreToolUse for ask_question -> input_requested & decision allow
-      const r3 = await runHook('PreToolUse', { conversationId: 'c1', toolCall: { name: 'ask_question' } });
-      expect(r3.code).toBe(0);
+      const r3 = await run('PreToolUse', { conversationId: 'c1', toolCall: { name: 'ask_question' } });
       expect(JSON.parse(r3.stdout)).toEqual({ decision: 'allow' });
-      expect(received).toEqual([{ terminalId: 'term-agy', event: 'input_requested', sessionId: 'c1' }]);
+      expect(received).toEqual([{ terminalId: 'term-agy', event: 'input_requested' }]);
 
-      // 4. PostToolUse for ask_question -> input_resolved
       received.length = 0;
-      const r4 = await runHook('PostToolUse', { conversationId: 'c1', toolCall: { name: 'ask_question' } });
-      expect(r4.code).toBe(0);
+      const r4 = await run('PostToolUse', { conversationId: 'c1', toolCall: { name: 'ask_question' } });
       expect(JSON.parse(r4.stdout)).toEqual({});
-      expect(received).toEqual([{ terminalId: 'term-agy', event: 'input_resolved', sessionId: 'c1' }]);
+      expect(received).toEqual([{ terminalId: 'term-agy', event: 'input_resolved' }]);
 
-      // 5. A non-interaction tool is ignored defensively. The plugin matcher
-      // prevents this call in Antigravity, so no permission decision is made.
+      // The plugin matcher prevents non-interaction tools; the interpreter is defensive too.
       received.length = 0;
-      const r5 = await runHook('PreToolUse', { conversationId: 'c1', toolCall: { name: 'run_command' } });
-      expect(r5.code).toBe(0);
+      const r5 = await run('PreToolUse', { conversationId: 'c1', toolCall: { name: 'run_command' } });
       expect(JSON.parse(r5.stdout)).toEqual({});
       expect(received).toEqual([]);
 
-      // 6. Stop -> turn_completed
-      received.length = 0;
-      const r6 = await runHook('Stop', { conversationId: 'c1', terminationReason: 'NO_TOOL_CALL' });
-      expect(r6.code).toBe(0);
-      expect(JSON.parse(r6.stdout)).toEqual({});
-      expect(received).toEqual([{ terminalId: 'term-agy', event: 'turn_completed', sessionId: 'c1' }]);
+      // Background work still active: Stop is not completion. Another conversation cannot settle either.
+      await run('Stop', { conversationId: 'c1', fullyIdle: false });
+      await run('Stop', { conversationId: 'c2', fullyIdle: true });
+      expect(received).toEqual([]);
+      await run('Stop', { conversationId: 'c1', fullyIdle: true });
+      expect(received).toEqual([{ terminalId: 'term-agy', event: 'turn_completed' }]);
     } finally {
       broker.close();
     }

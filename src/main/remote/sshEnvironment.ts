@@ -719,7 +719,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
         ? buildSessionCommand(params.resumeSession.session, { operation: params.resumeSession.fork ? 'fork' : 'resume', transport: 'ssh', userFlags: params.flags }).args
         : buildHarnessSpawnArgs(harnessConfig, params.model, params.flags, findHarnessProvider(params.harness)?.launch.modelArgs);
       if (params.attentionToken) {
-        attention = await prepareSshAttention(this.executor, this.target, params.harness, harnessArgs, params.attentionToken);
+        attention = await prepareSshAttention(this.executor, this.target, params.harness, harnessArgs, params.attentionToken, { rootSessionId: params.attentionRootSessionId });
         harnessArgs = attention.args;
       }
       const harnessEnv = [remoteHarnessEnvironment(harnessConfig.env), attention ? remoteAttentionEnvironment(attention.env) : ''].filter(Boolean).join(' ');

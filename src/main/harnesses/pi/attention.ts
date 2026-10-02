@@ -3,11 +3,14 @@ import * as path from 'node:path';
 import type { AttentionAdapterFiles } from '../types';
 import { localAttention } from '../localAttention';
 
+/** `agent_settled` (no retry, compaction, or queued continuation left) is the foreground
+ * completion; never regress to the lower-level `agent_end`. */
 export const SOURCE = `import { emit } from './observer.mjs';
+const report = (type, nativeEvent) => (_event, ctx) => emit(type, { scope: 'root', sessionId: ctx.sessionManager?.getSessionId?.(), nativeEvent });
 export default function (pi) {
-  pi.on('agent_start', (_event, ctx) => emit('turn_started', ctx.sessionManager?.getSessionId?.()));
-  pi.on('agent_settled', (_event, ctx) => emit('turn_completed', ctx.sessionManager?.getSessionId?.()));
-  pi.on('session_shutdown', (_event, ctx) => emit('session_ended', ctx.sessionManager?.getSessionId?.()));
+  pi.on('agent_start', report('turn_started', 'agent_start'));
+  pi.on('agent_settled', report('turn_completed', 'agent_settled'));
+  pi.on('session_shutdown', report('session_ended', 'session_shutdown'));
 }
 `;
 
