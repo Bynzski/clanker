@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { getHarnessProvider, getHarnessProviders } from '../../../src/main/harnesses/registry';
 import { HarnessCapabilityError, type HarnessProvider, type HarnessUsageCapability, type HarnessUsageSnapshot } from '../../../src/main/harnesses/types';
-import { HarnessUsageService, USAGE_FORCE_FLOOR_MS, DEFAULT_USAGE_MIN_INTERVAL_MS, USAGE_PROVIDER_DEADLINE_MS } from '../../../src/main/usage/harnessUsageService';
+import { HarnessUsageService, USAGE_FORCE_FLOOR_MS, DEFAULT_USAGE_CACHE_TTL_MS, USAGE_PROVIDER_DEADLINE_MS } from '../../../src/main/usage/harnessUsageService';
 import { LocalEnvironment } from '../../../src/main/environment/localEnvironment';
 import { SshEnvironment } from '../../../src/main/remote/sshEnvironment';
 import { SshExecutionError, type SshCommandExecutor } from '../../../src/main/remote/sshCommandExecutor';
@@ -75,7 +75,7 @@ describe('HarnessUsageService delegation', () => {
   });
 
   it('SSH workspaces run through SshCommandExecutor and never the local path', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: 'remote-out', stderr: '', exitCode: 0 });
+    const exec = vi.fn(async (_t: string, _c: string, args: string[]) => ({ stdout: String(args[1]).includes('command -v') ? 'codex\n' : 'remote-out', stderr: '', exitCode: 0 }));
     const env = new SshEnvironment({ kind: 'ssh', id: 'ssh-1', label: 'r', target: 'me@remote' }, { exec } as unknown as SshCommandExecutor);
     vi.spyOn(env, 'validateWorkspacePath').mockResolvedValue({ valid: true, resolvedPath: '/ws' });
     const { registry, register } = registryFor(env); await register();
@@ -182,7 +182,7 @@ describe('isolation, caching and bounds', () => {
     await service.get('ws', { force: true }); expect(calls).toBe(1); // inside the floor
     now += USAGE_FORCE_FLOOR_MS;
     await service.get('ws', { force: true }); expect(calls).toBe(2);
-    now += DEFAULT_USAGE_MIN_INTERVAL_MS;
+    now += DEFAULT_USAGE_CACHE_TTL_MS;
     fail = true;
     const failed = (await service.get('ws')).entries[0];
     expect(calls).toBe(3);
@@ -197,7 +197,7 @@ describe('isolation, caching and bounds', () => {
     let now = 0; const env = fakeEnv('local');
     const { registry, register } = registryFor(env); await register();
     const get = vi.fn(async () => snapshot());
-    const service = new HarnessUsageService(registry, { now: () => now, providers: () => [withUsage('codex', { get, refresh: { minIntervalMs: 20 * 60_000 } })] });
+    const service = new HarnessUsageService(registry, { now: () => now, providers: () => [withUsage('codex', { get, refresh: { cacheTtlMs: 20 * 60_000 } })] });
     expect((await service.get('ws')).entries[0].nextRefreshAt).toBe(20 * 60_000);
     now = 19 * 60_000; await service.get('ws'); expect(get).toHaveBeenCalledTimes(1);
   });
@@ -258,6 +258,131 @@ describe('isolation, caching and bounds', () => {
     const { registry, register } = registryFor(env); await register();
     const service = new HarnessUsageService(registry);
     expect((await service.get('ws', { harnessIds: ['pi', 'nope'] })).entries.map((e) => e.harnessId)).toEqual(['pi']);
+  });
+});
+
+describe('hard provider limits vs ordinary cache freshness', () => {
+  async function setup(refresh: HarnessUsageCapability['refresh'], failing = () => false) {
+    let now = 1_000_000;
+    const env = fakeEnv('local');
+    const { registry, register } = registryFor(env); await register();
+    const get = vi.fn(async () => { if (failing()) throw new Error('rate limited'); return snapshot(); });
+    const service = new HarnessUsageService(registry, { now: () => now, providers: () => [withUsage('codex', { get, refresh })] });
+    return { service, get, advance: (ms: number) => { now += ms; } };
+  }
+
+  it('lets a manual refresh bypass ordinary cache TTL once the global floor passes', async () => {
+    const { service, get, advance } = await setup({ cacheTtlMs: 30 * 60_000 });
+    await service.get('ws');
+    advance(USAGE_FORCE_FLOOR_MS);
+    await service.get('ws'); expect(get).toHaveBeenCalledTimes(1);
+    await service.get('ws', { force: true }); expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('repeated forced refreshes cannot defeat an explicit provider minimum', async () => {
+    const { service, get, advance } = await setup({ minimumProbeIntervalMs: 5 * 60_000 });
+    await service.get('ws');
+    for (let i = 0; i < 4; i++) { advance(60_000); await service.get('ws', { force: true }); }
+    expect(get).toHaveBeenCalledTimes(1); // 4 of 5 minutes elapsed
+    const entry = (await service.get('ws', { force: true })).entries[0];
+    expect(entry.refreshableAt).toBe(entry.checkedAt! + 5 * 60_000);
+    advance(60_000);
+    await service.get('ws', { force: true }); expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('repeated forced refreshes cannot defeat failure backoff', async () => {
+    let failing = true;
+    const { service, get, advance } = await setup({ failureBackoffMs: 5 * 60_000 }, () => failing);
+    expect((await service.get('ws')).entries[0].status).toBe('error');
+    for (let i = 0; i < 4; i++) { advance(60_000); await service.get('ws', { force: true }); }
+    expect(get).toHaveBeenCalledTimes(1);
+    failing = false; advance(61_000);
+    expect((await service.get('ws', { force: true })).entries[0].status).toBe('ok');
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('still deduplicates concurrent forced refreshes', async () => {
+    const { service, get, advance } = await setup(undefined);
+    await service.get('ws'); advance(USAGE_FORCE_FLOOR_MS);
+    await Promise.all([service.get('ws', { force: true }), service.get('ws', { force: true })]);
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('opaque account identity', () => {
+  it('is retained in main but never returned to the renderer', async () => {
+    const env = fakeEnv('local');
+    const { registry, register } = registryFor(env); await register();
+    const service = new HarnessUsageService(registry, { providers: () => [withUsage('codex', { get: async () => snapshot() })] });
+    const response = await service.get('ws');
+    expect(JSON.stringify(response)).not.toContain('acct-secret-key');
+    expect(JSON.stringify(response)).toContain('me@example.com');
+    const [cached] = service.getCachedSnapshots('ws');
+    expect(cached).toMatchObject({ harnessId: 'codex', status: 'ok' });
+    expect(cached.snapshot.measurements[0].scope).toMatchObject({ accountId: 'acct-secret-key', providerId: 'openai' });
+    // Cached copy is unaffected by the renderer projection, and survives a stale failure.
+    expect(service.getCachedSnapshots('ws')[0].snapshot.measurements[0].scope?.accountId).toBe('acct-secret-key');
+  });
+});
+
+describe('installed-harness detection', () => {
+  const probeable = (ids: string[] | Error) => {
+    const env = fakeEnv('ssh') as ReturnType<typeof fakeEnv> & { probeAvailableHarnessIds: ReturnType<typeof vi.fn> };
+    env.probeAvailableHarnessIds = ids instanceof Error ? vi.fn().mockRejectedValue(ids) : vi.fn().mockResolvedValue(ids);
+    return env;
+  };
+
+  it('reports not-installed without probing, once per request batch, and probes installed adapters', async () => {
+    const env = probeable(['codex']);
+    const { registry, register } = registryFor(env); await register();
+    const gets = { codex: vi.fn(async () => snapshot()), claude: vi.fn(async () => snapshot()), pi: vi.fn(async () => snapshot()) };
+    const providers = [withUsage('codex', { get: gets.codex }), withUsage('claude', { get: gets.claude }), withUsage('pi', { get: gets.pi }), withUsage('omp')];
+    const { entries } = await new HarnessUsageService(registry, { providers: () => providers }).get('ws');
+    expect(entries.map((e) => [e.harnessId, e.status])).toEqual([['codex', 'ok'], ['claude', 'not-installed'], ['pi', 'not-installed'], ['omp', 'unsupported']]);
+    expect(gets.claude).not.toHaveBeenCalled();
+    expect(env.probeAvailableHarnessIds).toHaveBeenCalledTimes(1);
+  });
+
+  it('is one batched SSH availability call regardless of provider count', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'codex\npi\n', stderr: '', exitCode: 0 });
+    const env = new SshEnvironment({ kind: 'ssh', id: 'ssh-1', label: 'r', target: 'me@remote' }, { exec } as unknown as SshCommandExecutor);
+    vi.spyOn(env, 'validateWorkspacePath').mockResolvedValue({ valid: true, resolvedPath: '/ws' });
+    const { registry, register } = registryFor(env); await register();
+    const get = async ({ executor }: { executor: { run: (r: { command: string }) => Promise<unknown> } }) => { await executor.run({ command: 'x' }); return snapshot(); };
+    const providers = [withUsage('codex', { get }), withUsage('claude', { get }), withUsage('pi', { get }), withUsage('omp', { get })];
+    await new HarnessUsageService(registry, { providers: () => providers }).get('ws');
+    const availabilityCalls = exec.mock.calls.filter(([, , args]) => String(args[1]).includes('command -v'));
+    expect(availabilityCalls).toHaveLength(1);
+  });
+
+  it('treats a failed or empty availability answer as inconclusive and still probes', async () => {
+    for (const ids of [new Error('ssh down'), []] as const) {
+      const env = probeable(ids as string[] | Error);
+      const { registry, register } = registryFor(env, 'w'); await register();
+      const get = vi.fn(async () => snapshot());
+      const { entries } = await new HarnessUsageService(registry, { providers: () => [withUsage('codex', { get })] }).get('w');
+      expect(entries[0].status).toBe('ok');
+    }
+  });
+
+  it('reuses the availability answer across requests within its window', async () => {
+    const env = probeable(['codex']);
+    const { registry, register } = registryFor(env); await register();
+    let now = 0;
+    const providers = [withUsage('codex', { get: async () => snapshot() }), withUsage('claude', { get: async () => snapshot() })];
+    const service = new HarnessUsageService(registry, { now: () => now, providers: () => providers });
+    await service.get('ws'); now += 1000; await service.get('ws');
+    expect(env.probeAvailableHarnessIds).toHaveBeenCalledTimes(1);
+  });
+
+  it('a remote command exiting 127 is the provider\'s result, not a missing harness', async () => {
+    const exec = vi.fn().mockRejectedValue(new SshExecutionError('x', 127, '', ''));
+    const env = new SshEnvironment({ kind: 'ssh', id: 'ssh-1', label: 'r', target: 'me@remote' }, { exec } as unknown as SshCommandExecutor);
+    vi.spyOn(env, 'validateWorkspacePath').mockResolvedValue({ valid: true, resolvedPath: '/ws' });
+    vi.spyOn(env, 'probeAvailableHarnessIds').mockResolvedValue(['codex']);
+    const { registry, register } = registryFor(env); await register();
+    const provider = withUsage('codex', { get: async ({ executor }) => { const r = await executor.run({ command: 'probe' }); if (r.exitCode !== 0) throw new HarnessCapabilityError('command-failed', 'bad'); return snapshot(); } });
+    expect((await new HarnessUsageService(registry, { providers: () => [provider] }).get('ws')).entries[0].status).toBe('error');
   });
 });
 

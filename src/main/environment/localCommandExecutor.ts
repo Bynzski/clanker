@@ -1,6 +1,6 @@
 import { execFile } from 'child_process';
 import * as os from 'node:os';
-import { resolveHarnessSpawn } from '../harnessLaunch';
+import { planBoundedSpawn, UnsafeBatchArgumentError } from './boundedSpawn';
 import { prependUserCliBinsToPath } from '../platformShell';
 import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
 import { toNativePath } from '../../shared/pathNormalize';
@@ -11,13 +11,33 @@ import {
   type HarnessCommandResult,
 } from '../harnesses/commandExecution';
 
+/** PATH is case-insensitive on Windows; never leave two spellings in the copy. */
+function buildEnvironment(extra: Record<string, string>, platform: NodeJS.Platform): Record<string, string> {
+  const env = withoutAttentionEnvironment(process.env);
+  const pathKey = platform === 'win32' ? Object.keys(env).find((key) => key.toLowerCase() === 'path') ?? 'PATH' : 'PATH';
+  env[pathKey] = prependUserCliBinsToPath(env[pathKey] ?? '', os.homedir());
+  for (const [key, value] of Object.entries(extra)) {
+    const existing = platform === 'win32' ? Object.keys(env).find((candidate) => candidate.toLowerCase() === key.toLowerCase()) : undefined;
+    env[existing ?? key] = value;
+  }
+  return env;
+}
+
 /** Local implementation of the bounded harness command boundary. */
 export function executeLocalHarnessCommand(request: HarnessCommandRequest, signal?: AbortSignal): Promise<HarnessCommandResult> {
   const command = normalizeHarnessCommand(request);
   if (signal?.aborted) return Promise.reject(new HarnessCapabilityError('aborted', 'Command aborted'));
-  const { spawnCmd, spawnArgs } = resolveHarnessSpawn(command.command, command.args, null);
+  const env = buildEnvironment(command.env, process.platform);
+  let plan;
+  try {
+    plan = planBoundedSpawn(command.command, command.args, { platform: process.platform, env });
+  } catch (error) {
+    if (error instanceof UnsafeBatchArgumentError) return Promise.reject(new HarnessCapabilityError('command-failed', error.message, error));
+    throw error;
+  }
+  if (!plan) return Promise.reject(new HarnessCapabilityError('binary-unavailable', `${command.command} is not installed`));
   return new Promise((resolve, reject) => {
-    const child = execFile(spawnCmd, spawnArgs, {
+    const child = execFile(plan.file, plan.args, {
       cwd: command.cwd ? toNativePath(command.cwd, process.platform) : undefined,
       timeout: command.timeoutMs,
       killSignal: 'SIGKILL',
@@ -25,11 +45,8 @@ export function executeLocalHarnessCommand(request: HarnessCommandRequest, signa
       encoding: 'utf8',
       signal,
       windowsHide: true,
-      env: {
-        ...withoutAttentionEnvironment(process.env),
-        PATH: prependUserCliBinsToPath(process.env.PATH ?? '', os.homedir()),
-        ...command.env,
-      },
+      windowsVerbatimArguments: plan.windowsVerbatimArguments,
+      env,
     }, (error, stdout, stderr) => {
       if (!error) { resolve({ stdout: String(stdout), stderr: String(stderr), exitCode: 0 }); return; }
       const details = error as NodeJS.ErrnoException & { killed?: boolean; code?: string | number; name: string };

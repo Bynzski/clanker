@@ -31,9 +31,12 @@ export async function executeSshHarnessCommand(
   } catch (error) {
     if (error instanceof HarnessCapabilityError) throw error;
     if (error instanceof SshExecutionError) {
-      // 255 is OpenSSH's own failure; 127 is the shell's "command not found".
+      // 255 is OpenSSH's own failure code. A remote program can also exit 255, which is
+      // indistinguishable without redesigning SshCommandExecutor; the consequence is
+      // bounded (reported as temporarily unavailable, retried only after backoff).
+      // Exit 127 is deliberately NOT interpreted: binary availability comes from the
+      // environment's batched availability probe, not from a command's exit status.
       if (error.exitCode === 255) throw new HarnessCapabilityError('transport-failure', error.message, error);
-      if (error.exitCode === 127) throw new HarnessCapabilityError('binary-unavailable', `${command.command} is not installed on the remote host`, error);
       return { stdout: error.stdout, stderr: error.stderr, exitCode: error.exitCode };
     }
     const message = error instanceof Error ? error.message : String(error);

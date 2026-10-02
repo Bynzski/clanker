@@ -31,8 +31,10 @@ export interface HarnessUsageEntry {
   observedAt?: number;
   /** When the probe last ran (success or failure). */
   checkedAt?: number;
-  /** Earliest time the service will query the provider again without `force`. */
+  /** Until when an ordinary request is served from cache. */
   nextRefreshAt?: number;
+  /** Earliest time a manual refresh (`force`) will actually query the provider. */
+  refreshableAt?: number;
   stale?: boolean;
   /** Fixed, safe text by failure category; never raw command output. */
   error?: string;

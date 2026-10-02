@@ -66,7 +66,8 @@ describe('SSH bounded execution', () => {
     const run = (error: unknown) => executeSshHarnessCommand(executor(vi.fn().mockRejectedValue(error)), 'h', { command: 't' });
     expect(await run(new SshExecutionError('bad', 2, 'o', 'e'))).toEqual({ stdout: 'o', stderr: 'e', exitCode: 2 });
     await expect(run(new SshExecutionError('x', 255, '', ''))).rejects.toMatchObject({ kind: 'transport-failure' });
-    await expect(run(new SshExecutionError('x', 127, '', ''))).rejects.toMatchObject({ kind: 'binary-unavailable' });
+    // 127 is program output, not proof the harness is missing (availability is probed separately).
+    expect(await run(new SshExecutionError('x', 127, '', ''))).toMatchObject({ exitCode: 127 });
     await expect(run(new Error('Remote SSH command timed out after 5ms'))).rejects.toMatchObject({ kind: 'timeout' });
     await expect(run(new Error('Remote SSH command stdout exceeded limit of 5 bytes'))).rejects.toMatchObject({ kind: 'output-limit' });
     await expect(run(new Error('Remote SSH command aborted'))).rejects.toMatchObject({ kind: 'aborted' });

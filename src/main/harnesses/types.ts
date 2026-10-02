@@ -160,9 +160,14 @@ export interface HarnessUsageContext {
   readonly modelId?: string;
 }
 export interface HarnessUsageRefreshPolicy {
-  /** Minimum time before a successful probe is repeated. */
-  readonly minIntervalMs?: number;
-  /** Minimum time before a failed probe is repeated. */
+  /** Ordinary cache freshness for a successful probe; a manual refresh may bypass it. */
+  readonly cacheTtlMs?: number;
+  /**
+   * Hard limit: the upstream source must not be queried more often than this,
+   * even for a manual refresh. Measured from the previous probe attempt.
+   */
+  readonly minimumProbeIntervalMs?: number;
+  /** Hard limit after a failed probe; manual refresh cannot shorten it. */
   readonly failureBackoffMs?: number;
 }
 export interface HarnessUsageCapability {

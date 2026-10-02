@@ -253,23 +253,45 @@ request: bare `command`, `args`, optional `cwd`, `env`, `stdin`, `timeoutMs`
 executables, NUL bytes, invalid env names or `CLANKER_ATTENTION_*` variables).
 Non-zero exits return `{ stdout, stderr, exitCode }`; use `requireSuccess()` when a
 zero exit is required. Timeout, output overflow, cancellation, a missing binary
-(local `ENOENT`, remote shell status 127) and SSH transport failure (255) throw
+(local resolution/`ENOENT`) and SSH transport failure (255) throw
 `HarnessCapabilityError` (`timeout`, `output-limit`, `aborted`, `binary-unavailable`,
 `transport-failure`). Providers should throw `unauthenticated` when the CLI
 reports a signed-out state, `parse-failure` for unrecognised output, and tolerate
 schema drift.
 
-Local execution reuses the desktop PATH augmentation and Windows `cmd.exe /c`
-resolution of the existing command helpers and strips attention credentials.
+Local execution reuses the desktop PATH augmentation and strips attention
+credentials. It does not reuse the interactive launcher's `cmd.exe /c` wrapper:
+`environment/boundedSpawn.ts` plans the launch. POSIX runs the command directly.
+On Windows it resolves the bare name through PATH/PATHEXT; a missing executable is
+`binary-unavailable`; `.exe`/`.com` run directly so argv keeps its boundaries and
+metacharacters (`& | < > ^ % "`) are inert; `.cmd`/`.bat` (npm shims) must go
+through `cmd.exe /d /s /c` because Node refuses to spawn them directly, so
+arguments are escaped (cross-spawn rules, never `shell: true`) and arguments
+containing `%` or CR/LF are rejected with `command-failed` since `cmd.exe` cannot
+carry them safely. PATH is merged case-insensitively on Windows.
 Remote execution always goes through `SshCommandExecutor` for the registered
 environment's target, with the same remote CLI PATH setup as other host probes.
 An environment without `executeHarnessCommand` yields `unavailable`; there is no
 fallback to the local machine.
 
+Remote exit statuses are not interpreted as availability: a remote `127` is the
+provider's command result. Whether a harness is installed comes from the
+environment's own `probeAvailableHarnessIds()` (one batched `command -v` SSH call),
+which the service runs once per request, shares across providers and reuses for
+60 s (a manual refresh re-checks). Missing harness -> `not-installed` with no
+probe; no usage capability -> `unsupported`; an empty/failed availability answer
+is inconclusive (that method cannot distinguish "none installed" from "SSH
+failed"), so probes proceed and report their own outcome. SSH exit `255` is mapped
+to `transport-failure`; a remote program that itself exits 255 is
+indistinguishable without redesigning `SshCommandExecutor`. The effect is bounded:
+the harness shows `unavailable` and is retried only after backoff.
+
 `HarnessUsageSnapshot` keeps the #60 measurement model (kind, arbitrary unit,
 used/remaining/limit, reset, period, scope). Additions: measurement `label`, and
 `scope.accountLabel`/`planLabel` for display. `scope.accountId` is an opaque
-grouping key kept in main and stripped before IPC. Percent-only sources use
+grouping key. The service caches the validated main-process snapshot including
+it (`getCachedSnapshots()`, main only) and strips it only when building the
+renderer entry. Percent-only sources use
 `unit: 'percent'`. Nothing assumes 5-hour/weekly/monthly windows, and nothing sums
 quota across harnesses; the same subscription can appear via several harnesses
 (source harness -> provider -> account -> measurement), and identity must not be
@@ -281,10 +303,13 @@ the registry and takes an authoritative `workspaceId` (resolved through
 Providers without `usage` report `unsupported`. Probes are isolated per
 provider, bounded by a 45 s deadline and cancelled on shutdown. Results are cached
 per environment object (local and SSH accounts never mix), deduplicated while in
-flight, and refreshed only after the provider's `refresh` policy (defaults: 5 min
-after success, 60 s after failure; floor 10 s). `force` bypasses the cache but not a
-10 s floor. A failed refresh keeps the last good reading flagged `stale`. There is
-no background polling. If the workspace closes or is replaced during a request, the
+flight and refreshed per the provider's `refresh` policy: `cacheTtlMs` (ordinary
+freshness; default 5 min) is what a normal request honors and a manual refresh may
+bypass. `minimumProbeIntervalMs` (hard provider limit) and `failureBackoffMs`
+(default 60 s, hard) are never bypassed by `force`, nor is Clanker's 10 s
+manual-refresh floor. Entries report `nextRefreshAt` (cache) and `refreshableAt`
+(earliest manual refresh). A failed refresh keeps the last good reading flagged
+`stale`. There is no background polling. If the workspace closes or is replaced during a request, the
 request fails rather than returning data to another workspace. Snapshots are
 validated and copied field by field; renderer errors are fixed per-category text,
 never raw stderr.
