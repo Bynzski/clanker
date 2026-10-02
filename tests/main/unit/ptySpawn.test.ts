@@ -5,7 +5,7 @@ vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 import { spawn } from 'node-pty';
 import { spawnPtyProcess, waitForTerminalCleanup } from '../../../src/main/ipc/ptySpawn';
 
-function fixture() {
+function fixture(onOutput?: (chunk: string) => void) {
   let exited!: (event: { exitCode: number }) => void;
   let data!: (chunk: string) => void;
   const process = { pid: 1, onExit: (callback: typeof exited) => { exited = callback; }, onData: (callback: typeof data) => { data = callback; } };
@@ -14,7 +14,7 @@ function fixture() {
   const window = { isDestroyed: vi.fn().mockReturnValue(false), webContents: { isDestroyed: vi.fn().mockReturnValue(false), isCrashed: vi.fn().mockReturnValue(false), send: vi.fn() } };
   const onExit = vi.fn<() => void | Promise<void>>();
   spawnPtyProcess({ id: 'remote', spawnCmd: 'ssh', spawnArgs: [], cwd: '/desktop', env: {}, terminals,
-    mainWindow: window as unknown as BrowserWindow, getIsShuttingDown: () => false, onExit });
+    mainWindow: window as unknown as BrowserWindow, getIsShuttingDown: () => false, onExit, onOutput, filterData: (data) => data.replace("SECRET", "") });
   return { terminals, window, onExit, exit: () => exited({ exitCode: 0 }), data: (chunk: string) => data(chunk) };
 }
 afterEach(async () => { await waitForTerminalCleanup(); vi.restoreAllMocks(); });
@@ -49,4 +49,11 @@ describe('PTY resource lifecycle', () => {
     expect(f.onExit).toHaveBeenCalledTimes(1);
     expect(f.terminals.size).toBe(0);
   });
+});
+
+it('observes filtered output before the startup handshake, but ignores closed terminal output', () => {
+  const observe = vi.fn(), f = fixture(observe);
+  f.data('SECREThttp://localhost:5173\n');
+  expect(observe).toHaveBeenCalledExactlyOnceWith('http://localhost:5173\n');
+  f.terminals.delete('remote'); f.data('late'); expect(observe).toHaveBeenCalledTimes(1);
 });

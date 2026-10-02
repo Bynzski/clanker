@@ -1,3 +1,4 @@
+import { createTerminalPreviewSignal } from './remote/terminalPreviewSignal';
 /**
  * Clanker Grid - Main Process Entry Point
  *
@@ -295,6 +296,7 @@ app.whenReady().then(() => {
     getHarnessOptions: () => HARNESS_OPTIONS,
     agentAttentionBroker,
     taskSessionCoordinator,
+    createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
   });
 
   registerRemotePreviewIpc(remotePreviewManager);
@@ -371,6 +373,7 @@ app.whenReady().then(() => {
     getWorkspaceRegistry: () => workspaceRegistry,
     agentAttentionBroker,
     taskSessionCoordinator,
+    createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
   });
 
   // Register annotation IPC handlers

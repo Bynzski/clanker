@@ -1,3 +1,5 @@
+import { findTerminalUrls, trimTrailingPunctuation } from '../../shared/terminalUrls';
+export { normalizeTerminalUrl } from '../../shared/terminalUrls';
 import { isAbsolutePath } from './pathUtils';
 
 export type TerminalLinkKind = 'file' | 'url';
@@ -9,42 +11,9 @@ export interface TerminalLinkMatch {
   startIndex: number;
 }
 
-const URL_PATTERN = /https?:\/\/[^\s<>"'`]+/giu;
 const FILE_PATTERN = /(?:[A-Za-z]:[\\/][^\s<>"'`|]+|(?:\\\\|\/\/)[^\s<>"'`|]+|(?:\.{1,2}[\\/]|\/)[^\s<>"'`|]+|(?:[A-Za-z0-9_@+.-]+[\\/])+(?:[A-Za-z0-9_@+().-]+)(?::\d+){0,2})/g;
 const FILE_LOCATION_SUFFIX = /(?::\d+){1,2}$/;
 const FILE_FRAGMENT_SUFFIX = /#L\d+(?:C\d+)?$/i;
-
-function trimTrailingPunctuation(value: string): string {
-  let result = value.replace(/[.,;!?]+$/g, '');
-  const pairs = [
-    ['(', ')'],
-    ['[', ']'],
-    ['{', '}'],
-  ] as const;
-
-  for (const [open, close] of pairs) {
-    while (result.endsWith(close)) {
-      const openCount = result.split(open).length - 1;
-      const closeCount = result.split(close).length - 1;
-      if (closeCount <= openCount) break;
-      result = result.slice(0, -1);
-    }
-  }
-
-  return result;
-}
-
-export function normalizeTerminalUrl(value: string): string | null {
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return null;
-    }
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
 
 interface CanonicalPath {
   value: string;
@@ -145,13 +114,7 @@ function rangesOverlap(start: number, length: number, matches: TerminalLinkMatch
 export function findTerminalLinks(line: string, workspacePath: string): TerminalLinkMatch[] {
   const matches: TerminalLinkMatch[] = [];
 
-  for (const match of line.matchAll(URL_PATTERN)) {
-    const rawText = match[0];
-    const text = trimTrailingPunctuation(rawText);
-    const target = normalizeTerminalUrl(text);
-    if (!target || match.index == null) continue;
-    matches.push({ kind: 'url', text, target, startIndex: match.index });
-  }
+  for (const match of findTerminalUrls(line)) matches.push({ kind: 'url', ...match });
 
   for (const match of line.matchAll(FILE_PATTERN)) {
     const rawText = match[0];
