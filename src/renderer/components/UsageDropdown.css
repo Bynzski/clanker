@@ -117,3 +117,6 @@
 .usage-status-warning { color: var(--status-warning); }
 .usage-status-error { color: var(--status-error); }
 .usage-measurement + .usage-status, .usage-group + .usage-status { margin-top: 4px; }
+
+.usage-use { cursor: pointer; border: 1px solid var(--border-default); background: transparent; }
+.usage-use:hover { background: var(--surface-control); }

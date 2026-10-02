@@ -64,10 +64,6 @@ export interface HarnessUsageServiceOptions {
  */
 interface UsageRecord {
   harnessId: string;
-  /** Opaque Clanker account, only for harnesses with several accounts. */
-  accountId?: string;
-  accountName?: string;
-  accountSelected?: boolean;
   status: HarnessUsageStatus;
   snapshot?: HarnessUsageSnapshot;
   stale?: boolean;
@@ -82,7 +78,6 @@ interface UsageRecord {
 /** Main-only view of cached snapshots; never sent over IPC. */
 export interface CachedUsageSnapshot {
   harnessId: string;
-  accountId?: string;
   status: HarnessUsageStatus;
   snapshot: HarnessUsageSnapshot;
   stale: boolean;
@@ -91,7 +86,6 @@ export interface CachedUsageSnapshot {
 function toEntry(record: UsageRecord): HarnessUsageEntry {
   return {
     harnessId: record.harnessId,
-    ...(record.accountId ? { account: { id: record.accountId, name: record.accountName ?? 'Account', selected: record.accountSelected === true } } : {}),
     status: record.status,
     measurements: record.snapshot ? toRendererMeasurements(record.snapshot) : [],
     ...(record.snapshot ? { observedAt: record.snapshot.observedAt } : {}),
@@ -185,7 +179,7 @@ export class HarnessUsageService {
     const workspace = this.registry.getWorkspace(workspaceId);
     if (!workspace) throw new Error('Workspace is not registered');
     return [...(this.cache.get(workspace.environment)?.values() ?? [])].flatMap((record) =>
-      record.snapshot ? [{ harnessId: record.harnessId, ...(record.accountId ? { accountId: record.accountId } : {}), status: record.status, snapshot: record.snapshot, stale: record.stale === true }] : []);
+      record.snapshot ? [{ harnessId: record.harnessId, status: record.status, snapshot: record.snapshot, stale: record.stale === true }] : []);
   }
 
   /** Aborts in-flight probes (shutdown). */
@@ -214,9 +208,13 @@ export class HarnessUsageService {
     const bindings = this.accounts && provider.accounts && environment.kind === 'local'
       ? this.accounts.listBindings(environment.id, provider.descriptor.id) : [];
     if (bindings.length <= 1) return [await this.resolve(environment, provider, force, installedHarnesses)];
-    const entries = await Promise.all(bindings.map((binding) => this.resolve(environment, provider, force, installedHarnesses, binding)));
+    const entries = await Promise.all(bindings.map(async (binding): Promise<HarnessUsageEntry> => ({
+      ...(await this.resolve(environment, provider, force, installedHarnesses, binding)),
+      // Identity and selection are read live: cached readings must not carry a stale "selected" flag.
+      account: { id: binding.id, name: binding.safe.label ?? binding.safe.email ?? (binding.kind === 'default' ? 'Default' : 'Account'), selected: binding.safe.selected },
+    })));
     // "Not installed" is a property of the environment, not of an account.
-    if (entries[0].status === 'not-installed' || entries[0].status === 'unsupported') return [entries[0]];
+    if (entries[0].status === 'not-installed' || entries[0].status === 'unsupported') return [{ ...entries[0], account: undefined }];
     return entries;
   }
 
@@ -279,9 +277,6 @@ export class HarnessUsageService {
     // provider never sees a path or variable: it gets these bound executors (default: untouched).
     const execution = bindHarnessExecution(environment, binding?.kind === 'managed' ? binding.environment : undefined, controller.signal);
     const { executor, sessionExecutor } = execution;
-    const accountFields = binding && binding.id !== undefined && this.accounts
-      ? { accountId: binding.id, accountName: binding.safe.label ?? binding.safe.email ?? (binding.kind === 'default' ? 'Default' : 'Account'), accountSelected: binding.safe.selected }
-      : {};
     const policy = capability.refresh;
     const hardMinimum = Math.max(policy?.minimumProbeIntervalMs ?? 0, 0);
     let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -299,7 +294,7 @@ export class HarnessUsageService {
       const snapshot = validateUsageSnapshot(raw);
       const checkedAt = this.now();
       record = {
-        harnessId, ...accountFields, status: 'ok', snapshot, checkedAt,
+        harnessId, status: 'ok', snapshot, checkedAt,
         freshUntil: checkedAt + Math.max(policy?.cacheTtlMs ?? DEFAULT_USAGE_CACHE_TTL_MS, MIN_TTL_MS, hardMinimum),
         probeNotBefore: checkedAt + hardMinimum,
       };
@@ -311,7 +306,7 @@ export class HarnessUsageService {
       const demanded = typeof failure.retryAfterMs === 'number' && Number.isFinite(failure.retryAfterMs) && failure.retryAfterMs > 0 ? failure.retryAfterMs : 0;
       const backoff = Math.max(policy?.failureBackoffMs ?? DEFAULT_USAGE_FAILURE_BACKOFF_MS, MIN_TTL_MS, hardMinimum, demanded);
       record = {
-        harnessId, ...accountFields, status, checkedAt, error: STATUS_TEXT[status],
+        harnessId, status, checkedAt, error: STATUS_TEXT[status],
         freshUntil: checkedAt + backoff,
         // Failure backoff is a hard limit: repeated manual refreshes cannot shorten it.
         probeNotBefore: checkedAt + backoff,

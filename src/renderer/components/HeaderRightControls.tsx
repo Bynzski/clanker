@@ -168,6 +168,8 @@ export default function HeaderRightControls({
           <UsageDropdown
             harnessIds={usage.harnessIds}
             entries={usage.entries}
+            otherAccounts={usage.otherAccounts}
+            onSelectAccount={usage.selectAccount}
             pending={usage.pending}
             refreshing={usage.refreshing}
             now={usage.now}

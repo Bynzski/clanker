@@ -90,7 +90,7 @@ export default function Header() {
       (USAGE_HARNESS_IDS as readonly string[]).includes(id) && harnessDefaults?.[id]?.usageVisible !== false),
     [harnessDefaults, harnessDefaultsStatus],
   );
-  const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage, harnessIds: usageHarnessIds });
+  const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage, harnessIds: usageHarnessIds, environmentId: focusedWorkspace?.environmentId ?? 'local' });
 
   const handleAddTerminal = async (harnessId: string) => {
     try {

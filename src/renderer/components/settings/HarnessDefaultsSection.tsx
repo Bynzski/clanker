@@ -8,6 +8,7 @@ import { hermesModelLabel } from '../../lib/hermesModelDisplay';
 import { HARNESS_FLAGS_PLACEHOLDER } from '../../lib/harnessFlags';
 import { KNOWN_HARNESS_IDS } from '../../../shared/harnessIds';
 import { HARNESS_DESCRIPTORS } from '../../../shared/harnessDescriptors';
+import HarnessAccountsRow from './HarnessAccountsRow';
 import type { HarnessDefaultsMap } from '../../../shared/types/store';
 import type { ModelOption } from '../../types/shared';
 
@@ -25,6 +26,8 @@ interface HarnessDefaultsSectionProps {
   handleSetHarnessUsageVisible: (harnessId: string, visible: boolean) => Promise<void>;
   handleSetDefaultModel: (harnessId: string, modelId: string) => Promise<void>;
   handleToggleFavorite: (harnessId: string, modelId: string) => Promise<void>;
+  /** Environment whose accounts are managed here; defaults to the local machine. */
+  accountEnvironmentId?: string;
 }
 
 export default function HarnessDefaultsSection({
@@ -41,6 +44,7 @@ export default function HarnessDefaultsSection({
   handleSetHarnessUsageVisible,
   handleSetDefaultModel,
   handleToggleFavorite,
+  accountEnvironmentId,
 }: HarnessDefaultsSectionProps) {
   const [modelPickerOpen, setModelPickerOpen] = useState<string | null>(null);
   const [isHermesManual, setIsHermesManual] = useState(false);
@@ -134,6 +138,9 @@ export default function HarnessDefaultsSection({
                       aria-label={`Show ${option?.label ?? harnessId} in Usage`}
                     />
                   </label>
+                )}
+                {'accounts' in HARNESS_DESCRIPTORS[harnessId as keyof typeof HARNESS_DESCRIPTORS] && (
+                  <HarnessAccountsRow harnessId={harnessId} harnessLabel={option?.label ?? harnessId} environmentId={accountEnvironmentId} />
                 )}
                 <div className="harness-defaults-field">
                   <span className="harness-defaults-field-label">Extra flags</span>
