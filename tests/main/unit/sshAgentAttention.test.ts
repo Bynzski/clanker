@@ -162,7 +162,9 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
     if (harness === 'codex') {
       expect(prepared.args.filter((arg) => arg.startsWith('hooks.')).map((arg) => arg.split('=')[0])).toEqual(['hooks.UserPromptSubmit', 'hooks.PermissionRequest', 'hooks.PostToolUse', 'hooks.Stop', 'hooks.SubagentStop', 'hooks.SessionEnd']);
       expect(prepared.args.join(' ')).not.toContain('notify=');
-      expect(prepared.args.join(' ')).toContain(`${root}/interpreter.mjs`);
+      expect(prepared.args.join(' ')).toContain(JSON.stringify('node "$CLANKER_REMOTE_ATTENTION_COMMAND" "$CLANKER_REMOTE_ATTENTION_INTERPRETER" Stop').slice(1, -1));
+      expect(prepared.args.join(' ')).not.toContain(root);
+      expect(prepared.env.CLANKER_REMOTE_ATTENTION_INTERPRETER).toBe(`${root}/interpreter.mjs`);
     }
     if (harness === 'claude') {
       const settings = JSON.parse(readFileSync(join(root, 'claude-settings.json'), 'utf8'));

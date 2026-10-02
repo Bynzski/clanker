@@ -1,11 +1,13 @@
-import { CODEX_HOOK_EVENTS, CODEX_OWNED_CONFIG_KEY } from './attention';
+import { CODEX_HOOK_EVENTS, CODEX_OWNED_CONFIG_KEY, CODEX_STABLE_HOOK_COMMAND } from './attention';
 import type { HarnessRemoteAttention } from '../types';
 
 const EVENTS = JSON.stringify([...CODEX_HOOK_EVENTS]);
 // Same key-path rule as the local parser (codexArgsConflict); JSON string syntax is valid Python.
+const STABLE = JSON.stringify(CODEX_STABLE_HOOK_COMMAND('NAME', 'CLANKER_REMOTE_ATTENTION'));
 const OWNED_KEY = JSON.stringify(CODEX_OWNED_CONFIG_KEY.source);
 
 export const remote: HarnessRemoteAttention = {
+  environmentKeys: ['CLANKER_REMOTE_ATTENTION_INTERPRETER'],
   requiresNode: true,
   validate: `overrides = []
 for index, arg in enumerate(args):
@@ -27,7 +29,9 @@ for name, pattern in (('config.toml', r'^\\s*\\[hooks\\]|^\\s*\\[\\[?hooks\\.(?:
         if len(value) > 1048576 or re.search(pattern, value, re.M):
             sys.exit('Remote attention cannot replace the host Codex hook configuration')`,
   configure: `    interpreter = os.path.join(root, 'interpreter.mjs')
+    # The hook definition stays identical across launches so Codex's hook trust review persists.
+    env['CLANKER_REMOTE_ATTENTION_INTERPRETER'] = interpreter
     for name in reversed(${EVENTS}):
-        hook_command = 'node ' + shlex.quote(command) + ' ' + shlex.quote(interpreter) + ' ' + name
+        hook_command = ${STABLE}.replace('NAME', name)
         args = ['-c', 'hooks.' + name + '=[{hooks=[{type="command",command=' + json.dumps(hook_command) + ',timeout=2}]}]'] + args`,
 };

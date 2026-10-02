@@ -53,9 +53,18 @@ export function codexHooksConflict(configToml: string, hooksJson: string): boole
     || new RegExp(`"(?:${events})"`).test(hooksJson);
 }
 
+/** Codex runs non-managed hooks only after the user reviews them, keyed by the hook definition.
+ * A command text containing this launch's temp paths would change every launch and never stay
+ * trusted, so POSIX hooks name the launch resources through the environment instead, which
+ * keeps the definition stable. (Windows `cmd /C` does not expand `$VAR`, so it embeds paths.) */
+export const CODEX_STABLE_HOOK_COMMAND = (name: string, prefix = 'CLANKER_ATTENTION') =>
+  `node "$${prefix}_COMMAND" "$${prefix}_INTERPRETER" ${name}`;
+
 export function codexHookOverrides(command: string, interpreter: string, platform: NodeJS.Platform): string[] {
   return CODEX_HOOK_EVENTS.flatMap((name) => {
-    const hookCommand = `${hookNodeExecutable(platform)} "${command}" "${interpreter}" ${name}`;
+    const hookCommand = platform === 'win32'
+      ? `${hookNodeExecutable(platform)} "${command}" "${interpreter}" ${name}`
+      : CODEX_STABLE_HOOK_COMMAND(name);
     return ['-c', `hooks.${name}=[{hooks=[{type="command",command=${JSON.stringify(hookCommand)},timeout=2}]}]`];
   });
 }
@@ -65,10 +74,13 @@ export const local = localAttention(({ args, env, files: adapterFiles, platform 
     const read = (name: string) => { try { return fs.readFileSync(path.join(home, name), 'utf8'); } catch { return ''; } };
     if (codexHooksConflict(read('config.toml'), read('hooks.json'))
       || codexArgsConflict(args)) return null;
-    const configArgs = codexHookOverrides(adapterFiles.command, interpreterPath(adapterFiles), platform);
+    const interpreter = interpreterPath(adapterFiles);
+    const configArgs = codexHookOverrides(adapterFiles.command, interpreter, platform);
     const subcommandIndex = args.findIndex((arg) => arg === 'resume' || arg === 'fork');
+    const launchEnv: Record<string, string> = platform === 'win32' ? {} : { CLANKER_ATTENTION_INTERPRETER: interpreter };
     return { args: subcommandIndex < 0
       ? [...configArgs, ...args]
-      : [...args.slice(0, subcommandIndex), ...configArgs, ...args.slice(subcommandIndex)], env: {} };
+      : [...args.slice(0, subcommandIndex), ...configArgs, ...args.slice(subcommandIndex)],
+      env: launchEnv };
 
 });

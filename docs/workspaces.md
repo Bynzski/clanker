@@ -91,13 +91,13 @@ Enable **Agent attention** in the harness defaults before launching a new SSH ag
 
 | Harness | Native events used |
 | --- | --- |
-| Codex | Native hooks: prompt submission, permission requests, tool completion, root stop (subagent stop is ignored), and session end. |
-| Claude | Prompt submission, permission requests, input notifications, tool completion, root stop (only when no background work is pending), and session end. |
+| Codex | Native hooks: prompt submission, permission requests, tool completion, root stop (subagent stop is ignored), and session end. Codex asks you to review the hooks once (`/hooks`) before it runs them. |
+| Claude | Prompt submission, permission requests, tool completion/failure/denial of the same request, root stop (only when no background work is pending), and session end. Needs Claude Code 2.1.196+ for prompt IDs. |
 | OpenCode | Busy/idle of the verified top-level session (child sessions are ignored), permission/question requests and replies, and session deletion. |
 | Pi | Agent start, agent settled, and session shutdown. |
 | OMP | Main-agent start, main-session stop (after background jobs drain), and session shutdown. |
 | Antigravity | Initial invocation, interactive ask-tool requests/replies, and stop only when fully idle for the root conversation. |
-| Hermes | Root turn start/completion, human approval requests/replies (smart approvals and child sessions are ignored), and session finalize through observer hooks. |
+| Hermes | Root turn start/completion (child turns are ignored; a compression session rotation is followed only when proven), human approval requests/replies tied to their turn (smart approvals and child sessions are ignored), and session finalize through observer hooks. |
 
 A native session change in a live agent (clear, switch) keeps attention registered and lets the new session bind; harness exit retires attention before the fallback shell. Resuming a session seeds its host-validated ID for providers that keep it; forks start unbound. Missing native events remain unknown; terminal output is never interpreted as an agent state. Codex, Claude, Pi, OMP, and Antigravity require Node.js on the host for hooks. OpenCode uses its own JavaScript runtime; Hermes uses Python and must support its observer plugin API.
 

@@ -110,7 +110,14 @@ describe('agent attention launch adapters', () => {
     const overrides = result!.args.filter((arg) => arg !== '-c' && arg.startsWith('hooks.'));
     expect(overrides.map((arg) => arg.split('=')[0])).toEqual(['hooks.UserPromptSubmit', 'hooks.PermissionRequest', 'hooks.PostToolUse', 'hooks.Stop', 'hooks.SubagentStop', 'hooks.SessionEnd']);
     expect(result!.args.join(' ')).not.toContain('notify=');
-    expect(overrides[3]).toContain(JSON.stringify(`node "${files.command}" "${interpreter}" Stop`).slice(1, -1));
+    // The definition is identical for every launch (Codex hook trust is keyed by it); the launch
+    // resources arrive through the environment.
+    expect(overrides[3]).toContain(JSON.stringify('node "$CLANKER_ATTENTION_COMMAND" "$CLANKER_ATTENTION_INTERPRETER" Stop').slice(1, -1));
+    expect(result?.args.join(' ')).not.toContain(files.command);
+    expect(attentionLaunchOptions('codex', ['codex'], { CODEX_HOME: '/nonexistent' }, files)?.env).toEqual({ CLANKER_ATTENTION_INTERPRETER: interpreter });
+    const windows = attentionLaunchOptions('codex', [], { CODEX_HOME: '/nonexistent' }, files, undefined, 'win32');
+    expect(windows?.env).toEqual({});
+    expect(windows?.args[1]).toContain(`node.exe \\"${files.command}\\"`);
     expect(attentionLaunchOptions('codex', ['-p', 'custom'], { CODEX_HOME: '/nonexistent' }, files)).toBeNull();
     expect(attentionLaunchOptions('codex', ['-c', 'hooks.Stop=[]'], { CODEX_HOME: '/nonexistent' }, files)).toBeNull();
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-codex-home-'));
