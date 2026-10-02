@@ -4,6 +4,7 @@ import { local, prepareResources, INTERPRETER } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import { claudeUsage } from './usage';
+import { claudeAccounts } from './accounts';
 import { defineHarness, type HarnessProvider } from '../types';
 
 export const claudeProvider = defineHarness({
@@ -19,5 +20,6 @@ export const claudeProvider = defineHarness({
   // Claude may assign a new session ID on resume, so a resumed ID is never pre-seeded.
   attention: { interpreter: INTERPRETER, prepareResources, local, remote },
   usage: claudeUsage,
+  accounts: claudeAccounts,
   launch: { command: 'claude', args: [], modelArg: '--model' },
 } satisfies HarnessProvider);

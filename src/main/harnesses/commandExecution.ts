@@ -71,6 +71,8 @@ export const MAX_SESSION_INPUT_BYTES = 64 * 1024;
 
 export const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
 export const MAX_COMMAND_TIMEOUT_MS = 30_000;
+/** Interactive sessions (e.g. a browser sign-in that waits on a person) may outlive one-shot commands. */
+export const MAX_SESSION_TIMEOUT_MS = 10 * 60_000;
 export const DEFAULT_COMMAND_OUTPUT_BYTES = 256 * 1024;
 export const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
 const MAX_STDIN_BYTES = 64 * 1024;
@@ -91,7 +93,7 @@ function invalid(message: string): HarnessCapabilityError {
 }
 
 /** Shared validation and clamping so every transport enforces the same bounds. */
-export function normalizeHarnessCommand(request: HarnessCommandRequest): NormalizedHarnessCommand {
+export function normalizeHarnessCommand(request: HarnessCommandRequest, maxTimeoutMs = MAX_COMMAND_TIMEOUT_MS): NormalizedHarnessCommand {
   const { command, args = [], cwd, env = {}, stdin } = request;
   if (typeof command !== 'string' || !command || command.includes('\0') || /[\s/\\]/.test(command)) throw invalid('executable must be a bare command name');
   if (!Array.isArray(args) || args.length > MAX_ARGS || args.some((arg) => typeof arg !== 'string' || arg.includes('\0'))) throw invalid('bad argument list');
@@ -105,7 +107,7 @@ export function normalizeHarnessCommand(request: HarnessCommandRequest): Normali
     typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.min(Math.floor(value), max) : fallback;
   return {
     command, args: [...args], cwd, env: { ...env }, stdin,
-    timeoutMs: clamp(request.timeoutMs, DEFAULT_COMMAND_TIMEOUT_MS, MAX_COMMAND_TIMEOUT_MS),
+    timeoutMs: clamp(request.timeoutMs, DEFAULT_COMMAND_TIMEOUT_MS, maxTimeoutMs),
     maxOutputBytes: clamp(request.maxOutputBytes, DEFAULT_COMMAND_OUTPUT_BYTES, MAX_COMMAND_OUTPUT_BYTES),
   };
 }

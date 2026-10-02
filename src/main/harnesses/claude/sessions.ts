@@ -147,9 +147,13 @@ async function discoverClaudeSessionFile(filePath: string, workspacePath: string
   };
 }
 
-export async function discoverClaudeSessions(workspacePath: string): Promise<HarnessSession[]> {
-  const homeDir = os.homedir();
-  const claudeProjectsDir = path.join(homeDir, '.claude', 'projects');
+/** The native/default Claude config directory; managed accounts pass their own trusted `CLAUDE_CONFIG_DIR`. */
+export function defaultClaudeConfigDir(): string {
+  return path.join(os.homedir(), '.claude');
+}
+
+export async function discoverClaudeSessions(workspacePath: string, configDir: string = defaultClaudeConfigDir()): Promise<HarnessSession[]> {
+  const claudeProjectsDir = path.join(configDir, 'projects');
 
   const encodedPrefix = encodeClaudeProjectDir(workspacePath);
 
