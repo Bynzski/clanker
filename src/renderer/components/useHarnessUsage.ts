@@ -135,5 +135,8 @@ export function useHarnessUsage({ workspaceId, open, harnessIds }: { workspaceId
   }, [open, nextManualRefreshAt]);
 
   const refreshing = forcing > 0;
-  return { harnessIds: ids, entries, pending, refreshing, now, refreshAll, canManualRefresh: ids.length > 0 && !refreshing && nextManualRefreshAt === undefined, nextManualRefreshAt };
+  // Any ordinary (initial/poll) or forced request in flight for a selected harness makes Refresh unavailable.
+  const hasPending = ids.some((id) => pending[id] === true);
+  const canManualRefresh = ids.length > 0 && !hasPending && !refreshing && nextManualRefreshAt === undefined;
+  return { harnessIds: ids, entries, pending, refreshing, now, refreshAll, canManualRefresh, nextManualRefreshAt };
 }

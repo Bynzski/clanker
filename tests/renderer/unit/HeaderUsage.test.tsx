@@ -134,6 +134,28 @@ describe('Usage polling', () => {
 });
 
 describe('Usage manual refresh', () => {
+  it('is disabled while the initial reads are in flight and enabled once they resolve', async () => {
+    await openUsage();
+    expect(calls()).toHaveLength(5);
+    expect(within(panel()).getAllByText('Checking usage…')).toHaveLength(5);
+    expect(within(panel()).getByRole('button', { name: 'Refresh usage' })).toBeDisabled();
+    for (const d of pending.splice(0)) await respond(d, okEntry(d.harnessId, `${d.harnessId} · x`, 1, { refreshableAt: 0 }));
+    expect(within(panel()).getByRole('button', { name: 'Refresh usage' })).toBeEnabled();
+  });
+
+  it('is disabled while an ordinary poll is in flight and enabled again when it resolves', async () => {
+    vi.useFakeTimers();
+    await openUsage();
+    for (const d of pending.splice(0)) await respond(d, okEntry(d.harnessId, `${d.harnessId} · x`, 1, { refreshableAt: 0 }));
+    expect(within(panel()).getByRole('button', { name: 'Refresh usage' })).toBeEnabled();
+    await act(async () => { vi.advanceTimersByTime(USAGE_POLL_INTERVAL_MS + 100); });
+    expect(pending.length).toBeGreaterThan(0);
+    expect(pending.every((d) => !d.force)).toBe(true);
+    expect(within(panel()).getByRole('button', { name: 'Refresh usage' })).toBeDisabled();
+    for (const d of pending.splice(0)) await respond(d, okEntry(d.harnessId, `${d.harnessId} · y`, 2, { refreshableAt: 0 }));
+    expect(within(panel()).getByRole('button', { name: 'Refresh usage' })).toBeEnabled();
+  });
+
   it('sends forced requests per harness, shows a busy disabled state, and re-enables when done', async () => {
     await openUsage();
     for (const d of pending.splice(0)) await respond(d, okEntry(d.harnessId, `${d.harnessId} · x`, 1, { refreshableAt: 0 }));
@@ -210,6 +232,7 @@ describe('Usage provider selection (Show in Usage)', () => {
     expect(within(panel()).queryByRole('region', { name: 'Codex' })).not.toBeInTheDocument();
     for (const d of pending.splice(0)) await respond(d, okEntry(d.harnessId, `${d.harnessId} · x`, 1, { refreshableAt: 0 }));
     await act(async () => { vi.advanceTimersByTime(USAGE_POLL_INTERVAL_MS + 100); });
+    for (const d of pending.splice(0)) await respond(d, okEntry(d.harnessId, `${d.harnessId} · x`, 1, { refreshableAt: 0 })); // the poll finishes first
     await act(async () => { fireEvent.click(within(panel()).getByRole('button', { name: 'Refresh usage' })); });
     for (const id of requestedIds()) expect(['claude', 'omp', 'agy']).toContain(id);
     expect(requestedIds().length).toBeGreaterThan(6);
