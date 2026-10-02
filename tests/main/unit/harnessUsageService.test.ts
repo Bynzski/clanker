@@ -42,13 +42,13 @@ beforeEach(() => { localExec.mockReset(); localExec.mockResolvedValue({ stdout: 
 afterEach(() => { vi.useRealTimers(); });
 
 describe('HarnessUsageService delegation', () => {
-  it('represents providers without usage as explicitly unsupported (all real providers today)', async () => {
+  it('represents providers without usage as explicitly unsupported (every real provider except OMP/Hermes)', async () => {
     const env = fakeEnv('local');
     const { registry, register } = registryFor(env); await register();
     const response = await new HarnessUsageService(registry).get('ws');
     expect(response.entries.map((e) => e.harnessId)).toEqual(getHarnessProviders().map((p) => p.descriptor.id));
-    for (const entry of response.entries) expect(entry).toMatchObject({ status: 'unsupported', measurements: [] });
-    expect(env.executeHarnessCommand).not.toHaveBeenCalled();
+    for (const entry of response.entries.filter((e) => !['omp', 'hermes'].includes(e.harnessId))) expect(entry).toMatchObject({ status: 'unsupported', measurements: [] });
+    expect(env.executeHarnessCommand).toHaveBeenCalledTimes(2); // only the two real adapters probe
   });
 
   it('calls provider.usage.get generically with only an executor, transport and signal', async () => {

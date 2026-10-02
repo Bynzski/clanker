@@ -45,8 +45,8 @@ require every implementation to use one storage format.
 ## Current capabilities
 
 All seven providers support local and SSH interactive launch. Model discovery and
-AI commit remain local-only. No provider implements `usage` yet; the execution
-seam below exists so the first adapters need only protocol and parser code.
+AI commit remain local-only. Only OMP and Hermes implement `usage` so far (see
+"Usage capability"); Codex, Claude, OpenCode, Pi and Agy remain without it.
 
 | Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -313,6 +313,63 @@ manual-refresh floor. Entries report `nextRefreshAt` (cache) and `refreshableAt`
 request fails rather than returning data to another workspace. Snapshots are
 validated and copied field by field; renderer errors are fixed per-category text,
 never raw stderr.
+
+### Usage adapters
+
+Both adapters live beside their provider (`omp/usage.ts`, `hermes/usage.ts`), run
+only through `context.executor.run()`, never branch on transport, and expose a pure
+parser (`parseOmpUsage`, `parseHermesUsage`). Fixtures are in
+`tests/main/unit/harnessUsageProviders.test.ts` with fake identities; no CI test calls a
+real account. The parsers state the upstream assumptions they rely on in their header
+comments (verified against upstream source and live output, Oct 2026).
+
+**OMP** — `omp usage --json` (never `omp usage invalidate`; `force` only bypasses
+Clanker's cache). One report per credential, so several providers and several
+accounts of one provider coexist in one snapshot. Each limit with numeric data becomes
+one measurement: `percent` (or fraction-only) limits -> `unit: 'percent'`,
+used = `usedFraction`/`used` x 100, limit 100, remaining derived (negative fractions
+clamp to 0, overage stays visible); absolute units (`tokens`, `usd`, `requests`,
+`credits`, ...) keep their unit and values, deriving the missing one of
+used/remaining from the limit. Kind: tokens -> `tokens`, usd -> `spend`, else
+`rate-limit` when OMP supplies a window, otherwise `allowance`. Window label, duration
+and reset come only from `window.*` (never from `primary`/`secondary` ids):
+`resetsAt`, `period{label, endsAt, startsAt = resetsAt - durationMs}`. Scope:
+`providerId` from the limit/report provider; `accountId` only from
+`scope.accountId`/`metadata.accountId`; `accountLabel` from `metadata.email`;
+`planLabel` from `metadata.planType`; `modelId` when present. No identity is
+synthesised, and nothing is deduplicated across harnesses (the same Codex account
+appears via OMP and Hermes). Copies of one quota sharing `scope.sharedGroup` within a
+report are collapsed. `accountsWithoutUsage`, `disabledCredentials`, `capacity`,
+`resetCredits`, `status` and unknown keys are ignored: an empty `reports` array (with or
+without `accountsWithoutUsage`) is an `ok` snapshot with zero measurements, not an error
+and not `unauthenticated`, because JSON mode exits 0 and cannot tell "no credentials"
+from "only providers without a usage endpoint". `observedAt` is the oldest report
+`fetchedAt` (OMP serves cached reports; this is the honest data age). Tolerance: a
+non-object root or non-array `reports`/unparsable JSON is `parse-failure`; a
+malformed report or limit is skipped so valid providers survive, unless something was
+malformed and nothing valid remains (then `parse-failure`). Non-zero exit ->
+`command-failed`. Refresh: cache 60 s, hard minimum 60 s, failure backoff 120 s. OMP
+caches provider reports for 5 minutes and has its own failure cooldown, so a minute
+cadence is cheap and does not defeat that cache; the minimum bounds process spawns.
+
+**Hermes** — `hermes usage --json`, one invocation for the *configured* provider
+(same credential resolution as a session, no agent started); no provider fan-out.
+Each window with a numeric `used_percent` (0-100) becomes a `percent` measurement
+(remaining = 100 - used, limit 100); `label` -> `label` and `period.label`;
+`resets_at` (ISO with offset) -> `resetsAt` (kind `rate-limit`, else `allowance`);
+`detail` -> `description`; `provider` -> `scope.providerId`; `plan` ->
+`scope.planLabel`; `fetched_at` -> `observedAt`. Null `used_percent` windows carry no
+number and are skipped. No account identity is produced because Hermes documents
+none. Exit 1 (no credential, no usage endpoint and fetch failure are
+indistinguishable, and stderr is deliberately not interpreted) is a generic
+`command-failed`, never `unauthenticated`. Exit 0 with `unavailable_reason` set and no
+measurements (free text; only its presence is used) is `unsupported` for the configured
+provider. Strictness: bad root/`windows`, a window without a string label, or a
+non-null `used_percent` outside 0-100 / not a number is `parse-failure`; an invalid
+`resets_at`/`fetched_at` is just omitted. Refresh: cache 60 s, hard minimum 60 s,
+failure backoff 300 s. Hermes makes a live provider request on every call with no cache
+of its own, so it gets no faster than the popover needs; exit 1 is often a permanent
+"not configured" state, so a long failure backoff avoids respawning Python every minute.
 
 IPC: `HARNESS_USAGE_GET` (`getHarnessUsage(workspaceId, { harnessIds?, force? })`)
 returns `{ workspaceId, entries }` for all (or the requested) harnesses. The header

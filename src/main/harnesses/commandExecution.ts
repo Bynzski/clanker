@@ -82,3 +82,12 @@ export function requireSuccess(result: HarnessCommandResult, what: string): stri
   }
   return result.stdout;
 }
+
+/** Provider helper: strict JSON from stdout. Decorated or empty output is a schema/command problem. */
+export function parseJsonOutput(stdout: string, what: string): unknown {
+  try {
+    return JSON.parse(stdout);
+  } catch (error) {
+    throw new HarnessCapabilityError('parse-failure', `${what} did not produce valid JSON`, error);
+  }
+}

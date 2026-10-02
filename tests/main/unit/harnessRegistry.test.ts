@@ -35,8 +35,13 @@ it('keeps serializable descriptors aligned with implemented AI commit capabiliti
   for (const provider of getHarnessProviders()) {
     expect(provider.descriptor).toBe(HARNESS_DESCRIPTORS[provider.descriptor.id]);
     expect(structuredClone(provider.descriptor)).toEqual(provider.descriptor);
-    expect(provider.usage).toBeUndefined();
   }
+});
+
+it('implements usage only for the providers with a verified structured interface', () => {
+  const withUsage = getHarnessProviders().filter((provider) => provider.usage).map((provider) => provider.descriptor.id);
+  expect(withUsage).toEqual(['omp', 'hermes']);
+  for (const id of ['codex', 'claude', 'opencode', 'pi', 'agy'] as const) expect(getHarnessProvider(id).usage).toBeUndefined();
 });
 
 it.each([
