@@ -34,7 +34,7 @@ describe('agent attention launch adapters', () => {
     expect(attentionLaunchOptions('claude', ['--settings', 'custom.json'], {}, files)).toBeNull();
     const settings = JSON.parse(fs.readFileSync(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'claude-settings.json'), 'utf8')) as { hooks: Record<string, unknown> };
     expect(Object.keys(settings.hooks)).toEqual(['UserPromptSubmit', 'PermissionRequest', 'PostToolBatch', 'Stop', 'StopFailure', 'SessionEnd']);
-    expect(JSON.stringify(settings)).toContain(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'interpreter.mjs'));
+    expect(JSON.stringify(settings)).toContain(JSON.stringify(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'interpreter.mjs')).slice(1, -1));
   });
 
   it('configures Antigravity launch options and limits hooks to interaction tools', () => {
@@ -104,7 +104,8 @@ describe('agent attention launch adapters', () => {
 
   it('uses native Codex hooks instead of legacy notify, placed before resume, and skips conflicts', () => {
     const interpreter = path.join(ensureProviderAttentionResources('codex', files).resourceRoot!, 'interpreter.mjs');
-    const result = attentionLaunchOptions('codex', ['codex', 'resume', 'abc'], { CODEX_HOME: '/nonexistent' }, files);
+    const posix = (args: string[], env: NodeJS.ProcessEnv = { CODEX_HOME: '/nonexistent' }) => attentionLaunchOptions('codex', args, env, files, undefined, 'linux');
+    const result = posix(['codex', 'resume', 'abc']);
     expect(result?.args[0]).toBe('codex');
     expect(result?.args.slice(-2)).toEqual(['resume', 'abc']);
     const overrides = result!.args.filter((arg) => arg !== '-c' && arg.startsWith('hooks.'));
@@ -114,23 +115,23 @@ describe('agent attention launch adapters', () => {
     // resources arrive through the environment.
     expect(overrides[4]).toContain(JSON.stringify('node "$CLANKER_ATTENTION_COMMAND" "$CLANKER_ATTENTION_INTERPRETER" Stop').slice(1, -1));
     expect(result?.args.join(' ')).not.toContain(files.command);
-    expect(attentionLaunchOptions('codex', ['codex'], { CODEX_HOME: '/nonexistent' }, files)?.env).toEqual({ CLANKER_ATTENTION_INTERPRETER: interpreter });
+    expect(posix(['codex'])?.env).toEqual({ CLANKER_ATTENTION_INTERPRETER: interpreter });
     const windows = attentionLaunchOptions('codex', [], { CODEX_HOME: '/nonexistent' }, files, undefined, 'win32');
     expect(windows?.env).toEqual({});
-    expect(windows?.args[1]).toContain(`node.exe \\"${files.command}\\"`);
-    expect(attentionLaunchOptions('codex', ['-p', 'custom'], { CODEX_HOME: '/nonexistent' }, files)).toBeNull();
-    expect(attentionLaunchOptions('codex', ['-c', 'hooks.Stop=[]'], { CODEX_HOME: '/nonexistent' }, files)).toBeNull();
+    expect(windows?.args[1]).toContain(JSON.stringify(`node.exe "${files.command}"`).slice(1, -1));
+    expect(posix(['-p', 'custom'])).toBeNull();
+    expect(posix(['-c', 'hooks.Stop=[]'])).toBeNull();
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-codex-home-'));
     try {
       fs.writeFileSync(path.join(home, 'config.toml'), '[[hooks.SubagentStop]]\n');
-      expect(attentionLaunchOptions('codex', [], { CODEX_HOME: home }, files)).toBeNull();
+      expect(posix([], { CODEX_HOME: home })).toBeNull();
       fs.writeFileSync(path.join(home, 'config.toml'), 'profile = "work"\n');
-      expect(attentionLaunchOptions('codex', [], { CODEX_HOME: home }, files)).toBeNull();
+      expect(posix([], { CODEX_HOME: home })).toBeNull();
       fs.writeFileSync(path.join(home, 'config.toml'), 'notify = ["legacy"]\n[hooks.state]\n');
-      expect(attentionLaunchOptions('codex', [], { CODEX_HOME: home }, files)).not.toBeNull();
+      expect(posix([], { CODEX_HOME: home })).not.toBeNull();
       fs.writeFileSync(path.join(home, 'config.toml'), '');
       fs.writeFileSync(path.join(home, 'hooks.json'), '{"hooks":{"Stop":[]}}');
-      expect(attentionLaunchOptions('codex', [], { CODEX_HOME: home }, files)).toBeNull();
+      expect(posix([], { CODEX_HOME: home })).toBeNull();
     } finally { fs.rmSync(home, { recursive: true, force: true }); }
   });
 

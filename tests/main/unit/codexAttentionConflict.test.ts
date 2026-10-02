@@ -54,7 +54,8 @@ describe('Codex hook/profile conflict detection', () => {
   it.each(UNRELATED)('local parser leaves %j alone', (...args) => {
     expect(codexArgsConflict(args)).toBe(false);
   });
-  it('remote preparation reaches the same decision for every form', async () => {
+  // The host script runs under /bin/sh on a POSIX SSH host.
+  it.skipIf(process.platform === 'win32')('remote preparation reaches the same decision for every form', async () => {
     for (const args of CONFLICTS) expect(await remoteConflicts(args), JSON.stringify(args)).toBe(true);
     for (const args of UNRELATED) expect(await remoteConflicts(args), JSON.stringify(args)).toBe(false);
   });

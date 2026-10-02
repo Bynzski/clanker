@@ -582,7 +582,8 @@ describe('OpenCode lifecycle', () => {
   });
 });
 
-describe('Hermes lifecycle (SSH observer plugin)', () => {
+// The plugin runs on a POSIX SSH host and the replay needs a pty.
+describe.skipIf(process.platform === 'win32')('Hermes lifecycle (SSH observer plugin)', () => {
   // Real hook kwargs (hermes-agent source): pre_llm_call(session_id, task_id, turn_id, user_message,
   // conversation_history, is_first_turn, model, platform, parent_session_id, sender_id);
   // post_llm_call(session_id, task_id, turn_id, user_message, assistant_response,

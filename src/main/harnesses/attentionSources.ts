@@ -138,7 +138,13 @@ const store = {
       const text = JSON.stringify(value);
       if (text.length > STATE_LIMIT) throw new Error('oversized');
       fs.writeFileSync(temporary, text, { mode: 0o600 });
-      fs.renameSync(temporary, statePath);
+      // Windows refuses to replace a file another process (an indexer, a reader) briefly holds open.
+      for (let attempt = 0; ; attempt++) {
+        try { fs.renameSync(temporary, statePath); break; } catch (error) {
+          if (attempt >= 4 || !['EPERM', 'EBUSY', 'EACCES'].includes(error.code)) throw error;
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+        }
+      }
       return true;
     } catch {
       failed = true;
