@@ -181,6 +181,14 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     // Session history
     discoverSessions: createAsyncMock([]),
     getHarnessUsage: createAsyncMock({ workspaceId: '', entries: [] }),
+    listHarnessAccounts: createAsyncMock({ environmentId: 'local', harness: '', managedSupported: true, accounts: [] }),
+    selectHarnessAccount: createAsyncMock({ environmentId: 'local', harness: '', managedSupported: true, accounts: [] }),
+    startHarnessAccountAdd: createAsyncMock({ flowId: 'flow', state: { status: 'starting' } }),
+    reconnectHarnessAccount: createAsyncMock({ flowId: 'flow', state: { status: 'starting' } }),
+    cancelHarnessAccountAuth: createAsyncMock(undefined),
+    removeHarnessAccount: createAsyncMock({ environmentId: 'local', harness: '', managedSupported: true, accounts: [] }),
+    renameHarnessAccount: createAsyncMock({ environmentId: 'local', harness: '', managedSupported: true, accounts: [] }),
+    onHarnessAccountAuthState: vi.fn(() => () => undefined),
     invokeSession: createAsyncMock({ id: 'term-session-1', pid: 2001 }),
 
     // Workspace Recipes

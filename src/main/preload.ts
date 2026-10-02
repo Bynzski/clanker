@@ -10,6 +10,7 @@ import type { VcsProvider } from '../shared/types/vcs';
 import type { GitStatusResult } from '../shared/types/git';
 import type { HarnessSession } from '../shared/types/session';
 import type { HarnessUsageRequest } from '../shared/types/harnessUsage';
+import type { HarnessAccountAuthEvent } from '../shared/types/harnessAccounts';
 import type { AgentAttentionUpdate } from '../shared/types/agentAttention';
 import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchRequest } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
@@ -53,6 +54,14 @@ import {
   TERMINAL_DATA,
   TERMINAL_EXIT,
   AGENT_ATTENTION_UPDATE,
+  HARNESS_ACCOUNTS_LIST,
+  HARNESS_ACCOUNTS_SELECT,
+  HARNESS_ACCOUNTS_ADD_START,
+  HARNESS_ACCOUNTS_RECONNECT,
+  HARNESS_ACCOUNTS_AUTH_CANCEL,
+  HARNESS_ACCOUNTS_REMOVE,
+  HARNESS_ACCOUNTS_RENAME,
+  HARNESS_ACCOUNTS_AUTH_STATE,
   TERMINAL_RESIZED,
   TERMINAL_READY,
   RECIPE_COMMAND_WAIT,
@@ -495,6 +504,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Harness usage (workspaceId is the only reference; main resolves the environment)
   getHarnessUsage: (workspaceId: string, request?: HarnessUsageRequest) =>
     ipcRenderer.invoke(HARNESS_USAGE_GET, workspaceId, request),
+
+  // Harness accounts. Plain strings only: main resolves identity, paths and environments itself.
+  listHarnessAccounts: (environmentId: string, harness: string) =>
+    ipcRenderer.invoke(HARNESS_ACCOUNTS_LIST, environmentId, harness),
+  selectHarnessAccount: (environmentId: string, harness: string, accountId: string) =>
+    ipcRenderer.invoke(HARNESS_ACCOUNTS_SELECT, environmentId, harness, accountId),
+  startHarnessAccountAdd: (environmentId: string, harness: string, label?: string) =>
+    ipcRenderer.invoke(HARNESS_ACCOUNTS_ADD_START, environmentId, harness, label),
+  reconnectHarnessAccount: (environmentId: string, harness: string, accountId: string) =>
+    ipcRenderer.invoke(HARNESS_ACCOUNTS_RECONNECT, environmentId, harness, accountId),
+  cancelHarnessAccountAuth: (flowId: string) =>
+    ipcRenderer.invoke(HARNESS_ACCOUNTS_AUTH_CANCEL, flowId),
+  removeHarnessAccount: (environmentId: string, harness: string, accountId: string) =>
+    ipcRenderer.invoke(HARNESS_ACCOUNTS_REMOVE, environmentId, harness, accountId),
+  renameHarnessAccount: (environmentId: string, harness: string, accountId: string, label: string) =>
+    ipcRenderer.invoke(HARNESS_ACCOUNTS_RENAME, environmentId, harness, accountId, label),
+  onHarnessAccountAuthState: (callback: (event: HarnessAccountAuthEvent) => void) => {
+    const handler = (_event: IpcRendererEvent, data: HarnessAccountAuthEvent) => callback(data);
+    ipcRenderer.on(HARNESS_ACCOUNTS_AUTH_STATE, handler);
+    return () => ipcRenderer.removeListener(HARNESS_ACCOUNTS_AUTH_STATE, handler);
+  },
 
   // Workspace Recipes
   recipeGetAll: (workspacePath?: string) =>

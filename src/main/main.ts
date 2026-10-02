@@ -60,6 +60,15 @@ import { registerVcsIpc } from './ipc/vcsIpc';
 import { registerAnnotationIpc } from './annotation/annotationIpc';
 import { registerSessionIpc } from './ipc/sessionIpc';
 import { registerUsageIpc } from './ipc/usageIpc';
+import { registerAccountIpc } from './ipc/accountIpc';
+import { HarnessAccountService } from './accounts/harnessAccountService';
+import { AccountHomeStore } from './accounts/accountHomes';
+import { createElectronAccountStorage } from './accounts/electronAccountStorage';
+import { LocalEnvironment } from './environment/localEnvironment';
+import { clearSessionCache } from './sessionHistory';
+import { HARNESS_ACCOUNTS_AUTH_STATE } from '../shared/ipcChannels';
+import * as nodeOs from 'node:os';
+import * as nodePath from 'node:path';
 import { HarnessUsageService } from './usage/harnessUsageService';
 import { registerRecipeIpc } from './ipc/recipeIpc';
 import { purgeLegacyTaskSessions } from './storeMigrations';
@@ -164,6 +173,8 @@ const killAllTerminals = () => {
 };
 
 const cleanupWorkspaceResources = () => {
+  // Pending sign-ins must not outlive the window that started them.
+  void harnessAccountService.cancelAllAuth();
   void remotePreviewManager.closeWorkspaces();
   remoteFileWatcher.close();
   void annotationController?.dispose();
@@ -183,12 +194,30 @@ const cleanupWindowState = () => {
 };
 
 const environmentManager = new EnvironmentManager(() => store);
+const accountLocalEnvironment = new LocalEnvironment();
 const workspaceRegistry: WorkspaceRegistry = new WorkspaceRegistry(
   (id) => environmentManager.getEnvironment(id),
   { isWorktreeBeingRemoved: (p: string): boolean => gitService.isWorktreeBeingRemoved(p) }
 );
 
-const harnessUsageService = new HarnessUsageService(workspaceRegistry, { clientVersion: () => app.getVersion() });
+// Account metadata lives in its own store (never the renderer-writable settings map); managed
+// homes live under the app's own data directory, apart from every provider-native home.
+const harnessAccountService = new HarnessAccountService({
+  storage: createElectronAccountStorage(),
+  homes: new AccountHomeStore(nodePath.join(app.getPath('userData'), 'harness-accounts'), {
+    protectedPaths: [nodePath.join(nodeOs.homedir(), '.codex'), nodePath.join(nodeOs.homedir(), '.claude')],
+  }),
+  getLocalEnvironment: () => accountLocalEnvironment,
+  openExternal: (url) => { void shell.openExternal(url); },
+  onAuthState: (event) => {
+    if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(HARNESS_ACCOUNTS_AUTH_STATE, event);
+  },
+  clientVersion: () => app.getVersion(),
+});
+// Cached discovery results carry account provenance, so any change to the account set drops them.
+harnessAccountService.onAccountsChanged(() => clearSessionCache());
+
+const harnessUsageService = new HarnessUsageService(workspaceRegistry, { clientVersion: () => app.getVersion(), accounts: harnessAccountService });
 
 const remotePreviewManager = new RemotePreviewManager(workspaceRegistry, (update) => {
   if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(REMOTE_PREVIEW_CHANGED, update);
@@ -293,6 +322,7 @@ app.whenReady().then(() => {
     getHarnessOptions: () => HARNESS_OPTIONS,
     agentAttentionBroker,
     createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
+    getHarnessAccountService: () => harnessAccountService,
   });
 
   registerRemotePreviewIpc(remotePreviewManager);
@@ -362,6 +392,7 @@ app.whenReady().then(() => {
   });
 
   registerUsageIpc({ getUsageService: () => harnessUsageService });
+  registerAccountIpc({ getAccountService: () => harnessAccountService });
 
   registerSessionIpc({
     getTerminals: () => terminals,
@@ -373,6 +404,7 @@ app.whenReady().then(() => {
     getWorkspaceRegistry: () => workspaceRegistry,
     agentAttentionBroker,
     createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
+    getHarnessAccountService: () => harnessAccountService,
   });
 
   // Register annotation IPC handlers
@@ -434,13 +466,14 @@ app.on('before-quit', (event) => {
   remoteFileWatcher.close();
   setAppShuttingDown(true);
   harnessUsageService.dispose();
+  const accountsClosed = harnessAccountService.dispose();
   workspaceRegistry.clear();
   killAllTerminals();
   agentAttentionBroker.close();
   removeAttentionAdapterFiles();
   // Keep the event loop alive for SSH SIGKILL escalation and host launch-file
   // cleanup. A repeated quit request shares this drain instead of bypassing it.
-  quitCleanup = Promise.all([previewsClosed, waitForTerminalCleanup()]).then(() => undefined);
+  quitCleanup = Promise.all([previewsClosed, waitForTerminalCleanup(), accountsClosed]).then(() => undefined);
   void quitCleanup.catch((error: unknown) => console.warn('[clanker-grid] shutdown cleanup failed:', error)).finally(() => {
     quitCleanupComplete = true;
     app.quit();

@@ -658,8 +658,11 @@ function defaultBinding(environmentId: WorkspaceEnvironmentId, harness: HarnessI
  */
 export function prepareHarnessAccountContext(
   service: HarnessAccountService | undefined,
-  input: { environmentId: WorkspaceEnvironmentId; harness: HarnessId; accountId?: HarnessAccountId; forLaunch?: boolean },
+  input: { environmentId: WorkspaceEnvironmentId; harness: string; accountId?: HarnessAccountId; forLaunch?: boolean },
 ): ResolvedHarnessAccountBinding {
-  if (!service || !findHarnessProvider(input.harness)?.accounts) return defaultBinding(input.environmentId, input.harness, true);
-  return service.resolveBinding({ forLaunch: true, ...input });
+  const provider = findHarnessProvider(input.harness);
+  if (!service || !provider?.accounts) {
+    return defaultBinding(input.environmentId, (provider?.descriptor.id ?? input.harness) as HarnessId, true);
+  }
+  return service.resolveBinding({ forLaunch: true, ...input, harness: provider.descriptor.id });
 }
