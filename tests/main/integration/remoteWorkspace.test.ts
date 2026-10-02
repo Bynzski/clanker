@@ -3,7 +3,6 @@ import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
 import { EnvironmentManager } from '../../../src/main/environment/environmentManager';
 import { SshCommandExecutor } from '../../../src/main/remote/sshCommandExecutor';
 import { GitService } from '../../../src/main/gitService';
-import { TaskSessionCoordinator } from '../../../src/main/taskSessionCoordinator';
 import { WorkspacePersistenceService } from '../../../src/main/workspacePersistence';
 import { LOCAL_ENVIRONMENT_ID } from '../../../src/shared/types/environments';
 
@@ -18,7 +17,6 @@ class MemoryStore {
       },
     ],
     workspaceRecipes: [],
-    taskSessions: [],
   };
 
   get<K extends string>(key: K): unknown {
@@ -27,6 +25,10 @@ class MemoryStore {
 
   set(key: string, value: unknown): void {
     this.data[key] = value;
+  }
+
+  keys(): string[] {
+    return Object.keys(this.data);
   }
 }
 
@@ -37,7 +39,6 @@ describe('Remote Workspace Integration', () => {
   let envManager: EnvironmentManager;
   let registry: WorkspaceRegistry;
   let gitService: GitService;
-  let coordinator: TaskSessionCoordinator;
 
   beforeEach(() => {
     store = new MemoryStore();
@@ -67,8 +68,6 @@ describe('Remote Workspace Integration', () => {
         return environment!.execGit(workspacePath, args, timeoutMs);
       }
     );
-
-    coordinator = new TaskSessionCoordinator(persistence);
   });
 
   it('coexists with a local workspace having the exact same path', async () => {
@@ -185,7 +184,7 @@ describe('Remote Workspace Integration', () => {
     expect(escapeWrite.errorCode).toBe('invalid-path');
   });
 
-  it('spawns remote terminal via ssh -t and isolates task recovery on exit', async () => {
+  it('spawns remote terminal via ssh -t and keeps no durable task-session record', async () => {
     vi.mocked(mockSshExecutor.exec).mockResolvedValueOnce({
       stdout: '/var/www/app\n',
       stderr: '',
@@ -210,23 +209,9 @@ describe('Remote Workspace Integration', () => {
     expect(terminalConfig.spawnArgs).toContain('jay@vps.internal');
     expect(terminalConfig.attentionEnabled).toBe(false);
 
-    // Track task
-    coordinator.onTerminalSpawned(
-      'term-remote-1',
-      '/var/www/app',
-      'codex',
-      undefined,
-      'dev-vps'
-    );
-
-    const taskBeforeExit = persistence.getAllTaskSessions().find((t) => t.terminalId === 'term-remote-1');
-    expect(taskBeforeExit?.state).toBe('running');
-    expect(taskBeforeExit?.environmentId).toBe('dev-vps');
-
-    // On exit, remote terminal does NOT scan local sessions; marks unavailable
-    const exitedTask = await coordinator.onTerminalExited('term-remote-1', 'dev-vps');
-    expect(exitedTask?.state).toBe('unavailable');
-    expect(exitedTask?.stateReason).toContain('Associate a remote conversation');
+    // Workspace Tasks were removed: no durable task-session state exists.
+    expect(persistence).not.toHaveProperty('getAllTaskSessions');
+    expect(store.keys()).not.toContain('taskSessions');
   });
 
   it('unregisters remote workspace cleanly without affecting local workspaces', async () => {

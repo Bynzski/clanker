@@ -90,7 +90,6 @@ describe('IPC registration smoke test', () => {
     const { registerSessionIpc } = await import('../../../src/main/ipc/sessionIpc');
     const { registerUsageIpc } = await import('../../../src/main/ipc/usageIpc');
     const { registerRecipeIpc } = await import('../../../src/main/ipc/recipeIpc');
-    const { registerTaskSessionIpc } = await import('../../../src/main/ipc/taskSessionIpc');
     const { registerSshEnvironmentIpc } = await import('../../../src/main/ipc/sshEnvironmentIpc');
     interface MockStoreSchema {
       lastWorkspace: string;
@@ -99,7 +98,6 @@ describe('IPC registration smoke test', () => {
       aiCommitModel: string;
       harnessDefaults: Record<string, { model: string; favorites: string[]; flags: string }>;
       workspaceRecipes: unknown[];
-      taskSessions: unknown[];
     }
 
     const mockTerminals = new Map<string, { id: string; pid: number }>();
@@ -166,7 +164,6 @@ describe('IPC registration smoke test', () => {
           aiCommitModel: '',
           harnessDefaults: {},
           workspaceRecipes: [],
-          taskSessions: [],
         };
         return defaults[key];
       }),
@@ -250,12 +247,6 @@ describe('IPC registration smoke test', () => {
     registerUsageIpc({ getUsageService: () => ({ get: vi.fn() }) as never });
     registerRecipeIpc({
       getStore: () => mockStore as never,
-    });
-
-    registerTaskSessionIpc({
-      getStore: () => mockStore as never,
-      getTerminals: () => mockTerminals as never,
-      getHarnessOptions: () => ({}),
     });
 
     const mockEnvManager = {

@@ -5,7 +5,6 @@ import type { RegisteredWorkspace } from '../workspaceRegistry';
 import type { RegisterSessionIpcDeps } from './sessionIpc';
 import { isPathContained } from '../remote/remotePaths';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
-import { captureRemoteSessionBaseline } from '../remote/remoteSessionCorrelation';
 import { spawnPtyProcess } from './ptySpawn';
 
 import { SUPPORTED_RESUME_HARNESSES, supportsSessionOperation } from '../sessionLaunch';
@@ -47,8 +46,6 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
     ? broker.registerRemote(id, session.harness) : undefined;
   let releaseAttention: (() => Promise<void>) | undefined;
   try {
-    const baseline = fork ? await captureRemoteSessionBaseline(environment, workspace.location.path, session.cwd, session.harness) : undefined;
-    checkWorkspace();
     const resolved = await environment.resolveTerminalSpawn({
       id, workingDir: session.cwd, harness: session.harness, flags, attentionToken,
       resumeSession: { session, fork: fork === true, workspaceRoot: workspace.location.path },
@@ -63,15 +60,11 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
       environmentId: workspace.location.environmentId, remoteWorkingDir: session.cwd,
       onOutput: deps.createRemoteOutputObserver?.(workspace.workspaceId),
       filterData: resolved.attentionEnabled && broker ? createRemoteAttentionFilter((raw) => broker.receiveRemote(id, raw)) : undefined,
-      onExit: () => {
+      onExit: async () => {
         broker?.release(id);
-        return Promise.all([
-          releaseAttention?.(), deps.taskSessionCoordinator?.onTerminalExited(id, workspace.location.environmentId),
-        ]).then(() => undefined);
+        await releaseAttention?.();
       },
     });
-    if (fork) deps.taskSessionCoordinator?.onTerminalSpawned(id, workspace.location.path, session.harness, session.modelId, workspace.location.environmentId, baseline);
-    else deps.taskSessionCoordinator?.onSessionInvoked(id, { ...session, cwd: workspace.location.path, environmentId: workspace.location.environmentId });
     return { ...result, harnessId: session.harness, attentionEnabled: resolved.attentionEnabled === true, workingDir: session.cwd };
   } catch (error) {
     broker?.release(id);

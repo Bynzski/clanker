@@ -5,24 +5,10 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import ChatHistoryDropdown from '../../../src/renderer/components/ChatHistoryDropdown';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
-import type { TaskSessionRecord } from '../../../src/shared/types/taskSessions';
 import type { HarnessSession } from '../../../src/shared/types/session';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
 describe('ChatHistoryDropdown', () => {
-  const sampleTask: TaskSessionRecord = {
-    id: 'task-resume-1',
-    workspacePath: '/projects/repo',
-    harnessId: 'codex',
-    modelId: 'gpt-5',
-    title: 'Auth feature',
-    nativeSessionId: 'codex-sess-1',
-    state: 'resumable',
-    createdAt: 1000,
-    updatedAt: 1000,
-    version: 1,
-  };
-
   const sampleSession: HarnessSession = {
     id: 'codex-sess-1',
     harness: 'codex',
@@ -85,21 +71,16 @@ describe('ChatHistoryDropdown', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('workspace closed');
   });
 
-  describe.each(['history', 'task'] as const)('local %s resumption', (kind) => {
+  describe('local conversation resumption', () => {
     async function startResume(onClose: () => void) {
       render(<ChatHistoryDropdown sessions={[sampleSession]} isLoading={false} workspacePath="/projects/repo" workspaceId="local-ws" onClose={onClose} />);
-      if (kind === 'task') {
-        fireEvent.click(await screen.findByRole('button', { name: /resume/i }));
-      } else {
-        fireEvent.click(screen.getByRole('button', { name: /Codex.*1/i }));
-        fireEvent.click(screen.getByRole('button', { name: /Auth conversation/i }));
-      }
+      fireEvent.click(screen.getByRole('button', { name: /Codex.*1/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Auth conversation/i }));
     }
 
     it('attaches to the original workspace after switching without closing the dropdown', async () => {
       let finish!: (value: { id: string; pid: number }) => void;
       installElectronApiMock({
-        taskSessionList: vi.fn().mockResolvedValue([sampleTask]),
         invokeSession: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; })),
       });
       useWorkspaceStore.setState((state) => ({ workspaces: [...state.workspaces, createWorkspaceFixture({ id: 'other', lifecycle: 'parked', terminals: [], panes: [], activeTerminalId: null })] }));
@@ -118,7 +99,6 @@ describe('ChatHistoryDropdown', () => {
     it('kills the returned terminal if the owning workspace closes', async () => {
       let finish!: (value: { id: string; pid: number }) => void;
       installElectronApiMock({
-        taskSessionList: vi.fn().mockResolvedValue([sampleTask]),
         invokeSession: vi.fn().mockReturnValue(new Promise((resolve) => { finish = resolve; })),
       });
       const onClose = vi.fn();
@@ -132,18 +112,10 @@ describe('ChatHistoryDropdown', () => {
     });
   });
 
-  it('surfaces discovery failures instead of implying that the remote history is empty', () => {
+  it('never requests or renders Workspace Tasks', () => {
     installElectronApiMock();
-    render(<ChatHistoryDropdown sessions={[]} isLoading={false} discoveryError="SSH authentication failed" workspacePath="/projects/repo" workspaceId="remote-ws" onClose={vi.fn()} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('SSH authentication failed');
-    expect(screen.queryByText('No sessions for this workspace')).toBeNull();
-  });
-
-  it('renders tasks and discovered sessions', async () => {
-    installElectronApiMock({
-      taskSessionList: vi.fn().mockResolvedValue([sampleTask]),
-    });
-
+    const taskChannels = vi.fn();
+    (window.electronAPI as unknown as Record<string, unknown>).taskSessionList = taskChannels;
     render(
       <ChatHistoryDropdown
         sessions={[sampleSession]}
@@ -154,63 +126,18 @@ describe('ChatHistoryDropdown', () => {
       />,
     );
 
-    expect(await screen.findByText('Auth feature')).toBeInTheDocument();
-    expect(screen.getByText('Resumable')).toBeInTheDocument();
-    expect(screen.getByText('Codex')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Codex.*1/i })).toBeInTheDocument();
+    expect(screen.queryByText('Workspace Tasks')).toBeNull();
+    expect(taskChannels).not.toHaveBeenCalled();
   });
 
-  it('handles resume failure gracefully by updating task state and displaying error and retry', async () => {
-    const taskSessionUpdateMock = vi.fn().mockResolvedValue(null);
-    const failedTask: TaskSessionRecord = {
-      ...sampleTask,
-      state: 'unavailable',
-      stateReason: 'Failed to resume: Session file corrupted on disk',
-    };
-    const taskSessionListMock = vi.fn()
-      .mockResolvedValueOnce([sampleTask])
-      .mockResolvedValueOnce([failedTask]);
-
-    installElectronApiMock({
-      taskSessionList: taskSessionListMock,
-      invokeSession: vi.fn().mockRejectedValue(new Error('Session file corrupted on disk')),
-      taskSessionUpdate: taskSessionUpdateMock,
-    });
-
-    const onClose = vi.fn();
-    render(
-      <ChatHistoryDropdown
-        sessions={[sampleSession]}
-        isLoading={false}
-        workspacePath="/projects/repo"
-        workspaceId="local-ws"
-        onClose={onClose}
-      />,
-    );
-
-    const resumeBtn = await screen.findByRole('button', { name: /resume/i });
-    fireEvent.click(resumeBtn);
-    expect(window.electronAPI.invokeSession).toHaveBeenCalledWith('local-ws', expect.objectContaining({
-      id: 'codex-sess-1', cwd: '/projects/repo',
-    }));
-
-    await waitFor(() => {
-      expect(taskSessionUpdateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'task-resume-1',
-          state: 'unavailable',
-          stateReason: expect.stringContaining('Session file corrupted on disk'),
-        }),
-      );
-    });
-
-    // Dropdown did not close silently
-    expect(onClose).not.toHaveBeenCalled();
-    // Error banner is rendered in the UI
-    expect(screen.getAllByText(/Session file corrupted on disk/i).length).toBeGreaterThanOrEqual(1);
-    // Final state follows Option A failure policy: Unavailable badge and Retry button rendered
-    expect(await screen.findByText('Unavailable')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+  it('surfaces discovery failures instead of implying that the remote history is empty', () => {
+    installElectronApiMock();
+    render(<ChatHistoryDropdown sessions={[]} isLoading={false} discoveryError="SSH authentication failed" workspacePath="/projects/repo" workspaceId="remote-ws" onClose={vi.fn()} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('SSH authentication failed');
+    expect(screen.queryByText('No sessions for this workspace')).toBeNull();
   });
+
   it('resumes discovered sessions using the selected workspace ID', async () => {
     const invokeSession = vi.fn().mockResolvedValue({ id: 'term-1', pid: 5 });
     installElectronApiMock({ invokeSession });

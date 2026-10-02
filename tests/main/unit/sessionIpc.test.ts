@@ -303,6 +303,34 @@ describe('registerSessionIpc', () => {
       }),
     }));
   });
+  it('records no durable task-session state when resuming a native conversation', async () => {
+    mockBuildSessionInvokeArgs.mockReturnValue({ spawnCmd: 'codex', spawnArgs: ['resume', 'codex-session'] });
+    mockSpawnPtyProcess.mockReturnValue({ id: 'term-1', pid: 123 });
+    const storeSet = vi.fn();
+    const handlers = new Map<string, Handler>();
+    mockHandle.mockImplementation((channel: string, handler: Handler) => {
+      handlers.set(channel, handler);
+    });
+    registerSessionIpc({
+      getTerminals: () => new Map(),
+      getMainWindow: () => null,
+      getSafeWorkspacePath: (workingDir: string) => workingDir,
+      getIsShuttingDown: () => false,
+      getStore: () => ({ get: vi.fn(() => ({ codex: { flags: '' } })), set: storeSet }) as never,
+      getHarnessOptions: vi.fn(() => ({ codex: { name: 'Codex', command: 'codex', args: [], icon: 'Codex' } })),
+      getWorkspaceRegistry: () => ({
+        getWorkspace: (id: string) => id === 'local-ws'
+          ? { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } }
+          : null,
+      }) as never,
+    });
+
+    await handlers.get(SESSION_INVOKE)?.({}, 'local-ws', codexSession);
+
+    expect(mockSpawnPtyProcess).toHaveBeenCalledTimes(1);
+    expect(storeSet.mock.calls.map(([key]) => key)).not.toContain('taskSessions');
+  });
+
   it('keeps local discovery and invocation distinct from a remote workspace at the same path', async () => {
     const getWorkspace = vi.fn((id: string) => ({
       'local-ws': { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } },

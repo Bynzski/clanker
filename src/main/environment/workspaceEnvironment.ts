@@ -104,7 +104,6 @@ export interface WorkspaceEnvironment {
   probeAvailableHarnessIds(): Promise<string[]>;
   discoverHarnessModels?(harnessId: string): Promise<EnvironmentModelOption[]>;
   discoverSessions?(workspacePath: string): Promise<HarnessSession[]>;
-  captureSessionBaseline?(workspacePath: string, harnessId: string): Promise<{ sessions: HarnessSession[]; hostTime: number }>;
   /**
    * Bounded command execution in this environment (local process or the saved
    * SSH target). Harness capabilities such as usage run through this; they never

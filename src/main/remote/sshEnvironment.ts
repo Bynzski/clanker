@@ -693,14 +693,6 @@ export class SshEnvironment implements WorkspaceEnvironment {
     return discoverSshSessions(this.executor, this.target, workspacePath, await this.probeAvailableHarnessIds());
   }
 
-  public async captureSessionBaseline(workspacePath: string, harnessId: string) {
-    const sessions = await discoverSshSessions(this.executor, this.target, workspacePath, [harnessId]);
-    const result = await this.executor.exec(this.target, 'python3', ['-c', 'import time; print(time.time() * 1000)'], { timeoutMs: 5000, maxBuffer: 1024 });
-    const hostTime = Number(result.stdout.trim());
-    if (!Number.isFinite(hostTime) || hostTime <= 0) throw new Error('Invalid SSH host clock');
-    return { sessions, hostTime };
-  }
-
   public async discoverHarnessModels(): Promise<EnvironmentModelOption[]> {
     // Model discovery is best-effort. Return empty array to use harness defaults on remote host
     return [];

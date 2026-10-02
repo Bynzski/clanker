@@ -19,8 +19,7 @@ import type { Terminal } from './terminalIpc';
 import type { HarnessSession } from '../../shared/types/session';
 import { defaultShell } from '../platformShell';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
-import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
-import type { TaskSessionCoordinator } from '../taskSessionCoordinator';
+import { toNativePath } from '../../shared/pathNormalize';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { invokeRemoteSession } from './remoteSessionInvocation';
 import {
@@ -37,13 +36,12 @@ export interface RegisterSessionIpcDeps {
   getStore: () => Store<StoreSchema>;
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
   agentAttentionBroker?: AgentAttentionBroker;
-  taskSessionCoordinator?: TaskSessionCoordinator;
   createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
   getWorkspaceRegistry?: () => WorkspaceRegistry;
 }
 
 export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
-  const { getTerminals, getMainWindow, getSafeWorkspacePath, getIsShuttingDown, getStore, getHarnessOptions, agentAttentionBroker, taskSessionCoordinator } = deps;
+  const { getTerminals, getMainWindow, getSafeWorkspacePath, getIsShuttingDown, getStore, getHarnessOptions, agentAttentionBroker } = deps;
 
   ipcMain.handle(SESSION_DISCOVER, async (_, workspaceId: string) => {
     const workspace = typeof workspaceId === 'string'
@@ -169,14 +167,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       onExit: () => {
         disposeAttentionSafely(preparedAttention);
         agentAttentionBroker?.release(id);
-        void taskSessionCoordinator?.onTerminalExited(id);
       },
-      });
-      taskSessionCoordinator?.onSessionInvoked(id, {
-        ...nativeSession,
-        // The session record crosses into persistence and renderer matching;
-        // keep trusted metadata in IPC path form rather than native spawn form.
-        cwd: toPosixPath(validatedSession.cwd),
       });
       return { ...result, harnessId: session.harness, attentionEnabled };
     } catch (error) {

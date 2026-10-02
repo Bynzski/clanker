@@ -168,9 +168,6 @@ import {
   RECIPE_GET_ALL,
   RECIPE_SAVE,
   RECIPE_DELETE,
-  TASK_SESSION_LIST,
-  TASK_SESSION_DELETE,
-  TASK_SESSION_UPDATE,
   SSH_ENVIRONMENT_LIST,
   SSH_ENVIRONMENT_SAVE,
   SSH_ENVIRONMENT_DELETE,
@@ -507,13 +504,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   recipeDelete: (recipeId: string) =>
     ipcRenderer.invoke(RECIPE_DELETE, recipeId),
 
-  // Task Sessions
-  taskSessionList: (workspacePath?: string, environmentId?: string) =>
-    ipcRenderer.invoke(TASK_SESSION_LIST, workspacePath, environmentId),
-  taskSessionDelete: (taskId: string) =>
-    ipcRenderer.invoke(TASK_SESSION_DELETE, taskId),
-  taskSessionUpdate: (updates: { id: string; title?: string; nativeSessionId?: string; nativeSessionPath?: string; state?: string; stateReason?: string }) =>
-    ipcRenderer.invoke(TASK_SESSION_UPDATE, updates),
   // Browser annotation
   annotationEnable: (workspaceId: string) => ipcRenderer.invoke(ANNOTATION_ENABLE, workspaceId),
   annotationDisable: () => ipcRenderer.invoke(ANNOTATION_DISABLE),

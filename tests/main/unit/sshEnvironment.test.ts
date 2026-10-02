@@ -69,15 +69,6 @@ describe('SshEnvironment', () => {
       );
     });
 
-    it('captures harness-specific session IDs before reading the host clock', async () => {
-      vi.mocked(mockExecutor.exec)
-        .mockResolvedValueOnce({ stdout: '[]', stderr: '', exitCode: 0 })
-        .mockResolvedValueOnce({ stdout: '8000000\n', stderr: '', exitCode: 0 });
-      expect(await env.captureSessionBaseline('/repo', 'codex')).toEqual({ sessions: [], hostTime: 8_000_000 });
-      expect(mockExecutor.exec).toHaveBeenNthCalledWith(1, 'user@test-host', 'python3', expect.arrayContaining(['/repo', '["codex"]']), expect.any(Object));
-      expect(mockExecutor.exec).toHaveBeenNthCalledWith(2, 'user@test-host', 'python3', ['-c', 'import time; print(time.time() * 1000)'], expect.objectContaining({ timeoutMs: 5000, maxBuffer: 1024 }));
-    });
-
     it('validates workspace path and resolves canonical directory', async () => {
       vi.mocked(mockExecutor.exec).mockResolvedValueOnce({
         stdout: '/var/www/canonical-app\n',

@@ -5,16 +5,11 @@ import type {
   RecipeLaunchStep,
   PersistedRecipeLayout,
 } from '../shared/types/recipes';
-import type {
-  TaskSessionRecord,
-  TaskRecoveryState,
-} from '../shared/types/taskSessions';
 import {
   normalizeWorkspacePath,
   isSameWorkspaceIdentity,
   parseWorkspaceIdentity,
 } from '../shared/workspaceIdentity';
-import { sanitizeRemoteSessionBaseline } from './remote/remoteSessionCorrelation';
 import { LOCAL_ENVIRONMENT_ID, type SshEnvironmentConfig } from '../shared/types/environments';
 import { isValidWorkspaceEnvironmentId, validateSshEnvironmentConfig } from '../shared/sshValidation';
 import { normalizeTrustedAppBrowserUrl } from './security';
@@ -127,58 +122,6 @@ export function sanitizeWorkspaceRecipe(input: unknown): WorkspaceRecipe | null 
   };
 }
 
-const VALID_TASK_STATES: Record<TaskRecoveryState, true> = {
-  running: true,
-  resumable: true,
-  'needs-selection': true,
-  unavailable: true,
-};
-
-export function sanitizeTaskSessionRecord(input: unknown): TaskSessionRecord | null {
-  if (!isObject(input)) return null;
-  if (!isNonEmptyString(input.id) || !isNonEmptyString(input.workspacePath) || !isNonEmptyString(input.harnessId)) {
-    return null;
-  }
-  if (input.environmentId != null && input.environmentId !== ''
-    && !isValidWorkspaceEnvironmentId(input.environmentId)) return null;
-
-  const normalizedPath = normalizeWorkspacePath(input.workspacePath);
-  if (!normalizedPath) return null;
-
-  const rawState = typeof input.state === 'string' ? input.state : 'unavailable';
-  const state: TaskRecoveryState = rawState in VALID_TASK_STATES
-    ? (rawState as TaskRecoveryState)
-    : 'unavailable';
-
-  const now = Date.now();
-  const createdAt = isFiniteNumber(input.createdAt) ? input.createdAt : now;
-  const updatedAt = isFiniteNumber(input.updatedAt) ? input.updatedAt : now;
-
-  const remoteSessionBaseline = sanitizeRemoteSessionBaseline(input.remoteSessionBaseline, normalizedPath);
-  const environmentId = isNonEmptyString(input.environmentId)
-    ? input.environmentId.trim()
-    : LOCAL_ENVIRONMENT_ID;
-
-  return {
-    id: input.id.trim(),
-    workspacePath: normalizedPath,
-    environmentId,
-    ...(environmentId !== LOCAL_ENVIRONMENT_ID && remoteSessionBaseline ? { remoteSessionBaseline } : {}),
-    harnessId: input.harnessId.trim(),
-    title: isNonEmptyString(input.title) ? input.title.trim() : `${input.harnessId.trim()} Task`,
-    ...(isNonEmptyString(input.modelId) ? { modelId: input.modelId.trim() } : {}),
-    ...(isNonEmptyString(input.terminalId) ? { terminalId: input.terminalId.trim() } : {}),
-    ...(isNonEmptyString(input.nativeSessionId) ? { nativeSessionId: input.nativeSessionId.trim() } : {}),
-    ...(isNonEmptyString(input.nativeSessionPath) ? { nativeSessionPath: input.nativeSessionPath.trim() } : {}),
-    state,
-    ...(isNonEmptyString(input.stateReason) ? { stateReason: input.stateReason.trim() } : {}),
-    createdAt,
-    updatedAt,
-    ...(isFiniteNumber(input.stoppedAt) ? { stoppedAt: input.stoppedAt } : {}),
-    version: 1,
-  };
-}
-
 export class WorkspacePersistenceService {
   constructor(private readonly getStore: () => Store<StoreSchema>) {}
 
@@ -251,75 +194,6 @@ export class WorkspacePersistenceService {
     if (filtered.length === all.length) return false;
 
     this.getStore().set('workspaceRecipes', filtered);
-    return true;
-  }
-
-  public getAllTaskSessions(): TaskSessionRecord[] {
-    try {
-      const raw = this.getStore().get('taskSessions');
-      if (!Array.isArray(raw)) return [];
-      const sanitized: TaskSessionRecord[] = [];
-      for (const item of raw) {
-        const session = sanitizeTaskSessionRecord(item);
-        if (session) sanitized.push(session);
-      }
-      return sanitized;
-    } catch {
-      return [];
-    }
-  }
-
-  public getTaskSessionsForWorkspace(workspacePath: string, environmentId?: string): TaskSessionRecord[] {
-    const all = this.getAllTaskSessions();
-    const parsed = parseWorkspaceIdentity(workspacePath);
-    const target = {
-      environmentId: environmentId || parsed.environmentId,
-      path: parsed.path,
-    };
-    return all.filter((session) => isSameWorkspaceIdentity(
-      { environmentId: session.environmentId || LOCAL_ENVIRONMENT_ID, path: session.workspacePath },
-      target
-    ));
-  }
-
-  public getTaskSessionById(taskId: string): TaskSessionRecord | null {
-    if (!taskId) return null;
-    const all = this.getAllTaskSessions();
-    return all.find((s) => s.id === taskId) ?? null;
-  }
-
-  public saveTaskSession(sessionInput: unknown): TaskSessionRecord {
-    const sanitized = sanitizeTaskSessionRecord(sessionInput);
-    if (!sanitized) {
-      throw new Error('Invalid task session payload');
-    }
-
-    const all = this.getAllTaskSessions();
-    const existingIndex = all.findIndex((s) => s.id === sanitized.id);
-    const updated = {
-      ...sanitized,
-      updatedAt: Date.now(),
-    };
-
-    let nextList: TaskSessionRecord[];
-    if (existingIndex >= 0) {
-      nextList = [...all];
-      nextList[existingIndex] = updated;
-    } else {
-      nextList = [...all, updated];
-    }
-
-    this.getStore().set('taskSessions', nextList);
-    return updated;
-  }
-
-  public deleteTaskSession(taskId: string): boolean {
-    if (!taskId) return false;
-    const all = this.getAllTaskSessions();
-    const filtered = all.filter((s) => s.id !== taskId);
-    if (filtered.length === all.length) return false;
-
-    this.getStore().set('taskSessions', filtered);
     return true;
   }
 

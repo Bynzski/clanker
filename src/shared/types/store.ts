@@ -1,5 +1,4 @@
 import type { WorkspaceRecipe } from './recipes';
-import type { TaskSessionRecord } from './taskSessions';
 import type { SshEnvironmentConfig } from './environments';
 import type { ThemeId } from './theme';
 /**
@@ -65,7 +64,6 @@ export interface StoreSchema {
   aiCommitModel: string;
   harnessDefaults: HarnessDefaultsMap;
   workspaceRecipes: WorkspaceRecipe[];
-  taskSessions: TaskSessionRecord[];
   sshEnvironments: SshEnvironmentConfig[];
   remoteWorktreeRemovals?: RemoteWorktreeRemovalRecord[];
 }

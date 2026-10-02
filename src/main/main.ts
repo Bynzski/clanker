@@ -62,8 +62,7 @@ import { registerSessionIpc } from './ipc/sessionIpc';
 import { registerUsageIpc } from './ipc/usageIpc';
 import { HarnessUsageService } from './usage/harnessUsageService';
 import { registerRecipeIpc } from './ipc/recipeIpc';
-import { registerTaskSessionIpc } from './ipc/taskSessionIpc';
-import { TaskSessionCoordinator } from './taskSessionCoordinator';
+import { purgeLegacyTaskSessions } from './storeMigrations';
 import { AgentAttentionBroker } from './agentAttentionBroker';
 import { AGENT_ATTENTION_UPDATE, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles } from './agentAttentionAdapters';
@@ -83,11 +82,14 @@ const store = new Store<StoreSchema>({
       KNOWN_HARNESS_IDS.map(id => [id, { model: '', favorites: [], flags: '', visible: true }])
     ),
     workspaceRecipes: [],
-    taskSessions: [],
     sshEnvironments: [],
     remoteWorktreeRemovals: [],
   },
 });
+
+// Workspace Tasks (#43) were removed. Drop any records persisted by older
+// builds instead of leaving an ever-growing dead store on disk.
+purgeLegacyTaskSessions(store);
 
 // Shared state for IPC modules (exported for test access)
 const terminals: Map<string, Terminal> = new Map();
@@ -95,7 +97,6 @@ const browserViews: BrowserViewsByWorkspace = new Map();
 const activeBrowserTabIdsByWorkspace: Map<string, string> = new Map();
 const lastBrowserBoundsByWorkspace: Map<string, Rectangle> = new Map();
 let activeBrowserWorkspaceId: string | null = null;
-let taskSessionCoordinator: TaskSessionCoordinator | null = null;
 let mainWindow: BrowserWindow | null = null;
 const agentAttentionBroker = new AgentAttentionBroker((update) => {
   if (isWindowAvailable(mainWindow)) {
@@ -282,14 +283,6 @@ app.whenReady().then(() => {
     getSafeWorkspacePath: (workingDir: string) => getSafeWorkspacePath(workingDir, store),
   });
 
-  const taskSessionPersistence = registerTaskSessionIpc({
-    getStore: () => store,
-    getTerminals: () => terminals,
-    getHarnessOptions: getAvailableHarnessOptions,
-    getWorkspaceRegistry: () => workspaceRegistry,
-  });
-  taskSessionCoordinator = new TaskSessionCoordinator(taskSessionPersistence);
-
   registerTerminalIpc({
     getTerminals: () => terminals,
     getMainWindow: () => mainWindow,
@@ -299,7 +292,6 @@ app.whenReady().then(() => {
     getWorkspaceRegistry: () => workspaceRegistry,
     getHarnessOptions: () => HARNESS_OPTIONS,
     agentAttentionBroker,
-    taskSessionCoordinator,
     createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
   });
 
@@ -380,7 +372,6 @@ app.whenReady().then(() => {
     getHarnessOptions: getAvailableHarnessOptions,
     getWorkspaceRegistry: () => workspaceRegistry,
     agentAttentionBroker,
-    taskSessionCoordinator,
     createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
   });
 
@@ -444,7 +435,6 @@ app.on('before-quit', (event) => {
   setAppShuttingDown(true);
   harnessUsageService.dispose();
   workspaceRegistry.clear();
-  taskSessionCoordinator?.onAppShutdown();
   killAllTerminals();
   agentAttentionBroker.close();
   removeAttentionAdapterFiles();

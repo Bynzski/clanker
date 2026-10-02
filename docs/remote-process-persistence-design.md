@@ -4,7 +4,7 @@ Status: **Proposed for architecture review; runtime implementation has not start
 
 Tracks [issue #47, item 6](https://github.com/Bynzski/clanker/issues/47). That issue asks for a separate transport evaluation before changing the SSH PTY path. This document defines the proposed contract and the first implementation slices.
 
-Current removal-operation records persist safety reservations across desktop restart and reconcile host completion journals. They track filesystem operations, not surviving remote terminal processes. Native conversation recovery also starts a new process; neither mechanism implements this proposal.
+Current removal-operation records persist safety reservations across desktop restart and reconcile host completion journals. They track filesystem operations, not surviving remote terminal processes. Native conversation resume also starts a new process; neither mechanism implements this proposal.
 
 ## Recommendation
 
@@ -29,12 +29,12 @@ The terminal properties above are documented in the [tmux getting-started guide]
 
 ## Ownership and identity
 
-Introduce a persisted `RemoteProcessRecord`, separate from the desktop `Terminal` and native `TaskSessionRecord`:
+Introduce a persisted `RemoteProcessRecord`, separate from the desktop `Terminal` and the harness-native conversation history:
 
 - Random process UUID, installation UUID, schema version, and immutable launch generation.
 - Saved environment ID and a fingerprint of its target configuration at launch.
 - Canonical workspace root and canonical launch cwd.
-- Harness ID, task ID, tmux session/pane IDs, and launch timestamp.
+- Harness ID, tmux session/pane IDs, and launch timestamp.
 - Last verified host status and observation time; no persisted attention credentials.
 
 A local attachment gets a new terminal ID on each connection and refers to the remote process UUID. Resolve renderer requests by `workspaceId` plus process UUID; obtain target, cwd, and tmux identifiers from main-owned records and verified host metadata. Never accept an arbitrary remote command, socket path, session name, or PID from the renderer.
@@ -53,17 +53,16 @@ A host fingerprint mismatch blocks automatic reuse. It does not prove an old hos
 
 1. Resolve the registered workspace and recheck root confinement, removal reservations, shutdown, and harness availability.
 2. Probe the supported tmux interface and private host storage. A failed probe leaves an actionable error and creates no process.
-3. Capture the existing native session baseline using the current remote correlation collaborator. Failure retains manual conversation association as the fallback.
-4. Reserve a process UUID and launch operation UUID locally, then write a host manifest atomically under an exclusive host lock.
-5. Create a detached tmux session using a safely constructed main-owned wrapper command. Persist its exact identifiers and start/exit evidence before acknowledging launch.
-6. Recheck the workspace and reservations, then attach an SSH client. If the workspace closed during creation, retain the verified detached process record and surface it in the environment's saved-process list.
+3. Reserve a process UUID and launch operation UUID locally, then write a host manifest atomically under an exclusive host lock.
+4. Create a detached tmux session using a safely constructed main-owned wrapper command. Persist its exact identifiers and start/exit evidence before acknowledging launch.
+5. Recheck the workspace and reservations, then attach an SSH client. If the workspace closed during creation, retain the verified detached process record and surface it in the environment's saved-process list.
 
 Creation is idempotent by process/operation UUID and manifest contents. If SSH fails after creation may have started, retain an **unknown** outcome and query the journal on retry. Never retry by launching a second session. Never use create-or-attach behavior to replace a process missing during reconnect.
 
 ### Reconnect
 
 1. Resolve the same environment and registered workspace. Validate the manifest, installation/generation, canonical cwd, target fingerprint, and process status on the host.
-2. If it exited, update task recovery from its real exit evidence and offer native conversation Resume separately.
+2. If it exited, report its real exit evidence and offer native conversation Resume from Chat History separately.
 3. If running, acquire an exclusive writer attachment lease under the host lock. Refuse another writer instead of detaching somebody else's client. A failed/expired claim must be reconciled against actual tmux client presence before reuse.
 4. Attach to the exact session/pane and bind the new local terminal to the owning workspace. Late attachment results use the same close/switch ownership checks as native resume.
 5. Release the attachment lease when its client ends. An SSH error changes connectivity to **unknown/disconnected** until host status is verified; it does not mark the harness exited.
@@ -79,9 +78,9 @@ Track connectivity independently of host execution:
 | Verified running | Connected | Terminal input and resize; Disconnect; Stop remote process |
 | Verified running | Disconnected | Running on host; Reconnect; Stop remote process |
 | Unknown | Disconnected | Status unknown; Verify/retry; no inferred completion or replacement launch |
-| Verified exited | Disconnected | Exit status/time; native Resume or manual session association |
+| Verified exited | Disconnected | Exit status/time; native Resume from Chat History |
 
-`TaskRecoveryState.running` currently means a PTY is alive in this desktop process. Add a distinct remote-running state and update every task consumer before exposing persistence. Never reinterpret a detached process as `unavailable` solely because its local attachment exited. Do not overwrite its original launch baseline or start time when reconnecting.
+This record is the only persisted launch state for persistent processes; the removed Workspace Tasks subsystem must not be reintroduced to describe them. Model connectivity independently of host execution and never reinterpret a detached process as stopped solely because its local attachment exited. Do not overwrite its original launch time or evidence when reconnecting.
 
 - Workspace tab switch keeps an attachment connected.
 - Disconnect and persistent terminal/workspace close terminate only the local SSH client.
@@ -112,7 +111,7 @@ Annotation handoff remains disabled for persistent processes until a live harnes
 
 1. **Read-only capability and status prototype:** probe tmux/features, validate private manifests, and inspect a unique fixture session. No product launch toggle yet.
 2. **Host lifecycle collaborator:** exclusive/idempotent create, inspect, and stop with journals. Test unknown outcomes and security checks using a temporary fixture.
-3. **Opt-in launch and manual reconnect:** attachment ownership, task states, environment/worktree protections, renderer controls, and shutdown behavior. Reject attention-enabled persistence until its transport is implemented.
+3. **Opt-in launch and manual reconnect:** attachment ownership, process status, environment/worktree protections, renderer controls, and shutdown behavior. Reject attention-enabled persistence until its transport is implemented.
 4. **Persistent attention:** implement and review credential/event handling across all harness adapters before enabling the combination.
 5. **Connection UX:** consider automatic retries only after manual reconnect is reliable. Host reboot restart remains a separate proposal.
 
@@ -124,7 +123,7 @@ Required acceptance checks:
 - Concurrent creation with the same UUID is idempotent. Two writers, overlapping reconnects, and a workspace close during attachment cannot leak local clients or hijack another workspace.
 - Reject foreign/symlinked/writable directories, modified manifests, malformed UUIDs, out-of-root cwd, and unowned tmux sessions.
 - Refuse worktree removal for detached/unknown processes, including duplicate target aliases and a second desktop instance.
-- Confirm an exited harness does not become a writable fallback shell; native conversation recovery remains distinct from process reconnect.
+- Confirm an exited harness does not become a writable fallback shell; native conversation resume remains distinct from process reconnect.
 - Verify terminal redraw, scrollback bounds, keyboard shortcuts, bracketed paste, resize, and Unicode across supported desktop platforms and the selected tmux versions.
 - Reject the attention/persistence combination explicitly until tested; preserve normal attention-enabled ordinary launches.
 - Run targeted tests and `npm run validate` for every implementation slice. Follow the existing VPS smoke protocol and preserve `clanker-test`.

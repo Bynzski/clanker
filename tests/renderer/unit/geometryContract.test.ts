@@ -71,12 +71,6 @@ const INTENTIONAL_EXCEPTIONS: Record<string, string[]> = {
     '.review-state',
   ],
   'components/RecipeModal.css': ['.recipe-badge'],
-  'components/TaskRecoverySection.css': [
-    '.task-recovery-badge',
-    '.task-recovery-count',
-    '.task-recovery-status',
-    '.task-recovery-state-badge',
-  ],
   'components/WorkspaceGate.css': [
     '.gate-directory-badge',
     '.gate-recipe-chip-count',
