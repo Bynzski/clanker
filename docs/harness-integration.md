@@ -467,7 +467,22 @@ verifies a real directory strictly inside the real owned root; symlinks anywhere
 and identity mismatches fail closed. Removal deletes only a verified owned directory and refuses any
 provider-native home (`~/.codex`, `~/.claude`) even if misconfigured. **Removing an account never
 means deleting the user's provider-native configuration**, and native auth is never copied into a
-managed home. If a managed directory cannot be proven safe it is retained (metadata is still dropped).
+managed home. A managed directory that cannot be proven safe is never deleted, and removal of that account is refused.
+
+Managed records are **local-only in v1**: on load, records scoped to any other environment are
+dropped, and `resolveBinding()` refuses a managed account for a non-local environment, so a tampered
+registry can never make a remote identity resolve a local home.
+
+### Settings and Usage surfaces
+
+The Settings account row is scoped to the focused workspace's real environment ID (local only when no
+workspace is focused); an SSH workspace therefore receives `managedSupported: false` and no add flow.
+A sign-in flow remembers the environment+harness that started it and is cancelled before any scope
+change or unmount; late events from an old scope are ignored. When a harness has several accounts the
+Usage panel adds *Add account* / *Manage accounts*, which only close Usage, open Settings, expand that
+harness and pass a one-shot renderer hint to the existing account row: Usage owns no account lifecycle.
+A selected managed account whose home is unusable stays visible in Usage as the active account
+("Not signed in") and is never replaced by default; launches refuse it the same way.
 
 ### Authentication flows
 
@@ -478,13 +493,18 @@ forwarded: failures map to fixed product messages. A new account is persisted on
 sign-in; failed or cancelled adds delete their directory. Sign-in URLs are opened by main (http/https
 only) and never round-trip through the renderer. Removal first cancels the account's flow, then asks
 the provider to sign out (secure-store cleanup), then removes metadata and the owned directory;
-existing terminals are not killed.
+existing terminals are not killed. **Removal fails closed**: credentials may sit in the provider's
+secure store, so deletion proceeds only when logout succeeded or the provider definitively reports
+`unauthenticated` (nothing left to sign out). A missing CLI, a version without logout support, a
+timeout, any other failure, or storage that cannot be verified keeps the metadata, ID, selection and
+home untouched, emits no removal event and returns a fixed safe message. Shared code never deletes
+keychain entries or credential files itself.
 
 **Codex** uses the structured app-server API (verified against codex-cli 0.160.0's generated schema):
 `initialize`, `initialized`, `account/login/start {type:"chatgpt"}` → `{loginId, authUrl}`, the
 `account/login/completed` notification **matching that `loginId`**, then `account/read` under the same
-`CODEX_HOME`; only a usable ChatGPT account counts. Cancel sends `account/login/cancel` for the active
-login before the process is reaped; delete uses `account/logout`. Credentials may live in a file, the OS
+`CODEX_HOME`; only a usable ChatGPT account counts. The client has a single read pump (the only `readLine()` consumer), so cancel responses cannot be stolen. Cancel sends `account/login/cancel` for the active
+login (bounded) before the process is reaped; delete uses `account/logout`. Credentials may live in a file, the OS
 keyring or another secure store: Codex derives that namespace from the canonical `CODEX_HOME`, so one
 isolated home per account isolates accounts in every mode. Clanker never reads, parses, swaps or forces
 the format of `auth.json`, and it does not use Codex's internal `account/sessions/*` types.
