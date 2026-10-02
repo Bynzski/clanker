@@ -3,27 +3,35 @@ import * as path from 'node:path';
 import type { AttentionAdapterFiles } from '../types';
 import { localAttention, hookNodeExecutable, interpreterPath } from '../localAttention';
 
-export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PermissionRequest', 'Stop', 'PostToolUse', 'Notification', 'SessionEnd'] as const;
+export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PermissionRequest', 'PostToolUse', 'PostToolUseFailure', 'PermissionDenied', 'Stop', 'SessionEnd'] as const;
 
-/** Provider-owned meaning of Claude hooks. Child (`agent_id`) events cannot affect the
- * root, `PermissionRequest` is the direct input wait, and `Stop` settles only when
- * provider-reported background work and session crons are idle. */
+/** Provider-owned meaning of Claude hooks (hook input fields per the Claude Code hooks reference):
+ * - root identity: `session_id`; child scope: presence of `agent_id` (subagent hooks carry it);
+ * - turn identity: `prompt_id` (UUID of the prompt being processed, Claude Code >= 2.1.196);
+ *   an event without one cannot be correlated and is not reported;
+ * - input wait: `PermissionRequest`, identified by `tool_use_id`; resolved only by the same
+ *   `tool_use_id` finishing (`PostToolUse`, `PostToolUseFailure`) or being denied (`PermissionDenied`);
+ * - settled: root `Stop` while `background_tasks` and `session_crons` are empty.
+ * `Notification` is deliberately unused: its payload has no turn or request identity, so it
+ * cannot prove a root input wait. */
 export const INTERPRETER = `const busy = (value) => Array.isArray(value) ? value.length > 0
   : typeof value === 'number' ? value > 0
   : value && typeof value === 'object' ? Object.keys(value).length > 0 : value === true;
+const text = (value) => typeof value === 'string' && value ? value : undefined;
 export default function interpret(input, hook) {
-  const sessionId = typeof input.session_id === 'string' ? input.session_id : undefined;
+  const sessionId = text(input.session_id);
+  const turnId = text(input.prompt_id);
   const scope = input.agent_id ? 'child' : 'root';
-  const toolName = typeof input.tool_name === 'string' ? input.tool_name : undefined;
+  const inputId = text(input.tool_use_id);
   const event = (type, fields) => ({ event: { type, scope, sessionId, nativeEvent: hook, ...fields } });
   switch (hook) {
-    case 'UserPromptSubmit': return event('turn_started');
-    case 'PermissionRequest': return event('input_requested', { inputId: toolName });
-    case 'Notification':
-      return input.notification_type === 'agent_needs_input' ? event('input_requested') : null;
-    case 'PostToolUse': return event('input_resolved', { inputId: toolName });
+    case 'UserPromptSubmit': return event('turn_started', { turnId });
+    case 'PermissionRequest': return inputId ? event('input_requested', { turnId, inputId }) : null;
+    case 'PostToolUse':
+    case 'PostToolUseFailure':
+    case 'PermissionDenied': return inputId ? event('input_resolved', { turnId, inputId }) : null;
     case 'Stop':
-      return busy(input.background_tasks) || busy(input.session_crons) ? null : event('turn_completed');
+      return busy(input.background_tasks) || busy(input.session_crons) ? null : event('turn_completed', { turnId });
     case 'SessionEnd': return event('session_ended');
     default: return null;
   }

@@ -2,11 +2,14 @@ import { randomBytes } from 'node:crypto';
 import * as net from 'node:net';
 import type { AgentAttentionEvent, AgentAttentionUpdate } from '../shared/types/agentAttention';
 
-const EVENTS = new Set<AgentAttentionEvent>([
-  'turn_started', 'input_requested', 'input_resolved', 'turn_completed', 'session_ended', 'agent_exited',
+/** Wire events. `session_continued` is an identity transition and never a renderer update. */
+type WireEvent = AgentAttentionEvent | 'session_continued';
+const EVENTS = new Set<WireEvent>([
+  'turn_started', 'input_requested', 'input_resolved', 'turn_completed', 'session_ended', 'session_continued', 'agent_exited',
 ]);
+const MAX_RETIRED_TURNS = 32;
 const MAX_MESSAGE_BYTES = 2048;
-const EVENT_FIELDS = new Set(['version', 'token', 'harness', 'event', 'sessionId', 'turnId', 'scope', 'inputId', 'nativeEvent']);
+const EVENT_FIELDS = new Set(['version', 'token', 'harness', 'event', 'sessionId', 'turnId', 'scope', 'inputId', 'nativeEvent', 'continuesSessionId']);
 const NATIVE_EVENT = /^[A-Za-z0-9_.:-]{1,64}$/;
 const DIAGNOSTIC_ID_LENGTH = 64;
 
@@ -23,8 +26,7 @@ export interface AttentionDiagnostic {
   nativeEvent?: string;
   sessionId?: string;
   turnId?: string;
-  generation: number;
-  semantic: AgentAttentionEvent;
+  semantic: WireEvent;
   decision: AttentionDecision;
 }
 
@@ -38,16 +40,17 @@ interface Registration {
   harness: string;
   transport: 'local' | 'remote';
   rootSessionId?: string;
+  /** Foreground turn identity: native, or a provider-owned epoch for harnesses without one. */
   activeTurnId?: string;
-  lastCompletedTurnId?: string;
-  /** Broker-owned foreground-turn epoch, for providers without native turn IDs. */
-  generation: number;
+  /** Completed or superseded turns; a late event from one can never touch a newer turn. */
+  retiredTurns: string[];
   pendingInput?: { turnId?: string; inputId?: string };
   lifecycle: Lifecycle;
 }
 
 interface ParsedEvent {
-  event: AgentAttentionEvent;
+  event: WireEvent;
+  continuesSessionId?: string;
   sessionId?: string;
   turnId?: string;
   scope?: Scope;
@@ -129,7 +132,7 @@ export class AgentAttentionBroker {
     this.release(terminalId);
     const token = randomBytes(32).toString('hex');
     this.registrations.set(token, {
-      terminalId, harness, transport, generation: 0, lifecycle: 'unbound',
+      terminalId, harness, transport, retiredTurns: [], lifecycle: 'unbound',
       ...(options.rootSessionId ? { rootSessionId: options.rootSessionId } : {}),
     });
     this.tokensByTerminal.set(terminalId, token);
@@ -180,8 +183,8 @@ export class AgentAttentionBroker {
   markSubmitted(terminalId: string): void {
     const registration = this.current(terminalId);
     if (registration?.lifecycle !== 'ready') return;
+    // The native start event must establish the turn identity before anything can settle it.
     registration.lifecycle = 'running';
-    registration.generation++;
     registration.activeTurnId = undefined;
     this.onUpdate({ terminalId, event: 'turn_started' });
   }
@@ -202,18 +205,19 @@ export class AgentAttentionBroker {
     if (!registration || data.harness !== registration.harness) return null;
     if (remoteTerminalId === undefined ? registration.transport !== 'local'
       : registration.transport !== 'remote' || registration.terminalId !== remoteTerminalId) return null;
-    if (typeof data.event !== 'string' || !EVENTS.has(data.event as AgentAttentionEvent)) return null;
-    for (const key of ['sessionId', 'turnId', 'inputId'] as const) {
+    if (typeof data.event !== 'string' || !EVENTS.has(data.event as WireEvent)) return null;
+    for (const key of ['sessionId', 'turnId', 'inputId', 'continuesSessionId'] as const) {
       if (data[key] !== undefined && (typeof data[key] !== 'string' || data[key].length === 0 || data[key].length > 128)) return null;
     }
     if (data.scope !== undefined && data.scope !== 'root' && data.scope !== 'child') return null;
     if (data.nativeEvent !== undefined && (typeof data.nativeEvent !== 'string' || !NATIVE_EVENT.test(data.nativeEvent))) return null;
     return { registration, parsed: {
-      event: data.event as AgentAttentionEvent,
+      event: data.event as WireEvent,
       ...(typeof data.sessionId === 'string' ? { sessionId: data.sessionId } : {}),
       ...(typeof data.turnId === 'string' ? { turnId: data.turnId } : {}),
       ...(data.scope ? { scope: data.scope } : {}),
       ...(typeof data.inputId === 'string' ? { inputId: data.inputId } : {}),
+      ...(typeof data.continuesSessionId === 'string' ? { continuesSessionId: data.continuesSessionId } : {}),
       ...(typeof data.nativeEvent === 'string' ? { nativeEvent: data.nativeEvent } : {}),
     } };
   }
@@ -228,7 +232,7 @@ export class AgentAttentionBroker {
       ...(parsed.nativeEvent ? { nativeEvent: parsed.nativeEvent } : {}),
       ...(parsed.sessionId ? { sessionId: parsed.sessionId.slice(0, DIAGNOSTIC_ID_LENGTH) } : {}),
       ...(parsed.turnId ? { turnId: parsed.turnId.slice(0, DIAGNOSTIC_ID_LENGTH) } : {}),
-      generation: registration.generation, semantic: parsed.event, decision,
+      semantic: parsed.event, decision,
     });
   }
 
@@ -247,30 +251,43 @@ export class AgentAttentionBroker {
     if (event.scope === 'child') return 'ignored-child';
     if (event.scope !== 'root') return 'rejected-ambiguous';
     if (!event.sessionId) return 'rejected-ambiguous';
+    if (event.event === 'session_continued') {
+      // The provider proved the same foreground conversation moved to a new session ID
+      // (for example context compression). It must name exactly the bound root it continues.
+      if (!registration.rootSessionId || !event.continuesSessionId) return 'rejected-ambiguous';
+      if (event.continuesSessionId !== registration.rootSessionId) return 'rejected-mismatch';
+      registration.rootSessionId = event.sessionId;
+      return 'accepted';
+    }
+
     if (registration.rootSessionId && registration.rootSessionId !== event.sessionId) return 'rejected-mismatch';
 
     if (event.event === 'session_ended') {
       // A native boundary clears the binding; the registration and credentials stay alive.
       registration.rootSessionId = undefined;
       registration.activeTurnId = undefined;
-      registration.lastCompletedTurnId = undefined;
+      registration.retiredTurns = [];
       registration.pendingInput = undefined;
       registration.lifecycle = 'unbound';
-      registration.generation++;
       this.emit(registration, 'session_ended');
       return 'accepted';
     }
-
+    // Turn identity (native, or a provider-owned epoch) is mandatory: an event that cannot
+    // be tied to one foreground turn must not change foreground state.
     const turnId = event.turnId;
+    if (!turnId) return 'rejected-ambiguous';
+    if (registration.retiredTurns.includes(turnId)) return 'ignored-stale';
     const active = registration.lifecycle === 'running' || registration.lifecycle === 'needs_input';
+
     if (event.event === 'turn_started') {
-      if (turnId && turnId === registration.lastCompletedTurnId) return 'ignored-stale';
       registration.rootSessionId ??= event.sessionId;
-      if (active && (!turnId || !registration.activeTurnId || turnId === registration.activeTurnId)) {
-        registration.activeTurnId ??= turnId;
+      if (active && registration.activeTurnId === turnId) return 'accepted';
+      if (active && !registration.activeTurnId) {
+        // Clanker submitted this prompt; the native start now names its turn.
+        registration.activeTurnId = turnId;
         return 'accepted';
       }
-      registration.generation++;
+      if (registration.activeTurnId) this.retire(registration, registration.activeTurnId);
       registration.activeTurnId = turnId;
       registration.pendingInput = undefined;
       registration.lifecycle = 'running';
@@ -278,18 +295,16 @@ export class AgentAttentionBroker {
       return 'accepted';
     }
 
-    // Everything else requires a bound root and a live foreground turn: a completion
-    // or input event can never establish authority.
+    // Everything else needs a bound root and the live, identified foreground turn: a
+    // completion or input event can never establish authority or settle another turn.
     if (!registration.rootSessionId) return 'rejected-ambiguous';
-    if (!active) return 'ignored-stale';
-    if (turnId && (turnId === registration.lastCompletedTurnId
-      || (registration.activeTurnId && turnId !== registration.activeTurnId))) return 'ignored-stale';
+    if (!active || registration.activeTurnId !== turnId) return 'ignored-stale';
 
     switch (event.event) {
       case 'input_requested':
         // The first outstanding wait stays authoritative; a duplicate request cannot replace it.
         if (registration.lifecycle !== 'needs_input') {
-          registration.pendingInput = { turnId: registration.activeTurnId ?? turnId, inputId: event.inputId };
+          registration.pendingInput = { turnId, inputId: event.inputId };
           registration.lifecycle = 'needs_input';
           this.emit(registration, 'input_requested');
         }
@@ -303,7 +318,7 @@ export class AgentAttentionBroker {
         return 'accepted';
       }
       case 'turn_completed':
-        registration.lastCompletedTurnId = registration.activeTurnId ?? turnId;
+        this.retire(registration, turnId);
         registration.activeTurnId = undefined;
         registration.pendingInput = undefined;
         registration.lifecycle = 'ready';
@@ -312,5 +327,9 @@ export class AgentAttentionBroker {
       default:
         return 'rejected-ambiguous';
     }
+  }
+
+  private retire(registration: Registration, turnId: string): void {
+    registration.retiredTurns = [...registration.retiredTurns, turnId].slice(-MAX_RETIRED_TURNS);
   }
 }

@@ -1,7 +1,9 @@
-import { CODEX_HOOK_EVENTS } from './attention';
+import { CODEX_HOOK_EVENTS, CODEX_OWNED_CONFIG_KEY } from './attention';
 import type { HarnessRemoteAttention } from '../types';
 
 const EVENTS = JSON.stringify([...CODEX_HOOK_EVENTS]);
+// Same key-path rule as the local parser (codexArgsConflict); JSON string syntax is valid Python.
+const OWNED_KEY = JSON.stringify(CODEX_OWNED_CONFIG_KEY.source);
 
 export const remote: HarnessRemoteAttention = {
   requiresNode: true,
@@ -11,9 +13,9 @@ for index, arg in enumerate(args):
         overrides.append(args[index + 1])
     elif arg.startswith('--config='):
         overrides.append(arg[len('--config='):])
-    elif arg.startswith('-c') and arg != '-c':
+    elif arg.startswith('-c') and not arg.startswith('--') and arg != '-c':
         overrides.append(arg[2:])
-if any(a in ('-p', '--profile') or a.startswith('--profile=') or (a.startswith('-p') and a != '-p') for a in args) or any(re.search(r'(?:^|\\.)\\s*(?:hooks|profile)[.=]', value) for value in overrides):
+if any(a in ('-p', '--profile') or a.startswith('--profile=') or (a.startswith('-p') and not a.startswith('--')) for a in args) or any(re.search(${OWNED_KEY}, value) for value in overrides):
     sys.exit('Remote attention cannot replace a Codex profile or hook configuration')
 codex_events = '|'.join(${EVENTS})
 codex_home = os.environ.get('CODEX_HOME') or os.path.join(home, '.codex')

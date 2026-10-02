@@ -27,10 +27,28 @@ export const INTERPRETER = `export default function interpret(input, hook) {
 }
 `;
 
-/** Conflicts with the user's own hook configuration degrade to unavailable, never to a merge. */
+/** A `-c`/`--config` key path that touches hooks or the active profile: the user owns it. */
+export const CODEX_OWNED_CONFIG_KEY = /(?:^|\.)\s*(?:hooks\s*\.|(?:hooks|profile)\s*=)/;
+
+/** Command-line forms Codex accepts (`-c k=v`, `-ck=v`, `--config k=v`, `--config=k=v`, `-p x`,
+ * `-px`, `--profile x`, `--profile=x`). Remote preparation mirrors this parser in Python. */
+export function codexArgsConflict(args: string[]): boolean {
+  const overrides: string[] = [];
+  args.forEach((arg, index) => {
+    if ((arg === '-c' || arg === '--config') && index + 1 < args.length) overrides.push(args[index + 1]);
+    else if (arg.startsWith('--config=')) overrides.push(arg.slice('--config='.length));
+    else if (arg.startsWith('-c') && !arg.startsWith('--') && arg !== '-c') overrides.push(arg.slice(2));
+  });
+  const profile = args.some((arg) => arg === '-p' || arg === '--profile' || arg.startsWith('--profile=')
+    || (arg.startsWith('-p') && !arg.startsWith('--')));
+  return profile || overrides.some((value) => CODEX_OWNED_CONFIG_KEY.test(value));
+}
+
+/** Conflicts with the user's own hook or profile configuration degrade to unavailable, never to a merge. */
 export function codexHooksConflict(configToml: string, hooksJson: string): boolean {
   const events = CODEX_HOOK_EVENTS.join('|');
   return /^\s*\[hooks\]/m.test(configToml)
+    || /^\s*profile\s*=/m.test(configToml)
     || new RegExp(`^\\s*\\[\\[?hooks\\.(?:${events})\\b`, 'm').test(configToml)
     || new RegExp(`"(?:${events})"`).test(hooksJson);
 }
@@ -46,7 +64,7 @@ export const local = localAttention(({ args, env, files: adapterFiles, platform 
     const home = env.CODEX_HOME || path.join(os.homedir(), '.codex');
     const read = (name: string) => { try { return fs.readFileSync(path.join(home, name), 'utf8'); } catch { return ''; } };
     if (codexHooksConflict(read('config.toml'), read('hooks.json'))
-      || args.some((arg) => /(?:^|\.)hooks[.=]/.test(arg) || arg === '-p' || arg === '--profile')) return null;
+      || codexArgsConflict(args)) return null;
     const configArgs = codexHookOverrides(adapterFiles.command, interpreterPath(adapterFiles), platform);
     const subcommandIndex = args.findIndex((arg) => arg === 'resume' || arg === 'fork');
     return { args: subcommandIndex < 0

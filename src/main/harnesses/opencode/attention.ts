@@ -27,6 +27,10 @@ export const ClankerAttention = async ({ client }) => {
     }
     return parentage.get(id);
   };
+  // OpenCode exposes no turn ID. Each verified root session owns one epoch per foreground turn:
+  // busy opens it, and only the matching idle completes it (which also absorbs the legacy
+  // session.idle duplicate). Input events must belong to the open epoch.
+  const turns = new Map();
   const classify = (type, props) => {
     const status = props.status?.type;
     if (type === 'session.status' && status === 'busy') return ['turn_started', props.sessionID];
@@ -43,7 +47,16 @@ export const ClankerAttention = async ({ client }) => {
     if (!kind || typeof sessionId !== 'string') return;
     const root = await isRoot(sessionId);
     if (root === undefined) return;
-    await emit(kind, { scope: root ? 'root' : 'child', sessionId, inputId: typeof inputId === 'string' ? inputId : undefined, nativeEvent: event.type });
+    const fields = { scope: root ? 'root' : 'child', sessionId, nativeEvent: event.type };
+    if (!root) return emit(kind, fields);
+    const turn = turns.get(sessionId) ?? { epoch: 0, open: false };
+    turns.set(sessionId, turn);
+    if (kind === 'session_ended') { turns.delete(sessionId); return emit(kind, fields); }
+    if (kind === 'turn_started') {
+      if (!turn.open) { turn.epoch += 1; turn.open = true; }
+    } else if (!turn.open) return;
+    if (kind === 'turn_completed') turn.open = false;
+    await emit(kind, { ...fields, turnId: String(turn.epoch), inputId: typeof inputId === 'string' ? inputId : undefined });
   };
   let queue = Promise.resolve();
   return { event: ({ event }) => (queue = queue.then(() => handle(event)).catch(() => undefined)) };

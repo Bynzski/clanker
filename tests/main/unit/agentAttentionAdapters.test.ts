@@ -33,7 +33,7 @@ describe('agent attention launch adapters', () => {
       .toEqual(['--model', 'x', '--settings', path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'claude-settings.json')]);
     expect(attentionLaunchOptions('claude', ['--settings', 'custom.json'], {}, files)).toBeNull();
     const settings = JSON.parse(fs.readFileSync(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'claude-settings.json'), 'utf8')) as { hooks: Record<string, unknown> };
-    expect(Object.keys(settings.hooks)).toEqual(['UserPromptSubmit', 'PermissionRequest', 'Stop', 'PostToolUse', 'Notification', 'SessionEnd']);
+    expect(Object.keys(settings.hooks)).toEqual(['UserPromptSubmit', 'PermissionRequest', 'PostToolUse', 'PostToolUseFailure', 'PermissionDenied', 'Stop', 'SessionEnd']);
     expect(JSON.stringify(settings)).toContain(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'interpreter.mjs'));
   });
 
@@ -117,6 +117,8 @@ describe('agent attention launch adapters', () => {
     try {
       fs.writeFileSync(path.join(home, 'config.toml'), '[[hooks.SubagentStop]]\n');
       expect(attentionLaunchOptions('codex', [], { CODEX_HOME: home }, files)).toBeNull();
+      fs.writeFileSync(path.join(home, 'config.toml'), 'profile = "work"\n');
+      expect(attentionLaunchOptions('codex', [], { CODEX_HOME: home }, files)).toBeNull();
       fs.writeFileSync(path.join(home, 'config.toml'), 'notify = ["legacy"]\n[hooks.state]\n');
       expect(attentionLaunchOptions('codex', [], { CODEX_HOME: home }, files)).not.toBeNull();
       fs.writeFileSync(path.join(home, 'config.toml'), '');
@@ -147,7 +149,7 @@ describe('agent attention launch adapters', () => {
     const broker = new AgentAttentionBroker((update) => received.push(update), () => undefined);
     try {
       const env = await broker.register('term-hook', 'claude');
-      const result = await runHook(env, 'claude', 'UserPromptSubmit', { session_id: 's1', prompt: 'private text' });
+      const result = await runHook(env, 'claude', 'UserPromptSubmit', { session_id: 's1', prompt_id: 'p1', prompt: 'private text' });
       expect(result.code).toBe(0);
       expect(received).toEqual([{ terminalId: 'term-hook', event: 'turn_started' }]);
     } finally {

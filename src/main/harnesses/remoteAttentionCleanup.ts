@@ -53,7 +53,7 @@ def cleanup_resources(manifest):
             pass
 `;
 // String.raw keeps Python escapes; the manifest name is shared infrastructure.
-export const REMOTE_END_AND_CLEANUP = `import base64, json, os, stat, sys
+export const REMOTE_END_AND_CLEANUP = `import base64, json, os, re, stat, sys
 root, token, harness = sys.argv[1:]
 try:
     fd = os.open('/dev/tty', os.O_WRONLY | os.O_NOCTTY | os.O_NONBLOCK)
@@ -78,6 +78,10 @@ try:
     if len(data) > 65536:
         raise ValueError('Invalid attention resource manifest')
     cleanup_resources(json.loads(data))
+    # Per-terminal epoch state written by the hook bridge is private launch state, not user data.
+    for name in os.listdir(root):
+        if re.fullmatch(r'\\.clanker-state-[0-9a-f]{16}\\.json', name):
+            os.unlink(checked_resource(name))
     if os.listdir(root) == ['${REMOTE_RESOURCE_MANIFEST}']:
         os.unlink(manifest_path)
         os.rmdir(root)

@@ -8,12 +8,30 @@ import { localAttention } from '../localAttention';
  * not a terminal completion. Hooks are rebound to subagent sessions, so the subject
  * comes from `ctx.agent.kind`; an unknown kind is never reported as root. */
 export const SOURCE = `import { emit } from './observer.mjs';
+// OMP exposes no turn ID. The extension owns one epoch per main-session foreground turn:
+// agent_start opens it and only the main session_stop closes it.
+let epoch = 0;
+let open = false;
+const sessionId = (ctx) => ctx.sessionManager?.getSessionId?.();
 const kind = (ctx) => ctx.agent?.kind === 'main' ? 'root' : ctx.agent?.kind === 'sub' ? 'child' : undefined;
-const report = (type, nativeEvent, scope) => (_event, ctx) => emit(type, { scope: scope(ctx), sessionId: ctx.sessionManager?.getSessionId?.(), nativeEvent });
 export default function (omp) {
-  omp.on('agent_start', report('turn_started', 'agent_start', kind));
-  omp.on('session_stop', report('turn_completed', 'session_stop', (ctx) => ctx.agent?.kind === 'sub' ? 'child' : 'root'));
-  omp.on('session_shutdown', report('session_ended', 'session_shutdown', kind));
+  omp.on('agent_start', (_event, ctx) => {
+    const scope = kind(ctx);
+    if (scope !== 'root') return emit('turn_started', { scope, sessionId: sessionId(ctx), nativeEvent: 'agent_start' });
+    if (!open) { epoch += 1; open = true; }
+    return emit('turn_started', { scope, sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'agent_start' });
+  });
+  omp.on('session_stop', (_event, ctx) => {
+    if (ctx.agent?.kind === 'sub') return emit('turn_completed', { scope: 'child', sessionId: sessionId(ctx), nativeEvent: 'session_stop' });
+    if (!open) return;
+    open = false;
+    return emit('turn_completed', { scope: 'root', sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'session_stop' });
+  });
+  omp.on('session_shutdown', (_event, ctx) => {
+    const scope = kind(ctx);
+    if (scope === 'root') open = false;
+    return emit('session_ended', { scope, sessionId: sessionId(ctx), nativeEvent: 'session_shutdown' });
+  });
 }
 `;
 
