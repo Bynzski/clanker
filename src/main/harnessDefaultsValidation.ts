@@ -19,6 +19,7 @@ const DEFAULT_ENTRY: HarnessDefaults = {
   flags: '',
   visible: true,
   attentionEnabled: false,
+  usageVisible: true,
 };
 
 /**
@@ -63,6 +64,8 @@ export function validateHarnessDefaultsMap(
       flags: typeof e.flags === 'string' ? e.flags : '',
       visible: typeof e.visible === 'boolean' ? e.visible : true,
       attentionEnabled: e.attentionEnabled === true,
+      // Legacy or malformed values keep the previous behavior: shown.
+      usageVisible: typeof e.usageVisible === 'boolean' ? e.usageVisible : true,
     };
   }
 

@@ -2,10 +2,11 @@ import { RefreshCw } from 'lucide-react';
 import type { HarnessUsageEntry, HarnessUsageStatus } from '../../shared/types/harnessUsage';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import { describeMeasurement, formatChecked, formatReset, groupMeasurements, groupMeta, providerDisplayName } from '../lib/usageFormat';
-import { USAGE_HARNESS_IDS } from './useHarnessUsage';
 import './UsageDropdown.css';
 
 interface Props {
+  /** Usage-capable, enabled harnesses to render, in canonical order. */
+  harnessIds: readonly string[];
   entries: Record<string, HarnessUsageEntry | undefined>;
   pending: Record<string, boolean>;
   refreshing: boolean;
@@ -32,7 +33,7 @@ function refreshTitle(refreshing: boolean, canRefresh: boolean, nextAt: number |
   return 'Refresh usage';
 }
 
-export default function UsageDropdown({ entries, pending, refreshing, now, canRefresh, nextManualRefreshAt, onRefresh }: Props) {
+export default function UsageDropdown({ harnessIds, entries, pending, refreshing, now, canRefresh, nextManualRefreshAt, onRefresh }: Props) {
   const title = refreshTitle(refreshing, canRefresh, nextManualRefreshAt, now);
   return (
     <div className="usage-dropdown">
@@ -42,7 +43,13 @@ export default function UsageDropdown({ entries, pending, refreshing, now, canRe
           <RefreshCw size={12} strokeWidth={2} className={refreshing ? 'usage-spin' : undefined} />
         </button>
       </div>
-      {USAGE_HARNESS_IDS.map((id) => {
+      {harnessIds.length === 0 && (
+        <div className="usage-harness">
+          <p className="usage-note">No usage providers selected</p>
+          <p className="usage-checked">Enable providers in Settings → Harness Defaults.</p>
+        </div>
+      )}
+      {harnessIds.map((id) => {
         const option = HARNESS_OPTIONS.find((candidate) => candidate.id === id)!;
         return <HarnessSection key={id} label={option.label} Icon={option.Icon} entry={entries[id]} checking={pending[id] === true} now={now} />;
       })}

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import UsageDropdown from '../../../src/renderer/components/UsageDropdown';
+import { HARNESS_DESCRIPTORS, USAGE_HARNESS_IDS } from '../../../src/shared/harnessDescriptors';
+import { KNOWN_HARNESS_IDS } from '../../../src/shared/harnessIds';
 import type { HarnessUsageEntry, HarnessUsageMeasurementView } from '../../../src/shared/types/harnessUsage';
 
 const NOW = Date.UTC(2026, 9, 2, 12, 0, 0);
@@ -10,16 +12,33 @@ const pct = (label: string, used: number, extra: Partial<HarnessUsageMeasurement
 const entry = (harnessId: string, overrides: Partial<HarnessUsageEntry> = {}): HarnessUsageEntry =>
   ({ harnessId, status: 'ok', measurements: [], checkedAt: NOW - 30_000, ...overrides });
 
+// The component renders exactly the harness ids it is given; most tests supply every canonical harness.
 const renderPanel = (entries: Record<string, HarnessUsageEntry | undefined> = {}, props: Partial<Parameters<typeof UsageDropdown>[0]> = {}) =>
-  render(<UsageDropdown entries={entries} pending={{}} refreshing={false} now={NOW} canRefresh onRefresh={() => {}} {...props} />);
+  render(<UsageDropdown harnessIds={KNOWN_HARNESS_IDS} entries={entries} pending={{}} refreshing={false} now={NOW} canRefresh onRefresh={() => {}} {...props} />);
 const section = (name: string) => screen.getByRole('region', { name });
 
 describe('UsageDropdown', () => {
-  it('lists every canonical harness from HARNESS_OPTIONS, in order, with icons and names', () => {
-    const { container } = renderPanel();
+  it('renders exactly the usage-capable harnesses it is given, in canonical order, with icons and names', () => {
+    const { container } = renderPanel({}, { harnessIds: ['codex', 'claude', 'omp', 'hermes', 'agy'] });
     const names = [...container.querySelectorAll('.usage-harness-name')].map((node) => node.textContent);
-    expect(names).toEqual(['Codex', 'Claude', 'OpenCode', 'Pi', 'Oh My Pi', 'Hermes', 'Antigravity']);
-    expect(container.querySelectorAll('.usage-harness-icon img').length).toBe(7);
+    expect(names).toEqual(['Codex', 'Claude', 'Oh My Pi', 'Hermes', 'Antigravity']);
+    expect(names).not.toContain('OpenCode');
+    expect(names).not.toContain('Pi');
+    expect(container.querySelectorAll('.usage-harness-icon img').length).toBe(5);
+  });
+
+  it('shows an empty state and nothing else when no usage providers are selected', () => {
+    const { container } = renderPanel({}, { harnessIds: [] });
+    expect(screen.getByText('No usage providers selected')).toBeInTheDocument();
+    expect(screen.getByText('Enable providers in Settings → Harness Defaults.')).toBeInTheDocument();
+    expect(container.querySelectorAll('.usage-harness-name')).toHaveLength(0);
+    expect(screen.queryByText('Checking usage…')).not.toBeInTheDocument();
+  });
+
+  it('descriptor metadata derives exactly Codex, Claude, OMP, Hermes and Antigravity', () => {
+    expect([...USAGE_HARNESS_IDS].sort()).toEqual(['agy', 'claude', 'codex', 'hermes', 'omp']);
+    expect(HARNESS_DESCRIPTORS.opencode).not.toHaveProperty('usage');
+    expect(HARNESS_DESCRIPTORS.pi).not.toHaveProperty('usage');
   });
 
   it('shows a per-harness checking state without hiding other rows', () => {
@@ -124,13 +143,13 @@ describe('UsageDropdown', () => {
 
   it('refresh control: accessible name, busy state, disabled with a countdown title', async () => {
     const onRefresh = vi.fn();
-    const { rerender } = render(<UsageDropdown entries={{}} pending={{}} refreshing={false} now={NOW} canRefresh onRefresh={onRefresh} />);
+    const { rerender } = render(<UsageDropdown harnessIds={USAGE_HARNESS_IDS} entries={{}} pending={{}} refreshing={false} now={NOW} canRefresh onRefresh={onRefresh} />);
     await userEvent.click(screen.getByRole('button', { name: 'Refresh usage' }));
     expect(onRefresh).toHaveBeenCalledTimes(1);
-    rerender(<UsageDropdown entries={{}} pending={{}} refreshing now={NOW} canRefresh={false} onRefresh={onRefresh} />);
+    rerender(<UsageDropdown harnessIds={USAGE_HARNESS_IDS} entries={{}} pending={{}} refreshing now={NOW} canRefresh={false} onRefresh={onRefresh} />);
     expect(screen.getByRole('button', { name: 'Refresh usage' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Refresh usage' })).toHaveAttribute('title', 'Refreshing usage…');
-    rerender(<UsageDropdown entries={{}} pending={{}} refreshing={false} now={NOW} canRefresh={false} nextManualRefreshAt={NOW + 32_000} onRefresh={onRefresh} />);
+    rerender(<UsageDropdown harnessIds={USAGE_HARNESS_IDS} entries={{}} pending={{}} refreshing={false} now={NOW} canRefresh={false} nextManualRefreshAt={NOW + 32_000} onRefresh={onRefresh} />);
     expect(screen.getByRole('button', { name: 'Refresh usage' })).toHaveAttribute('title', 'Refresh available in 32s');
   });
 });

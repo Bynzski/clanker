@@ -208,8 +208,11 @@ export interface HarnessUsageSnapshot {
 export type AttentionPlan = { status: 'ready'; options: AttentionLaunchOptions }
   | { status: 'blocked'; failure: HarnessCapabilityError };
 
-/** Metadata cannot advertise AI commit without an implementation, or vice versa. */
+/** Metadata cannot advertise AI commit or usage without an implementation, or vice versa. */
 export function defineHarness<Provider extends HarnessProvider>(provider: Provider & (
   Provider['descriptor'] extends { aiCommit: unknown }
     ? { aiCommit: HarnessAiCommitCapability } : { aiCommit?: never }
+) & (
+  Provider['descriptor'] extends { usage: unknown }
+    ? { usage: HarnessUsageCapability } : { usage?: never }
 )): Provider { return provider; }

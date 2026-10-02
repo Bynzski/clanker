@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import Header from '../../../src/renderer/components/Header';
-import { USAGE_HARNESS_IDS, USAGE_POLL_INTERVAL_MS } from '../../../src/renderer/components/useHarnessUsage';
+import { USAGE_POLL_INTERVAL_MS } from '../../../src/renderer/components/useHarnessUsage';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
@@ -10,6 +11,8 @@ import type { HarnessUsageEntry, HarnessUsageRequest, HarnessUsageResponse } fro
 vi.mock('../../../src/renderer/components/GitButton', () => ({ default: () => null }));
 
 type Deferred = { resolve: (response: HarnessUsageResponse) => void; reject: (error: unknown) => void; harnessId: string; force: boolean; workspaceId: string };
+/** Usage-capable harnesses in launcher order, as the panel requests and renders them. */
+const PANEL_IDS = ['codex', 'claude', 'omp', 'hermes', 'agy'];
 const pct = (label: string, used: number) => ({ kind: 'rate-limit' as const, unit: 'percent', used, remaining: 100 - used, limit: 100, label });
 const okEntry = (harnessId: string, label: string, used: number, extra: Partial<HarnessUsageEntry> = {}): HarnessUsageEntry =>
   ({ harnessId, status: 'ok', measurements: [pct(label, used)], checkedAt: Date.now(), ...extra });
@@ -42,10 +45,10 @@ const panel = () => screen.getByRole('dialog', { name: 'Usage' });
 describe('Usage panel loading', () => {
   it('requests every harness independently and concurrently on open, with ordinary reads', async () => {
     await openUsage();
-    expect(calls().map(([, request]) => request)).toEqual(USAGE_HARNESS_IDS.map((id) => ({ harnessIds: [id] })));
+    expect(calls().map(([, request]) => request)).toEqual(PANEL_IDS.map((id) => ({ harnessIds: [id] })));
     expect(calls().every(([id]) => id === 'ws-1')).toBe(true);
     expect(calls().some(([, request]) => request?.force)).toBe(false);
-    expect(within(panel()).getAllByText('Checking usage…')).toHaveLength(7);
+    expect(within(panel()).getAllByText('Checking usage…')).toHaveLength(5);
   });
 
   it('renders a fast provider immediately while a slow one still says Checking usage…', async () => {
@@ -59,9 +62,9 @@ describe('Usage panel loading', () => {
   it('shows safe text, never raw IPC errors, when a request is rejected; keeps a prior good reading as stale', async () => {
     vi.useFakeTimers();
     await openUsage();
-    await act(async () => pending.find((d) => d.harnessId === 'pi')!.reject(new Error('ECONNRESET /home/me/.secret token=sk-abc')));
-    const pi = within(panel()).getByRole('region', { name: 'Pi' });
-    expect(within(pi).getByText('Usage could not be read')).toBeInTheDocument();
+    await act(async () => pending.find((d) => d.harnessId === 'agy')!.reject(new Error('ECONNRESET /home/me/.secret token=sk-abc')));
+    const agy = within(panel()).getByRole('region', { name: 'Antigravity' });
+    expect(within(agy).getByText('Usage could not be read')).toBeInTheDocument();
     expect(panel().textContent).not.toMatch(/ECONNRESET|sk-abc|secret/);
 
     await respond(pending.find((d) => d.harnessId === 'codex')!, okEntry('codex', 'Codex · weekly', 40));
@@ -82,12 +85,12 @@ describe('Usage polling', () => {
     render(<Header />);
     expect(calls()).toHaveLength(0);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
-    expect(calls()).toHaveLength(7);
+    expect(calls()).toHaveLength(5);
     // Everything but codex resolves; codex stays in flight.
     for (const d of pending.filter((candidate) => candidate.harnessId !== 'codex')) await respond(d, okEntry(d.harnessId, `${d.harnessId} · x`, 1));
     await act(async () => { vi.advanceTimersByTime(USAGE_POLL_INTERVAL_MS + 100); });
-    const second = calls().slice(7);
-    expect(second.map(([, r]) => r?.harnessIds?.[0]).sort()).toEqual(USAGE_HARNESS_IDS.filter((id) => id !== 'codex').sort());
+    const second = calls().slice(5);
+    expect(second.map(([, r]) => r?.harnessIds?.[0]).sort()).toEqual(PANEL_IDS.filter((id) => id !== 'codex').sort());
     expect(second.every(([, r]) => !r?.force)).toBe(true);
     // Close: no further polling.
     await act(async () => { fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' }); });
@@ -132,7 +135,7 @@ describe('Usage manual refresh', () => {
     expect(button).toBeEnabled();
     await act(async () => { fireEvent.click(button); });
     const forced = pending.splice(0);
-    expect(forced.map((d) => [d.harnessId, d.force])).toEqual(USAGE_HARNESS_IDS.map((id) => [id, true]));
+    expect(forced.map((d) => [d.harnessId, d.force])).toEqual(PANEL_IDS.map((id) => [id, true]));
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('title', 'Refreshing usage…');
     // Progressive: one resolves, the others stay busy.
@@ -159,5 +162,72 @@ describe('Usage manual refresh', () => {
     await openUsage();
     for (const d of pending.splice(0)) await respond(d, { harnessId: d.harnessId, status: 'unsupported', measurements: [], error: 'No supported usage probe' });
     expect(within(panel()).getByRole('button', { name: 'Refresh usage' })).toBeEnabled();
+  });
+});
+
+describe('Usage provider selection (Show in Usage)', () => {
+  const defaults = (overrides: Record<string, Record<string, unknown>>) => Object.fromEntries(
+    ['codex', 'opencode', 'pi', 'omp', 'hermes', 'claude', 'agy'].map((id) => [id, { model: '', favorites: [], flags: '', visible: true, ...overrides[id] }]));
+  const useDefaults = (overrides: Record<string, Record<string, unknown>>) => vi.mocked(window.electronAPI.getHarnessDefaults).mockResolvedValue(defaults(overrides) as never);
+  const requestedIds = () => calls().map(([, request]) => request?.harnessIds?.[0]);
+
+  it('by default only the five supported harnesses appear and are requested; OpenCode and Pi never are', async () => {
+    await openUsage();
+    expect(requestedIds()).toEqual(['codex', 'claude', 'omp', 'hermes', 'agy']);
+    const names = [...panel().querySelectorAll('.usage-harness-name')].map((node) => node.textContent);
+    expect(names).toEqual(['Codex', 'Claude', 'Oh My Pi', 'Hermes', 'Antigravity']);
+    expect(within(panel()).queryByRole('region', { name: 'OpenCode' })).not.toBeInTheDocument();
+    expect(within(panel()).queryByRole('region', { name: 'Pi' })).not.toBeInTheDocument();
+  });
+
+  it('usageVisible=false removes the harness from the panel and from initial, polled and forced requests', async () => {
+    vi.useFakeTimers();
+    useDefaults({ codex: { usageVisible: false }, hermes: { usageVisible: false } });
+    render(<Header />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
+    expect(requestedIds()).toEqual(['claude', 'omp', 'agy']);
+    expect(within(panel()).queryByRole('region', { name: 'Codex' })).not.toBeInTheDocument();
+    for (const d of pending.splice(0)) await respond(d, okEntry(d.harnessId, `${d.harnessId} · x`, 1, { refreshableAt: 0 }));
+    await act(async () => { vi.advanceTimersByTime(USAGE_POLL_INTERVAL_MS + 100); });
+    await act(async () => { fireEvent.click(within(panel()).getByRole('button', { name: 'Refresh usage' })); });
+    for (const id of requestedIds()) expect(['claude', 'omp', 'agy']).toContain(id);
+    expect(requestedIds().length).toBeGreaterThan(6);
+  });
+
+  it('keeps the Usage control available and makes no requests when every provider is disabled', async () => {
+    useDefaults(Object.fromEntries(['codex', 'claude', 'omp', 'hermes', 'agy'].map((id) => [id, { usageVisible: false }])));
+    render(<Header />);
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
+    expect(within(panel()).getByText('No usage providers selected')).toBeInTheDocument();
+    expect(within(panel()).getByText('Enable providers in Settings → Harness Defaults.')).toBeInTheDocument();
+    expect(within(panel()).queryByText('Checking usage…')).not.toBeInTheDocument();
+    expect(within(panel()).getByRole('button', { name: 'Refresh usage' })).toBeDisabled();
+    expect(calls()).toHaveLength(0);
+  });
+
+  it('toggling Show in Usage in Settings persists through setHarnessDefaults and drops the harness from the next Usage opening', async () => {
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({ codex: { name: 'Codex', command: 'codex', args: [], icon: 'terminal' } });
+    const user = userEvent.setup();
+    render(<Header />);
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await user.click(await within(screen.getByRole('dialog', { name: 'Settings' })).findByRole('button', { name: 'Codex' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Show Codex in Usage' }));
+    expect(window.electronAPI.setHarnessDefaults).toHaveBeenLastCalledWith(expect.objectContaining({ codex: expect.objectContaining({ usageVisible: false }) }));
+    // Launcher visibility is untouched by this toggle.
+    const saved = vi.mocked(window.electronAPI.setHarnessDefaults).mock.calls;
+    expect(saved[saved.length - 1][0].codex.visible).not.toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Usage' }));
+    expect(requestedIds()).toEqual(['claude', 'omp', 'hermes', 'agy']);
+    expect(within(panel()).queryByRole('region', { name: 'Codex' })).not.toBeInTheDocument();
+  });
+
+  it('the header trigger is compact (icon only) but still named Usage; the popover keeps its USAGE heading', async () => {
+    await openUsage();
+    const trigger = screen.getByRole('button', { name: 'Usage' });
+    expect(trigger).toHaveAttribute('title', 'Usage');
+    expect(trigger.textContent?.trim()).toBe('');
+    expect(within(panel()).getByText('Usage')).toBeInTheDocument();
   });
 });

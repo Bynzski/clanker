@@ -1,5 +1,6 @@
 import { Button } from './ui/Button';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { USAGE_HARNESS_IDS } from '../../shared/harnessDescriptors';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
 import { Globe, NotebookPen, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
@@ -38,7 +39,6 @@ export default function Header() {
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [sessionDiscoveryError, setSessionDiscoveryError] = useState('');
   const [showUsage, setShowUsage] = useState(false);
-  const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage });
   const sessionRequest = useRef(0);
   useEffect(() => {
     sessionRequest.current++;
@@ -75,11 +75,20 @@ export default function Header() {
     handleSetHarnessFlags,
     handleSetHarnessVisible,
     handleSetHarnessAttention,
+    handleSetHarnessUsageVisible,
     handleSetDefaultModel,
     handleToggleFavorite,
     loadHarnessModels,
     aiCommitProviderOptions,
   } = useHeaderSettings({ harness, setHarness, environmentId: focusedWorkspace?.environmentId });
+  // Only harnesses with a usage capability AND an enabled "Show in Usage" preference are ever requested.
+  // Membership comes from descriptors; order follows the launcher's presentation order.
+  const usageHarnessIds = useMemo(
+    () => HARNESS_OPTIONS.map((option) => option.id).filter((id) =>
+      (USAGE_HARNESS_IDS as readonly string[]).includes(id) && harnessDefaults?.[id]?.usageVisible !== false),
+    [harnessDefaults],
+  );
+  const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage, harnessIds: usageHarnessIds });
 
   const handleAddTerminal = async (harnessId: string) => {
     try {
@@ -291,6 +300,7 @@ export default function Header() {
         handleSetHarnessFlags={handleSetHarnessFlags}
         handleSetHarnessVisible={handleSetHarnessVisible}
         handleSetHarnessAttention={handleSetHarnessAttention}
+        handleSetHarnessUsageVisible={handleSetHarnessUsageVisible}
         handleSetDefaultModel={handleSetDefaultModel}
         handleToggleFavorite={handleToggleFavorite}
       />

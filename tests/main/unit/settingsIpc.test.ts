@@ -480,13 +480,13 @@ describe('settingsIpc — harness defaults IPC', () => {
 
     const result = handler();
     expect(result).toEqual({
-      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo', visible: true, attentionEnabled: false },
-      opencode: { model: 'opencode/zen/big-pickle', favorites: [], flags: '', visible: true, attentionEnabled: false },
-      pi: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
-      omp: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
-      claude: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
-      hermes: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
-      agy: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false },
+      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo', visible: true, attentionEnabled: false, usageVisible: true },
+      opencode: { model: 'opencode/zen/big-pickle', favorites: [], flags: '', visible: true, attentionEnabled: false, usageVisible: true },
+      pi: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false, usageVisible: true },
+      omp: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false, usageVisible: true },
+      claude: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false, usageVisible: true },
+      hermes: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false, usageVisible: true },
+      agy: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false, usageVisible: true },
     });
   });
 
@@ -533,7 +533,7 @@ describe('settingsIpc — harness defaults IPC', () => {
     };
     handler(null, payload);
     expect(mockSetFn).toHaveBeenCalledWith('harnessDefaults', expect.objectContaining({
-      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo', visible: true, attentionEnabled: false },
+      codex: { model: 'gpt-4', favorites: ['gpt-4'], flags: '--yolo', visible: true, attentionEnabled: false, usageVisible: true },
     }));
   });
 

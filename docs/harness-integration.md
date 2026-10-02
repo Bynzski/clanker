@@ -590,15 +590,27 @@ returns `{ workspaceId, entries }` for all (or the requested) harnesses.
 
 ### Usage header control (renderer)
 
-A **Usage** button (gauge icon, label, chevron) sits between Chat history and Settings in the header. It is
+A **Usage** button (gauge icon and chevron, like Settings; `aria-label`/title "Usage") sits between Chat history and Settings in the header. It is
 a controlled Radix Popover like its siblings: same positioning, Escape/outside dismissal, focus
 restoration to the trigger, a `BrowserOverlayLease` while open, and mutual exclusion with Chat history
 and Settings in every direction (the Settings-to-Credentials handoff is untouched). Switching the
 focused workspace closes it and bumps an ownership generation, so late responses from the old workspace
 never render and reopening queries the new workspace id (the renderer sends only `workspaceId`).
 
-The panel always lists every canonical harness from `HARNESS_OPTIONS` (not filtered by launcher
-visibility, support or installation), so unsupported and not-installed states are visible. Reads are
+Only harnesses with a verified usage capability appear in the panel. Support is canonical descriptor
+metadata (`usage: { support }` in `HARNESS_DESCRIPTORS`, enforced against `provider.usage` by
+`defineHarness()` typing and a registry test; `USAGE_HARNESS_IDS` is derived from it), currently Codex,
+Claude, Oh My Pi, Hermes and Antigravity. OpenCode and Pi remain intentionally unsupported and are
+therefore absent: never listed, requested, polled or refreshed. Each supported harness has a persisted
+**Show in Usage** preference (`HarnessDefaults.usageVisible`, default true; missing or malformed legacy
+values validate to true; saved through `setHarnessDefaults`) in Settings, inside the expanded harness
+panel beside Agent attention and shown only for supported harnesses. It is independent of the launcher
+"visible" checkbox. The panel operates only on supported harnesses that are enabled: initial open,
+60 s polling, manual refresh, `refreshableAt` gating and pending state all use that list, so a hidden
+provider is never queried in the background, and a late response from a newly hidden provider cannot
+restore its row. With every provider disabled the control stays available and shows "No usage providers
+selected" with no requests. Not-installed and other per-provider states remain visible for the enabled
+providers. Reads are
 **progressive**: opening issues one `getHarnessUsage(workspaceId, { harnessIds: [id] })` per harness,
 concurrently, and each row updates as its own answer arrives (a slow provider shows "Checking usage…"
 while others already show data). Reopening keeps previously rendered values and issues ordinary reads

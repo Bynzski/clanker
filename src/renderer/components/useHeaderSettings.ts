@@ -245,6 +245,20 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     }
   };
 
+  const handleSetHarnessUsageVisible = async (harnessId: string, usageVisible: boolean) => {
+    if (!harnessDefaults) return;
+    const newDefaults = {
+      ...harnessDefaults,
+      [harnessId]: { ...harnessDefaults[harnessId], usageVisible },
+    };
+    setHarnessDefaultsState(newDefaults);
+    try {
+      await window.electronAPI.setHarnessDefaults(newDefaults);
+    } catch (err) {
+      console.error('Failed to save usage visibility:', err);
+    }
+  };
+
   const handleSetDefaultModel = async (harnessId: string, modelId: string) => {
     if (!harnessDefaults) return;
     const newDefaults = {
@@ -334,6 +348,7 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     handleSetHarnessFlags,
     handleSetHarnessVisible,
     handleSetHarnessAttention,
+    handleSetHarnessUsageVisible,
     handleSetDefaultModel,
     handleToggleFavorite,
     loadHarnessModels,

@@ -52,6 +52,7 @@ interface HeaderRightControlsProps {
   handleSetHarnessFlags: (harnessId: string, flags: string) => Promise<void>;
   handleSetHarnessVisible: (harnessId: string, visible: boolean) => Promise<void>;
   handleSetHarnessAttention: (harnessId: string, enabled: boolean) => Promise<void>;
+  handleSetHarnessUsageVisible: (harnessId: string, visible: boolean) => Promise<void>;
   handleSetDefaultModel: (harnessId: string, modelId: string) => Promise<void>;
   handleToggleFavorite: (harnessId: string, modelId: string) => Promise<void>;
 }
@@ -96,6 +97,7 @@ export default function HeaderRightControls({
   handleSetHarnessFlags,
   handleSetHarnessVisible,
   handleSetHarnessAttention,
+  handleSetHarnessUsageVisible,
   handleSetDefaultModel,
   handleToggleFavorite,
 }: HeaderRightControlsProps) {
@@ -156,12 +158,12 @@ export default function HeaderRightControls({
         <PopoverTrigger asChild>
           <Button className={`header-btn ${showUsage ? 'active' : ''}`} aria-label="Usage" title="Usage">
             <Gauge size={15} strokeWidth={2} />
-            Usage
             <ChevronDown size={12} strokeWidth={2} />
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" className="usage-popover" aria-label="Usage" workspaceId={workspaceId ?? undefined}>
           <UsageDropdown
+            harnessIds={usage.harnessIds}
             entries={usage.entries}
             pending={usage.pending}
             refreshing={usage.refreshing}
@@ -255,6 +257,7 @@ export default function HeaderRightControls({
               handleSetHarnessFlags={handleSetHarnessFlags}
               handleSetHarnessVisible={handleSetHarnessVisible}
               handleSetHarnessAttention={handleSetHarnessAttention}
+              handleSetHarnessUsageVisible={handleSetHarnessUsageVisible}
               handleSetDefaultModel={handleSetDefaultModel}
               handleToggleFavorite={handleToggleFavorite}
             />

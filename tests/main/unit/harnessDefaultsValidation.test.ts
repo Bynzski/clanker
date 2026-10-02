@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import { validateHarnessDefaultsMap } from '../../../src/main/harnessDefaultsValidation';
 
-const DEFAULT_ENTRY = { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false };
+const DEFAULT_ENTRY = { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false, usageVisible: true };
 
 describe('validateHarnessDefaultsMap', () => {
   describe('valid payload', () => {
@@ -204,5 +204,28 @@ describe('validateHarnessDefaultsMap', () => {
         expect(result.sanitized.codex.favorites).toEqual(['gpt-4', 'gpt-3.5', 'claude-3']);
       }
     });
+  });
+});
+
+describe('usageVisible', () => {
+  it('migrates legacy entries (missing value) to true', () => {
+    const result = validateHarnessDefaultsMap({ codex: { model: '', favorites: [], flags: '', visible: false }, claude: {} });
+    expect(result.valid && result.sanitized.codex.usageVisible).toBe(true);
+    expect(result.valid && result.sanitized.claude.usageVisible).toBe(true);
+    expect(result.valid && result.sanitized.pi.usageVisible).toBe(true); // filled defaults
+    expect(result.valid && result.sanitized.codex.visible).toBe(false); // independent of the launcher setting
+  });
+  it('preserves an explicit boolean, including false', () => {
+    const result = validateHarnessDefaultsMap({ codex: { usageVisible: false, visible: true }, claude: { usageVisible: true, visible: false } });
+    expect(result.valid && result.sanitized.codex).toMatchObject({ usageVisible: false, visible: true });
+    expect(result.valid && result.sanitized.claude).toMatchObject({ usageVisible: true, visible: false });
+  });
+  it.each(['false', 0, null, 'no', {}, []])('coerces malformed value %j to true', (value) => {
+    const result = validateHarnessDefaultsMap({ codex: { usageVisible: value } });
+    expect(result.valid && result.sanitized.codex.usageVisible).toBe(true);
+  });
+  it('is true for entries that are not objects at all', () => {
+    const result = validateHarnessDefaultsMap({ codex: 'x' });
+    expect(result.valid && result.sanitized.codex.usageVisible).toBe(true);
   });
 });
