@@ -1,5 +1,6 @@
 import { IconButton } from './ui/IconButton';
 import { Input } from './ui/Input';
+import { Button } from './ui/Button';
 import { useEffect, useRef, useState } from 'react';
 import { Folder, FolderOpen, Loader2 } from 'lucide-react';
 import RemoteDirectoryChooser from './RemoteDirectoryChooser';
@@ -21,6 +22,7 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
   const [absoluteInput, setAbsoluteInput] = useState(false);
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeError, setHomeError] = useState('');
+  const [homeAttempt, setHomeAttempt] = useState(0);
   const [chooserOpen, setChooserOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<Array<{ name: string; path: string }>>([]);
   const [selectedIndex, setSelectedIndex] = useState(-1);
@@ -37,6 +39,7 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
   };
 
   useEffect(() => {
+    // Each run owns its result: a new environment or Retry supersedes any in-flight lookup.
     let active = true;
     onBaseDirectoryChange?.('');
     void window.electronAPI.sshGetHomeDirectory(environmentId).then(({ homePath: home, initialPath }) => {
@@ -58,7 +61,7 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
       if (active) setHomeLoading(false);
     });
     return () => { active = false; };
-  }, [environmentId, onPathChange, relativeToBase, onBaseDirectoryChange]);
+  }, [environmentId, homeAttempt, onPathChange, relativeToBase, onBaseDirectoryChange]);
 
   useEffect(() => {
     const request = ++requestRef.current;
@@ -117,7 +120,7 @@ export default function RemoteWorkspacePath({ environmentId, path, onPathChange,
         {waitingForBase ? <Loader2 size={18} className="spin" /> : <FolderOpen size={18} />}
       </IconButton>
     </div>
-    {homeError && <p role="alert" className="gate-directory-error">Could not load remote home: {homeError}. Enter an absolute path manually.</p>}
+    {homeError && <p role="alert" className="gate-directory-error">Could not load remote home: {homeError}. Enter an absolute path manually. <Button type="button" onClick={() => { setHomeError(''); setHomeLoading(true); setHomeAttempt((attempt) => attempt + 1); }}>Retry</Button></p>}
     {focused && suggestions.length > 0 && <ul className="suggestions-list remote-suggestions">
       {suggestions.map((entry, index) => <li key={entry.path}>
         <button type="button" className={`suggestion-item ${selectedIndex === index ? 'selected' : ''}`}

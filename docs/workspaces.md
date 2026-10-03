@@ -77,6 +77,8 @@ Clanker **never** stores SSH passwords or private keys in application state, nor
 
 Saved SSH targets cannot be edited or deleted while an open workspace uses them. Close the workspace first, then update or remove the target.
 
+**Connection errors.** When OpenSSH itself fails (exit code 255), Clanker shows a short explanation instead of the raw output: authentication failed (check key, agent, account), host-key verification failed or changed (check `known_hosts`), host could not be resolved, connection refused (check sshd and port), host unreachable (check network/VPN/Tailscale), connection timed out, or connection lost. Any other OpenSSH failure shows a generic "SSH connection failed" line with its first diagnostic. A remote command that fails with an ordinary exit code is reported as that command's error, not as a connection problem. The raw output is kept for diagnostics. Use **Test** on a saved target to re-check it; the remote directory chooser retries a failed listing, and the initial remote-home lookup in the launcher has a **Retry** button that keeps any path you already typed. Clanker does not keep a persistent connection state or reconnect automatically.
+
 
 ### Remote Prerequisites & Platform Support
 
