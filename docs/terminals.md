@@ -58,7 +58,7 @@ Flags are passed through as entered.
 
 Terminal panes get short Grateful Dead inspired names such as Samson, Delilah, Jerry, and Bobby. Names identify panes in the UI; they are independent of the harness and its session ID.
 
-In **Settings → Harness Defaults**, expand a harness and enable **Agent attention** for future launches. Clanker then uses that harness's supported hooks to show running, needs input, or turn complete in the pane header. Background needs-input and completed turns also mark the workspace tab. The bell button beside the tabs jumps to the next agent needing attention. A working agent shows a spinner, a question waiting for you shows yellow, and a finished turn shows green until you focus that agent; an idle agent shows nothing. Plain shells have no agent status.
+In **Settings → Harness Defaults**, expand a harness and enable **Agent attention** for future launches. Clanker then uses that harness's supported hooks to show running, needs input, or turn complete in the pane header. Background needs-input and completed turns also mark the workspace (its badge on the sidebar row or tab), each agent row in the sidebar shows its own state, and the collapsed sidebar rail shows a dot on each agent's harness icon and a badge on the workspace mark. The bell button (in the sidebar header or rail, or beside the tabs in Tabs mode) jumps to the next agent needing attention. A working agent shows a spinner, a question waiting for you shows yellow, and a finished turn shows green until you focus that agent; an idle agent shows nothing. Plain shells have no agent status.
 
 Agent attention is opt-in per harness and affects only new terminals. With attention off, the pane has no agent status label. With attention on, the pane shows nothing until a supported event arrives, and returns to nothing when the agent is idle again (after a completed turn has been seen, an interrupt, or exit). It does not parse terminal screen text. Only events from the agent's root session and current foreground turn change the status: subagent, child-session, background and stale events are ignored. Codex, Claude, OpenCode, Antigravity and Hermes (SSH) report running, needs input and turn complete; Pi reports running and settled turns. OMP reports a turn complete only on its main-session `session_stop` (after background jobs drain), not on `agent_end`. Antigravity reports `Stop` only when fully idle. A user-interrupted Codex turn clears the status without a completion alert; Claude has no interrupt hook, so an interrupted Claude turn stays running until the next prompt. A Claude turn that ends on an API error (`StopFailure`) shows as settled, which does not imply success. Process exit retires attention. See the lifecycle contract in `harness-integration.md`. Hook availability can vary with CLI version and user configuration.
 Hermes has a remote observer adapter; its attention toggle applies to SSH launches. Local Hermes attention remains unavailable. Chat history, resume/fork, and AI commit are not integrated for Hermes. For Antigravity, chat history is discovered from its SQLite store and resumes via `--conversation`, AI commit message generation is supported via noninteractive piped invocation, and agent attention is fully integrated.
@@ -76,17 +76,17 @@ Hidden harnesses are launch-surface preferences only. They can still resume prev
 
 ### Subscription usage
 
-Click the **Usage** gauge icon between Chat History and Settings to check subscription usage and quota for the active workspace. Codex, Claude, Oh My Pi, Hermes, and Antigravity are supported. OpenCode and Pi are omitted because they do not expose a safe canonical harness-level quota interface. Supported providers remain listed when not installed or unavailable, with a status explaining the result.
+Click the **Usage** gauge icon between Chat History and Settings to check subscription usage and quota for the active workspace. Codex, Claude, Oh My Pi, Hermes, and Antigravity are supported. OpenCode and Pi are omitted because they do not expose a safe canonical harness-level quota interface. A supported harness that is not installed in the workspace's environment (the local machine or the SSH host) is hidden and is never probed. Installed providers stay listed with a status when they are unavailable, for example “Not signed in” or “Usage temporarily unavailable”.
 
 For local workspaces, probes use the local harness CLI and its authentication. For SSH workspaces, they use the registered host's installed CLI and authentication; there is no fallback to desktop accounts. Clanker usage adapters do not read credential/auth files. Antigravity requires a safely recognized stable CLI version of at least 1.1.11; older or ambiguous versions are not probed. Claude's probe disables hooks, MCP, and IDE integration and does not start a model turn.
 
 - Providers load independently, so a slow or failing provider does not delay other rows.
 - Quota windows show remaining capacity, reset times, and when they were checked. Progress bars represent remaining capacity.
-- Opening requests current readings, subject to caching. Polling runs about every 60 seconds while open and stops when closed or when switching workspaces.
+- Opening requests current readings, subject to caching. For local workspaces, a best-effort background read shortly after the workspace opens (only when the app is idle) lets the first opening show results immediately; SSH workspaces are never probed in the background. Polling runs about every 60 seconds while open and stops when closed or when switching workspaces.
 - **Refresh** requests fresh readings subject to provider minimum intervals and failure backoff. It is disabled while any selected provider request is in flight or all resolved entries are waiting for their next allowed refresh. Entries without a refresh deadline can be rechecked once loading finishes.
 - Failed refreshes preserve last-good measurements with a **Stale** marker. Switching workspaces clears the previous workspace's readings and discards late responses.
 
-In **Settings → Harness Defaults**, expand a supported harness and toggle **Show in Usage**. This is enabled by default and independent of launch visibility. Hidden usage providers are not queried; disabling every provider leaves the popover available with “No usage providers selected”. The trigger waits for saved preferences to load before allowing the popover to open.
+In **Settings → Harness Defaults**, expand a supported harness and toggle **Show in Usage**. This is enabled by default and independent of launch visibility. Hidden usage providers are not queried; when no provider is both installed here and enabled, the popover shows “No usage providers available”. The trigger waits for saved preferences to load before allowing the popover to open.
 
 Local probes were live-tested during issue #55. Full authenticated Codex/Claude usage on a real SSH host remains a non-blocking smoke-test follow-up: the available host did not have those CLIs installed/authenticated. See the [usage integration guide](harness-integration.md#usage-capability) for provider protocols, security boundaries, and execution limits.
 
@@ -118,7 +118,7 @@ The **Chat History** button (message icon) in the header opens a dropdown that d
 
 ### Selecting a Harness
 
-1. Click the **Harness** pill in the header
+1. Click a harness launcher in the toolbar (or choose a harness in the workspace gate)
 2. Choose from available CLIs (unavailable ones are hidden)
 3. Some harnesses support model selection
 
@@ -135,7 +135,7 @@ Model choices in the gate are scoped to the selected harness. Switching harnesse
 uses the new harness's default or previously selected model, never a model from
 the harness you switched away from.
 
-The gate's model picker and local default model resolution apply to local workspaces. SSH workspaces discover installed harnesses on the host but do not discover or pass model selections in V1; the remote CLI uses its own configured default.
+Local default model resolution applies to local workspaces. SSH workspaces discover installed harnesses on the host and, for Codex, OpenCode, Pi, OMP, and Antigravity, ask the host for its own model list; the gate shows the picker only when the host returns a real catalog, with **Use harness default** listed first. Otherwise (including Claude and Hermes) the remote CLI uses its own configured default. Toolbar launchers on SSH workspaces always use the host default. See [Remote Prerequisites & Platform Support](workspaces.md#remote-prerequisites--platform-support).
 
 Notes:
 - Codex models are discovered from the CLI.

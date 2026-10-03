@@ -4,9 +4,9 @@ Workspaces provide isolated development environments within a single window.
 
 ## Creating a Workspace
 
-1. Click **Open Workspace** (`+`) beside the workspace tabs
+1. Click **Open Workspace** (`+`) in the **WORKSPACES** sidebar header (in the collapsed rail it sits directly under the open workspaces), or beside the workspace tabs in Tabs mode
 2. Enter or browse to a local directory
-3. The workspace opens in a new tab
+3. The workspace opens and is added to the sidebar (or the tab strip)
 
 For local workspaces, the native directory picker can create a new directory before opening the workspace on platforms that support it. SSH workspaces use Clanker's own remote chooser and **New Folder** action.
 
@@ -30,11 +30,11 @@ Click **Inspect** beside a remote linked checkout to check whether it has tracke
 
 Remote removal preserves checkout files under `<checkout-parent>/.clanker-worktree-recovery/removed-<id>/checkout` and records the original path and branch in `recovery.json` beside that folder. The preserved folder is a file recovery copy, not a registered Git worktree; its old `.git` pointer is no longer valid. The branch remains available, so you can create a new worktree for it and copy needed files from the recovery folder. Recovery and operation-journal folders must be owned by the SSH account with private permissions (`0700`). Existing unsafe folders are rejected before the checkout is moved; Clanker does not change their permissions. Recovery folders are not automatically purged. If SSH loses the removal result, paths stay reserved until **Refresh worktrees** verifies that operation's completion journal on the host. If verification cannot complete, Clanker shows the staging and recovery paths for manual host inspection. Do not reopen them while the operation may still be running.
 
-Closing a workspace tab stops its live terminals and closes its UI; it leaves the checkout and branch on disk. To remove a local checkout, return to **Task worktree**, load the repository, and choose **Remove…** on a closed worktree. Clanker checks for uncommitted, untracked, and ignored files, then asks you to confirm the exact path and branch. Removal moves the checkout to the system Trash and unregisters it from Git, preserving files written during removal. The branch remains.
+Closing a workspace (its sidebar row or tab) stops its live terminals and closes its UI; it leaves the checkout and branch on disk. To remove a local checkout, return to **Task worktree**, load the repository, and choose **Remove…** on a closed worktree. Clanker checks for uncommitted, untracked, and ignored files, then asks you to confirm the exact path and branch. Removal moves the checkout to the system Trash and unregisters it from Git, preserving files written during removal. The branch remains.
 
 New worktrees contain Git tracked files from the base commit. Local ignored files such as `.env` and installed dependencies are not copied automatically; set up those files in the new checkout as needed.
 
-Removal safeguards share an opaque resource identity for saved SSH aliases whose effective OpenSSH hostname, user, port, and proxy route match. Workspace tabs and task records retain their separate saved environment identities. Different destination names (for example, a DNS name and its numeric IP) or different proxy routes are not assumed equivalent; use one saved environment when accessing the same repository through those routes.
+Removal safeguards share an opaque resource identity for saved SSH aliases whose effective OpenSSH hostname, user, port, and proxy route match. Workspaces retain their separate saved environment identities. Different destination names (for example, a DNS name and its numeric IP) or different proxy routes are not assumed equivalent; use one saved environment when accessing the same repository through those routes.
 
 Pending removal records are saved before dispatch and restored when Clanker restarts. After an interrupted removal, open the owning repository and use **Refresh worktrees** to verify the host completion journal. Until verification succeeds, conflicting opens and terminal launches remain blocked. A missing or incomplete journal requires host inspection; loss of SSH connectivity never proves that removal finished.
 
@@ -63,7 +63,7 @@ environmentId + canonical workspace path
 
 This ensures that a workspace on `dev-vps:/home/jay/Projects/clanker` is a distinct identity from `local:/home/jay/Projects/clanker`. Both can be open simultaneously in the same window without layout or notes state collision. SSH paths are canonicalized on the remote host before registration, and subsequent file, Git, and terminal requests use that registered location.
 
-Tab labels clearly display the environment prefix (e.g., `Local · clanker` vs. `dev-vps · clanker`).
+SSH workspaces are marked with their environment (for example `SSH · dev-vps`): as a prefix on the tab in Tabs mode, and as a server icon on the sidebar row (with the environment in its tooltip) or a dot on the rail mark. Local workspaces carry no marker.
 
 ### OpenSSH Transport & Credentials
 
@@ -146,13 +146,34 @@ Remote capabilities have the following limits in V1:
 7. **Remote Process Persistence**: Remote PTY processes terminate on workspace closure or app exit; PTY daemons are not installed on the remote machine.
 8. **AI Commit Generation**: Disabled for SSH workspaces; manual Git commits work remotely. Local model/CLI discovery is never used to represent a remote host.
 
-## Managing Tabs
+## Managing Workspaces
+
+Clanker lists open workspaces in one of two navigation modes, chosen under **Settings → Appearance → Workspaces**. New installs use **Sidebar**; installs that predate it keep **Tabs** until you switch. The setting changes only how workspaces are listed; workspaces, terminals, and layouts are unaffected.
+
+### Sidebar (default)
+
+The left sidebar has a **WORKSPACES** section above a **FILES** section pinned to the bottom (see [File Explorer](file-explorer.md)). The workspace toolbar is docked in the title bar beside it; there is no separate toolbar row.
+
+- **Switch workspaces**: Click a workspace row. Expand a row (chevron) to list its agents and click one to focus that terminal; the active workspace expands automatically.
+- **Reorder**: Drag a row onto another row, or focus it and press `Alt+Shift+Up/Down`. The saved order is restored when workspaces reopen.
+- **Rename**: Double-click the name, or use the rename button on hover
+- **Close**: Use the × on a row (shown on hover)
+- **Open Workspace**: `+` in the section header; **Collapse sidebar** and the section chevron live beside it
+- **Attention**: A workspace row shows a badge for agents needing input or completed turns when agent attention is enabled, each agent row shows its own state icon, and the bell jumps to the next agent needing attention
+- **Worktree label**: Linked worktrees show their branch
+- **Resize and collapse**: Drag the sidebar's right edge to resize it (the width is shared by all workspaces). Dragging it narrow, or choosing **Collapse sidebar**, shrinks it to an icon rail; drag the edge out or choose **Expand sidebar** to restore the previous width.
+
+The collapsed rail shows a two-letter mark per workspace (with a dot for SSH workspaces and a branch glyph for linked worktrees), followed by its agents' harness icons with live attention dots. It also has Open Workspace, the attention bell, and **Show Files**, which expands the sidebar to open FILES. Selecting items in the rail behaves like the expanded sidebar.
+
+### Tabs
+
+Workspaces appear as tab chips centred in the title bar, with the toolbar on its own row below.
 
 - **Switch workspaces**: Click a workspace tab
 - **Reorder**: Drag a tab onto another tab, or focus it and press `Alt+Shift+Left/Right`. The saved order is restored when workspaces reopen.
 - **Rename**: Double-click a tab name
 - **Close**: Click the × on a tab
-- **Attention badge**: Shows agents needing input or completed turns when agent attention is enabled
+- **Attention badge**: Shows agents needing input or completed turns when agent attention is enabled; the bell beside the tabs jumps to the next agent needing attention
 - **Worktree label**: Linked worktrees show their branch
 
 ## Per-Workspace State
@@ -181,7 +202,7 @@ Global harness defaults (model, favorites, flags, visibility, agent attention) a
 
 | Action | Description |
 |--------|-------------|
-| **Fit All** | Reset panes to balanced sizes |
+| **Fit All** | Rebalance split sizes, keeping the pane arrangement |
 | **Drag** | Rearrange terminal, Browser, Editor, and Notes panes from their drag grip |
 | **Dock** | Drop onto a workspace edge or one side of a pane to create a split |
 | **Swap** | Drop onto the center of another pane to swap positions |
@@ -196,7 +217,7 @@ Dragging a pane reveals two levels of drop targets:
 
 The preview rectangle shows the exact destination before the drop. Dragging uses a lightweight preview card, and native browser content is temporarily hidden so it cannot cover the docking targets.
 
-The Explorer is a separate, resizable left sidebar and does not join the pane layout tree.
+The Explorer never joins the pane layout tree: in Sidebar mode it is the FILES section of the sidebar, and in Tabs mode it is a separate, resizable left dock.
 
 #### Dock behavior
 
@@ -208,7 +229,7 @@ The Explorer is a separate, resizable left sidebar and does not join the pane la
 
 ## Persistence
 
-The app remembers the last workspace path. Layout topology, split sizes, note content, and notes visibility are stored separately by environment and canonical workspace path; old path-only local data is restored for local workspaces and migrated on the next write. Pane IDs are regenerated safely and are not persisted directly. Workspace tabs can be dragged or moved with `Alt+Shift+←/→`; their chosen order is remembered by workspace identity when those workspaces are reopened. The app does not automatically reopen all tabs after restart.
+The app remembers the last workspace path. Layout topology, split sizes, note content, and notes visibility are stored separately by environment and canonical workspace path; old path-only local data is restored for local workspaces and migrated on the next write. Pane IDs are regenerated safely and are not persisted directly. Workspaces can be reordered by dragging (or `Alt+Shift+←/→` on tabs, `Alt+Shift+↑/↓` in the sidebar); their chosen order is remembered by workspace identity when those workspaces are reopened. The app does not automatically reopen all workspaces after restart.
 
 Terminal processes and their runtime state are not reconstructed from layout persistence.
 
