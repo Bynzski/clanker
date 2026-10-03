@@ -1094,7 +1094,7 @@ before copying an existing adapter.
 
 Local CLI (Linux, September 2026): `/home/jay/.local/bin/hermes`, version
 `0.21.5+2453.gd0288be` (upstream `d0288be5`). `hermes --help` and
-`hermes chat --help` establish `hermes --tui` for interactive launch and
+`hermes -p <name> --help` establish `hermes --tui` for interactive launch and
 `-m <model>` as a TUI model override. Clanker uses the common PTY wrapper,
 passing `-m` before `--tui`, and retains the user's workspace as the CLI cwd.
 The installed `hermes model` command is interactive, not a machine-readable

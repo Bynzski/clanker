@@ -8,6 +8,8 @@ import { validateAssistantSettings } from './assistantSettings';
 import { isValidHarnessProfileName } from '../../shared/harnessProfiles';
 import { toNativePath } from '../../shared/pathNormalize';
 
+const MAX_ASSISTANT_PROFILES = 64;
+
 interface AssistantServiceDeps {
   readSettings(): AssistantSettings | undefined;
   writeSettings(settings: AssistantSettings): void;
@@ -46,7 +48,8 @@ export class AssistantService {
   configure(value: unknown): AssistantSnapshot {
     const settings = validateAssistantSettings(value);
     if (settings.pins.some((pin) => !this.deps.getProfilesCapability(pin.harnessId))) throw new Error('Invalid assistant pin: profiles capability is unavailable');
-    if (this.get().settings.enabled && !settings.enabled) this.epoch++;
+    // Disabling invalidates in-flight discovery; a later request must never coalesce onto it.
+    if (this.get().settings.enabled && !settings.enabled) { this.epoch++; this.discoveryOperation = undefined; }
     this.deps.writeSettings(structuredClone(settings));
     const snapshot = this.get();
     this.deps.onChanged(snapshot);
@@ -74,7 +77,7 @@ export class AssistantService {
       if (!capability) continue;
       try {
         const profiles = await capability.discover(this.deps.executor(harnessId));
-        if (profiles.length > 64) throw new Error('Profile limit exceeded');
+        if (profiles.length > MAX_ASSISTANT_PROFILES) throw new Error('Profile limit exceeded');
         for (const native of profiles) found.set(`${harnessId}:${native.name}`, { harnessId, native });
       } catch {
         errors.add('Automatic profile discovery unavailable. Select an existing profile by name; only local terminal backends are supported.');
@@ -87,6 +90,18 @@ export class AssistantService {
       }
     }
     if (epoch !== this.epoch || revision !== this.discoveryRevision || !this.get().settings.enabled || this.deps.isShuttingDown()) return this.get();
+    // Atomic with respect to the roster: the final roster is every found identity plus owned launches
+    // that survive even when absent from this discovery. Overflow changes nothing but the status.
+    const finalIdentities = new Set(found.keys());
+    for (const [id, profile] of this.profiles) if (this.launches.has(id)) finalIdentities.add(`${profile.public.harnessId}:${profile.native.name}`);
+    if (finalIdentities.size > MAX_ASSISTANT_PROFILES) {
+      errors.add(`Too many Assistant profiles (limit ${MAX_ASSISTANT_PROFILES}); the previous profile list was kept. Remove pins or profiles, then refresh.`);
+      this.discoveryError = [...errors].join(' ');
+      this.profilesChecked = true;
+      const snapshot = this.get();
+      this.deps.onChanged(snapshot);
+      return snapshot;
+    }
     for (const { harnessId, native } of found.values()) this.addResolved(harnessId, native);
     for (const [id, profile] of this.profiles) {
       if (!found.has(`${profile.public.harnessId}:${profile.native.name}`) && !this.launches.has(id)) this.profiles.delete(id);
@@ -101,7 +116,7 @@ export class AssistantService {
   private addResolved(harnessId: string, profile: HarnessNativeProfile): void {
     const previous = [...this.profiles.values()].find((entry) => entry.public.harnessId === harnessId && entry.public.profileName === profile.name);
     const id = previous?.public.id ?? randomUUID();
-    if (!previous && this.profiles.size >= 64) throw new Error('Assistant profile limit reached; refresh profiles');
+    if (!previous && this.profiles.size >= MAX_ASSISTANT_PROFILES) throw new Error('Assistant profile limit reached; refresh profiles');
     this.profiles.set(id, { public: { id, harnessId, profileName: profile.name, label: profile.label }, native: profile });
   }
 
@@ -206,6 +221,7 @@ export class AssistantService {
   reset(): void {
     this.epoch++;
     this.discoveryRevision++;
+    this.discoveryOperation = undefined;
     for (const launch of [...this.launches.values()]) this.deps.killTerminal(launch.terminalId);
     this.launches.clear();
     this.launchHomes.clear();

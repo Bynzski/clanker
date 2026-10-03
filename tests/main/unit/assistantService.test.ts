@@ -27,6 +27,155 @@ function fixture() {
 }
 
 describe('optional assistants', () => {
+  const native = (name: string) => ({ name, label: name, home: `/profiles/${name}`, rootHome: '/hermes-root' });
+  const many = (n: number, prefix = 'p') => Array.from({ length: n }, (_, i) => native(`${prefix}${i}`));
+  const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; };
+
+  describe('discovery generations', () => {
+    it('does not coalesce a post-re-enable request onto a discovery invalidated by disable', async () => {
+      const { service, discover } = fixture();
+      service.configure({ enabled: true, pins: [] });
+      const a = deferred<ReturnType<typeof native>[]>();
+      const b = deferred<ReturnType<typeof native>[]>();
+      discover.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+      const first = service.discover();
+      service.configure({ enabled: false, pins: [] });
+      service.configure({ enabled: true, pins: [] });
+      const second = service.discover();
+      expect(second).not.toBe(first);
+      expect(discover).toHaveBeenCalledTimes(2);
+      b.resolve([native('fresh')]);
+      const fresh = await second;
+      expect(fresh).toMatchObject({ profilesChecked: true });
+      expect(fresh.profiles.map((profile) => profile.profileName)).toEqual(['fresh']);
+      a.resolve([native('stale')]);
+      await first;
+      const after = service.get();
+      expect(after.profiles.map((profile) => profile.profileName)).toEqual(['fresh']);
+      expect(after.profilesChecked).toBe(true);
+      expect(after.discoveryError).toBeUndefined();
+      // The stale operation's cleanup must not have cleared the newer operation's slot or state.
+      await service.discover({ ifUnchecked: true });
+      expect(discover).toHaveBeenCalledTimes(2);
+    });
+    it('a stale failing discovery cannot set an error or checked state over the newer one', async () => {
+      const { service, discover } = fixture();
+      service.configure({ enabled: true, pins: [] });
+      const a = deferred<ReturnType<typeof native>[]>();
+      discover.mockReturnValueOnce(a.promise).mockResolvedValueOnce([native('fresh')]);
+      const first = service.discover();
+      service.configure({ enabled: false, pins: [] });
+      service.configure({ enabled: true, pins: [] });
+      await service.discover();
+      a.resolve(Promise.reject(new Error('late failure')) as never);
+      await first;
+      expect(service.get().discoveryError).toBeUndefined();
+    });
+    it('still coalesces simultaneous requests within one generation', async () => {
+      const { service, discover } = fixture();
+      service.configure({ enabled: true, pins: [] });
+      const gate = deferred<ReturnType<typeof native>[]>();
+      discover.mockReturnValueOnce(gate.promise);
+      const one = service.discover();
+      const two = service.discover();
+      gate.resolve([native('x')]);
+      await Promise.all([one, two]);
+      expect(discover).toHaveBeenCalledTimes(1);
+    });
+    it('discards a late result after disable without re-enable, and after reset', async () => {
+      for (const invalidate of [(s: AssistantService) => { s.configure({ enabled: false, pins: [] }); }, (s: AssistantService) => s.reset()]) {
+        const { service, discover } = fixture();
+        service.configure({ enabled: true, pins: [] });
+        const gate = deferred<ReturnType<typeof native>[]>();
+        discover.mockReturnValueOnce(gate.promise);
+        const pending = service.discover();
+        invalidate(service);
+        gate.resolve([native('late')]);
+        await pending;
+        expect(service.get().profiles).toEqual([]);
+        expect(service.get().profilesChecked).toBe(false);
+      }
+    });
+    it('after reset a new request performs a new probe instead of the invalidated one', async () => {
+      const { service, discover } = fixture();
+      service.configure({ enabled: true, pins: [] });
+      const gate = deferred<ReturnType<typeof native>[]>();
+      discover.mockReturnValueOnce(gate.promise).mockResolvedValueOnce([native('fresh')]);
+      const old = service.discover();
+      service.reset();
+      expect((await service.discover()).profiles.map((p) => p.profileName)).toEqual(['fresh']);
+      gate.resolve([]);
+      await old;
+      expect(discover).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('atomic 64-profile roster limit', () => {
+    const names = (service: AssistantService) => service.get().profiles.map((profile) => profile.profileName).sort();
+    it('keeps exactly 64 final rows', async () => {
+      const { service, discover } = fixture();
+      service.configure({ enabled: true, pins: [] });
+      discover.mockResolvedValueOnce(many(64));
+      const snapshot = await service.discover();
+      expect(snapshot.profiles).toHaveLength(64);
+      expect(snapshot).toMatchObject({ profilesChecked: true });
+      expect(snapshot.discoveryError).toBeUndefined();
+    });
+    it('cold start with discovery plus pins reaching 65 identities changes nothing but the status', async () => {
+      const { service, discover, resolve, onChanged } = fixture();
+      service.configure({ enabled: true, pins: [{ harnessId: 'hermes', profileName: 'pinned-extra' }] });
+      discover.mockResolvedValueOnce(many(64));
+      resolve.mockImplementation(async (_executor: unknown, name: string) => native(name));
+      onChanged.mockClear();
+      const before = service.get();
+      const snapshot = await service.discover({ ifUnchecked: true });
+      expect(snapshot.profiles).toEqual([]);
+      expect(snapshot.profiles).toEqual(before.profiles);
+      expect(snapshot).toMatchObject({ profilesChecked: true });
+      expect(snapshot.discoveryError).toMatch(/Too many Assistant profiles \(limit 64\)/);
+      expect(snapshot.discoveryError).not.toContain('/profiles');
+      expect(onChanged).toHaveBeenCalledTimes(1);
+      expect(onChanged).toHaveBeenCalledWith(snapshot);
+    });
+    it('an overflowing refresh retains the previous roster exactly, including ids', async () => {
+      const { service, discover, resolve } = fixture();
+      service.configure({ enabled: true, pins: [] });
+      discover.mockResolvedValueOnce(many(3, 'old'));
+      const before = await service.discover();
+      expect(before.profiles).toHaveLength(3);
+      service.configure({ enabled: true, pins: [{ harnessId: 'hermes', profileName: 'pinned-extra' }] });
+      resolve.mockImplementation(async (_executor: unknown, name: string) => native(name));
+      discover.mockResolvedValueOnce(many(64, 'new')); // 64 discovered + 1 pin = 65 final identities
+      const after = await service.discover();
+      expect(after.profiles).toEqual(before.profiles);
+      expect(after.launches).toEqual(before.launches);
+      expect(after.profilesChecked).toBe(true);
+      expect(after.discoveryError).toMatch(/limit 64/);
+    });
+    it('counts an owned launch absent from the new discovery toward the final roster', async () => {
+      const { service, discover, resolve, onChanged } = fixture();
+      service.configure({ enabled: true, pins: [] });
+      resolve.mockResolvedValue(native('owned'));
+      discover.mockResolvedValueOnce([native('owned')]);
+      const [{ id }] = (await service.discover()).profiles;
+      await service.launch({ profileId: id, workspaceId: 'ws-1', acknowledgeExternalActivity: true });
+      const before = service.get();
+      discover.mockResolvedValueOnce(many(64, 'other'));
+      onChanged.mockClear();
+      const after = await service.discover();
+      expect(after.profiles).toEqual(before.profiles);
+      expect(after.launches).toEqual(before.launches);
+      expect(after.discoveryError).toMatch(/limit 64/);
+      expect(after.profilesChecked).toBe(true);
+      expect(names(service)).toEqual(['owned']);
+      // 63 other + the owned one is exactly 64 and succeeds, keeping the owned row.
+      discover.mockResolvedValueOnce(many(63, 'other'));
+      const ok = await service.discover();
+      expect(ok.profiles).toHaveLength(64);
+      expect(ok.discoveryError).toBeUndefined();
+      expect(ok.profiles.find((profile) => profile.profileName === 'owned')?.id).toBe(id);
+    });
+  });
   it('cold start with persisted pins is unchecked, probe-free, and distinct from a checked failure', async () => {
     const { service, discover, resolve } = fixture();
     service.configure({ enabled: true, pins: [{ harnessId: 'hermes', profileName: 'gone' }] });

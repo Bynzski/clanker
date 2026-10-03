@@ -220,6 +220,21 @@ describe('Hermes native profiles capability', () => {
       ? Promise.resolve({ stdout: help, stderr: '', exitCode: 0 }) : original(request));
     await expect(hermesProvider.profiles.resolve(executor, 'coder')).rejects.toMatchObject({ kind: 'unsupported' });
   });
+  it('probes the launch parser with the exact bounded top-level help invocation, not the chat subparser', async () => {
+    const executor = executorFor();
+    await hermesProvider.profiles.resolve(executor, 'coder');
+    const helpCalls = executor.run.mock.calls.map(([request]) => request).filter((request) => request.args?.includes('--help'));
+    expect(helpCalls).toHaveLength(1);
+    expect(helpCalls[0]).toMatchObject({ command: 'hermes', args: ['-p', 'coder', '--help'], timeoutMs: 5000, maxOutputBytes: 32768 });
+    expect(JSON.stringify(executor.run.mock.calls)).not.toContain('chat');
+  });
+  it.each(['  --in DIR', '  --tui', '--inside DIR --tuition'])('requires both exact flags in the top-level help %j', async (help) => {
+    const executor = executorFor();
+    const original = executor.run.getMockImplementation()!;
+    executor.run.mockImplementation((request) => request.args?.includes('--help')
+      ? Promise.resolve({ stdout: help, stderr: '', exitCode: 0 }) : original(request));
+    await expect(hermesProvider.profiles.resolve(executor, 'coder')).rejects.toMatchObject({ kind: 'unsupported' });
+  });
   it.each(['', '../coder', ' coder', 'coder ', '--help', 'a'.repeat(65), 'coder\n', 'α'])('rejects invalid exact profile name %j before executing', async (name) => {
     const executor = executorFor();
     await expect(hermesProvider.profiles.resolve(executor, name)).rejects.toMatchObject({ kind: 'parse-failure' });
@@ -233,7 +248,7 @@ describe('Hermes native profiles capability', () => {
     expect(executor.run.mock.calls.map(([request]) => [request.command, request.args])).toEqual([
       ['hermes', ['-p', 'coder', 'config', 'path']],
       ['hermes', ['-p', 'coder', 'config', 'get', 'terminal.backend']],
-      ['hermes', ['-p', 'coder', 'chat', '--help']],
+      ['hermes', ['-p', 'coder', '--help']],
       ['hermes', ['-p', 'default', 'config', 'path']],
     ]);
     for (const [request] of executor.run.mock.calls) {

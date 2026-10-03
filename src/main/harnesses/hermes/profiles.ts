@@ -62,7 +62,7 @@ export const hermesProfiles: HarnessProfilesCapability = {
     const selectedHome = configHome(config);
     const backend = await probe(executor, { command: 'hermes', args: ['-p', name, 'config', 'get', 'terminal.backend'] });
     if (backend !== 'local') throw new HarnessCapabilityError('unsupported', 'Hermes profiles require the local terminal backend');
-    const help = (await probe(executor, { command: 'hermes', args: ['-p', name, 'chat', '--help'] })).replace(/\u001b\[[0-9;]*m/g, '');
+    const help = (await probe(executor, { command: 'hermes', args: ['-p', name, '--help'] })).replace(/\u001b\[[0-9;]*m/g, '');
     if (!/(?:^|[\s,])--in(?=[\s,=]|$)/.test(help) || !/(?:^|[\s,])--tui(?=[\s,=]|$)/.test(help)) {
       throw new HarnessCapabilityError('unsupported', 'Hermes CLI does not support the required launch flags');
     }
