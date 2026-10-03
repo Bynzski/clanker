@@ -45,7 +45,9 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   const harness = focusedWorkspace?.harness ?? '';
   const model = focusedWorkspace?.model ?? '';
   const [showChatHistory, setShowChatHistory] = useState(false);
-  const history = useConversationHistory(focusedWorkspace?.id ?? null);
+  // Background warm-ups are local-only: they must never trigger unattended SSH probes or scans.
+  const warmupEnabled = !focusedWorkspace?.environmentId || focusedWorkspace.environmentId === 'local';
+  const history = useConversationHistory(focusedWorkspace?.id ?? null, { warmup: warmupEnabled });
   const [showUsage, setShowUsage] = useState(false);
   // The focused workspace's own environment scopes account management; local only when there is none.
   const accountEnvironmentId = focusedWorkspace?.environmentId || 'local';
@@ -105,7 +107,7 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
       && harnessDefaults?.[id]?.usageVisible !== false),
     [availableHarnessIds, harnessDefaults, harnessDefaultsStatus],
   );
-  const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage, harnessIds: usageHarnessIds, environmentId: accountEnvironmentId, prefetch: true });
+  const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage, harnessIds: usageHarnessIds, environmentId: accountEnvironmentId, prefetch: warmupEnabled });
 
   const handleAddTerminal = async (harnessId: string) => {
     try {

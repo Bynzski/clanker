@@ -26,6 +26,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     getWorkspaceNavigationMode: createAsyncMock('tabs'),
     setWorkspaceNavigationMode: createAsyncMock(undefined),
     getWorkspaceSidebarWidth: createAsyncMock(280),
+    getWorkspaceSidebarExpandedWidth: createAsyncMock(280),
     setWorkspaceSidebarWidth: createAsyncMock(undefined),
     getKeybindingOverrides: createAsyncMock({}),
     setKeybindingOverrides: vi.fn(async (overrides: unknown) => ({ success: true, overrides })),

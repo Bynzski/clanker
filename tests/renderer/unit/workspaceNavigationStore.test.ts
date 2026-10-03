@@ -12,8 +12,9 @@ import {
   normalizeWorkspaceNavigationMode,
 } from '../../../src/shared/types/workspaceNavigation';
 
-function mockApi(persisted: unknown, width: unknown = 280) {
+function mockApi(persisted: unknown, width: unknown = 280, expanded: unknown = 280) {
   window.electronAPI = {
+    getWorkspaceSidebarExpandedWidth: vi.fn().mockResolvedValue(expanded),
     getWorkspaceSidebarWidth: vi.fn().mockResolvedValue(width),
     setWorkspaceSidebarWidth: vi.fn().mockResolvedValue(undefined),
     getWorkspaceNavigationMode: vi.fn().mockResolvedValue(persisted),
@@ -121,12 +122,12 @@ describe('workspace navigation mode', () => {
       expect(window.electronAPI.setWorkspaceSidebarWidth).toHaveBeenLastCalledWith(360);
     });
 
-    it('restores the default width when a collapsed rail was loaded from storage', async () => {
-      mockApi('sidebar', WORKSPACE_SIDEBAR_RAIL_WIDTH);
+    it('restores the persisted expanded width when a collapsed rail was loaded from storage', async () => {
+      mockApi('sidebar', WORKSPACE_SIDEBAR_RAIL_WIDTH, 400);
       await useWorkspaceNavigationStore.getState().initialize();
       expect(useWorkspaceNavigationStore.getState().sidebarWidth).toBe(WORKSPACE_SIDEBAR_RAIL_WIDTH);
       useWorkspaceNavigationStore.getState().expandSidebar();
-      expect(useWorkspaceNavigationStore.getState().sidebarWidth).toBe(DEFAULT_WORKSPACE_SIDEBAR_WIDTH);
+      expect(useWorkspaceNavigationStore.getState().sidebarWidth).toBe(400);
     });
 
     it('never remembers the rail as the expanded width', () => {

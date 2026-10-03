@@ -72,13 +72,17 @@ import * as nodePath from 'node:path';
 import { HarnessUsageService } from './usage/harnessUsageService';
 import { registerRecipeIpc } from './ipc/recipeIpc';
 import { KeybindingOverridesService } from './keybindingOverrides';
-import { purgeLegacyTaskSessions } from './storeMigrations';
+import { purgeLegacyTaskSessions, seedWorkspaceNavigationMode } from './storeMigrations';
+import { existsSync } from 'node:fs';
 import { AgentAttentionBroker } from './agentAttentionBroker';
 import { AGENT_ATTENTION_UPDATE, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles } from './agentAttentionAdapters';
 import { waitForTerminalCleanup } from './ipc/ptySpawn';
 
 
+
+// Must be read before the store is constructed: construction writes the defaults to disk.
+const storeFileExistedBeforeOpen = existsSync(nodePath.join(app.getPath('userData'), 'config.json'));
 
 const store = new Store<StoreSchema>({
   defaults: {
@@ -100,6 +104,7 @@ const store = new Store<StoreSchema>({
 // Workspace Tasks (#43) were removed. Drop any records persisted by older
 // builds instead of leaving an ever-growing dead store on disk.
 purgeLegacyTaskSessions(store);
+seedWorkspaceNavigationMode(store, storeFileExistedBeforeOpen);
 
 const keybindingOverrides = new KeybindingOverridesService(() => store);
 

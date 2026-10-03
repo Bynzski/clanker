@@ -21,7 +21,13 @@ import { type AiCommitProvider } from '../aiCommit';
 import { validateHarnessDefaultsMap } from '../harnessDefaultsValidation';
 import { KeybindingOverridesService } from '../keybindingOverrides';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
-import { isWorkspaceNavigationMode, normalizeWorkspaceNavigationMode, normalizeWorkspaceSidebarWidth } from '../../shared/types/workspaceNavigation';
+import {
+  DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
+  isWorkspaceNavigationMode,
+  isWorkspaceSidebarCollapsed,
+  normalizeWorkspaceNavigationMode,
+  normalizeWorkspaceSidebarWidth,
+} from '../../shared/types/workspaceNavigation';
 import { isThemeId, normalizeThemeId, getThemeMetadata } from '../../shared/types/theme';
 import {
   GET_APP_VERSION,
@@ -44,6 +50,7 @@ import {
   SET_WORKSPACE_NAVIGATION_MODE,
   GET_WORKSPACE_SIDEBAR_WIDTH,
   SET_WORKSPACE_SIDEBAR_WIDTH,
+  GET_WORKSPACE_SIDEBAR_EXPANDED_WIDTH,
   GET_KEYBINDING_OVERRIDES,
   SET_KEYBINDING_OVERRIDES,
 } from '../../shared/ipcChannels';
@@ -228,7 +235,17 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
       console.warn('[clanker-grid] SET_WORKSPACE_SIDEBAR_WIDTH rejected invalid width:', width);
       return;
     }
-    getStore().set('workspaceSidebarWidth', normalizeWorkspaceSidebarWidth(width));
+    const normalized = normalizeWorkspaceSidebarWidth(width);
+    getStore().set('workspaceSidebarWidth', normalized);
+    if (!isWorkspaceSidebarCollapsed(normalized)) getStore().set('workspaceSidebarExpandedWidth', normalized);
+  });
+
+  ipcMain.handle(GET_WORKSPACE_SIDEBAR_EXPANDED_WIDTH, () => {
+    const rawExpanded = getStore().get('workspaceSidebarExpandedWidth');
+    const expanded = normalizeWorkspaceSidebarWidth(rawExpanded);
+    if (rawExpanded !== undefined && !isWorkspaceSidebarCollapsed(expanded)) return expanded;
+    const current = normalizeWorkspaceSidebarWidth(getStore().get('workspaceSidebarWidth'));
+    return isWorkspaceSidebarCollapsed(current) ? DEFAULT_WORKSPACE_SIDEBAR_WIDTH : current;
   });
 
   ipcMain.handle(GET_KEYBINDING_OVERRIDES, () => keybindingOverrides.get());

@@ -1,11 +1,12 @@
-/** Wait after a workspace becomes active before any background warm-up, so opening it is never contended. */
+/** Wait after a workspace becomes active before any background warm-up, to keep it clear of the opening burst. */
 export const WARMUP_DELAY_MS = 3000;
 /** Upper bound on waiting for an idle moment once the delay has passed. */
 const IDLE_TIMEOUT_MS = 2000;
 
 /**
- * Runs `task` after `delayMs`, then at the next idle moment, so background prefetches
- * (conversation history, usage) never compete with a workspace opening its terminals.
+ * Best-effort delayed prefetch: runs `task` after `delayMs`, then at the next renderer idle moment
+ * (forced after a timeout; immediately where requestIdleCallback is missing). Renderer idleness says
+ * nothing about main-process or agent startup, so this lowers contention but guarantees nothing.
  * Returns a cancel function.
  */
 export function scheduleIdleWarmup(task: () => void, delayMs = WARMUP_DELAY_MS): () => void {

@@ -17,7 +17,13 @@ interface UseHeaderSettingsOptions {
 }
 
 export function useHeaderSettings({ harness, setHarness, includeAiCommit = true, validateHarness = true, environmentId = 'local' }: UseHeaderSettingsOptions) {
-  const [availableHarnessIds, setAvailableHarnessIds] = useState<string[]>(['']);
+  // Tagged with the environment it was discovered for, so a switch never exposes the previous
+  // environment's harnesses (a stale set would let Usage probe harnesses that are not installed).
+  const [discovered, setDiscovered] = useState<{ environmentId: string; ids: string[] }>({ environmentId, ids: [''] });
+  const availableHarnessIds = useMemo(
+    () => (discovered.environmentId === environmentId ? discovered.ids : ['']),
+    [discovered, environmentId],
+  );
   const [showSettings, setShowSettings] = useState(false);
   const [showCredentialModal, setShowCredentialModal] = useState(false);
   const [aiCommitEnabled, setAiCommitEnabled] = useState(false);
@@ -50,10 +56,10 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
           ? await window.electronAPI.getHarnessOptions()
           : await window.electronAPI.getEnvironmentHarnessOptions(environmentId);
         if (cancelled) return;
-        setAvailableHarnessIds(resolveAvailableHarnessIds(options));
+        setDiscovered({ environmentId, ids: resolveAvailableHarnessIds(options) });
       } catch {
         if (!cancelled) {
-          setAvailableHarnessIds(['']);
+          setDiscovered({ environmentId, ids: [''] });
         }
       }
     };

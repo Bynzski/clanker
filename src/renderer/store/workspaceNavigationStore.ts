@@ -21,7 +21,7 @@ import {
 export interface WorkspaceNavigationStoreState {
   mode: WorkspaceNavigationMode;
   sidebarWidth: number;
-  /** Session-only: the width to restore when the collapsed rail is expanded again. */
+  /** The width to restore when the collapsed rail is expanded again (persisted by main). */
   lastExpandedWidth: number;
   resolved: boolean;
   setMode: (mode: WorkspaceNavigationMode) => Promise<void>;
@@ -82,6 +82,7 @@ export const useWorkspaceNavigationStore = create<WorkspaceNavigationStoreState>
   initialize: async () => {
     let mode: WorkspaceNavigationMode = DEFAULT_WORKSPACE_NAVIGATION_MODE;
     let sidebarWidth = DEFAULT_WORKSPACE_SIDEBAR_WIDTH;
+    let expandedWidth = DEFAULT_WORKSPACE_SIDEBAR_WIDTH;
     if (typeof window !== 'undefined' && window.electronAPI) {
       const api = window.electronAPI;
       try {
@@ -94,10 +95,14 @@ export const useWorkspaceNavigationStore = create<WorkspaceNavigationStoreState>
       } catch (error) {
         console.error('[clanker-grid] Failed to load workspace sidebar width:', error);
       }
+      try {
+        if (api.getWorkspaceSidebarExpandedWidth) expandedWidth = normalizeWorkspaceSidebarWidth(await api.getWorkspaceSidebarExpandedWidth());
+      } catch (error) {
+        console.error('[clanker-grid] Failed to load workspace sidebar expanded width:', error);
+      }
     }
-    set(isWorkspaceSidebarCollapsed(sidebarWidth)
-      ? { mode, sidebarWidth, resolved: true }
-      : { mode, sidebarWidth, lastExpandedWidth: sidebarWidth, resolved: true });
+    const lastExpandedWidth = isWorkspaceSidebarCollapsed(expandedWidth) ? DEFAULT_WORKSPACE_SIDEBAR_WIDTH : expandedWidth;
+    set({ mode, sidebarWidth, lastExpandedWidth: isWorkspaceSidebarCollapsed(sidebarWidth) ? lastExpandedWidth : sidebarWidth, resolved: true });
     return mode;
   },
 }));

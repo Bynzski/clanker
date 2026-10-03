@@ -32,7 +32,7 @@ export interface UseHarnessUsageResult {
  */
 export function useHarnessUsage({ workspaceId, open, harnessIds, environmentId = 'local', prefetch = false }: {
   workspaceId: string | null; open: boolean; harnessIds: readonly string[]; environmentId?: string;
-  /** Warm the panel in the background once the workspace has settled. */
+  /** Warm the panel in the background shortly after the workspace becomes active (delayed, best-effort idle prefetch). */
   prefetch?: boolean;
 }): UseHarnessUsageResult {
   const [entries, setEntries] = useState<Record<string, HarnessUsageEntry | undefined>>({});
@@ -126,9 +126,9 @@ export function useHarnessUsage({ workspaceId, open, harnessIds, environmentId =
       .then(() => request(harnessId, false), () => undefined);
   }, [environmentId, request]);
 
-  // Closed: one ordinary read per workspace (and provider set) once the workspace has settled, so the
-  // first opening already has numbers. It never runs while a workspace is opening (scheduleIdleWarmup),
-  // never repeats after the panel closes, and main's cache/backoff still governs what is actually probed.
+  // Closed: one ordinary read per workspace (and provider set) shortly after the workspace becomes active
+  // (a delayed, best-effort idle prefetch, see scheduleIdleWarmup), so the first opening already has
+  // numbers. It never repeats after the panel closes, and main's cache/backoff still governs what is actually probed.
   const warmed = useRef<string | null>(null);
   useEffect(() => {
     const key = workspaceId ? `${workspaceId}\u0000${idsKey}` : null;

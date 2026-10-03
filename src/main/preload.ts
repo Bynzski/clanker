@@ -52,6 +52,7 @@ import {
   SET_WORKSPACE_NAVIGATION_MODE,
   GET_WORKSPACE_SIDEBAR_WIDTH,
   SET_WORKSPACE_SIDEBAR_WIDTH,
+  GET_WORKSPACE_SIDEBAR_EXPANDED_WIDTH,
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
   WRITE_TERMINAL,
@@ -221,6 +222,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setWorkspaceNavigationMode: (mode: WorkspaceNavigationMode) => ipcRenderer.invoke(SET_WORKSPACE_NAVIGATION_MODE, mode),
   getWorkspaceSidebarWidth: () => ipcRenderer.invoke(GET_WORKSPACE_SIDEBAR_WIDTH),
   setWorkspaceSidebarWidth: (width: number) => ipcRenderer.invoke(SET_WORKSPACE_SIDEBAR_WIDTH, width),
+  getWorkspaceSidebarExpandedWidth: () => ipcRenderer.invoke(GET_WORKSPACE_SIDEBAR_EXPANDED_WIDTH),
   getKeybindingOverrides: () => ipcRenderer.invoke(GET_KEYBINDING_OVERRIDES),
   setKeybindingOverrides: (overrides: KeybindingOverrides) => ipcRenderer.invoke(SET_KEYBINDING_OVERRIDES, overrides),
 

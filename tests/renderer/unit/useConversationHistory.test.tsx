@@ -12,7 +12,7 @@ beforeEach(() => { installElectronApiMock(); vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); });
 
 describe('useConversationHistory', () => {
-  it('warms history only after the workspace has settled, then opens instantly from it', async () => {
+  it('warms history only after the warm-up delay, then opens instantly from it', async () => {
     vi.mocked(window.electronAPI.discoverSessions).mockResolvedValue([session('a', 'Warm')]);
     const { result } = renderHook(() => useConversationHistory('ws-1'));
     act(() => { vi.advanceTimersByTime(WARMUP_DELAY_MS - 1); });
@@ -30,6 +30,12 @@ describe('useConversationHistory', () => {
     expect(result.current.sessions.map((s) => s.title)).toEqual(['Warm', 'New']);
   });
 
+  it('never warms in the background when warm-up is disabled (SSH workspaces)', () => {
+    renderHook(() => useConversationHistory('ws-ssh', { warmup: false }));
+    act(() => { vi.advanceTimersByTime(WARMUP_DELAY_MS * 3); });
+    expect(window.electronAPI.discoverSessions).not.toHaveBeenCalled();
+  });
+
   it('loads normally when opened before any warm-up, and ignores answers for a workspace left behind', async () => {
     let finish!: (sessions: HarnessSession[]) => void;
     vi.mocked(window.electronAPI.discoverSessions).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
@@ -40,6 +46,40 @@ describe('useConversationHistory', () => {
     await act(async () => finish([session('old', 'Old workspace')]));
     expect(result.current.sessions).toEqual([]);
     expect(result.current.isLoading).toBe(false);
+  });
+
+  it('caps the remembered workspaces at 8, evicting the least recently used', async () => {
+    vi.mocked(window.electronAPI.discoverSessions).mockImplementation(async (id: string) => [session(id, `list-${id}`)]);
+    const { result, rerender } = renderHook(({ id }) => useConversationHistory(id, { warmup: false }), { initialProps: { id: 'ws-0' } });
+    for (let i = 0; i < 9; i++) {
+      rerender({ id: `ws-${i}` });
+      act(() => result.current.setOpen(true));
+      await flush();
+      if (i === 1) { // touch ws-0 again so ws-1 becomes the oldest
+        rerender({ id: 'ws-0' });
+        act(() => result.current.setOpen(true));
+        await flush();
+      }
+    }
+    // 9 distinct workspaces were seen; ws-1 (oldest, untouched) was evicted, ws-0 (touched) was kept.
+    vi.mocked(window.electronAPI.discoverSessions).mockReturnValue(new Promise(() => undefined));
+    rerender({ id: 'ws-1' });
+    act(() => result.current.setOpen(true));
+    expect(result.current.isLoading).toBe(true);
+    rerender({ id: 'ws-0' });
+    act(() => result.current.setOpen(true));
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.sessions.map((x) => x.title)).toEqual(['list-ws-0']);
+  });
+
+  it('still opens and loads manually when background warm-up is disabled', async () => {
+    vi.mocked(window.electronAPI.discoverSessions).mockResolvedValue([session('a', 'Manual')]);
+    const { result } = renderHook(() => useConversationHistory('ws-ssh', { warmup: false }));
+    act(() => { vi.advanceTimersByTime(WARMUP_DELAY_MS * 3); });
+    expect(window.electronAPI.discoverSessions).not.toHaveBeenCalled();
+    act(() => result.current.setOpen(true));
+    await flush();
+    expect(result.current.sessions.map((x) => x.title)).toEqual(['Manual']);
   });
 
   it('keeps a failed refresh visible without dropping the remembered list', async () => {

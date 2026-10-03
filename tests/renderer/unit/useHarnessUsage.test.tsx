@@ -77,7 +77,7 @@ describe('useHarnessUsage selected harness set', () => {
 });
 
 describe('useHarnessUsage background warm-up', () => {
-  it('reads once only after the workspace has settled, and not again after the panel closes', () => {
+  it('reads once only after the warm-up delay, and not again after the panel closes', () => {
     vi.useFakeTimers();
     try {
       const { rerender } = renderHook(({ open }) => useHarnessUsage({ workspaceId: 'w', open, harnessIds: ['claude', 'agy'], prefetch: true }), { initialProps: { open: false } });

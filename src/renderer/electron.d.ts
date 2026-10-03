@@ -106,6 +106,8 @@ interface ElectronAPI {
   getWorkspaceNavigationMode: () => Promise<WorkspaceNavigationMode>;
   setWorkspaceNavigationMode: (mode: WorkspaceNavigationMode) => Promise<void>;
   getWorkspaceSidebarWidth: () => Promise<number>;
+  /** The width Expand restores; survives collapsing and restarts. */
+  getWorkspaceSidebarExpandedWidth: () => Promise<number>;
   setWorkspaceSidebarWidth: (width: number) => Promise<void>;
   getKeybindingOverrides: () => Promise<KeybindingOverrides>;
   setKeybindingOverrides: (overrides: KeybindingOverrides) => Promise<{ success: true; overrides: KeybindingOverrides } | { success: false; error: string }>;

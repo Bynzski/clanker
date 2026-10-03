@@ -199,13 +199,13 @@ describe('registerSettingsIpc', () => {
     });
   });
 
-  test('registers exactly 18 settings IPC channels', () => {
+  test('registers exactly 23 settings IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(22);
+    expect(handleCalls.length).toBe(23);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -215,7 +215,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(44);
+    expect(handleCalls.length).toBe(46);
   });
 
   test('OPEN_DIRECTORY_DIALOG allows creating directories from the picker', async () => {
@@ -1026,7 +1026,7 @@ describe('workspace sidebar width handlers', () => {
     const store = { get: vi.fn().mockReturnValue(stored), set: vi.fn() };
     registerSettingsIpc({ getStore: () => store as never, getMainWindow: () => null });
     const find = (name: string) => mockIpcMain.handle.mock.calls.find((c) => c[0] === name)![1];
-    return { store, get: find('get-workspace-sidebar-width'), set: find('set-workspace-sidebar-width') };
+    return { store, get: find('get-workspace-sidebar-width'), set: find('set-workspace-sidebar-width'), getExpanded: find('get-workspace-sidebar-expanded-width') };
   }
 
   test.each([320, 44])('GET returns a valid persisted width (%s) without rewriting', (width) => {
@@ -1043,6 +1043,32 @@ describe('workspace sidebar width handlers', () => {
       expect(store.set).toHaveBeenCalledWith('workspaceSidebarWidth', expected);
     },
   );
+
+  test('SET remembers the expanded width but not the rail, and GET expanded survives a collapse', () => {
+    const { store, set, getExpanded } = setup(44);
+    set({}, 360);
+    expect(store.set).toHaveBeenCalledWith('workspaceSidebarExpandedWidth', 360);
+    store.set.mockClear();
+    set({}, 44);
+    expect(store.set).toHaveBeenCalledTimes(1);
+    expect(store.set).toHaveBeenCalledWith('workspaceSidebarWidth', 44);
+    store.get.mockImplementation((key: string) => (key === 'workspaceSidebarExpandedWidth' ? 360 : 44));
+    expect(getExpanded()).toBe(360);
+    store.get.mockImplementation(() => undefined);
+    expect(getExpanded()).toBe(280);
+  });
+
+  test.each([['wide'], [Number.NaN], [10], [undefined]])('GET expanded never returns the rail or junk (%s)', (rawExpanded) => {
+    const { store, getExpanded } = setup(44);
+    store.get.mockImplementation((key: string) => (key === 'workspaceSidebarExpandedWidth' ? rawExpanded : 44));
+    expect(getExpanded()).toBe(280);
+  });
+
+  test('GET expanded falls back to a customised current width when none was remembered yet', () => {
+    const { store, getExpanded } = setup(360);
+    store.get.mockImplementation((key: string) => (key === 'workspaceSidebarWidth' ? 360 : undefined));
+    expect(getExpanded()).toBe(360);
+  });
 
   test('SET clamps numeric widths and rejects non-numeric ones', () => {
     const { store, set } = setup(280);
