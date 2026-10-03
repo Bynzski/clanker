@@ -328,7 +328,7 @@ function App() {
         const store = useWorkspaceStore.getState();
         const ws = store.workspaces.find((w) => w.id === wsId);
         if (ws && !ws.browserVisible) {
-          store.toggleBrowser();
+          store.setBrowserVisible(true, wsId);
         }
         if (typeof window.electronAPI?.browserNavigate === 'function') {
           return window.electronAPI.browserNavigate(wsId, url, undefined, true);

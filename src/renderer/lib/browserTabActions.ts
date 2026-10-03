@@ -51,7 +51,7 @@ export async function openUrlInWorkspaceBrowser(
   if (!workspace || workspace.id !== store.activeWorkspaceId) return null;
 
   if (!workspace.browserVisible) {
-    store.toggleBrowser();
+    store.setBrowserVisible(true, workspaceId);
   }
 
   return createAndActivateBrowserTab(workspaceId, url);

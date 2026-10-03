@@ -1,3 +1,4 @@
+import type { PanePlacementRestoreHint } from './workspaceLayout';
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
 import type { GitStatus } from '../components/git/types';
 
@@ -155,6 +156,8 @@ export interface WorkspaceTab {
   layoutRevision?: number;
   /** In-memory layout history; intentionally not persisted across launches. */
   layoutUndoStack?: LayoutNode[];
+  /** Runtime-only: where the browser sat before it was hidden. Never persisted. */
+  browserPlacementHint?: PanePlacementRestoreHint | null;
   explorerVisible: boolean;
   explorerSidebarWidth: number;
   explorerExpandedPaths: string[];

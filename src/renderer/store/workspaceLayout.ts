@@ -355,6 +355,110 @@ export function dockPaneToEdgeInLayout(
   return createLayoutSplit(trimmedLayout, dockedLeaf, 'vertical', 0.7);
 }
 
+/**
+ * Runtime-only hint describing where a hidden pane sat relative to its sibling
+ * subtree. The anchor is a node id that survives the collapse when the pane is
+ * removed, so the pane can be re-wrapped around whatever that subtree is now.
+ */
+export interface PanePlacementRestoreHint {
+  anchorNodeId: string;
+  orientation: 'horizontal' | 'vertical';
+  paneSide: 'first' | 'second';
+  ratio: number;
+}
+
+export function capturePanePlacementInLayout(
+  layoutRoot: LayoutNode | null,
+  paneId: string,
+): PanePlacementRestoreHint | null {
+  function visit(node: LayoutNode): PanePlacementRestoreHint | null {
+    if (node.type === 'leaf') {
+      return null;
+    }
+    if (node.first.type === 'leaf' && node.first.paneId === paneId) {
+      return {
+        anchorNodeId: node.second.nodeId,
+        orientation: node.orientation,
+        paneSide: 'first',
+        ratio: node.ratio,
+      };
+    }
+    if (node.second.type === 'leaf' && node.second.paneId === paneId) {
+      return {
+        anchorNodeId: node.first.nodeId,
+        orientation: node.orientation,
+        paneSide: 'second',
+        ratio: node.ratio,
+      };
+    }
+    return visit(node.first) ?? visit(node.second);
+  }
+
+  return layoutRoot == null ? null : visit(layoutRoot);
+}
+
+export type RestorePanePlacementResult =
+  | { ok: true; layoutRoot: LayoutNode }
+  | { ok: false };
+
+/**
+ * Wraps the current node matching `hint.anchorNodeId` in a split with the pane.
+ * Fails (without altering the layout) when the anchor is gone or the pane is
+ * already present.
+ */
+export function restorePanePlacementInLayout(
+  layoutRoot: LayoutNode | null,
+  paneId: string,
+  hint: PanePlacementRestoreHint,
+): RestorePanePlacementResult {
+  if (layoutRoot == null || collectLeafPaneIds(layoutRoot).includes(paneId)) {
+    return { ok: false };
+  }
+
+  let found = false;
+  function wrap(node: LayoutNode): LayoutNode {
+    if (node.nodeId === hint.anchorNodeId) {
+      found = true;
+      const leaf = createLayoutLeaf(paneId);
+      return hint.paneSide === 'first'
+        ? createLayoutSplit(leaf, node, hint.orientation, hint.ratio)
+        : createLayoutSplit(node, leaf, hint.orientation, hint.ratio);
+    }
+    if (node.type === 'leaf') {
+      return node;
+    }
+    const first = wrap(node.first);
+    if (found) {
+      return { ...node, first };
+    }
+    const second = wrap(node.second);
+    return found ? { ...node, second } : node;
+  }
+
+  const next = wrap(layoutRoot);
+  return found ? { ok: true, layoutRoot: next } : { ok: false };
+}
+
+/** Inserts a pane that is not yet in the layout at a workspace edge (30/70 split). */
+export function insertPaneAtWorkspaceEdgeInLayout(
+  layoutRoot: LayoutNode | null,
+  paneId: string,
+  edge: DockEdge,
+): LayoutNode {
+  if (layoutRoot == null) {
+    return createLayoutLeaf(paneId);
+  }
+  if (collectLeafPaneIds(layoutRoot).includes(paneId)) {
+    return layoutRoot;
+  }
+
+  const leaf = createLayoutLeaf(paneId);
+  if (edge === 'left') return createLayoutSplit(leaf, layoutRoot, 'horizontal', 0.3);
+  if (edge === 'right') return createLayoutSplit(layoutRoot, leaf, 'horizontal', 0.7);
+  if (edge === 'top') return createLayoutSplit(leaf, layoutRoot, 'vertical', 0.3);
+  return createLayoutSplit(layoutRoot, leaf, 'vertical', 0.7);
+}
+
 export function insertPaneAtEdgeGapInLayout(
   layoutRoot: LayoutNode | null,
   paneId: string,

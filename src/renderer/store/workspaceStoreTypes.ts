@@ -118,7 +118,9 @@ export interface WorkspaceState {
   addTerminal: (terminal: Terminal, workspaceId?: string) => void;
   removeTerminal: (id: string) => void;
   setActiveTerminal: (id: string) => void;
-  toggleBrowser: () => void;
+  /** Scoped, nondestructive browser visibility; restores placement best-effort on show. */
+  setBrowserVisible: (visible: boolean, workspaceId?: string) => void;
+  toggleBrowser: (workspaceId?: string) => void;
   toggleNotesPane: () => void;
   closeNotesPane: (workspaceId?: string) => void;
   pushBrowserOverlay: (workspaceId?: string) => void;

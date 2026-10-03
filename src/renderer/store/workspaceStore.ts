@@ -2,16 +2,19 @@ import { create } from 'zustand';
 import {
   buildWorkspaceLayout,
   collectLeafPaneIds,
+  capturePanePlacementInLayout,
   dockPaneToEdgeInLayout,
   GRID_COLS,
   GRID_ROWS,
   insertPaneAtEdgeGapInLayout,
   insertPaneAtEdgeSegmentInLayout,
+  insertPaneAtWorkspaceEdgeInLayout,
   insertPaneIntoLayout,
   movePaneInLayout,
   normalizeLayoutRoot,
   normalizePosition,
   removePaneFromLayout,
+  restorePanePlacementInLayout,
   setSplitRatioInLayout,
   swapPaneIdsInLayout,
 } from './workspaceLayout';
@@ -498,71 +501,60 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return nextState;
   }),
 
-  toggleBrowser: () => set((state) => {
-    const nextBrowserVisible = !state.browserVisible;
-    const nextBrowserPane = nextBrowserVisible
-      ? state.browserPane ?? createDefaultBrowserPane(
-          generateId('browser'),
-          { x: 0, y: 0, w: 6, h: 6 },
-          state.browserUrl,
-        )
-      : state.browserPane;
-
-    let nextLayoutRoot = state.layoutRoot;
-    if (nextBrowserVisible) {
-      const browserId = nextBrowserPane?.id ?? null;
-      if (browserId != null) {
-        if (state.browserVisible) {
-          nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, browserId, {
-            panes: state.panes,
-            explorerPane: state.explorerPane,
-            explorerVisible: state.explorerVisible,
-            browserPane: nextBrowserPane,
-            browserVisible: true,
-            editorPane: state.editorPane,
-            editorVisible: state.editorVisible,
-            notesPane: state.notesPane,
-            notesVisible: state.notesVisible,
-            activeTerminalId: state.activeTerminalId,
-          });
-        } else {
-          const currentIds = collectLeafPaneIds(state.layoutRoot ?? null);
-          if (!currentIds.includes(browserId)) {
-            nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, browserId, {
-              panes: state.panes,
-              explorerPane: state.explorerPane,
-              explorerVisible: state.explorerVisible,
-              browserPane: nextBrowserPane,
-              browserVisible: true,
-              editorPane: state.editorPane,
-              editorVisible: state.editorVisible,
-              notesPane: state.notesPane,
-              notesVisible: state.notesVisible,
-              activeTerminalId: state.activeTerminalId,
-            });
-          }
-        }
-      }
-    } else {
-      const browserId = state.browserPane?.id;
-      if (browserId != null) {
-        nextLayoutRoot = removePaneFromLayout(state.layoutRoot, browserId);
-      }
+  setBrowserVisible: (visible, workspaceId) => set((state) => {
+    const workspace = resolveWorkspaceByScope(state, workspaceId);
+    if (workspace == null) {
+      return state;
     }
 
-    return {
-      browserVisible: nextBrowserVisible,
+    const browserLeafPresent = workspace.browserPane != null
+      && collectLeafPaneIds(workspace.layoutRoot ?? null).includes(workspace.browserPane.id);
+    if (visible === workspace.browserVisible && visible === browserLeafPresent) {
+      return state;
+    }
+
+    let nextBrowserPane = workspace.browserPane;
+    let nextLayoutRoot = workspace.layoutRoot;
+    let nextHint = workspace.browserPlacementHint ?? null;
+
+    if (visible) {
+      nextBrowserPane = workspace.browserPane ?? createDefaultBrowserPane(
+        generateId('browser'),
+        { x: 0, y: 0, w: 6, h: 6 },
+        workspace.browserUrl,
+      );
+      if (!browserLeafPresent) {
+        const restored = nextHint
+          ? restorePanePlacementInLayout(workspace.layoutRoot, nextBrowserPane.id, nextHint)
+          : null;
+        nextLayoutRoot = restored?.ok
+          ? restored.layoutRoot
+          : insertPaneAtWorkspaceEdgeInLayout(workspace.layoutRoot, nextBrowserPane.id, 'right');
+      }
+      nextHint = null;
+    } else if (workspace.browserPane) {
+      nextHint = capturePanePlacementInLayout(workspace.layoutRoot, workspace.browserPane.id);
+      nextLayoutRoot = removePaneFromLayout(workspace.layoutRoot, workspace.browserPane.id);
+    }
+
+    // Visibility only: browser tabs/views are retained and no layout undo entry is recorded.
+    return patchWorkspaceById(state, workspace.id, (current) => ({
+      ...current,
+      browserVisible: visible,
       browserPane: nextBrowserPane,
       layoutRoot: nextLayoutRoot,
-      layoutRevision: state.layoutRevision + 1,
-      ...syncActiveWorkspace(state, (workspace) => ({
-        ...workspace,
-        browserVisible: nextBrowserVisible,
-        browserPane: nextBrowserPane,
-        layoutRoot: nextLayoutRoot,
-      })),
-    };
+      layoutRevision: (current.layoutRevision ?? 0) + 1,
+      browserPlacementHint: nextHint,
+    }));
   }),
+
+  toggleBrowser: (workspaceId) => {
+    const workspace = resolveWorkspaceByScope(get(), workspaceId);
+    if (workspace == null) {
+      return;
+    }
+    get().setBrowserVisible(!workspace.browserVisible, workspace.id);
+  },
 
   toggleNotesPane: () => set((state) => {
     const nextNotesVisible = !state.notesVisible;
