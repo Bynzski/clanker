@@ -8,7 +8,7 @@ import type { ExplorerTreeChangedEvent } from '../shared/types/fileExplorer';
 import type { HarnessDefaultsMap } from '../shared/types/store';
 import type { KeybindingOverrides, BrowserKeybindingCommandPayload } from '../shared/keybindings';
 import type { VcsProvider } from '../shared/types/vcs';
-import type { GitStatusResult } from '../shared/types/git';
+import type { GitCreateWorktreeOptions, GitStatusResult } from '../shared/types/git';
 import type { HarnessSession } from '../shared/types/session';
 import type { HarnessUsageRequest } from '../shared/types/harnessUsage';
 import type { HarnessAccountAuthEvent } from '../shared/types/harnessAccounts';
@@ -399,8 +399,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitCommit: (workspacePath: string, message: string, workspaceId?: string) => ipcRenderer.invoke(GIT_COMMIT, workspacePath, message, workspaceId),
   gitGetBranchState: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_GET_BRANCH_STATE, workspacePath, workspaceId),
   gitListWorktrees: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_LIST_WORKTREES, workspacePath, workspaceId),
-  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string) =>
-    ipcRenderer.invoke(GIT_CREATE_WORKTREE, workspacePath, baseRef, branch, workspaceId),
+  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string, options?: GitCreateWorktreeOptions) =>
+    ipcRenderer.invoke(GIT_CREATE_WORKTREE, workspacePath, baseRef, branch, workspaceId, options),
   registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) =>
     ipcRenderer.invoke(REGISTER_OPEN_WORKSPACE, id, workspacePath, environmentId),
   unregisterOpenWorkspace: (id: string) =>

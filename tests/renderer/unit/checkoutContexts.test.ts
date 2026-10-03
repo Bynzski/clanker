@@ -5,6 +5,7 @@ import {
   backfillCheckoutContexts,
   bindTerminalToCheckoutContext,
   getCheckoutContext,
+  upsertCheckoutContextList,
 } from '../../../src/renderer/lib/checkoutContexts';
 import { mainCheckoutContextId } from '../../../src/shared/checkoutContext';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
@@ -140,5 +141,77 @@ describe('workspace store checkout contexts', () => {
     useWorkspaceStore.getState().selectWorkspace('ws-1');
 
     expect(useWorkspaceStore.getState().getWorkspaceById('ws-1')?.checkoutContexts).toEqual(before);
+  });
+});
+
+describe('upserting an authoritative worktree context', () => {
+  const worktree = (workspaceId: string, overrides: Partial<CheckoutContext> = {}): CheckoutContext => ({
+    id: `${workspaceId}::ckt-1`, workspaceId, environmentId: 'local', path: '/work/app-worktrees/task',
+    kind: 'worktree', branch: 'task', mainCheckoutPath: '/work/app', ...overrides,
+  });
+
+  beforeEach(() => {
+    useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null, activeWorkspaceLifecycle: null, terminals: [], panes: [] });
+    const input = workspaceInput({ workspacePath: '/work/app' });
+    useWorkspaceStore.getState().addWorkspace({ ...input, id: 'ws-1' });
+    useWorkspaceStore.getState().addWorkspace({ ...input, id: 'ws-2', workspacePath: '/elsewhere' });
+  });
+
+  const contextsOf = (id: string) => useWorkspaceStore.getState().getWorkspaceById(id)!.checkoutContexts!;
+
+  it('adds the context to its owning workspace only, keeping the main context and the workspace root', () => {
+    expect(useWorkspaceStore.getState().upsertCheckoutContext('ws-1', worktree('ws-1'))).toBe(true);
+
+    expect(contextsOf('ws-1').map((context) => context.id)).toEqual([mainCheckoutContextId('ws-1'), 'ws-1::ckt-1']);
+    expect(contextsOf('ws-2')).toEqual([mainContext('ws-2', '/elsewhere')]);
+    expect(useWorkspaceStore.getState().getWorkspaceById('ws-1')?.workspacePath).toBe('/work/app');
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(2);
+  });
+
+  it('is idempotent: applying the same authoritative context twice neither duplicates nor re-renders it', () => {
+    useWorkspaceStore.getState().upsertCheckoutContext('ws-1', worktree('ws-1'));
+    const first = contextsOf('ws-1');
+
+    expect(useWorkspaceStore.getState().upsertCheckoutContext('ws-1', worktree('ws-1'))).toBe(true);
+
+    expect(contextsOf('ws-1')).toHaveLength(2);
+    expect(contextsOf('ws-1')).toBe(first);
+  });
+
+  it('updates descriptive fields (branch) of an existing context', () => {
+    useWorkspaceStore.getState().upsertCheckoutContext('ws-1', worktree('ws-1'));
+    useWorkspaceStore.getState().upsertCheckoutContext('ws-1', worktree('ws-1', { branch: 'renamed' }));
+    expect(contextsOf('ws-1').find((context) => context.id === 'ws-1::ckt-1')?.branch).toBe('renamed');
+    expect(contextsOf('ws-1')).toHaveLength(2);
+  });
+
+  it.each([
+    ['another workspace\'s context', () => worktree('ws-2')],
+    ['a context whose workspaceId names another workspace though its id is scoped here', () => worktree('ws-1', { workspaceId: 'ws-2' })],
+    ['an unknown workspace id in the call', () => worktree('ws-1')],
+    ['a context for a different environment', () => worktree('ws-1', { environmentId: 'vps' })],
+    ['a second main context', () => worktree('ws-1', { id: mainCheckoutContextId('ws-1'), kind: 'main' })],
+    ['a main-kind context under a fresh id', () => worktree('ws-1', { kind: 'main' })],
+    ['an id that is not scoped to the workspace', () => worktree('ws-1', { id: 'ws-2::ckt-1' })],
+    ['a relative path', () => worktree('ws-1', { path: 'relative/wt' })],
+    ['a second id for the workspace root', () => worktree('ws-1', { path: '/work/app' })],
+  ])('rejects %s and changes nothing', (label, build) => {
+    const target = label === 'an unknown workspace id in the call' ? 'ghost' : 'ws-1';
+    expect(useWorkspaceStore.getState().upsertCheckoutContext(target, build())).toBe(false);
+    expect(contextsOf('ws-1')).toEqual([mainContext('ws-1', '/work/app')]);
+    expect(contextsOf('ws-2')).toEqual([mainContext('ws-2', '/elsewhere')]);
+  });
+
+  it('never lets a context id be re-pointed at a different root', () => {
+    useWorkspaceStore.getState().upsertCheckoutContext('ws-1', worktree('ws-1'));
+    expect(useWorkspaceStore.getState().upsertCheckoutContext('ws-1', worktree('ws-1', { path: '/work/other-root' }))).toBe(false);
+    expect(contextsOf('ws-1').find((context) => context.id === 'ws-1::ckt-1')?.path).toBe('/work/app-worktrees/task');
+  });
+
+  it('the pure helper reports rejection as null and does not mutate its input', () => {
+    const workspace = createWorkspaceFixture({ id: 'ws-1', workspacePath: '/work/app', checkoutContexts: [mainContext('ws-1', '/work/app')] });
+    expect(upsertCheckoutContextList(workspace, worktree('ws-2'))).toBeNull();
+    expect(upsertCheckoutContextList(workspace, worktree('ws-1'))).toHaveLength(2);
+    expect(workspace.checkoutContexts).toHaveLength(1);
   });
 });

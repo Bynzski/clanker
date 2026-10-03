@@ -65,7 +65,7 @@ import { preserveOriginalLineEndings } from '../lib/lineEndings';
 import { restoreWorkspaceLayout, restoreWorkspaceLayoutFromPersisted } from '../lib/workspaceLayoutStorage';
 import { insertWorkspaceInSavedOrder, persistWorkspaceTabOrder } from '../lib/workspaceTabOrder';
 import { nameTerminal, nameTerminals } from '../lib/agentNames';
-import { bindTerminalToCheckoutContext } from '../lib/checkoutContexts';
+import { bindTerminalToCheckoutContext, upsertCheckoutContextList } from '../lib/checkoutContexts';
 import {
   readStoredNotesVisible,
   writeStoredNotesVisible,
@@ -319,6 +319,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       workspace.id === id ? { ...workspace, name } : workspace
     )),
   })),
+
+  upsertCheckoutContext: (workspaceId, checkoutContext) => {
+    const workspace = findWorkspaceById(get().workspaces, workspaceId);
+    if (!workspace) return false;
+    const next = upsertCheckoutContextList(workspace, checkoutContext);
+    if (!next) return false;
+    if (next !== workspace.checkoutContexts) {
+      set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({ ...entry, checkoutContexts: next })));
+    }
+    return true;
+  },
 
   setWorkspacePath: (path) => set((state) => syncActiveWorkspace(state, (workspace) => ({
     ...workspace,

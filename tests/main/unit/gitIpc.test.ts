@@ -1143,6 +1143,139 @@ describe('Git IPC workspace identity routing', () => {
     expect(createWorktree).toHaveBeenCalledTimes(1);
   });
 
+  const sshTask = { path: '/srv/Repo-worktrees/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false };
+  const sshListing = (...extra: string[]) => ({
+    stdout: `worktree ${workspacePath}\0branch refs/heads/main\0\0${extra.join('')}`,
+    stderr: '',
+  });
+  const sshListed = `worktree ${sshTask.path}\0branch refs/heads/task\0\0`;
+  const attach = { attachCheckoutContext: true };
+
+  test('passing the id of an open repository workspace without opting in attaches no context (legacy New Workspace flow)', async () => {
+    const { registry, remote, handle } = setup();
+    Object.assign(remote, { createWorktree: vi.fn().mockResolvedValue({ success: true, worktree: { ...sshTask } }) });
+    await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+    remote.execGit.mockClear();
+
+    for (const options of [undefined, {}, { attachCheckoutContext: false }, { attachCheckoutContext: 'yes' }, null]) {
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', options);
+      expect(result).toEqual({ success: true, worktree: sshTask });
+    }
+    expect(registry.getCheckoutContextsForWorkspace('ssh-tab')).toHaveLength(1);
+    expect(remote.execGit).not.toHaveBeenCalled();
+  });
+
+  test('asking to attach without a registered workspace fails before anything is created', async () => {
+    const { service, handle } = setup();
+    const localCreate = vi.spyOn(service, 'createWorktree');
+    expect(await handle('git-create-worktree')(null, process.cwd(), 'main', 'task', undefined, attach))
+      .toMatchObject({ success: false, error: expect.stringContaining('registered workspace is required') });
+    expect(localCreate).not.toHaveBeenCalled();
+  });
+
+  describe('workspace-scoped worktree creation attaches a checkout context', () => {
+    async function sshWorkspace(listing: { stdout: string; stderr: string } | Error = sshListing(sshListed)) {
+      const f = setup();
+      const createWorktree = vi.fn().mockResolvedValue({ success: true, worktree: { ...sshTask } });
+      Object.assign(f.remote, { createWorktree });
+      if (listing instanceof Error) f.remote.execGit.mockRejectedValue(listing);
+      else f.remote.execGit.mockResolvedValue(listing);
+      await f.handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      return { ...f, createWorktree };
+    }
+
+    test('SSH: registers an independently validated context under the existing workspace without widening its root', async () => {
+      const { registry, remote, handle } = await sshWorkspace();
+      remote.validateWorkspacePath.mockClear();
+
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', attach);
+
+      expect(result).toMatchObject({
+        success: true,
+        worktree: { path: sshTask.path, branch: 'task' },
+        checkoutContext: {
+          workspaceId: 'ssh-tab', environmentId: 'ssh', path: sshTask.path, kind: 'worktree',
+          branch: 'task', mainCheckoutPath: workspacePath,
+        },
+      });
+      // The worktree root went through the environment's own validation, not the workspace's.
+      expect(remote.validateWorkspacePath).toHaveBeenCalledExactlyOnceWith(sshTask.path);
+      // One workspace, root unchanged; two contexts; the sibling is not reachable from the main one.
+      expect(registry.getAllWorkspaces().map((entry) => entry.location.path)).toEqual([workspacePath]);
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab').map((entry) => entry.path)).toEqual([workspacePath, sshTask.path]);
+      expect(registry.resolveCheckoutContext('ssh-tab')?.path).toBe(workspacePath);
+      const returned = (result as { checkoutContext: { id: string } }).checkoutContext;
+      expect(registry.getCheckoutContext(returned.id)).toMatchObject({ path: sshTask.path });
+    });
+
+    test('SSH: derives branch and main checkout from Git metadata, not from the create result or arguments', async () => {
+      const listing = sshListing(`worktree ${sshTask.path}\0branch refs/heads/from-git\0\0`);
+      const { handle } = await sshWorkspace(listing);
+      const result = await handle('git-create-worktree')(null, '/forged/path', 'HEAD', 'task', 'ssh-tab', attach);
+      expect(result).toMatchObject({ checkoutContext: { branch: 'from-git', mainCheckoutPath: workspacePath, path: sshTask.path } });
+    });
+
+    test.each([
+      ['Git does not list the created path as a linked worktree', sshListing(`worktree /srv/elsewhere\0branch refs/heads/task\0\0`)],
+      ['Git lists it only as the main worktree', { stdout: `worktree ${sshTask.path}\0branch refs/heads/task\0\0`, stderr: '' }],
+      ['Git cannot list worktrees', new Error('ssh dropped')],
+    ])('SSH: keeps the created checkout and reports a partial result when %s', async (_label, listing) => {
+      const { registry, createWorktree, handle } = await sshWorkspace(listing);
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', attach);
+
+      expect(result).toMatchObject({
+        success: false, created: true, worktree: { path: sshTask.path, branch: 'task' },
+        error: expect.stringContaining('could not be attached'),
+      });
+      expect(result).not.toHaveProperty('checkoutContext');
+      expect(createWorktree).toHaveBeenCalledTimes(1);
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab')).toHaveLength(1);
+    });
+
+    test('SSH: a root that became reserved for removal is not attached, and nothing is deleted', async () => {
+      const { registry, remote, handle } = await sshWorkspace();
+      const removeWorktree = vi.fn();
+      Object.assign(remote, { removeWorktree });
+      registry.reserveRemotePaths('ssh', [sshTask.path]);
+
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', attach);
+
+      expect(result).toMatchObject({ success: false, created: true, worktree: { path: sshTask.path } });
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab')).toHaveLength(1);
+      expect(removeWorktree).not.toHaveBeenCalled();
+    });
+
+    test('SSH: a workspace closed while the create was in flight gets no context', async () => {
+      const { registry, createWorktree, handle } = await sshWorkspace();
+      createWorktree.mockImplementationOnce(async () => {
+        registry.unregisterWorkspace('ssh-tab');
+        return { success: true, worktree: { ...sshTask } };
+      });
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', attach);
+      expect(result).toMatchObject({ success: false, created: true });
+      expect(registry.getAllCheckoutContexts()).toEqual([]);
+    });
+
+    test('a failed create attaches nothing and is not reported as created', async () => {
+      const { registry, createWorktree, handle } = await sshWorkspace();
+      createWorktree.mockResolvedValueOnce({ success: false, error: 'branch exists' });
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', attach);
+      expect(result).toEqual({ success: false, error: 'branch exists' });
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab')).toHaveLength(1);
+    });
+
+    test('contexts attach only to the workspace named by the call, never to another workspace', async () => {
+      const { registry, remote, handle } = await sshWorkspace();
+      await handle('register-open-workspace')(null, 'other-tab', '/srv/other', 'ssh');
+      remote.execGit.mockResolvedValue({ stdout: `worktree /srv/other\0branch refs/heads/main\0\0${sshListed}`, stderr: '' });
+
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', attach) as { checkoutContext?: { id: string } };
+
+      expect(registry.getCheckoutContextsForWorkspace('other-tab')).toHaveLength(1);
+      expect(registry.resolveCheckoutContext('other-tab', result.checkoutContext?.id)).toBeNull();
+    });
+  });
+
   test('inspects using authoritative same-host workspace and terminal activity', async () => {
     const terminalPaths = vi.fn().mockReturnValue(['/srv/other/src']);
     const { remote, local, handle } = setup(terminalPaths);

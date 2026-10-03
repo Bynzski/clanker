@@ -8,6 +8,8 @@ import { ipcMain, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { GitService, type GitWorkspaceIdentity } from '../gitService';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
+import { attachCreatedWorktree } from '../worktreeContextAttachment';
+import type { GitCreateWorktreeOptions, GitWorktreeCreateResult } from '../../shared/types/git';
 import { RemoteWorktreeCoordinator, type RemoteWorktreeRemovalPersistence } from '../remote/remoteWorktreeCoordinator';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import {
@@ -220,21 +222,32 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
       : { ...result, worktrees: result.worktrees.map((entry) => ({ ...entry, path: toPosixPath(entry.path) })) };
   });
 
-  registerGitHandler(GIT_CREATE_WORKTREE, async (_, workspacePath: string, baseRef: string, branch: string) => {
+  registerGitHandler(GIT_CREATE_WORKTREE, async (_, workspacePath: string, baseRef: string, branch: string, _workspaceId?: string, options?: GitCreateWorktreeOptions) => {
+    // A workspace id only routes the operation. Attaching the checkout as a worktree context is
+    // explicit opt-in, so the legacy New Workspace flows (which open the checkout as a separate
+    // workspace, and may pass the id of an open repository workspace) never gain a context.
     const ws = resolveWorkspace();
+    const registry = getWorkspaceRegistry?.();
+    const attachRequested = typeof options === 'object' && options !== null && options.attachCheckoutContext === true;
+    if (attachRequested && (!ws || !registry)) {
+      return { success: false, error: 'A registered workspace is required to attach a checkout context' };
+    }
+    const attach = (created: GitWorktreeCreateResult, listPath: string): Promise<GitWorktreeCreateResult> | GitWorktreeCreateResult =>
+      attachRequested && ws && registry
+        ? attachCreatedWorktree({ registry, workspace: ws, created, listWorktrees: () => gitService.listWorktrees(listPath) })
+        : created;
     if (ws && ws.location.environmentId !== 'local') {
       const recoveryError = remoteWorktrees.getRecoveryError();
       if (recoveryError) return { success: false, error: recoveryError };
-      return ws.environment.createWorktree
-        ? ws.environment.createWorktree(ws.location.path, baseRef, branch)
-        : { success: false, error: 'Worktree creation is unavailable for this environment' };
+      if (!ws.environment.createWorktree) return { success: false, error: 'Worktree creation is unavailable for this environment' };
+      return attach(await ws.environment.createWorktree(ws.location.path, baseRef, branch), ws.location.path);
     }
     const safePath = getValidatedWorkspacePath(workspacePath);
     if (!safePath) return getInvalidWorkspaceResult();
     const result = await gitService.createWorktree(safePath, baseRef, branch);
-    return result.worktree
+    return attach(result.worktree
       ? { ...result, worktree: { ...result.worktree, path: toPosixPath(result.worktree.path) } }
-      : result;
+      : result, safePath);
   });
 
   registerGitHandler(REGISTER_OPEN_WORKSPACE, async (_, id: string, workspacePath: string, environmentId?: string) => {

@@ -31,6 +31,7 @@ import type {
   GitInitResult,
   GitWorktreeListResult,
   GitWorktreeCreateResult,
+  GitCreateWorktreeOptions,
   GitWorktreeInspectionResult,
   GitWorktreeRemoveResult,
 } from '../../shared/types/git';
@@ -226,7 +227,7 @@ interface ElectronAPI {
   gitCommit: (workspacePath: string, message: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
   gitGetBranchState: (workspacePath: string, workspaceId?: string) => Promise<GitBranchStateResult>;
   gitListWorktrees: (workspacePath: string, workspaceId?: string) => Promise<GitWorktreeListResult>;
-  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string) => Promise<GitWorktreeCreateResult>;
+  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string, options?: GitCreateWorktreeOptions) => Promise<GitWorktreeCreateResult>;
   registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) => Promise<{ success: boolean; location?: WorkspaceLocation; checkoutContext?: CheckoutContext; error?: string }>;
   unregisterOpenWorkspace: (id: string) => Promise<{ success: boolean; error?: string }>;
   gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeInspectionResult>;

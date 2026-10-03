@@ -17,6 +17,7 @@ import type {
   WorkspaceTab,
 } from './workspaceTypes';
 import type { GitStatus } from '../components/git/types';
+import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
 
 /**
@@ -100,6 +101,12 @@ export interface WorkspaceState {
   moveWorkspace: (workspaceId: string, targetWorkspaceId: string) => void;
   closeWorkspace: (id: string) => void;
   updateWorkspaceName: (id: string, name: string) => void;
+  /**
+   * Records an authoritative worktree context returned by main on the workspace that owns it.
+   * Returns false (and changes nothing) for a context that does not belong to that workspace or
+   * that main would not produce. Idempotent for the same context.
+   */
+  upsertCheckoutContext: (workspaceId: string, checkoutContext: CheckoutContext) => boolean;
   getWorkspaceById: (id: string | null) => WorkspaceTab | null;
   getActiveWorkspace: () => WorkspaceTab | null;
   isWorkspaceActive: (id: string) => boolean;
