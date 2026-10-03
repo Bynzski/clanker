@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { BellRing, Check, ChevronDown, ChevronRight, Edit2, GitBranch, Plus, X } from 'lucide-react';
 import { IconButton } from './ui/IconButton';
@@ -8,6 +8,7 @@ import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 import { attentionCounts, useAgentAttentionStore } from '../store/agentAttentionStore';
 import { nextAttentionTarget } from '../lib/agentAttentionNavigation';
 import { getAttentionPresentation } from '../lib/agentAttentionPresentation';
+import { AgentAttentionState, WorkspaceAttentionBadge } from './AgentAttentionIndicators';
 import { getHarnessOption } from '../lib/harnessOptions';
 import { closeWorkspaceWithCleanup } from '../lib/workspaceClose';
 import { getRemoteEnvironmentLabel, getWorkspaceRenameValue, getWorkspaceTabLabel } from '../lib/workspaceLabels';
@@ -21,7 +22,7 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
   const harness = getHarnessOption(terminal.harnessId);
   const HarnessIcon = harness.Icon;
   const showAttention = Boolean(terminal.harnessId && terminal.attentionEnabled);
-  const { label, Icon: AttentionIcon } = getAttentionPresentation(attention?.lifecycle);
+  const { label } = getAttentionPresentation(attention?.lifecycle);
   const name = terminal.displayName ?? harness.label;
 
   return (
@@ -36,15 +37,7 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
         <span className="ws-agent-harness" aria-hidden="true"><HarnessIcon size={13} strokeWidth={2} /></span>
         <span className="ws-agent-name">{name}</span>
         <span className="ws-agent-harness-label">{harness.label}</span>
-        {showAttention && (
-          <span
-            className={`terminal-agent-state state-${attention?.lifecycle ?? 'unknown'} ${attention?.unseen ? 'unseen' : ''}`}
-            role="img"
-            aria-label={`${name}: ${label}`}
-          >
-            <AttentionIcon size={14} strokeWidth={2} aria-hidden="true" />
-          </span>
-        )}
+        {showAttention && <AgentAttentionState attention={attention} name={name} />}
       </button>
     </li>
   );
@@ -66,14 +59,15 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace }: Workspace
   // Expansion is navigation-only UI state: it never affects residency or terminals.
   const [sectionOpen, setSectionOpen] = useState(true);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set(activeWorkspaceId ? [activeWorkspaceId] : []));
-  // Auto-expand a workspace when it becomes active (adjusting state during render).
-  const [seenActiveId, setSeenActiveId] = useState(activeWorkspaceId);
-  if (seenActiveId !== activeWorkspaceId) {
-    setSeenActiveId(activeWorkspaceId);
-    if (activeWorkspaceId && !expandedIds.has(activeWorkspaceId)) {
-      setExpandedIds(new Set(expandedIds).add(activeWorkspaceId));
+  // Auto-expand a workspace whenever it becomes active. Subscribing to the store
+  // (rather than deriving state in render or an effect body) keeps this a pure
+  // reaction to an external change; the initial active workspace is seeded above.
+  useEffect(() => useWorkspaceStore.subscribe((state, prev) => {
+    const id = state.activeWorkspaceId;
+    if (id && id !== prev.activeWorkspaceId) {
+      setExpandedIds((current) => current.has(id) ? current : new Set(current).add(id));
     }
-  }
+  }), []);
 
   const toggleExpanded = (id: string) => setExpandedIds((current) => {
     const next = new Set(current);
@@ -198,15 +192,7 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace }: Workspace
                       )}
                     </button>
                   )}
-                  {(counts.needsInput > 0 || counts.completed > 0) && (
-                    <span
-                      className={`workspace-tab-attention ${counts.needsInput > 0 ? 'needs-input' : 'complete'}`}
-                      aria-label={`${counts.needsInput} agents need input, ${counts.completed} turns complete`}
-                      title={`${counts.needsInput} need input · ${counts.completed} complete`}
-                    >
-                      {counts.needsInput > 0 ? `! ${counts.needsInput}` : `✓ ${counts.completed}`}
-                    </span>
-                  )}
+                  <WorkspaceAttentionBadge counts={counts} />
                   {!isEditing && (
                     <IconButton
                       aria-label="Rename workspace"

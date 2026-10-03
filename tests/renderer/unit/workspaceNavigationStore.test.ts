@@ -4,12 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import {
   DEFAULT_WORKSPACE_NAVIGATION_MODE,
+  DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
+  normalizeWorkspaceSidebarWidth,
   isWorkspaceNavigationMode,
   normalizeWorkspaceNavigationMode,
 } from '../../../src/shared/types/workspaceNavigation';
 
-function mockApi(persisted: unknown) {
+function mockApi(persisted: unknown, width: unknown = 280) {
   window.electronAPI = {
+    getWorkspaceSidebarWidth: vi.fn().mockResolvedValue(width),
+    setWorkspaceSidebarWidth: vi.fn().mockResolvedValue(undefined),
     getWorkspaceNavigationMode: vi.fn().mockResolvedValue(persisted),
     setWorkspaceNavigationMode: vi.fn().mockResolvedValue(undefined),
   } as unknown as typeof window.electronAPI;
@@ -17,7 +21,7 @@ function mockApi(persisted: unknown) {
 
 describe('workspace navigation mode', () => {
   beforeEach(() => {
-    useWorkspaceNavigationStore.setState({ mode: DEFAULT_WORKSPACE_NAVIGATION_MODE, resolved: false });
+    useWorkspaceNavigationStore.setState({ mode: DEFAULT_WORKSPACE_NAVIGATION_MODE, sidebarWidth: DEFAULT_WORKSPACE_SIDEBAR_WIDTH, resolved: false });
   });
 
   it('defaults to tabs', () => {
@@ -63,5 +67,35 @@ describe('workspace navigation mode', () => {
     await useWorkspaceNavigationStore.getState().setMode('nope');
     expect(useWorkspaceNavigationStore.getState().mode).toBe('tabs');
     expect(window.electronAPI.setWorkspaceNavigationMode).toHaveBeenLastCalledWith('tabs');
+  });
+
+  describe('global sidebar width', () => {
+    it('defaults to 280 and clamps to 180–500', () => {
+      expect(useWorkspaceNavigationStore.getState().sidebarWidth).toBe(280);
+      expect(normalizeWorkspaceSidebarWidth(10)).toBe(180);
+      expect(normalizeWorkspaceSidebarWidth(9999)).toBe(500);
+      expect(normalizeWorkspaceSidebarWidth(333.4)).toBe(333);
+      expect(normalizeWorkspaceSidebarWidth('300')).toBe(280);
+      expect(normalizeWorkspaceSidebarWidth(Number.NaN)).toBe(280);
+    });
+
+    it('loads the persisted width, normalizing invalid values', async () => {
+      mockApi('sidebar', 410);
+      await useWorkspaceNavigationStore.getState().initialize();
+      expect(useWorkspaceNavigationStore.getState().sidebarWidth).toBe(410);
+      mockApi('sidebar', 'bad');
+      await useWorkspaceNavigationStore.getState().initialize();
+      expect(useWorkspaceNavigationStore.getState().sidebarWidth).toBe(280);
+    });
+
+    it('updates live while dragging and persists only when asked', async () => {
+      mockApi('sidebar');
+      useWorkspaceNavigationStore.getState().setSidebarWidth(350);
+      useWorkspaceNavigationStore.getState().setSidebarWidth(9000);
+      expect(useWorkspaceNavigationStore.getState().sidebarWidth).toBe(500);
+      expect(window.electronAPI.setWorkspaceSidebarWidth).not.toHaveBeenCalled();
+      await useWorkspaceNavigationStore.getState().persistSidebarWidth();
+      expect(window.electronAPI.setWorkspaceSidebarWidth).toHaveBeenCalledWith(500);
+    });
   });
 });

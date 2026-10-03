@@ -21,7 +21,7 @@ import { type AiCommitProvider } from '../aiCommit';
 import { validateHarnessDefaultsMap } from '../harnessDefaultsValidation';
 import { KeybindingOverridesService } from '../keybindingOverrides';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
-import { isWorkspaceNavigationMode, normalizeWorkspaceNavigationMode } from '../../shared/types/workspaceNavigation';
+import { isWorkspaceNavigationMode, normalizeWorkspaceNavigationMode, normalizeWorkspaceSidebarWidth } from '../../shared/types/workspaceNavigation';
 import { isThemeId, normalizeThemeId, getThemeMetadata } from '../../shared/types/theme';
 import {
   GET_APP_VERSION,
@@ -42,6 +42,8 @@ import {
   SET_THEME,
   GET_WORKSPACE_NAVIGATION_MODE,
   SET_WORKSPACE_NAVIGATION_MODE,
+  GET_WORKSPACE_SIDEBAR_WIDTH,
+  SET_WORKSPACE_SIDEBAR_WIDTH,
   GET_KEYBINDING_OVERRIDES,
   SET_KEYBINDING_OVERRIDES,
 } from '../../shared/ipcChannels';
@@ -210,6 +212,23 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
       return;
     }
     getStore().set('workspaceNavigationMode', mode);
+  });
+
+  ipcMain.handle(GET_WORKSPACE_SIDEBAR_WIDTH, () => {
+    const raw = getStore().get('workspaceSidebarWidth');
+    const normalized = normalizeWorkspaceSidebarWidth(raw);
+    if (raw !== normalized) {
+      getStore().set('workspaceSidebarWidth', normalized);
+    }
+    return normalized;
+  });
+
+  ipcMain.handle(SET_WORKSPACE_SIDEBAR_WIDTH, (_, width: unknown) => {
+    if (typeof width !== 'number' || !Number.isFinite(width)) {
+      console.warn('[clanker-grid] SET_WORKSPACE_SIDEBAR_WIDTH rejected invalid width:', width);
+      return;
+    }
+    getStore().set('workspaceSidebarWidth', normalizeWorkspaceSidebarWidth(width));
   });
 
   ipcMain.handle(GET_KEYBINDING_OVERRIDES, () => keybindingOverrides.get());

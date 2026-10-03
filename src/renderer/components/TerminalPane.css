@@ -92,21 +92,6 @@
   border-color: var(--status-warning);
 }
 
-.terminal-agent-state {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  color: var(--text-secondary);
-}
-
-.terminal-agent-state.state-needs_input { color: var(--status-warning-emphasis); }
-.terminal-agent-state.state-turn_complete { color: var(--status-success-emphasis); }
-.terminal-agent-state.state-running { color: var(--status-info-emphasis); }
-.terminal-agent-state.unseen { font-weight: 700; }
-
 .terminal-header-actions {
   display: flex;
   align-items: center;

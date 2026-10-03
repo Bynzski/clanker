@@ -369,7 +369,7 @@ describe('TerminalPane', () => {
 
       expect(screen.getByText('Samson')).toBeTruthy();
       expect(screen.queryByText('Unknown')).toBeNull();
-      expect(document.querySelector('.terminal-agent-state')).toBeNull();
+      expect(document.querySelector('.agent-attention-state')).toBeNull();
     });
 
     it('shows harness and color coded attention icons without status words', () => {

@@ -105,6 +105,8 @@ interface ElectronAPI {
   setTheme: (theme: ThemeId) => Promise<void>;
   getWorkspaceNavigationMode: () => Promise<WorkspaceNavigationMode>;
   setWorkspaceNavigationMode: (mode: WorkspaceNavigationMode) => Promise<void>;
+  getWorkspaceSidebarWidth: () => Promise<number>;
+  setWorkspaceSidebarWidth: (width: number) => Promise<void>;
   getKeybindingOverrides: () => Promise<KeybindingOverrides>;
   setKeybindingOverrides: (overrides: KeybindingOverrides) => Promise<{ success: true; overrides: KeybindingOverrides } | { success: false; error: string }>;
 

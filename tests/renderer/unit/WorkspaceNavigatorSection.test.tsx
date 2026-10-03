@@ -9,7 +9,10 @@ import * as closeModule from '../../../src/renderer/lib/workspaceClose';
 import { installElectronApiMock } from '../../setup/electron';
 import { createTerminalFixture, createWorkspaceFixture } from '../../setup/fixtures';
 
+const { selectWorkspace: realSelect, moveWorkspace: realMove } = useWorkspaceStore.getState();
+
 function seed() {
+  useWorkspaceStore.setState({ selectWorkspace: realSelect, moveWorkspace: realMove });
   const alpha = createWorkspaceFixture({
     id: 'alpha', name: 'alpha', workspacePath: '/p/alpha', lifecycle: 'active',
     terminals: [
@@ -153,5 +156,45 @@ describe('WorkspaceNavigatorSection', () => {
     render(<WorkspaceNavigatorSection onOpenWorkspace={onOpen} />);
     fireEvent.click(screen.getByLabelText('Open Workspace'));
     expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('auto-expands a workspace when it becomes active without collapsing others', () => {
+    render(<WorkspaceNavigatorSection />);
+    // Initial active workspace starts expanded; others collapsed.
+    expect(screen.getByRole('button', { name: 'Collapse alpha' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Expand beta' })).toBeTruthy();
+    act(() => { useWorkspaceStore.getState().selectWorkspace('beta'); });
+    expect(screen.getByRole('button', { name: 'Collapse beta' })).toBeTruthy();
+    expect(screen.getByText('Jerry')).toBeTruthy();
+    // Previously expanded workspace stays expanded.
+    expect(screen.getByRole('button', { name: 'Collapse alpha' })).toBeTruthy();
+    // A user collapse sticks until that workspace is activated again.
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse beta' }));
+    expect(screen.queryByText('Jerry')).toBeNull();
+    act(() => { useWorkspaceStore.getState().selectWorkspace('alpha'); });
+    expect(screen.queryByText('Jerry')).toBeNull();
+  });
+
+  it('shows a plain shell as a generic Terminal row, not a coding harness', () => {
+    useWorkspaceStore.setState({
+      workspaces: [createWorkspaceFixture({
+        id: 'sh', name: 'sh', terminals: [createTerminalFixture({ id: 's1', displayName: 'Bobby', harnessId: null })], panes: [],
+      })],
+      activeWorkspaceId: 'sh',
+    });
+    render(<WorkspaceNavigatorSection />);
+    const row = screen.getByText('Bobby').closest('button')!;
+    expect(within(row).getByText('Terminal')).toBeTruthy();
+    expect(row.querySelector('[role="img"]')).toBeNull();
+  });
+
+  it('does not start a workspace drag from interactive controls inside the row', () => {
+    render(<WorkspaceNavigatorSection />);
+    const row = document.querySelector<HTMLElement>('.ws-nav-row')!;
+    const transfer = { setData: vi.fn(), effectAllowed: '' };
+    for (const control of [row.querySelector('.ws-nav-chevron')!, screen.getAllByLabelText('Rename workspace')[0], screen.getAllByLabelText('Close workspace')[0]]) {
+      expect(fireEvent.dragStart(control, { dataTransfer: transfer })).toBe(false);
+    }
+    expect(fireEvent.dragStart(row.querySelector('.ws-nav-select')!, { dataTransfer: transfer })).toBe(true);
   });
 });

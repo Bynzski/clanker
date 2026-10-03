@@ -1,26 +1,28 @@
+/* WORKSPACES section of the sidebar shell. Shrinks (list scrolls) so FILES keeps a usable minimum. */
 .ws-nav {
   display: flex;
   flex-direction: column;
   flex: 0 1 auto;
   min-height: 0;
-  max-height: 60%;
 }
 
 .ws-nav-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
+  min-height: 28px;
+  padding: 2px 6px 2px 8px;
   background: var(--surface-header);
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  user-select: none;
 }
 
 .ws-nav-section-toggle {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 0;
+  padding: 2px 0;
   background: none;
   border: none;
   color: var(--text-secondary);
@@ -45,8 +47,9 @@
 .ws-nav-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px 2px 2px;
+  gap: 2px;
+  min-height: 26px;
+  padding: 0 6px 0 2px;
   color: var(--text-secondary);
   font-size: 12px;
   border-left: 2px solid transparent;
@@ -58,16 +61,38 @@
 .ws-nav-row.drop-before { box-shadow: inset 0 2px 0 var(--accent-interactive); }
 .ws-nav-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent-interactive); }
 
-.ws-nav-action {
+/* Compact icon buttons; `.ws-nav` prefix outranks the shared Button defaults. */
+.ws-nav .ws-nav-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
 }
 
-.ws-nav-hover { opacity: 0; }
-.ws-nav-row:hover .ws-nav-hover,
-.ws-nav-row:focus-within .ws-nav-hover { opacity: 1; }
+.ws-nav .ws-nav-action:hover:not(:disabled) {
+  background: var(--surface-control-hover);
+  color: var(--text-primary);
+}
+
+/* Hover-only affordances stay reachable by keyboard. */
+.ws-nav .ws-nav-hover { opacity: 0; }
+.ws-nav .ws-nav-row:hover .ws-nav-hover,
+.ws-nav .ws-nav-row:focus-within .ws-nav-hover { opacity: 1; }
+
+.ws-nav-section-toggle:focus-visible,
+.ws-nav-select:focus-visible,
+.ws-agent-row:focus-visible,
+.ws-nav .ws-nav-action:focus-visible {
+  outline: 1px solid var(--accent-interactive);
+  outline-offset: -1px;
+}
 
 .ws-nav-select {
   display: flex;
@@ -75,7 +100,7 @@
   gap: 5px;
   flex: 1;
   min-width: 0;
-  padding: 3px 2px;
+  padding: 4px 2px;
   background: none;
   border: none;
   color: inherit;
@@ -93,7 +118,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 1px 4px;
+  padding: 0 4px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: var(--surface-control);
@@ -106,14 +131,14 @@
   gap: 3px;
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 90px;
+  max-width: 96px;
   color: var(--accent-interactive);
   font-family: var(--font-mono);
   font-size: 10px;
 }
 .ws-nav-worktree span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.ws-nav-edit { display: flex; align-items: center; flex: 1; min-width: 0; gap: 4px; }
+.ws-nav-edit { display: flex; align-items: center; flex: 1; min-width: 0; gap: 4px; padding: 2px 0; }
 .ws-nav-edit-input { flex: 1; min-width: 0; }
 
 .ws-agent-row {
@@ -121,9 +146,11 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 3px 8px 3px 28px;
+  min-height: 24px;
+  padding: 2px 8px 2px 30px;
   background: none;
   border: none;
+  border-left: 2px solid transparent;
   color: var(--text-secondary);
   font: inherit;
   font-size: 12px;
@@ -132,7 +159,7 @@
 }
 
 .ws-agent-row:hover { background: var(--surface-control); color: var(--text-primary); }
-.ws-agent-row.current { color: var(--text-primary); }
+.ws-agent-row.current { color: var(--text-primary); border-left-color: var(--border-strong, var(--border-default)); }
 .ws-agent-harness { display: inline-flex; flex-shrink: 0; }
 .ws-agent-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-agent-harness-label { flex-shrink: 0; font-size: 10px; opacity: 0.7; }

@@ -1791,4 +1791,23 @@ describe('FileExplorer section variant (workspace sidebar FILES)', () => {
     const hidden = render(<FileExplorer workspaceId={workspace.id} />);
     expect(hidden.container.firstChild).toBeNull();
   });
+
+  it('remembers the Files filter per workspace across switches (section variant only)', () => {
+    const a = createWorkspaceFixture({ id: 'wa', name: 'a', workspacePath: '/a', explorerVisible: true });
+    const b = createWorkspaceFixture({ id: 'wb', name: 'b', workspacePath: '/b', explorerVisible: true, lifecycle: 'parked' });
+    useWorkspaceStore.setState({ workspaces: [a, b], activeWorkspaceId: 'wa' });
+    const view = render(<FileExplorer key="wa" workspaceId="wa" variant="section" />);
+    fireEvent.change(screen.getByLabelText('Filter files'), { target: { value: 'src' } });
+    view.rerender(<FileExplorer key="wb" workspaceId="wb" variant="section" />);
+    expect(screen.getByLabelText('Filter files')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Filter files'), { target: { value: 'lib' } });
+    view.rerender(<FileExplorer key="wa" workspaceId="wa" variant="section" />);
+    expect(screen.getByLabelText('Filter files')).toHaveValue('src');
+    view.unmount();
+
+    // Dock explorers keep their filter local to the component instance.
+    const dock = render(<FileExplorer key="wa" workspaceId="wa" />);
+    expect(screen.getByLabelText('Filter files')).toHaveValue('');
+    dock.unmount();
+  });
 });

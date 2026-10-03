@@ -50,7 +50,6 @@ function App() {
   }, []);
 
 
-  // Stage 1: preference is loaded and persisted but does not yet change the shell.
   useEffect(() => {
     if (!useWorkspaceNavigationStore.getState().resolved) {
       void useWorkspaceNavigationStore.getState().initialize();

@@ -188,6 +188,8 @@ describe('registerSettingsIpc', () => {
       'set-theme',
       'get-workspace-navigation-mode',
       'set-workspace-navigation-mode',
+      'get-workspace-sidebar-width',
+      'set-workspace-sidebar-width',
       'get-keybinding-overrides',
       'set-keybinding-overrides',
     ];
@@ -203,7 +205,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(20);
+    expect(handleCalls.length).toBe(22);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -213,7 +215,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(40);
+    expect(handleCalls.length).toBe(44);
   });
 
   test('OPEN_DIRECTORY_DIALOG allows creating directories from the picker', async () => {
@@ -1010,6 +1012,46 @@ describe('workspace navigation mode handlers', () => {
     store.set.mockClear();
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     set({}, 'garbage');
+    expect(store.set).not.toHaveBeenCalled();
+  });
+});
+
+describe('workspace sidebar width handlers', () => {
+  const mockIpcMain = ipcMain as unknown as {
+    handle: { mock: { calls: Array<[string, (...args: unknown[]) => unknown]> } };
+  };
+
+  function setup(stored: unknown) {
+    vi.clearAllMocks();
+    const store = { get: vi.fn().mockReturnValue(stored), set: vi.fn() };
+    registerSettingsIpc({ getStore: () => store as never, getMainWindow: () => null });
+    const find = (name: string) => mockIpcMain.handle.mock.calls.find((c) => c[0] === name)![1];
+    return { store, get: find('get-workspace-sidebar-width'), set: find('set-workspace-sidebar-width') };
+  }
+
+  test('GET returns a valid persisted width without rewriting', () => {
+    const { store, get } = setup(320);
+    expect(get()).toBe(320);
+    expect(store.set).not.toHaveBeenCalled();
+  });
+
+  test.each([[undefined, 280], ['wide', 280], [Number.NaN, 280], [10, 180], [9000, 500]])(
+    'GET normalizes %s to %s and repairs the store',
+    (raw, expected) => {
+      const { store, get } = setup(raw);
+      expect(get()).toBe(expected);
+      expect(store.set).toHaveBeenCalledWith('workspaceSidebarWidth', expected);
+    },
+  );
+
+  test('SET clamps numeric widths and rejects non-numeric ones', () => {
+    const { store, set } = setup(280);
+    set({}, 9999);
+    expect(store.set).toHaveBeenCalledWith('workspaceSidebarWidth', 500);
+    store.set.mockClear();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    set({}, '300');
+    set({}, Number.NaN);
     expect(store.set).not.toHaveBeenCalled();
   });
 });

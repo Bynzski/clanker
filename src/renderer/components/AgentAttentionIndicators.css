@@ -1,0 +1,30 @@
+/* Shared attention presentation: owned here, not by TerminalPane or WorkspaceTabs. */
+.agent-attention-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: var(--text-secondary);
+}
+
+.agent-attention-state.state-needs_input { color: var(--status-warning-emphasis); }
+.agent-attention-state.state-turn_complete { color: var(--status-success-emphasis); }
+.agent-attention-state.state-running { color: var(--status-info-emphasis); }
+.agent-attention-state.unseen { font-weight: 700; }
+
+.workspace-attention-badge {
+  flex-shrink: 0;
+  padding: 1px 4px;
+  border-radius: var(--radius-md);
+  font-size: 10px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--status-success-emphasis) 16%, transparent);
+  color: var(--status-success-emphasis);
+}
+
+.workspace-attention-badge.needs-input {
+  background: color-mix(in srgb, var(--status-warning-emphasis) 18%, transparent);
+  color: var(--status-warning-emphasis);
+}

@@ -60,6 +60,7 @@ export interface RemoteWorktreeRemovalRecord {
 export interface StoreSchema {
   theme: ThemeId;
   workspaceNavigationMode?: WorkspaceNavigationMode;
+  workspaceSidebarWidth?: number;
   lastWorkspace: string;
   baseDirectory: string;
   aiCommitEnabled: boolean;

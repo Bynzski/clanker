@@ -9,6 +9,7 @@ import { useAgentAttentionStore, attentionCounts } from '../store/agentAttention
 import { useWorkspaceRename } from '../lib/useWorkspaceRename';
 import { useWorkspaceReorder } from '../lib/useWorkspaceReorder';
 import { nextAttentionTarget } from '../lib/agentAttentionNavigation';
+import { WorkspaceAttentionBadge } from './AgentAttentionIndicators';
 import './WorkspaceTabs.css';
 
 interface WorkspaceTabsProps {
@@ -119,15 +120,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                 <span>{branch || 'HEAD'}</span>
               </span>
             )}
-            {(counts.needsInput > 0 || counts.completed > 0) && (
-              <span
-                className={`workspace-tab-attention ${counts.needsInput > 0 ? 'needs-input' : 'complete'}`}
-                aria-label={`${counts.needsInput} agents need input, ${counts.completed} turns complete`}
-                title={`${counts.needsInput} need input · ${counts.completed} complete`}
-              >
-                {counts.needsInput > 0 ? `! ${counts.needsInput}` : `✓ ${counts.completed}`}
-              </span>
-            )}
+            <WorkspaceAttentionBadge counts={counts} />
             <IconButton
               className="workspace-tab-close"
               onClick={(event) => handleClose(workspace.id, event)}

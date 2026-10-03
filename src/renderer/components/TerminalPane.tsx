@@ -7,6 +7,7 @@ import { getTerminalTheme, registerThemedTerminal, unregisterThemedTerminal } fr
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAgentAttentionStore } from '../store/agentAttentionStore';
 import { getAttentionPresentation } from '../lib/agentAttentionPresentation';
+import { AgentAttentionState } from './AgentAttentionIndicators';
 import { getHarnessOption } from '../lib/harnessOptions';
 
 import { useDragHandle } from './dragHandleContext';
@@ -171,7 +172,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const terminalId = terminal?.id ?? null;
   const attention = useAgentAttentionStore((state) => terminalId ? state.byTerminalId[terminalId] : undefined);
   const showAgentAttention = Boolean(terminal?.harnessId && terminal.attentionEnabled);
-  const { label: attentionLabel, Icon: AttentionIcon } = getAttentionPresentation(attention?.lifecycle);
+  const { label: attentionLabel } = getAttentionPresentation(attention?.lifecycle);
   const harnessOption = getHarnessOption(terminal?.harnessId);
   const HarnessIcon = harnessOption.Icon;
   const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
@@ -757,15 +758,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
             <span className="terminal-title" title={terminal.harnessId ? `${harnessOption.label}${showAgentAttention ? ` · ${attentionLabel}` : ''}` : 'Shell'}>
               {terminal?.displayName ?? 'Terminal'}
             </span>
-            {showAgentAttention && (
-              <span
-                className={`terminal-agent-state state-${attention?.lifecycle ?? 'unknown'} ${attention?.unseen ? 'unseen' : ''}`}
-                aria-label={`${terminal.displayName ?? 'Agent'}: ${attentionLabel}`}
-                title={attentionLabel}
-              >
-                <AttentionIcon size={15} strokeWidth={2} aria-hidden="true" />
-              </span>
-            )}
+            {showAgentAttention && <AgentAttentionState attention={attention} name={terminal.displayName ?? 'Agent'} />}
           </div>
           <div className="terminal-header-actions">
             <IconButton aria-label="Close terminal" className="terminal-close" onClick={handleClose} title="Close terminal" disabled={!isInteractive}>

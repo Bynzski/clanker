@@ -12,6 +12,7 @@ import { pathKey } from '../../../shared/pathKey';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useScopedWorkspaceSelector } from '../WorkspaceScope';
 import FileTree from './FileTree';
+import { useExplorerFilter } from './explorerFilterStore';
 import ContextMenu, { type ContextAction } from './ContextMenu';
 import ConfirmCloseDialog from '../ConfirmCloseDialog';
 import {
@@ -133,7 +134,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
   const [deleteTarget, setDeleteTarget] = useState<FileExplorerEntry | null>(null);
   const [creating, setCreating] = useState<{ parentPath: string; type: 'file' | 'directory' } | null>(null);
   const [renaming, setRenaming] = useState<{ path: string; originalName: string } | null>(null);
-  const [filterQuery, setFilterQuery] = useState('');
+  const [filterQuery, setFilterQuery] = useExplorerFilter(resolvedWorkspaceId, isSection);
   const filterInputRef = useRef<HTMLInputElement>(null);
   const explorerTreeRefreshTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const previousExplorerVisibleRef = useRef(explorerVisible);
@@ -419,7 +420,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
         filterInputRef.current?.blur();
       }
     }
-  }, [filterQuery]);
+  }, [filterQuery, setFilterQuery]);
 
   const startCreating = useCallback((parentPath: string, type: 'file' | 'directory') => {
     // If the parent is a loaded-but-collapsed subdirectory, expand it so the
