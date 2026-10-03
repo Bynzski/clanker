@@ -34,6 +34,8 @@ import type {
   GitCreateWorktreeOptions,
   GitWorktreeInspectionResult,
   GitWorktreeRemoveResult,
+  GitWorktreePruneResult,
+  GitWorktreeUnlockResult,
 } from '../../shared/types/git';
 import type {
   CredentialOperationResult,
@@ -234,6 +236,8 @@ interface ElectronAPI {
   releaseCheckoutContext: (workspaceId: string, checkoutContextId: string) => Promise<ReleaseCheckoutContextResult>;
   gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeInspectionResult>;
   gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeRemoveResult>;
+  gitPruneWorktrees: (workspacePath: string, workspaceId?: string) => Promise<GitWorktreePruneResult>;
+  gitUnlockWorktree: (workspacePath: string, worktreePath: string, workspaceId?: string) => Promise<GitWorktreeUnlockResult>;
   gitGetOperationState: (workspacePath: string, workspaceId?: string) => Promise<GitOperationStateResult>;
   gitGetStashes: (workspacePath: string, workspaceId?: string) => Promise<GitStash[]>;
   gitGetHistory: (workspacePath: string, limit?: number, workspaceId?: string) => Promise<GitHistoryEntry[]>;

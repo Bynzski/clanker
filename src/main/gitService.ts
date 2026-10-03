@@ -5,7 +5,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { VcsProvider } from '../shared/types/vcs';
-import type { GitWorktree, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult } from '../shared/types/git';
+import type { GitWorktree, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult, GitWorktreePruneResult, GitWorktreeUnlockResult } from '../shared/types/git';
 import { utf8ByteLength } from '../shared/utf8';
 import { worktreeDirectoryName } from './worktreePaths';
 
@@ -283,6 +283,48 @@ export class GitService {
       return { success: true, worktrees };
     } catch (error) {
       return { success: false, worktrees: [], error: this.getGitErrorMessage(error, 'Failed to list worktrees') };
+    }
+  }
+
+  /**
+   * Drops Git's records of linked worktrees whose directory is gone (`git worktree prune --expire now`).
+   * Git prunes per repository, not per path, so this is a repository-wide cleanup. Locked worktrees are
+   * never pruned by Git. Branches and existing checkout directories are untouched.
+   */
+  async pruneWorktrees(workspacePath: string): Promise<GitWorktreePruneResult> {
+    if (this.worktreesBeingRemoved.size > 0) {
+      return { success: false, pruned: [], error: 'A worktree removal is in progress; try again when it finishes' };
+    }
+    const before = await this.listWorktrees(workspacePath);
+    if (!before.success) return { success: false, pruned: [], error: before.error };
+    const stale = before.worktrees.filter((entry) => entry.isPrunable && !entry.isMain && !entry.isLocked);
+    if (stale.length === 0) return { success: true, pruned: [] };
+    try {
+      await this.execGit(workspacePath, ['worktree', 'prune', '--expire', 'now'], 60000);      const after = await this.listWorktrees(workspacePath);
+      if (!after.success) return { success: false, pruned: [], error: after.error };
+      const stillListed = new Set(after.worktrees.map((entry) => entry.path));
+      return { success: true, pruned: stale.map((entry) => entry.path).filter((entryPath) => !stillListed.has(entryPath)) };
+    } catch (error) {
+      return { success: false, pruned: [], error: this.getGitErrorMessage(error, 'Failed to prune worktrees') };
+    }
+  }
+
+  /**
+   * Unlocks one linked worktree. The target must be a currently locked, non-main entry of this
+   * repository's own `git worktree list`; Git's listed path is what gets unlocked, never the caller's.
+   */
+  async unlockWorktree(workspacePath: string, worktreePath: string): Promise<GitWorktreeUnlockResult> {
+    const listed = await this.listWorktrees(workspacePath);
+    if (!listed.success) return { success: false, error: listed.error };
+    const isRemote = (this.getScopedWorkspaceIdentity()?.environmentId ?? 'local') !== 'local';
+    const target = listed.worktrees.find((entry) => isRemote ? entry.path === worktreePath : this.sameWorktreePath(entry.path, worktreePath));
+    if (!target || target.isMain) return { success: false, error: 'This is not a linked worktree' };
+    if (!target.isLocked) return { success: false, error: 'This worktree is not locked' };
+    try {
+      await this.execGit(workspacePath, ['worktree', 'unlock', target.path]);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: this.getGitErrorMessage(error, 'Failed to unlock worktree') };
     }
   }
 

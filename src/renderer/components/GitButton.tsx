@@ -70,6 +70,12 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
   const [selectedDefaultBranch, setSelectedDefaultBranch] = useState('main');
   const [remotes, setRemotes] = useState<GitRemote[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Modals owned by menu content render in portals outside `menuRef`; while one is open, outside
+  // pointer/Escape closing is suspended so the menu (and the modal's owner) outlives its action.
+  const menuModalCountRef = useRef(0);
+  const handleMenuModalChange = useCallback((open: boolean) => {
+    menuModalCountRef.current = Math.max(0, menuModalCountRef.current + (open ? 1 : -1));
+  }, []);
   useKeepInViewport(menuRef, '.git-menu', isMenuOpen, isRepo);
   const createBranchInputRef = useRef<HTMLInputElement>(null);
 
@@ -477,13 +483,14 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
     void refreshMenuData();
 
     const handlePointerDown = (event: MouseEvent) => {
+      if (menuModalCountRef.current > 0) return;
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
       }
     };
 
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && menuModalCountRef.current === 0) {
         setIsMenuOpen(false);
       }
     };
@@ -694,6 +701,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
             onApplyStash={(stashRef) => void handleApplyStash(stashRef)}
             onClearStashes={() => void handleClearStashes()}
             onClose={() => setIsMenuOpen(false)}
+            onModalOpenChange={handleMenuModalChange}
             onCreateBranch={handleCreateBranch}
             onDeleteBranch={(branchName) => void handleDeleteBranch(branchName)}
             onDropStash={(stashRef) => void handleDropStash(stashRef)}

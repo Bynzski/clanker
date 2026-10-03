@@ -177,3 +177,19 @@ export interface GitWorktreeRemoveResult {
   warning?: string;
   recoveryPath?: string;
 }
+
+/**
+ * Result of `git worktree prune --expire now`. Pruning is repository-wide: it drops the Git records
+ * of every linked worktree whose directory is already gone. It never deletes a branch or a directory.
+ */
+export interface GitWorktreePruneResult {
+  success: boolean;
+  /** Paths whose stale records were removed (empty when nothing was stale). */
+  pruned: string[];
+  error?: string;
+}
+
+export interface GitWorktreeUnlockResult {
+  success: boolean;
+  error?: string;
+}

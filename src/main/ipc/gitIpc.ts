@@ -24,6 +24,8 @@ import {
   GIT_CREATE_WORKTREE,
   GIT_INSPECT_WORKTREE,
   GIT_REMOVE_WORKTREE,
+  GIT_PRUNE_WORKTREES,
+  GIT_UNLOCK_WORKTREE,
   REGISTER_OPEN_WORKSPACE,
   UNREGISTER_OPEN_WORKSPACE,
   GIT_GET_OPERATION_STATE,
@@ -118,6 +120,8 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     [GIT_RENAME_REMOTE]: 3,
     [GIT_INSPECT_WORKTREE]: 3,
     [GIT_REMOVE_WORKTREE]: 4,
+    [GIT_PRUNE_WORKTREES]: 1,
+    [GIT_UNLOCK_WORKTREE]: 2,
     [GIT_PUSH]: 5,
   };
 
@@ -222,7 +226,38 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
       : { ...result, worktrees: result.worktrees.map((entry) => ({ ...entry, path: toPosixPath(entry.path) })) };
   });
 
-  registerGitHandler(GIT_CREATE_WORKTREE, async (_, workspacePath: string, baseRef: string, branch: string, _workspaceId?: string, options?: GitCreateWorktreeOptions) => {
+  // Metadata-only worktree operations run through the same scoped Git execution as listing. SSH
+  // workspaces use the registered host executor; nothing here widens a remote root.
+  const guardRemoteWorktreeMetadata = async (): Promise<string | null> => {
+    const environmentId = gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local';
+    if (environmentId === 'local') return null;
+    try { await remoteWorktrees.requireIdle(environmentId); return null; }
+    catch (error) { return error instanceof Error ? error.message : 'Could not verify remote worktree state'; }
+  };
+
+  registerGitHandler(GIT_PRUNE_WORKTREES, async (_, workspacePath: string) => {
+    const blocked = await guardRemoteWorktreeMetadata();
+    if (blocked) return { success: false, pruned: [], error: blocked };
+    const safePath = getValidatedWorkspacePath(workspacePath);
+    if (!safePath) return { success: false, pruned: [], error: getInvalidWorkspaceResult().error };
+    const result = await gitService.pruneWorktrees(safePath);
+    return (gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local') === 'local'
+      ? { ...result, pruned: result.pruned.map(toPosixPath) }
+      : result;
+  });
+
+  registerGitHandler(GIT_UNLOCK_WORKTREE, async (_, workspacePath: string, worktreePath: string) => {
+    if (typeof worktreePath !== 'string' || !worktreePath.trim()) return getInvalidWorkspaceResult();
+    const blocked = await guardRemoteWorktreeMetadata();
+    if (blocked) return { success: false, error: blocked };
+    const safePath = getValidatedWorkspacePath(workspacePath);
+    if (!safePath) return getInvalidWorkspaceResult();
+    // The path only selects an entry; gitService matches it against Git's own list.
+    const isRemote = (gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local') !== 'local';
+    return gitService.unlockWorktree(safePath, isRemote ? worktreePath : toNativePath(worktreePath, process.platform));
+  });
+
+  registerGitHandler(GIT_CREATE_WORKTREE,async (_, workspacePath: string, baseRef: string, branch: string, _workspaceId?: string, options?: GitCreateWorktreeOptions) => {
     // A workspace id only routes the operation. Attaching the checkout as a worktree context is
     // explicit opt-in, so the legacy New Workspace flows (which open the checkout as a separate
     // workspace, and may pass the id of an open repository workspace) never gain a context.

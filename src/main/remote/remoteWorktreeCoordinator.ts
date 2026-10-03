@@ -130,6 +130,18 @@ export class RemoteWorktreeCoordinator {
     }
   }
 
+  /**
+   * Metadata-level worktree operations (prune/unlock) must not interleave with a removal that has
+   * moved a checkout aside: reconcile uncertain ones, then refuse while one is still running.
+   */
+  public async requireIdle(environmentId: string): Promise<void> {
+    await this.reconcile(environmentId);
+    const resourceId = this.registry()?.getWorktreeResourceId(environmentId);
+    if ([...this.pending.values()].some((entry) => entry.active && entry.record.resourceId === resourceId)) {
+      throw new Error('A worktree removal is in progress on this host; try again when it finishes');
+    }
+  }
+
   /** Release uncertain reservations only after the host journals completion. */
   public async reconcile(environmentId: string): Promise<void> {
     if (this.recoveryError) throw new Error(this.recoveryError);

@@ -111,6 +111,8 @@ export const GIT_LIST_WORKTREES = 'git-list-worktrees';
 export const GIT_CREATE_WORKTREE = 'git-create-worktree';
 export const GIT_INSPECT_WORKTREE = 'git-inspect-worktree';
 export const GIT_REMOVE_WORKTREE = 'git-remove-worktree';
+export const GIT_PRUNE_WORKTREES = 'git-prune-worktrees';
+export const GIT_UNLOCK_WORKTREE = 'git-unlock-worktree';
 export const REGISTER_OPEN_WORKSPACE = 'register-open-workspace';
 export const UNREGISTER_OPEN_WORKSPACE = 'unregister-open-workspace';
 export const RELEASE_CHECKOUT_CONTEXT = 'release-checkout-context';
@@ -365,6 +367,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   GIT_CREATE_WORKTREE,
   GIT_INSPECT_WORKTREE,
   GIT_REMOVE_WORKTREE,
+  GIT_PRUNE_WORKTREES,
+  GIT_UNLOCK_WORKTREE,
   REGISTER_OPEN_WORKSPACE,
   UNREGISTER_OPEN_WORKSPACE,
   RELEASE_CHECKOUT_CONTEXT,

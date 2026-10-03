@@ -247,7 +247,7 @@ describe('registerGitIpc', () => {
     });
   });
 
-  test('registers exactly 35 git IPC handlers', () => {
+  test('registers exactly 39 git IPC handlers', () => {
     const mockGitService = createMockGitService();
 
     registerGitIpc({
@@ -256,7 +256,7 @@ describe('registerGitIpc', () => {
     });
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(37);
+    expect(handleCalls.length).toBe(39);
   });
 
   test('validates worktree paths and returns POSIX paths across IPC', async () => {
@@ -306,7 +306,7 @@ describe('registerGitIpc', () => {
     });
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(74);
+    expect(handleCalls.length).toBe(78);
   });
 
   test('git-stop-polling calls gitService.stopPolling', async () => {
@@ -1093,6 +1093,8 @@ describe('Git IPC workspace identity routing', () => {
       ['git-create-worktree', [workspacePath, 'HEAD', 'task', 'ssh-tab']],
       ['git-inspect-worktree', [workspacePath, '/srv/task', [], 'ssh-tab']],
       ['git-remove-worktree', [workspacePath, '/srv/task', 'task', [], 'ssh-tab']],
+      ['git-prune-worktrees', [workspacePath, 'ssh-tab']],
+      ['git-unlock-worktree', [workspacePath, '/srv/task', 'ssh-tab']],
     ] as const) {
       expect(await handle(channel)(null, ...args)).toMatchObject({ success: false, error: expect.stringContaining('Manual recovery required') });
     }
@@ -1121,7 +1123,68 @@ describe('Git IPC workspace identity routing', () => {
     await expect(handle('git-list-worktrees')(null, workspacePath, 'unregistered')).rejects.toThrow('no longer registered');
   });
 
-  test.each(['relative/path', '/srv/../escape'])('rejects malformed remote worktree path %s', async (worktreePath) => {
+  describe('worktree prune and unlock on SSH', () => {
+    const MAIN = 'worktree /srv/repo\0branch refs/heads/main\0\0';
+    const STALE = 'worktree /srv/Repo-gone\0branch refs/heads/gone\0prunable gitdir file points to non-existent location\0\0';
+    const LOCKED = 'worktree /srv/Repo-task\0branch refs/heads/task\0locked reason\0\0';
+    const OPEN = 'worktree /srv/Repo-open\0branch refs/heads/open\0\0';
+
+    const wire = (remote: ReturnType<typeof setup>['remote'], lists: string[]) => {
+      const queue = [...lists];
+      remote.execGit.mockImplementation(async (_cwd: string, args: string[]) =>
+        ({ stdout: args[0] === 'worktree' && args[1] === 'list' ? queue.shift() ?? '' : '', stderr: '' }));
+    };
+    const mutations = (remote: ReturnType<typeof setup>['remote']) =>
+      remote.execGit.mock.calls.filter(([, args]) => args[0] === 'worktree' && args[1] !== 'list');
+
+    test('prune runs on the registered host from the workspace root, never from a forged path', async () => {
+      const { local, remote, handle } = setup();
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, [MAIN + STALE, MAIN]);
+      const result = await handle('git-prune-worktrees')(null, '/forged/local/path', 'ssh-tab');
+      expect(result).toEqual({ success: true, pruned: ['/srv/Repo-gone'] });
+      expect(mutations(remote).map(([cwd, args]) => [cwd, args])).toEqual([[workspacePath, ['worktree', 'prune', '--expire', 'now']]]);
+      expect(local.execGit).not.toHaveBeenCalled();
+    });
+
+    test('prune with nothing stale runs no mutation', async () => {
+      const { remote, handle } = setup();
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, [MAIN + OPEN]);
+      expect(await handle('git-prune-worktrees')(null, workspacePath, 'ssh-tab')).toEqual({ success: true, pruned: [] });
+      expect(mutations(remote)).toHaveLength(0);
+    });
+
+    test('unlock validates the target against the host list and unlocks Git\'s listed path', async () => {
+      const { remote, handle } = setup();
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, [MAIN + LOCKED]);
+      expect(await handle('git-unlock-worktree')(null, workspacePath, '/srv/Repo-task', 'ssh-tab')).toEqual({ success: true });
+      expect(mutations(remote).map(([cwd, args]) => [cwd, args])).toEqual([[workspacePath, ['worktree', 'unlock', '/srv/Repo-task']]]);
+    });
+
+    test.each([
+      ['the main checkout', '/srv/repo'],
+      ['an unlisted path', '/srv/elsewhere'],
+      ['a path that only normalizes to a listed one', '/srv/other/../Repo-task'],
+      ['an unlocked linked worktree', '/srv/Repo-open'],
+    ])('unlock refuses %s without running Git', async (_label, target) => {
+      const { remote, handle } = setup();
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, [MAIN + LOCKED + OPEN]);
+      expect(await handle('git-unlock-worktree')(null, workspacePath, target, 'ssh-tab')).toMatchObject({ success: false });
+      expect(mutations(remote)).toHaveLength(0);
+    });
+
+    test('an unregistered workspace identity is rejected before any host command', async () => {
+      const { remote, handle } = setup();
+      await expect(handle('git-prune-worktrees')(null, workspacePath, 'nope')).rejects.toThrow('no longer registered');
+      await expect(handle('git-unlock-worktree')(null, workspacePath, '/srv/x', 'nope')).rejects.toThrow('no longer registered');
+      expect(remote.execGit).not.toHaveBeenCalled();
+    });
+  });
+
+  test.each(['relative/path', '/srv/../escape'])('rejects malformed remote worktree path %s',async (worktreePath) => {
     const { remote, handle } = setup();
     await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
     remote.execGit.mockResolvedValueOnce({ stdout: `worktree ${worktreePath}\0branch refs/heads/main\0\0`, stderr: '' });

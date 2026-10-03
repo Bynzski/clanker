@@ -50,6 +50,8 @@ interface GitRepoMenuProps {
   onApplyStash: (stashRef: string) => void;
   onClearStashes: () => void;
   onClose: () => void;
+  /** Reports a menu-owned portal modal opening/closing so the host does not treat clicks in it as outside clicks. */
+  onModalOpenChange?: (open: boolean) => void;
   onCreateBranch: (event: React.FormEvent) => void;
   onDeleteBranch: (branchName: string) => void;
   onDropStash: (stashRef: string) => void;
@@ -127,6 +129,7 @@ export function GitRepoMenu({
   onApplyStash,
   onClearStashes,
   onClose,
+  onModalOpenChange,
   onCreateBranch,
   onDeleteBranch,
   onDropStash,
@@ -242,7 +245,7 @@ export function GitRepoMenu({
         workspaceId={workspaceId}
       />
 
-      <GitWorktreesSection workspacePath={workspacePath} workspaceId={workspaceId} refreshKey={refreshKey} />
+      <GitWorktreesSection workspacePath={workspacePath} workspaceId={workspaceId} refreshKey={refreshKey} onModalOpenChange={onModalOpenChange} />
 
       <GitStashSection
         activeAction={activeAction}

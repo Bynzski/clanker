@@ -462,3 +462,94 @@ describe('GitService worktree lifecycle', () => {
     });
   });
 });
+
+describe('GitService worktree prune and unlock (real Git)', () => {
+  const branchExists = async (repo: string, branch: string) =>
+    (await execFileAsync('git', ['branch', '--list', branch], { cwd: repo })).stdout.includes(branch);
+
+  it('prunes only stale records: the branch and every existing checkout remain', async () => {
+    await withRepo(async (repo) => {
+      const service = makeService();
+      const gone = (await service.createWorktree(repo, 'main', 'task/gone')).worktree!.path;
+      const kept = (await service.createWorktree(repo, 'main', 'task/kept')).worktree!.path;
+      fs.writeFileSync(path.join(kept, 'work.txt'), 'uncommitted\n');
+      fs.rmSync(gone, { recursive: true, force: true });
+
+      const before = await service.listWorktrees(repo);
+      expect(before.worktrees.find((entry) => entry.branch === 'task/gone')?.isPrunable).toBe(true);
+
+      const result = await service.pruneWorktrees(repo);
+      expect(result).toEqual({ success: true, pruned: [expect.stringContaining('task-gone')] });
+
+      const after = await service.listWorktrees(repo);
+      expect(after.worktrees.map((entry) => entry.branch)).toEqual(['main', 'task/kept']);
+      expect(await branchExists(repo, 'task/gone')).toBe(true);
+      expect(fs.readFileSync(path.join(kept, 'work.txt'), 'utf8')).toBe('uncommitted\n');
+      // Nothing left to prune is a successful no-op.
+      expect(await service.pruneWorktrees(repo)).toEqual({ success: true, pruned: [] });
+    });
+  });
+
+  it('does not prune a locked missing worktree (Git keeps it) and reports nothing pruned', async () => {
+    await withRepo(async (repo) => {
+      const service = makeService();
+      const gone = (await service.createWorktree(repo, 'main', 'task/locked-gone')).worktree!.path;
+      await execFileAsync('git', ['worktree', 'lock', gone], { cwd: repo });
+      fs.rmSync(gone, { recursive: true, force: true });
+      expect(await service.pruneWorktrees(repo)).toEqual({ success: true, pruned: [] });
+      expect((await service.listWorktrees(repo)).worktrees.some((entry) => entry.branch === 'task/locked-gone')).toBe(true);
+    });
+  });
+
+  it('refuses to prune while a removal is in flight', async () => {
+    await withRepo(async (repo) => {
+      let release!: () => void;
+      const trash = new Promise<void>((resolve) => { release = resolve; });
+      const service = makeService(async (worktreePath) => { await trash; await fs.promises.rename(worktreePath, `${worktreePath}.recycled`); });
+      const checkout = (await service.createWorktree(repo, 'main', 'task/busy')).worktree!.path;
+      const removing = service.removeWorktree(repo, checkout, 'task/busy');
+      await vi.waitFor(() => expect(service.isWorktreeBeingRemoved(checkout)).toBe(true));
+      expect(await service.pruneWorktrees(repo)).toMatchObject({ success: false, error: expect.stringContaining('in progress') });
+      release();
+      expect((await removing).success).toBe(true);
+    });
+  });
+
+  it('unlocks a locked linked worktree and leaves its checkout and branch alone', async () => {
+    await withRepo(async (repo) => {
+      const service = makeService();
+      const checkout = (await service.createWorktree(repo, 'main', 'task/locked')).worktree!.path;
+      await execFileAsync('git', ['worktree', 'lock', '--reason', 'external', checkout], { cwd: repo });
+      const locked = (await service.listWorktrees(repo)).worktrees.find((entry) => entry.branch === 'task/locked');
+      expect(locked?.isLocked).toBe(true);
+      // A locked checkout cannot be inspected or removed until it is unlocked.
+      expect((await service.inspectWorktree(repo, checkout)).success).toBe(false);
+      expect((await service.removeWorktree(repo, checkout, 'task/locked')).success).toBe(false);
+      expect(fs.existsSync(checkout)).toBe(true);
+
+      expect(await service.unlockWorktree(repo, checkout)).toEqual({ success: true });
+      const unlocked = (await service.listWorktrees(repo)).worktrees.find((entry) => entry.branch === 'task/locked');
+      expect(unlocked?.isLocked).toBe(false);
+      expect(fs.existsSync(checkout)).toBe(true);
+      expect(await branchExists(repo, 'task/locked')).toBe(true);
+      // Removal is a separate, explicit step.
+      expect((await service.removeWorktree(repo, checkout, 'task/locked')).success).toBe(true);
+    });
+  });
+
+  it('only unlocks entries Git lists: not the main checkout, an unlocked worktree, or a foreign path', async () => {
+    await withRepo(async (repo) => {
+      const service = makeService();
+      const open = (await service.createWorktree(repo, 'main', 'task/open')).worktree!.path;
+      const foreign = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-foreign-'));
+      try {
+        expect(await service.unlockWorktree(repo, repo)).toMatchObject({ success: false });
+        expect(await service.unlockWorktree(repo, open)).toMatchObject({ success: false, error: 'This worktree is not locked' });
+        expect(await service.unlockWorktree(repo, foreign)).toMatchObject({ success: false, error: 'This is not a linked worktree' });
+        expect(await service.unlockWorktree(repo, path.join(open, '..', '..'))).toMatchObject({ success: false });
+      } finally {
+        fs.rmSync(foreign, { recursive: true, force: true });
+      }
+    });
+  });
+});
