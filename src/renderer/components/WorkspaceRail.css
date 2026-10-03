@@ -102,8 +102,8 @@
 }
 
 .ws-rail-agent.current {
-  background: var(--surface-active);
-  border-color: var(--border-strong);
+  background: var(--surface-selected);
+  border-color: var(--accent-interactive);
   color: var(--text-primary);
 }
 
