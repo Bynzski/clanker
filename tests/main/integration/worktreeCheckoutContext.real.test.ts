@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { testHome } from '../../_helpers/tempPaths';
 
@@ -43,9 +43,12 @@ import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
 import { LocalEnvironment } from '../../../src/main/environment/localEnvironment';
 import { mainCheckoutContextId } from '../../../src/shared/checkoutContext';
 import { toPosixPath } from '../../../src/shared/pathNormalize';
-import { REGISTER_OPEN_WORKSPACE, SPAWN_TERMINAL, GIT_CREATE_WORKTREE, GIT_LIST_WORKTREES } from '../../../src/shared/ipcChannels';
-import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
-import type { GitWorktreeCreateResult, GitWorktreeListResult } from '../../../src/shared/types/git';
+import {
+  REGISTER_OPEN_WORKSPACE, SPAWN_TERMINAL, GIT_CREATE_WORKTREE, GIT_LIST_WORKTREES,
+  RELEASE_CHECKOUT_CONTEXT, GIT_INSPECT_WORKTREE, GIT_REMOVE_WORKTREE, KILL_TERMINAL,
+} from '../../../src/shared/ipcChannels';
+import type { CheckoutContext, ReleaseCheckoutContextResult } from '../../../src/shared/types/checkoutContext';
+import type { GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult, GitWorktreeRemoveResult } from '../../../src/shared/types/git';
 
 const execFileAsync = promisify(execFile);
 const call = <T>(channel: string, ...args: unknown[]): Promise<T> => Promise.resolve(handlers.get(channel)!(null, ...args) as T);
@@ -80,7 +83,13 @@ beforeEach(() => {
   mockPtySpawn.mockReturnValue({ pid: 99, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(), resize: vi.fn() });
   const local = new LocalEnvironment();
   registry = new WorkspaceRegistry(() => local, { isWorktreeBeingRemoved: (p) => service.isWorktreeBeingRemoved(p) });
-  service = new GitService(() => undefined, async () => undefined, () => [], () => registry.getLocalOpenWorkspacePaths());
+  // Live terminal directories feed the removal safeguards exactly as in main.ts.
+  service = new GitService(
+    () => undefined,
+    async () => undefined,
+    () => [...terminals.values()].map((terminal) => terminal.cwd as string | undefined).filter((cwd): cwd is string => typeof cwd === 'string'),
+    () => registry.getLocalOpenWorkspacePaths(),
+  );
   registerGitIpc({ getGitService: () => service, getMainWindow: () => null, getWorkspaceRegistry: () => registry });
   registerTerminalIpc({
     getTerminals: () => terminals,
@@ -266,3 +275,142 @@ describe('main and worktree agents coexist in one workspace (local, real Git)', 
     expect(mockPtySpawn).not.toHaveBeenCalled();
   });
 });
+
+describe('releasing and removing a worktree checkout (local, real Git)', () => {
+  const release = (workspaceId: string, contextId: string) => call<ReleaseCheckoutContextResult>(RELEASE_CHECKOUT_CONTEXT, workspaceId, contextId);
+  /** The same calls, in the same order and with the same arguments, as the renderer helper makes. */
+  const inspect = (worktreePath: string) =>
+    call<GitWorktreeInspectionResult>(GIT_INSPECT_WORKTREE, toPosixPath(repo), toPosixPath(worktreePath), registry.getLocalOpenWorkspacePaths(), 'ws');
+  const remove = (worktreePath: string, expectedBranch: string | null) =>
+    call<GitWorktreeRemoveResult>(GIT_REMOVE_WORKTREE, toPosixPath(repo), toPosixPath(worktreePath), expectedBranch, registry.getLocalOpenWorkspacePaths(), 'ws');
+  const finish = async (context: CheckoutContext) => {
+    const released = await release('ws', context.id);
+    if (!released.success) return { released } as const;
+    const inspection = await inspect(context.path);
+    if (!inspection.success || inspection.hasChanges) return { released, inspection } as const;
+    return { released, inspection, removal: await remove(inspection.worktree!.path, inspection.worktree!.branch) } as const;
+  };
+  const contextsOf = () => registry.getCheckoutContextsForWorkspace('ws').map((entry) => entry.id);
+
+  it('releases and then removes a clean checkout, keeping the branch, the workspace and the main context', async () => {
+    const main = await openWorkspace();
+    const { checkoutContext } = await create('ws', 'finish-clean');
+    const checkout = checkoutContext!.path;
+
+    const outcome = await finish(checkoutContext!);
+
+    expect(outcome.released).toEqual({ success: true });
+    expect(outcome.removal).toMatchObject({ success: true });
+    expect(fs.existsSync(checkout)).toBe(false);
+    // Removing a worktree never deletes its branch.
+    expect((await git('branch', '--list', 'finish-clean')).stdout).toContain('finish-clean');
+    expect(contextsOf()).toEqual([main.id]);
+    expect(registry.getWorkspace('ws')).not.toBeNull();
+    expect((await git('worktree', 'list', '--porcelain')).stdout).not.toContain('finish-clean');
+  });
+
+  it('refuses to release while a terminal runs in the context; closing it lets the same sequence finish', async () => {
+    await openWorkspace();
+    const { checkoutContext } = await create('ws', 'busy-then-done');
+    const agent = await spawn(checkoutContext!.path, 'ws', checkoutContext!.id);
+
+    const blocked = await release('ws', checkoutContext!.id);
+    expect(blocked).toMatchObject({ success: false, activeTerminals: 1 });
+    expect(contextsOf()).toContain(checkoutContext!.id);
+    expect(fs.existsSync(checkoutContext!.path)).toBe(true);
+
+    await call(KILL_TERMINAL, agent.id);
+    const outcome = await finish(checkoutContext!);
+    expect(outcome.removal).toMatchObject({ success: true });
+    expect(fs.existsSync(checkoutContext!.path)).toBe(false);
+  });
+
+  it('does not let a terminal launch into a released context', async () => {
+    await openWorkspace();
+    const { checkoutContext } = await create('ws', 'no-relaunch');
+    await release('ws', checkoutContext!.id);
+    mockPtySpawn.mockClear();
+
+    await expect(spawn(checkoutContext!.path, 'ws', checkoutContext!.id)).rejects.toThrow('Checkout context is not registered for this workspace');
+    expect(mockPtySpawn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an untracked file', (dir: string) => fs.writeFileSync(path.join(dir, 'notes.txt'), 'wip\n')],
+    ['a modified tracked file', (dir: string) => fs.writeFileSync(path.join(dir, 'README.md'), 'changed\n')],
+    ['an ignored file', (dir: string) => {
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'secret.env\n');
+      gitIn(dir, ['add', '.gitignore']);
+      gitIn(dir, ['commit', '-m', 'ignore secrets']);
+      fs.writeFileSync(path.join(dir, 'secret.env'), 'token\n');
+    }],
+  ])('refuses to remove a checkout with %s, leaving it on disk and the context released', async (_label, dirty) => {
+    await openWorkspace();
+    const { checkoutContext } = await create('ws', `dirty-${Math.random().toString(36).slice(2, 8)}`);
+    dirty(checkoutContext!.path);
+
+    const outcome = await finish(checkoutContext!);
+
+    expect(outcome.released).toEqual({ success: true });
+    expect(outcome.inspection).toMatchObject({ success: true, hasChanges: true });
+    expect(outcome).not.toHaveProperty('removal');
+    // The existing removal path refuses too, independently of the inspection step.
+    expect(await remove(checkoutContext!.path, checkoutContext!.branch!)).toMatchObject({ success: false, error: expect.stringContaining('uncommitted, untracked, or ignored') });
+    expect(fs.existsSync(path.join(checkoutContext!.path, '.git'))).toBe(true);
+    // A failed removal never re-registers the checkout.
+    expect(contextsOf()).toEqual([mainCheckoutContextId('ws')]);
+  });
+
+  it('refuses to remove when the branch is not the expected one, leaving the checkout on disk', async () => {
+    await openWorkspace();
+    const { checkoutContext } = await create('ws', 'expected-branch');
+    await release('ws', checkoutContext!.id);
+
+    const wrong = await remove(checkoutContext!.path, 'some-other-branch');
+
+    expect(wrong).toMatchObject({ success: false, error: expect.stringContaining('branch changed') });
+    expect(fs.existsSync(path.join(checkoutContext!.path, 'README.md'))).toBe(true);
+  });
+
+  it('refuses when the checkout switches branch between inspection and removal', async () => {
+    await openWorkspace();
+    const { checkoutContext } = await create('ws', 'switch-after-inspect');
+    await release('ws', checkoutContext!.id);
+    const inspection = await inspect(checkoutContext!.path);
+    expect(inspection).toMatchObject({ success: true, hasChanges: false });
+
+    gitIn(checkoutContext!.path, ['switch', '-c', 'switched-meanwhile']);
+    const removal = await remove(checkoutContext!.path, inspection.worktree!.branch);
+
+    expect(removal).toMatchObject({ success: false, error: expect.stringContaining('branch changed') });
+    expect(fs.existsSync(path.join(checkoutContext!.path, 'README.md'))).toBe(true);
+    expect(contextsOf()).toEqual([mainCheckoutContextId('ws')]);
+  });
+
+  it('having just released the context does not bypass the live-terminal safeguard on the directory', async () => {
+    await openWorkspace();
+    const { checkoutContext } = await create('ws', 'terminal-after-release');
+    await release('ws', checkoutContext!.id);
+    // A path-only launch resolves no context, so release can no longer see it: the existing
+    // directory-based safeguard must.
+    await spawn(checkoutContext!.path, undefined);
+
+    expect(await inspect(checkoutContext!.path)).toMatchObject({ success: false });
+    expect(await remove(checkoutContext!.path, checkoutContext!.branch!)).toMatchObject({ success: false });
+    expect(fs.existsSync(path.join(checkoutContext!.path, 'README.md'))).toBe(true);
+  });
+
+  it('still protects a checkout that another workspace has opened as its own root', async () => {
+    await openWorkspace();
+    const { checkoutContext } = await create('ws', 'opened-elsewhere');
+    await call(REGISTER_OPEN_WORKSPACE, 'legacy-tab', toPosixPath(checkoutContext!.path));
+    await release('ws', checkoutContext!.id);
+
+    expect(await inspect(checkoutContext!.path)).toMatchObject({ success: false });
+    expect(fs.existsSync(path.join(checkoutContext!.path, 'README.md'))).toBe(true);
+  });
+});
+
+function gitIn(cwd: string, args: string[]): void {
+  execFileSync('git', args, { cwd, stdio: 'ignore' });
+}

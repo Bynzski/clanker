@@ -85,3 +85,21 @@ export function upsertCheckoutContextList(
   const unchanged = current.branch === incoming.branch && current.mainCheckoutPath === incoming.mainCheckoutPath;
   return unchanged ? (workspace.checkoutContexts ?? existing) : existing.map((context) => (context.id === incoming.id ? { ...incoming } : context));
 }
+
+/**
+ * The contexts without `checkoutContextId`, or null when that id is not a removable worktree
+ * context of this workspace (unknown, or the main context). Descriptive only: main has already
+ * released the context before the renderer forgets it.
+ */
+export function removeCheckoutContextFromList(
+  workspace: Pick<WorkspaceTab, 'id' | 'checkoutContexts'>,
+  checkoutContextId: string,
+): CheckoutContext[] | null {
+  const existing = workspace.checkoutContexts ?? [];
+  const target = existing.find((context) => context.id === checkoutContextId);
+  if (!target || target.workspaceId !== workspace.id || target.kind !== 'worktree'
+    || checkoutContextId === mainCheckoutContextId(workspace.id)) {
+    return null;
+  }
+  return existing.filter((context) => context.id !== checkoutContextId);
+}

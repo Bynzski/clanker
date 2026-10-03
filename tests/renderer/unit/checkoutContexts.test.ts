@@ -215,3 +215,56 @@ describe('upserting an authoritative worktree context', () => {
     expect(workspace.checkoutContexts).toHaveLength(1);
   });
 });
+
+describe('removing a worktree context (after main has released it)', () => {
+  const worktree = (workspaceId: string, suffix: string, path = `/work/app-wt/${suffix}`): CheckoutContext => ({
+    id: `${workspaceId}::ckt-${suffix}`, workspaceId, environmentId: 'local', path, kind: 'worktree', branch: suffix,
+  });
+  const contextsOf = (id: string) => useWorkspaceStore.getState().getWorkspaceById(id)!.checkoutContexts!;
+
+  beforeEach(() => {
+    useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null, activeWorkspaceLifecycle: null, terminals: [], panes: [] });
+    const input = workspaceInput({ workspacePath: '/work/app', terminals: [], panes: [], activeTerminalId: null });
+    useWorkspaceStore.getState().addWorkspace({ ...input, id: 'ws-1' });
+    useWorkspaceStore.getState().addWorkspace({ ...input, id: 'ws-2', workspacePath: '/elsewhere' });
+    for (const suffix of ['a', 'b']) useWorkspaceStore.getState().upsertCheckoutContext('ws-1', worktree('ws-1', suffix));
+  });
+
+  it('removes only the named worktree context and leaves the main context, the other context and the workspace root', () => {
+    expect(useWorkspaceStore.getState().removeCheckoutContext('ws-1', 'ws-1::ckt-a')).toBe(true);
+
+    expect(contextsOf('ws-1').map((context) => context.id)).toEqual([mainCheckoutContextId('ws-1'), 'ws-1::ckt-b']);
+    expect(useWorkspaceStore.getState().getWorkspaceById('ws-1')?.workspacePath).toBe('/work/app');
+    expect(useWorkspaceStore.getState().workspaces).toHaveLength(2);
+  });
+
+  it('does not touch terminals, panes or layout, including terminals still recording the removed context', () => {
+    useWorkspaceStore.getState().addTerminal(createTerminalFixture({ id: 'main-agent' }), 'ws-1');
+    useWorkspaceStore.getState().addTerminal(createTerminalFixture({ id: 'ended-agent', checkoutContextId: 'ws-1::ckt-a' }), 'ws-1');
+    const before = useWorkspaceStore.getState().getWorkspaceById('ws-1')!;
+
+    useWorkspaceStore.getState().removeCheckoutContext('ws-1', 'ws-1::ckt-a');
+
+    const after = useWorkspaceStore.getState().getWorkspaceById('ws-1')!;
+    expect(after.terminals).toEqual(before.terminals);
+    expect(after.panes).toEqual(before.panes);
+    expect(after.layoutRoot).toEqual(before.layoutRoot);
+    expect(after.activeTerminalId).toBe(before.activeTerminalId);
+  });
+
+  it.each([
+    ['the main context', 'ws-1', (id: string) => mainCheckoutContextId(id)],
+    ['an unknown context', 'ws-1', () => 'ws-1::ckt-missing'],
+    ['another workspace\'s context', 'ws-2', () => 'ws-1::ckt-a'],
+    ['a context in an unknown workspace', 'ghost', () => 'ws-1::ckt-a'],
+  ])('refuses to remove %s and changes nothing', (_label, workspaceId, contextId) => {
+    const before = [contextsOf('ws-1'), contextsOf('ws-2')];
+    expect(useWorkspaceStore.getState().removeCheckoutContext(workspaceId, contextId(workspaceId))).toBe(false);
+    expect([contextsOf('ws-1'), contextsOf('ws-2')]).toEqual(before);
+  });
+
+  it('cannot remove the same context twice', () => {
+    expect(useWorkspaceStore.getState().removeCheckoutContext('ws-1', 'ws-1::ckt-a')).toBe(true);
+    expect(useWorkspaceStore.getState().removeCheckoutContext('ws-1', 'ws-1::ckt-a')).toBe(false);
+  });
+});

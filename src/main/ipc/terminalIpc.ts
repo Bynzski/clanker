@@ -32,10 +32,13 @@ import {
   TERMINAL_READY,
   RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
+  RELEASE_CHECKOUT_CONTEXT,
 } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
 import { RecipeCommandStartup } from '../recipeCommandStartup';
 import { toNativePath } from '../../shared/pathNormalize';
+import { isInsideRoot } from '../localPathContainment';
+import { releaseCheckoutContext } from '../checkoutContextRelease';
 import { isPathContained } from '../remote/sshEnvironment';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
@@ -84,15 +87,6 @@ interface RegisterTerminalIpcDeps {
   createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
   /** Optional: without it (or without managed accounts) every launch uses the native account. */
   getHarnessAccountService?: () => HarnessAccountService | undefined;
-}
-
-function isInsideRoot(root: string, target: string): boolean {
-  try {
-    const relative = path.relative(fs.realpathSync(root), fs.realpathSync(target));
-    return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
-  } catch {
-    return false;
-  }
 }
 
 let appShuttingDown = false;
@@ -590,6 +584,16 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       }
     }
     return killed;
+  });
+
+  /**
+   * Releases a worktree checkout context once no Clanker terminal uses it. Only ids cross IPC;
+   * everything else is judged from main's registry and terminal table.
+   */
+  ipcMain.handle(RELEASE_CHECKOUT_CONTEXT, (_, workspaceId: unknown, checkoutContextId: unknown) => {
+    const registry = deps.getWorkspaceRegistry?.();
+    if (!registry) return fail('Workspace registry is unavailable');
+    return releaseCheckoutContext({ registry, terminals: getTerminals().values(), workspaceId, checkoutContextId });
   });
 
   ipcMain.handle(WRITE_CLIPBOARD, (_, text: unknown) => {

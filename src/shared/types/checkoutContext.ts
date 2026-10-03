@@ -35,3 +35,14 @@ export interface CheckoutContext {
    */
   mainCheckoutPath?: string;
 }
+
+/**
+ * Outcome of releasing a worktree checkout context. Releasing only unregisters the context; it
+ * never removes the worktree, its branch, or any process.
+ */
+export interface ReleaseCheckoutContextResult {
+  success: boolean;
+  error?: string;
+  /** Present when release was refused because Clanker terminals are still using the checkout. */
+  activeTerminals?: number;
+}

@@ -107,6 +107,12 @@ export interface WorkspaceState {
    * that main would not produce. Idempotent for the same context.
    */
   upsertCheckoutContext: (workspaceId: string, checkoutContext: CheckoutContext) => boolean;
+  /**
+   * Forgets a worktree context on its workspace after main has released it. Never removes the main
+   * context or another workspace's context, and leaves the workspace root, layout and terminals
+   * untouched. Returns false (changing nothing) otherwise.
+   */
+  removeCheckoutContext: (workspaceId: string, checkoutContextId: string) => boolean;
   getWorkspaceById: (id: string | null) => WorkspaceTab | null;
   getActiveWorkspace: () => WorkspaceTab | null;
   isWorkspaceActive: (id: string) => boolean;

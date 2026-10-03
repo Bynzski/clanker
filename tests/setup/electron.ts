@@ -111,6 +111,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
       success: true, location: { path, environmentId },
     })),
     unregisterOpenWorkspace: createAsyncMock({ success: true }),
+    releaseCheckoutContext: createAsyncMock({ success: true }),
     gitInspectWorktree: createAsyncMock({ success: false, error: 'Not configured' }),
     gitRemoveWorktree: createAsyncMock({ success: false, error: 'Not configured' }),
     gitGetOperationState: createAsyncMock({ success: true, isRepo: false, inProgress: false, mode: 'none', conflicts: [], message: 'Not a git repository' }),

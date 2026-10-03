@@ -140,6 +140,7 @@ describe('registerTerminalIpc — registration', () => {
       'resize-terminal',
       'kill-terminal',
       'terminal:cleanup-workspace',
+      'release-checkout-context',
     ];
 
     expectedChannels.forEach(channel => {
@@ -160,7 +161,7 @@ describe('registerTerminalIpc — registration', () => {
       ensureHarnessWrapperScript: vi.fn().mockReturnValue(testHarnessWrapper()),
     });
 
-    expect(mockHandle.mock.calls.length).toBe(11);
+    expect(mockHandle.mock.calls.length).toBe(12);
   });
 
   test('registers 3 event IPC channels (terminal-data, terminal-exit, terminal-resized)', () => {
@@ -196,7 +197,7 @@ describe('registerTerminalIpc — registration', () => {
     };
     registerTerminalIpc(opts);
     registerTerminalIpc(opts);
-    expect(mockHandle.mock.calls.length).toBe(22);
+    expect(mockHandle.mock.calls.length).toBe(24);
   });
 });
 

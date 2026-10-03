@@ -914,6 +914,13 @@ describe('preload.ts IPC Bridge Coverage Tests', () => {
       assert.ok(invocation.trimEnd().endsWith('environmentId, checkoutContextId)'), 'checkoutContextId must reach the main handler');
     });
 
+    test('release forwards only workspace and context ids to the RELEASE_CHECKOUT_CONTEXT handler', () => {
+      const signature = preloadSource.match(/releaseCheckoutContext:\s*\([^)]*\)/)?.[0] ?? '';
+      assert.ok(signature.includes('workspaceId') && signature.includes('checkoutContextId'), 'releaseCheckoutContext takes ids');
+      const invocation = preloadSource.match(/ipcRenderer\.invoke\(RELEASE_CHECKOUT_CONTEXT,[^)]*\)/)?.[0] ?? '';
+      assert.strictEqual(invocation.replace(/\s+/g, ' '), 'ipcRenderer.invoke(RELEASE_CHECKOUT_CONTEXT, workspaceId, checkoutContextId)');
+    });
+
     test('git stage accepts optional file list', () => {
       const method = extractedInvokeMethods.find(m => m.method === 'gitStage');
       assert.ok(method, 'gitStage should exist');

@@ -65,7 +65,7 @@ import { preserveOriginalLineEndings } from '../lib/lineEndings';
 import { restoreWorkspaceLayout, restoreWorkspaceLayoutFromPersisted } from '../lib/workspaceLayoutStorage';
 import { insertWorkspaceInSavedOrder, persistWorkspaceTabOrder } from '../lib/workspaceTabOrder';
 import { nameTerminal, nameTerminals } from '../lib/agentNames';
-import { bindTerminalToCheckoutContext, upsertCheckoutContextList } from '../lib/checkoutContexts';
+import { bindTerminalToCheckoutContext, removeCheckoutContextFromList, upsertCheckoutContextList } from '../lib/checkoutContexts';
 import {
   readStoredNotesVisible,
   writeStoredNotesVisible,
@@ -328,6 +328,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (next !== workspace.checkoutContexts) {
       set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({ ...entry, checkoutContexts: next })));
     }
+    return true;
+  },
+
+  removeCheckoutContext: (workspaceId, checkoutContextId) => {
+    const workspace = findWorkspaceById(get().workspaces, workspaceId);
+    if (!workspace) return false;
+    const next = removeCheckoutContextFromList(workspace, checkoutContextId);
+    if (!next) return false;
+    set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({ ...entry, checkoutContexts: next })));
     return true;
   },
 
