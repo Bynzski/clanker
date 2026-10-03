@@ -254,9 +254,10 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
 
     const cwd = getSafeWorkspacePath(toNativePath(workingDir, process.platform));
-    // A caller that names a context is confined to that context's root. getSafeWorkspacePath
-    // falls back to a default directory for unusable input, so check the directory actually used.
-    if (checkoutContextId && checkoutContext && !isInsideRoot(toNativePath(checkoutContext.path, process.platform), cwd)) {
+    // A resolved context, requested or implicitly the workspace's main one, is the execution
+    // boundary. getSafeWorkspacePath falls back to a default directory for unusable input, so
+    // check the directory actually used. Only a launch that resolves no context stays unbound.
+    if (checkoutContext && !isInsideRoot(toNativePath(checkoutContext.path, process.platform), cwd)) {
       throw new Error('Terminal directory is outside the registered workspace');
     }
     // Use user's default shell, fallback to bash

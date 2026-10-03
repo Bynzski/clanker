@@ -28,6 +28,10 @@ export interface CheckoutContext {
   kind: CheckoutContextKind;
   /** Current branch where known; descriptive only. */
   branch?: string | null;
-  /** Root of the repository's main checkout when this is a linked worktree and it is known. */
+  /**
+   * Root of the repository's main checkout when this is a linked worktree and it is known.
+   * Descriptive metadata only: it is not a registered root and must never authorize filesystem,
+   * Git, or terminal access. Reaching it requires its own environment-validated context.
+   */
   mainCheckoutPath?: string;
 }

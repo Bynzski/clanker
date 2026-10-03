@@ -235,6 +235,52 @@ describe('local terminals resolve through checkout context identity', () => {
     expect(terminals.get(result.id)?.checkoutContextId).toBeUndefined();
   });
 
+  describe('implicitly resolved main context is also the boundary (workspaceId given, no checkoutContextId)', () => {
+    test('a directory inside the main context succeeds, and is bound to it', async () => {
+      const { spawn, terminals } = await setup();
+      const result = await spawn(null, toPosixPath(main), undefined, undefined, undefined, undefined, 'ws', 'local');
+
+      expect(mockPtySpawn).toHaveBeenCalledWith(expect.any(String), expect.any(Array), expect.objectContaining({ cwd: main }));
+      expect(result.checkoutContextId).toBe(mainCheckoutContextId('ws'));
+      expect(terminals.get(result.id)).toMatchObject({ checkoutContextId: mainCheckoutContextId('ws') });
+    });
+
+    test('a subdirectory of the main context succeeds', async () => {
+      const { spawn } = await setup();
+      const sub = path.join(main, 'src');
+      await spawn(null, toPosixPath(sub), undefined, undefined, undefined, undefined, 'ws', 'local');
+      expect(mockPtySpawn).toHaveBeenCalledWith(expect.any(String), expect.any(Array), expect.objectContaining({ cwd: sub }));
+    });
+
+    test.each([
+      ['the worktree directory (outside the main context)', () => worktree],
+      ['the parent of the main context', () => root],
+      ['a sibling directory that merely shares the main context name as a prefix', () => path.join(root, 'project-worktrees')],
+      ['a missing directory (which the safe-path resolver would silently replace)', () => path.join(main, 'missing')],
+    ])('rejects %s', async (_label, dir) => {
+      const { spawn } = await setup();
+      await expect(spawn(null, toPosixPath(dir()), undefined, undefined, undefined, undefined, 'ws', 'local'))
+        .rejects.toThrow('Terminal directory is outside the registered workspace');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+
+    test('rejects a directory outside the main context even when the environment is omitted', async () => {
+      const { spawn } = await setup();
+      await expect(spawn(null, toPosixPath(worktree), undefined, undefined, undefined, undefined, 'ws'))
+        .rejects.toThrow('Terminal directory is outside the registered workspace');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+  });
+
+  test('a genuinely unbound path-only launch outside every registered root is unchanged', async () => {
+    const { spawn, terminals } = await setup();
+    const result = await spawn(null, toPosixPath(root));
+
+    expect(mockPtySpawn).toHaveBeenCalledWith(expect.any(String), expect.any(Array), expect.objectContaining({ cwd: root }));
+    expect(result.checkoutContextId).toBeUndefined();
+    expect(terminals.get(result.id)?.checkoutContextId).toBeUndefined();
+  });
+
   test('a launch naming a worktree context runs in that worktree and records the context', async () => {
     const { spawn, terminals, worktreeId } = await setup();
     const result = await spawn(null, toPosixPath(worktree), undefined, undefined, undefined, undefined, 'ws', 'local', worktreeId);
