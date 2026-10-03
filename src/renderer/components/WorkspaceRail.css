@@ -90,6 +90,10 @@
 
 .ws-rail-workspace { position: relative; }
 
+/* Reorder drop indicator: same accent line as the expanded navigator. */
+.ws-rail-workspace.drop-before { box-shadow: inset 0 2px 0 var(--accent-interactive); }
+.ws-rail-workspace.drop-after { box-shadow: inset 0 -2px 0 var(--accent-interactive); }
+
 .ws-rail-agents {
   display: flex;
   flex-direction: column;

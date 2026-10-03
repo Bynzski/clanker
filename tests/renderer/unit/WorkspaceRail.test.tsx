@@ -74,6 +74,54 @@ describe('WorkspaceRail', () => {
     expect(useWorkspaceStore.getState().workspaces.map((workspace) => workspace.terminals.length)).toEqual([2, 1]);
   });
 
+  describe('reordering', () => {
+    const transfer = () => ({ setData: vi.fn(), effectAllowed: '', dropEffect: '' });
+
+    it('drags a workspace entry onto another via moveWorkspace, with a drop indicator', () => {
+      const moveWorkspace = vi.fn();
+      useWorkspaceStore.setState({ moveWorkspace });
+      const { container } = render(<WorkspaceRail onExpand={() => undefined} onOpenWorkspace={() => undefined} />);
+      const alpha = container.querySelector<HTMLElement>('[data-rail-workspace-id="alpha"]')!;
+      const beta = container.querySelector<HTMLElement>('[data-rail-workspace-id="beta"]')!;
+      expect(alpha).toHaveAttribute('draggable', 'true');
+      expect(container.querySelector('.ws-rail-add')).not.toBeNull();
+      expect(container.querySelector('.ws-rail-add')).not.toHaveAttribute('draggable', 'true');
+
+      const dataTransfer = transfer();
+      fireEvent.dragStart(beta, { dataTransfer });
+      fireEvent.dragOver(alpha, { dataTransfer });
+      expect(alpha).toHaveClass('drop-before');
+      fireEvent.drop(alpha, { dataTransfer });
+      expect(moveWorkspace).toHaveBeenCalledWith('beta', 'alpha');
+      expect(alpha).not.toHaveClass('drop-before');
+    });
+
+    it('does not select a workspace or agent when a drag ends over its button', () => {
+      const select = vi.fn();
+      useWorkspaceStore.setState({ selectWorkspace: select, moveWorkspace: vi.fn() });
+      const { container } = render(<WorkspaceRail onExpand={() => undefined} />);
+      const beta = container.querySelector<HTMLElement>('[data-rail-workspace-id="beta"]')!;
+      const dataTransfer = transfer();
+      fireEvent.dragStart(beta, { dataTransfer });
+      fireEvent.click(screen.getByRole('button', { name: /demo-repo/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delilah · Claude' }));
+      expect(select).not.toHaveBeenCalled();
+    });
+
+    it('reorders with Alt+Shift+Arrow on a workspace mark', () => {
+      const moveWorkspace = vi.fn();
+      useWorkspaceStore.setState({ moveWorkspace });
+      render(<WorkspaceRail onExpand={() => undefined} />);
+      const alphaMark = screen.getByRole('button', { name: 'alpha' });
+      expect(alphaMark).toHaveAttribute('aria-keyshortcuts', 'Alt+Shift+ArrowUp Alt+Shift+ArrowDown');
+      fireEvent.keyDown(alphaMark, { key: 'ArrowDown', altKey: true, shiftKey: true });
+      expect(moveWorkspace).toHaveBeenCalledWith('alpha', 'beta');
+      moveWorkspace.mockClear();
+      fireEvent.keyDown(alphaMark, { key: 'ArrowUp', altKey: true, shiftKey: true });
+      expect(moveWorkspace).not.toHaveBeenCalled();
+    });
+  });
+
   it('shows agent lifecycle and a workspace badge for unseen attention', () => {
     useAgentAttentionStore.setState({
       byTerminalId: {
