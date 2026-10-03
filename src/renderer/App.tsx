@@ -50,6 +50,10 @@ function App() {
     const handleKeyDown = (event: KeyboardEvent) => {
       const zoomAction = getZoomShortcutAction(event);
       if (zoomAction != null) {
+        // A focused embedded surface (e.g. xterm) already owns this zoom event.
+        if (event.defaultPrevented) {
+          return;
+        }
         event.preventDefault();
 
         if (zoomAction === 'in') {

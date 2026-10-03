@@ -568,6 +568,26 @@ describe('App', () => {
 
       expect(mockResetZoomWindow).toHaveBeenCalled();
     });
+
+    it('ignores zoom shortcuts already consumed by an embedded surface', async () => {
+      render(<App />);
+
+      const consume = (event: KeyboardEvent) => event.preventDefault();
+      window.addEventListener('keydown', consume, true);
+      try {
+        await act(async () => {
+          fireEvent.keyDown(window, { key: '=', code: 'Equal', ctrlKey: true });
+          fireEvent.keyDown(window, { key: '-', code: 'Minus', ctrlKey: true });
+          fireEvent.keyDown(window, { key: '0', code: 'Digit0', ctrlKey: true });
+        });
+      } finally {
+        window.removeEventListener('keydown', consume, true);
+      }
+
+      expect(mockZoomInWindow).not.toHaveBeenCalled();
+      expect(mockZoomOutWindow).not.toHaveBeenCalled();
+      expect(mockResetZoomWindow).not.toHaveBeenCalled();
+    });
   });
 
   // =========================================================================
