@@ -18,7 +18,7 @@ Type at least two characters in the URL field to see matching history entries. S
 
 ## DevTools and shortcuts
 
-Right-click browser content to open DevTools or inspect an element. `Ctrl/Cmd+Shift+I` and `F12` toggle detached DevTools for the focused tab. Zoom shortcuts apply to the browser tab when browser content has focus; otherwise they apply to the app UI. See [Keyboard Shortcuts](keyboard-shortcuts.md).
+Right-click browser content to open DevTools or inspect an element. `Ctrl/Cmd+Shift+I` and `F12` toggle detached DevTools for the focused tab. Zoom shortcuts apply to the browser tab when browser content has focus; otherwise they apply to the app UI. While the browser has focus, `Cmd/Ctrl+L` focuses the address field, `Cmd/Ctrl+T` / `Cmd/Ctrl+W` open and close tabs, `Cmd/Ctrl+R` refreshes, and `Ctrl+Tab` / `Ctrl+Shift+Tab` cycle tabs. These are configurable; see [Keyboard Shortcuts](keyboard-shortcuts.md).
 
 ## Annotation
 

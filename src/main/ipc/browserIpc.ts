@@ -38,7 +38,15 @@ import {
   BROWSER_HISTORY_GET,
   BROWSER_HISTORY_CLEAR,
   FIT_ALL_PANES,
+  BROWSER_KEYBINDING_COMMAND,
 } from '../../shared/ipcChannels';
+import {
+  keystrokeFromElectronInput,
+  platformFromString,
+  resolveCommand,
+  type KeybindingCommandId,
+  type KeybindingOverrides,
+} from '../../shared/keybindings';
 import { BrowserSessionScopes } from '../browserSessionScope';
 import { getBrowserHistoryService } from '../browserHistory';
 import { probeRecipePreview } from '../recipePreview';
@@ -65,6 +73,8 @@ interface RegisterBrowserIpcDeps {
   getActiveBrowserWorkspaceId: () => string | null;
   setActiveBrowserWorkspaceId: (id: string | null) => void;
   onActiveBrowserTabChanged?: (workspaceId: string, tabId: string | null) => void;
+  /** Validated effective-override source shared with the settings IPC; read per keystroke from cache. */
+  getKeybindingOverrides?: () => KeybindingOverrides;
 }
 
 export interface BrowserIpcController {
@@ -157,34 +167,6 @@ function clampBrowserZoomLevel(level: number): number {
   return Math.max(-5, Math.min(5, level));
 }
 
-function getBrowserKeyboardZoomShortcutAction(input: {
-  control: boolean;
-  meta: boolean;
-  alt: boolean;
-  key?: string;
-  code?: string;
-}): BrowserZoomShortcutAction | null {
-  const primaryModifier = input.control || input.meta;
-  if (!primaryModifier || input.alt) return null;
-
-  const key = input.key?.toLowerCase() ?? '';
-  const code = input.code?.toLowerCase() ?? '';
-
-  if (code === 'digit0' || key === '0') {
-    return 'reset';
-  }
-
-  if (code === 'minus' || key === '-' || key === '_') {
-    return 'out';
-  }
-
-  if (code === 'equal' || key === '=' || key === '+') {
-    return 'in';
-  }
-
-  return null;
-}
-
 function isBrowserDevToolsShortcut(input: {
   control: boolean;
   meta: boolean;
@@ -208,7 +190,60 @@ function applyBrowserViewZoomAction(view: WebContentsView, action: BrowserZoomSh
   view.webContents.setZoomLevel(clampBrowserZoomLevel(currentLevel + delta));
 }
 
-function attachBrowserShortcutHandlers(view: WebContentsView, sendFitAllPanes: () => void) {
+const KEYBINDING_PLATFORM = platformFromString(process.platform);
+
+interface BrowserShortcutTarget {
+  workspaceId: string;
+  tabId: string;
+  deps: RegisterBrowserIpcDeps;
+}
+
+const BROWSER_ZOOM_COMMANDS = {
+  'zoom.in': 'in',
+  'zoom.out': 'out',
+  'zoom.reset': 'reset',
+} as const satisfies Partial<Record<KeybindingCommandId, BrowserZoomShortcutAction>>;
+
+/**
+ * Run one resolved browser-context command. Zoom, refresh and Fit All act on
+ * state main owns. Tab and address-bar commands change renderer-owned state, so
+ * they are forwarded as one typed signal and run by the renderer's existing
+ * browser actions; the address bar additionally needs window focus handed back.
+ */
+function runBrowserKeybinding(
+  commandId: KeybindingCommandId,
+  view: WebContentsView,
+  { workspaceId, tabId, deps }: BrowserShortcutTarget,
+): void {
+  const zoomAction = BROWSER_ZOOM_COMMANDS[commandId as keyof typeof BROWSER_ZOOM_COMMANDS];
+  if (zoomAction) {
+    applyBrowserViewZoomAction(view, zoomAction);
+    return;
+  }
+
+  const win = deps.getMainWindow();
+  switch (commandId) {
+    case 'browser.refresh':
+      view.webContents.reload();
+      return;
+    case 'layout.fitAll':
+      win?.webContents.send(FIT_ALL_PANES);
+      return;
+    case 'browser.focusAddress':
+    case 'browser.newTab':
+    case 'browser.closeTab':
+    case 'browser.nextTab':
+    case 'browser.previousTab':
+      if (!win) return;
+      if (commandId === 'browser.focusAddress') win.webContents.focus();
+      win.webContents.send(BROWSER_KEYBINDING_COMMAND, { workspaceId, tabId, command: commandId });
+      return;
+    default:
+      return;
+  }
+}
+
+function attachBrowserShortcutHandlers(view: WebContentsView, target: BrowserShortcutTarget) {
   // Ctrl+wheel over the page arrives as `zoom-changed`, not as a keyboard input event.
   view.webContents.on('zoom-changed', (_event, direction) => {
     if (direction === 'in' || direction === 'out') {
@@ -217,13 +252,6 @@ function attachBrowserShortcutHandlers(view: WebContentsView, sendFitAllPanes: (
   });
 
   view.webContents.on('before-input-event', (event, input) => {
-    const browserZoomAction = getBrowserKeyboardZoomShortcutAction(input);
-    if (browserZoomAction) {
-      event.preventDefault();
-      applyBrowserViewZoomAction(view, browserZoomAction);
-      return;
-    }
-
     if (isBrowserDevToolsShortcut(input)) {
       event.preventDefault();
       if (view.webContents.isDevToolsOpened()) {
@@ -234,9 +262,16 @@ function attachBrowserShortcutHandlers(view: WebContentsView, sendFitAllPanes: (
       return;
     }
 
-    if ((input.control || input.meta) && input.shift && input.key?.toLowerCase() === 'f') {
-      sendFitAllPanes();
-    }
+    const keystroke = keystrokeFromElectronInput(input, KEYBINDING_PLATFORM);
+    if (!keystroke) return;
+    // Same effective bindings as every other surface; browser focus owns only browser-context commands.
+    const overrides = target.deps.getKeybindingOverrides?.() ?? {};
+    const commandId = resolveCommand(keystroke, 'browser', overrides, KEYBINDING_PLATFORM);
+    if (!commandId) return;
+
+    event.preventDefault();
+    if (input.type === 'keyUp') return;
+    runBrowserKeybinding(commandId, view, target);
   });
 }
 
@@ -296,12 +331,7 @@ function createBrowserViewForTab(
 
   if (kind === 'ssh') browserSessionScopes.attach(workspaceId, view.webContents.session);
   attachBrowserSecurityHandlers(view);
-  attachBrowserShortcutHandlers(view, () => {
-    const win = deps.getMainWindow();
-    if (win) {
-      win.webContents.send(FIT_ALL_PANES);
-    }
-  });
+  attachBrowserShortcutHandlers(view, { workspaceId, tabId, deps });
   attachBrowserContextMenuHandlers(view, mainWindow);
   view.setVisible(false);
   view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
@@ -731,6 +761,7 @@ export function registerBrowserIpc(deps: RegisterBrowserIpcDeps): BrowserIpcCont
 
   ipcMain.on(BROWSER_URL_UPDATED, () => { });
   ipcMain.on(FIT_ALL_PANES, () => { });
+  ipcMain.on(BROWSER_KEYBINDING_COMMAND, () => { });
 
   return {
     disposeWorkspace: (workspaceId) => destroyWorkspaceBrowserViews(workspaceId, deps),
@@ -775,6 +806,5 @@ export {
   destroyWorkspaceBrowserViews,
   createBrowserViewForTab,
   clampBrowserZoomLevel,
-  getBrowserKeyboardZoomShortcutAction,
   applyBrowserViewZoomAction,
 };

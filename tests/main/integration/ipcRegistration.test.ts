@@ -77,6 +77,7 @@ describe('IPC registration smoke test', () => {
     // ── Import modules ──────────────────────────────────────────────────────
     await import('electron');
     const { registerSettingsIpc } = await import('../../../src/main/ipc/settingsIpc');
+    const { KeybindingOverridesService } = await import('../../../src/main/keybindingOverrides');
     const { registerWindowIpc } = await import('../../../src/main/ipc/windowIpc');
     const { registerAiCommitIpc } = await import('../../../src/main/ipc/aiCommitIpc');
     const { registerTerminalIpc } = await import('../../../src/main/ipc/terminalIpc');
@@ -193,6 +194,7 @@ describe('IPC registration smoke test', () => {
     registerSettingsIpc({
       getStore: () => mockStore as never,
       getMainWindow: () => mockMainWindow as never,
+      keybindingOverrides: new KeybindingOverridesService(() => mockStore as never),
     });
 
     registerWindowIpc({

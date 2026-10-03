@@ -7,8 +7,8 @@ import {
   EditorView,
   lineNumbers,
   highlightActiveLine,
-  keymap,
 } from '@codemirror/view';
+import { getEditorBaselineExtensions } from '../lib/editorKeymap';
 import { getEditorTheme } from '../theme/editorTheme';
 import { useThemeStore } from '../theme/themeStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -99,7 +99,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
     const baseExtensions: Extension[] = [
       lineNumbers(),
       highlightActiveLine(),
-      keymap.of([]),
+      ...getEditorBaselineExtensions(),
       themeCompartmentRef.current.of(getEditorTheme(useThemeStore.getState().theme)),
       EditorView.lineWrapping,
       langCompartment.of(languageExtension),
@@ -250,6 +250,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
         ref={panelRef}
         className={`editor-panel${editorVisible ? '' : ' editor-panel--hidden'}`}
         data-workspace-interactive={isInteractive ? 'true' : 'false'}
+        data-keybinding-context="editor"
       >
         <div className="editor-pane-header">
           <div className="pane-drag-surface" title="Drag to move pane" aria-label="Move editor pane" {...headerDragHandleProps}>

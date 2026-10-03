@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { openSettings } from '../../../src/renderer/lib/keybindingDispatcher';
 import Header from '../../../src/renderer/components/Header';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
@@ -148,6 +149,30 @@ const renderHeader = () => render(<Header />);
       expect(screen.queryByText('OLD WORKSPACE')).not.toBeInTheDocument();
       for (const call of vi.mocked(window.electronAPI.getHarnessUsage).mock.calls) expect(call[0]).toBe('ws-2');
       expect(vi.mocked(window.electronAPI.getHarnessUsage).mock.calls.length).toBeGreaterThan(0);
+    });
+
+    it('opens the existing Settings popover from the keybinding dispatcher', async () => {
+      renderHeader();
+      expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
+      act(() => openSettings());
+      expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    it('hands Settings off to Keyboard Shortcuts and restores Settings trigger focus on close', async () => {
+      const user = userEvent.setup();
+      renderHeader();
+      const trigger = screen.getByRole('button', { name: 'Settings' });
+      await user.click(trigger);
+      expect(count()).toBe(1);
+      await user.click(screen.getByRole('button', { name: 'Keyboard shortcuts...' }));
+      expect(screen.getByRole('dialog', { name: 'Keyboard Shortcuts' })).toBeInTheDocument();
+      expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
+      expect(count()).toBe(1);
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog', { name: 'Keyboard Shortcuts' })).not.toBeInTheDocument();
+      expect(count()).toBe(0);
+      await waitFor(() => expect(trigger).toHaveFocus());
     });
 
     it.each([0, 1])('hands Settings off to Credentials without releasing browser suppression (other owners: %s)', async (otherOwners) => {

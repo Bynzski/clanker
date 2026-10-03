@@ -9,6 +9,7 @@ import {
 } from '../../../src/shared/terminal';
 import TerminalPane from '../../../src/renderer/components/TerminalPane';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { useKeybindingStore } from '../../../src/renderer/store/keybindingStore';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { useThemeStore } from '../../../src/renderer/theme/themeStore';
@@ -794,6 +795,99 @@ describe('TerminalPane', () => {
       });
 
       expect(mockResizeTerminal).toHaveBeenCalledWith('t1', 80, 24);
+    });
+
+    describe('registered commands vs. the PTY', () => {
+      afterEach(() => {
+        useKeybindingStore.setState({ overrides: {} });
+      });
+
+      it.each([
+        ['Ctrl+S (editor Save)', { key: 's', code: 'KeyS', ctrlKey: true }],
+        ['Cmd+S', { key: 's', code: 'KeyS', metaKey: true }],
+        ['Ctrl+B (Toggle Explorer)', { key: 'b', code: 'KeyB', ctrlKey: true }],
+        ['Ctrl+T', { key: 't', code: 'KeyT', ctrlKey: true }],
+        ['Ctrl+W', { key: 'w', code: 'KeyW', ctrlKey: true }],
+        ['Ctrl+R', { key: 'r', code: 'KeyR', ctrlKey: true }],
+        ['Ctrl+L', { key: 'l', code: 'KeyL', ctrlKey: true }],
+        ['Ctrl+, (Settings)', { key: ',', code: 'Comma', ctrlKey: true }],
+        ['Ctrl+Alt+F (Fit All)', { key: 'f', code: 'KeyF', ctrlKey: true, altKey: true }],
+        ['Ctrl+C', { key: 'c', code: 'KeyC', ctrlKey: true }],
+        ['plain letter', { key: 'a', code: 'KeyA' }],
+        ['Enter', { key: 'Enter', code: 'Enter' }],
+        ['Ctrl+Tab', { key: 'Tab', code: 'Tab', ctrlKey: true }],
+      ])('passes %s through to xterm and the PTY unclaimed', async (_name, init) => {
+        await mountTerminal();
+        const { handled, preventDefault } = zoomKey(init);
+        expect(handled).toBe(true);
+        expect(preventDefault).not.toHaveBeenCalled();
+        expect(mockZoomInWindow).not.toHaveBeenCalled();
+      });
+
+      it('does not invoke editor Save for Ctrl+S even when an editor tab is open elsewhere', async () => {
+        const saveEditorFile = vi.fn().mockResolvedValue(true);
+        useWorkspaceStore.setState({ saveEditorFile, activeEditorTabId: 'tab-1' });
+        await mountTerminal();
+        const { handled } = zoomKey({ key: 's', code: 'KeyS', ctrlKey: true });
+        expect(handled).toBe(true);
+        expect(saveEditorFile).not.toHaveBeenCalled();
+      });
+
+      it('keeps Ctrl+Shift+C as terminal copy', async () => {
+        await mountTerminal();
+        const { handled, preventDefault } = zoomKey({ key: 'C', code: 'KeyC', ctrlKey: true, shiftKey: true });
+        expect(handled).toBe(false);
+        expect(preventDefault).toHaveBeenCalled();
+      });
+
+      it('releases the old Ctrl+Shift+F to the PTY', async () => {
+        await mountTerminal();
+        expect(zoomKey({ key: 'F', code: 'KeyF', ctrlKey: true, shiftKey: true }).handled).toBe(true);
+      });
+
+      it('consumes a rebound terminal zoom key and releases the old one', async () => {
+        useKeybindingStore.setState({
+          overrides: { 'zoom.in': { code: 'KeyJ', primary: true, ctrl: false, shift: false, alt: false } },
+        });
+        await mountTerminal();
+
+        const rebound = zoomKey({ key: 'j', code: 'KeyJ', ctrlKey: true });
+        expect(rebound.handled).toBe(false);
+        expect(rebound.preventDefault).toHaveBeenCalled();
+        expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE + 1);
+
+        const old = zoomKey(ctrlEqual);
+        expect(old.handled).toBe(true);
+        expect(old.preventDefault).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['NumpadAdd', 1], ['NumpadSubtract', -1], ['Numpad0', 0],
+      ] as const)('owns primary+%s numpad zoom', async (code, delta) => {
+        await mountTerminal();
+        const { handled, preventDefault } = zoomKey({ code, ctrlKey: true });
+        expect(handled).toBe(false);
+        expect(preventDefault).toHaveBeenCalled();
+        expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE + delta);
+        expect(mockZoomInWindow).not.toHaveBeenCalled();
+      });
+
+      it('releases numpad zoom to the PTY after an explicit zoom.in rebind', async () => {
+        useKeybindingStore.setState({
+          overrides: { 'zoom.in': { code: 'KeyJ', primary: true, ctrl: false, shift: false, alt: false } },
+        });
+        await mountTerminal();
+        const { handled, preventDefault } = zoomKey({ code: 'NumpadAdd', ctrlKey: true });
+        expect(handled).toBe(true);
+        expect(preventDefault).not.toHaveBeenCalled();
+      });
+
+      it('does not zoom on key-up of a zoom shortcut but still consumes it', async () => {
+        await mountTerminal();
+        const event = new KeyboardEvent('keyup', { cancelable: true, ...ctrlEqual });
+        expect(attachedKeyHandler?.(event)).toBe(false);
+        expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE);
+      });
     });
 
     const wheel = (init: WheelEventInit) => {

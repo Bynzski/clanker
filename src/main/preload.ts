@@ -6,6 +6,7 @@ import type { FileReadRequest, FileWriteRequest, FileChangedEvent, FileWatchRequ
 import type { FileCreateRequest, FileDeleteRequest, FileRenameRequest } from '../shared/types/fileOperations';
 import type { ExplorerTreeChangedEvent } from '../shared/types/fileExplorer';
 import type { HarnessDefaultsMap } from '../shared/types/store';
+import type { KeybindingOverrides, BrowserKeybindingCommandPayload } from '../shared/keybindings';
 import type { VcsProvider } from '../shared/types/vcs';
 import type { GitStatusResult } from '../shared/types/git';
 import type { HarnessSession } from '../shared/types/session';
@@ -39,6 +40,9 @@ import {
   REVEAL_IN_FILE_MANAGER,
   GET_AI_COMMIT_SETTINGS,
   SET_AI_COMMIT_ENABLED,
+  GET_KEYBINDING_OVERRIDES,
+  SET_KEYBINDING_OVERRIDES,
+  BROWSER_KEYBINDING_COMMAND,
   SET_AI_COMMIT_PROVIDER,
   SET_AI_COMMIT_MODEL,
   GET_THEME,
@@ -207,6 +211,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAiCommitModel: (model: string) => ipcRenderer.invoke(SET_AI_COMMIT_MODEL, model),
   getTheme: () => ipcRenderer.invoke(GET_THEME),
   setTheme: (theme: ThemeId) => ipcRenderer.invoke(SET_THEME, theme),
+  getKeybindingOverrides: () => ipcRenderer.invoke(GET_KEYBINDING_OVERRIDES),
+  setKeybindingOverrides: (overrides: KeybindingOverrides) => ipcRenderer.invoke(SET_KEYBINDING_OVERRIDES, overrides),
 
   // Terminal
   spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string) =>
@@ -342,6 +348,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ) => callback(payload);
     ipcRenderer.on(BROWSER_URL_UPDATED, handler);
     return () => ipcRenderer.removeListener(BROWSER_URL_UPDATED, handler);
+  },
+  onBrowserKeybindingCommand: (callback: (payload: BrowserKeybindingCommandPayload) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: BrowserKeybindingCommandPayload) => callback(payload);
+    ipcRenderer.on(BROWSER_KEYBINDING_COMMAND, handler);
+    return () => ipcRenderer.removeListener(BROWSER_KEYBINDING_COMMAND, handler);
   },
   onFitAllPanes: (callback: () => void) => {
     const handler = () => callback();

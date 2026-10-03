@@ -71,6 +71,7 @@ import * as nodeOs from 'node:os';
 import * as nodePath from 'node:path';
 import { HarnessUsageService } from './usage/harnessUsageService';
 import { registerRecipeIpc } from './ipc/recipeIpc';
+import { KeybindingOverridesService } from './keybindingOverrides';
 import { purgeLegacyTaskSessions } from './storeMigrations';
 import { AgentAttentionBroker } from './agentAttentionBroker';
 import { AGENT_ATTENTION_UPDATE, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
@@ -99,6 +100,8 @@ const store = new Store<StoreSchema>({
 // Workspace Tasks (#43) were removed. Drop any records persisted by older
 // builds instead of leaving an ever-growing dead store on disk.
 purgeLegacyTaskSessions(store);
+
+const keybindingOverrides = new KeybindingOverridesService(() => store);
 
 // Shared state for IPC modules (exported for test access)
 const terminals: Map<string, Terminal> = new Map();
@@ -295,6 +298,7 @@ app.whenReady().then(() => {
   registerSettingsIpc({
     getStore: () => store,
     getMainWindow: () => mainWindow,
+    keybindingOverrides,
   });
 
   registerWindowIpc({
@@ -330,6 +334,7 @@ app.whenReady().then(() => {
     onBrowserNavigation: (id, url, code) => remotePreviewManager.reportBrowserNavigation(id, url, code),
     getWorkspaceEnvironmentKind: (id) => workspaceRegistry.getWorkspace(id)?.environment.kind ?? null,
     getMainWindow: () => mainWindow,
+    getKeybindingOverrides: () => keybindingOverrides.get(),
     getBrowserViews: () => browserViews,
     getActiveBrowserWorkspaceId: () => activeBrowserWorkspaceId,
     setActiveBrowserWorkspaceId: (id) => { activeBrowserWorkspaceId = id; },

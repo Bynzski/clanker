@@ -117,8 +117,8 @@ import {
   createBrowserViewForTab,
   applyBrowserViewZoomAction,
   clampBrowserZoomLevel,
-  getBrowserKeyboardZoomShortcutAction,
 } from '../../../src/main/ipc/browserIpc';
+import { KeybindingOverridesService } from '../../../src/main/keybindingOverrides';
 import { BrowserHistoryService, __resetBrowserHistoryServiceForTests } from '../../../src/main/browserHistory';
 import type { BrowserHistoryEntry } from '../../../src/shared/types/browserHistory';
 
@@ -484,6 +484,191 @@ describe('browserIpc — error-path: null/invalid workspaceId returns valid resu
     expect(deps.getMainWindow().webContents.getZoomLevel).not.toHaveBeenCalled();
   });
 
+  describe('browser keybindings via before-input-event', () => {
+    type Input = { control?: boolean; meta?: boolean; alt?: boolean; shift?: boolean; code?: string; key?: string; type?: string };
+    const ctrl = (code: string, extra: Partial<Input> = {}): Input => ({
+      control: true, meta: false, alt: false, shift: false, code, type: 'keyDown', ...extra,
+    });
+    const custom = (code: string, mods: Partial<{ primary: boolean; shift: boolean; alt: boolean }> = {}) => ({
+      code, primary: true, ctrl: false, shift: false, alt: false, ...mods,
+    });
+
+    function setup(overrides: Record<string, unknown> = {}) {
+      const { deps } = createMockDeps();
+      const send = vi.fn();
+      const focus = vi.fn();
+      const win = { webContents: { send, focus, getZoomLevel: vi.fn(() => 0) }, contentView: { addChildView: vi.fn() } };
+      let current = overrides;
+      const fullDeps = {
+        ...deps,
+        getMainWindow: () => win as never,
+        getKeybindingOverrides: () => current as never,
+      };
+      const entry = createBrowserViewForTab('ws-k', 'tab-k', fullDeps as never)!;
+      entry.view.webContents.setZoomLevel = vi.fn();
+      entry.view.webContents.getZoomLevel = vi.fn(() => 0);
+      const press = (input: Input) => {
+        const preventDefault = vi.fn();
+        attachedBeforeInputEventHandler?.({ preventDefault }, input);
+        return preventDefault;
+      };
+      return { entry, send, focus, press, setOverrides: (next: Record<string, unknown>) => { current = next; }, win };
+    }
+
+    test('zoom keys zoom only the browser view', () => {
+      const { entry, press, send } = setup();
+      expect(press(ctrl('Equal'))).toHaveBeenCalled();
+      expect(entry.view.webContents.setZoomLevel).toHaveBeenLastCalledWith(0.5);
+      press(ctrl('Minus'));
+      expect(entry.view.webContents.setZoomLevel).toHaveBeenLastCalledWith(-0.5);
+      press(ctrl('Digit0'));
+      expect(entry.view.webContents.setZoomLevel).toHaveBeenLastCalledWith(0);
+      press(ctrl('Equal', { shift: true }));
+      expect(entry.view.webContents.setZoomLevel).toHaveBeenLastCalledWith(0.5);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    test('key-up of a handled shortcut is consumed without running it twice', () => {
+      const { entry, press } = setup();
+      const prevented = press(ctrl('Equal', { type: 'keyUp' }));
+      expect(prevented).toHaveBeenCalled();
+      expect(entry.view.webContents.setZoomLevel).not.toHaveBeenCalled();
+    });
+
+    test('refresh reloads the focused view without touching the renderer', () => {
+      const { entry, press, send } = setup();
+      expect(press(ctrl('KeyR'))).toHaveBeenCalled();
+      expect(entry.view.webContents.reload).toHaveBeenCalledTimes(1);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    test('focus address hands window focus to the renderer with a typed, scoped signal', () => {
+      const { press, send, focus } = setup();
+      expect(press(ctrl('KeyL'))).toHaveBeenCalled();
+      expect(focus).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledWith('browser-keybinding-command', {
+        workspaceId: 'ws-k', tabId: 'tab-k', command: 'browser.focusAddress',
+      });
+    });
+
+    test.each([
+      ['KeyT', {}, 'browser.newTab'],
+      ['KeyW', {}, 'browser.closeTab'],
+      ['Tab', {}, 'browser.nextTab'],
+      ['Tab', { shift: true }, 'browser.previousTab'],
+    ] as const)('%s %j signals %s without taking window focus', (code, extra, command) => {
+      const { press, send, focus } = setup();
+      expect(press(ctrl(code, extra))).toHaveBeenCalled();
+      expect(send).toHaveBeenCalledWith('browser-keybinding-command', { workspaceId: 'ws-k', tabId: 'tab-k', command });
+      expect(focus).not.toHaveBeenCalled();
+    });
+
+    test('Fit All uses its new default and the old Ctrl+Shift+F is no longer active', () => {
+      const { press, send } = setup();
+      expect(press(ctrl('KeyF', { alt: true }))).toHaveBeenCalled();
+      expect(send).toHaveBeenCalledWith('fit-all-panes');
+      send.mockClear();
+      expect(press(ctrl('KeyF', { shift: true, key: 'F' }))).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    test('DevTools shortcuts are preserved', () => {
+      const { entry, press } = setup();
+      press(ctrl('KeyI', { shift: true, key: 'I' }));
+      expect(entry.view.webContents.openDevTools).toHaveBeenCalledWith({ mode: 'detach' });
+      press({ code: 'F12', key: 'F12', control: false, meta: false, alt: false, shift: false, type: 'keyDown' });
+      expect(entry.view.webContents.openDevTools).toHaveBeenCalledTimes(2);
+    });
+
+    test('does not steal application-only commands or unbound keys from the page', () => {
+      const { press, send } = setup();
+      for (const code of ['KeyS', 'KeyB', 'Comma', 'KeyA', 'KeyC']) {
+        expect(press(ctrl(code))).not.toHaveBeenCalled();
+      }
+      expect(press({ ...ctrl('KeyT'), control: false })).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    test('ignores modifier-only and code-less input', () => {
+      const { press } = setup();
+      expect(press(ctrl('ControlLeft'))).not.toHaveBeenCalled();
+      expect(press({ control: true, type: 'mouseWheel' })).not.toHaveBeenCalled();
+    });
+
+    test('overridden bindings take effect and the default no longer fires', () => {
+      const { press, send } = setup({ 'browser.newTab': custom('KeyJ') });
+      expect(press(ctrl('KeyJ'))).toHaveBeenCalled();
+      expect(send).toHaveBeenCalledWith('browser-keybinding-command', expect.objectContaining({ command: 'browser.newTab' }));
+      send.mockClear();
+      expect(press(ctrl('KeyT'))).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    test('overridden zoom binding applies in the browser; default zoom key is released to the page', () => {
+      const { entry, press } = setup({ 'zoom.in': custom('KeyJ') });
+      press(ctrl('KeyJ'));
+      expect(entry.view.webContents.setZoomLevel).toHaveBeenLastCalledWith(0.5);
+      vi.mocked(entry.view.webContents.setZoomLevel).mockClear();
+      expect(press(ctrl('Equal'))).not.toHaveBeenCalled();
+      expect(entry.view.webContents.setZoomLevel).not.toHaveBeenCalled();
+    });
+
+    test('unbound commands do nothing and reset-to-default restores behavior live', () => {
+      const { entry, press, setOverrides } = setup({ 'browser.refresh': null });
+      expect(press(ctrl('KeyR'))).not.toHaveBeenCalled();
+      expect(entry.view.webContents.reload).not.toHaveBeenCalled();
+      setOverrides({});
+      expect(press(ctrl('KeyR'))).toHaveBeenCalled();
+      expect(entry.view.webContents.reload).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+      ['NumpadAdd', 0.5], ['NumpadSubtract', -0.5], ['Numpad0', 0],
+    ] as const)('primary+%s zooms the browser view via the zoom aliases', (code, level) => {
+      const { entry, press } = setup();
+      expect(press(ctrl(code))).toHaveBeenCalled();
+      expect(entry.view.webContents.setZoomLevel).toHaveBeenLastCalledWith(level);
+    });
+
+    test('numpad aliases stop applying after an explicit zoom rebind', () => {
+      const { entry, press } = setup({ 'zoom.in': custom('KeyJ') });
+      expect(press(ctrl('NumpadAdd'))).not.toHaveBeenCalled();
+      expect(entry.view.webContents.setZoomLevel).not.toHaveBeenCalled();
+      press(ctrl('NumpadSubtract'));
+      expect(entry.view.webContents.setZoomLevel).toHaveBeenLastCalledWith(-0.5);
+    });
+
+    test('a conflicting persisted map never reaches browser resolution', () => {
+      const store = {
+        // browser.newTab and browser.refresh both on Ctrl+R: well-formed, overlapping contexts
+        get: vi.fn(() => ({ 'browser.newTab': custom('KeyR') })),
+        set: vi.fn(),
+        delete: vi.fn(),
+      };
+      const service = new KeybindingOverridesService(() => store as never, 'other');
+      const { deps } = createMockDeps();
+      const send = vi.fn();
+      const win = { webContents: { send, focus: vi.fn(), getZoomLevel: vi.fn(() => 0) }, contentView: { addChildView: vi.fn() } };
+      const entry = createBrowserViewForTab('ws-c', 'tab-c', {
+        ...deps, getMainWindow: () => win as never, getKeybindingOverrides: () => service.get(),
+      } as never)!;
+      const preventDefault = vi.fn();
+      attachedBeforeInputEventHandler?.({ preventDefault }, ctrl('KeyR'));
+      expect(entry.view.webContents.reload).toHaveBeenCalledTimes(1); // default Refresh, no first-match winner
+      expect(send).not.toHaveBeenCalled();
+      expect(store.delete).toHaveBeenCalledWith('keybindingOverrides');
+    });
+
+    test('works without any override provider (defaults)', () => {
+      const { deps } = createMockDeps();
+      const entry = createBrowserViewForTab('ws-d', 'tab-d', deps as never)!;
+      const preventDefault = vi.fn();
+      attachedBeforeInputEventHandler?.({ preventDefault }, ctrl('KeyR'));
+      expect(preventDefault).toHaveBeenCalled();
+      expect(entry.view.webContents.reload).toHaveBeenCalled();
+    });
+  });
+
   test('new browser tabs do not inherit application zoom', () => {
     const { deps } = createMockDeps();
     deps.getMainWindow().webContents.getZoomLevel = vi.fn(() => 2);
@@ -503,11 +688,7 @@ describe('browserIpc — error-path: null/invalid workspaceId returns valid resu
     expect(firstTabEntry?.view.webContents.setZoomLevel).not.toHaveBeenCalled();
   });
 
-  test('browser zoom helper actions are parsed and clamped correctly', () => {
-    expect(getBrowserKeyboardZoomShortcutAction({ control: true, meta: false, alt: false, code: 'Equal' })).toBe('in');
-    expect(getBrowserKeyboardZoomShortcutAction({ control: true, meta: false, alt: false, code: 'Minus' })).toBe('out');
-    expect(getBrowserKeyboardZoomShortcutAction({ control: true, meta: false, alt: false, code: 'Digit0' })).toBe('reset');
-    expect(getBrowserKeyboardZoomShortcutAction({ control: true, meta: false, alt: true, code: 'Equal' })).toBeNull();
+  test('browser zoom helper actions are clamped correctly', () => {
     expect(clampBrowserZoomLevel(-10)).toBe(-5);
     expect(clampBrowserZoomLevel(10)).toBe(5);
 

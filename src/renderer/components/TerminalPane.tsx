@@ -31,7 +31,7 @@ import {
   findTerminalLinks,
   normalizeTerminalUrl,
 } from '../lib/linkUtils';
-import { getWheelZoomAction, getZoomShortcutAction } from '../lib/keyboardShortcuts';
+import { getWheelZoomAction, getZoomActionForCommand, resolveKeyboardCommand } from '../lib/keyboardShortcuts';
 import { linkRangeForMatch, readWrappedLogicalLine } from '../lib/terminalLinkRanges';
 
 type XTermInstance = import('@xterm/xterm').Terminal;
@@ -566,14 +566,16 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
         return false;
       }
 
-      // Terminal-focused zoom changes only this xterm's cell metrics. The event
-      // is always consumed (even at a bound) so it never reaches the PTY or the
-      // app-level zoom listener.
-      const zoomAction = getZoomShortcutAction(event);
-      if (zoomAction != null) {
+      // Terminal-context commands (currently zoom) are owned here: terminal zoom
+      // changes only this xterm's cell metrics. A matched command is always
+      // consumed (even at a bound) so it never reaches the PTY or the app-level
+      // listener. Anything unregistered for the terminal falls through to the PTY.
+      const command = resolveKeyboardCommand(event, 'terminal');
+      if (command != null) {
         event.preventDefault();
         event.stopPropagation();
-        if (event.type === 'keydown') {
+        const zoomAction = getZoomActionForCommand(command);
+        if (zoomAction != null && event.type === 'keydown') {
           applyTerminalZoom(zoomAction);
         }
         return false;
@@ -747,6 +749,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       ref={paneRootRef}
       className={`terminal-pane ${compact ? 'compact' : ''} ${isActive ? 'active' : ''} ${showAgentAttention && attention?.unseen ? 'attention-unseen' : ''}`}
       data-workspace-interactive={isInteractive ? 'true' : 'false'}
+      data-keybinding-context="terminal"
     >
       {!compact && (
         <div className="terminal-header">
