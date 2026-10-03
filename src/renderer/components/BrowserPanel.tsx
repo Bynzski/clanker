@@ -6,6 +6,7 @@ import type {
   ChangeEventHandler,
   FocusEventHandler,
   KeyboardEventHandler,
+  PointerEventHandler,
   Ref,
 } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, MousePointer2 } from 'lucide-react';
@@ -176,6 +177,8 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   const nextHandoffId = useRef(0);
   const [handoffError, setHandoffError] = useState('');
   const dragHandleProps = useDragHandle();
+  // Empty header chrome is a pointer-only drag surface; the title/grip owns keyboard/a11y activation.
+  const dragPointerDown = dragHandleProps?.onPointerDown as PointerEventHandler<HTMLDivElement> | undefined;
   const isActiveWorkspace = workspace?.id != null && workspace.id === activeWorkspaceId;
 
   useEffect(() => {
@@ -454,6 +457,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
           onCloseTab={(event, tabId) => void handleCloseTab(event, tabId)}
           onMoveTab={(tabId, targetTabId) => void handleMoveTab(tabId, targetTabId)}
         />
+        <div className="browser-pane-drag-fill" aria-hidden="true" data-testid="browser-header-drag-fill" onPointerDown={dragPointerDown} />
       </div>
       <BrowserToolbar
         canGoBack={canGoBack}

@@ -52,8 +52,15 @@ class MockResizeObserver {
 }
 
 // Mock the drag handle context
+const mockDragPointerDown = vi.fn();
 vi.mock('../../../src/renderer/components/dragHandleContext', () => ({
-  useDragHandle: vi.fn().mockReturnValue({ 'data-drag-activator': 'true' }),
+  useDragHandle: vi.fn(() => ({
+    'data-drag-activator': 'true',
+    role: 'button',
+    tabIndex: 0,
+    'aria-roledescription': 'draggable',
+    onPointerDown: mockDragPointerDown,
+  })),
 }));
 
 // Mock electron API for browser operations
@@ -243,6 +250,77 @@ describe('BrowserPanel', () => {
       render(<BrowserPanel {...defaultProps} />);
 
       expect(screen.getByText('Browser')).toBeTruthy();
+    });
+
+    describe('pane chrome (#50)', () => {
+      const pane: BrowserPaneState = {
+        id: 'browser-1',
+        position: { x: 0, y: 0, w: 6, h: 6 },
+        tabs: [
+          { id: 'tab-1', url: 'https://a.test', title: 'A', canGoBack: false, canGoForward: false },
+          { id: 'tab-2', url: 'https://b.test', title: 'B', canGoBack: false, canGoForward: false },
+        ],
+        activeTabId: 'tab-1',
+      };
+
+      it('has no in-pane hide control', () => {
+        setupStore({ browserPane: pane });
+
+        render(<BrowserPanel {...defaultProps} />);
+
+        expect(screen.queryByRole('button', { name: 'Hide browser' })).toBeNull();
+      });
+
+      it('gives the title/grip the full accessible activator and the empty chrome pointer-only drag', () => {
+        setupStore({ browserPane: pane });
+
+        render(<BrowserPanel {...defaultProps} />);
+
+        const grip = document.querySelector('.pane-drag-surface')!;
+        expect(grip).toHaveAttribute('role', 'button');
+        expect(grip).toHaveAttribute('tabindex', '0');
+        expect(grip).toHaveAttribute('data-drag-activator', 'true');
+
+        const fill = screen.getByTestId('browser-header-drag-fill');
+        expect(fill).not.toHaveAttribute('role');
+        expect(fill).not.toHaveAttribute('tabindex');
+        expect(fill).not.toHaveAttribute('data-drag-activator');
+        expect(fill).toHaveAttribute('aria-hidden', 'true');
+      });
+
+      it('starts pane drag from empty chrome pointerdown but not from tabs or buttons', () => {
+        setupStore({ browserPane: pane });
+
+        render(<BrowserPanel {...defaultProps} />);
+
+        mockDragPointerDown.mockClear();
+        for (const el of [
+          screen.getByRole('tab', { name: 'A' }),
+          screen.getByRole('button', { name: 'New tab' }),
+        ]) {
+          fireEvent.pointerDown(el);
+        }
+        expect(mockDragPointerDown).not.toHaveBeenCalled();
+
+        fireEvent.pointerDown(screen.getByTestId('browser-header-drag-fill'));
+        expect(mockDragPointerDown).toHaveBeenCalledTimes(1);
+      });
+
+      it('orders header as title, tab strip (with + after tabs), empty drag chrome', () => {
+        setupStore({ browserPane: pane });
+
+        render(<BrowserPanel {...defaultProps} />);
+
+        const header = document.querySelector('.browser-pane-header')!;
+        const children = Array.from(header.children);
+        expect(children[0]).toHaveClass('pane-drag-surface');
+        expect(children[1]).toHaveClass('browser-tab-strip');
+        expect(children[2]).toBe(screen.getByTestId('browser-header-drag-fill'));
+        expect(children).toHaveLength(3);
+        const strip = children[1];
+        expect(strip.children[0]).toBe(screen.getByRole('tablist'));
+        expect(strip.children[1]).toBe(screen.getByRole('button', { name: 'New tab' }));
+      });
     });
 
     it('renders drag handle', () => {

@@ -17,6 +17,9 @@ import {
   insertPaneAtEdgeGapInLayout,
   insertPaneAtEdgeSegmentInLayout,
   movePaneInLayout,
+  capturePanePlacementInLayout,
+  restorePanePlacementInLayout,
+  insertPaneAtWorkspaceEdgeInLayout,
 } from '../../../src/renderer/store/workspaceLayout';
 import type { EdgeTerminal } from '../../../src/renderer/store/workspaceLayout';
 import type {
@@ -1487,5 +1490,110 @@ describe('constants', () => {
   it('exports expected grid dimensions', () => {
     expect(GRID_COLS).toBe(12);
     expect(GRID_ROWS).toBe(8);
+  });
+});
+
+describe('browser pane placement helpers', () => {
+  it('inserts a missing pane at the outer right edge at 70/30', () => {
+    const result = insertPaneAtWorkspaceEdgeInLayout(leaf('A'), 'B', 'right') as LayoutSplit;
+    expect(result.type).toBe('split');
+    expect(result.orientation).toBe('horizontal');
+    expect(result.ratio).toBe(0.7);
+    expect((result.first as LayoutLeaf).paneId).toBe('A');
+    expect((result.second as LayoutLeaf).paneId).toBe('B');
+  });
+
+  it('inserts into an empty layout as the sole leaf', () => {
+    const result = insertPaneAtWorkspaceEdgeInLayout(null, 'B', 'right') as LayoutLeaf;
+    expect(result.type).toBe('leaf');
+    expect(result.paneId).toBe('B');
+  });
+
+  it('does not duplicate a pane that is already present', () => {
+    const root = split(leaf('A'), leaf('B'));
+    expect(insertPaneAtWorkspaceEdgeInLayout(root, 'B', 'right')).toBe(root);
+  });
+
+  it('captures the sibling node of an outer-right pane', () => {
+    const anchor = split(leaf('A'), leaf('T'), 'vertical', 0.5, 'anchor');
+    const root = split(anchor, leaf('B'), 'horizontal', 0.64, 'root');
+    expect(capturePanePlacementInLayout(root, 'B')).toEqual({
+      anchorNodeId: 'anchor',
+      orientation: 'horizontal',
+      paneSide: 'second',
+      ratio: 0.64,
+    });
+  });
+
+  it('captures only the local sibling for a nested pane', () => {
+    const root = split(
+      leaf('A', 'leaf-A'),
+      split(leaf('B', 'leaf-B'), leaf('T', 'leaf-T'), 'vertical', 0.4, 'inner'),
+      'horizontal',
+      0.5,
+      'outer',
+    );
+    expect(capturePanePlacementInLayout(root, 'B')).toEqual({
+      anchorNodeId: 'leaf-T',
+      orientation: 'vertical',
+      paneSide: 'first',
+      ratio: 0.4,
+    });
+  });
+
+  it('returns null when the pane is absent or has no sibling', () => {
+    expect(capturePanePlacementInLayout(null, 'B')).toBeNull();
+    expect(capturePanePlacementInLayout(leaf('B'), 'B')).toBeNull();
+    expect(capturePanePlacementInLayout(split(leaf('A'), leaf('T')), 'B')).toBeNull();
+  });
+
+  it('restores local topology and a non-default ratio after removal', () => {
+    const root = split(
+      leaf('A', 'leaf-A'),
+      split(leaf('B', 'leaf-B'), leaf('T', 'leaf-T'), 'vertical', 0.63, 'inner'),
+      'horizontal',
+      0.5,
+      'outer',
+    );
+    const hint = capturePanePlacementInLayout(root, 'B')!;
+    const without = removePaneFromLayout(root, 'B');
+    const result = restorePanePlacementInLayout(without, 'B', hint);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const outer = result.layoutRoot as LayoutSplit;
+    expect(outer.nodeId).toBe('outer');
+    const inner = outer.second as LayoutSplit;
+    expect(inner.orientation).toBe('vertical');
+    expect(inner.ratio).toBe(0.63);
+    expect((inner.first as LayoutLeaf).paneId).toBe('B');
+    expect((inner.second as LayoutLeaf).paneId).toBe('T');
+  });
+
+  it('preserves unrelated layout changes made while hidden', () => {
+    const root = split(leaf('A', 'leaf-A'), split(leaf('T', 'leaf-T'), leaf('B'), 'horizontal', 0.7, 'inner'), 'vertical', 0.5, 'outer');
+    const hint = capturePanePlacementInLayout(root, 'B')!;
+    const without = removePaneFromLayout(root, 'B')!;
+    // Unrelated change: A is replaced by a new split elsewhere.
+    const changed = { ...(without as LayoutSplit), first: split(leaf('A', 'leaf-A'), leaf('N'), 'horizontal', 0.5, 'newsplit') };
+    const result = restorePanePlacementInLayout(changed, 'B', hint);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const ids = collectLeafPaneIds(result.layoutRoot);
+    expect(ids.sort()).toEqual(['A', 'B', 'N', 'T']);
+    expect(((result.layoutRoot as LayoutSplit).first as LayoutSplit).nodeId).toBe('newsplit');
+  });
+
+  it('fails cleanly when the anchor no longer exists', () => {
+    const root = split(leaf('A', 'leaf-A'), leaf('B'), 'horizontal', 0.7);
+    const hint = capturePanePlacementInLayout(root, 'B')!;
+    const rebuilt = split(leaf('X', 'leaf-X'), leaf('Y', 'leaf-Y'));
+    expect(restorePanePlacementInLayout(rebuilt, 'B', hint)).toEqual({ ok: false });
+    expect(restorePanePlacementInLayout(null, 'B', hint)).toEqual({ ok: false });
+  });
+
+  it('never creates a duplicate leaf when restoring a present pane', () => {
+    const root = split(leaf('A', 'leaf-A'), leaf('B'));
+    const hint = capturePanePlacementInLayout(root, 'B')!;
+    expect(restorePanePlacementInLayout(root, 'B', hint)).toEqual({ ok: false });
   });
 });
