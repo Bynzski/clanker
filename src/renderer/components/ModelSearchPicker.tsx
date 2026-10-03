@@ -23,6 +23,8 @@ interface ModelSearchPickerProps {
   /** Settings use full labels and an explicit harness-default choice. */
   fullWidth?: boolean;
   includeDefault?: boolean;
+  /** List the default entry first regardless of sorting (remote launch: default is the safe choice). */
+  pinDefaultFirst?: boolean;
   disabled?: boolean;
   triggerLabel?: string;
   onEnterCustom?: () => void;
@@ -46,7 +48,7 @@ export function ModelSearchPicker(props: ModelSearchPickerProps) {
     id: option.id, label: hermes ? hermesModelLabel(option) : option.label,
     unavailable: props.isUnresolved(option.id),
   }));
-  if (props.includeDefault) items.push({ id: '', label: 'Use harness default', canFavorite: false });
+  if (props.includeDefault) items.push({ id: '', label: 'Use harness default', canFavorite: false, ...(props.pinDefaultFirst ? { pinnedFirst: true } : {}) });
   const missingIds = new Set([...props.favorites, ...(props.model ? [props.model] : [])]);
   for (const id of missingIds) {
     if (!items.some((item) => item.id === id)) items.push({ id,

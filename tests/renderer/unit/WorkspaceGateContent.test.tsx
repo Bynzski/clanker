@@ -1117,6 +1117,30 @@ describe('WorkspaceGateContent', () => {
       }));
     });
 
+    it('lists "Use harness default" first and Enter on it launches the remote with no model', async () => {
+      setupRemote();
+      vi.mocked(window.electronAPI.getEnvironmentHarnessModels).mockImplementation(async (_id, harness) => harness === 'codex'
+        ? [{ id: 'zeta', label: 'Zeta' }, { id: 'alpha-model', label: 'Alpha' }, { id: 'beta', label: 'Beta' }] : []);
+      const user = userEvent.setup();
+      await renderGate();
+      await selectRemote(false);
+      await user.click(await screen.findByRole('button', { name: 'codex model' }));
+      const choices = within(await screen.findByRole('group', { name: 'Models' })).getAllByRole('button', { pressed: undefined })
+        .filter((button) => button.classList.contains('searchable-picker-choice'));
+      expect(choices.map((button) => button.textContent)).toEqual(['Use harness default', 'Alpha', 'Beta', 'Zeta']);
+      await user.click(within(screen.getByRole('group', { name: 'Models' })).getByText('Alpha'));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'codex model' })).toHaveTextContent('Alpha'));
+      await user.click(screen.getByRole('button', { name: 'codex model' }));
+      await user.keyboard('{Enter}');
+      await waitFor(() => expect(screen.getByRole('button', { name: 'codex model' })).toHaveTextContent('Use harness default'));
+      fireEvent.click(screen.getByRole('button', { name: 'Add Codex terminal' }));
+      fireEvent.change(screen.getByLabelText('Remote Directory Path'), { target: { value: '/srv/app' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+      expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({
+        terminalLaunches: [{ harness: 'codex', model: undefined }],
+      }));
+    });
+
     it('keeps Host default when remote discovery is empty or fails, and never asks for Hermes', async () => {
       setupRemote();
       window.electronAPI.getEnvironmentHarnessOptions = vi.fn().mockResolvedValue({

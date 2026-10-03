@@ -38,7 +38,7 @@ function HarnessRow({ option, total, ...props }: Props & { option: HarnessOption
     <div className="gate-harness-name"><option.Icon size={16} /><span>{option.label}</span></div>
     <div className="gate-harness-model">
       {option.id && (!props.remote || remoteCatalog) && <ModelSearchPicker harness={option.id} model={model} models={models}
-        includeDefault={props.remote}
+        includeDefault={props.remote} pinDefaultFirst={props.remote}
         favorites={favorites} savedHermesModel={props.defaults?.hermes?.model ?? ''}
         refreshing={props.refreshing} loading={props.modelsLoading} open={pickerOpen}
         onOpenChange={setPickerOpen}
