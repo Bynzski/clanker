@@ -46,7 +46,11 @@ function ptyStub() {
   mockPtySpawn.mockReturnValue({ pid: 4321, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn(), resize: vi.fn() });
 }
 
-function install(registry: WorkspaceRegistry, getSafeWorkspacePath: (dir: string) => string = (dir) => dir) {
+function install(
+  registry: WorkspaceRegistry,
+  getSafeWorkspacePath: (dir: string) => string = (dir) => dir,
+  extraDeps: Partial<Parameters<typeof registerTerminalIpc>[0]> = {},
+) {
   const terminals = new Map();
   mockHandle.mockClear();
   registerTerminalIpc({
@@ -56,6 +60,7 @@ function install(registry: WorkspaceRegistry, getSafeWorkspacePath: (dir: string
     getSafeWorkspacePath,
     getHarnessOptions: () => ({}),
     getWorkspaceRegistry: () => registry,
+    ...extraDeps,
   });
   const spawn = mockHandle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1] as SpawnHandler;
   return { spawn, terminals };
@@ -304,6 +309,106 @@ describe('local terminals resolve through checkout context identity', () => {
     const { spawn } = await setup();
     await expect(spawn(null, toPosixPath(main), undefined, undefined, undefined, undefined, 'ws', 'local', 'ws::nope'))
       .rejects.toThrow('Checkout context is not registered for this workspace');
+  });
+
+  describe('revalidates the resolved workspace and context just before the PTY exists', () => {
+    // The attention broker registration is the launch's async pre-spawn step; hold it open.
+    const codex = { codex: { name: 'Codex', command: 'codex', args: [] as string[], icon: 'codex' } };
+
+    async function heldLaunch() {
+      const registry = new WorkspaceRegistry(() => localEnvironment);
+      await registry.registerWorkspace({ workspaceId: 'ws', workspacePath: toPosixPath(main) });
+      const wt = (await registry.registerCheckoutContext({ workspaceId: 'ws', path: toPosixPath(worktree), kind: 'worktree' })).checkoutContext!;
+      let releaseRegistration!: () => void;
+      const broker = {
+        register: vi.fn(() => new Promise<Record<string, string>>((resolve) => { releaseRegistration = () => resolve({}); })),
+        release: vi.fn(),
+      };
+      const { spawn, terminals } = install(registry, safePath, {
+        getHarnessOptions: () => codex,
+        ensureHarnessWrapperScript: () => null,
+        agentAttentionBroker: broker as never,
+      });
+      const launch = (dir: string, workspaceId: string | undefined, contextId?: string) =>
+        spawn(null, toPosixPath(dir), 'codex', undefined, undefined, undefined, workspaceId, workspaceId ? 'local' : undefined, contextId);
+      const held = async (start: () => Promise<unknown>, whileHeld: () => void) => {
+        const pending = start();
+        const settled = pending.then(() => 'ok' as const, (error: Error) => error);
+        await vi.waitFor(() => expect(broker.register).toHaveBeenCalled());
+        whileHeld();
+        releaseRegistration();
+        return settled;
+      };
+      return { registry, wt, broker, terminals, launch, held, releaseRegistration: () => releaseRegistration() };
+    }
+
+    test('control: a launch whose context stays registered completes', async () => {
+      const { wt, broker, terminals, launch, held } = await heldLaunch();
+      const outcome = await held(() => launch(worktree, 'ws', wt.id), () => undefined);
+
+      expect(outcome).toBe('ok');
+      expect(mockPtySpawn).toHaveBeenCalledTimes(1);
+      expect(mockPtySpawn).toHaveBeenCalledWith(expect.any(String), expect.any(Array), expect.objectContaining({ cwd: worktree }));
+      expect([...terminals.values()]).toEqual([expect.objectContaining({ checkoutContextId: wt.id })]);
+      expect(broker.release).not.toHaveBeenCalled();
+    });
+
+    test('rejects, without a PTY, when the context is unregistered while the launch is held', async () => {
+      const { registry, wt, broker, terminals, launch, held } = await heldLaunch();
+      const outcome = await held(() => launch(worktree, 'ws', wt.id), () => { registry.unregisterCheckoutContext(wt.id); });
+
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toBe('Workspace was closed or is being removed');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+      expect(terminals.size).toBe(0);
+      expect(broker.release).toHaveBeenCalledTimes(1);
+    });
+
+    test('rejects, without a PTY, when the workspace is closed while the launch is held (explicit worktree context)', async () => {
+      const { registry, wt, broker, terminals, launch, held } = await heldLaunch();
+      const outcome = await held(() => launch(worktree, 'ws', wt.id), () => { registry.unregisterWorkspace('ws'); });
+
+      expect((outcome as Error).message).toBe('Workspace was closed or is being removed');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+      expect(terminals.size).toBe(0);
+      expect(broker.release).toHaveBeenCalledTimes(1);
+    });
+
+    test('rejects, without a PTY, when the workspace is closed while an implicit main-context launch is held', async () => {
+      const { registry, launch, held } = await heldLaunch();
+      const outcome = await held(() => launch(main, 'ws'), () => { registry.unregisterWorkspace('ws'); });
+
+      expect((outcome as Error).message).toBe('Workspace was closed or is being removed');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+
+    test('rejects when the workspace id was closed and registered again meanwhile (a different registration object)', async () => {
+      const { registry, broker, launch, releaseRegistration } = await heldLaunch();
+      const original = registry.getWorkspace('ws');
+      const pending = launch(main, 'ws').then(() => 'ok' as const, (error: Error) => error);
+      await vi.waitFor(() => expect(broker.register).toHaveBeenCalled());
+
+      registry.unregisterWorkspace('ws');
+      expect((await registry.registerWorkspace({ workspaceId: 'ws', workspacePath: toPosixPath(main) })).success).toBe(true);
+      // The id is registered again, but it is not the registration this launch resolved.
+      expect(registry.getWorkspace('ws')).not.toBeNull();
+      expect(registry.getWorkspace('ws')).not.toBe(original);
+      releaseRegistration();
+
+      expect(((await pending) as Error).message).toBe('Workspace was closed or is being removed');
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+
+    test('does not weaken unbound legacy launches: closing an unrelated workspace does not stop a path-only launch', async () => {
+      const { registry, broker, launch, held } = await heldLaunch();
+      await registry.registerWorkspace({ workspaceId: 'unrelated', workspacePath: toPosixPath(root) });
+      // Not a registered workspace root, so this launch resolves no workspace or context.
+      const outcome = await held(() => launch(path.join(main, 'src'), undefined), () => { registry.unregisterWorkspace('unrelated'); });
+
+      expect(outcome).toBe('ok');
+      expect(mockPtySpawn).toHaveBeenCalledTimes(1);
+      expect(broker.release).not.toHaveBeenCalled();
+    });
   });
 
   test('closing the workspace invalidates the context for new launches', async () => {

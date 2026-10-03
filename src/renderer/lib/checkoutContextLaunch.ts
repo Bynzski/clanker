@@ -1,5 +1,6 @@
 import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { getCheckoutContext } from './checkoutContexts';
 import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 
 export interface CheckoutContextLaunchOptions {
@@ -38,10 +39,29 @@ export async function launchTerminalInCheckoutContext(
     environmentId,
     checkoutContext.id,
   );
+
+  // From here a PTY exists in main. Every path that does not end with the terminal recorded on
+  // its workspace must kill it, or it would run untracked.
+  const abandon = async (message: string): Promise<never> => {
+    await window.electronAPI.killTerminal(info.id).catch(() => undefined);
+    throw new Error(message);
+  };
+
   if (info.checkoutContextId !== checkoutContext.id) {
     // Main bound the process to some other root than the one requested: do not keep it.
-    await window.electronAPI.killTerminal(info.id).catch(() => undefined);
-    throw new Error('Terminal was not launched in the requested checkout context');
+    return abandon('Terminal was not launched in the requested checkout context');
+  }
+
+  // The spawn awaited; the workspace may have closed or lost the context meanwhile. Judge the
+  // live store, not the snapshot this launch started from.
+  const live = useWorkspaceStore.getState().getWorkspaceById(workspace.id);
+  const liveContext = live ? getCheckoutContext(live, checkoutContext.id) : null;
+  if (!live || !liveContext
+    || (live.environmentId || 'local') !== environmentId
+    || liveContext.workspaceId !== workspace.id
+    || liveContext.environmentId !== checkoutContext.environmentId
+    || liveContext.path !== checkoutContext.path) {
+    return abandon('The workspace or checkout context was closed while the terminal was starting');
   }
 
   const terminal: Terminal = {
@@ -55,5 +75,9 @@ export async function launchTerminalInCheckoutContext(
     attentionEnabled: info.attentionEnabled === true,
   };
   useWorkspaceStore.getState().addTerminal(terminal, workspace.id);
-  return useWorkspaceStore.getState().getWorkspaceById(workspace.id)?.terminals.find((entry) => entry.id === info.id) ?? terminal;
+
+  // addTerminal is silent when it has no owning workspace; confirm it actually landed.
+  const stored = useWorkspaceStore.getState().getWorkspaceById(workspace.id)?.terminals.find((entry) => entry.id === info.id);
+  if (!stored) return abandon('The terminal could not be added to its workspace');
+  return stored;
 }

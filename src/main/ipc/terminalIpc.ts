@@ -164,6 +164,14 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     if ((resolvedWorkspace || checkoutContextId) && !checkoutContext) {
       throw new Error('Checkout context is not registered for this workspace');
     }
+    // Launch resolution can await (SSH resolution, attention registration). Whatever was resolved
+    // must still be the exact registered workspace and context when the process is about to exist;
+    // a launch that resolved neither (legacy unbound, path only) has nothing to revalidate.
+    const isResolvedTargetCurrent = (): boolean => {
+      if (!resolvedWorkspace) return true;
+      if (registry?.getWorkspace(resolvedWorkspace.workspaceId) !== resolvedWorkspace) return false;
+      return !checkoutContext || registry.getCheckoutContext(checkoutContext.id) === checkoutContext;
+    };
     const effectiveEnvironmentId = resolvedWorkspace?.location.environmentId || environmentId || 'local';
     const isRemote = effectiveEnvironmentId !== 'local';
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -206,10 +214,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         });
         releaseAttention = resolved.releaseAttention;
 
-        if (appShuttingDown || deps.getAppShuttingDown?.() ||
-            registry?.getWorkspace(resolvedWorkspace.workspaceId) !== resolvedWorkspace ||
-            registry?.getCheckoutContext(checkoutContext.id) !== checkoutContext ||
-            registry.isRemotePathReserved?.(effectiveEnvironmentId, remoteWorkingDir)) {
+        if (appShuttingDown || deps.getAppShuttingDown?.() || !isResolvedTargetCurrent() ||
+            registry?.isRemotePathReserved?.(effectiveEnvironmentId, remoteWorkingDir)) {
           throw new Error('Remote workspace was closed or is being removed');
         }
 
@@ -339,6 +345,13 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         launchLabel = `[clanker-grid] ${config.command} ${harnessArgs.join(' ')}`;
       } else if (cleanInitialCommand) {
         launchLabel = `[clanker-grid] ${cleanInitialCommand}`;
+      }
+
+      // The attention registration above awaited: the workspace or context may have been
+      // closed meanwhile. Fail closed before any process exists; the catch below releases
+      // the attention resources.
+      if (!isResolvedTargetCurrent()) {
+        throw new Error('Workspace was closed or is being removed');
       }
 
       const result = spawnPtyProcess({

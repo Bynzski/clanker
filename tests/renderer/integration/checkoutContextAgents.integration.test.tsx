@@ -182,4 +182,117 @@ describe('main and worktree agents in one workspace', () => {
     await expect(launchTerminalInCheckoutContext(state(), worktreeContext)).rejects.toThrow('outside the registered workspace');
     expect(state().terminals).toHaveLength(before);
   });
+
+  describe('a spawned terminal is never left untracked', () => {
+    /** A spawn that stays pending until the test resolves it, like a slow main-process launch. */
+    function deferredSpawn(info: { id: string; contextId: string }) {
+      let resolve!: () => void;
+      spawnTerminal.mockImplementationOnce(() => new Promise((done) => {
+        resolve = () => done({ id: info.id, pid: 4242, harnessId: 'codex', checkoutContextId: info.contextId });
+      }));
+      return { resolve: () => resolve() };
+    }
+    const everywhere = () => {
+      const state = useWorkspaceStore.getState();
+      return [...state.terminals, ...state.workspaces.flatMap((entry) => entry.terminals)].map((terminal) => terminal.id);
+    };
+
+    it('control: a launch whose workspace and context stay open is recorded and not killed', async () => {
+      const { state, worktreeContext } = await setUpTwoAgents();
+      const spawn = deferredSpawn({ id: 'terminal-live', contextId: worktreeContext.id });
+      killTerminal.mockClear();
+
+      const launch = launchTerminalInCheckoutContext(state(), worktreeContext, { harness: 'codex' });
+      spawn.resolve();
+
+      await expect(launch).resolves.toMatchObject({ id: 'terminal-live', checkoutContextId: worktreeContext.id });
+      expect(state().terminals.map((terminal) => terminal.id)).toContain('terminal-live');
+      expect(killTerminal).not.toHaveBeenCalled();
+    });
+
+    it('kills the terminal and stores nothing when the workspace closes while the spawn is pending', async () => {
+      const { workspace, state, worktreeContext } = await setUpTwoAgents();
+      const spawn = deferredSpawn({ id: 'terminal-late', contextId: worktreeContext.id });
+      killTerminal.mockClear();
+
+      const launch = launchTerminalInCheckoutContext(state(), worktreeContext, { harness: 'codex' });
+      const outcome = launch.then(() => 'ok' as const, (error: Error) => error);
+      useWorkspaceStore.getState().closeWorkspace(workspace.id);
+      spawn.resolve();
+
+      expect(((await outcome) as Error).message).toContain('closed while the terminal was starting');
+      expect(killTerminal).toHaveBeenCalledExactlyOnceWith('terminal-late');
+      expect(useWorkspaceStore.getState().workspaces).toHaveLength(0);
+      expect(everywhere()).not.toContain('terminal-late');
+    });
+
+    it('kills the terminal and stores nothing when the context disappears but the workspace remains', async () => {
+      const { workspace, state, worktreeContext, agentA } = await setUpTwoAgents();
+      const spawn = deferredSpawn({ id: 'terminal-orphan', contextId: worktreeContext.id });
+      killTerminal.mockClear();
+
+      const outcome = launchTerminalInCheckoutContext(state(), worktreeContext, { harness: 'codex' })
+        .then(() => 'ok' as const, (error: Error) => error);
+      // Test-only simulation: there is deliberately no context-removal API yet.
+      useWorkspaceStore.setState((current) => ({
+        workspaces: current.workspaces.map((entry) => entry.id === workspace.id
+          ? { ...entry, checkoutContexts: entry.checkoutContexts!.filter((context) => context.id !== worktreeContext.id) }
+          : entry),
+      }));
+      spawn.resolve();
+
+      expect(((await outcome) as Error).message).toContain('closed while the terminal was starting');
+      expect(killTerminal).toHaveBeenCalledExactlyOnceWith('terminal-orphan');
+      expect(everywhere()).not.toContain('terminal-orphan');
+      expect(state().terminals.map((terminal) => terminal.id)).toContain(agentA.id);
+    });
+
+    it('kills the terminal when the context id now points at a different root', async () => {
+      const { workspace, state, worktreeContext } = await setUpTwoAgents();
+      const spawn = deferredSpawn({ id: 'terminal-moved', contextId: worktreeContext.id });
+      killTerminal.mockClear();
+
+      const outcome = launchTerminalInCheckoutContext(state(), worktreeContext, { harness: 'codex' })
+        .then(() => 'ok' as const, (error: Error) => error);
+      useWorkspaceStore.setState((current) => ({
+        workspaces: current.workspaces.map((entry) => entry.id === workspace.id
+          ? { ...entry, checkoutContexts: entry.checkoutContexts!.map((context) => context.id === worktreeContext.id ? { ...context, path: '/somewhere/else' } : context) }
+          : entry),
+      }));
+      spawn.resolve();
+
+      expect(((await outcome) as Error).message).toContain('closed while the terminal was starting');
+      expect(killTerminal).toHaveBeenCalledExactlyOnceWith('terminal-moved');
+      expect(everywhere()).not.toContain('terminal-moved');
+    });
+
+    it('kills the terminal and fails when the store silently does not record it', async () => {
+      const { state, worktreeContext } = await setUpTwoAgents();
+      const spawn = deferredSpawn({ id: 'terminal-dropped', contextId: worktreeContext.id });
+      killTerminal.mockClear();
+      const original = useWorkspaceStore.getState().addTerminal;
+      useWorkspaceStore.setState({ addTerminal: vi.fn() });
+      try {
+        const outcome = launchTerminalInCheckoutContext(state(), worktreeContext, { harness: 'codex' })
+          .then(() => 'ok' as const, (error: Error) => error);
+        spawn.resolve();
+        expect(((await outcome) as Error).message).toContain('could not be added');
+        expect(killTerminal).toHaveBeenCalledExactlyOnceWith('terminal-dropped');
+        expect(everywhere()).not.toContain('terminal-dropped');
+      } finally {
+        useWorkspaceStore.setState({ addTerminal: original });
+      }
+    });
+
+    it('still discards a terminal main bound to a different context, even though the workspace is open', async () => {
+      const { state, worktreeContext } = await setUpTwoAgents();
+      const spawn = deferredSpawn({ id: 'terminal-wrong', contextId: `${state().id}::main` });
+      killTerminal.mockClear();
+      const outcome = launchTerminalInCheckoutContext(state(), worktreeContext).then(() => 'ok' as const, (error: Error) => error);
+      spawn.resolve();
+      expect(((await outcome) as Error).message).toContain('not launched in the requested checkout context');
+      expect(killTerminal).toHaveBeenCalledExactlyOnceWith('terminal-wrong');
+      expect(everywhere()).not.toContain('terminal-wrong');
+    });
+  });
 });
