@@ -77,7 +77,7 @@ export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarPr
         )}
       </div>
       <div
-        className="edge-resize-handle edge-resize-handle--inside explorer-resize-handle"
+        className="edge-resize-handle explorer-resize-handle"
         onMouseDown={handleResizeStart}
         title={collapsed ? 'Drag to expand sidebar' : 'Drag to resize; drag narrow to collapse'}
       />

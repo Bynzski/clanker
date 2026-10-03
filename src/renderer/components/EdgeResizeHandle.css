@@ -8,39 +8,24 @@
 .edge-resize-handle {
   position: absolute;
   top: 0;
+  right: 0; /* Whole target stays inside the parent's overflow clip (docked Explorer and sidebar shell). */
   height: 100%;
   width: 14px;
   cursor: col-resize;
   z-index: 2;
 }
 
-/* Docked Explorer: the target is centred on the pane's right edge. */
-.edge-resize-handle--outside {
-  right: -7px;
-}
-
-/* Sidebar shell clips its children, so keep the whole target inside the edge. */
-.edge-resize-handle--inside {
-  right: 0;
-}
-
 .edge-resize-handle::before {
   content: '';
   position: absolute;
   top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  right: 3px; /* Grip sits just inside the pane boundary, never clipped by it. */
+  transform: translateY(-50%);
   width: 3px;
   height: 36px;
   background: var(--surface-control-hover);
   border-radius: 999px;
   transition: background-color var(--transition);
-}
-
-.edge-resize-handle--inside::before {
-  left: auto;
-  right: 3px;
-  transform: translateY(-50%);
 }
 
 .edge-resize-handle:hover::before,

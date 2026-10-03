@@ -720,7 +720,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
           onFocusFilter={focusFilterInput}
         />
       </div>
-      {!isSection && <div className="edge-resize-handle edge-resize-handle--outside explorer-resize-handle" onMouseDown={handleResizeStart} />}
+      {!isSection && <div className="edge-resize-handle explorer-resize-handle" onMouseDown={handleResizeStart} />}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}

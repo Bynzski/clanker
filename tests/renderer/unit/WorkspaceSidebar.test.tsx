@@ -43,7 +43,7 @@ describe('WorkspaceSidebar global width', () => {
   it('uses the shared edge resize handle and never depends on the lazy FileExplorer stylesheet', () => {
     const { container } = render(<WorkspaceSidebar />);
     const handle = container.querySelector('.workspace-sidebar > .explorer-resize-handle')!;
-    expect(handle).toHaveClass('edge-resize-handle', 'edge-resize-handle--inside');
+    expect(handle).toHaveClass('edge-resize-handle');
 
     const read = (path: string) => readFileSync(resolve(process.cwd(), 'src/renderer/components', path), 'utf8');
     expect(read('WorkspaceSidebar.tsx')).toContain("import './EdgeResizeHandle.css'");
@@ -51,7 +51,10 @@ describe('WorkspaceSidebar global width', () => {
     // The handle's visuals live only in the shared sheet.
     expect(read('FileExplorer/FileExplorer.css')).not.toContain('resize-handle');
     expect(read('WorkspaceSidebar.css')).not.toContain('resize-handle');
-    expect(read('EdgeResizeHandle.css')).toContain('.edge-resize-handle::before');
+    // The whole hit target and grip stay inside the clipping parent (no negative offsets).
+    const sheet = read('EdgeResizeHandle.css');
+    expect(sheet).toContain('.edge-resize-handle::before');
+    expect(sheet).not.toMatch(/right:\s*-/);
   });
 
   it('dragging the single handle updates and persists the global width, clamped', () => {
