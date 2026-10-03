@@ -108,6 +108,43 @@ describe('isolated agent picker: harness + working copy', () => {
     });
   });
 
+  describe('Terminal (empty harness id)', () => {
+    it('stays launchable, spawns a plain terminal in the isolated checkout, and switching back restores the AI harness', async () => {
+      openWorkspace();
+      render(<Header />);
+      await openPicker();
+      await user.type(screen.getByLabelText('New branch'), 'issue-7');
+
+      // Terminal's id is the empty string; it is a valid selection, not "no harness".
+      await user.click(screen.getByRole('radio', { name: 'Terminal' }));
+      expect(screen.getByRole('radio', { name: 'Terminal' })).toHaveAttribute('aria-checked', 'true');
+      expect(screen.getByRole('button', { name: 'Launch Terminal' })).toBeEnabled();
+
+      // Back to an AI harness: label and launch behaviour follow it.
+      await user.click(screen.getByRole('radio', { name: 'Claude' }));
+      expect(screen.getByRole('button', { name: 'Launch Claude' })).toBeEnabled();
+      await user.click(screen.getByRole('radio', { name: 'Terminal' }));
+      await user.click(screen.getByRole('button', { name: 'Launch Terminal' }));
+
+      await waitFor(() => expect(workspace().terminals).toHaveLength(1));
+      expect(api.gitCreateWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, 'main', 'issue-7', 'ws', { attachCheckoutContext: true });
+      expect(api.spawnTerminal).toHaveBeenCalledExactlyOnceWith(WT('issue-7'), undefined, undefined, undefined, undefined, 'ws', 'local', 'ws::ckt-issue-7');
+      expect(workspace().terminals[0].checkoutContextId).toBe('ws::ckt-issue-7');
+      expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
+      expect(api.registerOpenWorkspace).not.toHaveBeenCalled();
+    });
+
+    it('AI harnesses still send their ids', async () => {
+      openWorkspace();
+      render(<Header />);
+      await openPicker();
+      await user.type(screen.getByLabelText('New branch'), 'issue-8');
+      await launch('OpenCode');
+      await waitFor(() => expect(api.spawnTerminal).toHaveBeenCalled());
+      expect(api.spawnTerminal.mock.calls[0][1]).toBe('opencode');
+    });
+  });
+
   describe('new branch', () => {
     it('creates from the current branch and launches, as before', async () => {
       openWorkspace();

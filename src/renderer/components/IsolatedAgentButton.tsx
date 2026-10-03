@@ -252,7 +252,7 @@ export default function IsolatedAgentButton({ workspace, visibleHarnessIds }: Is
           </div>
 
           {error && <FormMessage variant="error" role="alert">{error}</FormMessage>}
-          <Button type="submit" size="sm" variant="primary" disabled={busy || !pending || !effectiveHarnessId}>
+          <Button type="submit" size="sm" variant="primary" disabled={busy || !pending || !effectiveHarness}>
             {launchLabel}
           </Button>
         </form>
