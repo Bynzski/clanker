@@ -34,3 +34,8 @@ export function trimBuffer(
 ): string {
   return '';
 }
+
+export const TERMINAL_DEFAULT_FONT_SIZE = 13;
+export const TERMINAL_MIN_FONT_SIZE = 8;
+export const TERMINAL_MAX_FONT_SIZE = 32;
+export const TERMINAL_FONT_SIZE_STEP = 1;

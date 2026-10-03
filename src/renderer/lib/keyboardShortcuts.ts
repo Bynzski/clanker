@@ -29,3 +29,13 @@ export function getZoomShortcutAction(event: KeyboardEvent): ZoomShortcutAction 
 
   return null;
 }
+
+export type WheelZoomAction = 'in' | 'out';
+
+/** Ctrl+wheel zoom direction; ordinary wheel scrolling and zero deltas are not zoom. */
+export function getWheelZoomAction(event: { ctrlKey: boolean; deltaY: number }): WheelZoomAction | null {
+  if (!event.ctrlKey || event.deltaY === 0) {
+    return null;
+  }
+  return event.deltaY < 0 ? 'in' : 'out';
+}

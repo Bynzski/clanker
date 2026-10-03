@@ -209,6 +209,13 @@ function applyBrowserViewZoomAction(view: WebContentsView, action: BrowserZoomSh
 }
 
 function attachBrowserShortcutHandlers(view: WebContentsView, sendFitAllPanes: () => void) {
+  // Ctrl+wheel over the page arrives as `zoom-changed`, not as a keyboard input event.
+  view.webContents.on('zoom-changed', (_event, direction) => {
+    if (direction === 'in' || direction === 'out') {
+      applyBrowserViewZoomAction(view, direction);
+    }
+  });
+
   view.webContents.on('before-input-event', (event, input) => {
     const browserZoomAction = getBrowserKeyboardZoomShortcutAction(input);
     if (browserZoomAction) {

@@ -2,6 +2,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor, cleanup } from '@testing-library/react';
+import {
+  TERMINAL_DEFAULT_FONT_SIZE,
+  TERMINAL_MAX_FONT_SIZE,
+  TERMINAL_MIN_FONT_SIZE,
+} from '../../../src/shared/terminal';
 import TerminalPane from '../../../src/renderer/components/TerminalPane';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
@@ -11,6 +16,7 @@ import { startTerminalThemeSync } from '../../../src/renderer/theme/themeRuntime
 import { getTerminalTheme } from '../../../src/renderer/theme/terminalTheme';
 import type { ILinkProvider } from '@xterm/xterm';
 
+let attachedWheelHandler: ((event: WheelEvent) => boolean) | null = null;
 let attachedKeyHandler: ((event: KeyboardEvent) => boolean) | null = null;
 let attachedDataHandler: ((data: string) => void) | null = null;
 let registeredLinkProvider: ILinkProvider | null = null;
@@ -57,6 +63,9 @@ vi.mock('@xterm/xterm', () => {
       attachCustomKeyEventHandler = vi.fn((handler: (event: KeyboardEvent) => boolean) => {
         attachedKeyHandler = handler;
         return true;
+      });
+      attachCustomWheelEventHandler = vi.fn((handler: (event: WheelEvent) => boolean) => {
+        attachedWheelHandler = handler;
       });
       registerLinkProvider = vi.fn((provider: ILinkProvider) => {
         registeredLinkProvider = provider;
@@ -201,6 +210,7 @@ describe('TerminalPane', () => {
     vi.clearAllMocks();
     vi.useFakeTimers({ shouldAdvanceTime: true });
     attachedKeyHandler = null;
+    attachedWheelHandler = null;
     attachedDataHandler = null;
     registeredLinkProvider = null;
     mockBufferLineText = '';
@@ -676,29 +686,207 @@ describe('TerminalPane', () => {
   });
 
   describe('keyboard shortcuts', () => {
-    it('does not own app zoom shortcuts when xterm is focused', async () => {
+    const mountTerminal = async () => {
       setupStoreWithTerminal('t1', 'p1');
-      render(<TerminalPane paneId="p1" />);
+      const view = render(<TerminalPane paneId="p1" />);
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(100);
+      });
+      return view;
+    };
 
+    const zoomKey = (init: KeyboardEventInit) => {
+      const event = new KeyboardEvent('keydown', { cancelable: true, ...init });
+      const preventDefault = vi.spyOn(event, 'preventDefault');
+      const handled = attachedKeyHandler?.(event);
+      return { handled, preventDefault, event };
+    };
+    const ctrlEqual = { key: '=', code: 'Equal', ctrlKey: true } as const;
+    const ctrlMinus = { key: '-', code: 'Minus', ctrlKey: true } as const;
+
+    it('zooms the focused terminal in and owns the event', async () => {
+      await mountTerminal();
+      mockWriteTerminal.mockClear();
+
+      const { handled, preventDefault } = zoomKey(ctrlEqual);
+
+      expect(handled).toBe(false);
+      expect(preventDefault).toHaveBeenCalled();
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE + 1);
+      expect(mockWriteTerminal).not.toHaveBeenCalled();
+      expect(mockZoomInWindow).not.toHaveBeenCalled();
+      expect(mockZoomOutWindow).not.toHaveBeenCalled();
+      expect(mockResetZoomWindow).not.toHaveBeenCalled();
+    });
+
+    it('marks the event handled so app zoom cannot also run', async () => {
+      await mountTerminal();
+      const { event } = zoomKey(ctrlEqual);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('zooms the focused terminal out', async () => {
+      await mountTerminal();
+      expect(zoomKey(ctrlMinus).handled).toBe(false);
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE - 1);
+    });
+
+    it('resets to the default size with Cmd+0', async () => {
+      await mountTerminal();
+      constructedTerminals[0].options.fontSize = 20;
+
+      const { handled } = zoomKey({ key: '0', code: 'Digit0', metaKey: true });
+
+      expect(handled).toBe(false);
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE);
+    });
+
+    it('owns Cmd++ via the Meta modifier', async () => {
+      await mountTerminal();
+      const { handled } = zoomKey({ key: '+', code: 'Equal', metaKey: true, shiftKey: true });
+      expect(handled).toBe(false);
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE + 1);
+    });
+
+    it('clamps at the maximum size but still consumes the shortcut', async () => {
+      await mountTerminal();
+      constructedTerminals[0].options.fontSize = TERMINAL_MAX_FONT_SIZE;
+      mockWriteTerminal.mockClear();
+
+      const { handled, preventDefault } = zoomKey(ctrlEqual);
+
+      expect(handled).toBe(false);
+      expect(preventDefault).toHaveBeenCalled();
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_MAX_FONT_SIZE);
+      expect(mockWriteTerminal).not.toHaveBeenCalled();
+    });
+
+    it('clamps at the minimum size but still consumes the shortcut', async () => {
+      await mountTerminal();
+      constructedTerminals[0].options.fontSize = TERMINAL_MIN_FONT_SIZE;
+
+      const { handled, preventDefault } = zoomKey(ctrlMinus);
+
+      expect(handled).toBe(false);
+      expect(preventDefault).toHaveBeenCalled();
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_MIN_FONT_SIZE);
+    });
+
+    it('consumes Ctrl+0 at the default size', async () => {
+      await mountTerminal();
+      const { handled, preventDefault } = zoomKey({ key: '0', code: 'Digit0', ctrlKey: true });
+      expect(handled).toBe(false);
+      expect(preventDefault).toHaveBeenCalled();
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE);
+    });
+
+    it('refits and resizes the PTY through the existing resize path after zoom', async () => {
+      await mountTerminal();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      mockResizeTerminal.mockClear();
+
+      zoomKey(ctrlEqual);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+
+      expect(mockResizeTerminal).toHaveBeenCalledWith('t1', 80, 24);
+    });
+
+    const wheel = (init: WheelEventInit) => {
+      const event = new WheelEvent('wheel', { cancelable: true, bubbles: true, ...init });
+      const preventDefault = vi.spyOn(event, 'preventDefault');
+      const stopPropagation = vi.spyOn(event, 'stopPropagation');
+      const handled = attachedWheelHandler?.(event);
+      return { handled, preventDefault, stopPropagation };
+    };
+
+    it('zooms in on Ctrl+wheel up and owns the event', async () => {
+      await mountTerminal();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      mockResizeTerminal.mockClear();
+      mockWriteTerminal.mockClear();
+
+      const { handled, preventDefault, stopPropagation } = wheel({ ctrlKey: true, deltaY: -100 });
+
+      expect(handled).toBe(false);
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE + 1);
+      expect(preventDefault).toHaveBeenCalled();
+      expect(stopPropagation).toHaveBeenCalled();
+      expect(mockZoomInWindow).not.toHaveBeenCalled();
+      expect(mockZoomOutWindow).not.toHaveBeenCalled();
+      expect(mockWriteTerminal).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(mockResizeTerminal).toHaveBeenCalledWith('t1', 80, 24);
+    });
+
+    it('zooms out on Ctrl+wheel down', async () => {
+      await mountTerminal();
+      expect(wheel({ ctrlKey: true, deltaY: 100 }).handled).toBe(false);
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE - 1);
+    });
+
+    it('consumes Ctrl+wheel at the bounds without refitting', async () => {
+      await mountTerminal();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      mockResizeTerminal.mockClear();
+
+      constructedTerminals[0].options.fontSize = TERMINAL_MAX_FONT_SIZE;
+      const up = wheel({ ctrlKey: true, deltaY: -100 });
+      expect(up.handled).toBe(false);
+      expect(up.preventDefault).toHaveBeenCalled();
+      expect(up.stopPropagation).toHaveBeenCalled();
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_MAX_FONT_SIZE);
+
+      constructedTerminals[0].options.fontSize = TERMINAL_MIN_FONT_SIZE;
+      const down = wheel({ ctrlKey: true, deltaY: 100 });
+      expect(down.handled).toBe(false);
+      expect(down.preventDefault).toHaveBeenCalled();
+      expect(down.stopPropagation).toHaveBeenCalled();
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_MIN_FONT_SIZE);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      expect(mockResizeTerminal).not.toHaveBeenCalled();
+    });
+
+    it('leaves plain wheel to xterm', async () => {
+      await mountTerminal();
+      const { handled, preventDefault, stopPropagation } = wheel({ deltaY: -100 });
+      expect(handled).toBe(true);
+      expect(preventDefault).not.toHaveBeenCalled();
+      expect(stopPropagation).not.toHaveBeenCalled();
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE);
+      expect(mockZoomInWindow).not.toHaveBeenCalled();
+    });
+
+    it('keeps the zoomed size when the cached xterm is remounted', async () => {
+      const view = await mountTerminal();
+      zoomKey(ctrlEqual);
+      zoomKey(ctrlEqual);
+      const xterm = constructedTerminals[0];
+      view.unmount();
+
+      render(<TerminalPane paneId="p1" />);
       await act(async () => {
         await Promise.resolve();
         await vi.advanceTimersByTimeAsync(100);
       });
 
-      const preventDefault = vi.fn();
-      const handled = attachedKeyHandler?.({
-        key: '=',
-        code: 'Equal',
-        ctrlKey: true,
-        metaKey: false,
-        altKey: false,
-        shiftKey: false,
-        preventDefault,
-      } as unknown as KeyboardEvent);
-
-      expect(handled).toBe(true);
-      expect(preventDefault).not.toHaveBeenCalled();
-      expect(mockZoomInWindow).not.toHaveBeenCalled();
+      expect(terminalConstructionCount).toBe(1);
+      expect(constructedTerminals[0]).toBe(xterm);
+      expect(xterm.options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE + 2);
     });
 
     it('keeps copy shortcut behavior when selected text exists', async () => {

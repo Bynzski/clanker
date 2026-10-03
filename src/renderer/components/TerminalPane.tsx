@@ -14,7 +14,13 @@ import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope
 import './TerminalPane.css';
 import '@xterm/xterm/css/xterm.css';
 
-import { TERMINAL_SCROLLBACK_LINES } from '../../shared/terminal';
+import {
+  TERMINAL_DEFAULT_FONT_SIZE,
+  TERMINAL_FONT_SIZE_STEP,
+  TERMINAL_MAX_FONT_SIZE,
+  TERMINAL_MIN_FONT_SIZE,
+  TERMINAL_SCROLLBACK_LINES,
+} from '../../shared/terminal';
 import {
   terminalCacheHit,
   terminalCacheMiss,
@@ -25,6 +31,7 @@ import {
   findTerminalLinks,
   normalizeTerminalUrl,
 } from '../lib/linkUtils';
+import { getWheelZoomAction, getZoomShortcutAction } from '../lib/keyboardShortcuts';
 import { linkRangeForMatch, readWrappedLogicalLine } from '../lib/terminalLinkRanges';
 
 type XTermInstance = import('@xterm/xterm').Terminal;
@@ -285,7 +292,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
           allowTransparency: false,
           theme: getTerminalTheme(useThemeStore.getState().theme),
           fontFamily: '"DejaVu Sans Mono", "JetBrains Mono", "Fira Code", "Cascadia Code", "Fira Mono", Menlo, Consolas, monospace',
-          fontSize: 13,
+          fontSize: TERMINAL_DEFAULT_FONT_SIZE,
           fontWeight: '400',
           fontWeightBold: '700',
           lineHeight: 1,
@@ -520,6 +527,32 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       }
     });
 
+    const applyTerminalZoom = (action: 'in' | 'out' | 'reset') => {
+      const current = xterm.options.fontSize ?? TERMINAL_DEFAULT_FONT_SIZE;
+      const requested = action === 'reset'
+        ? TERMINAL_DEFAULT_FONT_SIZE
+        : current + (action === 'in' ? TERMINAL_FONT_SIZE_STEP : -TERMINAL_FONT_SIZE_STEP);
+      const next = Math.min(TERMINAL_MAX_FONT_SIZE, Math.max(TERMINAL_MIN_FONT_SIZE, requested));
+      if (next !== current) {
+        xterm.options.fontSize = next;
+        scheduleLifecycleTimeout(fitAndResize, 0);
+      }
+    };
+
+    // Ctrl+wheel over the terminal zooms only this xterm. xterm runs this before
+    // its own wheel processing; returning false stops scrollback/mouse handling.
+    // Plain wheel returns true so xterm behaves normally.
+    xterm.attachCustomWheelEventHandler((event) => {
+      const wheelAction = getWheelZoomAction(event);
+      if (wheelAction == null) {
+        return true;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      applyTerminalZoom(wheelAction);
+      return false;
+    });
+
     xterm.attachCustomKeyEventHandler((event) => {
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'c') {
         if (xterm.hasSelection()) {
@@ -530,6 +563,19 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
           xterm.clearSelection();
         }
         event.preventDefault();
+        return false;
+      }
+
+      // Terminal-focused zoom changes only this xterm's cell metrics. The event
+      // is always consumed (even at a bound) so it never reaches the PTY or the
+      // app-level zoom listener.
+      const zoomAction = getZoomShortcutAction(event);
+      if (zoomAction != null) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.type === 'keydown') {
+          applyTerminalZoom(zoomAction);
+        }
         return false;
       }
       return true;
