@@ -9,6 +9,7 @@ import {
   getEffectiveBinding,
   getKeybindingCommand,
   isOverridden,
+  isSafeBinding,
   keystrokeFromDomEvent,
   keystrokesEqual,
   resetBinding,
@@ -92,6 +93,11 @@ function KeyboardShortcutsContent() {
       }
       const keystroke = keystrokeFromDomEvent(event, KEYBINDING_PLATFORM);
       if (!keystroke) return; // modifier-only press: keep waiting
+      if (!isSafeBinding(keystroke)) {
+        setError('Shortcuts need Ctrl/Cmd or Alt (Shift alone is not enough). Press another shortcut.');
+        return; // keep capturing
+      }
+      setError('');
       stopCapture();
       void applyKeystroke(capturingId, keystroke);
     };

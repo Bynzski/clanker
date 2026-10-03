@@ -26,7 +26,15 @@ export class KeybindingOverridesService {
   /** Validated overrides; untrusted store contents are never returned as-is. */
   get(): KeybindingOverrides {
     if (this.cache === null) {
-      this.cache = sanitizeKeybindingOverrides(this.getStore().get('keybindingOverrides'));
+      const store = this.getStore();
+      const stored = sanitizeKeybindingOverrides(store.get('keybindingOverrides'));
+      // Well-formed but ambiguous stored data fails closed: never pick a winner.
+      if (findAllConflicts(stored, this.platform).length > 0) {
+        store.delete('keybindingOverrides');
+        this.cache = {};
+      } else {
+        this.cache = stored;
+      }
     }
     return this.cache;
   }

@@ -9,6 +9,7 @@ import {
   getEffectiveBinding,
   getKeybindingCommand,
   isOverridden,
+  isSafeBinding,
   keystrokeFromDomEvent,
   keystrokeFromElectronInput,
   keystrokesEqual,
@@ -294,5 +295,51 @@ describe('sanitizeKeybindingOverrides', () => {
     expect(keystrokesEqual(ks('KeyA'), ks('KeyA'))).toBe(true);
     expect(keystrokesEqual(ks('KeyA'), ks('KeyA', { shift: true }))).toBe(false);
     expect(keystrokesEqual(ks('KeyA'), ks('KeyB'))).toBe(false);
+  });
+});
+
+describe('binding safety', () => {
+  it('requires Ctrl/Cmd or Alt; Shift alone is not enough', () => {
+    expect(isSafeBinding(ks('KeyK', { primary: true }))).toBe(true);
+    expect(isSafeBinding(ks('KeyK', { primary: true, shift: true }))).toBe(true);
+    expect(isSafeBinding(ks('KeyK', { alt: true }))).toBe(true);
+    expect(isSafeBinding(ks('Tab', { ctrl: true }))).toBe(true);
+    expect(isSafeBinding(ks('KeyK', { shift: true }))).toBe(false);
+    expect(isSafeBinding(ks('KeyK'))).toBe(false);
+  });
+
+  it('keeps every default valid', () => {
+    for (const command of KEYBINDING_COMMANDS) {
+      for (const platform of ['mac', 'other'] as const) {
+        expect(isSafeBinding(getDefaultBinding(command, platform))).toBe(true);
+      }
+    }
+  });
+
+  it('does not activate persisted plain or shift-only bindings', () => {
+    const result = sanitizeKeybindingOverrides({
+      'editor.save': ks('KeyS'),
+      'zoom.in': ks('KeyA', { shift: true }),
+      'zoom.out': ks('KeyK', { primary: true }),
+    });
+    expect(result).toEqual({ 'zoom.out': ks('KeyK', { primary: true }) });
+    expect(resolveCommand(ks('KeyS'), 'editor', result, 'other')).toBeNull();
+  });
+});
+
+describe('numpad zoom aliases', () => {
+  it.each([
+    ['NumpadAdd', 'zoom.in'], ['NumpadSubtract', 'zoom.out'], ['Numpad0', 'zoom.reset'],
+  ] as const)('%s resolves to %s in every zoom context', (code, id) => {
+    for (const context of ['app', 'editor', 'terminal', 'browser'] as const) {
+      expect(resolveCommand(ks(code, { primary: true }), context, {}, 'other')).toBe(id);
+    }
+  });
+
+  it('stops applying once the command is explicitly rebound or unbound', () => {
+    for (const override of [ks('KeyJ', { primary: true }), null]) {
+      expect(resolveCommand(ks('NumpadAdd', { primary: true }), 'app', { 'zoom.in': override }, 'other')).toBeNull();
+    }
+    expect(resolveCommand(ks('NumpadSubtract', { primary: true }), 'app', { 'zoom.in': null }, 'other')).toBe('zoom.out');
   });
 });

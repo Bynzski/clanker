@@ -861,6 +861,27 @@ describe('TerminalPane', () => {
         expect(old.preventDefault).not.toHaveBeenCalled();
       });
 
+      it.each([
+        ['NumpadAdd', 1], ['NumpadSubtract', -1], ['Numpad0', 0],
+      ] as const)('owns primary+%s numpad zoom', async (code, delta) => {
+        await mountTerminal();
+        const { handled, preventDefault } = zoomKey({ code, ctrlKey: true });
+        expect(handled).toBe(false);
+        expect(preventDefault).toHaveBeenCalled();
+        expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE + delta);
+        expect(mockZoomInWindow).not.toHaveBeenCalled();
+      });
+
+      it('releases numpad zoom to the PTY after an explicit zoom.in rebind', async () => {
+        useKeybindingStore.setState({
+          overrides: { 'zoom.in': { code: 'KeyJ', primary: true, ctrl: false, shift: false, alt: false } },
+        });
+        await mountTerminal();
+        const { handled, preventDefault } = zoomKey({ code: 'NumpadAdd', ctrlKey: true });
+        expect(handled).toBe(true);
+        expect(preventDefault).not.toHaveBeenCalled();
+      });
+
       it('does not zoom on key-up of a zoom shortcut but still consumes it', async () => {
         await mountTerminal();
         const event = new KeyboardEvent('keyup', { cancelable: true, ...ctrlEqual });

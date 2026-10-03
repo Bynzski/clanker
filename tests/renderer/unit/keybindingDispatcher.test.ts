@@ -56,6 +56,14 @@ describe('keybinding dispatcher', () => {
       expect(resolveKeyboardCommand(new KeyboardEvent('keydown', { code: 'ControlLeft', ctrlKey: true }), 'app')).toBeNull();
     });
 
+    it('resolves numpad zoom aliases and drops them after a rebind', () => {
+      const add = new KeyboardEvent('keydown', { code: 'NumpadAdd', ctrlKey: true });
+      expect(resolveKeyboardCommand(add, 'app')).toBe('zoom.in');
+      expect(resolveKeyboardCommand(new KeyboardEvent('keydown', { code: 'Numpad0', metaKey: true }), 'terminal')).toBe('zoom.reset');
+      useKeybindingStore.setState({ overrides: { 'zoom.in': null } });
+      expect(resolveKeyboardCommand(add, 'app')).toBeNull();
+    });
+
     it('maps zoom commands to zoom actions only', () => {
       expect(getZoomActionForCommand('zoom.in')).toBe('in');
       expect(getZoomActionForCommand('zoom.out')).toBe('out');

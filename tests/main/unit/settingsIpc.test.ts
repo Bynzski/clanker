@@ -286,6 +286,33 @@ describe('registerSettingsIpc', () => {
       expect(mockStore.delete).toHaveBeenCalledWith('keybindingOverrides');
     });
 
+    test('GET fails closed on well-formed but conflicting stored data and resets it', () => {
+      const { deps, mockStore } = createMockDeps();
+      mockStore.get.mockImplementation((key: string) => key === 'keybindingOverrides'
+        ? { 'view.toggleExplorer': { ...custom, code: 'KeyS' } } // collides with Save's default in the editor context
+        : undefined);
+      registerSettingsIpc(deps);
+      expect(handler('get-keybinding-overrides')({})).toEqual({});
+      expect(mockStore.delete).toHaveBeenCalledWith('keybindingOverrides');
+      expect(deps.keybindingOverrides.get()).toEqual({});
+    });
+
+    test('GET never activates stored plain-key bindings', () => {
+      const { deps, mockStore } = createMockDeps();
+      mockStore.get.mockImplementation((key: string) => key === 'keybindingOverrides'
+        ? { 'editor.save': { ...custom, primary: false } }
+        : undefined);
+      registerSettingsIpc(deps);
+      expect(handler('get-keybinding-overrides')({})).toEqual({});
+    });
+
+    test('SET rejects plain-key bindings', () => {
+      const { deps } = createMockDeps();
+      registerSettingsIpc(deps);
+      expect(handler('set-keybinding-overrides')({}, { 'editor.save': { ...custom, primary: false } }))
+        .toEqual({ success: true, overrides: {} });
+    });
+
     test('SET rejects ambiguous configurations', () => {
       const { deps, mockStore } = createMockDeps();
       registerSettingsIpc(deps);

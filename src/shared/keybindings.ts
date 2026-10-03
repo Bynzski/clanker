@@ -85,11 +85,13 @@ export const KEYBINDING_COMMANDS: readonly KeybindingCommand[] = [
   { id: 'zoom.in', label: 'Zoom In', category: 'Zoom', contexts: ALL_CONTEXTS,
     defaultBinding: key('Equal', { primary: true }),
     // Ctrl/Cmd++ (Shift+=) has always zoomed in as well.
-    defaultAliases: [key('Equal', { primary: true, shift: true })] },
+    defaultAliases: [key('Equal', { primary: true, shift: true }), key('NumpadAdd', { primary: true })] },
   { id: 'zoom.out', label: 'Zoom Out', category: 'Zoom', contexts: ALL_CONTEXTS,
-    defaultBinding: key('Minus', { primary: true }) },
+    defaultBinding: key('Minus', { primary: true }),
+    defaultAliases: [key('NumpadSubtract', { primary: true })] },
   { id: 'zoom.reset', label: 'Reset Zoom', category: 'Zoom', contexts: ALL_CONTEXTS,
-    defaultBinding: key('Digit0', { primary: true }) },
+    defaultBinding: key('Digit0', { primary: true }),
+    defaultAliases: [key('Numpad0', { primary: true })] },
   { id: 'browser.focusAddress', label: 'Focus Address Bar', category: 'Browser', contexts: ['browser'],
     defaultBinding: key('KeyL', { primary: true }) },
   { id: 'browser.newTab', label: 'New Tab', category: 'Browser', contexts: ['browser'],
@@ -179,6 +181,15 @@ export function keystrokeFromDomEvent(event: DomKeyLike, platform: KeybindingPla
 /** Normalize an Electron `before-input-event` input. */
 export function keystrokeFromElectronInput(input: ElectronInputLike, platform: KeybindingPlatform): Keystroke | null {
   return fromModifierState(input.code, input.control, input.meta, input.shift, input.alt, platform);
+}
+
+/**
+ * A configurable binding needs a real command modifier (Ctrl/Cmd or Alt);
+ * Shift alone, or no modifier, would steal ordinary typing from editors,
+ * terminals, pages and inputs.
+ */
+export function isSafeBinding(keystroke: Keystroke): boolean {
+  return keystroke.primary || keystroke.ctrl || keystroke.alt;
 }
 
 export function keystrokesEqual(a: Keystroke, b: Keystroke): boolean {
@@ -336,7 +347,8 @@ function sanitizeKeystroke(value: unknown): Keystroke | null {
   if (typeof primary !== 'boolean' || typeof ctrl !== 'boolean' || typeof shift !== 'boolean' || typeof alt !== 'boolean') {
     return null;
   }
-  return { code, primary, ctrl, shift, alt };
+  const keystroke = { code, primary, ctrl, shift, alt };
+  return isSafeBinding(keystroke) ? keystroke : null;
 }
 
 /**

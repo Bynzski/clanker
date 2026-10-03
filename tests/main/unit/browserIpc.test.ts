@@ -118,6 +118,7 @@ import {
   applyBrowserViewZoomAction,
   clampBrowserZoomLevel,
 } from '../../../src/main/ipc/browserIpc';
+import { KeybindingOverridesService } from '../../../src/main/keybindingOverrides';
 import { BrowserHistoryService, __resetBrowserHistoryServiceForTests } from '../../../src/main/browserHistory';
 import type { BrowserHistoryEntry } from '../../../src/shared/types/browserHistory';
 
@@ -619,6 +620,43 @@ describe('browserIpc — error-path: null/invalid workspaceId returns valid resu
       setOverrides({});
       expect(press(ctrl('KeyR'))).toHaveBeenCalled();
       expect(entry.view.webContents.reload).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+      ['NumpadAdd', 0.5], ['NumpadSubtract', -0.5], ['Numpad0', 0],
+    ] as const)('primary+%s zooms the browser view via the zoom aliases', (code, level) => {
+      const { entry, press } = setup();
+      expect(press(ctrl(code))).toHaveBeenCalled();
+      expect(entry.view.webContents.setZoomLevel).toHaveBeenLastCalledWith(level);
+    });
+
+    test('numpad aliases stop applying after an explicit zoom rebind', () => {
+      const { entry, press } = setup({ 'zoom.in': custom('KeyJ') });
+      expect(press(ctrl('NumpadAdd'))).not.toHaveBeenCalled();
+      expect(entry.view.webContents.setZoomLevel).not.toHaveBeenCalled();
+      press(ctrl('NumpadSubtract'));
+      expect(entry.view.webContents.setZoomLevel).toHaveBeenLastCalledWith(-0.5);
+    });
+
+    test('a conflicting persisted map never reaches browser resolution', () => {
+      const store = {
+        // browser.newTab and browser.refresh both on Ctrl+R: well-formed, overlapping contexts
+        get: vi.fn(() => ({ 'browser.newTab': custom('KeyR') })),
+        set: vi.fn(),
+        delete: vi.fn(),
+      };
+      const service = new KeybindingOverridesService(() => store as never, 'other');
+      const { deps } = createMockDeps();
+      const send = vi.fn();
+      const win = { webContents: { send, focus: vi.fn(), getZoomLevel: vi.fn(() => 0) }, contentView: { addChildView: vi.fn() } };
+      const entry = createBrowserViewForTab('ws-c', 'tab-c', {
+        ...deps, getMainWindow: () => win as never, getKeybindingOverrides: () => service.get(),
+      } as never)!;
+      const preventDefault = vi.fn();
+      attachedBeforeInputEventHandler?.({ preventDefault }, ctrl('KeyR'));
+      expect(entry.view.webContents.reload).toHaveBeenCalledTimes(1); // default Refresh, no first-match winner
+      expect(send).not.toHaveBeenCalled();
+      expect(store.delete).toHaveBeenCalledWith('keybindingOverrides');
     });
 
     test('works without any override provider (defaults)', () => {

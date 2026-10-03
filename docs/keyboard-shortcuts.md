@@ -25,9 +25,9 @@ These are the configurable commands (see [Customizing shortcuts](#customizing-sh
 | Fit All Panes | `Cmd/Ctrl+Alt+F` | App, editor, browser |
 | Toggle Explorer | `Cmd/Ctrl+B` | App, editor |
 | Save File | `Cmd/Ctrl+S` | Editor only |
-| Zoom In | `Cmd/Ctrl+=` (`Cmd/Ctrl+Shift+=` also works until you rebind it) | App, editor, terminal, browser |
-| Zoom Out | `Cmd/Ctrl+-` | App, editor, terminal, browser |
-| Reset Zoom | `Cmd/Ctrl+0` | App, editor, terminal, browser |
+| Zoom In | `Cmd/Ctrl+=` (`Cmd/Ctrl+Shift+=` and `Cmd/Ctrl`+numpad `+` also work until you rebind it) | App, editor, terminal, browser |
+| Zoom Out | `Cmd/Ctrl+-` (`Cmd/Ctrl`+numpad `-` also works until rebound) | App, editor, terminal, browser |
+| Reset Zoom | `Cmd/Ctrl+0` (`Cmd/Ctrl`+numpad `0` also works until rebound) | App, editor, terminal, browser |
 | Focus Address Bar | `Cmd/Ctrl+L` | Browser |
 | New Tab | `Cmd/Ctrl+T` | Browser |
 | Close Tab | `Cmd/Ctrl+W` | Browser |
@@ -58,7 +58,7 @@ Keyboard zoom bindings are configurable. `Ctrl`+wheel zoom is not: it is a fixed
 Open **Settings → Keyboard shortcuts...** to search commands, see which differ from their defaults, change a binding, reset one command, or **Reset All**.
 
 - Click **Edit**, then press the new shortcut. The pressed keys do not run anything while recording. `Esc` cancels, `Delete`/`Backspace` unbinds the command, and modifier keys alone are ignored.
-- Each command has at most one binding. Bindings must include a non-modifier key.
+- Each command has at most one binding. A binding needs a non-modifier key plus `Ctrl`/`Cmd` or `Alt`; plain keys and Shift-only keys are rejected so shortcuts can never steal ordinary typing. Stored settings that are invalid or conflicting are ignored and reset to the defaults.
 - Only your changes are stored; a command you never change always follows the built-in default. Explicitly unbinding a command is remembered separately from "no change".
 
 ### Conflicts

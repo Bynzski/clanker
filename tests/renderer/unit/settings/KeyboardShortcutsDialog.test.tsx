@@ -91,6 +91,25 @@ describe('KeyboardShortcutsDialog', () => {
     expect(useKeybindingStore.getState().capturing).toBe(false);
   });
 
+  it.each([
+    ['plain letter', { code: 'KeyS', key: 's' }],
+    ['Shift+letter', { code: 'KeyK', key: 'K', shiftKey: true }],
+  ])('rejects %s, explains why, and keeps capturing', async (_name, init) => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'Edit Save File shortcut' }));
+    const event = pressWindow(init);
+    expect(event.defaultPrevented).toBe(true);
+    expect(screen.getByRole('alert')).toHaveTextContent(/Ctrl\/Cmd or Alt/);
+    expect(screen.getByText('Press desired shortcut…')).toBeInTheDocument();
+    expect(useKeybindingStore.getState().capturing).toBe(true);
+    expect(setKeybindingOverrides).not.toHaveBeenCalled();
+
+    pressWindow({ code: 'KeyK', altKey: true }); // a valid one then succeeds
+    await waitFor(() => expect(within(row('Save File')).getByText('Alt+K')).toBeInTheDocument());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('ignores modifier-only presses and keeps waiting', async () => {
     const user = userEvent.setup();
     renderDialog();
