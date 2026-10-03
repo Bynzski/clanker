@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, tmp/84-docs-base]
 
 # Superseded PR runs are cancelled. Pushes to main are never cancelled so every
 # main commit keeps its own validation result.
