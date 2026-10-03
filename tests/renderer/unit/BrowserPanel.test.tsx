@@ -245,6 +245,64 @@ describe('BrowserPanel', () => {
       expect(screen.getByText('Browser')).toBeTruthy();
     });
 
+    describe('pane chrome (#50)', () => {
+      const pane: BrowserPaneState = {
+        id: 'browser-1',
+        position: { x: 0, y: 0, w: 6, h: 6 },
+        tabs: [
+          { id: 'tab-1', url: 'https://a.test', title: 'A', canGoBack: false, canGoForward: false },
+          { id: 'tab-2', url: 'https://b.test', title: 'B', canGoBack: false, canGoForward: false },
+        ],
+        activeTabId: 'tab-1',
+      };
+
+      it('renders Hide browser and scopes setBrowserVisible(false, workspaceId)', () => {
+        setupStore({ browserPane: pane });
+        const setBrowserVisible = vi.fn();
+        useWorkspaceStore.setState({ setBrowserVisible });
+
+        render(<BrowserPanel {...defaultProps} />);
+
+        const hide = screen.getByRole('button', { name: 'Hide browser' });
+        expect(hide).toHaveAttribute('title', 'Hide browser');
+        fireEvent.click(hide);
+        expect(setBrowserVisible).toHaveBeenCalledWith(false, 'workspace-1');
+      });
+
+      it('exposes the title/grip and empty chrome as drag activators only', () => {
+        setupStore({ browserPane: pane });
+
+        render(<BrowserPanel {...defaultProps} />);
+
+        expect(document.querySelector('.pane-drag-surface')).toHaveAttribute('data-drag-activator', 'true');
+        expect(screen.getByTestId('browser-header-drag-fill')).toHaveAttribute('data-drag-activator', 'true');
+        for (const el of [
+          screen.getByRole('tab', { name: 'A' }),
+          screen.getByRole('tablist'),
+          screen.getByRole('button', { name: 'New tab' }),
+          screen.getByRole('button', { name: 'Hide browser' }),
+        ]) {
+          expect(el.closest('[data-drag-activator]')).toBeNull();
+        }
+      });
+
+      it('orders header as title, tab strip (with + after tabs), empty drag chrome, Hide', () => {
+        setupStore({ browserPane: pane });
+
+        render(<BrowserPanel {...defaultProps} />);
+
+        const header = document.querySelector('.browser-pane-header')!;
+        const children = Array.from(header.children);
+        expect(children[0]).toHaveClass('pane-drag-surface');
+        expect(children[1]).toHaveClass('browser-tab-strip');
+        expect(children[2]).toBe(screen.getByTestId('browser-header-drag-fill'));
+        expect(children[3]).toBe(screen.getByRole('button', { name: 'Hide browser' }));
+        const strip = children[1];
+        expect(strip.children[0]).toBe(screen.getByRole('tablist'));
+        expect(strip.children[1]).toBe(screen.getByRole('button', { name: 'New tab' }));
+      });
+    });
+
     it('renders drag handle', () => {
       setupStore();
 

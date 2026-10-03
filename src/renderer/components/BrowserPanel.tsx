@@ -8,7 +8,7 @@ import type {
   KeyboardEventHandler,
   Ref,
 } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, MousePointer2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, MousePointer2, EyeOff } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { BrowserKeybindingCommandPayload } from '../../shared/keybindings';
@@ -163,6 +163,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   const urlInputRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const setBrowserVisible = useWorkspaceStore((state) => state.setBrowserVisible);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
   const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
   const removeBrowserTab = useWorkspaceStore((state) => state.removeBrowserTab);
@@ -454,6 +455,18 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
           onCloseTab={(event, tabId) => void handleCloseTab(event, tabId)}
           onMoveTab={(tabId, targetTabId) => void handleMoveTab(tabId, targetTabId)}
         />
+        <div className="browser-pane-drag-fill" aria-hidden="true" data-testid="browser-header-drag-fill" {...dragHandleProps} />
+        <IconButton
+          className="browser-pane-hide"
+          type="button"
+          onClick={() => {
+            if (workspace?.id) setBrowserVisible(false, workspace.id);
+          }}
+          title="Hide browser"
+          aria-label="Hide browser"
+        >
+          <EyeOff size={14} strokeWidth={2} />
+        </IconButton>
       </div>
       <BrowserToolbar
         canGoBack={canGoBack}

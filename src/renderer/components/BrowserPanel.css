@@ -19,12 +19,22 @@
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
-  cursor: grab;
   user-select: none;
 }
 
-.browser-pane-header:active {
+.browser-pane-drag-fill {
+  flex: 1 1 0;
+  min-width: 16px;
+  align-self: stretch;
+  cursor: grab;
+}
+
+.browser-pane-drag-fill:active {
   cursor: grabbing;
+}
+
+.browser-pane-hide {
+  flex-shrink: 0;
 }
 
 .browser-pane-drag-handle {
@@ -110,14 +120,14 @@
 .browser-tab-strip {
   display: flex;
   align-items: center;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   gap: 6px;
 }
 
 .browser-tab-track {
   display: flex;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   gap: 3px;
   overflow-x: auto;
