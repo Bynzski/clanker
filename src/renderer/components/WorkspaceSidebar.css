@@ -19,10 +19,3 @@
 }
 
 .workspace-sidebar-sections[hidden] { display: none; }
-
-/* Keep the grab area inside the (overflow-hidden) shell so it is fully hittable. */
-.workspace-sidebar > .explorer-resize-handle {
-  right: 0;
-  width: 6px;
-  z-index: 2;
-}

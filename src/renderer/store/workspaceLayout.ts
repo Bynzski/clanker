@@ -688,6 +688,26 @@ export function insertPaneIntoLayout(
   return splitLeafByPaneId(layoutRoot, targetPaneId, newPaneId);
 }
 
+/**
+ * Rebalances split ratios in place: each split gives its sides space proportional to their leaf
+ * counts (clamped to the app's 0.1-0.9 limits). Topology, orientation, node IDs and leaf order are
+ * untouched, and unchanged subtrees keep their identity.
+ */
+export function fitLayoutRatios(node: LayoutNode | null): LayoutNode | null {
+  if (node == null || node.type === 'leaf') {
+    return node;
+  }
+  const first = fitLayoutRatios(node.first)!;
+  const second = fitLayoutRatios(node.second)!;
+  const firstCount = collectLeafPaneIds(first).length;
+  const secondCount = collectLeafPaneIds(second).length;
+  const ratio = clamp(firstCount / (firstCount + secondCount), 0.1, 0.9);
+  if (first === node.first && second === node.second && Math.abs(ratio - node.ratio) < 0.0001) {
+    return node;
+  }
+  return { ...node, first, second, ratio };
+}
+
 export function normalizeLayoutRoot(
   layoutRoot: LayoutNode | null,
   state: LayoutVisibilityState

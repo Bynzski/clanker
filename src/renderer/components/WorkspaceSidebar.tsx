@@ -6,6 +6,7 @@ import { isWorkspaceSidebarCollapsed } from '../../shared/types/workspaceNavigat
 import { WorkspaceScopeProvider } from './WorkspaceScope';
 import WorkspaceNavigatorSection from './WorkspaceNavigatorSection';
 import WorkspaceRail from './WorkspaceRail';
+import './EdgeResizeHandle.css';
 import './WorkspaceSidebar.css';
 
 const FileExplorer = lazy(() => import('./FileExplorer'));
@@ -76,7 +77,7 @@ export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarPr
         )}
       </div>
       <div
-        className="explorer-resize-handle"
+        className="edge-resize-handle edge-resize-handle--inside explorer-resize-handle"
         onMouseDown={handleResizeStart}
         title={collapsed ? 'Drag to expand sidebar' : 'Drag to resize; drag narrow to collapse'}
       />

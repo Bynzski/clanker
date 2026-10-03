@@ -22,6 +22,7 @@ import {
   executeRename,
 } from './explorerActionHandlers';
 import './FileExplorer.css';
+import '../EdgeResizeHandle.css';
 
 const EXPLORER_TREE_REFRESH_DEBOUNCE_MS = 100;
 const EMPTY_ENTRIES: Record<string, FileExplorerEntry[] | undefined> = {};
@@ -719,7 +720,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
           onFocusFilter={focusFilterInput}
         />
       </div>
-      {!isSection && <div className="explorer-resize-handle" onMouseDown={handleResizeStart} />}
+      {!isSection && <div className="edge-resize-handle edge-resize-handle--outside explorer-resize-handle" onMouseDown={handleResizeStart} />}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}

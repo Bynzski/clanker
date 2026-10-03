@@ -11,35 +11,6 @@
   position: relative;
 }
 
-.explorer-resize-handle {
-  position: absolute;
-  top: 0;
-  right: -4px;
-  width: 8px;
-  height: 100%;
-  cursor: col-resize;
-  z-index: 1;
-}
-
-.explorer-resize-handle::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 3px;
-  height: 36px;
-  background: var(--surface-control-hover);
-  border-radius: 999px;
-  opacity: 0;
-  transition: opacity var(--transition), background-color var(--transition);
-}
-
-.explorer-resize-handle:hover::before {
-  opacity: 1;
-  background: var(--control-primary-bg);
-}
-
 .file-explorer-header {
   display: flex;
   align-items: center;

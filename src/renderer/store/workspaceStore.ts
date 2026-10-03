@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   buildWorkspaceLayout,
+  fitLayoutRatios,
   collectLeafPaneIds,
   capturePanePlacementInLayout,
   dockPaneToEdgeInLayout,
@@ -1293,7 +1294,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return patchWorkspaceLayout(state, workspace, nextLayout);
   }),
 
-  fitAllPanes: () => get().resetLayout(),
+  // Realign keeps the arrangement: reconcile the current tree with the visible panes (stale leaves
+  // pruned, missing ones inserted), then rebalance ratios. Only a missing tree is rebuilt from scratch.
+  fitAllPanes: () => set((state) => {
+    const workspace = resolveWorkspaceByScope(state);
+    if (workspace == null) return state;
+    const reconciled = buildWorkspaceLayout({
+      ...workspace,
+      explorerPane: workspace.explorerPane ?? null,
+      notesPane: workspace.notesPane ?? null,
+      notesVisible: workspace.notesVisible ?? false,
+    });
+    const fitted = fitLayoutRatios(reconciled);
+    // Nothing to repair: keep the existing tree (and its undo history) untouched.
+    if (JSON.stringify(fitted) === JSON.stringify(workspace.layoutRoot)) return state;
+    return patchWorkspaceLayout(state, workspace, fitted);
+  }),
 
   movePane: (paneId, target, workspaceId) => set((state) => {
     const workspace = resolveWorkspaceByScope(state, workspaceId);

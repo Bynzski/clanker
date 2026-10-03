@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WorkspaceSidebar from '../../../src/renderer/components/WorkspaceSidebar';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
@@ -36,6 +38,20 @@ describe('WorkspaceSidebar global width', () => {
     expect(await screen.findByTestId('files')).toHaveAttribute('data-ws', 'b');
     // Per-workspace widths (tabs mode) are untouched.
     expect(useWorkspaceStore.getState().workspaces.map((w) => w.explorerSidebarWidth)).toEqual([200, 480]);
+  });
+
+  it('uses the shared edge resize handle and never depends on the lazy FileExplorer stylesheet', () => {
+    const { container } = render(<WorkspaceSidebar />);
+    const handle = container.querySelector('.workspace-sidebar > .explorer-resize-handle')!;
+    expect(handle).toHaveClass('edge-resize-handle', 'edge-resize-handle--inside');
+
+    const read = (path: string) => readFileSync(resolve(process.cwd(), 'src/renderer/components', path), 'utf8');
+    expect(read('WorkspaceSidebar.tsx')).toContain("import './EdgeResizeHandle.css'");
+    expect(read('FileExplorer/index.tsx')).toContain("import '../EdgeResizeHandle.css'");
+    // The handle's visuals live only in the shared sheet.
+    expect(read('FileExplorer/FileExplorer.css')).not.toContain('resize-handle');
+    expect(read('WorkspaceSidebar.css')).not.toContain('resize-handle');
+    expect(read('EdgeResizeHandle.css')).toContain('.edge-resize-handle::before');
   });
 
   it('dragging the single handle updates and persists the global width, clamped', () => {

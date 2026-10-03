@@ -1372,9 +1372,11 @@ describe('layout operations', () => {
     expect(getStore().layoutRoot).not.toBeNull();
   });
 
-  it('fitAllPanes rebuilds layout from panes', () => {
+  it('fitAllPanes keeps the existing arrangement (see workspaceFit.test.ts for behaviour)', () => {
+    const before = collectLeafPaneIds(getStore().layoutRoot);
     getStore().fitAllPanes();
     expect(getStore().layoutRoot).not.toBeNull();
+    expect(collectLeafPaneIds(getStore().layoutRoot)).toEqual(before);
   });
 });
 
