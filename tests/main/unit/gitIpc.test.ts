@@ -1194,9 +1194,17 @@ describe('Git IPC workspace identity routing', () => {
   test('same-path operations retain their environment across overlapping Git commands', async () => {
     const { local, remote, handle, executions, mainWindow } = setup();
     expect(await handle('register-open-workspace')(null, 'local-tab', workspacePath, 'local'))
-      .toEqual({ success: true, location: { environmentId: 'local', path: workspacePath } });
+      .toEqual({
+        success: true,
+        location: { environmentId: 'local', path: workspacePath },
+        checkoutContext: { id: 'local-tab::main', workspaceId: 'local-tab', environmentId: 'local', path: workspacePath, kind: 'main' },
+      });
     expect(await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh'))
-      .toEqual({ success: true, location: { environmentId: 'ssh', path: workspacePath } });
+      .toEqual({
+        success: true,
+        location: { environmentId: 'ssh', path: workspacePath },
+        checkoutContext: { id: 'ssh-tab::main', workspaceId: 'ssh-tab', environmentId: 'ssh', path: workspacePath, kind: 'main' },
+      });
 
     let releaseRemote!: () => void;
     const delayed = new Promise<void>((resolve) => { releaseRemote = resolve; });

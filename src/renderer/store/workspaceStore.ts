@@ -65,6 +65,7 @@ import { preserveOriginalLineEndings } from '../lib/lineEndings';
 import { restoreWorkspaceLayout, restoreWorkspaceLayoutFromPersisted } from '../lib/workspaceLayoutStorage';
 import { insertWorkspaceInSavedOrder, persistWorkspaceTabOrder } from '../lib/workspaceTabOrder';
 import { nameTerminal, nameTerminals } from '../lib/agentNames';
+import { bindTerminalToCheckoutContext } from '../lib/checkoutContexts';
 import {
   readStoredNotesVisible,
   writeStoredNotesVisible,
@@ -382,7 +383,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const scopedWorkspace = workspaceId ? resolveWorkspaceByScope(current, workspaceId) : null;
     if (workspaceId && !scopedWorkspace) return current;
     const state = scopedWorkspace ? { ...current, ...getActiveWorkspaceSnapshot(scopedWorkspace) } : current;
-    const terminal = nameTerminal(unnamedTerminal, state.terminals);
+    const owningWorkspaceId = scopedWorkspace?.id ?? current.activeWorkspaceId;
+    const named = nameTerminal(unnamedTerminal, state.terminals);
+    const terminal = owningWorkspaceId ? bindTerminalToCheckoutContext(named, owningWorkspaceId) : named;
     const nextTerminals = [...state.terminals, terminal];
     const paneExists = state.panes.some((pane) => pane.terminalId === terminal.id);
     const nextPane = paneExists

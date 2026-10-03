@@ -262,7 +262,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
           gitService.registerOpenWorkspace(id, safePath);
         }
       }
-      return { success: true, location: result.location };
+      return { success: true, location: result.location, checkoutContext: result.checkoutContext };
     }
 
     const nativePath = toNativePath(workspacePath, process.platform);

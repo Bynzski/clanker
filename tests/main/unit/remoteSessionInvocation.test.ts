@@ -5,6 +5,7 @@ import type { RegisteredWorkspace } from '../../../src/main/workspaceRegistry';
 import type { HarnessSession } from '../../../src/shared/types/session';
 vi.mock('../../../src/main/ipc/ptySpawn', () => ({ spawnPtyProcess: vi.fn() }));
 import { spawnPtyProcess } from '../../../src/main/ipc/ptySpawn';
+import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
 
 function fixture(harness: HarnessSession['harness'] = 'codex') {
   const session: HarnessSession = { id: harness === 'agy' ? '12345678-1234-1234-1234-123456789abc' : 'native-id', harness, title: 'Host session', cwd: '/ws/sub', timestamp: 1, modelId: 'host-model', ...(harness === 'pi' || harness === 'omp' ? { filePath: `/home/remote/.${harness}/agent/sessions/p/session.jsonl` } : {}) };
@@ -17,7 +18,7 @@ function fixture(harness: HarnessSession['harness'] = 'codex') {
     resolveTerminalSpawn: vi.fn().mockResolvedValue({ spawnCmd: 'ssh', spawnArgs: ['-t', 'remote-host', 'remote launch'], env: {}, releaseAttention: release, attentionEnabled: true }),
   };
   const workspace = { workspaceId: 'remote-ws', location: { environmentId: 'ssh-a', path: '/ws' }, environment } as unknown as RegisteredWorkspace;
-  const registry = { getWorkspace: vi.fn().mockReturnValue(workspace), isRemotePathReserved: vi.fn().mockReturnValue(false) };
+  const registry = withCheckoutContexts({ getWorkspace: vi.fn().mockReturnValue(workspace), isRemotePathReserved: vi.fn().mockReturnValue(false) });
   const broker = { registerRemote: vi.fn().mockReturnValue('a'.repeat(64)), release: vi.fn(), receiveRemote: vi.fn() };
   const defaults: { flags?: string; attentionEnabled?: boolean } = { flags: '--verbose', attentionEnabled: true };
   const deps = {

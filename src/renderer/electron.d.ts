@@ -1,5 +1,6 @@
 import type { RemotePreviewRequest, RemotePreviewWatchRequest, RemotePreviewResult, RemotePreviewUpdate } from '../shared/types/remotePreview';
 import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types/environments';
+import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import type { RemoteDirectoryListing } from '../shared/types/environments';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { WorkspaceRecipe, RecipePreviewProbeResult } from '../../shared/types/recipes';
@@ -113,7 +114,7 @@ interface ElectronAPI {
   setKeybindingOverrides: (overrides: KeybindingOverrides) => Promise<{ success: true; overrides: KeybindingOverrides } | { success: false; error: string }>;
 
   // Terminal
-  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
+  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string, checkoutContextId?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean; checkoutContextId?: string }>;
   waitRecipeCommand: (id: string) => Promise<{ status: 'success' | 'started' | 'failed'; error?: string }>;
   getTerminalBuffer: (id: string) => Promise<string>;
   writeTerminal: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
@@ -226,7 +227,7 @@ interface ElectronAPI {
   gitGetBranchState: (workspacePath: string, workspaceId?: string) => Promise<GitBranchStateResult>;
   gitListWorktrees: (workspacePath: string, workspaceId?: string) => Promise<GitWorktreeListResult>;
   gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string) => Promise<GitWorktreeCreateResult>;
-  registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) => Promise<{ success: boolean; location?: WorkspaceLocation; error?: string }>;
+  registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) => Promise<{ success: boolean; location?: WorkspaceLocation; checkoutContext?: CheckoutContext; error?: string }>;
   unregisterOpenWorkspace: (id: string) => Promise<{ success: boolean; error?: string }>;
   gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeInspectionResult>;
   gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeRemoveResult>;

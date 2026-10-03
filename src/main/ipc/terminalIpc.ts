@@ -52,6 +52,8 @@ interface Terminal {
   cwd?: string;
   remoteWorkingDir?: string;
   workspaceId?: string;
+  /** Execution root this terminal was launched against (see WorkspaceRegistry checkout contexts). */
+  checkoutContextId?: string;
   environmentId?: string;
   harnessId?: string;
   releaseResources?: () => Promise<void>;
@@ -82,6 +84,15 @@ interface RegisterTerminalIpcDeps {
   createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
   /** Optional: without it (or without managed accounts) every launch uses the native account. */
   getHarnessAccountService?: () => HarnessAccountService | undefined;
+}
+
+function isInsideRoot(root: string, target: string): boolean {
+  try {
+    const relative = path.relative(fs.realpathSync(root), fs.realpathSync(target));
+    return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  } catch {
+    return false;
+  }
 }
 
 let appShuttingDown = false;
@@ -123,7 +134,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     initialCommand?: string,
     recipeCommand?: boolean,
     workspaceId?: string,
-    environmentId?: string
+    environmentId?: string,
+    checkoutContextId?: string
   ) => {
     const terminals = getTerminals();
     const mainWindow = getMainWindow();
@@ -140,16 +152,30 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     if (environmentId && resolvedWorkspace && environmentId !== resolvedWorkspace.location.environmentId) {
       throw new Error('Workspace environment does not match registered workspace');
     }
+    if (checkoutContextId !== undefined && !isNonEmptyString(checkoutContextId)) {
+      throw new Error('Invalid checkout context');
+    }
+    // The terminal root is the checkout context's validated root, not the workspace path:
+    // no requested id means the workspace's main checkout, and a context registered under another
+    // workspace never resolves. Launches outside any registered workspace stay unbound (legacy).
+    const checkoutContext = resolvedWorkspace && registry
+      ? registry.resolveCheckoutContext(resolvedWorkspace.workspaceId, checkoutContextId)
+      : null;
+    if ((resolvedWorkspace || checkoutContextId) && !checkoutContext) {
+      throw new Error('Checkout context is not registered for this workspace');
+    }
     const effectiveEnvironmentId = resolvedWorkspace?.location.environmentId || environmentId || 'local';
     const isRemote = effectiveEnvironmentId !== 'local';
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
     if (isRemote) {
-      if (!resolvedWorkspace || resolvedWorkspace.location.environmentId === 'local') {
+      if (!resolvedWorkspace || !checkoutContext || resolvedWorkspace.location.environmentId === 'local') {
         throw new Error('Remote workspace is not registered or not accessible');
       }
 
-      const root = resolvedWorkspace.location.path;
+      // Containment is against this context's own root, so a worktree context neither inherits
+      // nor extends the workspace root's reach.
+      const root = checkoutContext.path;
       if (typeof workingDir !== 'string' || !isPathContained(root, workingDir)) {
         throw new Error('Terminal directory is outside the registered workspace');
       }
@@ -182,6 +208,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
 
         if (appShuttingDown || deps.getAppShuttingDown?.() ||
             registry?.getWorkspace(resolvedWorkspace.workspaceId) !== resolvedWorkspace ||
+            registry?.getCheckoutContext(checkoutContext.id) !== checkoutContext ||
             registry.isRemotePathReserved?.(effectiveEnvironmentId, remoteWorkingDir)) {
           throw new Error('Remote workspace was closed or is being removed');
         }
@@ -199,6 +226,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           harnessId: resolved.harnessId,
           initialCommand: effectiveEnvironmentId === 'local' ? resolved.initialCommand : undefined,
           workspaceId: resolvedWorkspace.workspaceId,
+          checkoutContextId: checkoutContext.id,
           environmentId: effectiveEnvironmentId,
           remoteWorkingDir,
           onOutput: deps.createRemoteOutputObserver?.(resolvedWorkspace.workspaceId),
@@ -215,6 +243,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           pid: result.pid,
           attentionEnabled: resolved.attentionEnabled === true,
           harnessId: resolved.harnessId ?? harness ?? null,
+          checkoutContextId: checkoutContext.id,
         };
       } catch (error) {
         agentAttentionBroker?.release(id);
@@ -225,6 +254,11 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
 
     const cwd = getSafeWorkspacePath(toNativePath(workingDir, process.platform));
+    // A caller that names a context is confined to that context's root. getSafeWorkspacePath
+    // falls back to a default directory for unusable input, so check the directory actually used.
+    if (checkoutContextId && checkoutContext && !isInsideRoot(toNativePath(checkoutContext.path, process.platform), cwd)) {
+      throw new Error('Terminal directory is outside the registered workspace');
+    }
     // Use user's default shell, fallback to bash
     const userShell = defaultShell();
 
@@ -320,12 +354,18 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       initialCommand: recipeCommandStartup && cleanInitialCommand
         ? recipeCommandStartup.wrap(cleanInitialCommand, process.platform, userShell) : cleanInitialCommand,
       recipeCommandStartup,
+      checkoutContextId: checkoutContext?.id,
       onExit: () => {
         disposeAttentionSafely(preparedAttention);
         agentAttentionBroker?.release(id);
       },
       });
-      return { ...result, harnessId: harnessConfig ? harness : undefined, attentionEnabled };
+      return {
+        ...result,
+        harnessId: harnessConfig ? harness : undefined,
+        attentionEnabled,
+        checkoutContextId: checkoutContext?.id,
+      };
     } catch (error) {
       disposeAttentionSafely(preparedAttention);
       agentAttentionBroker?.release(id);

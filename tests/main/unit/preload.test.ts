@@ -907,6 +907,13 @@ describe('preload.ts IPC Bridge Coverage Tests', () => {
       assert.ok(spawnLine?.includes('model'), 'spawnTerminal should accept model parameter');
     });
 
+    test('terminal spawn forwards the checkout context to the SPAWN_TERMINAL handler', () => {
+      const signature = preloadSource.match(/spawnTerminal:\s*\([^)]*\)/)?.[0] ?? '';
+      assert.ok(signature.includes('checkoutContextId'), 'spawnTerminal should accept checkoutContextId');
+      const invocation = preloadSource.match(/ipcRenderer\.invoke\(SPAWN_TERMINAL,[^)]*\)/)?.[0] ?? '';
+      assert.ok(invocation.trimEnd().endsWith('environmentId, checkoutContextId)'), 'checkoutContextId must reach the main handler');
+    });
+
     test('git stage accepts optional file list', () => {
       const method = extractedInvokeMethods.find(m => m.method === 'gitStage');
       assert.ok(method, 'gitStage should exist');

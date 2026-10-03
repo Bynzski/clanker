@@ -5,6 +5,8 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { GitService } from '../../../src/main/gitService';
+import { WorkspaceRegistry } from '../../../src/main/workspaceRegistry';
+import type { WorkspaceEnvironment } from '../../../src/main/environment/workspaceEnvironment';
 
 const execFileAsync = promisify(execFile);
 
@@ -296,6 +298,35 @@ describe('GitService worktree lifecycle', () => {
       expect(fs.existsSync(path.join(checkout, 'README.md'))).toBe(true);
       service.unregisterOpenWorkspace('tab-1');
       expect((await service.removeWorktree(repo, checkout, 'registered-guard', [])).success).toBe(true);
+    });
+  });
+
+  it('refuses removal while a registered checkout context uses the checkout, without any workspace tab for it', async () => {
+    await withRepo(async (repo) => {
+      const environment = {
+        validateWorkspacePath: async (dir: string) => ({ valid: true, resolvedPath: dir }),
+      } as unknown as WorkspaceEnvironment;
+      const registry = new WorkspaceRegistry(() => environment);
+      const service = new GitService(
+        () => undefined,
+        async (worktreePath) => { await fs.promises.rename(worktreePath, `${worktreePath}.recycled`); },
+        () => [],
+        () => registry.getLocalOpenWorkspacePaths(),
+      );
+      const created = await service.createWorktree(repo, 'main', 'context-guard');
+      const checkout = created.worktree?.path ?? '';
+
+      await registry.registerWorkspace({ workspaceId: 'project', workspacePath: repo });
+      const context = await registry.registerCheckoutContext({ workspaceId: 'project', path: checkout, kind: 'worktree' });
+      expect(context.success).toBe(true);
+
+      expect((await service.inspectWorktree(repo, checkout, [])).success).toBe(false);
+      expect((await service.removeWorktree(repo, checkout, 'context-guard', [])).success).toBe(false);
+      expect(fs.existsSync(path.join(checkout, 'README.md'))).toBe(true);
+
+      // Closing the project releases its contexts; the same safeguards then allow removal.
+      registry.unregisterWorkspace('project');
+      expect((await service.removeWorktree(repo, checkout, 'context-guard', [])).success).toBe(true);
     });
   });
 
