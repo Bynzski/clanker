@@ -85,18 +85,6 @@
   white-space: nowrap;
 }
 
-.workspace-launcher .gate-view-directory .gate-worktree-forward {
-  flex-direction: row;
-  gap: 5px;
-  min-width: 80px;
-  height: var(--control-height-md);
-}
-
-.workspace-launcher .gate-view-directory .gate-worktree-forward span {
-  font-size: var(--font-size-sm);
-  line-height: normal;
-}
-
 .workspace-launcher .gate-view-directory .clanker-button:active:not(:disabled) {
   transform: none;
 }
@@ -159,7 +147,6 @@
 .workspace-launcher .gate-recipe-play { display: grid; place-items: center; width: var(--control-height-sm); height: var(--control-height-md); }
 
 .workspace-launcher .gate-directory-actions { display: flex; align-items: center; gap: 2px; min-width: 0; max-width: 65%; }
-.workspace-launcher .gate-view-directory .gate-directory-actions .gate-worktree-forward { flex: none; min-width: 0; height: var(--control-height-sm); }
 .workspace-launcher .gate-workspace-chooser > .gate-section-header { align-items: center; gap: 8px; }
 .workspace-launcher .gate-workspace-chooser > .gate-section-header .gate-base-path { flex: 1; }
 

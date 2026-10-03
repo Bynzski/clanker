@@ -8,3 +8,8 @@
   flex-direction: column;
   gap: var(--space-sm);
 }
+
+/* A launcher like the harness pills, set apart by the accent glyph: it creates a worktree-backed agent. */
+.isolated-agent-trigger svg { color: var(--accent-interactive); }
+.isolated-agent-trigger:disabled { opacity: 0.45; cursor: not-allowed; }
+.isolated-agent-trigger:disabled svg { color: currentColor; }

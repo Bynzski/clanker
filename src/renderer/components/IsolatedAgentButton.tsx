@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { GitBranch } from 'lucide-react';
-import { IconButton } from './ui/IconButton';
+import { GitBranchPlus } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Select } from './ui/Select';
@@ -69,17 +68,17 @@ export default function IsolatedAgentButton({ workspace, visibleHarnessIds }: Is
   return (
     <Popover open={open && available} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <IconButton
+        <button
           type="button"
-          size="xs"
-          variant="ghost"
-          className="header-btn header-btn-icon toolbar-btn"
+          className="harness-pill isolated-agent-trigger"
           aria-label="New isolated agent"
           title={title}
           disabled={!available}
         >
-          <GitBranch size={14} strokeWidth={2} />
-        </IconButton>
+          <GitBranchPlus size={14} strokeWidth={2.25} />
+          {/* Same responsive rule as the harness labels: spelled out only on a wide toolbar. */}
+          <span className="harness-pill-label" aria-hidden="true">Isolated</span>
+        </button>
       </PopoverTrigger>
       <PopoverContent workspaceId={workspace.id} align="start" className="isolated-agent-popover">
         <form className="isolated-agent-form" onSubmit={(event) => void submit(event)}>

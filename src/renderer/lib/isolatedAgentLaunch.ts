@@ -19,7 +19,15 @@ export interface IsolatedAgentRequest {
   visibleHarnessIds: readonly string[];
 }
 
-const messageOf = (cause: unknown, fallback: string): string => (cause instanceof Error && cause.message ? cause.message : fallback);
+const FOCUS_CHANGED = 'The focused workspace changed; open the control again from the workspace you want';
+
+/** The workspace exists in the live store and is the one the user is looking at. */
+function isStillFocused(workspaceId: string): boolean {
+  const state = useWorkspaceStore.getState();
+  return state.getWorkspaceById(workspaceId) !== null && selectFocusedWorkspace(state)?.id === workspaceId;
+}
+
+const messageOf =(cause: unknown, fallback: string): string => (cause instanceof Error && cause.message ? cause.message : fallback);
 
 /**
  * Creates a worktree for a task branch, attaches it to the workspace as a checkout context and
@@ -36,11 +44,8 @@ export async function createIsolatedAgent(request: IsolatedAgentRequest): Promis
   if (!taskBranch) return fail('Enter a task branch');
 
   // Judge the workspace as it is now, not as it was when the popover opened.
-  const state = useWorkspaceStore.getState();
-  const workspace = state.getWorkspaceById(request.workspaceId);
-  if (!workspace || selectFocusedWorkspace(state)?.id !== workspace.id) {
-    return fail('The focused workspace changed; open the control again from the workspace you want');
-  }
+  const workspace = useWorkspaceStore.getState().getWorkspaceById(request.workspaceId);
+  if (!workspace || !isStillFocused(workspace.id)) return fail(FOCUS_CHANGED);
   if (workspace.isLinkedWorktree) return fail('Isolated agents are created from the project workspace, not from a worktree workspace');
 
   // The base is the branch actually checked out now, from Git rather than from displayed state.
@@ -52,6 +57,9 @@ export async function createIsolatedAgent(request: IsolatedAgentRequest): Promis
   } catch (cause) {
     return fail(messageOf(cause, 'Could not read the current branch'));
   }
+
+  // The branch lookup awaited; do not create a checkout for a workspace the user has already left.
+  if (!isStillFocused(workspace.id)) return fail(FOCUS_CHANGED);
 
   let created;
   try {
@@ -74,6 +82,13 @@ export async function createIsolatedAgent(request: IsolatedAgentRequest): Promis
     // main holding a context nobody can see; the checkout itself is kept.
     await window.electronAPI.releaseCheckoutContext(workspace.id, checkoutContext.id).catch(() => undefined);
     return fail('The worktree was created but could not be attached to this workspace. It was kept.', true);
+  }
+
+  // Creation awaited too. If the user moved on, an agent started now would appear in a workspace they
+  // are not looking at. The checkout and its attached context are kept (nothing is deleted); it is
+  // listed under its workspace as an inactive checkout.
+  if (!isStillFocused(workspace.id)) {
+    return fail(`The worktree for "${taskBranch}" was created and attached to its workspace, but focus moved to another workspace, so no agent was started. It is listed there as an inactive checkout.`, true);
   }
 
   const launch = resolveToolbarLaunch({

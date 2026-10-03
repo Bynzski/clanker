@@ -268,3 +268,21 @@ describe('removing a worktree context (after main has released it)', () => {
     expect(useWorkspaceStore.getState().removeCheckoutContext('ws-1', 'ws-1::ckt-a')).toBe(false);
   });
 });
+
+describe('worktrees Clanker did not register', () => {
+  it('never become contexts: a terminal launched in a self-made worktree directory is bound to the main checkout', () => {
+    useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null, activeWorkspaceLifecycle: null, terminals: [], panes: [] });
+    const input = workspaceInput({ workspacePath: '/work/app', terminals: [], panes: [], activeTerminalId: null });
+    useWorkspaceStore.getState().addWorkspace({ ...input, id: 'ws-1' });
+
+    useWorkspaceStore.getState().addTerminal(
+      createTerminalFixture({ id: 'rogue', workingDir: '/work/app/.claude/worktrees/self-made', checkoutContextId: undefined }),
+      'ws-1',
+    );
+
+    const workspace = useWorkspaceStore.getState().getWorkspaceById('ws-1')!;
+    expect(workspace.terminals[0].checkoutContextId).toBe(mainCheckoutContextId('ws-1'));
+    expect(workspace.checkoutContexts).toEqual([mainContext('ws-1', '/work/app')]);
+    expect(workspace.workspacePath).toBe('/work/app');
+  });
+});

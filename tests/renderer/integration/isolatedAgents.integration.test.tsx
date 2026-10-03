@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Header from '../../../src/renderer/components/Header';
 import WorkspaceNavigatorSection from '../../../src/renderer/components/WorkspaceNavigatorSection';
@@ -305,6 +305,99 @@ describe('isolated agents from the toolbar', () => {
       expect(releaseCheckoutContext).toHaveBeenCalledWith('ws', 'someone-else::ckt-x');
       expect(spawnTerminal).not.toHaveBeenCalled();
       expect(workspace().checkoutContexts).toHaveLength(1);
+    });
+  });
+
+  describe('when focus moves to another workspace during creation', () => {
+    const otherWorkspace = () => {
+      const { id: _id, lifecycle: _l, ...other } = createWorkspaceFixture({ workspacePath: '/projects/other', gitIsRepo: true, terminals: [], panes: [], activeTerminalId: null });
+      void _id; void _l;
+      useWorkspaceStore.getState().addWorkspace({ ...other, id: 'other' });
+    };
+    const request = { workspaceId: 'ws', harnessId: 'codex', taskBranch: 'issue-90-x', visibleHarnessIds: ['codex'] };
+
+    it('creates nothing when focus moved while the current branch was being read', async () => {
+      openWorkspace();
+      gitGetBranchState.mockImplementation(async () => {
+        otherWorkspace();
+        return { success: true, isRepo: true, currentBranch: 'feature/base', isDetached: false, branches: [] };
+      });
+
+      const result = await createIsolatedAgent(request);
+
+      expect(result).toMatchObject({ ok: false, checkoutCreated: false, error: expect.stringContaining('focused workspace changed') });
+      expect(gitCreateWorktree).not.toHaveBeenCalled();
+      expect(spawnTerminal).not.toHaveBeenCalled();
+    });
+
+    it('keeps the created checkout and its context, but starts no agent in the background workspace', async () => {
+      openWorkspace();
+      gitCreateWorktree.mockImplementation(async (_p: string, _b: string, _br: string, workspaceId: string): Promise<GitWorktreeCreateResult> => {
+        otherWorkspace();
+        return {
+          success: true,
+          worktree: { path: WORKTREE, branch: 'issue-90-x', isMain: false, isLocked: false, isPrunable: false },
+          checkoutContext: worktreeContext(workspaceId),
+        };
+      });
+      const removeWorktree = vi.fn();
+      Object.assign(window.electronAPI, { gitRemoveWorktree: removeWorktree });
+
+      const result = await createIsolatedAgent(request);
+
+      expect(result).toMatchObject({ ok: false, checkoutCreated: true, error: expect.stringContaining('focus moved to another workspace') });
+      expect(spawnTerminal).not.toHaveBeenCalled();
+      // Nothing was undone: the context is attached to its owning workspace, which gained no agent.
+      expect(useWorkspaceStore.getState().getWorkspaceById('ws')!.checkoutContexts!.map((context) => context.id)).toEqual([mainCheckoutContextId('ws'), 'ws::ckt-x']);
+      expect(useWorkspaceStore.getState().getWorkspaceById('ws')!.terminals).toHaveLength(0);
+      expect(useWorkspaceStore.getState().getWorkspaceById('other')!.terminals).toHaveLength(0);
+      expect(releaseCheckoutContext).not.toHaveBeenCalled();
+      expect(removeWorktree).not.toHaveBeenCalled();
+      expect(useWorkspaceStore.getState().workspaces).toHaveLength(2);
+      expect(registerOpenWorkspace).not.toHaveBeenCalled();
+    });
+
+    it('leaves the preserved checkout visible as an inactive row when the user returns to its workspace', async () => {
+      openWorkspace();
+      gitCreateWorktree.mockImplementation(async (_p: string, _b: string, _br: string, workspaceId: string): Promise<GitWorktreeCreateResult> => {
+        otherWorkspace();
+        return {
+          success: true,
+          worktree: { path: WORKTREE, branch: 'issue-90-x', isMain: false, isLocked: false, isPrunable: false },
+          checkoutContext: worktreeContext(workspaceId),
+        };
+      });
+      await createIsolatedAgent(request);
+
+      act(() => useWorkspaceStore.getState().selectWorkspace('ws'));
+      render(<WorkspaceNavigatorSection />);
+
+      const rows = await screen.findByRole('list', { name: /inactive checkouts/ });
+      expect(within(rows).getByText('issue-90-x')).toBeTruthy();
+      expect(within(rows).getByRole('button', { name: /Remove checkout for branch issue-90-x/ })).toBeTruthy();
+    });
+
+    it('still launches normally when focus stays put', async () => {
+      openWorkspace();
+      expect(await createIsolatedAgent(request)).toEqual({ ok: true });
+      expect(spawnTerminal).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('the toolbar control\'s identity', () => {
+    it('uses a branch-plus glyph in the harness pill style, named for what it does', async () => {
+      openWorkspace();
+      const { container } = render(<Header />);
+      const button = await screen.findByRole('button', { name: 'New isolated agent' });
+
+      expect(button.querySelector('svg')?.getAttribute('class')).toContain('lucide-git-branch-plus');
+      expect(button.className).toContain('harness-pill');
+      expect(button).toHaveAttribute('title', 'New isolated agent');
+      // The short label is present for wide toolbars; it hides with the harness labels on narrow ones.
+      expect(button.querySelector('.harness-pill-label')?.textContent).toBe('Isolated');
+      expect(container.querySelectorAll('.harness-pills .isolated-agent-trigger')).toHaveLength(0);
+      // It is a separate action, not another harness: the pills still launch exactly the visible harnesses.
+      expect(screen.getAllByRole('button', { name: /^(Terminal|Codex|Claude)$/ })).toHaveLength(3);
     });
   });
 });

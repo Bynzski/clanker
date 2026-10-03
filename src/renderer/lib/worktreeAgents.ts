@@ -35,3 +35,15 @@ export function getUnusedWorktreeContexts(workspace: Pick<WorkspaceTab, 'id' | '
 export function worktreeBranchLabel(context: Pick<CheckoutContext, 'branch'>): string {
   return context.branch || 'HEAD';
 }
+
+/**
+ * The isolated worktree the workspace's selected agent runs in, or null when the selected agent (or
+ * none) is on the workspace's own checkout. Presentation only: it reads the registered
+ * terminal -> context mapping and never inspects the process, its directory, or the repository.
+ */
+export function getSelectedAgentWorktreeContext(
+  workspace: Pick<WorkspaceTab, 'id' | 'checkoutContexts' | 'terminals' | 'activeTerminalId'>,
+): CheckoutContext | null {
+  const terminal = workspace.terminals.find((entry) => entry.id === workspace.activeTerminalId);
+  return terminal ? getAgentWorktreeContext(workspace, terminal) : null;
+}
