@@ -189,6 +189,7 @@ import {
   SSH_LIST_DIRECTORIES,
   SSH_CREATE_DIRECTORY,
   GET_ENVIRONMENT_HARNESS_OPTIONS,
+  GET_ENVIRONMENT_HARNESS_MODELS,
 } from '../shared/ipcChannels';
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -603,4 +604,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sshCreateDirectory: (environmentId: string, parentPath: string, name: string) =>
     ipcRenderer.invoke(SSH_CREATE_DIRECTORY, environmentId, parentPath, name),
   getEnvironmentHarnessOptions: (environmentId: string) => ipcRenderer.invoke(GET_ENVIRONMENT_HARNESS_OPTIONS, environmentId),
+  getEnvironmentHarnessModels: (environmentId: string, harnessId: string) => ipcRenderer.invoke(GET_ENVIRONMENT_HARNESS_MODELS, environmentId, harnessId),
 });

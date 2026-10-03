@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { quotePosixArg, quotePosixCommand } from './posixQuote';
 import { withoutAttentionEnvironment } from '../agentAttentionAdapters';
 import { validateSshTarget } from '../../shared/sshValidation';
+import { classifySshTransportFailure, type SshFailureKind } from './sshErrorMessages';
 
 export interface SshExecOptions {
   signal?: AbortSignal;
@@ -25,6 +26,8 @@ export class SshExecutionError extends Error {
     public readonly exitCode: number,
     public readonly stdout: string,
     public readonly stderr: string,
+    /** Set only for OpenSSH transport failures (exit 255); raw output stays in stderr/stdout. */
+    public readonly transportKind?: SshFailureKind,
   ) {
     super(message);
     this.name = 'SshExecutionError';
@@ -167,11 +170,12 @@ export class SshCommandExecutor {
 
       const exitCode = code;
       if (exitCode !== 0) {
-        let errorMsg = stderr.trim();
         if (exitCode === 255) {
-          errorMsg = errorMsg || 'SSH connection failed or authentication required interactive login';
+          const failure = classifySshTransportFailure(stderr);
+          reject(new SshExecutionError(failure.message, exitCode, stdout, stderr, failure.kind));
+          return;
         }
-        reject(new SshExecutionError(errorMsg || `Command exited with code ${exitCode}`, exitCode, stdout, stderr));
+        reject(new SshExecutionError(stderr.trim() || `Command exited with code ${exitCode}`, exitCode, stdout, stderr));
         return;
       }
 

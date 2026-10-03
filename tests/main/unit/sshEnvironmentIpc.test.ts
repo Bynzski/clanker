@@ -5,7 +5,7 @@ import { SshCommandExecutor } from '../../../src/main/remote/sshCommandExecutor'
 import { registerSshEnvironmentIpc } from '../../../src/main/ipc/sshEnvironmentIpc';
 import {
   SSH_ENVIRONMENT_DELETE, SSH_ENVIRONMENT_SAVE, SSH_GET_HOME_DIRECTORY, SSH_LIST_DIRECTORIES,
-  SSH_CREATE_DIRECTORY,
+  SSH_CREATE_DIRECTORY, GET_ENVIRONMENT_HARNESS_MODELS,
 } from '../../../src/shared/ipcChannels';
 import { ipcMain } from 'electron';
 
@@ -111,5 +111,24 @@ describe('pre-workspace SSH browse IPC', () => {
       ['-c', expect.any(String), '/home/dev/workspaces'], { timeoutMs: 12000, maxBuffer: 128 * 1024 });
     expect(exec).toHaveBeenNthCalledWith(3, existing.target, 'python3',
       ['-c', expect.any(String), '/home/dev/workspaces', 'project'], { timeoutMs: 12000, maxBuffer: 128 * 1024 });
+  });
+});
+
+describe('environment harness model IPC', () => {
+  it('resolves only saved environments and runs discovery against their own saved target', async () => {
+    vi.clearAllMocks();
+    const store = new MemoryStore();
+    const exec = vi.fn().mockResolvedValue({ stdout: 'anthropic/claude-x\n', stderr: '', exitCode: 0 });
+    const manager = new EnvironmentManager(() => store as never, { exec } as unknown as SshCommandExecutor, async (target) => `ssh:${target}`);
+    registerSshEnvironmentIpc({ getStore: () => store as never, getEnvironmentManager: () => manager, getWorkspaceRegistry: () => new WorkspaceRegistry(async () => null) });
+    const handler = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === GET_ENVIRONMENT_HARNESS_MODELS)![1] as
+      (_event: unknown, id: unknown, harness: unknown) => Promise<unknown>;
+    expect(await handler(null, 'unknown-host', 'opencode')).toEqual([]);
+    expect(await handler(null, existing.id, 42)).toEqual([]);
+    expect(exec).not.toHaveBeenCalled();
+    expect(await handler(null, existing.id, 'opencode')).toEqual([{ id: 'anthropic/claude-x', label: 'anthropic/claude-x' }]);
+    expect(exec.mock.calls[0][0]).toBe(existing.target);
+    expect(await handler(null, existing.id, 'hermes')).toEqual([]);
+    expect(exec).toHaveBeenCalledTimes(1);
   });
 });

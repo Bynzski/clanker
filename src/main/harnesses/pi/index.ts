@@ -7,7 +7,10 @@ import { defineHarness, type HarnessProvider } from '../types';
 
 export const piProvider = defineHarness({
   descriptor: HARNESS_DESCRIPTORS.pi,
-  models: { discover: async () => (await import('./models')).discoverModels() },
+  models: {
+    discover: async () => (await import('./models')).discoverModels(),
+    discoverInEnvironment: async (executor) => (await import('./models')).discoverModelsIn(executor),
+  },
   sessions: {
     discoveryOrder: 2,
     validateLocal,

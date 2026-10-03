@@ -1,5 +1,6 @@
 import type { ModelOption } from '../types';
 import { runCommandOutput } from '../modelCommand';
+import { requireModelOutput, type HarnessCommandExecutor } from '../commandExecution';
 import { normalizeModelLine } from '../modelParsing';
 
 export function parsePiModels(output: string): ModelOption[] {
@@ -45,4 +46,9 @@ export function parsePiModels(output: string): ModelOption[] {
 export async function discoverModels(): Promise<ModelOption[]> {
   const models = parsePiModels(await runCommandOutput('pi', ['--list-models'], 6000));
   return models.filter((model, index, entries) => index === entries.findIndex((entry) => entry.id === model.id));
+}
+
+export async function discoverModelsIn(executor: HarnessCommandExecutor): Promise<ModelOption[]> {
+  const output = requireModelOutput(await executor.run({ command: 'pi', args: ['--list-models'], timeoutMs: 6000 }), 'pi --list-models');
+  return parsePiModels(output).filter((model, index, entries) => index === entries.findIndex((entry) => entry.id === model.id));
 }

@@ -7,7 +7,8 @@ import { defineHarness, type HarnessProvider } from '../types';
 
 export const opencodeProvider = defineHarness({
   descriptor: HARNESS_DESCRIPTORS.opencode,
-  models: { discover: async () => (await import('./models')).discoverModels(), fallback: [
+  models: { discover: async () => (await import('./models')).discoverModels(),
+    discoverInEnvironment: async (executor) => (await import('./models')).discoverModelsIn(executor), fallback: [
     { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
     { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
     { id: 'openai/gpt-4o', label: 'GPT-4o' },

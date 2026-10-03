@@ -1,5 +1,6 @@
 import type { ModelOption } from '../types';
 import { runCommandOutput } from '../modelCommand';
+import { requireModelOutput, type HarnessCommandExecutor } from '../commandExecution';
 import { normalizeModelLine } from '../modelParsing';
 
 export function parseOpenCodeModels(output: string): ModelOption[] {
@@ -26,4 +27,9 @@ export function parseOpenCodeModels(output: string): ModelOption[] {
 export async function discoverModels(): Promise<ModelOption[]> {
   const models = parseOpenCodeModels(await runCommandOutput('opencode', ['models'], 6000));
   return models.filter((model, index, entries) => index === entries.findIndex((entry) => entry.id === model.id));
+}
+
+export async function discoverModelsIn(executor: HarnessCommandExecutor): Promise<ModelOption[]> {
+  const output = requireModelOutput(await executor.run({ command: 'opencode', args: ['models'], timeoutMs: 6000 }), 'opencode models');
+  return parseOpenCodeModels(output).filter((model, index, entries) => index === entries.findIndex((entry) => entry.id === model.id));
 }

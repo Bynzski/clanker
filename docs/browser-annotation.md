@@ -133,7 +133,7 @@ Make this button more prominent — it's the primary CTA for the profile form.
 5. Copy the annotation and paste it into an agent, or choose **Send to agent**
 6. Review the message and destination workspace before sending
 
-Automatic **Send to agent** handoff is unavailable for remote terminals in V1. Use **Copy message** to paste an annotation into a remote agent yourself.
+**Send to agent** also works for remote SSH agent terminals that Agent Attention has registered and that are ready to receive input; it writes into the existing terminal and opens no new SSH connection. If the agent is closed, busy, a plain shell, or outside the workspace, use **Copy message** and paste it yourself.
 
 The structured output helps the agent understand exactly which element you mean, its position, and your intended change.
 

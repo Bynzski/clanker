@@ -142,7 +142,25 @@ describe('SshCommandExecutor', () => {
     mockChild.stderr.emit('data', Buffer.from('Permission denied (publickey)\n'));
     mockChild.emit('close', 255);
 
-    await expect(execPromise).rejects.toThrow('Permission denied (publickey)');
+    await expect(execPromise).rejects.toMatchObject({
+      message: expect.stringContaining('SSH authentication failed'),
+      stderr: 'Permission denied (publickey)\n',
+      exitCode: 255,
+      transportKind: 'auth',
+    });
+  });
+
+  it('does not describe an ordinary remote command failure as a transport failure', async () => {
+    const mockChild = createMockChild();
+    vi.mocked(spawn).mockReturnValue(mockChild as unknown as ChildProcess);
+
+    const execPromise = executor.exec('vps', 'ls');
+    mockChild.stderr.emit('data', Buffer.from('ls: cannot access x: Permission denied\n'));
+    mockChild.emit('close', 2);
+
+    await expect(execPromise).rejects.toMatchObject({
+      message: 'ls: cannot access x: Permission denied', exitCode: 2, transportKind: undefined,
+    });
   });
 
   it('enforces maximum output buffer limit', async () => {
@@ -205,6 +223,7 @@ describe('SshCommandExecutor', () => {
 
     const res = await testPromise;
     expect(res.success).toBe(false);
-    expect(res.error).toContain('Host key verification failed.');
+    expect(res.error).toContain('host-key verification failed');
+    expect(res.error).not.toContain('Host key verification failed.');
   });
 });

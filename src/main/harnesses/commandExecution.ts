@@ -120,6 +120,15 @@ export function requireSuccess(result: HarnessCommandResult, what: string): stri
   return result.stdout;
 }
 
+/**
+ * Provider helper for model catalogs: usable output of a successful command.
+ * Mirrors the local runner, which falls back to stderr when stdout is empty.
+ */
+export function requireModelOutput(result: HarnessCommandResult, what: string): string {
+  requireSuccess(result, what);
+  return result.stdout || result.stderr;
+}
+
 /** Provider helper: strict JSON from stdout. Decorated or empty output is a schema/command problem. */
 export function parseJsonOutput(stdout: string, what: string): unknown {
   try {

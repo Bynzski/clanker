@@ -393,6 +393,7 @@ interface ElectronAPI {
   sshListDirectories: (environmentId: string, directoryPath: string) => Promise<RemoteDirectoryListing>;
   sshCreateDirectory: (environmentId: string, parentPath: string, name: string) => Promise<{ path: string }>;
   getEnvironmentHarnessOptions: (environmentId: string) => Promise<Record<string, unknown>>;
+  getEnvironmentHarnessModels: (environmentId: string, harnessId: string) => Promise<Array<{ id: string; label: string }>>;
 }
 
 declare global {

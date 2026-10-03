@@ -41,6 +41,13 @@ export class HarnessCapabilityError extends Error {
 export interface ModelOption { id: string; label: string }
 export interface HarnessModelsCapability {
   discover(refresh?: boolean): Promise<ModelOption[]>;
+  /**
+   * Catalog for the environment that owns `executor` (local or SSH). The provider chooses the
+   * command and parser; the environment decides where it runs. Absent means the harness has no
+   * reliable model-list command for environment-bound execution. Failures reject; callers must not
+   * substitute fallbacks or a desktop catalog.
+   */
+  discoverInEnvironment?(executor: HarnessCommandExecutor): Promise<ModelOption[]>;
   readonly fallback?: ModelOption[];
   readonly explicitRefresh?: boolean;
   /** Preserve legacy caching at the wrapper, while providers report parse errors. */

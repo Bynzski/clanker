@@ -77,13 +77,15 @@ Clanker **never** stores SSH passwords or private keys in application state, nor
 
 Saved SSH targets cannot be edited or deleted while an open workspace uses them. Close the workspace first, then update or remove the target.
 
+**Connection errors.** When OpenSSH itself fails (exit code 255), Clanker shows a short explanation instead of the raw output: authentication failed (check key, agent, account), host-key verification failed or changed (check `known_hosts`), host could not be resolved, connection refused (check sshd and port), host unreachable (check network/VPN/Tailscale), connection timed out, or connection lost. Any other OpenSSH failure shows a generic "SSH connection failed" line with its first diagnostic. A remote command that fails with an ordinary exit code is reported as that command's error, not as a connection problem. The raw output is kept for diagnostics. Use **Test** on a saved target to re-check it; the remote directory chooser retries a failed listing, and the initial remote-home lookup in the launcher has a **Retry** button that keeps any path you already typed. Clanker does not keep a persistent connection state or reconnect automatically.
+
 
 ### Remote Prerequisites & Platform Support
 
 - **Supported Remote Platforms**: Linux and POSIX-compatible operating systems (x86_64, ARM64). Remote Windows hosts are not supported in V1.
 - **Prerequisites**: OpenSSH server running on the remote host, with key-based authentication or ssh-agent configured for noninteractive background operations. Python 3 is required on the remote host for root-confined filesystem operations and atomic writes.
 
-Remote harness commands are discovered and executed on the remote host using its shell environment. Configured harness flags and applicable harness environment settings are applied to new remote terminals; local CLI installations and desktop Agent Attention credentials are not forwarded. Remote attention uses host-side adapters when enabled in harness defaults. Remote model discovery and selection are deferred in V1, so Clanker does not pass a locally selected default model to a remote harness.
+Remote harness commands are discovered and executed on the remote host using its shell environment. Configured harness flags and applicable harness environment settings are applied to new remote terminals; local CLI installations and desktop Agent Attention credentials are not forwarded. Remote attention uses host-side adapters when enabled in harness defaults. Remote launches use the host's default model unless you pick one. For Codex, OpenCode, Pi, OMP and Antigravity the launcher asks the selected host for its own model list (the harness's list command, run over the existing SSH transport) and shows the model picker only when that returns a real catalog; otherwise it shows **Host default**. Claude has no reliable list command and Hermes is not queried, so both stay on the host default. Remote catalogs are never cached on the desktop or filled from the local list or a static fallback, and a locally saved default model is never applied to a remote launch. A chosen model is scoped to the selected host and cleared when you switch hosts.
 
 ### Remote Agent Attention
 
@@ -105,7 +107,9 @@ Clanker refuses launches with attention enabled when hook configuration conflict
 
 Antigravity installs an owned plugin at `~/.gemini/config/plugins/clanker-grid-remote-attention`; Hermes installs one at `~/.hermes/plugins/clanker-grid-remote-attention` and enables it with `hermes plugins enable`. These plugins remain installed and are inert without Clanker's per-launch environment. Antigravity hooks return an empty response when the launch credentials are absent; Clanker upgrades the exact prior owned hook configuration and refuses unrelated edits. Clanker refuses unowned/conflicting files and writable-by-other-users plugin folders. Hermes settings retain the enabled plugin entry; to uninstall, disable it through Hermes before removing that owned plugin directory. Other launch files use private temporary folders and are cleaned after exit where SSH remains available; interrupted connections can leave private temporary folders for manual cleanup.
 
-Local Hermes attention remains unsupported. Remote annotation handoff remains unavailable.
+Local Hermes attention remains unsupported.
+
+Browser annotation **Send to agent** works for remote agent terminals that Agent Attention has registered and that the broker reports as ready or unverified. Main checks the registered workspace, environment and remote launch directory (inside the canonical remote root) before writing to the existing SSH terminal; no extra SSH connection is made. Plain remote shells, closed or busy agents, and mismatched workspaces fail closed; use **Copy message** instead.
 
 Renderer crashes release workspace registrations, polling, terminals, and previews. App quit waits for managed preview SSH clients to terminate and for started terminal cleanup to finish. Private host launch files are cleaned where SSH remains reachable.
 
@@ -171,7 +175,7 @@ Workspaces store their own harness and model selection independently:
 - **No harness set** — spawns a plain shell; global harness defaults are not inferred
 - **Flags** — read from global store defaults (not per-workspace)
 
-Global harness defaults (model, favorites, flags, visibility, agent attention) are configured in the header settings dropdown. For local workspaces, the model is preselected in the launcher when a harness is chosen, and flags and attention settings apply to new harness terminals. For SSH workspaces, configured flags apply, and Agent Attention can be enabled per harness, while remote model selection remains unavailable. See [Configuration](configuration.md#harness-defaults).
+Global harness defaults (model, favorites, flags, visibility, agent attention) are configured in the header settings dropdown. For local workspaces, the model is preselected in the launcher when a harness is chosen, and flags and attention settings apply to new harness terminals. For SSH workspaces, configured flags apply, and Agent Attention can be enabled per harness, and SSH launches can select a model from the host's own catalog where the harness supports discovery. See [Configuration](configuration.md#harness-defaults).
 
 ## Layout Controls
 

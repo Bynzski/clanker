@@ -8,7 +8,10 @@ import { defineHarness, type HarnessProvider } from '../types';
 
 export const ompProvider = defineHarness({
   descriptor: HARNESS_DESCRIPTORS.omp,
-  models: { discover: async () => (await import('./models')).discoverModels() },
+  models: {
+    discover: async () => (await import('./models')).discoverModels(),
+    discoverInEnvironment: async (executor) => (await import('./models')).discoverModelsIn(executor),
+  },
   sessions: {
     discoveryOrder: 3,
     validateLocal,

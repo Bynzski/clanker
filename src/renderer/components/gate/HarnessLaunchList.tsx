@@ -28,20 +28,23 @@ function HarnessRow({ option, total, ...props }: Props & { option: HarnessOption
   const [pickerOpen, setPickerOpen] = useState(false);
   const count = props.counts[option.id] ?? 0;
   const models = props.models[option.id] ?? [];
-  const favorites = props.defaults?.[option.id]?.favorites ?? [];
+  // A remote picker is offered only for a real catalog from that host; favorites never add models it lacks.
+  const remoteCatalog = props.remote && models.length > 0;
+  const favorites = (props.defaults?.[option.id]?.favorites ?? []).filter((id) => !props.remote || models.some((m) => m.id === id));
   const model = props.selectedModels[option.id] ?? '';
   return <div className={`gate-harness-row ${count ? 'has-terminals' : ''}`} data-harness-id={option.id}
     onFocusCapture={() => { if (!props.disabled) props.onInteract(option.id); }}
     onPointerDownCapture={() => { if (!props.disabled) props.onInteract(option.id); }}>
     <div className="gate-harness-name"><option.Icon size={16} /><span>{option.label}</span></div>
     <div className="gate-harness-model">
-      {option.id && !props.remote && <ModelSearchPicker harness={option.id} model={model} models={models}
+      {option.id && (!props.remote || remoteCatalog) && <ModelSearchPicker harness={option.id} model={model} models={models}
+        includeDefault={props.remote} pinDefaultFirst={props.remote}
         favorites={favorites} savedHermesModel={props.defaults?.hermes?.model ?? ''}
         refreshing={props.refreshing} loading={props.modelsLoading} open={pickerOpen}
         onOpenChange={setPickerOpen}
         onSelect={(id) => props.onModel(option.id, id)} onToggleFavorite={(id) => props.onFavorite(option.id, id)}
         onRefreshHermes={props.onRefresh} isUnresolved={(id) => !!id && option.id !== 'hermes' && !models.some((m) => m.id === id)} />}
-      {option.id && props.remote && <span className="gate-host-model" title="Uses the model configured on this server">Host default</span>}
+      {option.id && props.remote && !remoteCatalog && <span className="gate-host-model" title="Uses the model configured on this server">Host default</span>}
     </div>
     <div className="gate-harness-count" role="group" aria-label={`${option.label} terminals`}>
       <IconButton type="button" aria-label={`Remove ${option.label} terminal`} disabled={props.disabled || count === 0} onClick={() => props.onCount(option.id, count - 1)}><Minus size={12} /></IconButton>

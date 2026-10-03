@@ -410,24 +410,39 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       || Buffer.byteLength(payload.message, 'utf8') > 32 * 1024) {
       return fail('Invalid annotation handoff');
     }
-    const registeredWs = deps.getWorkspaceRegistry?.()?.getWorkspace(payload.workspaceId);
-    if (registeredWs && registeredWs.location.environmentId !== 'local') {
-      return fail('Annotation handoff is not supported for remote terminals. Copy the message instead.');
-    }
-    const workspacePath = deps.getOpenWorkspacePath?.(payload.workspaceId);
     const terminal = getTerminals().get(payload.terminalId);
-    if (!workspacePath || !terminal?.cwd) return fail('The destination workspace or terminal is closed. Copy the message instead.');
-    if (terminal.environmentId && terminal.environmentId !== 'local') {
-      return fail('Annotation handoff is not supported for remote terminals. Copy the message instead.');
+    const registeredWs = deps.getWorkspaceRegistry?.()?.getWorkspace(payload.workspaceId);
+    const closed = 'The destination workspace or terminal is closed. Copy the message instead.';
+    if (!terminal) return fail(closed);
+    if (terminal.workspaceId !== undefined && terminal.workspaceId !== payload.workspaceId) {
+      return fail('The selected terminal belongs to a different workspace. Copy the message instead.');
     }
-    let relative: string;
-    try {
-      relative = path.relative(fs.realpathSync(workspacePath), fs.realpathSync(terminal.cwd));
-    } catch {
-      return fail('The destination directory is unavailable. Copy the message instead.');
-    }
-    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-      return fail('The selected terminal is outside that workspace. Copy the message instead.');
+
+    if (registeredWs && registeredWs.location.environmentId !== 'local') {
+      // The registered workspace is the authority. The PTY is the existing local ssh process, so
+      // terminal.cwd (a desktop directory) is meaningless here; the remote directory recorded at
+      // spawn is checked against the canonical remote root. No SSH round trip is made.
+      const root = registeredWs.location.path;
+      if (terminal.workspaceId !== registeredWs.workspaceId
+        || !terminal.environmentId || terminal.environmentId !== registeredWs.location.environmentId
+        || !terminal.remoteWorkingDir || !isPathContained(root, terminal.remoteWorkingDir)) {
+        return fail('The selected terminal is not in that remote workspace. Copy the message instead.');
+      }
+    } else {
+      const workspacePath = deps.getOpenWorkspacePath?.(payload.workspaceId);
+      if (!workspacePath || !terminal.cwd) return fail(closed);
+      if (terminal.environmentId && terminal.environmentId !== 'local') {
+        return fail('The selected terminal is not in that workspace. Copy the message instead.');
+      }
+      let relative: string;
+      try {
+        relative = path.relative(fs.realpathSync(workspacePath), fs.realpathSync(terminal.cwd));
+      } catch {
+        return fail('The destination directory is unavailable. Copy the message instead.');
+      }
+      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        return fail('The selected terminal is outside that workspace. Copy the message instead.');
+      }
     }
     if (!terminal.harnessId || !agentAttentionBroker?.canHandoff(payload.terminalId)) {
       return fail('The agent is no longer available for handoff. Copy the message instead.');

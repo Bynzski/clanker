@@ -1,5 +1,6 @@
 import { HarnessCapabilityError, type ModelOption } from '../types';
 import { runCommandOutput } from '../modelCommand';
+import { requireModelOutput, type HarnessCommandExecutor } from '../commandExecution';
 
 function parseCatalog(output: string): ModelOption[] {
   try {
@@ -23,4 +24,9 @@ export function parseCodexDebugModels(output: string): ModelOption[] {
 export async function discoverModels(): Promise<ModelOption[]> {
   const models = parseCatalog(await runCommandOutput('codex', ['debug', 'models'], 8000));
   return models.filter((model, index, entries) => index === entries.findIndex((entry) => entry.id === model.id));
+}
+
+export async function discoverModelsIn(executor: HarnessCommandExecutor): Promise<ModelOption[]> {
+  const output = requireModelOutput(await executor.run({ command: 'codex', args: ['debug', 'models'], timeoutMs: 8000 }), 'codex debug models');
+  return parseCatalog(output).filter((model, index, entries) => index === entries.findIndex((entry) => entry.id === model.id));
 }

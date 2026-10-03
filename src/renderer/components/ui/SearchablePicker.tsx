@@ -12,6 +12,8 @@ export interface SearchablePickerItem {
   searchText?: string;
   unavailable?: boolean;
   canFavorite?: boolean;
+  /** Always sorts first (before favorites); for a neutral choice such as "use the default". */
+  pinnedFirst?: boolean;
 }
 
 interface Props {
@@ -44,7 +46,8 @@ export function SearchablePicker({ label, trigger, items, value, open, onOpenCha
     const starred = new Set(favorites);
     const query = search.trim().toLowerCase();
     return items.filter((item) => `${item.label} ${item.id} ${item.searchText ?? ''}`.toLowerCase().includes(query))
-      .sort((a, b) => Number(starred.has(b.id)) - Number(starred.has(a.id))
+      .sort((a, b) => Number(!!b.pinnedFirst) - Number(!!a.pinnedFirst)
+        || Number(starred.has(b.id)) - Number(starred.has(a.id))
         || a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
   }, [items, favorites, search]);
 

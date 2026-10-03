@@ -14,6 +14,7 @@ import {
   SSH_LIST_DIRECTORIES,
   SSH_CREATE_DIRECTORY,
   GET_ENVIRONMENT_HARNESS_OPTIONS,
+  GET_ENVIRONMENT_HARNESS_MODELS,
 } from '../../shared/ipcChannels';
 
 export interface RegisterSshEnvironmentIpcDeps {
@@ -113,5 +114,13 @@ export function registerSshEnvironmentIpc(deps: RegisterSshEnvironmentIpcDeps): 
       return {};
     }
     return env.getHarnessOptions();
+  });
+
+  ipcMain.handle(GET_ENVIRONMENT_HARNESS_MODELS, async (_, environmentId: unknown, harnessId: unknown) => {
+    if (typeof harnessId !== 'string' || !harnessId) return [];
+    const env = await getEnvironmentManager().getEnvironment(typeof environmentId === 'string' ? environmentId : 'local');
+    if (!env?.discoverHarnessModels) return [];
+    const models = await env.discoverHarnessModels(harnessId);
+    return models.map(({ id, label }) => ({ id, label }));
   });
 }
