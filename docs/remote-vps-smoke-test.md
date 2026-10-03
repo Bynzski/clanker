@@ -103,3 +103,4 @@ test -d "$smoke_path" || exit 1
 rm -rf -- "$smoke_path"
 test -d "$fixture_path"
 ```
+
