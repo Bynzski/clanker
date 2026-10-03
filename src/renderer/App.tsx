@@ -6,6 +6,7 @@ import { migrateLegacyFavorites } from './lib/harnessDefaultsMigration';
 import Header from './components/Header';
 import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
+import AssistantsRoster from './components/assistants/AssistantsRoster';
 import { WorkspaceGateFullscreen, WorkspaceGateModal } from './components/WorkspaceGate';
 import { Pane, Terminal, useWorkspaceStore, DEFAULT_RUNTIME_STATE } from './store/workspaceStore';
 import { getWheelZoomAction } from './lib/keyboardShortcuts';
@@ -389,6 +390,7 @@ function App() {
         toolbar={sidebarMode ? <Header placement="titlebar" /> : undefined}
       />
       {!sidebarMode && <Header />}
+      {!sidebarMode && <AssistantsRoster variant="strip" />}
       {recipeFailure && (
         <div className="recipe-workspace-error" role="alert">
           <div>

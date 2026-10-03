@@ -16,15 +16,18 @@ import type { AgentAttentionUpdate } from '../shared/types/agentAttention';
 import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchRequest } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { ThemeId } from '../shared/types/theme';
-import type { AssistantSettings, AssistantLaunchRequest, AssistantSnapshot } from '../shared/types/assistants';
+import type { AssistantPtyData, AssistantSettings, AssistantSnapshot } from '../shared/types/assistants';
 import type { WorkspaceNavigationMode } from '../shared/types/workspaceNavigation';
 import {
   ASSISTANTS_GET,
   ASSISTANTS_CONFIGURE,
-  ASSISTANTS_DISCOVER,
-  ASSISTANTS_ADD_PROFILE,
-  ASSISTANTS_LAUNCH,
+  ASSISTANTS_REFRESH,
+  ASSISTANTS_OPEN,
+  ASSISTANTS_PTY_WRITE,
+  ASSISTANTS_PTY_RESIZE,
+  ASSISTANTS_PTY_CLOSE,
   ASSISTANTS_CHANGED,
+  ASSISTANTS_PTY_DATA,
   GET_APP_VERSION,
   GET_LAST_WORKSPACE,
   GET_BASE_DIRECTORY,
@@ -213,9 +216,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Optional native-profile roster; settings do not contain native credentials.
   getAssistants: () => ipcRenderer.invoke(ASSISTANTS_GET),
   configureAssistants: (settings: AssistantSettings) => ipcRenderer.invoke(ASSISTANTS_CONFIGURE, settings),
-  discoverAssistants: (options?: { ifUnchecked?: boolean }) => options ? ipcRenderer.invoke(ASSISTANTS_DISCOVER, options) : ipcRenderer.invoke(ASSISTANTS_DISCOVER),
-  addAssistantProfile: (harnessId: string, profileName: string) => ipcRenderer.invoke(ASSISTANTS_ADD_PROFILE, harnessId, profileName),
-  launchAssistant: (request: AssistantLaunchRequest) => ipcRenderer.invoke(ASSISTANTS_LAUNCH, request),
+  refreshAssistants: () => ipcRenderer.invoke(ASSISTANTS_REFRESH),
+  openAssistant: (botId: string) => ipcRenderer.invoke(ASSISTANTS_OPEN, botId),
+  writeAssistantPty: (botId: string, data: string) => ipcRenderer.invoke(ASSISTANTS_PTY_WRITE, botId, data),
+  resizeAssistantPty: (botId: string, cols: number, rows: number) => ipcRenderer.invoke(ASSISTANTS_PTY_RESIZE, botId, cols, rows),
+  closeAssistantPty: (botId: string) => ipcRenderer.invoke(ASSISTANTS_PTY_CLOSE, botId),
+  onAssistantPtyData: (callback: (payload: AssistantPtyData) => void) => {
+    const handler = (_event: IpcRendererEvent, payload: AssistantPtyData) => callback(payload);
+    ipcRenderer.on(ASSISTANTS_PTY_DATA, handler);
+    return () => ipcRenderer.removeListener(ASSISTANTS_PTY_DATA, handler);
+  },
   onAssistantsChanged: (callback: (snapshot: AssistantSnapshot) => void) => {
     const handler = (_event: IpcRendererEvent, snapshot: AssistantSnapshot) => callback(snapshot);
     ipcRenderer.on(ASSISTANTS_CHANGED, handler);

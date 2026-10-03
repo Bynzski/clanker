@@ -6,7 +6,8 @@ import { isWorkspaceSidebarCollapsed } from '../../shared/types/workspaceNavigat
 import { WorkspaceScopeProvider } from './WorkspaceScope';
 import WorkspaceNavigatorSection from './WorkspaceNavigatorSection';
 import WorkspaceRail from './WorkspaceRail';
-import AssistantsSettings from './settings/AssistantsSettings';
+import AssistantsRoster from './assistants/AssistantsRoster';
+import { useAssistantNavStore } from '../store/assistantNavStore';
 import './EdgeResizeHandle.css';
 import './WorkspaceSidebar.css';
 
@@ -33,6 +34,7 @@ export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarPr
   const collapseSidebar = useWorkspaceNavigationStore((state) => state.collapseSidebar);
   const expandSidebar = useWorkspaceNavigationStore((state) => state.expandSidebar);
   const collapsed = isWorkspaceSidebarCollapsed(width);
+  const assistantActive = useAssistantNavStore((state) => state.activeBotId !== null);
 
   const handleResizeStart = (event: ReactMouseEvent) => {
     event.preventDefault();
@@ -69,8 +71,8 @@ export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarPr
       {/* The navigator stays mounted while collapsed so per-workspace expansion survives the rail. */}
       <div className="workspace-sidebar-sections" hidden={collapsed}>
         <WorkspaceNavigatorSection onOpenWorkspace={onOpenWorkspace} onCollapseSidebar={collapseSidebar} />
-        <AssistantsSettings variant="sidebar" />
-        {activeWorkspaceId && !collapsed && (
+        <AssistantsRoster />
+        {activeWorkspaceId && !collapsed && !assistantActive && (
           <Suspense fallback={null}>
             <WorkspaceScopeProvider workspaceId={activeWorkspaceId}>
               <FileExplorer key={activeWorkspaceId} workspaceId={activeWorkspaceId} variant="section" />

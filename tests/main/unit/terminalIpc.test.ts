@@ -557,6 +557,29 @@ describe('terminalIpc — error-path: handler returns', () => {
     });
   });
 
+  test('an ordinary Hermes harness launch never touches the Hermes Bot service (no probing, sockets or service code)', async () => {
+    const { opts } = createMockDeps();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('must not be called'));
+    const socketSpy = vi.fn();
+    vi.stubGlobal('WebSocket', socketSpy);
+    try {
+      registerTerminalIpc({
+        ...opts,
+        getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
+        getStore: () => ({ get: () => ({ hermes: { flags: '', model: '' } }) }) as never,
+      });
+      mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
+      const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+      const result = await handler(null, process.cwd(), 'hermes');
+      expect(result.harnessId).toBe('hermes');
+      const [, args] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
+      expect(args).toEqual(['hermes', '--tui']);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(socketSpy).not.toHaveBeenCalled();
+      expect(fs.readFileSync(path.join(process.cwd(), 'src/main/ipc/terminalIpc.ts'), 'utf8')).not.toMatch(/hermesBotService|assistants\/hermesBackend/);
+    } finally { vi.unstubAllGlobals(); fetchSpy.mockRestore(); }
+  });
+
   describe('Assistants and checkout contexts', () => {
     const profileLaunch = (cwd: string) => ({ command: 'hermes', args: ['-p', 'reviewer', '--tui', '--in', cwd], env: { HERMES_HOME: testHome() }, unsetEnvironmentKeys: [] });
     const setup = () => {

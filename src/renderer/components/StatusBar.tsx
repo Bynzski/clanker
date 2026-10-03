@@ -3,6 +3,8 @@ import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceSto
 import { Tag, Circle, GitBranch, Folder, Server } from 'lucide-react';
 import { getRemoteEnvironmentLabel, getRemoteEnvironmentName, getWorkspaceProjectName } from '../lib/workspaceLabels';
 import { getSelectedAgentWorktreeContext, worktreeBranchLabel } from '../lib/worktreeAgents';
+import { useAssistantNavStore } from '../store/assistantNavStore';
+import { useAssistantsStore } from '../store/assistantsStore';
 import './StatusBar.css';
 
 export default function StatusBar() {
@@ -14,6 +16,8 @@ export default function StatusBar() {
   const currentBranch = agentWorktree ? agentWorktree.branch ?? null : focusedWorkspace?.gitCurrentBranch ?? null;
   const isRepo = agentWorktree ? true : focusedWorkspace?.gitIsRepo ?? false;
   const isDetached = agentWorktree ? !agentWorktree.branch : focusedWorkspace?.gitIsDetached ?? false;
+  const activeBotId = useAssistantNavStore((state) => state.activeBotId);
+  const activeBotName = useAssistantsStore((state) => (activeBotId ? state.knownBots[activeBotId]?.displayName ?? activeBotId.replace(/^hermes:/, '') : null));
   const [appVersion, setAppVersion] = useState<string>('');
 
   useEffect(() => {
@@ -34,6 +38,9 @@ export default function StatusBar() {
       </div>
       
       <div className="status-center">
+        {activeBotName ? (
+          <span className="status-project" data-testid="status-assistant">{activeBotName} · Hermes Bot Chat</span>
+        ) : (<>
         {remoteLabel && (
           <span className="status-environment" title={remoteLabel}>
             <Server size={12} strokeWidth={2} aria-hidden="true" />
@@ -55,6 +62,7 @@ export default function StatusBar() {
             <span>{isDetached ? 'HEAD' : currentBranch}</span>
           </span>
         )}
+        </>)}
       </div>
       
       <div className="status-right">

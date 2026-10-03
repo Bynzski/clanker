@@ -1,3 +1,4 @@
+import { useAssistantNavStore } from './assistantNavStore';
 import { create } from 'zustand';
 import {
   buildWorkspaceLayout,
@@ -230,6 +231,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   selectWorkspace: (id, terminalId) => set((state) => {
+    // Choosing a workspace always leaves any app-level Assistant surface (opened ones stay alive, parked).
+    useAssistantNavStore.getState().clearActive();
     const workspace = findWorkspaceById(state.workspaces, id);
     if (workspace == null) {
       return state;

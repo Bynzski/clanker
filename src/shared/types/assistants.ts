@@ -1,66 +1,62 @@
-import type { WorkspaceLocation } from './environments';
-
-/** Presentation preferences only. Hermes retains its profiles, credentials and conversations. */
-export interface AssistantPin {
-  harnessId: string;
-  profileName: string;
-  /** Absent means globally visible; a location pins visibility to a canonical workspace. */
-  workspace?: WorkspaceLocation;
-}
-
+/**
+ * Optional Hermes Assistants: an app-level integration with Hermes Bot Mode through a local
+ * `hermes serve` backend. Durable state is two booleans; everything else is main-owned runtime
+ * state. Nothing here carries a backend token, URL, profile home or config path.
+ */
 export interface AssistantSettings {
   enabled: boolean;
-  pins: AssistantPin[];
+  /** Start a Clanker-owned `hermes serve` when no compatible backend is already running. */
+  autoStart: boolean;
 }
 
-export interface AssistantProfile {
-  /** Main-owned opaque reference. Never a filesystem path or a renderer-owned launch command. */
+export const DEFAULT_ASSISTANT_SETTINGS: AssistantSettings = { enabled: false, autoStart: false };
+
+export type HermesAssistantServiceState =
+  | 'disabled'
+  | 'probing'
+  | 'starting'
+  | 'connected'
+  | 'offline'
+  | 'error'
+  | 'detected-unusable';
+
+export interface HermesBot {
+  /** Opaque Clanker id (never the display name); the only handle the renderer sends back. */
   id: string;
-  harnessId: string;
+  /** Raw Hermes profile slug, retained for display/diagnostics; routing is resolved in main from `id`. */
   profileName: string;
-  label: string;
+  displayName: string;
   description?: string;
+  /** Present when the Bot has a canonical persistent "Bot Chat". */
+  canonicalSessionId?: string;
 }
 
-export interface AssistantLaunchOwner {
-  profileId: string;
-  workspaceId: string;
-  terminalId: string;
-  /** Describes a terminal launch, not native turn/approval activity. */
-  state: 'starting' | 'open';
+export type AssistantSurfaceState = 'connecting' | 'open' | 'disconnected' | 'ended' | 'unavailable';
+
+export interface AssistantSurfaceStatus {
+  botId: string;
+  state: AssistantSurfaceState;
 }
 
 export interface AssistantSnapshot {
   settings: AssistantSettings;
-  profiles: AssistantProfile[];
-  launches: AssistantLaunchOwner[];
-  /** No assertion of machine-wide exclusivity is made. */
-  externalActivity: 'unknown';
-  discoveryError?: string;
-  /**
-   * Whether native profile discovery has completed in this main process. Profiles are memory-only, so
-   * after a restart `false` means "not checked yet" (distinct from a checked, failed `discoveryError`).
-   * Omitted by older producers; only an explicit `false` means unchecked.
-   */
-  profilesChecked?: boolean;
+  service: {
+    state: HermesAssistantServiceState;
+    ownership: 'external' | 'clanker' | null;
+    /** Display-safe: never contains a token, URL or host path. */
+    error?: string;
+  };
+  bots: HermesBot[];
+  surfaces: AssistantSurfaceStatus[];
 }
 
-export interface AssistantLaunchRequest {
-  profileId: string;
-  workspaceId: string;
-  /** Explicit acknowledgement that Clanker cannot establish external profile exclusivity. */
-  acknowledgeExternalActivity: boolean;
+export interface AssistantPtyData {
+  botId: string;
+  data: string;
 }
 
-export type AssistantLaunchResult = {
-  action: 'focus' | 'created';
-  workspaceId: string;
-  terminalId: string;
-  pid: number;
-  harnessId: string;
-  profileId: string;
-  profileName: string;
-  attentionEnabled: boolean;
-  /** Authoritative main-process context; Assistants always run in the workspace's main checkout. */
-  checkoutContextId?: string;
-};
+export interface AssistantOpenResult {
+  state: AssistantSurfaceState;
+  /** Recent output (bounded) so a re-mounted xterm can repaint. */
+  replay: string;
+}

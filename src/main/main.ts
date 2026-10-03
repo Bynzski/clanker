@@ -78,11 +78,9 @@ import { AgentAttentionBroker } from './agentAttentionBroker';
 import { AGENT_ATTENTION_UPDATE, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles } from './agentAttentionAdapters';
 import { waitForTerminalCleanup } from './ipc/ptySpawn';
-import { AssistantService } from './assistants/assistantService';
+import { HermesBotService } from './assistants/hermesBotService';
 import { registerAssistantIpc } from './ipc/assistantIpc';
-import { findHarnessProvider, getHarnessProviders } from './harnesses/registry';
-import { createLocalProfileExecutor } from './harnesses/profileExecution';
-import { ASSISTANTS_CHANGED } from '../shared/ipcChannels';
+import { ASSISTANTS_CHANGED, ASSISTANTS_PTY_DATA } from '../shared/ipcChannels';
 
 
 
@@ -103,7 +101,7 @@ const store = new Store<StoreSchema>({
     workspaceRecipes: [],
     sshEnvironments: [],
     remoteWorktreeRemovals: [],
-    assistantSettings: { enabled: false, pins: [] },
+    assistantSettings: { enabled: false, autoStart: false },
   },
 });
 
@@ -129,7 +127,7 @@ const agentAttentionBroker = new AgentAttentionBroker((update) => {
 let annotationModeEnabled = false;
 let annotationController: ReturnType<typeof import('./annotation/annotationIpc').registerAnnotationIpc> | null = null;
 let browserIpcController: BrowserIpcController | null = null;
-let assistantService: AssistantService | undefined;
+let assistantService: HermesBotService | undefined;
 
 const GRACEFUL_TERMINATION_TIMEOUT_MS = 1000;
 
@@ -137,7 +135,6 @@ const killAllTerminals = () => {
   // Phase 1: Send SIGTERM to all terminals for graceful shutdown
   const terminalPids: Map<string, number> = new Map();
   for (const [id, terminal] of terminals.entries()) {
-    assistantService?.releaseTerminal(id);
     agentAttentionBroker.release(id);
     void terminal.releaseResources?.();
     try {
@@ -330,7 +327,7 @@ app.whenReady().then(() => {
     getSafeWorkspacePath: (workingDir: string) => getSafeWorkspacePath(workingDir, store),
   });
 
-  const terminalController = registerTerminalIpc({
+  registerTerminalIpc({
     getTerminals: () => terminals,
     getMainWindow: () => mainWindow,
     getStore: () => store,
@@ -338,30 +335,24 @@ app.whenReady().then(() => {
     getOpenWorkspacePath: (workspaceId: string) => gitService.getOpenWorkspacePath(workspaceId),
     getWorkspaceRegistry: () => workspaceRegistry,
     getHarnessOptions: () => HARNESS_OPTIONS,
-    onTerminalReleased: (id) => assistantService?.releaseTerminal(id),
     agentAttentionBroker,
     createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
     getHarnessAccountService: () => harnessAccountService,
   });
 
-  assistantService = new AssistantService({
+  assistantService = new HermesBotService({
     readSettings: () => store.get('assistantSettings'),
     writeSettings: (settings) => store.set('assistantSettings', settings),
-    profileHarnessIds: getHarnessProviders().filter((provider) => provider.profiles).map((provider) => provider.descriptor.id),
-    getProfilesCapability: (id) => findHarnessProvider(id)?.profiles,
-    executor: (id) => {
-      const capability = findHarnessProvider(id)?.profiles;
-      if (!capability) throw new Error('Profiles capability is unavailable');
-      return createLocalProfileExecutor(capability);
-    },
-    getWorkspace: (id) => workspaceRegistry.getWorkspace(id),
-    spawn: (workspaceId, harnessId, launch) => terminalController.spawnAssistant(workspaceId, harnessId, launch),
-    killTerminal: (id) => { terminalController.killTerminal(id); },
     isShuttingDown: getAppShuttingDown,
     onChanged: (snapshot) => {
       if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(ASSISTANTS_CHANGED, snapshot);
     },
+    onPtyData: (botId, data) => {
+      if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(ASSISTANTS_PTY_DATA, { botId, data });
+    },
   });
+  // Opted-in users only: a disabled configuration performs no Hermes probing or spawning at startup.
+  assistantService.start();
   registerAssistantIpc({ getService: () => assistantService! });
 
   registerRemotePreviewIpc(remotePreviewManager);
@@ -395,7 +386,7 @@ app.whenReady().then(() => {
     getGitService: () => gitService,
     getMainWindow: () => mainWindow,
     getWorkspaceRegistry: () => workspaceRegistry,
-    onWorkspaceUnregistered: (id) => { assistantService?.closeWorkspace(id); browserIpcController?.disposeWorkspace(id); remoteFileWatcher.closeWorkspace(id); void remotePreviewManager.closeWorkspace(id); },
+    onWorkspaceUnregistered: (id) => { browserIpcController?.disposeWorkspace(id); remoteFileWatcher.closeWorkspace(id); void remotePreviewManager.closeWorkspace(id); },
     getLiveRemoteTerminalPaths: (environmentId) => {
       const paths: string[] = [];
       const configurations = store.get('sshEnvironments') ?? [];
@@ -513,7 +504,7 @@ app.on('before-quit', (event) => {
   const previewsClosed = remotePreviewManager.close();
   remoteFileWatcher.close();
   setAppShuttingDown(true);
-  assistantService?.reset();
+  const assistantsStopped = assistantService?.shutdown() ?? Promise.resolve();
   harnessUsageService.dispose();
   const accountsClosed = harnessAccountService.dispose();
   workspaceRegistry.clear();
@@ -522,7 +513,7 @@ app.on('before-quit', (event) => {
   removeAttentionAdapterFiles();
   // Keep the event loop alive for SSH SIGKILL escalation and host launch-file
   // cleanup. A repeated quit request shares this drain instead of bypassing it.
-  quitCleanup = Promise.all([previewsClosed, waitForTerminalCleanup(), accountsClosed]).then(() => undefined);
+  quitCleanup = Promise.all([previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped]).then(() => undefined);
   void quitCleanup.catch((error: unknown) => console.warn('[clanker-grid] shutdown cleanup failed:', error)).finally(() => {
     quitCleanupComplete = true;
     app.quit();

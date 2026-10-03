@@ -4,6 +4,9 @@ import { WorkspaceScopeProvider } from './WorkspaceScope';
 import BrowserLifecycleCoordinator from './BrowserLifecycleCoordinator';
 import WorkspaceSidebar from './WorkspaceSidebar';
 import { useWorkspaceNavigationStore } from '../store/workspaceNavigationStore';
+import { useAssistantNavStore } from '../store/assistantNavStore';
+import { useAssistantsStore } from '../store/assistantsStore';
+import AssistantSurface from './assistants/AssistantSurface';
 import ExplorerLifecycleCoordinator from './ExplorerLifecycleCoordinator';
 import { withWorkspaceResidency } from '../store/workspaceStoreHelpers';
 import {
@@ -108,6 +111,10 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
   const sidebarMode = navigationMode === 'sidebar';
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const activeBotId = useAssistantNavStore((state) => state.activeBotId);
+  const openedBotIds = useAssistantNavStore((state) => state.openedBotIds);
+  const knownBots = useAssistantsStore((state) => state.knownBots);
+  const assistantActive = activeBotId !== null;
   // Track prior active ID to detect switches
   const prevActiveWorkspaceIdRef = useRef<string | null>(null);
   const recentWorkspaceIdsRef = useRef<string[]>([]);
@@ -176,17 +183,21 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
         data-active-workspace-id={resolvedActiveWorkspaceId ?? ''}
         data-navigation-mode={navigationMode}
       >
-        <BrowserLifecycleCoordinator activeWorkspaceId={resolvedActiveWorkspaceId} />
+        {/* While an Assistant is on screen no workspace is focused, so native Browser views are hidden. */}
+        <BrowserLifecycleCoordinator activeWorkspaceId={assistantActive ? null : resolvedActiveWorkspaceId} />
         {sidebarMode && <WorkspaceSidebar onOpenWorkspace={onOpenWorkspace} />}
         <div className="workspace-surfaces-container">
           {workspaces.map((workspace) => (
             <WorkspaceSurface
               key={workspace.id}
               workspaceId={workspace.id}
-              isActive={workspace.id === resolvedActiveWorkspaceId}
+              isActive={!assistantActive && workspace.id === resolvedActiveWorkspaceId}
               mountContents={warmWorkspaceIdSet.has(workspace.id)}
               showExplorerDock={!sidebarMode}
             />
+          ))}
+          {openedBotIds.map((botId) => (
+            <AssistantSurface key={botId} botId={botId} displayName={knownBots[botId]?.displayName ?? botId.replace(/^hermes:/, '')} isActive={botId === activeBotId} />
           ))}
         </div>
       </div>
