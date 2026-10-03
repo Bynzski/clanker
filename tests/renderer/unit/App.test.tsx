@@ -2,6 +2,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
+import { registerOpenSettingsHandler } from '../../../src/renderer/lib/keybindingDispatcher';
+import { useKeybindingStore } from '../../../src/renderer/store/keybindingStore';
 import App from '../../../src/renderer/App';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useThemeStore } from '../../../src/renderer/theme/themeStore';
@@ -79,14 +81,18 @@ describe('App', () => {
   const mockZoomInWindow = vi.fn().mockResolvedValue(undefined);
   const mockZoomOutWindow = vi.fn().mockResolvedValue(undefined);
   const mockResetZoomWindow = vi.fn().mockResolvedValue(undefined);
+  const mockGetKeybindingOverrides = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useKeybindingStore.setState({ overrides: {}, loaded: false, capturing: false });
     mockSpawnTerminal.mockReset();
     mockOnFitAllPanes.mockReset();
     mockZoomInWindow.mockClear();
     mockZoomOutWindow.mockClear();
     mockResetZoomWindow.mockClear();
+    mockGetKeybindingOverrides.mockReset();
+    mockGetKeybindingOverrides.mockResolvedValue({});
     mockSpawnTerminal.mockResolvedValue({ id: 'term-1', pid: 1234 });
     mockOnFitAllPanes.mockReturnValue(vi.fn());
     
@@ -133,6 +139,7 @@ describe('App', () => {
       zoomInWindow: mockZoomInWindow,
       zoomOutWindow: mockZoomOutWindow,
       resetZoomWindow: mockResetZoomWindow,
+      getKeybindingOverrides: mockGetKeybindingOverrides,
       getHarnessDefaults: vi.fn().mockResolvedValue({
         codex: { model: '', favorites: [], flags: '' },
         opencode: { model: '', favorites: [], flags: '' },
@@ -479,54 +486,198 @@ describe('App', () => {
       });
     });
 
-    it('calls fitAllPanes when Ctrl+Shift+F is pressed', async () => {
+    it('calls fitAllPanes on the new default Ctrl+Alt+F', async () => {
       render(<App />);
-      
+
       await act(async () => {
-        fireEvent.keyDown(document, { key: 'f', metaKey: false, ctrlKey: true, shiftKey: true });
+        fireEvent.keyDown(document, { key: 'f', code: 'KeyF', ctrlKey: true, altKey: true });
       });
-      
+
       expect(mockFitAllPanes).toHaveBeenCalled();
     });
 
-    it('calls fitAllPanes when Meta+Shift+F is pressed (Mac)', async () => {
+    it('calls fitAllPanes on Meta+Alt+F (Mac)', async () => {
       render(<App />);
-      
+
       await act(async () => {
-        fireEvent.keyDown(document, { key: 'f', metaKey: true, ctrlKey: false, shiftKey: true });
+        fireEvent.keyDown(document, { key: 'f', code: 'KeyF', metaKey: true, altKey: true });
       });
-      
+
       expect(mockFitAllPanes).toHaveBeenCalled();
     });
 
-    it('does not call fitAllPanes when only Ctrl is pressed', async () => {
+    it('no longer calls fitAllPanes on the old Ctrl/Cmd+Shift+F binding', async () => {
       render(<App />);
-      
+
       await act(async () => {
-        fireEvent.keyDown(document, { key: 'f', metaKey: false, ctrlKey: true, shiftKey: false });
+        fireEvent.keyDown(document, { key: 'F', code: 'KeyF', ctrlKey: true, shiftKey: true });
+        fireEvent.keyDown(document, { key: 'F', code: 'KeyF', metaKey: true, shiftKey: true });
       });
-      
+
       expect(mockFitAllPanes).not.toHaveBeenCalled();
     });
 
-    it('does not call fitAllPanes when only Shift is pressed', async () => {
+    it('does not call fitAllPanes for Ctrl+F, Alt+F, or another key with Ctrl+Alt', async () => {
       render(<App />);
-      
+
       await act(async () => {
-        fireEvent.keyDown(document, { key: 'f', metaKey: false, ctrlKey: false, shiftKey: true });
+        fireEvent.keyDown(document, { key: 'f', code: 'KeyF', ctrlKey: true });
+        fireEvent.keyDown(document, { key: 'f', code: 'KeyF', altKey: true });
+        fireEvent.keyDown(document, { key: 'g', code: 'KeyG', ctrlKey: true, altKey: true });
       });
-      
+
       expect(mockFitAllPanes).not.toHaveBeenCalled();
     });
 
-    it('does not call fitAllPanes when a different key is pressed with Ctrl+Shift', async () => {
-      render(<App />);
-      
-      await act(async () => {
-        fireEvent.keyDown(document, { key: 'g', metaKey: false, ctrlKey: true, shiftKey: true });
+    it('honours an overridden Fit All binding and releases the default', async () => {
+      mockGetKeybindingOverrides.mockResolvedValue({
+        'layout.fitAll': { code: 'KeyJ', primary: true, ctrl: false, shift: false, alt: false },
       });
-      
+      render(<App />);
+      await waitFor(() => expect(useKeybindingStore.getState().overrides['layout.fitAll']).toBeDefined());
+
+      await act(async () => {
+        fireEvent.keyDown(document, { key: 'j', code: 'KeyJ', ctrlKey: true });
+        fireEvent.keyDown(document, { key: 'f', code: 'KeyF', ctrlKey: true, altKey: true });
+      });
+
+      expect(mockFitAllPanes).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens Settings through the registered Settings state path on Ctrl/Cmd+,', async () => {
+      const openSettings = vi.fn();
+      const dispose = registerOpenSettingsHandler(openSettings);
+      render(<App />);
+
+      await act(async () => {
+        fireEvent.keyDown(document, { key: ',', code: 'Comma', ctrlKey: true });
+        fireEvent.keyDown(document, { key: ',', code: 'Comma', metaKey: true });
+      });
+      dispose();
+
+      expect(openSettings).toHaveBeenCalledTimes(2);
+    });
+
+    it('toggles Explorer for the active workspace only', async () => {
+      act(() => {
+        const [first] = useWorkspaceStore.getState().workspaces;
+        useWorkspaceStore.setState({
+          workspaces: [first, { ...first, id: 'ws-2', lifecycle: 'parked', explorerVisible: false }],
+          activeWorkspaceId: 'ws-1',
+        });
+      });
+      render(<App />);
+
+      await act(async () => {
+        fireEvent.keyDown(document, { key: 'b', code: 'KeyB', ctrlKey: true });
+      });
+
+      const byId = (id: string) => useWorkspaceStore.getState().workspaces.find((w) => w.id === id);
+      expect(byId('ws-1')?.explorerVisible).toBe(true);
+      expect(byId('ws-2')?.explorerVisible).toBe(false);
+
+      await act(async () => {
+        fireEvent.keyDown(document, { key: 'b', code: 'KeyB', ctrlKey: true });
+      });
+      expect(byId('ws-1')?.explorerVisible).toBe(false);
+    });
+
+    describe('Save scoping', () => {
+      const saveEditorFile = vi.fn().mockResolvedValue(true);
+
+      beforeEach(() => {
+        saveEditorFile.mockClear();
+        act(() => {
+          const [first] = useWorkspaceStore.getState().workspaces;
+          useWorkspaceStore.setState({
+            workspaces: [{ ...first, activeEditorTabId: 'tab-1' }],
+            activeEditorTabId: 'tab-1',
+            saveEditorFile,
+          });
+        });
+      });
+
+      const mount = (context: 'editor' | 'terminal' | null) => {
+        const { container } = render(<App />);
+        const surface = document.createElement('div');
+        if (context) surface.setAttribute('data-keybinding-context', context);
+        const field = document.createElement('textarea');
+        surface.appendChild(field);
+        container.appendChild(surface);
+        return field;
+      };
+
+      it('saves from the editor surface', async () => {
+        const field = mount('editor');
+        await act(async () => {
+          fireEvent.keyDown(field, { key: 's', code: 'KeyS', ctrlKey: true });
+        });
+        expect(saveEditorFile).toHaveBeenCalledWith('tab-1', 'ws-1');
+      });
+
+      it('does not save when a terminal has focus even though an editor tab is open', async () => {
+        const field = mount('terminal');
+        let event!: KeyboardEvent;
+        await act(async () => {
+          event = new KeyboardEvent('keydown', { key: 's', code: 'KeyS', ctrlKey: true, bubbles: true, cancelable: true });
+          field.dispatchEvent(event);
+        });
+        expect(saveEditorFile).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(false);
+      });
+
+      it('does not save from app chrome', async () => {
+        const field = mount(null);
+        await act(async () => {
+          fireEvent.keyDown(field, { key: 's', code: 'KeyS', ctrlKey: true });
+        });
+        expect(saveEditorFile).not.toHaveBeenCalled();
+      });
+    });
+
+    it('does not run app commands while a shortcut is being captured', async () => {
+      useKeybindingStore.setState({ capturing: true });
+      render(<App />);
+
+      await act(async () => {
+        fireEvent.keyDown(document, { key: 'f', code: 'KeyF', ctrlKey: true, altKey: true });
+        fireEvent.keyDown(window, { key: '=', code: 'Equal', ctrlKey: true });
+      });
+
       expect(mockFitAllPanes).not.toHaveBeenCalled();
+      expect(mockZoomInWindow).not.toHaveBeenCalled();
+      useKeybindingStore.setState({ capturing: false });
+    });
+
+    it('still app-zooms from app chrome and from the editor surface', async () => {
+      const { container } = render(<App />);
+      const editor = document.createElement('div');
+      editor.setAttribute('data-keybinding-context', 'editor');
+      container.appendChild(editor);
+
+      await act(async () => {
+        fireEvent.keyDown(container, { key: '=', code: 'Equal', ctrlKey: true });
+        fireEvent.keyDown(editor, { key: '-', code: 'Minus', ctrlKey: true });
+      });
+
+      expect(mockZoomInWindow).toHaveBeenCalledTimes(1);
+      expect(mockZoomOutWindow).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves terminal-focused zoom to the terminal (no app zoom, event untouched)', async () => {
+      const { container } = render(<App />);
+      const terminal = document.createElement('div');
+      terminal.setAttribute('data-keybinding-context', 'terminal');
+      container.appendChild(terminal);
+
+      let event!: KeyboardEvent;
+      await act(async () => {
+        event = new KeyboardEvent('keydown', { key: '=', code: 'Equal', ctrlKey: true, bubbles: true, cancelable: true });
+        terminal.dispatchEvent(event);
+      });
+
+      expect(mockZoomInWindow).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
     });
 
     it('zooms in when Ctrl+= is pressed', async () => {

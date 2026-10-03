@@ -1,8 +1,9 @@
 import { Input } from './ui/Input';
-import type { ChangeEventHandler, FocusEventHandler, KeyboardEventHandler } from 'react';
+import type { ChangeEventHandler, FocusEventHandler, KeyboardEventHandler, Ref } from 'react';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 
 interface BrowserUrlInputProps {
+  inputRef?: Ref<HTMLInputElement>;
   inputUrl: string;
   historySuggestions: BrowserHistoryEntry[];
   highlightedSuggestionIndex: number;
@@ -15,6 +16,7 @@ interface BrowserUrlInputProps {
 }
 
 export default function BrowserUrlInput({
+  inputRef,
   inputUrl,
   historySuggestions,
   highlightedSuggestionIndex,
@@ -28,6 +30,7 @@ export default function BrowserUrlInput({
   return (
     <div className="browser-url-container">
       <Input variant="mono"
+        ref={inputRef}
         type="text"
         className="browser-url-input"
         value={inputUrl}

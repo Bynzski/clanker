@@ -60,7 +60,7 @@ vi.mock('@codemirror/view', () => {
     EditorView: MockEditorView as unknown as typeof import('@codemirror/view').EditorView,
     lineNumbers: vi.fn(() => ({})),
     highlightActiveLine: vi.fn(() => ({})),
-    keymap: { of: vi.fn(() => ({})) },
+    keymap: { of: vi.fn((bindings: unknown[]) => ({ keymapBindings: bindings })) },
   };
 });
 
@@ -108,6 +108,22 @@ describe('EditorPane', () => {
     cleanup();
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  describe('editing baseline', () => {
+    it('installs real history and the standard editing keymap instead of an empty keymap', () => {
+      const workspace = createWorkspaceFixture({ id: 'keys-ws', lifecycle: 'active', editorVisible: true,
+        editorPane: { id: 'editor-1' }, activeEditorTabId: 'tab', editorTabs: [{ id: 'tab', filePath: '/w/a.ts', fileName: 'a.ts',
+          content: 'x', originalContent: 'x', isDirty: false, hasExternalChange: false }] });
+      useWorkspaceStore.setState({ workspaces: [workspace], activeWorkspaceId: workspace.id });
+      render(<EditorPane workspaceId={workspace.id} />);
+
+      const extensions = editorMockState.extensions[0] as Array<{ keymapBindings?: unknown[] }>;
+      const keymapExtension = extensions.find((extension) => Array.isArray(extension?.keymapBindings));
+      expect(keymapExtension?.keymapBindings?.length ?? 0).toBeGreaterThan(20);
+      const keys = (keymapExtension?.keymapBindings as Array<{ key?: string }>).map((binding) => binding.key);
+      expect(keys).toEqual(expect.arrayContaining(['Mod-z', 'Mod-y', 'ArrowLeft', 'Backspace']));
+    });
   });
 
   describe('theme compartments', () => {

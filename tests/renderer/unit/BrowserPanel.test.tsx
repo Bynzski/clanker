@@ -1495,6 +1495,95 @@ describe('BrowserPanel', () => {
   // =========================================================================
   // URL Autocomplete
   // =========================================================================
+  describe('browser keybinding commands from main', () => {
+    type Emit = (payload: { workspaceId: string; tabId: string; command: string }) => void;
+    let emit: Emit;
+    const threeTabs = (activeTabId = 'tab-a'): BrowserPaneState => ({
+      id: 'bp1',
+      position: { x: 0, y: 0, w: 100, h: 100 },
+      activeTabId,
+      tabs: ['tab-a', 'tab-b', 'tab-c'].map((id) => ({ id, url: `https://${id}.example`, title: id, canGoBack: false, canGoForward: false })),
+    });
+    const mountWith = (pane: BrowserPaneState) => {
+      setupStore({ browserPane: pane });
+      window.electronAPI.onBrowserKeybindingCommand = vi.fn((callback) => {
+        emit = callback as Emit;
+        return vi.fn();
+      });
+      render(<BrowserPanel layoutVersion={1} workspaceId="workspace-1" />);
+    };
+    const active = () => useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserPane?.activeTabId;
+
+    it('focuses and selects the active tab address field', () => {
+      mountWith(threeTabs());
+      const input = screen.getByPlaceholderText('Enter URL...') as HTMLInputElement;
+      const select = vi.spyOn(input, 'select');
+      act(() => emit({ workspaceId: 'workspace-1', tabId: 'tab-a', command: 'browser.focusAddress' }));
+      expect(document.activeElement).toBe(input);
+      expect(select).toHaveBeenCalled();
+    });
+
+    it('opens a tab through the existing creation path', async () => {
+      mountWith(threeTabs());
+      await act(async () => emit({ workspaceId: 'workspace-1', tabId: 'tab-a', command: 'browser.newTab' }));
+      expect(mockBrowserCreateTab).toHaveBeenCalledWith('workspace-1', expect.any(String));
+      expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserPane?.tabs).toHaveLength(4);
+    });
+
+    it('closes the active tab through the existing close path', async () => {
+      mountWith(threeTabs('tab-b'));
+      await act(async () => emit({ workspaceId: 'workspace-1', tabId: 'tab-b', command: 'browser.closeTab' }));
+      expect(mockBrowserCloseTab).toHaveBeenCalledWith('workspace-1', 'tab-b');
+      expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserPane?.tabs.map((t) => t.id)).toEqual(['tab-a', 'tab-c']);
+    });
+
+    it('never closes the last tab', async () => {
+      const pane = threeTabs();
+      pane.tabs = pane.tabs.slice(0, 1);
+      mountWith(pane);
+      await act(async () => emit({ workspaceId: 'workspace-1', tabId: 'tab-a', command: 'browser.closeTab' }));
+      expect(mockBrowserCloseTab).not.toHaveBeenCalled();
+    });
+
+    it('cycles to the next tab in order and wraps', async () => {
+      mountWith(threeTabs('tab-c'));
+      await act(async () => emit({ workspaceId: 'workspace-1', tabId: 'tab-c', command: 'browser.nextTab' }));
+      expect(active()).toBe('tab-a');
+      expect(mockBrowserSwitchTab).toHaveBeenCalledWith('workspace-1', 'tab-a');
+    });
+
+    it('cycles to the previous tab in order and wraps', async () => {
+      mountWith(threeTabs('tab-a'));
+      await act(async () => emit({ workspaceId: 'workspace-1', tabId: 'tab-a', command: 'browser.previousTab' }));
+      expect(active()).toBe('tab-c');
+      await act(async () => emit({ workspaceId: 'workspace-1', tabId: 'tab-c', command: 'browser.previousTab' }));
+      expect(active()).toBe('tab-b');
+    });
+
+    it('does nothing for tab cycling with a single tab', async () => {
+      const pane = threeTabs();
+      pane.tabs = pane.tabs.slice(0, 1);
+      mountWith(pane);
+      await act(async () => {
+        emit({ workspaceId: 'workspace-1', tabId: 'tab-a', command: 'browser.nextTab' });
+        emit({ workspaceId: 'workspace-1', tabId: 'tab-a', command: 'browser.previousTab' });
+      });
+      expect(mockBrowserSwitchTab).not.toHaveBeenCalled();
+      expect(active()).toBe('tab-a');
+    });
+
+    it('ignores signals for another workspace or a stale tab', async () => {
+      mountWith(threeTabs('tab-b'));
+      await act(async () => {
+        emit({ workspaceId: 'workspace-2', tabId: 'tab-b', command: 'browser.nextTab' });
+        emit({ workspaceId: 'workspace-1', tabId: 'tab-a', command: 'browser.nextTab' });
+        emit({ workspaceId: 'workspace-1', tabId: 'tab-a', command: 'browser.newTab' });
+      });
+      expect(active()).toBe('tab-b');
+      expect(mockBrowserCreateTab).not.toHaveBeenCalled();
+    });
+  });
+
   describe('URL autocomplete', () => {
     const createTabbedPane = (): BrowserPaneState => ({
       id: 'bp1',

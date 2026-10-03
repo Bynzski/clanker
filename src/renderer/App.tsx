@@ -8,7 +8,10 @@ import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
 import { WorkspaceGateFullscreen, WorkspaceGateModal } from './components/WorkspaceGate';
 import { Pane, Terminal, useWorkspaceStore, DEFAULT_RUNTIME_STATE } from './store/workspaceStore';
-import { getWheelZoomAction, getZoomShortcutAction, isSaveShortcut } from './lib/keyboardShortcuts';
+import { getWheelZoomAction } from './lib/keyboardShortcuts';
+import { dispatchAppKeybinding, openSettings, type AppCommandActions } from './lib/keybindingDispatcher';
+import { useKeybindingStore } from './store/keybindingStore';
+import { selectFocusedWorkspace } from './store/workspaceStoreHelpers';
 import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import { persistWorkspaceLayout } from './lib/workspaceLayoutStorage';
@@ -47,39 +50,33 @@ function App() {
 
 
   useEffect(() => {
+    void useKeybindingStore.getState().load();
+  }, []);
+
+  // Application commands (app/editor contexts). Terminals and the native browser
+  // view own their own input; see keybindingDispatcher for the boundary.
+  useEffect(() => {
+    const actions: AppCommandActions = {
+      openSettings,
+      fitAllPanes,
+      toggleExplorer: () => {
+        const state = useWorkspaceStore.getState();
+        const workspace = selectFocusedWorkspace(state);
+        if (workspace) state.setExplorerVisible(!workspace.explorerVisible, workspace.id);
+      },
+      saveActiveEditorFile: () => {
+        const state = useWorkspaceStore.getState();
+        const workspace = selectFocusedWorkspace(state);
+        if (workspace?.activeEditorTabId) void state.saveEditorFile(workspace.activeEditorTabId, workspace.id);
+      },
+      zoomApp: (action) => {
+        if (action === 'in') void window.electronAPI.zoomInWindow();
+        else if (action === 'out') void window.electronAPI.zoomOutWindow();
+        else void window.electronAPI.resetZoomWindow();
+      },
+    };
     const handleKeyDown = (event: KeyboardEvent) => {
-      const zoomAction = getZoomShortcutAction(event);
-      if (zoomAction != null) {
-        // A focused embedded surface (e.g. xterm) already owns this zoom event.
-        if (event.defaultPrevented) {
-          return;
-        }
-        event.preventDefault();
-
-        if (zoomAction === 'in') {
-          void window.electronAPI.zoomInWindow();
-        } else if (zoomAction === 'out') {
-          void window.electronAPI.zoomOutWindow();
-        } else {
-          void window.electronAPI.resetZoomWindow();
-        }
-        return;
-      }
-
-      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
-        event.preventDefault();
-        fitAllPanes();
-        return;
-      }
-
-      if (isSaveShortcut(event)) {
-        event.preventDefault();
-        const { activeEditorTabId, saveEditorFile } = useWorkspaceStore.getState();
-        if (activeEditorTabId) {
-          void saveEditorFile(activeEditorTabId);
-        }
-        return;
-      }
+      dispatchAppKeybinding(event, actions);
     };
 
     window.addEventListener('keydown', handleKeyDown);

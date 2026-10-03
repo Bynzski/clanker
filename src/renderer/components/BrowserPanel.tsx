@@ -6,10 +6,12 @@ import type {
   ChangeEventHandler,
   FocusEventHandler,
   KeyboardEventHandler,
+  Ref,
 } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, MousePointer2 } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
+import type { BrowserKeybindingCommandPayload } from '../../shared/keybindings';
 import { useScopedWorkspace } from './WorkspaceScope';
 import { useDragHandle } from './dragHandleContext';
 import './BrowserPanel.css';
@@ -75,6 +77,7 @@ interface BrowserToolbarProps {
   handleOpenExternal: () => void;
   annotationActive: boolean;
   handleAnnotationToggle: () => Promise<void>;
+  urlInputRef: Ref<HTMLInputElement>;
 }
 
 function BrowserToolbar({
@@ -98,6 +101,7 @@ function BrowserToolbar({
   handleOpenExternal,
   annotationActive,
   handleAnnotationToggle,
+  urlInputRef,
 }: BrowserToolbarProps) {
   return (
     <div className="browser-toolbar">
@@ -115,6 +119,7 @@ function BrowserToolbar({
       </IconButton>
 
       <BrowserUrlInput
+        inputRef={urlInputRef}
         inputUrl={inputUrl}
         historySuggestions={historySuggestions}
         highlightedSuggestionIndex={highlightedSuggestionIndex}
@@ -155,6 +160,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   const [canGoBack, setCanGoBack] = useState(activeTab?.canGoBack ?? false);
   const [canGoForward, setCanGoForward] = useState(activeTab?.canGoForward ?? false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const urlInputRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
@@ -379,6 +385,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     handleNewTab,
     handleSwitchTab,
     handleCloseTab,
+    closeTabById,
   } = useBrowserPanelActions({
     workspaceId: workspace?.id ?? null,
     activeTabId,
@@ -390,6 +397,39 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     setActiveBrowserTab,
     scheduleBoundsUpdate,
   });
+
+  // Browser-context keybindings are matched in main (the native view owns focus) and
+  // arrive here as one typed signal; this runs them through the panel's own actions.
+  const runKeybindingCommand = useRef<(payload: BrowserKeybindingCommandPayload) => void>(() => undefined);
+  runKeybindingCommand.current = (payload) => {
+    if (!workspace?.id || payload.workspaceId !== workspace.id || payload.tabId !== activeTabId) return;
+    switch (payload.command) {
+      case 'browser.focusAddress':
+        urlInputRef.current?.focus();
+        urlInputRef.current?.select();
+        return;
+      case 'browser.newTab':
+        void handleNewTab();
+        return;
+      case 'browser.closeTab':
+        if (activeTabId) void closeTabById(activeTabId);
+        return;
+      case 'browser.nextTab':
+      case 'browser.previousTab': {
+        if (browserTabs.length < 2) return;
+        const index = browserTabs.findIndex((tab) => tab.id === activeTabId);
+        if (index === -1) return;
+        const step = payload.command === 'browser.nextTab' ? 1 : -1;
+        void handleSwitchTab(browserTabs[(index + step + browserTabs.length) % browserTabs.length].id);
+        return;
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window.electronAPI?.onBrowserKeybindingCommand !== 'function') return undefined;
+    return window.electronAPI.onBrowserKeybindingCommand((payload) => runKeybindingCommand.current(payload));
+  }, []);
 
   const handleMoveTab = useCallback(async (tabId: string, targetTabId: string) => {
     if (!workspace?.id || !activeTabId) return;
@@ -435,6 +475,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
         handleOpenExternal={handleOpenExternal}
         annotationActive={annotationActive}
         handleAnnotationToggle={handleAnnotationToggle}
+        urlInputRef={urlInputRef}
         remotePreviewControl={workspace?.environmentId && workspace.environmentId !== 'local' ? <RemotePreviewControl
           key={workspace.id} workspaceId={workspace.id} enabled={isActiveWorkspace && Boolean(workspace.browserVisible)} onOpen={handleNavigate}
         /> : undefined}

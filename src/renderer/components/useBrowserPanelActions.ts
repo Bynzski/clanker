@@ -29,6 +29,7 @@ interface UseBrowserPanelActionsResult {
   handleNewTab: () => Promise<void>;
   handleSwitchTab: (tabId: string) => Promise<void>;
   handleCloseTab: (event: ReactMouseEvent, tabId: string) => Promise<void>;
+  closeTabById: (tabId: string) => Promise<void>;
 }
 
 export function useBrowserPanelActions({
@@ -99,8 +100,7 @@ export function useBrowserPanelActions({
     scheduleBoundsUpdate(true);
   }, [activeTabId, scheduleBoundsUpdate, setActiveBrowserTab, workspaceId]);
 
-  const handleCloseTab = useCallback(async (event: ReactMouseEvent, tabId: string) => {
-    event.stopPropagation();
+  const closeTabById = useCallback(async (tabId: string) => {
     if (!workspaceId || browserTabsCount <= 1) return;
 
     const { removed } = removeBrowserTab(tabId, workspaceId);
@@ -110,6 +110,11 @@ export function useBrowserPanelActions({
     await syncSelectedBrowserTab(workspaceId);
     scheduleBoundsUpdate(true);
   }, [browserTabsCount, removeBrowserTab, scheduleBoundsUpdate, workspaceId]);
+
+  const handleCloseTab = useCallback(async (event: ReactMouseEvent, tabId: string) => {
+    event.stopPropagation();
+    await closeTabById(tabId);
+  }, [closeTabById]);
 
   return {
     handleBack,
@@ -121,5 +126,6 @@ export function useBrowserPanelActions({
     handleNewTab,
     handleSwitchTab,
     handleCloseTab,
+    closeTabById,
   };
 }
