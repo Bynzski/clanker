@@ -116,7 +116,10 @@ jobs:
           retention-days: 7
 
   # Windows compatibility: platform-independent checks (lint, typecheck, build,
-  # audit, coverage) run on Ubuntu only. Windows runs the plain test suite.
+  # audit, coverage) run on Ubuntu only. Windows runs the plain `main` Vitest
+  # project (fs, git, subprocess, path, harness, SSH). The renderer project is
+  # jsdom-only; its Windows tests simulate win32 via path.win32 / a mocked
+  # process.platform, so they behave identically on Ubuntu (still run there).
   windows-compat:
     needs: changes
     if: needs.changes.outputs.code_changed == 'true'
@@ -133,8 +136,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Test (no coverage)
-        run: npm run test
+      - name: Test main project (no coverage)
+        run: npm run test -- --project main
 
   # Stable required-check candidate. Always runs. Heavy jobs may only be
   # "skipped" when `changes` reported a docs-only change.
