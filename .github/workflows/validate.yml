@@ -6,38 +6,90 @@ on:
   pull_request:
     branches: [main]
 
+# Superseded PR runs are cancelled. Pushes to main are never cancelled so every
+# main commit keeps its own validation result.
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
-  validate:
-    runs-on: ${{ matrix.os }}
+  # Decides whether anything other than documentation changed. Anything not
+  # matching docs/** or *.md counts as code-impacting (fail-safe default).
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code_changed: ${{ steps.detect.outputs.code_changed }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        node-version: [22]
+      - name: Detect code-impacting changes
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # Checkout is the PR merge commit; its first parent is the base tip,
+            # so this is the PR's net change against main.
+            files=$(git diff --name-only HEAD^1 HEAD) || files=""
+          else
+            if git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+              files=$(git diff --name-only "$PUSH_BEFORE" "$PUSH_AFTER") || files=""
+            else
+              files=""
+            fi
+          fi
 
+          if [ -z "$files" ]; then
+            echo "No changed file list available; treating as code-impacting."
+            echo "code_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$files"
+
+          non_docs=$(echo "$files" | grep -vE '^docs/|\.md$' || true)
+          if [ -n "$non_docs" ]; then
+            echo "code_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Docs-only change; heavy jobs will be skipped."
+            echo "code_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Canonical validation: static checks, build, security, full tests + coverage.
+  ubuntu-validation:
+    needs: changes
+    if: needs.changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
       - name: Dependency review (PR only)
-        if: github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest' && matrix.node-version == 22
+        if: github.event_name == 'pull_request'
         uses: actions/dependency-review-action@v4
 
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: Use Node.js 22
         uses: actions/setup-node@v5
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
       - name: npm audit (informational)
-        if: matrix.os == 'ubuntu-latest' && matrix.node-version == 22
         continue-on-error: true
         run: npm audit --audit-level=high --json > audit.json
 
       - name: Upload npm audit report
-        if: matrix.os == 'ubuntu-latest' && matrix.node-version == 22
         uses: actions/upload-artifact@v4
         with:
           name: npm-audit
@@ -57,9 +109,64 @@ jobs:
         run: npm run test:coverage
 
       - name: Upload coverage report
-        if: matrix.os == 'ubuntu-latest' && matrix.node-version == 22
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage/
           retention-days: 7
+
+  # Windows compatibility: platform-independent checks (lint, typecheck, build,
+  # audit, coverage) run on Ubuntu only. Windows runs the plain test suite.
+  windows-compat:
+    needs: changes
+    if: needs.changes.outputs.code_changed == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test (no coverage)
+        run: npm run test
+
+  # Stable required-check candidate. Always runs. Heavy jobs may only be
+  # "skipped" when `changes` reported a docs-only change.
+  validate:
+    needs: [changes, ubuntu-validation, windows-compat]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate results
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          CODE_CHANGED: ${{ needs.changes.outputs.code_changed }}
+          UBUNTU: ${{ needs.ubuntu-validation.result }}
+          WINDOWS: ${{ needs.windows-compat.result }}
+        run: |
+          echo "changes=$CHANGES code_changed=$CODE_CHANGED ubuntu=$UBUNTU windows=$WINDOWS"
+          if [ "$CHANGES" != "success" ]; then
+            echo "::error::Change detection did not succeed ($CHANGES)."
+            exit 1
+          fi
+          if [ "$CODE_CHANGED" = "true" ]; then
+            # Heavy jobs were required: they must have actually succeeded.
+            if [ "$UBUNTU" != "success" ] || [ "$WINDOWS" != "success" ]; then
+              echo "::error::Required job did not succeed (ubuntu=$UBUNTU, windows=$WINDOWS)."
+              exit 1
+            fi
+            echo "Code changed and all required jobs succeeded."
+          else
+            # Docs-only: heavy jobs must have been skipped, not failed.
+            if [ "$UBUNTU" != "skipped" ] || [ "$WINDOWS" != "skipped" ]; then
+              echo "::error::Docs-only run but heavy jobs were not skipped (ubuntu=$UBUNTU, windows=$WINDOWS)."
+              exit 1
+            fi
+            echo "Docs-only change; heavy jobs intentionally skipped."
+          fi
