@@ -796,6 +796,7 @@ describe('WorkspaceGateContent', () => {
         codex: { name: 'Codex', command: 'codex', args: [], icon: 'codex' },
         pi: { name: 'Pi', command: 'pi', args: [], icon: 'pi' },
       });
+      window.electronAPI.getEnvironmentHarnessModels = vi.fn().mockResolvedValue([]);
       window.electronAPI.sshGetHomeDirectory = vi.fn().mockImplementation(async (id: string) => ({
         homePath: `/home/${id}`, initialPath: `/home/${id}/workspaces`,
       }));
@@ -1066,6 +1067,74 @@ describe('WorkspaceGateContent', () => {
       await act(async () => resolveOld({ codex: true }));
       expect(screen.queryByRole('button', { name: 'Add Codex terminal' })).toBeNull();
       expect(screen.getByRole('button', { name: 'Add Pi terminal' })).toBeEnabled();
+    });
+
+    it('launches remote harnesses with the host default and never the desktop model', async () => {
+      setupRemote();
+      vi.mocked(window.electronAPI.getHarnessDefaults).mockResolvedValue({ codex: { model: 'local-only', favorites: ['local-only'], flags: '' } });
+      vi.mocked(window.electronAPI.getEnvironmentHarnessModels).mockImplementation(async (_id, harness) => harness === 'codex'
+        ? [{ id: 'remote-a', label: 'Remote A' }, { id: 'remote-b', label: 'Remote B' }] : []);
+      await renderGate();
+      await selectRemote(false);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'codex model' })).toHaveTextContent('Use harness default'));
+      expect(screen.queryByRole('button', { name: 'pi model' })).toBeNull();
+      expect(screen.getAllByText('Host default').length).toBeGreaterThan(0);
+      fireEvent.click(screen.getByRole('button', { name: 'Add Codex terminal' }));
+      fireEvent.change(screen.getByLabelText('Remote Directory Path'), { target: { value: '/srv/app' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+      expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({
+        terminalLaunches: [{ harness: 'codex', model: undefined }],
+      }));
+    });
+
+    it('places an explicitly chosen remote model into the launch plan and drops it when the host changes', async () => {
+      setupRemote();
+      vi.mocked(window.electronAPI.getEnvironmentHarnessModels).mockImplementation(async (id, harness) => harness === 'codex'
+        ? [{ id: `${id}-model`, label: `${id} model label` }] : []);
+      const user = userEvent.setup();
+      await renderGate();
+      await selectRemote(false);
+      expect(window.electronAPI.getEnvironmentHarnessModels).toHaveBeenCalledWith('alpha', 'codex');
+      await user.click(await screen.findByRole('button', { name: 'codex model' }));
+      await user.click(await screen.findByText('alpha model label'));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'codex model' })).toHaveTextContent('alpha model label'));
+      fireEvent.click(screen.getByRole('button', { name: 'Add Codex terminal' }));
+      fireEvent.change(screen.getByLabelText('Remote Directory Path'), { target: { value: '/srv/app' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+      expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({
+        terminalLaunches: [{ harness: 'codex', model: 'alpha-model' }],
+      }));
+
+      fireEvent.click(document.querySelector('.gate-target-trigger')!);
+      fireEvent.click(await screen.findByRole('button', { name: 'Beta, beta.example' }));
+      await waitFor(() => expect(window.electronAPI.getEnvironmentHarnessModels).toHaveBeenCalledWith('beta', 'codex'));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'codex model' })).toHaveTextContent('Use harness default'));
+      fireEvent.click(screen.getByRole('button', { name: 'Add Codex terminal' }));
+      fireEvent.change(screen.getByLabelText('Remote Directory Path'), { target: { value: '/srv/app' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+      expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({
+        terminalLaunches: [{ harness: 'codex', model: undefined }],
+      }));
+    });
+
+    it('keeps Host default when remote discovery is empty or fails, and never asks for Hermes', async () => {
+      setupRemote();
+      window.electronAPI.getEnvironmentHarnessOptions = vi.fn().mockResolvedValue({
+        codex: { name: 'Codex', command: 'codex', args: [], icon: 'codex' },
+        pi: { name: 'Pi', command: 'pi', args: [], icon: 'pi' },
+        hermes: { name: 'Hermes', command: 'hermes', args: [], icon: 'hermes' },
+      });
+      vi.mocked(window.electronAPI.getEnvironmentHarnessModels).mockImplementation(async (_id, harness) => {
+        if (harness === 'pi') throw new Error('ssh down');
+        return [];
+      });
+      await renderGate();
+      await selectRemote(false);
+      await waitFor(() => expect(window.electronAPI.getEnvironmentHarnessModels).toHaveBeenCalledWith('alpha', 'pi'));
+      await waitFor(() => expect(screen.getAllByText('Host default').length).toBeGreaterThan(0));
+      expect(screen.queryByRole('button', { name: 'codex model' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'pi model' })).toBeNull();
+      expect(vi.mocked(window.electronAPI.getEnvironmentHarnessModels).mock.calls.map((call) => call[1])).not.toContain('hermes');
     });
 
     it('initializes each target separately and ignores a previous target home request', async () => {

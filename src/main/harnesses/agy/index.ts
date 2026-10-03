@@ -11,7 +11,8 @@ import { defineHarness, type HarnessProvider } from '../types';
 
 export const agyProvider = defineHarness({
   descriptor: HARNESS_DESCRIPTORS.agy,
-  models: { discover: async () => (await import('./models')).discoverModels(), fallback: [
+  models: { discover: async () => (await import('./models')).discoverModels(),
+    discoverInEnvironment: async (executor) => (await import('./models')).discoverModelsIn(executor), fallback: [
     { id: 'gemini-3.8-flash-high', label: 'Gemini 3.8 Flash (High)' },
     { id: 'gemini-3.7-flash-high', label: 'Gemini 3.7 Flash (High)' },
     { id: 'gemini-3.6-flash-high', label: 'Gemini 3.6 Flash (High)' },

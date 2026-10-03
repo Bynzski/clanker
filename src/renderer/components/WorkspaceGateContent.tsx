@@ -285,7 +285,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
       setSelectedHarness('');
     }
     setAllModels({});
-
+    // A model choice belongs to the host it was discovered on.
+    setModelOverrides({});
 
     const loadHarnessOptions = async () => {
       if (locationKind === 'ssh') {
@@ -297,6 +298,18 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
           const availableIds = resolveAvailableHarnessIds(options);
           setAvailableHarnessIds(availableIds);
           setSelectedHarness((current) => current && availableIds.includes(current) ? current : (availableIds.find((id) => id !== '') ?? ''));
+          setHasLoadedHarnessOptions(true);
+          // Catalogs come from this host only; Hermes has no remote model path.
+          const modelsMap: Record<string, ModelOption[]> = {};
+          if (selectedSshEnvId) {
+            await Promise.all(availableIds.filter((id) => id !== '' && id !== 'hermes').map(async (harnessId) => {
+              try {
+                const models = await window.electronAPI.getEnvironmentHarnessModels(selectedSshEnvId, harnessId);
+                if (Array.isArray(models) && models.length > 0) modelsMap[harnessId] = models;
+              } catch { /* no catalog: the host default stays */ }
+            }));
+          }
+          if (!cancelled) setAllModels(modelsMap);
         } catch {
           if (!cancelled) setAvailableHarnessIds(['']);
         } finally {
@@ -552,11 +565,14 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   const launchHarnessOptions = useMemo(() => HARNESS_OPTIONS
     .filter((option) => visibleHarnessIds.includes(option.id))
     .sort((a, b) => Number(a.id === '') - Number(b.id === '')), [visibleHarnessIds]);
-  const rowModels = Object.fromEntries(visibleHarnessIds.map((id) => [id,
-    modelOverrides[id] ?? (harnessDefaults?.[id]?.model || (id === 'hermes' ? '' : allModels[id]?.[0]?.id ?? '')),
+  // Remote launches use the host default unless a model from that host's catalog was chosen here;
+  // desktop defaults and the first local catalog entry never apply.
+  const rowModels = Object.fromEntries(visibleHarnessIds.map((id) => [id, locationKind === 'ssh'
+    ? modelOverrides[id] ?? ''
+    : modelOverrides[id] ?? (harnessDefaults?.[id]?.model || (id === 'hermes' ? '' : allModels[id]?.[0]?.id ?? '')),
   ]));
   const terminalLaunches: WorkspaceTerminalLaunch[] = launchHarnessOptions.flatMap(({ id: harness }) =>
-    Array.from({ length: counts[harness] ?? 0 }, () => ({ harness, model: locationKind === 'local' && harness ? rowModels[harness] || undefined : undefined })),
+    Array.from({ length: counts[harness] ?? 0 }, () => ({ harness, model: harness ? rowModels[harness] || undefined : undefined })),
   );
 
   const worktreeLaunchReady = !opening && hasLoadedHarnessOptions && terminalLaunches.length > 0;

@@ -220,6 +220,7 @@ function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): Electr
     sshListDirectories: createAsyncMock({ path: '/home/user/workspaces', parentPath: '/home/user', directories: [] }),
     sshCreateDirectory: createAsyncMock({ path: '/home/user/workspaces/new-folder' }),
     getEnvironmentHarnessOptions: createAsyncMock({}),
+    getEnvironmentHarnessModels: createAsyncMock([]),
     ...overrides,
   };
 }

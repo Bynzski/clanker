@@ -178,7 +178,7 @@ export class SshEnvironment implements WorkspaceEnvironment {
     revealInFileManager: false,
     agentAttention: true,
     sessionDiscovery: true,
-    annotationHandoff: false,
+    annotationHandoff: true,
   };
 
   constructor(
@@ -693,9 +693,19 @@ export class SshEnvironment implements WorkspaceEnvironment {
     return discoverSshSessions(this.executor, this.target, workspacePath, await this.probeAvailableHarnessIds());
   }
 
-  public async discoverHarnessModels(): Promise<EnvironmentModelOption[]> {
-    // Model discovery is best-effort. Return empty array to use harness defaults on remote host
-    return [];
+  /**
+   * The provider picks the command and parser; this host runs it through the bound executor. A
+   * harness without environment-bound discovery, or any failure, yields no catalog: neither the
+   * desktop cache nor a provider's static fallback describes what exists on this server.
+   */
+  public async discoverHarnessModels(harnessId: string): Promise<EnvironmentModelOption[]> {
+    const discover = findHarnessProvider(harnessId)?.models?.discoverInEnvironment;
+    if (!discover) return [];
+    try {
+      return await discover({ run: (request) => this.executeHarnessCommand(request) });
+    } catch {
+      return [];
+    }
   }
 
   public async resolveTerminalSpawn(params: TerminalSpawnRequest): Promise<TerminalSpawnResolved> {

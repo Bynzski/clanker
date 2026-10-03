@@ -1,5 +1,6 @@
 import type { ModelOption } from '../types';
 import { runCommandOutput } from '../modelCommand';
+import { requireModelOutput, type HarnessCommandExecutor } from '../commandExecution';
 import { normalizeModelLine } from '../modelParsing';
 import { HarnessCapabilityError } from '../types';
 
@@ -29,6 +30,12 @@ export function parseAgyModels(output: string): ModelOption[] {
 
 export async function discoverModels(): Promise<ModelOption[]> {
   const models = parseAgyModels(await runCommandOutput('agy', ['models'], 8000));
+  if (!models.length) throw new HarnessCapabilityError('parse-failure', 'No models discovered for agy');
+  return models.filter((model, index, entries) => index === entries.findIndex((entry) => entry.id === model.id));
+}
+
+export async function discoverModelsIn(executor: HarnessCommandExecutor): Promise<ModelOption[]> {
+  const models = parseAgyModels(requireModelOutput(await executor.run({ command: 'agy', args: ['models'], timeoutMs: 8000 }), 'agy models'));
   if (!models.length) throw new HarnessCapabilityError('parse-failure', 'No models discovered for agy');
   return models.filter((model, index, entries) => index === entries.findIndex((entry) => entry.id === model.id));
 }

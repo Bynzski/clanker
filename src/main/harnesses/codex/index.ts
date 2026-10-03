@@ -11,6 +11,7 @@ export const codexProvider = defineHarness({
   descriptor: HARNESS_DESCRIPTORS.codex,
   models: {
     discover: async () => (await import('./models')).discoverModels(),
+    discoverInEnvironment: async (executor) => (await import('./models')).discoverModelsIn(executor),
     compatibility: { cacheParseFailureAsEmpty: true },
   },
   sessions: {

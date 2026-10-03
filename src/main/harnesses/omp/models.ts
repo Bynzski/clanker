@@ -1,5 +1,6 @@
 import type { ModelOption } from '../types';
 import { runCommandOutput } from '../modelCommand';
+import { requireModelOutput, type HarnessCommandExecutor } from '../commandExecution';
 import { HarnessCapabilityError } from '../types';
 
 function parseOmpModelCatalog(output: string): ModelOption[] | null {
@@ -28,6 +29,12 @@ export function parseOmpModels(output: string): ModelOption[] {
 
 export async function discoverModels(): Promise<ModelOption[]> {
   const models = parseOmpModelCatalog(await runCommandOutput('omp', ['models', '--json'], 8000));
+  if (!models) throw new HarnessCapabilityError('parse-failure', 'Malformed OMP model catalog');
+  return models.filter((model, index, entries) => index === entries.findIndex((entry) => entry.id === model.id));
+}
+
+export async function discoverModelsIn(executor: HarnessCommandExecutor): Promise<ModelOption[]> {
+  const models = parseOmpModelCatalog(requireModelOutput(await executor.run({ command: 'omp', args: ['models', '--json'], timeoutMs: 8000 }), 'omp models'));
   if (!models) throw new HarnessCapabilityError('parse-failure', 'Malformed OMP model catalog');
   return models.filter((model, index, entries) => index === entries.findIndex((entry) => entry.id === model.id));
 }

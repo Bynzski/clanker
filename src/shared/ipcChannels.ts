@@ -249,6 +249,7 @@ export const SSH_GET_HOME_DIRECTORY = 'ssh-environment:get-home-directory';
 export const SSH_LIST_DIRECTORIES = 'ssh-environment:list-directories';
 export const SSH_CREATE_DIRECTORY = 'ssh-environment:create-directory';
 export const GET_ENVIRONMENT_HARNESS_OPTIONS = 'get-environment-harness-options';
+export const GET_ENVIRONMENT_HARNESS_MODELS = 'get-environment-harness-models';
 /* ============================================================================
  * Annotation
  * ============================================================================ */
@@ -461,4 +462,5 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   SSH_LIST_DIRECTORIES,
   SSH_CREATE_DIRECTORY,
   GET_ENVIRONMENT_HARNESS_OPTIONS,
+  GET_ENVIRONMENT_HARNESS_MODELS,
 ];
