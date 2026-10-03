@@ -732,17 +732,33 @@ describe('Header', () => {
   // Harness Validation
   // =========================================================================
   describe('harness validation', () => {
-    it('resets harness when current harness is not available', async () => {
+    const selectHarness = (harness: string) => useWorkspaceStore.setState({
+      workspaces: useWorkspaceStore.getState().workspaces.map((workspace) => ({ ...workspace, harness })),
+    });
+
+    it('resets harness once discovery succeeds and proves it is not available', async () => {
       const setHarness = useWorkspaceStore.getState().setHarness as ReturnType<typeof vi.fn>;
-      useWorkspaceStore.setState({ harness: 'claude' }); // claude not in default options
+      selectHarness('claude'); // discovery below reports claude as not installed
       renderHeader();
-      await waitFor(() => {
-        expect(window.electronAPI.getHarnessOptions).toHaveBeenCalled();
-      });
-      // claude should be reset because it's not in available list
       await waitFor(() => {
         expect(setHarness).toHaveBeenCalledWith('');
       });
+    });
+
+    it('keeps the selected harness while discovery is pending or has failed', async () => {
+      const setHarness = useWorkspaceStore.getState().setHarness as ReturnType<typeof vi.fn>;
+      const getOptions = window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>;
+      selectHarness('claude');
+      getOptions.mockReturnValue(new Promise(() => undefined));
+      const pending = renderHeader();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(setHarness).not.toHaveBeenCalled();
+      pending.unmount();
+      getOptions.mockRejectedValue(new Error('unreachable'));
+      renderHeader();
+      await waitFor(() => expect(getOptions).toHaveBeenCalledTimes(2));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(setHarness).not.toHaveBeenCalled();
     });
 
     it('handles harness validation effect', async () => {

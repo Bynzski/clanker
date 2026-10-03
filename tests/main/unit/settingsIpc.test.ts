@@ -1068,6 +1068,33 @@ describe('workspace sidebar width handlers', () => {
     const { store, getExpanded } = setup(360);
     store.get.mockImplementation((key: string) => (key === 'workspaceSidebarWidth' ? 360 : undefined));
     expect(getExpanded()).toBe(360);
+    expect(store.set).toHaveBeenCalledWith('workspaceSidebarExpandedWidth', 360);
+  });
+
+  test('GET expanded seeds the fallback so it survives a collapse and restart', () => {
+    const data: Record<string, unknown> = { workspaceSidebarWidth: 400 };
+    const { store, get, set, getExpanded } = setup(undefined);
+    store.get.mockImplementation((key: string) => data[key]);
+    store.set.mockImplementation((key: string, value: unknown) => { data[key] = value; });
+    expect(getExpanded()).toBe(400);
+    expect(data.workspaceSidebarExpandedWidth).toBe(400);
+    set({}, 44); // user collapses; only the rail is saved as the current width
+    expect(data.workspaceSidebarWidth).toBe(44);
+    expect(get()).toBe(44);
+    expect(getExpanded()).toBe(400); // after "restart"
+  });
+
+  test('GET expanded repairs a corrupt expanded value from the current width, never storing the rail', () => {
+    const data: Record<string, unknown> = { workspaceSidebarWidth: 320, workspaceSidebarExpandedWidth: 'junk' };
+    const { store, getExpanded } = setup(undefined);
+    store.get.mockImplementation((key: string) => data[key]);
+    store.set.mockImplementation((key: string, value: unknown) => { data[key] = value; });
+    expect(getExpanded()).toBe(320);
+    expect(data.workspaceSidebarExpandedWidth).toBe(320);
+    data.workspaceSidebarWidth = 44;
+    data.workspaceSidebarExpandedWidth = 10;
+    expect(getExpanded()).toBe(280);
+    expect(data.workspaceSidebarExpandedWidth).toBe(10);
   });
 
   test('SET clamps numeric widths and rejects non-numeric ones', () => {

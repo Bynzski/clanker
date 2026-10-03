@@ -17,12 +17,22 @@ interface UseHeaderSettingsOptions {
 }
 
 export function useHeaderSettings({ harness, setHarness, includeAiCommit = true, validateHarness = true, environmentId = 'local' }: UseHeaderSettingsOptions) {
-  // Tagged with the environment it was discovered for, so a switch never exposes the previous
-  // environment's harnesses (a stale set would let Usage probe harnesses that are not installed).
-  const [discovered, setDiscovered] = useState<{ environmentId: string; ids: string[] }>({ environmentId, ids: [''] });
+  // Discovery is owned by an environment *transition* (epoch), not just an environment id, so a
+  // result left over from an earlier visit to the same environment never counts as the current one.
+  // The epoch is bumped during render, before any stale result could be read for the new environment.
+  const [transition, setTransition] = useState({ environmentId, epoch: 0 });
+  if (transition.environmentId !== environmentId) {
+    setTransition({ environmentId, epoch: transition.epoch + 1 });
+  }
+  const epoch = transition.epoch;
+  const [discovery, setDiscovery] = useState<{ epoch: number; status: 'ready' | 'failed'; ids: string[] } | null>(null);
+  const currentDiscovery = discovery?.epoch === epoch && transition.environmentId === environmentId ? discovery : null;
+  /** 'loading' until the current transition's own discovery answers. */
+  const harnessDiscoveryStatus: 'loading' | 'ready' | 'failed' = currentDiscovery?.status ?? 'loading';
+  // Fail-closed for availability consumers (Usage, launcher): only a successful current discovery exposes ids.
   const availableHarnessIds = useMemo(
-    () => (discovered.environmentId === environmentId ? discovered.ids : ['']),
-    [discovered, environmentId],
+    () => (currentDiscovery?.status === 'ready' ? currentDiscovery.ids : ['']),
+    [currentDiscovery],
   );
   const [showSettings, setShowSettings] = useState(false);
   const [showCredentialModal, setShowCredentialModal] = useState(false);
@@ -56,10 +66,10 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
           ? await window.electronAPI.getHarnessOptions()
           : await window.electronAPI.getEnvironmentHarnessOptions(environmentId);
         if (cancelled) return;
-        setDiscovered({ environmentId, ids: resolveAvailableHarnessIds(options) });
+        setDiscovery({ epoch, status: 'ready', ids: resolveAvailableHarnessIds(options) });
       } catch {
         if (!cancelled) {
-          setDiscovered({ environmentId, ids: [''] });
+          setDiscovery({ epoch, status: 'failed', ids: [''] });
         }
       }
     };
@@ -69,14 +79,16 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     return () => {
       cancelled = true;
     };
-  }, [environmentId]);
+  }, [environmentId, epoch]);
 
   useEffect(() => {
-    if (!validateHarness) return;
+    // Selection is only judged by a successful discovery of the current environment: pending or failed
+    // discovery proves nothing, and clearing would also wipe the workspace's model.
+    if (!validateHarness || harnessDiscoveryStatus !== 'ready') return;
     if (harness && !visibleHarnessIds.includes(harness)) {
       setHarness('');
     }
-  }, [harness, setHarness, visibleHarnessIds, validateHarness]);
+  }, [harness, setHarness, visibleHarnessIds, validateHarness, harnessDiscoveryStatus]);
 
   useEffect(() => {
     if (!includeAiCommit) return;
@@ -337,6 +349,7 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
 
   return {
     harnessDefaultsStatus,
+    harnessDiscoveryStatus,
     availableHarnessIds,
     visibleHarnessIds,
     showSettings,

@@ -243,9 +243,17 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
   ipcMain.handle(GET_WORKSPACE_SIDEBAR_EXPANDED_WIDTH, () => {
     const rawExpanded = getStore().get('workspaceSidebarExpandedWidth');
     const expanded = normalizeWorkspaceSidebarWidth(rawExpanded);
-    if (rawExpanded !== undefined && !isWorkspaceSidebarCollapsed(expanded)) return expanded;
+    // Non-numbers normalize to the default, which would mask a corrupt value as a real one.
+    if (typeof rawExpanded === 'number' && Number.isFinite(rawExpanded) && !isWorkspaceSidebarCollapsed(expanded)) {
+      if (rawExpanded !== expanded) getStore().set('workspaceSidebarExpandedWidth', expanded);
+      return expanded;
+    }
+    // Missing or unusable: derive from the current width when it is expanded, and persist it so the
+    // value survives a later collapse and restart. The rail width is never stored as the expanded width.
     const current = normalizeWorkspaceSidebarWidth(getStore().get('workspaceSidebarWidth'));
-    return isWorkspaceSidebarCollapsed(current) ? DEFAULT_WORKSPACE_SIDEBAR_WIDTH : current;
+    const repaired = isWorkspaceSidebarCollapsed(current) ? DEFAULT_WORKSPACE_SIDEBAR_WIDTH : current;
+    if (!isWorkspaceSidebarCollapsed(current)) getStore().set('workspaceSidebarExpandedWidth', repaired);
+    return repaired;
   });
 
   ipcMain.handle(GET_KEYBINDING_OVERRIDES, () => keybindingOverrides.get());
