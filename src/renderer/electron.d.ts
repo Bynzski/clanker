@@ -51,6 +51,7 @@ import type { HarnessAccountAuthEvent, HarnessAccountAuthStart, HarnessAccountLi
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { AgentAttentionUpdate } from '../../shared/types/agentAttention';
 import type { ThemeId } from '../../shared/types/theme';
+import type { KeybindingOverrides, BrowserKeybindingCommandPayload } from '../../shared/keybindings';
 
 export type { VcsProvider, ProviderContext, PullRequestContext, DeepLink, DeepLinkType };
 export type { ThemeId };
@@ -101,6 +102,8 @@ interface ElectronAPI {
   setAiCommitModel: (model: string) => Promise<void>;
   getTheme: () => Promise<ThemeId>;
   setTheme: (theme: ThemeId) => Promise<void>;
+  getKeybindingOverrides: () => Promise<KeybindingOverrides>;
+  setKeybindingOverrides: (overrides: KeybindingOverrides) => Promise<{ success: true; overrides: KeybindingOverrides } | { success: false; error: string }>;
 
   // Terminal
   spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
@@ -204,6 +207,7 @@ interface ElectronAPI {
   setHarnessDefaults: (defaults: HarnessDefaultsMap) => Promise<void>;
 
   onFitAllPanes: (callback: () => void) => () => void;
+  onBrowserKeybindingCommand: (callback: (payload: BrowserKeybindingCommandPayload) => void) => () => void;
 
   // Git operations
   gitStartPolling: (workspacePath: string, workspaceId?: string) => Promise<void>;

@@ -1,6 +1,7 @@
 import type { WorkspaceRecipe } from './recipes';
 import type { SshEnvironmentConfig } from './environments';
 import type { ThemeId } from './theme';
+import type { KeybindingOverrides } from '../keybindings';
 /**
  * Shared store schema types.
  *
@@ -66,4 +67,6 @@ export interface StoreSchema {
   workspaceRecipes: WorkspaceRecipe[];
   sshEnvironments: SshEnvironmentConfig[];
   remoteWorktreeRemovals?: RemoteWorktreeRemovalRecord[];
+  /** Only deviations from the keybinding registry defaults; absent command = default, null = unbound. */
+  keybindingOverrides?: KeybindingOverrides;
 }

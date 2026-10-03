@@ -19,6 +19,7 @@ import {
 import { type StoreSchema, type HarnessDefaultsMap } from '../../shared/types/store';
 import { type AiCommitProvider } from '../aiCommit';
 import { validateHarnessDefaultsMap } from '../harnessDefaultsValidation';
+import { KeybindingOverridesService } from '../keybindingOverrides';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import { isThemeId, normalizeThemeId, getThemeMetadata } from '../../shared/types/theme';
 import {
@@ -38,11 +39,15 @@ import {
   GET_HARNESS_MODELS,
   GET_THEME,
   SET_THEME,
+  GET_KEYBINDING_OVERRIDES,
+  SET_KEYBINDING_OVERRIDES,
 } from '../../shared/ipcChannels';
 
 interface RegisterSettingsIpcDeps {
   getStore: () => Store<StoreSchema>;
   getMainWindow: () => BrowserWindow | null;
+  /** Shared with browser IPC so main has one validated override cache; defaults to a private one. */
+  keybindingOverrides?: KeybindingOverridesService;
 }
 
 function getInvalidWorkspaceResult() {
@@ -51,6 +56,7 @@ function getInvalidWorkspaceResult() {
 
 export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
   const { getStore, getMainWindow } = deps;
+  const keybindingOverrides = deps.keybindingOverrides ?? new KeybindingOverridesService(getStore);
 
   ipcMain.handle(GET_APP_VERSION, () => app.getVersion());
 
@@ -185,6 +191,10 @@ export function registerSettingsIpc(deps: RegisterSettingsIpcDeps): void {
     }
     return normalized;
   });
+
+  ipcMain.handle(GET_KEYBINDING_OVERRIDES, () => keybindingOverrides.get());
+
+  ipcMain.handle(SET_KEYBINDING_OVERRIDES, (_, overrides: unknown) => keybindingOverrides.set(overrides));
 
   ipcMain.handle(SET_THEME, (_, theme: unknown) => {
     if (!isThemeId(theme)) {

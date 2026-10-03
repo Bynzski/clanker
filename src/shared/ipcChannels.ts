@@ -32,6 +32,8 @@ export const GET_HARNESS_DEFAULTS = 'get-harness-defaults';
 export const SET_HARNESS_DEFAULTS = 'set-harness-defaults';
 export const GET_THEME = 'get-theme';
 export const SET_THEME = 'set-theme';
+export const GET_KEYBINDING_OVERRIDES = 'get-keybinding-overrides';
+export const SET_KEYBINDING_OVERRIDES = 'set-keybinding-overrides';
 
 /* ============================================================================
  * Terminal
@@ -90,6 +92,8 @@ export const BROWSER_HISTORY_ADD = 'browser-history-add';
 export const BROWSER_HISTORY_GET = 'browser-history-get';
 export const BROWSER_HISTORY_CLEAR = 'browser-history-clear';
 export const FIT_ALL_PANES = 'fit-all-panes';
+/** Main → renderer: a browser-context keybinding that renderer-owned tab/address state must run. */
+export const BROWSER_KEYBINDING_COMMAND = 'browser-keybinding-command';
 
 /* ============================================================================
  * Git
@@ -288,6 +292,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   SET_HARNESS_DEFAULTS,
   GET_THEME,
   SET_THEME,
+  GET_KEYBINDING_OVERRIDES,
+  SET_KEYBINDING_OVERRIDES,
   // Terminal
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
@@ -384,6 +390,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   REMOTE_PREVIEW_CHANGED,
   BROWSER_URL_UPDATED,
   FIT_ALL_PANES,
+  BROWSER_KEYBINDING_COMMAND,
   GIT_STATUS_UPDATE,
   EXPLORER_TREE_CHANGED,
   EXPLORER_START_WATCHING,

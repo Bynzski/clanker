@@ -6,6 +6,7 @@
 
 import { vi, describe, test, expect, beforeEach } from 'vitest';
 import { SET_THEME } from '../../../src/shared/ipcChannels';
+import { KeybindingOverridesService } from '../../../src/main/keybindingOverrides';
 import { testHome } from '../../_helpers/tempPaths';
 
 vi.mock('electron', () => ({
@@ -134,6 +135,7 @@ describe('registerSettingsIpc', () => {
         return defaults[key];
       }),
       set: vi.fn(),
+      delete: vi.fn(),
     };
 
     const mockMainWindow = {
@@ -152,7 +154,9 @@ describe('registerSettingsIpc', () => {
       deps: {
         getStore: () => mockStore as never,
         getMainWindow: () => mockMainWindow as never,
+        keybindingOverrides: new KeybindingOverridesService(() => mockStore as never, 'other'),
       },
+      mockStore,
     };
   };
 
@@ -182,6 +186,8 @@ describe('registerSettingsIpc', () => {
       'set-harness-defaults',
       'get-theme',
       'set-theme',
+      'get-keybinding-overrides',
+      'set-keybinding-overrides',
     ];
 
     expectedChannels.forEach(channel => {
@@ -189,13 +195,13 @@ describe('registerSettingsIpc', () => {
     });
   });
 
-  test('registers exactly 16 settings IPC channels', () => {
+  test('registers exactly 18 settings IPC channels', () => {
     const { deps } = createMockDeps();
 
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(16);
+    expect(handleCalls.length).toBe(18);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -205,7 +211,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(32);
+    expect(handleCalls.length).toBe(36);
   });
 
   test('OPEN_DIRECTORY_DIALOG allows creating directories from the picker', async () => {
@@ -246,6 +252,57 @@ describe('registerSettingsIpc', () => {
         title: 'Select Base Directory',
       })
     );
+  });
+
+  describe('keybinding overrides', () => {
+    const handler = (channel: string) =>
+      mockIpcMain.handle.mock.calls.find((call) => call[0] === channel)?.[1] as (e: unknown, ...a: unknown[]) => unknown;
+    const custom = { code: 'KeyK', primary: true, ctrl: false, shift: false, alt: false };
+
+    test('GET validates untrusted stored data', () => {
+      const { deps, mockStore } = createMockDeps();
+      mockStore.get.mockImplementation((key: string) => key === 'keybindingOverrides'
+        ? { 'editor.save': custom, 'evil.cmd': custom, 'zoom.in': { code: 'KeyK' } }
+        : undefined);
+      registerSettingsIpc(deps);
+      expect(handler('get-keybinding-overrides')({})).toEqual({ 'editor.save': custom });
+    });
+
+    test('SET persists only validated overrides and serves them from cache', () => {
+      const { deps, mockStore } = createMockDeps();
+      registerSettingsIpc(deps);
+      const result = handler('set-keybinding-overrides')({}, { 'editor.save': custom, 'evil.cmd': custom });
+      expect(result).toEqual({ success: true, overrides: { 'editor.save': custom } });
+      expect(mockStore.set).toHaveBeenCalledWith('keybindingOverrides', { 'editor.save': custom });
+      mockStore.get.mockClear();
+      expect(handler('get-keybinding-overrides')({})).toEqual({ 'editor.save': custom });
+      expect(mockStore.get).not.toHaveBeenCalled();
+    });
+
+    test('SET with no overrides removes the stored key', () => {
+      const { deps, mockStore } = createMockDeps();
+      registerSettingsIpc(deps);
+      expect(handler('set-keybinding-overrides')({}, {})).toEqual({ success: true, overrides: {} });
+      expect(mockStore.delete).toHaveBeenCalledWith('keybindingOverrides');
+    });
+
+    test('SET rejects ambiguous configurations', () => {
+      const { deps, mockStore } = createMockDeps();
+      registerSettingsIpc(deps);
+      const result = handler('set-keybinding-overrides')({}, { 'view.toggleExplorer': { ...custom, code: 'KeyS' } });
+      expect(result).toMatchObject({ success: false });
+      expect(mockStore.set).not.toHaveBeenCalled();
+    });
+
+    test('SET accepts an explicit unbind that resolves the conflict', () => {
+      const { deps } = createMockDeps();
+      registerSettingsIpc(deps);
+      const result = handler('set-keybinding-overrides')({}, {
+        'view.toggleExplorer': { ...custom, code: 'KeyS' },
+        'editor.save': null,
+      });
+      expect(result).toMatchObject({ success: true });
+    });
   });
 
   test('settings channels do not overlap with terminal channels', () => {
