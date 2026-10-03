@@ -539,18 +539,19 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       }
     };
 
-    // Ctrl+wheel over the terminal zooms only this xterm. Capture phase on the
-    // xterm element so it wins over xterm's own scrollback wheel handling and
-    // never bubbles to the app-level wheel zoom. Plain wheel is left untouched.
-    const xtermElement = xterm.element;
-    const handleWheel = (event: WheelEvent) => {
+    // Ctrl+wheel over the terminal zooms only this xterm. xterm runs this before
+    // its own wheel processing; returning false stops scrollback/mouse handling.
+    // Plain wheel returns true so xterm behaves normally.
+    xterm.attachCustomWheelEventHandler((event) => {
       const wheelAction = getWheelZoomAction(event);
-      if (wheelAction == null) return;
+      if (wheelAction == null) {
+        return true;
+      }
       event.preventDefault();
       event.stopPropagation();
       applyTerminalZoom(wheelAction);
-    };
-    xtermElement?.addEventListener('wheel', handleWheel, { capture: true, passive: false });
+      return false;
+    });
 
     xterm.attachCustomKeyEventHandler((event) => {
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'c') {
@@ -584,7 +585,6 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     const initialResizeTimeout = setTimeout(fitAndResize, 100);
 
     return () => {
-      xtermElement?.removeEventListener('wheel', handleWheel, { capture: true });
       clearTimeout(initialResizeTimeout);
       inputDisposable?.dispose();
       disposeResized?.();

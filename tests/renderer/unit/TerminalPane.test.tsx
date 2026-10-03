@@ -16,6 +16,7 @@ import { startTerminalThemeSync } from '../../../src/renderer/theme/themeRuntime
 import { getTerminalTheme } from '../../../src/renderer/theme/terminalTheme';
 import type { ILinkProvider } from '@xterm/xterm';
 
+let attachedWheelHandler: ((event: WheelEvent) => boolean) | null = null;
 let attachedKeyHandler: ((event: KeyboardEvent) => boolean) | null = null;
 let attachedDataHandler: ((data: string) => void) | null = null;
 let registeredLinkProvider: ILinkProvider | null = null;
@@ -62,6 +63,9 @@ vi.mock('@xterm/xterm', () => {
       attachCustomKeyEventHandler = vi.fn((handler: (event: KeyboardEvent) => boolean) => {
         attachedKeyHandler = handler;
         return true;
+      });
+      attachCustomWheelEventHandler = vi.fn((handler: (event: WheelEvent) => boolean) => {
+        attachedWheelHandler = handler;
       });
       registerLinkProvider = vi.fn((provider: ILinkProvider) => {
         registeredLinkProvider = provider;
@@ -206,6 +210,7 @@ describe('TerminalPane', () => {
     vi.clearAllMocks();
     vi.useFakeTimers({ shouldAdvanceTime: true });
     attachedKeyHandler = null;
+    attachedWheelHandler = null;
     attachedDataHandler = null;
     registeredLinkProvider = null;
     mockBufferLineText = '';
@@ -792,18 +797,14 @@ describe('TerminalPane', () => {
     });
 
     const wheel = (init: WheelEventInit) => {
-      const element = (constructedTerminals[0] as unknown as { element: HTMLElement }).element;
       const event = new WheelEvent('wheel', { cancelable: true, bubbles: true, ...init });
-      const appWheel = vi.fn();
-      window.addEventListener('wheel', appWheel);
-      act(() => {
-        element.dispatchEvent(event);
-      });
-      window.removeEventListener('wheel', appWheel);
-      return { event, appWheel };
+      const preventDefault = vi.spyOn(event, 'preventDefault');
+      const stopPropagation = vi.spyOn(event, 'stopPropagation');
+      const handled = attachedWheelHandler?.(event);
+      return { handled, preventDefault, stopPropagation };
     };
 
-    it('zooms in on Ctrl+wheel up without reaching the app or PTY', async () => {
+    it('zooms in on Ctrl+wheel up and owns the event', async () => {
       await mountTerminal();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(500);
@@ -811,12 +812,14 @@ describe('TerminalPane', () => {
       mockResizeTerminal.mockClear();
       mockWriteTerminal.mockClear();
 
-      const { event, appWheel } = wheel({ ctrlKey: true, deltaY: -100 });
+      const { handled, preventDefault, stopPropagation } = wheel({ ctrlKey: true, deltaY: -100 });
 
+      expect(handled).toBe(false);
       expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE + 1);
-      expect(event.defaultPrevented).toBe(true);
-      expect(appWheel).not.toHaveBeenCalled();
+      expect(preventDefault).toHaveBeenCalled();
+      expect(stopPropagation).toHaveBeenCalled();
       expect(mockZoomInWindow).not.toHaveBeenCalled();
+      expect(mockZoomOutWindow).not.toHaveBeenCalled();
       expect(mockWriteTerminal).not.toHaveBeenCalled();
 
       await act(async () => {
@@ -827,7 +830,7 @@ describe('TerminalPane', () => {
 
     it('zooms out on Ctrl+wheel down', async () => {
       await mountTerminal();
-      wheel({ ctrlKey: true, deltaY: 100 });
+      expect(wheel({ ctrlKey: true, deltaY: 100 }).handled).toBe(false);
       expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE - 1);
     });
 
@@ -836,17 +839,20 @@ describe('TerminalPane', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(500);
       });
+      mockResizeTerminal.mockClear();
 
       constructedTerminals[0].options.fontSize = TERMINAL_MAX_FONT_SIZE;
-      mockResizeTerminal.mockClear();
       const up = wheel({ ctrlKey: true, deltaY: -100 });
-      expect(up.event.defaultPrevented).toBe(true);
-      expect(up.appWheel).not.toHaveBeenCalled();
+      expect(up.handled).toBe(false);
+      expect(up.preventDefault).toHaveBeenCalled();
+      expect(up.stopPropagation).toHaveBeenCalled();
       expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_MAX_FONT_SIZE);
 
       constructedTerminals[0].options.fontSize = TERMINAL_MIN_FONT_SIZE;
       const down = wheel({ ctrlKey: true, deltaY: 100 });
-      expect(down.event.defaultPrevented).toBe(true);
+      expect(down.handled).toBe(false);
+      expect(down.preventDefault).toHaveBeenCalled();
+      expect(down.stopPropagation).toHaveBeenCalled();
       expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_MIN_FONT_SIZE);
 
       await act(async () => {
@@ -855,11 +861,12 @@ describe('TerminalPane', () => {
       expect(mockResizeTerminal).not.toHaveBeenCalled();
     });
 
-    it('does not intercept ordinary wheel scrolling', async () => {
+    it('leaves plain wheel to xterm', async () => {
       await mountTerminal();
-      const { event, appWheel } = wheel({ deltaY: -100 });
-      expect(event.defaultPrevented).toBe(false);
-      expect(appWheel).toHaveBeenCalledTimes(1);
+      const { handled, preventDefault, stopPropagation } = wheel({ deltaY: -100 });
+      expect(handled).toBe(true);
+      expect(preventDefault).not.toHaveBeenCalled();
+      expect(stopPropagation).not.toHaveBeenCalled();
       expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE);
       expect(mockZoomInWindow).not.toHaveBeenCalled();
     });
