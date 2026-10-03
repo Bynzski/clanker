@@ -1,6 +1,7 @@
 import type Store from 'electron-store';
 import type { StoreSchema } from '../shared/types/store';
 import { type WorkspaceNavigationMode } from '../shared/types/workspaceNavigation';
+import { KNOWN_HARNESS_IDS } from '../shared/harnessIds';
 
 /**
  * Legacy `taskSessions` key. Workspace Tasks (#43) persisted a durable record
@@ -48,4 +49,28 @@ export function seedWorkspaceNavigationMode(
   const mode: WorkspaceNavigationMode = storeFileExistedBeforeOpen ? 'tabs' : 'sidebar';
   store.set('workspaceNavigationMode', mode);
   return mode;
+}
+
+/**
+ * Agent attention is opt-in per harness, but a brand-new install should start with it on.
+ * Same fresh-vs-existing signal as `seedWorkspaceNavigationMode`: only a config file that did not
+ * exist before the store was constructed counts as a first load. Existing installs are never
+ * touched, because a stored `false` cannot be told apart from a deliberate opt-out. Later launches
+ * see the file, so a user's own toggles are never overwritten.
+ *
+ * Call once at startup. Returns true when attention was seeded.
+ */
+export function seedHarnessAttention(
+  store: Store<StoreSchema>,
+  storeFileExistedBeforeOpen: boolean,
+): boolean {
+  if (storeFileExistedBeforeOpen) return false;
+  const current = store.get('harnessDefaults') ?? {};
+  store.set('harnessDefaults', Object.fromEntries(
+    KNOWN_HARNESS_IDS.map((id) => [
+      id,
+      { ...(current[id] ?? { model: '', favorites: [], flags: '', visible: true }), attentionEnabled: true },
+    ]),
+  ));
+  return true;
 }

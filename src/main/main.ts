@@ -72,7 +72,7 @@ import * as nodePath from 'node:path';
 import { HarnessUsageService } from './usage/harnessUsageService';
 import { registerRecipeIpc } from './ipc/recipeIpc';
 import { KeybindingOverridesService } from './keybindingOverrides';
-import { purgeLegacyTaskSessions, seedWorkspaceNavigationMode } from './storeMigrations';
+import { purgeLegacyTaskSessions, seedHarnessAttention, seedWorkspaceNavigationMode } from './storeMigrations';
 import { existsSync } from 'node:fs';
 import { AgentAttentionBroker } from './agentAttentionBroker';
 import { AGENT_ATTENTION_UPDATE, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
@@ -110,6 +110,7 @@ const store = new Store<StoreSchema>({
 // builds instead of leaving an ever-growing dead store on disk.
 purgeLegacyTaskSessions(store);
 seedWorkspaceNavigationMode(store, storeFileExistedBeforeOpen);
+seedHarnessAttention(store, storeFileExistedBeforeOpen);
 
 const keybindingOverrides = new KeybindingOverridesService(() => store);
 
