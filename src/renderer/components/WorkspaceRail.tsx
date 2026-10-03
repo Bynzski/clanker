@@ -1,6 +1,7 @@
 import { BellRing, FolderTree, GitBranch, PanelLeftOpen, Plus } from 'lucide-react';
 import { IconButton } from './ui/IconButton';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import type { MutableRefObject } from 'react';
 import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 import { attentionCounts, useAgentAttentionStore } from '../store/agentAttentionStore';
 import { nextAttentionTarget } from '../lib/agentAttentionNavigation';
@@ -9,6 +10,7 @@ import { getHarnessOption } from '../lib/harnessOptions';
 import { getRemoteEnvironmentLabel, getWorkspaceTabLabel } from '../lib/workspaceLabels';
 import { toggleFocusedWorkspaceExplorer } from '../lib/explorerToggle';
 import { getAgentWorktreeContext, worktreeBranchLabel } from '../lib/worktreeAgents';
+import { useWorkspaceReorder } from '../lib/useWorkspaceReorder';
 import { AssistantButton, useAssistantsEnabled, useAssistantRoster } from './assistants/AssistantsRoster';
 import './WorkspaceRail.css';
 
@@ -20,7 +22,15 @@ export function getWorkspaceMonogram(label: string): string {
   return letters.toUpperCase();
 }
 
-function RailAgent({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab; terminal: Terminal; isCurrent: boolean }) {
+interface RailAgentProps {
+  workspace: WorkspaceTab;
+  terminal: Terminal;
+  isCurrent: boolean;
+  /** Set while a reorder drag settles, so its trailing click doesn't select. */
+  suppressClickRef: MutableRefObject<boolean>;
+}
+
+function RailAgent({ workspace, terminal, isCurrent, suppressClickRef }: RailAgentProps) {
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
   const attention = useAgentAttentionStore((state) => state.byTerminalId[terminal.id]);
   const harness = getHarnessOption(terminal.harnessId);
@@ -42,7 +52,7 @@ function RailAgent({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab
       aria-current={isCurrent ? 'true' : undefined}
       aria-label={description}
       title={worktree ? `${description}\n${worktree.path}` : description}
-      onClick={() => selectWorkspace(workspace.id, terminal.id)}
+      onClick={() => { if (!suppressClickRef.current) selectWorkspace(workspace.id, terminal.id); }}
     >
       <HarnessIcon size={14} strokeWidth={2} />
       {worktree && <GitBranch className="ws-rail-agent-worktree" size={8} strokeWidth={2.5} aria-hidden="true" />}
@@ -60,15 +70,21 @@ interface WorkspaceRailProps {
 
 /**
  * Collapsed sidebar: one column of workspace marks, each followed by its agents'
- * harness icons. Selection matches the expanded navigator; it never changes
- * residency or terminals.
+ * harness icons. Selection and drag/keyboard reordering match the expanded
+ * navigator; neither changes residency or terminals.
  */
 export default function WorkspaceRail({ onOpenWorkspace, onExpand }: WorkspaceRailProps) {
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const activeTerminalId = useWorkspaceStore((state) => state.activeTerminalId);
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
+  const moveWorkspace = useWorkspaceStore((state) => state.moveWorkspace);
   const byTerminalId = useAgentAttentionStore((state) => state.byTerminalId);
+  const reorder = useWorkspaceReorder(workspaces, moveWorkspace, {
+    axis: 'vertical',
+    // Nothing inside an entry opts out of dragging.
+    ignoreDragSelector: '[data-no-reorder]',
+  });
   const nextTarget = nextAttentionTarget(workspaces, byTerminalId, activeTerminalId);
   const assistantsEnabled = useAssistantsEnabled();
   const { assistants, live } = useAssistantRoster();
@@ -87,7 +103,7 @@ export default function WorkspaceRail({ onOpenWorkspace, onExpand }: WorkspaceRa
       </IconButton>
 
       <ul className="ws-rail-list">
-        {workspaces.map((workspace) => {
+        {workspaces.map((workspace, index) => {
           const isActive = workspace.id === activeWorkspaceId;
           const label = getWorkspaceTabLabel(workspace);
           const remoteLabel = getRemoteEnvironmentLabel(workspace);
@@ -100,16 +116,29 @@ export default function WorkspaceRail({ onOpenWorkspace, onExpand }: WorkspaceRa
             workspace.isLinkedWorktree && branch ? `worktree · ${branch}` : null,
             workspace.workspacePath,
           ].filter(Boolean).join('\n');
+          const dropClass = reorder.dropTarget?.id === workspace.id ? ` drop-${reorder.dropTarget.side === 'start' ? 'before' : 'after'}` : '';
 
           return (
-            <li key={workspace.id} className={`ws-rail-workspace${isActive ? ' active' : ''}`} data-rail-workspace-id={workspace.id}>
+            <li
+              key={workspace.id}
+              className={`ws-rail-workspace${isActive ? ' active' : ''}${dropClass}`}
+              data-rail-workspace-id={workspace.id}
+              draggable
+              onDragStart={(event) => reorder.onDragStart(event, workspace.id)}
+              onDragOver={(event) => reorder.onDragOver(event, workspace.id)}
+              onDragLeave={() => reorder.onDragLeave(workspace.id)}
+              onDrop={(event) => reorder.onDrop(event, workspace.id)}
+              onDragEnd={reorder.onDragEnd}
+            >
               <button
                 type="button"
                 className="ws-rail-mark"
                 aria-current={isActive ? 'true' : undefined}
                 aria-label={remoteLabel ? `${remoteLabel} · ${label}` : label}
+                aria-keyshortcuts="Alt+Shift+ArrowUp Alt+Shift+ArrowDown"
                 title={details}
-                onClick={() => selectWorkspace(workspace.id)}
+                onClick={() => { if (!reorder.suppressClickRef.current) selectWorkspace(workspace.id); }}
+                onKeyDown={(event) => reorder.onReorderKey(event, workspace.id, index)}
               >
                 <span aria-hidden="true">{getWorkspaceMonogram(label)}</span>
                 {remoteLabel && <span className="ws-rail-mark-remote" aria-hidden="true" />}
@@ -124,6 +153,7 @@ export default function WorkspaceRail({ onOpenWorkspace, onExpand }: WorkspaceRa
                       workspace={workspace}
                       terminal={terminal}
                       isCurrent={isActive && workspace.activeTerminalId === terminal.id}
+                      suppressClickRef={reorder.suppressClickRef}
                     />
                   ))}
                 </div>
