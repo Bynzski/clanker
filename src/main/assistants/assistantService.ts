@@ -72,13 +72,15 @@ export class AssistantService {
   private async collectProfiles(revision: number, epoch: number): Promise<AssistantSnapshot> {
     const found = new Map<string, { harnessId: string; native: HarnessNativeProfile }>();
     const errors = new Set<string>();
+    let overflow = false;
     for (const harnessId of this.deps.profileHarnessIds) {
       const capability = this.deps.getProfilesCapability(harnessId);
       if (!capability) continue;
       try {
         const profiles = await capability.discover(this.deps.executor(harnessId));
-        if (profiles.length > MAX_ASSISTANT_PROFILES) throw new Error('Profile limit exceeded');
-        for (const native of profiles) found.set(`${harnessId}:${native.name}`, { harnessId, native });
+        // Overflow is not an ordinary failure: nothing is copied (bounded memory) and the roster stays untouched.
+        if (profiles.length > MAX_ASSISTANT_PROFILES) overflow = true;
+        else for (const native of profiles) found.set(`${harnessId}:${native.name}`, { harnessId, native });
       } catch {
         errors.add('Automatic profile discovery unavailable. Select an existing profile by name; only local terminal backends are supported.');
       }
@@ -94,7 +96,7 @@ export class AssistantService {
     // that survive even when absent from this discovery. Overflow changes nothing but the status.
     const finalIdentities = new Set(found.keys());
     for (const [id, profile] of this.profiles) if (this.launches.has(id)) finalIdentities.add(`${profile.public.harnessId}:${profile.native.name}`);
-    if (finalIdentities.size > MAX_ASSISTANT_PROFILES) {
+    if (overflow || finalIdentities.size > MAX_ASSISTANT_PROFILES) {
       errors.add(`Too many Assistant profiles (limit ${MAX_ASSISTANT_PROFILES}); the previous profile list was kept. Remove pins or profiles, then refresh.`);
       this.discoveryError = [...errors].join(' ');
       this.profilesChecked = true;

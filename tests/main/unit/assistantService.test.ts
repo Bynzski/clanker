@@ -137,6 +137,43 @@ describe('optional assistants', () => {
       expect(onChanged).toHaveBeenCalledTimes(1);
       expect(onChanged).toHaveBeenCalledWith(snapshot);
     });
+    it('cold start where the provider itself returns 65 stays empty, checked, with the limit error only', async () => {
+      const { service, discover, onChanged } = fixture();
+      service.configure({ enabled: true, pins: [] });
+      discover.mockResolvedValueOnce(many(65));
+      onChanged.mockClear();
+      const snapshot = await service.discover({ ifUnchecked: true });
+      expect(snapshot.profiles).toEqual([]);
+      expect(snapshot.profilesChecked).toBe(true);
+      expect(snapshot.discoveryError).toMatch(/Too many Assistant profiles \(limit 64\)/);
+      expect(snapshot.discoveryError).not.toMatch(/Automatic profile discovery unavailable/);
+      expect(onChanged).toHaveBeenCalledTimes(1);
+    });
+    it('an existing roster survives a provider returning 65 directly, with ids and launches intact', async () => {
+      const { service, discover, resolve } = fixture();
+      service.configure({ enabled: true, pins: [] });
+      resolve.mockResolvedValue(native('keep'));
+      discover.mockResolvedValueOnce([native('keep'), native('other')]);
+      const before = await service.discover();
+      const keep = before.profiles.find((profile) => profile.profileName === 'keep')!;
+      await service.launch({ profileId: keep.id, workspaceId: 'ws-1', acknowledgeExternalActivity: true });
+      const withLaunch = service.get();
+      discover.mockResolvedValueOnce(many(65, 'big'));
+      const after = await service.discover();
+      expect(after.profiles).toEqual(withLaunch.profiles);
+      expect(after.launches).toEqual(withLaunch.launches);
+      expect(after.profilesChecked).toBe(true);
+      expect(after.discoveryError).toMatch(/limit 64/);
+      expect(after.discoveryError).not.toMatch(/Automatic profile discovery unavailable/);
+    });
+    it('accepts exactly 64 rows returned directly by the provider', async () => {
+      const { service, discover } = fixture();
+      service.configure({ enabled: true, pins: [] });
+      discover.mockResolvedValueOnce(many(64));
+      const snapshot = await service.discover();
+      expect(snapshot.profiles).toHaveLength(64);
+      expect(snapshot.discoveryError).toBeUndefined();
+    });
     it('an overflowing refresh retains the previous roster exactly, including ids', async () => {
       const { service, discover, resolve } = fixture();
       service.configure({ enabled: true, pins: [] });
