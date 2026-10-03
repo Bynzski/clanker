@@ -163,7 +163,7 @@ describe('searchable harness default settings', () => {
     document.head.append(style);
     container.classList.add('settings-dropdown');
     try {
-      expect(getComputedStyle(container).width).toBe('380px');
+      expect(getComputedStyle(container).width).toBe('360px');
       expect(getComputedStyle(container).maxWidth).toBe('calc(100vw - 16px)');
       expect(getComputedStyle(container).minWidth).toBe('0px');
       const trigger = screen.getByRole('button', { name: 'OpenCode default model' });

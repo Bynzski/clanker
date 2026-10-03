@@ -39,7 +39,7 @@ export function GitMergeSection({
       </div>
 
       {isLoadingOperation ? (
-        <div className="git-menu-empty">Checking merge state...</div>
+        <div className="git-menu-empty">Checking merge state…</div>
       ) : operationState?.inProgress ? (
         <div className="git-operation-panel">
           <div className={`git-operation-status ${operationState.mode}`}>
@@ -54,7 +54,7 @@ export function GitMergeSection({
               ))}
             </div>
           )}
-          <Button variant="danger"
+          <Button size="xs" variant="danger"
             type="button"
             className="git-operation-abort"
             onClick={onAbortOperation}
@@ -81,7 +81,7 @@ export function GitMergeSection({
               ))
             )}
           </Select>
-          <Button
+          <Button size="xs"
             type="button"
             className="header-btn git-create-branch-submit"
             onClick={onMergeBranch}

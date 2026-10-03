@@ -1,57 +1,72 @@
 .workspace-tabs {
   display: flex;
-  align-items: stretch;
-  gap: 1px;
-  padding: 4px 8px 0;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
   background: transparent;
-  border-bottom: 1px solid var(--border-subtle);
   overflow-x: auto;
   overflow-y: hidden;
+  scrollbar-width: none;
   -webkit-app-region: drag;
 }
+
+.workspace-tabs::-webkit-scrollbar { display: none; }
 
 .workspace-tabs * {
   -webkit-app-region: no-drag;
 }
 
+/* Compact chips centred in the title bar, sized like the toolbar controls. */
 .workspace-tab {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   max-width: 290px;
+  height: var(--control-height-sm);
   flex: 0 0 auto;
-  padding: 5px 10px 6px;
-  background: color-mix(in srgb, var(--surface-tint) 2%, transparent);
+  padding: 0 3px 0 10px;
+  background: transparent;
   border: 1px solid transparent;
-  border-bottom: none;
-  border-top-left-radius: 5px;
-  border-top-right-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   cursor: grab;
   white-space: nowrap;
-  transition: all var(--transition);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
 }
 
 .workspace-tab:active { cursor: grabbing; }
 
-.workspace-tab.drop-left { box-shadow: inset 3px 0 0 var(--accent-interactive); }
-.workspace-tab.drop-right { box-shadow: inset -3px 0 0 var(--accent-interactive); }
-.workspace-tab.active.drop-left { box-shadow: inset 3px 0 0 var(--accent-interactive), inset 0 2px 0 var(--accent-interactive); }
-.workspace-tab.active.drop-right { box-shadow: inset -3px 0 0 var(--accent-interactive), inset 0 2px 0 var(--accent-interactive); }
+.workspace-tab.drop-left { box-shadow: inset 2px 0 0 var(--accent-interactive); }
+.workspace-tab.drop-right { box-shadow: inset -2px 0 0 var(--accent-interactive); }
 
 .workspace-tab:hover {
   color: var(--text-primary);
-  background: var(--surface-control);
+  background: var(--surface-hover);
 }
 
 .workspace-tab.active {
   color: var(--text-primary);
-  background: var(--surface-app);
-  border-color: var(--border-default);
-  border-bottom-color: var(--surface-app);
-  box-shadow: inset 0 2px 0 var(--accent-interactive);
+  background: var(--surface-control);
+}
+
+/* Active marker: a short accent underline, like the sidebar's active bar. */
+.workspace-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent-interactive);
+}
+
+.workspace-tab:focus-visible {
+  outline: 1px solid var(--focus-ring);
+  outline-offset: -1px;
 }
 
 .workspace-tab-label {
@@ -69,12 +84,12 @@
   max-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: 1px 4px;
-  border: 1px solid var(--border-default);
+  padding: 0 4px;
   border-radius: var(--radius-sm);
-  background: var(--surface-control);
+  background: var(--surface-hover);
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
+  line-height: 16px;
 }
 
 .workspace-tab-name {
@@ -92,77 +107,49 @@
   max-width: 120px;
   color: var(--accent-interactive);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .workspace-tab-worktree span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
-.workspace-tab-jump {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* Inline tab actions: borderless, quiet until the tab is hovered or active. */
+.workspace-tab .workspace-tab-close,
+.workspace-tab .workspace-tab-edit-trigger {
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
-  width: 29px;
+  color: var(--text-muted);
+  opacity: 0;
 }
 
-.workspace-tab-count {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1px 5px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-hover);
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  flex-shrink: 0;
-}
-
-.workspace-tab.active .workspace-tab-count {
-  background: color-mix(in srgb, var(--surface-tint) 10%, transparent);
+.workspace-tab .workspace-tab-close:hover:not(:disabled),
+.workspace-tab .workspace-tab-edit-trigger:hover:not(:disabled) {
   color: var(--text-primary);
 }
 
-.workspace-tab-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  margin-left: 2px;
+.workspace-tab:hover .workspace-tab-close,
+.workspace-tab:focus-within .workspace-tab-close,
+.workspace-tab.active .workspace-tab-close,
+.workspace-tab:hover .workspace-tab-edit-trigger,
+.workspace-tab:focus-within .workspace-tab-edit-trigger {
+  opacity: 1;
+}
+
+/* Only the active tab reserves room for rename, so inactive tabs stay tight and
+   hovering never shifts neighbouring tabs; keyboard focus still reveals it, and
+   double-click renames any tab. */
+.workspace-tab:not(.active):not(:focus-within) .workspace-tab-edit-trigger { display: none; }
+
+/* The new-workspace and next-agent buttons sit beside the tabs as plain toolbar icons. */
+.workspace-tabs .workspace-tab-new,
+.workspace-tabs .workspace-tab-jump {
   flex-shrink: 0;
-  opacity: 0;
+  color: var(--text-secondary);
 }
 
-.workspace-tab:hover .workspace-tab-close {
-  opacity: 1;
-}
-
-.workspace-tab.active .workspace-tab-close {
-  opacity: 1;
-}
-
-.workspace-tab-new {
-  flex: 0 0 auto;
-  min-width: 30px;
-  justify-content: center;
-  padding-left: 8px;
-  padding-right: 8px;
-}
-
-.workspace-tab-edit-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  opacity: 0;
-  flex-shrink: 0;
-}
-
-.workspace-tab:hover .workspace-tab-edit-trigger {
-  opacity: 1;
+.workspace-tabs .workspace-tab-new:hover:not(:disabled),
+.workspace-tabs .workspace-tab-jump:hover:not(:disabled) {
+  color: var(--text-primary);
 }
 
 .workspace-tab-edit {

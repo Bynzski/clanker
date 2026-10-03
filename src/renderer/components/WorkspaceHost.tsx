@@ -169,7 +169,7 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
   return (
     <>
     <ExplorerLifecycleCoordinator />
-    <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
+    <Suspense fallback={<div className="main-content-loading">Loading workspace layout…</div>}>
       <div
         className={`workspace-host${sidebarMode ? ' with-sidebar' : ''}`}
         data-testid="workspace-host"

@@ -382,7 +382,8 @@ describe('TerminalPane', () => {
       render(<TerminalPane paneId="p1" />);
 
       expect(screen.getByRole('img', { name: 'OpenCode harness' })).toBeTruthy();
-      expect(screen.getByLabelText('Samson: Unknown')).toBeTruthy();
+      // Idle (no lifecycle yet) shows nothing at all.
+      expect(document.querySelector('.agent-attention-state')).toBeNull();
       expect(screen.queryByText('Unknown')).toBeNull();
       act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'turn_started' }, false));
       expect(screen.getByLabelText('Samson: Running')).toHaveClass('state-running');
@@ -390,6 +391,13 @@ describe('TerminalPane', () => {
       expect(screen.getByLabelText('Samson: Needs input')).toHaveClass('state-needs_input');
       act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'turn_completed' }, false));
       expect(screen.getByLabelText('Samson: Turn complete')).toHaveClass('state-turn_complete');
+      // Seeing the finished turn returns the agent to idle: nothing shown.
+      act(() => useAgentAttentionStore.getState().acknowledge('t1'));
+      expect(document.querySelector('.agent-attention-state')).toBeNull();
+      // A turn that finishes while the agent is in the foreground is never shown as unseen.
+      act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'turn_started' }, true));
+      act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'turn_completed' }, true));
+      expect(document.querySelector('.agent-attention-state')).toBeNull();
     });
 
     it('renders terminal pane with header when terminal exists', () => {

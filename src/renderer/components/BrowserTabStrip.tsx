@@ -92,7 +92,7 @@ export default function BrowserTabStrip({
             >
               <span className="browser-tab-label">{getBrowserTabLabel(tab)}</span>
             </button>
-            <IconButton
+            <IconButton variant="ghost"
               className="browser-tab-close"
               type="button"
               onClick={(event) => onCloseTab(event, tab.id)}
@@ -105,7 +105,7 @@ export default function BrowserTabStrip({
           </div>
         ))}
       </div>
-      <IconButton className="browser-tab-add" type="button" onClick={onNewTab} title="New tab" aria-label="New tab">
+      <IconButton variant="ghost" className="browser-tab-add" type="button" onClick={onNewTab} title="New tab" aria-label="New tab">
         <Plus size={14} strokeWidth={2} />
       </IconButton>
     </div>

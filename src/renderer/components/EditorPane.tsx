@@ -258,7 +258,7 @@ export default function EditorPane({ workspaceId }: { workspaceId?: string }) {
             <span className="editor-pane-title">Editor</span>
             <span className="editor-pane-spacer" />
           </div>
-          <IconButton
+          <IconButton variant="ghost"
             className="editor-pane-close-btn"
             onClick={handleClosePane}
             title="Close editor"

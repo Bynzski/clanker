@@ -121,7 +121,7 @@ export default function EditorTabBar({ workspaceId }: { workspaceId?: string }) 
                 <span className="editor-tab-dirty" aria-label="Unsaved changes" />
               )}
               <span className="editor-tab-name">{tab.fileName}</span>
-              <IconButton
+              <IconButton variant="ghost"
                 className="editor-tab-close"
                 onClick={(e) => handleCloseClick(tab.id, e)}
                 aria-label={`Close ${tab.fileName}`}

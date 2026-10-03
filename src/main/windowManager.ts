@@ -8,7 +8,7 @@
 import { app, BrowserWindow, Menu } from 'electron';
 import * as path from 'path';
 
-import { DEFAULT_THEME_ID, normalizeThemeId, getThemeMetadata } from '../shared/types/theme';
+import { DEFAULT_THEME_ID, normalizeThemeId, getThemeMetadata, type ThemeId } from '../shared/types/theme';
 
 /** Async resource callbacks may outlive the renderer or its window. */
 export function isWindowAvailable(window: BrowserWindow | null): window is BrowserWindow {
@@ -30,15 +30,20 @@ export interface CreateMainWindowOptions {
   onWindowClosed?: () => void;
   onRendererGone?: () => void;
   backgroundColor?: string;
+  /** Saved theme, passed to the page so its boot splash paints in the right colours before any script runs. */
+  theme?: ThemeId;
   show?: boolean;
 }
 
 /**
  * Resolves the initial window background color from the persisted theme in store.
  */
+export function resolveInitialTheme(targetStore: { get: (key: string) => unknown }): ThemeId {
+  return normalizeThemeId(targetStore.get('theme'));
+}
+
 export function resolveInitialWindowBackground(targetStore: { get: (key: string) => unknown }): string {
-  const savedTheme = normalizeThemeId(targetStore.get('theme'));
-  return getThemeMetadata(savedTheme).windowBackground;
+  return getThemeMetadata(resolveInitialTheme(targetStore)).windowBackground;
 }
 
 /**
@@ -94,6 +99,7 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
     fileWatcher,
     onWindowClosed,
     backgroundColor = getThemeMetadata(DEFAULT_THEME_ID).windowBackground,
+    theme = DEFAULT_THEME_ID,
     show = false,
   } = deps;
   const mainWindow = new BrowserWindow({
@@ -138,11 +144,18 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
     });
   }
 
+  // Show the window as soon as index.html's static boot splash has painted, so a
+  // cold start shows the logo instead of nothing while the bundle loads. The
+  // renderer's WINDOW_READY_TO_SHOW remains a fallback for the same show.
+  mainWindow.once('ready-to-show', () => {
+    if (!mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();
+  });
+
   // Load the app
   if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL(getRendererUrl({}));
+    mainWindow.loadURL(getRendererUrl({ theme }));
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'), { query: { theme } });
   }
 
   const cleanup = () => {

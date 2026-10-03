@@ -150,7 +150,7 @@ function TreeNodeChildren({
   }
 
   if (isLoading) {
-    return <div className="tree-node-status" style={{ paddingLeft: depth * 16 + 40 }}>Loading...</div>;
+    return <div className="tree-node-status" style={{ paddingLeft: depth * 16 + 40 }}>Loading…</div>;
   }
 
   if (error) {
@@ -595,7 +595,7 @@ export default function FileTree({ workspaceId, rootPath, workspacePath, rootErr
   const isCreatingAtRoot = creating?.parentPath === rootPath;
 
   if (isRootLoading && rootEntries.length === 0 && !isCreatingAtRoot) {
-    return <div className="file-explorer-status">Loading...</div>;
+    return <div className="file-explorer-status">Loading…</div>;
   }
 
   if (rootError) {

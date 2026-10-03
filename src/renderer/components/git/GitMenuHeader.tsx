@@ -60,12 +60,14 @@ export function GitMenuHeader({
           </span>
 
           <IconButton aria-label="Close"
+            size="xs"
+            variant="ghost"
             type="button"
             className="git-menu-close"
             onClick={onClose}
             title="Close"
           >
-            <X size={15} />
+            <X size={14} />
           </IconButton>
         </div>
       </div>
@@ -88,6 +90,7 @@ export function GitMenuHeader({
 
       <div className="git-menu-actions">
         <Button variant="primary"
+          size="xs"
           type="button"
           className="header-btn header-btn-primary git-menu-action"
           onClick={onOpenCommitDialog}
@@ -95,6 +98,7 @@ export function GitMenuHeader({
           Commit Changes
         </Button>
         <Button
+          size="xs"
           type="button"
           className="header-btn git-menu-action"
           onClick={onRefresh}

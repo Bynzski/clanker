@@ -1020,7 +1020,7 @@ describe('GitButton', () => {
       expect(screen.getByText('Fetch failed: connection refused')).toBeTruthy();
     });
 
-    it('shows "Fetching..." label while fetch is in progress', async () => {
+    it('shows "Fetching…" label while fetch is in progress', async () => {
       setupTrackedMain();
       mockGitFetch.mockImplementation(async () => {
         await new Promise((r) => setTimeout(r, 100));

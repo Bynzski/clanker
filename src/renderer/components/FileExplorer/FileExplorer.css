@@ -32,7 +32,7 @@
   background: var(--surface-control-hover);
   border-radius: 999px;
   opacity: 0;
-  transition: opacity 150ms ease-out, background-color 150ms ease-out;
+  transition: opacity var(--transition), background-color var(--transition);
 }
 
 .explorer-resize-handle:hover::before {
@@ -48,7 +48,7 @@
   background: var(--surface-header);
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -58,23 +58,6 @@
   gap: 8px;
   flex-shrink: 0;
 }
-
-.file-explorer-drag-handle {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  background:
-    radial-gradient(circle at 3px 3px, color-mix(in srgb, var(--text-primary) 65%, transparent) 1.2px, transparent 1.3px),
-    radial-gradient(circle at 9px 3px, color-mix(in srgb, var(--text-primary) 65%, transparent) 1.2px, transparent 1.3px),
-    radial-gradient(circle at 3px 9px, color-mix(in srgb, var(--text-primary) 65%, transparent) 1.2px, transparent 1.3px),
-    radial-gradient(circle at 9px 9px, color-mix(in srgb, var(--text-primary) 65%, transparent) 1.2px, transparent 1.3px);
-  opacity: 0.55;
-  flex-shrink: 0;
-  pointer-events: auto;
-  cursor: grab;
-}
-
-.file-explorer-drag-handle:active { cursor: grabbing; }
 
 .file-explorer-title {
   min-width: 0;
@@ -142,7 +125,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 6px 4px;
+  padding: 4px;
 }
 
 .file-tree {
@@ -154,8 +137,11 @@
   display: flex;
   align-items: center;
   width: 100%;
+  min-height: 22px;
   gap: 4px;
-  padding: 4px 8px;
+  padding: 2px 8px;
+  font-size: var(--font-size-md);
+  line-height: 18px;
   border: none;
   background: transparent;
   color: var(--text-primary);
@@ -231,7 +217,7 @@
 .tree-node-status {
   padding: 4px 12px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-md);
 }
 
 .tree-node-status.error,
@@ -240,10 +226,14 @@
 }
 
 /* Embedded FILES section inside the workspace sidebar shell. */
+/* FILES is pinned to the bottom of the sidebar and grows upward when opened;
+   WORKSPACES keeps the rest. It is deliberately capped so it never takes focus. */
 .file-explorer-section {
-  flex: 1 1 0;
-  min-height: 140px;
+  flex: 0 0 50%;
+  min-height: 160px;
+  max-height: calc(100% - 96px);
   height: auto;
+  margin-top: auto;
   border-right: none;
   border-top: 1px solid var(--border-default);
 }
@@ -251,7 +241,28 @@
 .file-explorer-section.collapsed {
   flex: 0 0 auto;
   min-height: 0;
+  max-height: none;
 }
+
+.file-explorer-section .file-explorer-header { min-height: 28px; padding: 2px 6px 2px 0; }
+
+.file-explorer-section .file-explorer-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  min-height: 26px;
+  padding: 0 8px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.file-explorer-section .file-explorer-section-title:hover { color: var(--text-primary); }
 
 .file-explorer-section .file-explorer-section-toggle {
   display: flex;
@@ -266,7 +277,7 @@
   border: none;
   border-radius: 0;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;

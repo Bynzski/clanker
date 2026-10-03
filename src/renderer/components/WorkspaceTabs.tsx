@@ -88,7 +88,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                   onKeyDown={handleEditKeyDown}
                   onBlur={saveEdit}
                 />
-                <IconButton aria-label="Save"
+                <IconButton variant="ghost" aria-label="Save"
                   className="workspace-tab-edit-btn"
                   onClick={(e) => { e.stopPropagation(); saveEdit(); }}
                   title="Save"
@@ -106,7 +106,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                   <span className="workspace-tab-name">{tabLabel}</span>
                 </span>
                 <IconButton aria-label="Rename tab"
-                  className="workspace-tab-edit-trigger"
+                  variant="ghost" size="xs" className="workspace-tab-edit-trigger"
                   onClick={(e) => startEditing(workspace.id, editName, e)}
                   title="Rename tab"
                 >
@@ -122,7 +122,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
             )}
             <WorkspaceAttentionBadge counts={counts} />
             <IconButton
-              className="workspace-tab-close"
+              variant="ghost" size="xs" className="workspace-tab-close"
               onClick={(event) => handleClose(workspace.id, event)}
               aria-label="Close workspace"
               title="Close workspace"
@@ -135,7 +135,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
       {nextTarget && (
         <IconButton
           type="button"
-          className="workspace-tab-jump"
+          variant="ghost" size="xs" className="workspace-tab-jump"
           aria-label="Jump to next agent needing attention"
           title="Jump to next agent needing attention"
           onClick={() => {
@@ -149,7 +149,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
       {onOpenWorkspace && (
         <IconButton
           type="button"
-          className="workspace-tab-new"
+          variant="ghost" size="xs" className="workspace-tab-new"
           onClick={onOpenWorkspace}
           aria-label="Open Workspace"
           title="Open Workspace"

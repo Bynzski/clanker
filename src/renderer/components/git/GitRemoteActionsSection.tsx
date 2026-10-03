@@ -32,15 +32,17 @@ export function GitRemoteActionsSection({
       </div>
       <div className="git-menu-remote-actions">
         <Button
+          size="xs"
           type="button"
           className="header-btn git-menu-action"
           onClick={onFetch}
           disabled={isBusy || remoteAction !== null}
         >
           <Download size={13} className={remoteAction === 'fetch' ? 'spin' : ''} />
-          {remoteAction === 'fetch' ? 'Fetching...' : 'Fetch'}
+          {remoteAction === 'fetch' ? 'Fetching…' : 'Fetch'}
         </Button>
         <Button
+          size="xs"
           type="button"
           className="header-btn git-menu-action"
           onClick={onPull}
@@ -48,10 +50,11 @@ export function GitRemoteActionsSection({
           title={!upstream ? 'Set an upstream branch to enable pull' : undefined}
         >
           <Download size={13} className={remoteAction === 'pull' ? 'spin' : ''} />
-          {remoteAction === 'pull' ? 'Pulling...' : 'Pull'}
+          {remoteAction === 'pull' ? 'Pulling…' : 'Pull'}
         </Button>
         {!upstream && currentBranch && (
           <Button
+            size="xs"
             type="button"
             className="header-btn git-menu-action"
             onClick={onPublish}
@@ -59,10 +62,11 @@ export function GitRemoteActionsSection({
             title={!hasRemotes ? 'Add a remote to publish this branch' : undefined}
           >
             <Upload size={13} className={remoteAction === 'publish' ? 'spin' : ''} />
-            {remoteAction === 'publish' ? 'Publishing...' : 'Publish branch'}
+            {remoteAction === 'publish' ? 'Publishing…' : 'Publish branch'}
           </Button>
         )}
         <Button
+          size="xs"
           type="button"
           className="header-btn git-menu-action"
           onClick={onPush}
@@ -70,7 +74,7 @@ export function GitRemoteActionsSection({
           title={!upstream ? 'Set an upstream branch to enable push' : undefined}
         >
           <Upload size={13} className={remoteAction === 'push' ? 'spin' : ''} />
-          {remoteAction === 'push' ? 'Pushing...' : 'Push'}
+          {remoteAction === 'push' ? 'Pushing…' : 'Push'}
         </Button>
       </div>
     </div>

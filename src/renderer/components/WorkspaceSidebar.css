@@ -5,10 +5,20 @@
   height: 100%;
   min-width: 0;
   background: var(--surface-raised);
-  border-right: 1px solid var(--border-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   position: relative;
 }
+
+.workspace-sidebar-sections {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.workspace-sidebar-sections[hidden] { display: none; }
 
 /* Keep the grab area inside the (overflow-hidden) shell so it is fully hittable. */
 .workspace-sidebar > .explorer-resize-handle {

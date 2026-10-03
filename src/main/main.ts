@@ -40,7 +40,7 @@ import { type StoreSchema } from '../shared/types/store';
 import { DEFAULT_THEME_ID } from '../shared/types/theme';
 import { KNOWN_HARNESS_IDS } from '../shared/harnessIds';
 import { HARNESS_OPTIONS, getAvailableHarnessOptions, discoverHarnessModels } from './harnessCatalog';
-import { createMainWindow, getPreloadPath, isWindowAvailable, resolveInitialWindowBackground } from './windowManager';
+import { createMainWindow, getPreloadPath, isWindowAvailable, resolveInitialTheme, resolveInitialWindowBackground } from './windowManager';
 import { registerSettingsIpc } from './ipc/settingsIpc';
 import { registerWindowIpc } from './ipc/windowIpc';
 import { registerAiCommitIpc } from './ipc/aiCommitIpc';
@@ -430,6 +430,7 @@ app.whenReady().then(() => {
     fileWatcher,
     explorerWatcher,
     backgroundColor: resolveInitialWindowBackground(store),
+    theme: resolveInitialTheme(store),
     onWindowClosed: cleanupWindowState,
     onRendererGone: cleanupWorkspaceResources,
   }));
@@ -446,6 +447,7 @@ app.whenReady().then(() => {
         fileWatcher,
         explorerWatcher,
         backgroundColor: resolveInitialWindowBackground(store),
+        theme: resolveInitialTheme(store),
         onWindowClosed: cleanupWindowState,
         onRendererGone: cleanupWorkspaceResources,
       }));

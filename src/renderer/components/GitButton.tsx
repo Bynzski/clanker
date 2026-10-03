@@ -22,6 +22,7 @@ import type {
   GitStatus,
 } from './git/types';
 import type { PullRequestContext, DeepLink, ProviderContext } from '../store/vcsStore';
+import { useKeepInViewport } from '../lib/useKeepInViewport';
 import './GitButton.css';
 
 interface GitButtonProps {
@@ -69,6 +70,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
   const [selectedDefaultBranch, setSelectedDefaultBranch] = useState('main');
   const [remotes, setRemotes] = useState<GitRemote[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
+  useKeepInViewport(menuRef, '.git-menu', isMenuOpen, isRepo);
   const createBranchInputRef = useRef<HTMLInputElement>(null);
 
   const { activeWorkspaceId, pushBrowserOverlay, popBrowserOverlay } = useWorkspaceStore();
@@ -642,11 +644,14 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
     <>
       <div className="git-menu-container" ref={menuRef}>
         <Button
-          className="header-btn git-btn"
+          size="xs"
+          variant="ghost"
+          className={`header-btn toolbar-btn git-btn ${isMenuOpen ? 'active' : ''}`}
           onClick={handleToggleMenu}
+          aria-expanded={isMenuOpen}
           title={currentBranch ? `Git - ${currentBranch}` : 'Git - View changes and branches'}
         >
-          <GitBranchIcon size={15} strokeWidth={2} />
+          <GitBranchIcon size={14} strokeWidth={2} />
           {changeCount > 0 && (
             <span className="git-badge">{changeCount > 99 ? '99+' : changeCount}</span>
           )}

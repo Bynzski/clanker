@@ -5,9 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="../assets/branding/generated/clanker-ui-32.png" />
     <title>Clanker Grid</title>
+    <script>
+      // Main passes the saved theme in the URL so the boot splash paints in the right
+      // colours before the bundle runs; themeStore takes over once React starts.
+      (function () {
+        var theme = new URLSearchParams(location.search).get('theme');
+        if (theme && /^[a-z-]{1,32}$/.test(theme)) document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
+    <style>
+      /* Boot splash: static so it shows before any script; React replaces #root's contents on first render. */
+      html, body, #root { height: 100%; margin: 0; }
+      .boot-splash {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+      }
+      .boot-splash img {
+        width: 64px;
+        height: 64px;
+        animation: boot-splash-in 240ms ease-out both, boot-splash-pulse 1.6s ease-in-out 240ms infinite;
+      }
+      @keyframes boot-splash-in { from { opacity: 0; transform: scale(0.96); } }
+      @keyframes boot-splash-pulse { 50% { opacity: 0.6; } }
+      @media (prefers-reduced-motion: reduce) { .boot-splash img { animation: none; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot-splash" aria-label="Clanker Grid is starting" role="status">
+        <img src="%BOOT_SPLASH_LOGO%" alt="" width="64" height="64" />
+      </div>
+    </div>
     <script type="module" src="./main.tsx"></script>
   </body>
 </html>

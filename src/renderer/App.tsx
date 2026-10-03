@@ -13,6 +13,7 @@ import { dispatchAppKeybinding, openSettings, type AppCommandActions } from './l
 import { useKeybindingStore } from './store/keybindingStore';
 import { selectFocusedWorkspace } from './store/workspaceStoreHelpers';
 import { startEditorFileWatcher } from './lib/editorFileWatcher';
+import { toggleFocusedWorkspaceExplorer } from './lib/explorerToggle';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import { persistWorkspaceLayout } from './lib/workspaceLayoutStorage';
 import { startRemoteFileWatcher } from './lib/remoteFileWatcher';
@@ -31,6 +32,7 @@ const WorkspaceHost = lazy(() => import('./components/WorkspaceHost'));
 function App() {
   const [showWorkspaceGate, setShowWorkspaceGate] = useState(false);
   const [recipeFailure, setRecipeFailure] = useState<RecipeLaunchResult | null>(null);
+  const sidebarMode = useWorkspaceNavigationStore((state) => state.mode === 'sidebar');
   const { 
     workspaces,
     addWorkspace,
@@ -66,11 +68,7 @@ function App() {
     const actions: AppCommandActions = {
       openSettings,
       fitAllPanes,
-      toggleExplorer: () => {
-        const state = useWorkspaceStore.getState();
-        const workspace = selectFocusedWorkspace(state);
-        if (workspace) state.setExplorerVisible(!workspace.explorerVisible, workspace.id);
-      },
+      toggleExplorer: toggleFocusedWorkspaceExplorer,
       saveActiveEditorFile: () => {
         const state = useWorkspaceStore.getState();
         const workspace = selectFocusedWorkspace(state);
@@ -366,8 +364,11 @@ function App() {
 
   return (
     <div className="app">
-      <TitleBar onOpenWorkspace={() => setShowWorkspaceGate(true)} />
-      <Header />
+      <TitleBar
+        onOpenWorkspace={() => setShowWorkspaceGate(true)}
+        toolbar={sidebarMode ? <Header placement="titlebar" /> : undefined}
+      />
+      {!sidebarMode && <Header />}
       {recipeFailure && (
         <div className="recipe-workspace-error" role="alert">
           <div>
@@ -391,7 +392,7 @@ function App() {
             </div>
           )}
         >
-          <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
+          <Suspense fallback={<div className="main-content-loading">Loading workspace layout…</div>}>
             <WorkspaceHost onOpenWorkspace={() => setShowWorkspaceGate(true)} />
           </Suspense>
         </ErrorBoundary>

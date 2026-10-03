@@ -2,123 +2,144 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px var(--space-sm);
+  gap: var(--space-sm);
+  height: var(--toolbar-height);
+  padding: 0 var(--space-sm);
   background: var(--surface-raised);
   border-bottom: 1px solid var(--border-default);
-  min-height: 42px;
   -webkit-app-region: drag;
+  container-type: inline-size;
+  container-name: toolbar;
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.app-logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent-interactive);
-  opacity: 0.9;
-}
-
-.app-logo svg {
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--surface-tint) 18%, transparent));
-}
-
-.app-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-  font-family: var(--font-mono);
+/* Docked into the title bar (sidebar mode): the title bar owns surface and border. */
+.header.header-inline {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px;
+  background: transparent;
+  border-bottom: none;
 }
 
 .header-center {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex: 1;
   min-width: 0;
+}
+
+/* The empty stretch of the toolbar stays a window drag region; only its controls opt out. */
+.header-center > :not(.toolbar-divider) {
   -webkit-app-region: no-drag;
-  flex-wrap: wrap;
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   -webkit-app-region: no-drag;
   flex-shrink: 0;
 }
 
-.header-btn {
+.toolbar-group {
   display: flex;
   align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.toolbar-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--border-default);
+}
+
+/* Toolbar buttons: quiet until hovered; panel toggles show a pressed state. */
+.toolbar-btn {
+  height: var(--control-height-sm);
   gap: 5px;
+  padding: 0 7px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
-.header-btn-icon {
-  justify-content: center;
-  width: 28px;
+.toolbar-btn.clanker-icon-button {
+  width: var(--control-height-sm);
+  padding: 0;
 }
 
-.header-btn.active {
-  background: var(--surface-control-hover);
+.toolbar-btn:hover:not(:disabled) {
   color: var(--text-primary);
-  border-color: var(--text-secondary);
 }
 
-/* Direct terminal launch buttons */
+.toolbar-btn.active {
+  background: var(--surface-active);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* New-terminal launchers: one icon per visible harness. */
 .harness-pills {
   display: flex;
   align-items: center;
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  padding: 2px;
   gap: 1px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .harness-pill {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 5px;
+  min-width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  padding: 0 5px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
-  transition: all var(--transition);
-  border: 1px solid transparent;
+  transition: background var(--transition), color var(--transition);
 }
 
 .harness-pill:hover {
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--surface-tint) 5%, transparent);
+  background: var(--surface-hover);
 }
 
-
-/* Harness logo SVG icons from svgl.app */
-.harness-logo-icon {
-  width: 14px;
-  height: 14px;
-  display: block;
-  object-fit: contain;
-  flex-shrink: 0;
+/* Labels are always in the accessible name; they are shown only when the toolbar has room. */
+.harness-pill-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-/* Interactive Header panels are positioned by Popover. */
-.header-btn.clanker-button { height: 28px; gap: 5px; }
-.header-btn.clanker-icon-button { width: 28px; }
+@container toolbar (min-width: 1500px) {
+  .harness-pill-label {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+  }
+}
 
 .settings-dropdown {
   background: var(--surface-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  padding: 8px 12px;
-  width: 380px;
+  padding: 8px 10px;
+  width: 360px;
   max-width: calc(100vw - 16px);
   min-width: 0;
   overflow-y: auto;
@@ -131,7 +152,7 @@
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-md);
   color: var(--text-secondary);
   padding: 4px 0;
 }
@@ -148,12 +169,12 @@
 }
 
 .settings-section {
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--border-default);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .settings-section:first-child {
@@ -169,8 +190,10 @@
 }
 
 .settings-row-label {
-  min-width: 56px;
-  font-size: 11px;
+  flex: 0 0 auto;
+  min-width: 72px;
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
@@ -179,20 +202,41 @@
   min-width: 0;
 }
 
-.settings-dropdown-action {
-  width: 100%;
-  margin-top: 10px;
-  text-align: left;
+/* A label stacked over a control that needs the full width (the theme swatches). */
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
+
+.settings-segmented { flex: 1; min-width: 0; }
+
+.settings-segmented .clanker-segmented-item {
+  gap: 5px;
+  height: calc(var(--control-height-sm) - 6px);
+  padding: 0 8px;
+}
+
+.settings-links { gap: 0; }
+
+.settings-dropdown .settings-dropdown-action {
+  justify-content: flex-start;
+  width: 100%;
+  padding: 0 6px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.settings-dropdown .settings-dropdown-action span { flex: 1; text-align: left; }
+.settings-dropdown-action-chevron { color: var(--text-muted); }
 
 /* Harness Defaults Section */
 .settings-section-title {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding-bottom: 4px;
+  letter-spacing: 0.06em;
 }
 
 .harness-defaults-row {
@@ -234,7 +278,7 @@
   background: var(--surface-control);
   border: none;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   transition: background var(--transition);
 }
@@ -257,7 +301,7 @@
   flex: 1;
   min-width: 0;
   text-align: left;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -279,6 +323,7 @@
 
 .harness-defaults-chevron {
   flex-shrink: 0;
+  margin-left: auto;
   transition: transform var(--transition);
 }
 
@@ -295,20 +340,6 @@
   gap: 8px;
 }
 
-.harness-defaults-option {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  font-size: 11px;
-  color: var(--text-secondary);
-  padding: 2px 0;
-}
-
-.harness-defaults-option:hover {
-  color: var(--text-primary);
-}
-
 .harness-defaults-field {
   display: flex;
   flex-direction: column;
@@ -316,7 +347,7 @@
 }
 
 .harness-defaults-field-label {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   font-weight: 500;
 }
@@ -337,15 +368,25 @@
 
 .header-chat-popover { padding: 0; border: 0; box-shadow: none; width: max-content; }
 
-/* Harness accounts (Settings → Harness Defaults) */
-.harness-accounts-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.harness-account { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
-.harness-account.selected { border-color: var(--border-strong); }
-.harness-account-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.harness-account-name { font-size: 11px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.harness-account-detail { font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.harness-account-selected { font-size: 10px; color: var(--text-secondary); }
-.harness-account-warning { font-size: 10px; color: var(--status-warning); }
-.harness-account-flow, .harness-account-add { display: flex; align-items: center; gap: 6px; font-size: 11px; }
-.harness-account-add .clanker-input { flex: 1; min-width: 0; }
-.harness-account-add-button { align-self: flex-start; }
+/* Harness accounts (Settings → Harness Defaults): plain lines like the toggles above, no boxes. */
+.harness-accounts { gap: 2px; }
+.harness-accounts-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
+.settings-dropdown .harness-accounts-add-trigger { height: var(--control-height-xs); padding: 0 4px; color: var(--text-secondary); }
+.settings-dropdown .harness-accounts-add-trigger:hover:not(:disabled) { color: var(--text-primary); }
+.harness-accounts-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.harness-account { display: flex; align-items: center; gap: 6px; min-height: var(--control-height-sm); padding: 0 2px 0 8px; border-left: 2px solid transparent; }
+/* The in-use marker only matters when there is a choice. */
+.harness-accounts-list:not(.multiple) .harness-account { padding-left: 0; border-left: 0; }
+.harness-accounts-list.multiple .harness-account.selected { border-left-color: var(--accent-interactive); }
+.harness-account-text { display: flex; align-items: baseline; gap: 6px; min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; }
+.harness-account-name { flex-shrink: 0; font-size: var(--font-size-sm); color: var(--text-primary); }
+.harness-account-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-size-xs); color: var(--text-muted); }
+.harness-account-selected { flex-shrink: 0; font-size: var(--font-size-xs); color: var(--text-muted); }
+.harness-account-warning { flex-shrink: 0; font-size: var(--font-size-xs); color: var(--status-warning); }
+.harness-account-note { font-size: var(--font-size-xs); color: var(--text-muted); }
+.settings-dropdown .harness-account .clanker-button { height: var(--control-height-xs); padding: 0 6px; flex-shrink: 0; }
+.settings-dropdown .harness-account .harness-account-remove { width: var(--control-height-xs); padding: 0; color: var(--text-muted); }
+.settings-dropdown .harness-account .harness-account-remove:hover:not(:disabled) { color: var(--status-error); }
+.harness-account-flow, .harness-account-add { display: flex; align-items: center; gap: 4px; font-size: var(--font-size-sm); color: var(--text-secondary); }
+.harness-account-flow span { flex: 1; min-width: 0; }
+.harness-account-add .clanker-input { flex: 1; min-width: 0; height: var(--control-height-sm); }

@@ -12,6 +12,8 @@ import {
   type WorkspaceNavigationMode,
   DEFAULT_WORKSPACE_NAVIGATION_MODE,
   DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
+  WORKSPACE_SIDEBAR_RAIL_WIDTH,
+  isWorkspaceSidebarCollapsed,
   normalizeWorkspaceNavigationMode,
   normalizeWorkspaceSidebarWidth,
 } from '../../shared/types/workspaceNavigation';
@@ -19,18 +21,27 @@ import {
 export interface WorkspaceNavigationStoreState {
   mode: WorkspaceNavigationMode;
   sidebarWidth: number;
+  /** Session-only: the width to restore when the collapsed rail is expanded again. */
+  lastExpandedWidth: number;
   resolved: boolean;
   setMode: (mode: WorkspaceNavigationMode) => Promise<void>;
   /** Updates the live width (e.g. during a drag) without persisting. */
   setSidebarWidth: (width: number) => void;
   /** Persists the current width; call when a resize gesture ends. */
   persistSidebarWidth: () => Promise<void>;
+  /** Records the expanded width the rail should restore (ignored for the rail width itself). */
+  rememberExpandedWidth: (width: number) => void;
+  /** Collapses the sidebar to the icon rail and persists it. */
+  collapseSidebar: () => void;
+  /** Restores the last expanded width and persists it. */
+  expandSidebar: () => void;
   initialize: () => Promise<WorkspaceNavigationMode>;
 }
 
 export const useWorkspaceNavigationStore = create<WorkspaceNavigationStoreState>((set, get) => ({
   mode: DEFAULT_WORKSPACE_NAVIGATION_MODE,
   sidebarWidth: DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
+  lastExpandedWidth: DEFAULT_WORKSPACE_SIDEBAR_WIDTH,
   resolved: false,
   setMode: async (newMode) => {
     const mode = normalizeWorkspaceNavigationMode(newMode);
@@ -44,6 +55,10 @@ export const useWorkspaceNavigationStore = create<WorkspaceNavigationStoreState>
     }
   },
   setSidebarWidth: (width) => set({ sidebarWidth: normalizeWorkspaceSidebarWidth(width) }),
+  rememberExpandedWidth: (width) => {
+    const normalized = normalizeWorkspaceSidebarWidth(width);
+    if (!isWorkspaceSidebarCollapsed(normalized)) set({ lastExpandedWidth: normalized });
+  },
   persistSidebarWidth: async () => {
     if (typeof window !== 'undefined' && window.electronAPI?.setWorkspaceSidebarWidth) {
       try {
@@ -52,6 +67,17 @@ export const useWorkspaceNavigationStore = create<WorkspaceNavigationStoreState>
         console.error('[clanker-grid] Failed to persist workspace sidebar width:', error);
       }
     }
+  },
+  collapseSidebar: () => {
+    const { sidebarWidth } = get();
+    if (isWorkspaceSidebarCollapsed(sidebarWidth)) return;
+    set({ sidebarWidth: WORKSPACE_SIDEBAR_RAIL_WIDTH, lastExpandedWidth: sidebarWidth });
+    void get().persistSidebarWidth();
+  },
+  expandSidebar: () => {
+    if (!isWorkspaceSidebarCollapsed(get().sidebarWidth)) return;
+    set({ sidebarWidth: normalizeWorkspaceSidebarWidth(get().lastExpandedWidth) });
+    void get().persistSidebarWidth();
   },
   initialize: async () => {
     let mode: WorkspaceNavigationMode = DEFAULT_WORKSPACE_NAVIGATION_MODE;
@@ -69,7 +95,9 @@ export const useWorkspaceNavigationStore = create<WorkspaceNavigationStoreState>
         console.error('[clanker-grid] Failed to load workspace sidebar width:', error);
       }
     }
-    set({ mode, sidebarWidth, resolved: true });
+    set(isWorkspaceSidebarCollapsed(sidebarWidth)
+      ? { mode, sidebarWidth, resolved: true }
+      : { mode, sidebarWidth, lastExpandedWidth: sidebarWidth, resolved: true });
     return mode;
   },
 }));

@@ -1,7 +1,7 @@
 .titlebar {
   display: flex;
   align-items: stretch;
-  height: 36px;
+  height: var(--toolbar-height);
   background: linear-gradient(to bottom, color-mix(in srgb, var(--surface-tint) 2%, transparent), transparent), var(--surface-raised);
   border-bottom: 1px solid var(--border-default);
   -webkit-app-region: drag;
@@ -16,8 +16,9 @@
 .titlebar-left {
   display: flex;
   align-items: center;
-  padding: 0 var(--space-sm);
-  min-width: 170px;
+  flex-shrink: 0;
+  padding: 0 var(--space-sm) 0 16px;
+  min-width: 160px;
   -webkit-app-region: drag;
   cursor: grab;
 }
@@ -29,14 +30,15 @@
 .titlebar-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  min-width: 0;
+  gap: 10px;
   color: var(--accent-interactive);
   opacity: 0.95;
 }
 
 .titlebar-title {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-lg);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -67,3 +69,28 @@
 .titlebar-controls {
   margin-left: 4px;
 }
+
+/* With the toolbar docked, the brand spans the sidebar column (width set inline). */
+.titlebar-with-toolbar .titlebar-left {
+  min-width: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--border-default);
+}
+
+.titlebar-with-toolbar .titlebar-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Collapsed rail: only the mark, centred over the rail. */
+.titlebar-with-toolbar .titlebar-left.rail {
+  justify-content: center;
+  padding: 0 0 0 8px;
+}
+
+.titlebar-with-toolbar .titlebar-left.rail .titlebar-title { display: none; }
+
+.titlebar-with-toolbar .titlebar-center { padding: 0 2px; }
+
+

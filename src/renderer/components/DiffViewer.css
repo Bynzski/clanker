@@ -15,26 +15,6 @@
   overflow: hidden;
 }
 
-.diff-viewer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border-default);
-}
-
-.diff-viewer-header h2 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-  font-family: var(--font-mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-
 .diff-viewer-body {
   flex: 1;
   overflow: hidden;
@@ -55,7 +35,7 @@
 
 .diff-viewer-pane-header {
   padding: 6px 10px;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-family: var(--font-mono);
   color: var(--text-secondary);
   background: var(--surface-header);
@@ -90,7 +70,7 @@
 .diff-viewer-merge-root .cm-editor { height: 100%; }
 .diff-viewer-merge-root .cm-scroller {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--font-size-md);
   line-height: 20px;
 }
 .diff-viewer-merge-root .cm-mergeView,
@@ -109,7 +89,7 @@
   justify-content: center;
   flex: 1;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-size-lg);
   padding: 40px;
 }
 

@@ -38,7 +38,7 @@ export default function BrowserUrlInput({
         onFocus={onInputFocus}
         onBlur={onInputBlur}
         onKeyDown={onInputKeyDown}
-        placeholder="Enter URL..."
+        placeholder="Enter URL…"
         aria-autocomplete="list"
         aria-expanded={historySuggestions.length > 0}
         aria-controls="browser-url-history-suggestions"

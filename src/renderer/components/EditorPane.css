@@ -45,7 +45,7 @@
 .editor-pane-drag-handle:active { cursor: grabbing; }
 
 .editor-pane-title {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -54,27 +54,6 @@
 
 .editor-pane-spacer {
   flex: 1;
-}
-
-.editor-pane-lock-btn {
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 150ms ease-out;
-  padding: 0;
-  flex-shrink: 0;
-}
-
-.editor-pane-lock-btn:hover {
-  background: var(--surface-control);
-  color: var(--text-primary);
 }
 
 .editor-pane-close-btn {
@@ -123,11 +102,11 @@
   justify-content: center;
   gap: 8px;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-lg);
 }
 
 .editor-empty-state .hint {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   opacity: 0.6;
 }
 
@@ -147,7 +126,7 @@
 }
 
 .editor-reload-banner-text {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   flex: 1;
 }

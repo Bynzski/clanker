@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { BellRing, Check, ChevronDown, ChevronRight, Edit2, GitBranch, Plus, X } from 'lucide-react';
+import { BellRing, Check, ChevronDown, ChevronRight, Edit2, GitBranch, PanelLeftClose, Plus, Server, X } from 'lucide-react';
 import { IconButton } from './ui/IconButton';
 import { Input } from './ui/Input';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 import { attentionCounts, useAgentAttentionStore } from '../store/agentAttentionStore';
 import { nextAttentionTarget } from '../lib/agentAttentionNavigation';
-import { getAttentionPresentation } from '../lib/agentAttentionPresentation';
+import { getAttentionSuffix } from '../lib/agentAttentionPresentation';
 import { AgentAttentionState, WorkspaceAttentionBadge } from './AgentAttentionIndicators';
 import { getHarnessOption } from '../lib/harnessOptions';
 import { closeWorkspaceWithCleanup } from '../lib/workspaceClose';
@@ -22,7 +22,6 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
   const harness = getHarnessOption(terminal.harnessId);
   const HarnessIcon = harness.Icon;
   const showAttention = Boolean(terminal.harnessId && terminal.attentionEnabled);
-  const { label } = getAttentionPresentation(attention?.lifecycle);
   const name = terminal.displayName ?? harness.label;
 
   return (
@@ -31,12 +30,13 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
         type="button"
         className={`ws-agent-row${isCurrent ? ' current' : ''}`}
         aria-current={isCurrent ? 'true' : undefined}
-        title={`${name} · ${harness.label}${showAttention ? ` · ${label}` : ''}`}
+        title={`${name} · ${harness.label}${showAttention ? getAttentionSuffix(attention) : ''}`}
         onClick={() => selectWorkspace(workspace.id, terminal.id)}
       >
-        <span className="ws-agent-harness" aria-hidden="true"><HarnessIcon size={13} strokeWidth={2} /></span>
+        <span className="ws-agent-harness" aria-hidden="true"><HarnessIcon size={14} strokeWidth={2} /></span>
         <span className="ws-agent-name">{name}</span>
-        <span className="ws-agent-harness-label">{harness.label}</span>
+        {/* The icon identifies the harness visually; the name stays available to assistive tech. */}
+        <span className="sr-only">{harness.label}</span>
         {showAttention && <AgentAttentionState attention={attention} name={name} />}
       </button>
     </li>
@@ -45,9 +45,11 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
 
 interface WorkspaceNavigatorSectionProps {
   onOpenWorkspace?: () => void;
+  /** Collapses the sidebar shell to its icon rail. */
+  onCollapseSidebar?: () => void;
 }
 
-export default function WorkspaceNavigatorSection({ onOpenWorkspace }: WorkspaceNavigatorSectionProps) {
+export default function WorkspaceNavigatorSection({ onOpenWorkspace, onCollapseSidebar }: WorkspaceNavigatorSectionProps) {
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const activeTerminalId = useWorkspaceStore((state) => state.activeTerminalId);
@@ -119,6 +121,11 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace }: Workspace
               <Plus size={14} strokeWidth={2.5} />
             </IconButton>
           )}
+          {onCollapseSidebar && (
+            <IconButton type="button" className="ws-nav-action" aria-label="Collapse sidebar" title="Collapse sidebar" onClick={onCollapseSidebar}>
+              <PanelLeftClose size={14} strokeWidth={2} />
+            </IconButton>
+          )}
         </div>
       </div>
 
@@ -182,7 +189,12 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace }: Workspace
                       onDoubleClick={() => rename.startEditing(workspace.id, editName)}
                       onKeyDown={(event) => reorder.onReorderKey(event, workspace.id, index)}
                     >
-                      {remoteLabel && <span className="ws-nav-remote">{remoteLabel}</span>}
+                      {remoteLabel && (
+                        <span className="ws-nav-remote">
+                          <Server size={12} strokeWidth={2} aria-hidden="true" />
+                          <span className="sr-only">{remoteLabel}</span>
+                        </span>
+                      )}
                       <span className="ws-nav-name">{label}</span>
                       {workspace.isLinkedWorktree && (
                         <span className="ws-nav-worktree" aria-label={`Worktree ${branch ? `on ${branch}` : 'at detached HEAD'}`}>

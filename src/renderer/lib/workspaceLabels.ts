@@ -13,10 +13,15 @@ type WorkspaceIdentity = Pick<
   'name' | 'workspacePath' | 'isLinkedWorktree' | 'projectName' | 'gitCurrentBranch' | 'environmentId' | 'environmentLabel'
 >;
 
-export function getRemoteEnvironmentLabel(workspace: Pick<WorkspaceTab, 'environmentId' | 'environmentLabel'>): string | null {
+/** The SSH environment's display name, or null for local workspaces. */
+export function getRemoteEnvironmentName(workspace: Pick<WorkspaceTab, 'environmentId' | 'environmentLabel'>): string | null {
   if (!workspace.environmentId || workspace.environmentId === LOCAL_ENVIRONMENT_ID) return null;
-  const label = workspace.environmentLabel?.trim() || workspace.environmentId;
-  return `SSH · ${label}`;
+  return workspace.environmentLabel?.trim() || workspace.environmentId;
+}
+
+export function getRemoteEnvironmentLabel(workspace: Pick<WorkspaceTab, 'environmentId' | 'environmentLabel'>): string | null {
+  const name = getRemoteEnvironmentName(workspace);
+  return name ? `SSH · ${name}` : null;
 }
 
 export function getWorkspaceProjectName(workspace: WorkspaceIdentity): string {

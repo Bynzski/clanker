@@ -3,7 +3,7 @@ import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { ChevronDown, ChevronRight, Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw, Search, X } from 'lucide-react';
 import type React from 'react';
 import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer';
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
@@ -584,7 +584,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
           aria-label="Expand Files"
           title="Expand Files"
         >
-          <ChevronRight size={12} strokeWidth={2} aria-hidden="true" />
+          <ChevronUp size={12} strokeWidth={2} aria-hidden="true" />
           <span>Files</span>
         </Button>
       </section>
@@ -604,9 +604,23 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
       aria-label={isSection ? 'Files' : undefined}
     >
       <div className="file-explorer-header">
-        <span className="file-explorer-title">{isSection ? 'Files' : 'Explorer'}</span>
+        {isSection ? (
+          <button
+            type="button"
+            className="file-explorer-title file-explorer-section-title"
+            aria-expanded={true}
+            aria-label="Collapse Files"
+            title="Collapse Files"
+            onClick={() => setExplorerVisible(false, resolvedWorkspaceId ?? undefined)}
+          >
+            <ChevronDown size={12} strokeWidth={2} aria-hidden="true" />
+            <span>Files</span>
+          </button>
+        ) : (
+          <span className="file-explorer-title">Explorer</span>
+        )}
         <div className="file-explorer-actions">
-          <IconButton aria-label="Refresh"
+          <IconButton size="xs" variant="ghost" aria-label="Refresh"
             type="button"
             className="file-explorer-action"
             onClick={handleRefresh}
@@ -614,7 +628,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
           >
             <RefreshCw size={14} strokeWidth={2} />
           </IconButton>
-          <IconButton aria-label="New File"
+          <IconButton size="xs" variant="ghost" aria-label="New File"
             type="button"
             className="file-explorer-action"
             onClick={() => startCreating(
@@ -625,7 +639,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
           >
             <FilePlus size={14} strokeWidth={2} />
           </IconButton>
-          <IconButton aria-label="New Folder"
+          <IconButton size="xs" variant="ghost" aria-label="New Folder"
             type="button"
             className="file-explorer-action"
             onClick={() => startCreating(
@@ -636,22 +650,28 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
           >
             <FolderPlus size={14} strokeWidth={2} />
           </IconButton>
-          <Button
+          <IconButton
+            size="xs"
+            variant="ghost"
+            aria-label={showHiddenFiles ? 'Hide dotfiles' : 'Show dotfiles'}
+            aria-pressed={showHiddenFiles}
             type="button"
             className={`file-explorer-action ${showHiddenFiles ? 'active' : ''}`}
             onClick={() => setShowHiddenFiles(!showHiddenFiles, resolvedWorkspaceId ?? undefined)}
             title={showHiddenFiles ? 'Hide dotfiles' : 'Show dotfiles'}
           >
             {showHiddenFiles ? <Eye size={14} strokeWidth={2} /> : <EyeOff size={14} strokeWidth={2} />}
-          </Button>
-          <IconButton aria-label={isSection ? 'Collapse Files' : 'Close Explorer'}
-            type="button"
-            className="file-explorer-close"
-            onClick={() => setExplorerVisible(false, resolvedWorkspaceId ?? undefined)}
-            title={isSection ? 'Collapse Files' : 'Close Explorer'}
-          >
-            {isSection ? <ChevronDown size={14} strokeWidth={2} /> : <PanelLeftClose size={16} strokeWidth={2} />}
           </IconButton>
+          {!isSection && (
+            <IconButton size="xs" variant="ghost" aria-label="Close Explorer"
+              type="button"
+              className="file-explorer-close"
+              onClick={() => setExplorerVisible(false, resolvedWorkspaceId ?? undefined)}
+              title="Close Explorer"
+            >
+              <PanelLeftClose size={14} strokeWidth={2} />
+            </IconButton>
+          )}
         </div>
       </div>
       <div className="file-explorer-filter">
@@ -667,7 +687,7 @@ export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExpl
           aria-label="Filter files"
         />
         {filterQuery.length > 0 ? (
-          <IconButton
+          <IconButton variant="ghost"
             type="button"
             className="file-explorer-filter-clear"
             onClick={() => setFilterQuery('')}

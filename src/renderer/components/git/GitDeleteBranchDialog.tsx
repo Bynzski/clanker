@@ -38,28 +38,30 @@ export function GitDeleteBranchDialog({
           if (isBusy) event.preventDefault();
         }}
       >
-        <div className="git-delete-dialog-header">
+        <div className="git-delete-dialog-header clanker-dialog-header">
           <AlertDialogTitle asChild>
-            <p className="git-delete-dialog-title">
+            <p className="git-delete-dialog-title clanker-dialog-title">
               {isForce ? 'Force delete branch' : 'Delete branch'}
             </p>
           </AlertDialogTitle>
-          <span className="git-delete-dialog-branch">{deleteDialog.branch}</span>
         </div>
-        <AlertDialogDescription asChild>
-          <p className="git-delete-dialog-body">
-            {isForce
-              ? `This branch has commits that are not merged into ${currentBranch ?? 'the current branch'}. Deleting it now may permanently discard work.`
-              : 'Removing a branch simply deletes the reference; commits remain reachable from other branches or remotes if they exist elsewhere.'}
-          </p>
-        </AlertDialogDescription>
-        {deleteDialog.detail && (
-          <div className="git-delete-detail">
-            <span>Git message</span>
-            <p>{deleteDialog.detail}</p>
-          </div>
-        )}
-        <div className="git-delete-actions">
+        <div className="git-delete-dialog-content clanker-dialog-body">
+          <span className="git-delete-dialog-branch">{deleteDialog.branch}</span>
+          <AlertDialogDescription asChild>
+            <p className="git-delete-dialog-body">
+              {isForce
+                ? `This branch has commits that are not merged into ${currentBranch ?? 'the current branch'}. Deleting it now may permanently discard work.`
+                : 'Removing a branch simply deletes the reference; commits remain reachable from other branches or remotes if they exist elsewhere.'}
+            </p>
+          </AlertDialogDescription>
+          {deleteDialog.detail && (
+            <div className="git-delete-detail">
+              <span>Git message</span>
+              <p>{deleteDialog.detail}</p>
+            </div>
+          )}
+        </div>
+        <div className="git-delete-actions clanker-dialog-footer">
           <AlertDialogCancel asChild>
             <Button
               size="sm"

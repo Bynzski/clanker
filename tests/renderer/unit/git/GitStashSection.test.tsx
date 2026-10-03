@@ -121,10 +121,12 @@ describe('GitStashSection', () => {
   // Stash Toolbar
   // =========================================================================
   describe('stash toolbar', () => {
-    it('shows "No stashes found" when stash list is empty', () => {
+    it('shows a single empty state and no toolbar when the stash list is empty', () => {
       render(<GitStashSection {...defaultProps} stashes={[]} />);
       
-      expect(screen.getByText('No stashes found')).toBeTruthy();
+      expect(screen.queryByText('No stashes found')).toBeNull();
+      expect(screen.queryByText('Available stashes')).toBeNull();
+      expect(screen.getByText('Nothing stashed yet')).toBeTruthy();
     });
 
     it('shows "Available stashes" when stashes exist', () => {
@@ -174,7 +176,7 @@ describe('GitStashSection', () => {
     it('shows loading state when isLoadingStashes is true', () => {
       render(<GitStashSection {...defaultProps} isLoadingStashes={true} />);
       
-      expect(screen.getByText('Loading stashes...')).toBeTruthy();
+      expect(screen.getByText('Loading stashes…')).toBeTruthy();
     });
 
     it('shows "Nothing stashed yet" when no stashes', () => {

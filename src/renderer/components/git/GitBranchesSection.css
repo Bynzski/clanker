@@ -3,12 +3,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  background: var(--surface-raised);
-  border-bottom: 1px solid var(--border-default);
-  margin: -12px -12px 12px -12px;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  gap: 8px;
 }
 
 .provider-context-info {
@@ -20,7 +15,7 @@
 }
 
 .provider-context-repo {
-  font-size: 12px;
+  font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--text-primary);
   overflow: hidden;
@@ -31,7 +26,7 @@
 .git-create-branch-form {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 .git-create-branch-input {
@@ -43,36 +38,25 @@
   white-space: nowrap;
 }
 
-.git-branch-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .git-branch-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  background: var(--surface-control);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  gap: 8px;
 }
 
-.git-branch-item.current {
-  border-color: color-mix(in srgb, var(--status-success) 50%, transparent);
-  background: color-mix(in srgb, var(--status-success) 8%, transparent);
+.git-menu .git-branch-item.current {
+  background: var(--surface-active);
 }
 
 .git-branch-name {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 500;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
 }
 
 .git-branch-name span:first-child {
@@ -83,19 +67,20 @@
 
 .git-branch-current {
   flex: none;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--status-success) 12%, transparent);
   color: var(--status-success);
-  font-size: 10px;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-2xs);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 .git-branch-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   flex: none;
 }
+
+/* The current branch cannot be switched to or deleted; keep its row clean. */
+.git-branch-item.current .git-branch-action { visibility: hidden; }

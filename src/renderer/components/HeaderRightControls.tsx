@@ -1,6 +1,6 @@
 import { Select } from './ui/Select';
 import { useRef } from 'react';
-import { ChevronDown, Gauge, LayoutGrid, MessageSquare, ScrollText, Settings, Undo2 } from 'lucide-react';
+import { ChevronRight, Gauge, Keyboard, KeyRound, LayoutGrid, MessageSquare, ScrollText, Settings, Undo2 } from 'lucide-react';
 import type { HarnessSession } from '../../shared/types/session';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
@@ -14,6 +14,8 @@ import AppearanceSettings from './settings/AppearanceSettings';
 import HarnessDefaultsSection from './settings/HarnessDefaultsSection';
 
 interface HeaderRightControlsProps {
+  /** Panel visibility toggles (Explorer/Browser/Notes), shown first in the right-hand group. */
+  panelToggles?: React.ReactNode;
   fitAllPanes: () => void;
   undoLayout: () => void;
   canUndoLayout: boolean;
@@ -67,6 +69,7 @@ interface HeaderRightControlsProps {
 }
 
 export default function HeaderRightControls({
+  panelToggles,
   fitAllPanes,
   undoLayout,
   canUndoLayout,
@@ -119,44 +122,59 @@ export default function HeaderRightControls({
   const usageHandoff = useRef(false);
   return (
     <div className="header-right">
+      {panelToggles && (
+        <>
+          {panelToggles}
+          <span className="toolbar-divider" aria-hidden="true" />
+        </>
+      )}
       <IconButton
-        className="header-btn header-btn-icon"
+        size="xs"
+        variant="ghost"
+        className="header-btn header-btn-icon toolbar-btn"
         type="button"
         onClick={undoLayout}
         disabled={!canUndoLayout}
         title="Undo last layout change"
         aria-label="Undo layout change"
       >
-        <Undo2 size={15} strokeWidth={2} />
+        <Undo2 size={14} strokeWidth={2} />
       </IconButton>
-      {onOpenRecipes && (
-        <IconButton
-          className="header-btn header-btn-icon"
-          type="button"
-          onClick={onOpenRecipes}
-          title="Workspace Launch Recipes"
-          aria-label="Workspace Launch Recipes"
-        >
-          <ScrollText size={15} strokeWidth={2} />
-        </IconButton>
-      )}
       <IconButton
-        className="header-btn header-btn-icon"
+        size="xs"
+        variant="ghost"
+        className="header-btn header-btn-icon toolbar-btn"
         type="button"
         onClick={fitAllPanes}
         title="Fit all panes into view"
         aria-label="Fit all panes"
       >
-        <LayoutGrid size={15} strokeWidth={2} />
+        <LayoutGrid size={14} strokeWidth={2} />
       </IconButton>
+      {onOpenRecipes && (
+        <IconButton
+          size="xs"
+          variant="ghost"
+          className="header-btn header-btn-icon toolbar-btn"
+          type="button"
+          onClick={onOpenRecipes}
+          title="Workspace Launch Recipes"
+          aria-label="Workspace Launch Recipes"
+        >
+          <ScrollText size={14} strokeWidth={2} />
+        </IconButton>
+      )}
+      <span className="toolbar-divider" aria-hidden="true" />
       <Popover open={showChatHistory} onOpenChange={onChatHistoryOpenChange}>
         <PopoverTrigger asChild>
           <IconButton
-            className={`header-btn header-btn-icon ${showChatHistory ? 'active' : ''}`}
+            size="xs"
+            variant="ghost"
+            className={`header-btn toolbar-btn header-btn-icon ${showChatHistory ? 'active' : ''}`}
             title="Chat history"
             aria-label="Chat history"
           >
-            <MessageSquare size={15} strokeWidth={2} />
+            <MessageSquare size={14} strokeWidth={2} />
           </IconButton>
         </PopoverTrigger>
         <PopoverContent align="end" className="header-chat-popover" aria-label="Chat history" workspaceId={workspaceId ?? undefined}>
@@ -172,10 +190,9 @@ export default function HeaderRightControls({
       </Popover>
       <Popover open={showUsage} onOpenChange={onUsageOpenChange}>
         <PopoverTrigger asChild>
-          <Button className={`header-btn ${showUsage ? 'active' : ''}`} aria-label="Usage" title="Usage" disabled={!usageReady && !showUsage}>
-            <Gauge size={15} strokeWidth={2} />
-            <ChevronDown size={12} strokeWidth={2} />
-          </Button>
+          <IconButton size="xs" variant="ghost" className={`header-btn toolbar-btn header-btn-icon ${showUsage ? 'active' : ''}`} aria-label="Usage" title="Usage" disabled={!usageReady && !showUsage}>
+            <Gauge size={14} strokeWidth={2} />
+          </IconButton>
         </PopoverTrigger>
         <PopoverContent align="end" className="usage-popover" aria-label="Usage" workspaceId={workspaceId ?? undefined}
           onCloseAutoFocus={(event) => {
@@ -200,15 +217,15 @@ export default function HeaderRightControls({
       </Popover>
       <Popover open={showSettings} onOpenChange={onSettingsOpenChange}>
         <PopoverTrigger asChild>
-          <Button ref={settingsTriggerRef} className="header-btn" aria-label="Settings" title="Settings">
-            <Settings size={15} strokeWidth={2} />
-            <ChevronDown size={12} strokeWidth={2} />
-          </Button>
+          <IconButton ref={settingsTriggerRef} size="xs" variant="ghost" className={`header-btn toolbar-btn header-btn-icon ${showSettings ? 'active' : ''}`} aria-label="Settings" title="Settings">
+            <Settings size={14} strokeWidth={2} />
+          </IconButton>
         </PopoverTrigger>
         <PopoverContent align="end" className="settings-dropdown" aria-label="Settings"
           workspaceId={workspaceId ?? undefined} onCloseAutoFocus={onSettingsCloseAutoFocus}>
           <AppearanceSettings />
           <div className="settings-section">
+            <div className="settings-section-title">Git</div>
             <label className="settings-option">
               <input
                 type="checkbox"
@@ -249,7 +266,7 @@ export default function HeaderRightControls({
                 disabled={!aiCommitEnabled || isLoadingAiCommitModels || aiCommitModels.length === 0}
               >
                 {isLoadingAiCommitModels ? (
-                  <option value="">Loading models...</option>
+                  <option value="">Loading models…</option>
                 ) : aiCommitModels.length === 0 ? (
                   <option value="">No models available</option>
                 ) : (
@@ -265,12 +282,18 @@ export default function HeaderRightControls({
               </Select>
             </div>
           </div>
-          <Button type="button" className="settings-dropdown-action" onClick={onOpenCredentialModal}>
-            Manage VCS credentials
-          </Button>
-          <Button type="button" className="settings-dropdown-action" onClick={onOpenKeyboardShortcuts}>
-            Keyboard shortcuts...
-          </Button>
+          <div className="settings-section settings-links">
+            <Button type="button" size="xs" variant="ghost" className="settings-dropdown-action" onClick={onOpenCredentialModal}>
+              <KeyRound size={13} strokeWidth={2} aria-hidden="true" />
+              <span>Manage VCS credentials</span>
+              <ChevronRight className="settings-dropdown-action-chevron" size={13} strokeWidth={2} aria-hidden="true" />
+            </Button>
+            <Button type="button" size="xs" variant="ghost" className="settings-dropdown-action" onClick={onOpenKeyboardShortcuts}>
+              <Keyboard size={13} strokeWidth={2} aria-hidden="true" />
+              <span>Keyboard shortcuts</span>
+              <ChevronRight className="settings-dropdown-action-chevron" size={13} strokeWidth={2} aria-hidden="true" />
+            </Button>
+          </div>
 
           {harnessDefaults && (
             <HarnessDefaultsSection

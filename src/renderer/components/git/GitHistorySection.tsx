@@ -36,7 +36,7 @@ export function GitHistorySection({
       </div>
 
       <div className="git-history-toolbar">
-        <Button
+        <Button size="xs"
           type="button"
           className={`git-history-toggle ${selectedDiffMode === 'working' ? 'active' : ''}`}
           onClick={() => onSelectWorkingDiff('working')}
@@ -44,7 +44,7 @@ export function GitHistorySection({
         >
           Working Tree
         </Button>
-        <Button
+        <Button size="xs"
           type="button"
           className={`git-history-toggle ${selectedDiffMode === 'staged' ? 'active' : ''}`}
           onClick={() => onSelectWorkingDiff('staged')}
@@ -55,7 +55,7 @@ export function GitHistorySection({
       </div>
 
       {isLoadingHistory ? (
-        <div className="git-menu-empty">Loading history...</div>
+        <div className="git-menu-empty">Loading history…</div>
       ) : history.length === 0 ? (
         <div className="git-menu-empty">No commits found</div>
       ) : (

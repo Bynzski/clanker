@@ -22,8 +22,12 @@ const calls = () => vi.mocked(window.electronAPI.getHarnessUsage).mock.calls as 
 const respond = (d: Deferred, entry: HarnessUsageEntry) => act(async () => d.resolve({ workspaceId: d.workspaceId, entries: [entry] }));
 
 /** Every request stays pending until the test resolves it, so progressive rendering is observable. */
+/** Every usage-capable harness is installed locally unless a test says otherwise. */
+const installedHarnesses = (ids: readonly string[]) => Object.fromEntries(ids.map((id) => [id, { name: id, command: id, args: [], icon: 'terminal' }]));
+const ALL_HARNESSES = ['codex', 'claude', 'opencode', 'pi', 'omp', 'hermes', 'agy'] as const;
+
 beforeEach(() => {
-  installElectronApiMock();
+  installElectronApiMock({ getHarnessOptions: vi.fn().mockResolvedValue(installedHarnesses(ALL_HARNESSES)) });
   pending = [];
   useWorkspaceStore.setState({
     activeWorkspaceId: 'ws-1', browserOverlayCount: 0,
@@ -129,7 +133,11 @@ describe('Usage polling', () => {
     act(() => useWorkspaceStore.getState().selectWorkspace('ws-2'));
     const before = calls().length;
     await act(async () => { vi.advanceTimersByTime(USAGE_POLL_INTERVAL_MS * 2); });
-    expect(calls()).toHaveLength(before);
+    const after = calls().slice(before);
+    // The old workspace is no longer polled; the new one only gets its single background warm-up read.
+    expect(after.filter(([workspaceId]) => workspaceId === 'ws-1')).toHaveLength(0);
+    expect(after.map(([, request]) => request?.harnessIds?.[0])).toEqual(['codex', 'claude', 'omp', 'hermes', 'agy']);
+    expect(after.every(([workspaceId, request]) => workspaceId === 'ws-2' && !request?.force)).toBe(true);
   });
 });
 
@@ -238,19 +246,27 @@ describe('Usage provider selection (Show in Usage)', () => {
     expect(requestedIds().length).toBeGreaterThan(6);
   });
 
+  it('never requests or lists a harness that is not installed in the workspace environment', async () => {
+    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue(installedHarnesses(['codex', 'omp']));
+    await openUsage();
+    expect(requestedIds()).toEqual(['codex', 'omp']);
+    const names = [...panel().querySelectorAll('.usage-harness-name')].map((node) => node.textContent);
+    expect(names).toEqual(['Codex', 'Oh My Pi']);
+    expect(within(panel()).queryByText('Not installed in this environment')).not.toBeInTheDocument();
+  });
+
   it('keeps the Usage control available and makes no requests when every provider is disabled', async () => {
     useDefaults(Object.fromEntries(['codex', 'claude', 'omp', 'hermes', 'agy'].map((id) => [id, { usageVisible: false }])));
     await renderReady();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Usage' })); });
-    expect(within(panel()).getByText('No usage providers selected')).toBeInTheDocument();
-    expect(within(panel()).getByText('Enable providers in Settings → Harness Defaults.')).toBeInTheDocument();
+    expect(within(panel()).getByText('No usage providers available')).toBeInTheDocument();
+    expect(within(panel()).getByText('Install a supported harness here, or enable one in Settings → Harness Defaults.')).toBeInTheDocument();
     expect(within(panel()).queryByText('Checking usage…')).not.toBeInTheDocument();
     expect(within(panel()).getByRole('button', { name: 'Refresh usage' })).toBeDisabled();
     expect(calls()).toHaveLength(0);
   });
 
   it('toggling Show in Usage in Settings persists through setHarnessDefaults and drops the harness from the next Usage opening', async () => {
-    vi.mocked(window.electronAPI.getHarnessOptions).mockResolvedValue({ codex: { name: 'Codex', command: 'codex', args: [], icon: 'terminal' } });
     const user = userEvent.setup();
     await renderReady();
     await user.click(screen.getByRole('button', { name: 'Settings' }));
@@ -271,7 +287,7 @@ describe('Usage provider selection (Show in Usage)', () => {
     vi.mocked(window.electronAPI.getHarnessDefaults).mockReturnValueOnce(new Promise((resolve) => { finish = resolve as never; }));
     render(<Header />);
     const trigger = screen.getByRole('button', { name: 'Usage' });
-    expect(trigger).toBeDisabled(); // neutral: not-yet-known preferences are not "no providers selected"
+    expect(trigger).toBeDisabled(); // neutral: not-yet-known preferences are not "no providers available"
     await user.click(trigger);
     expect(screen.queryByRole('dialog', { name: 'Usage' })).not.toBeInTheDocument();
     expect(calls()).toHaveLength(0);
@@ -280,7 +296,7 @@ describe('Usage provider selection (Show in Usage)', () => {
     await user.click(trigger);
     expect(requestedIds()).toEqual(['claude', 'omp', 'hermes', 'agy']);
     expect(requestedIds()).not.toContain('codex');
-    expect(within(panel()).queryByText('No usage providers selected')).not.toBeInTheDocument();
+    expect(within(panel()).queryByText('No usage providers available')).not.toBeInTheDocument();
   });
 
   it('fails closed (no probes at all) when harness defaults fail to load', async () => {

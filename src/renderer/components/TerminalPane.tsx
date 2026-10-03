@@ -1,4 +1,5 @@
 import { IconButton } from './ui/IconButton';
+import { X } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback, type DragEvent } from 'react';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import type { ILink, ILinkProvider } from '@xterm/xterm';
@@ -6,7 +7,7 @@ import { useThemeStore } from '../theme/themeStore';
 import { getTerminalTheme, registerThemedTerminal, unregisterThemedTerminal } from '../theme/terminalTheme';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAgentAttentionStore } from '../store/agentAttentionStore';
-import { getAttentionPresentation } from '../lib/agentAttentionPresentation';
+import { getAttentionSuffix } from '../lib/agentAttentionPresentation';
 import { AgentAttentionState } from './AgentAttentionIndicators';
 import { getHarnessOption } from '../lib/harnessOptions';
 
@@ -172,7 +173,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const terminalId = terminal?.id ?? null;
   const attention = useAgentAttentionStore((state) => terminalId ? state.byTerminalId[terminalId] : undefined);
   const showAgentAttention = Boolean(terminal?.harnessId && terminal.attentionEnabled);
-  const { label: attentionLabel } = getAttentionPresentation(attention?.lifecycle);
+  const attentionSuffix = showAgentAttention ? getAttentionSuffix(attention) : '';
   const harnessOption = getHarnessOption(terminal?.harnessId);
   const HarnessIcon = harnessOption.Icon;
   const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
@@ -755,14 +756,14 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
             <span className="terminal-harness-icon" role="img" aria-label={`${harnessOption.label} harness`} title={`${harnessOption.label} harness`}>
               <HarnessIcon size={14} strokeWidth={2} />
             </span>
-            <span className="terminal-title" title={terminal.harnessId ? `${harnessOption.label}${showAgentAttention ? ` · ${attentionLabel}` : ''}` : 'Shell'}>
+            <span className="terminal-title" title={terminal.harnessId ? `${harnessOption.label}${attentionSuffix}` : 'Shell'}>
               {terminal?.displayName ?? 'Terminal'}
             </span>
             {showAgentAttention && <AgentAttentionState attention={attention} name={terminal.displayName ?? 'Agent'} />}
           </div>
           <div className="terminal-header-actions">
-            <IconButton aria-label="Close terminal" className="terminal-close" onClick={handleClose} title="Close terminal" disabled={!isInteractive}>
-              ×
+            <IconButton variant="ghost" aria-label="Close terminal" className="terminal-close" onClick={handleClose} title="Close terminal" disabled={!isInteractive}>
+              <X size={14} strokeWidth={2} />
             </IconButton>
           </div>
         </div>

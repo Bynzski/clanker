@@ -65,7 +65,7 @@ describe('GitMergeSection', () => {
     it('shows loading message when checking operation state', () => {
       render(<GitMergeSection {...defaultProps} isLoadingOperation={true} />);
       
-      expect(screen.getByText('Checking merge state...')).toBeTruthy();
+      expect(screen.getByText('Checking merge state…')).toBeTruthy();
     });
   });
 

@@ -15,13 +15,13 @@
   gap: 6px;
   min-width: 0;
   max-width: 210px;
-  height: 26px;
+  height: var(--control-height-sm);
   padding: 0 7px;
   background: var(--surface-control);
   border: 0;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   text-align: left;
   cursor: pointer;
   transition: background var(--transition), color var(--transition);
@@ -60,7 +60,7 @@
   align-items: center;
   gap: var(--space-sm);
   width: 100%;
-  min-height: 30px;
+  min-height: var(--control-height-md);
   padding: 6px;
   background: transparent;
   border: 0;
@@ -68,7 +68,7 @@
   color: var(--text-secondary);
   text-align: left;
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-md);
   cursor: pointer;
 }
 
@@ -78,7 +78,7 @@
   align-items: center;
   gap: var(--space-sm);
   width: 100%;
-  min-height: 30px;
+  min-height: var(--control-height-md);
   text-align: left;
 }
 
@@ -87,10 +87,10 @@
 .gate-target-option > svg { flex-shrink: 0; }
 .gate-target-identity { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; color: var(--text-primary); }
 .gate-target-identity > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gate-target-identity .gate-target-detail { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
+.gate-target-identity .gate-target-detail { font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-muted); }
 .gate-target-check { color: var(--text-secondary); }
 .gate-target-actions { margin-top: var(--space-xs); padding-top: var(--space-xs); border-top: 1px solid var(--border-subtle); }
-.gate-target-empty { padding: 6px; margin: 0; font-size: 11px; color: var(--text-muted); }
+.gate-target-empty { padding: 6px; margin: 0; font-size: var(--font-size-sm); color: var(--text-muted); }
 
 @keyframes gate-target-reveal {
   from { opacity: 0; transform: translateY(3px); }

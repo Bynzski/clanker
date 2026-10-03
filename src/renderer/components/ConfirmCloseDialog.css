@@ -2,34 +2,10 @@
   width: 380px;
 }
 
-.confirm-close-header {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border-default);
-}
-
-.confirm-close-header h3 {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.confirm-close-body {
-  padding: 14px;
-}
-
 .confirm-close-body p {
-  font-size: 13px;
+  font-size: var(--font-size-md);
   color: var(--text-secondary);
   margin: 0;
   line-height: 1.5;
 }
 
-.confirm-close-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-sm);
-  padding: 12px 14px;
-  border-top: 1px solid var(--border-default);
-}

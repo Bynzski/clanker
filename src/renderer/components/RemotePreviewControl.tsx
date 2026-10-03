@@ -92,7 +92,7 @@ export default function RemotePreviewControl({ workspaceId, onOpen, enabled = tr
   const status = message ? 'error' : forward?.status === 'active' ? 'ready' : forward ? 'waiting' : services.length ? 'available' : 'empty';
   const title = status === 'error' ? 'Remote preview error' : status === 'waiting' ? 'Waiting for remote web service' : status === 'ready' ? 'Remote preview ready' : status === 'available' ? 'Remote services available' : 'No remote service detected';
   return <Popover open={menuOpen} onOpenChange={setMenuOpen}>
-    <PopoverTrigger asChild><IconButton aria-label="Remote preview" title={title} className="browser-nav-btn remote-preview-trigger" data-status={status} disabled={!enabled}>
+    <PopoverTrigger asChild><IconButton variant="ghost" aria-label="Remote preview" title={title} className="browser-nav-btn remote-preview-trigger" data-status={status} disabled={!enabled}>
       <Server size={16} strokeWidth={2} /><span className="remote-preview-dot" aria-hidden="true" />
     </IconButton></PopoverTrigger>
     <PopoverContent workspaceId={workspaceId} align="end" className="remote-preview-menu" aria-label="Remote preview controls">

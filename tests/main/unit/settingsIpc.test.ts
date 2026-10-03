@@ -999,10 +999,10 @@ describe('workspace navigation mode handlers', () => {
     expect(store.set).not.toHaveBeenCalled();
   });
 
-  test.each([undefined, 'rail', 42])('GET defaults %s to tabs and repairs the store', (raw) => {
+  test.each([undefined, 'rail', 42])('GET defaults %s to sidebar and repairs the store', (raw) => {
     const { store, get } = setup(raw);
-    expect(get()).toBe('tabs');
-    expect(store.set).toHaveBeenCalledWith('workspaceNavigationMode', 'tabs');
+    expect(get()).toBe('sidebar');
+    expect(store.set).toHaveBeenCalledWith('workspaceNavigationMode', 'sidebar');
   });
 
   test('SET persists valid values and rejects invalid ones', () => {
@@ -1029,13 +1029,13 @@ describe('workspace sidebar width handlers', () => {
     return { store, get: find('get-workspace-sidebar-width'), set: find('set-workspace-sidebar-width') };
   }
 
-  test('GET returns a valid persisted width without rewriting', () => {
-    const { store, get } = setup(320);
-    expect(get()).toBe(320);
+  test.each([320, 44])('GET returns a valid persisted width (%s) without rewriting', (width) => {
+    const { store, get } = setup(width);
+    expect(get()).toBe(width);
     expect(store.set).not.toHaveBeenCalled();
   });
 
-  test.each([[undefined, 280], ['wide', 280], [Number.NaN, 280], [10, 180], [9000, 500]])(
+  test.each([[undefined, 280], ['wide', 280], [Number.NaN, 280], [10, 44], [150, 180], [9000, 500]])(
     'GET normalizes %s to %s and repairs the store',
     (raw, expected) => {
       const { store, get } = setup(raw);

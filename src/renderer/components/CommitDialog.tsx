@@ -105,12 +105,12 @@ export default function CommitDialog({
 
     setIsCommitting(true);
     setError(null);
-    setCommitStatus(hasUnstagedChanges ? 'Staging changes...' : 'Running git hooks...');
+    setCommitStatus(hasUnstagedChanges ? 'Staging changes…' : 'Running git hooks…');
 
     try {
       if (hasUnstagedChanges) {
         await onStageAll();
-        setCommitStatus('Running git hooks...');
+        setCommitStatus('Running git hooks…');
       }
 
       const result = await onCommit(message);
@@ -285,19 +285,19 @@ export default function CommitDialog({
           inputRef.current?.focus();
         }}
       >
-        <div className="commit-dialog-header">
+        <div className="commit-dialog-header clanker-dialog-header">
           <DialogTitle asChild>
-            <h2>Create Commit</h2>
+            <h2 className="clanker-dialog-title">Create Commit</h2>
           </DialogTitle>
           <DialogClose asChild>
-            <IconButton aria-label="Close" title="Close">
-              <X size={18} />
+            <IconButton variant="ghost" className="clanker-dialog-close" aria-label="Close" title="Close">
+              <X size={14} />
             </IconButton>
           </DialogClose>
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div className="commit-dialog-body">
+          <div className="commit-dialog-body clanker-dialog-body">
             {error && <div className="commit-error">{error}</div>}
 
             <div>
@@ -331,7 +331,7 @@ export default function CommitDialog({
                 className="commit-message-input"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Describe your changes..."
+                placeholder="Describe your changes…"
                 disabled={isCommitting}
                 rows={3}
               />
@@ -354,7 +354,7 @@ export default function CommitDialog({
                       onClick={() => void handleUnstageAll()}
                       disabled={isBusy}
                     >
-                      {isUnstaging ? 'Unstaging...' : 'Unstage All'}
+                      {isUnstaging ? 'Unstaging…' : 'Unstage All'}
                     </Button>
                   )}
                   {hasUnstagedChanges && (
@@ -382,7 +382,7 @@ export default function CommitDialog({
                       <span className="commit-file-path" title={change.path}>
                         {change.path}
                       </span>
-                      <IconButton
+                      <IconButton variant="ghost"
                         size="sm"
                         className="commit-file-diff-action"
                         onClick={() => void handleViewFileDiff(change.path, change.staged ? 'staged' : 'working')}
@@ -417,7 +417,7 @@ export default function CommitDialog({
             </div>
           </div>
 
-          <div className="commit-dialog-footer">
+          <div className="commit-dialog-footer clanker-dialog-footer">
             <div className="commit-status" aria-live="polite">
               {isCommitting && commitStatus && (
                 <>

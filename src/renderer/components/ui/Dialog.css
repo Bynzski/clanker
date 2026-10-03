@@ -21,7 +21,72 @@
   box-shadow: var(--shadow-dialog);
 }
 
-.clanker-dialog-content :focus-visible {
+:where(.clanker-dialog-content) :focus-visible:where(:not(.clanker-input, .clanker-textarea, .clanker-select)) {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/*
+ * Shared dialog anatomy. Every dialog uses the same header, body and footer so
+ * titles, close buttons and actions line up across the app. Feature classes keep
+ * layout (widths, scrolling) but not this geometry.
+ */
+.clanker-dialog-content .clanker-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-height: var(--toolbar-height);
+  margin: 0;
+  padding: 0 6px 0 12px;
+  background: var(--surface-header);
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+.clanker-dialog-content .clanker-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.clanker-dialog-content .clanker-dialog-close {
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.clanker-dialog-content .clanker-dialog-close:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.clanker-dialog-content .clanker-dialog-body {
+  padding: 12px;
+}
+
+.clanker-dialog-content .clanker-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-default);
+  flex-shrink: 0;
 }

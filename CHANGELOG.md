@@ -12,10 +12,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Sidebar navigation by default** — new installs list workspaces in the sidebar; Tabs remains available under Settings → Appearance. In sidebar mode the workspace toolbar docks into the title bar instead of taking its own row.
+- **Collapsible workspace rail** — drag the sidebar edge narrow (or use Collapse sidebar) to shrink it to an icon rail that shows each workspace's mark, a separator, and its agents' harness icons with live attention dots; drag the edge or use Expand sidebar to open it again at its previous width.
+- **Files pinned to the bottom of the sidebar** — WORKSPACES fills the sidebar; FILES sits collapsed at the bottom and grows upward (to half the sidebar) when opened. Browser and Notes are icon toggles on the right of the toolbar.
+- **Remote folder chooser** — browsing SSH directories now works like a desktop file chooser: back/up/home, clickable breadcrumbs with a typed location (`~` supported, Ctrl+L), places, single-click to select and double-click to open, and a footer showing the folder that will be chosen.
+- **Compact, unified interface** — the toolbar groups new-terminal launchers and Git; a shared type scale, control heights and dialog header/footer now apply across dialogs, menus, the Git menu, Settings, the launcher and the file explorer. Enabled primary buttons are visually distinct from disabled ones, and destructive row actions stay quiet until hovered.
+- **Chat History and Usage open instantly** — a few seconds after a workspace has finished opening, and only when the app is idle, its conversation history and usage are read once in the background. Opening either panel shows those results immediately and refreshes them quietly; opening a workspace is never slowed down.
+- **Agent attention shows only what needs you** — idle agents show nothing instead of an "Unknown" icon, working agents show a spinner, questions stay yellow until answered, and a finished turn is green only until you focus that agent.
+- **Quieter focus and account rows** — text fields show focus as a tinted border with a faint halo instead of a thick outline ring, and harness accounts in Settings are compact lines with a small Add account action instead of boxed rows.
+- **Startup splash** — the window opens immediately on the app logo, in your saved theme, instead of staying blank while the interface loads.
+- **Shared shadows, sizes and borderless inline actions** — menus, dropdowns and dialogs use the shared elevation shadows; browser controls, model pickers and the launcher's target picker sit on the shared control heights; close, edit, star and clear buttons in tabs, pane headers and list rows are borderless icons (the terminal pane's close matches the editor and notes panes).
+- **Workspace tabs** — Tabs mode shows workspaces as compact chips centred in the title bar, with an accent underline on the active one and borderless close, rename and new-workspace buttons.
+- **Theme previews** — Settings → Appearance shows each theme as a miniature preview painted with its real colours, and workspace navigation is a Tabs/Sidebar toggle.
 - **Conversation History replaces Workspace Tasks** — Chat History now contains only harness-native conversations. The durable per-launch task records introduced in `0.6.0` no longer exist: local and SSH harness launches and native resumes write no application-level task state, and any `taskSessions` data persisted by earlier builds is deleted once at startup. Resuming an old conversation is unchanged — open Chat History, expand a harness, and select the conversation.
 
 ### Fixed
 
+- **Keyboard focus outlines** — sidebar rows, workspace tabs, rail items, window controls and folder-chooser rows now show their own compact focus outline; a global rule had been overriding them with a large offset ring that overlapped neighbouring rows.
+- **Usage lists only installed harnesses** — harnesses missing from the workspace's environment are hidden from Usage (and never probed) instead of being listed as "Not installed in this environment".
+- **Git menu stays on screen** — the Git menu opens from the toolbar's start and is kept inside the window, so it no longer runs off the left edge when few launchers are shown or the sidebar is collapsed.
+- **Open Workspace in the collapsed rail** — the add button sits directly under the open workspaces instead of at the bottom of the rail.
+- **Window dragging from the toolbar** — in sidebar mode the empty stretch of the docked toolbar drags the window again; previously only the brand area did.
 - **SSH preview recovery and isolation** — development servers can stop and restart without recreating healthy SSH tunnels. Private SSH workspace Browser sessions prevent loopback cookies and storage from leaking between unrelated remote workspaces.
 
 ## [0.9.0] - 2026-10-01

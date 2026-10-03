@@ -30,21 +30,21 @@
 }
 
 .error-boundary-title {
-  font-size: 14px;
+  font-size: var(--font-size-lg);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
 }
 
 .error-boundary-pane-id {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   margin: 0;
   font-family: var(--font-mono, monospace);
 }
 
 .error-boundary-message {
-  font-size: 12px;
+  font-size: var(--font-size-md);
   color: var(--text-secondary);
   margin: 0;
   word-break: break-word;
@@ -58,14 +58,14 @@
   gap: var(--space-xs, 4px);
   margin-top: var(--space-sm, 8px);
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: var(--font-size-md);
   font-weight: 500;
   color: var(--text-primary);
   background: var(--surface-control);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background var(--transition), border-color var(--transition);
 }
 
 .error-boundary-retry:hover {

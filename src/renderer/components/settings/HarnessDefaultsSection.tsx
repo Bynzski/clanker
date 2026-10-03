@@ -33,6 +33,13 @@ interface HarnessDefaultsSectionProps {
   onAccountIntentConsumed?: () => void;
 }
 
+// Same order as the toolbar launchers and the workspace launcher.
+const presentationIndex = (id: string) => {
+  const index = HARNESS_OPTIONS.findIndex((option) => option.id === id);
+  return index === -1 ? HARNESS_OPTIONS.length : index;
+};
+const HARNESS_DEFAULTS_ORDER = [...KNOWN_HARNESS_IDS].sort((a, b) => presentationIndex(a) - presentationIndex(b));
+
 export default function HarnessDefaultsSection({
   harnessDefaults,
   availableHarnessIds,
@@ -56,7 +63,7 @@ export default function HarnessDefaultsSection({
   return (
     <div className="settings-section">
       <div className="settings-section-title">Harness Defaults</div>
-      {KNOWN_HARNESS_IDS.filter((id) => availableHarnessIds.includes(id)).map((harnessId) => {
+      {HARNESS_DEFAULTS_ORDER.filter((id) => availableHarnessIds.includes(id)).map((harnessId) => {
         const option = HARNESS_OPTIONS.find((entry) => entry.id === harnessId);
         const defaults = harnessDefaults[harnessId];
         const isExpanded = expandedHarness === harnessId;

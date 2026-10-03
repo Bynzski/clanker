@@ -16,6 +16,15 @@ All structural geometry is centrally owned through design tokens in `styles/glob
 - Feature classes may customize layout, flex behavior, dimensions, and composition,
   but should not recreate or override primitive border, radius, surface, or focus styling.
 
+# Type scale and control heights
+
+Font sizes come from `--font-size-2xs` (9px) through `--font-size-xl` (14px) in
+`styles/global.css`; feature CSS never uses literal pixel font sizes. The main
+layout reads at `--font-size-sm`/`--font-size-md` (11–12px); `--font-size-lg`
+(13px) is for dialog titles and `--font-size-xl` only for the launcher title and
+glyph-sized controls. Control heights use `--control-height-xs/sm/md`
+(20/24/28px) and bars use `--toolbar-height` (36px).
+
 # Dialog foundation
 
 Import feature UI from `Dialog` or `AlertDialog` in this directory. The exported
@@ -33,6 +42,13 @@ forceMount hidden content unless it should continue suppressing the browser.
 Counts remain owned exclusively by workspaceStore. Existing callers with their
 own leases may coexist during incremental migration.
 
+Every dialog uses the shared anatomy classes from `Dialog.css`:
+`clanker-dialog-header` (a 36px bar) containing a `clanker-dialog-title` and an
+`IconButton` with `clanker-dialog-close` (an `X`, never a text "Close" button),
+then `clanker-dialog-body` (12px padding) and an optional
+`clanker-dialog-footer` with right-aligned `sm` actions. Feature classes may set
+width, height and scrolling but not this geometry.
+
 Dialog dismisses on Escape/outside pointer interaction. AlertDialog focuses
 Cancel and requires an explicit decision by default. `onBackdropCancel` is an
 opt-in compatibility policy for ConfirmCloseDialog's existing backdrop behavior.
@@ -45,11 +61,17 @@ migrating them, rather than adding DOM-class exceptions here.
 
 ## Buttons and single selection
 
-Use `Button` for actions (`primary`, `secondary`, or `danger`, currently size
-`sm`). It retains native button props and React 19 refs, defaults to
-`type="button"`, and supports a `className` extension. Use `IconButton` for
-icon-only actions; it shares Button behavior and requires `aria-label` or
-`aria-labelledby` rather than relying on a tooltip.
+Use `Button` for actions (`primary`, `secondary`, `ghost`, or `danger`). Sizes
+follow the shared control heights: `xs` (24px, 11px text) for toolbars, list rows
+and inline actions; `sm` (28px, 12px text, the default) for forms and dialog
+actions, matching `Input`/`Select`. Use `ghost` for quiet row and toolbar
+actions; keep filled `danger` for the confirming action of a destructive dialog
+and give destructive row actions a ghost button with a hover-only error tint.
+A disabled `primary` or `danger` button renders as a neutral control so it never
+reads as enabled. Button retains native button props and React 19 refs, defaults
+to `type="button"`, and supports a `className` extension. Use `IconButton` for
+icon-only actions; it is square at its size, shares Button behavior and requires
+`aria-label` or `aria-labelledby` rather than relying on a tooltip.
 
 Use compositional `SegmentedControl` / `SegmentedControlItem` for a one-of-N
 choice. Label the group with `aria-label` or `aria-labelledby`, give each item

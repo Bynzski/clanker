@@ -45,7 +45,7 @@
 .notes-pane-drag-handle:active { cursor: grabbing; }
 
 .notes-pane-title {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;

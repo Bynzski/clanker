@@ -26,13 +26,13 @@ export default function ConfirmCloseDialog({
   return (
     <AlertDialog open={isOpen} onOpenChange={(open) => { if (!open) onCancel(); }}>
       <AlertDialogContent className="confirm-close-dialog" overlayClassName="confirm-close-overlay" onBackdropCancel={onCancel}>
-        <div className="confirm-close-header">
-          <AlertDialogTitle asChild><h3>{title}</h3></AlertDialogTitle>
+        <div className="confirm-close-header clanker-dialog-header">
+          <AlertDialogTitle asChild><h3 className="clanker-dialog-title">{title}</h3></AlertDialogTitle>
         </div>
-        <div className="confirm-close-body">
+        <div className="confirm-close-body clanker-dialog-body">
           <AlertDialogDescription asChild><p>{message}</p></AlertDialogDescription>
         </div>
-        <div className="confirm-close-footer">
+        <div className="confirm-close-footer clanker-dialog-footer">
           {/* Actions own closing (including async saves); do not route them through onCancel. */}
           {options.map((option, index) => (
             <Button
