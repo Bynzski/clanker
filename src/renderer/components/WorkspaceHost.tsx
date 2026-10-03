@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useRef } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { WorkspaceScopeProvider } from './WorkspaceScope';
 import BrowserLifecycleCoordinator from './BrowserLifecycleCoordinator';
+import ExplorerLifecycleCoordinator from './ExplorerLifecycleCoordinator';
 import { withWorkspaceResidency } from '../store/workspaceStoreHelpers';
 import {
   recordWorkspaceActivation,
@@ -150,7 +151,7 @@ export default function WorkspaceHost() {
   }, [warmWorkspaceIdSet]);
 
   if (workspaces.length === 0) {
-    return null;
+    return <ExplorerLifecycleCoordinator />;
   }
 
   return (
@@ -160,6 +161,7 @@ export default function WorkspaceHost() {
         data-testid="workspace-host"
         data-active-workspace-id={resolvedActiveWorkspaceId ?? ''}
       >
+        <ExplorerLifecycleCoordinator />
         <BrowserLifecycleCoordinator activeWorkspaceId={resolvedActiveWorkspaceId} />
         <div className="workspace-surfaces-container">
           {workspaces.map((workspace) => (

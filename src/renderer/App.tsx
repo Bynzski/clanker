@@ -24,6 +24,7 @@ import { getWorkspaceNameFromPath } from './lib/workspaceLabels';
 import type { GitWorktree } from '../shared/types/git';
 import './App.css';
 import { useThemeStore } from './theme/themeStore';
+import { useWorkspaceNavigationStore } from './store/workspaceNavigationStore';
 
 const WorkspaceHost = lazy(() => import('./components/WorkspaceHost'));
 
@@ -48,6 +49,13 @@ function App() {
     }
   }, []);
 
+
+  // Stage 1: preference is loaded and persisted but does not yet change the shell.
+  useEffect(() => {
+    if (!useWorkspaceNavigationStore.getState().resolved) {
+      void useWorkspaceNavigationStore.getState().initialize();
+    }
+  }, []);
 
   useEffect(() => {
     void useKeybindingStore.getState().load();

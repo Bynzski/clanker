@@ -1,6 +1,7 @@
 import type { WorkspaceRecipe } from './recipes';
 import type { SshEnvironmentConfig } from './environments';
 import type { ThemeId } from './theme';
+import type { WorkspaceNavigationMode } from './workspaceNavigation';
 import type { KeybindingOverrides } from '../keybindings';
 /**
  * Shared store schema types.
@@ -58,6 +59,7 @@ export interface RemoteWorktreeRemovalRecord {
 /** Top-level store schema. */
 export interface StoreSchema {
   theme: ThemeId;
+  workspaceNavigationMode?: WorkspaceNavigationMode;
   lastWorkspace: string;
   baseDirectory: string;
   aiCommitEnabled: boolean;

@@ -3,9 +3,9 @@ import { Input } from './ui/Input';
 import { useState, useRef, useEffect } from 'react';
 import type { DragEvent, KeyboardEvent, MouseEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { disposeWorkspaceResources } from '../lib/workspaceLifecycle';
+import { closeWorkspaceWithCleanup } from '../lib/workspaceClose';
 import { Plus, X, Check, Edit2, BellRing, GitBranch } from 'lucide-react';
-import { getRemoteEnvironmentLabel, getWorkspaceNameFromPath, getWorkspaceProjectName, getWorkspaceTabLabel } from '../lib/workspaceLabels';
+import { getRemoteEnvironmentLabel, getWorkspaceRenameValue, getWorkspaceTabLabel } from '../lib/workspaceLabels';
 import { useAgentAttentionStore, attentionCounts } from '../store/agentAttentionStore';
 import { nextAttentionTarget } from '../lib/agentAttentionNavigation';
 import './WorkspaceTabs.css';
@@ -15,7 +15,7 @@ interface WorkspaceTabsProps {
 }
 
 export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
-  const { workspaces, activeWorkspaceId, activeTerminalId, selectWorkspace, moveWorkspace, closeWorkspace, updateWorkspaceName } = useWorkspaceStore();
+  const { workspaces, activeWorkspaceId, activeTerminalId, selectWorkspace, moveWorkspace, updateWorkspaceName } = useWorkspaceStore();
   const byTerminalId = useAgentAttentionStore((state) => state.byTerminalId);
   const nextTarget = nextAttentionTarget(workspaces, byTerminalId, activeTerminalId);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -24,51 +24,6 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
   const draggedWorkspaceIdRef = useRef<string | null>(null);
   const suppressClickRef = useRef(false);
   const [dropTarget, setDropTarget] = useState<{ id: string; side: 'left' | 'right' } | null>(null);
-
-  /**
-   * Keep the explorer watcher aligned with the active workspace.
-   * Only the active workspace explorer watcher remains live. Parked workspaces
-   * keep cached explorer state and refresh when activated again.
-   */
-  useEffect(() => {
-    const syncExplorerWatcher = async (
-      workspaceId: string | null,
-      state = useWorkspaceStore.getState(),
-    ) => {
-      if (typeof window.electronAPI?.explorerStartWatching !== 'function') {
-        return;
-      }
-
-      const workspace = state.getWorkspaceById(workspaceId);
-      if (!workspace) {
-        if (typeof window.electronAPI?.explorerStopWatching === 'function') {
-          await window.electronAPI.explorerStopWatching();
-        }
-        return;
-      }
-
-      if ((workspace.environmentId ?? 'local') !== 'local') {
-        await window.electronAPI.explorerStopWatching();
-        return;
-      }
-      await window.electronAPI.explorerStartWatching(workspace.id);
-    };
-
-    void syncExplorerWatcher(useWorkspaceStore.getState().activeWorkspaceId);
-
-    const unsubscribe = useWorkspaceStore.subscribe((state, prevState) => {
-      if (state.activeWorkspaceId !== prevState.activeWorkspaceId) {
-        void syncExplorerWatcher(state.activeWorkspaceId, state);
-      }
-    });
-
-    return () => {
-      unsubscribe();
-      if (typeof window.electronAPI?.explorerStopWatching === 'function') {
-        void window.electronAPI.explorerStopWatching();
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (editingId && inputRef.current) {
@@ -84,17 +39,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
   const handleClose = async (id: string, event: MouseEvent) => {
     event.stopPropagation();
 
-    const state = useWorkspaceStore.getState();
-    const workspace = state.getWorkspaceById(id);
-    if (workspace == null) {
-      return;
-    }
-
-    await disposeWorkspaceResources(workspace, { isActiveWorkspace: state.activeWorkspaceId === id });
-    closeWorkspace(id);
-    await window.electronAPI.unregisterOpenWorkspace(id).catch((error) => {
-      console.error('Could not unregister closed workspace:', error);
-    });
+    await closeWorkspaceWithCleanup(id);
   };
 
   const startEditing = (id: string, currentName: string, event: MouseEvent) => {
@@ -175,13 +120,10 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
         const isActive = workspace.id === activeWorkspaceId;
         const isEditing = workspace.id === editingId;
         const counts = attentionCounts(workspace.terminals.map((terminal) => terminal.id), byTerminalId);
-        const projectName = getWorkspaceProjectName(workspace);
         const tabLabel = getWorkspaceTabLabel(workspace);
         const branch = workspace.gitCurrentBranch;
         const remoteLabel = getRemoteEnvironmentLabel(workspace);
-        const editName = workspace.isLinkedWorktree && workspace.name === getWorkspaceNameFromPath(workspace.workspacePath)
-          ? projectName
-          : workspace.name || projectName;
+        const editName = getWorkspaceRenameValue(workspace);
 
         return (
           <div

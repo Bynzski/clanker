@@ -32,6 +32,8 @@ export const GET_HARNESS_DEFAULTS = 'get-harness-defaults';
 export const SET_HARNESS_DEFAULTS = 'set-harness-defaults';
 export const GET_THEME = 'get-theme';
 export const SET_THEME = 'set-theme';
+export const GET_WORKSPACE_NAVIGATION_MODE = 'get-workspace-navigation-mode';
+export const SET_WORKSPACE_NAVIGATION_MODE = 'set-workspace-navigation-mode';
 export const GET_KEYBINDING_OVERRIDES = 'get-keybinding-overrides';
 export const SET_KEYBINDING_OVERRIDES = 'set-keybinding-overrides';
 
@@ -293,6 +295,8 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   SET_HARNESS_DEFAULTS,
   GET_THEME,
   SET_THEME,
+  GET_WORKSPACE_NAVIGATION_MODE,
+  SET_WORKSPACE_NAVIGATION_MODE,
   GET_KEYBINDING_OVERRIDES,
   SET_KEYBINDING_OVERRIDES,
   // Terminal

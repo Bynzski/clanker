@@ -546,8 +546,9 @@ describe('Header', () => {
       fireEvent.click(screen.getByTitle('Settings'));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       const selects = screen.getAllByRole('combobox');
-      expect(selects.length).toBe(3); // Appearance, Provider and Model selects
+      expect(selects.length).toBe(4); // Theme, Workspace navigation, Provider and Model
       expect(screen.getByRole('combobox', { name: 'Theme' })).toBeTruthy();
+      expect(screen.getByRole('combobox', { name: 'Workspace navigation' })).toBeTruthy();
     });
 
     it('uses shared settings selects and persists provider/model selection', async () => {

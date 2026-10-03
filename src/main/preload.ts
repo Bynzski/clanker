@@ -16,6 +16,7 @@ import type { AgentAttentionUpdate } from '../shared/types/agentAttention';
 import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchRequest } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { ThemeId } from '../shared/types/theme';
+import type { WorkspaceNavigationMode } from '../shared/types/workspaceNavigation';
 import {
   GET_APP_VERSION,
   GET_LAST_WORKSPACE,
@@ -47,6 +48,8 @@ import {
   SET_AI_COMMIT_MODEL,
   GET_THEME,
   SET_THEME,
+  GET_WORKSPACE_NAVIGATION_MODE,
+  SET_WORKSPACE_NAVIGATION_MODE,
   SPAWN_TERMINAL,
   GET_TERMINAL_BUFFER,
   WRITE_TERMINAL,
@@ -212,6 +215,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAiCommitModel: (model: string) => ipcRenderer.invoke(SET_AI_COMMIT_MODEL, model),
   getTheme: () => ipcRenderer.invoke(GET_THEME),
   setTheme: (theme: ThemeId) => ipcRenderer.invoke(SET_THEME, theme),
+  getWorkspaceNavigationMode: () => ipcRenderer.invoke(GET_WORKSPACE_NAVIGATION_MODE),
+  setWorkspaceNavigationMode: (mode: WorkspaceNavigationMode) => ipcRenderer.invoke(SET_WORKSPACE_NAVIGATION_MODE, mode),
   getKeybindingOverrides: () => ipcRenderer.invoke(GET_KEYBINDING_OVERRIDES),
   setKeybindingOverrides: (overrides: KeybindingOverrides) => ipcRenderer.invoke(SET_KEYBINDING_OVERRIDES, overrides),
 

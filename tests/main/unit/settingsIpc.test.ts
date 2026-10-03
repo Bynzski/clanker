@@ -186,6 +186,8 @@ describe('registerSettingsIpc', () => {
       'set-harness-defaults',
       'get-theme',
       'set-theme',
+      'get-workspace-navigation-mode',
+      'set-workspace-navigation-mode',
       'get-keybinding-overrides',
       'set-keybinding-overrides',
     ];
@@ -201,7 +203,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(18);
+    expect(handleCalls.length).toBe(20);
   });
 
   test('can be called multiple times (registering handlers again)', () => {
@@ -211,7 +213,7 @@ describe('registerSettingsIpc', () => {
     registerSettingsIpc(deps);
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(36);
+    expect(handleCalls.length).toBe(40);
   });
 
   test('OPEN_DIRECTORY_DIALOG allows creating directories from the picker', async () => {
@@ -973,5 +975,41 @@ describe('GET_THEME and SET_THEME handlers', () => {
 
     expect(mockStore.set).not.toHaveBeenCalled();
     expect(mockWindow.setBackgroundColor).not.toHaveBeenCalled();
+  });
+});
+
+describe('workspace navigation mode handlers', () => {
+  const mockIpcMain = ipcMain as unknown as {
+    handle: { mock: { calls: Array<[string, (...args: unknown[]) => unknown]> } };
+  };
+
+  function setup(stored: unknown) {
+    vi.clearAllMocks();
+    const store = { get: vi.fn().mockReturnValue(stored), set: vi.fn() };
+    registerSettingsIpc({ getStore: () => store as never, getMainWindow: () => null });
+    const find = (name: string) => mockIpcMain.handle.mock.calls.find((c) => c[0] === name)![1];
+    return { store, get: find('get-workspace-navigation-mode'), set: find('set-workspace-navigation-mode') };
+  }
+
+  test.each(['tabs', 'sidebar'])('GET returns persisted %s without rewriting', (mode) => {
+    const { store, get } = setup(mode);
+    expect(get()).toBe(mode);
+    expect(store.set).not.toHaveBeenCalled();
+  });
+
+  test.each([undefined, 'rail', 42])('GET defaults %s to tabs and repairs the store', (raw) => {
+    const { store, get } = setup(raw);
+    expect(get()).toBe('tabs');
+    expect(store.set).toHaveBeenCalledWith('workspaceNavigationMode', 'tabs');
+  });
+
+  test('SET persists valid values and rejects invalid ones', () => {
+    const { store, set } = setup('tabs');
+    set({}, 'sidebar');
+    expect(store.set).toHaveBeenCalledWith('workspaceNavigationMode', 'sidebar');
+    store.set.mockClear();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    set({}, 'garbage');
+    expect(store.set).not.toHaveBeenCalled();
   });
 });

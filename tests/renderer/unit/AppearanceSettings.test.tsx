@@ -5,6 +5,7 @@ import AppearanceSettings from '../../../src/renderer/components/settings/Appear
 import { useThemeStore } from '../../../src/renderer/theme/themeStore';
 import { THEME_IDS, THEME_METADATA } from '../../../src/shared/types/theme';
 import { installElectronApiMock } from '../../setup/electron';
+import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 
 const originalSetTheme = useThemeStore.getState().setTheme;
@@ -86,5 +87,20 @@ describe('Appearance settings integration', () => {
     expect(select).toHaveFocus();
     await user.selectOptions(select, 'light');
     expect(select).toHaveValue('light');
+  });
+});
+
+describe('Appearance settings workspace navigation', () => {
+  it('shows and persists the navigation mode', async () => {
+    installElectronApiMock({ setWorkspaceNavigationMode: vi.fn().mockResolvedValue(undefined) });
+    useWorkspaceNavigationStore.setState({ mode: 'tabs', resolved: true });
+    render(<AppearanceSettings />);
+    const select = screen.getByLabelText('Workspace navigation');
+    expect(select).toHaveValue('tabs');
+    fireEvent.change(select, { target: { value: 'sidebar' } });
+    expect(useWorkspaceNavigationStore.getState().mode).toBe('sidebar');
+    expect(window.electronAPI.setWorkspaceNavigationMode).toHaveBeenCalledWith('sidebar');
+    await act(async () => { await Promise.resolve(); });
+    useWorkspaceNavigationStore.setState({ mode: 'tabs' });
   });
 });

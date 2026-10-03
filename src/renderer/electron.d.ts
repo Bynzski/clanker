@@ -51,6 +51,7 @@ import type { HarnessAccountAuthEvent, HarnessAccountAuthStart, HarnessAccountLi
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { AgentAttentionUpdate } from '../../shared/types/agentAttention';
 import type { ThemeId } from '../../shared/types/theme';
+import type { WorkspaceNavigationMode } from '../../shared/types/workspaceNavigation';
 import type { KeybindingOverrides, BrowserKeybindingCommandPayload } from '../../shared/keybindings';
 
 export type { VcsProvider, ProviderContext, PullRequestContext, DeepLink, DeepLinkType };
@@ -102,6 +103,8 @@ interface ElectronAPI {
   setAiCommitModel: (model: string) => Promise<void>;
   getTheme: () => Promise<ThemeId>;
   setTheme: (theme: ThemeId) => Promise<void>;
+  getWorkspaceNavigationMode: () => Promise<WorkspaceNavigationMode>;
+  setWorkspaceNavigationMode: (mode: WorkspaceNavigationMode) => Promise<void>;
   getKeybindingOverrides: () => Promise<KeybindingOverrides>;
   setKeybindingOverrides: (overrides: KeybindingOverrides) => Promise<{ success: true; overrides: KeybindingOverrides } | { success: false; error: string }>;
 
