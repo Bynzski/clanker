@@ -78,8 +78,9 @@ this function. Session invocation requires an explicit transport and rejects
 unsupported operation/transport pairs with `HarnessCapabilityError`.
 User flags (including reasoning/effort options) remain opaque, whitespace-split
 arguments in their existing order; this migration does not reinterpret them.
-The common launcher retains the POSIX wrapper, fallback shell, Windows
-`cmd.exe /c` resolution, cwd and PTY behavior.
+The common launcher retains the POSIX wrapper, fallback shell, cwd and PTY behavior;
+on Windows every local PTY (terminal and session resume/fork) is planned by
+`resolveHarnessPtySpawn()` from the final argv and child environment.
 
 Model capabilities retain native parsers, intentional fallback lists, TTL and
 explicit-refresh behavior. Discovery implementations load lazily. The shared

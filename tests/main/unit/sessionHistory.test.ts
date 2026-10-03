@@ -88,7 +88,7 @@ function makeReadableLines(lines: string[]): Readable {
 import {
   discoverSessions,
   discoverSessionsDetailed,
-  buildSessionInvokeArgs,
+  buildSessionLaunch,
   clearSessionCache,
   getSessionCacheSize,
   SESSION_CACHE_MAX_ENTRIES,
@@ -346,7 +346,13 @@ describe('sessionMatchesWorkspace', () => {
   });
 });
 
-describe('buildSessionInvokeArgs', () => {
+// Legacy-shaped view over the raw provider launch: the wrapper is applied by the PTY planner at spawn time.
+const buildSessionInvokeArgs = (...args: Parameters<typeof buildSessionLaunch>) => {
+  const { command, args: rest } = buildSessionLaunch(...args);
+  return { spawnCmd: TEST_HARNESS_WRAPPER, spawnArgs: [command, ...rest] };
+};
+
+describe('buildSessionLaunch', () => {
   const wrapper = TEST_HARNESS_WRAPPER;
 
   it('builds OMP resume and fork commands with the session path', () => {

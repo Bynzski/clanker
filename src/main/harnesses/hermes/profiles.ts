@@ -1,12 +1,12 @@
+import { realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { isValidHarnessProfileName } from '../../../shared/harnessProfiles';
 import { requireSuccess, type HarnessCommandExecutor, type HarnessCommandRequest } from '../commandExecution';
 import { classifyHarnessFailure, HarnessCapabilityError, type HarnessProfilesCapability } from '../types';
 
-// Resolve on the executor's host, not the desktop filesystem. This deliberately requires
-// a public node executable there (including Windows); absence fails closed. No Hermes
-// Python installation layout is assumed, and no config/identity/credential file is read.
-const REAL_HOME = "const fs=require('node:fs'); const p=process.argv[1]; if(!fs.statSync(p).isDirectory()) process.exit(1); process.stdout.write(fs.realpathSync(p));";
+// Assistants profiles are local-only in this release, so canonical homes are resolved with the main
+// process's own filesystem APIs; no external `node` executable is needed. Only path metadata is
+// inspected: no Hermes config, credential, database or conversation file is ever read.
 const PROBE_SELECTOR_KEYS = ['HERMES_CONFIG', 'HERMES_ENV', 'HERMES_CONFIG_PATH', 'HERMES_ENV_PATH',
   'HERMES_PROFILE_NAME', 'HERMES_PROFILE', 'HERMES_RESUME', 'HERMES_YOLO_MODE',
   'TERMINAL_CWD', 'TERMINAL_ENV', 'TERMINAL_BACKEND', 'HERMES_TERMINAL_BACKEND'] as const;
@@ -41,8 +41,15 @@ function configHome(config: string): string {
   return paths.dirname(config);
 }
 
-async function canonicalHome(executor: HarnessCommandExecutor, home: string): Promise<string> {
-  const canonical = await probe(executor, { command: 'node', args: ['-e', REAL_HOME, home] });
+async function canonicalHome(home: string): Promise<string> {
+  let canonical: string;
+  try {
+    canonical = await realpath(home);
+    if (!(await stat(canonical)).isDirectory()) throw new Error('not a directory');
+  } catch {
+    // Deliberately generic: raw fs errors embed host paths and must not reach renderer-visible state.
+    throw new HarnessCapabilityError('command-failed', 'Hermes profile directory is unavailable');
+  }
   nativePath(canonical);
   return canonical;
 }
@@ -63,8 +70,8 @@ export const hermesProfiles: HarnessProfilesCapability = {
     // Discover the root via the public default-profile CLI, never infer it from that target.
     const rootConfig = name === 'default' ? config
       : await probe(executor, { command: 'hermes', args: ['-p', 'default', 'config', 'path'] });
-    const rootHome = await canonicalHome(executor, configHome(rootConfig));
-    const home = name === 'default' ? rootHome : await canonicalHome(executor, selectedHome);
+    const rootHome = await canonicalHome(configHome(rootConfig));
+    const home = name === 'default' ? rootHome : await canonicalHome(selectedHome);
     return { name, label: name, home, rootHome };
   },
   async discover(executor) {

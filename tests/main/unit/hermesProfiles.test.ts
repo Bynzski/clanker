@@ -1,21 +1,29 @@
-import { describe, expect, it, vi } from 'vitest';
-import { mkdtemp, mkdir, symlink, rm } from 'node:fs/promises';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, mkdir, symlink, rm, realpath, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { executeLocalHarnessCommand } from '../../../src/main/environment/localCommandExecutor';
 import { isValidHarnessProfileName } from '../../../src/shared/harnessProfiles';
 import { HarnessCapabilityError } from '../../../src/main/harnesses/types';
 import { hermesProvider } from '../../../src/main/harnesses/hermes';
 import type { HarnessCommandRequest } from '../../../src/main/harnesses/commandExecution';
 
-function executorFor(configPath = '/native/hermes/config.yaml') {
+// Real, canonical directories: main now canonicalizes with its own filesystem APIs.
+let FIXTURE = '';
+let HOME = '';
+beforeAll(async () => {
+  FIXTURE = await realpath(await mkdtemp(path.join(os.tmpdir(), 'hermes-profiles-')));
+  HOME = path.join(FIXTURE, 'hermes');
+  await mkdir(HOME);
+});
+afterAll(async () => { await rm(FIXTURE, { recursive: true, force: true }); });
+
+function executorFor(configPath = path.join(HOME, 'config.yaml')) {
   const run = vi.fn(async (request: HarnessCommandRequest) => {
     const args = request.args ?? [];
     let stdout = '';
     if (args.includes('path')) stdout = `${configPath}\n`;
     else if (args.includes('get')) stdout = 'local\n';
     else if (args.includes('--help')) stdout = 'options: --in PATH  --tui\n';
-    else if (request.command === 'node') stdout = '/canonical/hermes\n';
     return { stdout, stderr: '', exitCode: 0 };
   });
   return { run };
@@ -33,7 +41,6 @@ describe('Hermes native profiles capability', () => {
       await symlink(target, named, process.platform === 'win32' ? 'junction' : 'dir');
       const executor = {
         run: vi.fn(async (request: HarnessCommandRequest) => {
-          if (request.command === 'node') return executeLocalHarnessCommand(request);
           const args = request.args ?? [];
           const stdout = args.includes('path')
             ? path.join(args[1] === 'default' ? root : named, 'config.yaml')
@@ -65,7 +72,7 @@ describe('Hermes native profiles capability', () => {
     executor.run.mockImplementation((request) => request.args?.[1] === 'default' && request.args.includes('path')
       ? Promise.resolve({ stdout: rootConfig, stderr: '', exitCode: 0 }) : original(request));
     await expect(hermesProvider.profiles.resolve(executor, 'coder')).rejects.toMatchObject({ kind: 'parse-failure' });
-    expect(executor.run.mock.calls.every(([request]) => request.command !== 'node')).toBe(true);
+    expect(executor.run.mock.calls.every(([request]) => request.command === 'hermes')).toBe(true);
   });
   it('fails closed for named profile metadata missing its native root', () => {
     expect(() => hermesProvider.profiles.buildLaunch({ name: 'coder', label: 'Coder', home: '/external/profile' }, '/workspace')).toThrow();
@@ -90,11 +97,9 @@ describe('Hermes native profiles capability', () => {
     expect(await hermesProvider.profiles.resolve(executor, 'default')).toMatchObject({ name: 'default' });
   });
   it('preserves trailing spaces in a canonical native home instead of changing its identity', async () => {
-    const executor = executorFor();
-    const original = executor.run.getMockImplementation()!;
-    executor.run.mockImplementation((request) => request.command === 'node'
-      ? Promise.resolve({ stdout: '/canonical/home with space ', stderr: '', exitCode: 0 }) : original(request));
-    expect(await hermesProvider.profiles.resolve(executor, 'coder')).toMatchObject({ home: '/canonical/home with space ' });
+    const spaced = path.join(FIXTURE, 'home with space ');
+    await mkdir(spaced);
+    expect(await hermesProvider.profiles.resolve(executorFor(path.join(spaced, 'config.yaml')), 'coder')).toMatchObject({ home: spaced });
   });
   it.each([
     new Error('private credential diagnostic'),
@@ -150,29 +155,56 @@ describe('Hermes native profiles capability', () => {
     const executor = executorFor();
     executor.run.mockImplementationOnce(async () => ({ stdout: '\u001b[32m Profile  Model  Gateway  Alias  Distribution\u001b[0m\n ─────  ─────  ─────  ─────  ─────\n ◆default  model  stopped  —  —\n coder-2  model  stopped  coder  —\n', stderr: '', exitCode: 0 }));
     expect(await hermesProvider.profiles.discover(executor)).toEqual([
-      { name: 'default', label: 'default', home: '/canonical/hermes', rootHome: '/canonical/hermes' },
-      { name: 'coder-2', label: 'coder-2', home: '/canonical/hermes', rootHome: '/canonical/hermes' },
+      { name: 'default', label: 'default', home: HOME, rootHome: HOME },
+      { name: 'coder-2', label: 'coder-2', home: HOME, rootHome: HOME },
     ]);
     expect(executor.run.mock.calls[0][0].args).toEqual(['profile', 'list']);
   });
   it.each(['relative/config.yaml', 'C:config.yaml', '\\home\\config.yaml', '/native/hermes/not-config.txt', '/a/config.yaml\nwarning', '/a/../config.yaml', '/a/\u0000/config.yaml'])('rejects unsafe native config path %j', async (config) => {
     await expect(hermesProvider.profiles.resolve(executorFor(config), 'coder')).rejects.toMatchObject({ kind: 'parse-failure' });
   });
-  it('uses native Windows path semantics independently of the desktop platform', async () => {
-    const executor = executorFor('C:\\Users\\Jay\\Hermes Profile\\config.yaml');
-    const original = executor.run.getMockImplementation()!;
-    executor.run.mockImplementation((request) => request.command === 'node'
-      ? Promise.resolve({ stdout: 'C:\\Canonical\\Hermes Profile', stderr: '', exitCode: 0 }) : original(request));
-    expect(await hermesProvider.profiles.resolve(executor, 'coder')).toMatchObject({ home: 'C:\\Canonical\\Hermes Profile' });
-    const args = executor.run.mock.calls[executor.run.mock.calls.length - 1][0].args!;
-    expect(args[args.length - 1]).toBe('C:\\Users\\Jay\\Hermes Profile');
+  it.each(['C:\\Users\\Jay\\Hermes Profile\\config.yaml', '\\\\server\\share\\hermes\\config.yaml'])('still validates Windows-shaped config paths syntactically, then fails closed when the directory does not exist here %j', async (config) => {
+    await expect(hermesProvider.profiles.resolve(executorFor(config), 'coder')).rejects.toMatchObject({ kind: 'command-failed', message: 'Hermes profile directory is unavailable' });
   });
-  it.each(['relative', '/a/../home', '/a\nother', ''])('rejects invalid canonical home %j', async (home) => {
-    const executor = executorFor();
-    const original = executor.run.getMockImplementation()!;
-    executor.run.mockImplementation((request) => request.command === 'node'
-      ? Promise.resolve({ stdout: home, stderr: '', exitCode: 0 }) : original(request));
-    await expect(hermesProvider.profiles.resolve(executor, 'coder')).rejects.toMatchObject({ kind: 'parse-failure' });
+  it('fails closed for a missing or non-directory home without leaking the host path', async () => {
+    const file = path.join(FIXTURE, 'a-file');
+    await writeFile(file, 'x');
+    for (const home of [path.join(FIXTURE, 'does-not-exist'), file]) {
+      const error = await hermesProvider.profiles.resolve(executorFor(path.join(home, 'config.yaml')), 'coder').catch((failure: unknown) => failure);
+      expect(error).toBeInstanceOf(HarnessCapabilityError);
+      expect(error).toMatchObject({ kind: 'command-failed', message: 'Hermes profile directory is unavailable', cause: undefined });
+      expect(JSON.stringify(error)).not.toContain(FIXTURE);
+    }
+  });
+  it('canonicalizes the default and named profile homes independently, through symlinks', async () => {
+    const root = path.join(FIXTURE, 'canon-root');
+    const target = path.join(FIXTURE, 'canon-external');
+    const rootLink = path.join(FIXTURE, 'canon-root-link');
+    await mkdir(root); await mkdir(target);
+    await mkdir(path.join(root, 'profiles'));
+    const kind = process.platform === 'win32' ? 'junction' : 'dir';
+    await symlink(root, rootLink, kind);
+    await symlink(target, path.join(root, 'profiles', 'coder'), kind);
+    const executor = { run: vi.fn(async (request: HarnessCommandRequest) => {
+      const args = request.args ?? [];
+      const stdout = args.includes('path')
+        ? path.join(args[1] === 'default' ? rootLink : path.join(rootLink, 'profiles', 'coder'), 'config.yaml')
+        : args.includes('get') ? 'local' : '--in PATH --tui';
+      return { stdout, stderr: '', exitCode: 0 };
+    }) };
+    expect(await hermesProvider.profiles.resolve(executor, 'default')).toMatchObject({ home: root, rootHome: root });
+    expect(await hermesProvider.profiles.resolve(executor, 'coder')).toMatchObject({ home: target, rootHome: root });
+  });
+  it('resolves and discovers with no external node executable (executor reports node unavailable)', async () => {
+    const inner = executorFor();
+    const run = vi.fn(async (request: HarnessCommandRequest) => {
+      if (request.command === 'node') throw Object.assign(new Error('spawn node ENOENT'), { code: 'ENOENT' });
+      return inner.run(request);
+    });
+    expect(await hermesProvider.profiles.resolve({ run }, 'coder')).toMatchObject({ home: HOME, rootHome: HOME });
+    run.mockImplementationOnce(async () => ({ stdout: 'Profile  Model  Gateway  Alias  Distribution\n────\ndefault  m  stopped  —  —\n', stderr: '', exitCode: 0 }));
+    expect(await hermesProvider.profiles.discover({ run })).toHaveLength(1);
+    expect(run.mock.calls.every(([request]) => request.command === 'hermes')).toBe(true);
   });
   it.each(['docker', 'ssh', '', 'local\nextra'])('fails closed for backend %j', async (backend) => {
     const executor = executorFor();
@@ -193,18 +225,16 @@ describe('Hermes native profiles capability', () => {
     await expect(hermesProvider.profiles.resolve(executor, name)).rejects.toMatchObject({ kind: 'parse-failure' });
     expect(executor.run).not.toHaveBeenCalled();
   });
-  it('resolves an explicit native profile with bounded CLI probes and canonical home', async () => {
+  it('resolves an explicit native profile with only bounded Hermes CLI probes and canonical home', async () => {
     expect(hermesProvider).toHaveProperty('profiles');
     const executor = executorFor();
     const profiles = hermesProvider.profiles;
-    expect(await profiles.resolve(executor, 'coder')).toEqual({ name: 'coder', label: 'coder', home: '/canonical/hermes', rootHome: '/canonical/hermes' });
+    expect(await profiles.resolve(executor, 'coder')).toEqual({ name: 'coder', label: 'coder', home: HOME, rootHome: HOME });
     expect(executor.run.mock.calls.map(([request]) => [request.command, request.args])).toEqual([
       ['hermes', ['-p', 'coder', 'config', 'path']],
       ['hermes', ['-p', 'coder', 'config', 'get', 'terminal.backend']],
       ['hermes', ['-p', 'coder', 'chat', '--help']],
       ['hermes', ['-p', 'default', 'config', 'path']],
-      ['node', [expect.any(String), expect.any(String), '/native/hermes']],
-      ['node', [expect.any(String), expect.any(String), '/native/hermes']],
     ]);
     for (const [request] of executor.run.mock.calls) {
       expect(request.timeoutMs).toBeGreaterThan(0);
