@@ -246,14 +246,14 @@ describe('Claude lifecycle', () => {
   // Native hook fields (Claude Code hooks reference): root identity `session_id`; turn identity
   // `prompt_id` (common field); child scope: `agent_id`; PermissionRequest has `tool_name` and
   // `tool_input` but NO `tool_use_id`; PostToolUse has `tool_use_id`; PostToolBatch has `tool_calls`
-  // (the resolved batch); settled: `Stop` with empty `background_tasks`/`session_crons`, or
+  // (the resolved batch); settled: root `Stop` (regardless of `background_tasks`/`session_crons`), or
   // `StopFailure` (`error`, `error_details`, `last_assistant_message`). The permission wait is
   // Clanker-derived turn-level state (inputId 'permission'), resolved only by PostToolBatch.
   const common = { session_id: 'root', prompt_id: 'prompt-1', transcript_path: '/t.jsonl', cwd: '/w', permission_mode: 'default' };
   const request = (extra: object = {}) => ({ ...common, hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'SECRET' }, ...extra });
   const batch = (extra: object = {}) => ({ ...common, hook_event_name: 'PostToolBatch', tool_calls: [{ tool_name: 'Bash', tool_input: { command: 'SECRET' }, tool_use_id: 'toolu_1', tool_response: 'SECRET' }], ...extra });
 
-  it('ignores child events and background-active Stop; a clean root Stop settles', async () => {
+  it('ignores child events; a root Stop settles even while background work (a dev server, a cron) is running', async () => {
     const hook = await interpreter('claude');
     const { feed, state, decisions } = rig('claude');
     feed(hook('UserPromptSubmit', { ...common, hook_event_name: 'UserPromptSubmit', prompt: 'private' }));
@@ -263,8 +263,14 @@ describe('Claude lifecycle', () => {
     feed(hook('StopFailure', { ...common, ...child, error: 'rate_limit' }));
     expect(state()).toBe('running');
     expect(decisions.slice(1)).toEqual(['ignored-child', 'ignored-child', 'ignored-child']);
-    expect(hook('Stop', { ...common, background_tasks: [{ id: 'bg' }] })).toBeNull();
-    expect(hook('Stop', { ...common, session_crons: [{ id: 'cron' }] })).toBeNull();
+    // Claude has returned control to the user; a long-lived background task must not hold the turn open.
+    feed(hook('Stop', { ...common, background_tasks: [{ id: 'bg', type: 'shell', status: 'running' }], session_crons: [{ id: 'cron' }] }));
+    expect(state()).toBe('ready');
+  });
+  it('a clean root Stop settles', async () => {
+    const hook = await interpreter('claude');
+    const { feed, state } = rig('claude');
+    feed(hook('UserPromptSubmit', { ...common, hook_event_name: 'UserPromptSubmit' }));
     feed(hook('Stop', { ...common, background_tasks: [], session_crons: [], stop_reason: 'end_turn' }));
     expect(state()).toBe('ready');
   });

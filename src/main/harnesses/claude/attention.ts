@@ -17,15 +17,13 @@ export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PermissionRequest', 'Pos
  *   resolved. A per-tool `PostToolUse` is not subscribed, so an unrelated parallel tool finishing
  *   can never clear a wait. Cost: after an approval the pane stays Needs Input until the batch
  *   ends, and a denied call resolves with its batch.
- * - Settled: root `Stop` while `background_tasks` and `session_crons` are empty, or `StopFailure`
- *   (the turn ended on an API error: the foreground is settled, not necessarily successful; the
- *   error is never forwarded). Claude has no user-interrupt hook, so an interrupted turn stays
+ * - Settled: root `Stop`, or `StopFailure` (the turn ended on an API error: the foreground is
+ *   settled, not necessarily successful; the error is never forwarded). `Stop` means Claude has
+ *   handed control back to the user, so `background_tasks`/`session_crons` are deliberately not
+ *   consulted: a long-lived dev server or cron would otherwise keep the turn Running forever. Claude has no user-interrupt hook, so an interrupted turn stays
  *   Running until the next prompt.
  * `Notification` is unused: no turn or request identity. */
-export const INTERPRETER = `const busy = (value) => Array.isArray(value) ? value.length > 0
-  : typeof value === 'number' ? value > 0
-  : value && typeof value === 'object' ? Object.keys(value).length > 0 : value === true;
-const text = (value) => typeof value === 'string' && value ? value : undefined;
+export const INTERPRETER = `const text = (value) => typeof value === 'string' && value ? value : undefined;
 export default function interpret(input, hook, store) {
   const sessionId = text(input.session_id);
   const turnId = text(input.prompt_id);
@@ -53,7 +51,7 @@ export default function interpret(input, hook, store) {
       store.write({ turn: turnId, pending: false });
       return event('input_resolved', { turnId, inputId: 'permission' });
     case 'Stop':
-      return busy(input.background_tasks) || busy(input.session_crons) ? null : settle();
+      return settle();
     case 'StopFailure':
       return settle();
     case 'SessionEnd':
