@@ -119,28 +119,36 @@ export class AssistantService {
 
   async launch(request: AssistantLaunchRequest): Promise<AssistantLaunchResult> {
     if (!this.get().settings.enabled) throw new Error('Assistants integration is disabled');
-    const existing = this.launches.get(request.profileId);
-    if (existing) return { ...existing, action: 'focus' };
-    const pending = this.pending.get(request.profileId);
-    if (pending) return { ...await pending, action: 'focus' };
-    const profile = this.profiles.get(request.profileId);
-    if (!profile) throw new Error('Assistant profile is unavailable; refresh profiles');
+    // Ownership model: the caller is the registered workspace identity that initiated THIS request.
+    // It is captured once and rechecked after every await, independently of the workspace that owns
+    // an already-created or in-flight terminal. A stale caller only ever rejects itself: only the
+    // operation that created a PTY may kill it.
+    const epoch = this.epoch;
     const workspace = this.deps.getWorkspace(request.workspaceId);
     if (!workspace || workspace.location.environmentId !== 'local') throw new Error('Assistant launch requires a registered local workspace');
-    if (!request.acknowledgeExternalActivity) throw new Error('External profile activity must be acknowledged');
-    const capability = this.deps.getProfilesCapability(profile.public.harnessId);
-    if (!capability) throw new Error('Profiles capability is unavailable');
-    const epoch = this.epoch;
     const location = { ...workspace.location };
-    const assertOwner = () => {
+    const assertCaller = () => {
       const current = this.deps.getWorkspace(workspace.workspaceId);
       if (this.epoch !== epoch || !this.get().settings.enabled || this.deps.isShuttingDown()) throw new Error('Assistant launch was disabled or application state changed');
       if (!current || current !== workspace || current.location.path !== location.path || current.location.environmentId !== location.environmentId) throw new Error('Registered assistant workspace changed');
     };
+    const existing = this.launches.get(request.profileId);
+    if (existing) return { ...existing, action: 'focus' };
+    const pending = this.pending.get(request.profileId);
+    if (pending) {
+      const shared = await pending;
+      assertCaller();
+      return { ...shared, action: 'focus' };
+    }
+    const profile = this.profiles.get(request.profileId);
+    if (!profile) throw new Error('Assistant profile is unavailable; refresh profiles');
+    if (!request.acknowledgeExternalActivity) throw new Error('External profile activity must be acknowledged');
+    const capability = this.deps.getProfilesCapability(profile.public.harnessId);
+    if (!capability) throw new Error('Profiles capability is unavailable');
     let reservedHome: string | undefined;
     const operation = (async (): Promise<AssistantLaunchResult> => {
       const native = await capability.resolve(this.deps.executor(profile.public.harnessId), profile.native.name);
-      assertOwner();
+      assertCaller();
       const homeKey = `${profile.public.harnessId}:${pathKey(native.home, process.platform === 'win32')}`;
       const caseFold = process.platform === 'win32';
       if (native.name !== profile.native.name || pathKey(native.home, caseFold) !== pathKey(profile.native.home, caseFold)) throw new Error('Assistant profile home changed; refresh profiles');
@@ -151,12 +159,16 @@ export class AssistantService {
       const owned = ownerId && this.launches.get(ownerId);
       if (owned) return { ...owned, action: 'focus' };
       const sameHomePending = this.pendingHomes.get(homeKey);
-      if (sameHomePending) return { ...await sameHomePending, action: 'focus' };
+      if (sameHomePending) {
+        const shared = await sameHomePending;
+        assertCaller();
+        return { ...shared, action: 'focus' };
+      }
       reservedHome = homeKey;
       this.pendingHomes.set(homeKey, this.pending.get(profile.public.id)!);
       const spawned = await this.deps.spawn(workspace.workspaceId, profile.public.harnessId, capability.buildLaunch(native, toNativePath(location.path, process.platform)));
       try {
-        assertOwner();
+        assertCaller();
         if (this.earlyExits.delete(spawned.id)) throw new Error('Assistant terminal exited during startup');
       } catch (error) {
         this.deps.killTerminal(spawned.id);

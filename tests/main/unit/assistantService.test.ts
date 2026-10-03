@@ -229,6 +229,79 @@ describe('optional assistants', () => {
     expect(spawn).toHaveBeenCalledOnce();
     expect(service.get().launches).toEqual([{ profileId: profile.id, workspaceId: 'ws-1', terminalId: 'term-1', state: 'open' }]);
   });
+  describe('request ownership while waiting on another workspace\'s launch', () => {
+    const NATIVE = { home: '/profiles/default', rootHome: '/hermes-root' };
+    const flush = () => new Promise<void>((done) => setTimeout(done, 0));
+    const mutate = (workspaces: Map<string, { workspaceId: string; location: { environmentId: string; path: string } }>, change: 'closed' | 'replaced') => {
+      if (change === 'closed') workspaces.delete('ws-2');
+      if (change === 'replaced') workspaces.set('ws-2', { workspaceId: 'ws-2', location: { environmentId: 'local', path: '/replacement' } });
+    };
+    async function pendingOwner(alias: boolean) {
+      const f = fixture();
+      f.service.configure({ enabled: true, pins: [] });
+      f.workspaces.set('ws-2', { workspaceId: 'ws-2', location: { environmentId: 'local', path: '/second/worktree' } });
+      const { profiles: [first] } = await f.service.discover();
+      let second = first;
+      if (alias) {
+        f.resolve.mockResolvedValueOnce({ name: 'alias', label: 'Alias', ...NATIVE });
+        second = (await f.service.addProfile('hermes', 'alias')).profiles[1];
+        f.resolve.mockImplementation(async (_executor: unknown, name: string) => ({ name, label: name, ...NATIVE }));
+      }
+      let finishSpawn!: (value: { id: string; pid: number; attentionEnabled: boolean }) => void;
+      f.spawn.mockImplementationOnce(() => new Promise((done) => { finishSpawn = done; }));
+      const owner = f.service.launch({ profileId: first.id, workspaceId: 'ws-1', acknowledgeExternalActivity: true });
+      await vi.waitFor(() => expect(f.spawn).toHaveBeenCalledOnce());
+      const waiter = f.service.launch({ profileId: second.id, workspaceId: 'ws-2', acknowledgeExternalActivity: true });
+      await flush();
+      return { ...f, first, owner, waiter, finishOwner: () => finishSpawn({ id: 'term-1', pid: 42, attentionEnabled: false }) };
+    }
+
+    const PATHS = [{ alias: false, label: 'same-profile' }, { alias: true, label: 'alias-home' }] as const;
+    const STALE = ['closed', 'replaced'] as const;
+
+    describe.each(PATHS)('$label waiter', ({ alias }) => {
+      it.each(STALE)('rejects when the waiter workspace is %s, leaving the owner and its PTY untouched', async (change) => {
+        const { service, spawn, workspaces, killTerminal, owner, waiter, finishOwner, first } = await pendingOwner(alias);
+        mutate(workspaces, change);
+        const rejected = expect(waiter).rejects.toThrow(/changed|registered/);
+        finishOwner();
+        await expect(owner).resolves.toMatchObject({ action: 'created', terminalId: 'term-1', workspaceId: 'ws-1' });
+        await rejected;
+        expect(spawn).toHaveBeenCalledOnce();
+        expect(killTerminal).not.toHaveBeenCalled();
+        expect(service.get().launches).toEqual([{ profileId: first.id, workspaceId: 'ws-1', terminalId: 'term-1', state: 'open' }]);
+      });
+
+      it('receives focus on the owner terminal while still valid', async () => {
+        const { service, spawn, killTerminal, owner, waiter, finishOwner, first } = await pendingOwner(alias);
+        finishOwner();
+        const [created, focused] = await Promise.all([owner, waiter]);
+        expect(created).toMatchObject({ action: 'created', terminalId: 'term-1', workspaceId: 'ws-1' });
+        expect(focused).toMatchObject({ action: 'focus', terminalId: 'term-1', workspaceId: 'ws-1' });
+        expect(spawn).toHaveBeenCalledOnce();
+        expect(killTerminal).not.toHaveBeenCalled();
+        expect(service.get().launches).toEqual([{ profileId: first.id, workspaceId: 'ws-1', terminalId: 'term-1', state: 'open' }]);
+      });
+    });
+
+    it('requires a currently registered local caller even when the profile is already owned', async () => {
+      const { service, workspaces, killTerminal, spawn } = fixture();
+      service.configure({ enabled: true, pins: [] });
+      workspaces.set('ws-2', { workspaceId: 'ws-2', location: { environmentId: 'local', path: '/second/worktree' } });
+      workspaces.set('remote', { workspaceId: 'remote', location: { environmentId: 'dev-vps', path: '/srv/project' } });
+      const { profiles: [profile] } = await service.discover();
+      await service.launch({ profileId: profile.id, workspaceId: 'ws-1', acknowledgeExternalActivity: true });
+      const request = (workspaceId: string) => ({ profileId: profile.id, workspaceId, acknowledgeExternalActivity: true });
+      await expect(service.launch(request('ws-2'))).resolves.toMatchObject({ action: 'focus', terminalId: 'term-1', workspaceId: 'ws-1' });
+      workspaces.delete('ws-2');
+      await expect(service.launch(request('ws-2'))).rejects.toThrow(/registered local workspace/);
+      await expect(service.launch(request('never-registered'))).rejects.toThrow(/registered local workspace/);
+      await expect(service.launch(request('remote'))).rejects.toThrow(/registered local workspace/);
+      expect(spawn).toHaveBeenCalledOnce();
+      expect(killTerminal).not.toHaveBeenCalled();
+      expect(service.get().launches).toEqual([{ profileId: profile.id, workspaceId: 'ws-1', terminalId: 'term-1', state: 'open' }]);
+    });
+  });
   it('discovers display-safe opaque profiles only after opting in', async () => {
     const { service, discover } = fixture();
     service.configure({ enabled: true, pins: [] });
