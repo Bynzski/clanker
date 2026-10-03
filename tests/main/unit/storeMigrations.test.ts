@@ -6,9 +6,11 @@ import { join } from 'node:path';
 import { normalizeWorkspaceNavigationMode } from '../../../src/shared/types/workspaceNavigation';
 import type Store from 'electron-store';
 import type { StoreSchema } from '../../../src/shared/types/store';
+import { KNOWN_HARNESS_IDS } from '../../../src/shared/harnessIds';
 import {
   LEGACY_TASK_SESSIONS_KEY,
   purgeLegacyTaskSessions,
+  seedHarnessAttention,
   seedWorkspaceNavigationMode,
 } from '../../../src/main/storeMigrations';
 
@@ -104,5 +106,68 @@ describe('seedWorkspaceNavigationMode (real conf semantics)', () => {
     expect(seedWorkspaceNavigationMode(store, true)).toBeNull();
     expect(store.get('workspaceNavigationMode')).toBe('rail');
     expect(normalizeWorkspaceNavigationMode(store.get('workspaceNavigationMode'))).toBe('sidebar');
+  });
+});
+
+describe('seedHarnessAttention (real conf semantics)', () => {
+  // Mirrors main.ts: construction writes these defaults, so a fresh store already has every entry.
+  const defaults = {
+    harnessDefaults: Object.fromEntries(
+      KNOWN_HARNESS_IDS.map((id) => [id, { model: '', favorites: [], flags: '', visible: true }]),
+    ),
+  };
+  const dirs: string[] = [];
+  afterAll(() => { for (const dir of dirs) rmSync(dir, { recursive: true, force: true }); });
+
+  function open(dir: string) {
+    const existed = existsSync(join(dir, 'config.json'));
+    const store = new Conf<Record<string, unknown>>({ cwd: dir, defaults }) as unknown as Store<StoreSchema>;
+    return { store, existed };
+  }
+  const tmp = () => { const dir = mkdtempSync(join(tmpdir(), 'clanker-store-')); dirs.push(dir); return dir; };
+
+  it('fresh install → attention on for every known harness, and it is persisted', () => {
+    const dir = tmp();
+    const { store, existed } = open(dir);
+    expect(seedHarnessAttention(store, existed)).toBe(true);
+    const persisted = open(dir).store.get('harnessDefaults');
+    expect(Object.keys(persisted).sort()).toEqual([...KNOWN_HARNESS_IDS].sort());
+    for (const id of KNOWN_HARNESS_IDS) expect(persisted[id].attentionEnabled).toBe(true);
+  });
+
+  it('keeps the other per-harness fields when seeding', () => {
+    const { store } = memoryStore({
+      harnessDefaults: { codex: { model: 'gpt-5', favorites: ['gpt-5'], flags: '--yolo', visible: false } },
+    });
+    expect(seedHarnessAttention(store, false)).toBe(true);
+    const seeded = store.get('harnessDefaults');
+    expect(seeded.codex).toEqual({ model: 'gpt-5', favorites: ['gpt-5'], flags: '--yolo', visible: false, attentionEnabled: true });
+    expect(seeded.claude.attentionEnabled).toBe(true);
+  });
+
+  it('existing install is left untouched, including a deliberate opt-out', () => {
+    const dir = tmp();
+    const stored = { harnessDefaults: { codex: { model: '', favorites: [], flags: '', visible: true, attentionEnabled: false } } };
+    writeFileSync(join(dir, 'config.json'), JSON.stringify(stored));
+    const { store, existed } = open(dir);
+    expect(existed).toBe(true);
+    expect(seedHarnessAttention(store, existed)).toBe(false);
+    expect(store.get('harnessDefaults').codex.attentionEnabled).toBe(false);
+    expect(store.get('harnessDefaults')).toEqual(stored.harnessDefaults);
+  });
+
+  it('does not re-seed on the second launch or override a later opt-out', () => {
+    const dir = tmp();
+    const first = open(dir);
+    seedHarnessAttention(first.store, first.existed);
+    first.store.set('harnessDefaults', {
+      ...first.store.get('harnessDefaults'),
+      claude: { ...first.store.get('harnessDefaults').claude, attentionEnabled: false },
+    });
+    const second = open(dir);
+    expect(second.existed).toBe(true);
+    expect(seedHarnessAttention(second.store, second.existed)).toBe(false);
+    expect(second.store.get('harnessDefaults').claude.attentionEnabled).toBe(false);
+    expect(second.store.get('harnessDefaults').codex.attentionEnabled).toBe(true);
   });
 });
