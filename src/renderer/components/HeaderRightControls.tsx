@@ -10,6 +10,7 @@ import { IconButton } from './ui/IconButton';
 import ChatHistoryDropdown from './ChatHistoryDropdown';
 import UsageDropdown from './UsageDropdown';
 import type { UseHarnessUsageResult } from './useHarnessUsage';
+import AssistantsSettings from './settings/AssistantsSettings';
 import AppearanceSettings from './settings/AppearanceSettings';
 import HarnessDefaultsSection from './settings/HarnessDefaultsSection';
 
@@ -224,6 +225,7 @@ export default function HeaderRightControls({
         <PopoverContent align="end" className="settings-dropdown" aria-label="Settings"
           workspaceId={workspaceId ?? undefined} onCloseAutoFocus={onSettingsCloseAutoFocus}>
           <AppearanceSettings />
+          <AssistantsSettings />
           <div className="settings-section">
             <div className="settings-section-title">Git</div>
             <label className="settings-option">

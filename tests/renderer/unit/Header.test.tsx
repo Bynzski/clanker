@@ -101,7 +101,7 @@ describe('Header', () => {
       toggleNotesPane: vi.fn(),
     });
 
-    window.electronAPI = {
+    installElectronApiMock({
       getHarnessOptions: vi.fn().mockResolvedValue({
         codex: true,
         claude: false,
@@ -150,7 +150,7 @@ describe('Header', () => {
       gitGetDiff: vi.fn().mockResolvedValue({ success: true, output: '' }),
       onGitStatusUpdate: vi.fn(),
       generateCommitMessage: vi.fn().mockResolvedValue({ success: false }),
-    } as unknown as typeof window.electronAPI;
+    });
   });
 
   afterEach(() => {

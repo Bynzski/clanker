@@ -368,6 +368,35 @@ describe('terminalIpc — error-path: handler returns', () => {
     expect(mockPtySpawn).not.toHaveBeenCalled();
   });
 
+  test('trusted profile launches retain wrapper/PTY paths and never apply harness-global model or bypass flags', async () => {
+    const { opts, terminals } = createMockDeps();
+    const onTerminalReleased = vi.fn();
+    const cwd = fs.realpathSync(process.cwd());
+    const registered = { workspaceId: 'assistant-owner', location: { environmentId: 'local', path: cwd.replace(/\\/g, '/') } };
+    const controller = registerTerminalIpc({
+      ...opts,
+      getWorkspaceRegistry: () => ({ getWorkspace: () => registered }) as never,
+      getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
+      getStore: () => ({ get: () => ({ hermes: { flags: '--yolo --resume', model: 'wrong-model' } }) }) as never,
+      onTerminalReleased,
+    });
+    mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
+    vi.stubEnv('HERMES_YOLO', '1');
+    try {
+      const result = await controller.spawnAssistant('assistant-owner', 'hermes', { command: 'hermes', args: ['-p', 'reviewer', '--tui', '--in', cwd], env: { HERMES_HOME: testHome() }, unsetEnvironmentKeys: ['HERMES_YOLO'] });
+      const [command, args, options] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
+      expect(command).toBe(testHarnessWrapper());
+      expect(args).toEqual(['hermes', '-p', 'reviewer', '--tui', '--in', cwd]);
+      expect(options.cwd).toBe(cwd);
+      expect(options.handleFlowControl).toBe(false);
+      expect(options.env.HERMES_YOLO).toBeUndefined();
+      expect(options.env.HERMES_HOME).toBe(testHome());
+      expect(terminals.get(result.id)).toMatchObject({ workspaceId: 'assistant-owner', environmentId: 'local', harnessId: 'hermes' });
+      controller.killTerminal(result.id);
+      expect(onTerminalReleased).toHaveBeenCalledWith(result.id);
+    } finally { vi.unstubAllEnvs(); }
+  });
+
   test('records no durable task-session state for local or SSH harness launches', async () => {
     const { opts } = createMockDeps();
     const storeSet = vi.fn();

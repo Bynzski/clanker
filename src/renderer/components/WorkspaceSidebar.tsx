@@ -6,6 +6,7 @@ import { isWorkspaceSidebarCollapsed } from '../../shared/types/workspaceNavigat
 import { WorkspaceScopeProvider } from './WorkspaceScope';
 import WorkspaceNavigatorSection from './WorkspaceNavigatorSection';
 import WorkspaceRail from './WorkspaceRail';
+import AssistantsSettings from './settings/AssistantsSettings';
 import './EdgeResizeHandle.css';
 import './WorkspaceSidebar.css';
 
@@ -68,6 +69,7 @@ export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarPr
       {/* The navigator stays mounted while collapsed so per-workspace expansion survives the rail. */}
       <div className="workspace-sidebar-sections" hidden={collapsed}>
         <WorkspaceNavigatorSection onOpenWorkspace={onOpenWorkspace} onCollapseSidebar={collapseSidebar} />
+        <AssistantsSettings variant="sidebar" />
         {activeWorkspaceId && !collapsed && (
           <Suspense fallback={null}>
             <WorkspaceScopeProvider workspaceId={activeWorkspaceId}>

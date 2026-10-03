@@ -1,5 +1,5 @@
 import { disposeAttentionSafely } from '../harnesses/localAttention';
-import type { PreparedLocalAttention } from '../harnesses/types';
+import type { HarnessProfilesCapability, PreparedLocalAttention } from '../harnesses/types';
 import { findHarnessProvider } from '../harnesses/registry';
 import { prepareHarnessAccountContext, type HarnessAccountService } from '../accounts/harnessAccountService';
 /**
@@ -36,6 +36,7 @@ import {
 import { spawnPtyProcess } from './ptySpawn';
 import { RecipeCommandStartup } from '../recipeCommandStartup';
 import { toNativePath } from '../../shared/pathNormalize';
+import { pathKey } from '../../shared/pathKey';
 import { isPathContained } from '../remote/sshEnvironment';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
@@ -82,6 +83,14 @@ interface RegisterTerminalIpcDeps {
   createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
   /** Optional: without it (or without managed accounts) every launch uses the native account. */
   getHarnessAccountService?: () => HarnessAccountService | undefined;
+  onTerminalReleased?: (id: string) => void;
+}
+
+type TrustedProfileLaunch = ReturnType<HarnessProfilesCapability['buildLaunch']>;
+export interface TerminalIpcController {
+  /** Main-only: renderer IPC cannot supply commands, environment or profile paths. */
+  spawnAssistant(workspaceId: string, harnessId: string, launch: TrustedProfileLaunch): Promise<{ id: string; pid: number; harnessId?: string | null; attentionEnabled: boolean }>;
+  killTerminal(id: string): { success: true } | { success: false; error: string };
 }
 
 let appShuttingDown = false;
@@ -94,7 +103,7 @@ export function getAppShuttingDown(): boolean {
   return appShuttingDown;
 }
 
-export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
+export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcController {
   const {
     getTerminals,
     getMainWindow,
@@ -115,15 +124,15 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   const isFiniteNumber = (value: unknown): value is number =>
     typeof value === 'number' && Number.isFinite(value);
 
-  ipcMain.handle(SPAWN_TERMINAL, async (
-    _,
+  const spawnTerminal = async (
     workingDir: string,
     harness?: string,
     model?: string,
     initialCommand?: string,
     recipeCommand?: boolean,
     workspaceId?: string,
-    environmentId?: string
+    environmentId?: string,
+    profileLaunch?: TrustedProfileLaunch
   ) => {
     const terminals = getTerminals();
     const mainWindow = getMainWindow();
@@ -142,6 +151,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
     const effectiveEnvironmentId = resolvedWorkspace?.location.environmentId || environmentId || 'local';
     const isRemote = effectiveEnvironmentId !== 'local';
+    if (profileLaunch && (isRemote || !resolvedWorkspace || !findHarnessProvider(harness)?.profiles)) throw new Error('Profile launch requires a registered local workspace and provider capability');
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
     if (isRemote) {
@@ -224,7 +234,11 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       }
     }
 
-    const cwd = getSafeWorkspacePath(toNativePath(workingDir, process.platform));
+    // Profile launches fail closed instead of silently falling back to home/last workspace.
+    const cwd = profileLaunch
+      ? fs.realpathSync(toNativePath(resolvedWorkspace!.location.path, process.platform))
+      : getSafeWorkspacePath(toNativePath(workingDir, process.platform));
+    if (profileLaunch && pathKey(cwd, process.platform === 'win32') !== pathKey(resolvedWorkspace!.location.path, process.platform === 'win32')) throw new Error('Registered assistant directory changed');
     // Use user's default shell, fallback to bash
     const userShell = defaultShell();
 
@@ -239,13 +253,14 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const accountBinding = harness && harnessConfig
       ? prepareHarnessAccountContext(deps.getHarnessAccountService?.(), { environmentId: effectiveEnvironmentId, harness })
       : undefined;
-    const baseHarnessEnv = (harness && getHarnessOptions()[harness]?.env) || {};
+    const baseHarnessEnv = profileLaunch?.env ?? ((harness && getHarnessOptions()[harness]?.env) || {});
     const harnessEnv = accountBinding ? accountBinding.mergeEnvironment(baseHarnessEnv) : baseHarnessEnv;
     const harnessDefaults = store.get('harnessDefaults');
     const attentionEnabled = Boolean(harnessConfig && harness && findHarnessProvider(harness)?.attention?.local && harnessDefaults[harness]?.attentionEnabled);
-    const userFlags = harness ? harnessDefaults[harness]?.flags : undefined;
-    const effectiveModel = model || (harness ? harnessDefaults[harness]?.model || undefined : undefined);
-    let harnessArgs = harnessConfig
+    // Native profiles own model/provider/approval settings, not harness-global defaults.
+    const userFlags = profileLaunch ? undefined : harness ? harnessDefaults[harness]?.flags : undefined;
+    const effectiveModel = profileLaunch ? undefined : model || (harness ? harnessDefaults[harness]?.model || undefined : undefined);
+    let harnessArgs = profileLaunch ? [...profileLaunch.args] : harnessConfig
       ? buildHarnessSpawnArgs(harnessConfig, effectiveModel, userFlags, findHarnessProvider(harness)?.launch.modelArgs)
       : [];
     let attentionEnv: Record<string, string> = {};
@@ -273,8 +288,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
     try {
       const wrapperPath = harnessConfig ? ensureHarnessWrapperScriptPath() : null;
+      if (appShuttingDown || deps.getAppShuttingDown?.() || (profileLaunch && registry?.getWorkspace(resolvedWorkspace!.workspaceId) !== resolvedWorkspace)) throw new Error('Assistant workspace was closed or application is shutting down');
       const harnessCmd = harnessConfig
-        ? resolveHarnessSpawn(harnessConfig.command, harnessArgs, wrapperPath)
+        ? resolveHarnessSpawn(profileLaunch?.command ?? harnessConfig.command, harnessArgs, wrapperPath)
         : { spawnCmd: userShell, spawnArgs: shellArgs };
 
       const env: { [key: string]: string } = {
@@ -292,6 +308,14 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         TERM_PROGRAM: 'clanker-grid',
         FORCE_COLOR: '1',
       };
+      if (profileLaunch) {
+        for (const key of profileLaunch.unsetEnvironmentKeys) {
+          for (const inherited of Object.keys(env)) {
+            if (process.platform === 'win32' ? inherited.toLowerCase() === key.toLowerCase() : inherited === key) delete env[inherited];
+          }
+        }
+        Object.assign(env, profileLaunch.env);
+      }
 
       let launchLabel: string | undefined;
       const cleanInitialCommand = (!harness && typeof initialCommand === 'string' && initialCommand.trim())
@@ -317,10 +341,13 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       getIsShuttingDown: () => appShuttingDown,
       launchLabel,
       harnessId: harnessConfig ? harness : undefined,
+      workspaceId: resolvedWorkspace?.workspaceId,
+      environmentId: effectiveEnvironmentId,
       initialCommand: recipeCommandStartup && cleanInitialCommand
         ? recipeCommandStartup.wrap(cleanInitialCommand, process.platform, userShell) : cleanInitialCommand,
       recipeCommandStartup,
       onExit: () => {
+        deps.onTerminalReleased?.(id);
         disposeAttentionSafely(preparedAttention);
         agentAttentionBroker?.release(id);
       },
@@ -331,7 +358,10 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       agentAttentionBroker?.release(id);
       throw error;
     }
-  });
+  };
+  // Explicit positional bridge: extra renderer arguments cannot become a trusted descriptor.
+  ipcMain.handle(SPAWN_TERMINAL, (_event, workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string) =>
+    spawnTerminal(workingDir, harness, model, initialCommand, recipeCommand, workspaceId, environmentId));
 
   /**
    * @deprecated GET_TERMINAL_BUFFER is retained as a no-op returning ''.
@@ -497,13 +527,14 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     return ok(); // no-op for missing terminal
   });
 
-  ipcMain.handle(KILL_TERMINAL, (_, id: string) => {
+  const killTerminal = (id: string) => {
     const terminals = getTerminals();
     if (!isNonEmptyString(id)) {
       return fail('Invalid terminal id');
     }
     const terminal = terminals.get(id);
     if (terminal) {
+      deps.onTerminalReleased?.(id);
       agentAttentionBroker?.release(id);
       void terminal.releaseResources?.();
       try {
@@ -516,7 +547,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       return ok();
     }
     return ok(); // no-op for missing terminal
-  });
+  };
+  ipcMain.handle(KILL_TERMINAL, (_, id: string) => killTerminal(id));
 
   ipcMain.handle(TERMINAL_CLEANUP_WORKSPACE, (_, ids: string[]) => {
     const terminals = getTerminals();
@@ -524,6 +556,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     for (const id of ids) {
       const terminal = terminals.get(id);
       if (terminal) {
+        deps.onTerminalReleased?.(id);
         agentAttentionBroker?.release(id);
         void terminal.releaseResources?.();
         try {
@@ -553,4 +586,12 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   ipcMain.on(TERMINAL_RESIZED, () => { });
 
   // TERMINAL_READY is a handler (ipcMain.handle), not an event channel.
+  return {
+    spawnAssistant: (workspaceId, harnessId, launch) => {
+      const workspace = deps.getWorkspaceRegistry?.().getWorkspace(workspaceId);
+      if (!workspace || workspace.location.environmentId !== 'local') return Promise.reject(new Error('Assistant workspace is not registered locally'));
+      return spawnTerminal(workspace.location.path, harnessId, undefined, undefined, undefined, workspaceId, workspace.location.environmentId, launch);
+    },
+    killTerminal,
+  };
 }

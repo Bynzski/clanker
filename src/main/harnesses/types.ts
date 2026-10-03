@@ -23,6 +23,25 @@ export interface HarnessProvider {
   readonly aiCommit?: HarnessAiCommitCapability;
   readonly usage?: HarnessUsageCapability;
   readonly accounts?: HarnessAccountsCapability;
+  readonly profiles?: HarnessProfilesCapability;
+}
+
+/** Native home is private main-process metadata, never a renderer-supplied path. */
+export interface HarnessNativeProfile {
+  name: string; label: string; home: string;
+  /** Canonical native default root, private main-only launch metadata. Older metadata must
+   * be re-resolved before named-profile launches; its canonical home cannot identify a root. */
+  readonly rootHome?: string;
+}
+export interface HarnessProfilesCapability {
+  readonly probeUnsetEnvironmentKeys: readonly string[];
+  /** Main supplies an executor with inherited profile/config/backend selectors removed,
+   * preserving the intended native root home. The executor cannot unset environment keys. */
+  discover(executor: HarnessCommandExecutor): Promise<HarnessNativeProfile[]>;
+  resolve(executor: HarnessCommandExecutor, profileName: string): Promise<HarnessNativeProfile>;
+  buildLaunch(profile: HarnessNativeProfile, cwd: string): {
+    command: string; args: string[]; env: Record<string, string>; unsetEnvironmentKeys: readonly string[];
+  };
 }
 
 export type CapabilitySupport = 'native' | 'emulated';

@@ -49,11 +49,11 @@ export function planLocalLaunch(command: NormalizedHarnessCommand, overrides: Lo
 }
 
 /** Local implementation of the bounded harness command boundary. */
-export function executeLocalHarnessCommand(request: HarnessCommandRequest, signal?: AbortSignal): Promise<HarnessCommandResult> {
+export function executeLocalHarnessCommand(request: HarnessCommandRequest, signal?: AbortSignal, overrides: LocalLaunchOverrides = {}): Promise<HarnessCommandResult> {
   const command = normalizeHarnessCommand(request);
   if (signal?.aborted) return Promise.reject(new HarnessCapabilityError('aborted', 'Command aborted'));
   let launch: LocalLaunch;
-  try { launch = planLocalLaunch(command); } catch (error) { return Promise.reject(error); }
+  try { launch = planLocalLaunch(command, overrides); } catch (error) { return Promise.reject(error); }
   const { plan, env } = launch;
   return new Promise((resolve, reject) => {
     const child = execFile(plan.file, plan.args, {

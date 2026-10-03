@@ -447,16 +447,26 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return nextState;
   }),
 
-  removeTerminal: (id) => set((state) => {
-    const nextTerminals = state.terminals.filter((terminal) => terminal.id !== id);
-    const paneToRemove = state.panes.find((pane) => pane.terminalId === id);
-    const nextPanes = state.panes.filter((pane) => pane.terminalId !== id);
-    const nextActiveTerminalId = state.activeTerminalId === id
+  removeTerminal: (id, workspaceId) => set((state) => {
+    const source = workspaceId ? findWorkspaceById(state.workspaces, workspaceId) : state;
+    if (!source) return state;
+    const nextTerminals = source.terminals.filter((terminal) => terminal.id !== id);
+    const paneToRemove = source.panes.find((pane) => pane.terminalId === id);
+    const nextPanes = source.panes.filter((pane) => pane.terminalId !== id);
+    const nextActiveTerminalId = source.activeTerminalId === id
       ? (nextTerminals.length > 0 ? nextTerminals[nextTerminals.length - 1].id : null)
-      : state.activeTerminalId;
+      : source.activeTerminalId;
     const nextLayoutRoot = paneToRemove
-      ? removePaneFromLayout(state.layoutRoot, paneToRemove.id)
-      : state.layoutRoot;
+      ? removePaneFromLayout(source.layoutRoot, paneToRemove.id)
+      : source.layoutRoot;
+    if (workspaceId) return {
+      ...patchWorkspaceById(state, workspaceId, (workspace) => ({
+        ...workspace, terminals: nextTerminals, panes: nextPanes,
+        activeTerminalId: nextActiveTerminalId, layoutRoot: nextLayoutRoot,
+        layoutRevision: (workspace.layoutRevision ?? 0) + 1,
+      })),
+      layoutRevision: state.layoutRevision + 1,
+    };
     const nextState = {
       terminals: nextTerminals,
       panes: nextPanes,

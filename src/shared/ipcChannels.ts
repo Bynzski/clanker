@@ -220,6 +220,14 @@ export const SESSION_INVOKE = 'session-invoke';
 
 export const HARNESS_USAGE_GET = 'harness-usage:get';
 
+/** Optional profile-backed assistants; execution still belongs to terminal IPC. */
+export const ASSISTANTS_GET = 'assistants:get';
+export const ASSISTANTS_CONFIGURE = 'assistants:configure';
+export const ASSISTANTS_DISCOVER = 'assistants:discover';
+export const ASSISTANTS_ADD_PROFILE = 'assistants:add-profile';
+export const ASSISTANTS_LAUNCH = 'assistants:launch';
+export const ASSISTANTS_CHANGED = 'assistants:changed';
+
 /* ============================================================================
  * Harness Accounts
  * ============================================================================ */
@@ -451,6 +459,12 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   SESSION_INVOKE,
   // Harness usage
   HARNESS_USAGE_GET,
+  ASSISTANTS_GET,
+  ASSISTANTS_CONFIGURE,
+  ASSISTANTS_DISCOVER,
+  ASSISTANTS_ADD_PROFILE,
+  ASSISTANTS_LAUNCH,
+  ASSISTANTS_CHANGED,
   HARNESS_ACCOUNTS_LIST,
   HARNESS_ACCOUNTS_SELECT,
   HARNESS_ACCOUNTS_ADD_START,

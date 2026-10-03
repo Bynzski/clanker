@@ -84,7 +84,15 @@ export type {
   GlobalCredentialStatusResult,
 };
 
-interface ElectronAPI {
+import type { AssistantSettings, AssistantSnapshot, AssistantLaunchRequest, AssistantLaunchResult } from '../shared/types/assistants';
+
+export interface ElectronAPI {
+  getAssistants: () => Promise<AssistantSnapshot>;
+  configureAssistants: (settings: AssistantSettings) => Promise<AssistantSnapshot>;
+  discoverAssistants: () => Promise<AssistantSnapshot>;
+  addAssistantProfile: (harnessId: string, profileName: string) => Promise<AssistantSnapshot>;
+  launchAssistant: (request: AssistantLaunchRequest) => Promise<AssistantLaunchResult>;
+  onAssistantsChanged: (callback: (snapshot: AssistantSnapshot) => void) => () => void;
   // App
   getAppVersion: () => Promise<string>;
 

@@ -116,7 +116,7 @@ export interface WorkspaceState {
   setHarness: (harness: string) => void;
   setModel: (model: string) => void;
   addTerminal: (terminal: Terminal, workspaceId?: string) => void;
-  removeTerminal: (id: string) => void;
+  removeTerminal: (id: string, workspaceId?: string) => void;
   setActiveTerminal: (id: string) => void;
   /** Scoped, nondestructive browser visibility; restores placement best-effort on show. */
   setBrowserVisible: (visible: boolean, workspaceId?: string) => void;

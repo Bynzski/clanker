@@ -16,8 +16,15 @@ import type { AgentAttentionUpdate } from '../shared/types/agentAttention';
 import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchRequest } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { ThemeId } from '../shared/types/theme';
+import type { AssistantSettings, AssistantLaunchRequest, AssistantSnapshot } from '../shared/types/assistants';
 import type { WorkspaceNavigationMode } from '../shared/types/workspaceNavigation';
 import {
+  ASSISTANTS_GET,
+  ASSISTANTS_CONFIGURE,
+  ASSISTANTS_DISCOVER,
+  ASSISTANTS_ADD_PROFILE,
+  ASSISTANTS_LAUNCH,
+  ASSISTANTS_CHANGED,
   GET_APP_VERSION,
   GET_LAST_WORKSPACE,
   GET_BASE_DIRECTORY,
@@ -199,6 +206,17 @@ import {
 } from '../shared/ipcChannels';
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // Optional native-profile roster; settings do not contain native credentials.
+  getAssistants: () => ipcRenderer.invoke(ASSISTANTS_GET),
+  configureAssistants: (settings: AssistantSettings) => ipcRenderer.invoke(ASSISTANTS_CONFIGURE, settings),
+  discoverAssistants: () => ipcRenderer.invoke(ASSISTANTS_DISCOVER),
+  addAssistantProfile: (harnessId: string, profileName: string) => ipcRenderer.invoke(ASSISTANTS_ADD_PROFILE, harnessId, profileName),
+  launchAssistant: (request: AssistantLaunchRequest) => ipcRenderer.invoke(ASSISTANTS_LAUNCH, request),
+  onAssistantsChanged: (callback: (snapshot: AssistantSnapshot) => void) => {
+    const handler = (_event: IpcRendererEvent, snapshot: AssistantSnapshot) => callback(snapshot);
+    ipcRenderer.on(ASSISTANTS_CHANGED, handler);
+    return () => ipcRenderer.removeListener(ASSISTANTS_CHANGED, handler);
+  },
   // App
   getAppVersion: () => ipcRenderer.invoke(GET_APP_VERSION),
 
