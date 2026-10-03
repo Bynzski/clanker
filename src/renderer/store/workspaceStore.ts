@@ -65,6 +65,7 @@ import { preserveOriginalLineEndings } from '../lib/lineEndings';
 import { restoreWorkspaceLayout, restoreWorkspaceLayoutFromPersisted } from '../lib/workspaceLayoutStorage';
 import { insertWorkspaceInSavedOrder, persistWorkspaceTabOrder } from '../lib/workspaceTabOrder';
 import { nameTerminal, nameTerminals } from '../lib/agentNames';
+import { bindTerminalToCheckoutContext, removeCheckoutContextFromList, upsertCheckoutContextList } from '../lib/checkoutContexts';
 import {
   readStoredNotesVisible,
   writeStoredNotesVisible,
@@ -319,6 +320,26 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     )),
   })),
 
+  upsertCheckoutContext: (workspaceId, checkoutContext) => {
+    const workspace = findWorkspaceById(get().workspaces, workspaceId);
+    if (!workspace) return false;
+    const next = upsertCheckoutContextList(workspace, checkoutContext);
+    if (!next) return false;
+    if (next !== workspace.checkoutContexts) {
+      set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({ ...entry, checkoutContexts: next })));
+    }
+    return true;
+  },
+
+  removeCheckoutContext: (workspaceId, checkoutContextId) => {
+    const workspace = findWorkspaceById(get().workspaces, workspaceId);
+    if (!workspace) return false;
+    const next = removeCheckoutContextFromList(workspace, checkoutContextId);
+    if (!next) return false;
+    set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({ ...entry, checkoutContexts: next })));
+    return true;
+  },
+
   setWorkspacePath: (path) => set((state) => syncActiveWorkspace(state, (workspace) => ({
     ...workspace,
     workspacePath: path,
@@ -382,7 +403,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const scopedWorkspace = workspaceId ? resolveWorkspaceByScope(current, workspaceId) : null;
     if (workspaceId && !scopedWorkspace) return current;
     const state = scopedWorkspace ? { ...current, ...getActiveWorkspaceSnapshot(scopedWorkspace) } : current;
-    const terminal = nameTerminal(unnamedTerminal, state.terminals);
+    const owningWorkspaceId = scopedWorkspace?.id ?? current.activeWorkspaceId;
+    const named = nameTerminal(unnamedTerminal, state.terminals);
+    const terminal = owningWorkspaceId ? bindTerminalToCheckoutContext(named, owningWorkspaceId) : named;
     const nextTerminals = [...state.terminals, terminal];
     const paneExists = state.panes.some((pane) => pane.terminalId === terminal.id);
     const nextPane = paneExists

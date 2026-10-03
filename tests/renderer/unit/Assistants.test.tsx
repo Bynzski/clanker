@@ -456,3 +456,22 @@ it('shares one cold-start probe between simultaneously mounted Assistant surface
   await waitFor(() => expect(screen.getAllByText('Research').length).toBe(2));
   expect(probes).toBe(1);
 });
+
+it('inserts an Assistant terminal with main\'s authoritative main-checkout context, not the selected worktree context', async () => {
+  const api = window.electronAPI;
+  const main = { id: 'ws-a::main', workspaceId: 'ws-a', environmentId: 'local', path: '/projects/a', kind: 'main' as const };
+  const linked = { id: 'ws-a::wt', workspaceId: 'ws-a', environmentId: 'local', path: '/projects/a-wt', kind: 'worktree' as const };
+  useWorkspaceStore.setState({
+    workspaces: [createWorkspaceFixture({
+      id: 'ws-a', workspacePath: '/projects/a/', environmentId: 'local', checkoutContexts: [main, linked],
+      terminals: [{ id: 'wt-terminal', pid: 9, workingDir: '/projects/a-wt', checkoutContextId: 'ws-a::wt' }], activeTerminalId: 'wt-terminal',
+    })], activeWorkspaceId: 'ws-a',
+  });
+  vi.mocked(api.getAssistants).mockResolvedValue(enabled);
+  vi.mocked(api.launchAssistant).mockResolvedValue({ action: 'created', workspaceId: 'ws-a', terminalId: 'assistant-terminal', pid: 42, harnessId: 'hermes', profileId: 'hermes:research', profileName: 'research', attentionEnabled: false, checkoutContextId: 'ws-a::main' });
+  render(<AssistantsSettings />);
+  fireEvent.click(await screen.findByRole('button', { name: 'New task here' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Acknowledge and launch' }));
+  await waitFor(() => expect(useWorkspaceStore.getState().getWorkspaceById('ws-a')?.terminals).toContainEqual(expect.objectContaining({ id: 'assistant-terminal', checkoutContextId: 'ws-a::main' })));
+  expect(api.launchAssistant).toHaveBeenCalledWith({ profileId: 'hermes:research', workspaceId: 'ws-a', acknowledgeExternalActivity: true });
+});

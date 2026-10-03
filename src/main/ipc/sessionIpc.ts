@@ -80,6 +80,8 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       return invokeRemoteSession(deps, workspace, requestedSession, fork);
     }
     const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
+    // Resume is confined to the workspace root, so it runs in the workspace's main checkout context.
+    const mainContext = deps.getWorkspaceRegistry?.()?.resolveCheckoutContext(workspaceId) ?? null;
     // A session's `accountId` is only a claim. For a managed account main re-finds the session inside
     // that account's own storage and launches that authoritative copy with that account's binding;
     // a session without a claim resumes under the native account, never the currently selected one.
@@ -199,12 +201,13 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       getIsShuttingDown,
       launchLabel,
       harnessId: session.harness,
+      checkoutContextId: mainContext?.id,
       onExit: () => {
         disposeAttentionSafely(preparedAttention);
         agentAttentionBroker?.release(id);
       },
       });
-      return { ...result, harnessId: session.harness, attentionEnabled };
+      return { ...result, harnessId: session.harness, attentionEnabled, checkoutContextId: mainContext?.id };
     } catch (error) {
       disposeAttentionSafely(preparedAttention);
       agentAttentionBroker?.release(id);

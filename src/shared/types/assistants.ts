@@ -61,4 +61,6 @@ export type AssistantLaunchResult = {
   profileId: string;
   profileName: string;
   attentionEnabled: boolean;
+  /** Authoritative main-process context; Assistants always run in the workspace's main checkout. */
+  checkoutContextId?: string;
 };

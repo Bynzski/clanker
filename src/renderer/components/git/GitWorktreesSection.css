@@ -1,0 +1,89 @@
+/* Geometry comes from .git-menu-section; rows follow the branch/stash list treatment. */
+.git-menu .git-worktree-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.git-worktree-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 2px 2px;
+}
+
+.git-worktree-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.git-worktree-branch,
+.git-worktree-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-worktree-branch {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.git-worktree-path {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-2xs);
+}
+
+.git-worktree-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.git-worktree-tag {
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.git-worktree-tag.managed { color: var(--text-secondary); }
+
+.git-worktree-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+}
+.git-worktree-notice > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.git-worktree-notice.error {
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+  color: var(--status-error);
+}
+.git-worktree-notice.warning {
+  background: color-mix(in srgb, var(--status-warning) 12%, transparent);
+  color: var(--status-warning);
+}
+.git-worktree-notice.info {
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  color: var(--text-secondary);
+}
+
+.git-worktree-footer {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 4px;
+}

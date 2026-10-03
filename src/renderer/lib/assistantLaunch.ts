@@ -64,6 +64,8 @@ export async function attachAssistantTerminal(result: AssistantLaunchResult, own
     id: result.terminalId, pid: result.pid, workingDir: current.workspacePath,
     environmentId: current.environmentId || 'local', workspaceId: current.id,
     harnessId: result.harnessId, attentionEnabled: result.attentionEnabled,
+    // Main's authoritative (main-checkout) context; absent means the store binds the workspace main.
+    ...(result.checkoutContextId ? { checkoutContextId: result.checkoutContextId } : {}),
   }, owner.id);
   // A late launch may populate its original workspace, but cannot steal newer selection.
   if (ownerHasSelectionAuthority(owner)) focusWorkspaceTerminal(owner.id, result.terminalId);

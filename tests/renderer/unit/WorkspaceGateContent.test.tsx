@@ -8,7 +8,6 @@ import type { HarnessDefaultsMap } from '../../../src/shared/types/store';
 import WorkspaceGateContent from '../../../src/renderer/components/WorkspaceGateContent';
 import { sameWorkspacePath } from '../../../src/renderer/lib/pathUtils';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
-import { createWorkspaceFixture } from '../../setup/fixtures';
 
 // Platform-neutral path constants for test fixtures
 const TEST_HOME_USER = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user');
@@ -91,12 +90,6 @@ describe('WorkspaceGateContent', () => {
     expect(screen.getByText('Harness settings')).toBeInTheDocument();
   });
 
-  async function openWorktreeOptions() {
-    const button = screen.getByRole('button', { name: 'Worktree options' });
-    await waitFor(() => expect(button).toBeEnabled());
-    fireEvent.click(button);
-  }
-
   it('shows the actual saved model, allows a different model, and disables an empty launch plan', async () => {
     vi.mocked(window.electronAPI.getHarnessDefaults).mockResolvedValue({ codex: { model: 'gpt-3.5', flags: '', favorites: [] } });
     await renderGate({ fullscreen: true, initialPath: '/repo' });
@@ -113,7 +106,6 @@ describe('WorkspaceGateContent', () => {
     for (let i = 0; i < 4; i++) fireEvent.click(screen.getByRole('button', { name: 'Remove Codex terminal' }));
     expect(screen.getByRole('button', { name: 'Remove Codex terminal' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeDisabled();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Worktree options' })).toBeEnabled());
   });
 
   it('preserves favorites across harness menus while an earlier save is pending', async () => {
@@ -180,7 +172,35 @@ describe('WorkspaceGateContent', () => {
   it('renders the Launch Workspace button', async () => {
     await renderGate();
     expect(screen.getByText('Launch Workspace')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Worktree options' })).toBeTruthy();
+  });
+
+  describe('the launcher no longer steers toward the legacy Worktree workflow', () => {
+    it.each([true, false])('offers no Worktree action beside the location picker or the launch button (fullscreen=%s)', async (fullscreen) => {
+      await renderGate({ fullscreen, initialPath: '/repo/' });
+      await screen.findByRole('button', { name: 'Launch Workspace' });
+
+      expect(screen.queryByRole('button', { name: 'Worktree options' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /worktree/i })).toBeNull();
+      expect(screen.queryByText('Worktree')).toBeNull();
+      // This PC / server selection and Launch remain the only ways to open a project.
+      expect(screen.getByRole('button', { name: /Choose location: This PC/ })).toBeTruthy();
+    });
+
+    it('does not probe the chosen directory for worktree readiness any more', async () => {
+      await renderGate({ initialPath: '/repo/' });
+      await screen.findByRole('button', { name: 'Launch Workspace' });
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(window.electronAPI.gitGetBranchState).not.toHaveBeenCalled();
+    });
+
+    it('still opens an existing checkout directory as an ordinary workspace', async () => {
+      await renderGate({ fullscreen: true, initialPath: '/repo-worktrees/task-5f66ef4178e31b5f4a9b/' });
+      await chooseBasicTerminal();
+      fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
+      expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({
+        path: '/repo-worktrees/task-5f66ef4178e31b5f4a9b/', environmentId: 'local',
+      }));
+    });
   });
 
   it('renders an open error beside the launch action and reports target changes', () => {
@@ -232,116 +252,6 @@ describe('WorkspaceGateContent', () => {
     expect(screen.getByRole('button', { name: 'Settings' })).toBeTruthy();
   });
 
-  it('explains unavailable worktrees on the action without a passive launch warning', async () => {
-    window.electronAPI.gitGetBranchState = vi.fn().mockResolvedValue({ success: false, isRepo: false });
-    await renderGate({ initialPath: '/not-a-repo/' });
-    await waitFor(() => expect(window.electronAPI.gitGetBranchState).toHaveBeenCalledWith('/not-a-repo/'));
-    expect(screen.getByRole('button', { name: 'Worktree options' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Worktree options' })).toHaveAttribute('title', 'Choose a Git repository or linked checkout first');
-    expect(screen.queryByText('Worktrees require a Git repository or linked checkout.')).toBeNull();
-
-    const input = screen.getByPlaceholderText('workspace directory');
-    fireEvent.focus(input);
-    expect(screen.queryByText('Worktrees require a Git repository or linked checkout.')).toBeNull();
-    fireEvent.change(input, { target: { value: '/not-a-repo/new-path' } });
-    await waitFor(() => expect(window.electronAPI.gitGetBranchState).toHaveBeenCalledWith('/not-a-repo/new-path/'));
-    expect(screen.queryByText('Worktrees require a Git repository or linked checkout.')).toBeNull();
-  });
-
-  it('opens the worktree view and returns to the workspace launcher', async () => {
-    await renderGate({ initialPath: '/repo/' });
-    await openWorktreeOptions();
-    expect(screen.getByText('Task worktree')).toBeTruthy();
-    expect(screen.queryByText('Launch Workspace')).toBeNull();
-    expect((screen.getByLabelText('Repository') as HTMLInputElement).value).toBe('/repo/');
-    fireEvent.click(screen.getByText('Back to workspace'));
-    expect(screen.getByText('Launch Workspace')).toBeTruthy();
-    expect((screen.getByPlaceholderText('workspace directory') as HTMLInputElement).value).toBe('/repo/');
-  });
-
-  it('allows zero-terminal local worktree management but blocks creation and opening', async () => {
-    const worktree = { path: '/repo-worktrees/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false };
-    vi.mocked(window.electronAPI.gitListWorktrees).mockResolvedValue({ success: true, worktrees: [worktree] });
-    window.electronAPI.gitCreateWorktree = vi.fn();
-    window.electronAPI.gitInspectWorktree = vi.fn().mockResolvedValue({ success: true, worktree, hasChanges: false });
-    window.electronAPI.gitRemoveWorktree = vi.fn().mockResolvedValue({ success: true });
-    await renderGate({ fullscreen: true, initialPath: '/repo/' });
-    await openWorktreeOptions();
-    expect(screen.getByRole('status')).toHaveTextContent('Select at least one terminal');
-    fireEvent.click(screen.getByRole('button', { name: 'Load repository' }));
-    await screen.findByLabelText('Task branch');
-    fireEvent.change(screen.getByLabelText('Task branch'), { target: { value: 'new-task' } });
-    const create = screen.getByRole('button', { name: 'Create and open worktree' });
-    const open = screen.getByRole('button', { name: 'Open' });
-    expect(create).toBeDisabled();
-    expect(open).toBeDisabled();
-    fireEvent.click(create);
-    fireEvent.click(open);
-    expect(window.electronAPI.gitCreateWorktree).not.toHaveBeenCalled();
-    expect(mockOnSubmit).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Remove…' }));
-    await screen.findByRole('dialog', { name: 'Confirm worktree removal' });
-    fireEvent.click(screen.getByRole('button', { name: 'Remove this worktree' }));
-    await waitFor(() => expect(window.electronAPI.gitRemoveWorktree).toHaveBeenCalledWith('/repo/', worktree.path, 'task', []));
-  });
-
-  it('keeps Worktree entry disabled for a non-repository even with zero terminals', async () => {
-    vi.mocked(window.electronAPI.gitGetBranchState).mockResolvedValue({ success: true, isRepo: false, currentBranch: '', branches: [] });
-    await renderGate({ fullscreen: true, initialPath: '/not-a-repo/' });
-    await waitFor(() => expect(window.electronAPI.gitGetBranchState).toHaveBeenCalledWith('/not-a-repo/'));
-    expect(screen.getByRole('button', { name: 'Worktree options' })).toBeDisabled();
-  });
-
-  it('creates a task worktree before opening its checkout', async () => {
-    window.electronAPI.gitGetBranchState = vi.fn().mockResolvedValue({ success: true, isRepo: true, currentBranch: 'main', branches: [{ name: 'main', isCurrent: true }] });
-    window.electronAPI.gitListWorktrees = vi.fn().mockResolvedValue({ success: true, worktrees: [] });
-    window.electronAPI.gitCreateWorktree = vi.fn().mockResolvedValue({ success: true, worktree: { path: '/repo-worktrees/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false } });
-    await renderGate({ initialPath: '/repo/' });
-    await openWorktreeOptions();
-    fireEvent.click(screen.getByText('Load repository'));
-    await screen.findByText('Task branch');
-    fireEvent.change(screen.getByLabelText('Task branch'), { target: { value: 'task' } });
-    fireEvent.click(screen.getByText('Create and open worktree'));
-    await waitFor(() => expect(window.electronAPI.gitCreateWorktree).toHaveBeenCalledWith('/repo/', 'main', 'task'));
-    expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({ path: '/repo-worktrees/task' }));
-  });
-
-  it('opens an existing worktree and requires inspection before removal', async () => {
-    const worktree = { path: '/repo-worktrees/task-5f66ef4178e31b5f4a9b', branch: 'task', isMain: false, isLocked: false, isPrunable: false };
-    window.electronAPI.gitGetBranchState = vi.fn().mockResolvedValue({ success: true, isRepo: true, currentBranch: 'main', branches: [] });
-    window.electronAPI.gitListWorktrees = vi.fn().mockResolvedValue({ success: true, worktrees: [worktree] });
-    window.electronAPI.gitInspectWorktree = vi.fn().mockResolvedValue({ success: true, worktree, hasChanges: false });
-    window.electronAPI.gitRemoveWorktree = vi.fn().mockResolvedValue({ success: true });
-    await renderGate({ initialPath: '/repo/' });
-    await openWorktreeOptions();
-    fireEvent.click(screen.getByText('Load repository'));
-    const identity = await screen.findByTitle(worktree.path);
-    expect(identity).toHaveTextContent('repo');
-    expect(identity).toHaveTextContent('task');
-    expect(identity).not.toHaveTextContent('5f66ef4178e31b5f4a9b');
-    fireEvent.click(screen.getByText('Open'));
-    expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({ path: worktree.path }));
-    fireEvent.click(screen.getByText('Remove…'));
-    await screen.findByText(/Remove checkout at/);
-    expect(window.electronAPI.gitRemoveWorktree).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText('Remove this worktree'));
-    await waitFor(() => expect(window.electronAPI.gitRemoveWorktree).toHaveBeenCalledWith('/repo/', worktree.path, 'task', []));
-  });
-
-  it('does not open a prunable worktree with a missing checkout', async () => {
-    const worktree = { path: '/repo-worktrees/missing', branch: 'missing', isMain: false, isLocked: false, isPrunable: true };
-    window.electronAPI.gitGetBranchState = vi.fn().mockResolvedValue({ success: true, isRepo: true, currentBranch: 'main', branches: [] });
-    window.electronAPI.gitListWorktrees = vi.fn().mockResolvedValue({ success: true, worktrees: [worktree] });
-    await renderGate({ initialPath: '/repo/' });
-    await openWorktreeOptions();
-    fireEvent.click(screen.getByText('Load repository'));
-    expect(await screen.findByTitle(worktree.path)).toHaveTextContent('missing');
-    const open = screen.getByRole('button', { name: 'Open' });
-    expect(open.hasAttribute('disabled')).toBe(true);
-    fireEvent.click(open);
-    expect(mockOnSubmit).not.toHaveBeenCalled();
-  });
-
   it('keeps a generated worktree container out of workspace choices', async () => {
     const projects = TEST_PROJECTS.replace(/\\/g, '/');
     const repository = `${projects}/test`;
@@ -364,10 +274,9 @@ describe('WorkspaceGateContent', () => {
     ]);
 
     await renderGate({ initialPath: `${container}/` });
-    await waitFor(() => expect(window.electronAPI.gitListWorktrees).toHaveBeenCalled());
-    expect(screen.getByRole('button', { name: 'Worktree options' })).toBeDisabled();
     fireEvent.click(screen.getByText('Launch Workspace'));
     expect(await screen.findByRole('alert')).toHaveTextContent('This folder holds worktrees for test');
+    expect(screen.getByRole('alert')).toHaveTextContent('New isolated agent');
     expect(mockOnSubmit).not.toHaveBeenCalled();
 
     const input = screen.getByPlaceholderText('workspace directory');
@@ -376,8 +285,10 @@ describe('WorkspaceGateContent', () => {
     expect(await screen.findByText('test/')).toBeTruthy();
     expect(screen.queryByText('test-worktrees/')).toBeNull();
 
+    // A checkout inside the container is an ordinary directory and opens as one.
     fireEvent.change(input, { target: { value: `${checkout}/` } });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Worktree options' })).toBeEnabled());
+    fireEvent.click(screen.getByText('Launch Workspace'));
+    await waitFor(() => expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({ path: `${checkout}/`, environmentId: 'local' })));
   });
 
   it('keeps looking for directory suggestions after generated containers', async () => {
@@ -516,7 +427,6 @@ describe('WorkspaceGateContent', () => {
     await screen.findByText(TEST_PROJECTS.replace(/\\/g, '/') + '/');
     await chooseBasicTerminal();
     const input = screen.getByLabelText('Workspace directory');
-    await waitFor(() => expect(window.electronAPI.gitGetBranchState).toHaveBeenCalledWith(TEST_PROJECTS.replace(/\\/g, '/') + '/'));
     expect(screen.queryByText('Worktrees require a Git repository or linked checkout.')).toBeNull();
     expect(input).toHaveValue('');
     fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
@@ -961,65 +871,6 @@ describe('WorkspaceGateContent', () => {
       expect(screen.queryByRole('dialog', { name: 'Manage SSH Targets' })).toBeNull();
       expect(screen.getByLabelText('Remote Directory Path')).toBeTruthy();
     });
-
-    it('allows zero-terminal SSH worktree management and blocks launch actions before creation', async () => {
-      setupRemote();
-      const source = createWorkspaceFixture({ id: 'alpha-repo', environmentId: 'alpha', workspacePath: '/repo' });
-      const worktree = { path: '/remote-task', branch: 'task', isMain: false, isLocked: false, isPrunable: false };
-      useWorkspaceStore.setState({ workspaces: [source], activeWorkspaceId: source.id });
-      vi.mocked(window.electronAPI.gitListWorktrees).mockResolvedValue({ success: true, worktrees: [worktree] });
-      window.electronAPI.gitCreateWorktree = vi.fn();
-      window.electronAPI.gitInspectWorktree = vi.fn().mockResolvedValue({ success: true, worktree, hasChanges: false });
-      window.electronAPI.gitRemoveWorktree = vi.fn().mockResolvedValue({ success: true, recoveryPath: '/recovery/task' });
-      await renderGate({ fullscreen: true });
-      await selectRemote(false);
-      await openWorktreeOptions();
-      await screen.findByText('/remote-task');
-      expect(screen.getByText(/Select at least one terminal/)).toBeInTheDocument();
-      fireEvent.change(screen.getByLabelText('Worktree branch'), { target: { value: 'new-task' } });
-      const create = screen.getByRole('button', { name: 'Create and open worktree' });
-      const open = screen.getByRole('button', { name: 'Open' });
-      expect(create).toBeDisabled();
-      expect(open).toBeDisabled();
-      fireEvent.click(create);
-      fireEvent.click(open);
-      expect(window.electronAPI.gitCreateWorktree).not.toHaveBeenCalled();
-      expect(mockOnSubmit).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByRole('button', { name: 'Inspect /remote-task' }));
-      await screen.findByText('Checkout is clean.');
-      fireEvent.click(screen.getByRole('button', { name: 'Remove /remote-task' }));
-      await screen.findByRole('dialog', { name: 'Confirm remote worktree removal' });
-      fireEvent.click(screen.getByRole('button', { name: 'Remove this worktree' }));
-      await waitFor(() => expect(window.electronAPI.gitRemoveWorktree).toHaveBeenCalledWith('/repo', '/remote-task', 'task', [], source.id));
-    });
-
-    it('keeps SSH Worktree entry disabled without an open repository on the target', async () => {
-      setupRemote();
-      await renderGate({ fullscreen: true });
-      await selectRemote(false);
-      expect(screen.getByRole('button', { name: 'Worktree options' })).toBeDisabled();
-    });
-
-    it('discovers from an open repository on the selected target and opens a checkout in that environment', async () => {
-      setupRemote();
-      const source = createWorkspaceFixture({ id: 'alpha-repo', environmentId: 'alpha', workspacePath: '/repo' });
-      const otherHost = createWorkspaceFixture({ id: 'beta-repo', environmentId: 'beta', workspacePath: '/repo' });
-      const local = createWorkspaceFixture({ id: 'local-repo', environmentId: 'local', workspacePath: '/repo' });
-      useWorkspaceStore.setState({ workspaces: [source, otherHost, local], activeWorkspaceId: otherHost.id });
-      vi.mocked(window.electronAPI.gitListWorktrees).mockResolvedValue({ success: true, worktrees: [{ path: '/remote-task', branch: 'task', isMain: false, isLocked: false, isPrunable: false }] });
-      await renderGate();
-      await selectRemote();
-      fireEvent.click(screen.getByRole('button', { name: 'Worktree options' }));
-      await screen.findByText('/remote-task');
-      expect(screen.getByLabelText('Open SSH repository')).toHaveValue(source.id);
-      expect(screen.getAllByRole('option').filter((option) => option.parentElement?.id === 'remote-worktree-repository')).toHaveLength(1);
-      expect(window.electronAPI.gitListWorktrees).toHaveBeenCalledWith('/repo', source.id);
-      fireEvent.click(screen.getByRole('button', { name: 'Open' }));
-      expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({ path: '/remote-task', environmentId: 'alpha', environmentLabel: 'Alpha' }));
-      expect(screen.getByText('Create and open worktree')).toBeDisabled();
-    });
-
-
 
     it('rediscovers harnesses after editing the selected host and blocks launching stale choices while loading', async () => {
       setupRemote();

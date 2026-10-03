@@ -17,7 +17,7 @@ interface AssistantServiceDeps {
   profileHarnessIds: readonly string[];
   executor(harnessId: string): HarnessCommandExecutor;
   getWorkspace(id: string): { workspaceId: string; location: WorkspaceLocation } | null;
-  spawn(workspaceId: string, harnessId: string, launch: ReturnType<HarnessProfilesCapability['buildLaunch']>): Promise<{ id: string; pid: number; attentionEnabled?: boolean }>;
+  spawn(workspaceId: string, harnessId: string, launch: ReturnType<HarnessProfilesCapability['buildLaunch']>): Promise<{ id: string; pid: number; attentionEnabled?: boolean; checkoutContextId?: string }>;
   killTerminal(terminalId: string): void;
   onChanged(snapshot: AssistantSnapshot): void;
   isShuttingDown(): boolean;
@@ -195,7 +195,7 @@ export class AssistantService {
         this.deps.killTerminal(spawned.id);
         throw error;
       }
-      const result: AssistantLaunchResult = { action: 'created', workspaceId: workspace.workspaceId, terminalId: spawned.id, pid: spawned.pid, harnessId: profile.public.harnessId, profileId: profile.public.id, profileName: profile.public.profileName, attentionEnabled: spawned.attentionEnabled ?? false };
+      const result: AssistantLaunchResult = { action: 'created', workspaceId: workspace.workspaceId, terminalId: spawned.id, pid: spawned.pid, harnessId: profile.public.harnessId, profileId: profile.public.id, profileName: profile.public.profileName, attentionEnabled: spawned.attentionEnabled ?? false, ...(spawned.checkoutContextId ? { checkoutContextId: spawned.checkoutContextId } : {}) };
       this.launches.set(profile.public.id, result);
       this.launchHomes.set(profile.public.id, homeKey);
       this.deps.onChanged(this.get());

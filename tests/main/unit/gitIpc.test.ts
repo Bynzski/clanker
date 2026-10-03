@@ -247,7 +247,7 @@ describe('registerGitIpc', () => {
     });
   });
 
-  test('registers exactly 35 git IPC handlers', () => {
+  test('registers exactly 40 git IPC handlers', () => {
     const mockGitService = createMockGitService();
 
     registerGitIpc({
@@ -256,7 +256,7 @@ describe('registerGitIpc', () => {
     });
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(37);
+    expect(handleCalls.length).toBe(40);
   });
 
   test('validates worktree paths and returns POSIX paths across IPC', async () => {
@@ -306,7 +306,7 @@ describe('registerGitIpc', () => {
     });
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(74);
+    expect(handleCalls.length).toBe(80);
   });
 
   test('git-stop-polling calls gitService.stopPolling', async () => {
@@ -1093,6 +1093,8 @@ describe('Git IPC workspace identity routing', () => {
       ['git-create-worktree', [workspacePath, 'HEAD', 'task', 'ssh-tab']],
       ['git-inspect-worktree', [workspacePath, '/srv/task', [], 'ssh-tab']],
       ['git-remove-worktree', [workspacePath, '/srv/task', 'task', [], 'ssh-tab']],
+      ['git-prune-worktrees', [workspacePath, 'ssh-tab']],
+      ['git-unlock-worktree', [workspacePath, '/srv/task', 'ssh-tab']],
     ] as const) {
       expect(await handle(channel)(null, ...args)).toMatchObject({ success: false, error: expect.stringContaining('Manual recovery required') });
     }
@@ -1121,7 +1123,116 @@ describe('Git IPC workspace identity routing', () => {
     await expect(handle('git-list-worktrees')(null, workspacePath, 'unregistered')).rejects.toThrow('no longer registered');
   });
 
-  test.each(['relative/path', '/srv/../escape'])('rejects malformed remote worktree path %s', async (worktreePath) => {
+  describe('worktree prune and unlock on SSH', () => {
+    const MAIN = 'worktree /srv/repo\0branch refs/heads/main\0\0';
+    const STALE = 'worktree /srv/Repo-gone\0branch refs/heads/gone\0prunable gitdir file points to non-existent location\0\0';
+    const LOCKED = 'worktree /srv/Repo-task\0branch refs/heads/task\0locked reason\0\0';
+    const OPEN = 'worktree /srv/Repo-open\0branch refs/heads/open\0\0';
+
+    const wire = (remote: ReturnType<typeof setup>['remote'], lists: string[]) => {
+      const queue = [...lists];
+      remote.execGit.mockImplementation(async (_cwd: string, args: string[]) =>
+        ({ stdout: args[0] === 'worktree' && args[1] === 'list' ? queue.shift() ?? '' : '', stderr: '' }));
+    };
+    const mutations = (remote: ReturnType<typeof setup>['remote']) =>
+      remote.execGit.mock.calls.filter(([, args]) => args[0] === 'worktree' && args[1] !== 'list');
+
+    test('prune runs on the registered host from the workspace root, never from a forged path', async () => {
+      const { local, remote, handle } = setup();
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, [MAIN + STALE, MAIN]);
+      const result = await handle('git-prune-worktrees')(null, '/forged/local/path', 'ssh-tab');
+      expect(result).toEqual({ success: true, pruned: ['/srv/Repo-gone'] });
+      expect(mutations(remote).map(([cwd, args]) => [cwd, args])).toEqual([[workspacePath, ['worktree', 'prune', '--expire', 'now']]]);
+      expect(local.execGit).not.toHaveBeenCalled();
+    });
+
+    test('prune with nothing stale runs no mutation', async () => {
+      const { remote, handle } = setup();
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, [MAIN + OPEN]);
+      expect(await handle('git-prune-worktrees')(null, workspacePath, 'ssh-tab')).toEqual({ success: true, pruned: [] });
+      expect(mutations(remote)).toHaveLength(0);
+    });
+
+    test('unlock validates the target against the host list and unlocks Git\'s listed path', async () => {
+      const { remote, handle } = setup();
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, [MAIN + LOCKED]);
+      expect(await handle('git-unlock-worktree')(null, workspacePath, '/srv/Repo-task', 'ssh-tab')).toEqual({ success: true });
+      expect(mutations(remote).map(([cwd, args]) => [cwd, args])).toEqual([[workspacePath, ['worktree', 'unlock', '/srv/Repo-task']]]);
+    });
+
+    test.each([
+      ['the main checkout', '/srv/repo'],
+      ['an unlisted path', '/srv/elsewhere'],
+      ['a path that only normalizes to a listed one', '/srv/other/../Repo-task'],
+      ['an unlocked linked worktree', '/srv/Repo-open'],
+    ])('unlock refuses %s without running Git', async (_label, target) => {
+      const { remote, handle } = setup();
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, [MAIN + LOCKED + OPEN]);
+      expect(await handle('git-unlock-worktree')(null, workspacePath, target, 'ssh-tab')).toMatchObject({ success: false });
+      expect(mutations(remote)).toHaveLength(0);
+    });
+
+    test('an unregistered workspace identity is rejected before any host command', async () => {
+      const { remote, handle } = setup();
+      await expect(handle('git-prune-worktrees')(null, workspacePath, 'nope')).rejects.toThrow('no longer registered');
+      await expect(handle('git-unlock-worktree')(null, workspacePath, '/srv/x', 'nope')).rejects.toThrow('no longer registered');
+      expect(remote.execGit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('explicit worktree adoption on SSH', () => {
+    const MAIN = 'worktree /srv/repo\0branch refs/heads/main\0\0';
+    const TASK = 'worktree /srv/Repo-task\0branch refs/heads/task\0\0';
+    const LOCKED = 'worktree /srv/Repo-locked\0branch refs/heads/locked\0locked\0\0';
+    const GONE = 'worktree /srv/Repo-gone\0branch refs/heads/gone\0prunable gone\0\0';
+    const wire = (remote: ReturnType<typeof setup>['remote'], list: string) => {
+      remote.execGit.mockImplementation(async (_cwd: string, args: string[]) =>
+        ({ stdout: args[0] === 'worktree' && args[1] === 'list' ? list : '', stderr: '' }));
+    };
+
+    test('registers the listed linked worktree as its own validated context without widening the workspace root', async () => {
+      const { remote, registry, handle } = setup();
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, MAIN + TASK);
+
+      const result = await handle('adopt-worktree-checkout-context')(null, 'ssh-tab', '/srv/Repo-task') as { success: boolean; checkoutContext?: Record<string, unknown> };
+
+      expect(result.success).toBe(true);
+      expect(result.checkoutContext).toMatchObject({ workspaceId: 'ssh-tab', environmentId: 'ssh', kind: 'worktree', branch: 'task', path: '/srv/Repo-task', mainCheckoutPath: '/srv/repo' });
+      // Validated independently through the environment, as its own root.
+      expect(remote.validateWorkspacePath).toHaveBeenCalledWith('/srv/Repo-task');
+      expect(registry.getWorkspace('ssh-tab')!.location.path).toBe(workspacePath);
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab').map((entry) => entry.path)).toEqual([workspacePath, '/srv/Repo-task']);
+      // Read-only on the host: only the worktree list ran.
+      expect(remote.execGit.mock.calls.every(([, args]) => args[0] === 'worktree' && args[1] === 'list')).toBe(true);
+    });
+
+    test.each([
+      ['the main checkout', '/srv/repo'],
+      ['an unlisted path', '/srv/elsewhere'],
+      ['a locked worktree', '/srv/Repo-locked'],
+      ['a missing worktree', '/srv/Repo-gone'],
+      ['a path that only normalizes to a listed one', '/srv/x/../Repo-task'],
+    ])('rejects %s', async (_label, target) => {
+      const { remote, registry, handle } = setup();
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, MAIN + TASK + LOCKED + GONE);
+      expect(await handle('adopt-worktree-checkout-context')(null, 'ssh-tab', target)).toMatchObject({ success: false });
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab')).toHaveLength(1);
+    });
+
+    test('an unregistered workspace identity is rejected before any host command', async () => {
+      const { remote, handle } = setup();
+      await expect(handle('adopt-worktree-checkout-context')(null, 'nope', '/srv/Repo-task')).rejects.toThrow('no longer registered');
+      expect(remote.execGit).not.toHaveBeenCalled();
+    });
+  });
+
+  test.each(['relative/path', '/srv/../escape'])('rejects malformed remote worktree path %s',async (worktreePath) => {
     const { remote, handle } = setup();
     await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
     remote.execGit.mockResolvedValueOnce({ stdout: `worktree ${worktreePath}\0branch refs/heads/main\0\0`, stderr: '' });
@@ -1141,6 +1252,139 @@ describe('Git IPC workspace identity routing', () => {
     await registry.unregisterWorkspace('ssh-tab');
     await expect(handle('git-create-worktree')(null, workspacePath, 'HEAD', 'other', 'ssh-tab')).rejects.toThrow('no longer registered');
     expect(createWorktree).toHaveBeenCalledTimes(1);
+  });
+
+  const sshTask = { path: '/srv/Repo-worktrees/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false };
+  const sshListing = (...extra: string[]) => ({
+    stdout: `worktree ${workspacePath}\0branch refs/heads/main\0\0${extra.join('')}`,
+    stderr: '',
+  });
+  const sshListed = `worktree ${sshTask.path}\0branch refs/heads/task\0\0`;
+  const attach = { attachCheckoutContext: true };
+
+  test('passing the id of an open repository workspace without opting in attaches no context (legacy New Workspace flow)', async () => {
+    const { registry, remote, handle } = setup();
+    Object.assign(remote, { createWorktree: vi.fn().mockResolvedValue({ success: true, worktree: { ...sshTask } }) });
+    await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+    remote.execGit.mockClear();
+
+    for (const options of [undefined, {}, { attachCheckoutContext: false }, { attachCheckoutContext: 'yes' }, null]) {
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', options);
+      expect(result).toEqual({ success: true, worktree: sshTask });
+    }
+    expect(registry.getCheckoutContextsForWorkspace('ssh-tab')).toHaveLength(1);
+    expect(remote.execGit).not.toHaveBeenCalled();
+  });
+
+  test('asking to attach without a registered workspace fails before anything is created', async () => {
+    const { service, handle } = setup();
+    const localCreate = vi.spyOn(service, 'createWorktree');
+    expect(await handle('git-create-worktree')(null, process.cwd(), 'main', 'task', undefined, attach))
+      .toMatchObject({ success: false, error: expect.stringContaining('registered workspace is required') });
+    expect(localCreate).not.toHaveBeenCalled();
+  });
+
+  describe('workspace-scoped worktree creation attaches a checkout context', () => {
+    async function sshWorkspace(listing: { stdout: string; stderr: string } | Error = sshListing(sshListed)) {
+      const f = setup();
+      const createWorktree = vi.fn().mockResolvedValue({ success: true, worktree: { ...sshTask } });
+      Object.assign(f.remote, { createWorktree });
+      if (listing instanceof Error) f.remote.execGit.mockRejectedValue(listing);
+      else f.remote.execGit.mockResolvedValue(listing);
+      await f.handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      return { ...f, createWorktree };
+    }
+
+    test('SSH: registers an independently validated context under the existing workspace without widening its root', async () => {
+      const { registry, remote, handle } = await sshWorkspace();
+      remote.validateWorkspacePath.mockClear();
+
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', attach);
+
+      expect(result).toMatchObject({
+        success: true,
+        worktree: { path: sshTask.path, branch: 'task' },
+        checkoutContext: {
+          workspaceId: 'ssh-tab', environmentId: 'ssh', path: sshTask.path, kind: 'worktree',
+          branch: 'task', mainCheckoutPath: workspacePath,
+        },
+      });
+      // The worktree root went through the environment's own validation, not the workspace's.
+      expect(remote.validateWorkspacePath).toHaveBeenCalledExactlyOnceWith(sshTask.path);
+      // One workspace, root unchanged; two contexts; the sibling is not reachable from the main one.
+      expect(registry.getAllWorkspaces().map((entry) => entry.location.path)).toEqual([workspacePath]);
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab').map((entry) => entry.path)).toEqual([workspacePath, sshTask.path]);
+      expect(registry.resolveCheckoutContext('ssh-tab')?.path).toBe(workspacePath);
+      const returned = (result as { checkoutContext: { id: string } }).checkoutContext;
+      expect(registry.getCheckoutContext(returned.id)).toMatchObject({ path: sshTask.path });
+    });
+
+    test('SSH: derives branch and main checkout from Git metadata, not from the create result or arguments', async () => {
+      const listing = sshListing(`worktree ${sshTask.path}\0branch refs/heads/from-git\0\0`);
+      const { handle } = await sshWorkspace(listing);
+      const result = await handle('git-create-worktree')(null, '/forged/path', 'HEAD', 'task', 'ssh-tab', attach);
+      expect(result).toMatchObject({ checkoutContext: { branch: 'from-git', mainCheckoutPath: workspacePath, path: sshTask.path } });
+    });
+
+    test.each([
+      ['Git does not list the created path as a linked worktree', sshListing(`worktree /srv/elsewhere\0branch refs/heads/task\0\0`)],
+      ['Git lists it only as the main worktree', { stdout: `worktree ${sshTask.path}\0branch refs/heads/task\0\0`, stderr: '' }],
+      ['Git cannot list worktrees', new Error('ssh dropped')],
+    ])('SSH: keeps the created checkout and reports a partial result when %s', async (_label, listing) => {
+      const { registry, createWorktree, handle } = await sshWorkspace(listing);
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', attach);
+
+      expect(result).toMatchObject({
+        success: false, created: true, worktree: { path: sshTask.path, branch: 'task' },
+        error: expect.stringContaining('could not be attached'),
+      });
+      expect(result).not.toHaveProperty('checkoutContext');
+      expect(createWorktree).toHaveBeenCalledTimes(1);
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab')).toHaveLength(1);
+    });
+
+    test('SSH: a root that became reserved for removal is not attached, and nothing is deleted', async () => {
+      const { registry, remote, handle } = await sshWorkspace();
+      const removeWorktree = vi.fn();
+      Object.assign(remote, { removeWorktree });
+      registry.reserveRemotePaths('ssh', [sshTask.path]);
+
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', attach);
+
+      expect(result).toMatchObject({ success: false, created: true, worktree: { path: sshTask.path } });
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab')).toHaveLength(1);
+      expect(removeWorktree).not.toHaveBeenCalled();
+    });
+
+    test('SSH: a workspace closed while the create was in flight gets no context', async () => {
+      const { registry, createWorktree, handle } = await sshWorkspace();
+      createWorktree.mockImplementationOnce(async () => {
+        registry.unregisterWorkspace('ssh-tab');
+        return { success: true, worktree: { ...sshTask } };
+      });
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', attach);
+      expect(result).toMatchObject({ success: false, created: true });
+      expect(registry.getAllCheckoutContexts()).toEqual([]);
+    });
+
+    test('a failed create attaches nothing and is not reported as created', async () => {
+      const { registry, createWorktree, handle } = await sshWorkspace();
+      createWorktree.mockResolvedValueOnce({ success: false, error: 'branch exists' });
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', attach);
+      expect(result).toEqual({ success: false, error: 'branch exists' });
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab')).toHaveLength(1);
+    });
+
+    test('contexts attach only to the workspace named by the call, never to another workspace', async () => {
+      const { registry, remote, handle } = await sshWorkspace();
+      await handle('register-open-workspace')(null, 'other-tab', '/srv/other', 'ssh');
+      remote.execGit.mockResolvedValue({ stdout: `worktree /srv/other\0branch refs/heads/main\0\0${sshListed}`, stderr: '' });
+
+      const result = await handle('git-create-worktree')(null, workspacePath, 'HEAD', 'task', 'ssh-tab', attach) as { checkoutContext?: { id: string } };
+
+      expect(registry.getCheckoutContextsForWorkspace('other-tab')).toHaveLength(1);
+      expect(registry.resolveCheckoutContext('other-tab', result.checkoutContext?.id)).toBeNull();
+    });
   });
 
   test('inspects using authoritative same-host workspace and terminal activity', async () => {
@@ -1194,9 +1438,17 @@ describe('Git IPC workspace identity routing', () => {
   test('same-path operations retain their environment across overlapping Git commands', async () => {
     const { local, remote, handle, executions, mainWindow } = setup();
     expect(await handle('register-open-workspace')(null, 'local-tab', workspacePath, 'local'))
-      .toEqual({ success: true, location: { environmentId: 'local', path: workspacePath } });
+      .toEqual({
+        success: true,
+        location: { environmentId: 'local', path: workspacePath },
+        checkoutContext: { id: 'local-tab::main', workspaceId: 'local-tab', environmentId: 'local', path: workspacePath, kind: 'main' },
+      });
     expect(await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh'))
-      .toEqual({ success: true, location: { environmentId: 'ssh', path: workspacePath } });
+      .toEqual({
+        success: true,
+        location: { environmentId: 'ssh', path: workspacePath },
+        checkoutContext: { id: 'ssh-tab::main', workspaceId: 'ssh-tab', environmentId: 'ssh', path: workspacePath, kind: 'main' },
+      });
 
     let releaseRemote!: () => void;
     const delayed = new Promise<void>((resolve) => { releaseRemote = resolve; });

@@ -194,6 +194,23 @@ describe('remote worktree removal coordination', () => {
     expect(registry.isRemotePathReserved('ssh', '/srv/task')).toBe(false);
   });
 
+  it('treats a registered checkout context root as active, blocking inspection and removal until it is released', async () => {
+    const { coordinator, registry, source, environment } = await setup();
+    const { checkoutContext } = await registry.registerCheckoutContext({ workspaceId: 'source', path: '/srv/task', kind: 'worktree' });
+    const blocked = { success: false, error: expect.stringContaining('Close workspace tabs') };
+
+    // The context is not a workspace tab and is not a terminal, yet it still counts as live use.
+    expect(registry.getAllWorkspaces().map((entry) => entry.location.path)).toEqual(['/srv/repo']);
+    expect(await coordinator.inspect(source, '/srv/task')).toMatchObject(blocked);
+    expect(await coordinator.remove(source, '/srv/task', 'task')).toMatchObject(blocked);
+    expect(environment.inspectWorktree).not.toHaveBeenCalled();
+    expect(environment.removeWorktree).not.toHaveBeenCalled();
+
+    registry.unregisterCheckoutContext(checkoutContext!.id);
+    expect(await coordinator.inspect(source, '/srv/task')).toMatchObject({ success: true });
+    expect(await coordinator.remove(source, '/srv/task', 'task')).toMatchObject({ success: true });
+  });
+
   it('protects duplicate saved SSH targets without blocking unrelated hosts at the same path', async () => {
     const { coordinator, source, registry, environment } = await setup();
     Object.assign(environment, { worktreeResourceId: 'ssh:user@host' });

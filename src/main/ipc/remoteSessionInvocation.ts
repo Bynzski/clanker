@@ -22,6 +22,8 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
       || registry.isRemotePathReserved?.(workspace.location.environmentId, workspace.location.path)) throw new Error('Remote workspace was closed or is being removed');
   };
   checkWorkspace();
+  // Resume is confined to the workspace root, so it runs in the workspace's main checkout context.
+  const mainContext = registry?.resolveCheckoutContext(workspace.workspaceId) ?? null;
   const sessions = await environment.discoverSessions(workspace.location.path);
   checkWorkspace();
   const session = sessions.find((candidate) => candidate.harness === requested.harness && candidate.id === requested.id);
@@ -60,6 +62,7 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
       id, spawnCmd: resolved.spawnCmd, spawnArgs: resolved.spawnArgs, cwd: process.cwd(), env: resolved.env,
       terminals: deps.getTerminals(), mainWindow: deps.getMainWindow(), getIsShuttingDown: deps.getIsShuttingDown,
       launchLabel: resolved.launchLabel, harnessId: session.harness, workspaceId: workspace.workspaceId,
+      checkoutContextId: mainContext?.id,
       environmentId: workspace.location.environmentId, remoteWorkingDir: session.cwd,
       onOutput: deps.createRemoteOutputObserver?.(workspace.workspaceId),
       filterData: resolved.attentionEnabled && broker ? createRemoteAttentionFilter((raw) => broker.receiveRemote(id, raw)) : undefined,
@@ -68,7 +71,7 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
         await releaseAttention?.();
       },
     });
-    return { ...result, harnessId: session.harness, attentionEnabled: resolved.attentionEnabled === true, workingDir: session.cwd };
+    return { ...result, harnessId: session.harness, attentionEnabled: resolved.attentionEnabled === true, workingDir: session.cwd, checkoutContextId: mainContext?.id };
   } catch (error) {
     broker?.release(id);
     await releaseAttention?.().catch(() => undefined);

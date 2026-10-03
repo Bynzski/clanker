@@ -8,6 +8,7 @@ import { getAttentionDisplay, getAttentionSuffix } from '../lib/agentAttentionPr
 import { getHarnessOption } from '../lib/harnessOptions';
 import { getRemoteEnvironmentLabel, getWorkspaceTabLabel } from '../lib/workspaceLabels';
 import { toggleFocusedWorkspaceExplorer } from '../lib/explorerToggle';
+import { getAgentWorktreeContext, worktreeBranchLabel } from '../lib/worktreeAgents';
 import './WorkspaceRail.css';
 
 /** Two-letter mark for a workspace: word initials ("demo-repo" → "DR") or the first two letters. */
@@ -27,17 +28,23 @@ function RailAgent({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab
   const attentionOn = Boolean(terminal.harnessId && terminal.attentionEnabled);
   const display = attentionOn ? getAttentionDisplay(attention) : null;
   const suffix = attentionOn ? getAttentionSuffix(attention) : '';
+  const worktree = getAgentWorktreeContext(workspace, terminal);
+  // Branch identity only: management of checkouts lives in the expanded sidebar.
+  const description = worktree
+    ? `${name} · ${harness.label} · on branch ${worktreeBranchLabel(worktree)}${suffix}`
+    : `${name} · ${harness.label}${suffix}`;
 
   return (
     <button
       type="button"
-      className={`ws-rail-agent${isCurrent ? ' current' : ''}`}
+      className={`ws-rail-agent${isCurrent ? ' current' : ''}${worktree ? ' worktree' : ''}`}
       aria-current={isCurrent ? 'true' : undefined}
-      aria-label={`${name} · ${harness.label}${suffix}`}
-      title={`${name} · ${harness.label}${suffix}`}
+      aria-label={description}
+      title={worktree ? `${description}\n${worktree.path}` : description}
       onClick={() => selectWorkspace(workspace.id, terminal.id)}
     >
       <HarnessIcon size={14} strokeWidth={2} />
+      {worktree && <GitBranch className="ws-rail-agent-worktree" size={8} strokeWidth={2.5} aria-hidden="true" />}
       {display && (
         <span className={`ws-rail-agent-state state-${display}${attention?.unseen ? ' unseen' : ''}`} aria-hidden="true" />
       )}

@@ -3,6 +3,7 @@ import type { HarnessSession } from '../../../src/shared/types/session';
 import { SESSION_INVOKE } from '../../../src/shared/ipcChannels';
 import { getHarnessProvider } from '../../../src/main/harnesses/registry';
 import { removeAttentionAdapterFiles } from '../../../src/main/agentAttentionAdapters';
+import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
 import { parseMsvcrtArgv, ptyCommandLine } from '../../_helpers/windowsCommandLine';
 
 const { mockHandle, mockSpawnPty } = vi.hoisted(() => ({ mockHandle: vi.fn(), mockSpawnPty: vi.fn() }));
@@ -40,7 +41,7 @@ function setup(options: { installed: string[]; flags?: string; wrapper?: string 
     getStore: () => ({ get: () => ({ codex: { flags: options.flags ?? '', attentionEnabled: options.attention === true } }) }) as never,
     getHarnessOptions: () => ({ codex: { name: 'Codex', command: 'codex', args: [], icon: '', ...(options.harnessEnv ? { env: options.harnessEnv } : {}) } }),
     agentAttentionBroker: options.attention ? { register: vi.fn().mockResolvedValue({}), release: vi.fn() } as never : undefined,
-    getWorkspaceRegistry: () => ({ getWorkspace: (id: string) => id === 'ws' ? { workspaceId: 'ws', location: { environmentId: 'local', path: '/workspace' } } : null }) as never,
+    getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: (id: string) => id === 'ws' ? { workspaceId: 'ws', location: { environmentId: 'local', path: '/workspace' } } : null }) as never,
     ensureHarnessWrapperScript: () => options.wrapper ?? null,
     harnessSpawnOverrides: { platform: options.platform ?? 'win32', fileExists },
   });
@@ -52,7 +53,10 @@ function setup(options: { installed: string[]; flags?: string; wrapper?: string 
 describe('local session resume/fork through the Windows PTY planner', () => {
   it('launches a resolved .exe directly with discrete argv and never cmd.exe', async () => {
     const { invoke, spawned } = setup({ installed: [EXE], flags: NASTY_FLAGS.join(' ') });
-    await invoke();
+    const result = await invoke();
+    // PR #92 contract preserved: local resume belongs to the workspace main checkout context.
+    expect(result).toMatchObject({ checkoutContextId: 'ws::main' });
+    expect((mockSpawnPty.mock.calls[0][0] as { checkoutContextId?: string }).checkoutContextId).toBe('ws::main');
     const { spawnCmd, spawnArgs } = spawned();
     expect(spawnCmd.toLowerCase()).toBe(EXE.toLowerCase());
     expect(spawnArgs).toEqual(['resume', 'codex-session', ...NASTY_FLAGS]);

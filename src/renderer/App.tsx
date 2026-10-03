@@ -18,7 +18,9 @@ import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import { persistWorkspaceLayout } from './lib/workspaceLayoutStorage';
 import { startRemoteFileWatcher } from './lib/remoteFileWatcher';
 import { sameWorkspacePath } from './lib/pathUtils';
-import { isSameWorkspaceIdentity } from '../shared/workspaceIdentity';
+import { isSameWorkspaceIdentity, normalizeWorkspacePath } from '../shared/workspaceIdentity';
+import { createMainCheckoutContext, mainCheckoutContextId } from '../shared/checkoutContext';
+import type { CheckoutContext } from '../shared/types/checkoutContext';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../shared/types/recipes';
 import { executeWorkspaceRecipe } from './lib/recipeExecution';
 import { getWorkspaceNameFromPath } from './lib/workspaceLabels';
@@ -168,8 +170,8 @@ function App() {
     const isRemote = effectiveEnvironmentId !== 'local';
     const workspaceId = crypto.randomUUID();
     const registration = isRemote
-      ? await window.electronAPI.registerOpenWorkspace(workspaceId, path, effectiveEnvironmentId).catch((error: unknown) => ({ success: false, error: String(error), location: undefined }))
-      : await window.electronAPI.registerOpenWorkspace(workspaceId, path).catch((error: unknown) => ({ success: false, error: String(error), location: undefined }));
+      ? await window.electronAPI.registerOpenWorkspace(workspaceId, path, effectiveEnvironmentId).catch((error: unknown) => ({ success: false, error: String(error), location: undefined, checkoutContext: undefined }))
+      : await window.electronAPI.registerOpenWorkspace(workspaceId, path).catch((error: unknown) => ({ success: false, error: String(error), location: undefined, checkoutContext: undefined }));
     if (!registration.success) {
       console.error('Could not open workspace:', registration.error);
       return false;
@@ -201,6 +203,7 @@ function App() {
             pid: info.pid,
             workingDir: canonicalPath,
             workspaceId,
+            checkoutContextId: info.checkoutContextId ?? mainCheckoutContextId(workspaceId),
             environmentId: effectiveEnvironmentId,
             harnessId: info.harnessId ?? launchHarness ?? null,
             attentionEnabled: info.attentionEnabled === true,
@@ -220,12 +223,29 @@ function App() {
       const projectName = linkedWorktree
         ? getWorkspaceNameFromPath(worktreeList?.worktrees.find((entry: GitWorktree) => entry.isMain)?.path ?? canonicalPath)
         : getWorkspaceNameFromPath(canonicalPath);
+      // Main returned the registered context; the root it validated is the workspace root. A
+      // linked-worktree workspace is its own root, so annotate it as a worktree context while it
+      // is still presented as a workspace (descriptive only; the path is not changed).
+      const registeredContext: CheckoutContext = registration.checkoutContext
+        ?? createMainCheckoutContext({ workspaceId, environmentId: effectiveEnvironmentId, path: canonicalPath });
+      const mainCheckoutPath = worktreeList?.success
+        ? worktreeList.worktrees.find((entry: GitWorktree) => entry.isMain)?.path
+        : undefined;
+      const checkoutContext: CheckoutContext = linkedWorktree
+        ? {
+          ...registeredContext,
+          kind: 'worktree',
+          branch: linkedWorktree.branch ?? null,
+          ...(mainCheckoutPath ? { mainCheckoutPath: normalizeWorkspacePath(mainCheckoutPath) } : {}),
+        }
+        : registeredContext;
       addWorkspace({
         id: workspaceId,
         environmentId: effectiveEnvironmentId,
         environmentLabel: effectiveEnvironmentLabel,
         name: projectName,
         workspacePath: canonicalPath,
+        checkoutContexts: [checkoutContext],
         isLinkedWorktree: !!linkedWorktree,
         projectName,
         harness,

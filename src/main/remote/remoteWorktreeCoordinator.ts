@@ -71,9 +71,10 @@ export class RemoteWorktreeCoordinator {
   private activity(workspace: RegisteredWorkspace): string[] | null {
     const terminals = this.terminalPaths ? this.terminalPaths(workspace.location.environmentId) : [];
     if (terminals === null) return null;
-    return [...new Set([...terminals, ...(this.registry()?.getAllWorkspaces() ?? [])
-      .filter((entry) => entry.location.environmentId !== 'local' && this.registry()?.getWorktreeResourceId(entry.location.environmentId) ===
-        this.registry()?.getWorktreeResourceId(workspace.location.environmentId)).map((entry) => entry.location.path)])].sort();
+    // Checkout-context roots (each workspace's main root included) are the registered activity.
+    return [...new Set([...terminals, ...(this.registry()?.getAllCheckoutContexts() ?? [])
+      .filter((entry) => entry.environmentId !== 'local' && this.registry()?.getWorktreeResourceId(entry.environmentId) ===
+        this.registry()?.getWorktreeResourceId(workspace.location.environmentId)).map((entry) => entry.path)])].sort();
   }
 
   public async inspect(workspace: RegisteredWorkspace, worktreePath: string): Promise<GitWorktreeInspectionResult> {
@@ -126,6 +127,18 @@ export class RemoteWorktreeCoordinator {
     } finally {
       pending.active = false;
       if (!uncertain) this.complete(operationId, pending);
+    }
+  }
+
+  /**
+   * Metadata-level worktree operations (prune/unlock) must not interleave with a removal that has
+   * moved a checkout aside: reconcile uncertain ones, then refuse while one is still running.
+   */
+  public async requireIdle(environmentId: string): Promise<void> {
+    await this.reconcile(environmentId);
+    const resourceId = this.registry()?.getWorktreeResourceId(environmentId);
+    if ([...this.pending.values()].some((entry) => entry.active && entry.record.resourceId === resourceId)) {
+      throw new Error('A worktree removal is in progress on this host; try again when it finishes');
     }
   }
 

@@ -100,6 +100,7 @@ import { ipcMain } from 'electron';
 import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
 import { REMOTE_ATTENTION_PREFIX } from '../../../src/main/remote/remoteAttentionTransport';
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
+import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
 import { RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY } from '../../../src/shared/ipcChannels';
 import { hermesProfiles } from '../../../src/main/harnesses/hermes/profiles';
 import { parseMsvcrtArgv, ptyCommandLine } from '../../_helpers/windowsCommandLine';
@@ -141,6 +142,7 @@ describe('registerTerminalIpc — registration', () => {
       'resize-terminal',
       'kill-terminal',
       'terminal:cleanup-workspace',
+      'release-checkout-context',
     ];
 
     expectedChannels.forEach(channel => {
@@ -161,7 +163,7 @@ describe('registerTerminalIpc — registration', () => {
       ensureHarnessWrapperScript: vi.fn().mockReturnValue(testHarnessWrapper()),
     });
 
-    expect(mockHandle.mock.calls.length).toBe(11);
+    expect(mockHandle.mock.calls.length).toBe(12);
   });
 
   test('registers 3 event IPC channels (terminal-data, terminal-exit, terminal-resized)', () => {
@@ -197,7 +199,7 @@ describe('registerTerminalIpc — registration', () => {
     };
     registerTerminalIpc(opts);
     registerTerminalIpc(opts);
-    expect(mockHandle.mock.calls.length).toBe(22);
+    expect(mockHandle.mock.calls.length).toBe(24);
   });
 });
 
@@ -287,7 +289,7 @@ describe('terminalIpc — error-path: handler returns', () => {
       onData: (callback: typeof onData) => { onData = callback; },
       onExit: (callback: typeof onExit) => { onExit = callback; } });
     registerTerminalIpc({ ...opts, agentAttentionBroker: broker,
-      getWorkspaceRegistry: () => ({ getWorkspace: () => registered }) } as never);
+      getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }) } as never);
     const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
     try {
       const result = await handler(null, '/srv/project', 'opencode', undefined, undefined, undefined, 'remote', 'host');
@@ -326,7 +328,7 @@ describe('terminalIpc — error-path: handler returns', () => {
         ? { codex: { flags: '--sandbox workspace-write', model: 'ignored-local-model' } }
         : false,
     }) as never;
-    const deps = { ...opts, getWorkspaceRegistry: () => ({
+    const deps = { ...opts, getWorkspaceRegistry: () => withCheckoutContexts({
       getWorkspace: (id: string) => id === 'remote-tab' ? registered : null,
     }) };
     mockPtySpawn.mockReturnValue({
@@ -358,7 +360,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     const reserved = vi.fn().mockReturnValue(false);
     const registered = { workspaceId: 'remote', location: { path: '/srv/task', environmentId: 'ssh' },
       environment: { resolveTerminalSpawn: vi.fn(() => new Promise((done) => { finish = done; })) } };
-    registerTerminalIpc({ ...opts, getWorkspaceRegistry: () => ({
+    registerTerminalIpc({ ...opts, getWorkspaceRegistry: () => withCheckoutContexts({
       getWorkspace: () => registered, isRemotePathReserved: reserved,
     }) } as never);
     const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
@@ -377,7 +379,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     const registered = { workspaceId: 'assistant-owner', location: { environmentId: 'local', path: cwd.replace(/\\/g, '/') } };
     const controller = registerTerminalIpc({
       ...opts,
-      getWorkspaceRegistry: () => ({ getWorkspace: () => registered }) as never,
+      getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }) as never,
       getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
       getStore: () => ({ get: () => ({ hermes: { flags: '--yolo --resume', model: 'wrong-model' } }) }) as never,
       onTerminalReleased,
@@ -418,7 +420,7 @@ describe('terminalIpc — error-path: handler returns', () => {
       const controller = registerTerminalIpc({
         ...opts,
         agentAttentionBroker: broker as never,
-        getWorkspaceRegistry: () => ({ getWorkspace: () => registered }) as never,
+        getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }) as never,
         getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
         getStore: () => ({ get: () => ({ hermes: { flags: '', model: '' } }) }) as never,
       });
@@ -491,7 +493,7 @@ describe('terminalIpc — error-path: handler returns', () => {
       const controller = registerTerminalIpc({
         ...opts,
         agentAttentionBroker: broker as never,
-        getWorkspaceRegistry: () => ({ getWorkspace: () => registered }) as never,
+        getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }) as never,
         getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
         getStore: () => ({ get: () => ({ hermes: { flags: '', model: '' } }) }) as never,
       });
@@ -555,6 +557,105 @@ describe('terminalIpc — error-path: handler returns', () => {
     });
   });
 
+  describe('Assistants and checkout contexts', () => {
+    const profileLaunch = (cwd: string) => ({ command: 'hermes', args: ['-p', 'reviewer', '--tui', '--in', cwd], env: { HERMES_HOME: testHome() }, unsetEnvironmentKeys: [] });
+    const setup = () => {
+      const { opts, terminals } = createMockDeps();
+      const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-assistant-ctx-')));
+      const workspace = path.join(base, 'workspace');
+      const worktree = path.join(base, 'worktree');
+      fs.mkdirSync(workspace);
+      fs.mkdirSync(worktree);
+      const toPosix = (p: string) => p.replace(/\\/g, '/');
+      let registered: { workspaceId: string; location: { environmentId: string; path: string } } = { workspaceId: 'assistant-owner', location: { environmentId: 'local', path: toPosix(workspace) } };
+      const linked = { id: 'assistant-owner::wt', workspaceId: 'assistant-owner', environmentId: 'local', path: toPosix(worktree), kind: 'worktree' as const };
+      const registry = withCheckoutContexts({ getWorkspace: () => registered }, [linked]);
+      let mainOverride: unknown;
+      const originalGet = registry.getCheckoutContext;
+      registry.getCheckoutContext = (id: string) => (mainOverride && id === 'assistant-owner::main' ? mainOverride as never : originalGet(id));
+      let finishRegister!: (env: Record<string, string>) => void;
+      const broker = {
+        register: vi.fn(() => new Promise<Record<string, string>>((done) => { finishRegister = done; })),
+        release: vi.fn(),
+      };
+      const controller = registerTerminalIpc({
+        ...opts,
+        agentAttentionBroker: broker as never,
+        getWorkspaceRegistry: () => registry as never,
+        getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
+        getStore: () => ({ get: () => ({ hermes: { flags: '', model: '' } }) }) as never,
+      });
+      mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
+      return {
+        controller, broker, terminals, workspace, worktree, linked, registry,
+        replaceWorkspace: () => { registered = { ...registered, location: { ...registered.location } }; },
+        replaceMain: () => { mainOverride = { ...registry.resolveCheckoutContext('assistant-owner'), path: registered.location.path }; },
+        finish: () => finishRegister({}),
+        cleanup: () => fs.rmSync(base, { recursive: true, force: true }),
+      };
+    };
+
+    test('an Assistant launch runs in the MAIN checkout context even when a worktree context exists', async () => {
+      const { controller, broker, terminals, workspace, linked, finish, cleanup } = setup();
+      try {
+        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(workspace));
+        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
+        finish();
+        const result = await pending;
+        expect(result.checkoutContextId).toBe('assistant-owner::main');
+        expect(result.checkoutContextId).not.toBe(linked.id);
+        expect(terminals.get(result.id)).toMatchObject({ workspaceId: 'assistant-owner', checkoutContextId: 'assistant-owner::main' });
+        expect(mockPtySpawn.mock.calls[0][2].cwd).toBe(workspace);
+      } finally { cleanup(); }
+    });
+
+    test.each(['workspace replaced', 'main context replaced'] as const)('rejects before PTY creation when the %s during attention setup', async (change) => {
+      const { controller, broker, terminals, workspace, replaceWorkspace, replaceMain, finish, cleanup } = setup();
+      try {
+        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(workspace));
+        const rejected = expect(pending).rejects.toThrow(/workspace was closed|closed or is being removed/);
+        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
+        if (change === 'workspace replaced') replaceWorkspace(); else replaceMain();
+        finish();
+        await rejected;
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+        expect(terminals.size).toBe(0);
+        const [terminalId] = broker.register.mock.calls[0] as unknown as [string];
+        expect(broker.release).toHaveBeenCalledWith(terminalId);
+      } finally { cleanup(); }
+    });
+
+    test('an ordinary launch with an explicit worktree context still runs in and is tagged with that context, through the Windows planner', async () => {
+      const { opts, terminals } = createMockDeps();
+      const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-ctx-win-')));
+      try {
+        const workspace = path.join(base, 'workspace');
+        const worktree = path.join(base, 'worktree');
+        fs.mkdirSync(workspace); fs.mkdirSync(worktree);
+        const linked = { id: 'ws::wt', workspaceId: 'ws', environmentId: 'local', path: worktree.replace(/\\/g, '/'), kind: 'worktree' as const };
+        const registered = { workspaceId: 'ws', location: { environmentId: 'local', path: workspace.replace(/\\/g, '/') } };
+        registerTerminalIpc({
+          ...opts,
+          getSafeWorkspacePath: (dir: string) => dir,
+          ensureHarnessWrapperScript: () => null,
+          harnessSpawnOverrides: { platform: 'win32', env: { Path: 'C:\\Tools', PATHEXT: '.EXE;.CMD', ComSpec: 'C:\\Windows\\System32\\cmd.exe' }, fileExists: (file: string) => file.toLowerCase() === 'c:\\tools\\codex.exe' },
+          getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }, [linked]) as never,
+          getHarnessOptions: () => ({ codex: { name: 'Codex', command: 'codex', args: [], icon: '' } }),
+          getStore: () => ({ get: () => ({ codex: { flags: '', model: '' } }) }) as never,
+        });
+        mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
+        const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+        const result = await handler(null, worktree, 'codex', undefined, undefined, undefined, 'ws', 'local', 'ws::wt');
+        expect(result.checkoutContextId).toBe('ws::wt');
+        expect(terminals.get(result.id)).toMatchObject({ checkoutContextId: 'ws::wt' });
+        const [file, args, options] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
+        expect(file.toLowerCase()).toBe('c:\\tools\\codex.exe');
+        expect(args).toEqual([]);
+        expect(options.cwd).toBe(worktree);
+      } finally { fs.rmSync(base, { recursive: true, force: true }); }
+    });
+  });
+
   describe('Windows PTY argument serialization through the real terminal spawn path', () => {
     const COMSPEC = 'C:\\Windows\\System32\\cmd.exe';
     const hermesProfile = { name: 'reviewer', label: 'reviewer', home: path.join(testHome(), 'profiles', 'reviewer'), rootHome: testHome() };
@@ -576,7 +677,7 @@ describe('terminalIpc — error-path: handler returns', () => {
         agentAttentionBroker: broker as never,
         ensureHarnessWrapperScript: () => null,
         harnessSpawnOverrides: windowsFor(installed),
-        getWorkspaceRegistry: () => ({ getWorkspace: () => registered }) as never,
+        getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }) as never,
         getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
         getStore: () => ({ get: () => ({ hermes: { flags: '', model: '' } }) }) as never,
       });
@@ -672,7 +773,7 @@ describe('terminalIpc — error-path: handler returns', () => {
         set: storeSet,
       }) as never,
       getHarnessOptions: vi.fn().mockReturnValue({ codex: { name: 'Codex', command: 'codex', args: [], icon: '' } }),
-      getWorkspaceRegistry: () => ({
+      getWorkspaceRegistry: () => withCheckoutContexts({
         getWorkspace: (id: string) => (id === 'remote-tab' ? registered : null),
         getWorkspaceByLocation: () => null,
       }),
@@ -789,7 +890,7 @@ describe('terminalIpc — error-path: handler returns', () => {
       const getOpenWorkspacePath = vi.fn().mockReturnValue(null);
       registerTerminalIpc({
         ...opts, getOpenWorkspacePath, agentAttentionBroker: broker as never,
-        getWorkspaceRegistry: () => ({ getWorkspace: (id: string) => (workspace && id === workspace.workspaceId ? workspace : null) }) as never,
+        getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: (id: string) => (workspace && id === workspace.workspaceId ? workspace : null) }) as never,
       });
       const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'send-annotation-to-agent')?.[1] as (
         _: unknown, payload: unknown,
@@ -853,7 +954,7 @@ describe('terminalIpc — error-path: handler returns', () => {
         mockIpcMain.handle.mockClear();
         registerTerminalIpc({
           ...opts, getOpenWorkspacePath: () => workspacePath, agentAttentionBroker: broker as never,
-          getWorkspaceRegistry: () => ({ getWorkspace: () => ({ workspaceId: 'ws-local', location: { environmentId: 'local', path: workspacePath } }) }) as never,
+          getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => ({ workspaceId: 'ws-local', location: { environmentId: 'local', path: workspacePath } }) }) as never,
         });
         const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'send-annotation-to-agent')?.[1] as (_: unknown, payload: unknown) => { success: boolean };
         expect(handler(null, { workspaceId: 'ws-local', terminalId: 'term-agent', message: 'x' }).success).toBe(false);

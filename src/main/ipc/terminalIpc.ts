@@ -32,11 +32,14 @@ import {
   TERMINAL_READY,
   RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
+  RELEASE_CHECKOUT_CONTEXT,
 } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
 import { RecipeCommandStartup } from '../recipeCommandStartup';
 import { toNativePath } from '../../shared/pathNormalize';
 import { pathKey } from '../../shared/pathKey';
+import { isInsideRoot } from '../localPathContainment';
+import { releaseCheckoutContext } from '../checkoutContextRelease';
 import { isPathContained } from '../remote/sshEnvironment';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
@@ -53,6 +56,8 @@ interface Terminal {
   cwd?: string;
   remoteWorkingDir?: string;
   workspaceId?: string;
+  /** Execution root this terminal was launched against (see WorkspaceRegistry checkout contexts). */
+  checkoutContextId?: string;
   environmentId?: string;
   harnessId?: string;
   releaseResources?: () => Promise<void>;
@@ -91,7 +96,7 @@ interface RegisterTerminalIpcDeps {
 type TrustedProfileLaunch = ReturnType<HarnessProfilesCapability['buildLaunch']>;
 export interface TerminalIpcController {
   /** Main-only: renderer IPC cannot supply commands, environment or profile paths. */
-  spawnAssistant(workspaceId: string, harnessId: string, launch: TrustedProfileLaunch): Promise<{ id: string; pid: number; harnessId?: string | null; attentionEnabled: boolean }>;
+  spawnAssistant(workspaceId: string, harnessId: string, launch: TrustedProfileLaunch): Promise<{ id: string; pid: number; harnessId?: string | null; attentionEnabled: boolean; checkoutContextId?: string }>;
   killTerminal(id: string): { success: true } | { success: false; error: string };
 }
 
@@ -134,6 +139,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
     recipeCommand?: boolean,
     workspaceId?: string,
     environmentId?: string,
+    checkoutContextId?: string,
     profileLaunch?: TrustedProfileLaunch
   ) => {
     const terminals = getTerminals();
@@ -151,17 +157,39 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
     if (environmentId && resolvedWorkspace && environmentId !== resolvedWorkspace.location.environmentId) {
       throw new Error('Workspace environment does not match registered workspace');
     }
+    if (checkoutContextId !== undefined && !isNonEmptyString(checkoutContextId)) {
+      throw new Error('Invalid checkout context');
+    }
+    // The terminal root is the checkout context's validated root, not the workspace path:
+    // no requested id means the workspace's main checkout, and a context registered under another
+    // workspace never resolves. Launches outside any registered workspace stay unbound (legacy).
+    const checkoutContext = resolvedWorkspace && registry
+      ? registry.resolveCheckoutContext(resolvedWorkspace.workspaceId, checkoutContextId)
+      : null;
+    if ((resolvedWorkspace || checkoutContextId) && !checkoutContext) {
+      throw new Error('Checkout context is not registered for this workspace');
+    }
+    // Launch resolution can await (SSH resolution, attention registration). Whatever was resolved
+    // must still be the exact registered workspace and context when the process is about to exist;
+    // a launch that resolved neither (legacy unbound, path only) has nothing to revalidate.
+    const isResolvedTargetCurrent = (): boolean => {
+      if (!resolvedWorkspace) return true;
+      if (registry?.getWorkspace(resolvedWorkspace.workspaceId) !== resolvedWorkspace) return false;
+      return !checkoutContext || registry.getCheckoutContext(checkoutContext.id) === checkoutContext;
+    };
     const effectiveEnvironmentId = resolvedWorkspace?.location.environmentId || environmentId || 'local';
     const isRemote = effectiveEnvironmentId !== 'local';
     if (profileLaunch && (isRemote || !resolvedWorkspace || !findHarnessProvider(harness)?.profiles)) throw new Error('Profile launch requires a registered local workspace and provider capability');
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
     if (isRemote) {
-      if (!resolvedWorkspace || resolvedWorkspace.location.environmentId === 'local') {
+      if (!resolvedWorkspace || !checkoutContext || resolvedWorkspace.location.environmentId === 'local') {
         throw new Error('Remote workspace is not registered or not accessible');
       }
 
-      const root = resolvedWorkspace.location.path;
+      // Containment is against this context's own root, so a worktree context neither inherits
+      // nor extends the workspace root's reach.
+      const root = checkoutContext.path;
       if (typeof workingDir !== 'string' || !isPathContained(root, workingDir)) {
         throw new Error('Terminal directory is outside the registered workspace');
       }
@@ -192,9 +220,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
         });
         releaseAttention = resolved.releaseAttention;
 
-        if (appShuttingDown || deps.getAppShuttingDown?.() ||
-            registry?.getWorkspace(resolvedWorkspace.workspaceId) !== resolvedWorkspace ||
-            registry.isRemotePathReserved?.(effectiveEnvironmentId, remoteWorkingDir)) {
+        if (appShuttingDown || deps.getAppShuttingDown?.() || !isResolvedTargetCurrent() ||
+            registry?.isRemotePathReserved?.(effectiveEnvironmentId, remoteWorkingDir)) {
           throw new Error('Remote workspace was closed or is being removed');
         }
 
@@ -211,6 +238,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
           harnessId: resolved.harnessId,
           initialCommand: effectiveEnvironmentId === 'local' ? resolved.initialCommand : undefined,
           workspaceId: resolvedWorkspace.workspaceId,
+          checkoutContextId: checkoutContext.id,
           environmentId: effectiveEnvironmentId,
           remoteWorkingDir,
           onOutput: deps.createRemoteOutputObserver?.(resolvedWorkspace.workspaceId),
@@ -227,6 +255,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
           pid: result.pid,
           attentionEnabled: resolved.attentionEnabled === true,
           harnessId: resolved.harnessId ?? harness ?? null,
+          checkoutContextId: checkoutContext.id,
         };
       } catch (error) {
         agentAttentionBroker?.release(id);
@@ -236,14 +265,26 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
       }
     }
 
+    // Assistants are main-checkout launches: the profile launch never targets a non-main context,
+    // whatever the renderer has selected. The authoritative path is that main context's path.
+    if (profileLaunch && (checkoutContextId !== undefined || !checkoutContext || checkoutContext.kind !== 'main')) {
+      throw new Error('Assistant launch requires the workspace main checkout context');
+    }
+    const profileRegisteredPath = profileLaunch ? toNativePath(checkoutContext!.path, process.platform) : undefined;
     // Profile launches fail closed instead of silently falling back to home/last workspace.
     const cwd = profileLaunch
-      ? fs.realpathSync(toNativePath(resolvedWorkspace!.location.path, process.platform))
+      ? fs.realpathSync(profileRegisteredPath!)
       : getSafeWorkspacePath(toNativePath(workingDir, process.platform));
     // The registered path may legitimately reach the directory through symlinks/junctions, so it need not
     // be textually canonical; `cwd` is its canonical target and its dev/ino identity is pinned here.
     const profileCwdIdentity = profileLaunch ? fs.statSync(cwd, { bigint: true }) : undefined;
     if (profileLaunch && !profileCwdIdentity!.isDirectory()) throw new Error('Registered assistant directory changed');
+    // A resolved context, requested or implicitly the workspace's main one, is the execution
+    // boundary. getSafeWorkspacePath falls back to a default directory for unusable input, so
+    // check the directory actually used. Only a launch that resolves no context stays unbound.
+    if (!profileLaunch && checkoutContext && !isInsideRoot(toNativePath(checkoutContext.path, process.platform), cwd)) {
+      throw new Error('Terminal directory is outside the registered workspace');
+    }
     // Final check, run synchronously before PTY creation (after every await): the registered path must
     // still canonicalize to the same target and name the directory that was validated above.
     const assertProfileDirectoryUnchanged = () => {
@@ -251,7 +292,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
       let current: string;
       let identity: fs.BigIntStats;
       try {
-        current = fs.realpathSync(toNativePath(resolvedWorkspace!.location.path, process.platform));
+        current = fs.realpathSync(profileRegisteredPath!);
         identity = fs.statSync(current, { bigint: true });
       } catch { throw new Error('Registered assistant directory changed'); }
       if (pathKey(current, process.platform === 'win32') !== pathKey(cwd, process.platform === 'win32')
@@ -358,7 +399,15 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
         launchLabel = `[clanker-grid] ${cleanInitialCommand}`;
       }
 
+      // The attention registration above awaited: the workspace or context may have been
+      // closed meanwhile. Fail closed before any process exists; the catch below releases
+      // the attention resources. Both object-identity and filesystem-identity checks are
+      // synchronous and immediately precede PTY creation.
+      if (!isResolvedTargetCurrent()) {
+        throw new Error('Workspace was closed or is being removed');
+      }
       assertProfileDirectoryUnchanged();
+
       const result = spawnPtyProcess({
       id,
       spawnCmd: harnessCmd.spawnCmd,
@@ -375,13 +424,19 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
       initialCommand: recipeCommandStartup && cleanInitialCommand
         ? recipeCommandStartup.wrap(cleanInitialCommand, process.platform, userShell) : cleanInitialCommand,
       recipeCommandStartup,
+      checkoutContextId: checkoutContext?.id,
       onExit: () => {
         deps.onTerminalReleased?.(id);
         disposeAttentionSafely(preparedAttention);
         agentAttentionBroker?.release(id);
       },
       });
-      return { ...result, harnessId: harnessConfig ? harness : undefined, attentionEnabled };
+      return {
+        ...result,
+        harnessId: harnessConfig ? harness : undefined,
+        attentionEnabled,
+        checkoutContextId: checkoutContext?.id,
+      };
     } catch (error) {
       disposeAttentionSafely(preparedAttention);
       agentAttentionBroker?.release(id);
@@ -389,8 +444,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
     }
   };
   // Explicit positional bridge: extra renderer arguments cannot become a trusted descriptor.
-  ipcMain.handle(SPAWN_TERMINAL, (_event, workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string) =>
-    spawnTerminal(workingDir, harness, model, initialCommand, recipeCommand, workspaceId, environmentId));
+  ipcMain.handle(SPAWN_TERMINAL, (_event, workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string, checkoutContextId?: string) =>
+    spawnTerminal(workingDir, harness, model, initialCommand, recipeCommand, workspaceId, environmentId, checkoutContextId));
 
   /**
    * @deprecated GET_TERMINAL_BUFFER is retained as a no-op returning ''.
@@ -600,6 +655,16 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
     return killed;
   });
 
+  /**
+   * Releases a worktree checkout context once no Clanker terminal uses it. Only ids cross IPC;
+   * everything else is judged from main's registry and terminal table.
+   */
+  ipcMain.handle(RELEASE_CHECKOUT_CONTEXT, (_, workspaceId: unknown, checkoutContextId: unknown) => {
+    const registry = deps.getWorkspaceRegistry?.();
+    if (!registry) return fail('Workspace registry is unavailable');
+    return releaseCheckoutContext({ registry, terminals: getTerminals().values(), workspaceId, checkoutContextId });
+  });
+
   ipcMain.handle(WRITE_CLIPBOARD, (_, text: unknown) => {
     if (typeof text !== 'string') {
       return fail('Invalid text');
@@ -619,7 +684,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
     spawnAssistant: (workspaceId, harnessId, launch) => {
       const workspace = deps.getWorkspaceRegistry?.().getWorkspace(workspaceId);
       if (!workspace || workspace.location.environmentId !== 'local') return Promise.reject(new Error('Assistant workspace is not registered locally'));
-      return spawnTerminal(workspace.location.path, harnessId, undefined, undefined, undefined, workspaceId, workspace.location.environmentId, launch);
+      return spawnTerminal(workspace.location.path, harnessId, undefined, undefined, undefined, workspaceId, workspace.location.environmentId, undefined, launch);
     },
     killTerminal,
   };

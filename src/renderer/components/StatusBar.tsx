@@ -2,14 +2,18 @@ import { useEffect, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
 import { Tag, Circle, GitBranch, Folder, Server } from 'lucide-react';
 import { getRemoteEnvironmentLabel, getRemoteEnvironmentName, getWorkspaceProjectName } from '../lib/workspaceLabels';
+import { getSelectedAgentWorktreeContext, worktreeBranchLabel } from '../lib/worktreeAgents';
 import './StatusBar.css';
 
 export default function StatusBar() {
   const focusedWorkspace = useWorkspaceStore((state) => selectFocusedWorkspace(state));
-  const workspacePath = focusedWorkspace?.workspacePath ?? '';
-  const currentBranch = focusedWorkspace?.gitCurrentBranch ?? null;
-  const isRepo = focusedWorkspace?.gitIsRepo ?? false;
-  const isDetached = focusedWorkspace?.gitIsDetached ?? false;
+  // The selected agent's registered checkout decides what is shown. Only an isolated worktree differs
+  // from the workspace's own checkout; the workspace's path and branch state are never altered by it.
+  const agentWorktree = focusedWorkspace ? getSelectedAgentWorktreeContext(focusedWorkspace) : null;
+  const workspacePath = agentWorktree?.path ?? focusedWorkspace?.workspacePath ?? '';
+  const currentBranch = agentWorktree ? agentWorktree.branch ?? null : focusedWorkspace?.gitCurrentBranch ?? null;
+  const isRepo = agentWorktree ? true : focusedWorkspace?.gitIsRepo ?? false;
+  const isDetached = agentWorktree ? !agentWorktree.branch : focusedWorkspace?.gitIsDetached ?? false;
   const [appVersion, setAppVersion] = useState<string>('');
 
   useEffect(() => {
@@ -41,7 +45,12 @@ export default function StatusBar() {
           <span className="status-project-name">{projectName}</span>
         </span>
         {isRepo && (
-          <span className="status-branch" title={isDetached ? 'Detached HEAD' : currentBranch ?? ''}>
+          <span
+            className="status-branch"
+            title={agentWorktree
+              ? `${worktreeBranchLabel(agentWorktree)} (selected agent's isolated worktree)\n${agentWorktree.path}`
+              : isDetached ? 'Detached HEAD' : currentBranch ?? ''}
+          >
             <GitBranch size={12} strokeWidth={2} />
             <span>{isDetached ? 'HEAD' : currentBranch}</span>
           </span>

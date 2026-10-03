@@ -8,6 +8,8 @@ import { ipcMain, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { GitService, type GitWorkspaceIdentity } from '../gitService';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
+import { adoptListedWorktree, attachCreatedWorktree } from '../worktreeContextAttachment';
+import type { GitCreateWorktreeOptions, GitWorktreeCreateResult } from '../../shared/types/git';
 import { RemoteWorktreeCoordinator, type RemoteWorktreeRemovalPersistence } from '../remote/remoteWorktreeCoordinator';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import {
@@ -22,6 +24,9 @@ import {
   GIT_CREATE_WORKTREE,
   GIT_INSPECT_WORKTREE,
   GIT_REMOVE_WORKTREE,
+  GIT_PRUNE_WORKTREES,
+  GIT_UNLOCK_WORKTREE,
+  ADOPT_WORKTREE_CHECKOUT_CONTEXT,
   REGISTER_OPEN_WORKSPACE,
   UNREGISTER_OPEN_WORKSPACE,
   GIT_GET_OPERATION_STATE,
@@ -116,6 +121,9 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     [GIT_RENAME_REMOTE]: 3,
     [GIT_INSPECT_WORKTREE]: 3,
     [GIT_REMOVE_WORKTREE]: 4,
+    [GIT_PRUNE_WORKTREES]: 1,
+    [GIT_UNLOCK_WORKTREE]: 2,
+    [ADOPT_WORKTREE_CHECKOUT_CONTEXT]: 0,
     [GIT_PUSH]: 5,
   };
 
@@ -220,21 +228,77 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
       : { ...result, worktrees: result.worktrees.map((entry) => ({ ...entry, path: toPosixPath(entry.path) })) };
   });
 
-  registerGitHandler(GIT_CREATE_WORKTREE, async (_, workspacePath: string, baseRef: string, branch: string) => {
+  // Metadata-only worktree operations run through the same scoped Git execution as listing. SSH
+  // workspaces use the registered host executor; nothing here widens a remote root.
+  const guardRemoteWorktreeMetadata = async (): Promise<string | null> => {
+    const environmentId = gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local';
+    if (environmentId === 'local') return null;
+    try { await remoteWorktrees.requireIdle(environmentId); return null; }
+    catch (error) { return error instanceof Error ? error.message : 'Could not verify remote worktree state'; }
+  };
+
+  registerGitHandler(GIT_PRUNE_WORKTREES, async (_, workspacePath: string) => {
+    const blocked = await guardRemoteWorktreeMetadata();
+    if (blocked) return { success: false, pruned: [], error: blocked };
+    const safePath = getValidatedWorkspacePath(workspacePath);
+    if (!safePath) return { success: false, pruned: [], error: getInvalidWorkspaceResult().error };
+    const result = await gitService.pruneWorktrees(safePath);
+    return (gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local') === 'local'
+      ? { ...result, pruned: result.pruned.map(toPosixPath) }
+      : result;
+  });
+
+  registerGitHandler(GIT_UNLOCK_WORKTREE, async (_, workspacePath: string, worktreePath: string) => {
+    if (typeof worktreePath !== 'string' || !worktreePath.trim()) return getInvalidWorkspaceResult();
+    const blocked = await guardRemoteWorktreeMetadata();
+    if (blocked) return { success: false, error: blocked };
+    const safePath = getValidatedWorkspacePath(workspacePath);
+    if (!safePath) return getInvalidWorkspaceResult();
+    // The path only selects an entry; gitService matches it against Git's own list.
+    const isRemote = (gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local') !== 'local';
+    return gitService.unlockWorktree(safePath, isRemote ? worktreePath : toNativePath(worktreePath, process.platform));
+  });
+
+  // Explicit adoption of one listed linked worktree as a checkout context. The renderer supplies only
+  // the workspace id (position 0, which also scopes Git to that workspace) and a path; everything
+  // else comes from Git's listing and the workspace environment. There is no generic registration.
+  registerGitHandler(ADOPT_WORKTREE_CHECKOUT_CONTEXT, async (_, workspaceId: unknown, worktreePath: unknown) => {
+    const ws = typeof workspaceId === 'string' ? resolveWorkspace(workspaceId) : null;
+    const registry = getWorkspaceRegistry?.();
+    if (!ws || !registry) return { success: false, error: 'A registered workspace is required to use a worktree' };
+    const safePath = getValidatedWorkspacePath(ws.location.path);
+    if (!safePath) return { success: false, error: getInvalidWorkspaceResult().error };
+    return adoptListedWorktree({
+      registry, workspace: ws, worktreePath, listWorktrees: () => gitService.listWorktrees(safePath),
+    });
+  });
+
+  registerGitHandler(GIT_CREATE_WORKTREE,async (_, workspacePath: string, baseRef: string, branch: string, _workspaceId?: string, options?: GitCreateWorktreeOptions) => {
+    // A workspace id only routes the operation. Attaching the checkout as a worktree context is
+    // explicit opt-in, so the legacy New Workspace flows (which open the checkout as a separate
+    // workspace, and may pass the id of an open repository workspace) never gain a context.
     const ws = resolveWorkspace();
+    const registry = getWorkspaceRegistry?.();
+    const attachRequested = typeof options === 'object' && options !== null && options.attachCheckoutContext === true;
+    if (attachRequested && (!ws || !registry)) {
+      return { success: false, error: 'A registered workspace is required to attach a checkout context' };
+    }
+    const attach = (created: GitWorktreeCreateResult, listPath: string): Promise<GitWorktreeCreateResult> | GitWorktreeCreateResult =>
+      attachRequested && ws && registry
+        ? attachCreatedWorktree({ registry, workspace: ws, created, listWorktrees: () => gitService.listWorktrees(listPath) })
+        : created;
     if (ws && ws.location.environmentId !== 'local') {
       const recoveryError = remoteWorktrees.getRecoveryError();
       if (recoveryError) return { success: false, error: recoveryError };
-      return ws.environment.createWorktree
-        ? ws.environment.createWorktree(ws.location.path, baseRef, branch)
-        : { success: false, error: 'Worktree creation is unavailable for this environment' };
+      if (!ws.environment.createWorktree) return { success: false, error: 'Worktree creation is unavailable for this environment' };
+      return attach(await ws.environment.createWorktree(ws.location.path, baseRef, branch), ws.location.path);
     }
     const safePath = getValidatedWorkspacePath(workspacePath);
     if (!safePath) return getInvalidWorkspaceResult();
     const result = await gitService.createWorktree(safePath, baseRef, branch);
-    return result.worktree
+    return attach(result.worktree
       ? { ...result, worktree: { ...result.worktree, path: toPosixPath(result.worktree.path) } }
-      : result;
+      : result, safePath);
   });
 
   registerGitHandler(REGISTER_OPEN_WORKSPACE, async (_, id: string, workspacePath: string, environmentId?: string) => {
@@ -262,7 +326,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
           gitService.registerOpenWorkspace(id, safePath);
         }
       }
-      return { success: true, location: result.location };
+      return { success: true, location: result.location, checkoutContext: result.checkoutContext };
     }
 
     const nativePath = toNativePath(workspacePath, process.platform);
