@@ -137,7 +137,7 @@ describe('workspace-scoped worktree creation (local, real Git)', () => {
       // From `git worktree list`: the repository's main checkout.
       mainCheckoutPath: toPosixPath(repo),
     });
-    expect(path.dirname(checkout)).toBe(path.join(root, 'clanker-worktrees'));
+    expect(path.dirname(checkout)).toBe(toPosixPath(path.join(root, 'clanker-worktrees')));
 
     // Still exactly one workspace with its root untouched, now owning two contexts.
     expect(registry.getAllWorkspaces().map((entry) => entry.location.path)).toEqual([toPosixPath(repo)]);

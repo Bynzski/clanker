@@ -160,7 +160,7 @@ describe('isolated agent smoke (real renderer logic, real main process, real Git
     const isolated = workspace().terminals.find((terminal) => terminal.id !== normalAgentId)!;
     const context = getAgentWorktreeContext(workspace(), isolated)!;
     expect(context).toMatchObject({ kind: 'worktree', branch: 'smoke-task', workspaceId: 'ws' });
-    expect(path.dirname(context.path)).toBe(path.join(root, 'clanker-worktrees'));
+    expect(path.dirname(context.path)).toBe(toPosixPath(path.join(root, 'clanker-worktrees')));
     expect(spawnedCwds()).toEqual([repo, path.normalize(context.path)]);
     expect(getAgentWorktreeContext(workspace(), workspace().terminals.find((terminal) => terminal.id === normalAgentId)!)).toBeNull();
     expect(getUnusedWorktreeContexts(workspace())).toEqual([]);
