@@ -8,7 +8,7 @@ import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
 import { WorkspaceGateFullscreen, WorkspaceGateModal } from './components/WorkspaceGate';
 import { Pane, Terminal, useWorkspaceStore, DEFAULT_RUNTIME_STATE } from './store/workspaceStore';
-import { getZoomShortcutAction, isSaveShortcut } from './lib/keyboardShortcuts';
+import { getWheelZoomAction, getZoomShortcutAction, isSaveShortcut } from './lib/keyboardShortcuts';
 import { startEditorFileWatcher } from './lib/editorFileWatcher';
 import { startTerminalSessionBridge } from './lib/terminalSessionBridge';
 import { persistWorkspaceLayout } from './lib/workspaceLayoutStorage';
@@ -85,6 +85,26 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [fitAllPanes]);
+
+  // Whole-app Ctrl+wheel zoom is the fallback owner: surfaces like xterm claim
+  // their own wheel events (preventDefault + stopPropagation) before this runs.
+  useEffect(() => {
+    const handleWheel = (event: WheelEvent) => {
+      const wheelAction = getWheelZoomAction(event);
+      if (wheelAction == null || event.defaultPrevented) {
+        return;
+      }
+      event.preventDefault();
+      if (wheelAction === 'in') {
+        void window.electronAPI.zoomInWindow();
+      } else {
+        void window.electronAPI.zoomOutWindow();
+      }
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    return () => window.removeEventListener('wheel', handleWheel);
+  }, []);
 
   useEffect(() => {
     return window.electronAPI.onFitAllPanes(() => {

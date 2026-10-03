@@ -31,7 +31,7 @@ import {
   findTerminalLinks,
   normalizeTerminalUrl,
 } from '../lib/linkUtils';
-import { getZoomShortcutAction } from '../lib/keyboardShortcuts';
+import { getWheelZoomAction, getZoomShortcutAction } from '../lib/keyboardShortcuts';
 import { linkRangeForMatch, readWrappedLogicalLine } from '../lib/terminalLinkRanges';
 
 type XTermInstance = import('@xterm/xterm').Terminal;
@@ -527,6 +527,31 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       }
     });
 
+    const applyTerminalZoom = (action: 'in' | 'out' | 'reset') => {
+      const current = xterm.options.fontSize ?? TERMINAL_DEFAULT_FONT_SIZE;
+      const requested = action === 'reset'
+        ? TERMINAL_DEFAULT_FONT_SIZE
+        : current + (action === 'in' ? TERMINAL_FONT_SIZE_STEP : -TERMINAL_FONT_SIZE_STEP);
+      const next = Math.min(TERMINAL_MAX_FONT_SIZE, Math.max(TERMINAL_MIN_FONT_SIZE, requested));
+      if (next !== current) {
+        xterm.options.fontSize = next;
+        scheduleLifecycleTimeout(fitAndResize, 0);
+      }
+    };
+
+    // Ctrl+wheel over the terminal zooms only this xterm. Capture phase on the
+    // xterm element so it wins over xterm's own scrollback wheel handling and
+    // never bubbles to the app-level wheel zoom. Plain wheel is left untouched.
+    const xtermElement = xterm.element;
+    const handleWheel = (event: WheelEvent) => {
+      const wheelAction = getWheelZoomAction(event);
+      if (wheelAction == null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      applyTerminalZoom(wheelAction);
+    };
+    xtermElement?.addEventListener('wheel', handleWheel, { capture: true, passive: false });
+
     xterm.attachCustomKeyEventHandler((event) => {
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'c') {
         if (xterm.hasSelection()) {
@@ -548,15 +573,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
         event.preventDefault();
         event.stopPropagation();
         if (event.type === 'keydown') {
-          const current = xterm.options.fontSize ?? TERMINAL_DEFAULT_FONT_SIZE;
-          const requested = zoomAction === 'reset'
-            ? TERMINAL_DEFAULT_FONT_SIZE
-            : current + (zoomAction === 'in' ? TERMINAL_FONT_SIZE_STEP : -TERMINAL_FONT_SIZE_STEP);
-          const next = Math.min(TERMINAL_MAX_FONT_SIZE, Math.max(TERMINAL_MIN_FONT_SIZE, requested));
-          if (next !== current) {
-            xterm.options.fontSize = next;
-            scheduleLifecycleTimeout(fitAndResize, 0);
-          }
+          applyTerminalZoom(zoomAction);
         }
         return false;
       }
@@ -567,6 +584,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     const initialResizeTimeout = setTimeout(fitAndResize, 100);
 
     return () => {
+      xtermElement?.removeEventListener('wheel', handleWheel, { capture: true });
       clearTimeout(initialResizeTimeout);
       inputDisposable?.dispose();
       disposeResized?.();

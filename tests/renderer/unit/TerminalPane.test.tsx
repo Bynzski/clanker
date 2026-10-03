@@ -791,6 +791,79 @@ describe('TerminalPane', () => {
       expect(mockResizeTerminal).toHaveBeenCalledWith('t1', 80, 24);
     });
 
+    const wheel = (init: WheelEventInit) => {
+      const element = (constructedTerminals[0] as unknown as { element: HTMLElement }).element;
+      const event = new WheelEvent('wheel', { cancelable: true, bubbles: true, ...init });
+      const appWheel = vi.fn();
+      window.addEventListener('wheel', appWheel);
+      act(() => {
+        element.dispatchEvent(event);
+      });
+      window.removeEventListener('wheel', appWheel);
+      return { event, appWheel };
+    };
+
+    it('zooms in on Ctrl+wheel up without reaching the app or PTY', async () => {
+      await mountTerminal();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      mockResizeTerminal.mockClear();
+      mockWriteTerminal.mockClear();
+
+      const { event, appWheel } = wheel({ ctrlKey: true, deltaY: -100 });
+
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE + 1);
+      expect(event.defaultPrevented).toBe(true);
+      expect(appWheel).not.toHaveBeenCalled();
+      expect(mockZoomInWindow).not.toHaveBeenCalled();
+      expect(mockWriteTerminal).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+      expect(mockResizeTerminal).toHaveBeenCalledWith('t1', 80, 24);
+    });
+
+    it('zooms out on Ctrl+wheel down', async () => {
+      await mountTerminal();
+      wheel({ ctrlKey: true, deltaY: 100 });
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE - 1);
+    });
+
+    it('consumes Ctrl+wheel at the bounds without refitting', async () => {
+      await mountTerminal();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+
+      constructedTerminals[0].options.fontSize = TERMINAL_MAX_FONT_SIZE;
+      mockResizeTerminal.mockClear();
+      const up = wheel({ ctrlKey: true, deltaY: -100 });
+      expect(up.event.defaultPrevented).toBe(true);
+      expect(up.appWheel).not.toHaveBeenCalled();
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_MAX_FONT_SIZE);
+
+      constructedTerminals[0].options.fontSize = TERMINAL_MIN_FONT_SIZE;
+      const down = wheel({ ctrlKey: true, deltaY: 100 });
+      expect(down.event.defaultPrevented).toBe(true);
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_MIN_FONT_SIZE);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      expect(mockResizeTerminal).not.toHaveBeenCalled();
+    });
+
+    it('does not intercept ordinary wheel scrolling', async () => {
+      await mountTerminal();
+      const { event, appWheel } = wheel({ deltaY: -100 });
+      expect(event.defaultPrevented).toBe(false);
+      expect(appWheel).toHaveBeenCalledTimes(1);
+      expect(constructedTerminals[0].options.fontSize).toBe(TERMINAL_DEFAULT_FONT_SIZE);
+      expect(mockZoomInWindow).not.toHaveBeenCalled();
+    });
+
     it('keeps the zoomed size when the cached xterm is remounted', async () => {
       const view = await mountTerminal();
       zoomKey(ctrlEqual);

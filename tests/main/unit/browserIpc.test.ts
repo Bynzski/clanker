@@ -9,6 +9,7 @@ import { testHome } from '../../_helpers/tempPaths';
 
 let attachedBeforeInputEventHandler: ((event: { preventDefault: () => void }, input: { control?: boolean; meta?: boolean; alt?: boolean; shift?: boolean; key?: string; code?: string; type?: string }) => void) | null = null;
 let attachedContextMenuHandler: ((event: unknown, params: { x: number; y: number }) => void) | null = null;
+let attachedZoomChangedHandler: ((event: unknown, direction: string) => void) | null = null;
 let attachedDidFailLoadHandler: ((event: unknown, code: number, description: string, url: string, isMainFrame: boolean) => void) | null = null;
 let attachedDidNavigateHandler: ((event: unknown, url: string) => void) | null = null;
 
@@ -70,6 +71,9 @@ vi.mock('electron', () => ({
       on: vi.fn((eventName: string, handler: typeof attachedBeforeInputEventHandler) => {
         if (eventName === 'before-input-event') {
           attachedBeforeInputEventHandler = handler;
+        }
+        if (eventName === 'zoom-changed') {
+          attachedZoomChangedHandler = handler as unknown as typeof attachedZoomChangedHandler;
         }
         if (eventName === 'context-menu') {
           attachedContextMenuHandler = handler as typeof attachedContextMenuHandler;
@@ -165,6 +169,7 @@ describe('registerBrowserIpc', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     attachedBeforeInputEventHandler = null;
+    attachedZoomChangedHandler = null;
     attachedContextMenuHandler = null;
     attachedDidNavigateHandler = null;
     __resetBrowserHistoryServiceForTests(new BrowserHistoryService(new MemoryHistoryStore()));
@@ -448,6 +453,35 @@ describe('browserIpc — error-path: null/invalid workspaceId returns valid resu
     );
     expect(preventDefault).not.toHaveBeenCalled();
     expect(view.webContents.setZoomLevel).not.toHaveBeenCalled();
+  });
+
+  test('browser Ctrl+wheel zoom-changed zooms only the browser tab in 0.5 steps and clamps', () => {
+    const { deps } = createMockDeps();
+    registerBrowserIpc(deps);
+
+    const handler = mockIpcMain.handle.mock.calls.find(
+      (call) => call[0] === 'browser-set-bounds'
+    )?.[1] as (_: unknown, workspaceId: string, bounds: object) => void;
+    handler(null, 'ws-1', { x: 0, y: 0, width: 800, height: 600 });
+
+    expect(attachedZoomChangedHandler).not.toBeNull();
+    const workspaceViews = deps.getBrowserViews().get('ws-1') as Map<string, {
+      view: { webContents: { getZoomLevel: ReturnType<typeof vi.fn>; setZoomLevel: ReturnType<typeof vi.fn> } };
+    }>;
+    const view = workspaceViews.values().next().value!.view;
+    view.webContents.getZoomLevel = vi.fn(() => 1);
+    view.webContents.setZoomLevel = vi.fn();
+
+    attachedZoomChangedHandler?.({}, 'in');
+    expect(view.webContents.setZoomLevel).toHaveBeenLastCalledWith(1.5);
+    attachedZoomChangedHandler?.({}, 'out');
+    expect(view.webContents.setZoomLevel).toHaveBeenLastCalledWith(0.5);
+
+    view.webContents.getZoomLevel = vi.fn(() => 5);
+    attachedZoomChangedHandler?.({}, 'in');
+    expect(view.webContents.setZoomLevel).toHaveBeenLastCalledWith(5);
+
+    expect(deps.getMainWindow().webContents.getZoomLevel).not.toHaveBeenCalled();
   });
 
   test('new browser tabs do not inherit application zoom', () => {

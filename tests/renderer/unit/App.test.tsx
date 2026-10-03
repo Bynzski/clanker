@@ -588,6 +588,52 @@ describe('App', () => {
       expect(mockZoomOutWindow).not.toHaveBeenCalled();
       expect(mockResetZoomWindow).not.toHaveBeenCalled();
     });
+
+    it('zooms the app in on Ctrl+wheel up', async () => {
+      render(<App />);
+      let event!: WheelEvent;
+      await act(async () => {
+        event = new WheelEvent('wheel', { ctrlKey: true, deltaY: -100, cancelable: true, bubbles: true });
+        window.dispatchEvent(event);
+      });
+      expect(mockZoomInWindow).toHaveBeenCalledTimes(1);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('zooms the app out on Ctrl+wheel down', async () => {
+      render(<App />);
+      await act(async () => {
+        window.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: 100, cancelable: true, bubbles: true }));
+      });
+      expect(mockZoomOutWindow).toHaveBeenCalledTimes(1);
+      expect(mockResetZoomWindow).not.toHaveBeenCalled();
+    });
+
+    it('leaves ordinary wheel scrolling alone', async () => {
+      render(<App />);
+      let event!: WheelEvent;
+      await act(async () => {
+        event = new WheelEvent('wheel', { deltaY: -100, cancelable: true, bubbles: true });
+        document.body.dispatchEvent(event);
+      });
+      expect(event.defaultPrevented).toBe(false);
+      expect(mockZoomInWindow).not.toHaveBeenCalled();
+      expect(mockZoomOutWindow).not.toHaveBeenCalled();
+    });
+
+    it('does not app-zoom a Ctrl+wheel owned by an embedded surface', async () => {
+      const { container } = render(<App />);
+      const surface = document.createElement('div');
+      container.appendChild(surface);
+      surface.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      await act(async () => {
+        surface.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: -100, cancelable: true, bubbles: true }));
+      });
+      expect(mockZoomInWindow).not.toHaveBeenCalled();
+    });
   });
 
   // =========================================================================
