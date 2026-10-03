@@ -65,4 +65,16 @@ describe('remote worktree picker', () => {
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Open' })).toHaveLength(3));
     expect(screen.getAllByRole('button', { name: 'Open' }).every((button) => button.hasAttribute('disabled'))).toBe(true);
   });
+
+  it('with no launch plan still lists checkouts but blocks creating and opening', async () => {
+    render(<RemoteWorktreePicker repositories={[repository]} preferredWorkspaceId={repository.id} onOpenPath={open} launchReady={false} />);
+    await screen.findByText('/srv/task · Locked');
+    fireEvent.change(screen.getByLabelText('Worktree branch'), { target: { value: 'new-task' } });
+    const create = screen.getByRole('button', { name: 'Create and open worktree' });
+
+    expect(create).toBeDisabled();
+    fireEvent.click(create);
+    expect(api.gitCreateWorktree).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+  });
 });

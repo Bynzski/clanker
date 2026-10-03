@@ -3,6 +3,7 @@ import {
   collectLeafPaneIds,
 } from './workspaceLayout';
 import type { GitStatus } from '../components/git/types';
+import { backfillCheckoutContexts, bindTerminalToCheckoutContext } from '../lib/checkoutContexts';
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
 import type {
   BrowserPaneState,
@@ -247,7 +248,8 @@ export const sanitizeWorkspace = (workspace: WorkspaceTab): WorkspaceTab => {
     environmentId,
     environmentLabel,
     lifecycle: workspace.lifecycle ?? 'active',
-    terminals: [...workspace.terminals],
+    checkoutContexts: backfillCheckoutContexts(workspace),
+    terminals: workspace.terminals.map((terminal) => bindTerminalToCheckoutContext(terminal, workspace.id)),
     panes: [...workspace.panes],
     explorerExpandedPaths: [...workspace.explorerExpandedPaths],
     explorerEntriesByPath: { ...workspace.explorerEntriesByPath },

@@ -183,3 +183,11 @@
 
 .ws-rail .ws-rail-action { color: var(--text-secondary); }
 .ws-rail .ws-rail-action.attention { color: var(--status-warning-emphasis); }
+
+/* An agent in an isolated worktree: a small branch glyph at its top corner (details in the tooltip). */
+.ws-rail-agent-worktree {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  color: var(--accent-interactive);
+}

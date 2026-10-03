@@ -1,12 +1,15 @@
 import type { PanePlacementRestoreHint } from './workspaceLayout';
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
 import type { GitStatus } from '../components/git/types';
+import type { CheckoutContext } from '../../shared/types/checkoutContext';
 
 export interface Terminal {
   id: string;
   pid: number;
   workingDir: string;
   workspaceId?: string;
+  /** Execution root this terminal runs in; absent on legacy terminals, which mean the workspace's main checkout. */
+  checkoutContextId?: string;
   environmentId?: string;
   harnessId?: string | null;
   attentionEnabled?: boolean;
@@ -133,6 +136,12 @@ export interface WorkspaceTab {
   workspacePath: string;
   environmentId?: string;
   environmentLabel?: string;
+  /**
+   * Validated working roots owned by this workspace (always includes the main context once
+   * sanitized). `workspacePath` is still the registered root, equal to the main context's path.
+   */
+  checkoutContexts?: CheckoutContext[];
+  /** Transitional: linked worktrees are still presented as workspaces (see checkoutContexts). */
   isLinkedWorktree?: boolean;
   projectName?: string;
   harness: string;

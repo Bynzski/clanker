@@ -97,6 +97,87 @@ describe('App workspace open integration', () => {
       .toBeLessThan(vi.mocked(window.electronAPI.spawnTerminal).mock.invocationCallOrder[0]);
   });
 
+  describe('checkout contexts', () => {
+    const open = async (path: string) => {
+      render(<App />);
+      fireEvent.change(document.querySelector('.gate-input') as HTMLInputElement, { target: { value: path } });
+      await chooseBasicTerminal();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
+      fireEvent.click(screen.getByText('Launch Workspace'));
+      await waitFor(() => expect(useWorkspaceStore.getState().workspaces).toHaveLength(1));
+      return useWorkspaceStore.getState().workspaces[0];
+    };
+
+    it('gives a newly opened workspace the main context main registered, and binds its terminals to it', async () => {
+      const context = (id: string) => ({ id: `${id}::main`, workspaceId: id, environmentId: 'local', path: '/canonical', kind: 'main' as const });
+      installElectronApiMock({
+        registerOpenWorkspace: vi.fn().mockImplementation(async (id: string) => ({
+          success: true, location: { environmentId: 'local', path: '/canonical' }, checkoutContext: context(id),
+        })),
+        spawnTerminal: vi.fn().mockImplementation(async (_path, harness) => ({
+          id: 'terminal-1', pid: 1, harnessId: harness, checkoutContextId: undefined,
+        })),
+      });
+
+      const workspace = await open('/workspace/');
+
+      expect(workspace.checkoutContexts).toEqual([context(workspace.id)]);
+      expect(workspace.terminals).toHaveLength(1);
+      expect(workspace.terminals[0].checkoutContextId).toBe(`${workspace.id}::main`);
+      expect(workspace.isLinkedWorktree).toBe(false);
+    });
+
+    it('trusts the context id main reports for the terminal it spawned', async () => {
+      installElectronApiMock({
+        registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true, location: { environmentId: 'local', path: '/canonical' } }),
+        spawnTerminal: vi.fn().mockResolvedValue({ id: 'terminal-1', pid: 1, checkoutContextId: 'reported-by-main' }),
+      });
+      const workspace = await open('/workspace/');
+      expect(workspace.terminals[0].checkoutContextId).toBe('reported-by-main');
+    });
+
+    it('backfills a main context when main returns none (older registration result)', async () => {
+      installElectronApiMock({
+        registerOpenWorkspace: vi.fn().mockResolvedValue({ success: true, location: { environmentId: 'local', path: '/canonical' } }),
+        spawnTerminal: vi.fn().mockResolvedValue({ id: 'terminal-1', pid: 1 }),
+      });
+      const workspace = await open('/workspace/');
+      expect(workspace.checkoutContexts).toEqual([
+        { id: `${workspace.id}::main`, workspaceId: workspace.id, environmentId: 'local', path: '/canonical', kind: 'main' },
+      ]);
+      expect(workspace.terminals[0].checkoutContextId).toBe(`${workspace.id}::main`);
+    });
+
+    it('opens an existing linked worktree as the same legacy workspace, annotated as a worktree context', async () => {
+      installElectronApiMock({
+        registerOpenWorkspace: vi.fn().mockImplementation(async (id: string) => ({
+          success: true,
+          location: { environmentId: 'local', path: '/repos/app-worktrees/task' },
+          checkoutContext: { id: `${id}::main`, workspaceId: id, environmentId: 'local', path: '/repos/app-worktrees/task', kind: 'main' },
+        })),
+        gitListWorktrees: vi.fn().mockResolvedValue({
+          success: true,
+          worktrees: [
+            { path: '/repos/app', branch: 'main', isMain: true, isLocked: false, isPrunable: false },
+            { path: '/repos/app-worktrees/task', branch: 'task', isMain: false, isLocked: false, isPrunable: false },
+          ],
+        }),
+        spawnTerminal: vi.fn().mockResolvedValue({ id: 'terminal-1', pid: 1 }),
+      });
+
+      const workspace = await open('/repos/app-worktrees/task');
+
+      // Still one workspace, still presented as a linked worktree workspace...
+      expect(workspace).toMatchObject({ workspacePath: '/repos/app-worktrees/task', isLinkedWorktree: true, projectName: 'app' });
+      // ...whose single context is the worktree root, with the repository relationship recorded.
+      expect(workspace.checkoutContexts).toEqual([{
+        id: `${workspace.id}::main`, workspaceId: workspace.id, environmentId: 'local',
+        path: '/repos/app-worktrees/task', kind: 'worktree', branch: 'task', mainCheckoutPath: '/repos/app',
+      }]);
+      expect(workspace.terminals[0].checkoutContextId).toBe(`${workspace.id}::main`);
+    });
+  });
+
   it.each(['fullscreen', 'modal'])('spawns mixed harness counts with displayed models at the canonical root from the %s launcher', async (shell) => {
     installElectronApiMock({
       getHarnessOptions: vi.fn().mockResolvedValue({ codex: true, pi: true }),

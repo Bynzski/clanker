@@ -1,5 +1,6 @@
 import type { RemotePreviewRequest, RemotePreviewWatchRequest, RemotePreviewResult, RemotePreviewUpdate } from '../shared/types/remotePreview';
 import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types/environments';
+import type { AdoptWorktreeCheckoutContextResult, CheckoutContext, ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
 import type { RemoteDirectoryListing } from '../shared/types/environments';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { WorkspaceRecipe, RecipePreviewProbeResult } from '../../shared/types/recipes';
@@ -30,8 +31,11 @@ import type {
   GitInitResult,
   GitWorktreeListResult,
   GitWorktreeCreateResult,
+  GitCreateWorktreeOptions,
   GitWorktreeInspectionResult,
   GitWorktreeRemoveResult,
+  GitWorktreePruneResult,
+  GitWorktreeUnlockResult,
 } from '../../shared/types/git';
 import type {
   CredentialOperationResult,
@@ -113,7 +117,7 @@ interface ElectronAPI {
   setKeybindingOverrides: (overrides: KeybindingOverrides) => Promise<{ success: true; overrides: KeybindingOverrides } | { success: false; error: string }>;
 
   // Terminal
-  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean }>;
+  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string, checkoutContextId?: string) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean; checkoutContextId?: string }>;
   waitRecipeCommand: (id: string) => Promise<{ status: 'success' | 'started' | 'failed'; error?: string }>;
   getTerminalBuffer: (id: string) => Promise<string>;
   writeTerminal: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
@@ -225,11 +229,16 @@ interface ElectronAPI {
   gitCommit: (workspacePath: string, message: string, workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
   gitGetBranchState: (workspacePath: string, workspaceId?: string) => Promise<GitBranchStateResult>;
   gitListWorktrees: (workspacePath: string, workspaceId?: string) => Promise<GitWorktreeListResult>;
-  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string) => Promise<GitWorktreeCreateResult>;
-  registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) => Promise<{ success: boolean; location?: WorkspaceLocation; error?: string }>;
+  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string, options?: GitCreateWorktreeOptions) => Promise<GitWorktreeCreateResult>;
+  registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) => Promise<{ success: boolean; location?: WorkspaceLocation; checkoutContext?: CheckoutContext; error?: string }>;
   unregisterOpenWorkspace: (id: string) => Promise<{ success: boolean; error?: string }>;
+  /** Main decides: only a worktree context of that workspace with no live terminals is released. */
+  adoptWorktreeCheckoutContext: (workspaceId: string, worktreePath: string) => Promise<AdoptWorktreeCheckoutContextResult>;
+  releaseCheckoutContext: (workspaceId: string, checkoutContextId: string) => Promise<ReleaseCheckoutContextResult>;
   gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeInspectionResult>;
   gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeRemoveResult>;
+  gitPruneWorktrees: (workspacePath: string, workspaceId?: string) => Promise<GitWorktreePruneResult>;
+  gitUnlockWorktree: (workspacePath: string, worktreePath: string, workspaceId?: string) => Promise<GitWorktreeUnlockResult>;
   gitGetOperationState: (workspacePath: string, workspaceId?: string) => Promise<GitOperationStateResult>;
   gitGetStashes: (workspacePath: string, workspaceId?: string) => Promise<GitStash[]>;
   gitGetHistory: (workspacePath: string, limit?: number, workspaceId?: string) => Promise<GitHistoryEntry[]>;

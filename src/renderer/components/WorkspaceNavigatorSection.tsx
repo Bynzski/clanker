@@ -14,6 +14,8 @@ import { closeWorkspaceWithCleanup } from '../lib/workspaceClose';
 import { getRemoteEnvironmentLabel, getWorkspaceRenameValue, getWorkspaceTabLabel } from '../lib/workspaceLabels';
 import { useWorkspaceRename } from '../lib/useWorkspaceRename';
 import { useWorkspaceReorder } from '../lib/useWorkspaceReorder';
+import WorkspaceCheckouts from './WorkspaceCheckouts';
+import { getAgentWorktreeContext, worktreeBranchLabel } from '../lib/worktreeAgents';
 import './WorkspaceNavigatorSection.css';
 
 function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab; terminal: Terminal; isCurrent: boolean }) {
@@ -23,6 +25,9 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
   const HarnessIcon = harness.Icon;
   const showAttention = Boolean(terminal.harnessId && terminal.attentionEnabled);
   const name = terminal.displayName ?? harness.label;
+  const worktree = getAgentWorktreeContext(workspace, terminal);
+  const branch = worktree ? worktreeBranchLabel(worktree) : null;
+  const attentionSuffix = showAttention ? getAttentionSuffix(attention) : '';
 
   return (
     <li>
@@ -30,13 +35,21 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
         type="button"
         className={`ws-agent-row${isCurrent ? ' current' : ''}`}
         aria-current={isCurrent ? 'true' : undefined}
-        title={`${name} · ${harness.label}${showAttention ? getAttentionSuffix(attention) : ''}`}
+        title={worktree
+          ? `${name} · ${harness.label} · ${branch}${attentionSuffix}\n${worktree.path}`
+          : `${name} · ${harness.label}${attentionSuffix}`}
         onClick={() => selectWorkspace(workspace.id, terminal.id)}
       >
         <span className="ws-agent-harness" aria-hidden="true"><HarnessIcon size={14} strokeWidth={2} /></span>
         <span className="ws-agent-name">{name}</span>
         {/* The icon identifies the harness visually; the name stays available to assistive tech. */}
         <span className="sr-only">{harness.label}</span>
+        {branch && (
+          <span className="ws-agent-branch" aria-label={`on branch ${branch}`}>
+            <GitBranch size={10} strokeWidth={2} aria-hidden="true" />
+            <span>{branch}</span>
+          </span>
+        )}
         {showAttention && <AgentAttentionState attention={attention} name={name} />}
       </button>
     </li>
@@ -236,6 +249,7 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace, onCollapseS
                     ))}
                   </ul>
                 )}
+                <WorkspaceCheckouts workspace={workspace} expanded={isExpanded} label={label} />
               </li>
             );
           })}

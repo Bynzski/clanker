@@ -5,6 +5,7 @@ import { GitMergeSection } from './GitMergeSection';
 import { GitRemoteActionsSection } from './GitRemoteActionsSection';
 import GitRemotesSection from './GitRemotesSection';
 import { GitStashSection } from './GitStashSection';
+import { GitWorktreesSection } from './GitWorktreesSection';
 import type {
   DiffMode,
   GitBranch,
@@ -49,6 +50,8 @@ interface GitRepoMenuProps {
   onApplyStash: (stashRef: string) => void;
   onClearStashes: () => void;
   onClose: () => void;
+  /** Reports a menu-owned portal modal opening/closing so the host does not treat clicks in it as outside clicks. */
+  onModalOpenChange?: (open: boolean) => void;
   onCreateBranch: (event: React.FormEvent) => void;
   onDeleteBranch: (branchName: string) => void;
   onDropStash: (stashRef: string) => void;
@@ -75,6 +78,8 @@ interface GitRepoMenuProps {
   provider: VcsProvider;
   providerContext: ProviderContext | null;
   pullRequest: PullRequestContext | null;
+  /** Bumped by the menu's data refresh; the Worktrees section reloads with it. */
+  refreshKey?: number;
   remoteAction: 'fetch' | 'pull' | 'push' | 'publish' | null;
   remoteError: string | null;
   remotes: GitRemote[];
@@ -124,6 +129,7 @@ export function GitRepoMenu({
   onApplyStash,
   onClearStashes,
   onClose,
+  onModalOpenChange,
   onCreateBranch,
   onDeleteBranch,
   onDropStash,
@@ -150,6 +156,7 @@ export function GitRepoMenu({
   provider,
   providerContext,
   pullRequest,
+  refreshKey = 0,
   remoteAction,
   remoteError,
   remotes,
@@ -237,6 +244,8 @@ export function GitRepoMenu({
         workspacePath={workspacePath}
         workspaceId={workspaceId}
       />
+
+      <GitWorktreesSection workspacePath={workspacePath} workspaceId={workspaceId} refreshKey={refreshKey} onModalOpenChange={onModalOpenChange} />
 
       <GitStashSection
         activeAction={activeAction}

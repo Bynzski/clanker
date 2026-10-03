@@ -100,6 +100,7 @@ import { ipcMain } from 'electron';
 import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
 import { REMOTE_ATTENTION_PREFIX } from '../../../src/main/remote/remoteAttentionTransport';
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
+import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
 import { RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY } from '../../../src/shared/ipcChannels';
 
 type MockIpcMain = typeof ipcMain & {
@@ -139,6 +140,7 @@ describe('registerTerminalIpc — registration', () => {
       'resize-terminal',
       'kill-terminal',
       'terminal:cleanup-workspace',
+      'release-checkout-context',
     ];
 
     expectedChannels.forEach(channel => {
@@ -159,7 +161,7 @@ describe('registerTerminalIpc — registration', () => {
       ensureHarnessWrapperScript: vi.fn().mockReturnValue(testHarnessWrapper()),
     });
 
-    expect(mockHandle.mock.calls.length).toBe(11);
+    expect(mockHandle.mock.calls.length).toBe(12);
   });
 
   test('registers 3 event IPC channels (terminal-data, terminal-exit, terminal-resized)', () => {
@@ -195,7 +197,7 @@ describe('registerTerminalIpc — registration', () => {
     };
     registerTerminalIpc(opts);
     registerTerminalIpc(opts);
-    expect(mockHandle.mock.calls.length).toBe(22);
+    expect(mockHandle.mock.calls.length).toBe(24);
   });
 });
 
@@ -285,7 +287,7 @@ describe('terminalIpc — error-path: handler returns', () => {
       onData: (callback: typeof onData) => { onData = callback; },
       onExit: (callback: typeof onExit) => { onExit = callback; } });
     registerTerminalIpc({ ...opts, agentAttentionBroker: broker,
-      getWorkspaceRegistry: () => ({ getWorkspace: () => registered }) } as never);
+      getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }) } as never);
     const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
     try {
       const result = await handler(null, '/srv/project', 'opencode', undefined, undefined, undefined, 'remote', 'host');
@@ -324,7 +326,7 @@ describe('terminalIpc — error-path: handler returns', () => {
         ? { codex: { flags: '--sandbox workspace-write', model: 'ignored-local-model' } }
         : false,
     }) as never;
-    const deps = { ...opts, getWorkspaceRegistry: () => ({
+    const deps = { ...opts, getWorkspaceRegistry: () => withCheckoutContexts({
       getWorkspace: (id: string) => id === 'remote-tab' ? registered : null,
     }) };
     mockPtySpawn.mockReturnValue({
@@ -356,7 +358,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     const reserved = vi.fn().mockReturnValue(false);
     const registered = { workspaceId: 'remote', location: { path: '/srv/task', environmentId: 'ssh' },
       environment: { resolveTerminalSpawn: vi.fn(() => new Promise((done) => { finish = done; })) } };
-    registerTerminalIpc({ ...opts, getWorkspaceRegistry: () => ({
+    registerTerminalIpc({ ...opts, getWorkspaceRegistry: () => withCheckoutContexts({
       getWorkspace: () => registered, isRemotePathReserved: reserved,
     }) } as never);
     const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
@@ -390,7 +392,7 @@ describe('terminalIpc — error-path: handler returns', () => {
         set: storeSet,
       }) as never,
       getHarnessOptions: vi.fn().mockReturnValue({ codex: { name: 'Codex', command: 'codex', args: [], icon: '' } }),
-      getWorkspaceRegistry: () => ({
+      getWorkspaceRegistry: () => withCheckoutContexts({
         getWorkspace: (id: string) => (id === 'remote-tab' ? registered : null),
         getWorkspaceByLocation: () => null,
       }),

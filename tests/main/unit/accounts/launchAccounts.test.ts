@@ -19,6 +19,7 @@ vi.mock('../../../../src/main/sessionHistory', async (importOriginal) => ({
 import { registerTerminalIpc } from '../../../../src/main/ipc/terminalIpc';
 import { registerSessionIpc } from '../../../../src/main/ipc/sessionIpc';
 import { addAccount, createHarness, lastOf, type Harness } from './accountFixtures';
+import { withCheckoutContexts } from '../../../_helpers/checkoutContexts';
 
 const WORKSPACE = toNativePath('/workspace', process.platform);
 type Handler = (event: unknown, ...args: unknown[]) => Promise<Record<string, unknown>>;
@@ -140,7 +141,7 @@ describe('resume and fork keep the account that owns the session', () => {
       getTerminals: () => new Map(), getMainWindow: () => ({ webContents: { send: vi.fn() } }) as never,
       getSafeWorkspacePath: (dir: string) => dir, getIsShuttingDown: () => false, getStore: () => store as never,
       getHarnessOptions: () => options,
-      getWorkspaceRegistry: () => ({ getWorkspace: (id: string) => (id === 'ws' ? { workspaceId: 'ws', location: { environmentId: 'local', path: '/workspace' } } : null) }) as never,
+      getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: (id: string) => (id === 'ws' ? { workspaceId: 'ws', location: { environmentId: 'local', path: '/workspace' } } : null) }) as never,
       getHarnessAccountService: () => h.service,
     });
   }
@@ -241,7 +242,7 @@ describe('resume and fork keep the account that owns the session', () => {
     handlers.clear();
     registerSessionIpc({
       getTerminals: () => new Map(), getMainWindow: () => null, getSafeWorkspacePath: (d: string) => d, getIsShuttingDown: () => false,
-      getStore: () => store as never, getHarnessOptions: () => options, getWorkspaceRegistry: () => ({ getWorkspace: () => remote }) as never,
+      getStore: () => store as never, getHarnessOptions: () => options, getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => remote }) as never,
       getHarnessAccountService: () => h.service,
     });
     mockSpawnPty.mockClear();

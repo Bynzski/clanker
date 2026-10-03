@@ -8,7 +8,7 @@ import type { ExplorerTreeChangedEvent } from '../shared/types/fileExplorer';
 import type { HarnessDefaultsMap } from '../shared/types/store';
 import type { KeybindingOverrides, BrowserKeybindingCommandPayload } from '../shared/keybindings';
 import type { VcsProvider } from '../shared/types/vcs';
-import type { GitStatusResult } from '../shared/types/git';
+import type { GitCreateWorktreeOptions, GitStatusResult } from '../shared/types/git';
 import type { HarnessSession } from '../shared/types/session';
 import type { HarnessUsageRequest } from '../shared/types/harnessUsage';
 import type { HarnessAccountAuthEvent } from '../shared/types/harnessAccounts';
@@ -128,8 +128,12 @@ import {
   GIT_CREATE_WORKTREE,
   GIT_INSPECT_WORKTREE,
   GIT_REMOVE_WORKTREE,
+  GIT_PRUNE_WORKTREES,
+  GIT_UNLOCK_WORKTREE,
   REGISTER_OPEN_WORKSPACE,
   UNREGISTER_OPEN_WORKSPACE,
+  RELEASE_CHECKOUT_CONTEXT,
+  ADOPT_WORKTREE_CHECKOUT_CONTEXT,
   GIT_GET_OPERATION_STATE,
   GIT_GET_STASHES,
   GIT_GET_HISTORY,
@@ -227,8 +231,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setKeybindingOverrides: (overrides: KeybindingOverrides) => ipcRenderer.invoke(SET_KEYBINDING_OVERRIDES, overrides),
 
   // Terminal
-  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string) =>
-    ipcRenderer.invoke(SPAWN_TERMINAL, workingDir, harness, model, initialCommand, recipeCommand, workspaceId, environmentId),
+  spawnTerminal: (workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string, checkoutContextId?: string) =>
+    ipcRenderer.invoke(SPAWN_TERMINAL, workingDir, harness, model, initialCommand, recipeCommand, workspaceId, environmentId, checkoutContextId),
   waitRecipeCommand: (id: string) => ipcRenderer.invoke(RECIPE_COMMAND_WAIT, id),
   getTerminalBuffer: (id: string) => ipcRenderer.invoke(GET_TERMINAL_BUFFER, id),
   writeTerminal: (id: string, data: string) => ipcRenderer.invoke(WRITE_TERMINAL, { id, data }),
@@ -399,16 +403,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitCommit: (workspacePath: string, message: string, workspaceId?: string) => ipcRenderer.invoke(GIT_COMMIT, workspacePath, message, workspaceId),
   gitGetBranchState: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_GET_BRANCH_STATE, workspacePath, workspaceId),
   gitListWorktrees: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_LIST_WORKTREES, workspacePath, workspaceId),
-  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string) =>
-    ipcRenderer.invoke(GIT_CREATE_WORKTREE, workspacePath, baseRef, branch, workspaceId),
+  gitCreateWorktree: (workspacePath: string, baseRef: string, branch: string, workspaceId?: string, options?: GitCreateWorktreeOptions) =>
+    ipcRenderer.invoke(GIT_CREATE_WORKTREE, workspacePath, baseRef, branch, workspaceId, options),
   registerOpenWorkspace: (id: string, workspacePath: string, environmentId?: string) =>
     ipcRenderer.invoke(REGISTER_OPEN_WORKSPACE, id, workspacePath, environmentId),
   unregisterOpenWorkspace: (id: string) =>
     ipcRenderer.invoke(UNREGISTER_OPEN_WORKSPACE, id),
+  adoptWorktreeCheckoutContext: (workspaceId: string, worktreePath: string) =>
+    ipcRenderer.invoke(ADOPT_WORKTREE_CHECKOUT_CONTEXT, workspaceId, worktreePath),
+  releaseCheckoutContext: (workspaceId: string, checkoutContextId: string) =>
+    ipcRenderer.invoke(RELEASE_CHECKOUT_CONTEXT, workspaceId, checkoutContextId),
   gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[], workspaceId?: string) =>
     ipcRenderer.invoke(GIT_INSPECT_WORKTREE, workspacePath, worktreePath, openWorkspacePaths, workspaceId),
   gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) =>
     ipcRenderer.invoke(GIT_REMOVE_WORKTREE, workspacePath, worktreePath, expectedBranch, openWorkspacePaths, workspaceId),
+  gitPruneWorktrees: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_PRUNE_WORKTREES, workspacePath, workspaceId),
+  gitUnlockWorktree: (workspacePath: string, worktreePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_UNLOCK_WORKTREE, workspacePath, worktreePath, workspaceId),
   gitGetOperationState: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_GET_OPERATION_STATE, workspacePath, workspaceId),
   gitGetStashes: (workspacePath: string, workspaceId?: string) => ipcRenderer.invoke(GIT_GET_STASHES, workspacePath, workspaceId),
   gitGetHistory: (workspacePath: string, limit?: number, workspaceId?: string) => ipcRenderer.invoke(GIT_GET_HISTORY, workspacePath, limit, workspaceId),

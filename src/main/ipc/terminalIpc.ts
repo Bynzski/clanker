@@ -32,10 +32,13 @@ import {
   TERMINAL_READY,
   RECIPE_COMMAND_WAIT,
   WRITE_CLIPBOARD,
+  RELEASE_CHECKOUT_CONTEXT,
 } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
 import { RecipeCommandStartup } from '../recipeCommandStartup';
 import { toNativePath } from '../../shared/pathNormalize';
+import { isInsideRoot } from '../localPathContainment';
+import { releaseCheckoutContext } from '../checkoutContextRelease';
 import { isPathContained } from '../remote/sshEnvironment';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
@@ -52,6 +55,8 @@ interface Terminal {
   cwd?: string;
   remoteWorkingDir?: string;
   workspaceId?: string;
+  /** Execution root this terminal was launched against (see WorkspaceRegistry checkout contexts). */
+  checkoutContextId?: string;
   environmentId?: string;
   harnessId?: string;
   releaseResources?: () => Promise<void>;
@@ -123,7 +128,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     initialCommand?: string,
     recipeCommand?: boolean,
     workspaceId?: string,
-    environmentId?: string
+    environmentId?: string,
+    checkoutContextId?: string
   ) => {
     const terminals = getTerminals();
     const mainWindow = getMainWindow();
@@ -140,16 +146,38 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     if (environmentId && resolvedWorkspace && environmentId !== resolvedWorkspace.location.environmentId) {
       throw new Error('Workspace environment does not match registered workspace');
     }
+    if (checkoutContextId !== undefined && !isNonEmptyString(checkoutContextId)) {
+      throw new Error('Invalid checkout context');
+    }
+    // The terminal root is the checkout context's validated root, not the workspace path:
+    // no requested id means the workspace's main checkout, and a context registered under another
+    // workspace never resolves. Launches outside any registered workspace stay unbound (legacy).
+    const checkoutContext = resolvedWorkspace && registry
+      ? registry.resolveCheckoutContext(resolvedWorkspace.workspaceId, checkoutContextId)
+      : null;
+    if ((resolvedWorkspace || checkoutContextId) && !checkoutContext) {
+      throw new Error('Checkout context is not registered for this workspace');
+    }
+    // Launch resolution can await (SSH resolution, attention registration). Whatever was resolved
+    // must still be the exact registered workspace and context when the process is about to exist;
+    // a launch that resolved neither (legacy unbound, path only) has nothing to revalidate.
+    const isResolvedTargetCurrent = (): boolean => {
+      if (!resolvedWorkspace) return true;
+      if (registry?.getWorkspace(resolvedWorkspace.workspaceId) !== resolvedWorkspace) return false;
+      return !checkoutContext || registry.getCheckoutContext(checkoutContext.id) === checkoutContext;
+    };
     const effectiveEnvironmentId = resolvedWorkspace?.location.environmentId || environmentId || 'local';
     const isRemote = effectiveEnvironmentId !== 'local';
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
     if (isRemote) {
-      if (!resolvedWorkspace || resolvedWorkspace.location.environmentId === 'local') {
+      if (!resolvedWorkspace || !checkoutContext || resolvedWorkspace.location.environmentId === 'local') {
         throw new Error('Remote workspace is not registered or not accessible');
       }
 
-      const root = resolvedWorkspace.location.path;
+      // Containment is against this context's own root, so a worktree context neither inherits
+      // nor extends the workspace root's reach.
+      const root = checkoutContext.path;
       if (typeof workingDir !== 'string' || !isPathContained(root, workingDir)) {
         throw new Error('Terminal directory is outside the registered workspace');
       }
@@ -180,9 +208,8 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         });
         releaseAttention = resolved.releaseAttention;
 
-        if (appShuttingDown || deps.getAppShuttingDown?.() ||
-            registry?.getWorkspace(resolvedWorkspace.workspaceId) !== resolvedWorkspace ||
-            registry.isRemotePathReserved?.(effectiveEnvironmentId, remoteWorkingDir)) {
+        if (appShuttingDown || deps.getAppShuttingDown?.() || !isResolvedTargetCurrent() ||
+            registry?.isRemotePathReserved?.(effectiveEnvironmentId, remoteWorkingDir)) {
           throw new Error('Remote workspace was closed or is being removed');
         }
 
@@ -199,6 +226,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           harnessId: resolved.harnessId,
           initialCommand: effectiveEnvironmentId === 'local' ? resolved.initialCommand : undefined,
           workspaceId: resolvedWorkspace.workspaceId,
+          checkoutContextId: checkoutContext.id,
           environmentId: effectiveEnvironmentId,
           remoteWorkingDir,
           onOutput: deps.createRemoteOutputObserver?.(resolvedWorkspace.workspaceId),
@@ -215,6 +243,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
           pid: result.pid,
           attentionEnabled: resolved.attentionEnabled === true,
           harnessId: resolved.harnessId ?? harness ?? null,
+          checkoutContextId: checkoutContext.id,
         };
       } catch (error) {
         agentAttentionBroker?.release(id);
@@ -225,6 +254,12 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
 
     const cwd = getSafeWorkspacePath(toNativePath(workingDir, process.platform));
+    // A resolved context, requested or implicitly the workspace's main one, is the execution
+    // boundary. getSafeWorkspacePath falls back to a default directory for unusable input, so
+    // check the directory actually used. Only a launch that resolves no context stays unbound.
+    if (checkoutContext && !isInsideRoot(toNativePath(checkoutContext.path, process.platform), cwd)) {
+      throw new Error('Terminal directory is outside the registered workspace');
+    }
     // Use user's default shell, fallback to bash
     const userShell = defaultShell();
 
@@ -306,6 +341,13 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         launchLabel = `[clanker-grid] ${cleanInitialCommand}`;
       }
 
+      // The attention registration above awaited: the workspace or context may have been
+      // closed meanwhile. Fail closed before any process exists; the catch below releases
+      // the attention resources.
+      if (!isResolvedTargetCurrent()) {
+        throw new Error('Workspace was closed or is being removed');
+      }
+
       const result = spawnPtyProcess({
       id,
       spawnCmd: harnessCmd.spawnCmd,
@@ -320,12 +362,18 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       initialCommand: recipeCommandStartup && cleanInitialCommand
         ? recipeCommandStartup.wrap(cleanInitialCommand, process.platform, userShell) : cleanInitialCommand,
       recipeCommandStartup,
+      checkoutContextId: checkoutContext?.id,
       onExit: () => {
         disposeAttentionSafely(preparedAttention);
         agentAttentionBroker?.release(id);
       },
       });
-      return { ...result, harnessId: harnessConfig ? harness : undefined, attentionEnabled };
+      return {
+        ...result,
+        harnessId: harnessConfig ? harness : undefined,
+        attentionEnabled,
+        checkoutContextId: checkoutContext?.id,
+      };
     } catch (error) {
       disposeAttentionSafely(preparedAttention);
       agentAttentionBroker?.release(id);
@@ -536,6 +584,16 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       }
     }
     return killed;
+  });
+
+  /**
+   * Releases a worktree checkout context once no Clanker terminal uses it. Only ids cross IPC;
+   * everything else is judged from main's registry and terminal table.
+   */
+  ipcMain.handle(RELEASE_CHECKOUT_CONTEXT, (_, workspaceId: unknown, checkoutContextId: unknown) => {
+    const registry = deps.getWorkspaceRegistry?.();
+    if (!registry) return fail('Workspace registry is unavailable');
+    return releaseCheckoutContext({ registry, terminals: getTerminals().values(), workspaceId, checkoutContextId });
   });
 
   ipcMain.handle(WRITE_CLIPBOARD, (_, text: unknown) => {

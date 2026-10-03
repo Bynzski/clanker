@@ -1,0 +1,108 @@
+.isolated-agent-popover {
+  width: 420px;
+  padding: var(--space-sm);
+}
+
+.isolated-agent-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+/* Two flat panes separated by a hairline: which harness, and where it runs. */
+.isolated-agent-panes {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr);
+  gap: var(--space-sm);
+  min-height: 150px;
+}
+
+.isolated-agent-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.isolated-agent-copies {
+  padding-left: var(--space-sm);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.isolated-agent-heading,
+.isolated-agent-subheading {
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.isolated-agent-heading { margin-bottom: 2px; }
+.isolated-agent-subheading { padding: 4px 0 2px; }
+
+.isolated-agent-new { display: flex; flex-direction: column; gap: 2px; }
+.isolated-agent-new .clanker-input { height: var(--control-height-sm); font-size: var(--font-size-sm); }
+
+.isolated-agent-scroll {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.isolated-agent-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 26px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.isolated-agent-choice:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
+.isolated-agent-choice.selected {
+  background: var(--surface-hover);
+  border-color: var(--accent-interactive);
+  color: var(--text-primary);
+}
+.isolated-agent-choice:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.isolated-agent-choice-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.isolated-agent-copies .isolated-agent-choice-label { font-family: var(--font-mono); }
+
+.isolated-agent-state {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.isolated-agent-state.in-use { color: var(--text-secondary); }
+.isolated-agent-state.missing,
+.isolated-agent-state.locked { color: var(--status-warning); }
+
+.isolated-agent-note {
+  padding: 4px 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+/* A launcher like the harness pills, set apart by the accent glyph: it creates a worktree-backed agent. */
+.isolated-agent-trigger svg { color: var(--accent-interactive); }
+.isolated-agent-trigger:disabled { opacity: 0.45; cursor: not-allowed; }
+.isolated-agent-trigger:disabled svg { color: currentColor; }

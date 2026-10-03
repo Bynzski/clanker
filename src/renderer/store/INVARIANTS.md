@@ -20,6 +20,10 @@ The `gitChanges` field is stored in the explorer section of workspace state. Thi
 
 A workspace's persistent identity is its environment ID plus canonical POSIX path. Legacy records without an environment ID are local. A local and an SSH workspace may have the same path while keeping separate layouts, notes, Explorer state, terminals, and browser tabs. Runtime actions use `workspaceId` to select the workspace; a resource file path does not identify one by itself.
 
+### Checkout Contexts
+
+A workspace owns `checkoutContexts` (validated working roots) and every terminal carries a `checkoutContextId`. The main context's id is `<workspaceId>::main` and its path equals `workspacePath`; `sanitizeWorkspace` adds it (and binds unbound terminals to it) for workspaces created without contexts. A legacy linked-worktree workspace is its own root, so its single context has `kind: 'worktree'`. A terminal's recorded context is never rewritten by backfill. The authoritative, validated copy lives in main's `WorkspaceRegistry`; the renderer's copy is descriptive and cannot change where a terminal may run.
+
 ## Workspace Lifecycle Model
 
 ### Lifecycle Vocabulary

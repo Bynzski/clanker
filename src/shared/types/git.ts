@@ -3,6 +3,8 @@
  * These types define the contract for Git IPC operations.
  */
 
+import type { CheckoutContext } from './checkoutContext';
+
 import type { VcsProvider } from './vcs';
 
 export type GitErrorCode = 'not-a-repo' | 'git-not-found' | 'unknown';
@@ -134,9 +136,31 @@ export interface GitWorktreeListResult {
   error?: string;
 }
 
+/**
+ * Opt-in for `gitCreateWorktree`. A workspace id alone only routes the Git operation (the remote
+ * New Workspace flow passes the id of an open repository workspace and then opens the checkout as
+ * a separate workspace), so attaching a checkout context must be asked for explicitly. It carries
+ * no path or identity; main derives everything from the workspace named by the call.
+ */
+export interface GitCreateWorktreeOptions {
+  attachCheckoutContext?: boolean;
+}
+
 export interface GitWorktreeCreateResult {
   success: boolean;
   worktree?: GitWorktree;
+  /**
+   * Present only when the caller asked to attach (`GitCreateWorktreeOptions`) and the new checkout
+   * was attached to its registered workspace. Authority: main derives every field (path, branch, kind, mainCheckoutPath)
+   * from Git and environment validation; nothing here comes from renderer input.
+   */
+  checkoutContext?: CheckoutContext;
+  /**
+   * True when the checkout exists even though `success` is false: a workspace-scoped create made
+   * the worktree but attaching it to the workspace failed. The checkout and its branch are
+   * kept (never auto-deleted) and appear in a normal worktree refresh; `worktree` identifies them.
+   */
+  created?: boolean;
   error?: string;
 }
 
@@ -152,4 +176,20 @@ export interface GitWorktreeRemoveResult {
   error?: string;
   warning?: string;
   recoveryPath?: string;
+}
+
+/**
+ * Result of `git worktree prune --expire now`. Pruning is repository-wide: it drops the Git records
+ * of every linked worktree whose directory is already gone. It never deletes a branch or a directory.
+ */
+export interface GitWorktreePruneResult {
+  success: boolean;
+  /** Paths whose stale records were removed (empty when nothing was stale). */
+  pruned: string[];
+  error?: string;
+}
+
+export interface GitWorktreeUnlockResult {
+  success: boolean;
+  error?: string;
 }

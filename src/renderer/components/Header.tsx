@@ -7,6 +7,7 @@ import { isExplorerShown, toggleFocusedWorkspaceExplorer } from '../lib/explorer
 import { Globe, NotebookPen, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import GitButton from './GitButton';
+import IsolatedAgentButton from './IsolatedAgentButton';
 import CredentialSettings from './settings/CredentialSettings';
 import KeyboardShortcutsDialog from './settings/KeyboardShortcutsDialog';
 import { registerOpenSettingsHandler } from '../lib/keybindingDispatcher';
@@ -20,6 +21,7 @@ import { captureTerminalLaunches } from '../lib/recipeCapture';
 import RecipeModal from './RecipeModal';
 import { executeWorkspaceRecipe } from '../lib/recipeExecution';
 import { serializeWorkspaceLayout } from '../lib/workspaceLayoutStorage';
+import { resolveToolbarLaunch } from '../lib/toolbarLaunch';
 
 interface HeaderProps {
   /** `bar` is the standalone toolbar row (tabs mode); `titlebar` docks it into the title bar (sidebar mode). */
@@ -111,12 +113,13 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
 
   const handleAddTerminal = async (harnessId: string) => {
     try {
-      const resolvedHarness = harnessId && visibleHarnessIds.includes(harnessId)
-        ? harnessId
-        : undefined;
-      const resolvedModel = focusedWorkspace?.environmentId && focusedWorkspace.environmentId !== 'local'
-        ? undefined
-        : resolvedHarness === harness ? (model || undefined) : undefined;
+      const { harness: resolvedHarness, model: resolvedModel } = resolveToolbarLaunch({
+        harnessId,
+        visibleHarnessIds,
+        workspaceHarness: harness,
+        workspaceModel: model,
+        environmentId: focusedWorkspace?.environmentId,
+      });
 
       const info = focusedWorkspace?.environmentId && focusedWorkspace.environmentId !== 'local'
         ? await window.electronAPI.spawnTerminal(
@@ -294,6 +297,13 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
             );
           })}
         </div>
+        {focusedWorkspace && !focusedWorkspace.isLinkedWorktree && (
+          <>
+            {/* Set apart from the harness launchers: this creates a worktree-backed agent, it is not another harness. */}
+            <span className="toolbar-divider" aria-hidden="true" />
+            <IsolatedAgentButton key={focusedWorkspace.id} workspace={focusedWorkspace} visibleHarnessIds={visibleHarnessIds} />
+          </>
+        )}
 
         {workspacePath && (
           <>

@@ -33,6 +33,7 @@ export interface SpawnPtyOptions {
   harnessId?: string;
   initialCommand?: string;
   workspaceId?: string;
+  checkoutContextId?: string;
   environmentId?: string;
   remoteWorkingDir?: string;
   recipeCommandStartup?: RecipeCommandStartup;
@@ -71,6 +72,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     pty: ptyProcess,
     cwd,
     workspaceId: opts.workspaceId,
+    checkoutContextId: opts.checkoutContextId,
     environmentId: opts.environmentId,
     remoteWorkingDir: opts.remoteWorkingDir,
     harnessId,

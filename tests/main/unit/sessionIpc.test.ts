@@ -40,13 +40,14 @@ vi.mock('../../../src/main/platformShell', () => ({
 }));
 
 import { registerSessionIpc } from '../../../src/main/ipc/sessionIpc';
+import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
 
 type Handler = (_event: unknown, ...args: unknown[]) => unknown;
 
 function registerHandlers(
   getHarnessOptions = vi.fn(() => ({})),
   agentAttentionBroker?: Parameters<typeof registerSessionIpc>[0]['agentAttentionBroker'],
-  getWorkspaceRegistry: NonNullable<Parameters<typeof registerSessionIpc>[0]['getWorkspaceRegistry']> = () => ({
+  getWorkspaceRegistry: NonNullable<Parameters<typeof registerSessionIpc>[0]['getWorkspaceRegistry']> = () => withCheckoutContexts({
     getWorkspace: (id: string) => id === 'local-ws'
       ? { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } }
       : null,
@@ -225,7 +226,7 @@ describe('registerSessionIpc', () => {
       a: { location: { environmentId: 'ssh-a', path: '/workspace' }, environment: { capabilities: { sessionDiscovery: true }, discoverSessions: discoverA } },
       b: { location: { environmentId: 'ssh-b', path: '/workspace' }, environment: { capabilities: { sessionDiscovery: true }, discoverSessions: discoverB } },
     };
-    const handlers = registerHandlers(undefined, undefined, () => ({ getWorkspace: (id: keyof typeof workspaces) => workspaces[id] }) as never);
+    const handlers = registerHandlers(undefined, undefined, () => withCheckoutContexts({ getWorkspace: (id: keyof typeof workspaces) => workspaces[id] }) as never);
     expect(await handlers.get(SESSION_DISCOVER)?.({}, 'a')).toEqual([expect.objectContaining({ title: 'Host A' })]);
     expect(await handlers.get(SESSION_DISCOVER)?.({}, 'b')).toEqual([expect.objectContaining({ title: 'Host B' })]);
     expect(discoverA).toHaveBeenCalledWith('/workspace');
@@ -238,7 +239,7 @@ describe('registerSessionIpc', () => {
     const discover = vi.fn(() => new Promise<HarnessSession[]>((res) => { resolve = res; }));
     const workspace = { location: { environmentId: 'ssh-a', path: '/workspace' }, environment: { capabilities: { sessionDiscovery: true }, discoverSessions: discover } };
     const getWorkspace = vi.fn().mockReturnValue(workspace);
-    const handlers = registerHandlers(undefined, undefined, () => ({ getWorkspace }) as never);
+    const handlers = registerHandlers(undefined, undefined, () => withCheckoutContexts({ getWorkspace }) as never);
     const discovery = handlers.get(SESSION_DISCOVER)?.({}, 'a');
     getWorkspace.mockReturnValue({ ...workspace });
     resolve([codexSession]);
@@ -284,7 +285,7 @@ describe('registerSessionIpc', () => {
 
     const result = await handlers.get(SESSION_INVOKE)?.({}, 'local-ws', codexSession, true);
 
-    expect(result).toEqual({ id: 'term-1', pid: 123, harnessId: 'codex', attentionEnabled: false });
+    expect(result).toEqual({ id: 'term-1', pid: 123, harnessId: 'codex', attentionEnabled: false, checkoutContextId: 'local-ws::main' });
     // A fork creates a new native session: the old ID is never pre-seeded.
     expect(broker.register).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: undefined });
     expect(mockBuildSessionInvokeArgs).toHaveBeenCalledWith(
@@ -319,7 +320,7 @@ describe('registerSessionIpc', () => {
       getIsShuttingDown: () => false,
       getStore: () => ({ get: vi.fn(() => ({ codex: { flags: '' } })), set: storeSet }) as never,
       getHarnessOptions: vi.fn(() => ({ codex: { name: 'Codex', command: 'codex', args: [], icon: 'Codex' } })),
-      getWorkspaceRegistry: () => ({
+      getWorkspaceRegistry: () => withCheckoutContexts({
         getWorkspace: (id: string) => id === 'local-ws'
           ? { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } }
           : null,
@@ -339,7 +340,7 @@ describe('registerSessionIpc', () => {
     })[id as 'local-ws' | 'remote-ws'] ?? null);
     const handlers = registerHandlers(vi.fn(() => ({
       codex: { name: 'Codex', command: 'codex', args: [], icon: 'Codex' },
-    })), undefined, () => ({ getWorkspace }) as never);
+    })), undefined, () => withCheckoutContexts({ getWorkspace }) as never);
     mockDiscoverSessions.mockResolvedValue([codexSession]);
     mockBuildSessionInvokeArgs.mockReturnValue({ spawnCmd: 'codex', spawnArgs: ['resume', 'codex-session'] });
     mockSpawnPtyProcess.mockReturnValue({ id: 'term-1', pid: 123 });

@@ -3,23 +3,20 @@ import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { clankerApp128 } from '../lib/branding';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { FolderOpen, Folder, Loader2, Play, ChevronRight, AlertTriangle, Cog, GitBranch, ArrowLeft } from 'lucide-react';
+import { FolderOpen, Folder, Loader2, Play, ChevronRight, AlertTriangle, Cog } from 'lucide-react';
 import type { WorkspaceRecipe, RecipeLaunchResult } from '../../shared/types/recipes';
 import type { SshEnvironmentConfig } from '../../shared/types/environments';
 import { HARNESS_OPTIONS, resolveAvailableHarnessIds, resolveVisibleHarnessIds } from '../lib/harnessOptions';
 import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { isAbsoluteWorkspacePath } from '../../shared/pathClassify';
-import { useWorkspaceStore } from '../store/workspaceStore';
-import WorktreeLauncher from './WorktreeLauncher';
 import GateHarnessSettings from './GateHarnessSettings';
 import { findGeneratedWorktreeContainerOwner } from '../lib/worktreeContainer';
 import { getWorkspaceNameFromPath } from '../lib/workspaceLabels';
 import { joinPaths } from '../lib/pathUtils';
 import RemoteWorkspacePath from './RemoteWorkspacePath';
 import SshEnvironmentManager from './SshEnvironmentManager';
-import RemoteWorktreePicker from './RemoteWorktreePicker';
-import { GateLaunchActions, GateWorktreeAction } from './gate/GateLaunchActions';
+import { GateLaunchActions } from './gate/GateLaunchActions';
 import { WorkspaceTargetPicker } from './gate/WorkspaceTargetPicker';
 import { HarnessLaunchList } from './gate/HarnessLaunchList';
 import { MAX_GATE_TERMINALS, recipeTerminalCounts, type WorkspaceTerminalLaunch } from '../lib/workspaceLaunchPlan';
@@ -94,25 +91,15 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   const refreshedHermesModelsRef = useRef<ModelOption[] | null>(null);
   const [modelOverrides, setModelOverrides] = useState<Record<string, string>>({});
   const [locationKind, setLocationKind] = useState<'local' | 'ssh'>('local');
-  const [workspaceMode, setWorkspaceMode] = useState<'directory' | 'worktree' | 'settings'>('directory');
-  const [hasViewedWorktree, setHasViewedWorktree] = useState(false);
-  const [repoCheck, setRepoCheck] = useState<{ path: string; isRepo: boolean } | null>(null);
+  const [workspaceMode, setWorkspaceMode] = useState<'directory' | 'settings'>('directory');
   const [directoryError, setDirectoryError] = useState('');
-  const openWorkspaces = useWorkspaceStore((state) => state.workspaces);
-  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const openPaths = openWorkspaces
-    .filter((workspace) => !workspace.environmentId || workspace.environmentId === 'local')
-    .map((workspace) => workspace.workspacePath);
   const selectedPath = resolveWorkspacePath(inputValue, baseDirectory);
-  const repoCandidatePath = selectedPath;
-  const worktreeReady = !!repoCandidatePath && repoCheck?.path === repoCandidatePath && repoCheck.isRepo;
   const [sshEnvironments, setSshEnvironments] = useState<SshEnvironmentConfig[]>([]);
   const [selectedSshEnvId, setSelectedSshEnvId] = useState<string>('');
   const selectedSshEnvironment = sshEnvironments.find((environment) => environment.id === selectedSshEnvId);
   const selectedSshTarget = locationKind === 'ssh'
     ? selectedSshEnvironment?.target
     : undefined;
-  const remoteRepositories = openWorkspaces.filter((workspace) => workspace.environmentId === selectedSshEnvId);
   const [remotePath, setRemotePath] = useState('');
   const remoteLocationKey = JSON.stringify([selectedSshEnvId, selectedSshEnvironment]);
   const [remoteBase, setRemoteBase] = useState<{ key: string; path: string } | null>(null);
@@ -248,25 +235,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
       cancelled = true;
     };
   }, [initialPath]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!repoCandidatePath || typeof window.electronAPI.gitGetBranchState !== 'function') return;
-    const timer = setTimeout(() => {
-      void window.electronAPI.gitGetBranchState(repoCandidatePath)
-        .then(async (result) => {
-          const isRepo = result.success && result.isRepo && !await findGeneratedWorktreeContainerOwner(repoCandidatePath);
-          if (!cancelled) setRepoCheck({ path: repoCandidatePath, isRepo });
-        })
-        .catch(() => {
-          if (!cancelled) setRepoCheck({ path: repoCandidatePath, isRepo: false });
-        });
-    }, 180);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [repoCandidatePath]);
 
   useEffect(() => {
     launchRequestRef.current += 1;
@@ -575,8 +543,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     Array.from({ length: counts[harness] ?? 0 }, () => ({ harness, model: harness ? rowModels[harness] || undefined : undefined })),
   );
 
-  const worktreeLaunchReady = !opening && hasLoadedHarnessOptions && terminalLaunches.length > 0;
-
   const launchPath = (path: string, envId = 'local', envLabel = 'Local') => {
     if (opening) { setDirectoryError('A workspace is already opening.'); return; }
     if (!hasLoadedHarnessOptions) { setDirectoryError('Wait for terminal options to load before opening a workspace.'); return; }
@@ -617,7 +583,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
     void findGeneratedWorktreeContainerOwner(selectedPath).then((owner) => {
       if (requestId !== launchRequestRef.current) return;
       if (owner) {
-        setDirectoryError(`This folder holds worktrees for ${getWorkspaceNameFromPath(owner)}. Choose a checkout inside it or select the repository and use Worktree.`);
+        setDirectoryError(`This folder holds worktrees for ${getWorkspaceNameFromPath(owner)}. Choose a checkout inside it, or open the repository and use New isolated agent.`);
       } else {
         launchPath(selectedPath, 'local', 'Local');
       }
@@ -676,16 +642,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   };
 
   const showSuggestions = isFocused && suggestions.length > 0;
-  const worktreeActionProps = {
-    worktreeDisabled: opening || (locationKind === 'ssh' ? !remoteRepositories.length : !worktreeReady),
-    worktreeTitle: locationKind === 'ssh' ? 'Discover worktrees from an open repository on this SSH target' : worktreeReady ? 'Create or open a task worktree' : 'Choose a Git repository or linked checkout first',
-    onWorktree: () => {
-      setDirectoryError('');
-      setHasViewedWorktree(true);
-      setWorkspaceMode('worktree');
-    },
-  };
-
   const targetPicker = <WorkspaceTargetPicker
     value={locationKind === 'local' ? 'local' : selectedSshEnvId}
     environments={sshEnvironments} localRoot={baseDirectory} settingsBusy={isBaseLoading} disabled={opening}
@@ -707,7 +663,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
   return (
     <div className="gate-content workspace-launcher">
       {workspaceMode === 'directory' ? (
-      <div className={`gate-view gate-view-directory ${hasViewedWorktree ? 'gate-view-return' : ''}`}>
+      <div className="gate-view gate-view-directory">
       {fullscreen && <div className="gate-header">
         <img src={clankerApp128} alt="" width="64" height="64" className="gate-brand-icon" />
         <h1 className="gate-title">Clanker Grid</h1>
@@ -718,7 +674,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
       <div className="gate-section-header">
         <div className="gate-directory-actions">
           {targetPicker}
-          <GateWorktreeAction {...worktreeActionProps} />
         </div>
         {(locationKind === 'local' ? baseDirectory : remoteBaseDirectory) &&
           <span className="gate-base-path" title="Starting directory">{locationKind === 'local' ? baseDirectory : withTrailingSlash(remoteBaseDirectory)}</span>}
@@ -833,8 +788,8 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         onRefresh={() => { void refreshHermesModels(); }}
       />
 
-      <GateLaunchActions showWorktree={false} onLaunch={handleSubmit} opening={opening} launchDisabled={(!hasLoadedHarnessOptions || !terminalLaunches.length) || locationKind === 'local' && !selectedPath || locationKind === 'ssh' && (!hasLoadedHarnessOptions || (!remoteBaseDirectory && !remotePath.startsWith('/')))}
-        {...worktreeActionProps} />
+      <GateLaunchActions onLaunch={handleSubmit} opening={opening} launchDisabled={(!hasLoadedHarnessOptions || !terminalLaunches.length) || locationKind === 'local' && !selectedPath || locationKind === 'ssh' && (!hasLoadedHarnessOptions || (!remoteBaseDirectory && !remotePath.startsWith('/')))}
+      />
       <div className="gate-settings-footer">
         <Button type="button" className="gate-settings-link" disabled={opening} onClick={() => setWorkspaceMode('settings')}>
           <Cog size={12} aria-hidden="true" /> Settings
@@ -847,46 +802,6 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
         </p>
       )}
       {directoryError && <p className="gate-directory-error" role="alert">{directoryError}</p>}
-      </div>
-      ) : workspaceMode === 'worktree' ? (
-      <div className="gate-view gate-view-worktree">
-        <Button className="gate-worktree-back" type="button" onClick={() => setWorkspaceMode('directory')}>
-          <ArrowLeft size={14} strokeWidth={2} /> Back to workspace
-        </Button>
-        <div className="gate-worktree-heading">
-          <GitBranch size={18} strokeWidth={2} />
-          <div>
-            <h2>{locationKind === 'ssh' ? 'Open remote worktree' : 'Task worktree'}</h2>
-            <p>{locationKind === 'ssh' ? `Choose an existing checkout on ${sshEnvironments.find((env) => env.id === selectedSshEnvId)?.label ?? 'this SSH target'}.` : 'Work on a separate branch and checkout.'}</p>
-          </div>
-        </div>
-        {locationKind === 'ssh' ? <RemoteWorktreePicker
-          key={selectedSshEnvId}
-          repositories={remoteRepositories}
-          preferredWorkspaceId={activeWorkspaceId}
-          launchReady={worktreeLaunchReady}
-          onOpenPath={(path) => launchPath(path, selectedSshEnvId, sshEnvironments.find((env) => env.id === selectedSshEnvId)?.label ?? 'Remote')}
-        /> : <>
-        <div className="gate-input-container">
-          <div className="gate-section-header">
-            <label className="gate-section-label" htmlFor="gate-worktree-repo">Repository</label>
-            {baseDirectory && <span className="gate-base-path" title={`Base: ${baseDirectory}`}>{baseDirectory}</span>}
-          </div>
-          <div className="input-wrapper">
-            <IconButton className="cog-button cog-button-left" onClick={handleOpenBaseDirectory} disabled={isBaseLoading} title="Set base directory" aria-label="Set base directory">
-              {isBaseLoading ? <Loader2 size={18} className="spin" /> : <Cog size={18} strokeWidth={2} />}
-            </IconButton>
-            <Input variant="mono" id="gate-worktree-repo" type="text" className="gate-input" value={inputValue} onChange={(event) => setInputValue(event.target.value)} placeholder="repository directory" spellCheck={false} autoComplete="off" autoCapitalize="off" />
-            <IconButton className="cog-button" onClick={handleOpenDirectory} disabled={isLoading} title="Browse repositories" aria-label="Browse repositories">
-              {isLoading ? <Loader2 size={18} className="spin" /> : <FolderOpen size={18} strokeWidth={2} />}
-            </IconButton>
-          </div>
-        </div>
-        <WorktreeLauncher launchReady={worktreeLaunchReady} repoPath={selectedPath} openPaths={openPaths} onOpenPath={launchPath} />
-        </>}
-        {!terminalLaunches.length && <p role="status">Select at least one terminal in the workspace launcher before opening a worktree.</p>}
-        {directoryError && <p className="gate-directory-error" role="alert">{directoryError}</p>}
-        <p className="gate-worktree-launch-summary">Opens with {launchHarnessOptions.filter((option) => counts[option.id]).map((option) => `${counts[option.id]} ${option.label}`).join(' · ')} · {terminalLaunches.length} terminals</p>
       </div>
       ) : (
         <GateHarnessSettings
