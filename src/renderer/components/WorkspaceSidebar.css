@@ -1,0 +1,11 @@
+.workspace-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  height: 100%;
+  min-width: 0;
+  background: var(--surface-raised);
+  border-right: 1px solid var(--border-default);
+  overflow: hidden;
+  position: relative;
+}

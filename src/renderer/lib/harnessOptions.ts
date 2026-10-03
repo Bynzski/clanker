@@ -59,6 +59,10 @@ export const HARNESS_OPTIONS: HarnessOption[] = [
   { id: 'agy', label: 'Antigravity', Icon: HARNESS_SVG_ICONS.agy },
 ];
 
+export function getHarnessOption(harnessId: string | null | undefined): HarnessOption {
+  return HARNESS_OPTIONS.find((option) => option.id === harnessId) ?? HARNESS_OPTIONS[0];
+}
+
 export { AI_COMMIT_HARNESS_IDS as AI_COMMIT_PROVIDER_IDS } from '../../shared/harnessDescriptors';
 
 export function resolveAvailableHarnessIds(

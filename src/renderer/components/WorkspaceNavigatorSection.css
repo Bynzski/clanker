@@ -1,0 +1,138 @@
+.ws-nav {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 60%;
+}
+
+.ws-nav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: var(--surface-header);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.ws-nav-section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.ws-nav-header-actions { display: flex; align-items: center; gap: 2px; }
+
+.ws-nav-list,
+.ws-agent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ws-nav-list { overflow-y: auto; min-height: 0; padding: 2px 0; }
+
+.ws-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 2px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  border-left: 2px solid transparent;
+  cursor: grab;
+}
+
+.ws-nav-row:hover { background: var(--surface-control); color: var(--text-primary); }
+.ws-nav-row.active { background: var(--surface-app); color: var(--text-primary); border-left-color: var(--accent-interactive); }
+.ws-nav-row.drop-before { box-shadow: inset 0 2px 0 var(--accent-interactive); }
+.ws-nav-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent-interactive); }
+
+.ws-nav-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ws-nav-hover { opacity: 0; }
+.ws-nav-row:hover .ws-nav-hover,
+.ws-nav-row:focus-within .ws-nav-hover { opacity: 1; }
+
+.ws-nav-select {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  padding: 3px 2px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: inherit;
+}
+
+.ws-nav-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ws-nav-remote {
+  flex: 0 1 auto;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 4px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-control);
+  font-size: 10px;
+}
+
+.ws-nav-worktree {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 90px;
+  color: var(--accent-interactive);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.ws-nav-worktree span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ws-nav-edit { display: flex; align-items: center; flex: 1; min-width: 0; gap: 4px; }
+.ws-nav-edit-input { flex: 1; min-width: 0; }
+
+.ws-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 8px 3px 28px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-agent-row:hover { background: var(--surface-control); color: var(--text-primary); }
+.ws-agent-row.current { color: var(--text-primary); }
+.ws-agent-harness { display: inline-flex; flex-shrink: 0; }
+.ws-agent-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-agent-harness-label { flex-shrink: 0; font-size: 10px; opacity: 0.7; }

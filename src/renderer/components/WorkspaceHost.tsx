@@ -2,6 +2,8 @@ import { Suspense, lazy, useEffect, useMemo, useRef } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { WorkspaceScopeProvider } from './WorkspaceScope';
 import BrowserLifecycleCoordinator from './BrowserLifecycleCoordinator';
+import WorkspaceSidebar from './WorkspaceSidebar';
+import { useWorkspaceNavigationStore } from '../store/workspaceNavigationStore';
 import ExplorerLifecycleCoordinator from './ExplorerLifecycleCoordinator';
 import { withWorkspaceResidency } from '../store/workspaceStoreHelpers';
 import {
@@ -23,10 +25,13 @@ function WorkspaceSurface({
   workspaceId,
   isActive,
   mountContents = true,
+  showExplorerDock = true,
 }: {
   workspaceId: string;
   isActive: boolean;
   mountContents?: boolean;
+  /** Tabs mode renders a per-surface Explorer dock; sidebar mode uses the single shared sidebar. */
+  showExplorerDock?: boolean;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   // Track prior isActive state to detect transitions
@@ -85,7 +90,7 @@ function WorkspaceSurface({
       {mountContents ? (
         <WorkspaceScopeProvider workspaceId={workspaceId}>
           <div className="workspace-layout-row">
-            <FileExplorer workspaceId={workspaceId} />
+            {showExplorerDock && <FileExplorer workspaceId={workspaceId} />}
             <DynamicPaneLayout workspaceId={workspaceId} />
           </div>
         </WorkspaceScopeProvider>
@@ -94,7 +99,13 @@ function WorkspaceSurface({
   );
 }
 
-export default function WorkspaceHost() {
+interface WorkspaceHostProps {
+  onOpenWorkspace?: () => void;
+}
+
+export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = {}) {
+  const navigationMode = useWorkspaceNavigationStore((state) => state.mode);
+  const sidebarMode = navigationMode === 'sidebar';
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   // Track prior active ID to detect switches
@@ -150,19 +161,23 @@ export default function WorkspaceHost() {
     });
   }, [warmWorkspaceIdSet]);
 
+  // The Explorer watcher owner lives outside the lazy/Suspense presentation subtree.
   if (workspaces.length === 0) {
     return <ExplorerLifecycleCoordinator />;
   }
 
   return (
+    <>
+    <ExplorerLifecycleCoordinator />
     <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
       <div
-        className="workspace-host"
+        className={`workspace-host${sidebarMode ? ' with-sidebar' : ''}`}
         data-testid="workspace-host"
         data-active-workspace-id={resolvedActiveWorkspaceId ?? ''}
+        data-navigation-mode={navigationMode}
       >
-        <ExplorerLifecycleCoordinator />
         <BrowserLifecycleCoordinator activeWorkspaceId={resolvedActiveWorkspaceId} />
+        {sidebarMode && <WorkspaceSidebar onOpenWorkspace={onOpenWorkspace} />}
         <div className="workspace-surfaces-container">
           {workspaces.map((workspace) => (
             <WorkspaceSurface
@@ -170,10 +185,12 @@ export default function WorkspaceHost() {
               workspaceId={workspace.id}
               isActive={workspace.id === resolvedActiveWorkspaceId}
               mountContents={warmWorkspaceIdSet.has(workspace.id)}
+              showExplorerDock={!sidebarMode}
             />
           ))}
         </div>
       </div>
     </Suspense>
+    </>
   );
 }

@@ -1755,3 +1755,40 @@ describe('Issue #3: explorer filter input', () => {
     expect(screen.getByText('env.config.ts')).toBeInTheDocument();
   });
 });
+
+describe('FileExplorer section variant (workspace sidebar FILES)', () => {
+  beforeEach(() => {
+    resetStore();
+    installElectronApiMock();
+  });
+
+  it('renders embedded without width style or resize handle, and collapses from explorerVisible', async () => {
+    const workspace = setActiveWorkspace({ explorerVisible: true });
+    const { container } = render(<FileExplorer workspaceId={workspace.id} variant="section" />);
+    const section = screen.getByRole('region', { name: 'Files' });
+    expect(section).toHaveClass('file-explorer-section');
+    expect(section.getAttribute('style')).toBeNull();
+    expect(container.querySelector('.explorer-resize-handle')).toBeNull();
+    expect(screen.getByLabelText('Filter files')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Files' }));
+    expect(useWorkspaceStore.getState().workspaces[0].explorerVisible).toBe(false);
+    const toggle = screen.getByRole('button', { name: 'Expand Files' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText('Filter files')).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(useWorkspaceStore.getState().workspaces[0].explorerVisible).toBe(true);
+  });
+
+  it('keeps the dock variant unchanged (aside, resize handle, hidden when not visible)', () => {
+    const workspace = setActiveWorkspace({ explorerVisible: true });
+    const { container, unmount } = render(<FileExplorer workspaceId={workspace.id} />);
+    expect(container.querySelector('aside.file-explorer')).toBeTruthy();
+    expect(container.querySelector('.explorer-resize-handle')).toBeTruthy();
+    unmount();
+    useWorkspaceStore.getState().setExplorerVisible(false, workspace.id);
+    const hidden = render(<FileExplorer workspaceId={workspace.id} />);
+    expect(hidden.container.firstChild).toBeNull();
+  });
+});

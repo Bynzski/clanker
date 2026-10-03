@@ -5,6 +5,7 @@ import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-libra
 import userEvent from '@testing-library/user-event';
 import Header from '../../../src/renderer/components/Header';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 
@@ -188,6 +189,22 @@ describe('Header', () => {
     it('renders static explorer toggle button', () => {
       renderHeader();
       expect(screen.getByText('Explorer')).toBeTruthy();
+    });
+
+    it('labels the toggle Files in sidebar mode and still toggles the active workspace explorerVisible', () => {
+      useWorkspaceNavigationStore.setState({ mode: 'sidebar' });
+      try {
+        renderHeader();
+        expect(screen.queryByText('Explorer')).toBeNull();
+        const button = screen.getByTitle('Toggle Files section');
+        expect(button.textContent).toContain('Files');
+        const before = useWorkspaceStore.getState().workspaces.find((w) => w.id === useWorkspaceStore.getState().activeWorkspaceId)?.explorerVisible;
+        fireEvent.click(button);
+        const after = useWorkspaceStore.getState().workspaces.find((w) => w.id === useWorkspaceStore.getState().activeWorkspaceId)?.explorerVisible;
+        expect(after).toBe(!before);
+      } finally {
+        useWorkspaceNavigationStore.setState({ mode: 'tabs' });
+      }
     });
 
     it('renders Settings button', () => {

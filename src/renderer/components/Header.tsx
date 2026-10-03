@@ -2,6 +2,7 @@ import { Button } from './ui/Button';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { USAGE_HARNESS_IDS } from '../../shared/harnessDescriptors';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
+import { useWorkspaceNavigationStore } from '../store/workspaceNavigationStore';
 import { Globe, NotebookPen, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import type { HarnessSession } from '../../shared/types/session';
@@ -34,6 +35,8 @@ export default function Header() {
   const browserVisible = focusedWorkspace?.browserVisible ?? false;
   const notesVisible = focusedWorkspace?.notesVisible ?? false;
   const explorerVisible = focusedWorkspace?.explorerVisible ?? false;
+  const sidebarMode = useWorkspaceNavigationStore((state) => state.mode === 'sidebar');
+  const explorerLabel = sidebarMode ? 'Files' : 'Explorer';
   const harness = focusedWorkspace?.harness ?? '';
   const model = focusedWorkspace?.model ?? '';
   const [showChatHistory, setShowChatHistory] = useState(false);
@@ -241,10 +244,10 @@ export default function Header() {
           type="button"
           className={`header-btn ${explorerVisible ? 'active' : ''}`}
           onClick={() => setExplorerVisible(!explorerVisible)}
-          title="Toggle File Explorer"
+          title={sidebarMode ? 'Toggle Files section' : 'Toggle File Explorer'}
         >
           {explorerVisible ? <PanelLeftClose size={15} strokeWidth={2} /> : <PanelLeft size={15} strokeWidth={2} />}
-          Explorer
+          {explorerLabel}
         </Button>
 
         <div className="harness-pills">

@@ -393,7 +393,7 @@ function App() {
           )}
         >
           <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
-            <WorkspaceHost />
+            <WorkspaceHost onOpenWorkspace={() => setShowWorkspaceGate(true)} />
           </Suspense>
         </ErrorBoundary>
       </div>
