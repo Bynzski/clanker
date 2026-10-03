@@ -209,6 +209,8 @@ describe('GitWorktreesSection', () => {
       expect(alert.textContent).toContain('uncommitted, untracked, or ignored files');
       expect(alert.textContent).toContain('left on disk');
       expect(alert.textContent).toContain('branch was not deleted');
+      // An unmanaged checkout was never attached, so it is not described as detached.
+      expect(alert.textContent).not.toContain('no longer attached');
       expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
       expect(await rowOf('old-task')).toBeTruthy();
     });
@@ -272,7 +274,9 @@ describe('GitWorktreesSection', () => {
       await user.click((await removeButton('issue-90'))!);
       await confirmRemoval();
 
-      expect((await screen.findByRole('alert')).textContent).toContain('1 running terminal is still using this checkout');
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain('1 running terminal is still using this checkout');
+      expect(alert.textContent).not.toContain('no longer attached');
       expect(api.gitInspectWorktree).not.toHaveBeenCalled();
       expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
       expect(workspace().checkoutContexts!.map((entry) => entry.id)).toContain(MANAGED_CTX.id);
@@ -287,6 +291,9 @@ describe('GitWorktreesSection', () => {
 
       const alert = await screen.findByRole('alert');
       expect(alert.textContent).toContain(`left on disk at ${MANAGED.path}`);
+      // It is still listed right below, so the message must not claim otherwise.
+      expect(alert.textContent).toContain('is no longer attached to this workspace');
+      expect(alert.textContent).not.toContain('no longer listed');
       await waitFor(() => expect(within(screen.getByText('issue-90').closest('.git-worktree-item') as HTMLElement).getByText('Unmanaged')).toBeTruthy());
       expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
       expect(workspace().checkoutContexts!.map((entry) => entry.id)).not.toContain(MANAGED_CTX.id);

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
-import { removeWorktreeCheckout } from '../../../src/renderer/lib/worktreeCheckoutRemoval';
+import { formatCheckoutRemovalFailure, removeWorktreeCheckout } from '../../../src/renderer/lib/worktreeCheckoutRemoval';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { mainCheckoutContextId } from '../../../src/shared/checkoutContext';
@@ -179,5 +179,34 @@ describe('removeWorktreeCheckout', () => {
 
     expect(api.gitInspectWorktree).toHaveBeenCalledWith(ROOT, '/projects/clanker-worktrees/task', [], 'ws');
     expect(api.gitRemoveWorktree).toHaveBeenCalledWith(ROOT, '/projects/clanker-worktrees/task', 'task', [], 'ws');
+  });
+});
+
+describe('formatCheckoutRemovalFailure', () => {
+  const base = { branch: 'feature/foo', path: '/projects/clanker-worktrees/foo' };
+
+  it('after a release says the checkout is on disk and no longer attached, without claiming where else it is listed', () => {
+    const message = formatCheckoutRemovalFailure({ ...base, error: 'Worktree has uncommitted files', released: true });
+
+    expect(message).toBe(
+      'Could not remove the checkout for branch "feature/foo": Worktree has uncommitted files. '
+      + 'It was left on disk at /projects/clanker-worktrees/foo and is no longer attached to this workspace. The branch was not deleted.',
+    );
+    expect(message).not.toContain('listed');
+  });
+
+  it('without a release claims nothing was detached', () => {
+    const message = formatCheckoutRemovalFailure({ ...base, error: 'Worktree branch changed; inspect it again', released: false });
+
+    expect(message).toBe(
+      'Could not remove the checkout for branch "feature/foo": Worktree branch changed; inspect it again. '
+      + 'It was left on disk. The branch was not deleted.',
+    );
+    expect(message).not.toContain('attached');
+  });
+
+  it('does not double the punctuation of an error that is already a sentence', () => {
+    expect(formatCheckoutRemovalFailure({ ...base, error: 'Save or remove them first.', released: false }))
+      .toContain('Save or remove them first. It was left on disk.');
   });
 });

@@ -221,6 +221,8 @@ describe('worktree-backed agents in the sidebar', () => {
         expect(alert.textContent).toContain('1 running terminal is still using this checkout');
         expect(alert.textContent).toContain('left on disk');
         expect(alert.textContent).toContain('branch was not deleted');
+        // Nothing was released, so nothing is claimed to be detached.
+        expect(alert.textContent).not.toContain('no longer attached');
         expect(screen.getByRole('button', { name: 'Remove checkout for branch issue-72-finished' })).toBeTruthy();
         expect(gitInspectWorktree).not.toHaveBeenCalled();
         expect(workspace().checkoutContexts).toHaveLength(2);
@@ -234,7 +236,9 @@ describe('worktree-backed agents in the sidebar', () => {
         const alert = await screen.findByRole('alert');
         expect(alert.textContent).toContain('uncommitted, untracked, or ignored files');
         expect(alert.textContent).toContain(`left on disk at ${FINISHED.path}`);
-        expect(alert.textContent).toContain('no longer listed here');
+        // The state is described, not this screen: Git may well still list the checkout elsewhere.
+        expect(alert.textContent).toContain('is no longer attached to this workspace');
+        expect(alert.textContent).not.toContain('no longer listed');
         expect(alert.textContent).toContain('branch was not deleted');
         // Released and forgotten: the row is gone, but the explanation stays readable until dismissed.
         expect(screen.queryByRole('list', { name: /inactive checkouts/ })).toBeNull();
@@ -253,6 +257,7 @@ describe('worktree-backed agents in the sidebar', () => {
 
         // The existing error is not a sentence; the explanation that follows it still reads as one.
         expect((await screen.findByRole('alert')).textContent).toContain('Worktree branch changed; inspect it again. It was left on disk');
+        expect(screen.getByRole('alert').textContent).toContain('no longer attached to this workspace');
         expect(gitRemoveWorktree).toHaveBeenCalledTimes(1);
         expect(releaseCheckoutContext).toHaveBeenCalledTimes(1);
         expect(workspace().checkoutContexts!.map((entry) => entry.id)).not.toContain(FINISHED.id);
