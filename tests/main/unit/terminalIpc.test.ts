@@ -494,6 +494,104 @@ describe('terminalIpc — error-path: handler returns', () => {
     }
   });
 
+  describe('remote annotation handoff', () => {
+    const ROOT = '/srv/app';
+    function setup(overrides: Record<string, unknown> = {}, workspace: Record<string, unknown> | null = { workspaceId: 'ws-ssh', location: { environmentId: 'ssh-1', path: ROOT } }) {
+      const { terminals, opts } = createMockDeps();
+      const write = vi.fn();
+      const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn() };
+      terminals.set('term-agent', {
+        id: 'term-agent', cwd: '/home/desktop/other', harnessId: 'codex', workspaceId: 'ws-ssh', environmentId: 'ssh-1',
+        remoteWorkingDir: `${ROOT}/pkg`, pty: { write }, ...overrides,
+      });
+      const getOpenWorkspacePath = vi.fn().mockReturnValue(null);
+      registerTerminalIpc({
+        ...opts, getOpenWorkspacePath, agentAttentionBroker: broker as never,
+        getWorkspaceRegistry: () => ({ getWorkspace: (id: string) => (workspace && id === workspace.workspaceId ? workspace : null) }) as never,
+      });
+      const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'send-annotation-to-agent')?.[1] as (
+        _: unknown, payload: unknown,
+      ) => { success: boolean; error?: string };
+      const send = (message = 'Review annotation', workspaceId = 'ws-ssh') => handler(null, { workspaceId, terminalId: 'term-agent', message });
+      return { terminals, write, broker, send, getOpenWorkspacePath };
+    }
+
+    test('delivers the same bracketed-paste payload to an eligible remote agent and marks it submitted', () => {
+      const { write, broker, send, getOpenWorkspacePath } = setup();
+      expect(send('URL: https://example.com\nNote: Fix this')).toEqual({ success: true });
+      expect(write).toHaveBeenCalledWith('\x1b[200~URL: https://example.com\nNote: Fix this\x1b[201~\r');
+      expect(broker.markSubmitted).toHaveBeenCalledWith('term-agent');
+      expect(getOpenWorkspacePath).not.toHaveBeenCalled();
+    });
+
+    test('accepts the workspace root itself as the remote directory', () => {
+      const { write, send } = setup({ remoteWorkingDir: ROOT });
+      expect(send().success).toBe(true);
+      expect(write).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+      ['wrong workspace ID', { workspaceId: 'ws-other' }],
+      ['wrong environment ID', { environmentId: 'ssh-2' }],
+      ['local environment ID on the terminal', { environmentId: 'local' }],
+      ['missing environment ID', { environmentId: undefined }],
+      ['remote directory outside the root', { remoteWorkingDir: '/srv/app-sibling' }],
+      ['traversal out of the root', { remoteWorkingDir: `${ROOT}/../etc` }],
+      ['missing remote directory', { remoteWorkingDir: undefined }],
+      ['relative remote directory', { remoteWorkingDir: 'pkg' }],
+      ['generic remote shell without a harness', { harnessId: undefined }],
+    ])('fails closed for %s', (_name, overrides) => {
+      const { write, broker, send } = setup(overrides);
+      expect(send().success).toBe(false);
+      expect(write).not.toHaveBeenCalled();
+      expect(broker.markSubmitted).not.toHaveBeenCalled();
+    });
+
+    test('fails when the broker says the agent is busy or unregistered, or the terminal is closed or unregistered workspace', () => {
+      const { write, broker, send, terminals } = setup();
+      broker.canHandoff.mockReturnValue(false);
+      expect(send().success).toBe(false);
+      broker.canHandoff.mockReturnValue(true);
+      expect(send('x', 'ws-unregistered').success).toBe(false);
+      terminals.delete('term-agent');
+      expect(send().success).toBe(false);
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    test('a same-path local terminal cannot receive a remote workspace handoff, nor the reverse', () => {
+      const local = setup({ environmentId: 'local', workspaceId: undefined, cwd: ROOT, remoteWorkingDir: undefined });
+      expect(local.send().success).toBe(false);
+      expect(local.write).not.toHaveBeenCalled();
+      const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-handoff-'));
+      try {
+        const { terminals, opts } = createMockDeps();
+        const write = vi.fn();
+        terminals.set('term-agent', { id: 'term-agent', cwd: workspacePath, harnessId: 'codex', workspaceId: 'ws-ssh', environmentId: 'ssh-1', remoteWorkingDir: workspacePath, pty: { write } });
+        const broker = { canHandoff: vi.fn().mockReturnValue(true), markSubmitted: vi.fn() };
+        mockIpcMain.handle.mockClear();
+        registerTerminalIpc({
+          ...opts, getOpenWorkspacePath: () => workspacePath, agentAttentionBroker: broker as never,
+          getWorkspaceRegistry: () => ({ getWorkspace: () => ({ workspaceId: 'ws-local', location: { environmentId: 'local', path: workspacePath } }) }) as never,
+        });
+        const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'send-annotation-to-agent')?.[1] as (_: unknown, payload: unknown) => { success: boolean };
+        expect(handler(null, { workspaceId: 'ws-local', terminalId: 'term-agent', message: 'x' }).success).toBe(false);
+        expect(write).not.toHaveBeenCalled();
+      } finally {
+        fs.rmSync(workspacePath, { recursive: true, force: true });
+      }
+    });
+
+    test('keeps size, shape and control-character protections', () => {
+      const { write, send } = setup();
+      expect(send('a'.repeat(32 * 1024 + 1)).success).toBe(false);
+      expect(send('unsafe\x1b[201~').success).toBe(false);
+      expect(send('bell\x07').success).toBe(false);
+      expect(send('').success).toBe(false);
+      expect(write).not.toHaveBeenCalled();
+      expect(send('a'.repeat(32 * 1024)).success).toBe(true);
+    });
+  });
+
   test('GET_TERMINAL_BUFFER returns empty string when terminals map is empty', async () => {
     const { opts } = createMockDeps();
     opts.getTerminals = vi.fn().mockReturnValue(new Map());

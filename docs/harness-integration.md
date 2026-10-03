@@ -44,8 +44,12 @@ require every implementation to use one storage format.
 
 ## Current capabilities
 
-All seven providers support local and SSH interactive launch. Model discovery and
-AI commit remain local-only. Only Codex, Claude, OMP, Hermes and Agy implement `usage` so far (see
+All seven providers support local and SSH interactive launch. AI commit remains local-only.
+Model discovery is local for every provider; Codex, OpenCode, Pi, OMP and Agy also expose an optional
+`models.discoverInEnvironment(executor)` that runs their own list command and parser through the
+selected environment's bound `HarnessCommandExecutor` (never an SSH target). Claude has no list command
+and Hermes is not queried remotely; a failed or unsupported remote discovery yields no catalog, with no
+local cache or static fallback. Only Codex, Claude, OMP, Hermes and Agy implement `usage` so far (see
 "Usage capability"); OpenCode and Pi remain without it. Only Codex and Claude implement the
 optional `accounts` capability (see "Accounts capability").
 
@@ -369,7 +373,7 @@ local scans keep their existing formats/limits/fallbacks. Pi and OMP history
 aggregation retains conventional roots. Trusted Pi invocation separately resolves
 configured agent/session roots and stored session-directory flags. SSH Agy requires canonical workspace evidence and
 rejects fork, whereas local discovery keeps its global-session fallback and
-emulated fork. SSH models/inference and local Hermes attention remain absent.
+emulated fork. SSH inference and local Hermes attention remain absent.
 
 ## Adding a harness or capability
 
