@@ -14,7 +14,7 @@ import Store from 'electron-store';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { type StoreSchema } from '../../shared/types/store';
-import { buildHarnessSpawnArgs, ensureHarnessWrapperScript, resolveHarnessSpawn } from '../harnessLaunch';
+import { buildHarnessSpawnArgs, ensureHarnessWrapperScript, resolveHarnessPtySpawn, type HarnessPtySpawnOptions } from '../harnessLaunch';
 import { defaultShell, prependUserCliBinsToPath } from '../platformShell';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
 import {
@@ -84,6 +84,8 @@ interface RegisterTerminalIpcDeps {
   /** Optional: without it (or without managed accounts) every launch uses the native account. */
   getHarnessAccountService?: () => HarnessAccountService | undefined;
   onTerminalReleased?: (id: string) => void;
+  /** Test seam (mirrors LocalLaunchOverrides): plan harness spawns for another platform/host. */
+  harnessSpawnOverrides?: Partial<HarnessPtySpawnOptions>;
 }
 
 type TrustedProfileLaunch = ReturnType<HarnessProfilesCapability['buildLaunch']>;
@@ -239,6 +241,22 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
       ? fs.realpathSync(toNativePath(resolvedWorkspace!.location.path, process.platform))
       : getSafeWorkspacePath(toNativePath(workingDir, process.platform));
     if (profileLaunch && pathKey(cwd, process.platform === 'win32') !== pathKey(resolvedWorkspace!.location.path, process.platform === 'win32')) throw new Error('Registered assistant directory changed');
+    const profileCwdIdentity = profileLaunch ? fs.statSync(cwd, { bigint: true }) : undefined;
+    // Final check, run synchronously before PTY creation (after every await): the registered path must
+    // still canonicalize to itself and name the directory that was validated above.
+    const assertProfileDirectoryUnchanged = () => {
+      if (!profileLaunch) return;
+      let current: string;
+      let identity: fs.BigIntStats;
+      try {
+        current = fs.realpathSync(toNativePath(resolvedWorkspace!.location.path, process.platform));
+        identity = fs.statSync(current, { bigint: true });
+      } catch { throw new Error('Registered assistant directory changed'); }
+      if (pathKey(current, process.platform === 'win32') !== pathKey(cwd, process.platform === 'win32')
+        || !identity.isDirectory() || identity.dev !== profileCwdIdentity!.dev || identity.ino !== profileCwdIdentity!.ino) {
+        throw new Error('Registered assistant directory changed');
+      }
+    };
     // Use user's default shell, fallback to bash
     const userShell = defaultShell();
 
@@ -289,12 +307,14 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
     try {
       const wrapperPath = harnessConfig ? ensureHarnessWrapperScriptPath() : null;
       if (appShuttingDown || deps.getAppShuttingDown?.() || (profileLaunch && registry?.getWorkspace(resolvedWorkspace!.workspaceId) !== resolvedWorkspace)) throw new Error('Assistant workspace was closed or application is shutting down');
-      const harnessCmd = harnessConfig
-        ? resolveHarnessSpawn(profileLaunch?.command ?? harnessConfig.command, harnessArgs, wrapperPath)
-        : { spawnCmd: userShell, spawnArgs: shellArgs };
-
+      // PATH is case-insensitive on Windows: keep one spelling so the resolved executable is the one
+      // the child will see.
+      const inheritedEnv = withoutAttentionEnvironment(process.env);
+      if (process.platform === 'win32') {
+        for (const key of Object.keys(inheritedEnv)) if (key.toLowerCase() === 'path') delete inheritedEnv[key];
+      }
       const env: { [key: string]: string } = {
-        ...withoutAttentionEnvironment(process.env),
+        ...inheritedEnv,
         PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
         ...withoutAttentionEnvironment(harnessEnv),
         ...attentionEnv,
@@ -317,6 +337,12 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
         Object.assign(env, profileLaunch.env);
       }
 
+      // Resolved from the final child environment so Windows PATH/PATHEXT resolution and shim
+      // escaping (or fail-closed rejection) apply to exactly what will be spawned.
+      const harnessCmd = harnessConfig
+        ? resolveHarnessPtySpawn(profileLaunch?.command ?? harnessConfig.command, harnessArgs, wrapperPath, { env, ...deps.harnessSpawnOverrides })
+        : { spawnCmd: userShell, spawnArgs: shellArgs };
+
       let launchLabel: string | undefined;
       const cleanInitialCommand = (!harness && typeof initialCommand === 'string' && initialCommand.trim())
         ? initialCommand.trim().replace(/[\r\n]+/g, ' ')
@@ -330,6 +356,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
         launchLabel = `[clanker-grid] ${cleanInitialCommand}`;
       }
 
+      assertProfileDirectoryUnchanged();
       const result = spawnPtyProcess({
       id,
       spawnCmd: harnessCmd.spawnCmd,

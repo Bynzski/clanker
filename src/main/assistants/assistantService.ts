@@ -142,7 +142,11 @@ export class AssistantService {
       const native = await capability.resolve(this.deps.executor(profile.public.harnessId), profile.native.name);
       assertOwner();
       const homeKey = `${profile.public.harnessId}:${pathKey(native.home, process.platform === 'win32')}`;
-      if (native.name !== profile.native.name || pathKey(native.home, process.platform === 'win32') !== pathKey(profile.native.home, process.platform === 'win32')) throw new Error('Assistant profile home changed; refresh profiles');
+      const caseFold = process.platform === 'win32';
+      if (native.name !== profile.native.name || pathKey(native.home, caseFold) !== pathKey(profile.native.home, caseFold)) throw new Error('Assistant profile home changed; refresh profiles');
+      // The native root is part of profile identity: the same canonical home under a different
+      // root is a different native installation. A missing root on either side cannot be verified.
+      if (!native.rootHome || !profile.native.rootHome || pathKey(native.rootHome, caseFold) !== pathKey(profile.native.rootHome, caseFold)) throw new Error('Assistant profile root changed; refresh profiles');
       const ownerId = [...this.launchHomes].find(([, home]) => home === homeKey)?.[0];
       const owned = ownerId && this.launches.get(ownerId);
       if (owned) return { ...owned, action: 'focus' };

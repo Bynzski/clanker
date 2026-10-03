@@ -102,7 +102,7 @@ The Windows default shell is fixed to `powershell.exe`; the `SHELL` environment 
 
 ## Harness launch on Windows
 
-npm-installed CLI tools (Codex, Claude, OpenCode, Pi) are installed as `.cmd` shim scripts on Windows. Clanker Grid spawns these through `cmd.exe /c <harness>` so the `.cmd` extension resolves correctly under `node-pty`. No manual configuration is required.
+npm-installed CLI tools (Codex, Claude, OpenCode, Pi) are installed as `.cmd` shim scripts on Windows. Clanker Grid resolves the command through `PATH`/`PATHEXT` itself (`resolveHarnessPtySpawn()`, sharing `planBoundedSpawn()` with bounded command execution). Real executables (`.exe`) launch directly with no shell; `.cmd`/`.bat` shims run through `cmd.exe /d /s /c` with escaped arguments. Arguments a shim cannot carry safely (`%`, CR/LF) and unresolvable commands fail the launch with a typed error instead of reaching `cmd /c`. No manual configuration is required.
 
 The POSIX wrapper script that Clanker Grid generates on Linux/macOS (`~/.clanker-grid/harness-wrapper.sh`) is **not** generated on Windows — harnesses run directly.
 

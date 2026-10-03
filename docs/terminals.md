@@ -39,7 +39,7 @@ When a harness exits, the terminal falls back to an interactive shell so the pan
 
 **Harness launch model — Linux / macOS:** Harnesses run as the direct PTY foreground job via a generated shell script (`~/.clanker-grid/harness-wrapper.sh`). When the harness exits, the wrapper script replaces itself with an interactive shell so the pane stays usable.
 
-**Harness launch model — Windows:** No wrapper script is generated. Harnesses are spawned through `cmd.exe /c <harness>` so npm-installed `.cmd` shims resolve correctly. When the harness exits, the pane is replaced by a fresh PowerShell session.
+**Harness launch model — Windows:** No wrapper script is generated. The command is resolved via `PATH`/`PATHEXT` (`resolveHarnessPtySpawn()`): `.exe` files launch directly, npm-installed `.cmd` shims go through `cmd.exe /d /s /c` with escaped arguments, and unsafe arguments (`%`, CR/LF) or an unresolvable command fail closed. When the harness exits, the pane is replaced by a fresh PowerShell session.
 
 **Harness launch model — Remote Workspaces (SSH):** Remote terminal panes execute on the remote machine via local `node-pty` invoking system `ssh` with interactive pseudo-terminal allocation (`ssh -t`). The remote command changes into the workspace directory and executes the remote harness CLI, then leaves `${SHELL:-/bin/bash} -l` running when the harness exits. Harness availability is probed remotely on the target host; only installed remote CLIs are offered for launch. The remote shell and harness receive no local Agent Attention variables.
 ### Harness Flags

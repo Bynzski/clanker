@@ -1,6 +1,8 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { planBoundedSpawn, UnsafeBatchArgumentError } from './environment/boundedSpawn';
+import { HarnessCapabilityError } from './harnesses/types';
 
 export interface HarnessConfig {
   command: string;
@@ -44,6 +46,42 @@ export function resolveHarnessSpawn(
   }
   // Fallback (shouldn't reach here — wrapperPath is always set on POSIX)
   return { spawnCmd: command, spawnArgs: args };
+}
+
+export interface HarnessPtySpawnOptions {
+  /** Environment the child will receive; PATH/PATHEXT/ComSpec drive Windows resolution. */
+  env: Record<string, string | undefined>;
+  platform?: NodeJS.Platform;
+  fileExists?: (file: string) => boolean;
+}
+
+/**
+ * PTY form of {@link resolveHarnessSpawn}. `spawnArgs` is a single verbatim command line only for
+ * Windows `.cmd`/`.bat` shims, which node-pty passes through unchanged.
+ *
+ * Windows resolution and quoting reuse {@link planBoundedSpawn}, the same planner as bounded local
+ * execution: real executables launch directly (node-pty's MSVCRT argv quoting, no shell), shims go
+ * through `cmd.exe /d /s /c` with escaped arguments, and arguments cmd.exe cannot carry (`%`, CR/LF)
+ * or an unresolvable command fail closed with a typed error instead of reaching `cmd /c`.
+ */
+export function resolveHarnessPtySpawn(
+  command: string,
+  args: string[],
+  wrapperPath: string | null,
+  options: HarnessPtySpawnOptions
+): { spawnCmd: string; spawnArgs: string[] | string } {
+  const platform = options.platform ?? process.platform;
+  if (wrapperPath) return { spawnCmd: wrapperPath, spawnArgs: [command, ...args] };
+  if (platform !== 'win32') return { spawnCmd: command, spawnArgs: args };
+  let plan;
+  try {
+    plan = planBoundedSpawn(command, args, { platform, env: options.env, fileExists: options.fileExists });
+  } catch (error) {
+    if (error instanceof UnsafeBatchArgumentError) throw new HarnessCapabilityError('command-failed', error.message, error);
+    throw error;
+  }
+  if (!plan) throw new HarnessCapabilityError('binary-unavailable', `${command} is not installed`);
+  return { spawnCmd: plan.file, spawnArgs: plan.windowsVerbatimArguments ? plan.args.join(' ') : plan.args };
 }
 
 export function buildHarnessSpawnArgs(

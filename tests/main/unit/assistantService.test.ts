@@ -4,8 +4,8 @@ import type { AssistantSettings } from '../../../src/shared/types/assistants';
 
 function fixture() {
   let settings: AssistantSettings = { enabled: false, pins: [] };
-  const discover = vi.fn().mockResolvedValue([{ name: 'default', label: 'Default', home: '/profiles/default' }]);
-  const resolve = vi.fn().mockResolvedValue({ name: 'default', label: 'Default', home: '/profiles/default' });
+  const discover = vi.fn().mockResolvedValue([{ name: 'default', label: 'Default', home: '/profiles/default', rootHome: '/hermes-root' }]);
+  const resolve = vi.fn().mockResolvedValue({ name: 'default', label: 'Default', home: '/profiles/default', rootHome: '/hermes-root' });
   const spawn = vi.fn().mockResolvedValue({ id: 'term-1', pid: 42, attentionEnabled: false });
   const workspace = { workspaceId: 'ws-1', location: { environmentId: 'local', path: '/repo/worktree' } };
   const workspaces = new Map([[workspace.workspaceId, workspace]]);
@@ -30,11 +30,11 @@ describe('optional assistants', () => {
   it('window reset invalidates pending manual discovery and launch results', async () => {
     const { service, resolve } = fixture();
     service.configure({ enabled: true, pins: [] });
-    let finish!: (value: { name: string; label: string; home: string }) => void;
+    let finish!: (value: { name: string; label: string; home: string; rootHome: string }) => void;
     resolve.mockImplementationOnce(() => new Promise((done) => { finish = done; }));
     const pending = service.addProfile('hermes', 'reviewer');
     service.reset();
-    finish({ name: 'reviewer', label: 'Reviewer', home: '/profile' });
+    finish({ name: 'reviewer', label: 'Reviewer', home: '/profile', rootHome: '/hermes-root' });
     await expect(pending).rejects.toThrow(/changed/);
     expect(service.get().profiles).toEqual([]);
   });
@@ -62,7 +62,7 @@ describe('optional assistants', () => {
     const { service, discover, resolve } = fixture();
     service.configure({ enabled: true, pins: [{ harnessId: 'hermes', profileName: 'reviewer' }] });
     discover.mockRejectedValueOnce(new Error('secret environment dump'));
-    resolve.mockResolvedValueOnce({ name: 'reviewer', label: 'Reviewer', home: '/profiles/reviewer' });
+    resolve.mockResolvedValueOnce({ name: 'reviewer', label: 'Reviewer', home: '/profiles/reviewer', rootHome: '/hermes-root' });
     const snapshot = await service.discover();
     expect(snapshot.profiles[0].profileName).toBe('reviewer');
     expect(snapshot.discoveryError).toMatch(/manual|unavailable/);
@@ -71,11 +71,11 @@ describe('optional assistants', () => {
   it('discards late discovery after the integration is disabled', async () => {
     const { service, discover } = fixture();
     service.configure({ enabled: true, pins: [] });
-    let finish!: (value: { name: string; label: string; home: string }[]) => void;
+    let finish!: (value: { name: string; label: string; home: string; rootHome: string }[]) => void;
     discover.mockImplementationOnce(() => new Promise((done) => { finish = done; }));
     const pending = service.discover();
     service.configure({ enabled: false, pins: [] });
-    finish([{ name: 'default', label: 'Default', home: '/profiles/default' }]);
+    finish([{ name: 'default', label: 'Default', home: '/profiles/default', rootHome: '/hermes-root' }]);
     await pending;
     expect(service.get().profiles).toEqual([]);
   });
@@ -103,10 +103,10 @@ describe('optional assistants', () => {
     const { service, resolve, spawn } = fixture();
     service.configure({ enabled: true, pins: [] });
     await service.discover();
-    resolve.mockResolvedValueOnce({ name: 'alias', label: 'Alias', home: '/profiles/default' });
+    resolve.mockResolvedValueOnce({ name: 'alias', label: 'Alias', home: '/profiles/default', rootHome: '/hermes-root' });
     const snapshot = await service.addProfile('hermes', 'alias');
     const [first, second] = snapshot.profiles;
-    resolve.mockImplementation(async (_executor, name) => ({ name, label: name, home: '/profiles/default' }));
+    resolve.mockImplementation(async (_executor, name) => ({ name, label: name, home: '/profiles/default', rootHome: '/hermes-root' }));
     const results = await Promise.all([first, second].map((profile) => service.launch({ profileId: profile.id, workspaceId: 'ws-1', acknowledgeExternalActivity: true })));
     expect(results.map((r) => r.action)).toEqual(['created', 'focus']);
     expect(spawn).toHaveBeenCalledOnce();
@@ -115,14 +115,48 @@ describe('optional assistants', () => {
     const { service, resolve, spawn } = fixture();
     service.configure({ enabled: true, pins: [] });
     const { profiles: [profile] } = await service.discover();
-    resolve.mockResolvedValueOnce({ name: 'default', label: 'Default', home: '/profiles/replacement' });
+    resolve.mockResolvedValueOnce({ name: 'default', label: 'Default', home: '/profiles/replacement', rootHome: '/hermes-root' });
     await expect(service.launch({ profileId: profile.id, workspaceId: 'ws-1', acknowledgeExternalActivity: true })).rejects.toThrow(/changed|refresh/);
     expect(spawn).not.toHaveBeenCalled();
+  });
+  it('allows a launch when the re-resolved canonical home and native root are unchanged', async () => {
+    const { service, resolve, spawn } = fixture();
+    service.configure({ enabled: true, pins: [] });
+    const { profiles: [profile] } = await service.discover();
+    resolve.mockResolvedValueOnce({ name: 'default', label: 'Default', home: '/profiles/default', rootHome: '/hermes-root' });
+    await expect(service.launch({ profileId: profile.id, workspaceId: 'ws-1', acknowledgeExternalActivity: true })).resolves.toMatchObject({ action: 'created' });
+    expect(spawn).toHaveBeenCalledOnce();
+  });
+  it('requires refresh when the same canonical home now belongs to a different native root', async () => {
+    const { service, resolve, spawn } = fixture();
+    service.configure({ enabled: true, pins: [] });
+    const { profiles: [profile] } = await service.discover();
+    resolve.mockResolvedValueOnce({ name: 'default', label: 'Default', home: '/profiles/default', rootHome: '/another-root' });
+    await expect(service.launch({ profileId: profile.id, workspaceId: 'ws-1', acknowledgeExternalActivity: true })).rejects.toThrow(/root changed|refresh/);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(service.get().launches).toEqual([]);
+  });
+  it.each(['discovered', 're-resolved'] as const)('fails closed when the %s profile metadata lacks a native root', async (missing) => {
+    const { service, resolve, discover, spawn } = fixture();
+    service.configure({ enabled: true, pins: [] });
+    if (missing === 'discovered') discover.mockResolvedValueOnce([{ name: 'default', label: 'Default', home: '/profiles/default' }]);
+    const { profiles: [profile] } = await service.discover();
+    if (missing === 're-resolved') resolve.mockResolvedValueOnce({ name: 'default', label: 'Default', home: '/profiles/default' });
+    else resolve.mockResolvedValueOnce({ name: 'default', label: 'Default', home: '/profiles/default', rootHome: '/hermes-root' });
+    await expect(service.launch({ profileId: profile.id, workspaceId: 'ws-1', acknowledgeExternalActivity: true })).rejects.toThrow(/root changed|refresh/);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+  it('never exposes native home or root through the renderer-facing snapshot', async () => {
+    const { service } = fixture();
+    service.configure({ enabled: true, pins: [] });
+    const snapshot = await service.discover();
+    expect(JSON.stringify(snapshot)).not.toMatch(/hermes-root|\/profiles\//);
+    expect(Object.keys(snapshot.profiles[0]).sort()).toEqual(['harnessId', 'id', 'label', 'profileName']);
   });
   it('supports manual native profile selection without creating or switching profiles', async () => {
     const { service, resolve, discover } = fixture();
     service.configure({ enabled: true, pins: [] });
-    resolve.mockResolvedValueOnce({ name: 'reviewer', label: 'Reviewer', home: '/profiles/reviewer' });
+    resolve.mockResolvedValueOnce({ name: 'reviewer', label: 'Reviewer', home: '/profiles/reviewer', rootHome: '/hermes-root' });
     const snapshot = await service.addProfile('hermes', 'reviewer');
     expect(resolve).toHaveBeenCalledWith(expect.anything(), 'reviewer');
     expect(snapshot.profiles[0]).toMatchObject({ harnessId: 'hermes', profileName: 'reviewer' });
@@ -158,13 +192,13 @@ describe('optional assistants', () => {
     const { service, resolve, spawn, workspaces } = fixture();
     service.configure({ enabled: true, pins: [] });
     const { profiles: [profile] } = await service.discover();
-    let finish!: (value: { name: string; label: string; home: string }) => void;
+    let finish!: (value: { name: string; label: string; home: string; rootHome: string }) => void;
     resolve.mockImplementationOnce(() => new Promise((done) => { finish = done; }));
     const pending = service.launch({ profileId: profile.id, workspaceId: 'ws-1', acknowledgeExternalActivity: true });
     if (change === 'closed') workspaces.delete('ws-1');
     if (change === 'replaced') workspaces.set('ws-1', { workspaceId: 'ws-1', location: { environmentId: 'local', path: '/replaced' } });
     if (change === 'disabled') service.configure({ enabled: false, pins: [] });
-    finish({ name: 'default', label: 'Default', home: '/profiles/default' });
+    finish({ name: 'default', label: 'Default', home: '/profiles/default', rootHome: '/hermes-root' });
     await expect(pending).rejects.toThrow(/changed|disabled|registered/);
     expect(spawn).not.toHaveBeenCalled();
   });
@@ -172,12 +206,12 @@ describe('optional assistants', () => {
     const { service, resolve, spawn } = fixture();
     service.configure({ enabled: true, pins: [] });
     const { profiles: [profile] } = await service.discover();
-    let finish!: (value: { name: string; label: string; home: string }) => void;
+    let finish!: (value: { name: string; label: string; home: string; rootHome: string }) => void;
     resolve.mockImplementationOnce(() => new Promise((done) => { finish = done; }));
     const request = { profileId: profile.id, workspaceId: 'ws-1', acknowledgeExternalActivity: true };
     const first = service.launch(request);
     const second = service.launch(request);
-    finish({ name: 'default', label: 'Default', home: '/profiles/default' });
+    finish({ name: 'default', label: 'Default', home: '/profiles/default', rootHome: '/hermes-root' });
     const results = await Promise.all([first, second]);
     expect(results.map((r) => r.action)).toEqual(['created', 'focus']);
     expect(spawn).toHaveBeenCalledOnce();

@@ -131,7 +131,7 @@ Browser annotation feature for capturing structured element descriptions:
 | `security.ts` | `resolveExistingDirectory()` for path validation, `isUrlAllowed()` for browser URL allowlist. |
 | `gitService.ts` | GitService class — git CLI wrapper. All git operations go through this class. |
 | `aiCommit.ts` | AI commit message generation. Builds prompts and executes harness commands. |
-| `harnessLaunch.ts` | Harness launch helpers. On Linux/macOS, manages the generated `~/.clanker-grid/harness-wrapper.sh` used for PTY spawning. On Windows, skips wrapper generation and uses `resolveHarnessSpawn()` to wrap commands in `cmd.exe /c` so npm-installed `.cmd` shims resolve correctly. |
+| `harnessLaunch.ts` | Harness launch helpers. On Linux/macOS, manages the generated `~/.clanker-grid/harness-wrapper.sh` used for PTY spawning. On Windows, skips wrapper generation and uses `resolveHarnessPtySpawn()` (backed by `environment/boundedSpawn.ts`) for PTY launches so npm-installed `.cmd` shims still resolve while argument boundaries and `cmd.exe` metacharacters are handled by the one canonical planner; `resolveHarnessSpawn()` remains the legacy `cmd.exe /c` form for non-PTY callers. |
 | `platformShell.ts` | Single source of truth for default shell (`powershell.exe` on Windows, `$SHELL`/`bash` elsewhere) and `~/.local/bin` PATH prepending. |
 | `harnessCatalog.ts` | `getAvailableHarnessOptions()` and `discoverHarnessModels()` — detects installed harnesses and available models. |
 | `sessionHistory.ts` | Chat history discovery from Claude, Codex, OpenCode, Pi, and OMP session stores. Caches results for 60 seconds. |

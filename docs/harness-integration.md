@@ -636,8 +636,8 @@ reports a signed-out state, `parse-failure` for unrecognised output, and tolerat
 schema drift.
 
 Local execution reuses the desktop PATH augmentation and strips attention
-credentials. It does not reuse the interactive launcher's `cmd.exe /c` wrapper:
-`environment/boundedSpawn.ts` plans the launch. POSIX runs the command directly.
+credentials. It does not use the legacy `cmd.exe /c` form (interactive PTY launches now share
+the same planner through `resolveHarnessPtySpawn()`): `environment/boundedSpawn.ts` plans the launch. POSIX runs the command directly.
 On Windows it resolves the bare name through PATH/PATHEXT; a missing executable is
 `binary-unavailable`; `.exe`/`.com` run directly so argv keeps its boundaries and
 metacharacters (`& | < > ^ % "`) are inert; `.cmd`/`.bat` (npm shims) must go
