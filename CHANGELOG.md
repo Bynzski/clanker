@@ -6,12 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-03
+
 ### Added
 
 - **Automatic SSH browser previews** — discover workspace-owned remote HTTP/HTTPS services, allocate desktop loopback forwards automatically, and open a single unambiguous service in the embedded Browser. Multiple services and manual forwarding are available from a compact Browser control.
 - **Harness usage** — a Usage button in the toolbar shows subscription quota windows, remaining capacity and reset times for Codex, Claude, Oh My Pi, Hermes and Antigravity in the active local or SSH workspace, using the harness's own CLI and sign-in. Choose which providers appear with **Show in Usage** in Settings → Harness Defaults.
 - **Harness accounts** — optionally add managed Codex and Claude accounts in Settings → Harness Defaults, pick which one future launches use, and see each account's usage. Resume and fork keep using the account that owns the conversation. Without added accounts nothing changes, and accounts are local-only for now (SSH workspaces report them as unavailable).
-- **Customizable keyboard shortcuts** — Settings → Keyboard shortcuts… lets you rebind, unbind and reset commands, with conflict detection. New defaults include Open Settings (`Cmd/Ctrl+,`), Toggle Explorer (`Cmd/Ctrl+B`) and browser tab shortcuts (`Cmd/Ctrl+L/T/W/R`, `Ctrl+Tab`). Application shortcuts never take keys from a focused terminal or browser page.
+- **Customizable keyboard shortcuts** — Settings → Keyboard shortcuts… lets you rebind, unbind and reset commands, with conflict detection. New defaults include Open Settings (`Cmd/Ctrl+,`), Toggle Explorer (`Cmd/Ctrl+B`) and browser tab shortcuts (`Cmd/Ctrl+L/T/W/R`, `Ctrl+Tab`). Each surface handles only its own commands, so application shortcuts never take keys from a focused terminal or browser page.
 - **Terminal zoom** — zoom follows focus: `Cmd/Ctrl` `+`/`-`/`0` and `Ctrl`+wheel resize the focused terminal's font, the focused browser tab, or the whole app.
 - **Remote harness models** — when opening an SSH workspace, the launcher asks the host for its own model list for Codex, OpenCode, Pi, OMP and Antigravity and shows a picker (with Use harness default first) when the host returns a real catalog; otherwise the host default applies.
 - **Annotation handoff to SSH agents** — Send to agent in Browser annotation now works for eligible remote agent terminals in the matching workspace.
@@ -19,11 +21,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 
 - **Sidebar navigation by default** — new installs list workspaces in the sidebar; Tabs remains available under Settings → Appearance. In sidebar mode the workspace toolbar docks into the title bar instead of taking its own row.
-- **Collapsible workspace rail** — drag the sidebar edge narrow (or use Collapse sidebar) to shrink it to an icon rail that shows each workspace's mark, a separator, and its agents' harness icons with live attention dots; drag the edge or use Expand sidebar to open it again at its previous width.
+- **Collapsible workspace rail** — drag the sidebar edge narrow (or use Collapse sidebar) to shrink it to an icon rail that shows each workspace's mark followed by its agents' harness icons with live attention dots; drag the edge or use Expand sidebar to open it again at its previous width.
 - **Files pinned to the bottom of the sidebar** — WORKSPACES fills the sidebar; FILES sits collapsed at the bottom and grows upward (to half the sidebar) when opened. Browser and Notes are icon toggles on the right of the toolbar.
 - **Remote folder chooser** — browsing SSH directories now works like a desktop file chooser: back/up/home, clickable breadcrumbs with a typed location (`~` supported, Ctrl+L), places, single-click to select and double-click to open, and a footer showing the folder that will be chosen.
 - **Compact, unified interface** — the toolbar groups new-terminal launchers and Git; a shared type scale, control heights and dialog header/footer now apply across dialogs, menus, the Git menu, Settings, the launcher and the file explorer. Enabled primary buttons are visually distinct from disabled ones, and destructive row actions stay quiet until hovered.
-- **Chat History and Usage open instantly** — a few seconds after a workspace has finished opening, and only when the app is idle, its conversation history and usage are read once in the background. Opening either panel shows those results immediately and refreshes them quietly; opening a workspace is never slowed down.
+- **Chat History and Usage open instantly** — a few seconds after a local workspace has finished opening, and only when the app is idle, its conversation history and usage are read once in the background (SSH workspaces are never probed in the background). Opening either panel shows those results immediately and refreshes them quietly; opening a workspace is never slowed down.
 - **Agent attention shows only what needs you** — idle agents show nothing instead of an "Unknown" icon, working agents show a spinner, questions stay yellow until answered, and a finished turn is green only until you focus that agent.
 - **Quieter focus and account rows** — text fields show focus as a tinted border with a faint halo instead of a thick outline ring, and harness accounts in Settings are compact lines with a small Add account action instead of boxed rows.
 - **Startup splash** — the window opens immediately on the app logo, in your saved theme, instead of staying blank while the interface loads.
@@ -34,6 +36,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Fit All Panes** — now keeps your pane arrangement and only rebalances split sizes instead of rebuilding the layout, and its default shortcut moved from `Cmd/Ctrl+Shift+F` to `Cmd/Ctrl+Alt+F` (rebindable).
 - **Browser returns where it was** — hiding and re-showing the Browser puts it back in its previous place in the layout for the rest of the session; otherwise it opens at the right edge. The toolbar's Browser button is the only show/hide control.
 - **Clearer SSH connection errors** — when OpenSSH itself fails, Clanker names the cause (authentication, host key, DNS, refused, unreachable, timeout, lost connection) instead of showing raw output, and the launcher's remote-home lookup has a Retry that keeps your typed path.
+- **Linux-only release artifact** — `0.10.0` ships as a Linux x64 AppImage. No Windows binary is produced for this release; Windows remains covered by CI validation.
 
 ### Fixed
 
@@ -383,7 +386,8 @@ Initial public release.
 
 - macOS and Windows packaging targets are configured but not produced or tested in this release.
 
-[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Bynzski/clanker/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Bynzski/clanker/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Bynzski/clanker/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Bynzski/clanker/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Bynzski/clanker/compare/v0.6.0...v0.7.0
