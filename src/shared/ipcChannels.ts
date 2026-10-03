@@ -212,6 +212,20 @@ export const SESSION_INVOKE = 'session-invoke';
 export const HARNESS_USAGE_GET = 'harness-usage:get';
 
 /* ============================================================================
+ * Harness Accounts
+ * ============================================================================ */
+
+export const HARNESS_ACCOUNTS_LIST = 'harness-accounts:list';
+export const HARNESS_ACCOUNTS_SELECT = 'harness-accounts:select';
+export const HARNESS_ACCOUNTS_ADD_START = 'harness-accounts:add-start';
+export const HARNESS_ACCOUNTS_RECONNECT = 'harness-accounts:reconnect';
+export const HARNESS_ACCOUNTS_AUTH_CANCEL = 'harness-accounts:auth-cancel';
+export const HARNESS_ACCOUNTS_REMOVE = 'harness-accounts:remove';
+export const HARNESS_ACCOUNTS_RENAME = 'harness-accounts:rename';
+/** Main -> renderer progress event, keyed by an opaque flow ID. */
+export const HARNESS_ACCOUNTS_AUTH_STATE = 'harness-accounts:auth-state';
+
+/* ============================================================================
  * Workspace Recipes
  * ============================================================================ */
 
@@ -419,6 +433,14 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   SESSION_INVOKE,
   // Harness usage
   HARNESS_USAGE_GET,
+  HARNESS_ACCOUNTS_LIST,
+  HARNESS_ACCOUNTS_SELECT,
+  HARNESS_ACCOUNTS_ADD_START,
+  HARNESS_ACCOUNTS_RECONNECT,
+  HARNESS_ACCOUNTS_AUTH_CANCEL,
+  HARNESS_ACCOUNTS_REMOVE,
+  HARNESS_ACCOUNTS_RENAME,
+  HARNESS_ACCOUNTS_AUTH_STATE,
   // Workspace Recipes
   RECIPE_GET_ALL,
   RECIPE_SAVE,

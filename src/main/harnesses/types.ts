@@ -22,6 +22,7 @@ export interface HarnessProvider {
   readonly attention?: HarnessAttentionCapability;
   readonly aiCommit?: HarnessAiCommitCapability;
   readonly usage?: HarnessUsageCapability;
+  readonly accounts?: HarnessAccountsCapability;
 }
 
 export type CapabilitySupport = 'native' | 'emulated';
@@ -233,14 +234,55 @@ export interface HarnessUsageSnapshot {
   measurements: HarnessUsageMeasurement[];
 }
 
+/**
+ * Optional manually-managed accounts. Shared code owns IDs, selection, persistence, owned-directory
+ * allocation, launch binding and provenance; the provider owns only authentication protocol and
+ * account-environment semantics. Providers receive bound executors (their environment already carries
+ * the managed home) and never an SSH target, a renderer value or a filesystem path other than the
+ * trusted `home` handed to `environment` and `discoverSessions` by main.
+ */
+export interface HarnessAccountIdentity {
+  /** Display-only; provider-reported. */
+  email?: string;
+  plan?: string;
+}
+export interface HarnessAccountExecutionContext {
+  /** Bounded commands whose environment is already bound to the managed account. */
+  readonly executor: HarnessCommandExecutor;
+  readonly sessionExecutor?: HarnessCommandSessionExecutor;
+  readonly signal: AbortSignal;
+  readonly clientInfo: { readonly name: string; readonly title: string; readonly version: string };
+}
+export interface HarnessAccountAuthContext extends HarnessAccountExecutionContext {
+  /** Main validates and opens the URL; the provider never opens anything itself. */
+  openUrl(url: string): void;
+  /** Reports that the user must finish in the browser. */
+  waitingForBrowser(): void;
+}
+export interface HarnessAccountsCapability {
+  /** Provider-owned variables that bind a launch/probe to a managed home. Never used for the default account. */
+  environment(home: string): Record<string, string>;
+  /** Runs the provider's supported sign-in to completion and verifies the account. Abort cancels it. */
+  authenticate(context: HarnessAccountAuthContext): Promise<HarnessAccountIdentity>;
+  /** Machine-readable check of the bound account; throws `unauthenticated` when signed out. */
+  verify(context: HarnessAccountExecutionContext): Promise<HarnessAccountIdentity>;
+  /** Provider-supported sign-out/secure-store cleanup of the bound account. */
+  logout(context: HarnessAccountExecutionContext): Promise<void>;
+  /** Same parser as the default discovery, run against a trusted managed home. */
+  discoverSessions(workspacePath: string, home: string): Promise<HarnessSession[]>;
+}
+
 export type AttentionPlan = { status: 'ready'; options: AttentionLaunchOptions }
   | { status: 'blocked'; failure: HarnessCapabilityError };
 
-/** Metadata cannot advertise AI commit or usage without an implementation, or vice versa. */
+/** Metadata cannot advertise AI commit, usage or accounts without an implementation, or vice versa. */
 export function defineHarness<Provider extends HarnessProvider>(provider: Provider & (
   Provider['descriptor'] extends { aiCommit: unknown }
     ? { aiCommit: HarnessAiCommitCapability } : { aiCommit?: never }
 ) & (
   Provider['descriptor'] extends { usage: unknown }
     ? { usage: HarnessUsageCapability } : { usage?: never }
+) & (
+  Provider['descriptor'] extends { accounts: unknown }
+    ? { accounts: HarnessAccountsCapability } : { accounts?: never }
 )): Provider { return provider; }

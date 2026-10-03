@@ -8,6 +8,10 @@ export interface UseHarnessUsageResult {
   /** The harnesses this panel operates on (usage-capable AND enabled); nothing else is requested. */
   harnessIds: readonly string[];
   entries: Record<string, HarnessUsageEntry | undefined>;
+  /** Further accounts of a harness that has managed accounts; `entries` holds the selected one. */
+  otherAccounts: Record<string, HarnessUsageEntry[] | undefined>;
+  /** Selects an account through the account service (usage never owns accounts), then re-reads. */
+  selectAccount: (harnessId: string, accountId: string) => void;
   /** Harness requests currently in flight (initial load or refresh). */
   pending: Record<string, boolean>;
   /** A manual (forced) refresh is running. */
@@ -25,8 +29,9 @@ export interface UseHarnessUsageResult {
  * Polling and the display clock exist only while `open`. Cache TTLs, backoff and floors stay in main;
  * `refreshableAt` is used only to avoid knowingly pointless manual refreshes.
  */
-export function useHarnessUsage({ workspaceId, open, harnessIds }: { workspaceId: string | null; open: boolean; harnessIds: readonly string[] }): UseHarnessUsageResult {
+export function useHarnessUsage({ workspaceId, open, harnessIds, environmentId = 'local' }: { workspaceId: string | null; open: boolean; harnessIds: readonly string[]; environmentId?: string }): UseHarnessUsageResult {
   const [entries, setEntries] = useState<Record<string, HarnessUsageEntry | undefined>>({});
+  const [otherAccounts, setOtherAccounts] = useState<Record<string, HarnessUsageEntry[] | undefined>>({});
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [now, setNow] = useState(() => Date.now());
   const generation = useRef(0);
@@ -44,6 +49,7 @@ export function useHarnessUsage({ workspaceId, open, harnessIds }: { workspaceId
   if (ownerWorkspace !== workspaceId) {
     setOwnerWorkspace(workspaceId);
     setEntries({});
+    setOtherAccounts({});
     setPending({});
     setForcing(0);
   }
@@ -64,6 +70,7 @@ export function useHarnessUsage({ workspaceId, open, harnessIds }: { workspaceId
     setOwnerIds(idsKey);
     const keep = <T,>(record: Record<string, T>) => Object.fromEntries(Object.entries(record).filter(([id]) => ids.includes(id)));
     setEntries(keep);
+    setOtherAccounts(keep);
     setPending(keep);
   }
   useEffect(() => {
@@ -83,8 +90,10 @@ export function useHarnessUsage({ workspaceId, open, harnessIds }: { workspaceId
     void window.electronAPI.getHarnessUsage(workspaceId, { harnessIds: [harnessId], ...(force ? { force: true } : {}) })
       .then((response: HarnessUsageResponse) => {
         if (generation.current !== owner || unmounted.current || !idsRef.current.includes(harnessId)) return;
-        const entry = response.entries.find((candidate) => candidate.harnessId === harnessId);
+        // Entries arrive selected-account first; a harness without managed accounts has exactly one.
+        const [entry, ...others] = response.entries.filter((candidate) => candidate.harnessId === harnessId);
         if (entry) setEntries((current) => ({ ...current, [harnessId]: entry }));
+        setOtherAccounts((current) => ({ ...current, [harnessId]: others }));
       }, () => {
         if (generation.current !== owner || unmounted.current || !idsRef.current.includes(harnessId)) return;
         // Safe text only; a prior good reading is kept and flagged stale.
@@ -106,6 +115,11 @@ export function useHarnessUsage({ workspaceId, open, harnessIds }: { workspaceId
   const refreshAll = useCallback((force: boolean) => {
     for (const id of idsRef.current) request(id, force);
   }, [request]);
+
+  const selectAccount = useCallback((harnessId: string, accountId: string) => {
+    void window.electronAPI.selectHarnessAccount(environmentId, harnessId, accountId)
+      .then(() => request(harnessId, false), () => undefined);
+  }, [environmentId, request]);
 
   // Open: immediate ordinary read, then an ordinary read every minute. Nothing runs while closed.
   useEffect(() => {
@@ -138,5 +152,5 @@ export function useHarnessUsage({ workspaceId, open, harnessIds }: { workspaceId
   // Any ordinary (initial/poll) or forced request in flight for a selected harness makes Refresh unavailable.
   const hasPending = ids.some((id) => pending[id] === true);
   const canManualRefresh = ids.length > 0 && !hasPending && !refreshing && nextManualRefreshAt === undefined;
-  return { harnessIds: ids, entries, pending, refreshing, now, refreshAll, canManualRefresh, nextManualRefreshAt };
+  return { harnessIds: ids, entries, otherAccounts, selectAccount, pending, refreshing, now, refreshAll, canManualRefresh, nextManualRefreshAt };
 }

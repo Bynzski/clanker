@@ -1,6 +1,8 @@
 import { disposeAttentionSafely } from '../harnesses/localAttention';
 import type { PreparedLocalAttention } from '../harnesses/types';
-import { findHarnessProvider } from '../harnesses/registry';
+import { findHarnessProvider, isHarnessId } from '../harnesses/registry';
+import { prepareHarnessAccountContext, type HarnessAccountService } from '../accounts/harnessAccountService';
+import { DEFAULT_HARNESS_ACCOUNT_ID } from '../../shared/types/harnessAccounts';
 import { supportsSessionOperation } from '../sessionLaunch';
 /**
  * Session History IPC Handlers
@@ -39,6 +41,8 @@ export interface RegisterSessionIpcDeps {
   agentAttentionBroker?: AgentAttentionBroker;
   createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
   getWorkspaceRegistry?: () => WorkspaceRegistry;
+  /** Optional: without it (or without managed accounts) discovery and resume use the native account only. */
+  getHarnessAccountService?: () => HarnessAccountService | undefined;
 }
 
 export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
@@ -58,19 +62,42 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
 
     const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
     const availableHarnessIds = new Set(Object.keys(getHarnessOptions()));
-    const sessions = await discoverSessions(nativeWorkspacePath);
+    const managed = deps.getHarnessAccountService?.()?.discoverySource('local');
+    const sessions = managed ? await discoverSessions(nativeWorkspacePath, { managed }) : await discoverSessions(nativeWorkspacePath);
     return sessions.filter((session) => availableHarnessIds.has(session.harness));
   });
 
-  ipcMain.handle(SESSION_INVOKE, async (_, workspaceId: string, session: HarnessSession, fork?: boolean) => {
+  ipcMain.handle(SESSION_INVOKE, async (_, workspaceId: string, requestedSession: HarnessSession, fork?: boolean) => {
     const workspace = typeof workspaceId === 'string'
       ? deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId)
       : null;
     if (!workspace) throw new Error('Workspace is not registered');
     if (workspace.location.environmentId !== 'local') {
-      return invokeRemoteSession(deps, workspace, session, fork);
+      return invokeRemoteSession(deps, workspace, requestedSession, fork);
     }
     const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
+    // A session's `accountId` is only a claim. For a managed account main re-finds the session inside
+    // that account's own storage and launches that authoritative copy with that account's binding;
+    // a session without a claim resumes under the native account, never the currently selected one.
+    const accountService = deps.getHarnessAccountService?.();
+    let session = requestedSession;
+    const claimedAccountId = (requestedSession as { accountId?: unknown } | null)?.accountId;
+    const managedClaim = claimedAccountId !== undefined && claimedAccountId !== DEFAULT_HARNESS_ACCOUNT_ID;
+    let accountBinding = prepareHarnessAccountContext(accountService, {
+      environmentId: 'local', harness: String(requestedSession?.harness), accountId: DEFAULT_HARNESS_ACCOUNT_ID,
+    });
+    if (managedClaim) {
+      if (!accountService || !isHarnessId(requestedSession?.harness) || typeof requestedSession.id !== 'string'
+        || !supportsSessionOperation(requestedSession.harness, fork === true, 'local')) {
+        throw new Error('Session account is not available');
+      }
+      const owned = await accountService.resolveOwnedSession({
+        environmentId: 'local', harness: requestedSession.harness, accountId: claimedAccountId,
+        sessionId: requestedSession.id, workspacePath: nativeWorkspacePath,
+      });
+      session = owned.session;
+      accountBinding = owned.binding;
+    }
     const nativeSessionCwd = typeof session?.cwd === 'string'
       ? toNativePath(session.cwd, process.platform)
       : '';
@@ -111,7 +138,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
 
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const { spawnCmd, spawnArgs: baseArgs } = buildSessionInvokeArgs(nativeSession, fork ?? false, userFlags);
-    const harnessEnv = harnessConfig.env ?? {};
+    const harnessEnv = accountBinding.mergeEnvironment(harnessConfig.env ?? {});
     let spawnArgs = baseArgs;
     let attentionEnv: Record<string, string> = {};
     let attentionCommand: string | undefined;

@@ -1,6 +1,5 @@
 import { getHarnessProviders } from '../harnesses/registry';
 import { HarnessCapabilityError, classifyHarnessFailure, type HarnessProvider, type HarnessUsageSnapshot } from '../harnesses/types';
-import type { HarnessCommandExecutor, HarnessCommandSession, HarnessCommandSessionExecutor } from '../harnesses/commandExecution';
 import type { WorkspaceEnvironment } from '../environment/workspaceEnvironment';
 import type { RegisteredWorkspace } from '../workspaceRegistry';
 import type {
@@ -10,6 +9,10 @@ import type {
   HarnessUsageStatus,
 } from '../../shared/types/harnessUsage';
 import { toRendererMeasurements, validateUsageSnapshot } from './usageSnapshot';
+import { bindHarnessExecution } from '../accounts/accountExecution';
+import type { HarnessAccountStatus } from '../../shared/types/harnessAccounts';
+import type { HarnessId } from '../../shared/harnessIds';
+import type { ResolvedHarnessAccountBinding } from '../accounts/harnessAccountService';
 
 export const DEFAULT_USAGE_CACHE_TTL_MS = 5 * 60_000;
 export const DEFAULT_USAGE_FAILURE_BACKOFF_MS = 60_000;
@@ -21,6 +24,10 @@ export const USAGE_PROVIDER_DEADLINE_MS = 45_000;
 export const USAGE_AVAILABILITY_TTL_MS = 60_000;
 const MIN_TTL_MS = 10_000;
 const MAX_HARNESS_IDS = 32;
+const ACCOUNT_KEY_SEPARATOR = '\u0000';
+/** Default and single-account launches keep the harness ID as their key, exactly as before accounts existed. */
+const usageKey = (harnessId: string, binding?: ResolvedHarnessAccountBinding) =>
+  binding?.kind === 'managed' ? `${harnessId}${ACCOUNT_KEY_SEPARATOR}${binding.id}` : harnessId;
 
 const STATUS_TEXT: Record<Exclude<HarnessUsageStatus, 'ok'>, string> = {
   unsupported: 'No supported usage probe',
@@ -34,7 +41,16 @@ export interface UsageWorkspaceLookup {
   getWorkspace(workspaceId: string): RegisteredWorkspace | null;
 }
 
+/** The slice of the account service usage needs; usage never owns account state. */
+export interface UsageAccountSource {
+  listBindings(environmentId: string, harness: HarnessId): ResolvedHarnessAccountBinding[];
+  reportStatus(accountId: string, status: Exclude<HarnessAccountStatus, 'unknown'>): void;
+  onAccountsChanged?(listener: (change: { accountId: string }) => void): () => void;
+}
+
 export interface HarnessUsageServiceOptions {
+  /** Optional account orchestration; without it (or without managed accounts) behaviour is unchanged. */
+  accounts?: UsageAccountSource;
   now?: () => number;
   /** Injectable for tests; production uses the canonical registry. */
   providers?: () => readonly HarnessProvider[];
@@ -110,6 +126,8 @@ function statusFor(error: HarnessCapabilityError): Exclude<HarnessUsageStatus, '
  */
 export class HarnessUsageService {
   private readonly cache = new WeakMap<WorkspaceEnvironment, Map<string, UsageRecord>>();
+  /** Recently used per-environment record maps (bounded), so a removed account's entries can be dropped. */
+  private readonly recordMaps: Array<Map<string, UsageRecord>> = [];
   private readonly flights = new WeakMap<WorkspaceEnvironment, Map<string, Promise<UsageRecord | 'not-installed'>>>();
   private readonly availability = new WeakMap<WorkspaceEnvironment, { ids: ReadonlySet<string>; at: number }>();
   private readonly availabilityFlights = new WeakMap<WorkspaceEnvironment, Promise<ReadonlySet<string> | undefined>>();
@@ -117,11 +135,21 @@ export class HarnessUsageService {
   private readonly now: () => number;
   private readonly listProviders: () => readonly HarnessProvider[];
   private readonly clientVersion: () => string;
+  private readonly accounts?: UsageAccountSource;
 
   constructor(private readonly registry: UsageWorkspaceLookup, options: HarnessUsageServiceOptions = {}) {
     this.now = options.now ?? Date.now;
     this.listProviders = options.providers ?? getHarnessProviders;
     this.clientVersion = options.clientVersion ?? (() => 'unknown');
+    this.accounts = options.accounts;
+    // A removed account's cached readings and backoff must not outlive it.
+    this.accounts?.onAccountsChanged?.((change) => this.forgetAccount(change.accountId));
+  }
+
+  private forgetAccount(accountId: string): void {
+    for (const records of this.recordMaps) {
+      for (const key of [...records.keys()]) if (key.endsWith(`${ACCOUNT_KEY_SEPARATOR}${accountId}`)) records.delete(key);
+    }
   }
 
   public async get(workspaceId: string, request: HarnessUsageRequest = {}): Promise<HarnessUsageResponse> {
@@ -138,7 +166,7 @@ export class HarnessUsageService {
     // One availability check per request, shared by every provider that needs it.
     let availability: Promise<ReadonlySet<string> | undefined> | undefined;
     const installed = () => availability ??= this.installedHarnesses(environment, force);
-    const entries = await Promise.all(providers.map((provider) => this.resolve(environment, provider, force, installed)));
+    const entries = (await Promise.all(providers.map((provider) => this.resolveAccounts(environment, provider, force, installed)))).flat();
 
     // The workspace may have closed (or been replaced under the same ID)
     // while probes ran. Never hand its result to whatever workspace is there now.
@@ -168,24 +196,50 @@ export class HarnessUsageService {
     return now < record.freshUntil;
   }
 
+  /**
+   * Account-capable providers with managed accounts report one entry per account (selected first), each
+   * cached, backed off and probed independently. Everyone else, including every default-only user,
+   * takes the single-entry path unchanged.
+   */
+  private async resolveAccounts(
+    environment: WorkspaceEnvironment, provider: HarnessProvider, force: boolean,
+    installedHarnesses: () => Promise<ReadonlySet<string> | undefined>,
+  ): Promise<HarnessUsageEntry[]> {
+    const bindings = this.accounts && provider.accounts && environment.kind === 'local'
+      ? this.accounts.listBindings(environment.id, provider.descriptor.id) : [];
+    if (bindings.length <= 1) return [await this.resolve(environment, provider, force, installedHarnesses)];
+    const entries = await Promise.all(bindings.map(async (binding): Promise<HarnessUsageEntry> => ({
+      ...(await this.resolve(environment, provider, force, installedHarnesses, binding)),
+      // Identity and selection are read live: cached readings must not carry a stale "selected" flag.
+      account: { id: binding.id, name: binding.safe.label ?? binding.safe.email ?? (binding.kind === 'default' ? 'Default' : 'Account'), selected: binding.safe.selected },
+    })));
+    // "Not installed" is a property of the environment, not of an account.
+    if (entries[0].status === 'not-installed' || entries[0].status === 'unsupported') return [{ ...entries[0], account: undefined }];
+    return entries;
+  }
+
   private async resolve(
     environment: WorkspaceEnvironment, provider: HarnessProvider, force: boolean,
     installedHarnesses: () => Promise<ReadonlySet<string> | undefined>,
+    binding?: ResolvedHarnessAccountBinding,
   ): Promise<HarnessUsageEntry> {
     const harnessId = provider.descriptor.id;
     if (!provider.usage) return plainEntry(harnessId, 'unsupported');
     if (!environment.executeHarnessCommand) return plainEntry(harnessId, 'unavailable');
 
-    const cached = this.cache.get(environment)?.get(harnessId);
+    // An unusable managed account is reported, never probed and never replaced by another account.
+    if (binding?.unusable) return plainEntry(harnessId, 'unauthenticated');
+    const key = usageKey(harnessId, binding);
+    const cached = this.cache.get(environment)?.get(key);
     if (this.mustServeCache(cached, force, this.now())) return toEntry(cached);
     let flights = this.flights.get(environment);
     if (!flights) this.flights.set(environment, flights = new Map());
-    let flight = flights.get(harnessId);
+    let flight = flights.get(key);
     if (!flight) {
       flight = installedHarnesses()
-        .then(async (installed): Promise<UsageRecord | 'not-installed'> => (installed && !installed.has(harnessId) ? 'not-installed' : this.probe(environment, provider, cached)))
-        .finally(() => { flights.delete(harnessId); });
-      flights.set(harnessId, flight);
+        .then(async (installed): Promise<UsageRecord | 'not-installed'> => (installed && !installed.has(harnessId) ? 'not-installed' : this.probe(environment, provider, cached, binding)))
+        .finally(() => { flights.delete(key); });
+      flights.set(key, flight);
     }
     const outcome = await flight;
     return outcome === 'not-installed' ? plainEntry(harnessId, 'not-installed') : toEntry(outcome);
@@ -216,30 +270,22 @@ export class HarnessUsageService {
     return flight;
   }
 
-  private async probe(environment: WorkspaceEnvironment, provider: HarnessProvider, previous: UsageRecord | undefined): Promise<UsageRecord> {
+  private async probe(environment: WorkspaceEnvironment, provider: HarnessProvider, previous: UsageRecord | undefined, binding?: ResolvedHarnessAccountBinding): Promise<UsageRecord> {
     const harnessId = provider.descriptor.id;
     const capability = provider.usage!;
-    const execute = environment.executeHarnessCommand!.bind(environment);
     const controller = new AbortController();
     this.controllers.add(controller);
-    const executor: HarnessCommandExecutor = { run: (command) => execute(command, controller.signal) };
-    // Sessions opened by the provider are always reaped when the probe ends, however it ends.
-    const sessions = new Set<HarnessCommandSession>();
-    const openSession = environment.openHarnessCommandSession?.bind(environment);
-    const sessionExecutor: HarnessCommandSessionExecutor | undefined = openSession ? {
-      open: async (command) => {
-        const session = await openSession(command, controller.signal);
-        sessions.add(session);
-        return session;
-      },
-    } : undefined;
+    // The environment decides WHERE/HOW; a managed account only adds its main-owned variables. The
+    // provider never sees a path or variable: it gets these bound executors (default: untouched).
+    const execution = bindHarnessExecution(environment, binding?.kind === 'managed' ? binding.environment : undefined, controller.signal);
+    const { executor, sessionExecutor } = execution;
     const policy = capability.refresh;
     const hardMinimum = Math.max(policy?.minimumProbeIntervalMs ?? 0, 0);
     let deadline: ReturnType<typeof setTimeout> | undefined;
     let record: UsageRecord;
     try {
       const raw = await Promise.race([
-        capability.get({ executor, ...(sessionExecutor ? { sessionExecutor } : {}), transport: environment.kind, signal: controller.signal, clientInfo: { name: 'clanker-grid', title: 'Clanker Grid', version: this.clientVersion() } }),
+        capability.get({ executor, ...(sessionExecutor ? { sessionExecutor } : {}), transport: environment.kind, signal: controller.signal, ...(binding?.kind === 'managed' ? { accountId: binding.id } : {}), clientInfo: { name: 'clanker-grid', title: 'Clanker Grid', version: this.clientVersion() } }),
         new Promise<never>((_, reject) => {
           deadline = setTimeout(() => {
             controller.abort();
@@ -273,11 +319,20 @@ export class HarnessUsageService {
       if (deadline) clearTimeout(deadline);
       this.controllers.delete(controller);
       controller.abort();
-      await Promise.allSettled([...sessions].map((session) => session.dispose()));
+      await execution.disposeSessions();
     }
     let perEnvironment = this.cache.get(environment);
-    if (!perEnvironment) this.cache.set(environment, perEnvironment = new Map());
-    perEnvironment.set(harnessId, record);
+    if (!perEnvironment) {
+      this.cache.set(environment, perEnvironment = new Map());
+      this.recordMaps.push(perEnvironment);
+      if (this.recordMaps.length > 64) this.recordMaps.shift();
+    }
+    perEnvironment.set(usageKey(harnessId, binding), record);
+    // A probe may only mark a managed account (never delete or reroute it).
+    if (binding?.kind === 'managed') {
+      if (record.status === 'ok') this.accounts?.reportStatus(binding.id, 'connected');
+      else if (record.status === 'unauthenticated') this.accounts?.reportStatus(binding.id, 'needs-auth');
+    }
     return record;
   }
 }

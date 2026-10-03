@@ -5,6 +5,7 @@ import { buildSessionCommand } from './sessionLaunch';
 import { toNativePath, toPosixPath } from '../shared/pathNormalize';
 import { getHarnessProviders } from './harnesses/registry';
 import { classifyHarnessFailure, type HarnessCapabilityError } from './harnesses/types';
+import type { ManagedSessionDiscovery } from './accounts/harnessAccountService';
 export { sessionMatchesWorkspace } from './harnesses/sessionFiles';
 export { encodeClaudeProjectDir } from './harnesses/claude/sessions';
 export { parseOmpSessionMetadata } from './harnesses/omp/sessions';
@@ -19,6 +20,7 @@ interface SessionCacheEntry {
 }
 
 const sessionCache = new Map<string, SessionCacheEntry>();
+const CACHE_KEY_SEPARATOR = '\u0000';
 export function clearSessionCache(): void {
   sessionCache.clear();
 }
@@ -29,7 +31,10 @@ export function clearSessionCacheForWorkspace(workspacePath?: string): void {
     return;
   }
   const normalizedPath = toNativePath(workspacePath.replace(/[\\/]+$/, ''), process.platform);
-  sessionCache.delete(normalizedPath);
+  // Entries are keyed by path plus (when managed accounts exist) the account-set generation.
+  for (const key of [...sessionCache.keys()]) {
+    if (key === normalizedPath || key.startsWith(`${normalizedPath}${CACHE_KEY_SEPARATOR}`)) sessionCache.delete(key);
+  }
 }
 /** Test-only/introspection helper for verifying the cache remains bounded. */
 export function getSessionCacheSize(): number {
@@ -55,6 +60,12 @@ function pruneSessionCache(now: number): void {
 // ============================================================================
 export interface DiscoverSessionsOptions {
   forceRefresh?: boolean;
+  /**
+   * Trusted managed-account storage roots, supplied by main's account service. The cache key then
+   * includes the account-set generation, so stale provenance is never served after the set changes.
+   * Absent for default-only users, whose cache identity is exactly the workspace path as before.
+   */
+  managed?: ManagedSessionDiscovery;
 }
 
 type DiscoveryStatus = { status: 'success' } | { status: 'error'; error: string; failure?: HarnessCapabilityError };
@@ -78,18 +89,23 @@ export async function discoverSessionsDetailed(
   const now = Date.now();
   pruneSessionCache(now);
 
-  const cached = sessionCache.get(normalizedPath);
+  const managed = options?.managed && options.managed.targets.length > 0 ? options.managed : undefined;
+  const cacheKey = managed ? `${normalizedPath}${CACHE_KEY_SEPARATOR}${managed.cacheKey}` : normalizedPath;
+  const cached = sessionCache.get(cacheKey);
   if (cached && !options?.forceRefresh) {
     // Refresh insertion order so eviction follows least-recently-used behavior.
-    sessionCache.delete(normalizedPath);
-    sessionCache.set(normalizedPath, cached);
+    sessionCache.delete(cacheKey);
+    sessionCache.set(cacheKey, cached);
     return cached.discovery;
   }
 
   const providers = getHarnessProviders().filter((provider) => provider.sessions?.discover)
     .sort((a, b) => (a.sessions?.discoveryOrder ?? Infinity) - (b.sessions?.discoveryOrder ?? Infinity));
   const harnesses = providers.map((provider) => provider.descriptor.id);
-  const results = await Promise.allSettled(providers.map((provider) => provider.sessions!.discover(normalizedPath)));
+  const [results, managedResults] = await Promise.all([
+    Promise.allSettled(providers.map((provider) => provider.sessions!.discover(normalizedPath))),
+    Promise.allSettled((managed?.targets ?? []).map((target) => target.discover(normalizedPath))),
+  ]);
 
   const sessions: HarnessSession[] = [];
   const harnessStatus = {} as DetailedSessionDiscovery['harnessStatus'];
@@ -100,6 +116,17 @@ export async function discoverSessionsDetailed(
       harnessStatus[harness] = { status: 'success' };
     } else {
       harnessStatus[harness] = { status: 'error', error: result.reason instanceof Error ? result.reason.message : String(result.reason), failure: classifyHarnessFailure(result.reason) };
+    }
+  }
+
+  // Each managed account runs the provider's own parser against its own root. A failing account
+  // marks only its harness, never hides the others, and keeps a partial scan out of the cache.
+  for (const [index, result] of managedResults.entries()) {
+    const target = managed!.targets[index];
+    if (result.status === 'fulfilled') {
+      sessions.push(...result.value.map((session) => ({ ...session, accountId: target.accountId })));
+    } else if (harnessStatus[target.harness]?.status !== 'error') {
+      harnessStatus[target.harness] = { status: 'error', error: 'A managed account\'s session history could not be read', failure: classifyHarnessFailure(result.reason) };
     }
   }
 
@@ -114,7 +141,7 @@ export async function discoverSessionsDetailed(
   const discovery = { sessions: posixSessions, harnessStatus };
   // A partial scan can still populate history, but it must not turn into a cached empty scan.
   if (Object.values(harnessStatus).every((status) => status?.status === 'success')) {
-    sessionCache.set(normalizedPath, { discovery, cachedAt: Date.now() });
+    sessionCache.set(cacheKey, { discovery, cachedAt: Date.now() });
     pruneSessionCache(Date.now());
   }
   return discovery;

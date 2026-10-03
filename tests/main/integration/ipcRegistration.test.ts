@@ -89,6 +89,7 @@ describe('IPC registration smoke test', () => {
     const { registerAnnotationIpc } = await import('../../../src/main/annotation/annotationIpc');
     const { registerSessionIpc } = await import('../../../src/main/ipc/sessionIpc');
     const { registerUsageIpc } = await import('../../../src/main/ipc/usageIpc');
+    const { registerAccountIpc } = await import('../../../src/main/ipc/accountIpc');
     const { registerRecipeIpc } = await import('../../../src/main/ipc/recipeIpc');
     const { registerSshEnvironmentIpc } = await import('../../../src/main/ipc/sshEnvironmentIpc');
     interface MockStoreSchema {
@@ -245,6 +246,7 @@ describe('IPC registration smoke test', () => {
       getHarnessOptions: () => ({}),
     });
     registerUsageIpc({ getUsageService: () => ({ get: vi.fn() }) as never });
+    registerAccountIpc({ getAccountService: () => ({}) as never });
     registerRecipeIpc({
       getStore: () => mockStore as never,
     });

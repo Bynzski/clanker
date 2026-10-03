@@ -4,6 +4,7 @@ import { local, INTERPRETER } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import { codexUsage } from './usage';
+import { codexAccounts } from './accounts';
 import { defineHarness, type HarnessProvider } from '../types';
 
 export const codexProvider = defineHarness({
@@ -22,6 +23,7 @@ export const codexProvider = defineHarness({
   },
   attention: { interpreter: INTERPRETER, resumePreservesSessionId: true, local, remote },
   usage: codexUsage,
+  accounts: codexAccounts,
   aiCommit: { modelArg: '-m',
     buildInvocation: ({ model, prompt }) => ({ command: 'codex', args: [...['exec'], ...(model ? ['-m', model] : [])], stdin: prompt, timeoutMs: 60000 }),
   },

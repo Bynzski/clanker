@@ -2,6 +2,7 @@ import type { ChildProcess } from 'child_process';
 import { HarnessCapabilityError } from '../harnesses/types';
 import {
   MAX_SESSION_INPUT_BYTES,
+  MAX_SESSION_TIMEOUT_MS,
   normalizeHarnessCommand,
   type HarnessCommandRequest,
   type HarnessCommandSession,
@@ -12,7 +13,7 @@ import {
 /** Validates a session request with the shared command rules; sessions take no initial stdin. */
 export function normalizeSessionRequest(request: HarnessCommandRequest): NormalizedHarnessCommand {
   if (request.stdin !== undefined) throw new HarnessCapabilityError('command-failed', 'Invalid harness command: sessions take no initial stdin');
-  return normalizeHarnessCommand(request);
+  return normalizeHarnessCommand(request, MAX_SESSION_TIMEOUT_MS);
 }
 
 export interface BoundedSessionOptions {

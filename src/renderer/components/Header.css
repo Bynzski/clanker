@@ -336,3 +336,16 @@
 }
 
 .header-chat-popover { padding: 0; border: 0; box-shadow: none; width: max-content; }
+
+/* Harness accounts (Settings → Harness Defaults) */
+.harness-accounts-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.harness-account { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); }
+.harness-account.selected { border-color: var(--border-strong); }
+.harness-account-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.harness-account-name { font-size: 11px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.harness-account-detail { font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.harness-account-selected { font-size: 10px; color: var(--text-secondary); }
+.harness-account-warning { font-size: 10px; color: var(--status-warning); }
+.harness-account-flow, .harness-account-add { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.harness-account-add .clanker-input { flex: 1; min-width: 0; }
+.harness-account-add-button { align-self: flex-start; }

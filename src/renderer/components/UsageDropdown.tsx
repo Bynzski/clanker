@@ -8,6 +8,10 @@ interface Props {
   /** Usage-capable, enabled harnesses to render, in canonical order. */
   harnessIds: readonly string[];
   entries: Record<string, HarnessUsageEntry | undefined>;
+  otherAccounts?: Record<string, HarnessUsageEntry[] | undefined>;
+  onSelectAccount?: (harnessId: string, accountId: string) => void;
+  /** Hands off to the existing Settings account surface; Usage owns no account lifecycle. */
+  onManageAccounts?: (harnessId: string, intent: 'manage' | 'add') => void;
   pending: Record<string, boolean>;
   refreshing: boolean;
   now: number;
@@ -33,7 +37,7 @@ function refreshTitle(refreshing: boolean, canRefresh: boolean, nextAt: number |
   return 'Refresh usage';
 }
 
-export default function UsageDropdown({ harnessIds, entries, pending, refreshing, now, canRefresh, nextManualRefreshAt, onRefresh }: Props) {
+export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSelectAccount, onManageAccounts, pending, refreshing, now, canRefresh, nextManualRefreshAt, onRefresh }: Props) {
   const title = refreshTitle(refreshing, canRefresh, nextManualRefreshAt, now);
   return (
     <div className="usage-dropdown">
@@ -51,14 +55,31 @@ export default function UsageDropdown({ harnessIds, entries, pending, refreshing
       )}
       {harnessIds.map((id) => {
         const option = HARNESS_OPTIONS.find((candidate) => candidate.id === id)!;
-        return <HarnessSection key={id} label={option.label} Icon={option.Icon} entry={entries[id]} checking={pending[id] === true} now={now} />;
+        const primary = entries[id];
+        return (
+          <div key={id}>
+            <HarnessSection label={option.label} Icon={option.Icon} entry={primary} checking={pending[id] === true} now={now} />
+            {(otherAccounts?.[id] ?? []).map((other) => (
+              <HarnessSection
+                key={other.account?.id ?? 'other'} label={option.label} Icon={option.Icon} entry={other} checking={false} now={now}
+                onUse={other.account && onSelectAccount ? () => onSelectAccount(id, other.account!.id) : undefined}
+              />
+            ))}
+            {onManageAccounts && (otherAccounts?.[id]?.length ?? 0) > 0 && (
+              <div className="usage-account-actions">
+                <button type="button" className="usage-badge usage-use" onClick={() => onManageAccounts(id, 'add')} aria-label={`Add ${option.label} account`}>Add account</button>
+                <button type="button" className="usage-badge usage-use" onClick={() => onManageAccounts(id, 'manage')} aria-label={`Manage ${option.label} accounts`}>Manage accounts</button>
+              </div>
+            )}
+          </div>
+        );
       })}
     </div>
   );
 }
 
-function HarnessSection({ label, Icon, entry, checking, now }: {
-  label: string; Icon: (typeof HARNESS_OPTIONS)[number]['Icon']; entry?: HarnessUsageEntry; checking: boolean; now: number;
+function HarnessSection({ label, Icon, entry, checking, now, onUse }: {
+  label: string; Icon: (typeof HARNESS_OPTIONS)[number]['Icon']; entry?: HarnessUsageEntry; checking: boolean; now: number; onUse?: () => void;
 }) {
   const groups = entry ? groupMeasurements(entry.measurements) : [];
   const single = groups.length === 1 ? groups[0] : undefined;
@@ -69,7 +90,9 @@ function HarnessSection({ label, Icon, entry, checking, now }: {
     <section className="usage-harness" aria-label={label} aria-busy={checking}>
       <div className="usage-harness-header">
         <span className="usage-harness-icon"><Icon size={12} strokeWidth={2.5} /></span>
-        <span className="usage-harness-name">{label}</span>
+        <span className="usage-harness-name">{label}{entry?.account ? ` · ${entry.account.name}` : ''}</span>
+        {entry?.account?.selected && <span className="usage-badge">In use</span>}
+        {onUse && <button type="button" className="usage-badge usage-use" onClick={onUse} aria-label={`Use ${entry?.account?.name ?? 'account'} for ${label}`}>Use</button>}
         {meta && <span className="usage-harness-meta" title={meta}>{meta}</span>}
         {stale && <span className="usage-badge">Stale</span>}
       </div>

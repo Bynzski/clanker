@@ -1,6 +1,7 @@
 import { disposeAttentionSafely } from '../harnesses/localAttention';
 import type { PreparedLocalAttention } from '../harnesses/types';
 import { findHarnessProvider } from '../harnesses/registry';
+import { prepareHarnessAccountContext, type HarnessAccountService } from '../accounts/harnessAccountService';
 /**
  * Terminal IPC Handlers
  *
@@ -79,6 +80,8 @@ interface RegisterTerminalIpcDeps {
   getAppShuttingDown?: () => boolean;
   agentAttentionBroker?: AgentAttentionBroker;
   createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
+  /** Optional: without it (or without managed accounts) every launch uses the native account. */
+  getHarnessAccountService?: () => HarnessAccountService | undefined;
 }
 
 let appShuttingDown = false;
@@ -229,9 +232,15 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     // PowerShell is interactive by default (no flag needed); bash needs -i.
     const shellArgs = process.platform === 'win32' ? [] : ['-i'];
 
-    const harnessEnv = (harness && getHarnessOptions()[harness]?.env) || {};
-
     const harnessConfig = harness ? getHarnessOptions()[harness] : undefined;
+    // The one account seam: the manually selected account contributes its provider-owned variables
+    // (nothing at all for the default account). Resolved before any resource is registered so a
+    // disconnected account fails the launch cleanly instead of falling back to another account.
+    const accountBinding = harness && harnessConfig
+      ? prepareHarnessAccountContext(deps.getHarnessAccountService?.(), { environmentId: effectiveEnvironmentId, harness })
+      : undefined;
+    const baseHarnessEnv = (harness && getHarnessOptions()[harness]?.env) || {};
+    const harnessEnv = accountBinding ? accountBinding.mergeEnvironment(baseHarnessEnv) : baseHarnessEnv;
     const harnessDefaults = store.get('harnessDefaults');
     const attentionEnabled = Boolean(harnessConfig && harness && findHarnessProvider(harness)?.attention?.local && harnessDefaults[harness]?.attentionEnabled);
     const userFlags = harness ? harnessDefaults[harness]?.flags : undefined;

@@ -216,10 +216,14 @@ async function resolveCodexOrphanedTitle(
   return (indexTitle && indexTitle.trim()) || userMessageTitle || cwdBasename || 'Codex session';
 }
 
-export async function discoverCodexSessions(workspacePath: string): Promise<HarnessSession[]> {
-  const homeDir = os.homedir();
-  const indexPath = path.join(homeDir, '.codex', 'session_index.jsonl');
-  const sessionsDir = path.join(homeDir, '.codex', 'sessions');
+/** The native/default Codex home; managed accounts pass their own trusted `CODEX_HOME` instead. */
+export function defaultCodexHome(): string {
+  return path.join(os.homedir(), '.codex');
+}
+
+export async function discoverCodexSessions(workspacePath: string, codexHome: string = defaultCodexHome()): Promise<HarnessSession[]> {
+  const indexPath = path.join(codexHome, 'session_index.jsonl');
+  const sessionsDir = path.join(codexHome, 'sessions');
 
   let indexContent = '';
   try {

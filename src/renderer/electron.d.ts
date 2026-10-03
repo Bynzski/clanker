@@ -47,6 +47,7 @@ import type { AiCommitSettings, ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import type { HarnessSession } from '../../shared/types/session';
 import type { HarnessUsageRequest, HarnessUsageResponse } from '../../shared/types/harnessUsage';
+import type { HarnessAccountAuthEvent, HarnessAccountAuthStart, HarnessAccountList } from '../../shared/types/harnessAccounts';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { AgentAttentionUpdate } from '../../shared/types/agentAttention';
 import type { ThemeId } from '../../shared/types/theme';
@@ -300,6 +301,14 @@ interface ElectronAPI {
   // Session history
   discoverSessions: (workspaceId: string) => Promise<HarnessSession[]>;
   getHarnessUsage: (workspaceId: string, request?: HarnessUsageRequest) => Promise<HarnessUsageResponse>;
+  listHarnessAccounts: (environmentId: string, harness: string) => Promise<HarnessAccountList>;
+  selectHarnessAccount: (environmentId: string, harness: string, accountId: string) => Promise<HarnessAccountList>;
+  startHarnessAccountAdd: (environmentId: string, harness: string, label?: string) => Promise<HarnessAccountAuthStart>;
+  reconnectHarnessAccount: (environmentId: string, harness: string, accountId: string) => Promise<HarnessAccountAuthStart>;
+  cancelHarnessAccountAuth: (flowId: string) => Promise<void>;
+  removeHarnessAccount: (environmentId: string, harness: string, accountId: string) => Promise<HarnessAccountList>;
+  renameHarnessAccount: (environmentId: string, harness: string, accountId: string, label: string) => Promise<HarnessAccountList>;
+  onHarnessAccountAuthState: (callback: (event: HarnessAccountAuthEvent) => void) => () => void;
   invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean; workingDir?: string }>;
 
   // Workspace Recipes

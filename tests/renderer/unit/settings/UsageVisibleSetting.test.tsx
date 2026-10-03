@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { installElectronApiMock } from '../../../setup/electron';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import HarnessDefaultsSection from '../../../../src/renderer/components/settings/HarnessDefaultsSection';
@@ -18,6 +19,9 @@ function renderFor(harnessId: string, usageVisible?: boolean, visible = true) {
 }
 
 describe('Show in Usage setting', () => {
+  // Account-capable harnesses render an accounts row that reads through the bridge.
+  beforeEach(() => { installElectronApiMock(); });
+
   it.each([['codex', 'Codex'], ['claude', 'Claude'], ['omp', 'Oh My Pi'], ['hermes', 'Hermes'], ['agy', 'Antigravity']])(
     'is offered for %s, checked by default (legacy defaults), and persists changes through the handler', async (id, label) => {
       const props = renderFor(id);

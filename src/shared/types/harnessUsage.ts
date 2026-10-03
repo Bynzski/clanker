@@ -24,6 +24,11 @@ export interface HarnessUsageMeasurementView {
 
 export interface HarnessUsageEntry {
   harnessId: string;
+  /**
+   * Present only when a harness has managed accounts. `id` is Clanker's opaque account ID (never a
+   * provider-native identifier); `name` is display-safe. Entries are ordered selected account first.
+   */
+  account?: { id: string; name: string; selected: boolean };
   status: HarnessUsageStatus;
   /** Last good measurements; retained (with `stale`) when a later probe fails. */
   measurements: HarnessUsageMeasurementView[];
