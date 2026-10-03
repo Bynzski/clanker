@@ -6,8 +6,9 @@ import { useThemeStore } from '../theme/themeStore';
 import { getTerminalTheme, registerThemedTerminal, unregisterThemedTerminal } from '../theme/terminalTheme';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { useAgentAttentionStore } from '../store/agentAttentionStore';
-import { CircleAlert, CircleCheck, CircleDot, CircleHelp } from 'lucide-react';
-import { HARNESS_OPTIONS } from '../lib/harnessOptions';
+import { getAttentionPresentation } from '../lib/agentAttentionPresentation';
+import { AgentAttentionState } from './AgentAttentionIndicators';
+import { getHarnessOption } from '../lib/harnessOptions';
 
 import { useDragHandle } from './dragHandleContext';
 import { useScopedWorkspace, useScopedWorkspaceActivity } from './WorkspaceScope';
@@ -171,13 +172,8 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const terminalId = terminal?.id ?? null;
   const attention = useAgentAttentionStore((state) => terminalId ? state.byTerminalId[terminalId] : undefined);
   const showAgentAttention = Boolean(terminal?.harnessId && terminal.attentionEnabled);
-  const attentionLabel = attention?.lifecycle === 'needs_input' ? 'Needs input'
-    : attention?.lifecycle === 'turn_complete' ? 'Turn complete'
-    : attention?.lifecycle === 'running' ? 'Running' : 'Unknown';
-  const AttentionIcon = attention?.lifecycle === 'needs_input' ? CircleAlert
-    : attention?.lifecycle === 'turn_complete' ? CircleCheck
-    : attention?.lifecycle === 'running' ? CircleDot : CircleHelp;
-  const harnessOption = HARNESS_OPTIONS.find((option) => option.id === terminal?.harnessId) ?? HARNESS_OPTIONS[0];
+  const { label: attentionLabel } = getAttentionPresentation(attention?.lifecycle);
+  const harnessOption = getHarnessOption(terminal?.harnessId);
   const HarnessIcon = harnessOption.Icon;
   const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
 
@@ -762,15 +758,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
             <span className="terminal-title" title={terminal.harnessId ? `${harnessOption.label}${showAgentAttention ? ` · ${attentionLabel}` : ''}` : 'Shell'}>
               {terminal?.displayName ?? 'Terminal'}
             </span>
-            {showAgentAttention && (
-              <span
-                className={`terminal-agent-state state-${attention?.lifecycle ?? 'unknown'} ${attention?.unseen ? 'unseen' : ''}`}
-                aria-label={`${terminal.displayName ?? 'Agent'}: ${attentionLabel}`}
-                title={attentionLabel}
-              >
-                <AttentionIcon size={15} strokeWidth={2} aria-hidden="true" />
-              </span>
-            )}
+            {showAgentAttention && <AgentAttentionState attention={attention} name={terminal.displayName ?? 'Agent'} />}
           </div>
           <div className="terminal-header-actions">
             <IconButton aria-label="Close terminal" className="terminal-close" onClick={handleClose} title="Close terminal" disabled={!isInteractive}>

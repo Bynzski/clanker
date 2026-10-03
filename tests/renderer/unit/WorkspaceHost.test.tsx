@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
-import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, cleanup, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WorkspaceHost from '../../../src/renderer/components/WorkspaceHost';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
+import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
+import { MAX_WARM_WORKSPACE_SURFACES } from '../../../src/renderer/lib/workspaceWarmth';
 
 vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
   default: ({ workspaceId }: { workspaceId: string }) => (
@@ -13,8 +15,8 @@ vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({
 }));
 
 vi.mock('../../../src/renderer/components/FileExplorer', () => ({
-  default: ({ workspaceId }: { workspaceId: string }) => (
-    <aside data-testid="explorer-dock" data-explorer-workspace-id={workspaceId} />
+  default: ({ workspaceId, variant }: { workspaceId: string; variant?: string }) => (
+    <aside data-testid="explorer-dock" data-explorer-workspace-id={workspaceId} data-explorer-variant={variant ?? 'dock'} />
   ),
 }));
 
@@ -34,6 +36,7 @@ describe('WorkspaceHost', () => {
 
   afterEach(() => {
     cleanup();
+    useWorkspaceNavigationStore.setState({ mode: 'tabs' });
   });
 
   it('renders nothing when no workspaces exist', () => {
@@ -168,6 +171,85 @@ describe('WorkspaceHost', () => {
       expect(state.workspaces.find((workspace) => workspace.id === 'ws-1')?.runtimeState.residencyState).toBe('warm');
       expect(state.workspaces.find((workspace) => workspace.id === 'ws-3')?.runtimeState.residencyState).toBe('cold');
       expect(state.workspaces.find((workspace) => workspace.id === 'ws-3')?.runtimeState.resourcePolicy.terminals).toBe('warm');
+    });
+  });
+
+  describe('sidebar navigation mode', () => {
+    function seedFour(overrides: Record<string, Partial<ReturnType<typeof createWorkspaceFixture>>> = {}) {
+      const ids = ['ws-1', 'ws-2', 'ws-3', 'ws-4'];
+      useWorkspaceStore.setState({
+        workspaces: ids.map((id, i) => createWorkspaceFixture({
+          id, name: id, lifecycle: i === 0 ? 'active' : 'parked', explorerVisible: true, ...overrides[id],
+        })),
+        activeWorkspaceId: 'ws-1',
+      });
+    }
+
+    it('tabs mode keeps per-surface explorer docks and renders no sidebar', async () => {
+      seedFour();
+      render(<WorkspaceHost />);
+      await screen.findByTestId('workspace-host');
+      expect(screen.queryByTestId('workspace-sidebar')).toBeNull();
+      expect(screen.getAllByTestId('explorer-dock').length).toBe(MAX_WARM_WORKSPACE_SURFACES);
+    });
+
+    it('renders exactly one sidebar and one active-scoped Files section, with no surface docks', async () => {
+      useWorkspaceNavigationStore.setState({ mode: 'sidebar' });
+      seedFour();
+      render(<WorkspaceHost />);
+      await screen.findByTestId('workspace-sidebar');
+      expect(screen.getAllByTestId('workspace-sidebar')).toHaveLength(1);
+      const docks = await screen.findAllByTestId('explorer-dock');
+      expect(docks).toHaveLength(1);
+      expect(docks[0]).toHaveAttribute('data-explorer-workspace-id', 'ws-1');
+      expect(docks[0].closest('[data-testid="workspace-sidebar"]')).toBeTruthy();
+      expect(docks[0]).toHaveAttribute('data-explorer-variant', 'section');
+      expect(screen.getByTestId('workspace-host')).toHaveAttribute('data-navigation-mode', 'sidebar');
+
+      act(() => { useWorkspaceStore.setState({ activeWorkspaceId: 'ws-2' }); });
+      await waitFor(() => {
+        expect(screen.getByTestId('explorer-dock')).toHaveAttribute('data-explorer-workspace-id', 'ws-2');
+      });
+    });
+
+    it('keeps the warm cap at three and unaffected by sidebar expansion or rows', async () => {
+      useWorkspaceNavigationStore.setState({ mode: 'sidebar' });
+      seedFour();
+      render(<WorkspaceHost />);
+      await screen.findByTestId('workspace-sidebar');
+      expect(MAX_WARM_WORKSPACE_SURFACES).toBe(3);
+      expect(screen.getAllByTestId('dynamic-pane-layout')).toHaveLength(3);
+      expect(document.querySelectorAll('[data-workspace-residency="warm"]')).toHaveLength(3);
+      const cold = document.querySelector('[data-workspace-id="ws-2"]');
+      expect(cold).toHaveAttribute('data-workspace-residency', 'cold');
+
+      // Expanding every workspace row must not warm anything.
+      for (const toggle of screen.getAllByRole('button', { name: /^Expand / })) fireEvent.click(toggle);
+      expect(document.querySelectorAll('[data-workspace-residency="warm"]')).toHaveLength(3);
+      expect(cold).toHaveAttribute('data-workspace-residency', 'cold');
+    });
+
+    it('keeps WORKSPACES visible when the active workspace has Files collapsed', async () => {
+      useWorkspaceNavigationStore.setState({ mode: 'sidebar' });
+      seedFour({ 'ws-2': { explorerVisible: false } });
+      render(<WorkspaceHost />);
+      await screen.findByTestId('workspace-sidebar');
+      act(() => { useWorkspaceStore.getState().selectWorkspace('ws-2'); });
+      await waitFor(() => expect(screen.getByTestId('workspace-host')).toHaveAttribute('data-active-workspace-id', 'ws-2'));
+      // Sidebar and WORKSPACES stay; FILES stays scoped to the new active workspace
+      // (it collapses itself from explorerVisible, covered in FileExplorer tests).
+      expect(screen.getByTestId('workspace-sidebar')).toBeTruthy();
+      expect(screen.getByRole('region', { name: 'Workspaces' })).toBeTruthy();
+      expect(screen.getByTestId('explorer-dock')).toHaveAttribute('data-explorer-workspace-id', 'ws-2');
+    });
+
+    it('passes Open Workspace through to the sidebar', async () => {
+      useWorkspaceNavigationStore.setState({ mode: 'sidebar' });
+      seedFour();
+      const onOpen = vi.fn();
+      render(<WorkspaceHost onOpenWorkspace={onOpen} />);
+      fireEvent.click(await screen.findByLabelText('Open Workspace'));
+      expect(onOpen).toHaveBeenCalledTimes(1);
     });
   });
 });

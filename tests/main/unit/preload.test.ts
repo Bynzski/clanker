@@ -127,6 +127,10 @@ const MAIN_IPC_INVOKE_CHANNELS = [
   'set-ai-commit-model',
   'get-theme',
   'set-theme',
+  'get-workspace-navigation-mode',
+  'set-workspace-navigation-mode',
+  'get-workspace-sidebar-width',
+  'set-workspace-sidebar-width',
 
   // Terminal
   'spawn-terminal',

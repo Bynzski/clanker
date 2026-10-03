@@ -45,3 +45,11 @@ export function getWorkspaceTabLabel(workspace: WorkspaceIdentity): string {
     ? `${projectName} / ${name}`
     : projectName;
 }
+
+/** Initial value for the inline rename editor of a workspace. */
+export function getWorkspaceRenameValue(workspace: WorkspaceIdentity): string {
+  const projectName = getWorkspaceProjectName(workspace);
+  return workspace.isLinkedWorktree && workspace.name === getWorkspaceNameFromPath(workspace.workspacePath)
+    ? projectName
+    : workspace.name || projectName;
+}

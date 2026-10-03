@@ -24,6 +24,7 @@ import { getWorkspaceNameFromPath } from './lib/workspaceLabels';
 import type { GitWorktree } from '../shared/types/git';
 import './App.css';
 import { useThemeStore } from './theme/themeStore';
+import { useWorkspaceNavigationStore } from './store/workspaceNavigationStore';
 
 const WorkspaceHost = lazy(() => import('./components/WorkspaceHost'));
 
@@ -48,6 +49,12 @@ function App() {
     }
   }, []);
 
+
+  useEffect(() => {
+    if (!useWorkspaceNavigationStore.getState().resolved) {
+      void useWorkspaceNavigationStore.getState().initialize();
+    }
+  }, []);
 
   useEffect(() => {
     void useKeybindingStore.getState().load();
@@ -385,7 +392,7 @@ function App() {
           )}
         >
           <Suspense fallback={<div className="main-content-loading">Loading workspace layout...</div>}>
-            <WorkspaceHost />
+            <WorkspaceHost onOpenWorkspace={() => setShowWorkspaceGate(true)} />
           </Suspense>
         </ErrorBoundary>
       </div>

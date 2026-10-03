@@ -97,21 +97,6 @@
 
 .workspace-tab-worktree span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
-.workspace-tab-attention {
-  flex-shrink: 0;
-  padding: 1px 4px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
-  background: color-mix(in srgb, var(--status-success-emphasis) 16%, transparent);
-  color: var(--status-success-emphasis);
-}
-
-.workspace-tab-attention.needs-input {
-  background: color-mix(in srgb, var(--status-warning-emphasis) 18%, transparent);
-  color: var(--status-warning-emphasis);
-}
-
 .workspace-tab-jump {
   display: flex;
   align-items: center;

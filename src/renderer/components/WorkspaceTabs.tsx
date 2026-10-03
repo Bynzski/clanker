@@ -1,13 +1,15 @@
 import { IconButton } from './ui/IconButton';
 import { Input } from './ui/Input';
-import { useState, useRef, useEffect } from 'react';
-import type { DragEvent, KeyboardEvent, MouseEvent } from 'react';
+import type { MouseEvent } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { disposeWorkspaceResources } from '../lib/workspaceLifecycle';
+import { closeWorkspaceWithCleanup } from '../lib/workspaceClose';
 import { Plus, X, Check, Edit2, BellRing, GitBranch } from 'lucide-react';
-import { getRemoteEnvironmentLabel, getWorkspaceNameFromPath, getWorkspaceProjectName, getWorkspaceTabLabel } from '../lib/workspaceLabels';
+import { getRemoteEnvironmentLabel, getWorkspaceRenameValue, getWorkspaceTabLabel } from '../lib/workspaceLabels';
 import { useAgentAttentionStore, attentionCounts } from '../store/agentAttentionStore';
+import { useWorkspaceRename } from '../lib/useWorkspaceRename';
+import { useWorkspaceReorder } from '../lib/useWorkspaceReorder';
 import { nextAttentionTarget } from '../lib/agentAttentionNavigation';
+import { WorkspaceAttentionBadge } from './AgentAttentionIndicators';
 import './WorkspaceTabs.css';
 
 interface WorkspaceTabsProps {
@@ -15,67 +17,15 @@ interface WorkspaceTabsProps {
 }
 
 export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
-  const { workspaces, activeWorkspaceId, activeTerminalId, selectWorkspace, moveWorkspace, closeWorkspace, updateWorkspaceName } = useWorkspaceStore();
+  const { workspaces, activeWorkspaceId, activeTerminalId, selectWorkspace, moveWorkspace } = useWorkspaceStore();
   const byTerminalId = useAgentAttentionStore((state) => state.byTerminalId);
   const nextTarget = nextAttentionTarget(workspaces, byTerminalId, activeTerminalId);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-  const draggedWorkspaceIdRef = useRef<string | null>(null);
-  const suppressClickRef = useRef(false);
-  const [dropTarget, setDropTarget] = useState<{ id: string; side: 'left' | 'right' } | null>(null);
-
-  /**
-   * Keep the explorer watcher aligned with the active workspace.
-   * Only the active workspace explorer watcher remains live. Parked workspaces
-   * keep cached explorer state and refresh when activated again.
-   */
-  useEffect(() => {
-    const syncExplorerWatcher = async (
-      workspaceId: string | null,
-      state = useWorkspaceStore.getState(),
-    ) => {
-      if (typeof window.electronAPI?.explorerStartWatching !== 'function') {
-        return;
-      }
-
-      const workspace = state.getWorkspaceById(workspaceId);
-      if (!workspace) {
-        if (typeof window.electronAPI?.explorerStopWatching === 'function') {
-          await window.electronAPI.explorerStopWatching();
-        }
-        return;
-      }
-
-      if ((workspace.environmentId ?? 'local') !== 'local') {
-        await window.electronAPI.explorerStopWatching();
-        return;
-      }
-      await window.electronAPI.explorerStartWatching(workspace.id);
-    };
-
-    void syncExplorerWatcher(useWorkspaceStore.getState().activeWorkspaceId);
-
-    const unsubscribe = useWorkspaceStore.subscribe((state, prevState) => {
-      if (state.activeWorkspaceId !== prevState.activeWorkspaceId) {
-        void syncExplorerWatcher(state.activeWorkspaceId, state);
-      }
-    });
-
-    return () => {
-      unsubscribe();
-      if (typeof window.electronAPI?.explorerStopWatching === 'function') {
-        void window.electronAPI.explorerStopWatching();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (editingId && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [editingId]);
+  const { editingId, editValue, setEditValue, inputRef, startEditing: beginEditing, saveEdit, handleEditKeyDown } = useWorkspaceRename();
+  const reorder = useWorkspaceReorder(workspaces, moveWorkspace, {
+    axis: 'horizontal',
+    ignoreDragSelector: '.workspace-tab-edit, .workspace-tab-edit-trigger, .workspace-tab-close',
+  });
+  const { dropTarget, suppressClickRef } = reorder;
 
   if (workspaces.length === 0) {
     return null;
@@ -84,89 +34,12 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
   const handleClose = async (id: string, event: MouseEvent) => {
     event.stopPropagation();
 
-    const state = useWorkspaceStore.getState();
-    const workspace = state.getWorkspaceById(id);
-    if (workspace == null) {
-      return;
-    }
-
-    await disposeWorkspaceResources(workspace, { isActiveWorkspace: state.activeWorkspaceId === id });
-    closeWorkspace(id);
-    await window.electronAPI.unregisterOpenWorkspace(id).catch((error) => {
-      console.error('Could not unregister closed workspace:', error);
-    });
+    await closeWorkspaceWithCleanup(id);
   };
 
   const startEditing = (id: string, currentName: string, event: MouseEvent) => {
     event.stopPropagation();
-    setEditingId(id);
-    setEditValue(currentName);
-  };
-
-  const saveEdit = () => {
-    if (editingId && editValue.trim()) {
-      updateWorkspaceName(editingId, editValue.trim());
-    }
-    setEditingId(null);
-    setEditValue('');
-  };
-
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditValue('');
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      saveEdit();
-    } else if (e.key === 'Escape') {
-      cancelEdit();
-    }
-  };
-
-  const handleDragStart = (event: DragEvent<HTMLDivElement>, workspaceId: string) => {
-    if (event.target instanceof Element && event.target.closest('.workspace-tab-edit, .workspace-tab-edit-trigger, .workspace-tab-close')) {
-      event.preventDefault();
-      return;
-    }
-    draggedWorkspaceIdRef.current = workspaceId;
-    suppressClickRef.current = true;
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', workspaceId);
-  };
-
-  const handleDragOver = (event: DragEvent<HTMLDivElement>, targetId: string) => {
-    const draggedId = draggedWorkspaceIdRef.current;
-    if (!draggedId || draggedId === targetId) return;
-    const fromIndex = workspaces.findIndex((workspace) => workspace.id === draggedId);
-    const targetIndex = workspaces.findIndex((workspace) => workspace.id === targetId);
-    if (fromIndex < 0 || targetIndex < 0) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    setDropTarget({ id: targetId, side: fromIndex < targetIndex ? 'right' : 'left' });
-  };
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>, targetId: string) => {
-    event.preventDefault();
-    const draggedId = draggedWorkspaceIdRef.current;
-    draggedWorkspaceIdRef.current = null;
-    setDropTarget(null);
-    if (draggedId && draggedId !== targetId) moveWorkspace(draggedId, targetId);
-  };
-
-  const handleDragEnd = () => {
-    draggedWorkspaceIdRef.current = null;
-    setDropTarget(null);
-    window.setTimeout(() => { suppressClickRef.current = false; }, 0);
-  };
-
-  const handleReorderKey = (event: KeyboardEvent<HTMLDivElement>, workspaceId: string, index: number) => {
-    if (event.target !== event.currentTarget || !event.altKey || !event.shiftKey) return;
-    const targetIndex = event.key === 'ArrowLeft' ? index - 1 : event.key === 'ArrowRight' ? index + 1 : -1;
-    const target = workspaces[targetIndex];
-    if (!target) return;
-    event.preventDefault();
-    moveWorkspace(workspaceId, target.id);
+    beginEditing(id, currentName);
   };
 
   return (
@@ -175,31 +48,28 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
         const isActive = workspace.id === activeWorkspaceId;
         const isEditing = workspace.id === editingId;
         const counts = attentionCounts(workspace.terminals.map((terminal) => terminal.id), byTerminalId);
-        const projectName = getWorkspaceProjectName(workspace);
         const tabLabel = getWorkspaceTabLabel(workspace);
         const branch = workspace.gitCurrentBranch;
         const remoteLabel = getRemoteEnvironmentLabel(workspace);
-        const editName = workspace.isLinkedWorktree && workspace.name === getWorkspaceNameFromPath(workspace.workspacePath)
-          ? projectName
-          : workspace.name || projectName;
+        const editName = getWorkspaceRenameValue(workspace);
 
         return (
           <div
             tabIndex={0}
             key={workspace.id}
-            className={`workspace-tab ${isActive ? 'active' : ''}${dropTarget?.id === workspace.id ? ` drop-${dropTarget.side}` : ''}`}
+            className={`workspace-tab ${isActive ? 'active' : ''}${dropTarget?.id === workspace.id ? ` drop-${dropTarget.side === 'start' ? 'left' : 'right'}` : ''}`}
             role="tab"
             aria-selected={isActive}
             aria-keyshortcuts="Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
             title={`${remoteLabel ? `${remoteLabel}\n` : ''}${tabLabel}${workspace.isLinkedWorktree && branch ? ` · ${branch}` : ''}\n${workspace.workspacePath}`}
             draggable={!isEditing}
-            onDragStart={(event) => handleDragStart(event, workspace.id)}
-            onDragOver={(event) => handleDragOver(event, workspace.id)}
-            onDragLeave={() => setDropTarget((current) => current?.id === workspace.id ? null : current)}
-            onDrop={(event) => handleDrop(event, workspace.id)}
-            onDragEnd={handleDragEnd}
+            onDragStart={(event) => reorder.onDragStart(event, workspace.id)}
+            onDragOver={(event) => reorder.onDragOver(event, workspace.id)}
+            onDragLeave={() => reorder.onDragLeave(workspace.id)}
+            onDrop={(event) => reorder.onDrop(event, workspace.id)}
+            onDragEnd={reorder.onDragEnd}
             onKeyDown={(event) => {
-              handleReorderKey(event, workspace.id, index);
+              reorder.onReorderKey(event, workspace.id, index);
               if (event.target === event.currentTarget && !isEditing && (event.key === 'Enter' || event.key === ' ')) {
                 event.preventDefault();
                 selectWorkspace(workspace.id);
@@ -215,7 +85,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                   className="workspace-tab-edit-input"
                   value={editValue}
                   onChange={(e) => setEditValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
+                  onKeyDown={handleEditKeyDown}
                   onBlur={saveEdit}
                 />
                 <IconButton aria-label="Save"
@@ -250,15 +120,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
                 <span>{branch || 'HEAD'}</span>
               </span>
             )}
-            {(counts.needsInput > 0 || counts.completed > 0) && (
-              <span
-                className={`workspace-tab-attention ${counts.needsInput > 0 ? 'needs-input' : 'complete'}`}
-                aria-label={`${counts.needsInput} agents need input, ${counts.completed} turns complete`}
-                title={`${counts.needsInput} need input · ${counts.completed} complete`}
-              >
-                {counts.needsInput > 0 ? `! ${counts.needsInput}` : `✓ ${counts.completed}`}
-              </span>
-            )}
+            <WorkspaceAttentionBadge counts={counts} />
             <IconButton
               className="workspace-tab-close"
               onClick={(event) => handleClose(workspace.id, event)}

@@ -5,6 +5,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { installElectronApiMock } from '../../setup/electron';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
+import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import TitleBar from '../../../src/renderer/components/TitleBar';
 
 describe('TitleBar', () => {
@@ -44,5 +45,16 @@ describe('TitleBar', () => {
     render(<TitleBar />);
     fireEvent.click(screen.getByTitle('Maximize window'));
     expect(window.electronAPI.toggleMaximizeWindow).toHaveBeenCalled();
+  });
+
+  it('omits workspace tabs in sidebar mode but keeps brand, drag center and controls', () => {
+    useWorkspaceNavigationStore.setState({ mode: 'sidebar' });
+    const { container } = render(<TitleBar />);
+    expect(screen.queryByRole('tablist', { name: 'Workspaces' })).toBeNull();
+    expect(screen.getByText('Clanker Grid')).toBeTruthy();
+    expect(container.querySelector('.titlebar-center')).toBeTruthy();
+    expect(container.querySelector('.titlebar-center')?.children).toHaveLength(0);
+    expect(screen.getByTitle('Close window')).toBeTruthy();
+    useWorkspaceNavigationStore.setState({ mode: 'tabs' });
   });
 });

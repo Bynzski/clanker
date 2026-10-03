@@ -1,6 +1,7 @@
 import { clankerUi18, clankerUi36 } from '../lib/branding';
 import WindowControls from './WindowControls';
 import WorkspaceTabs from './WorkspaceTabs';
+import { useWorkspaceNavigationStore } from '../store/workspaceNavigationStore';
 import './TitleBar.css';
 
 interface TitleBarProps {
@@ -8,6 +9,7 @@ interface TitleBarProps {
 }
 
 export default function TitleBar({ onOpenWorkspace }: TitleBarProps) {
+  const sidebarMode = useWorkspaceNavigationStore((state) => state.mode === 'sidebar');
   return (
     <div className="titlebar">
       <div className="titlebar-left">
@@ -23,8 +25,8 @@ export default function TitleBar({ onOpenWorkspace }: TitleBarProps) {
         </div>
       </div>
 
-      <div className="titlebar-center">
-        <WorkspaceTabs onOpenWorkspace={onOpenWorkspace} />
+      <div className="titlebar-center" data-navigation-mode={sidebarMode ? 'sidebar' : 'tabs'}>
+        {!sidebarMode && <WorkspaceTabs onOpenWorkspace={onOpenWorkspace} />}
       </div>
 
       <WindowControls className="titlebar-controls" buttonClassName="titlebar-control" closeClassName="close" />

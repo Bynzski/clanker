@@ -1755,3 +1755,59 @@ describe('Issue #3: explorer filter input', () => {
     expect(screen.getByText('env.config.ts')).toBeInTheDocument();
   });
 });
+
+describe('FileExplorer section variant (workspace sidebar FILES)', () => {
+  beforeEach(() => {
+    resetStore();
+    installElectronApiMock();
+  });
+
+  it('renders embedded without width style or resize handle, and collapses from explorerVisible', async () => {
+    const workspace = setActiveWorkspace({ explorerVisible: true });
+    const { container } = render(<FileExplorer workspaceId={workspace.id} variant="section" />);
+    const section = screen.getByRole('region', { name: 'Files' });
+    expect(section).toHaveClass('file-explorer-section');
+    expect(section.getAttribute('style')).toBeNull();
+    expect(container.querySelector('.explorer-resize-handle')).toBeNull();
+    expect(screen.getByLabelText('Filter files')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Files' }));
+    expect(useWorkspaceStore.getState().workspaces[0].explorerVisible).toBe(false);
+    const toggle = screen.getByRole('button', { name: 'Expand Files' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText('Filter files')).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(useWorkspaceStore.getState().workspaces[0].explorerVisible).toBe(true);
+  });
+
+  it('keeps the dock variant unchanged (aside, resize handle, hidden when not visible)', () => {
+    const workspace = setActiveWorkspace({ explorerVisible: true });
+    const { container, unmount } = render(<FileExplorer workspaceId={workspace.id} />);
+    expect(container.querySelector('aside.file-explorer')).toBeTruthy();
+    expect(container.querySelector('.explorer-resize-handle')).toBeTruthy();
+    unmount();
+    useWorkspaceStore.getState().setExplorerVisible(false, workspace.id);
+    const hidden = render(<FileExplorer workspaceId={workspace.id} />);
+    expect(hidden.container.firstChild).toBeNull();
+  });
+
+  it('remembers the Files filter per workspace across switches (section variant only)', () => {
+    const a = createWorkspaceFixture({ id: 'wa', name: 'a', workspacePath: '/a', explorerVisible: true });
+    const b = createWorkspaceFixture({ id: 'wb', name: 'b', workspacePath: '/b', explorerVisible: true, lifecycle: 'parked' });
+    useWorkspaceStore.setState({ workspaces: [a, b], activeWorkspaceId: 'wa' });
+    const view = render(<FileExplorer key="wa" workspaceId="wa" variant="section" />);
+    fireEvent.change(screen.getByLabelText('Filter files'), { target: { value: 'src' } });
+    view.rerender(<FileExplorer key="wb" workspaceId="wb" variant="section" />);
+    expect(screen.getByLabelText('Filter files')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Filter files'), { target: { value: 'lib' } });
+    view.rerender(<FileExplorer key="wa" workspaceId="wa" variant="section" />);
+    expect(screen.getByLabelText('Filter files')).toHaveValue('src');
+    view.unmount();
+
+    // Dock explorers keep their filter local to the component instance.
+    const dock = render(<FileExplorer key="wa" workspaceId="wa" />);
+    expect(screen.getByLabelText('Filter files')).toHaveValue('');
+    dock.unmount();
+  });
+});

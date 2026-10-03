@@ -293,7 +293,7 @@ describe('WorkspaceTabs', () => {
       expect(tabs).toHaveLength(2);
     });
 
-    it('stops explorer watching on unmount', () => {
+    it('does not own the explorer watcher lifecycle', () => {
       const electronApi = installElectronApiMock();
       useWorkspaceStore.setState({
         workspaces: mockWorkspaces,
@@ -301,10 +301,10 @@ describe('WorkspaceTabs', () => {
       });
 
       const { unmount } = render(<WorkspaceTabs />);
-
       unmount();
 
-      expect(electronApi.explorerStopWatching).toHaveBeenCalledTimes(1);
+      expect(electronApi.explorerStartWatching).not.toHaveBeenCalled();
+      expect(electronApi.explorerStopWatching).not.toHaveBeenCalled();
     });
 
     it('displays workspace name in tab', () => {
@@ -447,28 +447,6 @@ describe('WorkspaceTabs', () => {
       expect(selectWorkspace).toHaveBeenCalledWith('ws2');
     });
 
-    it('stops local watching when switching to a remote workspace at the same path', async () => {
-      const electronApi = installElectronApiMock();
-      useWorkspaceStore.setState({
-        workspaces: [
-          createMockWorkspace({ id: 'local-id', workspacePath: '/workspace', environmentId: 'local' }),
-          createMockWorkspace({ id: 'remote-id', workspacePath: '/workspace', environmentId: 'vps' }),
-        ],
-        activeWorkspaceId: 'local-id',
-      });
-
-      render(<WorkspaceTabs />);
-      expect(electronApi.explorerStartWatching).toHaveBeenCalledWith('local-id');
-      electronApi.explorerStartWatching.mockClear();
-      electronApi.explorerStopWatching.mockClear();
-
-      useWorkspaceStore.setState({ activeWorkspaceId: 'remote-id' });
-      await act(async () => { await Promise.resolve(); });
-
-      expect(electronApi.explorerStopWatching).toHaveBeenCalled();
-      expect(electronApi.explorerStartWatching).not.toHaveBeenCalled();
-    });
-
     it('does not call selectWorkspace when in edit mode', async () => {
       const selectWorkspace = vi.fn();
       useWorkspaceStore.setState({
@@ -495,27 +473,6 @@ describe('WorkspaceTabs', () => {
       
       // selectWorkspace should not be called because we're in edit mode
       expect(selectWorkspace).not.toHaveBeenCalled();
-    });
-
-    it('stops explorer watching when there is no active workspace', async () => {
-      const electronApi = installElectronApiMock();
-      useWorkspaceStore.setState({
-        workspaces: mockWorkspaces,
-        activeWorkspaceId: 'ws1',
-      });
-
-      render(<WorkspaceTabs />);
-      electronApi.explorerStopWatching.mockClear();
-
-      useWorkspaceStore.setState({
-        activeWorkspaceId: null,
-      });
-
-      await act(async () => {
-        await Promise.resolve();
-      });
-
-      expect(electronApi.explorerStopWatching).toHaveBeenCalledTimes(1);
     });
   });
 

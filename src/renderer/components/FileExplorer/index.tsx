@@ -3,7 +3,7 @@ import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Eye, EyeOff, FilePlus, FolderPlus, PanelLeftClose, RefreshCw, Search, X } from 'lucide-react';
 import type React from 'react';
 import type { FileListDirectoryResult } from '../../../shared/types/fileExplorer';
 import type { FileExplorerEntry } from '../../../shared/types/fileExplorer';
@@ -12,6 +12,7 @@ import { pathKey } from '../../../shared/pathKey';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useScopedWorkspaceSelector } from '../WorkspaceScope';
 import FileTree from './FileTree';
+import { useExplorerFilter } from './explorerFilterStore';
 import ContextMenu, { type ContextAction } from './ContextMenu';
 import ConfirmCloseDialog from '../ConfirmCloseDialog';
 import {
@@ -61,7 +62,18 @@ function resolveCreateParentPath(
   return dirnamePath(selectedPath);
 }
 
-export default function FileExplorer({ workspaceId }: { workspaceId?: string }) {
+interface FileExplorerProps {
+  workspaceId?: string;
+  /**
+   * `dock` (default): standalone resizable sidebar owned by a workspace surface.
+   * `section`: FILES section embedded in the workspace sidebar shell, which owns
+   * sizing and resizing; `explorerVisible` expands/collapses it.
+   */
+  variant?: 'dock' | 'section';
+}
+
+export default function FileExplorer({ workspaceId, variant = 'dock' }: FileExplorerProps) {
+  const isSection = variant === 'section';
   const workspace = useScopedWorkspaceSelector((current) => current && ({
     id: current.id,
     workspacePath: current.workspacePath,
@@ -122,7 +134,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
   const [deleteTarget, setDeleteTarget] = useState<FileExplorerEntry | null>(null);
   const [creating, setCreating] = useState<{ parentPath: string; type: 'file' | 'directory' } | null>(null);
   const [renaming, setRenaming] = useState<{ path: string; originalName: string } | null>(null);
-  const [filterQuery, setFilterQuery] = useState('');
+  const [filterQuery, setFilterQuery] = useExplorerFilter(resolvedWorkspaceId, isSection);
   const filterInputRef = useRef<HTMLInputElement>(null);
   const explorerTreeRefreshTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const previousExplorerVisibleRef = useRef(explorerVisible);
@@ -408,7 +420,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
         filterInputRef.current?.blur();
       }
     }
-  }, [filterQuery]);
+  }, [filterQuery, setFilterQuery]);
 
   const startCreating = useCallback((parentPath: string, type: 'file' | 'directory') => {
     // If the parent is a loaded-but-collapsed subdirectory, expand it so the
@@ -557,14 +569,42 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
     );
   }, [deleteTarget, normalizedWorkspacePath, resolvedWorkspaceId, actionDeps]);
 
-  if (!explorerVisible || !normalizedWorkspacePath) {
+  if (!normalizedWorkspacePath) {
     return null;
   }
 
+  if (isSection && !explorerVisible) {
+    return (
+      <section className="file-explorer file-explorer-section collapsed" aria-label="Files">
+        <Button
+          type="button"
+          className="file-explorer-section-toggle"
+          aria-expanded={false}
+          onClick={() => setExplorerVisible(true, resolvedWorkspaceId ?? undefined)}
+          aria-label="Expand Files"
+          title="Expand Files"
+        >
+          <ChevronRight size={12} strokeWidth={2} aria-hidden="true" />
+          <span>Files</span>
+        </Button>
+      </section>
+    );
+  }
+
+  if (!explorerVisible) {
+    return null;
+  }
+
+  const Root = isSection ? 'section' : 'aside';
+
   return (
-    <aside className="file-explorer" style={{ width: explorerSidebarWidth }}>
+    <Root
+      className={`file-explorer${isSection ? ' file-explorer-section' : ''}`}
+      style={isSection ? undefined : { width: explorerSidebarWidth }}
+      aria-label={isSection ? 'Files' : undefined}
+    >
       <div className="file-explorer-header">
-        <span className="file-explorer-title">Explorer</span>
+        <span className="file-explorer-title">{isSection ? 'Files' : 'Explorer'}</span>
         <div className="file-explorer-actions">
           <IconButton aria-label="Refresh"
             type="button"
@@ -604,13 +644,13 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
           >
             {showHiddenFiles ? <Eye size={14} strokeWidth={2} /> : <EyeOff size={14} strokeWidth={2} />}
           </Button>
-          <IconButton aria-label="Close Explorer"
+          <IconButton aria-label={isSection ? 'Collapse Files' : 'Close Explorer'}
             type="button"
             className="file-explorer-close"
             onClick={() => setExplorerVisible(false, resolvedWorkspaceId ?? undefined)}
-            title="Close Explorer"
+            title={isSection ? 'Collapse Files' : 'Close Explorer'}
           >
-            <PanelLeftClose size={16} strokeWidth={2} />
+            {isSection ? <ChevronDown size={14} strokeWidth={2} /> : <PanelLeftClose size={16} strokeWidth={2} />}
           </IconButton>
         </div>
       </div>
@@ -659,7 +699,7 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
           onFocusFilter={focusFilterInput}
         />
       </div>
-      <div className="explorer-resize-handle" onMouseDown={handleResizeStart} />
+      {!isSection && <div className="explorer-resize-handle" onMouseDown={handleResizeStart} />}
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
@@ -677,6 +717,6 @@ export default function FileExplorer({ workspaceId }: { workspaceId?: string }) 
         options={[{ label: 'Delete', variant: 'danger', action: performDelete }]}
         onCancel={() => setDeleteTarget(null)}
       />
-    </aside>
+    </Root>
   );
 }
