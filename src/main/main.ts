@@ -453,6 +453,12 @@ app.whenReady().then(() => {
   });
 });
 
+if (process.env.NODE_ENV === 'development') {
+  app.on('child-process-gone', (_event, details) => {
+    console.error(`[diag] child process gone type=${details.type} name=${details.name ?? ''} reason=${details?.reason} exitCode=${details?.exitCode}`);
+  });
+}
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();

@@ -153,7 +153,12 @@ export function createMainWindow(deps: CreateMainWindowOptions): {
   };
 
   mainWindow.on('closed', cleanup);
-  mainWindow.webContents.on('render-process-gone', () => {
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (process.env.NODE_ENV === 'development') {
+      console.error(
+        `[diag] main renderer gone webContents=${mainWindow.webContents.id} reason=${details?.reason} exitCode=${details?.exitCode}`,
+      );
+    }
     gitService.stopPolling();
     fileWatcher.unwatchAll();
     deps.explorerWatcher?.close();

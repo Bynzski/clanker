@@ -263,17 +263,12 @@ describe('BrowserPanel', () => {
         activeTabId: 'tab-1',
       };
 
-      it('renders Hide browser and scopes setBrowserVisible(false, workspaceId)', () => {
+      it('has no in-pane hide control', () => {
         setupStore({ browserPane: pane });
-        const setBrowserVisible = vi.fn();
-        useWorkspaceStore.setState({ setBrowserVisible });
 
         render(<BrowserPanel {...defaultProps} />);
 
-        const hide = screen.getByRole('button', { name: 'Hide browser' });
-        expect(hide).toHaveAttribute('title', 'Hide browser');
-        fireEvent.click(hide);
-        expect(setBrowserVisible).toHaveBeenCalledWith(false, 'workspace-1');
+        expect(screen.queryByRole('button', { name: 'Hide browser' })).toBeNull();
       });
 
       it('gives the title/grip the full accessible activator and the empty chrome pointer-only drag', () => {
@@ -302,7 +297,6 @@ describe('BrowserPanel', () => {
         for (const el of [
           screen.getByRole('tab', { name: 'A' }),
           screen.getByRole('button', { name: 'New tab' }),
-          screen.getByRole('button', { name: 'Hide browser' }),
         ]) {
           fireEvent.pointerDown(el);
         }
@@ -312,7 +306,7 @@ describe('BrowserPanel', () => {
         expect(mockDragPointerDown).toHaveBeenCalledTimes(1);
       });
 
-      it('orders header as title, tab strip (with + after tabs), empty drag chrome, Hide', () => {
+      it('orders header as title, tab strip (with + after tabs), empty drag chrome', () => {
         setupStore({ browserPane: pane });
 
         render(<BrowserPanel {...defaultProps} />);
@@ -322,7 +316,7 @@ describe('BrowserPanel', () => {
         expect(children[0]).toHaveClass('pane-drag-surface');
         expect(children[1]).toHaveClass('browser-tab-strip');
         expect(children[2]).toBe(screen.getByTestId('browser-header-drag-fill'));
-        expect(children[3]).toBe(screen.getByRole('button', { name: 'Hide browser' }));
+        expect(children).toHaveLength(3);
         const strip = children[1];
         expect(strip.children[0]).toBe(screen.getByRole('tablist'));
         expect(strip.children[1]).toBe(screen.getByRole('button', { name: 'New tab' }));

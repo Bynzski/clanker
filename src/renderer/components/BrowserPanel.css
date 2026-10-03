@@ -33,10 +33,6 @@
   cursor: grabbing;
 }
 
-.browser-pane-hide {
-  flex-shrink: 0;
-}
-
 .browser-pane-drag-handle {
   width: 12px;
   height: 12px;

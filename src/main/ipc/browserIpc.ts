@@ -330,6 +330,13 @@ function createBrowserViewForTab(
   });
 
   if (kind === 'ssh') browserSessionScopes.attach(workspaceId, view.webContents.session);
+  if (process.env.NODE_ENV === 'development') {
+    view.webContents.on('render-process-gone', (_event, details) => {
+      console.error(
+        `[diag] browser view gone workspace=${workspaceId} tab=${tabId} webContents=${view.webContents.id} reason=${details?.reason} exitCode=${details?.exitCode}`,
+      );
+    });
+  }
   attachBrowserSecurityHandlers(view);
   attachBrowserShortcutHandlers(view, { workspaceId, tabId, deps });
   attachBrowserContextMenuHandlers(view, mainWindow);
