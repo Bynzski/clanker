@@ -159,6 +159,13 @@
 }
 
 .ws-agent-row:hover { background: var(--surface-control); color: var(--text-primary); }
-.ws-agent-row.current { color: var(--text-primary); border-left-color: var(--border-strong, var(--border-default)); }
+/* The focused agent is the only filled row. Its bar matches the active workspace's, so one
+   accent line links the workspace to the agent. Declared after :hover so hover keeps the tint. */
+.ws-agent-row.current {
+  background: var(--surface-selected);
+  border-left-color: var(--accent-interactive);
+  color: var(--text-primary);
+  font-weight: 600;
+}
 .ws-agent-harness { display: inline-flex; flex-shrink: 0; }
 .ws-agent-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
