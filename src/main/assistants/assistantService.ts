@@ -31,6 +31,7 @@ export class AssistantService {
   private epoch = 0;
   private readonly earlyExits = new Set<string>();
   private discoveryError: string | undefined;
+  private profilesChecked = false;
   private discoveryRevision = 0;
   private discoveryOperation: Promise<AssistantSnapshot> | undefined;
   constructor(private readonly deps: AssistantServiceDeps) {}
@@ -39,7 +40,7 @@ export class AssistantService {
     let settings: AssistantSettings;
     try { settings = validateAssistantSettings(this.deps.readSettings() ?? { enabled: false, pins: [] }); }
     catch { settings = { enabled: false, pins: [] }; }
-    return { settings, profiles: [...this.profiles.values()].map((entry) => ({ ...entry.public })), launches: [...this.launches.values()].map(({ profileId, workspaceId, terminalId }) => ({ profileId, workspaceId, terminalId, state: 'open' })), externalActivity: 'unknown', ...(this.discoveryError ? { discoveryError: this.discoveryError } : {}) };
+    return { settings, profiles: [...this.profiles.values()].map((entry) => ({ ...entry.public })), launches: [...this.launches.values()].map(({ profileId, workspaceId, terminalId }) => ({ profileId, workspaceId, terminalId, state: 'open' })), externalActivity: 'unknown', profilesChecked: this.profilesChecked, ...(this.discoveryError ? { discoveryError: this.discoveryError } : {}) };
   }
 
   configure(value: unknown): AssistantSnapshot {
@@ -52,8 +53,10 @@ export class AssistantService {
     return snapshot;
   }
 
-  async discover(): Promise<AssistantSnapshot> {
+  /** `ifUnchecked` is the cold-start hydration path: it never re-probes once this process has checked. */
+  async discover(options?: { ifUnchecked?: boolean }): Promise<AssistantSnapshot> {
     if (!this.get().settings.enabled) throw new Error('Assistants integration is disabled');
+    if (options?.ifUnchecked && this.profilesChecked && !this.discoveryOperation) return this.get();
     if (this.discoveryOperation) return this.discoveryOperation;
     const revision = ++this.discoveryRevision;
     const epoch = this.epoch;
@@ -89,6 +92,7 @@ export class AssistantService {
       if (!found.has(`${profile.public.harnessId}:${profile.native.name}`) && !this.launches.has(id)) this.profiles.delete(id);
     }
     this.discoveryError = [...errors].join(' ') || undefined;
+    this.profilesChecked = true;
     const snapshot = this.get();
     this.deps.onChanged(snapshot);
     return snapshot;
@@ -207,6 +211,7 @@ export class AssistantService {
     this.launchHomes.clear();
     this.profiles.clear();
     this.discoveryError = undefined;
+    this.profilesChecked = false;
   }
 
   releaseTerminal(terminalId: string): void {

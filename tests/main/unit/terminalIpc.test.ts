@@ -468,6 +468,93 @@ describe('terminalIpc — error-path: handler returns', () => {
     });
   });
 
+  describe('assistant workspaces registered through symlinks', () => {
+    const profileLaunch = (cwd: string) => ({ command: 'hermes', args: ['-p', 'reviewer', '--tui', '--in', cwd], env: { HERMES_HOME: testHome() }, unsetEnvironmentKeys: [] });
+    // `base` is canonical; the registered path is deliberately NOT canonical (link / link-ancestor).
+    const setup = (shape: 'link' | 'ancestor') => {
+      const { opts, terminals } = createMockDeps();
+      const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-assistant-link-')));
+      const real = path.join(base, 'real');
+      const other = path.join(base, 'other');
+      fs.mkdirSync(path.join(real, 'project'), { recursive: true });
+      fs.mkdirSync(path.join(other, 'project'), { recursive: true });
+      const link = path.join(base, 'link');
+      fs.symlinkSync(real, link, 'junction');
+      const registeredPath = shape === 'link' ? link : path.join(link, 'project');
+      const canonicalCwd = shape === 'link' ? real : path.join(real, 'project');
+      const registered = { workspaceId: 'assistant-owner', location: { environmentId: 'local', path: registeredPath.replace(/\\/g, '/') } };
+      let finishRegister!: (env: Record<string, string>) => void;
+      const broker = {
+        register: vi.fn(() => new Promise<Record<string, string>>((done) => { finishRegister = done; })),
+        release: vi.fn(),
+      };
+      const controller = registerTerminalIpc({
+        ...opts,
+        agentAttentionBroker: broker as never,
+        getWorkspaceRegistry: () => ({ getWorkspace: () => registered }) as never,
+        getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
+        getStore: () => ({ get: () => ({ hermes: { flags: '', model: '' } }) }) as never,
+      });
+      mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
+      return { controller, broker, terminals, base, real, other, link, registeredPath, canonicalCwd, finish: () => finishRegister({}) };
+    };
+    const retarget = (link: string, to: string) => { fs.rmSync(link, { recursive: true, force: true }); fs.symlinkSync(to, link, 'junction'); };
+
+    test.each(['link', 'ancestor'] as const)('allows a registered path that is a %s and spawns in the canonical directory', async (shape) => {
+      const { controller, broker, terminals, base, registeredPath, canonicalCwd, finish } = setup(shape);
+      try {
+        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(registeredPath));
+        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
+        finish();
+        const result = await pending;
+        expect(mockPtySpawn).toHaveBeenCalledOnce();
+        expect(mockPtySpawn.mock.calls[0][2].cwd).toBe(canonicalCwd);
+        expect(terminals.has(result.id)).toBe(true);
+      } finally { fs.rmSync(base, { recursive: true, force: true }); }
+    });
+
+    test.each(['link', 'ancestor'] as const)('rejects a %s redirected to another directory during attention setup', async (shape) => {
+      const { controller, broker, terminals, base, other, link, registeredPath, finish } = setup(shape);
+      try {
+        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(registeredPath));
+        const rejected = expect(pending).rejects.toThrow(/directory changed/);
+        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
+        retarget(link, other);
+        finish();
+        await rejected;
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+        expect(terminals.size).toBe(0);
+      } finally { fs.rmSync(base, { recursive: true, force: true }); }
+    });
+
+    test('rejects a link that was removed during attention setup', async () => {
+      const { controller, broker, base, link, registeredPath, finish } = setup('link');
+      try {
+        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(registeredPath));
+        const rejected = expect(pending).rejects.toThrow(/directory changed/);
+        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
+        fs.rmSync(link, { recursive: true, force: true });
+        finish();
+        await rejected;
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+      } finally { fs.rmSync(base, { recursive: true, force: true }); }
+    });
+
+    test('rejects a link whose target directory was replaced by a new directory at the same path', async () => {
+      const { controller, broker, base, real, registeredPath, finish } = setup('link');
+      try {
+        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(registeredPath));
+        const rejected = expect(pending).rejects.toThrow(/directory changed/);
+        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
+        fs.renameSync(real, `${real}-moved`);
+        fs.mkdirSync(real);
+        finish();
+        await rejected;
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+      } finally { fs.rmSync(base, { recursive: true, force: true }); }
+    });
+  });
+
   describe('Windows PTY argument serialization through the real terminal spawn path', () => {
     const COMSPEC = 'C:\\Windows\\System32\\cmd.exe';
     const hermesProfile = { name: 'reviewer', label: 'reviewer', home: path.join(testHome(), 'profiles', 'reviewer'), rootHome: testHome() };

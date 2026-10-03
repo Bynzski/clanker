@@ -17,7 +17,7 @@ type PendingLaunch = {
 
 /** The same native-profile controls are available in Settings in either navigation mode. */
 export default function AssistantsSettings({ variant = 'settings' }: { variant?: 'settings' | 'sidebar' }) {
-  const { snapshot, error, busy, setError, setBusy, run } = useAssistantsSnapshot();
+  const { snapshot, error, busy, setError, setBusy, run, unchecked, hydrationFailed } = useAssistantsSnapshot();
   const [profileName, setProfileName] = useState('');
   const [pending, setPending] = useState<PendingLaunch | null>(null);
   const [manage, setManage] = useState(false);
@@ -101,7 +101,11 @@ export default function AssistantsSettings({ variant = 'settings' }: { variant?:
         </form>
       </>}
       <Button size="xs" disabled={busy} onClick={() => void run(() => window.electronAPI.discoverAssistants())}>Refresh profiles</Button>
-      {missing.map((pin, index) => <div className="assistant-card" key={`${pin.harnessId}:${pin.profileName}:${index}`}>
+      {unchecked && missing.map((pin, index) => <div className="assistant-card" key={`${pin.harnessId}:${pin.profileName}:${index}`}>
+        <span>{pin.profileName} — {hydrationFailed ? 'not checked' : 'checking…'}</span>
+        <p className="assistants-note">{hydrationFailed ? 'Profiles could not be checked yet. Refresh to try again.' : 'Checking native profiles…'}</p>
+      </div>)}
+      {!unchecked && missing.map((pin, index) => <div className="assistant-card" key={`${pin.harnessId}:${pin.profileName}:${index}`}>
         <span>{pin.profileName} — unavailable</span>
         <p className="assistants-note">Refresh or add the existing native name to recover this pin.</p>
         <Button size="xs" disabled={busy} onClick={() => void run(() => window.electronAPI.configureAssistants({
@@ -134,7 +138,7 @@ export default function AssistantsSettings({ variant = 'settings' }: { variant?:
           <label><input type="checkbox" aria-label={`Pin ${profile.label} here`} disabled={busy || !location} checked={snapshot.settings.pins.some((pin) => matchesPin(pin, profile, true))} onChange={() => togglePin(profile, true)} />Workspace pin</label>
         </div>}
       </div>)}
-      {!profiles.length && !missing.length && <p className="assistants-note">{managing ? 'No profiles found. Refresh or add an existing native profile name.' : 'Pin an existing profile from Manage.'}</p>}
+      {!profiles.length && !missing.length && !unchecked && <p className="assistants-note">{managing ? 'No profiles found. Refresh or add an existing native profile name.' : 'Pin an existing profile from Manage.'}</p>}
     </>}
     {(error || snapshot?.discoveryError) && <p className="assistants-error" role="alert">{error || snapshot?.discoveryError}</p>}
     {!snapshot && error && <Button size="xs" disabled={busy} onClick={() => void run(() => window.electronAPI.getAssistants())}>Retry settings</Button>}

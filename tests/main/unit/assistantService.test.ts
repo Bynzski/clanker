@@ -27,6 +27,36 @@ function fixture() {
 }
 
 describe('optional assistants', () => {
+  it('cold start with persisted pins is unchecked, probe-free, and distinct from a checked failure', async () => {
+    const { service, discover, resolve } = fixture();
+    service.configure({ enabled: true, pins: [{ harnessId: 'hermes', profileName: 'gone' }] });
+    const cold = service.get();
+    expect(cold).toMatchObject({ profiles: [], profilesChecked: false });
+    expect(cold.discoveryError).toBeUndefined();
+    expect(discover).not.toHaveBeenCalled();
+    resolve.mockRejectedValue(new Error('missing'));
+    const checked = await service.discover({ ifUnchecked: true });
+    expect(checked.profilesChecked).toBe(true);
+    expect(checked.discoveryError).toMatch(/unavailable/);
+  });
+  it('coalesces concurrent cold-start hydration and never re-probes once checked', async () => {
+    const { service, discover } = fixture();
+    service.configure({ enabled: true, pins: [] });
+    await Promise.all([service.discover({ ifUnchecked: true }), service.discover({ ifUnchecked: true })]);
+    await service.discover({ ifUnchecked: true });
+    expect(discover).toHaveBeenCalledTimes(1);
+    await service.discover();
+    expect(discover).toHaveBeenCalledTimes(2);
+  });
+  it('rejects hydration while disabled without probing, and window reset returns to unchecked', async () => {
+    const { service, discover } = fixture();
+    await expect(service.discover({ ifUnchecked: true })).rejects.toThrow(/disabled/);
+    expect(discover).not.toHaveBeenCalled();
+    service.configure({ enabled: true, pins: [] });
+    await service.discover();
+    service.reset();
+    expect(service.get().profilesChecked).toBe(false);
+  });
   it('window reset invalidates pending manual discovery and launch results', async () => {
     const { service, resolve } = fixture();
     service.configure({ enabled: true, pins: [] });

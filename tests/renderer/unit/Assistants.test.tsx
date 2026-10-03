@@ -381,3 +381,78 @@ it('discards stale refresh results after a newer disabled event and unsubscribes
   expect(unsubscribe).toHaveBeenCalledOnce();
   expect(api.killTerminal).not.toHaveBeenCalled();
 });
+
+// Cold start: profiles are memory-only, so a restarted process has pins but has not checked anything yet.
+const cold = (pins: AssistantSnapshot['settings']['pins'], enabledFlag = true): AssistantSnapshot =>
+  ({ settings: { enabled: enabledFlag, pins }, profiles: [], launches: [], externalActivity: 'unknown', profilesChecked: false });
+
+it('does not call a restart-time pin unavailable, and offers no removal, until profiles have really been checked', async () => {
+  const api = window.electronAPI;
+  const pins = [{ harnessId: 'hermes', profileName: 'research' }, { harnessId: 'hermes', profileName: 'gone' }];
+  vi.mocked(api.getAssistants).mockResolvedValue(cold(pins));
+  let finish!: (value: AssistantSnapshot) => void;
+  vi.mocked(api.discoverAssistants).mockImplementation(() => new Promise((done) => { finish = done; }));
+  render(<AssistantsSettings variant="sidebar" />);
+  expect(await screen.findByText('research — checking…')).toBeInTheDocument();
+  expect(screen.queryByText(/unavailable/)).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Remove unavailable pin' })).toBeNull();
+  expect(api.discoverAssistants).toHaveBeenCalledWith({ ifUnchecked: true });
+  await act(async () => finish({ ...cold(pins), profiles: [enabled.profiles[0]], profilesChecked: true }));
+  expect(await screen.findByText('Research')).toBeInTheDocument();
+  expect(screen.getByText('gone — unavailable')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Remove unavailable pin' })).toBeInTheDocument();
+});
+
+it('stays honest and recoverable when automatic hydration fails', async () => {
+  const api = window.electronAPI;
+  vi.mocked(api.getAssistants).mockResolvedValue(cold([{ harnessId: 'hermes', profileName: 'research' }]));
+  vi.mocked(api.discoverAssistants).mockRejectedValue(new Error('boom'));
+  render(<AssistantsSettings />);
+  expect(await screen.findByText('research — not checked')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Remove unavailable pin' })).toBeNull();
+  expect(screen.getByRole('textbox', { name: 'Existing Hermes profile name' })).toBeEnabled();
+});
+
+it('does not hydrate when Assistants is disabled or already checked', async () => {
+  const api = window.electronAPI;
+  vi.mocked(api.getAssistants).mockResolvedValue(cold([{ harnessId: 'hermes', profileName: 'research' }], false));
+  const first = render(<AssistantsSettings />);
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Enable Assistants (optional)' })).not.toBeChecked());
+  first.unmount();
+  vi.mocked(api.getAssistants).mockResolvedValue({ ...cold([]), profilesChecked: true });
+  render(<AssistantsSettings />);
+  await screen.findByRole('button', { name: 'Refresh profiles' });
+  expect(api.discoverAssistants).not.toHaveBeenCalled();
+});
+
+it('keeps global and workspace pin visibility semantics once a cold-start roster resolves', async () => {
+  const api = window.electronAPI;
+  const pins = [
+    { harnessId: 'hermes', profileName: 'research' },
+    { harnessId: 'hermes', profileName: 'other', workspace: { environmentId: 'local', path: '/projects/b' } },
+  ];
+  vi.mocked(api.getAssistants).mockResolvedValue(cold(pins));
+  vi.mocked(api.discoverAssistants).mockResolvedValue({
+    ...cold(pins), profilesChecked: true,
+    profiles: [enabled.profiles[0], { id: 'hermes:other', harnessId: 'hermes', profileName: 'other', label: 'Other' }],
+  });
+  render(<AssistantsSettings variant="sidebar" />);
+  expect(await screen.findByText('Research')).toBeInTheDocument();
+  expect(screen.queryByText('Other')).toBeNull();
+  expect(screen.queryByText(/unavailable/)).toBeNull();
+});
+
+it('shares one cold-start probe between simultaneously mounted Assistant surfaces', async () => {
+  const api = window.electronAPI;
+  const pins = [{ harnessId: 'hermes', profileName: 'research' }];
+  vi.mocked(api.getAssistants).mockResolvedValue(cold(pins));
+  // Mirrors main: ifUnchecked requests coalesce onto one in-flight operation.
+  let inflight: Promise<AssistantSnapshot> | undefined; let probes = 0;
+  vi.mocked(api.discoverAssistants).mockImplementation(() => {
+    inflight ??= (async () => { probes++; await Promise.resolve(); return { ...cold(pins), profiles: [enabled.profiles[0]], profilesChecked: true }; })();
+    return inflight;
+  });
+  render(<><AssistantsSettings variant="sidebar" /><AssistantsSettings /></>);
+  await waitFor(() => expect(screen.getAllByText('Research').length).toBe(2));
+  expect(probes).toBe(1);
+});

@@ -6,7 +6,9 @@ import { ASSISTANTS_GET, ASSISTANTS_CONFIGURE, ASSISTANTS_DISCOVER, ASSISTANTS_A
 export function registerAssistantIpc(deps: { getService(): AssistantService }): void {
   ipcMain.handle(ASSISTANTS_GET, () => deps.getService().get());
   ipcMain.handle(ASSISTANTS_CONFIGURE, (_event, settings: unknown) => deps.getService().configure(settings));
-  ipcMain.handle(ASSISTANTS_DISCOVER, () => deps.getService().discover());
+  ipcMain.handle(ASSISTANTS_DISCOVER, (_event, options?: unknown) => deps.getService().discover(
+    options && typeof options === 'object' && (options as { ifUnchecked?: unknown }).ifUnchecked === true ? { ifUnchecked: true } : undefined,
+  ));
   ipcMain.handle(ASSISTANTS_ADD_PROFILE, (_event, harnessId: string, profileName: string) => deps.getService().addProfile(harnessId, profileName));
   ipcMain.handle(ASSISTANTS_LAUNCH, (_event, value: unknown) => {
     if (!value || typeof value !== 'object') throw new Error('Invalid assistant launch request');

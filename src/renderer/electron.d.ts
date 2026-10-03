@@ -89,7 +89,7 @@ import type { AssistantSettings, AssistantSnapshot, AssistantLaunchRequest, Assi
 export interface ElectronAPI {
   getAssistants: () => Promise<AssistantSnapshot>;
   configureAssistants: (settings: AssistantSettings) => Promise<AssistantSnapshot>;
-  discoverAssistants: () => Promise<AssistantSnapshot>;
+  discoverAssistants: (options?: { ifUnchecked?: boolean }) => Promise<AssistantSnapshot>;
   addAssistantProfile: (harnessId: string, profileName: string) => Promise<AssistantSnapshot>;
   launchAssistant: (request: AssistantLaunchRequest) => Promise<AssistantLaunchResult>;
   onAssistantsChanged: (callback: (snapshot: AssistantSnapshot) => void) => () => void;

@@ -37,6 +37,12 @@ export interface AssistantSnapshot {
   /** No assertion of machine-wide exclusivity is made. */
   externalActivity: 'unknown';
   discoveryError?: string;
+  /**
+   * Whether native profile discovery has completed in this main process. Profiles are memory-only, so
+   * after a restart `false` means "not checked yet" (distinct from a checked, failed `discoveryError`).
+   * Omitted by older producers; only an explicit `false` means unchecked.
+   */
+  profilesChecked?: boolean;
 }
 
 export interface AssistantLaunchRequest {

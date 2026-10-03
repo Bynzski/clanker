@@ -209,7 +209,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Optional native-profile roster; settings do not contain native credentials.
   getAssistants: () => ipcRenderer.invoke(ASSISTANTS_GET),
   configureAssistants: (settings: AssistantSettings) => ipcRenderer.invoke(ASSISTANTS_CONFIGURE, settings),
-  discoverAssistants: () => ipcRenderer.invoke(ASSISTANTS_DISCOVER),
+  discoverAssistants: (options?: { ifUnchecked?: boolean }) => options ? ipcRenderer.invoke(ASSISTANTS_DISCOVER, options) : ipcRenderer.invoke(ASSISTANTS_DISCOVER),
   addAssistantProfile: (harnessId: string, profileName: string) => ipcRenderer.invoke(ASSISTANTS_ADD_PROFILE, harnessId, profileName),
   launchAssistant: (request: AssistantLaunchRequest) => ipcRenderer.invoke(ASSISTANTS_LAUNCH, request),
   onAssistantsChanged: (callback: (snapshot: AssistantSnapshot) => void) => {

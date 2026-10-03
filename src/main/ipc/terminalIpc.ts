@@ -240,10 +240,12 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): TerminalIpcC
     const cwd = profileLaunch
       ? fs.realpathSync(toNativePath(resolvedWorkspace!.location.path, process.platform))
       : getSafeWorkspacePath(toNativePath(workingDir, process.platform));
-    if (profileLaunch && pathKey(cwd, process.platform === 'win32') !== pathKey(resolvedWorkspace!.location.path, process.platform === 'win32')) throw new Error('Registered assistant directory changed');
+    // The registered path may legitimately reach the directory through symlinks/junctions, so it need not
+    // be textually canonical; `cwd` is its canonical target and its dev/ino identity is pinned here.
     const profileCwdIdentity = profileLaunch ? fs.statSync(cwd, { bigint: true }) : undefined;
+    if (profileLaunch && !profileCwdIdentity!.isDirectory()) throw new Error('Registered assistant directory changed');
     // Final check, run synchronously before PTY creation (after every await): the registered path must
-    // still canonicalize to itself and name the directory that was validated above.
+    // still canonicalize to the same target and name the directory that was validated above.
     const assertProfileDirectoryUnchanged = () => {
       if (!profileLaunch) return;
       let current: string;
