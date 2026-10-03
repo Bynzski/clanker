@@ -50,6 +50,7 @@ interface HeaderRightControlsProps {
   isLoadingAiCommitModels: boolean;
   onAiCommitModelChange: (model: string) => void;
   onOpenCredentialModal: () => void;
+  onOpenKeyboardShortcuts: () => void;
   harnessDefaults: HarnessDefaultsMap | null;
   availableHarnessIds: string[];
   expandedHarness: string | null;
@@ -100,6 +101,7 @@ export default function HeaderRightControls({
   isLoadingAiCommitModels,
   onAiCommitModelChange,
   onOpenCredentialModal,
+  onOpenKeyboardShortcuts,
   harnessDefaults,
   availableHarnessIds,
   expandedHarness,
@@ -142,7 +144,7 @@ export default function HeaderRightControls({
         className="header-btn header-btn-icon"
         type="button"
         onClick={fitAllPanes}
-        title="Fit all panes into view (Ctrl/Cmd+Shift+F)"
+        title="Fit all panes into view"
         aria-label="Fit all panes"
       >
         <LayoutGrid size={15} strokeWidth={2} />
@@ -265,6 +267,9 @@ export default function HeaderRightControls({
           </div>
           <Button type="button" className="settings-dropdown-action" onClick={onOpenCredentialModal}>
             Manage VCS credentials
+          </Button>
+          <Button type="button" className="settings-dropdown-action" onClick={onOpenKeyboardShortcuts}>
+            Keyboard shortcuts...
           </Button>
 
           {harnessDefaults && (

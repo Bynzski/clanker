@@ -7,6 +7,8 @@ import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import type { HarnessSession } from '../../shared/types/session';
 import GitButton from './GitButton';
 import CredentialSettings from './settings/CredentialSettings';
+import KeyboardShortcutsDialog from './settings/KeyboardShortcutsDialog';
+import { registerOpenSettingsHandler } from '../lib/keybindingDispatcher';
 import HeaderRightControls from './HeaderRightControls';
 import { useHeaderSettings } from './useHeaderSettings';
 import { useHarnessUsage } from './useHarnessUsage';
@@ -54,6 +56,8 @@ export default function Header() {
   }, [focusedWorkspace?.id]);
   const settingsTriggerRef = useRef<HTMLButtonElement>(null);
   const credentialHandoff = useRef(false);
+  const shortcutsHandoff = useRef(false);
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const [showRecipeModal, setShowRecipeModal] = useState(false);
   const [activeRecipe, setActiveRecipe] = useState<WorkspaceRecipe | null>(null);
   const {
@@ -159,6 +163,8 @@ export default function Header() {
       void handleChatHistoryOpenChange(false);
     }
   };
+  // The app keybinding dispatcher opens Settings through this same state path.
+  useEffect(() => registerOpenSettingsHandler(() => handleSettingsOpenChange(true)));
   /** Usage -> Settings handoff: close Usage, open Settings, expand that harness; its account row does the rest. */
   const handleManageAccounts = (harnessId: string, intent: 'manage' | 'add') => {
     setShowUsage(false);
@@ -293,7 +299,7 @@ export default function Header() {
         usage={usage}
         settingsTriggerRef={settingsTriggerRef}
         onSettingsCloseAutoFocus={(event) => {
-          if (credentialHandoff.current) event.preventDefault();
+          if (credentialHandoff.current || shortcutsHandoff.current) event.preventDefault();
         }}
         showSettings={showSettings}
         onSettingsOpenChange={handleSettingsOpenChange}
@@ -309,6 +315,10 @@ export default function Header() {
         onOpenCredentialModal={() => {
           credentialHandoff.current = true;
           setShowCredentialModal(true);
+        }}
+        onOpenKeyboardShortcuts={() => {
+          shortcutsHandoff.current = true;
+          setShowKeyboardShortcuts(true);
         }}
         harnessDefaults={harnessDefaults}
         availableHarnessIds={availableHarnessIds}
@@ -338,6 +348,21 @@ export default function Header() {
             event.preventDefault();
             settingsTriggerRef.current?.focus();
             credentialHandoff.current = false;
+          }
+        }}
+      />
+      <KeyboardShortcutsDialog
+        isOpen={showKeyboardShortcuts}
+        onClose={() => setShowKeyboardShortcuts(false)}
+        onOpenAutoFocus={() => {
+          // Same Popover -> Dialog handoff as Credentials: keep Settings mounted until the dialog holds its lease.
+          setShowSettings(false);
+        }}
+        onCloseAutoFocus={(event) => {
+          if (shortcutsHandoff.current) {
+            event.preventDefault();
+            settingsTriggerRef.current?.focus();
+            shortcutsHandoff.current = false;
           }
         }}
       />
