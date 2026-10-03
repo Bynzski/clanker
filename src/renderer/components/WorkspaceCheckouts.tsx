@@ -6,7 +6,7 @@ import ConfirmCloseDialog from './ConfirmCloseDialog';
 import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import type { WorkspaceTab } from '../store/workspaceTypes';
 import { getUnusedWorktreeContexts, worktreeBranchLabel } from '../lib/worktreeAgents';
-import { removeWorktreeCheckout } from '../lib/worktreeCheckoutRemoval';
+import { formatCheckoutRemovalFailure, removeWorktreeCheckout } from '../lib/worktreeCheckoutRemoval';
 
 interface Notice {
   id: number;
@@ -50,11 +50,7 @@ export default function WorkspaceCheckouts({ workspace, expanded, label }: Works
         if (result.warning) pushNotice('warning', result.warning);
         return;
       }
-      // Existing error texts are not always sentences; keep the explanation readable.
-      const reason = /[.!?]$/.test(result.error.trim()) ? result.error.trim() : `${result.error.trim()}.`;
-      pushNotice('error', result.released
-        ? `Could not remove the checkout for branch "${branch}": ${reason} It was left on disk at ${context.path} and is no longer listed here. The branch was not deleted.`
-        : `Could not remove the checkout for branch "${branch}": ${reason} It was left on disk. The branch was not deleted.`);
+      pushNotice('error', formatCheckoutRemovalFailure({ branch, path: context.path, error: result.error, released: result.released }));
     } finally {
       setRemovingId(null);
     }

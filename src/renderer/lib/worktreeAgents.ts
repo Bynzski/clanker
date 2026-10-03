@@ -1,6 +1,7 @@
 import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
+import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
 import { getCheckoutContext } from './checkoutContexts';
 
 /**
@@ -46,4 +47,28 @@ export function getSelectedAgentWorktreeContext(
 ): CheckoutContext | null {
   const terminal = workspace.terminals.find((entry) => entry.id === workspace.activeTerminalId);
   return terminal ? getAgentWorktreeContext(workspace, terminal) : null;
+}
+
+/**
+ * The attached isolated-worktree context whose root is this listed worktree, if any. Compared by
+ * environment and canonical path identity (not raw strings), so slash style, trailing separators and
+ * Windows case do not hide a match. A worktree with no attached context is unmanaged: created
+ * outside Clanker, by an old flow, or whose context was released.
+ */
+export function findManagedWorktreeContext(
+  workspace: Pick<WorkspaceTab, 'id' | 'environmentId' | 'checkoutContexts'>,
+  worktreePath: string,
+): CheckoutContext | null {
+  const environmentId = workspace.environmentId || 'local';
+  return (workspace.checkoutContexts ?? []).find((context) =>
+    isIsolatedWorktreeContext(workspace, context)
+    && isSameWorkspaceIdentity({ environmentId, path: context.path }, { environmentId, path: worktreePath })) ?? null;
+}
+
+/** Whether any agent of the workspace currently references the context. */
+export function isCheckoutContextInUse(
+  workspace: Pick<WorkspaceTab, 'terminals'>,
+  context: Pick<CheckoutContext, 'id'>,
+): boolean {
+  return workspace.terminals.some((terminal) => terminal.checkoutContextId === context.id);
 }

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -110,6 +112,21 @@ describe('worktree-backed agents in the sidebar', () => {
       expect(rows[0].textContent).toContain('issue-72-finished');
       expect(rows[0].title).toContain(FINISHED.path);
       expect(within(list).getByRole('button', { name: 'Remove checkout for branch issue-72-finished' })).toBeTruthy();
+    });
+
+    it('keeps Remove… visible without hovering: rendered, and never hidden by the stylesheet', () => {
+      openWorkspace({ terminals: [createTerminalFixture({ id: 't-main', displayName: 'Samson', harnessId: 'codex', checkoutContextId: MAIN.id })] });
+      render(<WorkspaceNavigatorSection />);
+      const remove = screen.getAllByRole('button', { name: /^Remove checkout for branch/ })[0];
+      expect(remove).toBeVisible();
+      expect(remove.textContent).toBe('Remove…');
+
+      // jsdom does not apply the stylesheet, so check the rule itself: muted, but not invisible.
+      const css = fs.readFileSync(path.join(process.cwd(), 'src/renderer/components/WorkspaceNavigatorSection.css'), 'utf8');
+      const rule = css.match(/\.ws-checkout-row \.ws-checkout-remove\s*\{([^}]*)\}/)?.[1] ?? '';
+      const opacity = Number(rule.match(/opacity:\s*([\d.]+)/)?.[1]);
+      expect(opacity).toBeGreaterThanOrEqual(0.5);
+      expect(rule).not.toMatch(/display:\s*none|visibility:\s*hidden/);
     });
 
     it('shows no inactive row while an agent is using the checkout, and shows it once the agent is gone', () => {

@@ -3,7 +3,19 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 import type { WorkspaceTab } from '../store/workspaceTypes';
 import { getCheckoutContext } from './checkoutContexts';
 
-export type WorktreeCheckoutRemovalStage = 'validate' | 'release' | 'inspect' | 'remove';
+/**
+ * The user-facing explanation of a failed removal. Existing error texts are not always sentences, and
+ * once the context was released the checkout is no longer listed anywhere else, so say where it is.
+ */
+export function formatCheckoutRemovalFailure(input: { branch: string; path: string; error: string; released: boolean }): string {
+  const trimmed = input.error.trim();
+  const reason = /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+  return input.released
+    ? `Could not remove the checkout for branch "${input.branch}": ${reason} It was left on disk at ${input.path} and is no longer listed here. The branch was not deleted.`
+    : `Could not remove the checkout for branch "${input.branch}": ${reason} It was left on disk. The branch was not deleted.`;
+}
+
+export type WorktreeCheckoutRemovalStage ='validate' | 'release' | 'inspect' | 'remove';
 
 export type WorktreeCheckoutRemovalResult =
   | { success: true; warning?: string; recoveryPath?: string }

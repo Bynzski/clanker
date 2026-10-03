@@ -171,6 +171,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
   }, [workspacePath, loadRemotes]);
 
   const refreshMenuDataRef = useRef<() => Promise<void>>(async () => {});
+  const [menuRefreshCount, setMenuRefreshCount] = useState(0);
 
   const refreshAfterAction = useCallback(async () => {
     await Promise.all([refreshMenuDataRef.current(), window.electronAPI.gitRefresh(workspaceId)]);
@@ -236,6 +237,8 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
     if (!workspacePath) {
       return;
     }
+
+    setMenuRefreshCount((count) => count + 1);
 
     setIsLoadingBranches(true);
     setIsLoadingOperation(true);
@@ -717,6 +720,7 @@ export default function GitButton({ workspacePath, workspaceId }: GitButtonProps
             provider={provider}
             providerContext={vcsProviderContext}
             pullRequest={pullRequest}
+            refreshKey={menuRefreshCount}
             remoteAction={remoteAction}
             remoteError={remoteError}
             remotes={remotes}

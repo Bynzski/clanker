@@ -206,7 +206,8 @@
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
 }
-.ws-checkout-row .ws-checkout-remove { opacity: 0; flex-shrink: 0; }
+/* Visible but muted, so cleaning up is findable without hovering; it firms up on hover or focus. */
+.ws-checkout-row .ws-checkout-remove { opacity: 0.7; flex-shrink: 0; }
 .ws-checkout-row:hover .ws-checkout-remove,
 .ws-checkout-row:focus-within .ws-checkout-remove { opacity: 1; }
 

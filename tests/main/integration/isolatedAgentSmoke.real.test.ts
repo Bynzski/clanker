@@ -11,7 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { testHome } from '../../_helpers/tempPaths';
 
@@ -50,7 +50,9 @@ import { createMainCheckoutContext } from '../../../src/shared/checkoutContext';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createIsolatedAgent } from '../../../src/renderer/lib/isolatedAgentLaunch';
 import { removeWorktreeCheckout } from '../../../src/renderer/lib/worktreeCheckoutRemoval';
-import { getAgentWorktreeContext, getUnusedWorktreeContexts } from '../../../src/renderer/lib/worktreeAgents';
+import { findManagedWorktreeContext, getAgentWorktreeContext, getUnusedWorktreeContexts } from '../../../src/renderer/lib/worktreeAgents';
+import { removeUnmanagedWorktree } from '../../../src/renderer/lib/unmanagedWorktreeRemoval';
+import type { GitWorktree } from '../../../src/shared/types/git';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 
 const execFileAsync = promisify(execFile);
@@ -108,6 +110,7 @@ beforeEach(() => {
     gitGetBranchState: (p: string, id?: string) => call(C.GIT_GET_BRANCH_STATE, p, id),
     gitCreateWorktree: (...args: unknown[]) => call(C.GIT_CREATE_WORKTREE, ...args),
     releaseCheckoutContext: (workspaceId: string, contextId: string) => call(C.RELEASE_CHECKOUT_CONTEXT, workspaceId, contextId),
+    gitListWorktrees: (p: string, id?: string) => call(C.GIT_LIST_WORKTREES, p, id),
     gitInspectWorktree: (...args: unknown[]) => call(C.GIT_INSPECT_WORKTREE, ...args),
     gitRemoveWorktree: (...args: unknown[]) => call(C.GIT_REMOVE_WORKTREE, ...args),
   };
@@ -219,5 +222,130 @@ describe('isolated agent smoke (real renderer logic, real main process, real Git
     expect((await git('branch', '--list', 'dirty-task')).stdout).toContain('dirty-task');
     expect(getUnusedWorktreeContexts(workspace())).toEqual([]);
     expect(registry.getCheckoutContextsForWorkspace('ws')).toHaveLength(1);
+  });
+});
+
+describe('Git menu worktree management (real Git, worktrees Clanker did not create)', () => {
+  /** A worktree made the way a shell, another tool or the old launcher would: no context, no Clanker. */
+  function externalWorktree(name: string, branch = name): string {
+    const dirPath = path.join(root, 'external', name);
+    execFileSync('git', ['worktree', 'add', '-b', branch, dirPath], { cwd: repo, stdio: 'ignore' });
+    return fs.realpathSync(dirPath);
+  }
+  const listing = async (): Promise<GitWorktree[]> =>
+    (await api().gitListWorktrees(toPosixPath(repo), 'ws')).worktrees.filter((entry: GitWorktree) => !entry.isMain);
+  const entryFor = async (dirPath: string): Promise<GitWorktree> =>
+    (await listing()).find((entry) => path.normalize(entry.path) === path.normalize(dirPath))!;
+  const hasBranch = async (name: string) => (await git('branch', '--list', name)).stdout.includes(name);
+
+  it('lists an external worktree as unmanaged and an isolated one as managed', async () => {
+    await openProjectWithNormalAgent();
+    const external = externalWorktree('ext-listed');
+    await createIsolatedAgent({ workspaceId: 'ws', harnessId: '', taskBranch: 'managed-one', visibleHarnessIds: [''] });
+
+    // The repository is shared with the other tests, so look only at the two this test made.
+    const entries = (await listing()).filter((entry) => entry.branch === 'managed-one' || path.normalize(entry.path) === path.normalize(external));
+    const managed = entries.filter((entry) => findManagedWorktreeContext(workspace(), entry.path));
+    const unmanaged = entries.filter((entry) => !findManagedWorktreeContext(workspace(), entry.path));
+
+    expect(entries).toHaveLength(2);
+    expect(managed.map((entry) => entry.branch)).toEqual(['managed-one']);
+    expect(unmanaged.map((entry) => path.normalize(entry.path))).toEqual([path.normalize(external)]);
+  });
+
+  it('removes a clean unmanaged worktree through the existing safeguards, keeping its branch', async () => {
+    await openProjectWithNormalAgent();
+    const external = externalWorktree('ext-clean');
+
+    const result = await removeUnmanagedWorktree(workspace(), await entryFor(external));
+
+    expect(result).toMatchObject({ success: true });
+    expect(fs.existsSync(external)).toBe(false);
+    expect(await hasBranch('ext-clean')).toBe(true);
+    expect((await listing()).some((entry) => path.normalize(entry.path) === path.normalize(external))).toBe(false);
+    expect(registry.getWorkspace('ws')).not.toBeNull();
+  });
+
+  it.each([
+    ['an untracked file', (dir: string) => fs.writeFileSync(path.join(dir, 'notes.txt'), 'wip\n')],
+    ['a modified tracked file', (dir: string) => fs.writeFileSync(path.join(dir, 'README.md'), 'changed\n')],
+    ['an ignored file', (dir: string) => {
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'secret.env\n');
+      execFileSync('git', ['add', '.gitignore'], { cwd: dir });
+      execFileSync('git', ['commit', '-m', 'ignore secrets'], { cwd: dir, stdio: 'ignore' });
+      fs.writeFileSync(path.join(dir, 'secret.env'), 'token\n');
+    }],
+  ])('refuses an unmanaged worktree with %s, leaving it and its branch alone', async (label, dirty) => {
+    await openProjectWithNormalAgent();
+    const name = `ext-dirty-${label.replace(/\W+/g, '-')}`;
+    const external = externalWorktree(name);
+    dirty(external);
+
+    const result = await removeUnmanagedWorktree(workspace(), await entryFor(external));
+
+    expect(result).toMatchObject({ success: false, stage: 'inspect', error: expect.stringContaining('uncommitted') });
+    expect(fs.existsSync(path.join(external, '.git'))).toBe(true);
+    expect(await hasBranch(name)).toBe(true);
+  });
+
+  it('refuses when the branch is not the one inspected, even if everything else is clean', async () => {
+    await openProjectWithNormalAgent();
+    const external = externalWorktree('ext-switch');
+    const entry = await entryFor(external);
+    const openPaths = [toPosixPath(repo)];
+    const inspection = await api().gitInspectWorktree(toPosixPath(repo), entry.path, openPaths, 'ws');
+    expect(inspection).toMatchObject({ success: true, hasChanges: false });
+
+    execFileSync('git', ['switch', '-c', 'switched-meanwhile'], { cwd: external, stdio: 'ignore' });
+    const removal = await api().gitRemoveWorktree(toPosixPath(repo), entry.path, inspection.worktree.branch, openPaths, 'ws');
+
+    expect(removal).toMatchObject({ success: false, error: expect.stringContaining('branch changed') });
+    expect(fs.existsSync(path.join(external, '.git'))).toBe(true);
+  });
+
+  it('refuses a worktree that is open as its own workspace, and does not close that workspace', async () => {
+    await openProjectWithNormalAgent();
+    const external = externalWorktree('ext-open-as-tab');
+    expect((await api().registerOpenWorkspace('legacy-tab', toPosixPath(external))).success).toBe(true);
+    useWorkspaceStore.getState().addWorkspace({ ...workspace(), id: 'legacy-tab', workspacePath: toPosixPath(external), isLinkedWorktree: true, terminals: [], activeTerminalId: null });
+    useWorkspaceStore.getState().selectWorkspace('ws');
+
+    const result = await removeUnmanagedWorktree(workspace(), await entryFor(external));
+
+    expect(result).toMatchObject({ success: false, stage: 'inspect', error: expect.stringContaining('Close this workspace tab') });
+    expect(fs.existsSync(path.join(external, '.git'))).toBe(true);
+    expect(useWorkspaceStore.getState().getWorkspaceById('legacy-tab')).not.toBeNull();
+    expect(registry.getWorkspace('legacy-tab')).not.toBeNull();
+  });
+
+  it('refuses a worktree a live terminal is working in', async () => {
+    await openProjectWithNormalAgent();
+    const external = externalWorktree('ext-busy');
+    await api().spawnTerminal(toPosixPath(external), undefined, undefined);
+
+    const result = await removeUnmanagedWorktree(workspace(), await entryFor(external));
+
+    expect(result).toMatchObject({ success: false, stage: 'inspect' });
+    expect(fs.existsSync(path.join(external, '.git'))).toBe(true);
+  });
+
+  it('keeps managed and unmanaged lifecycles apart: an attached checkout is never removed directly', async () => {
+    await openProjectWithNormalAgent();
+    await createIsolatedAgent({ workspaceId: 'ws', harnessId: '', taskBranch: 'managed-two', visibleHarnessIds: [''] });
+    const isolated = workspace().terminals[1];
+    const context = getAgentWorktreeContext(workspace(), isolated)!;
+    const entry = await entryFor(context.path);
+    await api().killTerminal(isolated.id);
+    useWorkspaceStore.getState().removeTerminal(isolated.id);
+
+    // Even inactive, the direct path refuses; nothing is touched and the context stays attached.
+    expect(await removeUnmanagedWorktree(workspace(), entry)).toMatchObject({ success: false, stage: 'validate' });
+    expect(fs.existsSync(path.join(context.path, 'README.md'))).toBe(true);
+    expect(workspace().checkoutContexts!.map((item) => item.id)).toContain(context.id);
+
+    // The lifecycle path does release, inspect and remove, and the branch stays.
+    expect(await removeWorktreeCheckout(workspace(), context)).toMatchObject({ success: true });
+    expect(fs.existsSync(context.path)).toBe(false);
+    expect(await hasBranch('managed-two')).toBe(true);
   });
 });
