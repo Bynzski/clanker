@@ -59,6 +59,18 @@ describe('worktree-backed agents in the sidebar', () => {
     expect(row.title).toContain(ACTIVE.path);
   });
 
+  it('keeps the branch glyph when a very long branch name truncates', () => {
+    const long = 'feature/this-is-an-intentionally-very-long-branch-name-to-test-truncation-in-the-sidebar';
+    openWorkspace({ checkoutContexts: [MAIN, { ...ACTIVE, branch: long }] });
+    const { container } = render(<WorkspaceNavigatorSection />);
+    const badge = container.querySelector('.ws-agent-branch')!;
+
+    // The text is the part that truncates (CSS ellipsis); the glyph and full name both remain present.
+    expect(badge.querySelector('svg')).toBeTruthy();
+    expect(badge.querySelector('span')?.textContent).toBe(long);
+    expect(badge.getAttribute('aria-label')).toBe(`on branch ${long}`);
+  });
+
   it('leaves a main-checkout agent exactly as it was: no badge, and the original two-part tooltip', () => {
     openWorkspace();
     const { container } = render(<WorkspaceNavigatorSection />);
@@ -222,7 +234,8 @@ describe('worktree-backed agents in the sidebar', () => {
         await startRemoval();
         await confirm();
 
-        expect((await screen.findByRole('alert')).textContent).toContain('Worktree branch changed; inspect it again');
+        // The existing error is not a sentence; the explanation that follows it still reads as one.
+        expect((await screen.findByRole('alert')).textContent).toContain('Worktree branch changed; inspect it again. It was left on disk');
         expect(gitRemoveWorktree).toHaveBeenCalledTimes(1);
         expect(releaseCheckoutContext).toHaveBeenCalledTimes(1);
         expect(workspace().checkoutContexts!.map((entry) => entry.id)).not.toContain(FINISHED.id);

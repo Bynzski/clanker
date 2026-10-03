@@ -297,8 +297,12 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
             );
           })}
         </div>
-        {focusedWorkspace && (
-          <IsolatedAgentButton key={focusedWorkspace.id} workspace={focusedWorkspace} visibleHarnessIds={visibleHarnessIds} />
+        {focusedWorkspace && !focusedWorkspace.isLinkedWorktree && (
+          <>
+            {/* Set apart from the harness launchers: this creates a worktree-backed agent, it is not another harness. */}
+            <span className="toolbar-divider" aria-hidden="true" />
+            <IsolatedAgentButton key={focusedWorkspace.id} workspace={focusedWorkspace} visibleHarnessIds={visibleHarnessIds} />
+          </>
         )}
 
         {workspacePath && (

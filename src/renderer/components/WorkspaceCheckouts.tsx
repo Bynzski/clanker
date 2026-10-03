@@ -50,9 +50,11 @@ export default function WorkspaceCheckouts({ workspace, expanded, label }: Works
         if (result.warning) pushNotice('warning', result.warning);
         return;
       }
+      // Existing error texts are not always sentences; keep the explanation readable.
+      const reason = /[.!?]$/.test(result.error.trim()) ? result.error.trim() : `${result.error.trim()}.`;
       pushNotice('error', result.released
-        ? `Could not remove the checkout for branch "${branch}": ${result.error} It was left on disk at ${context.path} and is no longer listed here. The branch was not deleted.`
-        : `Could not remove the checkout for branch "${branch}": ${result.error} It was left on disk. The branch was not deleted.`);
+        ? `Could not remove the checkout for branch "${branch}": ${reason} It was left on disk at ${context.path} and is no longer listed here. The branch was not deleted.`
+        : `Could not remove the checkout for branch "${branch}": ${reason} It was left on disk. The branch was not deleted.`);
     } finally {
       setRemovingId(null);
     }

@@ -176,6 +176,8 @@
   font-size: var(--font-size-xs);
 }
 .ws-agent-branch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long branch truncates its text, never the glyph. */
+.ws-agent-branch svg { flex-shrink: 0; }
 
 /* Inactive isolated checkouts: subdued rows under the agents, not agents themselves. */
 .ws-checkout-list,

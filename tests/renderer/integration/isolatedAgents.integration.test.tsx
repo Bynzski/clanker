@@ -396,6 +396,8 @@ describe('isolated agents from the toolbar', () => {
       // The short label is present for wide toolbars; it hides with the harness labels on narrow ones.
       expect(button.querySelector('.harness-pill-label')?.textContent).toBe('Isolated');
       expect(container.querySelectorAll('.harness-pills .isolated-agent-trigger')).toHaveLength(0);
+      // A divider sets it apart from the harness launchers it sits beside.
+      expect(button.previousElementSibling?.classList.contains('toolbar-divider')).toBe(true);
       // It is a separate action, not another harness: the pills still launch exactly the visible harnesses.
       expect(screen.getAllByRole('button', { name: /^(Terminal|Codex|Claude)$/ })).toHaveLength(3);
     });
