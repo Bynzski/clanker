@@ -4,6 +4,15 @@
 
 Access via the header toolbar gear icon.
 
+### Appearance
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Theme | Dark, Light, or Slate, shown as a preview of each theme | Dark |
+| Workspaces | **Sidebar** lists workspaces in a collapsible left sidebar and docks the toolbar in the title bar; **Tabs** shows workspace tabs in the title bar and the toolbar on its own row | Sidebar on new installs; installs that predate the sidebar keep Tabs |
+
+Keyboard bindings are edited from **Keyboard shortcuts...** in the same menu; see [Keyboard Shortcuts](keyboard-shortcuts.md#customizing-shortcuts).
+
 ### AI Commit
 
 | Setting | Description | Default |
@@ -67,7 +76,7 @@ Plain shells have no model and do not inherit a harness from global defaults.
 
 Favorites are **never** used at spawn time — they only affect the picker/discovery UI.
 
-For SSH workspaces in V1, harness availability is discovered on the host. Extra flags still apply, but model discovery and selection remain unavailable; the remote CLI uses its own model configuration. Agent attention uses host-side adapters when enabled in harness defaults; see [Remote Agent Attention](workspaces.md#remote-agent-attention) for setup and limits. Locally installed CLIs and desktop attention credentials are not used for remote launches. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh).
+For SSH workspaces in V1, harness availability is discovered on the host. Extra flags still apply. A locally saved default model is never applied; the workspace gate lists the host's own models for harnesses that support remote discovery (Codex, OpenCode, Pi, OMP, Antigravity) and otherwise leaves the remote CLI on its own model configuration. Agent attention uses host-side adapters when enabled in harness defaults; see [Remote Agent Attention](workspaces.md#remote-agent-attention) for setup and limits. Locally installed CLIs and desktop attention credentials are not used for remote launches. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh).
 
 ### VCS Credentials
 
@@ -108,10 +117,12 @@ The app can automatically configure your SSH config to use the generated key for
 
 Settings are stored locally via `electron-store` (`clanker-grid.json`):
 - Last workspace path
+- Theme, workspace navigation mode (Sidebar or Tabs), and sidebar width
 - Base directory for workspace suggestions
 - AI commit configuration
 - Harness defaults (per-harness visibility, model, favorites, flags, agent attention)
 - Saved SSH environment labels and targets (no passwords or private keys)
+- Keyboard shortcut overrides (only bindings you changed)
 
 The store schema is defined in `src/shared/types/store.ts`.
 

@@ -12,7 +12,7 @@
 
 - All `npm run lint`, `npm run typecheck`, and `npm run build` must pass before considering tasks completed.
 - NEVER run bare `npm test`. Always use `npm run test` (runs Vitest).
-- Run `npm run validate` as the final check — it runs lint → typecheck → security-check (`npm audit --audit-level=high`) → build → test.
+- Run `npm run validate` as the final check — it runs branding check → lint → typecheck → security-check → build → test. `security-check` (`scripts/security-audit.cjs`) fails on any high/critical `npm audit` finding except the single documented dev-only electron-builder chain (`GHSA-ch52-4w7c-c8xp`); see `RELEASING.md`.
 
 ## Project Snapshot
 
@@ -195,9 +195,11 @@ npm run lint       # ESLint
 npm run typecheck  # TypeScript
 npm run build      # Vite + tsc
 npm run test       # Vitest
-npm run security-check # npm audit --audit-level=high
-npm run validate   # lint, typecheck, security-check, build, test
+npm run security-check # scripts/security-audit.cjs (npm audit, high threshold, one documented exception)
+npm run validate   # branding check, lint, typecheck, security-check, build, test
 ```
+
+CI (`.github/workflows/validate.yml`): `changes` → `ubuntu-validation` (dependency review on PRs, informational audit artifact, lint, typecheck, build, full tests with coverage) and `windows-compat` (`vitest --project main`, no coverage) → final `validate` aggregate, the stable required check. Windows does not repeat lint, typecheck, or build.
 
 ## File Size Thresholds
 

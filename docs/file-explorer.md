@@ -4,7 +4,11 @@ Navigate and manage files in your workspace with the integrated file explorer.
 
 ## Opening the Explorer
 
-Click the **Explorer** button in the header toolbar to toggle the file explorer sidebar.
+In **Sidebar** navigation (the default), files live in the **FILES** section pinned to the bottom of the workspace sidebar. It starts collapsed; click **Files** to open it, and it grows upward to at most half the sidebar. FILES always shows the active workspace. From the collapsed sidebar rail, **Show Files** expands the sidebar and opens FILES.
+
+In **Tabs** navigation, click the **Explorer** button in the header toolbar to toggle a separate, resizable Explorer dock.
+
+`Cmd/Ctrl+B` toggles either one.
 
 ## Features
 

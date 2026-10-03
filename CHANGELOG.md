@@ -9,6 +9,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - **Automatic SSH browser previews** — discover workspace-owned remote HTTP/HTTPS services, allocate desktop loopback forwards automatically, and open a single unambiguous service in the embedded Browser. Multiple services and manual forwarding are available from a compact Browser control.
+- **Harness usage** — a Usage button in the toolbar shows subscription quota windows, remaining capacity and reset times for Codex, Claude, Oh My Pi, Hermes and Antigravity in the active local or SSH workspace, using the harness's own CLI and sign-in. Choose which providers appear with **Show in Usage** in Settings → Harness Defaults.
+- **Harness accounts** — optionally add managed Codex and Claude accounts in Settings → Harness Defaults, pick which one future launches use, and see each account's usage. Resume and fork keep using the account that owns the conversation. Without added accounts nothing changes, and accounts are local-only for now (SSH workspaces report them as unavailable).
+- **Customizable keyboard shortcuts** — Settings → Keyboard shortcuts… lets you rebind, unbind and reset commands, with conflict detection. New defaults include Open Settings (`Cmd/Ctrl+,`), Toggle Explorer (`Cmd/Ctrl+B`) and browser tab shortcuts (`Cmd/Ctrl+L/T/W/R`, `Ctrl+Tab`). Application shortcuts never take keys from a focused terminal or browser page.
+- **Terminal zoom** — zoom follows focus: `Cmd/Ctrl` `+`/`-`/`0` and `Ctrl`+wheel resize the focused terminal's font, the focused browser tab, or the whole app.
+- **Remote harness models** — when opening an SSH workspace, the launcher asks the host for its own model list for Codex, OpenCode, Pi, OMP and Antigravity and shows a picker (with Use harness default first) when the host returns a real catalog; otherwise the host default applies.
+- **Annotation handoff to SSH agents** — Send to agent in Browser annotation now works for eligible remote agent terminals in the matching workspace.
 
 ### Changed
 
@@ -25,6 +31,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Workspace tabs** — Tabs mode shows workspaces as compact chips centred in the title bar, with an accent underline on the active one and borderless close, rename and new-workspace buttons.
 - **Theme previews** — Settings → Appearance shows each theme as a miniature preview painted with its real colours, and workspace navigation is a Tabs/Sidebar toggle.
 - **Conversation History replaces Workspace Tasks** — Chat History now contains only harness-native conversations. The durable per-launch task records introduced in `0.6.0` no longer exist: local and SSH harness launches and native resumes write no application-level task state, and any `taskSessions` data persisted by earlier builds is deleted once at startup. Resuming an old conversation is unchanged — open Chat History, expand a harness, and select the conversation.
+- **Fit All Panes** — now keeps your pane arrangement and only rebalances split sizes instead of rebuilding the layout, and its default shortcut moved from `Cmd/Ctrl+Shift+F` to `Cmd/Ctrl+Alt+F` (rebindable).
+- **Browser returns where it was** — hiding and re-showing the Browser puts it back in its previous place in the layout for the rest of the session; otherwise it opens at the right edge. The toolbar's Browser button is the only show/hide control.
+- **Clearer SSH connection errors** — when OpenSSH itself fails, Clanker names the cause (authentication, host key, DNS, refused, unreachable, timeout, lost connection) instead of showing raw output, and the launcher's remote-home lookup has a Retry that keeps your typed path.
 
 ### Fixed
 
@@ -34,6 +43,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Open Workspace in the collapsed rail** — the add button sits directly under the open workspaces instead of at the bottom of the rail.
 - **Window dragging from the toolbar** — in sidebar mode the empty stretch of the docked toolbar drags the window again; previously only the brand area did.
 - **SSH preview recovery and isolation** — development servers can stop and restart without recreating healthy SSH tunnels. Private SSH workspace Browser sessions prevent loopback cookies and storage from leaking between unrelated remote workspaces.
+- **Agent attention accuracy** — status now follows each harness's native lifecycle: permission requests show as needing input until resolved, subagent, child-session, background and stale events are ignored, a Claude turn that ends on an API error shows as settled, and an interrupted Codex turn clears without a completion alert. Out-of-order hook events can no longer leave a pane stuck on Needs input, and resuming a conversation keeps its attention state. Codex attention now uses Codex's native hooks, which Codex may ask you to review once (`/hooks`).
+- **Selected harness kept during discovery** — a workspace's chosen harness is no longer cleared while harness discovery for its environment is still loading or fails; it is only reset after a successful discovery shows it is unavailable.
 
 ## [0.9.0] - 2026-10-01
 

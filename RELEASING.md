@@ -26,16 +26,16 @@ Releases are cut from `main`. The working tree must be clean before starting.
 
 A full release produces both the Linux AppImage and the Windows NSIS installer + portable executable. Each platform must be built on its own host: the AppImage on Linux, the NSIS/portable on Windows. There is no cross-compilation step.
 
-Linux-only releases are allowed at any semantic version when the artifact scope is explicit. Choose the version from the changes being released, complete Linux validation and the AppImage smoke test, mention the Linux-only artifact scope in `CHANGELOG.md`, and publish only the AppImage. The release commit must pass both Linux and Windows CI validation; a Windows artifact is not required for a Linux-only release.
+Linux-only releases are allowed at any semantic version when the artifact scope is explicit. Choose the version from the changes being released, complete Linux validation and the AppImage smoke test, mention the Linux-only artifact scope in `CHANGELOG.md`, and publish only the AppImage. The release commit must pass the CI `validate` check (Ubuntu validation and Windows `main`-project compatibility); a Windows artifact is not required for a Linux-only release.
 
 ### 1. Prepare the release commit (Linux host)
 
-1. Confirm `main` is green: `npm run validate` (lint, typecheck, security audit, build, tests). CI must be green for both `ubuntu-latest` and `windows-latest`.
+1. Confirm `main` is green: run `npm ci`, then `npm run validate` (branding check, lint, typecheck, security check, build, tests). The CI `validate` check must be green; it aggregates Ubuntu validation (lint, typecheck, build, full tests with coverage) and Windows compatibility (the `main` Vitest project only). See [Security gate](#security-gate) for what the security check enforces.
 2. Edit `CHANGELOG.md`: rename the `## [Unreleased]` heading to `## [X.Y.Z] - YYYY-MM-DD`. Add a fresh empty `## [Unreleased]` section above it. Update the link references at the bottom.
 3. Bump `version` in `package.json` to `X.Y.Z`. Update `package-lock.json` to match (the top-level `version` and the root package entry).
 4. Run `npm run validate` again.
 5. Commit the changelog and version bump together: `chore(release): vX.Y.Z`.
-6. Push the release commit to `main` and wait for both Linux and Windows CI jobs on that commit to pass. Do not create or push the version tag yet.
+6. Push the release commit to `main` and wait for the CI `validate` check on that commit to pass. Do not create or push the version tag yet.
 
 ### 2. Build the Linux artifact (Linux host)
 
@@ -92,6 +92,16 @@ gh release create vX.Y.Z \
 ```
 
 Mention in the release notes that no Windows build was produced for this tag.
+
+## Security gate
+
+`npm run security-check` runs `scripts/security-audit.cjs`, which runs `npm audit --json` and fails on any high or critical finding, or if `npm audit` cannot produce a report. Development and packaging dependencies are included: build tooling produces the release artifacts. CI uploads a raw `npm audit` report as an informational artifact; the gate itself runs locally through `npm run validate`.
+
+**Temporary exception.** `GHSA-ch52-4w7c-c8xp` (`http-cache-semantics` <= 4.2.0, max-stale cache handling) has no patched release. Every current `electron-builder` v26 release (checked through 26.17.0) reaches it through `app-builder-lib` → `@electron/get@3` → `got@11` → `cacheable-request`, and npm's only suggested fix is a downgrade to `electron-builder@26.5.0`. The script permits exactly this advisory in exactly this chain, and only while every affected package is a dev-only entry in `package-lock.json` and `electron-builder` is a devDependency. Any other advisory, or the same advisory in a runtime dependency, fails the check. Clanker does not ship these packages; they run on the release host, where `@electron/get` downloads toolchain and Electron binaries without enabling an HTTP cache.
+
+**Do not downgrade to clear the audit.** The script always requires `app-builder-lib` and `electron-builder` >= 26.15.0 (fixes `GHSA-7g7r-gx96-252g`, an AppImage vulnerability; Clanker ships an AppImage) and `builder-util-runtime` >= 9.7.0 (fixes `GHSA-p2f4-r6v6-j797`).
+
+**Removal.** When an `electron-builder` release stops depending on a vulnerable `http-cache-semantics` chain (for example by moving to `@electron/get` >= 4 without `got`), upgrade, then replace the script with `npm audit --audit-level=high` in `package.json`'s `security-check` and delete the script and its test. The script prints a notice when the exception is no longer needed.
 
 ## Platform targets
 

@@ -23,7 +23,7 @@ These are the configurable commands (see [Customizing shortcuts](#customizing-sh
 |---------|---------|----------|
 | Open Settings | `Cmd/Ctrl+,` | App, editor |
 | Fit All Panes | `Cmd/Ctrl+Alt+F` | App, editor, browser |
-| Toggle Explorer | `Cmd/Ctrl+B` | App, editor |
+| Toggle Explorer (the FILES section in Sidebar mode) | `Cmd/Ctrl+B` | App, editor |
 | Save File | `Cmd/Ctrl+S` | Editor only |
 | Zoom In | `Cmd/Ctrl+=` (`Cmd/Ctrl+Shift+=` and `Cmd/Ctrl`+numpad `+` also work until you rebind it) | App, editor, terminal, browser |
 | Zoom Out | `Cmd/Ctrl+-` (`Cmd/Ctrl`+numpad `-` also works until rebound) | App, editor, terminal, browser |
@@ -73,18 +73,19 @@ These are interaction semantics of individual components, not Clanker commands, 
 
 - `Esc` in dialogs, popovers, and inline create/rename fields; `Enter` to confirm
 - File tree and list arrow-key navigation, `Enter`/`Space` activation
-- Workspace tab accessibility and reorder keys (`Alt+Shift+←/→`)
+- Workspace tab and sidebar-row accessibility and reorder keys (`Alt+Shift+←/→`, `Alt+Shift+↑/↓`)
 - Workspace Gate and SSH directory chooser keys (below)
 - CodeMirror's own editing keys: arrows, selection, `Cmd/Ctrl+Z` undo, `Cmd/Ctrl+Shift+Z`/`Cmd/Ctrl+Y` redo, and the rest of its standard keymap
 - Terminal copy: `Ctrl+Shift+C` copies the xterm selection (selecting text also copies it)
 - Browser DevTools: `Cmd/Ctrl+Shift+I` and `F12`
 - `Ctrl`+wheel zoom
 
-## Workspace Tabs
+## Workspace Tabs and Sidebar
 
 | Action | Shortcut | Notes |
 |--------|----------|-------|
-| Move focused workspace tab left or right | `Alt+Shift+←` / `Alt+Shift+→` | Also available by dragging a tab; does not activate an inactive tab |
+| Move focused workspace tab left or right (Tabs mode) | `Alt+Shift+←` / `Alt+Shift+→` | Also available by dragging a tab; does not activate an inactive tab |
+| Move focused workspace row up or down (Sidebar mode) | `Alt+Shift+↑` / `Alt+Shift+↓` | Also available by dragging a row; does not activate an inactive workspace |
 
 ## Workspace Gate
 
