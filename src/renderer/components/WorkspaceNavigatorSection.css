@@ -162,3 +162,61 @@
 .ws-agent-row.current { color: var(--text-primary); border-left-color: var(--border-strong, var(--border-default)); }
 .ws-agent-harness { display: inline-flex; flex-shrink: 0; }
 .ws-agent-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* An agent running in an isolated worktree names its branch, quietly, at the row's end. */
+.ws-agent-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 96px;
+  color: var(--accent-interactive);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+.ws-agent-branch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Inactive isolated checkouts: subdued rows under the agents, not agents themselves. */
+.ws-checkout-list,
+.ws-checkout-notices {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 2px;
+}
+
+.ws-checkout-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 0 8px 0 26px;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.ws-checkout-icon { flex-shrink: 0; }
+.ws-checkout-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+.ws-checkout-row .ws-checkout-remove { opacity: 0; flex-shrink: 0; }
+.ws-checkout-row:hover .ws-checkout-remove,
+.ws-checkout-row:focus-within .ws-checkout-remove { opacity: 1; }
+
+.ws-checkout-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 2px 8px 2px 26px;
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+.ws-checkout-notice > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.ws-checkout-notice.error { color: var(--status-error); }
+.ws-checkout-notice.warning { color: var(--status-warning); }
