@@ -212,7 +212,11 @@ export default function Header() {
         addTerminal(term);
       },
       openBrowserPreview: async (wsId, url) => {
-        if (!browserVisible) toggleBrowser();
+        const store = useWorkspaceStore.getState();
+        const target = store.workspaces.find((entry) => entry.id === wsId);
+        if (target && !target.browserVisible) {
+          store.setBrowserVisible(true, wsId);
+        }
         if (typeof window.electronAPI?.browserNavigate === 'function') {
           return window.electronAPI.browserNavigate(wsId, url, undefined, true);
         }

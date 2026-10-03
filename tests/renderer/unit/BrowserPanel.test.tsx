@@ -52,8 +52,15 @@ class MockResizeObserver {
 }
 
 // Mock the drag handle context
+const mockDragPointerDown = vi.fn();
 vi.mock('../../../src/renderer/components/dragHandleContext', () => ({
-  useDragHandle: vi.fn().mockReturnValue({ 'data-drag-activator': 'true' }),
+  useDragHandle: vi.fn(() => ({
+    'data-drag-activator': 'true',
+    role: 'button',
+    tabIndex: 0,
+    'aria-roledescription': 'draggable',
+    onPointerDown: mockDragPointerDown,
+  })),
 }));
 
 // Mock electron API for browser operations
@@ -269,21 +276,40 @@ describe('BrowserPanel', () => {
         expect(setBrowserVisible).toHaveBeenCalledWith(false, 'workspace-1');
       });
 
-      it('exposes the title/grip and empty chrome as drag activators only', () => {
+      it('gives the title/grip the full accessible activator and the empty chrome pointer-only drag', () => {
         setupStore({ browserPane: pane });
 
         render(<BrowserPanel {...defaultProps} />);
 
-        expect(document.querySelector('.pane-drag-surface')).toHaveAttribute('data-drag-activator', 'true');
-        expect(screen.getByTestId('browser-header-drag-fill')).toHaveAttribute('data-drag-activator', 'true');
+        const grip = document.querySelector('.pane-drag-surface')!;
+        expect(grip).toHaveAttribute('role', 'button');
+        expect(grip).toHaveAttribute('tabindex', '0');
+        expect(grip).toHaveAttribute('data-drag-activator', 'true');
+
+        const fill = screen.getByTestId('browser-header-drag-fill');
+        expect(fill).not.toHaveAttribute('role');
+        expect(fill).not.toHaveAttribute('tabindex');
+        expect(fill).not.toHaveAttribute('data-drag-activator');
+        expect(fill).toHaveAttribute('aria-hidden', 'true');
+      });
+
+      it('starts pane drag from empty chrome pointerdown but not from tabs or buttons', () => {
+        setupStore({ browserPane: pane });
+
+        render(<BrowserPanel {...defaultProps} />);
+
+        mockDragPointerDown.mockClear();
         for (const el of [
           screen.getByRole('tab', { name: 'A' }),
-          screen.getByRole('tablist'),
           screen.getByRole('button', { name: 'New tab' }),
           screen.getByRole('button', { name: 'Hide browser' }),
         ]) {
-          expect(el.closest('[data-drag-activator]')).toBeNull();
+          fireEvent.pointerDown(el);
         }
+        expect(mockDragPointerDown).not.toHaveBeenCalled();
+
+        fireEvent.pointerDown(screen.getByTestId('browser-header-drag-fill'));
+        expect(mockDragPointerDown).toHaveBeenCalledTimes(1);
       });
 
       it('orders header as title, tab strip (with + after tabs), empty drag chrome, Hide', () => {

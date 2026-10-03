@@ -15,6 +15,18 @@ vi.mock('../../../src/renderer/components/GitButton', () => ({
   ),
 }));
 
+let capturedLaunchRecipe: ((recipe: unknown) => Promise<unknown>) | undefined;
+vi.mock('../../../src/renderer/components/RecipeModal', () => ({
+  default: (props: { onLaunchRecipe: (recipe: unknown) => Promise<unknown> }) => {
+    capturedLaunchRecipe = props.onLaunchRecipe;
+    return null;
+  },
+}));
+const mockExecuteRecipe = vi.fn();
+vi.mock('../../../src/renderer/lib/recipeExecution', () => ({
+  executeWorkspaceRecipe: (...args: unknown[]) => mockExecuteRecipe(...args),
+}));
+
 describe('Header', () => {
   it('discovers history on SSH workspaces and ignores late responses from a previous workspace', async () => {
     // This setup runs after beforeEach, keeping the usual header fixture intact.
@@ -326,6 +338,23 @@ describe('Header', () => {
       renderHeader();
       fireEvent.click(screen.getByLabelText('Fit all panes'));
       expect(fitAllPanes).toHaveBeenCalled();
+    });
+
+    it('recipe browser preview shows the target workspace explicitly instead of toggling', async () => {
+      const setBrowserVisible = vi.fn();
+      const toggleBrowser = vi.fn();
+      useWorkspaceStore.setState({ setBrowserVisible, toggleBrowser });
+      const browserNavigate = vi.fn().mockResolvedValue(true);
+      window.electronAPI = { ...window.electronAPI, browserNavigate } as typeof window.electronAPI;
+      mockExecuteRecipe.mockImplementation(async (_recipe: unknown, deps: { openBrowserPreview: (ws: string, url: string) => Promise<boolean> }) =>
+        deps.openBrowserPreview('ws-1', 'http://localhost:3000'));
+
+      render(<Header />);
+      await capturedLaunchRecipe!({});
+
+      expect(setBrowserVisible).toHaveBeenCalledWith(true, 'ws-1');
+      expect(toggleBrowser).not.toHaveBeenCalled();
+      expect(browserNavigate).toHaveBeenCalledWith('ws-1', 'http://localhost:3000', undefined, true);
     });
 
     it('calls toggleBrowser when Browser is clicked', () => {
