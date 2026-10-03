@@ -64,7 +64,7 @@ async function git(...args: string[]) {
 }
 
 beforeAll(async () => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-ckt-real-')));
+  root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-ckt-real-')));
   repo = path.join(root, 'clanker');
   fs.mkdirSync(repo);
   await git('init', '--initial-branch', 'main');
@@ -133,7 +133,7 @@ describe('workspace-scoped worktree creation (local, real Git)', () => {
       environmentId: 'local',
       kind: 'worktree',
       branch: 'issue-90-test',
-      path: toPosixPath(fs.realpathSync(checkout)),
+      path: toPosixPath(fs.realpathSync.native(checkout)),
       // From `git worktree list`: the repository's main checkout.
       mainCheckoutPath: toPosixPath(repo),
     });
@@ -437,7 +437,7 @@ describe('explicit adoption of an existing linked worktree (local, real Git)', (
     expect(result.success).toBe(true);
     expect(result.checkoutContext).toMatchObject({
       workspaceId: 'ws', environmentId: 'local', kind: 'worktree', branch,
-      path: toPosixPath(fs.realpathSync(dir)), mainCheckoutPath: toPosixPath(repo),
+      path: toPosixPath(fs.realpathSync.native(dir)), mainCheckoutPath: toPosixPath(repo),
     });
     expect(registry.getCheckoutContextsForWorkspace('ws').map((entry) => entry.id)).toEqual([main.id, result.checkoutContext!.id]);
     expect(registry.getAllWorkspaces()).toHaveLength(1);
@@ -447,7 +447,7 @@ describe('explicit adoption of an existing linked worktree (local, real Git)', (
     // And the adopted root is a usable, confined launch root.
     const terminal = await spawn(dir, 'ws', result.checkoutContext!.id);
     expect(terminal.checkoutContextId).toBe(result.checkoutContext!.id);
-    expect(fs.realpathSync(spawnedCwd())).toBe(fs.realpathSync(dir));
+    expect(fs.realpathSync.native(spawnedCwd())).toBe(fs.realpathSync.native(dir));
   });
 
   it('registers Git\'s listed path, so a symlinked spelling of the same worktree resolves to its real root', async () => {
@@ -457,7 +457,7 @@ describe('explicit adoption of an existing linked worktree (local, real Git)', (
     fs.symlinkSync(dir, link);
     const result = await adopt('ws', toPosixPath(link));
     expect(result.success).toBe(true);
-    expect(result.checkoutContext?.path).toBe(toPosixPath(fs.realpathSync(dir)));
+    expect(result.checkoutContext?.path).toBe(toPosixPath(fs.realpathSync.native(dir)));
   });
 
   it.each([

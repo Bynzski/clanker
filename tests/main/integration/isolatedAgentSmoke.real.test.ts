@@ -66,7 +66,7 @@ const terminals = new Map();
 const git = (...args: string[]) => execFileAsync('git', args, { cwd: repo });
 
 beforeAll(async () => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-smoke-')));
+  root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-smoke-')));
   repo = path.join(root, 'clanker');
   fs.mkdirSync(repo);
   await git('init', '--initial-branch', 'main');
@@ -230,7 +230,7 @@ describe('Git menu worktree management (real Git, worktrees Clanker did not crea
   function externalWorktree(name: string, branch = name): string {
     const dirPath = path.join(root, 'external', name);
     execFileSync('git', ['worktree', 'add', '-b', branch, dirPath], { cwd: repo, stdio: 'ignore' });
-    return fs.realpathSync(dirPath);
+    return fs.realpathSync.native(dirPath);
   }
   const listing = async (): Promise<GitWorktree[]> =>
     (await api().gitListWorktrees(toPosixPath(repo), 'ws')).worktrees.filter((entry: GitWorktree) => !entry.isMain);
