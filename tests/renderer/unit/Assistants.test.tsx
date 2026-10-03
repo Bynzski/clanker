@@ -102,6 +102,23 @@ it('focuses an existing owned launch in another workspace repeatedly without sta
   expect(useWorkspaceStore.getState().activeTerminalId).toBe('owned');
   fireEvent.click(focus);
   expect(api.launchAssistant).not.toHaveBeenCalled();
+  expect(api.spawnTerminal).not.toHaveBeenCalled();
+  expect(api.killTerminal).not.toHaveBeenCalled();
+});
+
+it('an explicit Focus existing click stays authoritative while an earlier launch request is still pending', async () => {
+  const api = window.electronAPI;
+  const other = createWorkspaceFixture({ id: 'ws-b', workspacePath: '/projects/b', terminals: [{ id: 'owned', pid: 7, workingDir: '/projects/b', harnessId: 'hermes' }] });
+  useWorkspaceStore.setState((state) => ({ workspaces: [...state.workspaces, other] }));
+  vi.mocked(api.getAssistants).mockResolvedValue({ ...enabled, profiles: [...enabled.profiles, { id: 'hermes:other', harnessId: 'hermes', profileName: 'other', label: 'Other' }], launches: [{ profileId: 'hermes:research', workspaceId: 'ws-b', terminalId: 'owned', state: 'open' }] });
+  vi.mocked(api.launchAssistant).mockImplementation(() => new Promise(() => { /* never settles */ }));
+  render(<AssistantsSettings />);
+  fireEvent.click((await screen.findAllByRole('button', { name: 'New task here' }))[1]);
+  fireEvent.click(screen.getByRole('button', { name: 'Acknowledge and launch' }));
+  await waitFor(() => expect(api.launchAssistant).toHaveBeenCalledOnce());
+  fireEvent.click(screen.getByRole('button', { name: 'Focus existing' }));
+  expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('ws-b');
+  expect(useWorkspaceStore.getState().activeTerminalId).toBe('owned');
   expect(api.killTerminal).not.toHaveBeenCalled();
 });
 
@@ -134,6 +151,90 @@ it.each(['closed', 'replaced', 'switched'] as const)('handles a %s launch owner 
   } else await waitFor(() => expect(api.killTerminal).toHaveBeenCalledWith('late'));
   expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('ws-b');
   expect(useWorkspaceStore.getState().getWorkspaceById('ws-b')?.terminals.some((terminal) => terminal.id === 'late')).toBe(false);
+});
+
+/** Asynchronous `action: 'focus'` results: another workspace ("ws-c") already owns the shared terminal. */
+type LaunchResult = import('../../../src/shared/types/assistants').AssistantLaunchResult;
+async function pendingFocusLaunch() {
+  const api = window.electronAPI;
+  vi.mocked(api.getAssistants).mockResolvedValue(enabled);
+  let resolve!: (result: LaunchResult) => void;
+  vi.mocked(api.launchAssistant).mockImplementation(() => new Promise((done) => { resolve = done; }));
+  const b = createWorkspaceFixture({ id: 'ws-b', workspacePath: '/projects/b', terminals: [{ id: 'b-term', pid: 5, workingDir: '/projects/b' }], activeTerminalId: 'b-term' });
+  const c = createWorkspaceFixture({ id: 'ws-c', workspacePath: '/projects/c', terminals: [{ id: 'owned', pid: 7, workingDir: '/projects/c', harnessId: 'hermes' }], activeTerminalId: 'owned' });
+  useWorkspaceStore.setState((state) => ({ workspaces: [...state.workspaces, b, c] }));
+  const view = render(<AssistantsSettings />);
+  fireEvent.click(await screen.findByRole('button', { name: 'New task here' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Acknowledge and launch' }));
+  await waitFor(() => expect(api.launchAssistant).toHaveBeenCalledOnce());
+  const focusResult = (overrides: Partial<LaunchResult> = {}): LaunchResult => ({
+    action: 'focus', workspaceId: 'ws-c', terminalId: 'owned', pid: 7, harnessId: 'hermes',
+    profileId: 'hermes:research', profileName: 'research', attentionEnabled: false, ...overrides,
+  } as LaunchResult);
+  const sharedTerminals = () => useWorkspaceStore.getState().getWorkspaceById('ws-c')?.terminals.map((terminal) => terminal.id);
+  return { api, view, resolve: (result: LaunchResult) => act(async () => resolve(result)), focusResult, sharedTerminals };
+}
+
+it.each([
+  ['same-profile coalesced', {}],
+  ['alias/canonical-home coalesced (result names a different profile than requested)', { profileId: 'hermes:alias', profileName: 'alias' }],
+] as const)('a delayed %s focus result does not steal a newer workspace selection', async (_label, overrides) => {
+  const { api, resolve, focusResult, sharedTerminals } = await pendingFocusLaunch();
+  useWorkspaceStore.getState().selectWorkspace('ws-b', 'b-term');
+  const before = useWorkspaceStore.getState();
+  const workspaceCount = before.workspaces.length;
+  await resolve(focusResult(overrides));
+  const after = useWorkspaceStore.getState();
+  expect(after.activeWorkspaceId).toBe('ws-b');
+  expect(after.activeTerminalId).toBe('b-term');
+  expect(after.getWorkspaceById('ws-b')?.terminals.map((terminal) => terminal.id)).toEqual(['b-term']);
+  expect(sharedTerminals()).toEqual(['owned']);
+  expect(after.workspaces).toHaveLength(workspaceCount);
+  expect(api.killTerminal).not.toHaveBeenCalled();
+  expect(api.spawnTerminal).not.toHaveBeenCalled();
+  expect(api.launchAssistant).toHaveBeenCalledOnce();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+it.each([
+  ['same-profile', {}],
+  ['alias', { profileId: 'hermes:alias', profileName: 'alias' }],
+] as const)('honors a delayed %s focus result when the user has not moved, even for another workspace\'s terminal', async (_label, overrides) => {
+  const { api, resolve, focusResult, sharedTerminals } = await pendingFocusLaunch();
+  expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('ws-a');
+  await resolve(focusResult(overrides));
+  expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('ws-c');
+  expect(useWorkspaceStore.getState().activeTerminalId).toBe('owned');
+  expect(sharedTerminals()).toEqual(['owned']);
+  expect(api.killTerminal).not.toHaveBeenCalled();
+  expect(api.spawnTerminal).not.toHaveBeenCalled();
+});
+
+it('reports an unavailable shared terminal instead of focusing when the user has not moved', async () => {
+  const { api, resolve, focusResult } = await pendingFocusLaunch();
+  await resolve(focusResult({ terminalId: 'gone' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Owned terminal is unavailable');
+  expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('ws-a');
+  expect(api.killTerminal).not.toHaveBeenCalled();
+});
+
+it.each(['closed', 'replaced'] as const)('a focus result for a %s launch owner focuses nothing, kills nothing and inserts nothing', async (change) => {
+  const { api, resolve, focusResult, sharedTerminals } = await pendingFocusLaunch();
+  const state = useWorkspaceStore.getState();
+  const original = state.getWorkspaceById('ws-a')!;
+  const others = state.workspaces.filter((workspace) => workspace.id !== 'ws-a');
+  // "replaced" keeps the same id (and keeps it active) under a different canonical path.
+  useWorkspaceStore.setState(change === 'closed'
+    ? { workspaces: others, activeWorkspaceId: 'ws-b' }
+    : { workspaces: [{ ...original, workspacePath: '/replacement' }, ...others], activeWorkspaceId: 'ws-a' });
+  const activeBefore = useWorkspaceStore.getState().activeWorkspaceId;
+  const replacementTerminals = useWorkspaceStore.getState().getWorkspaceById('ws-a')?.terminals;
+  await resolve(focusResult());
+  expect(await screen.findByRole('alert')).toHaveTextContent('Launch workspace was closed or replaced');
+  expect(useWorkspaceStore.getState().activeWorkspaceId).toBe(activeBefore);
+  expect(useWorkspaceStore.getState().getWorkspaceById('ws-a')?.terminals).toEqual(replacementTerminals);
+  expect(sharedTerminals()).toEqual(['owned']);
+  expect(api.killTerminal).not.toHaveBeenCalled();
 });
 
 it.each(['tabs', 'sidebar'] as const)('makes optional Assistants usable through existing settings in %s mode', async (mode) => {
