@@ -12,6 +12,7 @@ describe('TitleBar', () => {
   beforeEach(() => {
     installElectronApiMock();
     useWorkspaceStore.setState({ workspaces: [createWorkspaceFixture({ id: 'titlebar' })], activeWorkspaceId: 'titlebar' });
+    useWorkspaceNavigationStore.setState({ mode: 'tabs' });
   });
 
   it('renders the app name', () => {
@@ -56,5 +57,31 @@ describe('TitleBar', () => {
     expect(container.querySelector('.titlebar-center')?.children).toHaveLength(0);
     expect(screen.getByTitle('Close window')).toBeTruthy();
     useWorkspaceNavigationStore.setState({ mode: 'tabs' });
+  });
+
+  it('docks the workspace toolbar into the drag center in sidebar mode only', () => {
+    useWorkspaceNavigationStore.setState({ mode: 'sidebar' });
+    const { container, rerender } = render(<TitleBar toolbar={<div data-testid="toolbar" />} />);
+    expect(container.querySelector('.titlebar-center')?.querySelector('[data-testid="toolbar"]')).toBeTruthy();
+    expect(container.querySelector('.titlebar')).toHaveClass('titlebar-with-toolbar');
+    useWorkspaceNavigationStore.setState({ mode: 'tabs' });
+    rerender(<TitleBar toolbar={<div data-testid="toolbar" />} />);
+    expect(screen.queryByTestId('toolbar')).toBeNull();
+    expect(screen.getByRole('tablist', { name: 'Workspaces' })).toBeTruthy();
+  });
+
+  it('spans the brand over the sidebar column when the toolbar is docked, shrinking to the mark for the rail', () => {
+    useWorkspaceNavigationStore.setState({ mode: 'sidebar', sidebarWidth: 300 });
+    const { container, rerender } = render(<TitleBar toolbar={<div />} />);
+    const brand = container.querySelector<HTMLElement>('.titlebar-left')!;
+    expect(brand.style.width).toBe('308px');
+    expect(brand).not.toHaveClass('rail');
+    useWorkspaceNavigationStore.setState({ sidebarWidth: 44 });
+    rerender(<TitleBar toolbar={<div />} />);
+    expect(brand.style.width).toBe('52px');
+    expect(brand).toHaveClass('rail');
+    useWorkspaceNavigationStore.setState({ mode: 'tabs', sidebarWidth: 280 });
+    rerender(<TitleBar toolbar={<div />} />);
+    expect(brand.style.width).toBe('');
   });
 });

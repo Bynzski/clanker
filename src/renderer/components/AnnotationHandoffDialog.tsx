@@ -77,60 +77,60 @@ export default function AnnotationHandoffDialog({ sourceWorkspaceId, initialMess
         overlayClassName="annotation-handoff-overlay"
         workspaceId={sourceWorkspaceId}
       >
-        <header className="annotation-handoff-header">
-          <div>
-            <DialogTitle asChild>
-              <h2>Send annotation to agent</h2>
-            </DialogTitle>
-            <DialogDescription asChild>
-              <p>Review the message and choose an open agent. Check the pane when status is unverified.</p>
-            </DialogDescription>
-          </div>
+        <header className="annotation-handoff-header clanker-dialog-header">
+          <DialogTitle asChild>
+            <h2 className="clanker-dialog-title">Send annotation to agent</h2>
+          </DialogTitle>
           <DialogClose asChild>
-            <IconButton aria-label="Close annotation handoff"><X size={16} /></IconButton>
+            <IconButton variant="ghost" className="clanker-dialog-close" aria-label="Close annotation handoff" title="Close"><X size={14} /></IconButton>
           </DialogClose>
         </header>
-        <label className="annotation-handoff-label" htmlFor="annotation-handoff-message">Message</label>
-        <Textarea
-          id="annotation-handoff-message"
-          variant="mono"
-          value={message}
-          onChange={(event) => {
-            setMessage(event.target.value);
-            setFeedback('');
-          }}
-          autoFocus
-          spellCheck={false}
-        />
-        <div className="annotation-handoff-destinations">
-          <div className="annotation-handoff-label">Agents</div>
-          {candidates.length === 0 && <p>No agent panes are open. Copy the message to use it elsewhere.</p>}
-          {candidates.map(({ workspace, terminal, canSend, status }) => {
-            const harnessName = HARNESS_OPTIONS.find((option) => option.id === terminal.harnessId)?.label ?? terminal.harnessId;
-            const projectName = getWorkspaceProjectName(workspace);
-            const destination = `${projectName}${workspace.gitCurrentBranch ? ` · ${workspace.gitCurrentBranch}` : ''}`;
-            const name = terminal.displayName ?? harnessName ?? 'Agent';
-            return (
-              <div className="annotation-handoff-agent" key={terminal.id}>
-                <div>
-                  <strong>{name}</strong><span> · {harnessName}</span>
-                  <small>{destination} · {status}</small>
-                  <small className="annotation-handoff-path" title={workspace.workspacePath}>{workspace.workspacePath}</small>
+        <div className="annotation-handoff-body clanker-dialog-body">
+          <DialogDescription asChild>
+            <p className="annotation-handoff-description">Review the message and choose an open agent. Check the pane when status is unverified.</p>
+          </DialogDescription>
+          <label className="annotation-handoff-label" htmlFor="annotation-handoff-message">Message</label>
+          <Textarea
+            id="annotation-handoff-message"
+            variant="mono"
+            value={message}
+            onChange={(event) => {
+              setMessage(event.target.value);
+              setFeedback('');
+            }}
+            autoFocus
+            spellCheck={false}
+          />
+          <div className="annotation-handoff-destinations">
+            <div className="annotation-handoff-label">Agents</div>
+            {candidates.length === 0 && <p>No agent panes are open. Copy the message to use it elsewhere.</p>}
+            {candidates.map(({ workspace, terminal, canSend, status }) => {
+              const harnessName = HARNESS_OPTIONS.find((option) => option.id === terminal.harnessId)?.label ?? terminal.harnessId;
+              const projectName = getWorkspaceProjectName(workspace);
+              const destination = `${projectName}${workspace.gitCurrentBranch ? ` · ${workspace.gitCurrentBranch}` : ''}`;
+              const name = terminal.displayName ?? harnessName ?? 'Agent';
+              return (
+                <div className="annotation-handoff-agent" key={terminal.id}>
+                  <div>
+                    <strong>{name}</strong><span> · {harnessName}</span>
+                    <small>{destination} · {status}</small>
+                    <small className="annotation-handoff-path" title={workspace.workspacePath}>{workspace.workspacePath}</small>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!canSend || busy || !message.trim()}
+                    onClick={() => void sendMessage(workspace.id, terminal.id, name)}
+                  >
+                    Send
+                  </Button>
                 </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={!canSend || busy || !message.trim()}
-                  onClick={() => void sendMessage(workspace.id, terminal.id, name)}
-                >
-                  Send
-                </Button>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+          {feedback && <p className="annotation-handoff-feedback" role="status">{feedback}</p>}
         </div>
-        {feedback && <p className="annotation-handoff-feedback" role="status">{feedback}</p>}
-        <footer className="annotation-handoff-footer">
+        <footer className="annotation-handoff-footer clanker-dialog-footer">
           <Button size="sm" variant="secondary" onClick={() => void copyMessage()} disabled={busy || !message}>
             Copy message
           </Button>

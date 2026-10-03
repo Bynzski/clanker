@@ -229,18 +229,18 @@ export default function RecipeModal({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="recipe-modal" overlayClassName="recipe-modal-overlay" aria-describedby={undefined}>
-        <div className="recipe-modal-header">
+        <div className="recipe-modal-header clanker-dialog-header">
           <div className="recipe-modal-title-group">
             <DialogTitle asChild>
-              <h2>{isEditing ? (initialRecipe ? 'Edit Launch Recipe' : 'New Launch Recipe') : name}</h2>
+              <h2 className="clanker-dialog-title">{isEditing ? (initialRecipe ? 'Edit Launch Recipe' : 'New Launch Recipe') : name}</h2>
             </DialogTitle>
             {!isEditing && <span className="recipe-badge">{launches.length} steps</span>}
           </div>
           <DialogClose asChild>
-            <IconButton aria-label="Close"><X size={18} /></IconButton>
+            <IconButton variant="ghost" className="clanker-dialog-close" aria-label="Close"><X size={14} /></IconButton>
           </DialogClose>
         </div>
-        <div className="recipe-modal-body">
+        <div className="recipe-modal-body clanker-dialog-body">
           {recipeUnavailable && (
             <div className="recipe-error-banner">
               <AlertTriangle size={16} />
@@ -375,7 +375,7 @@ export default function RecipeModal({
                           />
                         </div>
                       )}
-                      <IconButton
+                      <IconButton variant="ghost"
                         className="recipe-remove-step-btn"
                         onClick={() => handleRemoveStep(index)}
                         aria-label="Remove step"
@@ -454,7 +454,7 @@ export default function RecipeModal({
           )}
         </div>
 
-        <div className="recipe-modal-footer">
+        <div className="recipe-modal-footer clanker-dialog-footer">
           {isEditing ? (
             <div className="recipe-footer-actions">
               {initialRecipe && (

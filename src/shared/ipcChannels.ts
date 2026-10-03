@@ -36,6 +36,7 @@ export const GET_WORKSPACE_NAVIGATION_MODE = 'get-workspace-navigation-mode';
 export const SET_WORKSPACE_NAVIGATION_MODE = 'set-workspace-navigation-mode';
 export const GET_WORKSPACE_SIDEBAR_WIDTH = 'get-workspace-sidebar-width';
 export const SET_WORKSPACE_SIDEBAR_WIDTH = 'set-workspace-sidebar-width';
+export const GET_WORKSPACE_SIDEBAR_EXPANDED_WIDTH = 'get-workspace-sidebar-expanded-width';
 export const GET_KEYBINDING_OVERRIDES = 'get-keybinding-overrides';
 export const SET_KEYBINDING_OVERRIDES = 'set-keybinding-overrides';
 
@@ -301,6 +302,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   SET_WORKSPACE_NAVIGATION_MODE,
   GET_WORKSPACE_SIDEBAR_WIDTH,
   SET_WORKSPACE_SIDEBAR_WIDTH,
+  GET_WORKSPACE_SIDEBAR_EXPANDED_WIDTH,
   GET_KEYBINDING_OVERRIDES,
   SET_KEYBINDING_OVERRIDES,
   // Terminal

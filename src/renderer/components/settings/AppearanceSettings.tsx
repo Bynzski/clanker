@@ -1,6 +1,5 @@
-import { Select } from '../ui/Select';
 import { useId } from 'react';
-import { THEME_IDS, THEME_METADATA, isThemeId } from '../../../shared/types/theme';
+import { PanelLeft, PanelTop } from 'lucide-react';
 import { useThemeStore } from '../../theme/themeStore';
 import {
   WORKSPACE_NAVIGATION_MODES,
@@ -8,10 +7,14 @@ import {
   isWorkspaceNavigationMode,
 } from '../../../shared/types/workspaceNavigation';
 import { useWorkspaceNavigationStore } from '../../store/workspaceNavigationStore';
+import { SegmentedControl, SegmentedControlItem } from '../ui/SegmentedControl';
+import ThemePicker from './ThemePicker';
+
+const NAVIGATION_MODE_ICONS = { tabs: PanelTop, sidebar: PanelLeft } as const;
 
 export default function AppearanceSettings() {
-  const selectId = useId();
-  const navigationSelectId = useId();
+  const themeLabelId = useId();
+  const navigationLabelId = useId();
   const theme = useThemeStore((state) => state.theme);
   const setTheme = useThemeStore((state) => state.setTheme);
   const navigationMode = useWorkspaceNavigationStore((state) => state.mode);
@@ -20,37 +23,30 @@ export default function AppearanceSettings() {
   return (
     <section className="settings-section" aria-label="Appearance">
       <div className="settings-section-title">Appearance</div>
-      <div className="settings-row">
-        <label className="settings-row-label" htmlFor={selectId}>Theme</label>
-        <Select
-          id={selectId}
-          className="settings-select"
-          value={theme}
-          onChange={(event) => {
-            const selected = event.target.value;
-            if (isThemeId(selected)) void setTheme(selected);
-          }}
-        >
-          {THEME_IDS.map((id) => (
-            <option key={id} value={id}>{THEME_METADATA[id].label}</option>
-          ))}
-        </Select>
+      <div className="settings-field">
+        <span className="settings-row-label" id={themeLabelId}>Theme</span>
+        <ThemePicker aria-labelledby={themeLabelId} value={theme} onChange={(selected) => void setTheme(selected)} />
       </div>
       <div className="settings-row">
-        <label className="settings-row-label" htmlFor={navigationSelectId}>Workspace navigation</label>
-        <Select
-          id={navigationSelectId}
-          className="settings-select"
+        <span className="settings-row-label" id={navigationLabelId}>Workspaces</span>
+        <SegmentedControl
+          className="settings-segmented"
+          aria-labelledby={navigationLabelId}
           value={navigationMode}
-          onChange={(event) => {
-            const selected = event.target.value;
+          onValueChange={(selected) => {
             if (isWorkspaceNavigationMode(selected)) void setNavigationMode(selected);
           }}
         >
-          {WORKSPACE_NAVIGATION_MODES.map((mode) => (
-            <option key={mode} value={mode}>{WORKSPACE_NAVIGATION_MODE_LABELS[mode]}</option>
-          ))}
-        </Select>
+          {WORKSPACE_NAVIGATION_MODES.map((mode) => {
+            const Icon = NAVIGATION_MODE_ICONS[mode];
+            return (
+              <SegmentedControlItem key={mode} value={mode}>
+                <Icon size={12} strokeWidth={2} aria-hidden="true" />
+                {WORKSPACE_NAVIGATION_MODE_LABELS[mode]}
+              </SegmentedControlItem>
+            );
+          })}
+        </SegmentedControl>
       </div>
     </section>
   );

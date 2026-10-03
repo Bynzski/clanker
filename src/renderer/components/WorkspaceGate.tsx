@@ -23,13 +23,13 @@ export function WorkspaceGateModal({ isOpen, onClose, onWorkspaceSelect, onLaunc
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="modal-content" overlayClassName="modal-overlay" aria-describedby={undefined}>
-        <div className="modal-header">
-          <DialogTitle asChild><span className="modal-title">
+        <div className="modal-header clanker-dialog-header">
+          <DialogTitle asChild><span className="modal-title clanker-dialog-title">
             <img src={clankerUi16} srcSet={`${clankerUi16} 1x, ${clankerUi32} 2x`} alt="" width={16} height={16} className="modal-title-icon" />
             New Workspace
           </span></DialogTitle>
-          <DialogClose asChild><IconButton className="modal-close" title="Close (Esc)" aria-label="Close">
-            <X size={16} strokeWidth={2} />
+          <DialogClose asChild><IconButton variant="ghost" className="modal-close clanker-dialog-close" title="Close (Esc)" aria-label="Close">
+            <X size={14} strokeWidth={2} />
           </IconButton></DialogClose>
         </div>
         <WorkspaceGateContent fullscreen={false} {...actions} />

@@ -28,11 +28,13 @@ export function GitInitMenu({
   return (
     <>
       <Button
-        className="header-btn git-btn"
+        size="xs"
+        variant="ghost"
+        className={`header-btn toolbar-btn git-btn ${isMenuOpen ? 'active' : ''}`}
         onClick={onToggleMenu}
         title="Initialize Git Repository"
       >
-        <GitBranchIcon size={15} strokeWidth={2} />
+        <GitBranchIcon size={14} strokeWidth={2} />
         <span>Init Git</span>
         <ChevronDown size={12} strokeWidth={2.5} />
       </Button>
@@ -44,7 +46,7 @@ export function GitInitMenu({
               <div className="git-menu-label">Initialize Repository</div>
               <div className="git-menu-branch">No git repository found</div>
             </div>
-            <IconButton aria-label="Close"
+            <IconButton size="xs" variant="ghost" aria-label="Close"
               type="button"
               className="git-menu-close"
               onClick={onClose}
@@ -86,14 +88,14 @@ export function GitInitMenu({
           {initError && <div className="git-menu-error">{initError}</div>}
 
           <div className="git-menu-actions">
-            <Button variant="primary"
+            <Button size="xs" variant="primary"
               type="button"
               className="header-btn header-btn-primary git-menu-action"
               onClick={onInitialize}
               disabled={isInitializing}
             >
               {isInitializing && <Loader2 size={13} className="spin" />}
-              {isInitializing ? 'Initializing...' : 'Initialize Repository'}
+              {isInitializing ? 'Initializing…' : 'Initialize Repository'}
             </Button>
           </div>
 

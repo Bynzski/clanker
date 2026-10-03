@@ -4,23 +4,35 @@
   justify-content: center;
   gap: 6px;
   font-family: inherit;
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background var(--transition), border-color var(--transition), color var(--transition);
 }
 
+/* Toolbars, list rows and inline actions. */
+.clanker-button:where([data-size='xs']) {
+  height: var(--control-height-sm);
+  padding: 0 8px;
+  gap: 4px;
+  font-size: var(--font-size-sm);
+}
+
+/* Form rows and dialog actions; matches Input/Select height. */
 .clanker-button:where([data-size='sm']) {
-  height: 34px;
-  padding: 6px 12px;
-  font-size: 12px;
+  height: var(--control-height-md);
+  padding: 0 10px;
+  font-size: var(--font-size-md);
 }
 
 .clanker-button:where([data-variant='primary']) {
   background: var(--control-primary-bg);
   color: var(--control-primary-fg);
-  border-color: var(--accent-interactive);
+  border-color: var(--control-primary-bg);
+  font-weight: 600;
 }
 
 .clanker-button:where([data-variant='primary']:hover:not(:disabled)) {
@@ -38,6 +50,18 @@
   background: var(--surface-control-hover);
 }
 
+/* Quiet actions inside rows and panels: no fill until hovered. */
+.clanker-button:where([data-variant='ghost']) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.clanker-button:where([data-variant='ghost']:hover:not(:disabled)) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
 .clanker-button:where([data-variant='danger']) {
   background: var(--control-danger-bg);
   color: var(--control-danger-fg);
@@ -50,5 +74,17 @@
 
 .clanker-button:where(:active:not(:disabled)) { transform: translateY(1px); }
 .clanker-button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+/* A disabled filled action must not look like an enabled one. */
+.clanker-button:where([data-variant='primary'], [data-variant='danger']):disabled {
+  background: var(--surface-control);
+  border-color: var(--border-default);
+  color: var(--text-muted);
+  opacity: 1;
+}
+
 .clanker-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.clanker-icon-button { width: 34px; padding: 0; flex-shrink: 0; }
+
+.clanker-icon-button { padding: 0; flex-shrink: 0; }
+.clanker-icon-button:where([data-size='xs']) { width: var(--control-height-sm); }
+.clanker-icon-button:where([data-size='sm']) { width: var(--control-height-md); }

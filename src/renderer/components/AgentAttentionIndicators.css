@@ -11,14 +11,21 @@
 
 .agent-attention-state.state-needs_input { color: var(--status-warning-emphasis); }
 .agent-attention-state.state-turn_complete { color: var(--status-success-emphasis); }
-.agent-attention-state.state-running { color: var(--status-info-emphasis); }
-.agent-attention-state.unseen { font-weight: 700; }
+/* Working: a quiet spinner rather than a coloured state. */
+.agent-attention-state.state-running { color: var(--text-secondary); }
+.agent-attention-state.state-running svg { animation: agent-attention-spin 0.9s linear infinite; }
+
+@keyframes agent-attention-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-attention-state.state-running svg { animation: none; }
+}
 
 .workspace-attention-badge {
   flex-shrink: 0;
   padding: 1px 4px;
   border-radius: var(--radius-md);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   background: color-mix(in srgb, var(--status-success-emphasis) 16%, transparent);
   color: var(--status-success-emphasis);

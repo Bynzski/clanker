@@ -3,26 +3,23 @@
   max-height: min(720px, 90vh);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 18px;
+  padding: 0;
 }
 
-.annotation-handoff-header { display: flex; justify-content: space-between; gap: 16px; }
-.annotation-handoff-header h2 { margin: 0; font-size: 15px; }
-.annotation-handoff-header p,
-.annotation-handoff-destinations p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
-.annotation-handoff-label { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+.annotation-handoff-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow: hidden; }
+.annotation-handoff-description,
+.annotation-handoff-destinations p { margin: 0; color: var(--text-secondary); font-size: var(--font-size-md); }
+.annotation-handoff-label { font-size: var(--font-size-sm); font-weight: 600; color: var(--text-secondary); }
 .annotation-handoff-dialog .clanker-textarea {
   width: 100%;
   min-height: 150px;
   max-height: 38vh;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
 }
 .annotation-handoff-destinations { overflow-y: auto; min-height: 0; }
-.annotation-handoff-agent { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border-default); font-size: 12px; }
+.annotation-handoff-agent { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border-default); font-size: var(--font-size-md); }
 .annotation-handoff-agent div { min-width: 0; }
 .annotation-handoff-agent small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
 .annotation-handoff-path { font-family: var(--font-mono); opacity: 0.75; }
 .annotation-handoff-agent button { flex-shrink: 0; }
-.annotation-handoff-feedback { margin: 0; font-size: 12px; color: var(--text-secondary); }
-.annotation-handoff-footer { display: flex; justify-content: flex-end; gap: 8px; }
+.annotation-handoff-feedback { margin: 0; font-size: var(--font-size-md); color: var(--text-secondary); }

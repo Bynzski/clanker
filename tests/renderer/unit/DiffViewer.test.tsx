@@ -104,8 +104,8 @@ describe('DiffViewer', () => {
   describe('loading state', () => {
     it('renders loading state', () => {
       renderDiffViewer({ isLoading: true });
-      expect(screen.getByText('Loading diff...')).toBeTruthy();
-      expect(screen.getByText('Loading...')).toBeTruthy();
+      expect(screen.getByText('Loading diff…')).toBeTruthy();
+      expect(screen.getByText('Loading…')).toBeTruthy();
     });
   });
 

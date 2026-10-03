@@ -1,8 +1,8 @@
-/* WORKSPACES section of the sidebar shell. Shrinks (list scrolls) so FILES keeps a usable minimum. */
+/* WORKSPACES fills the sidebar above the bottom-pinned FILES section; the list scrolls. */
 .ws-nav {
   display: flex;
   flex-direction: column;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -26,7 +26,7 @@
   background: none;
   border: none;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -42,7 +42,11 @@
   padding: 0;
 }
 
-.ws-nav-list { overflow-y: auto; min-height: 0; padding: 2px 0; }
+.ws-nav-list { overflow-y: auto; min-height: 0; padding: 0; }
+
+/* Workspaces are separated by a rule, matching the collapsed rail. */
+.ws-nav-item + .ws-nav-item { border-top: 1px solid var(--border-subtle); }
+.ws-agent-list { padding-bottom: 2px; }
 
 .ws-nav-row {
   display: flex;
@@ -51,7 +55,7 @@
   min-height: 26px;
   padding: 0 6px 0 2px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-md);
   border-left: 2px solid transparent;
   cursor: grab;
 }
@@ -81,10 +85,11 @@
   color: var(--text-primary);
 }
 
-/* Hover-only affordances stay reachable by keyboard. */
-.ws-nav .ws-nav-hover { opacity: 0; }
+/* Hover-only affordances take no room until needed, so names get the full row;
+   focusing the row's select button reveals them for keyboard users. */
+.ws-nav .ws-nav-hover { display: none; }
 .ws-nav .ws-nav-row:hover .ws-nav-hover,
-.ws-nav .ws-nav-row:focus-within .ws-nav-hover { opacity: 1; }
+.ws-nav .ws-nav-row:focus-within .ws-nav-hover { display: inline-flex; }
 
 .ws-nav-section-toggle:focus-visible,
 .ws-nav-select:focus-visible,
@@ -112,17 +117,11 @@
 
 .ws-nav-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Remote workspaces carry a server mark; the host name lives in the row tooltip. */
 .ws-nav-remote {
-  flex: 0 1 auto;
-  max-width: 90px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 4px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--surface-control);
-  font-size: 10px;
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-muted);
 }
 
 .ws-nav-worktree {
@@ -134,7 +133,7 @@
   max-width: 96px;
   color: var(--accent-interactive);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 .ws-nav-worktree span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -142,18 +141,19 @@
 .ws-nav-edit-input { flex: 1; min-width: 0; }
 
 .ws-agent-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
-  min-height: 24px;
-  padding: 2px 8px 2px 30px;
+  min-height: 22px;
+  padding: 1px 8px 1px 26px;
   background: none;
   border: none;
   border-left: 2px solid transparent;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-md);
   text-align: left;
   cursor: pointer;
 }
@@ -162,4 +162,3 @@
 .ws-agent-row.current { color: var(--text-primary); border-left-color: var(--border-strong, var(--border-default)); }
 .ws-agent-harness { display: inline-flex; flex-shrink: 0; }
 .ws-agent-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ws-agent-harness-label { flex-shrink: 0; font-size: 10px; opacity: 0.7; }

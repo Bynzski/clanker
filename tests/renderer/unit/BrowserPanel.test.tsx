@@ -554,7 +554,7 @@ describe('BrowserPanel', () => {
     it('renders URL input with placeholder', () => {
       render(<BrowserPanel {...defaultProps} />);
 
-      expect(screen.getByPlaceholderText('Enter URL...')).toBeTruthy();
+      expect(screen.getByPlaceholderText('Enter URL…')).toBeTruthy();
     });
 
     it('displays initial URL in input from active browser tab', () => {
@@ -569,7 +569,7 @@ describe('BrowserPanel', () => {
 
       render(<BrowserPanel {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...') as HTMLInputElement;
+      const input = screen.getByPlaceholderText('Enter URL…') as HTMLInputElement;
       expect(input.value).toBe('https://example.com');
     });
 
@@ -595,14 +595,14 @@ describe('BrowserPanel', () => {
       });
       rerender(<BrowserPanel {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...') as HTMLInputElement;
+      const input = screen.getByPlaceholderText('Enter URL…') as HTMLInputElement;
       expect(input.value).toBe('https://github.com');
     });
 
     it('calls browserNavigate with https URL when Go is clicked', () => {
       render(<BrowserPanel {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
       fireEvent.change(input, { target: { value: 'github.com' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
@@ -613,7 +613,7 @@ describe('BrowserPanel', () => {
     it('does not navigate when input is empty', () => {
       render(<BrowserPanel {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
       fireEvent.change(input, { target: { value: '' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
@@ -624,7 +624,7 @@ describe('BrowserPanel', () => {
     it('trims whitespace from URL', () => {
       render(<BrowserPanel {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
       fireEvent.change(input, { target: { value: '  github.com  ' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
@@ -643,7 +643,7 @@ describe('BrowserPanel', () => {
       });
       render(<BrowserPanel {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
       fireEvent.change(input, { target: { value: 'example.com' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
@@ -658,7 +658,7 @@ describe('BrowserPanel', () => {
     it('calls browserNavigate on Enter key press', () => {
       render(<BrowserPanel {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
       fireEvent.change(input, { target: { value: 'example.com' } });
       fireEvent.keyDown(input, { key: 'Enter' });
 
@@ -667,7 +667,7 @@ describe('BrowserPanel', () => {
 
     it.each(['localhost:3000', '127.0.0.1:5173', '[::1]:8080', 'localhost', 'localhost/path'])('defaults developer loopback input %s to HTTP', (inputUrl) => {
       render(<BrowserPanel {...defaultProps} />);
-      fireEvent.change(screen.getByPlaceholderText('Enter URL...'), { target: { value: inputUrl } });
+      fireEvent.change(screen.getByPlaceholderText('Enter URL…'), { target: { value: inputUrl } });
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
       expect(mockBrowserNavigate).toHaveBeenCalledWith('workspace-1', `http://${inputUrl}`);
     });
@@ -675,7 +675,7 @@ describe('BrowserPanel', () => {
     it('preserves http protocol if already specified', () => {
       render(<BrowserPanel {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
       fireEvent.change(input, { target: { value: 'http://example.com' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
@@ -686,7 +686,7 @@ describe('BrowserPanel', () => {
     it('preserves file protocol if already specified', () => {
       render(<BrowserPanel {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
       fireEvent.change(input, { target: { value: 'file:///tmp/report.html' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
@@ -697,7 +697,7 @@ describe('BrowserPanel', () => {
     it('converts absolute POSIX paths to file URLs', () => {
       render(<BrowserPanel {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
       fireEvent.change(input, { target: { value: '/tmp/report.html' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
@@ -708,7 +708,7 @@ describe('BrowserPanel', () => {
     it('converts absolute Windows paths to file URLs', () => {
       render(<BrowserPanel {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
       fireEvent.change(input, { target: { value: 'C:\\Users\\Jay\\report.html' } });
 
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
@@ -1487,7 +1487,7 @@ describe('BrowserPanel', () => {
         expect(mockBrowserSwitchTab).toHaveBeenCalledWith('workspace-1', 'tab-b');
       });
       expect(useWorkspaceStore.getState().getWorkspaceById('workspace-1')?.browserPane?.activeTabId).toBe('tab-b');
-      expect((screen.getByPlaceholderText('Enter URL...') as HTMLInputElement).value).toBe('https://example.com/docs');
+      expect((screen.getByPlaceholderText('Enter URL…') as HTMLInputElement).value).toBe('https://example.com/docs');
     });
 
     it('close button does not propagate to row switch and closing active selects adjacent tab', async () => {
@@ -1560,7 +1560,7 @@ describe('BrowserPanel', () => {
       setupStore({ browserPane: createTabbedPane() });
       render(<BrowserPanel layoutVersion={1} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
       fireEvent.change(input, { target: { value: 'localhost:3000' } });
       fireEvent.click(screen.getByRole('button', { name: 'Go' }));
 
@@ -1594,7 +1594,7 @@ describe('BrowserPanel', () => {
 
     it('focuses and selects the active tab address field', () => {
       mountWith(threeTabs());
-      const input = screen.getByPlaceholderText('Enter URL...') as HTMLInputElement;
+      const input = screen.getByPlaceholderText('Enter URL…') as HTMLInputElement;
       const select = vi.spyOn(input, 'select');
       act(() => emit({ workspaceId: 'workspace-1', tabId: 'tab-a', command: 'browser.focusAddress' }));
       expect(document.activeElement).toBe(input);
@@ -1683,7 +1683,7 @@ describe('BrowserPanel', () => {
 
     it('debounces history queries by 300ms', async () => {
       render(<BrowserPanel layoutVersion={1} />);
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
 
       expect(input).toHaveClass('clanker-input');
       input.focus();
@@ -1705,7 +1705,7 @@ describe('BrowserPanel', () => {
 
     it('does not query for fewer than 2 characters', async () => {
       render(<BrowserPanel layoutVersion={1} />);
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
 
       fireEvent.focus(input);
       fireEvent.change(input, { target: { value: 'g' } });
@@ -1718,7 +1718,7 @@ describe('BrowserPanel', () => {
 
     it('renders suggestions returned by IPC', async () => {
       render(<BrowserPanel layoutVersion={1} />);
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
 
       fireEvent.focus(input);
       fireEvent.change(input, { target: { value: 'local' } });
@@ -1733,7 +1733,7 @@ describe('BrowserPanel', () => {
 
     it('hides the native browser while URL suggestions are visible', async () => {
       render(<BrowserPanel layoutVersion={1} />);
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
 
       fireEvent.focus(input);
       fireEvent.change(input, { target: { value: 'local' } });
@@ -1752,7 +1752,7 @@ describe('BrowserPanel', () => {
 
     it('clicking a suggestion navigates the active tab', async () => {
       render(<BrowserPanel layoutVersion={1} />);
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
 
       fireEvent.focus(input);
       fireEvent.change(input, { target: { value: 'local' } });
@@ -1768,7 +1768,7 @@ describe('BrowserPanel', () => {
 
     it('keyboard selection uses highlighted suggestion on Enter', async () => {
       render(<BrowserPanel layoutVersion={1} />);
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
 
       fireEvent.focus(input);
       fireEvent.change(input, { target: { value: 'git' } });
@@ -1787,7 +1787,7 @@ describe('BrowserPanel', () => {
 
     it('Escape closes suggestions', async () => {
       render(<BrowserPanel layoutVersion={1} />);
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
 
       fireEvent.focus(input);
       fireEvent.change(input, { target: { value: 'local' } });
@@ -1802,7 +1802,7 @@ describe('BrowserPanel', () => {
 
     it('switching tabs clears stale suggestions and syncs input', async () => {
       render(<BrowserPanel layoutVersion={1} />);
-      const input = screen.getByPlaceholderText('Enter URL...') as HTMLInputElement;
+      const input = screen.getByPlaceholderText('Enter URL…') as HTMLInputElement;
 
       fireEvent.focus(input);
       fireEvent.change(input, { target: { value: 'local' } });
@@ -1837,7 +1837,7 @@ describe('BrowserPanel', () => {
     it('is enabled when URL is entered', () => {
       render(<BrowserPanel {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText('Enter URL...');
+      const input = screen.getByPlaceholderText('Enter URL…');
       fireEvent.change(input, { target: { value: 'test.com' } });
 
       const goButton = screen.getByRole('button', { name: 'Go' });

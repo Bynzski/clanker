@@ -3,6 +3,7 @@
   --font-ui: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Fira Mono', Menlo, Consolas, monospace;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Fira Mono', Menlo, Consolas, monospace;
 
+  --space-2xs: 2px;
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 16px;
@@ -14,12 +15,28 @@
   --radius-md: 4px;
   --radius-lg: 8px;
 
+  /* Type scale: the main layout reads at 11–12px; 13px is reserved for titles. */
+  --font-size-2xs: 9px;
+  --font-size-xs: 10px;
+  --font-size-sm: 11px;
+  --font-size-md: 12px;
+  --font-size-lg: 13px;
+  --font-size-xl: 14px;
+
+  /* Control heights: toolbars and rows use sm, form controls and dialog actions use md. */
+  --control-height-xs: 20px;
+  --control-height-sm: 24px;
+  --control-height-md: 28px;
+  --toolbar-height: 36px;
+
   --transition: 150ms ease-out;
 }
 
-/* Dark is also the safe fallback before theme resolution. */
+/* Dark is also the safe fallback before theme resolution. `data-theme-preview`
+   scopes a theme's tokens to one subtree (the Settings theme swatches). */
 :root,
-:root[data-theme="dark"] {
+:root[data-theme="dark"],
+[data-theme-preview="dark"] {
   color-scheme: dark;
   /* Monochrome artwork contrast */
   --logo-monochrome-filter: none;
@@ -55,9 +72,9 @@
   --accent-interactive: #8b949e;
   --accent-interactive-hover: #6b7280;
   /* Filled action pairs */
-  --control-primary-bg: #8b949e;
-  --control-primary-bg-hover: #a0a0a0;
-  --control-primary-fg: #fff;
+  --control-primary-bg: #d4d4d4;
+  --control-primary-bg-hover: #ededed;
+  --control-primary-fg: #121212;
   --control-primary-fg-hover: #121212;
   --control-info-bg-hover: #1d4ed8;
   --control-success-bg: #059669;
@@ -82,6 +99,7 @@
   /* Overlays and elevation */
   --overlay-backdrop: rgba(0, 0, 0, 0.6);
   --shadow-color: #000;
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.4);
   --shadow-dialog: 0 8px 32px rgba(0, 0, 0, 0.4);
   /* Global interactions */
@@ -92,7 +110,8 @@
   --scrollbar-thumb-hover: #9b9b9b;
 }
 
-:root[data-theme="light"] {
+:root[data-theme="light"],
+[data-theme-preview="light"] {
   color-scheme: light;
   /* Monochrome artwork contrast */
   --logo-monochrome-filter: brightness(0.25);
@@ -155,6 +174,7 @@
   /* Overlays and elevation */
   --overlay-backdrop: rgba(28, 38, 52, 0.35);
   --shadow-color: #475569;
+  --shadow-raised: 0 1px 2px rgba(28, 38, 52, 0.12);
   --shadow-popover: 0 4px 16px rgba(28, 38, 52, 0.18);
   --shadow-dialog: 0 8px 32px rgba(28, 38, 52, 0.22);
   /* Global interactions */
@@ -166,7 +186,8 @@
 }
 
 /* Slate adapts GitHub Dark Dimmed to Clanker's semantic roles. */
-:root[data-theme="slate"] {
+:root[data-theme="slate"],
+[data-theme-preview="slate"] {
   color-scheme: dark;
   --logo-monochrome-filter: none;
   --surface-app: #22272e;
@@ -221,6 +242,7 @@
   --git-untracked: #adbac7;
   --overlay-backdrop: rgba(0, 0, 0, 0.6);
   --shadow-color: #000;
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.4);
   --shadow-dialog: 0 8px 32px rgba(0, 0, 0, 0.4);
   --selection-bg: rgba(65, 132, 228, 0.3);
@@ -244,7 +266,7 @@ html, body, #root {
 
 body {
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--font-size-md);
   line-height: 1.5;
   color: var(--text-primary);
   background: var(--surface-app);
@@ -275,6 +297,12 @@ input {
   outline: none;
 }
 
+/* Native checkboxes/radios follow the neutral accent instead of the browser blue. */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent-interactive);
+}
+
 /* Selection styling */
 ::selection {
   background: var(--selection-bg);
@@ -293,17 +321,35 @@ input {
 
 ::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
 }
 
-/* Focus visible for accessibility */
-:root :focus-visible:not(.cm-content):not(.xterm-helper-textarea) {
+/* Visually hidden but present in the accessibility tree. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Default focus ring. Zero-specificity wrappers let any component's own focus style win;
+   form controls draw their own, softer state (ui/Input.css). */
+:focus-visible:where(:not(.cm-content, .xterm-helper-textarea, .clanker-input, .clanker-textarea, .clanker-select)) {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* Harness logo SVGs (svgl.app). Size comes from the component's `size` prop, matching lucide icons. */
+.harness-logo-icon {
+  display: block;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 /* White monochrome harness marks need contrast on Light surfaces. Brand artwork stays intact. */

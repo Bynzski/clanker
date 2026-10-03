@@ -87,8 +87,9 @@ describe('WorkspaceNavigatorSection', () => {
 
   it('shows per-agent attention and an aggregate badge without reordering', () => {
     render(<WorkspaceNavigatorSection />);
-    const names = () => screen.getAllByRole('img').map((el) => el.getAttribute('aria-label'));
-    expect(names()).toEqual(['Samson: Unknown', 'Delilah: Unknown']);
+    const names = () => screen.queryAllByRole('img').map((el) => el.getAttribute('aria-label'));
+    // Idle agents show no indicator.
+    expect(names()).toEqual([]);
     act(() => {
       useAgentAttentionStore.setState({
         byTerminalId: {

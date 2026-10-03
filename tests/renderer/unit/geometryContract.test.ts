@@ -41,17 +41,14 @@ const isTokenizedRadius = (value: string) => {
  * Affordances with intentional, non-standard visual geometry.
  */
 const INTENTIONAL_EXCEPTIONS: Record<string, string[]> = {
-  // Browser tab uses trapezoidal curved top corners
-  'components/BrowserPanel.css': ['.browser-tab', '.browser-pane-drag-handle'],
   // Drag handle dot grid texture uses 3px radial gradient dot bounds
+  'components/BrowserPanel.css': ['.browser-pane-drag-handle'],
   'components/DynamicPaneLayout.css': [
     '.terminal-drag-handle',
     '.browser-pane-drag-handle',
-    '.pane-dock-zone span',
   ],
   'components/EditorPane.css': ['.editor-pane-drag-handle'],
   'components/NotesPane.css': ['.notes-pane-drag-handle'],
-  'components/FileExplorer/FileExplorer.css': ['.file-explorer-drag-handle'],
   // OS-native scrollbar thumb styling
   'styles/global.css': ['::-webkit-scrollbar-thumb'],
   'components/EditorTabBar.css': ['.editor-tab-bar::-webkit-scrollbar-thumb'],

@@ -810,7 +810,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
                 <span className="gate-recipe-chip-name">{r.name}</span>
                 <span className="gate-recipe-chip-count">{Math.max(r.launches.length, r.terminalCount ?? 0, 1)}</span>
               </button>
-              <IconButton type="button" className="gate-recipe-play" disabled={opening || !onLaunchRecipe}
+              <IconButton variant="ghost" type="button" className="gate-recipe-play" disabled={opening || !onLaunchRecipe}
                 aria-label={`Launch recipe ${r.name}`} aria-busy={launchingRecipeId === r.id}
                 title={`Launch "${r.name}" in ${r.workspacePath}`}
                 onClick={() => { void onLaunchRecipe?.(r); }}>

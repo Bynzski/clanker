@@ -60,6 +60,7 @@ export function GitStashSection({
           <span>Untracked</span>
         </label>
         <Button
+          size="xs"
           type="button"
           className="header-btn git-create-branch-submit"
           onClick={onStash}
@@ -70,10 +71,12 @@ export function GitStashSection({
         </Button>
       </div>
 
-      <div className="git-stash-toolbar">
-        <span>{stashes.length > 0 ? 'Available stashes' : 'No stashes found'}</span>
-        {stashes.length > 0 && (
+      {stashes.length > 0 && (
+        <div className="git-stash-toolbar">
+          <span>Available stashes</span>
           <Button
+            size="xs"
+            variant="ghost"
             type="button"
             className="git-stash-clear"
             onClick={onClearStashes}
@@ -81,11 +84,11 @@ export function GitStashSection({
           >
             Clear All
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {isLoadingStashes ? (
-        <div className="git-menu-empty">Loading stashes...</div>
+        <div className="git-menu-empty">Loading stashes…</div>
       ) : stashes.length === 0 ? (
         <div className="git-menu-empty">Nothing stashed yet</div>
       ) : (
@@ -98,6 +101,8 @@ export function GitStashSection({
               </div>
               <div className="git-stash-actions">
                 <Button
+                  size="xs"
+                  variant="ghost"
                   type="button"
                   className="git-branch-action"
                   onClick={() => onApplyStash(stash.ref)}
@@ -106,6 +111,8 @@ export function GitStashSection({
                   Apply
                 </Button>
                 <Button
+                  size="xs"
+                  variant="ghost"
                   type="button"
                   className="git-branch-action"
                   onClick={() => onPopStash(stash.ref)}
@@ -113,7 +120,9 @@ export function GitStashSection({
                 >
                   Pop
                 </Button>
-                <Button variant="danger"
+                <Button
+                  size="xs"
+                  variant="ghost"
                   type="button"
                   className="git-branch-action danger"
                   onClick={() => onDropStash(stash.ref)}

@@ -1,0 +1,185 @@
+/* Collapsed sidebar rail: workspace marks separated by rules, agents stacked beneath. */
+.ws-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-height: 0;
+  padding: 4px 0;
+  gap: 2px;
+}
+
+.ws-rail-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: none;
+}
+
+.ws-rail-list::-webkit-scrollbar { display: none; }
+
+.ws-rail-workspace {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 0;
+  border-top: 1px solid var(--border-default);
+}
+
+.ws-rail-workspace:first-child { border-top-color: transparent; }
+
+.ws-rail-mark,
+.ws-rail-agent {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: var(--control-height-md);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.ws-rail-mark {
+  height: 22px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--surface-control);
+  border-color: var(--border-default);
+}
+
+.ws-rail-mark:hover,
+.ws-rail-agent:hover {
+  background: var(--surface-control-hover);
+  color: var(--text-primary);
+}
+
+.ws-rail-workspace.active .ws-rail-mark {
+  color: var(--text-primary);
+  border-color: var(--accent-interactive);
+}
+
+/* The active workspace keeps a left accent, matching the expanded navigator. */
+.ws-rail-workspace.active::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 0;
+  width: 2px;
+  height: 22px;
+  background: var(--accent-interactive);
+}
+
+.ws-rail-workspace { position: relative; }
+
+.ws-rail-agents {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.ws-rail-agent.current {
+  background: var(--surface-active);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.ws-rail-mark:focus-visible,
+.ws-rail-agent:focus-visible {
+  outline: 1px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+/* Lifecycle dot in the agent's corner: same colors as the expanded attention icons. */
+.ws-rail-agent-state {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  box-shadow: 0 0 0 1.5px var(--surface-raised);
+}
+
+/* Working: a tiny spinning ring instead of a coloured dot. */
+.ws-rail-agent-state.state-running {
+  width: 7px;
+  height: 7px;
+  background: var(--surface-raised);
+  border: 1.5px solid var(--text-secondary);
+  border-top-color: transparent;
+  animation: ws-rail-agent-spin 0.9s linear infinite;
+}
+
+@keyframes ws-rail-agent-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-rail-agent-state.state-running { animation: none; }
+}
+
+.ws-rail-agent-state.state-needs_input { background: var(--status-warning-emphasis); }
+.ws-rail-agent-state.state-turn_complete { background: var(--status-success-emphasis); }
+.ws-rail-agent-state.unseen { width: 8px; height: 8px; right: 1px; bottom: 1px; }
+
+.ws-rail-mark-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--surface-raised);
+}
+
+.ws-rail-mark-badge.needs-input { background: var(--status-warning-emphasis); }
+.ws-rail-mark-badge.complete { background: var(--status-success-emphasis); }
+
+.ws-rail-mark-remote {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--status-info);
+}
+
+.ws-rail-mark-worktree {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  color: var(--accent-interactive);
+}
+
+.ws-rail-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-default);
+  width: 100%;
+}
+
+.ws-rail .ws-rail-action { color: var(--text-secondary); }
+.ws-rail .ws-rail-action.attention { color: var(--status-warning-emphasis); }

@@ -108,7 +108,7 @@ export default function DiffViewer({
     mergeView.b.dispatch({ effects: themeBRef.current.reconfigure(getEditorTheme(theme)) });
     appliedThemeRef.current = theme;
   }, [theme]);
-  const title = isLoading ? 'Loading diff...' : error ? 'Diff Error' : newPath;
+  const title = isLoading ? 'Loading diff…' : error ? 'Diff Error' : newPath;
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -118,20 +118,20 @@ export default function DiffViewer({
         workspaceId={workspaceId}
         aria-describedby={undefined}
       >
-        <div className="diff-viewer-header">
+        <div className="diff-viewer-header clanker-dialog-header">
           <DialogTitle asChild>
-            <h2>{title}</h2>
+            <h2 className="clanker-dialog-title">{title}</h2>
           </DialogTitle>
           <DialogClose asChild>
-            <IconButton aria-label="Close" title="Close">
-              <X size={18} />
+            <IconButton variant="ghost" className="clanker-dialog-close" aria-label="Close" title="Close">
+              <X size={14} />
             </IconButton>
           </DialogClose>
         </div>
 
         {isLoading ? (
           <div className="diff-viewer-loading">
-            <span>Loading...</span>
+            <span>Loading…</span>
           </div>
         ) : error ? (
           <div className="diff-viewer-error">

@@ -10,12 +10,12 @@
   align-items: center;
   gap: 4px;
   padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
   font-weight: 500;
   border: none;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background var(--transition), color var(--transition);
   max-width: 200px;
 }
 
@@ -73,8 +73,8 @@
 
 .pr-state {
   padding: 1px 4px;
-  border-radius: 10px;
-  font-size: 9px;
+  border-radius: 999px;
+  font-size: var(--font-size-2xs);
   text-transform: uppercase;
   font-weight: 600;
 }
@@ -128,9 +128,9 @@
 
 /* Review state */
 .review-state {
-  font-size: 9px;
+  font-size: var(--font-size-2xs);
   padding: 1px 4px;
-  border-radius: 8px;
+  border-radius: 999px;
 }
 
 .review-state.approved {

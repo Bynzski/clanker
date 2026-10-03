@@ -247,11 +247,11 @@ export default function CredentialSettings({ isOpen, onClose, onOpenAutoFocus, o
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="credential-settings" overlayClassName="credential-settings-overlay"
         aria-modal="true" aria-describedby={undefined} onOpenAutoFocus={onOpenAutoFocus} onCloseAutoFocus={onCloseAutoFocus}>
-        <div className="credential-settings-header">
-          <DialogTitle>VCS Credentials</DialogTitle>
+        <div className="credential-settings-header clanker-dialog-header">
+          <DialogTitle className="clanker-dialog-title">VCS Credentials</DialogTitle>
           <DialogClose asChild>
-            <IconButton className="credential-settings-close" aria-label="Close VCS Credentials">
-              <Plus size={18} style={{ transform: 'rotate(45deg)' }} />
+            <IconButton variant="ghost" className="credential-settings-close clanker-dialog-close" aria-label="Close VCS Credentials" title="Close">
+              <Plus size={16} style={{ transform: 'rotate(45deg)' }} />
             </IconButton>
           </DialogClose>
         </div>
@@ -309,7 +309,7 @@ export default function CredentialSettings({ isOpen, onClose, onOpenAutoFocus, o
                 <div className="credential-ssh-key-info">
                   <div className="credential-key-header">
                     <span className="credential-key-label">Public Key</span>
-                    <Button
+                    <Button size="xs"
                       type="button"
                       className="credential-copy-btn"
                       onClick={handleCopyPublicKey}
@@ -347,7 +347,7 @@ export default function CredentialSettings({ isOpen, onClose, onOpenAutoFocus, o
 
               <div className="credential-ssh-actions">
                 {!sshKey.exists ? (
-                  <Button variant="primary"
+                  <Button size="xs" variant="primary"
                     type="button"
                     className="credential-generate-btn"
                     onClick={handleGenerateSshKey}
@@ -366,7 +366,7 @@ export default function CredentialSettings({ isOpen, onClose, onOpenAutoFocus, o
                     )}
                   </Button>
                 ) : (
-                  <Button variant="danger"
+                  <Button size="xs" variant="danger"
                     type="button"
                     className="credential-delete-btn"
                     onClick={handleDeleteSshKey}
@@ -426,7 +426,7 @@ export default function CredentialSettings({ isOpen, onClose, onOpenAutoFocus, o
                             }
                           />
                           <div className="credential-token-form-actions">
-                            <Button variant="primary"
+                            <Button size="xs" variant="primary"
                               type="button"
                               className="credential-token-save-btn"
                               onClick={handleSavePat}
@@ -435,7 +435,7 @@ export default function CredentialSettings({ isOpen, onClose, onOpenAutoFocus, o
                               {isSavingPat ? <Loader2 size={12} className="spin" /> : <Check size={12} />}
                               Save
                             </Button>
-                            <Button
+                            <Button size="xs"
                               type="button"
                               className="credential-token-cancel-btn"
                               onClick={() => {
@@ -458,7 +458,7 @@ export default function CredentialSettings({ isOpen, onClose, onOpenAutoFocus, o
                             <ExternalLink size={11} />
                             Learn more
                           </a>
-                          <Button variant="danger"
+                          <Button size="xs" variant="danger"
                             type="button"
                             className="credential-token-remove-btn"
                             onClick={() => handleDeletePat(provider.id)}
@@ -468,7 +468,7 @@ export default function CredentialSettings({ isOpen, onClose, onOpenAutoFocus, o
                           </Button>
                         </div>
                       ) : (
-                        <Button
+                        <Button size="xs"
                           type="button"
                           className="credential-token-add-btn"
                           onClick={() => setPatProvider(provider.id)}

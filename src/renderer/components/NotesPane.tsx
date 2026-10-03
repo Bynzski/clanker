@@ -61,7 +61,7 @@ export default function NotesPane({ workspaceId }: { workspaceId?: string }) {
           <span className="notes-pane-title">Notes</span>
           <span className="notes-pane-spacer" />
         </div>
-        <IconButton
+        <IconButton variant="ghost"
           className="notes-pane-close-btn"
           onClick={handleClosePane}
           title="Close notes"
@@ -75,7 +75,7 @@ export default function NotesPane({ workspaceId }: { workspaceId?: string }) {
         key={storageKey}
         className="notes-editor"
         defaultValue={initialContent}
-        placeholder="Notes..."
+        placeholder="Notes…"
         spellCheck
         onChange={(event) => writeStoredNote(storageKey, event.currentTarget.value)}
       />

@@ -2,8 +2,9 @@ import type { ComponentProps } from 'react';
 import './Button.css';
 
 export type ButtonProps = ComponentProps<'button'> & {
-  variant?: 'primary' | 'secondary' | 'danger';
-  size?: 'sm';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  /** `xs` (24px) for toolbars and row actions; `sm` (28px) for forms and dialog actions. */
+  size?: 'xs' | 'sm';
 };
 
 /** Native semantics, including React 19's ref prop. Actions default to non-submit. */

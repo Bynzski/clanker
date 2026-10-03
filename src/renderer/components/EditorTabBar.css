@@ -38,7 +38,7 @@
   border: none;
   border-right: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-md);
   cursor: pointer;
   transition: background 100ms ease-out, color 100ms ease-out;
   white-space: nowrap;

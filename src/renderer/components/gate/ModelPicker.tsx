@@ -115,7 +115,7 @@ function LegacyModelPicker({ fullscreen = false, harness, model, models, sortedM
                 </span>
                 {model === id && <Check size={12} strokeWidth={2.5} className="favorites-check" />}
               </button>
-              <IconButton type="button" className="favorites-star-btn favorited" title="Remove from favorites"
+              <IconButton variant="ghost" type="button" className="favorites-star-btn favorited" title="Remove from favorites"
                 aria-label={`Remove ${accessibleName} from favorites`} onClick={() => {
                   onToggleFavorite(id);
                   // The removed star may unmount after persistence; keep focus in the surface.
@@ -147,15 +147,15 @@ function LegacyModelPicker({ fullscreen = false, harness, model, models, sortedM
             handingOff.current = false;
             if (triggerRef.current?.isConnected) { event.preventDefault(); triggerRef.current.focus(); }
           }}>
-          <div className="discovery-header">
-            <DialogTitle asChild><span className="discovery-title">All Models</span></DialogTitle>
+          <div className="discovery-header clanker-dialog-header">
+            <DialogTitle asChild><span className="discovery-title clanker-dialog-title">All Models</span></DialogTitle>
             {hermes && <Button type="button" className="discovery-refresh" onClick={onRefreshHermes} disabled={refreshing}>{refreshLabel}</Button>}
-            <DialogClose asChild><IconButton className="discovery-close" aria-label="Close All Models"><X size={14} /></IconButton></DialogClose>
+            <DialogClose asChild><IconButton variant="ghost" className="discovery-close clanker-dialog-close" aria-label="Close All Models" title="Close"><X size={14} /></IconButton></DialogClose>
           </div>
           <div className="discovery-search-wrap">
             <Search size={14} className="discovery-search-icon" />
             <Input ref={searchRef} type="text" role="searchbox" aria-label="Search models" aria-controls={resultsId}
-              className="discovery-search-input" placeholder="Search models..." value={search}
+              className="discovery-search-input" placeholder="Search models…" value={search}
               onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => navigate(event)} />
           </div>
           <div id={resultsId} className="discovery-list" role="group" aria-label="Matching models">
@@ -168,7 +168,7 @@ function LegacyModelPicker({ fullscreen = false, harness, model, models, sortedM
                   <span className={`discovery-model-label ${hermes ? 'hermes-model-label' : ''}`}>{label(option)}</span>
                   {model === option.id && <Check size={12} strokeWidth={2.5} className="discovery-check" />}
                 </button>
-                <IconButton type="button" className={`discovery-star-btn ${favorite ? 'favorited' : ''}`}
+                <IconButton variant="ghost" type="button" className={`discovery-star-btn ${favorite ? 'favorited' : ''}`}
                   title={favorite ? 'Remove from favorites' : 'Add to favorites'}
                   aria-label={`${favorite ? 'Remove' : 'Add'} ${name(option)} ${favorite ? 'from' : 'to'} favorites`}
                   onClick={() => onToggleFavorite(option.id)}><Star size={12} fill={favorite ? 'currentColor' : 'none'} /></IconButton>

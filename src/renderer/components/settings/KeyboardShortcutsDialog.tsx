@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
+import { IconButton } from '../ui/IconButton';
+import { X } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogClose, DialogDescription } from '../ui/Dialog';
 import {
   KEYBINDING_COMMANDS,
@@ -132,10 +134,10 @@ function KeyboardShortcutsContent() {
 
   return (
     <>
-        <div className="keyboard-shortcuts-header">
-          <DialogTitle>Keyboard Shortcuts</DialogTitle>
+        <div className="keyboard-shortcuts-header clanker-dialog-header">
+          <DialogTitle className="clanker-dialog-title">Keyboard Shortcuts</DialogTitle>
           <DialogClose asChild>
-            <Button aria-label="Close Keyboard Shortcuts">Close</Button>
+            <IconButton variant="ghost" className="clanker-dialog-close" aria-label="Close Keyboard Shortcuts" title="Close"><X size={14} /></IconButton>
           </DialogClose>
         </div>
         <DialogDescription className="keyboard-shortcuts-description">
@@ -146,7 +148,7 @@ function KeyboardShortcutsContent() {
           <Input
             type="search"
             aria-label="Search shortcuts"
-            placeholder="Search shortcuts..."
+            placeholder="Search shortcuts…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />

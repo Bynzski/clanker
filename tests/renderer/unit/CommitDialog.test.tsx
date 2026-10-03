@@ -234,7 +234,7 @@ describe('CommitDialog', () => {
       ],
     });
 
-    const textarea = screen.getByPlaceholderText('Describe your changes...');
+    const textarea = screen.getByPlaceholderText('Describe your changes…');
     fireEvent.change(textarea, { target: { value: 'fix: resolve issue' } });
     // Click the submit button instead of form submit
     fireEvent.click(screen.getByText('Commit'));
@@ -254,7 +254,7 @@ describe('CommitDialog', () => {
       ],
     });
 
-    const textarea = screen.getByPlaceholderText('Describe your changes...');
+    const textarea = screen.getByPlaceholderText('Describe your changes…');
     fireEvent.change(textarea, { target: { value: 'feat: add feature' } });
     // Click the submit button
     fireEvent.click(screen.getByText('Stage All & Commit'));
@@ -273,7 +273,7 @@ describe('CommitDialog', () => {
       ],
     });
 
-    const textarea = screen.getByPlaceholderText('Describe your changes...');
+    const textarea = screen.getByPlaceholderText('Describe your changes…');
     fireEvent.change(textarea, { target: { value: 'my commit' } });
     // Click the submit button
     fireEvent.click(screen.getByText('Commit'));
@@ -298,12 +298,12 @@ describe('CommitDialog', () => {
       ],
     });
 
-    const textarea = screen.getByPlaceholderText('Describe your changes...');
+    const textarea = screen.getByPlaceholderText('Describe your changes…');
     fireEvent.change(textarea, { target: { value: 'feat: add feature' } });
     fireEvent.click(screen.getByText('Commit'));
 
     await waitFor(() => {
-      expect(screen.getByText('Running git hooks...')).toBeTruthy();
+      expect(screen.getByText('Running git hooks…')).toBeTruthy();
     });
 
     resolveCommit?.({ success: true });
@@ -347,7 +347,7 @@ describe('CommitDialog', () => {
 
     await waitFor(() => expect(window.electronAPI.getAiCommitSettings).toHaveBeenCalled());
     expect(screen.queryByText('Generate')).toBeNull();
-    fireEvent.change(screen.getByPlaceholderText('Describe your changes...'), { target: { value: 'manual commit' } });
+    fireEvent.change(screen.getByPlaceholderText('Describe your changes…'), { target: { value: 'manual commit' } });
     fireEvent.click(screen.getByRole('button', { name: 'Commit' }));
     await waitFor(() => expect(mockOnCommit).toHaveBeenCalledWith('manual commit'));
     expect(window.electronAPI.generateCommitMessage).not.toHaveBeenCalled();
@@ -382,7 +382,7 @@ describe('CommitDialog', () => {
     fireEvent.click(screen.getByText('Generate'));
 
     await waitFor(() => {
-      const textarea = screen.getByPlaceholderText('Describe your changes...') as HTMLTextAreaElement;
+      const textarea = screen.getByPlaceholderText('Describe your changes…') as HTMLTextAreaElement;
       expect(textarea.value).toBe('fix: auto-generated message');
     });
   });
@@ -519,8 +519,8 @@ describe('CommitDialog', () => {
     });
 
     fireEvent.click(screen.getByText('Unstage All'));
-    // Button text changes to "Unstaging..." while in progress
-    expect(screen.getByText('Unstaging...')).toBeDisabled();
+    // Button text changes to "Unstaging…" while in progress
+    expect(screen.getByText('Unstaging…')).toBeDisabled();
   });
 
   it('disables footer buttons while unstage is in progress', () => {

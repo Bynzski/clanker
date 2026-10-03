@@ -9,7 +9,7 @@ import { Input } from '../ui/Input';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
-import { Plus, Trash2, Edit2, X, Loader2, Check, AlertCircle, Globe, Network } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Loader2, Check, AlertCircle } from 'lucide-react';
 import type { VcsProvider } from '../../../shared/types/vcs';
 import './GitRemotesSection.css';
 
@@ -108,10 +108,9 @@ function RemoteList({
     <div className="git-remotes-list">
       {remotes.length === 0 ? (
         <div className="git-remotes-empty">
-          <Network size={24} strokeWidth={1.5} />
           <p>No remotes configured</p>
           <span className="git-remotes-hint">Add a remote to connect to a repository host</span>
-          <Button type="button" className="git-remotes-empty-add-btn" onClick={onAdd}>
+          <Button size="xs" type="button" className="git-remotes-empty-add-btn" onClick={onAdd}>
             <Plus size={12} />
             Add remote
           </Button>
@@ -126,10 +125,10 @@ function RemoteList({
               </span>
             </div>
             <div className="git-remote-actions">
-              <IconButton aria-label="Rename remote" type="button" className="git-remote-action-btn" onClick={() => onEdit(remote)} title="Rename remote">
+              <IconButton size="xs" variant="ghost" aria-label="Rename remote" type="button" className="git-remote-action-btn" onClick={() => onEdit(remote)} title="Rename remote">
                 <Edit2 size={12} />
               </IconButton>
-              <IconButton aria-label="Remove remote" variant="danger"
+              <IconButton size="xs" aria-label="Remove remote" variant="ghost"
                 type="button"
                 className="git-remote-action-btn git-remote-action-btn-danger"
                 onClick={() => onRemove(remote.name)}
@@ -337,15 +336,14 @@ export default function GitRemotesSection({
   const formErrorMessage = form.error || validationError;
 
   return (
-    <div className="git-remotes-section">
-      <div className="git-remotes-header">
+    <div className="git-menu-section git-remotes-section">
+      <div className="git-menu-section-header git-remotes-header">
         <div className="git-remotes-title">
-          <Globe size={14} />
           <span>Remotes</span>
-          <span className="git-remotes-count">{remotes.length}</span>
+          <span className="git-menu-count git-remotes-count">{remotes.length}</span>
         </div>
         {mode === 'list' && (
-          <IconButton aria-label="Add remote"
+          <IconButton size="xs" variant="ghost" aria-label="Add remote"
             type="button"
             className="git-remotes-add-btn"
             onClick={() => setMode('add')}
@@ -355,7 +353,7 @@ export default function GitRemotesSection({
           </IconButton>
         )}
         {mode !== 'list' && (
-          <IconButton aria-label="Cancel"
+          <IconButton size="xs" variant="ghost" aria-label="Cancel"
             type="button"
             className="git-remotes-cancel-btn"
             onClick={resetForm}
@@ -441,7 +439,7 @@ export default function GitRemotesSection({
 
           <RemoteFormError message={formErrorMessage} />
 
-          <Button variant="primary"
+          <Button size="xs" variant="primary"
             type="button"
             className="git-remotes-submit-btn"
             onClick={handleAddRemote}
@@ -487,7 +485,7 @@ export default function GitRemotesSection({
 
           <RemoteFormError message={formErrorMessage} />
 
-          <Button variant="primary"
+          <Button size="xs" variant="primary"
             type="button"
             className="git-remotes-submit-btn"
             onClick={handleRenameRemote}

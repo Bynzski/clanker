@@ -136,7 +136,7 @@ describe('GitBranchesSection', () => {
     it('shows loading state when isLoadingBranches is true', () => {
       render(<GitBranchesSection {...defaultProps} isLoadingBranches={true} />);
       
-      expect(screen.getByText('Loading branches...')).toBeTruthy();
+      expect(screen.getByText('Loading branches…')).toBeTruthy();
     });
 
     it('shows empty state when no branches', () => {

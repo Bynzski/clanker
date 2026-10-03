@@ -45,7 +45,8 @@ describe('StatusBar', () => {
     useWorkspaceStore.setState({ workspaces: [local, remote], activeWorkspaceId: 'remote', activeWorkspaceLifecycle: 'active' });
 
     render(<StatusBar />);
-    expect(document.querySelector('.status-environment')).toHaveTextContent('SSH · devbox');
+    expect(document.querySelector('.status-environment')).toHaveTextContent('devbox');
+    expect(document.querySelector('.status-environment')).toHaveAttribute('title', 'SSH · devbox');
     expect(screen.getByText('feature')).toBeTruthy();
     expect(screen.getByText('remote')).toBeTruthy();
 

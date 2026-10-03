@@ -78,13 +78,13 @@ export default function SshEnvironmentManager({ environments, initialEnvironment
       onEscapeKeyDown={(event) => { if (busy) event.preventDefault(); }}
       onPointerDownOutside={(event) => { if (busy) event.preventDefault(); }}
       onOpenAutoFocus={(event) => { event.preventDefault(); labelRef.current?.focus(); }}>
-      <div className="ssh-manager-header">
-        <DialogTitle asChild><span className="ssh-manager-title">Manage SSH Targets</span></DialogTitle>
+      <div className="ssh-manager-header clanker-dialog-header">
+        <DialogTitle asChild><span className="ssh-manager-title clanker-dialog-title">Manage SSH Targets</span></DialogTitle>
         <DialogClose asChild>
-          <IconButton aria-label="Close SSH target manager" disabled={!!busy}><X size={16} /></IconButton>
+          <IconButton variant="ghost" className="clanker-dialog-close" aria-label="Close SSH target manager" title="Close" disabled={!!busy}><X size={14} /></IconButton>
         </DialogClose>
       </div>
-      <div className="ssh-manager-body">
+      <div className="ssh-manager-body clanker-dialog-body">
         <form className="ssh-manager-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           <span className="gate-section-label">{editingId ? 'Edit SSH Environment' : 'Add New SSH Environment'}</span>
           <Field className="ssh-form-row">
@@ -103,8 +103,8 @@ export default function SshEnvironmentManager({ environments, initialEnvironment
           {status && <p role="status" className={status.success ? 'ssh-manager-success' : 'ssh-manager-error'}>{status.message}</p>}
           {error && <p role="alert" className="ssh-manager-error">{error}</p>}
           <div className="ssh-form-actions">
-            <Button size="sm" variant="secondary" onClick={() => void test()} disabled={!!busy}>{busy === 'test' ? 'Testing...' : 'Test Connection'}</Button>
-            <Button size="sm" variant="primary" type="submit" disabled={!!busy}>{busy === 'save' ? 'Saving...' : editingId ? 'Save Changes' : 'Save Target'}</Button>
+            <Button size="sm" variant="secondary" onClick={() => void test()} disabled={!!busy}>{busy === 'test' ? 'Testing…' : 'Test Connection'}</Button>
+            <Button size="sm" variant="primary" type="submit" disabled={!!busy}>{busy === 'save' ? 'Saving…' : editingId ? 'Save Changes' : 'Save Target'}</Button>
             {editingId && <Button size="sm" variant="secondary" onClick={reset} disabled={!!busy}>Cancel Edit</Button>}
           </div>
         </form>
@@ -118,7 +118,7 @@ export default function SshEnvironmentManager({ environments, initialEnvironment
               {config.defaultWorkspaceRoot && <span className="ssh-env-target" title={config.defaultWorkspaceRoot}>{config.defaultWorkspaceRoot}</span>}
             </div>
             <div className="ssh-env-actions">
-              <IconButton type="button" className="ssh-env-edit-btn" onClick={() => edit(config)} disabled={!!busy} aria-label={`Edit ${config.label}`}><Pencil size={14} /></IconButton>
+              <IconButton variant="ghost" type="button" className="ssh-env-edit-btn" onClick={() => edit(config)} disabled={!!busy} aria-label={`Edit ${config.label}`}><Pencil size={14} /></IconButton>
               <IconButton variant="danger" type="button" className="ssh-env-delete-btn" onClick={() => void remove(config.id)} disabled={!!busy} aria-label={`Delete ${config.label}`}><X size={14} /></IconButton>
             </div>
           </div>)}

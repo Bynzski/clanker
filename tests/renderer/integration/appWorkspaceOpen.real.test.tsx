@@ -41,7 +41,7 @@ function resetStore() {
 }
 
 async function chooseBasicTerminal() {
-  const add = screen.getByRole('button', { name: 'Add Terminal terminal' });
+  const add = screen.getByRole('button', { name: 'Add plain terminal' });
   await waitFor(() => expect(add).toBeEnabled());
   fireEvent.click(add);
 }

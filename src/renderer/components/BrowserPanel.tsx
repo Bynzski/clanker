@@ -106,16 +106,16 @@ function BrowserToolbar({
 }: BrowserToolbarProps) {
   return (
     <div className="browser-toolbar">
-      <IconButton aria-label="Back" className="browser-nav-btn" onClick={handleBack} disabled={!canGoBack} title="Back">
+      <IconButton variant="ghost" aria-label="Back" className="browser-nav-btn" onClick={handleBack} disabled={!canGoBack} title="Back">
         <ArrowLeft size={16} strokeWidth={2} />
       </IconButton>
-      <IconButton aria-label="Forward" className="browser-nav-btn" onClick={handleForward} disabled={!canGoForward} title="Forward">
+      <IconButton variant="ghost" aria-label="Forward" className="browser-nav-btn" onClick={handleForward} disabled={!canGoForward} title="Forward">
         <ArrowRight size={16} strokeWidth={2} />
       </IconButton>
-      <IconButton aria-label="Refresh" className="browser-nav-btn" onClick={handleRefresh} title="Refresh">
+      <IconButton variant="ghost" aria-label="Refresh" className="browser-nav-btn" onClick={handleRefresh} title="Refresh">
         <RotateCw size={16} strokeWidth={2} />
       </IconButton>
-      <IconButton aria-label="Stop" className="browser-nav-btn browser-stop" onClick={handleStop} title="Stop">
+      <IconButton variant="ghost" aria-label="Stop" className="browser-nav-btn browser-stop" onClick={handleStop} title="Stop">
         <X size={16} strokeWidth={2} />
       </IconButton>
 
@@ -136,12 +136,12 @@ function BrowserToolbar({
         Go
       </Button>
 
-      <IconButton aria-label="Open in system browser" className="browser-nav-btn browser-external" onClick={handleOpenExternal} title="Open in system browser">
+      <IconButton variant="ghost" aria-label="Open in system browser" className="browser-nav-btn browser-external" onClick={handleOpenExternal} title="Open in system browser">
         <ExternalLink size={16} strokeWidth={2} />
       </IconButton>
 
       {remotePreviewControl}
-      <IconButton aria-label={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}
+      <IconButton variant="ghost" aria-label={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}
         className={`browser-nav-btn ${annotationActive ? 'browser-annotation-active' : ''}`}
         onClick={handleAnnotationToggle}
         title={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}

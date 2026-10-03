@@ -16,7 +16,7 @@ test('renderer loss stops file/git watchers and releases workspace resources wit
   const nodeEnv = process.env.NODE_ENV;
   process.env.NODE_ENV = 'development';
   const handlers = new Map<string, () => void>();
-  const window = { setMenuBarVisibility: vi.fn(), setAutoHideMenuBar: vi.fn(), loadURL: vi.fn(), loadFile: vi.fn(), on: vi.fn(),
+  const window = { setMenuBarVisibility: vi.fn(), setAutoHideMenuBar: vi.fn(), loadURL: vi.fn(), loadFile: vi.fn(), on: vi.fn(), once: vi.fn(),
     webContents: { on: vi.fn((name: string, handler: () => void) => handlers.set(name, handler)), openDevTools: vi.fn() } };
   vi.mocked(BrowserWindow).mockImplementation(function () { return window as never; });
   const deps = { preloadPath: '/preload.js', gitService: { stopPolling: vi.fn() }, fileWatcher: { unwatchAll: vi.fn() },
@@ -153,6 +153,38 @@ describe('windowManager', () => {
       expect(typeof result.cleanup).toBe('function');
     });
 
+    test('shows the window once the boot splash has painted and passes the saved theme to the page', () => {
+      const prevEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      const once = new Map<string, () => void>();
+      const mockWin = {
+        setMenuBarVisibility: vi.fn(),
+        setAutoHideMenuBar: vi.fn(),
+        loadURL: vi.fn(),
+        loadFile: vi.fn(),
+        on: vi.fn(),
+        once: vi.fn((name: string, handler: () => void) => once.set(name, handler)),
+        isDestroyed: vi.fn(() => false),
+        isVisible: vi.fn(() => false),
+        show: vi.fn(),
+        webContents: { on: vi.fn(), openDevTools: vi.fn() },
+      };
+      vi.mocked(BrowserWindow).mockImplementation(function () { return mockWin as never; });
+      try {
+        createMainWindow({ preloadPath: '/preload.js', gitService: { stopPolling: vi.fn() }, fileWatcher: { unwatchAll: vi.fn() }, theme: 'light' });
+        expect(mockWin.loadFile).toHaveBeenCalledWith(expect.stringMatching(/index\.html$/), { query: { theme: 'light' } });
+        expect(mockWin.show).not.toHaveBeenCalled();
+        once.get('ready-to-show')!();
+        expect(mockWin.show).toHaveBeenCalledTimes(1);
+        // Already visible (e.g. the renderer signalled first): no second show.
+        mockWin.isVisible.mockReturnValue(true);
+        once.get('ready-to-show')!();
+        expect(mockWin.show).toHaveBeenCalledTimes(1);
+      } finally {
+        process.env.NODE_ENV = prevEnv;
+      }
+    });
+
     test('BrowserWindow starts hidden (show: false) by default', () => {
       const prevEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'development';
@@ -162,6 +194,7 @@ describe('windowManager', () => {
         loadURL: vi.fn(),
         loadFile: vi.fn(),
         on: vi.fn(),
+        once: vi.fn(),
         webContents: { on: vi.fn(), openDevTools: vi.fn() },
       };
       vi.mocked(BrowserWindow).mockImplementation(function () { return mockWin as never; });
@@ -192,6 +225,7 @@ describe('windowManager', () => {
         loadURL: vi.fn(),
         loadFile: vi.fn(),
         on: vi.fn(),
+        once: vi.fn(),
         webContents: { on: vi.fn(), openDevTools: vi.fn() },
       };
       vi.mocked(BrowserWindow).mockImplementation(function () { return mockWin as never; });
@@ -231,6 +265,7 @@ describe('windowManager', () => {
         loadURL: vi.fn(),
         loadFile: vi.fn(),
         on: vi.fn(),
+        once: vi.fn(),
         webContents: { on: vi.fn(), openDevTools: vi.fn() },
       };
       vi.mocked(BrowserWindow).mockImplementation(function () { return mockWin as never; });

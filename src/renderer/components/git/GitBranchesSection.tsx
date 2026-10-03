@@ -118,6 +118,7 @@ export function GitBranchesSection({
             disabled={isBusy}
           />
           <Button
+            size="xs"
             type="submit"
             className="header-btn git-create-branch-submit"
             disabled={isBusy || newBranchName.trim().length === 0}
@@ -135,7 +136,7 @@ export function GitBranchesSection({
         </div>
 
         {isLoadingBranches ? (
-          <div className="git-menu-empty">Loading branches...</div>
+          <div className="git-menu-empty">Loading branches…</div>
         ) : branches.length === 0 ? (
           <div className="git-menu-empty">No local branches found</div>
         ) : (
@@ -151,6 +152,8 @@ export function GitBranchesSection({
                 </div>
                 <div className="git-branch-actions">
                   <Button
+                    size="xs"
+                    variant="ghost"
                     type="button"
                     className="git-branch-action"
                     onClick={() => onSwitchBranch(branch.name)}
@@ -161,9 +164,12 @@ export function GitBranchesSection({
                     ) : null}
                     Switch
                   </Button>
-                  <Button variant="danger"
+                  <Button
+                    size="xs"
+                    variant="ghost"
                     type="button"
                     className="git-branch-action danger"
+                    title={`Delete ${branch.name}`}
                     onClick={() => onDeleteBranch(branch.name)}
                     disabled={branch.isCurrent || isBusy}
                   >

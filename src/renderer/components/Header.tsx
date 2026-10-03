@@ -1,11 +1,11 @@
-import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { USAGE_HARNESS_IDS } from '../../shared/harnessDescriptors';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
 import { useWorkspaceNavigationStore } from '../store/workspaceNavigationStore';
+import { isExplorerShown, toggleFocusedWorkspaceExplorer } from '../lib/explorerToggle';
 import { Globe, NotebookPen, PanelLeft, PanelLeftClose } from 'lucide-react';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
-import type { HarnessSession } from '../../shared/types/session';
 import GitButton from './GitButton';
 import CredentialSettings from './settings/CredentialSettings';
 import KeyboardShortcutsDialog from './settings/KeyboardShortcutsDialog';
@@ -13,6 +13,7 @@ import { registerOpenSettingsHandler } from '../lib/keybindingDispatcher';
 import HeaderRightControls from './HeaderRightControls';
 import { useHeaderSettings } from './useHeaderSettings';
 import { useHarnessUsage } from './useHarnessUsage';
+import { useConversationHistory } from './useConversationHistory';
 import './Header.css';
 import type { WorkspaceRecipe } from '../../shared/types/recipes';
 import { captureTerminalLaunches } from '../lib/recipeCapture';
@@ -20,10 +21,14 @@ import RecipeModal from './RecipeModal';
 import { executeWorkspaceRecipe } from '../lib/recipeExecution';
 import { serializeWorkspaceLayout } from '../lib/workspaceLayoutStorage';
 
-export default function Header() {
+interface HeaderProps {
+  /** `bar` is the standalone toolbar row (tabs mode); `titlebar` docks it into the title bar (sidebar mode). */
+  placement?: 'bar' | 'titlebar';
+}
+
+export default function Header({ placement = 'bar' }: HeaderProps) {
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const focusedWorkspace = useWorkspaceStore((state) => selectFocusedWorkspace(state));
-  const setExplorerVisible = useWorkspaceStore((state) => state.setExplorerVisible);
   const toggleBrowser = useWorkspaceStore((state) => state.toggleBrowser);
   const toggleNotesPane = useWorkspaceStore((state) => state.toggleNotesPane);
   const addTerminal = useWorkspaceStore((state) => state.addTerminal);
@@ -36,27 +41,25 @@ export default function Header() {
   const notesVisible = focusedWorkspace?.notesVisible ?? false;
   const explorerVisible = focusedWorkspace?.explorerVisible ?? false;
   const sidebarMode = useWorkspaceNavigationStore((state) => state.mode === 'sidebar');
-  const explorerLabel = sidebarMode ? 'Files' : 'Explorer';
+  const explorerShown = useWorkspaceNavigationStore((state) => isExplorerShown(explorerVisible, state.mode, state.sidebarWidth));
   const harness = focusedWorkspace?.harness ?? '';
   const model = focusedWorkspace?.model ?? '';
   const [showChatHistory, setShowChatHistory] = useState(false);
-  const [chatSessions, setChatSessions] = useState<HarnessSession[]>([]);
-  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
-  const [sessionDiscoveryError, setSessionDiscoveryError] = useState('');
+  // Background warm-ups are local-only: they must never trigger unattended SSH probes or scans.
+  const warmupEnabled = !focusedWorkspace?.environmentId || focusedWorkspace.environmentId === 'local';
+  const history = useConversationHistory(focusedWorkspace?.id ?? null, { warmup: warmupEnabled });
   const [showUsage, setShowUsage] = useState(false);
   // The focused workspace's own environment scopes account management; local only when there is none.
   const accountEnvironmentId = focusedWorkspace?.environmentId || 'local';
   const [accountIntent, setAccountIntent] = useState<{ harness: string; intent: 'manage' | 'add' } | null>(null);
-  const sessionRequest = useRef(0);
-  useEffect(() => {
-    sessionRequest.current++;
+  // A workspace change closes the workspace-scoped panels (reset during render; history voids its own answers).
+  const [panelOwner, setPanelOwner] = useState(focusedWorkspace?.id);
+  if (panelOwner !== focusedWorkspace?.id) {
+    setPanelOwner(focusedWorkspace?.id);
     setAccountIntent(null);
     setShowUsage(false);
     setShowChatHistory(false);
-    setChatSessions([]);
-    setSessionDiscoveryError('');
-    setIsLoadingSessions(false);
-  }, [focusedWorkspace?.id]);
+  }
   const settingsTriggerRef = useRef<HTMLButtonElement>(null);
   const credentialHandoff = useRef(false);
   const shortcutsHandoff = useRef(false);
@@ -93,15 +96,18 @@ export default function Header() {
     loadHarnessModels,
     aiCommitProviderOptions,
   } = useHeaderSettings({ harness, setHarness, environmentId: focusedWorkspace?.environmentId });
-  // Only harnesses with a usage capability AND an enabled "Show in Usage" preference are ever requested.
-  // Membership comes from descriptors; order follows the launcher's presentation order.
-  // Fail closed: nothing is probed until the persisted preferences have loaded successfully.
+  // Only harnesses with a usage capability, installed in this workspace's environment, AND with an
+  // enabled "Show in Usage" preference are ever requested. Membership comes from descriptors; order
+  // follows the launcher's presentation order. Fail closed: nothing is probed until the persisted
+  // preferences have loaded successfully.
   const usageHarnessIds = useMemo(
     () => harnessDefaultsStatus !== 'ready' ? [] : HARNESS_OPTIONS.map((option) => option.id).filter((id) =>
-      (USAGE_HARNESS_IDS as readonly string[]).includes(id) && harnessDefaults?.[id]?.usageVisible !== false),
-    [harnessDefaults, harnessDefaultsStatus],
+      (USAGE_HARNESS_IDS as readonly string[]).includes(id)
+      && availableHarnessIds.includes(id)
+      && harnessDefaults?.[id]?.usageVisible !== false),
+    [availableHarnessIds, harnessDefaults, harnessDefaultsStatus],
   );
-  const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage, harnessIds: usageHarnessIds, environmentId: accountEnvironmentId });
+  const usage = useHarnessUsage({ workspaceId: focusedWorkspace?.id ?? null, open: showUsage, harnessIds: usageHarnessIds, environmentId: accountEnvironmentId, prefetch: warmupEnabled });
 
   const handleAddTerminal = async (harnessId: string) => {
     try {
@@ -138,32 +144,18 @@ export default function Header() {
     toggleNotesPane();
   };
 
-  const handleChatHistoryOpenChange = async (open: boolean) => {
-    const request = ++sessionRequest.current;
+  const handleChatHistoryOpenChange = (open: boolean) => {
     setShowChatHistory(open);
+    history.setOpen(open);
     if (!open) return;
     setShowSettings(false);
     setShowUsage(false);
-    setIsLoadingSessions(true);
-    setSessionDiscoveryError('');
-    setChatSessions([]);
-    try {
-      const sessions = focusedWorkspace?.id
-        ? await window.electronAPI.discoverSessions(focusedWorkspace.id)
-        : [];
-      if (sessionRequest.current === request) setChatSessions(sessions);
-    } catch (err) {
-      console.error('Failed to discover sessions:', err);
-      if (sessionRequest.current === request) setSessionDiscoveryError(err instanceof Error ? err.message : 'Could not discover sessions');
-    } finally {
-      if (sessionRequest.current === request) setIsLoadingSessions(false);
-    }
   };
   const handleSettingsOpenChange = (open: boolean) => {
     setShowSettings(open);
     if (open) {
       setShowUsage(false);
-      void handleChatHistoryOpenChange(false);
+      handleChatHistoryOpenChange(false);
     }
   };
   // The app keybinding dispatcher opens Settings through this same state path.
@@ -171,7 +163,7 @@ export default function Header() {
   /** Usage -> Settings handoff: close Usage, open Settings, expand that harness; its account row does the rest. */
   const handleManageAccounts = (harnessId: string, intent: 'manage' | 'add') => {
     setShowUsage(false);
-    void handleChatHistoryOpenChange(false);
+    handleChatHistoryOpenChange(false);
     setAccountIntent({ harness: harnessId, intent });
     setExpandedHarness(harnessId);
     void loadHarnessModels(harnessId);
@@ -181,7 +173,7 @@ export default function Header() {
     setShowUsage(open);
     if (!open) return;
     setShowSettings(false);
-    void handleChatHistoryOpenChange(false);
+    handleChatHistoryOpenChange(false);
   };
 
   const handleOpenRecipes = async () => {
@@ -236,21 +228,56 @@ export default function Header() {
 
   const defaultLaunches = captureTerminalLaunches(focusedWorkspace?.terminals ?? []);
 
+  // Panel toggles sit with the other view controls on the right. Sidebar mode has
+  // no Explorer toggle here: FILES is pinned to the bottom of the sidebar instead.
+  const panelToggles = (
+    <div className="toolbar-group" role="group" aria-label="Panels">
+      {!sidebarMode && (
+        <IconButton
+          type="button"
+          size="xs"
+          variant="ghost"
+          className={`header-btn header-btn-icon toolbar-btn ${explorerShown ? 'active' : ''}`}
+          onClick={toggleFocusedWorkspaceExplorer}
+          aria-pressed={explorerShown}
+          aria-label="Toggle File Explorer"
+          title="Toggle File Explorer"
+        >
+          {explorerShown ? <PanelLeftClose size={14} strokeWidth={2} /> : <PanelLeft size={14} strokeWidth={2} />}
+        </IconButton>
+      )}
+      <IconButton
+        type="button"
+        size="xs"
+        variant="ghost"
+        className={`header-btn header-btn-icon toolbar-btn ${browserVisible ? 'active' : ''}`}
+        onClick={handleToggleBrowser}
+        aria-pressed={browserVisible}
+        aria-label="Toggle browser panel"
+        title="Toggle browser panel"
+      >
+        <Globe size={14} strokeWidth={2} />
+      </IconButton>
+      <IconButton
+        type="button"
+        size="xs"
+        variant="ghost"
+        className={`header-btn header-btn-icon toolbar-btn ${notesVisible ? 'active' : ''}`}
+        onClick={handleToggleNotes}
+        aria-pressed={notesVisible}
+        aria-label="Toggle notes panel"
+        title="Toggle notes panel"
+      >
+        <NotebookPen size={14} strokeWidth={2} />
+      </IconButton>
+    </div>
+  );
+
   const defaultLayout = focusedWorkspace ? serializeWorkspaceLayout(focusedWorkspace) : undefined;
   return (
-    <header className="header">
+    <header className={`header${placement === 'titlebar' ? ' header-inline' : ''}`} data-placement={placement}>
       <div className="header-center">
-        <Button
-          type="button"
-          className={`header-btn ${explorerVisible ? 'active' : ''}`}
-          onClick={() => setExplorerVisible(!explorerVisible)}
-          title={sidebarMode ? 'Toggle Files section' : 'Toggle File Explorer'}
-        >
-          {explorerVisible ? <PanelLeftClose size={15} strokeWidth={2} /> : <PanelLeft size={15} strokeWidth={2} />}
-          {explorerLabel}
-        </Button>
-
-        <div className="harness-pills">
+        <div className="harness-pills" role="group" aria-label="New terminal">
           {HARNESS_OPTIONS.filter((opt) => visibleHarnessIds.includes(opt.id)).map(opt => {
             const IconComponent = opt.Icon;
             return (
@@ -261,45 +288,39 @@ export default function Header() {
                 onClick={() => void handleAddTerminal(opt.id)}
                 title={opt.id ? `Add ${opt.label} terminal` : 'Add terminal'}
               >
-                <IconComponent size={14} strokeWidth={2.5} />
-                <span>{opt.label}</span>
+                <IconComponent size={14} strokeWidth={2.25} />
+                <span className="harness-pill-label">{opt.label}</span>
               </button>
             );
           })}
         </div>
 
-        <Button type="button" className={`header-btn ${browserVisible ? 'active' : ''}`} onClick={handleToggleBrowser} title="Toggle browser panel">
-          <Globe size={15} strokeWidth={2} />
-          Browser
-        </Button>
-
-        <Button type="button" className={`header-btn ${notesVisible ? 'active' : ''}`} onClick={handleToggleNotes} title="Toggle notes panel">
-          <NotebookPen size={15} strokeWidth={2} />
-          Notes
-        </Button>
-
         {workspacePath && (
-          <GitButton key={focusedWorkspace?.id} workspacePath={workspacePath} workspaceId={focusedWorkspace?.id} />
+          <>
+            <span className="toolbar-divider" aria-hidden="true" />
+            <GitButton key={focusedWorkspace?.id} workspacePath={workspacePath} workspaceId={focusedWorkspace?.id} />
+          </>
         )}
       </div>
 
       <HeaderRightControls
+        panelToggles={panelToggles}
         fitAllPanes={fitAllPanes}
         undoLayout={() => undoLayout(activeWorkspaceId ?? undefined)}
         canUndoLayout={(focusedWorkspace?.layoutUndoStack?.length ?? 0) > 0}
         onOpenRecipes={handleOpenRecipes}
         showChatHistory={showChatHistory}
-        onChatHistoryOpenChange={(open) => void handleChatHistoryOpenChange(open)}
-        chatSessions={chatSessions}
-        isLoadingSessions={isLoadingSessions}
-        sessionDiscoveryError={sessionDiscoveryError}
+        onChatHistoryOpenChange={(open) => handleChatHistoryOpenChange(open)}
+        chatSessions={history.sessions}
+        isLoadingSessions={history.isLoading}
+        sessionDiscoveryError={history.error}
         workspacePath={workspacePath || '/'}
         workspaceId={focusedWorkspace?.id ?? null}
         environmentId={accountEnvironmentId}
         accountIntent={accountIntent}
         onAccountIntentConsumed={() => setAccountIntent(null)}
         onManageAccounts={handleManageAccounts}
-        onCloseChatHistory={() => void handleChatHistoryOpenChange(false)}
+        onCloseChatHistory={() => handleChatHistoryOpenChange(false)}
         showUsage={showUsage}
         usageReady={harnessDefaultsStatus === 'ready'}
         onUsageOpenChange={handleUsageOpenChange}

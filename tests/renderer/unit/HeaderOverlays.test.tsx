@@ -165,7 +165,7 @@ const renderHeader = () => render(<Header />);
       const trigger = screen.getByRole('button', { name: 'Settings' });
       await user.click(trigger);
       expect(count()).toBe(1);
-      await user.click(screen.getByRole('button', { name: 'Keyboard shortcuts...' }));
+      await user.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }));
       expect(screen.getByRole('dialog', { name: 'Keyboard Shortcuts' })).toBeInTheDocument();
       expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument();
       expect(count()).toBe(1);

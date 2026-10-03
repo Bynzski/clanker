@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HarnessUsageEntry, HarnessUsageResponse } from '../../shared/types/harnessUsage';
+import { scheduleIdleWarmup } from '../lib/idleWarmup';
 export const USAGE_POLL_INTERVAL_MS = 60_000;
 const CLOCK_INTERVAL_MS = 30_000;
 const GENERIC_ERROR = 'Usage could not be read';
@@ -26,10 +27,14 @@ export interface UseHarnessUsageResult {
  * Owns usage state for ONE workspace. Each harness is requested independently and concurrently so a slow
  * provider never delays the others. Ownership is explicit: every request captures a generation that is
  * bumped on workspace change/unmount, so late responses never land in a different workspace's panel.
- * Polling and the display clock exist only while `open`. Cache TTLs, backoff and floors stay in main;
+ * Polling and the display clock exist only while `open`; with `prefetch`, one background read warms it. Cache TTLs, backoff and floors stay in main;
  * `refreshableAt` is used only to avoid knowingly pointless manual refreshes.
  */
-export function useHarnessUsage({ workspaceId, open, harnessIds, environmentId = 'local' }: { workspaceId: string | null; open: boolean; harnessIds: readonly string[]; environmentId?: string }): UseHarnessUsageResult {
+export function useHarnessUsage({ workspaceId, open, harnessIds, environmentId = 'local', prefetch = false }: {
+  workspaceId: string | null; open: boolean; harnessIds: readonly string[]; environmentId?: string;
+  /** Warm the panel in the background shortly after the workspace becomes active (delayed, best-effort idle prefetch). */
+  prefetch?: boolean;
+}): UseHarnessUsageResult {
   const [entries, setEntries] = useState<Record<string, HarnessUsageEntry | undefined>>({});
   const [otherAccounts, setOtherAccounts] = useState<Record<string, HarnessUsageEntry[] | undefined>>({});
   const [pending, setPending] = useState<Record<string, boolean>>({});
@@ -121,15 +126,29 @@ export function useHarnessUsage({ workspaceId, open, harnessIds, environmentId =
       .then(() => request(harnessId, false), () => undefined);
   }, [environmentId, request]);
 
-  // Open: immediate ordinary read, then an ordinary read every minute. Nothing runs while closed.
+  // Closed: one ordinary read per workspace (and provider set) shortly after the workspace becomes active
+  // (a delayed, best-effort idle prefetch, see scheduleIdleWarmup), so the first opening already has
+  // numbers. It never repeats after the panel closes, and main's cache/backoff still governs what is actually probed.
+  const warmed = useRef<string | null>(null);
+  useEffect(() => {
+    const key = workspaceId ? `${workspaceId}\u0000${idsKey}` : null;
+    if (open || !prefetch || !key || ids.length === 0 || warmed.current === key) return;
+    return scheduleIdleWarmup(() => {
+      warmed.current = key;
+      refreshAll(false);
+    });
+  }, [open, prefetch, workspaceId, idsKey, ids, refreshAll]);
+
+  // Open: immediate ordinary read, then an ordinary read every minute. Polling only runs while open.
   useEffect(() => {
     if (!open || !workspaceId) return;
+    warmed.current = `${workspaceId}\u0000${idsKey}`;
     refreshAll(false);
     const first = setTimeout(() => setNow(Date.now()), 0); // fresh clock on open
     const poll = setInterval(() => refreshAll(false), USAGE_POLL_INTERVAL_MS);
     const clock = setInterval(() => setNow(Date.now()), CLOCK_INTERVAL_MS);
     return () => { clearTimeout(first); clearInterval(poll); clearInterval(clock); };
-  }, [open, workspaceId, refreshAll, ids]);
+  }, [open, workspaceId, refreshAll, ids, idsKey]);
 
   const nextManualRefreshAt = useMemo(() => {
     const resolved = ids.map((id) => entries[id]).filter((entry): entry is HarnessUsageEntry => entry !== undefined);

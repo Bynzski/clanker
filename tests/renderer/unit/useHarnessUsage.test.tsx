@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useHarnessUsage } from '../../../src/renderer/components/useHarnessUsage';
+import { WARMUP_DELAY_MS } from '../../../src/renderer/lib/idleWarmup';
 import { installElectronApiMock } from '../../setup/electron';
 import type { HarnessUsageEntry, HarnessUsageRequest, HarnessUsageResponse } from '../../../src/shared/types/harnessUsage';
 
@@ -72,5 +73,36 @@ describe('useHarnessUsage selected harness set', () => {
     expect(result.current.entries.claude).toBeUndefined();
     const calls = vi.mocked(window.electronAPI.getHarnessUsage).mock.calls;
     expect(calls[calls.length - 1][0]).toBe('b');
+  });
+});
+
+describe('useHarnessUsage background warm-up', () => {
+  it('reads once only after the warm-up delay, and not again after the panel closes', () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = renderHook(({ open }) => useHarnessUsage({ workspaceId: 'w', open, harnessIds: ['claude', 'agy'], prefetch: true }), { initialProps: { open: false } });
+      act(() => { vi.advanceTimersByTime(WARMUP_DELAY_MS - 1); });
+      expect(window.electronAPI.getHarnessUsage).not.toHaveBeenCalled();
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(requested()).toEqual(['claude', 'agy']);
+      expect(pending.every((request) => !request.force)).toBe(true);
+      rerender({ open: true });
+      rerender({ open: false });
+      const afterOpen = requested().length;
+      act(() => { vi.advanceTimersByTime(WARMUP_DELAY_MS * 3); });
+      expect(requested()).toHaveLength(afterOpen);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('never warms without prefetch, and cancels a pending warm-up when the workspace changes', () => {
+    vi.useFakeTimers();
+    try {
+      renderHook(() => useHarnessUsage({ workspaceId: 'w', open: false, harnessIds: ['claude'] }));
+      const { rerender } = renderHook(({ id }) => useHarnessUsage({ workspaceId: id, open: false, harnessIds: ['claude'], prefetch: true }), { initialProps: { id: 'a' } });
+      act(() => { vi.advanceTimersByTime(WARMUP_DELAY_MS - 10); });
+      rerender({ id: 'b' });
+      act(() => { vi.advanceTimersByTime(WARMUP_DELAY_MS); });
+      expect(vi.mocked(window.electronAPI.getHarnessUsage).mock.calls.map(([workspaceId]) => workspaceId)).toEqual(['b']);
+    } finally { vi.useRealTimers(); }
   });
 });

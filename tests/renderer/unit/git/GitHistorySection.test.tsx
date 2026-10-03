@@ -103,7 +103,7 @@ describe('GitHistorySection', () => {
     it('shows loading state when isLoadingHistory is true', () => {
       render(<GitHistorySection {...defaultProps} isLoadingHistory={true} />);
       
-      expect(screen.getByText('Loading history...')).toBeTruthy();
+      expect(screen.getByText('Loading history…')).toBeTruthy();
     });
 
     it('shows "No commits found" when history is empty', () => {

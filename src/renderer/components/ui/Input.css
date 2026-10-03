@@ -3,12 +3,12 @@
 .clanker-textarea,
 .clanker-select {
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-md);
   color: var(--text-primary);
   background: var(--surface-control);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  transition: background var(--transition), border-color var(--transition), color var(--transition);
+  transition: background var(--transition), border-color var(--transition), box-shadow var(--transition), color var(--transition);
 }
 
 .clanker-input::placeholder,
@@ -19,9 +19,11 @@
 .clanker-input:focus-visible,
 .clanker-textarea:focus-visible,
 .clanker-select:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
-  border-color: var(--focus-ring);
+  /* Text fields take focus on every click, so the highlight stays quiet: a tinted
+     border with a faint halo instead of an offset outline ring. */
+  outline: none;
+  border-color: color-mix(in srgb, var(--focus-ring) 65%, var(--border-default));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 14%, transparent);
 }
 
 .clanker-input:disabled,
@@ -45,22 +47,23 @@
 .clanker-input[aria-invalid='true']:focus-visible,
 .clanker-textarea[aria-invalid='true']:focus-visible,
 .clanker-select[aria-invalid='true']:focus-visible {
-  outline-color: var(--status-error);
+  border-color: var(--status-error);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-error) 18%, transparent);
 }
 
 /* Sizing and variants */
 .clanker-input:where([data-size='sm']),
 .clanker-select:where([data-size='sm']) {
-  height: 28px;
+  height: var(--control-height-md);
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: var(--font-size-md);
 }
 
 .clanker-input:where([data-size='md']),
 .clanker-select:where([data-size='md']) {
-  height: 34px;
-  padding: 6px 10px;
-  font-size: 13px;
+  height: var(--control-height-md);
+  padding: 4px 10px;
+  font-size: var(--font-size-md);
 }
 
 .clanker-input:where([data-variant='mono']),
@@ -92,13 +95,13 @@
 }
 
 .clanker-field-label {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--text-secondary);
 }
 
 .clanker-form-message {
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   line-height: 1.4;
   margin: 0;
 }

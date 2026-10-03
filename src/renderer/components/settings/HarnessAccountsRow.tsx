@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { IconButton } from '../ui/IconButton';
 import { Input } from '../ui/Input';
 import { useHarnessAccounts } from '../useHarnessAccounts';
 import { HARNESS_ACCOUNT_LABEL_MAX, type SafeHarnessAccount } from '../../../shared/types/harnessAccounts';
@@ -57,50 +59,63 @@ export default function HarnessAccountsRow({ harnessId, harnessLabel, environmen
   const multiple = list.accounts.length > 1;
   const flowMessage = flow?.state.status === 'failed' ? flow.state.message : flow?.state.status === 'cancelled' ? 'Sign-in cancelled.' : null;
 
+  const canAdd = list.managedSupported && !pending && !adding;
+
   return (
     <div ref={rootRef} className="harness-defaults-field harness-accounts" aria-label={`${harnessLabel} accounts`}>
-      <span className="harness-defaults-field-label">{multiple ? 'Accounts' : 'Account'}</span>
-      <ul className="harness-accounts-list">
-        {list.accounts.map((account) => (
-          <li key={account.id} className={`harness-account ${account.selected ? 'selected' : ''}`}>
-            <span className="harness-account-text">
-              <span className="harness-account-name">{accountName(account)}</span>
-              {accountDetail(account) && <span className="harness-account-detail">{accountDetail(account)}</span>}
+      <div className="harness-accounts-header">
+        <span className="harness-defaults-field-label">{multiple ? 'Accounts' : 'Account'}</span>
+        {canAdd && (
+          <Button size="xs" variant="ghost" className="harness-accounts-add-trigger" disabled={busy}
+            onClick={() => { accounts.dismissFlow(); setAdding(true); }}>
+            <Plus size={12} strokeWidth={2.25} aria-hidden="true" />
+            Add account
+          </Button>
+        )}
+      </div>
+      <ul className={`harness-accounts-list${multiple ? ' multiple' : ''}`}>
+        {list.accounts.map((account) => {
+          const detail = accountDetail(account);
+          return (
+            <li key={account.id} className={`harness-account ${account.selected ? 'selected' : ''}`}>
+              <span className="harness-account-text" title={detail || undefined}>
+                <span className="harness-account-name">{accountName(account)}</span>
+                {detail && <span className="harness-account-detail">{detail}</span>}
+              </span>
               {account.status === 'needs-auth' && <span className="harness-account-warning">Needs sign-in</span>}
-            </span>
-            {multiple && (account.selected
-              ? <span className="harness-account-selected">In use</span>
-              : <Button disabled={busy || pending} onClick={() => void accounts.select(account.id)} aria-label={`Use ${accountName(account)} for ${harnessLabel}`}>Use</Button>)}
-            {account.kind === 'managed' && (
-              <>
-                {account.status === 'needs-auth' && (
-                  <Button disabled={busy || pending} onClick={() => void accounts.reconnect(account.id)}>Reconnect</Button>
-                )}
-                <Button variant="danger" disabled={busy || pending} onClick={() => void accounts.remove(account.id)} aria-label={`Remove ${accountName(account)}`}>Remove</Button>
-              </>
-            )}
-          </li>
-        ))}
+              {account.kind === 'managed' && account.status === 'needs-auth' && (
+                <Button size="xs" variant="ghost" disabled={busy || pending} onClick={() => void accounts.reconnect(account.id)}>Reconnect</Button>
+              )}
+              {multiple && (account.selected
+                ? <span className="harness-account-selected">In use</span>
+                : <Button size="xs" variant="ghost" disabled={busy || pending} onClick={() => void accounts.select(account.id)} aria-label={`Use ${accountName(account)} for ${harnessLabel}`}>Use</Button>)}
+              {account.kind === 'managed' && (
+                <IconButton size="xs" variant="ghost" className="harness-account-remove" disabled={busy || pending}
+                  onClick={() => void accounts.remove(account.id)} aria-label={`Remove ${accountName(account)}`} title="Remove account">
+                  <Trash2 size={12} strokeWidth={2} />
+                </IconButton>
+              )}
+            </li>
+          );
+        })}
       </ul>
 
       {pending ? (
         <div className="harness-account-flow" role="status">
           <span>{flow.state.status === 'waiting-for-browser' ? 'Finish signing in in your browser…' : 'Starting sign-in…'}</span>
-          <Button onClick={accounts.cancel}>Cancel</Button>
+          <Button size="xs" variant="ghost" onClick={accounts.cancel}>Cancel</Button>
         </div>
       ) : !list.managedSupported ? (
-        list.unsupportedReason && <span className="harness-account-detail">{list.unsupportedReason}</span>
-      ) : adding ? (
+        list.unsupportedReason && <span className="harness-account-note">{list.unsupportedReason}</span>
+      ) : adding && (
         <div className="harness-account-add">
           <Input
-            type="text" value={label} maxLength={HARNESS_ACCOUNT_LABEL_MAX} aria-label="Account label"
-            placeholder="Label (optional), e.g. Work" onChange={(event) => setLabel(event.target.value)}
+            type="text" value={label} maxLength={HARNESS_ACCOUNT_LABEL_MAX} aria-label="Account label" autoFocus
+            placeholder="Label, e.g. Work" onChange={(event) => setLabel(event.target.value)}
           />
-          <Button variant="primary" disabled={busy} onClick={() => { void accounts.add(label.trim()); setAdding(false); setLabel(''); }}>Sign in</Button>
-          <Button onClick={() => { setAdding(false); setLabel(''); }}>Cancel</Button>
+          <Button size="xs" variant="primary" disabled={busy} onClick={() => { void accounts.add(label.trim()); setAdding(false); setLabel(''); }}>Sign in</Button>
+          <Button size="xs" variant="ghost" onClick={() => { setAdding(false); setLabel(''); }}>Cancel</Button>
         </div>
-      ) : (
-        <Button className="harness-account-add-button" disabled={busy} onClick={() => { accounts.dismissFlow(); setAdding(true); }}>Add account</Button>
       )}
       {flowMessage && <span className="harness-account-warning" role="alert">{flowMessage}</span>}
       {error && <span className="harness-account-warning" role="alert">{error}</span>}

@@ -62,7 +62,7 @@ describe('NotesPane', () => {
 
     render(<NotesPane workspaceId="ws-notes" />);
 
-    expect(screen.getByPlaceholderText('Notes...')).toHaveValue('remember this');
+    expect(screen.getByPlaceholderText('Notes…')).toHaveValue('remember this');
     expect(window.localStorage.getItem(getNotesContentStorageKey('/workspace/notes', 'ws-notes'))).toBe('remember this');
   });
 
@@ -70,9 +70,9 @@ describe('NotesPane', () => {
     setupWorkspace();
     render(<NotesPane workspaceId="ws-notes" />);
 
-    expect(screen.getByPlaceholderText('Notes...')).toHaveClass('clanker-textarea');
+    expect(screen.getByPlaceholderText('Notes…')).toHaveClass('clanker-textarea');
     expect(screen.getByRole('button', { name: 'Close notes' })).toHaveClass('clanker-icon-button');
-    fireEvent.change(screen.getByPlaceholderText('Notes...'), {
+    fireEvent.change(screen.getByPlaceholderText('Notes…'), {
       target: { value: 'local scratch note' },
     });
 
@@ -94,7 +94,7 @@ describe('NotesPane', () => {
     });
 
     render(<NotesPane workspaceId="ws-notes" />);
-    fireEvent.change(screen.getByPlaceholderText('Notes...'), {
+    fireEvent.change(screen.getByPlaceholderText('Notes…'), {
       target: { value: 'same key' },
     });
 
@@ -121,18 +121,18 @@ describe('NotesPane', () => {
   it('keeps same-path local and SSH note content independent across workspace switches', () => {
     setupWorkspace();
     const localView = render(<NotesPane workspaceId="ws-notes" />);
-    fireEvent.change(screen.getByPlaceholderText('Notes...'), { target: { value: 'local only' } });
+    fireEvent.change(screen.getByPlaceholderText('Notes…'), { target: { value: 'local only' } });
     localView.unmount();
 
     setupWorkspace({ id: 'ws-remote', environmentId: 'ssh-server' });
     const remoteView = render(<NotesPane workspaceId="ws-remote" />);
-    expect(screen.getByPlaceholderText('Notes...')).toHaveValue('');
-    fireEvent.change(screen.getByPlaceholderText('Notes...'), { target: { value: 'remote only' } });
+    expect(screen.getByPlaceholderText('Notes…')).toHaveValue('');
+    fireEvent.change(screen.getByPlaceholderText('Notes…'), { target: { value: 'remote only' } });
     remoteView.unmount();
 
     setupWorkspace();
     render(<NotesPane workspaceId="ws-notes" />);
-    expect(screen.getByPlaceholderText('Notes...')).toHaveValue('local only');
+    expect(screen.getByPlaceholderText('Notes…')).toHaveValue('local only');
     expect(window.localStorage.getItem(getNotesContentStorageKey('/workspace/notes', 'ws-remote', 'ssh-server'))).toBe('remote only');
   });
 
@@ -141,7 +141,7 @@ describe('NotesPane', () => {
     setupWorkspace({ id: 'ws-remote', environmentId: 'ssh-server' });
     render(<NotesPane workspaceId="ws-remote" />);
 
-    expect(screen.getByPlaceholderText('Notes...')).toHaveValue('');
+    expect(screen.getByPlaceholderText('Notes…')).toHaveValue('');
     expect(window.localStorage.getItem(getNotesContentStorageKey('/workspace/notes', 'ws-remote', 'ssh-server'))).toBeNull();
   });
 

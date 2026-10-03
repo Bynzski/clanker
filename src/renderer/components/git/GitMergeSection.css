@@ -9,7 +9,7 @@
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--surface-tint) 4%, transparent);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-md);
   line-height: 1.4;
 }
 
@@ -34,7 +34,7 @@
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--status-error) 12%, transparent);
   color: var(--status-error);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   word-break: break-word;
 }
 

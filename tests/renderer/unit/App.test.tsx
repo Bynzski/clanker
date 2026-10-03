@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { ReactNode } from 'react';
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import { registerOpenSettingsHandler } from '../../../src/renderer/lib/keybindingDispatcher';
 import { useKeybindingStore } from '../../../src/renderer/store/keybindingStore';
@@ -29,9 +30,10 @@ vi.mock('../../../src/renderer/components/Header', () => ({
 }));
 
 vi.mock('../../../src/renderer/components/TitleBar', () => ({
-  default: ({ onOpenWorkspace }: { onOpenWorkspace?: () => void }) => (
+  default: ({ onOpenWorkspace, toolbar }: { onOpenWorkspace?: () => void; toolbar?: ReactNode }) => (
     <div data-testid="title-bar">
       <button data-testid="titlebar-open-workspace" onClick={onOpenWorkspace}>Open Workspace</button>
+      {toolbar}
     </div>
   ),
 }));

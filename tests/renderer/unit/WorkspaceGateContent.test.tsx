@@ -59,14 +59,14 @@ describe('WorkspaceGateContent', () => {
     const view = render(<WorkspaceGateContent onSubmit={mockOnSubmit} {...overrides} />);
     // Path/worktree fixtures request a plan explicitly; startup-state tests omit it.
     if (overrides.fullscreen === undefined) {
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Add Terminal terminal' })).toBeEnabled());
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Add plain terminal' })).toBeEnabled());
       fireEvent.keyDown(window, { key: '4' });
     }
     return view;
   }
 
   async function chooseBasicTerminal() {
-    const add = screen.getByRole('button', { name: 'Add Terminal terminal' });
+    const add = screen.getByRole('button', { name: 'Add plain terminal' });
     await waitFor(() => expect(add).toBeEnabled());
     fireEvent.click(add);
   }
@@ -75,7 +75,7 @@ describe('WorkspaceGateContent', () => {
     await renderGate({ fullscreen: true, initialPath: '/repo' });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Add Codex terminal' })).toBeEnabled());
     expect(screen.getByLabelText('Codex terminal count')).toHaveTextContent('0');
-    expect(screen.getByLabelText('Terminal terminal count')).toHaveTextContent('0');
+    expect(screen.getByLabelText('plain terminal count')).toHaveTextContent('0');
     expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeDisabled();
     const rows = document.querySelectorAll('.gate-harness-row');
     expect(rows[rows.length - 1].querySelector('.gate-harness-name')).toHaveTextContent('Terminal');
@@ -160,7 +160,7 @@ describe('WorkspaceGateContent', () => {
     await waitFor(() => expect(chip).toBeEnabled());
     fireEvent.click(chip);
     expect(screen.getByLabelText('Codex terminal count')).toHaveTextContent('1');
-    expect(screen.getByLabelText('Terminal terminal count')).toHaveTextContent('2');
+    expect(screen.getByLabelText('plain terminal count')).toHaveTextContent('2');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Workspace directory')).toHaveValue('/repo');
     expect(launchRecipe).not.toHaveBeenCalled();
@@ -698,9 +698,9 @@ describe('WorkspaceGateContent', () => {
     expect(screen.getByLabelText('Pi terminal count')).toHaveTextContent('2');
     expect(screen.getByLabelText('Codex terminal count')).toHaveTextContent('1');
     // Focus alone chooses a row, including the empty harness ID for plain shells.
-    screen.getByRole('button', { name: 'Add Terminal terminal' }).focus();
+    screen.getByRole('button', { name: 'Add plain terminal' }).focus();
     await user.keyboard('2');
-    expect(screen.getByLabelText('Terminal terminal count')).toHaveTextContent('2');
+    expect(screen.getByLabelText('plain terminal count')).toHaveTextContent('2');
     expect(screen.getByLabelText('Pi terminal count')).toHaveTextContent('2');
     await user.click(screen.getByRole('button', { name: 'Launch Workspace' }));
     expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ terminalCount: 5,
@@ -709,12 +709,12 @@ describe('WorkspaceGateContent', () => {
         expect.objectContaining({ harness: '' }), expect.objectContaining({ harness: '' })] }));
     // Outside the list, numbers retain the last interacted row rather than Codex.
     await user.keyboard('4');
-    expect(screen.getByLabelText('Terminal terminal count')).toHaveTextContent('4');
+    expect(screen.getByLabelText('plain terminal count')).toHaveTextContent('4');
     expect(screen.getByLabelText('Codex terminal count')).toHaveTextContent('1');
     expect(screen.getByLabelText('Pi terminal count')).toHaveTextContent('2');
     // B explicitly collapses a mixed plan even when Terminal was last used.
     await user.keyboard('b');
-    expect(screen.getByLabelText('Terminal terminal count')).toHaveTextContent('7');
+    expect(screen.getByLabelText('plain terminal count')).toHaveTextContent('7');
     expect(screen.getByLabelText('Codex terminal count')).toHaveTextContent('0');
     expect(screen.getByLabelText('Pi terminal count')).toHaveTextContent('0');
   });
@@ -749,9 +749,9 @@ describe('WorkspaceGateContent', () => {
     await renderGate({ initialPath: '/workspace/' });
     await screen.findByRole('button', { name: 'Add Antigravity terminal' });
     screen.getByRole('button', { name: 'Add Codex terminal' }).focus();
-    for (const [key, name, harness] of [['b', 'Terminal', ''], ['o', 'OpenCode', 'opencode'], ['p', 'Pi', 'pi'], ['a', 'Antigravity', 'agy'], ['c', 'Codex', 'codex']]) {
+    for (const [key, noun, harness] of [['b', 'plain terminal', ''], ['o', 'OpenCode terminal', 'opencode'], ['p', 'Pi terminal', 'pi'], ['a', 'Antigravity terminal', 'agy'], ['c', 'Codex terminal', 'codex']]) {
       await user.keyboard(key);
-      expect(screen.getByLabelText(`${name} terminal count`)).toHaveTextContent('4');
+      expect(screen.getByLabelText(`${noun} count`)).toHaveTextContent('4');
       await user.click(screen.getByRole('button', { name: 'Launch Workspace' }));
       expect(mockOnSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ harness }));
     }
@@ -814,7 +814,7 @@ describe('WorkspaceGateContent', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Alpha, alpha.example' }));
       await screen.findByRole('textbox', { name: 'Remote Directory Path' });
       if (withPlan) {
-        await waitFor(() => expect(screen.getByRole('button', { name: 'Add Terminal terminal' })).toBeEnabled());
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Add plain terminal' })).toBeEnabled());
         fireEvent.keyDown(window, { key: '4' });
       }
     }
@@ -940,9 +940,9 @@ describe('WorkspaceGateContent', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Alpha, alpha.example' }));
       await screen.findByText('/home/alpha/workspaces/');
       fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
-      fireEvent.click(await screen.findByRole('button', { name: 'clanker-test' }));
+      fireEvent.doubleClick(await screen.findByRole('option', { name: 'clanker-test' }));
       await waitFor(() => expect(window.electronAPI.sshListDirectories).toHaveBeenLastCalledWith('alpha', '/home/alpha/workspaces/clanker-test'));
-      fireEvent.click(screen.getByRole('button', { name: 'Select this directory' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Select folder' }));
       expect(screen.getByLabelText('Remote Directory Path')).toHaveValue('clanker-test');
       expect(screen.getByText('/home/alpha/workspaces/')).toBeTruthy();
     });
@@ -1260,23 +1260,24 @@ describe('WorkspaceGateContent', () => {
       await waitFor(() => expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe(''));
       fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
       expect(within(screen.getByRole('dialog', { name: 'Browse remote directories' })).getByRole('status')).toHaveTextContent('Loading directories');
-      expect(screen.getByRole('button', { name: 'Select this directory' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Select folder' })).toBeDisabled();
       await act(async () => resolveFirst({ path: '/home/alpha/workspaces', parentPath: '/home/alpha', directories: [{ name: 'project', path: '/canonical/project' }, { name: 'srv', path: '/srv' }] }));
-      fireEvent.click(screen.getByRole('button', { name: 'srv' }));
+      fireEvent.doubleClick(screen.getByRole('option', { name: 'srv' }));
       expect(await screen.findByRole('alert')).toHaveTextContent('Permission denied');
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
       fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
-      await screen.findByRole('button', { name: 'project' });
+      await screen.findByRole('option', { name: 'project' });
       fireEvent.keyDown(screen.getByRole('dialog', { name: 'Browse remote directories' }), { key: 'ArrowDown' });
-      const projectButton = screen.getByRole('button', { name: 'project' });
+      const projectButton = screen.getByRole('option', { name: 'project' });
       expect(document.activeElement).toBe(projectButton);
       await userEvent.keyboard('{Enter}');
       await waitFor(() => expect(screen.getByText('/canonical/project')).toBeTruthy());
       fireEvent.keyDown(screen.getByRole('dialog', { name: 'Browse remote directories' }), { key: 'Backspace' });
       await waitFor(() => expect(screen.getByText('/home/alpha/workspaces')).toBeTruthy());
-      fireEvent.click(screen.getByRole('button', { name: 'project' }));
+      // A single click highlights the folder; Select then chooses it.
+      fireEvent.click(screen.getByRole('option', { name: 'project' }));
       await waitFor(() => expect(screen.getByText('/canonical/project')).toBeTruthy());
-      fireEvent.click(screen.getByRole('button', { name: 'Select this directory' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Select folder' }));
       expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe('/canonical/project');
       fireEvent.click(screen.getByRole('button', { name: 'Launch Workspace' }));
       expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({ path: '/canonical/project', environmentId: 'alpha' }));
@@ -1301,7 +1302,7 @@ describe('WorkspaceGateContent', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Create' }));
       await waitFor(() => expect(window.electronAPI.sshCreateDirectory).toHaveBeenCalledWith('alpha', '/home/alpha/workspaces', 'my-app'));
       await waitFor(() => expect(screen.getByText('/canonical/my-app')).toBeTruthy());
-      fireEvent.click(screen.getByRole('button', { name: 'Select this directory' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Select folder' }));
       expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe('/canonical/my-app');
     });
 
@@ -1316,10 +1317,10 @@ describe('WorkspaceGateContent', () => {
       await selectRemote();
       await waitFor(() => expect((screen.getByRole('textbox', { name: 'Remote Directory Path' }) as HTMLInputElement).value).toBe(''));
       fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
-      fireEvent.click(await screen.findByRole('button', { name: 'old' }));
+      fireEvent.doubleClick(await screen.findByRole('option', { name: 'old' }));
       fireEvent.keyDown(screen.getByRole('dialog', { name: 'Browse remote directories' }), { key: 'Escape' });
       fireEvent.click(screen.getByRole('button', { name: 'Browse remote directories' }));
-      fireEvent.click(await screen.findByRole('button', { name: 'new' }));
+      fireEvent.doubleClick(await screen.findByRole('option', { name: 'new' }));
       await waitFor(() => expect(screen.getByText('/new')).toBeTruthy());
       await act(async () => resolveOld({ path: '/old', parentPath: '/', directories: [] }));
       expect(screen.getByText('/new')).toBeTruthy();
@@ -1359,7 +1360,7 @@ describe('WorkspaceGateContent', () => {
       fireEvent.submit(form);
       fireEvent.submit(form);
       expect(window.electronAPI.sshCreateDirectory).toHaveBeenCalledTimes(1);
-      expect(screen.getByRole('button', { name: 'Select this directory' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Select folder' })).toBeDisabled();
       await act(async () => resolveCreate({ path: '/home/alpha/workspaces/once' }));
       await waitFor(() => expect(screen.getByText('/home/alpha/workspaces/once')).toBeTruthy());
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));

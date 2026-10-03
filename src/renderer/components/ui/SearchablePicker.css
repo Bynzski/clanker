@@ -1,4 +1,4 @@
-.clanker-searchable-picker { width: 320px; display: flex; flex-direction: column; overflow: hidden; padding: 4px; font-size: 12px; animation: searchable-picker-reveal 140ms ease-out; }
+.clanker-searchable-picker { width: 320px; display: flex; flex-direction: column; overflow: hidden; padding: 4px; font-size: var(--font-size-md); animation: searchable-picker-reveal 140ms ease-out; }
 .searchable-picker-search { display: flex; align-items: center; gap: 7px; padding: 8px; color: var(--text-muted); border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
 .searchable-picker-search input { flex: 1; min-width: 0; }
 .searchable-picker-results { max-height: 300px; overflow-y: auto; min-height: 0; padding: 4px 0; }

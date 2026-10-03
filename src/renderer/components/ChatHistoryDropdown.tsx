@@ -149,7 +149,7 @@ export default function ChatHistoryDropdown({
     <div className="chat-history-dropdown">
       {sessionLaunchError && <div className="chat-history-empty" role="alert">{sessionLaunchError}</div>}
       {isLoading ? (
-        <div className="chat-history-empty">Loading sessions...</div>
+        <div className="chat-history-empty">Loading sessions…</div>
       ) : discoveryError ? (
         <div className="chat-history-empty" role="alert">{discoveryError}</div>
       ) : sessions.length === 0 ? (

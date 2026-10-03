@@ -15,7 +15,7 @@
   color: var(--text-primary);
   background: color-mix(in srgb, var(--status-error) 18%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--status-error) 45%, transparent);
-  font-size: 12px;
+  font-size: var(--font-size-md);
 }
 
 .recipe-workspace-error ul { margin: 4px 0 0; padding-left: 18px; }
@@ -37,7 +37,7 @@
   min-width: 0;
   min-height: 0;
   color: var(--text-on-emphasis);
-  font-size: 13px;
+  font-size: var(--font-size-lg);
   letter-spacing: 0.02em;
   border: 1px dashed color-mix(in srgb, var(--accent-interactive) 18%, transparent);
   border-radius: var(--radius-sm);
@@ -107,12 +107,12 @@
   min-height: 0;
   gap: var(--space-sm);
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--font-size-lg);
   text-align: center;
 }
 
 .workspace-error-fallback .error-detail {
-  font-size: 12px;
+  font-size: var(--font-size-md);
   color: var(--text-secondary);
   max-width: 400px;
   word-break: break-word;
@@ -121,14 +121,14 @@
 .workspace-error-fallback button {
   margin-top: var(--space-sm);
   padding: 8px 16px;
-  font-size: 13px;
+  font-size: var(--font-size-lg);
   font-weight: 500;
   color: var(--text-primary);
   background: var(--surface-control);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--transition);
 }
 
 .workspace-error-fallback button:hover {

@@ -97,7 +97,7 @@ export default function ProviderMenu({
 
   return (
     <div className="provider-menu-container" ref={menuRef}>
-      <Button
+      <Button size="xs"
         type="button"
         className="provider-menu-trigger"
         onClick={() => setIsOpen(!isOpen)}
@@ -122,7 +122,7 @@ export default function ProviderMenu({
             <span className="provider-repo-name">
               {provider.owner}/{provider.repo}
             </span>
-            <IconButton aria-label="Refresh"
+            <IconButton size="xs" variant="ghost" aria-label="Refresh"
               type="button"
               className="provider-menu-refresh"
               onClick={handleRefresh}

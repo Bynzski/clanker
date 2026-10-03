@@ -6,9 +6,9 @@
   background: var(--surface-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--shadow-color) 30%, transparent);
+  box-shadow: var(--shadow-popover);
   z-index: 1000;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
 }
 
 .chat-history-empty {
@@ -37,7 +37,7 @@
   text-align: left;
   cursor: pointer;
   transition: background var(--transition);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
 }
 
 .chat-history-harness-header:hover {
@@ -53,7 +53,7 @@
 .chat-history-harness-label {
   flex: 1;
   font-weight: 600;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-secondary);
@@ -61,16 +61,16 @@
 
 .chat-history-harness-count {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   background: var(--surface-control);
   padding: 1px 5px;
-  border-radius: 8px;
+  border-radius: 999px;
 }
 
 .chat-history-harness-chevron {
   flex-shrink: 0;
-  font-size: 8px;
+  font-size: var(--font-size-2xs);
   color: var(--text-secondary);
   transition: transform var(--transition);
 }
@@ -89,7 +89,7 @@
 .chat-history-harness-empty {
   padding: 8px 12px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-style: italic;
 }
 
@@ -107,7 +107,7 @@
   text-align: left;
   cursor: pointer;
   transition: background var(--transition);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
 }
 
 .chat-history-session:last-child {
@@ -130,5 +130,5 @@
 .chat-history-session-time {
   flex-shrink: 0;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }

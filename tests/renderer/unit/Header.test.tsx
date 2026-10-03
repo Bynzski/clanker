@@ -48,6 +48,7 @@ describe('Header', () => {
   });
   beforeEach(() => {
     vi.clearAllMocks();
+    useWorkspaceNavigationStore.setState({ mode: 'tabs' });
     useWorkspaceStore.setState({
       workspacePath: '/workspace',
       activeWorkspaceId: 'ws-1',
@@ -181,27 +182,31 @@ describe('Header', () => {
       expect(screen.queryByText('Fit All Panes')).toBeNull();
     });
 
-    it('renders static browser toggle button', () => {
+    it('renders icon-only panel toggles grouped with the right-hand controls', () => {
       renderHeader();
-      expect(screen.getByText('Browser')).toBeTruthy();
+      const panels = screen.getByRole('group', { name: 'Panels' });
+      expect(panels.closest('.header-right')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Toggle browser panel' }).textContent).toBe('');
+      expect(screen.getByRole('button', { name: 'Toggle notes panel' }).textContent).toBe('');
+      expect(screen.queryByText('Browser')).toBeNull();
+      expect(screen.queryByText('Notes')).toBeNull();
     });
 
-    it('renders static explorer toggle button', () => {
+    it('toggles the Explorer dock in tabs mode', () => {
       renderHeader();
-      expect(screen.getByText('Explorer')).toBeTruthy();
+      const button = screen.getByRole('button', { name: 'Toggle File Explorer' });
+      const before = useWorkspaceStore.getState().workspaces[0].explorerVisible;
+      fireEvent.click(button);
+      expect(useWorkspaceStore.getState().workspaces[0].explorerVisible).toBe(!before);
     });
 
-    it('labels the toggle Files in sidebar mode and still toggles the active workspace explorerVisible', () => {
+    it('has no Files toggle in sidebar mode, where FILES lives at the bottom of the sidebar', () => {
       useWorkspaceNavigationStore.setState({ mode: 'sidebar' });
       try {
         renderHeader();
-        expect(screen.queryByText('Explorer')).toBeNull();
-        const button = screen.getByTitle('Toggle Files section');
-        expect(button.textContent).toContain('Files');
-        const before = useWorkspaceStore.getState().workspaces.find((w) => w.id === useWorkspaceStore.getState().activeWorkspaceId)?.explorerVisible;
-        fireEvent.click(button);
-        const after = useWorkspaceStore.getState().workspaces.find((w) => w.id === useWorkspaceStore.getState().activeWorkspaceId)?.explorerVisible;
-        expect(after).toBe(!before);
+        expect(screen.queryByRole('button', { name: 'Toggle File Explorer' })).toBeNull();
+        expect(screen.queryByTitle('Toggle Files section')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Toggle browser panel' })).toBeTruthy();
       } finally {
         useWorkspaceNavigationStore.setState({ mode: 'tabs' });
       }
@@ -377,14 +382,14 @@ describe('Header', () => {
     it('calls toggleBrowser when Browser is clicked', () => {
       const toggleBrowser = useWorkspaceStore.getState().toggleBrowser as ReturnType<typeof vi.fn>;
       renderHeader();
-      fireEvent.click(screen.getByText('Browser'));
+      fireEvent.click(screen.getByRole('button', { name: 'Toggle browser panel' }));
       expect(toggleBrowser).toHaveBeenCalled();
     });
 
     it('calls toggleNotesPane when Notes is clicked', () => {
       const toggleNotesPane = useWorkspaceStore.getState().toggleNotesPane as ReturnType<typeof vi.fn>;
       renderHeader();
-      fireEvent.click(screen.getByText('Notes'));
+      fireEvent.click(screen.getByRole('button', { name: 'Toggle notes panel' }));
       expect(toggleNotesPane).toHaveBeenCalled();
     });
 
@@ -395,7 +400,9 @@ describe('Header', () => {
         )),
       }));
       renderHeader();
-      expect(screen.getByText('Browser').closest('.header-btn')?.classList.contains('active')).toBe(true);
+      const browser = screen.getByRole('button', { name: 'Toggle browser panel' });
+      expect(browser).toHaveClass('active');
+      expect(browser).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('marks notes button active when notes are visible', () => {
@@ -405,7 +412,7 @@ describe('Header', () => {
         )),
       }));
       renderHeader();
-      expect(screen.getByText('Notes').closest('.header-btn')?.classList.contains('active')).toBe(true);
+      expect(screen.getByRole('button', { name: 'Toggle notes panel' })).toHaveClass('active');
     });
 
     it('handles spawnTerminal failure gracefully', async () => {
@@ -472,13 +479,12 @@ describe('Header', () => {
       fireEvent.click(screen.getByTitle('Settings'));
       const dropdown = document.querySelector('.settings-dropdown');
       expect(dropdown?.firstElementChild).toHaveAttribute('aria-label', 'Appearance');
-      const theme = screen.getByRole('combobox', { name: 'Theme' });
-      fireEvent.change(theme, { target: { value: 'light' } });
-      expect(theme).toHaveValue('light');
+      fireEvent.click(screen.getByRole('radio', { name: 'Light' }));
+      expect(screen.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true');
       expect(document.querySelector('.settings-dropdown')).toBe(dropdown);
       expect(screen.getByText('AI commit messages')).toBeVisible();
-      fireEvent.change(theme, { target: { value: 'dark' } });
-      expect(theme).toHaveValue('dark');
+      fireEvent.click(screen.getByRole('radio', { name: 'Dark' }));
+      expect(screen.getByRole('radio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
       expect(document.querySelector('.settings-dropdown')).toBe(dropdown);
     });
 
@@ -563,9 +569,9 @@ describe('Header', () => {
       fireEvent.click(screen.getByTitle('Settings'));
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       const selects = screen.getAllByRole('combobox');
-      expect(selects.length).toBe(4); // Theme, Workspace navigation, Provider and Model
-      expect(screen.getByRole('combobox', { name: 'Theme' })).toBeTruthy();
-      expect(screen.getByRole('combobox', { name: 'Workspace navigation' })).toBeTruthy();
+      expect(selects.length).toBe(2); // Provider and Model; Appearance uses radio groups
+      expect(screen.getByRole('radiogroup', { name: 'Theme' })).toBeTruthy();
+      expect(screen.getByRole('radiogroup', { name: 'Workspaces' })).toBeTruthy();
     });
 
     it('uses shared settings selects and persists provider/model selection', async () => {
@@ -634,7 +640,7 @@ describe('Header', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: /AI commit messages/i }));
       // Should show loading state
       await waitFor(() => {
-        expect(screen.getByText('Loading models...')).toBeTruthy();
+        expect(screen.getByText('Loading models…')).toBeTruthy();
         expect(screen.getByRole('combobox', { name: 'AI commit model' })).toBeDisabled();
       });
       // Resolve the promise
@@ -726,17 +732,33 @@ describe('Header', () => {
   // Harness Validation
   // =========================================================================
   describe('harness validation', () => {
-    it('resets harness when current harness is not available', async () => {
+    const selectHarness = (harness: string) => useWorkspaceStore.setState({
+      workspaces: useWorkspaceStore.getState().workspaces.map((workspace) => ({ ...workspace, harness })),
+    });
+
+    it('resets harness once discovery succeeds and proves it is not available', async () => {
       const setHarness = useWorkspaceStore.getState().setHarness as ReturnType<typeof vi.fn>;
-      useWorkspaceStore.setState({ harness: 'claude' }); // claude not in default options
+      selectHarness('claude'); // discovery below reports claude as not installed
       renderHeader();
-      await waitFor(() => {
-        expect(window.electronAPI.getHarnessOptions).toHaveBeenCalled();
-      });
-      // claude should be reset because it's not in available list
       await waitFor(() => {
         expect(setHarness).toHaveBeenCalledWith('');
       });
+    });
+
+    it('keeps the selected harness while discovery is pending or has failed', async () => {
+      const setHarness = useWorkspaceStore.getState().setHarness as ReturnType<typeof vi.fn>;
+      const getOptions = window.electronAPI.getHarnessOptions as unknown as ReturnType<typeof vi.fn>;
+      selectHarness('claude');
+      getOptions.mockReturnValue(new Promise(() => undefined));
+      const pending = renderHeader();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(setHarness).not.toHaveBeenCalled();
+      pending.unmount();
+      getOptions.mockRejectedValue(new Error('unreachable'));
+      renderHeader();
+      await waitFor(() => expect(getOptions).toHaveBeenCalledTimes(2));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(setHarness).not.toHaveBeenCalled();
     });
 
     it('handles harness validation effect', async () => {

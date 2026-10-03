@@ -27,7 +27,7 @@
   border: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-lg);
   text-align: left;
   cursor: pointer;
   transition: background 100ms ease-out;

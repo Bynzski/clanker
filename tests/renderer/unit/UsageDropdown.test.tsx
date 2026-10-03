@@ -29,8 +29,8 @@ describe('UsageDropdown', () => {
 
   it('shows an empty state and nothing else when no usage providers are selected', () => {
     const { container } = renderPanel({}, { harnessIds: [] });
-    expect(screen.getByText('No usage providers selected')).toBeInTheDocument();
-    expect(screen.getByText('Enable providers in Settings → Harness Defaults.')).toBeInTheDocument();
+    expect(screen.getByText('No usage providers available')).toBeInTheDocument();
+    expect(screen.getByText('Install a supported harness here, or enable one in Settings → Harness Defaults.')).toBeInTheDocument();
     expect(container.querySelectorAll('.usage-harness-name')).toHaveLength(0);
     expect(screen.queryByText('Checking usage…')).not.toBeInTheDocument();
   });
@@ -125,13 +125,20 @@ describe('UsageDropdown', () => {
   });
 
   it.each([
-    ['unsupported', 'No supported usage probe', 'muted'], ['not-installed', 'Not installed in this environment', 'muted'],
+    ['unsupported', 'No supported usage probe', 'muted'],
     ['unauthenticated', 'Not signed in', 'warning'], ['unavailable', 'Usage temporarily unavailable', 'warning'], ['error', 'Usage could not be read', 'error'],
   ] as const)('shows the %s state with its tone', (status, text, tone) => {
     renderPanel({ opencode: entry('opencode', { status, error: text }) });
     const note = within(section('OpenCode')).getByText(text);
     expect(note).toHaveClass(`usage-status-${tone}`);
   });
+  it('hides a harness that is not installed in this environment instead of listing it', () => {
+    renderPanel({ hermes: entry('hermes'), opencode: entry('opencode', { status: 'not-installed', error: 'Not installed in this environment', measurements: [] }) });
+    expect(section('Hermes')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'OpenCode' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Not installed in this environment')).not.toBeInTheDocument();
+  });
+
   it('falls back to default status copy when the entry carries no text', () => {
     renderPanel({ opencode: entry('opencode', { status: 'unauthenticated' }) });
     expect(within(section('OpenCode')).getByText('Not signed in')).toBeInTheDocument();

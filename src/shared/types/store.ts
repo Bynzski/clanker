@@ -61,6 +61,8 @@ export interface StoreSchema {
   theme: ThemeId;
   workspaceNavigationMode?: WorkspaceNavigationMode;
   workspaceSidebarWidth?: number;
+  /** Last non-collapsed sidebar width, kept while the rail is shown so Expand can restore it. */
+  workspaceSidebarExpandedWidth?: number;
   lastWorkspace: string;
   baseDirectory: string;
   aiCommitEnabled: boolean;

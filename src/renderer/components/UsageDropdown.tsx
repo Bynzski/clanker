@@ -20,9 +20,8 @@ interface Props {
   onRefresh: () => void;
 }
 
-const STATUS_TEXT: Record<Exclude<HarnessUsageStatus, 'ok'>, string> = {
+const STATUS_TEXT: Record<Exclude<HarnessUsageStatus, 'ok' | 'not-installed'>, string> = {
   unsupported: 'No supported usage probe',
-  'not-installed': 'Not installed in this environment',
   unauthenticated: 'Not signed in',
   unavailable: 'Usage temporarily unavailable',
   error: 'Usage could not be read',
@@ -39,6 +38,8 @@ function refreshTitle(refreshing: boolean, canRefresh: boolean, nextAt: number |
 
 export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSelectAccount, onManageAccounts, pending, refreshing, now, canRefresh, nextManualRefreshAt, onRefresh }: Props) {
   const title = refreshTitle(refreshing, canRefresh, nextManualRefreshAt, now);
+  // A harness missing from this environment is hidden, as everywhere else, rather than listed as absent.
+  const shownIds = harnessIds.filter((id) => entries[id]?.status !== 'not-installed');
   return (
     <div className="usage-dropdown">
       <div className="usage-header">
@@ -47,13 +48,13 @@ export default function UsageDropdown({ harnessIds, entries, otherAccounts, onSe
           <RefreshCw size={12} strokeWidth={2} className={refreshing ? 'usage-spin' : undefined} />
         </button>
       </div>
-      {harnessIds.length === 0 && (
+      {shownIds.length === 0 && (
         <div className="usage-harness">
-          <p className="usage-note">No usage providers selected</p>
-          <p className="usage-checked">Enable providers in Settings → Harness Defaults.</p>
+          <p className="usage-note">No usage providers available</p>
+          <p className="usage-checked">Install a supported harness here, or enable one in Settings → Harness Defaults.</p>
         </div>
       )}
-      {harnessIds.map((id) => {
+      {shownIds.map((id) => {
         const option = HARNESS_OPTIONS.find((candidate) => candidate.id === id)!;
         const primary = entries[id];
         return (
@@ -85,7 +86,7 @@ function HarnessSection({ label, Icon, entry, checking, now, onUse }: {
   const single = groups.length === 1 ? groups[0] : undefined;
   const meta = single ? groupMeta(single) : '';
   const stale = entry?.stale === true && (entry?.measurements.length ?? 0) > 0;
-  const statusText = entry && entry.status !== 'ok' ? (entry.error ?? STATUS_TEXT[entry.status]) : undefined;
+  const statusText = entry && entry.status !== 'ok' && entry.status !== 'not-installed' ? (entry.error ?? STATUS_TEXT[entry.status]) : undefined;
   return (
     <section className="usage-harness" aria-label={label} aria-busy={checking}>
       <div className="usage-harness-header">
