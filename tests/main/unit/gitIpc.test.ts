@@ -247,7 +247,7 @@ describe('registerGitIpc', () => {
     });
   });
 
-  test('registers exactly 39 git IPC handlers', () => {
+  test('registers exactly 40 git IPC handlers', () => {
     const mockGitService = createMockGitService();
 
     registerGitIpc({
@@ -256,7 +256,7 @@ describe('registerGitIpc', () => {
     });
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(39);
+    expect(handleCalls.length).toBe(40);
   });
 
   test('validates worktree paths and returns POSIX paths across IPC', async () => {
@@ -306,7 +306,7 @@ describe('registerGitIpc', () => {
     });
 
     const handleCalls = mockIpcMain.handle.mock.calls;
-    expect(handleCalls.length).toBe(78);
+    expect(handleCalls.length).toBe(80);
   });
 
   test('git-stop-polling calls gitService.stopPolling', async () => {
@@ -1180,6 +1180,54 @@ describe('Git IPC workspace identity routing', () => {
       const { remote, handle } = setup();
       await expect(handle('git-prune-worktrees')(null, workspacePath, 'nope')).rejects.toThrow('no longer registered');
       await expect(handle('git-unlock-worktree')(null, workspacePath, '/srv/x', 'nope')).rejects.toThrow('no longer registered');
+      expect(remote.execGit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('explicit worktree adoption on SSH', () => {
+    const MAIN = 'worktree /srv/repo\0branch refs/heads/main\0\0';
+    const TASK = 'worktree /srv/Repo-task\0branch refs/heads/task\0\0';
+    const LOCKED = 'worktree /srv/Repo-locked\0branch refs/heads/locked\0locked\0\0';
+    const GONE = 'worktree /srv/Repo-gone\0branch refs/heads/gone\0prunable gone\0\0';
+    const wire = (remote: ReturnType<typeof setup>['remote'], list: string) => {
+      remote.execGit.mockImplementation(async (_cwd: string, args: string[]) =>
+        ({ stdout: args[0] === 'worktree' && args[1] === 'list' ? list : '', stderr: '' }));
+    };
+
+    test('registers the listed linked worktree as its own validated context without widening the workspace root', async () => {
+      const { remote, registry, handle } = setup();
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, MAIN + TASK);
+
+      const result = await handle('adopt-worktree-checkout-context')(null, 'ssh-tab', '/srv/Repo-task') as { success: boolean; checkoutContext?: Record<string, unknown> };
+
+      expect(result.success).toBe(true);
+      expect(result.checkoutContext).toMatchObject({ workspaceId: 'ssh-tab', environmentId: 'ssh', kind: 'worktree', branch: 'task', path: '/srv/Repo-task', mainCheckoutPath: '/srv/repo' });
+      // Validated independently through the environment, as its own root.
+      expect(remote.validateWorkspacePath).toHaveBeenCalledWith('/srv/Repo-task');
+      expect(registry.getWorkspace('ssh-tab')!.location.path).toBe(workspacePath);
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab').map((entry) => entry.path)).toEqual([workspacePath, '/srv/Repo-task']);
+      // Read-only on the host: only the worktree list ran.
+      expect(remote.execGit.mock.calls.every(([, args]) => args[0] === 'worktree' && args[1] === 'list')).toBe(true);
+    });
+
+    test.each([
+      ['the main checkout', '/srv/repo'],
+      ['an unlisted path', '/srv/elsewhere'],
+      ['a locked worktree', '/srv/Repo-locked'],
+      ['a missing worktree', '/srv/Repo-gone'],
+      ['a path that only normalizes to a listed one', '/srv/x/../Repo-task'],
+    ])('rejects %s', async (_label, target) => {
+      const { remote, registry, handle } = setup();
+      await handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
+      wire(remote, MAIN + TASK + LOCKED + GONE);
+      expect(await handle('adopt-worktree-checkout-context')(null, 'ssh-tab', target)).toMatchObject({ success: false });
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab')).toHaveLength(1);
+    });
+
+    test('an unregistered workspace identity is rejected before any host command', async () => {
+      const { remote, handle } = setup();
+      await expect(handle('adopt-worktree-checkout-context')(null, 'nope', '/srv/Repo-task')).rejects.toThrow('no longer registered');
       expect(remote.execGit).not.toHaveBeenCalled();
     });
   });

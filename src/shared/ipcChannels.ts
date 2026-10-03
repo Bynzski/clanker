@@ -116,6 +116,7 @@ export const GIT_UNLOCK_WORKTREE = 'git-unlock-worktree';
 export const REGISTER_OPEN_WORKSPACE = 'register-open-workspace';
 export const UNREGISTER_OPEN_WORKSPACE = 'unregister-open-workspace';
 export const RELEASE_CHECKOUT_CONTEXT = 'release-checkout-context';
+export const ADOPT_WORKTREE_CHECKOUT_CONTEXT = 'adopt-worktree-checkout-context';
 export const GIT_GET_OPERATION_STATE = 'git-get-operation-state';
 export const GIT_GET_STASHES = 'git-get-stashes';
 export const GIT_GET_HISTORY = 'git-get-history';
@@ -372,6 +373,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   REGISTER_OPEN_WORKSPACE,
   UNREGISTER_OPEN_WORKSPACE,
   RELEASE_CHECKOUT_CONTEXT,
+  ADOPT_WORKTREE_CHECKOUT_CONTEXT,
   GIT_GET_OPERATION_STATE,
   GIT_GET_STASHES,
   GIT_GET_HISTORY,

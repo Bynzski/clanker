@@ -45,7 +45,7 @@ import { mainCheckoutContextId } from '../../../src/shared/checkoutContext';
 import { toPosixPath } from '../../../src/shared/pathNormalize';
 import {
   REGISTER_OPEN_WORKSPACE, SPAWN_TERMINAL, GIT_CREATE_WORKTREE, GIT_LIST_WORKTREES,
-  RELEASE_CHECKOUT_CONTEXT, GIT_INSPECT_WORKTREE, GIT_REMOVE_WORKTREE, KILL_TERMINAL,
+  RELEASE_CHECKOUT_CONTEXT, GIT_INSPECT_WORKTREE, GIT_REMOVE_WORKTREE, KILL_TERMINAL, ADOPT_WORKTREE_CHECKOUT_CONTEXT,
 } from '../../../src/shared/ipcChannels';
 import type { CheckoutContext, ReleaseCheckoutContextResult } from '../../../src/shared/types/checkoutContext';
 import type { GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult, GitWorktreeRemoveResult } from '../../../src/shared/types/git';
@@ -414,3 +414,117 @@ describe('releasing and removing a worktree checkout (local, real Git)', () => {
 function gitIn(cwd: string, args: string[]): void {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
 }
+
+describe('explicit adoption of an existing linked worktree (local, real Git)', () => {
+  const adopt = (workspaceId: unknown, worktreePath: unknown) =>
+    call<{ success: boolean; checkoutContext?: CheckoutContext; error?: string }>(ADOPT_WORKTREE_CHECKOUT_CONTEXT, workspaceId, worktreePath);
+  let made = 0;
+  /** A worktree created outside Clanker, so no context exists for it. */
+  async function externalWorktree(extraArgs: string[] = []) {
+    const branch = `external-${++made}`;
+    const dir = path.join(root, 'external', branch);
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    await git('worktree', 'add', ...extraArgs, '-b', branch, dir);
+    return { branch, dir };
+  }
+
+  it('adopts a listed linked worktree as a worktree context with main-derived fields', async () => {
+    const main = await openWorkspace();
+    const { branch, dir } = await externalWorktree();
+
+    const result = await adopt('ws', toPosixPath(dir));
+
+    expect(result.success).toBe(true);
+    expect(result.checkoutContext).toMatchObject({
+      workspaceId: 'ws', environmentId: 'local', kind: 'worktree', branch,
+      path: toPosixPath(fs.realpathSync(dir)), mainCheckoutPath: toPosixPath(repo),
+    });
+    expect(registry.getCheckoutContextsForWorkspace('ws').map((entry) => entry.id)).toEqual([main.id, result.checkoutContext!.id]);
+    expect(registry.getAllWorkspaces()).toHaveLength(1);
+    // Idempotent: adopting again returns the same context rather than a second one.
+    expect((await adopt('ws', toPosixPath(dir))).checkoutContext?.id).toBe(result.checkoutContext!.id);
+    expect(registry.getCheckoutContextsForWorkspace('ws')).toHaveLength(2);
+    // And the adopted root is a usable, confined launch root.
+    const terminal = await spawn(dir, 'ws', result.checkoutContext!.id);
+    expect(terminal.checkoutContextId).toBe(result.checkoutContext!.id);
+    expect(fs.realpathSync(spawnedCwd())).toBe(fs.realpathSync(dir));
+  });
+
+  it('registers Git\'s listed path, so a symlinked spelling of the same worktree resolves to its real root', async () => {
+    await openWorkspace();
+    const { dir } = await externalWorktree();
+    const link = path.join(root, `link-${made}`);
+    fs.symlinkSync(dir, link);
+    const result = await adopt('ws', toPosixPath(link));
+    expect(result.success).toBe(true);
+    expect(result.checkoutContext?.path).toBe(toPosixPath(fs.realpathSync(dir)));
+  });
+
+  it.each([
+    ['the main checkout', () => toPosixPath(repo), 'main checkout'],
+    ['a directory Git does not list', () => toPosixPath(root), 'does not list'],
+    ['a subdirectory of a listed worktree', () => '', 'does not list'],
+    ['an empty path', () => '   ', 'Choose a worktree'],
+  ])('rejects %s and registers nothing', async (_label, pick, message) => {
+    await openWorkspace();
+    const { dir } = await externalWorktree();
+    const target = _label === 'a subdirectory of a listed worktree' ? toPosixPath(path.join(dir, '.git')) : pick();
+    const result = await adopt('ws', target);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain(message);
+    expect(registry.getCheckoutContextsForWorkspace('ws')).toHaveLength(1);
+  });
+
+  it('rejects a non-string path and an unknown workspace', async () => {
+    await openWorkspace();
+    expect((await adopt('ws', { path: '/x' })).success).toBe(false);
+    expect((await adopt('ws', undefined)).success).toBe(false);
+    await expect(adopt('nope', toPosixPath(repo))).rejects.toThrow('no longer registered');
+  });
+
+  it('rejects a missing (prunable) worktree and a locked one, with the Git-menu hint', async () => {
+    await openWorkspace();
+    const gone = await externalWorktree();
+    fs.rmSync(gone.dir, { recursive: true, force: true });
+    const missing = await adopt('ws', toPosixPath(gone.dir));
+    expect(missing.success).toBe(false);
+    expect(missing.error).toContain('missing');
+
+    const stuck = await externalWorktree();
+    await git('worktree', 'lock', stuck.dir);
+    const locked = await adopt('ws', toPosixPath(stuck.dir));
+    expect(locked.success).toBe(false);
+    expect(locked.error).toContain('locked');
+    expect(registry.getCheckoutContextsForWorkspace('ws')).toHaveLength(1);
+  });
+
+  it('refuses to adopt the workspace\'s own checkout when the workspace is itself a linked worktree', async () => {
+    const own = await externalWorktree();
+    const opened = await call<{ success: boolean }>(REGISTER_OPEN_WORKSPACE, 'linked', toPosixPath(own.dir));
+    expect(opened.success).toBe(true);
+    const result = await adopt('linked', toPosixPath(own.dir));
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('own checkout');
+    expect(registry.getCheckoutContextsForWorkspace('linked')).toHaveLength(1);
+  });
+
+  it('does not let another repository\'s workspace adopt this repository\'s worktree', async () => {
+    await openWorkspace('ws');
+    const { dir } = await externalWorktree();
+
+    const other = path.join(root, 'other-repo');
+    fs.mkdirSync(other);
+    await execFileAsync('git', ['init', '--initial-branch', 'main'], { cwd: other });
+    await execFileAsync('git', ['config', 'user.name', 'Other'], { cwd: other });
+    await execFileAsync('git', ['config', 'user.email', 'other@example.invalid'], { cwd: other });
+    fs.writeFileSync(path.join(other, 'a.txt'), 'a\n');
+    await execFileAsync('git', ['add', 'a.txt'], { cwd: other });
+    await execFileAsync('git', ['commit', '-m', 'init'], { cwd: other });
+    expect((await call<{ success: boolean }>(REGISTER_OPEN_WORKSPACE, 'foreign', toPosixPath(other))).success).toBe(true);
+
+    const result = await adopt('foreign', toPosixPath(dir));
+    expect(result.success).toBe(false);
+    expect(registry.getCheckoutContextsForWorkspace('foreign')).toHaveLength(1);
+    expect(registry.getCheckoutContextsForWorkspace('ws')).toHaveLength(1);
+  });
+});

@@ -74,13 +74,13 @@ describe('isolated agents from the toolbar', () => {
 
   async function openPopover() {
     await user.click(await screen.findByRole('button', { name: 'New isolated agent' }));
-    return screen.findByLabelText('Task branch');
+    return screen.findByLabelText('New branch');
   }
   async function submit(branch = 'issue-90-x', harness?: string) {
     const input = await openPopover();
-    if (harness) await user.selectOptions(screen.getByLabelText('Harness'), harness);
+    if (harness) await user.click(screen.getByRole('radio', { name: new RegExp('^' + harness + '$', 'i') }));
     await user.type(input, branch);
-    await user.click(screen.getByRole('button', { name: 'Create isolated agent' }));
+    await user.click(screen.getByRole('button', { name: /^Launch/ }));
   }
 
   describe('ordinary agents are untouched', () => {
@@ -95,21 +95,23 @@ describe('isolated agents from the toolbar', () => {
       expect(spawnTerminal).toHaveBeenCalledExactlyOnceWith(ROOT, 'codex', undefined);
       expect(gitCreateWorktree).not.toHaveBeenCalled();
       expect(gitGetBranchState).not.toHaveBeenCalled();
-      expect(screen.queryByLabelText('Task branch')).toBeNull();
+      expect(screen.queryByLabelText('New branch')).toBeNull();
       expect(workspace().terminals[0].checkoutContextId).toBe(mainCheckoutContextId('ws'));
       expect(workspace().checkoutContexts).toHaveLength(1);
     });
   });
 
   describe('availability', () => {
-    it('is present for a Git project and offers only the harness and the task branch', async () => {
+    it('is present for a Git project and offers the harness icons and a working copy, never a model', async () => {
       openWorkspace();
       render(<Header />);
       const branch = await openPopover();
 
       expect(branch).toBeTruthy();
       const popover = branch.closest('form') as HTMLElement;
-      expect(within(popover).getAllByRole('combobox')).toHaveLength(1);
+      expect(within(popover).queryAllByRole('combobox')).toHaveLength(0);
+      expect(within(popover).getAllByRole('radio').map((el) => el.getAttribute('title'))).toEqual(['Terminal', 'Codex', 'Claude']);
+      expect(popover.querySelectorAll('.isolated-agent-harnesses svg, .isolated-agent-harnesses img').length).toBe(3);
       expect(within(popover).getAllByRole('textbox')).toHaveLength(1);
       expect(within(popover).queryByText(/base/i)).toBeNull();
       expect(within(popover).queryByText(/path/i)).toBeNull();
@@ -123,7 +125,7 @@ describe('isolated agents from the toolbar', () => {
 
       expect(button).toBeDisabled();
       await user.click(button);
-      expect(screen.queryByLabelText('Task branch')).toBeNull();
+      expect(screen.queryByLabelText('New branch')).toBeNull();
     });
 
     it('is not offered from a legacy linked-worktree workspace', async () => {
@@ -151,7 +153,7 @@ describe('isolated agents from the toolbar', () => {
       expect(spawnTerminal).toHaveBeenCalledExactlyOnceWith(WORKTREE, 'codex', undefined, undefined, undefined, 'ws', 'local', 'ws::ckt-x');
       expect(workspace().terminals[0]).toMatchObject({ workspaceId: 'ws', workingDir: WORKTREE, checkoutContextId: 'ws::ckt-x' });
       // Closed on success, and still one workspace that was never registered a second time.
-      await waitFor(() => expect(screen.queryByLabelText('Task branch')).toBeNull());
+      await waitFor(() => expect(screen.queryByLabelText('New branch')).toBeNull());
       expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
       expect(registerOpenWorkspace).not.toHaveBeenCalled();
       expect(workspace().workspacePath).toBe(ROOT);
@@ -217,7 +219,7 @@ describe('isolated agents from the toolbar', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent('Branch name is invalid');
       expect(spawnTerminal).not.toHaveBeenCalled();
       expect(workspace().checkoutContexts).toHaveLength(1);
-      expect(screen.getByLabelText('Task branch')).toBeTruthy();
+      expect(screen.getByLabelText('New branch')).toBeTruthy();
     });
 
     it('reports a created-but-unattached worktree, launches no terminal, and deletes nothing', async () => {

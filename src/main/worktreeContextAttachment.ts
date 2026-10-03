@@ -1,7 +1,8 @@
 import * as fs from 'node:fs';
 import type { GitWorktreeCreateResult, GitWorktreeListResult } from '../shared/types/git';
+import type { AdoptWorktreeCheckoutContextResult } from '../shared/types/checkoutContext';
 import { LOCAL_ENVIRONMENT_ID } from '../shared/types/environments';
-import { toPosixPath } from '../shared/pathNormalize';
+import { toNativePath, toPosixPath } from '../shared/pathNormalize';
 import { isSameWorkspaceIdentity } from '../shared/workspaceIdentity';
 import type { RegisteredWorkspace, WorkspaceRegistry } from './workspaceRegistry';
 
@@ -66,5 +67,61 @@ export async function attachCreatedWorktree(params: {
     return { ...created, worktree: { ...worktree, path: createdPath }, checkoutContext: registration.checkoutContext };
   } catch (error) {
     return partial(error instanceof Error ? error.message : 'the checkout could not be registered');
+  }
+}
+
+/**
+ * Explicitly adopts an existing linked worktree as a `worktree` checkout context. The caller names
+ * only a path; it is accepted solely if Git's own listing for this workspace's repository contains
+ * it as a usable linked worktree, and the registered root is Git's listed path (never the caller's
+ * string), validated again by the workspace's environment. Fails closed for the main checkout, the
+ * workspace's own root, missing (prunable) and locked entries, and anything Git does not list.
+ * Idempotent: an already registered root returns its existing context.
+ */
+export async function adoptListedWorktree(params: {
+  registry: WorkspaceRegistry;
+  workspace: RegisteredWorkspace;
+  worktreePath: unknown;
+  listWorktrees: () => Promise<GitWorktreeListResult>;
+}): Promise<AdoptWorktreeCheckoutContextResult> {
+  const { registry, workspace, worktreePath, listWorktrees } = params;
+  const fail = (error: string): AdoptWorktreeCheckoutContextResult => ({ success: false, error });
+  if (typeof worktreePath !== 'string' || !worktreePath.trim()) return fail('Choose a worktree to use');
+
+  const environmentId = workspace.location.environmentId;
+  const isLocal = environmentId === LOCAL_ENVIRONMENT_ID;
+  const comparable = (entryPath: string): string => {
+    if (!isLocal) return entryPath;
+    try { return toPosixPath(fs.realpathSync.native(toNativePath(entryPath, process.platform))); } catch { return toPosixPath(entryPath); }
+  };
+
+  try {
+    const listing = await listWorktrees();
+    if (!listing.success) return fail(listing.error || 'Git could not list the repository worktrees');
+    const requested = { environmentId, path: comparable(worktreePath) };
+    const listed = listing.worktrees.find((entry) =>
+      isSameWorkspaceIdentity({ environmentId, path: comparable(entry.path) }, requested));
+    if (!listed) return fail('Git does not list that path as a worktree of this repository');
+    if (listed.isMain) return fail('The main checkout cannot be used as an isolated worktree');
+    if (isSameWorkspaceIdentity({ environmentId, path: comparable(listed.path) }, { environmentId, path: comparable(workspace.location.path) })) {
+      return fail('That checkout is already this workspace\'s own checkout');
+    }
+    if (listed.isPrunable) return fail('That worktree\'s directory is missing; prune it from the Git menu');
+    if (listed.isLocked) return fail('That worktree is locked; unlock it from the Git menu first');
+
+    const main = listing.worktrees.find((entry) => entry.isMain);
+    const registration = await registry.registerCheckoutContext({
+      workspaceId: workspace.workspaceId,
+      path: toPosixPath(listed.path),
+      kind: 'worktree',
+      branch: listed.branch ?? undefined,
+      mainCheckoutPath: main?.path,
+    });
+    if (!registration.success || !registration.checkoutContext) {
+      return fail(registration.error || 'The checkout could not be registered');
+    }
+    return { success: true, checkoutContext: registration.checkoutContext };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : 'The checkout could not be registered');
   }
 }

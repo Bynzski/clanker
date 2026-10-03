@@ -133,6 +133,7 @@ import {
   REGISTER_OPEN_WORKSPACE,
   UNREGISTER_OPEN_WORKSPACE,
   RELEASE_CHECKOUT_CONTEXT,
+  ADOPT_WORKTREE_CHECKOUT_CONTEXT,
   GIT_GET_OPERATION_STATE,
   GIT_GET_STASHES,
   GIT_GET_HISTORY,
@@ -408,6 +409,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(REGISTER_OPEN_WORKSPACE, id, workspacePath, environmentId),
   unregisterOpenWorkspace: (id: string) =>
     ipcRenderer.invoke(UNREGISTER_OPEN_WORKSPACE, id),
+  adoptWorktreeCheckoutContext: (workspaceId: string, worktreePath: string) =>
+    ipcRenderer.invoke(ADOPT_WORKTREE_CHECKOUT_CONTEXT, workspaceId, worktreePath),
   releaseCheckoutContext: (workspaceId: string, checkoutContextId: string) =>
     ipcRenderer.invoke(RELEASE_CHECKOUT_CONTEXT, workspaceId, checkoutContextId),
   gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[], workspaceId?: string) =>

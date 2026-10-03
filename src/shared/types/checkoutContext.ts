@@ -46,3 +46,14 @@ export interface ReleaseCheckoutContextResult {
   /** Present when release was refused because Clanker terminals are still using the checkout. */
   activeTerminals?: number;
 }
+
+/**
+ * Outcome of explicitly adopting a listed linked worktree as a checkout context. The renderer only
+ * names a worktree path; main verifies it against Git's own listing and returns the authoritative
+ * context (branch, kind, canonical root and repository relationship all come from main).
+ */
+export interface AdoptWorktreeCheckoutContextResult {
+  success: boolean;
+  checkoutContext?: CheckoutContext;
+  error?: string;
+}

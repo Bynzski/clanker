@@ -8,7 +8,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import * as path from 'path';
 import { GitService, type GitWorkspaceIdentity } from '../gitService';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
-import { attachCreatedWorktree } from '../worktreeContextAttachment';
+import { adoptListedWorktree, attachCreatedWorktree } from '../worktreeContextAttachment';
 import type { GitCreateWorktreeOptions, GitWorktreeCreateResult } from '../../shared/types/git';
 import { RemoteWorktreeCoordinator, type RemoteWorktreeRemovalPersistence } from '../remote/remoteWorktreeCoordinator';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
@@ -26,6 +26,7 @@ import {
   GIT_REMOVE_WORKTREE,
   GIT_PRUNE_WORKTREES,
   GIT_UNLOCK_WORKTREE,
+  ADOPT_WORKTREE_CHECKOUT_CONTEXT,
   REGISTER_OPEN_WORKSPACE,
   UNREGISTER_OPEN_WORKSPACE,
   GIT_GET_OPERATION_STATE,
@@ -122,6 +123,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     [GIT_REMOVE_WORKTREE]: 4,
     [GIT_PRUNE_WORKTREES]: 1,
     [GIT_UNLOCK_WORKTREE]: 2,
+    [ADOPT_WORKTREE_CHECKOUT_CONTEXT]: 0,
     [GIT_PUSH]: 5,
   };
 
@@ -255,6 +257,20 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     // The path only selects an entry; gitService matches it against Git's own list.
     const isRemote = (gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local') !== 'local';
     return gitService.unlockWorktree(safePath, isRemote ? worktreePath : toNativePath(worktreePath, process.platform));
+  });
+
+  // Explicit adoption of one listed linked worktree as a checkout context. The renderer supplies only
+  // the workspace id (position 0, which also scopes Git to that workspace) and a path; everything
+  // else comes from Git's listing and the workspace environment. There is no generic registration.
+  registerGitHandler(ADOPT_WORKTREE_CHECKOUT_CONTEXT, async (_, workspaceId: unknown, worktreePath: unknown) => {
+    const ws = typeof workspaceId === 'string' ? resolveWorkspace(workspaceId) : null;
+    const registry = getWorkspaceRegistry?.();
+    if (!ws || !registry) return { success: false, error: 'A registered workspace is required to use a worktree' };
+    const safePath = getValidatedWorkspacePath(ws.location.path);
+    if (!safePath) return { success: false, error: getInvalidWorkspaceResult().error };
+    return adoptListedWorktree({
+      registry, workspace: ws, worktreePath, listWorktrees: () => gitService.listWorktrees(safePath),
+    });
   });
 
   registerGitHandler(GIT_CREATE_WORKTREE,async (_, workspacePath: string, baseRef: string, branch: string, _workspaceId?: string, options?: GitCreateWorktreeOptions) => {
