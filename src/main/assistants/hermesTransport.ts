@@ -28,7 +28,8 @@ export function frameByteLength(data: unknown): number | null {
 }
 
 export class RpcError extends Error {
-  constructor(message: string, readonly code?: number) { super(message); }
+  /** The server's own message, kept for classification (e.g. "already in use") and never shown to the renderer. */
+  constructor(message: string, readonly code?: number, readonly detail = '') { super(message); }
 }
 
 interface Pending {
@@ -74,7 +75,7 @@ export class HermesRpcClient {
     if (!entry) return;
     this.pending.delete(frame.id);
     clearTimeout(entry.timer);
-    if (frame.error) entry.reject(new RpcError('Hermes request failed', typeof frame.error.code === 'number' ? frame.error.code : undefined));
+    if (frame.error) entry.reject(new RpcError('Hermes request failed', typeof frame.error.code === 'number' ? frame.error.code : undefined, typeof frame.error.message === 'string' ? frame.error.message.slice(0, 300) : ''));
     else entry.resolve(frame.result);
   }
 

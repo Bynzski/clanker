@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import {
   DEFAULT_ASSISTANT_SETTINGS,
@@ -21,7 +20,7 @@ import {
   type ServeChild,
   type SpawnServe,
 } from './hermesBackend';
-import { HermesRpcClient, defaultWebSocketFactory, frameByteLength, type WebSocketFactory, type WebSocketLike } from './hermesTransport';
+import { HermesRpcClient, RpcError, defaultWebSocketFactory, frameByteLength, type WebSocketFactory, type WebSocketLike } from './hermesTransport';
 
 export interface HermesBotServiceDeps {
   readSettings(): unknown;
@@ -48,10 +47,14 @@ const PTY_CLOSE_CHILD_EXITED = 4410;
 const PROFILE_SLUG = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const SESSION_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const BOT_ID = /^hermes:[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+/** The one canonical title: (profile, "Bot Chat") is that profile's permanent chat identity in Hermes. */
+export const CANONICAL_CHAT_TITLE = 'Bot Chat';
+const CANONICAL_LIST_LIMIT = 200;
 
 export function isValidBotId(value: unknown): value is string { return typeof value === 'string' && BOT_ID.test(value); }
 
-interface RosterEntry { public: HermesBot; slug: string; sessionId?: string }
+/** `hadCanonical`: the last roster listing positively reported a canonical chat (an empty lookup is then unconfirmed, never a reason to mint). */
+interface RosterEntry { public: HermesBot; slug: string; sessionId?: string; hadCanonical: boolean }
 
 interface PtySession {
   botId: string;
@@ -93,6 +96,7 @@ export class HermesBotService {
   private connectedAt = 0;
   private episodeRestarts = 0;
   private readonly sessions = new Map<string, PtySession>();
+  private readonly opening = new Map<string, Promise<AssistantOpenResult>>();
 
   constructor(private readonly deps: HermesBotServiceDeps) {
     this.fetcher = deps.fetch ?? ((url, init) => fetch(url, init) as ReturnType<FetchLike>);
@@ -367,34 +371,100 @@ export class HermesBotService {
 
   private entry(botId: string): RosterEntry | undefined { return this.roster.find((entry) => entry.public.id === botId); }
 
-  openSurface(botId: unknown): AssistantOpenResult {
-    if (!isValidBotId(botId)) throw new Error('Invalid assistant');
+  /** Open (or reveal) the Assistant's canonical Bot Chat. Concurrent opens of one Bot share one resolution. */
+  openSurface(botId: unknown): Promise<AssistantOpenResult> {
+    if (!isValidBotId(botId)) return Promise.reject(new Error('Invalid assistant'));
     const existing = this.sessions.get(botId);
-    if (existing && (existing.state === 'open' || existing.state === 'connecting')) return { state: existing.state, replay: existing.replay };
+    if (existing && (existing.state === 'open' || existing.state === 'connecting') && existing.socket) return Promise.resolve({ state: existing.state, replay: existing.replay });
+    const inflight = this.opening.get(botId);
+    if (inflight) return inflight;
+    const operation = this.openResolved(botId).finally(() => { if (this.opening.get(botId) === operation) this.opening.delete(botId); });
+    this.opening.set(botId, operation);
+    return operation;
+  }
+
+  private async openResolved(botId: string): Promise<AssistantOpenResult> {
     const entry = this.entry(botId);
-    if (!entry || !this.endpoint || this.state !== 'connected') {
-      if (existing) { existing.state = 'disconnected'; this.publish(); return { state: 'disconnected', replay: existing.replay }; }
+    const rpc = this.rpc;
+    const endpoint = this.endpoint;
+    const previous = this.sessions.get(botId);
+    if (!entry || !endpoint || !rpc || rpc.isClosed || this.state !== 'connected') {
+      if (previous) { previous.state = 'disconnected'; this.publish(); return { state: 'disconnected', replay: previous.replay }; }
       throw new Error('Hermes service is not connected');
     }
-    if (!entry.sessionId) {
-      // No clean public RPC creates the canonical Bot Chat without fabricating history: surface that honestly.
-      const session = existing ?? this.newSession(botId);
-      session.state = 'unavailable';
-      this.sessions.set(botId, session);
-      this.publish();
-      return { state: 'unavailable', replay: '' };
-    }
-    const session = existing ?? this.newSession(botId);
+    const generation = this.generation;
+    const session = previous ?? this.newSession(botId);
+    session.state = 'connecting';
     this.sessions.set(botId, session);
+    this.publish();
+    let sessionId: string;
+    try {
+      sessionId = await this.resolveCanonicalChat(entry, rpc);
+    } catch {
+      // Fail closed: nothing was created on a lookup failure, and no scratch conversation is substituted.
+      if (this.sessions.get(botId) === session && this.current(generation)) { session.state = 'unavailable'; this.publish(); }
+      return { state: 'unavailable', replay: session.replay };
+    }
+    if (!this.current(generation) || this.sessions.get(botId) !== session || !this.endpoint) return { state: session.state, replay: session.replay };
+    entry.sessionId = sessionId;
+    entry.hadCanonical = true;
+    entry.public.canonicalSessionId = sessionId;
     this.attach(session, entry, this.endpoint);
     this.publish();
     return { state: session.state, replay: session.replay };
   }
 
+  /**
+   * The Bot's ONE permanent chat, per Hermes' own contract: the profile's session titled exactly
+   * "Bot Chat". Exact lookup first; a failed lookup, or an empty one when the roster had positively
+   * reported a chat, fails closed. Only a confirmed absence creates, with no model turn: the lazy session
+   * is materialized with `session.title`, and a lost title race adopts the winner. The profile's own
+   * `terminal.cwd` applies — Clanker never passes a workspace cwd.
+   */
+  private async resolveCanonicalChat(entry: RosterEntry, rpc: HermesRpcClient): Promise<string> {
+    const lookup = async (): Promise<string | null> => {
+      const result = await rpc.call('session.list', { profile: entry.slug, title: CANONICAL_CHAT_TITLE, limit: CANONICAL_LIST_LIMIT, include_hidden: true });
+      const rows = result && typeof result === 'object' ? (result as { sessions?: unknown }).sessions : undefined;
+      if (!Array.isArray(rows)) throw new Error('Unexpected session list');
+      for (const row of rows) {
+        if (!row || typeof row !== 'object') continue;
+        const record = row as Record<string, unknown>;
+        const rootTitle = typeof record.root_title === 'string' ? record.root_title.trim() : '';
+        const title = typeof record.title === 'string' ? record.title.trim() : '';
+        if (!(rootTitle === CANONICAL_CHAT_TITLE || (!rootTitle && title === CANONICAL_CHAT_TITLE))) continue;
+        const id = typeof record.resolved_id === 'string' && SESSION_ID.test(record.resolved_id) ? record.resolved_id
+          : typeof record.id === 'string' && SESSION_ID.test(record.id) ? record.id : null;
+        if (id) return id;
+      }
+      return null;
+    };
+    const existing = await lookup();
+    if (existing) return existing;
+    if (entry.hadCanonical) throw new Error('Bot Chat registry could not be confirmed');
+    const created = await rpc.call('session.create', {
+      profile: entry.slug, title: CANONICAL_CHAT_TITLE, hidden: true, follow_profile_config: true,
+    }, 30_000) as { session_id?: unknown; stored_session_id?: unknown } | undefined;
+    const runtime = typeof created?.session_id === 'string' ? created.session_id : '';
+    const stored = typeof created?.stored_session_id === 'string' && SESSION_ID.test(created.stored_session_id) ? created.stored_session_id : '';
+    if (!runtime || !stored) throw new Error('Unexpected session create result');
+    try {
+      await rpc.call('session.title', { session_id: runtime, title: CANONICAL_CHAT_TITLE });
+      return stored;
+    } catch (error) {
+      if (error instanceof RpcError && /already in use/i.test(error.detail)) {
+        const winner = await lookup();
+        if (winner) return winner;
+      }
+      throw error;
+    }
+  }
+
   private newSession(botId: string): PtySession {
     const slug = botId.slice('hermes:'.length);
     return {
-      botId, attach: `clanker-${randomBytes(8).toString('hex')}-${slug}`.slice(0, 120), socket: null, state: 'connecting',
+      // Stable per Bot (not per run): Hermes keys its keep-alive PTY on this, so a reconnect or restart
+      // re-attaches the same chat process instead of stacking a second TUI beside the lingering one.
+      botId, attach: `clanker-assistant-${slug}`, socket: null, state: 'connecting',
       replay: '', decoder: new StringDecoder('utf8'), size: null, generation: 0,
     };
   }
@@ -495,9 +565,10 @@ export class HermesBotService {
 }
 
 /**
- * `profiles.list` is the roster authority. Only profiles carrying Hermes' Bot Mode marker
- * (`ui_meta["hermes-bots"]`) and not hidden are Assistants; `default` appears only if it carries it.
- * Routing uses the raw slug; display uses the Bot title, then the profile display name, then the slug.
+ * `profiles.list` is the roster authority: every valid local Hermes profile EXCEPT the raw `default`
+ * (already represented by the ordinary Hermes harness). `ui_meta["hermes-bots"]` is optional presentation
+ * metadata (title, description, and Desktop's own `hidden` preference), never eligibility. Routing always
+ * uses the raw slug; display is Bot title, then profile display name, then the prettified slug.
  */
 export function parseBotRoster(result: unknown): RosterEntry[] {
   const profiles = result && typeof result === 'object' ? (result as { profiles?: unknown }).profiles : undefined;
@@ -508,11 +579,10 @@ export function parseBotRoster(result: unknown): RosterEntry[] {
     if (!raw || typeof raw !== 'object') continue;
     const row = raw as Record<string, unknown>;
     const slug = typeof row.name === 'string' ? row.name : '';
-    if (!PROFILE_SLUG.test(slug) || seen.has(slug)) continue;
+    if (!PROFILE_SLUG.test(slug) || slug === 'default' || row.is_default === true || seen.has(slug)) continue;
     const uiMeta = row.ui_meta && typeof row.ui_meta === 'object' ? row.ui_meta as Record<string, unknown> : null;
-    const bot = uiMeta?.['hermes-bots'];
-    if (!bot || typeof bot !== 'object' || Array.isArray(bot)) continue;
-    const meta = bot as Record<string, unknown>;
+    const botMeta = uiMeta?.['hermes-bots'];
+    const meta = botMeta && typeof botMeta === 'object' && !Array.isArray(botMeta) ? botMeta as Record<string, unknown> : {};
     if (meta.hidden === true) continue;
     seen.add(slug);
     const title = typeof meta.title === 'string' ? meta.title.trim() : '';
@@ -523,10 +593,10 @@ export function parseBotRoster(result: unknown): RosterEntry[] {
     const resolved = canonical && typeof canonical.resolved_id === 'string' && SESSION_ID.test(canonical.resolved_id) ? canonical.resolved_id
       : canonical && typeof canonical.id === 'string' && SESSION_ID.test(canonical.id) ? canonical.id : undefined;
     bots.push({
-      slug, sessionId: resolved,
+      slug, sessionId: resolved, hadCanonical: !!resolved,
       public: {
         id: `hermes:${slug}`, profileName: slug,
-        displayName: (title || profileDisplay || slug).slice(0, 80),
+        displayName: (title || profileDisplay || prettifySlug(slug)).slice(0, 80),
         ...(description ? { description: description.slice(0, 200) } : {}),
         ...(resolved ? { canonicalSessionId: resolved } : {}),
       },
@@ -534,6 +604,10 @@ export function parseBotRoster(result: unknown): RosterEntry[] {
     if (bots.length >= MAX_BOTS) break;
   }
   return bots;
+}
+
+function prettifySlug(slug: string): string {
+  return slug.replace(/[-_]+/g, ' ').trim().replace(/\b\w/g, (ch) => ch.toUpperCase());
 }
 
 /** Only fixed, display-safe strings reach the renderer; raw errors can embed URLs or paths. */

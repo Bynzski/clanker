@@ -15,7 +15,7 @@ const OVERLAY_TEXT: Partial<Record<AssistantSurfaceState, string>> = {
   connecting: 'Connecting to Bot Chat…',
   disconnected: 'Disconnected from the Hermes service.',
   ended: 'This Bot Chat session ended.',
-  unavailable: 'This Bot has no Bot Chat yet. Open it once in Hermes to create it.',
+  unavailable: 'Could not open this Assistant\'s chat. Nothing was changed.',
 };
 
 /**
@@ -104,7 +104,9 @@ export default function AssistantSurface({ botId, displayName, isActive }: { bot
       {overlay && (
         <div className="assistant-surface-overlay" role="status">
           <p>{overlay}</p>
-          {(!serviceConnected || surfaceState === 'ended') && <Button size="xs" onClick={() => void refresh()}>Reconnect</Button>}
+          {!serviceConnected && <Button size="xs" onClick={() => void refresh()}>Reconnect</Button>}
+          {serviceConnected && surfaceState === 'ended' && <Button size="xs" onClick={() => void window.electronAPI.openAssistant(botId).catch(() => undefined)}>Reopen</Button>}
+          {serviceConnected && surfaceState === 'unavailable' && <Button size="xs" onClick={() => void window.electronAPI.openAssistant(botId).catch(() => undefined)}>Retry</Button>}
         </div>
       )}
     </section>

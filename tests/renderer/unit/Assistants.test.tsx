@@ -181,11 +181,13 @@ it('the surface forwards xterm input and Bot output over the narrow Assistant IP
   expect(JSON.stringify(vi.mocked(window.electronAPI.openAssistant).mock.calls)).not.toMatch(/token|ws:\/\//i);
 });
 
-it('an unavailable Bot Chat is explained rather than replaced by a scratch chat', async () => {
+it('an unresolved Bot Chat is explained, offers Retry, and is never replaced by a scratch chat', async () => {
   mockMain(snap({ surfaces: [{ botId: 'hermes:fred', state: 'unavailable' }] }));
   vi.mocked(window.electronAPI.openAssistant).mockResolvedValue({ state: 'unavailable', replay: '' });
   render(<AssistantSurface botId="hermes:fred" displayName="Fred" isActive />);
-  expect(await screen.findByText(/no Bot Chat yet/)).toBeInTheDocument();
+  expect(await screen.findByText(/Could not open this Assistant's chat/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(2));
 });
 
 it('Settings expose only the two options, a status and Retry; autoStart is gated on enablement', async () => {
@@ -215,4 +217,14 @@ it('Tabs mode reaches Assistants through a compact strip with the same roster be
   render(<AssistantsRoster variant="strip" />);
   fireEvent.click(await screen.findByRole('button', { name: 'Reviewer' }));
   expect(useAssistantNavStore.getState().activeBotId).toBe('hermes:reviewer');
+});
+
+it('uses Assistant (not Bot) wording for an empty roster and a service-first Settings explanation', async () => {
+  mockMain(snap({ bots: [] }));
+  const { unmount } = render(<AssistantsRoster />);
+  expect(await screen.findByText('No Hermes Assistants found')).toBeInTheDocument();
+  unmount();
+  render(<AssistantsSettings />);
+  expect(await screen.findByText(/Uses a local Hermes service/)).toBeInTheDocument();
+  expect(screen.queryByText(/Bot Mode/)).toBeNull();
 });

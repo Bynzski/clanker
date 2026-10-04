@@ -206,24 +206,39 @@ describe('Clanker-owned backend', () => {
 });
 
 describe('roster', () => {
-  it('lists only Bot-managed, non-hidden profiles; routes by slug; names by Bot title > display name > slug', async () => {
+  it('lists every valid named profile except default, with or without Bot metadata; routes by slug; names by Bot title > display name > prettified slug', async () => {
     const { service } = setup({ enabled: true, autoStart: false });
     const { bots } = await service.refresh();
     expect(bots.map((bot) => [bot.id, bot.profileName, bot.displayName, bot.canonicalSessionId])).toEqual([
-      ['hermes:fred', 'fred', 'Fred the Helper', 'sess-fred-tip'],
-      ['hermes:reviewer', 'reviewer', 'Code Reviewer', 'sess-rev'],
-      ['hermes:fresh', 'fresh', 'Fresh', undefined],
+      ['hermes:fred', 'fred', 'Fred', undefined],
+      ['hermes:reviewer', 'reviewer', 'Code Reviewer', 'sess-rev-tip'],
+      ['hermes:ops-agent', 'ops-agent', 'Ops Agent', 'sess-ops'],
     ]);
-    expect(bots.some((bot) => bot.profileName === 'default')).toBe(false);
+    expect(bots.find((bot) => bot.profileName === 'fred')?.description).toBe('Fred is a general-purpose assistant.');
+    expect(bots.find((bot) => bot.profileName === 'reviewer')?.description).toBe('Reviews changes');
+    const names = bots.map((bot) => bot.profileName);
+    expect(names).not.toContain('default');
+    expect(names).not.toContain('hidden-one');
+    expect(names).not.toContain('bad name!');
     expect(JSON.stringify(bots)).not.toMatch(/path|home|token/i);
   });
-  it('falls back to the profile display name and then the raw slug', () => {
+  it('does not require a messaging gateway, Bot metadata or an existing canonical chat for eligibility', () => {
     const roster = parseBotRoster({ profiles: [
-      { name: 'a', display_name: 'Alpha', ui_meta: { 'hermes-bots': {} } },
-      { name: 'b-slug', ui_meta: { 'hermes-bots': {} } },
-      { name: 'bad name!', ui_meta: { 'hermes-bots': {} } },
+      { name: 'solo', canonical_session: null, gateway_running: false },
+      { name: 'default', is_default: true, ui_meta: { 'hermes-bots': { title: 'Hermes' } } },
+      { name: 'renamed-default', is_default: true },
     ] });
-    expect(roster.map((entry) => entry.public.displayName)).toEqual(['Alpha', 'b-slug']);
+    expect(roster.map((entry) => entry.slug)).toEqual(['solo']);
+    expect(roster[0].hadCanonical).toBe(false);
+  });
+  it('falls back to the profile display name and then a prettified slug; malformed shapes are skipped', () => {
+    const roster = parseBotRoster({ profiles: [
+      { name: 'a', display_name: 'Alpha' },
+      { name: 'b-slug_two' },
+      'junk', null, { name: 42 },
+    ] });
+    expect(roster.map((entry) => entry.public.displayName)).toEqual(['Alpha', 'B Slug Two']);
+    expect(roster.map((entry) => entry.slug)).toEqual(['a', 'b-slug_two']);
     expect(() => parseBotRoster({})).toThrow();
   });
   it('a late roster result cannot overwrite a newer service generation', async () => {
@@ -238,11 +253,11 @@ describe('roster', () => {
     service.configure({ enabled: true, autoStart: false });
     await flush(15);
     expect(service.get().bots).toHaveLength(3);
-    hermes.profiles = [{ name: 'late', ui_meta: { 'hermes-bots': {} } }];
+    hermes.profiles = [{ name: 'late' }];
     release();
     await stale;
     await flush();
-    expect(service.get().bots.map((bot) => bot.profileName)).toEqual(['fred', 'reviewer', 'fresh']);
+    expect(service.get().bots.map((bot) => bot.profileName)).toEqual(['fred', 'reviewer', 'ops-agent']);
   });
   it('coalesces same-generation refreshes into one roster call', async () => {
     const { service, hermes } = setup({ enabled: true, autoStart: false });
@@ -259,6 +274,108 @@ describe('roster', () => {
   });
 });
 
+describe('canonical Bot Chat resolution', () => {
+  const open = async () => {
+    const ctx = setup({ enabled: true, autoStart: false });
+    await ctx.service.refresh();
+    return ctx;
+  };
+  const methods = (hermes: FakeHermes) => hermes.calls.map((call) => call.method).filter((method) => method !== 'profiles.list');
+  const ptyParams = (hermes: FakeHermes, index = 0) => new URL(hermes.ptySockets()[index].url).searchParams;
+
+  it('uses an existing canonical chat found by exact lookup and never creates', async () => {
+    const { service, hermes } = await open();
+    hermes.canonical.reviewer = 'sess-existing-tip';
+    expect((await service.openSurface('hermes:reviewer')).state).toBe('connecting');
+    expect(hermes.calls.find((call) => call.method === 'session.list')?.params).toEqual({ profile: 'reviewer', title: 'Bot Chat', limit: 200, include_hidden: true });
+    expect(methods(hermes)).toEqual(['session.list']);
+    expect(ptyParams(hermes).get('profile')).toBe('reviewer');
+    expect(ptyParams(hermes).get('resume')).toBe('sess-existing-tip');
+  });
+  it('first open creates exactly one canonical chat with the supported contract, materialized by session.title, with no prompt', async () => {
+    const { service, hermes } = await open();
+    await service.openSurface('hermes:fred');
+    expect(methods(hermes)).toEqual(['session.list', 'session.create', 'session.title']);
+    expect(hermes.calls.find((call) => call.method === 'session.create')?.params).toEqual({ profile: 'fred', title: 'Bot Chat', hidden: true, follow_profile_config: true });
+    expect(hermes.calls.find((call) => call.method === 'session.title')?.params).toEqual({ session_id: 'rt-1', title: 'Bot Chat' });
+    expect(methods(hermes)).not.toContain('prompt.submit');
+    expect(hermes.canonical.fred).toBe('stored-1');
+    expect(hermes.ptySockets()).toHaveLength(1);
+    expect(ptyParams(hermes).get('profile')).toBe('fred');
+    expect(ptyParams(hermes).get('resume')).toBe('stored-1');
+    expect(service.get().bots.find((bot) => bot.id === 'hermes:fred')?.canonicalSessionId).toBe('stored-1');
+  });
+  it('never injects a Clanker workspace cwd into creation, lookup or PTY resume', async () => {
+    const { service, hermes } = await open();
+    await service.openSurface('hermes:fred');
+    for (const call of hermes.calls) expect(Object.keys(call.params)).not.toEqual(expect.arrayContaining(['cwd']));
+    for (const key of ['cwd', 'workspace', 'fresh']) expect(ptyParams(hermes).has(key)).toBe(false);
+    expect(JSON.stringify(hermes.calls)).not.toMatch(/cwd/);
+  });
+  it('double/concurrent opens coalesce into one resolution and one connection', async () => {
+    const { service, hermes } = await open();
+    const [a, b] = await Promise.all([service.openSurface('hermes:fred'), service.openSurface('hermes:fred')]);
+    expect(a).toEqual(b);
+    expect(hermes.calls.filter((call) => call.method === 'session.create')).toHaveLength(1);
+    expect(hermes.ptySockets()).toHaveLength(1);
+    const again = await service.openSurface('hermes:fred');
+    expect(again.state).toMatch(/connecting|open/);
+    expect(hermes.calls.filter((call) => call.method === 'session.list')).toHaveLength(1);
+    expect(hermes.ptySockets()).toHaveLength(1);
+  });
+  it('adopts the winner when another writer takes the canonical title, never creating a second chat', async () => {
+    const { service, hermes } = await open();
+    hermes.titleRace = 'sess-winner';
+    await service.openSurface('hermes:fred');
+    expect(methods(hermes)).toEqual(['session.list', 'session.create', 'session.title', 'session.list']);
+    expect(ptyParams(hermes).get('resume')).toBe('sess-winner');
+    expect(hermes.calls.filter((call) => call.method === 'session.create')).toHaveLength(1);
+  });
+  it('fails closed on a failed registry lookup: nothing is created and no PTY opens', async () => {
+    const { service, hermes } = await open();
+    hermes.listFails = true;
+    expect(await service.openSurface('hermes:fred')).toMatchObject({ state: 'unavailable' });
+    expect(methods(hermes)).toEqual(['session.list']);
+    expect(hermes.ptySockets()).toHaveLength(0);
+    expect(service.get().surfaces).toEqual([{ botId: 'hermes:fred', state: 'unavailable' }]);
+    // Retry after the registry recovers resolves normally.
+    hermes.listFails = false;
+    expect((await service.openSurface('hermes:fred')).state).toBe('connecting');
+    expect(hermes.ptySockets()).toHaveLength(1);
+  });
+  it('fails closed when a profile the roster saw with a canonical chat answers an empty lookup', async () => {
+    const { service, hermes } = await open();
+    hermes.listEmpty = true;
+    expect(await service.openSurface('hermes:reviewer')).toMatchObject({ state: 'unavailable' });
+    expect(methods(hermes)).toEqual(['session.list']);
+    expect(hermes.ptySockets()).toHaveLength(0);
+  });
+  it('fails closed (no prompt, no second create) when materializing the title fails for another reason', async () => {
+    const { service, hermes } = await open();
+    hermes.titleFails = true;
+    expect(await service.openSurface('hermes:fred')).toMatchObject({ state: 'unavailable' });
+    expect(methods(hermes)).toEqual(['session.list', 'session.create', 'session.title']);
+    expect(hermes.ptySockets()).toHaveLength(0);
+  });
+  it('a refresh keeps the same canonical chat and a reconnect resolves the existing chat instead of minting another', async () => {
+    const { service, hermes } = await open();
+    await service.openSurface('hermes:fred');
+    await flush();
+    await service.refresh();
+    expect(hermes.calls.filter((call) => call.method === 'session.create')).toHaveLength(1);
+    hermes.running = false;
+    hermes.wsSockets()[0].close(1006);
+    hermes.running = true;
+    // A fresh process: the roster now reports the chat Hermes created.
+    hermes.profiles = hermes.profiles.map((profile) => profile.name === 'fred' ? { ...profile, canonical_session: { id: 'stored-1' } } : profile);
+    await service.refresh();
+    await service.openSurface('hermes:fred');
+    expect(hermes.calls.filter((call) => call.method === 'session.create')).toHaveLength(1);
+    const urls = hermes.ptySockets().map((socket) => new URL(socket.url).searchParams);
+    expect(urls.map((params) => params.get('resume'))).toEqual(['stored-1', 'stored-1']);
+  });
+});
+
 describe('Bot Chat PTY surfaces', () => {
   const open = async () => {
     const ctx = setup({ enabled: true, autoStart: false });
@@ -267,62 +384,57 @@ describe('Bot Chat PTY surfaces', () => {
   };
   it('opens one /api/pty connection with the exact profile slug and canonical resume id; second open does not duplicate', async () => {
     const { service, hermes } = await open();
-    const first = service.openSurface('hermes:fred');
+    const first = await service.openSurface('hermes:reviewer');
     await flush();
-    const second = service.openSurface('hermes:fred');
+    const second = await service.openSurface('hermes:reviewer');
     expect(hermes.ptySockets()).toHaveLength(1);
     const url = new URL(hermes.ptySockets()[0].url);
     expect(url.host).toBe('127.0.0.1:9119');
-    expect(url.searchParams.get('profile')).toBe('fred');
-    expect(url.searchParams.get('resume')).toBe('sess-fred-tip');
+    expect(url.searchParams.get('profile')).toBe('reviewer');
+    expect(url.searchParams.get('resume')).toBe('sess-rev-tip');
     expect(url.searchParams.get('token')).toBe(TOKEN);
-    expect(url.searchParams.get('attach')).toMatch(/^clanker-[0-9a-f]{16}-fred$/);
+    expect(url.searchParams.get('attach')).toBe('clanker-assistant-reviewer');
     expect(url.searchParams.has('cwd')).toBe(false);
     expect(url.searchParams.has('fresh')).toBe(false);
     expect([first.state, second.state]).toEqual(['connecting', 'open']);
-    expect(service.get().surfaces).toEqual([{ botId: 'hermes:fred', state: 'open' }]);
+    expect(service.get().surfaces).toEqual([{ botId: 'hermes:reviewer', state: 'open' }]);
   });
   it('forwards input, output (text and binary, split multi-byte) and Hermes resize framing', async () => {
     const { service, hermes, ptyData } = await open();
-    service.openSurface('hermes:fred');
+    await service.openSurface('hermes:reviewer');
     await flush();
     const socket = hermes.ptySockets()[0];
-    service.writePty('hermes:fred', 'hello\r');
-    service.resizePty('hermes:fred', 100, 30);
+    service.writePty('hermes:reviewer', 'hello\r');
+    service.resizePty('hermes:reviewer', 100, 30);
     expect(socket.sent).toEqual(['hello\r', '\x1b[RESIZE:100;30]']);
     socket.emit('message', { data: 'plain' });
     const bytes = Buffer.from('é');
     socket.emit('message', { data: new Uint8Array([bytes[0]]).buffer });
     socket.emit('message', { data: new Uint8Array([bytes[1]]).buffer });
-    expect(ptyData).toEqual([['hermes:fred', 'plain'], ['hermes:fred', 'é']]);
-    expect(service.openSurface('hermes:fred').replay).toBe('plainé');
+    expect(ptyData).toEqual([['hermes:reviewer', 'plain'], ['hermes:reviewer', 'é']]);
+    expect((await service.openSurface('hermes:reviewer')).replay).toBe('plainé');
   });
   it('applies a size recorded before the socket opened', async () => {
     const { service, hermes } = await open();
-    service.openSurface('hermes:fred');
-    service.resizePty('hermes:fred', 80, 24);
+    await service.openSurface('hermes:reviewer');
+    service.resizePty('hermes:reviewer', 80, 24);
     await flush();
     expect(hermes.ptySockets()[0].sent).toEqual(['\x1b[RESIZE:80;24]']);
   });
   it('ignores malformed ids, oversized writes and invalid sizes; never opens an unknown or default Bot', async () => {
     const { service, hermes } = await open();
-    expect(() => service.openSurface('../x')).toThrow();
-    expect(() => service.openSurface('hermes:default')).toThrow(/not connected/);
-    service.openSurface('hermes:fred'); await flush();
-    service.writePty('hermes:fred', 'x'.repeat(70_000));
+    await expect(service.openSurface('../x')).rejects.toThrow();
+    await expect(service.openSurface('hermes:default')).rejects.toThrow(/not connected/);
+    await service.openSurface('hermes:reviewer'); await flush();
+    service.writePty('hermes:reviewer', 'x'.repeat(70_000));
     service.writePty('nope', 'x');
-    service.resizePty('hermes:fred', 0, 10);
-    service.resizePty('hermes:fred', 10.5, 10);
+    service.resizePty('hermes:reviewer', 0, 10);
+    service.resizePty('hermes:reviewer', 10.5, 10);
     expect(hermes.ptySockets()[0].sent).toEqual([]);
-  });
-  it('reports unavailable (no scratch conversation) when the Bot has no canonical Bot Chat', async () => {
-    const { service, hermes } = await open();
-    expect(service.openSurface('hermes:fresh')).toEqual({ state: 'unavailable', replay: '' });
-    expect(hermes.ptySockets()).toHaveLength(0);
   });
   it('keeps open surfaces connected through unrelated navigation and closes them on shutdown', async () => {
     const { service, hermes } = await open();
-    service.openSurface('hermes:fred'); service.openSurface('hermes:reviewer'); await flush();
+    await service.openSurface('hermes:reviewer'); await service.openSurface('hermes:ops-agent'); await flush();
     expect(hermes.ptySockets()).toHaveLength(2);
     // The renderer navigating between workspaces/Assistants never reaches main; only an explicit close does.
     expect(hermes.ptySockets().every((socket) => !socket.closed)).toBe(true);
@@ -331,30 +443,31 @@ describe('Bot Chat PTY surfaces', () => {
   });
   it('a lost service surfaces disconnected state and re-attaches to the same canonical chat, never a new one', async () => {
     const { service, hermes } = await open();
-    service.openSurface('hermes:fred'); await flush();
+    await service.openSurface('hermes:reviewer'); await flush();
     hermes.running = false;
     hermes.wsSockets()[0].close(1006);
     expect(service.get().service.state).toBe('offline');
-    expect(service.get().surfaces).toEqual([{ botId: 'hermes:fred', state: 'disconnected' }]);
+    expect(service.get().surfaces).toEqual([{ botId: 'hermes:reviewer', state: 'disconnected' }]);
     expect(hermes.ptySockets()).toHaveLength(1);
     hermes.running = true;
+    hermes.canonical.reviewer = 'sess-rev-tip';
     await service.refresh();
-    expect(service.openSurface('hermes:fred').state).toBe('connecting');
+    expect((await service.openSurface('hermes:reviewer')).state).toBe('connecting');
     const urls = hermes.ptySockets().map((socket) => new URL(socket.url));
     expect(urls).toHaveLength(2);
-    expect(urls[1].searchParams.get('resume')).toBe('sess-fred-tip');
+    expect(urls[1].searchParams.get('resume')).toBe('sess-rev-tip');
     expect(urls[1].searchParams.get('attach')).toBe(urls[0].searchParams.get('attach'));
   });
   it('treats close code 4410 as the Bot Chat process ending', async () => {
     const { service, hermes } = await open();
-    service.openSurface('hermes:fred'); await flush();
+    await service.openSurface('hermes:reviewer'); await flush();
     hermes.ptySockets()[0].close(4410);
-    expect(service.get().surfaces).toEqual([{ botId: 'hermes:fred', state: 'ended' }]);
+    expect(service.get().surfaces).toEqual([{ botId: 'hermes:reviewer', state: 'ended' }]);
   });
   it('closeSurface closes the socket; disable closes every surface', async () => {
     const { service, hermes } = await open();
-    service.openSurface('hermes:fred'); service.openSurface('hermes:reviewer'); await flush();
-    service.closeSurface('hermes:fred');
+    await service.openSurface('hermes:reviewer'); await service.openSurface('hermes:ops-agent'); await flush();
+    service.closeSurface('hermes:reviewer');
     expect(hermes.ptySockets()[0].closed).toBe(true);
     service.configure({ enabled: false, autoStart: false });
     expect(hermes.ptySockets()[1].closed).toBe(true);

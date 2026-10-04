@@ -39,7 +39,7 @@ export default function AssistantsSettings() {
         <span>Start Hermes service when needed</span>
       </label>
       <p className="assistants-roster-status">
-        Needs Hermes Bot Mode (<code>hermes serve</code>). The ordinary Hermes harness works independently of this.
+        Uses a local Hermes service (<code>hermes serve</code>). Ordinary Hermes harness usage works independently.
       </p>
       {settings?.enabled && service && (
         <div className="settings-row">

@@ -61,7 +61,7 @@ export default function AssistantsRoster({ variant = 'sidebar' }: { variant?: 's
   const { bots, live } = useRosterBots();
   if (!enabled || !snapshot) return null;
   const state = snapshot.service.state;
-  const status = state === 'connected' ? (bots.length === 0 ? 'No Hermes Bots found' : null) : STATUS_TEXT[state] ?? null;
+  const status = state === 'connected' ? (bots.length === 0 ? 'No Hermes Assistants found' : null) : STATUS_TEXT[state] ?? null;
   const retry = state === 'offline' || state === 'error' || state === 'detected-unusable';
   return (
     <section className={`assistants-roster assistants-roster-${variant}`} aria-label="Assistants">
