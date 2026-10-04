@@ -72,11 +72,11 @@ import * as nodePath from 'node:path';
 import { HarnessUsageService } from './usage/harnessUsageService';
 import { registerRecipeIpc } from './ipc/recipeIpc';
 import { KeybindingOverridesService } from './keybindingOverrides';
-import { purgeLegacyTaskSessions, seedWorkspaceNavigationMode } from './storeMigrations';
+import { purgeLegacyTaskSessions, seedHarnessAttention, seedWorkspaceNavigationMode } from './storeMigrations';
 import { existsSync } from 'node:fs';
 import { AgentAttentionBroker } from './agentAttentionBroker';
 import { AGENT_ATTENTION_UPDATE, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
-import { removeAttentionAdapterFiles } from './agentAttentionAdapters';
+import { removeAttentionAdapterFiles, scavengeStaleAttentionRoots, migrateLegacyAgyAttentionPlugin } from './agentAttentionAdapters';
 import { waitForTerminalCleanup } from './ipc/ptySpawn';
 import { HermesAssistantService } from './assistants/hermesAssistantService';
 import { registerAssistantIpc } from './ipc/assistantIpc';
@@ -110,6 +110,7 @@ const store = new Store<StoreSchema>({
 // builds instead of leaving an ever-growing dead store on disk.
 purgeLegacyTaskSessions(store);
 seedWorkspaceNavigationMode(store, storeFileExistedBeforeOpen);
+seedHarnessAttention(store, storeFileExistedBeforeOpen);
 
 const keybindingOverrides = new KeybindingOverridesService(() => store);
 
@@ -305,6 +306,10 @@ function prewarmModelCache(): void {
 // App lifecycle
 app.whenReady().then(() => {
   const preloadPath = getPreloadPath();
+  // Drop the historical broken plugin and reclaim temp roots of crashed runs; failure must never block startup.
+  try { migrateLegacyAgyAttentionPlugin(); scavengeStaleAttentionRoots(); } catch (error) {
+    console.warn('[clanker-grid] attention leftover cleanup failed:', error);
+  }
 
   // Register IPC handlers
   registerSettingsIpc({

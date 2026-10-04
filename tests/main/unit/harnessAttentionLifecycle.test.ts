@@ -11,7 +11,7 @@ const failure = vi.hoisted(() => ({ hooks: false }));
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
   return { ...actual, writeFileSync: (...args: Parameters<typeof actual.writeFileSync>) => {
-    if (failure.hooks && String(args[0]).endsWith('hooks.json')) throw new Error('disk full');
+    if (failure.hooks && /hooks\.json(\.\d+\.tmp)?$/.test(String(args[0]))) throw new Error('disk full');
     return actual.writeFileSync(...args);
   } };
 });
@@ -34,7 +34,7 @@ describe('provider attention leases', () => {
     expect(getHarnessProvider('hermes').attention?.local).toBeUndefined();
     expect(getHarnessProvider('hermes').attention?.remote).toBeDefined();
   });
-  it('retains Agy ownership across repeated preparations and out-of-order disposal', () => {
+  it('keeps the persistent Agy plugin installed across repeated preparations and disposal', () => {
     const ctx = context();
     const capability = getHarnessProvider('agy').attention!.local!;
     const first = capability.prepare(ctx)!;
@@ -42,20 +42,21 @@ describe('provider attention leases', () => {
     const third = capability.prepare({ ...ctx, terminalId: 'other' })!;
     second.dispose(); second.dispose();
     first.dispose();
-    expect(fs.existsSync(pluginPath(ctx))).toBe(true);
     third.dispose(); third.dispose();
-    expect(fs.existsSync(pluginPath(ctx))).toBe(false);
+    // Other Clanker processes and live Antigravity sessions share it; the guard keeps it inert.
+    expect(fs.existsSync(pluginPath(ctx))).toBe(true);
+    expect(fs.existsSync(path.join(path.dirname(pluginPath(ctx)), 'guard.mjs'))).toBe(true);
   });
-  it('rolls back a partially written Agy plugin and permits a later preparation', () => {
+  it('never leaves a hook referencing a partially written Agy plugin and permits a later preparation', () => {
     const ctx = context();
     failure.hooks = true;
     const capability = getHarnessProvider('agy').attention!.local!;
     expect(() => capability.prepare(ctx)).toThrow('disk full');
-    expect(fs.existsSync(path.dirname(pluginPath(ctx)))).toBe(false);
-    failure.hooks = false;
-    const prepared = capability.prepare(ctx)!;
-    prepared.dispose();
     expect(fs.existsSync(pluginPath(ctx))).toBe(false);
+    expect(fs.readdirSync(path.dirname(pluginPath(ctx))).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+    failure.hooks = false;
+    capability.prepare(ctx)!.dispose();
+    expect(fs.existsSync(pluginPath(ctx))).toBe(true);
   });
   it('does not acquire resources when user configuration prevents injection', () => {
     const ctx = context();
