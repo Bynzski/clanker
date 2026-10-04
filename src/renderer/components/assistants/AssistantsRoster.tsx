@@ -33,7 +33,7 @@ export function useAssistantsEnabled(): boolean {
   return useAssistantsStore((state) => state.snapshot?.available === true && state.snapshot.settings.enabled === true);
 }
 
-export function AssistantButton({ assistant, live, variant, disabled = false }: { assistant: HermesAssistant; live: boolean; variant: 'row' | 'icon'; disabled?: boolean }) {
+export function AssistantButton({ assistant, live, variant, disabled = false }: { assistant: HermesAssistant; live: boolean; variant: 'row' | 'icon' | 'launcher'; disabled?: boolean }) {
   const active = useAssistantNavStore((state) => state.activeAssistantId === assistant.id);
   const openAssistantSurface = useAssistantNavStore((state) => state.openAssistantSurface);
   const HermesIcon = getHarnessOption('hermes').Icon;
@@ -42,7 +42,7 @@ export function AssistantButton({ assistant, live, variant, disabled = false }: 
   return (
     <button
       type="button"
-      className={`assistant-${variant}${active ? ' active' : ''}${live ? '' : ' offline'}`}
+      className={`${variant === 'launcher' ? 'assistant-launcher-button' : `assistant-${variant}`}${active ? ' active' : ''}${live ? '' : ' offline'}`}
       aria-current={active ? 'true' : undefined}
       aria-label={variant === 'icon' ? label : undefined}
       title={title}
@@ -50,6 +50,7 @@ export function AssistantButton({ assistant, live, variant, disabled = false }: 
       onClick={() => openAssistantSurface(assistant.id)}
     >
       <HermesIcon size={14} strokeWidth={2} aria-hidden="true" />
+      {variant === 'launcher' && <span className="assistant-name">{assistant.displayName}</span>}
       {variant === 'row' && <><span className="assistant-name">{assistant.displayName}</span><span className={`assistant-dot${live ? ' live' : ''}`} aria-hidden="true" /></>}
     </button>
   );
@@ -76,7 +77,7 @@ export default function AssistantsRoster({ variant = 'sidebar', disabled = false
     <section className={`assistants-roster assistants-roster-${variant}`} aria-label="Assistants">
       <div className="assistants-roster-heading">Assistants</div>
       <div className="assistants-roster-list">
-        {assistants.map((assistant) => <AssistantButton key={assistant.id} assistant={assistant} live={live.has(assistant.id) && state === 'connected'} variant="row" disabled={disabled} />)}
+        {assistants.map((assistant) => <AssistantButton key={assistant.id} assistant={assistant} live={live.has(assistant.id) && state === 'connected'} variant={variant === 'launcher' ? 'launcher' : 'row'} disabled={disabled} />)}
       </div>
       {snapshot.service.error && state !== 'connected'
         ? <p className="assistants-roster-error" role="alert">{snapshot.service.error}</p>

@@ -140,6 +140,34 @@ describe('startup launcher', () => {
     expect(within(launcher).queryByRole('button', { name: /Fred/ })).toBeNull();
   });
 
+  it.each([1, 3, 7])('connected with %i Assistants: one compact launcher chip each, with no status dot or row styling', async (count) => {
+    const assistants = Array.from({ length: count }, (_, i) => ({ id: `hermes:bot${i}`, displayName: i === 0 ? 'A very long assistant display name that must stay bounded' : `Bot ${i}`, description: `desc ${i}` }));
+    vi.mocked(window.electronAPI.getAssistants).mockResolvedValue(snap({ assistants }));
+    render(<App />);
+    const launcher = await screen.findByRole('region', { name: 'Assistants' });
+    const buttons = await within(launcher).findAllByRole('button');
+    expect(buttons).toHaveLength(count);
+    for (const button of buttons) {
+      expect(button).toHaveClass('assistant-launcher-button');
+      expect(button).not.toHaveClass('assistant-row');
+    }
+    expect(launcher.querySelector('.assistant-dot')).toBeNull();
+    expect(buttons[0]).toHaveAccessibleName(/A very long assistant display name that must stay bounded/);
+    expect(buttons[0]).toHaveAttribute('title', expect.stringContaining('desc 0'));
+    // Each chip opens its own opaque Assistant ID.
+    fireEvent.click(buttons[count - 1]);
+    expect(useAssistantNavStore.getState().activeAssistantId).toBe(`hermes:bot${count - 1}`);
+  });
+
+  it('the sidebar roster keeps its row presentation and status dot', async () => {
+    useWorkspaceStore.setState({ workspaces: [createWorkspaceFixture({ id: 'ws-a', workspacePath: '/projects/a', environmentId: 'local' })], activeWorkspaceId: 'ws-a' });
+    render(<App />);
+    const roster = await screen.findByRole('region', { name: 'Assistants' });
+    const row = await within(roster).findByRole('button', { name: /Fred/ });
+    expect(row).toHaveClass('assistant-row');
+    expect(row.querySelector('.assistant-dot.live')).not.toBeNull();
+  });
+
   it('connected with no named profiles shows an empty state', async () => {
     vi.mocked(window.electronAPI.getAssistants).mockResolvedValue(snap({ assistants: [] }));
     render(<App />);
