@@ -140,7 +140,7 @@ describe('isolated-agent conversations on a real repository (issue #100)', () =>
     const worktree = created.worktree!.path;
     fs.mkdirSync(path.join(worktree, 'src'));
     const container = path.join(root, 'clanker-worktrees');
-    expect(worktree).toBe(toPosixPath(path.join(container, path.basename(worktree))));
+    expect(toPosixPath(worktree)).toBe(toPosixPath(path.join(container, path.basename(worktree))));
     claudeSession('11111111-1111-4111-8111-111111111111', path.join(worktree, 'src'));
     piSession('pi-live', worktree);
     claudeSession('22222222-2222-4222-8222-222222222222', repo); // an ordinary main-checkout conversation
