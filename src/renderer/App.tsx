@@ -39,6 +39,8 @@ function App() {
   const [showWorkspaceGate, setShowWorkspaceGate] = useState(false);
   const [recipeFailure, setRecipeFailure] = useState<RecipeLaunchResult | null>(null);
   const sidebarMode = useWorkspaceNavigationStore((state) => state.mode === 'sidebar');
+  // An Assistant is a destination in its own right: it is enough to own the shell with no Workspace open.
+  const assistantDestinationActive = useAssistantNavStore((state) => state.activeAssistantId !== null);
   const { 
     workspaces,
     addWorkspace,
@@ -382,7 +384,7 @@ function App() {
     setShowWorkspaceGate(false);
   };
 
-  if (workspaces.length === 0) {
+  if (workspaces.length === 0 && !assistantDestinationActive) {
     return (
       <WorkspaceGateFullscreen onWorkspaceSelect={handleWorkspaceSelect} onLaunchRecipe={(recipe) => handleLaunchRecipe(recipe, false)} />
     );

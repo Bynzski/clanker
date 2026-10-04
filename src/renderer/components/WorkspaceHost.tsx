@@ -185,7 +185,8 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
   }, [warmWorkspaceIdSet]);
 
   // The Explorer watcher owner lives outside the lazy/Suspense presentation subtree.
-  if (workspaces.length === 0) {
+  // No workspace and no Assistant: nothing to host. An active Assistant mounts its surface without any Workspace.
+  if (workspaces.length === 0 && !assistantActive) {
     return <ExplorerLifecycleCoordinator />;
   }
 
