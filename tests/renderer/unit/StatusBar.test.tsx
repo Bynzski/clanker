@@ -211,6 +211,13 @@ describe('StatusBar', () => {
       expect([branchText(), pathTitle()]).toEqual(['feature/test-isolated', B.path]);
     });
 
+    it('marks the selected agent\'s checkout as removed once Git no longer has it', () => {
+      open('t-a', { checkoutContexts: [main, { ...A, missing: true }, B] });
+      render(<StatusBar />);
+      expect(branchText()).toBe('issue-90 · removed');
+      expect(document.querySelector('.status-branch')?.getAttribute('title')).toContain('checkout removed');
+    });
+
     it('ignores a terminal bound to a context the workspace does not have', () => {
       open('t-x', { terminals: [agent('t-x', 'ws::ckt-never-registered')] });
       render(<StatusBar />);

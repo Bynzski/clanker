@@ -35,15 +35,22 @@ export function getAgentWorktreeContext(
 }
 
 /** Isolated worktree contexts no terminal of the workspace was launched into: inactive, removable
- * checkouts. Judged by launch binding, never by reported location. */
+ * checkouts. Judged by launch binding, never by reported location. A missing checkout is not one:
+ * there is nothing on disk to remove, and main drops it on its next reconciliation. */
 export function getUnusedWorktreeContexts(workspace: Pick<WorkspaceTab, 'id' | 'checkoutContexts' | 'terminals'>): CheckoutContext[] {
   const used = new Set(workspace.terminals.map((terminal) => terminal.checkoutContextId));
-  return (workspace.checkoutContexts ?? []).filter((context) => isIsolatedWorktreeContext(workspace, context) && !used.has(context.id));
+  return (workspace.checkoutContexts ?? []).filter((context) =>
+    isIsolatedWorktreeContext(workspace, context) && !context.missing && !used.has(context.id));
 }
 
 /** Short label for a worktree checkout: its branch, or HEAD when detached/unknown. */
 export function worktreeBranchLabel(context: Pick<CheckoutContext, 'branch'>): string {
   return context.branch || 'HEAD';
+}
+
+/** The branch as shown for an agent's checkout: marked when Git no longer has the checkout. */
+export function worktreeDisplayLabel(context: Pick<CheckoutContext, 'branch' | 'missing'>): string {
+  return context.missing ? `${worktreeBranchLabel(context)} · removed` : worktreeBranchLabel(context);
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   backfillCheckoutContexts,
   bindTerminalToCheckoutContext,
   getCheckoutContext,
+  reconcileCheckoutContextList,
   upsertCheckoutContextList,
 } from '../../../src/renderer/lib/checkoutContexts';
 import { mainCheckoutContextId } from '../../../src/shared/checkoutContext';
@@ -284,5 +285,44 @@ describe('worktrees Clanker did not register', () => {
     expect(workspace.terminals[0].checkoutContextId).toBe(mainCheckoutContextId('ws-1'));
     expect(workspace.checkoutContexts).toEqual([mainContext('ws-1', '/work/app')]);
     expect(workspace.workspacePath).toBe('/work/app');
+  });
+});
+
+describe('applying main\'s reconciliation of worktree contexts', () => {
+  const worktree = (suffix: string, extra: Partial<CheckoutContext> = {}): CheckoutContext => ({
+    id: `ws::ckt-${suffix}`, workspaceId: 'ws', environmentId: 'local', path: `/w/app-worktrees/${suffix}`, kind: 'worktree', branch: suffix, ...extra,
+  });
+  const workspace = (contexts: CheckoutContext[]) => ({ id: 'ws', environmentId: 'local', checkoutContexts: [mainContext('ws', '/w/app'), ...contexts] });
+
+  it('refreshes branch and missing on known contexts and forgets dropped ones', () => {
+    const next = reconcileCheckoutContextList(workspace([worktree('a'), worktree('b'), worktree('c')]), {
+      success: true,
+      contexts: [worktree('a', { branch: 'renamed', missing: false }), worktree('b', { missing: true })],
+      dropped: [worktree('c').id],
+    });
+    expect(next).toEqual([mainContext('ws', '/w/app'), worktree('a', { branch: 'renamed', missing: false }), worktree('b', { missing: true })]);
+  });
+
+  it('never adds, re-roots or drops the main context, and ignores another workspace\'s contexts', () => {
+    const current = workspace([worktree('a')]);
+    const next = reconcileCheckoutContextList(current, {
+      success: true,
+      contexts: [worktree('new'), worktree('a', { path: '/elsewhere', missing: true }), { ...worktree('a'), workspaceId: 'other', missing: true }],
+      dropped: [mainCheckoutContextId('ws'), 'other::ckt-x'],
+    });
+    expect(next).toBe(current.checkoutContexts);
+  });
+
+  it('returns the same list when nothing changed, and ignores a failed reconciliation', () => {
+    const current = workspace([worktree('a')]);
+    expect(reconcileCheckoutContextList(current, { success: true, contexts: [worktree('a')], dropped: [] })).toBe(current.checkoutContexts);
+    expect(reconcileCheckoutContextList(current, { success: false, error: 'x', dropped: [worktree('a').id] })).toBe(current.checkoutContexts);
+  });
+
+  it('is applied through the store for one workspace only', () => {
+    useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null });
+    useWorkspaceStore.getState().addWorkspace({ ...workspaceInput({ workspacePath: '/w/app', checkoutContexts: [mainContext('ws', '/w/app'), worktree('a')] }), id: 'ws' });
+    useWorkspaceStore.getState().applyCheckoutContextReconciliation('ws', { success: true, contexts: [], dropped: [worktree('a').id] });
+    expect(useWorkspaceStore.getState().getWorkspaceById('ws')?.checkoutContexts).toEqual([mainContext('ws', '/w/app')]);
   });
 });

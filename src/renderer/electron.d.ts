@@ -1,6 +1,6 @@
 import type { RemotePreviewRequest, RemotePreviewWatchRequest, RemotePreviewResult, RemotePreviewUpdate } from '../shared/types/remotePreview';
 import type { SshEnvironmentConfig, WorkspaceLocation } from '../../shared/types/environments';
-import type { AdoptWorktreeCheckoutContextResult, CheckoutContext, ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
+import type { AdoptWorktreeCheckoutContextResult, CheckoutContext, ReconcileCheckoutContextsResult, ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
 import type { RemoteDirectoryListing } from '../shared/types/environments';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { WorkspaceRecipe, RecipePreviewProbeResult } from '../../shared/types/recipes';
@@ -246,6 +246,8 @@ export interface ElectronAPI {
   /** Main decides: only a worktree context of that workspace with no live terminals is released. */
   adoptWorktreeCheckoutContext: (workspaceId: string, worktreePath: string) => Promise<AdoptWorktreeCheckoutContextResult>;
   releaseCheckoutContext: (workspaceId: string, checkoutContextId: string) => Promise<ReleaseCheckoutContextResult>;
+  /** Main reconciles the workspace's worktree contexts with Git: branch refreshed, gone ones dropped or marked missing. */
+  reconcileCheckoutContexts: (workspaceId: string) => Promise<ReconcileCheckoutContextsResult>;
   gitInspectWorktree: (workspacePath: string, worktreePath: string, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeInspectionResult>;
   gitRemoveWorktree: (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[], workspaceId?: string) => Promise<GitWorktreeRemoveResult>;
   gitPruneWorktrees: (workspacePath: string, workspaceId?: string) => Promise<GitWorktreePruneResult>;

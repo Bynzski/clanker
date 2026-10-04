@@ -239,6 +239,18 @@ export class WorkspaceRegistry {
     return { success: true, checkoutContext: { ...checkoutContext } };
   }
 
+  /**
+   * Updates a worktree context's descriptive fields (branch, missing) in place, so its identity,
+   * which launches revalidate against, never changes. Root, kind and ownership are immutable.
+   */
+  public describeCheckoutContext(contextId: string, description: { branch?: string | null; missing?: boolean }): boolean {
+    const context = this.checkoutContexts.get(contextId);
+    if (!context || context.kind !== 'worktree') return false;
+    if (description.branch !== undefined) context.branch = description.branch;
+    if (description.missing !== undefined) context.missing = description.missing;
+    return true;
+  }
+
   /** Drops one non-main context. The main context lives and dies with its workspace. */
   public unregisterCheckoutContext(contextId: string): boolean {
     const context = this.checkoutContexts.get(contextId);

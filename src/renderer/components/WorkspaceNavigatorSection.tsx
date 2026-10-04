@@ -16,7 +16,7 @@ import { getRemoteEnvironmentLabel, getWorkspaceRenameValue, getWorkspaceTabLabe
 import { useWorkspaceRename } from '../lib/useWorkspaceRename';
 import { useWorkspaceReorder } from '../lib/useWorkspaceReorder';
 import WorkspaceCheckouts from './WorkspaceCheckouts';
-import { getAgentWorktreeContext, worktreeBranchLabel } from '../lib/worktreeAgents';
+import { getAgentWorktreeContext, worktreeBranchLabel, worktreeDisplayLabel } from '../lib/worktreeAgents';
 import { useAgentLocation } from '../lib/useAgentLocation';
 import './WorkspaceNavigatorSection.css';
 
@@ -29,6 +29,7 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
   const name = terminal.displayName ?? harness.label;
   const worktree = getAgentWorktreeContext(workspace, terminal, useAgentLocation(terminal.id));
   const branch = worktree ? worktreeBranchLabel(worktree) : null;
+  const removed = Boolean(worktree?.missing);
   const attentionSuffix = showAttention ? getAttentionSuffix(attention) : '';
 
   return (
@@ -38,7 +39,7 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
         className={`ws-agent-row${isCurrent ? ' current' : ''}`}
         aria-current={isCurrent ? 'true' : undefined}
         title={worktree
-          ? `${name} · ${harness.label} · ${branch}${attentionSuffix}\n${worktree.path}`
+          ? `${name} · ${harness.label} · ${branch}${removed ? ' (checkout removed)' : ''}${attentionSuffix}\n${worktree.path}`
           : `${name} · ${harness.label}${attentionSuffix}`}
         onClick={() => selectWorkspace(workspace.id, terminal.id)}
       >
@@ -47,9 +48,12 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
         {/* The icon identifies the harness visually; the name stays available to assistive tech. */}
         <span className="sr-only">{harness.label}</span>
         {branch && (
-          <span className="ws-agent-branch" aria-label={`on branch ${branch}`}>
+          <span
+            className={`ws-agent-branch${removed ? ' missing' : ''}`}
+            aria-label={removed ? `on branch ${branch}, checkout removed` : `on branch ${branch}`}
+          >
             <GitBranch size={10} strokeWidth={2} aria-hidden="true" />
-            <span>{branch}</span>
+            <span>{worktree ? worktreeDisplayLabel(worktree) : branch}</span>
           </span>
         )}
         {showAttention && <AgentAttentionState attention={attention} name={name} />}

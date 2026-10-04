@@ -46,7 +46,7 @@ function RailAgent({ workspace, terminal, isCurrent, suppressClickRef }: RailAge
   const worktree = getAgentWorktreeContext(workspace, terminal, useAgentLocation(terminal.id));
   // Branch identity only: management of checkouts lives in the expanded sidebar.
   const description = worktree
-    ? `${name} · ${harness.label} · on branch ${worktreeBranchLabel(worktree)}${suffix}`
+    ? `${name} · ${harness.label} · on branch ${worktreeBranchLabel(worktree)}${worktree.missing ? ' (checkout removed)' : ''}${suffix}`
     : `${name} · ${harness.label}${suffix}`;
 
   return (

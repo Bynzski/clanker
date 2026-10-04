@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { selectFocusedWorkspace, useWorkspaceStore } from '../store/workspaceStore';
 import { Tag, Circle, GitBranch, Folder, Server } from 'lucide-react';
 import { getRemoteEnvironmentLabel, getRemoteEnvironmentName, getWorkspaceProjectName } from '../lib/workspaceLabels';
-import { getSelectedAgentWorktreeContext, worktreeBranchLabel } from '../lib/worktreeAgents';
+import { getSelectedAgentWorktreeContext, worktreeBranchLabel, worktreeDisplayLabel } from '../lib/worktreeAgents';
 import { useAgentLocation } from '../lib/useAgentLocation';
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import { useAssistantsStore } from '../store/assistantsStore';
@@ -16,7 +16,7 @@ export default function StatusBar() {
   const selectedLocation = useAgentLocation(focusedWorkspace?.activeTerminalId);
   const agentWorktree = focusedWorkspace ? getSelectedAgentWorktreeContext(focusedWorkspace, selectedLocation) : null;
   const workspacePath = agentWorktree?.path ?? focusedWorkspace?.workspacePath ?? '';
-  const currentBranch = agentWorktree ? agentWorktree.branch ?? null : focusedWorkspace?.gitCurrentBranch ?? null;
+  const currentBranch = agentWorktree ? (agentWorktree.branch ? worktreeDisplayLabel(agentWorktree) : null) : focusedWorkspace?.gitCurrentBranch ?? null;
   const isRepo = agentWorktree ? true : focusedWorkspace?.gitIsRepo ?? false;
   const isDetached = agentWorktree ? !agentWorktree.branch : focusedWorkspace?.gitIsDetached ?? false;
   const activeAssistantId = useAssistantNavStore((state) => state.activeAssistantId);
@@ -58,7 +58,7 @@ export default function StatusBar() {
           <span
             className="status-branch"
             title={agentWorktree
-              ? `${worktreeBranchLabel(agentWorktree)} (selected agent's isolated worktree)\n${agentWorktree.path}`
+              ? `${worktreeBranchLabel(agentWorktree)} (selected agent's isolated worktree${agentWorktree.missing ? ', checkout removed' : ''})\n${agentWorktree.path}`
               : isDetached ? 'Detached HEAD' : currentBranch ?? ''}
           >
             <GitBranch size={12} strokeWidth={2} />

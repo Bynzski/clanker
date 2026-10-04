@@ -34,6 +34,24 @@ export interface CheckoutContext {
    * Git, or terminal access. Reaching it requires its own environment-validated context.
    */
   mainCheckoutPath?: string;
+  /**
+   * Descriptive only: Git no longer lists this worktree as usable (removed, or its directory is
+   * gone). Set by reconciliation while something is still bound to the context; a missing context
+   * nothing was launched into is dropped instead.
+   */
+  missing?: boolean;
+}
+
+/**
+ * Outcome of reconciling a workspace's worktree checkout contexts with Git. `contexts` are the
+ * workspace's remaining worktree contexts as main now describes them; `dropped` were unregistered
+ * because their worktree is gone and nothing was launched into them.
+ */
+export interface ReconcileCheckoutContextsResult {
+  success: boolean;
+  contexts?: CheckoutContext[];
+  dropped?: string[];
+  error?: string;
 }
 
 /**

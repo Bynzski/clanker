@@ -7,6 +7,22 @@ import { isSameWorkspaceIdentity } from '../shared/workspaceIdentity';
 import type { RegisteredWorkspace, WorkspaceRegistry } from './workspaceRegistry';
 
 /**
+ * Git's listed worktree whose root is `worktreePath`, compared by environment path identity (local
+ * paths symlink-resolved where they exist). Shared by every route that matches a checkout against
+ * Git's own listing.
+ */
+export function findListedWorktree(
+  listing: GitWorktreeListResult, environmentId: string, worktreePath: string,
+): GitWorktreeListResult['worktrees'][number] | null {
+  const comparable = (entryPath: string): string => {
+    if (environmentId !== LOCAL_ENVIRONMENT_ID) return entryPath;
+    try { return toPosixPath(fs.realpathSync.native(toNativePath(entryPath, process.platform))); } catch { return toPosixPath(entryPath); }
+  };
+  const target = { environmentId, path: comparable(worktreePath) };
+  return listing.worktrees.find((entry) => isSameWorkspaceIdentity({ environmentId, path: comparable(entry.path) }, target)) ?? null;
+}
+
+/**
  * Attaches a worktree that Git has just created to the workspace that asked for it, as a
  * `worktree` checkout context. This is the only route by which a renderer request leads to a
  * new execution root, and every authoritative field comes from main:
@@ -89,21 +105,14 @@ export async function adoptListedWorktree(params: {
   if (typeof worktreePath !== 'string' || !worktreePath.trim()) return fail('Choose a worktree to use');
 
   const environmentId = workspace.location.environmentId;
-  const isLocal = environmentId === LOCAL_ENVIRONMENT_ID;
-  const comparable = (entryPath: string): string => {
-    if (!isLocal) return entryPath;
-    try { return toPosixPath(fs.realpathSync.native(toNativePath(entryPath, process.platform))); } catch { return toPosixPath(entryPath); }
-  };
 
   try {
     const listing = await listWorktrees();
     if (!listing.success) return fail(listing.error || 'Git could not list the repository worktrees');
-    const requested = { environmentId, path: comparable(worktreePath) };
-    const listed = listing.worktrees.find((entry) =>
-      isSameWorkspaceIdentity({ environmentId, path: comparable(entry.path) }, requested));
+    const listed = findListedWorktree(listing, environmentId, worktreePath);
     if (!listed) return fail('Git does not list that path as a worktree of this repository');
     if (listed.isMain) return fail('The main checkout cannot be used as an isolated worktree');
-    if (isSameWorkspaceIdentity({ environmentId, path: comparable(listed.path) }, { environmentId, path: comparable(workspace.location.path) })) {
+    if (findListedWorktree({ success: true, worktrees: [listed] }, environmentId, workspace.location.path)) {
       return fail('That checkout is already this workspace\'s own checkout');
     }
     if (listed.isPrunable) return fail('That worktree\'s directory is missing; prune it from the Git menu');

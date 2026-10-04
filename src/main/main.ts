@@ -76,6 +76,7 @@ import { purgeLegacyTaskSessions, seedHarnessAttention, seedWorkspaceNavigationM
 import { existsSync } from 'node:fs';
 import { AgentAttentionBroker } from './agentAttentionBroker';
 import { createAgentLocationResolver } from './agentLocation';
+import { releaseCheckoutContext } from './checkoutContextRelease';
 import { AGENT_ATTENTION_CHANGED, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles, scavengeStaleAttentionRoots, migrateLegacyAgyAttentionPlugin } from './agentAttentionAdapters';
 import { waitForTerminalCleanup } from './ipc/ptySpawn';
@@ -409,6 +410,8 @@ app.whenReady().then(() => {
     getGitService: () => gitService,
     getMainWindow: () => mainWindow,
     getWorkspaceRegistry: () => workspaceRegistry,
+    releaseCheckoutContext: (workspaceId, checkoutContextId) =>
+      releaseCheckoutContext({ registry: workspaceRegistry, terminals: terminals.values(), workspaceId, checkoutContextId }),
     onWorkspaceUnregistered: (id) => { browserIpcController?.disposeWorkspace(id); remoteFileWatcher.closeWorkspace(id); void remotePreviewManager.closeWorkspace(id); },
     getLiveRemoteTerminalPaths: (environmentId) => {
       const paths: string[] = [];
