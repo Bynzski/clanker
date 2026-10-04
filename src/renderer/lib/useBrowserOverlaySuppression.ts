@@ -1,6 +1,8 @@
 import { useLayoutEffect } from 'react';
 import { useScopedWorkspaceId } from '../components/WorkspaceScope';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { useAssistantNavStore } from '../store/assistantNavStore';
+import { useAssistantSurfaceStore } from '../store/assistantSurfaceStore';
 
 /** Own one store suppression lease while open. Explicit/context scope wins;
  * otherwise follow the active workspace, including the legacy no-workspace state.
@@ -24,4 +26,14 @@ export function useBrowserOverlaySuppression(open: boolean, workspaceId?: string
       pop(ownerId);
     };
   }, [open, ownerId, push, pop]);
+}
+
+/** An open popover/dialog also hides the active Assistant's native Browser view, which would otherwise overlay it. */
+export function useAssistantBrowserOverlaySuppression(open: boolean): void {
+  const activeAssistantId = useAssistantNavStore((state) => state.activeAssistantId);
+  useLayoutEffect(() => {
+    if (!open || !activeAssistantId) return;
+    useAssistantSurfaceStore.getState().pushOverlay(activeAssistantId);
+    return () => useAssistantSurfaceStore.getState().popOverlay(activeAssistantId);
+  }, [open, activeAssistantId]);
 }

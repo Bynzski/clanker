@@ -406,6 +406,11 @@ export class HermesAssistantService {
   private entry(assistantId: string): RosterEntry | undefined { return this.roster.find((entry) => entry.public.id === assistantId); }
 
   /** Open (or reveal) the Assistant's canonical Bot Chat. Concurrent opens of one Assistant share one resolution. */
+  /** True while this opaque id resolves to a roster Assistant (or one with an open surface). Gates Browser ownership. */
+  hasAssistant(assistantId: string): boolean {
+    return this.settings.enabled && this.available && isValidAssistantId(assistantId) && (!!this.entry(assistantId) || this.sessions.has(assistantId));
+  }
+
   openSurface(assistantId: unknown): Promise<AssistantOpenResult> {
     if (!isValidAssistantId(assistantId)) return Promise.reject(new Error('Invalid assistant'));
     const existing = this.sessions.get(assistantId);

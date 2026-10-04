@@ -10,12 +10,15 @@ import { IconButton } from './ui/IconButton';
 import ChatHistoryDropdown from './ChatHistoryDropdown';
 import UsageDropdown from './UsageDropdown';
 import type { UseHarnessUsageResult } from './useHarnessUsage';
+import type { DestinationCapabilities } from '../lib/activeDestination';
 import AssistantsSettings from './settings/AssistantsSettings';
 import AppearanceSettings from './settings/AppearanceSettings';
 import HarnessDefaultsSection from './settings/HarnessDefaultsSection';
 
 interface HeaderRightControlsProps {
   /** Panel visibility toggles (Explorer/Browser/Notes), shown first in the right-hand group. */
+  /** What the active destination supports; workspace-scoped controls are removed when it is not a workspace. */
+  capabilities: DestinationCapabilities;
   panelToggles?: React.ReactNode;
   fitAllPanes: () => void;
   undoLayout: () => void;
@@ -70,6 +73,7 @@ interface HeaderRightControlsProps {
 }
 
 export default function HeaderRightControls({
+  capabilities,
   panelToggles,
   fitAllPanes,
   undoLayout,
@@ -129,6 +133,7 @@ export default function HeaderRightControls({
           <span className="toolbar-divider" aria-hidden="true" />
         </>
       )}
+      {capabilities.layout && (<>
       <IconButton
         size="xs"
         variant="ghost"
@@ -152,7 +157,8 @@ export default function HeaderRightControls({
       >
         <LayoutGrid size={14} strokeWidth={2} />
       </IconButton>
-      {onOpenRecipes && (
+      </>)}
+      {capabilities.recipes && onOpenRecipes && (
         <IconButton
           size="xs"
           variant="ghost"
@@ -165,7 +171,8 @@ export default function HeaderRightControls({
           <ScrollText size={14} strokeWidth={2} />
         </IconButton>
       )}
-      <span className="toolbar-divider" aria-hidden="true" />
+      {(capabilities.sessionHistory || capabilities.usage) && <span className="toolbar-divider" aria-hidden="true" />}
+      {capabilities.sessionHistory && (
       <Popover open={showChatHistory} onOpenChange={onChatHistoryOpenChange}>
         <PopoverTrigger asChild>
           <IconButton
@@ -189,6 +196,8 @@ export default function HeaderRightControls({
           />
         </PopoverContent>
       </Popover>
+      )}
+      {capabilities.usage && (
       <Popover open={showUsage} onOpenChange={onUsageOpenChange}>
         <PopoverTrigger asChild>
           <IconButton size="xs" variant="ghost" className={`header-btn toolbar-btn header-btn-icon ${showUsage ? 'active' : ''}`} aria-label="Usage" title="Usage" disabled={!usageReady && !showUsage}>
@@ -216,6 +225,7 @@ export default function HeaderRightControls({
           />
         </PopoverContent>
       </Popover>
+      )}
       <Popover open={showSettings} onOpenChange={onSettingsOpenChange}>
         <PopoverTrigger asChild>
           <IconButton ref={settingsTriggerRef} size="xs" variant="ghost" className={`header-btn toolbar-btn header-btn-icon ${showSettings ? 'active' : ''}`} aria-label="Settings" title="Settings">

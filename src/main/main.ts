@@ -81,6 +81,7 @@ import { waitForTerminalCleanup } from './ipc/ptySpawn';
 import { HermesAssistantService } from './assistants/hermesAssistantService';
 import { registerAssistantIpc } from './ipc/assistantIpc';
 import { ASSISTANTS_CHANGED, ASSISTANTS_PTY_DATA } from '../shared/ipcChannels';
+import { assistantBrowserOwners, resolveBrowserOwnerKind } from './browserOwner';
 
 
 
@@ -347,6 +348,10 @@ app.whenReady().then(() => {
     // The same authority behind the toolbar's Hermes launcher: a missing CLI makes Assistants dormant.
     isHermesAvailable: () => Boolean(getAvailableHarnessOptions().hermes),
     onChanged: (snapshot) => {
+      // Deliberately disabled (or unavailable) Assistants own no native Browser views: dispose them all.
+      if (!snapshot.settings.enabled || !snapshot.available) {
+        for (const owner of assistantBrowserOwners(browserViews.keys())) browserIpcController?.disposeWorkspace(owner);
+      }
       if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(ASSISTANTS_CHANGED, snapshot);
     },
     onPtyData: (assistantId, data) => {
@@ -360,7 +365,10 @@ app.whenReady().then(() => {
   registerRemotePreviewIpc(remotePreviewManager);
   browserIpcController = registerBrowserIpc({
     onBrowserNavigation: (id, url, code) => remotePreviewManager.reportBrowserNavigation(id, url, code),
-    getWorkspaceEnvironmentKind: (id) => workspaceRegistry.getWorkspace(id)?.environment.kind ?? null,
+    getWorkspaceEnvironmentKind: (id) => resolveBrowserOwnerKind(id, {
+      hasAssistant: (assistantId) => assistantService?.hasAssistant(assistantId) ?? false,
+      getWorkspaceKind: (workspaceId) => workspaceRegistry.getWorkspace(workspaceId)?.environment.kind ?? null,
+    }),
     getMainWindow: () => mainWindow,
     getKeybindingOverrides: () => keybindingOverrides.get(),
     getBrowserViews: () => browserViews,

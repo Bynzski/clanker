@@ -1,6 +1,5 @@
 import { useCallback } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { createAndActivateBrowserTab, syncSelectedBrowserTab } from '../lib/browserTabActions';
 
 interface RemoveBrowserTabResult {
   removed: boolean;
@@ -8,14 +7,17 @@ interface RemoveBrowserTabResult {
 }
 
 interface UseBrowserPanelActionsOptions {
-  workspaceId: string | null;
+  /** Opaque Browser owner: a workspace id or an Assistant browser scope. */
+  ownerId: string | null;
   activeTabId: string | null;
   browserTabsCount: number;
   displayedUrl: string;
   annotationActive: boolean;
   setAnnotationActive: (value: boolean) => void;
-  removeBrowserTab: (tabId: string, workspaceId: string) => RemoveBrowserTabResult;
-  setActiveBrowserTab: (tabId: string, workspaceId: string) => boolean;
+  removeBrowserTab: (tabId: string) => RemoveBrowserTabResult;
+  setActiveBrowserTab: (tabId: string) => boolean;
+  createTab: () => Promise<string | null>;
+  syncSelectedTab: () => Promise<void>;
   scheduleBoundsUpdate: (force?: boolean) => void;
 }
 
@@ -33,7 +35,7 @@ interface UseBrowserPanelActionsResult {
 }
 
 export function useBrowserPanelActions({
-  workspaceId,
+  ownerId,
   activeTabId,
   browserTabsCount,
   displayedUrl,
@@ -41,27 +43,29 @@ export function useBrowserPanelActions({
   setAnnotationActive,
   removeBrowserTab,
   setActiveBrowserTab,
+  createTab,
+  syncSelectedTab,
   scheduleBoundsUpdate,
 }: UseBrowserPanelActionsOptions): UseBrowserPanelActionsResult {
   const handleBack = useCallback(() => {
-    if (!workspaceId) return;
-    window.electronAPI.browserBack(workspaceId);
-  }, [workspaceId]);
+    if (!ownerId) return;
+    window.electronAPI.browserBack(ownerId);
+  }, [ownerId]);
 
   const handleForward = useCallback(() => {
-    if (!workspaceId) return;
-    window.electronAPI.browserForward(workspaceId);
-  }, [workspaceId]);
+    if (!ownerId) return;
+    window.electronAPI.browserForward(ownerId);
+  }, [ownerId]);
 
   const handleRefresh = useCallback(() => {
-    if (!workspaceId) return;
-    window.electronAPI.browserRefresh(workspaceId);
-  }, [workspaceId]);
+    if (!ownerId) return;
+    window.electronAPI.browserRefresh(ownerId);
+  }, [ownerId]);
 
   const handleStop = useCallback(() => {
-    if (!workspaceId) return;
-    window.electronAPI.browserStop(workspaceId);
-  }, [workspaceId]);
+    if (!ownerId) return;
+    window.electronAPI.browserStop(ownerId);
+  }, [ownerId]);
 
   const handleOpenExternal = useCallback(() => {
     if (displayedUrl) {
@@ -70,7 +74,7 @@ export function useBrowserPanelActions({
   }, [displayedUrl]);
 
   const handleAnnotationToggle = useCallback(async () => {
-    if (!workspaceId) return;
+    if (!ownerId) return;
 
     if (annotationActive) {
       await window.electronAPI.annotationDisable();
@@ -78,38 +82,38 @@ export function useBrowserPanelActions({
       return;
     }
 
-    const result = await window.electronAPI.annotationEnable(workspaceId);
+    const result = await window.electronAPI.annotationEnable(ownerId);
     if (result.success) {
       setAnnotationActive(true);
     }
-  }, [annotationActive, setAnnotationActive, workspaceId]);
+  }, [annotationActive, setAnnotationActive, ownerId]);
 
   const handleNewTab = useCallback(async () => {
-    if (!workspaceId) return;
-    const tabId = await createAndActivateBrowserTab(workspaceId);
+    if (!ownerId) return;
+    const tabId = await createTab();
     if (!tabId) return;
     scheduleBoundsUpdate(true);
-  }, [scheduleBoundsUpdate, workspaceId]);
+  }, [createTab, scheduleBoundsUpdate, ownerId]);
 
   const handleSwitchTab = useCallback(async (tabId: string) => {
-    if (!workspaceId || tabId === activeTabId) return;
+    if (!ownerId || tabId === activeTabId) return;
 
-    const changed = setActiveBrowserTab(tabId, workspaceId);
+    const changed = setActiveBrowserTab(tabId);
     if (!changed) return;
-    await window.electronAPI.browserSwitchTab(workspaceId, tabId);
+    await window.electronAPI.browserSwitchTab(ownerId, tabId);
     scheduleBoundsUpdate(true);
-  }, [activeTabId, scheduleBoundsUpdate, setActiveBrowserTab, workspaceId]);
+  }, [activeTabId, scheduleBoundsUpdate, setActiveBrowserTab, ownerId]);
 
   const closeTabById = useCallback(async (tabId: string) => {
-    if (!workspaceId || browserTabsCount <= 1) return;
+    if (!ownerId || browserTabsCount <= 1) return;
 
-    const { removed } = removeBrowserTab(tabId, workspaceId);
+    const { removed } = removeBrowserTab(tabId);
     if (!removed) return;
 
-    await window.electronAPI.browserCloseTab(workspaceId, tabId);
-    await syncSelectedBrowserTab(workspaceId);
+    await window.electronAPI.browserCloseTab(ownerId, tabId);
+    await syncSelectedTab();
     scheduleBoundsUpdate(true);
-  }, [browserTabsCount, removeBrowserTab, scheduleBoundsUpdate, workspaceId]);
+  }, [browserTabsCount, removeBrowserTab, scheduleBoundsUpdate, syncSelectedTab, ownerId]);
 
   const handleCloseTab = useCallback(async (event: ReactMouseEvent, tabId: string) => {
     event.stopPropagation();

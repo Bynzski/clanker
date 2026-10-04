@@ -6,6 +6,8 @@ import WorkspaceSidebar from './WorkspaceSidebar';
 import { useWorkspaceNavigationStore } from '../store/workspaceNavigationStore';
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import { useAssistantsStore } from '../store/assistantsStore';
+import { useAssistantSurfaceStore } from '../store/assistantSurfaceStore';
+import { assistantBrowserOwnerId } from '../../shared/browserOwner';
 import AssistantSurface from './assistants/AssistantSurface';
 import ExplorerLifecycleCoordinator from './ExplorerLifecycleCoordinator';
 import { withWorkspaceResidency } from '../store/workspaceStoreHelpers';
@@ -115,13 +117,18 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
   const openedAssistantIds = useAssistantNavStore((state) => state.openedAssistantIds);
   const knownAssistants = useAssistantsStore((state) => state.knownAssistants);
   const assistantActive = activeAssistantId !== null;
+  const clearAssistantSurfaceUi = useAssistantSurfaceStore((state) => state.clearAll);
   const clearAllAssistants = useAssistantNavStore((state) => state.clearAllAssistants);
   const ensureAssistantsSubscribed = useAssistantsStore((state) => state.ensureSubscribed);
   // Authoritative disabled/unavailable snapshot = deliberate teardown. A transient offline/probing/starting
   // service is NOT: those keep their parked surfaces so they can re-attach.
   const assistantsOff = useAssistantsStore((state) => state.snapshot !== null && (!state.snapshot.available || !state.snapshot.settings.enabled));
   useEffect(() => { ensureAssistantsSubscribed(); }, [ensureAssistantsSubscribed]);
-  useEffect(() => { if (assistantsOff) clearAllAssistants(); }, [assistantsOff, clearAllAssistants]);
+  useEffect(() => {
+    if (!assistantsOff) return;
+    clearAllAssistants();
+    clearAssistantSurfaceUi(); // main disposes the Assistant-owned native Browser views on the same transition
+  }, [assistantsOff, clearAllAssistants, clearAssistantSurfaceUi]);
   // Track prior active ID to detect switches
   const prevActiveWorkspaceIdRef = useRef<string | null>(null);
   const recentWorkspaceIdsRef = useRef<string[]>([]);
@@ -142,6 +149,8 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
 
   const lifecycleActiveWorkspace = workspaces.find((workspace) => workspace.lifecycle === 'active') ?? null;
   const resolvedActiveWorkspaceId = activeWorkspaceId ?? lifecycleActiveWorkspace?.id ?? workspaces[0]?.id ?? null;
+  // One active Browser owner at most: the active Assistant's scope, else the active workspace.
+  const activeBrowserOwnerId = activeAssistantId ? assistantBrowserOwnerId(activeAssistantId) : resolvedActiveWorkspaceId;
   const warmWorkspaceIds = useMemo(
     () => selectWarmWorkspaceIds(
       workspaceIds,
@@ -191,7 +200,7 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
         data-navigation-mode={navigationMode}
       >
         {/* While an Assistant is on screen no workspace is focused, so native Browser views are hidden. */}
-        <BrowserLifecycleCoordinator activeWorkspaceId={assistantActive ? null : resolvedActiveWorkspaceId} />
+        <BrowserLifecycleCoordinator activeOwnerId={activeBrowserOwnerId} />
         {sidebarMode && <WorkspaceSidebar onOpenWorkspace={onOpenWorkspace} />}
         <div className="workspace-surfaces-container">
           {workspaces.map((workspace) => (

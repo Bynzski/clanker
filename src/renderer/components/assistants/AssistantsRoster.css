@@ -22,8 +22,10 @@
 .assistant-surface { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; position: relative; background: var(--surface-app); }
 .assistant-surface.parked { display: none; }
 .assistant-surface-header { padding: 4px var(--space-md); border-bottom: 1px solid var(--border-default); color: var(--text-secondary); font-size: var(--font-size-sm); }
+.assistant-surface-body { flex: 1; min-height: 0; min-width: 0; }
+.assistant-terminal { position: relative; display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; }
 .assistant-surface-terminal { flex: 1; min-height: 0; padding: 4px; }
-.assistant-surface-overlay { position: absolute; inset: 28px 0 0 0; display: flex; flex-direction: column; gap: var(--space-sm); align-items: center; justify-content: center; text-align: center; background: var(--surface-app); padding: var(--space-lg); }
+.assistant-surface-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; gap: var(--space-sm); align-items: center; justify-content: center; text-align: center; background: var(--surface-app); padding: var(--space-lg); }
 
 /* One upper navigation stack: WORKSPACES then ASSISTANTS, scrolling together above the bottom-pinned FILES. */
 .workspace-sidebar-upper { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto; }

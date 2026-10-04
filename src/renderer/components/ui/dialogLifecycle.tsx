@@ -1,8 +1,9 @@
 import { useRef } from 'react';
-import { useBrowserOverlaySuppression } from '../../lib/useBrowserOverlaySuppression';
+import { useAssistantBrowserOverlaySuppression, useBrowserOverlaySuppression } from '../../lib/useBrowserOverlaySuppression';
 
 export function BrowserOverlayLease({ workspaceId }: { workspaceId?: string }) {
   useBrowserOverlaySuppression(true, workspaceId);
+  useAssistantBrowserOverlaySuppression(true);
   return null;
 }
 
