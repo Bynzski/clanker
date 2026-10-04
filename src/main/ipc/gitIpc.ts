@@ -9,6 +9,8 @@ import * as path from 'path';
 import { GitService, type GitWorkspaceIdentity } from '../gitService';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { adoptListedWorktree, attachCreatedWorktree } from '../worktreeContextAttachment';
+import { recordListedWorktrees } from '../sessionWorktrees';
+import type { WorktreeProvenance } from '../worktreeProvenance';
 import { reconcileCheckoutContexts } from '../checkoutContextReconcile';
 import type { ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
 import type { GitCreateWorktreeOptions, GitWorktreeCreateResult } from '../../shared/types/git';
@@ -75,6 +77,8 @@ interface RegisterGitIpcDeps {
   /** Told which of a workspace's contexts Git no longer has (marked missing or dropped) after a reconciliation. */
   onCheckoutContextsGone?: (workspaceId: string, checkoutContextIds: string[]) => void;
   remoteWorktreeRemovalPersistence?: RemoteWorktreeRemovalPersistence;
+  /** Remembers worktrees main observes or creates, so their conversations stay attributable once removed. */
+  worktreeProvenance?: WorktreeProvenance;
 }
 function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
   if (!Array.isArray(paths) || !paths.every((entry) => typeof entry === 'string')) return null;
@@ -86,7 +90,16 @@ function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
   return validated.every((entry): entry is string => entry !== null) ? validated : null;
 }
 
-export function registerGitIpc(deps: RegisterGitIpcDeps): void {
+export interface GitIpcController {
+  /**
+   * Creates the worktree for an *existing* branch at its generated path and attaches it to the
+   * workspace as a checkout context: the same trusted route as `New isolated agent`, including SSH
+   * recovery blocking and reservations. Used only after the user confirms recreating a removed one.
+   */
+  createWorktreeForSession(workspaceId: string, branch: string): Promise<GitWorktreeCreateResult>;
+}
+
+export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
   const { getGitService, getMainWindow, getWorkspaceRegistry } = deps;
   const gitService = getGitService();
   const remoteWorktrees = new RemoteWorktreeCoordinator(() => getWorkspaceRegistry?.(), deps.getLiveRemoteTerminalPaths, deps.remoteWorktreeRemovalPersistence);
@@ -231,6 +244,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     const safePath = getValidatedWorkspacePath(workspacePath);
     if (!safePath) return { success: false, worktrees: [], error: getInvalidWorkspaceResult().error };
     const result = await gitService.listWorktrees(safePath);
+    recordListedWorktrees(deps.worktreeProvenance, gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local', result);
     return isRemote
       ? result
       : { ...result, worktrees: result.worktrees.map((entry) => ({ ...entry, path: toPosixPath(entry.path) })) };
@@ -299,13 +313,10 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return result;
   });
 
-  registerGitHandler(GIT_CREATE_WORKTREE,async (_, workspacePath: string, baseRef: string, branch: string, _workspaceId?: string, options?: GitCreateWorktreeOptions) => {
-    // A workspace id only routes the operation. Attaching the checkout as a worktree context is
-    // explicit opt-in, so the legacy New Workspace flows (which open the checkout as a separate
-    // workspace, and may pass the id of an open repository workspace) never gain a context.
-    const ws = resolveWorkspace();
+  const createWorktreeInScope = async (
+    ws: ReturnType<typeof resolveWorkspace>, workspacePath: string, baseRef: string, branch: string, attachRequested: boolean,
+  ): Promise<GitWorktreeCreateResult> => {
     const registry = getWorkspaceRegistry?.();
-    const attachRequested = typeof options === 'object' && options !== null && options.attachCheckoutContext === true;
     if (attachRequested && (!ws || !registry)) {
       return { success: false, error: 'A registered workspace is required to attach a checkout context' };
     }
@@ -313,18 +324,35 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
       attachRequested && ws && registry
         ? attachCreatedWorktree({ registry, workspace: ws, created, listWorktrees: () => gitService.listWorktrees(listPath) })
         : created;
+    const remember = async (created: GitWorktreeCreateResult, listPath: string, environmentId: string): Promise<void> => {
+      // A created checkout is remembered at once (Git may forget it after removal); best effort only.
+      if (created.worktree && deps.worktreeProvenance) {
+        try { recordListedWorktrees(deps.worktreeProvenance, environmentId, await gitService.listWorktrees(listPath)); } catch { /* best effort */ }
+      }
+    };
     if (ws && ws.location.environmentId !== 'local') {
       const recoveryError = remoteWorktrees.getRecoveryError();
       if (recoveryError) return { success: false, error: recoveryError };
       if (!ws.environment.createWorktree) return { success: false, error: 'Worktree creation is unavailable for this environment' };
-      return attach(await ws.environment.createWorktree(ws.location.path, baseRef, branch), ws.location.path);
+      const created = await ws.environment.createWorktree(ws.location.path, baseRef, branch);
+      await remember(created, ws.location.path, ws.location.environmentId);
+      return attach(created, ws.location.path);
     }
     const safePath = getValidatedWorkspacePath(workspacePath);
     if (!safePath) return getInvalidWorkspaceResult();
     const result = await gitService.createWorktree(safePath, baseRef, branch);
+    await remember(result, safePath, 'local');
     return attach(result.worktree
       ? { ...result, worktree: { ...result.worktree, path: toPosixPath(result.worktree.path) } }
       : result, safePath);
+  };
+
+  registerGitHandler(GIT_CREATE_WORKTREE,async (_, workspacePath: string, baseRef: string, branch: string, _workspaceId?: string, options?: GitCreateWorktreeOptions) => {
+    // A workspace id only routes the operation. Attaching the checkout as a worktree context is
+    // explicit opt-in, so the legacy New Workspace flows (which open the checkout as a separate
+    // workspace, and may pass the id of an open repository workspace) never gain a context.
+    const attachRequested = typeof options === 'object' && options !== null && options.attachCheckoutContext === true;
+    return createWorktreeInScope(resolveWorkspace(), workspacePath, baseRef, branch, attachRequested);
   });
 
   registerGitHandler(REGISTER_OPEN_WORKSPACE, async (_, id: string, workspacePath: string, environmentId?: string) => {
@@ -757,4 +785,15 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
   // Event channel — registered so the integration test can verify completeness.
   // This is one-way: main sends events to renderer (no handler needed).
   ipcMain.on(GIT_STATUS_UPDATE, () => { });
+
+  return {
+    createWorktreeForSession: (workspaceId, branch) => {
+      const ws = resolveWorkspace(workspaceId);
+      if (!ws) return Promise.resolve({ success: false, error: 'A registered workspace is required to recreate a worktree' });
+      const identity: GitWorkspaceIdentity = {
+        workspacePath: ws.location.path, workspaceId: ws.workspaceId, environmentId: ws.location.environmentId,
+      };
+      return gitService.withWorkspace(identity, () => createWorktreeInScope(ws, ws.location.path, '', branch, true));
+    },
+  };
 }

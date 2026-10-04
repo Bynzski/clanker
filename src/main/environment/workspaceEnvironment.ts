@@ -105,7 +105,12 @@ export interface WorkspaceEnvironment {
   getHarnessOptions(): Promise<Record<string, EnvironmentHarnessOption>>;
   probeAvailableHarnessIds(): Promise<string[]>;
   discoverHarnessModels?(harnessId: string): Promise<EnvironmentModelOption[]>;
-  discoverSessions?(workspacePath: string): Promise<HarnessSession[]>;
+  /**
+   * `scopes` are extra directories, derived by main from Git, whose conversations also belong to
+   * the workspace (its repository's linked worktrees). They widen only what the on-host scan
+   * reports, never what may be launched.
+   */
+  discoverSessions?(workspacePath: string, scopes?: readonly string[]): Promise<HarnessSession[]>;
   /**
    * Bounded command execution in this environment (local process or the saved
    * SSH target). Harness capabilities such as usage run through this; they never

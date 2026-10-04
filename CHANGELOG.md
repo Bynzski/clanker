@@ -12,6 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Isolated-agent conversations in chat history** — conversations held by agents launched into a worktree now appear in the workspace's chat history (local and SSH), labelled with their branch (or `branch · removed` once the checkout is gone). Resuming one launches into that worktree's checkout context (adopting it first when needed). If the worktree was removed, Claude, Codex and Oh My Pi resume in the main checkout and say so; Pi, OpenCode and Antigravity can only continue in their original directory, so Clanker offers to recreate the worktree from its branch (after confirmation) or explains why it cannot. Directories that were never this repository's worktrees stay out of history.
 - **Windows harness PTY safety** — local harness terminals and resumed sessions now resolve their final command through the bounded Windows PTY planner instead of constructing raw `cmd.exe /c` invocations, so unusual paths and arguments can no longer be misinterpreted by the shell.
 
 ## [0.10.0] - 2026-10-03

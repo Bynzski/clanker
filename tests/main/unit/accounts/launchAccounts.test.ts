@@ -9,6 +9,16 @@ import { testHarnessWrapper } from '../../../_helpers/tempPaths';
 const { mockHandle, mockSpawnPty, mockDiscover, mockBuildArgs } = vi.hoisted(() => ({
   mockHandle: vi.fn(), mockSpawnPty: vi.fn(), mockDiscover: vi.fn(), mockBuildArgs: vi.fn(),
 }));
+// These tests exercise unrelated resume behaviour against a fictional '/workspace'; the real
+// filesystem-backed containment rule is covered by sessionIpcWorktrees.test.ts and the real-Git test.
+vi.mock('../../../../src/main/localPathContainment', async () => {
+  const path = await import('node:path');
+  return { isInsideRoot: (root: string, target: string) => {
+    const relative = path.relative(root, target);
+    return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  } };
+});
+
 vi.mock('electron', () => ({ ipcMain: { handle: mockHandle, on: vi.fn() }, BrowserWindow: vi.fn(), clipboard: { writeText: vi.fn() }, shell: { openExternal: vi.fn() } }));
 vi.mock('../../../../src/main/ipc/ptySpawn', () => ({ spawnPtyProcess: mockSpawnPty, waitForTerminalCleanup: vi.fn() }));
 vi.mock('../../../../src/main/platformShell', async (importOriginal) => ({ ...(await importOriginal<object>()), defaultShell: () => 'shell' }));
@@ -22,6 +32,8 @@ import { addAccount, createHarness, lastOf, type Harness } from './accountFixtur
 import { withCheckoutContexts } from '../../../_helpers/checkoutContexts';
 
 const WORKSPACE = toNativePath('/workspace', process.platform);
+const workspaceObject = { workspaceId: 'ws', location: { environmentId: 'local', path: '/workspace' } };
+const stableRegistry = withCheckoutContexts({ getWorkspace: (id: string) => (id === 'ws' ? workspaceObject : null) });
 type Handler = (event: unknown, ...args: unknown[]) => Promise<Record<string, unknown>>;
 const handlers = new Map<string, Handler>();
 
@@ -143,7 +155,7 @@ describe('resume and fork keep the account that owns the session', () => {
       getHarnessOptions: () => options,
       // Account/session ownership is the subject here, not host installation: the real planner runs, with a deterministic fake executable.
       harnessSpawnOverrides: { fileExists: () => true },
-      getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: (id: string) => (id === 'ws' ? { workspaceId: 'ws', location: { environmentId: 'local', path: '/workspace' } } : null) }) as never,
+      getWorkspaceRegistry: () => stableRegistry as never,
       getHarnessAccountService: () => h.service,
     });
   }

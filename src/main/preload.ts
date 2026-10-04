@@ -9,7 +9,7 @@ import type { HarnessDefaultsMap } from '../shared/types/store';
 import type { KeybindingOverrides, BrowserKeybindingCommandPayload } from '../shared/keybindings';
 import type { VcsProvider } from '../shared/types/vcs';
 import type { GitCreateWorktreeOptions, GitStatusResult } from '../shared/types/git';
-import type { HarnessSession } from '../shared/types/session';
+import type { HarnessSession, SessionInvokeOptions } from '../shared/types/session';
 import type { HarnessUsageRequest } from '../shared/types/harnessUsage';
 import type { HarnessAccountAuthEvent } from '../shared/types/harnessAccounts';
 import type { AgentAttentionChange } from '../shared/types/agentAttention';
@@ -562,8 +562,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Session history
   discoverSessions: (workspaceId: string) =>
     ipcRenderer.invoke(SESSION_DISCOVER, workspaceId),
-  invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean) =>
-    ipcRenderer.invoke(SESSION_INVOKE, workspaceId, session, fork),
+  invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean, options?: SessionInvokeOptions) =>
+    ipcRenderer.invoke(SESSION_INVOKE, workspaceId, session, fork, options),
 
   // Harness usage (workspaceId is the only reference; main resolves the environment)
   getHarnessUsage: (workspaceId: string, request?: HarnessUsageRequest) =>

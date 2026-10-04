@@ -1277,6 +1277,57 @@ do not canonize those names without version-specific evidence. OMP storage
 integration remains conventional locally and on SSH. Future storage work should
 extend provider root specifications and keep host environment resolution on-host.
 
+## Removed-worktree resume (issue #100)
+
+Conversations that ran in an isolated agent's worktree appear in the workspace's chat history
+(`sessionWorktrees.ts`). When the worktree has since been removed, whether a harness can continue the
+conversation from another directory is a property of that CLI, recorded per provider as
+`sessions.resumesWithoutOriginalDirectory`. Only a *proven* `true` lets main resume in the main checkout (with an
+explicit notice); everything else resumes only in its original directory, so main offers to recreate the
+worktree from its branch (`resolveSessionResumeTarget`, `RecreateCheckoutOffer`) and otherwise says precisely why
+it cannot.
+
+Characterized (October 2026) with the installed CLIs, a throwaway `HOME`/config directory and a session fixture
+whose recorded cwd no longer exists, resumed from an unrelated directory. No credentials were provided, so a
+resume that reaches the account/login step has already located and loaded the conversation:
+
+| Harness (version) | Resume after the cwd was removed | Evidence | Policy |
+| --- | --- | --- | --- |
+| Claude 2.1.289 | Finds and continues it; stays in its own project file | `claude -p --resume <id>` appended the new prompt to the original project file | resume in main + notice |
+| Codex 0.160.0 | Finds the rollout by id; runs in the current directory | `codex exec resume <id>`: rollout appended, `workdir` = current directory (an unknown id fails with "no rollout found") | resume in main + notice |
+| OMP 18.4.10 | Loads the session file | `omp --resume <file>` loaded it and proceeded (Clanker always passes `filePath`; a bare id is scoped to the session dir) | resume in main + notice |
+| Pi 1.0.0 | Refuses: "Stored session working directory does not exist"; by bare id from another project it asks to *fork* into the current directory | `pi --session <file>` / `--session <id>` | recreate the worktree |
+| OpenCode 1.18.34 | Finds the session (an unknown id says "Session not found") but fails with an "Unexpected server error" while its directory is missing | `opencode run --session <id>` after importing a session and deleting its directory | recreate the worktree |
+| Antigravity (agy) | Not characterizable offline: its conversation store is opaque and needs an authenticated account; nothing was assumed | – | recreate the worktree |
+
+Recreation uses the same trusted route as `New isolated agent` (`createWorktreeForSession`: `gitCreateWorktree` with
+`attachCheckoutContext`, SSH recovery blocking and reservations included) for an *existing* branch. It reproduces
+the original directory only because Clanker's directory name is a deterministic function of the branch
+(`worktreeDirectoryName`), so it is offered only when the removed path is that generated path and the branch still
+exists. It happens only after the user confirms (a second `SESSION_INVOKE` with `{ recreateCheckout: true }`), and main
+first re-finds the conversation in its own history. Pi's `validateLocal` is not relaxed: the recreated directory exists
+again and the session-file identity and owned-store checks run unchanged.
+
+Provenance for a *removed* worktree (it must be proven to belong to the repository; a stranger directory under
+`<repo>-worktrees`, another repository or a look-alike sibling is never matched):
+
+1. Git lists it (live, or prunable), or a registered checkout context names it.
+2. Main remembered it (`worktreeProvenance`, electron-store, keyed by environment + main checkout): written from
+   Git's listing and from checkouts main creates, read back after Git forgets it. This is the only record for an
+   adopted sibling or a deleted branch. A worktree created and removed entirely outside main's observation, whose
+   branch is also gone, cannot be attributed (nothing proves it) and is excluded rather than guessed.
+3. Its directory name is `worktreeDirectoryName(branch)` for an existing local (or remembered/listed) branch of this
+   repository. The name hashes the full branch name, so this also recovers the actual branch (`feature/foo`, not
+   `feature-foo-<hash>`).
+
+Reproducing a probe: copy a real session into a temporary home, change its recorded cwd to a directory that does not
+exist, and run the harness's resume command from another directory with that home (`HOME`, `CODEX_HOME`,
+`PI_CODING_AGENT_DIR`, `--session-dir`, `XDG_*DIR` for OpenCode). Never point a probe at a real conversation.
+
+SSH: the host scan takes main-derived absolute scope paths (at most 64, validated on both sides) and reports a
+session whose cwd no longer exists only when it lies inside a scope; the workspace root must still exist. The
+per-store byte, file, directory and 512-session bounds are unchanged (a scope costs matching, not reads).
+
 ## Hermes Assistants
 
 Hermes Assistants are an optional, disabled-by-default, local-only integration that is **independent of the ordinary Hermes harness** above. The ordinary harness remains a normal provider launching `hermes --tui` in a normal Clanker terminal; it needs no `hermes serve` and never calls into the code below.

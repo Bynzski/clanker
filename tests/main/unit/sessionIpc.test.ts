@@ -19,6 +19,16 @@ const {
   mockSpawnPtyProcess: vi.fn(),
 }));
 
+// These tests exercise unrelated resume behaviour against a fictional '/workspace'; the real
+// filesystem-backed containment rule is covered by sessionIpcWorktrees.test.ts and the real-Git test.
+vi.mock('../../../src/main/localPathContainment', async () => {
+  const path = await import('node:path');
+  return { isInsideRoot: (root: string, target: string) => {
+    const relative = path.relative(root, target);
+    return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  } };
+});
+
 vi.mock('electron', () => ({
   ipcMain: {
     handle: mockHandle,
@@ -44,14 +54,14 @@ import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
 
 type Handler = (_event: unknown, ...args: unknown[]) => unknown;
 
+// The real registry hands out one object per workspace; resume checks that identity before spawning.
+const localWorkspace = { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } };
+const stableLocalRegistry = () => withCheckoutContexts({ getWorkspace: (id: string) => id === 'local-ws' ? localWorkspace : null });
+
 function registerHandlers(
   getHarnessOptions = vi.fn(() => ({})),
   agentAttentionBroker?: Parameters<typeof registerSessionIpc>[0]['agentAttentionBroker'],
-  getWorkspaceRegistry: NonNullable<Parameters<typeof registerSessionIpc>[0]['getWorkspaceRegistry']> = () => withCheckoutContexts({
-    getWorkspace: (id: string) => id === 'local-ws'
-      ? { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } }
-      : null,
-  }) as never,
+  getWorkspaceRegistry: NonNullable<Parameters<typeof registerSessionIpc>[0]['getWorkspaceRegistry']> = () => stableLocalRegistry() as never,
   attentionEnabled = false,
 ): Map<string, Handler> {
   const handlers = new Map<string, Handler>();
@@ -242,6 +252,8 @@ describe('registerSessionIpc', () => {
     const getWorkspace = vi.fn().mockReturnValue(workspace);
     const handlers = registerHandlers(undefined, undefined, () => withCheckoutContexts({ getWorkspace }) as never);
     const discovery = handlers.get(SESSION_DISCOVER)?.({}, 'a');
+    // Main first reads the workspace's Git worktree evidence, then starts the host scan.
+    await vi.waitFor(() => expect(discover).toHaveBeenCalled());
     getWorkspace.mockReturnValue({ ...workspace });
     resolve([codexSession]);
     await expect(discovery).rejects.toThrow('closed during discovery');
@@ -286,7 +298,7 @@ describe('registerSessionIpc', () => {
 
     const result = await handlers.get(SESSION_INVOKE)?.({}, 'local-ws', codexSession, true);
 
-    expect(result).toEqual({ id: 'term-1', pid: 123, harnessId: 'codex', attentionEnabled: false, checkoutContextId: 'local-ws::main' });
+    expect(result).toEqual({ id: 'term-1', pid: 123, harnessId: 'codex', attentionEnabled: false, checkoutContextId: 'local-ws::main', workingDir: '/workspace' });
     // A fork creates a new native session: the old ID is never pre-seeded.
     expect(broker.register).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: undefined, authority: 'full', quality: 'hook' });
     expect(mockBuildSessionLaunch).toHaveBeenCalledWith(
@@ -322,11 +334,7 @@ describe('registerSessionIpc', () => {
       getStore: () => ({ get: vi.fn(() => ({ codex: { flags: '' } })), set: storeSet }) as never,
       getHarnessOptions: vi.fn(() => ({ codex: { name: 'Codex', command: 'codex', args: [], icon: 'Codex' } })),
       ensureHarnessWrapperScript: () => '/wrapper',
-      getWorkspaceRegistry: () => withCheckoutContexts({
-        getWorkspace: (id: string) => id === 'local-ws'
-          ? { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } }
-          : null,
-      }) as never,
+      getWorkspaceRegistry: () => stableLocalRegistry() as never,
     });
 
     await handlers.get(SESSION_INVOKE)?.({}, 'local-ws', codexSession);
@@ -336,10 +344,11 @@ describe('registerSessionIpc', () => {
   });
 
   it('keeps local discovery and invocation distinct from a remote workspace at the same path', async () => {
-    const getWorkspace = vi.fn((id: string) => ({
+    const known = {
       'local-ws': { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } },
       'remote-ws': { workspaceId: 'remote-ws', location: { environmentId: 'vps', path: '/workspace' } },
-    })[id as 'local-ws' | 'remote-ws'] ?? null);
+    };
+    const getWorkspace = vi.fn((id: string) => known[id as 'local-ws' | 'remote-ws'] ?? null);
     const handlers = registerHandlers(vi.fn(() => ({
       codex: { name: 'Codex', command: 'codex', args: [], icon: 'Codex' },
     })), undefined, () => withCheckoutContexts({ getWorkspace }) as never);

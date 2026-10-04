@@ -21,8 +21,10 @@ import { spawnPtyProcess } from './ptySpawn';
 import type { Terminal } from './terminalIpc';
 import type { HarnessSession } from '../../shared/types/session';
 import { defaultShell } from '../platformShell';
-import type { WorkspaceRegistry } from '../workspaceRegistry';
-import { toNativePath } from '../../shared/pathNormalize';
+import type { RegisteredWorkspace, WorkspaceRegistry } from '../workspaceRegistry';
+import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
+import type { GitWorktreeCreateResult, GitWorktreeListResult } from '../../shared/types/git';
+import type { SessionInvokeOptions } from '../../shared/types/session';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { invokeRemoteSession } from './remoteSessionInvocation';
 import {
@@ -32,6 +34,14 @@ import {
   trustedRootSessionId,
   withoutAttentionEnvironment,
 } from '../agentAttentionAdapters';
+import { isInsideRoot } from '../localPathContainment';
+import { sessionMatchesWorkspace } from '../harnesses/sessionFiles';
+import {
+  classifySessions, directoryExists, discoverSessionsWithCheckouts, loadSessionCheckoutPlan, MAX_REMOTE_SESSION_SCOPES,
+  routeSessionResume, sessionScanScopes, type SessionCheckoutPlan,
+} from '../sessionWorktrees';
+import { isCurrentCheckoutContext, resolveSessionResumeTarget } from '../sessionResumeTarget';
+import type { WorktreeProvenance } from '../worktreeProvenance';
 
 export interface RegisterSessionIpcDeps {
   getTerminals: () => Map<string, Terminal>;
@@ -43,6 +53,20 @@ export interface RegisterSessionIpcDeps {
   agentAttentionBroker?: AgentAttentionBroker;
   createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
   getWorkspaceRegistry?: () => WorkspaceRegistry;
+  /**
+   * Git's worktree listing for a registered local workspace (scoped to it). Optional: without it,
+   * history and resume only cover the workspace root and its already registered worktree contexts.
+   */
+  listWorktrees?: (workspaceId: string) => Promise<GitWorktreeListResult>;
+  /** Existing local branch names of the workspace's repository (scoped like `listWorktrees`). */
+  listBranches?: (workspaceId: string) => Promise<string[]>;
+  /** Main-owned memory of removed worktrees; see worktreeProvenance.ts. */
+  worktreeProvenance?: WorktreeProvenance;
+  /**
+   * Creates the worktree for an existing branch at its generated path and attaches it to the workspace
+   * (the same trusted route as `New isolated agent`). Only used after the user confirms recreation.
+   */
+  recreateWorktree?: (workspaceId: string, branch: string) => Promise<GitWorktreeCreateResult>;
   /** Optional: without it (or without managed accounts) discovery and resume use the native account only. */
   getHarnessAccountService?: () => HarnessAccountService | undefined;
   /** Test seams mirroring terminal spawning: wrapper lookup and Windows file/platform resolution. */
@@ -53,36 +77,71 @@ export interface RegisterSessionIpcDeps {
 export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
   const { getTerminals, getMainWindow, getSafeWorkspacePath, getIsShuttingDown, getStore, getHarnessOptions, agentAttentionBroker } = deps;
 
+  const loadPlan = (workspaceId: string, workspace: RegisteredWorkspace): Promise<SessionCheckoutPlan | null> => loadSessionCheckoutPlan({
+    registry: deps.getWorkspaceRegistry?.(), workspace,
+    listWorktrees: deps.listWorktrees ? () => deps.listWorktrees!(workspaceId) : undefined,
+    listBranches: deps.listBranches ? () => deps.listBranches!(workspaceId) : undefined,
+    provenance: deps.worktreeProvenance,
+  });
+
   ipcMain.handle(SESSION_DISCOVER, async (_, workspaceId: string) => {
     const workspace = typeof workspaceId === 'string'
       ? deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId)
       : null;
     if (!workspace) throw new Error('Workspace is not registered');
+    const plan = await loadPlan(workspaceId, workspace);
     if (workspace.location.environmentId !== 'local') {
       if (!workspace.environment?.capabilities.sessionDiscovery || !workspace.environment.discoverSessions) return [];
-      const sessions = await workspace.environment.discoverSessions(workspace.location.path);
+      // One bounded on-host scan covers the workspace and the worktree scopes main derived from Git.
+      const scopes = plan ? sessionScanScopes(plan).slice(0, MAX_REMOTE_SESSION_SCOPES) : [];
+      const found = scopes.length > 0
+        ? await workspace.environment.discoverSessions(workspace.location.path, scopes)
+        : await workspace.environment.discoverSessions(workspace.location.path);
       if (deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId) !== workspace) throw new Error('Remote workspace closed during discovery');
-      return sessions;
+      return plan ? classifySessions(plan, found) : found;
     }
 
     const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
     const availableHarnessIds = new Set(Object.keys(getHarnessOptions()));
     const managed = deps.getHarnessAccountService?.()?.discoverySource('local');
-    const sessions = managed ? await discoverSessions(nativeWorkspacePath, { managed }) : await discoverSessions(nativeWorkspacePath);
+    const discover = (scanPath: string) => managed ? discoverSessions(scanPath, { managed }) : discoverSessions(scanPath);
+    // Conversations of isolated agents live in linked worktrees outside the workspace root; they
+    // belong to this workspace's history, labelled with their checkout.
+    const sessions = plan
+      ? await discoverSessionsWithCheckouts({
+        plan, scanWorkspacePath: nativeWorkspacePath, discover,
+        toScanPath: (posixPath) => toNativePath(posixPath, process.platform),
+      })
+      : await discover(nativeWorkspacePath);
     return sessions.filter((session) => availableHarnessIds.has(session.harness));
   });
 
-  ipcMain.handle(SESSION_INVOKE, async (_, workspaceId: string, requestedSession: HarnessSession, fork?: boolean) => {
+  ipcMain.handle(SESSION_INVOKE, async (_, workspaceId: string, requestedSession: HarnessSession, fork?: boolean, options?: SessionInvokeOptions) => {
     const workspace = typeof workspaceId === 'string'
       ? deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId)
       : null;
     if (!workspace) throw new Error('Workspace is not registered');
     if (workspace.location.environmentId !== 'local') {
-      return invokeRemoteSession(deps, workspace, requestedSession, fork);
+      return invokeRemoteSession(deps, workspace, requestedSession, fork, options);
     }
     const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
-    // Resume is confined to the workspace root, so it runs in the workspace's main checkout context.
-    const mainContext = deps.getWorkspaceRegistry?.()?.resolveCheckoutContext(workspaceId) ?? null;
+    const registry = deps.getWorkspaceRegistry?.();
+    // Resume runs in the workspace's main checkout context unless the conversation ran in one of its
+    // linked worktrees (decided below from the session's recorded cwd, never from renderer fields).
+    const mainContext = registry?.resolveCheckoutContext(workspaceId) ?? null;
+    const plan = await loadPlan(workspaceId, workspace);
+    const routeFor = (candidate: HarnessSession): ReturnType<typeof routeSessionResume> => {
+      const cwd = typeof candidate?.cwd === 'string' ? toPosixPath(candidate.cwd) : '';
+      if (plan) return routeSessionResume(plan, cwd);
+      // Without a registry there is no worktree evidence: only the workspace root itself qualifies.
+      return cwd && !cwd.split('/').some((segment) => segment === '..' || segment === '.')
+        && sessionMatchesWorkspace(workspace.location.path, cwd) ? { kind: 'main' } : { kind: 'outside' };
+    };
+    const preRoute = routeFor(requestedSession);
+    if (preRoute.kind === 'outside') throw new Error('Session working directory is outside the workspace');
+    // The checkout root the session's own history lives under (the workspace root for ordinary sessions).
+    const sessionRootPath = preRoute.kind === 'worktree' || preRoute.kind === 'gone'
+      ? toNativePath(preRoute.root.path, process.platform) : nativeWorkspacePath;
     // A session's `accountId` is only a claim. For a managed account main re-finds the session inside
     // that account's own storage and launches that authoritative copy with that account's binding;
     // a session without a claim resumes under the native account, never the currently selected one.
@@ -100,7 +159,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       }
       const owned = await accountService.resolveOwnedSession({
         environmentId: 'local', harness: requestedSession.harness, accountId: claimedAccountId,
-        sessionId: requestedSession.id, workspacePath: nativeWorkspacePath,
+        sessionId: requestedSession.id, workspacePath: sessionRootPath,
       });
       session = owned.session;
       accountBinding = owned.binding;
@@ -108,9 +167,10 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     const nativeSessionCwd = typeof session?.cwd === 'string'
       ? toNativePath(session.cwd, process.platform)
       : '';
-    const relativeCwd = path.relative(nativeWorkspacePath, nativeSessionCwd);
-    if (!path.isAbsolute(nativeSessionCwd) || relativeCwd === '..'
-      || relativeCwd.startsWith(`..${path.sep}`) || path.isAbsolute(relativeCwd)) {
+    const route = routeFor(session);
+    const rootPathOf = (value: typeof route): string | null => value.kind === 'worktree' || value.kind === 'gone' ? value.root.path : null;
+    const sameRoute = route.kind === preRoute.kind && rootPathOf(route) === rootPathOf(preRoute);
+    if (route.kind === 'outside' || !sameRoute || !path.isAbsolute(nativeSessionCwd)) {
       throw new Error('Session working directory is outside the workspace');
     }
 
@@ -130,12 +190,41 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       throw new Error(`${session.harness} harness is not available`);
     }
 
+    // Where it launches: the checkout the conversation ran in when that still exists (its registered
+    // context, or one adopted through Git's own listing); otherwise the main checkout with an
+    // explicit notice, or an offer to recreate the worktree for a harness that cannot resume
+    // elsewhere. A removed or unusable worktree never becomes the launch directory.
+    const sessionPosixCwd = toPosixPath(session.cwd);
+    const discoverForConfirmation = (scanPath: string) => {
+      const managedSource = accountService?.discoverySource('local');
+      return managedSource ? discoverSessions(scanPath, { managed: managedSource }) : discoverSessions(scanPath);
+    };
+    const target = plan ? await resolveSessionResumeTarget({
+      registry, workspace, plan, harness: session.harness, cwd: sessionPosixCwd, mainContext,
+      listWorktrees: deps.listWorktrees ? () => deps.listWorktrees!(workspaceId) : undefined,
+      recreateWorktree: deps.recreateWorktree ? (branch) => deps.recreateWorktree!(workspaceId, branch) : undefined,
+      recreateRequested: options?.recreateCheckout === true,
+      isUsable: (context) => directoryExists(toNativePath(context.path, process.platform)),
+      // A renderer-named cwd must be a conversation main itself finds before anything is offered or created.
+      confirmSession: async () => (await discoverSessionsWithCheckouts({
+        plan, scanWorkspacePath: nativeWorkspacePath, discover: discoverForConfirmation,
+        toScanPath: (posixPath) => toNativePath(posixPath, process.platform),
+      })).some((entry) => entry.harness === session.harness && entry.id === session.id && toPosixPath(entry.cwd) === sessionPosixCwd),
+    }) : { kind: 'launch' as const, target: 'main' as const, context: mainContext };
+    if (target.kind === 'offer') return { recreateOffer: target.offer };
 
     // Look up per-harness default flags from store — same source as SPAWN_TERMINAL
     const harnessDefaults = store.get('harnessDefaults');
     const attentionEnabled = harnessDefaults[session.harness]?.attentionEnabled === true;
     const userFlags = harnessDefaults[session.harness]?.flags?.trim();
-    const validatedSession = await findHarnessProvider(session.harness)?.sessions?.validateLocal?.(session, { workspacePath: nativeWorkspacePath, userFlags }) ?? session;
+    // A recreated worktree exists again by now, so a harness that validates against its own store
+    // (Pi) does so exactly as for any live worktree; nothing about that check is relaxed.
+    const validatedSession = await findHarnessProvider(session.harness)?.sessions?.validateLocal?.(session, { workspacePath: sessionRootPath, userFlags }) ?? session;
+
+    const launchContext = target.context;
+    const resumeNotice = target.notice;
+    const launchRoot = target.target === 'worktree' && launchContext
+      ? toNativePath(launchContext.path, process.platform) : nativeWorkspacePath;
 
     const nativeSession = {
       ...validatedSession,
@@ -172,7 +261,17 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       }
     }
     try {
-      const cwd = getSafeWorkspacePath(nativeSession.cwd);
+      // Never a directory outside the root being launched into: a session whose recorded cwd is not
+      // inside it (or no longer exists) starts at that root.
+      const wantedCwd = isInsideRoot(launchRoot, nativeSession.cwd) ? nativeSession.cwd : launchRoot;
+      const cwd = getSafeWorkspacePath(wantedCwd);
+      // getSafeWorkspacePath falls back to lastWorkspace or home when the directory is gone. Judge the
+      // directory actually used, exactly as an ordinary terminal launch does, so a checkout that vanished
+      // after route resolution fails here, before any PTY exists, instead of resuming somewhere else
+      // while still bound to the selected checkout context.
+      if (!isInsideRoot(launchRoot, cwd)) {
+        throw new Error('Resume directory is outside the checkout it was resolved to');
+      }
       const userShell = defaultShell();
 
       const env: { [key: string]: string } = {
@@ -191,6 +290,12 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       const planned = resolveHarnessPtySpawn(sessionCommand, spawnArgs, (deps.ensureHarnessWrapperScript ?? ensureHarnessWrapperScript)(), { env, ...deps.harnessSpawnOverrides });
       const launchLabel = `[clanker-grid] ${sessionCommand} ${spawnArgs.join(' ')}`;
 
+      // Everything above awaited: the workspace or the selected checkout may have been closed or
+      // released meanwhile. Fail closed before any process exists.
+      if (registry && (registry.getWorkspace(workspaceId) !== workspace || !isCurrentCheckoutContext(registry, launchContext))) {
+        throw new Error('Workspace was closed or is being removed');
+      }
+
       const result = spawnPtyProcess({
       id,
       spawnCmd: planned.spawnCmd,
@@ -202,13 +307,21 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       getIsShuttingDown,
       launchLabel,
       harnessId: session.harness,
-      checkoutContextId: mainContext?.id,
+      // Main's own record of ownership: an agent's reported location is resolved against it (agentLocation.ts).
+      workspaceId: workspace.workspaceId,
+      checkoutContextId: launchContext?.id,
       onExit: () => {
         disposeAttentionSafely(preparedAttention);
         agentAttentionBroker?.release(id);
       },
       });
-      return { ...result, harnessId: session.harness, attentionEnabled, checkoutContextId: mainContext?.id };
+      return {
+        ...result, harnessId: session.harness, attentionEnabled, checkoutContextId: launchContext?.id,
+        // Where it actually started (never the recorded cwd of a removed worktree).
+        workingDir: toPosixPath(cwd),
+        ...(launchContext && launchContext.kind === 'worktree' ? { checkoutContext: launchContext } : {}),
+        ...(resumeNotice ? { resumeNotice } : {}),
+      };
     } catch (error) {
       disposeAttentionSafely(preparedAttention);
       agentAttentionBroker?.release(id);

@@ -1006,7 +1006,7 @@ describe('Git IPC workspace identity routing', () => {
         return (registered?.environment ?? local).execGit(cwd, args);
       }
     );
-    registerGitIpc({
+    const controller = registerGitIpc({
       getGitService: () => service,
       getMainWindow: () => mainWindow as never,
       getWorkspaceRegistry: () => registry,
@@ -1015,7 +1015,7 @@ describe('Git IPC workspace identity routing', () => {
     });
     const handle = (channel: string) =>
       ipc.handle.mock.calls.find(([name]) => name === channel)?.[1] as (...args: unknown[]) => Promise<unknown>;
-    return { local, remote, registry, service, statuses, executions, mainWindow, handle };
+    return { local, remote, registry, service, statuses, executions, mainWindow, handle, controller };
   }
 
   test('legacy path-only history remains local', async () => {
@@ -1294,6 +1294,17 @@ describe('Git IPC workspace identity routing', () => {
       await f.handle('register-open-workspace')(null, 'ssh-tab', workspacePath, 'ssh');
       return { ...f, createWorktree };
     }
+
+    test('recreating a removed worktree for a session goes through the same SSH creation and attach route', async () => {
+      const { registry, controller, createWorktree } = await sshWorkspace();
+      const result = await controller.createWorktreeForSession('ssh-tab', 'task');
+      // An existing branch needs no base; the host creates it at its generated path.
+      expect(createWorktree).toHaveBeenCalledExactlyOnceWith(workspacePath, '', 'task');
+      expect(result).toMatchObject({ success: true, checkoutContext: expect.objectContaining({ kind: 'worktree', path: sshTask.path, branch: 'task', workspaceId: 'ssh-tab' }) });
+      expect(registry.getCheckoutContextsForWorkspace('ssh-tab')).toHaveLength(2);
+      expect(await controller.createWorktreeForSession('missing-workspace', 'task')).toMatchObject({ success: false, error: expect.stringContaining('registered workspace') });
+      expect(createWorktree).toHaveBeenCalledTimes(1);
+    });
 
     test('SSH: registers an independently validated context under the existing workspace without widening its root', async () => {
       const { registry, remote, handle } = await sshWorkspace();

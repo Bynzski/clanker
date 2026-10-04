@@ -13,6 +13,7 @@ export const ompProvider = defineHarness({
     discoverInEnvironment: async (executor) => (await import('./models')).discoverModelsIn(executor),
   },
   sessions: {
+    resumesWithoutOriginalDirectory: true,
     discoveryOrder: 3,
     validateLocal,
     remote: remoteSessions,

@@ -689,8 +689,8 @@ export class SshEnvironment implements WorkspaceEnvironment {
     return startSshPortForward(this.target, localPort, remotePort, signal, onExit, remoteHost);
   }
 
-  public async discoverSessions(workspacePath: string) {
-    return discoverSshSessions(this.executor, this.target, workspacePath, await this.probeAvailableHarnessIds());
+  public async discoverSessions(workspacePath: string, scopes: readonly string[] = []) {
+    return discoverSshSessions(this.executor, this.target, workspacePath, await this.probeAvailableHarnessIds(), scopes);
   }
 
   /**

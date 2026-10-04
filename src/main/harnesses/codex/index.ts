@@ -15,6 +15,7 @@ export const codexProvider = defineHarness({
     compatibility: { cacheParseFailureAsEmpty: true },
   },
   sessions: {
+    resumesWithoutOriginalDirectory: true,
     discoveryOrder: 1,
     remote: remoteSessions,
     resume: { support: 'native', build: (session, flags) => buildInvocation(session, false, flags) },

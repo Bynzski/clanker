@@ -23,7 +23,7 @@ with sqlite3.connect('file:' + urllib.parse.quote(db) + '?mode=ro', uri=True, ti
             elif not parsed.scheme and os.path.isabs(uri):
                 cwd = uri
             else: continue
-            if contained(root, os.path.realpath(cwd)):
+            if in_scope(os.path.realpath(cwd)):
                 emit(harness, sid, cwd, title or (preview if preview != '<conversation>' else ''), timestamp(modified, timestamp(user_time)))
                 break
 return
