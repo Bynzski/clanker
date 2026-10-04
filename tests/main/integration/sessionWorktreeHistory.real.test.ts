@@ -154,7 +154,7 @@ describe('isolated-agent conversations on a real repository (issue #100)', () =>
     const live = await call<{ checkoutContextId?: string; checkoutContext?: { id: string; branch?: string } }>(SESSION_INVOKE, 'ws', claudeHarnessSession('11111111-1111-4111-8111-111111111111', path.join(worktree, 'src')));
     expect(live.checkoutContext).toMatchObject({ id: created.checkoutContext!.id, branch: 'feature/foo' });
     expect(live.checkoutContextId).toBe(created.checkoutContext!.id);
-    expect(spawnOptions().cwd).toBe(path.join(worktree, 'src'));
+    expect(spawnOptions().cwd).toBe(path.normalize(path.join(worktree, 'src')));
 
     // 2. Removed (Git forgets it, the branch remains): still listed, labelled with the real branch.
     await git('worktree', 'remove', '--force', worktree);
@@ -184,7 +184,7 @@ describe('isolated-agent conversations on a real repository (issue #100)', () =>
     expect(recreated.checkoutContext).toMatchObject({ branch: 'feature/foo' });
     expect(recreated.resumeNotice).toMatch(/Recreated the worktree for feature\/foo/);
     expect(registry.getCheckoutContext(recreated.checkoutContextId!)?.path).toBe(toPosixPath(worktree));
-    expect(spawnOptions().cwd).toBe(worktree);
+    expect(spawnOptions().cwd).toBe(path.normalize(worktree));
   });
 
   it('keeps attributing a removed worktree after its branch is deleted, and says precisely why Pi cannot resume it', async () => {
