@@ -141,6 +141,8 @@ describe('resume and fork keep the account that owns the session', () => {
       getTerminals: () => new Map(), getMainWindow: () => ({ webContents: { send: vi.fn() } }) as never,
       getSafeWorkspacePath: (dir: string) => dir, getIsShuttingDown: () => false, getStore: () => store as never,
       getHarnessOptions: () => options,
+      // Account/session ownership is the subject here, not host installation: the real planner runs, with a deterministic fake executable.
+      harnessSpawnOverrides: { fileExists: () => true },
       getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: (id: string) => (id === 'ws' ? { workspaceId: 'ws', location: { environmentId: 'local', path: '/workspace' } } : null) }) as never,
       getHarnessAccountService: () => h.service,
     });
