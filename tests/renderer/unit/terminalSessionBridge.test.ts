@@ -196,6 +196,41 @@ describe('terminal session bridge', () => {
       second();
     });
 
+    it('removes a cached agent that retired in main while the bridge was away', async () => {
+      useAgentAttentionStore.getState().applyChange(change(snapshot('a', 'running', 4)), false);
+      attentionApi(async () => []);
+      const stop = startTerminalSessionBridge();
+      await flush();
+      expect(useAgentAttentionStore.getState().byTerminalId.a).toBeUndefined();
+      stop();
+    });
+
+    it('a push during hydration survives a response that omits or predates it', async () => {
+      useAgentAttentionStore.getState().applyChange(change(snapshot('a', 'running', 4)), false);
+      let resolve!: (value: AgentAttentionSnapshot[]) => void;
+      const { listener } = attentionApi(() => new Promise((done) => { resolve = done; }));
+      const stop = startTerminalSessionBridge();
+      listener.current?.(change(snapshot('a', 'needs_input', 5)));
+      listener.current?.(change(snapshot('fresh', 'running', 2)));
+      resolve([]);
+      await flush();
+      expect(useAgentAttentionStore.getState().byTerminalId.a.revision).toBe(5);
+      expect(useAgentAttentionStore.getState().byTerminalId.fresh.revision).toBe(2);
+      stop();
+    });
+
+    it('a tombstone during hydration survives a response captured before it', async () => {
+      useAgentAttentionStore.getState().applyChange(change(snapshot('a', 'running', 4)), false);
+      let resolve!: (value: AgentAttentionSnapshot[]) => void;
+      const { listener } = attentionApi(() => new Promise((done) => { resolve = done; }));
+      const stop = startTerminalSessionBridge();
+      listener.current?.(tombstone('a', 5));
+      resolve([snapshot('a', 'running', 4)]);
+      await flush();
+      expect(useAgentAttentionStore.getState().byTerminalId.a).toBeUndefined();
+      stop();
+    });
+
     it('does not apply a hydration that resolves after the bridge was disposed', async () => {
       let resolve!: (value: AgentAttentionSnapshot[]) => void;
       attentionApi(() => new Promise((done) => { resolve = done; }));

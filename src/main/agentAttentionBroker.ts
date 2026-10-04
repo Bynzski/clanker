@@ -92,7 +92,9 @@ interface Registration {
   retiredTurns: string[];
   status: AgentRuntimeStatus;
   startedAt: number | null;
-  pending?: PendingRequest;
+  /** Every proven outstanding wait, oldest first. A wait clears only by its own resolution or
+   * its turn's boundary, so one resolving request can never hide another that is still open. */
+  pending: PendingRequest[];
   lastCompletion: AgentAttentionSnapshot['lastCompletion'];
   lastOutcome: AgentAttentionSnapshot['lastOutcome'];
   lastAccepted?: AttentionExplanation['lastAccepted'];
@@ -111,6 +113,10 @@ interface ParsedEvent {
   requestKind?: AgentPendingRequestKind;
   nativeEvent?: string;
 }
+
+const pendingEvidence = (registration: Registration): AgentAttentionEvidence | null =>
+  registration.pending.some((request) => request.evidence === 'structured') ? 'structured'
+    : registration.pending.length > 0 ? 'fallback' : null;
 
 function defaultDiagnostics(diagnostic: AttentionDiagnostic): void {
   if (process.env.CLANKER_DEBUG_ATTENTION === '1') console.debug('[clanker-grid] attention', JSON.stringify(diagnostic));
@@ -194,7 +200,7 @@ export class AgentAttentionBroker {
     this.release(terminalId);
     const token = randomBytes(32).toString('hex');
     this.registrations.set(token, {
-      terminalId, harness, transport, retiredTurns: [], status: 'unverified', startedAt: null,
+      terminalId, harness, transport, retiredTurns: [], status: 'unverified', startedAt: null, pending: [],
       authority: options.authority ?? 'full', quality: options.quality ?? 'hook',
       lastCompletion: null, lastOutcome: null,
       revision: this.issueRevision(terminalId),
@@ -260,9 +266,10 @@ export class AgentAttentionBroker {
       revision: r.revision,
       sessionId: r.rootSessionId ?? null,
       runtime: { status: r.status, turnId: r.activeTurnId ?? null, startedAt: r.startedAt },
-      pendingRequest: r.pending ? {
-        id: r.pending.inputId ?? null, turnId: r.pending.turnId ?? null, kind: r.pending.kind,
-        evidence: r.pending.evidence, revision: r.pending.revision, createdAt: r.pending.createdAt,
+      // Compact public view: the oldest outstanding wait stands for the set.
+      pendingRequest: r.pending[0] ? {
+        id: r.pending[0].inputId ?? null, turnId: r.pending[0].turnId ?? null, kind: r.pending[0].kind,
+        evidence: r.pending[0].evidence, revision: r.pending[0].revision, createdAt: r.pending[0].createdAt,
       } : null,
       lastCompletion: r.lastCompletion ? { ...r.lastCompletion } : null,
       lastOutcome: r.lastOutcome ? { ...r.lastOutcome } : null,
@@ -274,11 +281,11 @@ export class AgentAttentionBroker {
   explain(terminalId: string): AttentionExplanation | null {
     const r = this.current(terminalId);
     if (!r) return null;
-    const effective: AttentionEffectiveState = r.pending ? 'needs_input'
+    const effective: AttentionEffectiveState = r.pending.length > 0 ? 'needs_input'
       : isActive(r) ? 'working' : r.status === 'failed' ? 'failed' : r.status === 'idle' ? 'idle' : 'unverified';
     return {
       terminalId: r.terminalId, harness: r.harness, transport: r.transport, effective,
-      source: { quality: r.quality, authority: r.authority, effectiveEvidence: r.pending?.evidence ?? 'structured' },
+      source: { quality: r.quality, authority: r.authority, effectiveEvidence: pendingEvidence(r) ?? 'structured' },
       snapshot: this.toSnapshot(r),
       ...(r.lastAccepted ? { lastAccepted: { ...r.lastAccepted } } : {}),
       ...(r.lastRejected ? { lastRejected: { ...r.lastRejected } } : {}),
@@ -303,7 +310,7 @@ export class AgentAttentionBroker {
   handoffState(terminalId: string): 'unverified' | 'ready' | 'running' | 'needs_input' | 'unavailable' {
     const registration = this.current(terminalId);
     if (!registration) return 'unavailable';
-    if (isActive(registration)) return registration.pending ? 'needs_input' : 'running';
+    if (isActive(registration)) return registration.pending.length > 0 ? 'needs_input' : 'running';
     return registration.status === 'idle' && registration.lastOutcome?.kind === 'completed' ? 'ready' : 'unverified';
   }
 
@@ -331,7 +338,7 @@ export class AgentAttentionBroker {
     const registration = this.current(terminalId);
     if (!registration) return;
     const verdict = arbitrateFallback(evidence, {
-      authority: registration.authority, status: registration.status, pendingEvidence: registration.pending?.evidence ?? null,
+      authority: registration.authority, status: registration.status, pendingEvidence: pendingEvidence(registration),
     });
     let decision: NonNullable<AttentionExplanation['lastFallback']>['decision'];
     if (verdict.action === 'ignore') {
@@ -342,8 +349,8 @@ export class AgentAttentionBroker {
       decision = 'fallback-accepted';
       this.commit(registration, (revision) => {
         registration.pending = verdict.action === 'raise_request'
-          ? { turnId: registration.activeTurnId, kind: null, evidence: 'fallback', revision, createdAt: this.now() }
-          : undefined;
+          ? [{ turnId: registration.activeTurnId, kind: null, evidence: 'fallback', revision, createdAt: this.now() }]
+          : registration.pending.filter((request) => request.evidence !== 'fallback');
       });
     }
     registration.lastFallback = { evidence, decision };
@@ -430,16 +437,16 @@ export class AgentAttentionBroker {
 
     if (event.event === 'session_ended') {
       // A native boundary clears the binding; the registration and credentials stay alive.
-      const clean = registration.rootSessionId === undefined && registration.status === 'unverified' && !registration.pending
+      const clean = registration.rootSessionId === undefined && registration.status === 'unverified' && registration.pending.length === 0
         && (registration.lastOutcome === null || registration.lastOutcome.kind === 'session_ended');
       if (clean) return 'accepted';
       const hadState = registration.rootSessionId !== undefined || registration.status !== 'unverified'
-        || registration.pending !== undefined || registration.lastOutcome !== null;
+        || registration.pending.length > 0 || registration.lastOutcome !== null;
       this.commit(registration, (revision) => {
         registration.rootSessionId = undefined;
         registration.activeTurnId = undefined;
         registration.retiredTurns = [];
-        registration.pending = undefined;
+        registration.pending = [];
         registration.status = 'unverified';
         registration.startedAt = null;
         // A boundary supersedes an older completion without erasing it: it is no longer a current Done.
@@ -473,7 +480,7 @@ export class AgentAttentionBroker {
         registration.rootSessionId ??= event.sessionId;
         if (registration.activeTurnId) this.retire(registration, registration.activeTurnId);
         registration.activeTurnId = turnId;
-        registration.pending = undefined;
+        registration.pending = [];
         registration.status = 'running';
         registration.startedAt = this.now();
       });
@@ -487,21 +494,26 @@ export class AgentAttentionBroker {
 
     switch (event.event) {
       case 'input_requested': {
-        const pending = registration.pending;
-        // The first outstanding structured wait stays authoritative; a duplicate cannot replace it.
-        // A fallback-raised wait is weaker evidence and yields to the provider's own request.
-        if (pending && pending.evidence === 'structured') return 'accepted';
+        // The same correlated request (same proven id, or two id-less waits) is a duplicate.
+        // A distinct id is another outstanding wait. A fallback wait is weaker evidence and yields.
+        if (registration.pending.some((request) => request.evidence === 'structured' && request.inputId === event.inputId)) return 'accepted';
         this.commit(registration, (revision) => {
-          registration.pending = {
+          registration.pending = [...registration.pending.filter((request) => request.evidence === 'structured'), {
             turnId, inputId: event.inputId, kind: event.requestKind ?? null, evidence: 'structured', revision, createdAt: this.now(),
-          };
+          }];
         });
         return 'accepted';
       }
       case 'input_resolved': {
-        const pending = registration.pending;
-        if (!pending || (pending.inputId && event.inputId !== pending.inputId)) return 'ignored-stale';
-        this.commit(registration, () => { registration.pending = undefined; });
+        // Resolve exactly the matching wait; an id-less resolution matches only an id-less wait.
+        const matches = registration.pending.filter((request) => request.evidence === 'structured' && request.inputId === event.inputId);
+        // Structured evidence also retires a weaker fallback wait when it resolves nothing else.
+        const fallback = registration.pending.filter((request) => request.evidence === 'fallback');
+        if (matches.length === 0 && fallback.length === 0) return 'ignored-stale';
+        this.commit(registration, () => {
+          registration.pending = registration.pending.filter((request) => !matches.includes(request)
+            && !(matches.length === 0 && request.evidence === 'fallback'));
+        });
         return 'accepted';
       }
       case 'turn_interrupted':
@@ -527,7 +539,7 @@ export class AgentAttentionBroker {
       const at = this.now();
       this.retire(registration, turnId);
       registration.activeTurnId = undefined;
-      registration.pending = undefined;
+      registration.pending = [];
       registration.status = status;
       registration.startedAt = null;
       registration.lastOutcome = { kind, turnId, revision, at };

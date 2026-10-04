@@ -23,8 +23,15 @@ interface AgentAttentionState {
   seenByTerminalId: Record<string, AttentionSeen>;
   /** Accept an equal or newer revision; `foreground` panes acknowledge what they are already showing. */
   applyChange: (change: AgentAttentionChange, foreground: boolean) => void;
-  /** Merge a full hydration set by the same revision ordering as pushes. */
-  hydrate: (snapshots: AgentAttentionSnapshot[], isForeground: (terminalId: string) => boolean) => void;
+  /** Merge main's complete live set by the same revision ordering as pushes. `baseline` is the
+   * revision of every cached agent at the moment the subscription was established (before the
+   * request was issued): a cached agent absent from the set is retired only if nothing newer
+   * arrived since, so a push or tombstone received during the hydration window always wins. */
+  hydrate: (
+    snapshots: AgentAttentionSnapshot[], isForeground: (terminalId: string) => boolean, baseline?: Record<string, number>,
+  ) => void;
+  /** Revisions of the agents currently cached, for use as a hydration baseline. */
+  baseline: () => Record<string, number>;
   acknowledge: (terminalId: string) => void;
   /** The terminal or its agent is gone locally: drop the snapshot, keep the revision floor. */
   retire: (terminalId: string) => void;
@@ -48,7 +55,14 @@ function without<T>(record: Record<string, T>, key: string): Record<string, T> {
 
 function merge(state: Slice, change: AgentAttentionChange, foreground: boolean): Slice {
   const known = state.revisionByTerminalId[change.terminalId];
-  if (known !== undefined && change.revision < known) return state;
+  if (known !== undefined) {
+    if (change.revision < known) return state;
+    if (change.revision === known && change.snapshot) {
+      // Equal revision: a retirement at R dominates any live snapshot at R, and re-delivery of
+      // the cached live revision is idempotent (never replaced by a conflicting payload).
+      return state;
+    }
+  }
   const revisionByTerminalId = { ...state.revisionByTerminalId, [change.terminalId]: change.revision };
   if (!change.snapshot) {
     return {
@@ -65,18 +79,27 @@ function merge(state: Slice, change: AgentAttentionChange, foreground: boolean):
   };
 }
 
-export const useAgentAttentionStore = create<AgentAttentionState>((set) => ({
+export const useAgentAttentionStore = create<AgentAttentionState>((set, get) => ({
   byTerminalId: {},
   revisionByTerminalId: {},
   seenByTerminalId: {},
   applyChange: (change, foreground) => set((state) => merge(state, change, foreground)),
-  hydrate: (snapshots, isForeground) => set((state) => {
+  hydrate: (snapshots, isForeground, baseline = {}) => set((state) => {
     let next: Slice = state;
+    const live = new Set<string>();
     for (const snapshot of snapshots) {
+      live.add(snapshot.terminalId);
       next = merge(next, { terminalId: snapshot.terminalId, revision: snapshot.revision, snapshot }, isForeground(snapshot.terminalId));
+    }
+    for (const [terminalId, revision] of Object.entries(baseline)) {
+      // Main no longer has this agent, and the cache has not moved since the baseline.
+      if (!live.has(terminalId) && next.byTerminalId[terminalId] && next.revisionByTerminalId[terminalId] === revision) {
+        next = merge(next, { terminalId, revision, snapshot: null }, false);
+      }
     }
     return next === state ? state : { ...state, ...next };
   }),
+  baseline: () => Object.fromEntries(Object.keys(get().byTerminalId).map((id) => [id, get().revisionByTerminalId[id]])),
   acknowledge: (terminalId) => set((state) => {
     const snapshot = state.byTerminalId[terminalId];
     if (!snapshot) return state;

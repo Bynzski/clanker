@@ -73,11 +73,44 @@ describe('snapshot cache revision merge', () => {
     store().applyChange(tombstone('a', 6), false);
     expect(store().byTerminalId.a).toBeUndefined();
     store().applyChange(change(snapshot('a', 'running', 5)), false); // stale in-flight push
-    store().hydrate([snapshot('a', 'running', 6)], () => false); // stale hydration at the tombstone revision... equal revision
+    store().hydrate([snapshot('a', 'running', 6)], () => false); // equal-revision hydration
+    expect(store().byTerminalId.a).toBeUndefined();
+    store().applyChange(change(snapshot('a', 'running', 6)), false); // equal-revision push
+    expect(store().byTerminalId.a).toBeUndefined();
     expect(store().revisionByTerminalId.a).toBe(6);
     // A genuinely newer registration may reappear.
     store().applyChange(change(snapshot('a', 'idle', 8)), false);
     expect(store().byTerminalId.a.revision).toBe(8);
+  });
+
+  it('a tombstone dominates a live snapshot at the same revision, in any arrival order', () => {
+    store().applyChange(change(snapshot('a', 'running', 5)), false);
+    store().applyChange(tombstone('a', 6), false);
+    store().applyChange(change(snapshot('a', 'running', 6)), false);
+    expect(store().byTerminalId.a).toBeUndefined();
+    // Tombstone arriving at the revision of the cached live snapshot retires it.
+    store().applyChange(change(snapshot('b', 'running', 4)), false);
+    store().applyChange(tombstone('b', 4), false);
+    expect(store().byTerminalId.b).toBeUndefined();
+  });
+
+  it('redelivery of the same live revision is idempotent and never replaced by a conflicting payload', () => {
+    store().applyChange(change(snapshot('a', 'running', 5)), false);
+    const cached = store().byTerminalId.a;
+    store().applyChange(change(snapshot('a', 'needs_input', 5)), false);
+    expect(store().byTerminalId.a).toBe(cached);
+  });
+
+  it('local retirement cannot be undone by a same-revision late push', () => {
+    store().applyChange(change(snapshot('a', 'running', 5)), false);
+    store().retire('a');
+    store().applyChange(change(snapshot('a', 'running', 5)), false);
+    store().hydrate([snapshot('a', 'running', 5)], () => false);
+    expect(store().byTerminalId.a).toBeUndefined();
+    // The broker's own tombstone and any genuinely newer registration still apply.
+    store().applyChange(tombstone('a', 6), false);
+    store().applyChange(change(snapshot('a', 'idle', 7)), false);
+    expect(store().byTerminalId.a.revision).toBe(7);
   });
 
   it('local retirement keeps the revision floor so a late snapshot cannot resurrect it', () => {
@@ -92,6 +125,51 @@ describe('snapshot cache revision merge', () => {
     store().hydrate([snapshot('a', 'running', 2), snapshot('b', 'running', 2)], () => false);
     store().applyChange(tombstone('a', 3), false);
     expect(Object.keys(store().byTerminalId)).toEqual(['b']);
+  });
+});
+
+describe('hydration reconciliation', () => {
+  it('retires a cached agent absent from the hydration set when nothing newer arrived', () => {
+    store().applyChange(change(snapshot('a', 'running', 4)), false);
+    store().applyChange(change(snapshot('b', 'running', 2)), false);
+    const baseline = store().baseline();
+    store().hydrate([snapshot('b', 'running', 2)], () => false, baseline);
+    expect(store().byTerminalId.a).toBeUndefined();
+    expect(store().byTerminalId.b).toBeDefined();
+    store().applyChange(change(snapshot('a', 'running', 4)), false); // cannot come back
+    expect(store().byTerminalId.a).toBeUndefined();
+  });
+
+  it('keeps an agent whose snapshot advanced after the baseline, even if the response omits it', () => {
+    store().applyChange(change(snapshot('a', 'running', 4)), false);
+    const baseline = store().baseline();
+    store().applyChange(change(snapshot('a', 'needs_input', 5)), false);
+    store().hydrate([], () => false, baseline);
+    expect(store().byTerminalId.a.revision).toBe(5);
+  });
+
+  it('keeps an agent registered after the baseline and never erases a newer snapshot with an older response', () => {
+    const baseline = store().baseline();
+    store().applyChange(change(snapshot('new', 'running', 9)), false);
+    store().hydrate([snapshot('other', 'running', 1)], () => false, baseline);
+    expect(store().byTerminalId.new.revision).toBe(9);
+    store().applyChange(change(snapshot('x', 'completed', 8)), false);
+    store().hydrate([snapshot('x', 'running', 7)], () => false, baseline);
+    expect(store().byTerminalId.x.revision).toBe(8);
+  });
+
+  it('a tombstone received during the hydration window survives a response that still lists the agent', () => {
+    store().applyChange(change(snapshot('a', 'running', 4)), false);
+    const baseline = store().baseline();
+    store().applyChange(tombstone('a', 5), false);
+    store().hydrate([snapshot('a', 'running', 4)], () => false, baseline);
+    expect(store().byTerminalId.a).toBeUndefined();
+  });
+
+  it('without a baseline, absence retires nothing', () => {
+    store().applyChange(change(snapshot('a', 'running', 4)), false);
+    store().hydrate([], () => false);
+    expect(store().byTerminalId.a).toBeDefined();
   });
 });
 

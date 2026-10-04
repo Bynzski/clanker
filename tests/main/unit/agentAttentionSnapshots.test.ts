@@ -338,3 +338,130 @@ describe('source authority and fallback arbitration', () => {
     expect(broker.explain('missing')).toBeNull();
   });
 });
+
+describe('multiple correlated pending requests', () => {
+  const start = () => {
+    const r = rig();
+    r.send('turn_started', { turnId: 'T' });
+    return r;
+  };
+  const ask = (r: ReturnType<typeof rig>, inputId?: string, extra: Record<string, unknown> = {}) =>
+    r.send('input_requested', { turnId: 'T', ...(inputId ? { inputId } : {}), ...extra });
+  const resolve = (r: ReturnType<typeof rig>, inputId?: string, extra: Record<string, unknown> = {}) =>
+    r.send('input_resolved', { turnId: 'T', ...(inputId ? { inputId } : {}), ...extra });
+
+  it('keeps Needs Input until every distinct request has resolved', () => {
+    const r = start();
+    ask(r, 'A');
+    ask(r, 'B');
+    expect(r.snap().pendingRequest?.id).toBe('A');
+    expect(resolve(r, 'A')).toBe('accepted');
+    expect(r.snap().pendingRequest).toMatchObject({ id: 'B' });
+    expect(r.broker.handoffState('t')).toBe('needs_input');
+    expect(resolve(r, 'B')).toBe('accepted');
+    expect(r.snap().pendingRequest).toBeNull();
+    expect(r.broker.handoffState('t')).toBe('running');
+  });
+
+  it('resolving in the other order also leaves the remaining request pending', () => {
+    const r = start();
+    ask(r, 'A');
+    ask(r, 'B');
+    resolve(r, 'B');
+    expect(r.snap().pendingRequest?.id).toBe('A');
+    resolve(r, 'A');
+    expect(r.snap().pendingRequest).toBeNull();
+  });
+
+  it('treats an exact duplicate request id as a no-op without bumping the revision', () => {
+    const r = start();
+    ask(r, 'A');
+    const rev = r.snap().revision;
+    expect(ask(r, 'A')).toBe('accepted');
+    expect(r.snap().revision).toBe(rev);
+    resolve(r, 'A');
+    expect(r.snap().pendingRequest).toBeNull();
+  });
+
+  it('ignores mismatched, id-less and stale resolutions while requests are outstanding', () => {
+    const r = start();
+    ask(r, 'A');
+    ask(r, 'B');
+    const rev = r.snap().revision;
+    expect(resolve(r, 'C')).toBe('ignored-stale');
+    expect(resolve(r)).toBe('ignored-stale');
+    expect(resolve(r, 'A', { sessionId: 'other' })).toBe('rejected-mismatch');
+    expect(resolve(r, 'A', { scope: 'child' })).toBe('ignored-child');
+    expect(ask(r, 'C', { scope: 'child' })).toBe('ignored-child');
+    expect(r.snap().revision).toBe(rev);
+    expect(r.broker.handoffState('t')).toBe('needs_input');
+  });
+
+  it('keeps an id-less wait fail-closed: only an id-less resolution or the turn boundary clears it', () => {
+    const r = start();
+    ask(r);
+    ask(r, 'A');
+    resolve(r, 'A');
+    expect(r.snap().pendingRequest).toMatchObject({ id: null });
+    expect(resolve(r, 'unrelated')).toBe('ignored-stale');
+    expect(r.broker.handoffState('t')).toBe('needs_input');
+    resolve(r);
+    expect(r.snap().pendingRequest).toBeNull();
+  });
+
+  it.each([['turn_completed'], ['turn_interrupted'], ['turn_failed']])('%s clears every outstanding request', (boundary) => {
+    const r = start();
+    ask(r, 'A');
+    ask(r, 'B');
+    r.send(boundary, { turnId: 'T' });
+    expect(r.snap().pendingRequest).toBeNull();
+    expect(resolve(r, 'A')).toBe('ignored-stale');
+  });
+
+  it('a new turn drops requests that belonged to the previous turn', () => {
+    const r = start();
+    ask(r, 'A');
+    r.send('turn_started', { turnId: 'T2' });
+    expect(r.snap().pendingRequest).toBeNull();
+  });
+
+  it('carries the request kind of each wait and bumps the revision once per distinct change', () => {
+    const r = start();
+    ask(r, 'perm', { requestKind: 'approval' });
+    const afterFirst = r.snap().revision;
+    ask(r, 'question', { requestKind: 'input' });
+    expect(r.snap().revision).toBe(afterFirst + 1);
+    expect(r.snap().pendingRequest?.kind).toBe('approval');
+    resolve(r, 'perm');
+    expect(r.snap().pendingRequest).toMatchObject({ id: 'question', kind: 'input' });
+  });
+
+  it('a structured request replaces a fallback wait, and a structured resolution retires only fallback when nothing matches', () => {
+    const r = rig({ authority: 'partial' });
+    r.send('turn_started', { turnId: 'T' });
+    r.broker.receiveFallback('t', 'visible_blocker');
+    r.send('input_requested', { turnId: 'T', inputId: 'A' });
+    expect(r.snap().pendingRequest).toMatchObject({ evidence: 'structured', id: 'A' });
+    r.send('input_resolved', { turnId: 'T', inputId: 'A' });
+    r.broker.receiveFallback('t', 'visible_blocker');
+    expect(r.snap().pendingRequest?.evidence).toBe('fallback');
+    r.send('input_resolved', { turnId: 'T', inputId: 'Z' });
+    expect(r.snap().pendingRequest).toBeNull();
+  });
+
+  it('OpenCode semantics: per-request permission and question ids resolve independently', async () => {
+    const recorder = attentionRecorder();
+    const broker = new AgentAttentionBroker(recorder.onChange, () => undefined);
+    brokers.push(broker);
+    const token = broker.registerRemote('t', 'opencode');
+    const send = (event: string, fields: Record<string, unknown> = {}) =>
+      broker.receiveRemote('t', JSON.stringify({ version: 1, token, harness: 'opencode', event, scope: 'root', sessionId: 'S', turnId: '1', ...fields }));
+    send('turn_started');
+    send('input_requested', { inputId: 'perm-1', requestKind: 'approval' });
+    send('input_requested', { inputId: 'q-1', requestKind: 'input' });
+    send('input_resolved', { inputId: 'perm-1' });
+    expect(broker.snapshot('t')?.pendingRequest).toMatchObject({ id: 'q-1', kind: 'input' });
+    send('input_resolved', { inputId: 'q-1' });
+    expect(broker.snapshot('t')?.pendingRequest).toBeNull();
+  });
+});

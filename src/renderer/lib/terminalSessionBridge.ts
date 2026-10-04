@@ -39,8 +39,10 @@ export function startTerminalSessionBridge(): () => void {
     if (typeof window.electronAPI.getAgentAttentionSnapshots === 'function') {
       let disposed = false;
       disposers.push(() => { disposed = true; });
+      // Captured after subscribing and before the request: anything newer than this wins.
+      const baseline = useAgentAttentionStore.getState().baseline();
       void window.electronAPI.getAgentAttentionSnapshots()
-        .then((snapshots) => { if (!disposed && Array.isArray(snapshots)) useAgentAttentionStore.getState().hydrate(snapshots, isForeground); })
+        .then((snapshots) => { if (!disposed && Array.isArray(snapshots)) useAgentAttentionStore.getState().hydrate(snapshots, isForeground, baseline); })
         .catch(() => undefined);
     }
   }
