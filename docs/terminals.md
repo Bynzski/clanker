@@ -128,7 +128,9 @@ Hermes Assistants are an **optional** feature for people who already use named H
 
 **The Assistant surface.** Hermes' own terminal UI is the main content. The Browser toolbar button opens an embedded Browser as a right-hand companion panel that you can resize and close. That Browser belongs to the Assistant: it is independent of any workspace's Browser. Switching to a workspace and back leaves Fred's terminal and Browser exactly as they were, and opening a new workspace while Fred is active simply takes you to the new workspace while Fred stays ready. Turning Assistants off closes these surfaces.
 
-**What is not available in Assistant mode.** Assistants are not workspaces, so the toolbar shows only what applies: Browser and Settings. Files, Git and worktrees, Notes, Launch Recipes, the terminal launchers, isolated agents, workspace chat history, workspace usage and the layout Fit/Undo tools are hidden rather than acting on whichever workspace you used last. In this release an Assistant also needs at least one open workspace to be reachable.
+**What is not available in Assistant mode.** Assistants are not workspaces, so the toolbar shows only what applies: Browser and Settings. Files, Git and worktrees, Notes, Launch Recipes, the terminal launchers, isolated agents, workspace chat history, workspace usage and the layout Fit/Undo tools are hidden rather than acting on whichever workspace you used last.
+
+**Starting without a workspace.** An enabled Assistant is reachable even when no workspace is open: the startup launcher lists the Assistants under the workspace controls (with the same connection status and Retry as the sidebar), and choosing one enters the normal app shell with the Assistant as the active destination. No workspace, folder or terminal is created for it. Open a workspace later with **Open Workspace** (`+`, in the sidebar, rail or tabs bar): the workspace becomes active and Fred stays parked, so returning to Fred resumes the same Bot Chat and Browser. If opening the workspace fails, you stay on Fred. If Assistants are turned off while no workspace is open, the app returns to the startup launcher.
 
 ### Selecting a Harness
 

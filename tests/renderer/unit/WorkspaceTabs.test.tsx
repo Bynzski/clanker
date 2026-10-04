@@ -82,12 +82,12 @@ describe('WorkspaceTabs', () => {
   // Empty State
   // =========================================================================
   describe('empty state', () => {
-    it('returns null when workspaces array is empty', () => {
+    it('renders no tabs (and no fake tab) when the workspaces array is empty', () => {
       useWorkspaceStore.setState({ workspaces: [] });
-      
-      const { container } = render(<WorkspaceTabs />);
-      
-      expect(container.firstChild).toBeNull();
+
+      render(<WorkspaceTabs />);
+
+      expect(screen.queryAllByRole('tab')).toHaveLength(0);
     });
 
     it('does not render any tabs when no workspaces', () => {
