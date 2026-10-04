@@ -1,7 +1,11 @@
 import type { HarnessRemoteAttention } from '../types';
 
 /** Provenance comes from real Hermes lifecycle data: `pre_llm_call` (turn_id, parent_session_id) opens
- * a root or child turn; `post_llm_call` and the approval hooks are tied back to it by turn_id. */
+ * a root or child turn; `post_llm_call` and the approval hooks are tied back to it by turn_id.
+ * Location: Hermes keeps a persistent shell directory (a `cd` carries over between commands) on the
+ * task's terminal environment; no hook argument carries it. Root turn events report it from the
+ * active environment of their task, only for a local backend (a container's path is not a host path).
+ * No environment yet, another backend, or any failure reports nothing. */
 export const HERMES_REMOTE_ATTENTION_PLUGIN = `import base64, json, os, sqlite3, threading
 
 _LOCK = threading.Lock()
@@ -19,7 +23,18 @@ def _track(bucket, key):
 def _text(value):
     return value if isinstance(value, str) and value else None
 
-def _emit(event, scope, native, session_id=None, turn_id=None, input_id=None, continues=None):
+def _location(task_id):
+    try:
+        from tools.terminal_tool_lifecycle import get_active_env
+        env = get_active_env(task_id) if task_id else None
+    except Exception:
+        return None
+    if env is None or type(env).__name__ != 'LocalEnvironment':
+        return None
+    cwd = getattr(env, 'cwd', None)
+    return cwd if isinstance(cwd, str) and cwd.startswith('/') else None
+
+def _emit(event, scope, native, session_id=None, turn_id=None, input_id=None, continues=None, cwd=None):
     token = os.environ.get('CLANKER_REMOTE_ATTENTION_TOKEN')
     if not token or os.environ.get('CLANKER_REMOTE_ATTENTION_HARNESS') != 'hermes':
         return
@@ -27,6 +42,8 @@ def _emit(event, scope, native, session_id=None, turn_id=None, input_id=None, co
     for key, value in (('sessionId', session_id), ('turnId', turn_id), ('inputId', input_id), ('continuesSessionId', continues)):
         if value:
             payload[key] = value[:128]
+    if isinstance(cwd, str) and cwd and len(cwd.encode()) <= 1024 and all(ord(c) >= 32 and ord(c) != 127 for c in cwd):
+        payload['cwd'] = cwd
     raw = json.dumps(payload).encode()
     if len(raw) > 2048:
         return
@@ -102,7 +119,7 @@ def pre_llm_call(**kwargs):
         _track(_ROOT_TURNS, turn)
     if previous:
         _emit('session_continued', 'root', 'pre_llm_call', current, continues=previous)
-    _emit('turn_started', 'root', 'pre_llm_call', current, turn)
+    _emit('turn_started', 'root', 'pre_llm_call', current, turn, cwd=_location(_text(kwargs.get('task_id'))))
 
 def post_llm_call(**kwargs):
     # post_llm_call does not carry parent_session_id, so provenance comes from the turn
@@ -123,7 +140,8 @@ def post_llm_call(**kwargs):
             return
     if previous:
         _emit('session_continued', 'root', 'post_llm_call', current, continues=previous)
-    _emit('turn_completed', scope, 'post_llm_call', current, turn)
+    cwd = _location(_text(kwargs.get('task_id'))) if scope == 'root' else None
+    _emit('turn_completed', scope, 'post_llm_call', current, turn, cwd=cwd)
 
 def _approval(event, native):
     def handler(**kwargs):

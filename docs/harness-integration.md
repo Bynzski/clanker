@@ -274,10 +274,21 @@ context (falling back to the launch context until a report arrives). It never
 re-binds `terminal.checkoutContextId`, never authorizes a root, and never relaxes
 release or removal checks, which stay on the launch binding.
 
-Claude reports `cwd` on `UserPromptSubmit`, `Stop`, `StopFailure` and `SessionEnd`,
-and maps `CwdChanged` (`new_cwd`) to `location_changed`. Mid-turn tool hooks carry
-none, so a reordered move is corrected when the turn ends at the latest. Other
-providers do not report a location yet. Adding one means emitting `cwd` from its
+What each provider reports (root only; mid-turn tool hooks and children never
+carry a location):
+
+| Provider | Can the location move? | Reported from |
+| --- | --- | --- |
+| Claude | Yes, a Bash `cd` persists (the process never moves) | `cwd` on `UserPromptSubmit`/`Stop`/`StopFailure`/`SessionEnd`; `CwdChanged` (`new_cwd`) as `location_changed` |
+| Codex | Only `/cd` or a worktree switch, while idle (commands run one-shot) | hook `cwd` on `UserPromptSubmit`/`Stop`/`Interrupt`/`SessionEnd` |
+| Pi | Only when the session is replaced (resume/new/fork) | `ctx.cwd` on `agent_start`/`agent_settled`; `session_start` as `location_changed` |
+| OMP | Only on a session switch or explicit directory change | main-session `ctx.cwd` on `agent_start`/`session_stop`; `session_start`/`session_switch` as `location_changed` |
+| OpenCode | Per session (`info.directory`) | the verified root session's directory (else the plugin's instance directory) on its turn events |
+| Antigravity | No (per-command `Cwd`); hooks carry no cwd | the root conversation's `workspacePaths` when it has exactly one |
+| Hermes (SSH) | Yes, its terminal keeps a persistent `cd` | the turn task's active **local** terminal environment `cwd` on root `pre_llm_call`/`post_llm_call` (a container backend reports nothing) |
+
+A move is shown once it is reported: immediately for Claude, at the next turn
+boundary for the others. Adding a provider means emitting `cwd` from its
 interpreter or plugin; nothing in the broker or renderer is harness-specific.
 
 Set `CLANKER_DEBUG_ATTENTION=1` to log one bounded diagnostic per accepted-envelope

@@ -50,6 +50,7 @@ async function importSource(source: string, location = 'source.mjs') {
   fs.writeFileSync(path.join(dir, location), source);
   return import(/* @vite-ignore */ `${pathToFileURL(path.join(dir, location)).href}?${Math.random()}`);
 }
+const locationOf = (broker: AgentAttentionBroker) => broker.snapshot('term')?.location?.path ?? null;
 function drain(): Wire[] {
   const emitted = (globalThis as { __emitted?: Wire[] }).__emitted ?? [];
   return emitted.splice(0);
@@ -240,6 +241,28 @@ describe('Codex lifecycle', () => {
     expect(state()).toBe('running');
     feed(hook('Stop', { session_id: 'next', turn_id: 't1' }));
     expect(state()).toBe('ready');
+  });
+
+  // Location: every Codex hook carries `cwd`, the session's working directory. Commands never move
+  // it (each runs one-shot); `/cd` or a worktree switch does, and only while idle, so the next
+  // UserPromptSubmit reports it. Only the root's turn boundaries carry it.
+  it('reports the root session directory on turn boundaries, never from tool hooks or subagents', async () => {
+    const hook = await interpreter('codex');
+    const { feed, broker } = rig('codex');
+    const turn = (id: string, cwd: string) => ({ session_id: 'root', turn_id: id, cwd });
+    feed(hook('UserPromptSubmit', turn('t1', '/w/repo-worktrees/wt-1')));
+    expect(locationOf(broker)).toBe('/w/repo-worktrees/wt-1');
+    expect(hook('PreToolUse', { ...turn('t1', '/elsewhere'), tool_use_id: 'a', tool_name: 'Bash', tool_input: { command: 'x' } })).toBeNull();
+    feed(hook('PermissionRequest', { ...turn('t1', '/elsewhere'), tool_name: 'Bash', tool_input: { command: 'x' } }));
+    feed(hook('SubagentStop', { ...turn('t1', '/sub'), agent_id: 'worker' }));
+    expect(locationOf(broker)).toBe('/w/repo-worktrees/wt-1');
+    feed(hook('Stop', turn('t1', '/w/repo-worktrees/wt-1')));
+    // `/cd /w/repo` while idle: the next prompt reports it.
+    feed(hook('UserPromptSubmit', turn('t2', '/w/repo')));
+    expect(locationOf(broker)).toBe('/w/repo');
+    feed(hook('Interrupt', turn('t2', '/w/repo')));
+    feed(hook('SessionEnd', { session_id: 'root', cwd: '/w/repo' }));
+    expect(locationOf(broker)).toBe('/w/repo');
   });
 });
 
@@ -452,6 +475,21 @@ describe('Agy lifecycle', () => {
     feed(hook('PostToolUse', { conversationId: 'root', toolCall: { name: 'ask_permission' } }));
     expect(state()).toBe('running');
   });
+
+  // Location: Antigravity hooks carry no cwd; every payload carries the conversation's
+  // `workspacePaths`. Commands take a per-call Cwd and never move it. A single workspace root is the
+  // root conversation's location; several are ambiguous and report nothing.
+  it('reports the root conversation\'s single workspace path, and nothing for other conversations or several roots', async () => {
+    const hook = await interpreter('agy');
+    const { feed, broker } = rig('agy');
+    feed(hook('PreInvocation', { conversationId: 'root', invocationNum: 0, initialNumSteps: 0, workspacePaths: ['/w/repo-worktrees/wt-1'] }));
+    expect(locationOf(broker)).toBe('/w/repo-worktrees/wt-1');
+    feed(hook('PreInvocation', { conversationId: 'sub', invocationNum: 0, initialNumSteps: 0, workspacePaths: ['/w/branch'] }));
+    feed(hook('Stop', { conversationId: 'root', executionNum: 1, fullyIdle: true, workspacePaths: ['/w/a', '/w/b'] }));
+    expect(locationOf(broker)).toBe('/w/repo-worktrees/wt-1');
+    feed(hook('PreInvocation', { conversationId: 'root', invocationNum: 0, initialNumSteps: 0, workspacePaths: ['/w/repo'] }));
+    expect(locationOf(broker)).toBe('/w/repo');
+  });
 });
 
 describe('Pi lifecycle', () => {
@@ -466,7 +504,7 @@ describe('Pi lifecycle', () => {
   const ctx = { sessionManager: { getSessionId: () => 'root' } };
   it('completes on agent_settled only, never on lower-level end events', async () => {
     const handlers = await load();
-    expect(Object.keys(handlers).sort()).toEqual(['agent_settled', 'agent_start', 'session_shutdown']);
+    expect(Object.keys(handlers).sort()).toEqual(['agent_settled', 'agent_start', 'session_shutdown', 'session_start']);
     const { feed, state } = rig('pi');
     drain();
     await handlers.agent_start({}, ctx);
@@ -507,6 +545,22 @@ describe('Pi lifecycle', () => {
     await handlers.agent_settled({}, ctx);
     expect(drain()).toEqual([]);
   });
+
+  // Location: `ctx.cwd` is the session's directory. Commands never move it; replacing the session
+  // (resume, new, fork) does: Pi emits session_shutdown for the old one, then session_start with
+  // the new session's cwd.
+  it('reports ctx.cwd on root events and follows a session replacement into another directory', async () => {
+    const handlers = await load();
+    const { feed, broker } = rig('pi');
+    const at = (id: string, cwd: string) => ({ sessionManager: { getSessionId: () => id }, cwd });
+    const run = async (name: string, context: unknown, event: unknown = {}) => { drain(); await handlers[name](event, context); drain().forEach(feed); };
+    await run('agent_start', at('root', '/w/repo-worktrees/wt-1'));
+    expect(locationOf(broker)).toBe('/w/repo-worktrees/wt-1');
+    await run('agent_settled', at('root', '/w/repo-worktrees/wt-1'));
+    await run('session_shutdown', at('root', '/w/repo-worktrees/wt-1'), { type: 'session_shutdown', reason: 'resume' });
+    await run('session_start', at('other', '/w/repo'), { type: 'session_start', reason: 'resume' });
+    expect(locationOf(broker)).toBe('/w/repo');
+  });
 });
 
 describe('Oh My Pi lifecycle', () => {
@@ -545,6 +599,28 @@ describe('Oh My Pi lifecycle', () => {
     await handlers.session_stop({}, main);
     await handlers.session_stop({}, main);
     expect(drain().map((wire) => wire.event)).toEqual(['turn_started', 'turn_completed']);
+  });
+
+  // Location: `ctx.cwd` follows the session manager's directory, which moves on a session switch or
+  // an explicit working-directory change, never from a command. Subagents never move it.
+  it('reports the main session\'s ctx.cwd and follows a session switch, ignoring subagents', async () => {
+    const omp = await importSource(OMP);
+    const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> = {};
+    omp.default({ on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers[name] = handler; } });
+    const main = (cwd: string, id = 'main') => ({ sessionManager: { getSessionId: () => id }, agent: { kind: 'main' }, cwd });
+    const sub = { sessionManager: { getSessionId: () => 'task-1' }, agent: { kind: 'sub' }, cwd: '/tmp/sub' };
+    const { feed, broker } = rig('omp');
+    const run = async (name: string, ctx: unknown) => { drain(); await handlers[name]({}, ctx); drain().forEach(feed); };
+    await run('agent_start', main('/w/repo-worktrees/wt-1'));
+    expect(locationOf(broker)).toBe('/w/repo-worktrees/wt-1');
+    await run('agent_start', sub);
+    await run('session_stop', sub);
+    expect(locationOf(broker)).toBe('/w/repo-worktrees/wt-1');
+    await run('session_stop', main('/w/repo-worktrees/wt-1'));
+    await run('session_switch', main('/w/repo'));
+    expect(locationOf(broker)).toBe('/w/repo');
+    await run('session_start', main('/w/repo/sub'));
+    expect(locationOf(broker)).toBe('/w/repo/sub');
   });
 });
 
@@ -630,6 +706,32 @@ describe('OpenCode lifecycle', () => {
     expect(state()).toBe('running');
     await step('question.asked', { sessionID: 'child-1', id: 'q-1' });
     expect(state()).toBe('running');
+  });
+
+  // Location: a session's native info carries its `directory`; the plugin reports it for root turns,
+  // falling back to the plugin's own instance directory when the info has none. Children never move it.
+  it('reports the verified root session\'s directory on its turns, never a child\'s', async () => {
+    const located: Record<string, { id: string; parentID?: string; directory?: string }> = {
+      root: { id: 'root', directory: '/w/repo-worktrees/wt-1' }, child: { id: 'child', parentID: 'root', directory: '/tmp/child' }, bare: { id: 'bare' },
+    };
+    const module = await importSource(OPENCODE, 'plugins/source.mjs');
+    const instance = await module.ClankerAttention({
+      client: { session: { get: async ({ path: { id } }: { path: { id: string } }) => ({ data: located[id] }) } },
+      directory: '/w/instance',
+    });
+    const { feed, broker } = rig('opencode');
+    const step = async (type: string, properties: Record<string, unknown>) => { drain(); await instance.event({ event: { type, properties } }); drain().forEach(feed); };
+    await step(...status('root', 'busy'));
+    expect(locationOf(broker)).toBe('/w/repo-worktrees/wt-1');
+    await step(...status('child', 'busy'));
+    await step(...status('child', 'idle'));
+    expect(locationOf(broker)).toBe('/w/repo-worktrees/wt-1');
+    await step('session.updated', { info: { id: 'root', directory: '/w/repo' } });
+    await step(...status('root', 'idle'));
+    expect(locationOf(broker)).toBe('/w/repo');
+    await step('session.deleted', { info: { id: 'root' } });
+    await step(...status('bare', 'busy'));
+    expect(locationOf(broker)).toBe('/w/instance');
   });
 });
 
@@ -794,5 +896,40 @@ ${steps}
   it('ignores a finalize for an unrelated session', () => {
     const { trace } = replay([llm('A', 'A:task:t1'), "fire('on_session_finalize', session_id='other', platform='tui')"].join('\n'));
     expect(trace).toEqual(['turn_started:running']);
+  });
+  // Location: Hermes keeps a persistent shell directory (a `cd` carries over between commands), held
+  // by the session's terminal environment, not by any hook argument. The plugin reads it from the
+  // active environment of the turn's task, and only from a local backend (a container path is not a
+  // host path); no environment yet, or any failure, reports nothing.
+  const ENVIRONMENTS = `
+import sys, types
+lifecycle = types.ModuleType('tools.terminal_tool_lifecycle')
+class LocalEnvironment:
+    def __init__(self, cwd):
+        self.cwd = cwd
+class DockerEnvironment(LocalEnvironment):
+    pass
+ENVS = {}
+lifecycle.get_active_env = lambda task_id: ENVS.get(task_id)
+package = types.ModuleType('tools')
+package.terminal_tool_lifecycle = lifecycle
+sys.modules['tools'] = package
+sys.modules['tools.terminal_tool_lifecycle'] = lifecycle
+`;
+  it('reports the root task\'s local terminal directory, following a cd, and nothing from containers or children', () => {
+    const { broker, frames } = replay([
+      ENVIRONMENTS,
+      llm('root', 'root:task:t1'),
+      "ENVS['task'] = LocalEnvironment('/w/repo-worktrees/wt-1')",
+      done('root', 'root:task:t1'),
+      "ENVS['task'].cwd = '/w/repo'",
+      llm('root', 'root:task:t2'),
+      "ENVS['task'] = DockerEnvironment('/workspace')",
+      done('root', 'root:task:t2'),
+      "ENVS['task'] = LocalEnvironment('/tmp/child')",
+      llm('child', 'child:task:c1', 'root'),
+    ].join('\n'));
+    expect(frames.map((frame) => frame.cwd ?? null)).toEqual([null, '/w/repo-worktrees/wt-1', '/w/repo', null]);
+    expect(broker.snapshot('term')?.location?.path).toBe('/w/repo');
   });
 });
