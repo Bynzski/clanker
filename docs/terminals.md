@@ -116,6 +116,20 @@ The **Chat History** button (message icon) in the header opens a dropdown that d
 
 **Remote session isolation:** SSH Chat history discovers supported harness conversations on the registered host and never scans desktop session files. Resume revalidates the selected conversation and its canonical working directory before opening an SSH terminal. Clanker keeps no record of a launch, so history always reflects the host's own current metadata; a conversation finished through Clanker appears there like any other. Hermes history and remote process persistence remain unavailable. See [SSH session history](workspaces.md#ssh-session-history) for supported harnesses and limits.
 
+### Hermes Assistants
+
+Hermes Assistants are an **optional** feature for people who already use named Hermes profiles. They are separate from the ordinary Hermes launcher in the toolbar, which keeps working exactly as before (including with only the default profile, and without `hermes serve`).
+
+**Turning it on.** The feature is hidden entirely when the Hermes CLI is not installed. Otherwise, open **Settings → Hermes Assistants** and enable it. By default Clanker only connects to a Hermes service that is already running locally. Turn on **Start Hermes service when needed** to let Clanker start `hermes serve` itself; Clanker stops only a service it started and never one you were already running. Hover the info icon for the current connection state.
+
+**Who appears.** Every named Hermes profile appears under **ASSISTANTS** in the sidebar (and as icons in the collapsed sidebar or a compact row in Tabs mode). The raw `default` profile intentionally does not appear, because the toolbar's Hermes launcher already represents it. There is no pinning and no Add Profile screen: create and configure profiles in Hermes, and a Bot title or description set there is used as the display name.
+
+**Opening an Assistant.** Click a name such as Fred to open that profile's persistent Hermes **Bot Chat**. Each profile has exactly one, so coming back later resumes the same conversation. If a profile has never had one, Clanker creates it on first open without sending any message to the model. The profile keeps its own working directory; opening Fred from different workspaces does not move it.
+
+**The Assistant surface.** Hermes' own terminal UI is the main content. The Browser toolbar button opens an embedded Browser as a right-hand companion panel that you can resize and close. That Browser belongs to the Assistant: it is independent of any workspace's Browser. Switching to a workspace and back leaves Fred's terminal and Browser exactly as they were, and opening a new workspace while Fred is active simply takes you to the new workspace while Fred stays ready. Turning Assistants off closes these surfaces.
+
+**What is not available in Assistant mode.** Assistants are not workspaces, so the toolbar shows only what applies: Browser and Settings. Files, Git and worktrees, Notes, Launch Recipes, the terminal launchers, isolated agents, workspace chat history, workspace usage and the layout Fit/Undo tools are hidden rather than acting on whichever workspace you used last. In this release an Assistant also needs at least one open workspace to be reachable.
+
 ### Selecting a Harness
 
 1. Click a harness launcher in the toolbar (or choose a harness in the workspace gate)

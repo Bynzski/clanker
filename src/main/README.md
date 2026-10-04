@@ -24,6 +24,12 @@ src/main/
 ├── modelCache.ts            # Model availability caching
 ├── terminalUtils.ts         # Terminal buffer constants (shared with renderer)
 ├── harnessDefaultsValidation.ts # Harness defaults validation
+├── assistants/             # Optional Hermes Assistants (served Bot Chat)
+│   ├── assistantSettings.ts       # {enabled, autoStart} validation and tolerant legacy read
+│   ├── hermesAssistantService.ts  # Roster, canonical Bot Chat, /api/pty sessions, owned-service lifecycle
+│   ├── hermesBackend.ts           # Backend adoption (bounded token bootstrap) and `hermes serve` start/readiness
+│   └── hermesTransport.ts         # Injectable WebSocket + small JSON-RPC client
+├── browserOwner.ts          # Browser owner validation (workspace vs Assistant)
 ├── ipc/                     # IPC handler registrations
 │   ├── settingsIpc.ts      # Store schema, AI commit, harness options, window
 │   ├── terminalIpc.ts       # PTY spawn, write, resize, kill, clipboard
@@ -34,6 +40,7 @@ src/main/
 │   ├── vcsIpc.ts           # VCS provider context, PR info, deep links
 │   ├── aiCommitIpc.ts      # AI commit message generation
 │   ├── sessionIpc.ts       # Session history IPC
+│   ├── assistantIpc.ts     # Narrow Assistant bridge (opaque ids only)
 │   ├── sshEnvironmentIpc.ts # Saved SSH targets, remote browsing and folder creation
 │   ├── windowIpc.ts        # Window controls (zoom, minimize, maximize)
 │   └── ptySpawn.ts         # PTY spawning utilities
@@ -72,6 +79,7 @@ All IPC handler registrations. Each file corresponds to a domain:
 | `settingsIpc.ts` | Persisted settings and harness defaults |
 | `terminalIpc.ts` | PTY spawn, write, resize, kill, startup handshake, clipboard write |
 | `gitIpc.ts` | Git polling, status, branch operations, stash, merge, history, diff, remotes, push/pull/fetch |
+| `assistantIpc.ts` | Assistant settings/refresh, opening a surface, PTY write/resize; no generic Hermes RPC, URL or token channel |
 | `browserIpc.ts` | WebContentsView navigation, back/forward, bounds, external link handling |
 | `fileIpc.ts` | File read, write, watch, unwatch, create, delete, rename |
 | `credentialIpc.ts` | SSH key generation/retrieval/deletion, PAT management, SSH host configuration |
@@ -151,3 +159,7 @@ Browser annotation feature for capturing structured element descriptions:
 - **Test exports are internal.** `main.ts` exports `terminals`, `browserViews`, `gitService`, `store`, `killAllTerminals` for test access only. Do not build new features on these exports.
 - **Canonical IPC paths are POSIX.** Convert local paths to native (`path.sep`) at the main-process boundary and return forward slashes to the renderer. Keep SSH paths as POSIX paths on the remote host. Use the helpers in `src/shared/pathNormalize.ts`. See `AGENTS.md` Maintainability section.
 - **Platform branching.** Use `src/main/platformShell.ts` for default-shell selection and `harnessLaunch.resolveHarnessPtySpawn()` for local PTY harness command resolution (`resolveHarnessSpawn()` is legacy, non-PTY only). Do not add ad-hoc `process.platform === 'win32'` branches; centralize them in these helpers.
+
+## Hermes Assistants
+
+`assistants/` is the whole optional Hermes Assistants integration; ordinary Hermes launching (`harnesses/hermes/`) is unrelated and never touches it. Main owns the Hermes service token, raw profile slugs, session IDs and backend/PTY connections; the renderer only ever holds opaque Assistant IDs and display-safe state. `browserOwner.ts` is main's authority for Browser ownership: an Assistant's Browser owner (`assistant-browser:<id>`) is local and valid only while `HermesAssistantService` resolves the id, so a fabricated id never creates a view. See [harness integration](../../docs/harness-integration.md#hermes-assistants) for the architecture.
