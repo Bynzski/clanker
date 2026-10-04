@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as net from 'node:net';
 import { AgentAttentionBroker, type AttentionDiagnostic } from '../../../src/main/agentAttentionBroker';
-import type { AgentAttentionUpdate } from '../../../src/shared/types/agentAttention';
+import { attentionRecorder } from '../../_helpers/attentionChanges';
 
 const brokers: AgentAttentionBroker[] = [];
 afterEach(() => {
@@ -10,16 +10,17 @@ afterEach(() => {
 });
 
 function setup(options?: { rootSessionId?: string }) {
-  const updates: AgentAttentionUpdate[] = [];
+  const recorder = attentionRecorder();
+  const updates = recorder.changes;
   const diagnostics: AttentionDiagnostic[] = [];
-  const broker = new AgentAttentionBroker((update) => updates.push(update), (diagnostic) => diagnostics.push(diagnostic));
+  const broker = new AgentAttentionBroker(recorder.onChange, (diagnostic) => diagnostics.push(diagnostic));
   brokers.push(broker);
   const token = broker.registerRemote('term-a', 'codex', options);
   const send = (event: string, fields: Record<string, unknown> = {}) => {
     broker.receiveRemote('term-a', JSON.stringify({ version: 1, token, harness: 'codex', event, scope: 'root', ...fields }));
     return diagnostics[diagnostics.length - 1]?.decision;
   };
-  return { broker, updates, diagnostics, send, token };
+  return { broker, updates, labels: recorder.labels, recorder, diagnostics, send, token };
 }
 
 describe('AgentAttentionBroker transport and authentication', () => {
@@ -39,7 +40,7 @@ describe('AgentAttentionBroker transport and authentication', () => {
     });
     expect(broker.handoffState('term-a')).toBe('unverified');
     await send(first, { harness: 'claude', fields: { event: 'turn_started', scope: 'root', sessionId: 'session-a', turnId: 'turn-1' } });
-    await vi.waitFor(() => expect(onUpdate).toHaveBeenCalledWith({ terminalId: 'term-a', event: 'turn_started' }));
+    await vi.waitFor(() => expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ terminalId: 'term-a', snapshot: expect.objectContaining({ runtime: expect.objectContaining({ status: 'running', turnId: 'turn-1' }) }) })));
     expect(second.CLANKER_ATTENTION_TOKEN).not.toBe(first.CLANKER_ATTENTION_TOKEN);
     expect(onUpdate).toHaveBeenCalledTimes(1);
     expect(broker.handoffState('term-a')).toBe('running');
@@ -58,19 +59,20 @@ describe('AgentAttentionBroker transport and authentication', () => {
     broker.receive(JSON.stringify(base));
     expect(updates).toEqual([]);
     broker.receiveRemote('term-a', JSON.stringify(base));
-    expect(updates).toEqual([{ terminalId: 'term-a', event: 'turn_started' }]);
+    expect(updates).toHaveLength(1);
   });
 
-  it('never forwards session or turn identity to the renderer', () => {
-    const { send, updates } = setup();
+  it('publishes identity but never prompts, tool payloads or credentials', () => {
+    const { send, updates, token } = setup();
     send('turn_started', { sessionId: 'session-a', turnId: 'turn-1' });
-    expect(updates).toEqual([{ terminalId: 'term-a', event: 'turn_started' }]);
+    expect(updates[0].snapshot).toMatchObject({ sessionId: 'session-a', runtime: { turnId: 'turn-1' } });
+    expect(JSON.stringify(updates)).not.toContain(token);
   });
 });
 
 describe('AgentAttentionBroker root-session and turn correlation', () => {
   it('ignores completions from another session, a child, and a stale turn; settles the current root turn', () => {
-    const { broker, send, updates } = setup();
+    const { broker, send, labels } = setup();
     expect(send('turn_started', { sessionId: 'session-a', turnId: 'turn-1' })).toBe('accepted');
     expect(send('turn_completed', { sessionId: 'session-b', turnId: 'turn-1' })).toBe('rejected-mismatch');
     expect(send('turn_completed', { sessionId: 'session-a', turnId: 'turn-1', scope: 'child' })).toBe('ignored-child');
@@ -79,7 +81,7 @@ describe('AgentAttentionBroker root-session and turn correlation', () => {
     expect(broker.handoffState('term-a')).toBe('running');
     expect(send('turn_completed', { sessionId: 'session-a', turnId: 'turn-1' })).toBe('accepted');
     expect(broker.isReady('term-a')).toBe(true);
-    expect(updates.map((update) => update.event)).toEqual(['turn_started', 'turn_completed']);
+    expect(labels).toEqual(['turn_started', 'turn_completed']);
   });
 
   it('does not let a completion establish the root or settle without a live turn', () => {
@@ -162,20 +164,20 @@ describe('AgentAttentionBroker root-session and turn correlation', () => {
   });
 
   it('keeps Needs Input through repeated start events and clears it on completion', () => {
-    const { broker, send, updates } = setup();
+    const { broker, send, labels } = setup();
     send('turn_started', { sessionId: 'session-a', turnId: 'turn-1' });
     send('input_requested', { sessionId: 'session-a', turnId: 'turn-1', inputId: 'Bash' });
     expect(send('turn_started', { sessionId: 'session-a', turnId: 'turn-1' })).toBe('accepted');
     expect(broker.handoffState('term-a')).toBe('needs_input');
     send('turn_completed', { sessionId: 'session-a', turnId: 'turn-1' });
     expect(broker.handoffState('term-a')).toBe('ready');
-    expect(updates.map((update) => update.event)).toEqual(['turn_started', 'input_requested', 'turn_completed']);
+    expect(labels).toEqual(['turn_started', 'input_requested', 'turn_completed']);
   });
 });
 
 describe('AgentAttentionBroker turn interruption', () => {
   it('retires the active turn and wait without a completion, keeps the root, and allows a new turn', () => {
-    const { broker, send, updates } = setup();
+    const { broker, send, labels } = setup();
     send('turn_started', { sessionId: 'A', turnId: 'T1' });
     send('input_requested', { sessionId: 'A', turnId: 'T1', inputId: 'w1' });
     expect(send('turn_interrupted', { sessionId: 'B', turnId: 'T1' })).toBe('rejected-mismatch');
@@ -189,19 +191,19 @@ describe('AgentAttentionBroker turn interruption', () => {
     expect(send('input_resolved', { sessionId: 'A', turnId: 'T1', inputId: 'w1' })).toBe('ignored-stale');
     expect(send('turn_started', { sessionId: 'B', turnId: 'T2' })).toBe('rejected-mismatch'); // root stays bound
     expect(send('turn_started', { sessionId: 'A', turnId: 'T2' })).toBe('accepted');
-    expect(updates.map((update) => update.event)).toEqual(['turn_started', 'input_requested', 'turn_interrupted', 'turn_started']);
+    expect(labels).toEqual(['turn_started', 'input_requested', 'turn_interrupted', 'turn_started']);
   });
 });
 
 describe('AgentAttentionBroker session continuation', () => {
   it('moves the bound root to a continuation session without changing foreground state', () => {
-    const { broker, send, updates } = setup();
+    const { broker, send, labels } = setup();
     send('turn_started', { sessionId: 'A', turnId: 'T1' });
     expect(send('session_continued', { sessionId: 'B', continuesSessionId: 'A' })).toBe('accepted');
     expect(broker.handoffState('term-a')).toBe('running');
     expect(send('turn_completed', { sessionId: 'A', turnId: 'T1' })).toBe('rejected-mismatch');
     expect(send('turn_completed', { sessionId: 'B', turnId: 'T1' })).toBe('accepted');
-    expect(updates.map((update) => update.event)).toEqual(['turn_started', 'turn_completed']);
+    expect(labels).toEqual(['turn_started', 'session_continued', 'turn_completed']);
   });
 
   it('only accepts a continuation of the currently bound root', () => {
@@ -227,7 +229,7 @@ describe('AgentAttentionBroker session continuation', () => {
 
 describe('AgentAttentionBroker session boundary versus agent exit', () => {
   it('clears the root on a native boundary, keeps the registration, and lets a new root bind', () => {
-    const { broker, send, updates } = setup();
+    const { broker, send, labels } = setup();
     send('turn_started', { sessionId: 'session-a', turnId: 'turn-1' });
     expect(send('session_ended', { sessionId: 'session-b' })).toBe('rejected-mismatch');
     expect(send('session_ended', { sessionId: 'session-a', scope: 'child' })).toBe('ignored-child');
@@ -239,12 +241,13 @@ describe('AgentAttentionBroker session boundary versus agent exit', () => {
     expect(send('turn_started', { sessionId: 'session-b', turnId: 'turn-9' })).toBe('accepted');
     expect(send('turn_completed', { sessionId: 'session-a', turnId: 'turn-1' })).toBe('rejected-mismatch');
     expect(send('turn_completed', { sessionId: 'session-b', turnId: 'turn-9' })).toBe('accepted');
-    expect(updates.map((update) => update.event)).toEqual(['turn_started', 'session_ended', 'turn_started', 'turn_completed']);
+    expect(labels).toEqual(['turn_started', 'session_ended', 'turn_started', 'turn_completed']);
   });
 
   it('retires the registration when the harness exits to the fallback shell', async () => {
-    const updates: AgentAttentionUpdate[] = [];
-    const broker = new AgentAttentionBroker((update) => updates.push(update), () => undefined);
+    const recorder = attentionRecorder();
+    const updates = recorder.changes;
+    const broker = new AgentAttentionBroker(recorder.onChange, () => undefined);
     brokers.push(broker);
     const env = await broker.register('term-a', 'codex');
     expect(broker.handoffState('term-a')).toBe('unverified');
@@ -254,7 +257,7 @@ describe('AgentAttentionBroker session boundary versus agent exit', () => {
     broker.receive(JSON.stringify(exited));
     expect(broker.canHandoff('term-a')).toBe(false);
     expect(broker.handoffState('term-a')).toBe('unavailable');
-    expect(updates).toEqual([{ terminalId: 'term-a', event: 'agent_exited' }]);
+    expect(updates).toEqual([{ terminalId: 'term-a', revision: 2, snapshot: null }]);
     // The credentials died with the agent: nothing can re-arm the fallback shell.
     broker.receive(JSON.stringify({ ...exited, event: 'turn_started', scope: 'root', sessionId: 's' }));
     expect(updates).toHaveLength(1);
@@ -275,9 +278,11 @@ describe('AgentAttentionBroker session boundary versus agent exit', () => {
   it('retires a re-registered terminal credential', () => {
     const { broker, token, updates } = setup();
     broker.registerRemote('term-a', 'codex');
-    broker.receiveRemote('term-a', JSON.stringify({ version: 1, token, harness: 'codex', event: 'turn_started', scope: 'root', sessionId: 's' }));
-    expect(updates).toEqual([]);
+    broker.receiveRemote('term-a', JSON.stringify({ version: 1, token, harness: 'codex', event: 'turn_started', scope: 'root', sessionId: 's', turnId: 't' }));
+    // Only the replacement's tombstone was published: the old credential changed nothing.
+    expect(updates).toEqual([{ terminalId: 'term-a', revision: 2, snapshot: null }]);
     expect(broker.handoffState('term-a')).toBe('unverified');
+    expect(broker.snapshot('term-a')?.revision).toBe(3);
   });
 });
 
@@ -308,7 +313,7 @@ describe('AgentAttentionBroker diagnostics', () => {
     send('turn_started', { sessionId: 's'.repeat(128), turnId: 't'.repeat(100), nativeEvent: 'UserPromptSubmit' });
     expect(diagnostics[0]).toEqual({
       harness: 'codex', terminalId: 'term-a', nativeEvent: 'UserPromptSubmit', sessionId: 's'.repeat(64), turnId: 't'.repeat(64),
-      semantic: 'turn_started', decision: 'accepted',
+      semantic: 'turn_started', decision: 'accepted', revision: 2, status: 'running',
     });
     expect(Object.keys(diagnostics[0])).not.toContain('token');
   });

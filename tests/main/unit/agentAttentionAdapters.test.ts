@@ -15,6 +15,7 @@ import {
   migrateLegacyAgyAttentionPlugin,
   withoutAttentionEnvironment,
 } from '../../../src/main/agentAttentionAdapters';
+import { attentionRecorder } from '../../_helpers/attentionChanges';
 import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
 
 afterAll(() => removeAttentionAdapterFiles());
@@ -147,13 +148,14 @@ describe('agent attention launch adapters', () => {
   });
 
   it('delivers a command hook event without forwarding prompt text', async () => {
-    const received: Array<{ terminalId: string; event: string }> = [];
-    const broker = new AgentAttentionBroker((update) => received.push(update), () => undefined);
+    const recorder = attentionRecorder();
+    const received = recorder.labels;
+    const broker = new AgentAttentionBroker(recorder.onChange, () => undefined);
     try {
       const env = await broker.register('term-hook', 'claude');
       const result = await runHook(env, 'claude', 'UserPromptSubmit', { session_id: 's1', prompt_id: 'p1', prompt: 'private text' });
       expect(result.code).toBe(0);
-      expect(received).toEqual([{ terminalId: 'term-hook', event: 'turn_started' }]);
+      expect(received).toEqual(['turn_started']);
     } finally {
       broker.close();
     }
@@ -171,8 +173,9 @@ describe('agent attention launch adapters', () => {
   });
 
   it('delivers Antigravity lifecycle events and decisions accurately', async () => {
-    const received: Array<{ terminalId: string; event: string }> = [];
-    const broker = new AgentAttentionBroker((update) => received.push(update), () => undefined);
+    const recorder = attentionRecorder();
+    const received = recorder.labels;
+    const broker = new AgentAttentionBroker(recorder.onChange, () => undefined);
     try {
       const env = await broker.register('term-agy', 'agy');
       const run = (hook: string, payload: Record<string, unknown>) => runHook(env, 'agy', hook, payload);
@@ -180,7 +183,7 @@ describe('agent attention launch adapters', () => {
       const r1 = await run('PreInvocation', { conversationId: 'c1', invocationNum: 0 });
       expect(r1.code).toBe(0);
       expect(JSON.parse(r1.stdout)).toEqual({});
-      expect(received).toEqual([{ terminalId: 'term-agy', event: 'turn_started' }]);
+      expect(received).toEqual(['turn_started']);
 
       received.length = 0;
       await run('PreInvocation', { conversationId: 'c1', invocationNum: 1 });
@@ -188,12 +191,12 @@ describe('agent attention launch adapters', () => {
 
       const r3 = await run('PreToolUse', { conversationId: 'c1', toolCall: { name: 'ask_question' } });
       expect(JSON.parse(r3.stdout)).toEqual({ decision: 'allow' });
-      expect(received).toEqual([{ terminalId: 'term-agy', event: 'input_requested' }]);
+      expect(received).toEqual(['input_requested']);
 
       received.length = 0;
       const r4 = await run('PostToolUse', { conversationId: 'c1', toolCall: { name: 'ask_question' } });
       expect(JSON.parse(r4.stdout)).toEqual({});
-      expect(received).toEqual([{ terminalId: 'term-agy', event: 'input_resolved' }]);
+      expect(received).toEqual(['input_resolved']);
 
       // The plugin matcher prevents non-interaction tools; the interpreter is defensive too.
       received.length = 0;
@@ -206,7 +209,7 @@ describe('agent attention launch adapters', () => {
       await run('Stop', { conversationId: 'c2', fullyIdle: true });
       expect(received).toEqual([]);
       await run('Stop', { conversationId: 'c1', fullyIdle: true });
-      expect(received).toEqual([{ terminalId: 'term-agy', event: 'turn_completed' }]);
+      expect(received).toEqual(['turn_completed']);
     } finally {
       broker.close();
     }
@@ -404,8 +407,9 @@ describe('Antigravity attention plugin resilience', () => {
 
   it('still delivers Antigravity lifecycle events and decisions through the guard', async () => {
     const home = tempHome();
-    const received: Array<{ terminalId: string; event: string }> = [];
-    const broker = new AgentAttentionBroker((update) => received.push(update), () => undefined);
+    const recorder = attentionRecorder();
+    const received = recorder.labels;
+    const broker = new AgentAttentionBroker(recorder.onChange, () => undefined);
     try {
       const guard = install(home);
       const env = {
@@ -413,17 +417,14 @@ describe('Antigravity attention plugin resilience', () => {
         CLANKER_ATTENTION_COMMAND: files.command, CLANKER_ATTENTION_INTERPRETER: interpreter,
       };
       expect(JSON.parse((await runGuard(guard, 'PreInvocation', { conversationId: 'c1', invocationNum: 0 }, env)).stdout)).toEqual({});
-      expect(received).toEqual([{ terminalId: 'term-live', event: 'turn_started' }]);
+      expect(received).toEqual(['turn_started']);
       received.length = 0;
       expect(JSON.parse((await runGuard(guard, 'PreToolUse', askPayload, env)).stdout)).toEqual({ decision: 'allow' });
-      expect(received).toEqual([{ terminalId: 'term-live', event: 'input_requested' }]);
+      expect(received).toEqual(['input_requested']);
       received.length = 0;
       await runGuard(guard, 'PostToolUse', askPayload, env);
       await runGuard(guard, 'Stop', { conversationId: 'c1', fullyIdle: true }, env);
-      expect(received).toEqual([
-        { terminalId: 'term-live', event: 'input_resolved' },
-        { terminalId: 'term-live', event: 'turn_completed' },
-      ]);
+      expect(received).toEqual(['input_resolved', 'turn_completed']);
     } finally {
       broker.close();
       fs.rmSync(home, { recursive: true, force: true });

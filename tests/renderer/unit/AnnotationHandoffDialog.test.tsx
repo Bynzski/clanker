@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import AnnotationHandoffDialog from '../../../src/renderer/components/AnnotationHandoffDialog';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { snapshot, storeState } from '../../_helpers/attentionSnapshots';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
@@ -23,9 +24,7 @@ describe('AnnotationHandoffDialog', () => {
       })],
       activeWorkspaceId: 'workspace-1',
     });
-    useAgentAttentionStore.setState({ byTerminalId: {
-      'term-1': { lifecycle: 'turn_complete', unseen: false, updatedAt: Date.now() },
-    } });
+    useAgentAttentionStore.setState(storeState([snapshot('term-1', 'completed', 1)], { 'term-1': { completion: 1, request: 0 } }));
   });
 
   afterEach(() => cleanup());

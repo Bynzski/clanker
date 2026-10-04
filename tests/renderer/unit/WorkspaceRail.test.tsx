@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WorkspaceRail, { getWorkspaceMonogram } from '../../../src/renderer/components/WorkspaceRail';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { EMPTY_ATTENTION, snapshot, storeState } from '../../_helpers/attentionSnapshots';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import { installElectronApiMock } from '../../setup/electron';
@@ -35,7 +36,7 @@ function seed() {
 describe('WorkspaceRail', () => {
   beforeEach(() => {
     installElectronApiMock();
-    useAgentAttentionStore.setState({ byTerminalId: {} });
+    useAgentAttentionStore.setState(EMPTY_ATTENTION);
     seed();
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -123,12 +124,7 @@ describe('WorkspaceRail', () => {
   });
 
   it('shows agent lifecycle and a workspace badge for unseen attention', () => {
-    useAgentAttentionStore.setState({
-      byTerminalId: {
-        t1: { lifecycle: 'running', unseen: false, updatedAt: 1 },
-        t2: { lifecycle: 'needs_input', unseen: true, updatedAt: 2 },
-      },
-    });
+    useAgentAttentionStore.setState(storeState([snapshot('t1', 'running', 1), snapshot('t2', 'needs_input', 2)]));
     const { container } = render(<WorkspaceRail onExpand={() => undefined} />);
     expect(screen.getByRole('button', { name: 'Delilah · Claude · Needs input' })).toBeTruthy();
     expect(container.querySelector('.ws-rail-agent-state.state-running')).toBeTruthy();
@@ -138,21 +134,18 @@ describe('WorkspaceRail', () => {
   });
 
   it('shows no dot for idle agents or for a finished turn that has been seen', () => {
-    useAgentAttentionStore.setState({
-      byTerminalId: {
-        t1: { lifecycle: 'turn_complete', unseen: false, updatedAt: 1 },
-        t2: { lifecycle: 'unknown', unseen: false, updatedAt: 2 },
-      },
-    });
+    useAgentAttentionStore.setState(storeState(
+      [snapshot('t1', 'completed', 1), snapshot('t2', 'unverified', 2)], { t1: { completion: 1, request: 0 } },
+    ));
     const { container } = render(<WorkspaceRail onExpand={() => undefined} />);
     expect(container.querySelector('.ws-rail-agent-state')).toBeNull();
     expect(screen.getByRole('button', { name: 'Samson · Codex' })).toBeTruthy();
-    act(() => useAgentAttentionStore.setState({ byTerminalId: { t1: { lifecycle: 'turn_complete', unseen: true, updatedAt: 3 } } }));
+    act(() => useAgentAttentionStore.setState(storeState([snapshot('t1', 'completed', 3)])));
     expect(container.querySelector('.ws-rail-agent-state.state-turn_complete.unseen')).toBeTruthy();
   });
 
   it('offers expand, open-workspace and next-attention actions', () => {
-    useAgentAttentionStore.setState({ byTerminalId: { t3: { lifecycle: 'needs_input', unseen: true, updatedAt: 1 } } });
+    useAgentAttentionStore.setState(storeState([snapshot('t3', 'needs_input', 1)]));
     const onExpand = vi.fn();
     const onOpenWorkspace = vi.fn();
     render(<WorkspaceRail onExpand={onExpand} onOpenWorkspace={onOpenWorkspace} />);
@@ -166,7 +159,7 @@ describe('WorkspaceRail', () => {
     expect(onOpenWorkspace).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('button', { name: 'Jump to next agent needing attention' }));
     expect(useWorkspaceStore.getState().activeWorkspaceId).toBe('beta');
-    expect(useAgentAttentionStore.getState().byTerminalId.t3.unseen).toBe(false);
+    expect(useAgentAttentionStore.getState().seenByTerminalId.t3).toEqual({ completion: 0, request: 1 });
   });
 
   it('opens the sidebar on FILES from the rail', () => {

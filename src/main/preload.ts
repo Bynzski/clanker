@@ -12,7 +12,7 @@ import type { GitCreateWorktreeOptions, GitStatusResult } from '../shared/types/
 import type { HarnessSession } from '../shared/types/session';
 import type { HarnessUsageRequest } from '../shared/types/harnessUsage';
 import type { HarnessAccountAuthEvent } from '../shared/types/harnessAccounts';
-import type { AgentAttentionUpdate } from '../shared/types/agentAttention';
+import type { AgentAttentionChange } from '../shared/types/agentAttention';
 import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchRequest } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { ThemeId } from '../shared/types/theme';
@@ -72,7 +72,8 @@ import {
   TERMINAL_CLEANUP_WORKSPACE,
   TERMINAL_DATA,
   TERMINAL_EXIT,
-  AGENT_ATTENTION_UPDATE,
+  AGENT_ATTENTION_CHANGED,
+  GET_AGENT_ATTENTION_SNAPSHOTS,
   HARNESS_ACCOUNTS_LIST,
   HARNESS_ACCOUNTS_SELECT,
   HARNESS_ACCOUNTS_ADD_START,
@@ -279,10 +280,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(TERMINAL_EXIT, handler);
     return () => ipcRenderer.removeListener(TERMINAL_EXIT, handler);
   },
-  onAgentAttentionUpdate: (callback: (data: AgentAttentionUpdate) => void) => {
-    const handler = (_event: IpcRendererEvent, data: AgentAttentionUpdate) => callback(data);
-    ipcRenderer.on(AGENT_ATTENTION_UPDATE, handler);
-    return () => ipcRenderer.removeListener(AGENT_ATTENTION_UPDATE, handler);
+  getAgentAttentionSnapshots: () => ipcRenderer.invoke(GET_AGENT_ATTENTION_SNAPSHOTS),
+  onAgentAttentionChanged: (callback: (data: AgentAttentionChange) => void) => {
+    const handler = (_event: IpcRendererEvent, data: AgentAttentionChange) => callback(data);
+    ipcRenderer.on(AGENT_ATTENTION_CHANGED, handler);
+    return () => ipcRenderer.removeListener(AGENT_ATTENTION_CHANGED, handler);
   },
   onTerminalResized: (callback: (data: { id: string; cols: number; rows: number }) => void) => {
     const handler = (_event: IpcRendererEvent, data: { id: string; cols: number; rows: number }) => callback(data);

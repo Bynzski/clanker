@@ -28,7 +28,7 @@ export const agyProvider = defineHarness({
     selectionFlags: ['--conversation'],
     discover: async (workspace: string) => (await import('./sessions')).discoverAgySessions(workspace),
   },
-  attention: { interpreter: INTERPRETER, resumePreservesSessionId: true, local, remote },
+  attention: { interpreter: INTERPRETER, resumePreservesSessionId: true, source: 'native', local, remote },
   aiCommit,
   usage: agyUsage,
   launch: { command: 'agy', args: [], modelArg: '--model' },

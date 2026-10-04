@@ -19,7 +19,8 @@ interface WorkspaceTabsProps {
 export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
   const { workspaces, activeWorkspaceId, activeTerminalId, selectWorkspace, moveWorkspace } = useWorkspaceStore();
   const byTerminalId = useAgentAttentionStore((state) => state.byTerminalId);
-  const nextTarget = nextAttentionTarget(workspaces, byTerminalId, activeTerminalId);
+  const seenByTerminalId = useAgentAttentionStore((state) => state.seenByTerminalId);
+  const nextTarget = nextAttentionTarget(workspaces, byTerminalId, seenByTerminalId, activeTerminalId);
   const { editingId, editValue, setEditValue, inputRef, startEditing: beginEditing, saveEdit, handleEditKeyDown } = useWorkspaceRename();
   const reorder = useWorkspaceReorder(workspaces, moveWorkspace, {
     axis: 'horizontal',
@@ -47,7 +48,7 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
       {workspaces.map((workspace, index) => {
         const isActive = workspace.id === activeWorkspaceId;
         const isEditing = workspace.id === editingId;
-        const counts = attentionCounts(workspace.terminals.map((terminal) => terminal.id), byTerminalId);
+        const counts = attentionCounts(workspace.terminals.map((terminal) => terminal.id), byTerminalId, seenByTerminalId);
         const tabLabel = getWorkspaceTabLabel(workspace);
         const branch = workspace.gitCurrentBranch;
         const remoteLabel = getRemoteEnvironmentLabel(workspace);

@@ -11,6 +11,7 @@
 
 .agent-attention-state.state-needs_input { color: var(--status-warning-emphasis); }
 .agent-attention-state.state-turn_complete { color: var(--status-success-emphasis); }
+.agent-attention-state.state-failed { color: var(--status-error); }
 /* Working: a quiet spinner rather than a coloured state. */
 .agent-attention-state.state-running { color: var(--text-secondary); }
 .agent-attention-state.state-running svg { animation: agent-attention-spin 0.9s linear infinite; }

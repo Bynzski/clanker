@@ -61,7 +61,7 @@ export default function interpret(input, hook, store) {
       save();
       return null;
     case 'PermissionRequest': {
-      if (!current) return event('input_requested', { turnId, inputId: 'w0' });
+      if (!current) return event('input_requested', { turnId, inputId: 'w0', requestKind: 'approval' });
       const fp = fingerprint(input);
       const ids = state.calls.filter((call) => call.fp === fp && !state.done.includes(call.id)).map((call) => call.id);
       const first = state.waits.length === 0 && !state.overflow;
@@ -69,7 +69,7 @@ export default function interpret(input, hook, store) {
       else state.waits = [...state.waits, { ids }];
       if (first) state.input = 'w' + (state.seq += 1);
       save();
-      return first ? event('input_requested', { turnId, inputId: state.input }) : null;
+      return first ? event('input_requested', { turnId, inputId: state.input, requestKind: 'approval' }) : null;
     }
     case 'PostToolUse': {
       const id = text(input.tool_use_id);

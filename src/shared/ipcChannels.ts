@@ -54,7 +54,8 @@ export const KILL_TERMINAL = 'kill-terminal';
 export const TERMINAL_CLEANUP_WORKSPACE = 'terminal:cleanup-workspace';
 export const TERMINAL_DATA = 'terminal-data';
 export const TERMINAL_EXIT = 'terminal-exit';
-export const AGENT_ATTENTION_UPDATE = 'agent-attention-update';
+export const AGENT_ATTENTION_CHANGED = 'agent-attention-changed';
+export const GET_AGENT_ATTENTION_SNAPSHOTS = 'get-agent-attention-snapshots';
 export const TERMINAL_RESIZED = 'terminal-resized';
 export const TERMINAL_READY = 'terminal-ready';
 export const RECIPE_COMMAND_WAIT = 'recipe-command:wait';
@@ -324,6 +325,7 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   GET_TERMINAL_BUFFER,
   WRITE_TERMINAL,
   GET_AGENT_HANDOFF_STATUSES,
+  GET_AGENT_ATTENTION_SNAPSHOTS,
   SEND_ANNOTATION_TO_AGENT,
   RESIZE_TERMINAL,
   KILL_TERMINAL,

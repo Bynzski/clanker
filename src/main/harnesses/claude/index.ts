@@ -18,7 +18,7 @@ export const claudeProvider = defineHarness({
     discover: async (workspace: string) => (await import('./sessions')).discoverClaudeSessions(workspace),
   },
   // Claude may assign a new session ID on resume, so a resumed ID is never pre-seeded.
-  attention: { interpreter: INTERPRETER, prepareResources, local, remote },
+  attention: { interpreter: INTERPRETER, authority: 'partial', prepareResources, local, remote },
   usage: claudeUsage,
   accounts: claudeAccounts,
   launch: { command: 'claude', args: [], modelArg: '--model' },

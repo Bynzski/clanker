@@ -10,6 +10,7 @@ import {
 import TerminalPane from '../../../src/renderer/components/TerminalPane';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useKeybindingStore } from '../../../src/renderer/store/keybindingStore';
+import { change, EMPTY_ATTENTION, snapshot } from '../../_helpers/attentionSnapshots';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { useThemeStore } from '../../../src/renderer/theme/themeStore';
@@ -228,7 +229,7 @@ describe('TerminalPane', () => {
     clearTerminalCache();
     useThemeStore.setState({ theme: 'dark', resolved: true });
     stopThemeSync = startTerminalThemeSync();
-    useAgentAttentionStore.setState({ byTerminalId: {} });
+    useAgentAttentionStore.setState(EMPTY_ATTENTION);
   });
 
   afterEach(() => {
@@ -385,18 +386,25 @@ describe('TerminalPane', () => {
       // Idle (no lifecycle yet) shows nothing at all.
       expect(document.querySelector('.agent-attention-state')).toBeNull();
       expect(screen.queryByText('Unknown')).toBeNull();
-      act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'turn_started' }, false));
+      const push = (kind: Parameters<typeof snapshot>[1], revision: number, foreground = false) =>
+        act(() => useAgentAttentionStore.getState().applyChange(change(snapshot('t1', kind, revision)), foreground));
+      push('running', 1);
       expect(screen.getByLabelText('Samson: Running')).toHaveClass('state-running');
-      act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'input_requested' }, false));
+      push('needs_input', 2);
       expect(screen.getByLabelText('Samson: Needs input')).toHaveClass('state-needs_input');
-      act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'turn_completed' }, false));
+      push('completed', 3);
       expect(screen.getByLabelText('Samson: Turn complete')).toHaveClass('state-turn_complete');
       // Seeing the finished turn returns the agent to idle: nothing shown.
       act(() => useAgentAttentionStore.getState().acknowledge('t1'));
       expect(document.querySelector('.agent-attention-state')).toBeNull();
       // A turn that finishes while the agent is in the foreground is never shown as unseen.
-      act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'turn_started' }, true));
-      act(() => useAgentAttentionStore.getState().applyUpdate({ terminalId: 't1', event: 'turn_completed' }, true));
+      push('running', 4, true);
+      push('completed', 5, true);
+      expect(document.querySelector('.agent-attention-state')).toBeNull();
+      // A proven failure is its own state, distinct from Done, and a later retirement clears it.
+      push('failed', 6);
+      expect(screen.getByLabelText('Samson: Failed')).toHaveClass('state-failed');
+      act(() => useAgentAttentionStore.getState().applyChange({ terminalId: 't1', revision: 7, snapshot: null }, false));
       expect(document.querySelector('.agent-attention-state')).toBeNull();
     });
 

@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { AGENT_NAMES, nameTerminal, nameTerminals } from '../../../src/renderer/lib/agentNames';
 import { nextAttentionTarget } from '../../../src/renderer/lib/agentAttentionNavigation';
 import { swapPaneIdsInLayout } from '../../../src/renderer/store/workspaceLayout';
-import { attentionCounts, useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
+import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
+import { EMPTY_ATTENTION, snapshot, storeState } from '../../_helpers/attentionSnapshots';
 import type { Terminal, WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 
-beforeEach(() => useAgentAttentionStore.setState({ byTerminalId: {} }));
+beforeEach(() => useAgentAttentionStore.setState(EMPTY_ATTENTION));
 
 describe('agent pane names and attention', () => {
   it('assigns human names once and avoids collisions after a pane is added', () => {
@@ -24,53 +25,16 @@ describe('agent pane names and attention', () => {
     ]).map((terminal) => terminal.displayName)).toEqual(['Delilah', 'Samson']);
   });
 
-  it('keeps status separate from unseen attention and isolates simultaneous agents', () => {
-    const state = useAgentAttentionStore.getState();
-    state.applyUpdate({ terminalId: 'a', event: 'turn_started' }, false);
-    state.applyUpdate({ terminalId: 'a', event: 'input_requested' }, false);
-    state.applyUpdate({ terminalId: 'b', event: 'turn_completed' }, false);
-    expect(attentionCounts(['a', 'b'], useAgentAttentionStore.getState().byTerminalId))
-      .toEqual({ needsInput: 1, completed: 1 });
-    state.acknowledge('a');
-    expect(useAgentAttentionStore.getState().byTerminalId.a.lifecycle).toBe('needs_input');
-    expect(useAgentAttentionStore.getState().byTerminalId.a.unseen).toBe(false);
-    expect(useAgentAttentionStore.getState().byTerminalId.b.unseen).toBe(true);
-    state.applyUpdate({ terminalId: 'b', event: 'turn_started' }, false);
-    expect(useAgentAttentionStore.getState().byTerminalId.b.unseen).toBe(false);
-    state.applyUpdate({ terminalId: 'a', event: 'input_resolved' }, false);
-    expect(useAgentAttentionStore.getState().byTerminalId.a.lifecycle).toBe('running');
-    state.markExited('b');
-    expect(useAgentAttentionStore.getState().byTerminalId.b.lifecycle).toBe('unknown');
-  });
-
   it('jumps to waiting agents before completed turns without clearing other panes', () => {
-    const store = useAgentAttentionStore.getState();
-    store.applyUpdate({ terminalId: 'a', event: 'turn_completed' }, false);
-    store.applyUpdate({ terminalId: 'b', event: 'input_requested' }, false);
+    useAgentAttentionStore.setState(storeState([snapshot('a', 'completed', 3), snapshot('b', 'needs_input', 4)]));
+    const { byTerminalId, seenByTerminalId } = useAgentAttentionStore.getState();
     const workspace = { id: 'workspace', terminals: [
       { id: 'a' }, { id: 'b' },
     ], panes: [
       { id: 'pane-a', terminalId: 'a' }, { id: 'pane-b', terminalId: 'b' },
     ] } as WorkspaceTab;
-    expect(nextAttentionTarget([workspace], useAgentAttentionStore.getState().byTerminalId, 'a'))
+    expect(nextAttentionTarget([workspace], byTerminalId, seenByTerminalId, 'a'))
       .toEqual({ workspaceId: 'workspace', terminalId: 'b' });
-  });
-
-  it('projects main-approved lifecycle updates without session correlation of its own', () => {
-    const store = useAgentAttentionStore.getState();
-    store.applyUpdate({ terminalId: 'a', event: 'turn_started' }, false);
-    store.applyUpdate({ terminalId: 'a', event: 'turn_completed' }, false);
-    expect(useAgentAttentionStore.getState().byTerminalId.a).toMatchObject({ lifecycle: 'turn_complete', unseen: true });
-    store.applyUpdate({ terminalId: 'a', event: 'turn_started' }, false);
-    store.applyUpdate({ terminalId: 'a', event: 'turn_interrupted' }, false);
-    expect(useAgentAttentionStore.getState().byTerminalId.a).toMatchObject({ lifecycle: 'unknown', unseen: false });
-    // A native session boundary and harness exit both leave the pane with no known state.
-    store.applyUpdate({ terminalId: 'a', event: 'session_ended' }, false);
-    expect(useAgentAttentionStore.getState().byTerminalId.a).toMatchObject({ lifecycle: 'unknown', unseen: false });
-    store.applyUpdate({ terminalId: 'a', event: 'turn_started' }, false);
-    store.applyUpdate({ terminalId: 'a', event: 'agent_exited' }, false);
-    expect(useAgentAttentionStore.getState().byTerminalId.a.lifecycle).toBe('unknown');
-    expect(Object.keys(useAgentAttentionStore.getState().byTerminalId.a)).not.toContain('sessionId');
   });
 
   it('follows the visible layout after panes are swapped', () => {
@@ -89,11 +53,9 @@ describe('agent pane names and attention', () => {
       panes: ['a', 'b', 'c'].map((id) => ({ id: `pane-${id}`, terminalId: id })),
       layoutRoot: swapPaneIdsInLayout(root, 'pane-a', 'pane-c'),
     } as WorkspaceTab;
-    const store = useAgentAttentionStore.getState();
-    for (const terminalId of ['a', 'b', 'c']) {
-      store.applyUpdate({ terminalId, event: 'turn_completed' }, false);
-    }
-    expect(nextAttentionTarget([workspace], useAgentAttentionStore.getState().byTerminalId, 'c'))
+    useAgentAttentionStore.setState(storeState(['a', 'b', 'c'].map((id) => snapshot(id, 'completed', 2))));
+    const { byTerminalId, seenByTerminalId } = useAgentAttentionStore.getState();
+    expect(nextAttentionTarget([workspace], byTerminalId, seenByTerminalId, 'c'))
       .toEqual({ workspaceId: 'workspace', terminalId: 'b' });
   });
 });

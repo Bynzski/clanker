@@ -17,8 +17,8 @@ export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PermissionRequest', 'Pos
  *   resolved. A per-tool `PostToolUse` is not subscribed, so an unrelated parallel tool finishing
  *   can never clear a wait. Cost: after an approval the pane stays Needs Input until the batch
  *   ends, and a denied call resolves with its batch.
- * - Settled: root `Stop`, or `StopFailure` (the turn ended on an API error: the foreground is
- *   settled, not necessarily successful; the error is never forwarded). `Stop` means Claude has
+ * - Settled: root `Stop` is a completion. `StopFailure` (the turn ended on an API error) is explicit
+ *   failure evidence and becomes `turn_failed`, never a completion; the error is never forwarded. `Stop` means Claude has
  *   handed control back to the user, so `background_tasks`/`session_crons` are deliberately not
  *   consulted: a long-lived dev server or cron would otherwise keep the turn Running forever. Claude has no user-interrupt hook, so an interrupted turn stays
  *   Running until the next prompt.
@@ -31,29 +31,29 @@ export default function interpret(input, hook, store) {
   const event = (type, fields) => ({ event: { type, scope, sessionId, nativeEvent: hook, ...fields } });
   if (scope === 'child') {
     // Child activity is reported only so the broker can record why it was ignored; it never touches state.
-    const mapped = { PermissionRequest: 'input_requested', PostToolBatch: 'input_resolved', StopFailure: 'turn_completed' }[hook];
+    const mapped = { PermissionRequest: 'input_requested', PostToolBatch: 'input_resolved', StopFailure: 'turn_failed' }[hook];
     return mapped ? event(mapped, { turnId, inputId: 'permission' }) : null;
   }
   const state = store.read();
   const current = turnId !== undefined && state.turn === turnId;
-  const settle = () => { store.write({ turn: turnId, pending: false }); return event('turn_completed', { turnId }); };
+  const settle = (type) => { store.write({ turn: turnId, pending: false }); return event(type, { turnId }); };
   switch (hook) {
     case 'UserPromptSubmit':
       store.write({ turn: turnId, pending: false });
       return event('turn_started', { turnId });
     case 'PermissionRequest':
-      if (!current) return event('input_requested', { turnId, inputId: 'permission' });
+      if (!current) return event('input_requested', { turnId, inputId: 'permission', requestKind: 'approval' });
       if (state.pending) return null;
       store.write({ turn: turnId, pending: true });
-      return event('input_requested', { turnId, inputId: 'permission' });
+      return event('input_requested', { turnId, inputId: 'permission', requestKind: 'approval' });
     case 'PostToolBatch':
       if (!current || !state.pending) return null;
       store.write({ turn: turnId, pending: false });
       return event('input_resolved', { turnId, inputId: 'permission' });
     case 'Stop':
-      return settle();
+      return settle('turn_completed');
     case 'StopFailure':
-      return settle();
+      return settle('turn_failed');
     case 'SessionEnd':
       store.write({});
       return event('session_ended');

@@ -35,7 +35,7 @@ export default function interpret(input, hook, store) {
       store.write({ session: sessionId, epoch, open: true });
       return event('turn_started', { turnId: String(epoch) });
     }
-    case 'PreToolUse': return asks ? { ...(live ? event('input_requested', { turnId: live, inputId: toolName }) : {}), output: { decision: 'allow' } } : null;
+    case 'PreToolUse': return asks ? { ...(live ? event('input_requested', { turnId: live, inputId: toolName, requestKind: 'input' }) : {}), output: { decision: 'allow' } } : null;
     case 'PostToolUse': return asks && live ? event('input_resolved', { turnId: live, inputId: toolName }) : null;
     case 'Stop':
       if (input.fullyIdle !== true || !live) return null;

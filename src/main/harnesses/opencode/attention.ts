@@ -35,7 +35,8 @@ export const ClankerAttention = async ({ client }) => {
     const status = props.status?.type;
     if (type === 'session.status' && status === 'busy') return ['turn_started', props.sessionID];
     if ((type === 'session.status' && status === 'idle') || type === 'session.idle') return ['turn_completed', props.sessionID];
-    if (type === 'permission.asked' || type === 'question.asked') return ['input_requested', props.sessionID, props.id];
+    if (type === 'permission.asked') return ['input_requested', props.sessionID, props.id, 'approval'];
+    if (type === 'question.asked') return ['input_requested', props.sessionID, props.id, 'input'];
     if (type === 'permission.replied' || type === 'question.replied' || type === 'question.rejected') return ['input_resolved', props.sessionID, props.requestID];
     if (type === 'session.deleted') return ['session_ended', props.info?.id];
     return null;
@@ -43,7 +44,7 @@ export const ClankerAttention = async ({ client }) => {
   const handle = async (event) => {
     const props = event.properties || {};
     if (event.type === 'session.created' || event.type === 'session.updated') return remember(props.info);
-    const [kind, sessionId, inputId] = classify(event.type, props) ?? [];
+    const [kind, sessionId, inputId, requestKind] = classify(event.type, props) ?? [];
     if (!kind || typeof sessionId !== 'string') return;
     const root = await isRoot(sessionId);
     if (root === undefined) return;
@@ -56,7 +57,7 @@ export const ClankerAttention = async ({ client }) => {
       if (!turn.open) { turn.epoch += 1; turn.open = true; }
     } else if (!turn.open) return;
     if (kind === 'turn_completed') turn.open = false;
-    await emit(kind, { ...fields, turnId: String(turn.epoch), inputId: typeof inputId === 'string' ? inputId : undefined });
+    await emit(kind, { ...fields, turnId: String(turn.epoch), inputId: typeof inputId === 'string' ? inputId : undefined, requestKind });
   };
   let queue = Promise.resolve();
   return { event: ({ event }) => (queue = queue.then(() => handle(event)).catch(() => undefined)) };

@@ -74,10 +74,11 @@ describe('SSH attention event boundary', () => {
     broker.receiveRemote('ssh-a', JSON.stringify({ version: 1, token: local.CLANKER_ATTENTION_TOKEN, harness: 'opencode', event: 'turn_started', scope: 'root', sessionId: 'session-a', turnId: '1' }));
     expect(updates).not.toHaveBeenCalled();
     broker.receiveRemote('ssh-a', raw);
-    expect(updates).toHaveBeenCalledExactlyOnceWith({ terminalId: 'ssh-a', event: 'turn_started' });
+    expect(updates).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ terminalId: 'ssh-a', snapshot: expect.objectContaining({ runtime: expect.objectContaining({ status: 'running' }) }) }));
     broker.release('ssh-a');
+    expect(updates).toHaveBeenLastCalledWith(expect.objectContaining({ terminalId: 'ssh-a', snapshot: null }));
     broker.receiveRemote('ssh-a', raw);
-    expect(updates).toHaveBeenCalledTimes(1);
+    expect(updates).toHaveBeenCalledTimes(2);
   });
 
   it('extracts split and adjacent lifecycle frames while preserving Unicode, escape sequences, and ordinary output', () => {
@@ -529,7 +530,7 @@ describe.skipIf(process.platform === 'win32')('remote permission lifecycle throu
     const stdout = execFileSync('python3', ['-c', CAPTURE_TTY, 'sh', '-c', steps.map(run).join(' && ')], {
       encoding: 'utf8', env: { ...process.env, ...prepared.env }, timeout: 20000,
     });
-    const events: Array<{ event: string; turnId?: string; inputId?: string }> = [];
+    const events: Array<{ event: string; turnId?: string; inputId?: string; requestKind?: string }> = [];
     createRemoteAttentionFilter((raw) => events.push(JSON.parse(raw)))(stdout);
     expect(stdout).not.toContain('SECRET');
     await prepared.release();
@@ -545,7 +546,8 @@ describe.skipIf(process.platform === 'win32')('remote permission lifecycle throu
       ['PostToolBatch', common],
       ['StopFailure', { ...common, error: 'rate_limit', error_details: 'SECRET' }],
     ]);
-    expect(events.map((event) => event.event)).toEqual(['turn_started', 'input_requested', 'input_resolved', 'turn_completed']);
+    expect(events.map((event) => event.event)).toEqual(['turn_started', 'input_requested', 'input_resolved', 'turn_failed']);
+    expect(events[1].requestKind).toBe('approval');
     expect(new Set(events.map((event) => event.turnId))).toEqual(new Set(['p1']));
   });
   it('Codex: an unrelated PostToolUse does not resolve the waiting call', async () => {

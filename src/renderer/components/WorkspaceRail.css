@@ -143,6 +143,7 @@
 
 .ws-rail-agent-state.state-needs_input { background: var(--status-warning-emphasis); }
 .ws-rail-agent-state.state-turn_complete { background: var(--status-success-emphasis); }
+.ws-rail-agent-state.state-failed { background: var(--status-error); }
 .ws-rail-agent-state.unseen { width: 8px; height: 8px; right: 1px; bottom: 1px; }
 
 .ws-rail-mark-badge {

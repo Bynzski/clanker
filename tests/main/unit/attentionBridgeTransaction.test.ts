@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { attentionRecorder } from '../../_helpers/attentionChanges';
 import { AgentAttentionBroker, type AttentionDiagnostic } from '../../../src/main/agentAttentionBroker';
 import { COMMAND, OBSERVER } from '../../../src/main/harnesses/attentionSources';
 import { getHarnessProvider } from '../../../src/main/harnesses/registry';
@@ -37,9 +38,10 @@ export default (input, hook, store) => inner(input, hook, {
   // Generic interpreter: reads state, then reports the canonical event named by the payload.
   fs.writeFileSync(path.join(dir, 'echo.mjs'), `export default (input, hook, store) => { store.read(); return { event: { type: input.type, scope: 'root', sessionId: 's', turnId: 't1' } }; };\n`);
   for (const [name, content] of Object.entries(extraFiles)) fs.writeFileSync(path.join(dir, name), content);
-  const updates: string[] = [];
+  const recorder = attentionRecorder();
+  const updates = recorder.labels;
   const diagnostics: AttentionDiagnostic[] = [];
-  const broker = new AgentAttentionBroker((update) => updates.push(update.event), (diagnostic) => diagnostics.push(diagnostic));
+  const broker = new AgentAttentionBroker(recorder.onChange, (diagnostic) => diagnostics.push(diagnostic));
   brokers.push(broker);
   const env = await broker.register('term', 'codex');
   const stateBase = path.join(dir, '.clanker-state-' + createHash('sha256').update(env.CLANKER_ATTENTION_TOKEN).digest('hex').slice(0, 16));

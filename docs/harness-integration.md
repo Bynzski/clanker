@@ -160,9 +160,40 @@ native harness event
   -> provider-owned interpretation (src/main/harnesses/<id>/attention*)
   -> root/child + session/turn provenance
   -> canonical lifecycle event
-  -> AgentAttentionBroker correlation (main process)
-  -> approved AgentAttentionUpdate -> renderer projection
+  -> AgentAttentionBroker correlation (main process, the single lifecycle authority)
+  -> revisioned AgentAttentionSnapshot (push: agent-attention-changed; hydrate: get-agent-attention-snapshots)
+  -> renderer snapshot cache + UI acknowledgement watermark
+  -> pure presentation selector
 ```
+
+The broker publishes independent semantic facts, never UI concepts: `runtime`
+(`unverified | idle | starting | running | failed`, turn id, start time), a durable
+`pendingRequest` (id, owning turn, `input | approval | null` kind, evidence class),
+`lastCompletion` (set only by an accepted foreground completion and never cleared by new
+work) and `lastOutcome` (the latest completion, interruption, failure or session end, so an
+older completion cannot resurface as a fresh Done). The revision is per terminal, advances
+only on an accepted semantic change (never for stale, rejected, child or duplicate events)
+and survives registration replacement. A retirement (`agent_exited`, PTY exit, release) is a
+revisioned tombstone (`snapshot: null`); hydration only lists live registrations. The
+renderer subscribes first, then hydrates, and keeps the newest revision per terminal
+(tombstones included). Whether the user has seen a completion or request is a renderer
+watermark over those revisions; it never changes lifecycle. `deriveAttention` projects
+Needs Input, then Working, then Failed, then an unseen completion that is also the latest
+outcome. A user-facing `Failed` shows no badge or navigation target; only Needs Input and
+unseen Done are counted and jumped to.
+
+Source authority is declared per provider (`attention.authority: full | partial`, and
+`source: native | hook`) and arbitrated centrally (`attentionAuthority.ts`).
+`full` structured authority suppresses every lower-confidence source. `partial` (Claude has
+no interrupt hook; Pi and OMP expose no input waits) may accept narrowly scoped
+provider-specific live-screen evidence through `receiveFallback`: a blocker only inside a
+proven active turn, clearable only by fallback itself and always replaced by a structured
+request; an idle-looking screen never changes state, and fallback can never create a turn
+or a completion. No production screen detector exists yet because Clanker has no
+trustworthy main-process access to live screen state, and PTY silence, generic prompt
+patterns and scrollback parsing remain forbidden. `broker.explain(terminalId)` and
+`CLANKER_DEBUG_ATTENTION=1` report why an agent is in its current state (safe metadata
+only).
 
 A terminal token proves *which terminal* emitted an event. It never proves that
 the event belongs to the root user-facing session or its current foreground turn.
@@ -239,7 +270,7 @@ owner record is unchanged; a live holder is never broken.
 Fail closed. If the transaction cannot be established (lock not acquired in time, state
 unreadable, corrupt, oversized or unwritable) the interpreter runs against empty state, a
 private poison marker is created, and no `input_resolved` is delivered until a turn
-boundary (`turn_started`, `turn_completed`, `turn_interrupted`, `session_ended`) is
+boundary (`turn_started`, `turn_completed`, `turn_interrupted`, `turn_failed`, `session_ended`) is
 delivered by a healthy transaction. Evidence of a possible human wait is still delivered.
 State, poison, temporaries and a crashed holder's lock are private launch files: local
 cleanup removes the whole launch root, and SSH cleanup removes exactly those names (never
@@ -268,7 +299,7 @@ the root session; turn = the turn identity; child = how child scope is proven).
 | Provider | Root start (identity / turn) | Input wait / resolution | Completion (Ready) | Never completes / child scope | Session boundary |
 | --- | --- | --- | --- | --- | --- |
 | Codex | `UserPromptSubmit` (`session_id` / `turn_id`) | `PermissionRequest` (no `tool_use_id`) correlated with `PreToolUse`/`PostToolUse` calls (see below) | root `Stop`; root `Interrupt` ends the turn without a completion (`turn_interrupted`) | `SubagentStop`, events with `agent_id`, other threads, legacy `notify` | `SessionEnd` |
-| Claude | `UserPromptSubmit` (`session_id` / `prompt_id`) | `PermissionRequest` (no `tool_use_id`) = turn-level wait / `PostToolBatch` for the same prompt | root `Stop` (background tasks and crons do not hold the turn open), or `StopFailure` (settled, not necessarily successful) | events with `agent_id`; `Notification` is not used (no turn or request identity) | `SessionEnd` |
+| Claude | `UserPromptSubmit` (`session_id` / `prompt_id`) | `PermissionRequest` (no `tool_use_id`) = turn-level wait / `PostToolBatch` for the same prompt | root `Stop` (background tasks and crons do not hold the turn open), `StopFailure` = `turn_failed` (Failed, never Done) | events with `agent_id`; `Notification` is not used (no turn or request identity) | `SessionEnd` |
 | OpenCode | `session.status` busy of a verified top-level session (parentage from `client.session.get`, or the trusted resumed ID) / plugin epoch | `permission.asked`/`question.asked` (`id`) / `*.replied`, `question.rejected` (`requestID`) | verified-root `session.status` idle (the legacy `session.idle` duplicate is absorbed by the closed epoch) | sessions with a `parentID`; sessions with unknown parentage | `session.deleted` |
 | Pi | `agent_start` (`ctx.sessionManager` session ID / extension epoch) | not reported | `agent_settled` | `agent_end` and lower-level events | `session_shutdown` |
 | OMP | `agent_start` where `ctx.agent.kind === 'main'` (session ID / extension epoch) | not reported | main `session_stop` (OMP defers it until agent-owned background jobs are idle); it is the terminal foreground completion | `agent_end` is not terminal completion; `ctx.agent.kind === 'sub'` sessions (and unknown kinds) never settle the pane | `session_shutdown` (main) |
@@ -285,8 +316,8 @@ reports `input_resolved`; per-tool `PostToolUse` is deliberately not subscribed,
 unrelated parallel tool finishing cannot clear the wait. A denied call resolves with its
 batch. Cost: after approval the pane stays Needs Input until the batch finishes. Child
 (`agent_id`) permission and batch events are ignored. `StopFailure` (turn ended on an API
-error) settles the foreground like `Stop`: Ready/settled does not imply a successful
-model response, and the error text is never forwarded. Claude has no user-interrupt hook,
+error) is explicit failure evidence: it is reported as `turn_failed` (Failed), never as a
+completion, and the error text is never forwarded. Claude has no user-interrupt hook,
 so an interrupted turn stays Running until the next prompt or `Stop`.
 
 Codex permission correlation. `PermissionRequest` has `turn_id`, `tool_name` and

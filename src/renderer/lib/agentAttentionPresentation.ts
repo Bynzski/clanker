@@ -1,21 +1,38 @@
-import { CircleAlert, CircleCheck, LoaderCircle } from 'lucide-react';
-import type { TerminalAttention } from '../store/agentAttentionStore';
+import { CircleAlert, CircleCheck, CircleX, LoaderCircle } from 'lucide-react';
+import type { AgentAttentionSnapshot } from '../../shared/types/agentAttention';
+import type { AttentionSeen } from '../store/agentAttentionStore';
 
-/** What an agent's attention indicator shows; `null` means nothing is shown. */
-export type AttentionDisplay = 'running' | 'needs_input' | 'turn_complete';
+/** What an agent's attention indicator shows; `null` view means nothing is shown. */
+export type AttentionDisplay = 'running' | 'needs_input' | 'failed' | 'turn_complete';
+
+export interface AttentionView {
+  display: AttentionDisplay;
+  /** Needs-input or completion the user has not acknowledged yet. */
+  unseen: boolean;
+}
 
 /**
- * Idle agents show nothing. A working agent spins; one waiting on a question stays
- * yellow until it is unblocked; a finished turn is green only until it has been seen
- * (focusing the agent acknowledges it), after which the agent is idle again.
+ * Pure projection of canonical facts onto presentation. It never correlates sessions, infers
+ * turn boundaries or replays events. Precedence: a pending request, then active work, then a
+ * proven failure, then a completion that is both the latest outcome and not yet acknowledged.
+ * Because active work outranks completion, an old completion needs no explicit clearing, and
+ * because Done requires the latest outcome to be that completion, an older one can never
+ * resurface after a newer turn was interrupted, failed or ended.
  */
-export function getAttentionDisplay(attention: TerminalAttention | undefined): AttentionDisplay | null {
-  switch (attention?.lifecycle) {
-    case 'running': return 'running';
-    case 'needs_input': return 'needs_input';
-    case 'turn_complete': return attention.unseen ? 'turn_complete' : null;
-    default: return null;
+export function deriveAttention(
+  snapshot: AgentAttentionSnapshot | undefined,
+  seen: AttentionSeen | undefined,
+): AttentionView | null {
+  if (!snapshot) return null;
+  const { pendingRequest, runtime, lastCompletion, lastOutcome } = snapshot;
+  if (pendingRequest) return { display: 'needs_input', unseen: pendingRequest.revision > (seen?.request ?? 0) };
+  if (runtime.status === 'starting' || runtime.status === 'running') return { display: 'running', unseen: false };
+  if (runtime.status === 'failed') return { display: 'failed', unseen: false };
+  if (runtime.status === 'idle' && lastCompletion && lastOutcome?.kind === 'completed'
+    && lastOutcome.revision === lastCompletion.revision && lastCompletion.revision > (seen?.completion ?? 0)) {
+    return { display: 'turn_complete', unseen: true };
   }
+  return null;
 }
 
 /** Shared label/icon semantics for a displayed attention state. */
@@ -23,12 +40,12 @@ export function getAttentionPresentation(display: AttentionDisplay) {
   switch (display) {
     case 'needs_input': return { label: 'Needs input', Icon: CircleAlert };
     case 'turn_complete': return { label: 'Turn complete', Icon: CircleCheck };
+    case 'failed': return { label: 'Failed', Icon: CircleX };
     case 'running': return { label: 'Running', Icon: LoaderCircle };
   }
 }
 
 /** Tooltip/name suffix for an agent, e.g. " · Running"; empty while idle. */
-export function getAttentionSuffix(attention: TerminalAttention | undefined): string {
-  const display = getAttentionDisplay(attention);
-  return display ? ` · ${getAttentionPresentation(display).label}` : '';
+export function getAttentionSuffix(view: AttentionView | null): string {
+  return view ? ` · ${getAttentionPresentation(view.display).label}` : '';
 }

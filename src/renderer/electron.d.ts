@@ -53,7 +53,7 @@ import type { HarnessSession } from '../../shared/types/session';
 import type { HarnessUsageRequest, HarnessUsageResponse } from '../../shared/types/harnessUsage';
 import type { HarnessAccountAuthEvent, HarnessAccountAuthStart, HarnessAccountList } from '../../shared/types/harnessAccounts';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
-import type { AgentAttentionUpdate } from '../../shared/types/agentAttention';
+import type { AgentAttentionChange, AgentAttentionSnapshot } from '../../shared/types/agentAttention';
 import type { ThemeId } from '../../shared/types/theme';
 import type { WorkspaceNavigationMode } from '../../shared/types/workspaceNavigation';
 import type { KeybindingOverrides, BrowserKeybindingCommandPayload } from '../../shared/keybindings';
@@ -138,7 +138,8 @@ export interface ElectronAPI {
   cleanupWorkspaceTerminals: (ids: string[]) => Promise<number>;
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => () => void;
-  onAgentAttentionUpdate: (callback: (data: AgentAttentionUpdate) => void) => () => void;
+  getAgentAttentionSnapshots: () => Promise<AgentAttentionSnapshot[]>;
+  onAgentAttentionChanged: (callback: (data: AgentAttentionChange) => void) => () => void;
   /** Phase 1 resize confirmation: main sends confirmed PTY geometry after resize. */
   onTerminalResized: (callback: (data: { id: string; cols: number; rows: number }) => void) => () => void;
   /** Phase 1 startup fix: renderer signals xterm is ready to receive data. Triggers flush of startup buffer. */
