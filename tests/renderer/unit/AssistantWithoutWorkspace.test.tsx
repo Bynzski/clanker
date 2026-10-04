@@ -31,6 +31,7 @@ vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit = vi.fn(); } }));
 vi.mock('../../../src/renderer/components/FileExplorer', () => ({ default: () => <div data-testid="files-section" /> }));
 vi.mock('../../../src/renderer/components/DynamicPaneLayout', () => ({ default: ({ workspaceId }: { workspaceId: string }) => <div data-testid={`layout-${workspaceId}`} /> }));
 
+import { closeWorkspaceWithCleanup } from '../../../src/renderer/lib/workspaceClose';
 import App from '../../../src/renderer/App';
 import Header from '../../../src/renderer/components/Header';
 import WorkspaceHost from '../../../src/renderer/components/WorkspaceHost';
@@ -275,14 +276,113 @@ describe('zero-workspace Assistant shell', () => {
     expect(screen.getByRole('button', { name: 'Toggle browser panel' })).toBeInTheDocument();
     workspaceStateUntouched();
   });
+});
 
-  it('keyboard-level workspace commands do not act on a nonexistent workspace while Fred is active', async () => {
-    await enterFred();
-    const fitAllPanes = vi.spyOn(useWorkspaceStore.getState(), 'fitAllPanes');
-    fireEvent.keyDown(window, { key: 'e', ctrlKey: true, shiftKey: true });
-    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
-    expect(fitAllPanes).not.toHaveBeenCalled();
-    workspaceStateUntouched();
+describe('workspace keyboard commands never reach a parked or missing workspace while Fred is active', () => {
+  // Real default bindings: Fit All = Ctrl+Alt+F, Toggle Explorer = Ctrl+B, Save = Ctrl+S (editor context only).
+  const fitAll = () => fireEvent.keyDown(window, { key: 'f', code: 'KeyF', ctrlKey: true, altKey: true });
+  const toggleExplorer = () => fireEvent.keyDown(window, { key: 'b', code: 'KeyB', ctrlKey: true });
+  const save = () => {
+    const editor = document.createElement('div');
+    editor.setAttribute('data-keybinding-context', 'editor');
+    document.body.appendChild(editor);
+    fireEvent.keyDown(editor, { key: 's', code: 'KeyS', ctrlKey: true });
+    editor.remove();
+  };
+  // Installed BEFORE App renders: App captures fitAllPanes from the store at render time.
+  const spies = () => {
+    const fitAllPanes = vi.fn();
+    const setExplorerVisible = vi.fn();
+    const saveEditorFile = vi.fn().mockResolvedValue(undefined);
+    useWorkspaceStore.setState({ fitAllPanes, setExplorerVisible, saveEditorFile } as never);
+    return { fitAllPanes, setExplorerVisible, saveEditorFile };
+  };
+  const parkedWorkspace = () => createWorkspaceFixture({ id: 'ws-a', workspacePath: '/projects/a', environmentId: 'local', activeEditorTabId: 'tab-1' });
+
+  it('control: with a Workspace active the same events invoke the workspace actions (the bindings really resolve)', async () => {
+    const mocks = spies();
+    useWorkspaceStore.setState({ workspaces: [parkedWorkspace()], activeWorkspaceId: 'ws-a' });
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Toggle browser panel' })).toBeInTheDocument());
+    fitAll(); toggleExplorer(); save();
+    expect(mocks.fitAllPanes).toHaveBeenCalledTimes(1);
+    expect(mocks.setExplorerVisible).toHaveBeenCalledTimes(1);
+    expect(mocks.saveEditorFile).toHaveBeenCalledWith('tab-1', 'ws-a');
+  });
+
+  it('active Fred over a parked Workspace: Fit All, Explorer and Save invoke nothing', async () => {
+    const mocks = spies();
+    useWorkspaceStore.setState({ workspaces: [parkedWorkspace()], activeWorkspaceId: 'ws-a' });
+    useAssistantNavStore.getState().openAssistantSurface(FRED);
+    render(<App />);
+    await waitFor(() => expect(surfaceOf(FRED)).not.toBeNull());
+    fitAll(); toggleExplorer(); save();
+    expect(mocks.fitAllPanes).not.toHaveBeenCalled();
+    expect(mocks.setExplorerVisible).not.toHaveBeenCalled();
+    expect(mocks.saveEditorFile).not.toHaveBeenCalled();
+  });
+
+  it('active Fred with zero workspaces: nothing is invoked and no workspace appears', async () => {
+    const mocks = spies();
+    useAssistantNavStore.getState().openAssistantSurface(FRED);
+    render(<App />);
+    await waitFor(() => expect(surfaceOf(FRED)).not.toBeNull());
+    fitAll(); toggleExplorer(); save();
+    expect(mocks.fitAllPanes).not.toHaveBeenCalled();
+    expect(mocks.setExplorerVisible).not.toHaveBeenCalled();
+    expect(mocks.saveEditorFile).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().workspaces).toEqual([]);
+  });
+});
+
+describe('closing the last Workspace', () => {
+  const closeLast = async () => { await act(async () => { await closeWorkspaceWithCleanup('ws-a'); }); };
+  const oneWorkspace = () => useWorkspaceStore.setState({
+    workspaces: [createWorkspaceFixture({ id: 'ws-a', workspacePath: '/projects/a', environmentId: 'local' })], activeWorkspaceId: 'ws-a',
+  });
+
+  it('Fred ACTIVE: Fred stays the destination; shell, xterm and Browser state survive untouched', async () => {
+    oneWorkspace();
+    useAssistantNavStore.getState().openAssistantSurface(FRED);
+    render(<App />);
+    await waitFor(() => expect(surfaceOf(FRED)).not.toBeNull());
+    await waitFor(() => expect(xterms).toHaveLength(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle browser panel' }));
+    await waitFor(() => expect(useAssistantSurfaceStore.getState().byId[FRED]?.tabs).toHaveLength(1));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    const browserBefore = structuredClone(useAssistantSurfaceStore.getState().byId[FRED]);
+    const surfaceBefore = surfaceOf(FRED);
+
+    await closeLast();
+
+    const workspaces = useWorkspaceStore.getState();
+    expect(workspaces.workspaces).toHaveLength(0);
+    expect(workspaces.activeWorkspaceId).toBeNull();
+    expect(useAssistantNavStore.getState().activeAssistantId).toBe(FRED);
+    expect(gate()).toBeNull();
+    expect(surfaceOf(FRED)).toBe(surfaceBefore); // same DOM node: no remount
+    expect(xterms).toHaveLength(1);
+    expect(xterms[0].dispose).not.toHaveBeenCalled();
+    expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1);
+    expect(useAssistantSurfaceStore.getState().byId[FRED]).toEqual(browserBefore);
+  });
+
+  it('Fred PARKED behind an active Workspace: closing the last Workspace leaves no active destination, so the launcher returns', async () => {
+    oneWorkspace();
+    useAssistantNavStore.getState().openAssistantSurface(FRED);
+    render(<App />);
+    await waitFor(() => expect(surfaceOf(FRED)).not.toBeNull());
+    act(() => useWorkspaceStore.getState().selectWorkspace('ws-a'));
+    expect(useAssistantNavStore.getState().activeAssistantId).toBeNull(); // selecting a Workspace parks Fred
+    await waitFor(() => expect(surfaceOf(FRED)).toHaveClass('parked'));
+
+    await closeLast();
+
+    // No remembered-destination policy exists, so with no active destination the launcher is shown.
+    expect(useAssistantNavStore.getState().activeAssistantId).toBeNull();
+    expect(useAssistantNavStore.getState().openedAssistantIds).toEqual([FRED]);
+    await waitFor(() => expect(gate()).not.toBeNull());
+    expect(useWorkspaceStore.getState().workspaces).toEqual([]);
   });
 });
 
