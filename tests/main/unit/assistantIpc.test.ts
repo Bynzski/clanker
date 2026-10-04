@@ -8,7 +8,7 @@ vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }));
 function fixture() {
   vi.mocked(ipcMain.handle).mockReset();
   vi.mocked(ipcMain.on).mockReset();
-  const service = { get: vi.fn(), configure: vi.fn(), refresh: vi.fn(), openSurface: vi.fn(), writePty: vi.fn(), resizePty: vi.fn(), closeSurface: vi.fn() };
+  const service = { get: vi.fn(), configure: vi.fn(), refresh: vi.fn(), openSurface: vi.fn(), writePty: vi.fn(), resizePty: vi.fn() };
   registerAssistantIpc({ getService: () => service as never });
   const handler = (channel: string) => vi.mocked(ipcMain.handle).mock.calls.find(([name]) => name === channel)![1] as (...args: unknown[]) => unknown;
   return { service, handler };
@@ -21,7 +21,7 @@ describe('Assistants IPC', () => {
     const handled = vi.mocked(ipcMain.handle).mock.calls.map(([name]) => name).sort();
     expect(handled).toEqual([
       channels.ASSISTANTS_GET, channels.ASSISTANTS_CONFIGURE, channels.ASSISTANTS_REFRESH, channels.ASSISTANTS_OPEN,
-      channels.ASSISTANTS_PTY_WRITE, channels.ASSISTANTS_PTY_RESIZE, channels.ASSISTANTS_PTY_CLOSE,
+      channels.ASSISTANTS_PTY_WRITE, channels.ASSISTANTS_PTY_RESIZE,
     ].sort());
     expect((Object.values(channels).filter((value) => typeof value === 'string') as string[]).filter((value) => value.startsWith('assistants:')).sort())
       .toEqual([...handled, channels.ASSISTANTS_CHANGED, channels.ASSISTANTS_PTY_DATA].sort());
@@ -33,11 +33,9 @@ describe('Assistants IPC', () => {
     handler(channels.ASSISTANTS_OPEN)({}, 'hermes:fred');
     handler(channels.ASSISTANTS_PTY_WRITE)({}, 'hermes:fred', 'x');
     handler(channels.ASSISTANTS_PTY_RESIZE)({}, 'hermes:fred', 80, 24);
-    handler(channels.ASSISTANTS_PTY_CLOSE)({}, 'hermes:fred');
     expect(service.configure).toHaveBeenCalledWith({ enabled: true, autoStart: false });
     expect(service.openSurface).toHaveBeenCalledWith('hermes:fred');
     expect(service.writePty).toHaveBeenCalledWith('hermes:fred', 'x');
     expect(service.resizePty).toHaveBeenCalledWith('hermes:fred', 80, 24);
-    expect(service.closeSurface).toHaveBeenCalledWith('hermes:fred');
   });
 });

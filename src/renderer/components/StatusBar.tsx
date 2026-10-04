@@ -16,8 +16,8 @@ export default function StatusBar() {
   const currentBranch = agentWorktree ? agentWorktree.branch ?? null : focusedWorkspace?.gitCurrentBranch ?? null;
   const isRepo = agentWorktree ? true : focusedWorkspace?.gitIsRepo ?? false;
   const isDetached = agentWorktree ? !agentWorktree.branch : focusedWorkspace?.gitIsDetached ?? false;
-  const activeBotId = useAssistantNavStore((state) => state.activeBotId);
-  const activeBotName = useAssistantsStore((state) => (activeBotId ? state.knownBots[activeBotId]?.displayName ?? activeBotId.replace(/^hermes:/, '') : null));
+  const activeAssistantId = useAssistantNavStore((state) => state.activeAssistantId);
+  const activeBotName = useAssistantsStore((state) => (activeAssistantId ? state.knownAssistants[activeAssistantId]?.displayName ?? activeAssistantId.replace(/^hermes:/, '') : null));
   const [appVersion, setAppVersion] = useState<string>('');
 
   useEffect(() => {

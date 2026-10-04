@@ -29,9 +29,9 @@ export function fakeChild(): ServeChild & EventEmitter & { stdout: PassThrough; 
   return child;
 }
 
-export interface BotFixture { name: string; ui_meta?: object; display_name?: string; description?: string; canonical_session?: { id: string; resolved_id?: string } | null; is_default?: boolean }
+export interface AssistantFixture { name: string; ui_meta?: object; display_name?: string; description?: string; canonical_session?: { id: string; resolved_id?: string } | null; is_default?: boolean }
 
-export const defaultProfiles = (): BotFixture[] => [
+export const defaultProfiles = (): AssistantFixture[] => [
   { name: 'default', is_default: true, canonical_session: { id: 'sess-default' } },
   { name: 'fred', description: 'Fred is a general-purpose assistant.', canonical_session: null },
   { name: 'reviewer', ui_meta: { 'hermes-bots': { title: 'Code Reviewer', description: 'Reviews changes' } }, display_name: 'rev', canonical_session: { id: 'sess-rev-root', resolved_id: 'sess-rev-tip' } },
@@ -46,7 +46,7 @@ export class FakeHermes {
   running = true;
   authRequired = false;
   bootstrap: string | null = `<script>window.__HERMES_SESSION_TOKEN__="${TOKEN}";window.__HERMES_AUTH_REQUIRED__=false;</script>`;
-  profiles: BotFixture[] = defaultProfiles();
+  profiles: AssistantFixture[] = defaultProfiles();
   sockets: FakeSocket[] = [];
   fetched: string[] = [];
   holdRoster: Promise<void> | null = null;

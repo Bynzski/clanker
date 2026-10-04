@@ -2,19 +2,19 @@ import { useEffect } from 'react';
 import { getHarnessOption } from '../../lib/harnessOptions';
 import { useAssistantsStore } from '../../store/assistantsStore';
 import { useAssistantNavStore } from '../../store/assistantNavStore';
-import type { HermesAssistantServiceState, HermesBot } from '../../../shared/types/assistants';
+import type { HermesAssistantServiceState, HermesAssistant } from '../../../shared/types/assistants';
 import { Button } from '../ui/Button';
 import './AssistantsRoster.css';
 
-/** Bots to list: the live roster plus any opened Bot the service no longer reports (kept, shown offline). */
-export function useRosterBots(): { bots: HermesBot[]; live: Set<string> } {
+/** Assistants to list: the live roster plus any opened Assistant the service no longer reports (kept, shown offline). */
+export function useAssistantRoster(): { assistants: HermesAssistant[]; live: Set<string> } {
   const snapshot = useAssistantsStore((state) => state.snapshot);
-  const knownBots = useAssistantsStore((state) => state.knownBots);
-  const openedBotIds = useAssistantNavStore((state) => state.openedBotIds);
-  const live = new Set((snapshot?.bots ?? []).map((bot) => bot.id));
-  const bots = [...(snapshot?.bots ?? [])];
-  for (const id of openedBotIds) if (!live.has(id) && knownBots[id]) bots.push(knownBots[id]);
-  return { bots, live };
+  const knownAssistants = useAssistantsStore((state) => state.knownAssistants);
+  const openedAssistantIds = useAssistantNavStore((state) => state.openedAssistantIds);
+  const live = new Set((snapshot?.assistants ?? []).map((assistant) => assistant.id));
+  const assistants = [...(snapshot?.assistants ?? [])];
+  for (const id of openedAssistantIds) if (!live.has(id) && knownAssistants[id]) assistants.push(knownAssistants[id]);
+  return { assistants, live };
 }
 
 const STATUS_TEXT: Partial<Record<HermesAssistantServiceState, string>> = {
@@ -33,12 +33,12 @@ export function useAssistantsEnabled(): boolean {
   return useAssistantsStore((state) => state.snapshot?.available === true && state.snapshot.settings.enabled === true);
 }
 
-export function BotButton({ bot, live, variant }: { bot: HermesBot; live: boolean; variant: 'row' | 'icon' }) {
-  const active = useAssistantNavStore((state) => state.activeBotId === bot.id);
-  const openBot = useAssistantNavStore((state) => state.openBot);
+export function AssistantButton({ assistant, live, variant }: { assistant: HermesAssistant; live: boolean; variant: 'row' | 'icon' }) {
+  const active = useAssistantNavStore((state) => state.activeAssistantId === assistant.id);
+  const openAssistantSurface = useAssistantNavStore((state) => state.openAssistantSurface);
   const HermesIcon = getHarnessOption('hermes').Icon;
-  const label = `${bot.displayName} · Hermes Assistant`;
-  const title = bot.description ? `${label}\n${bot.description}` : label;
+  const label = `${assistant.displayName} · Hermes Assistant`;
+  const title = assistant.description ? `${label}\n${assistant.description}` : label;
   return (
     <button
       type="button"
@@ -46,30 +46,30 @@ export function BotButton({ bot, live, variant }: { bot: HermesBot; live: boolea
       aria-current={active ? 'true' : undefined}
       aria-label={variant === 'icon' ? label : undefined}
       title={title}
-      onClick={() => openBot(bot.id)}
+      onClick={() => openAssistantSurface(assistant.id)}
     >
       <HermesIcon size={14} strokeWidth={2} aria-hidden="true" />
-      {variant === 'row' && <><span className="assistant-name">{bot.displayName}</span><span className={`assistant-dot${live ? ' live' : ''}`} aria-hidden="true" /></>}
+      {variant === 'row' && <><span className="assistant-name">{assistant.displayName}</span><span className={`assistant-dot${live ? ' live' : ''}`} aria-hidden="true" /></>}
     </button>
   );
 }
 
-/** Sidebar (and compact strip) roster: one row per Bot; click opens/focuses its canonical Bot Chat. */
+/** Sidebar (and compact strip) roster: one row per Assistant; click opens/focuses its canonical Bot Chat. */
 export default function AssistantsRoster({ variant = 'sidebar' }: { variant?: 'sidebar' | 'strip' }) {
   const enabled = useAssistantsEnabled();
   const snapshot = useAssistantsStore((state) => state.snapshot);
   const refresh = useAssistantsStore((state) => state.refresh);
   const busy = useAssistantsStore((state) => state.busy);
-  const { bots, live } = useRosterBots();
+  const { assistants, live } = useAssistantRoster();
   if (!enabled || !snapshot) return null;
   const state = snapshot.service.state;
-  const status = state === 'connected' ? (bots.length === 0 ? 'No Hermes Assistants found' : null) : STATUS_TEXT[state] ?? null;
+  const status = state === 'connected' ? (assistants.length === 0 ? 'No Hermes Assistants found' : null) : STATUS_TEXT[state] ?? null;
   const retry = state === 'offline' || state === 'error' || state === 'detected-unusable';
   return (
     <section className={`assistants-roster assistants-roster-${variant}`} aria-label="Assistants">
       <div className="assistants-roster-heading">Assistants</div>
       <div className="assistants-roster-list">
-        {bots.map((bot) => <BotButton key={bot.id} bot={bot} live={live.has(bot.id) && state === 'connected'} variant="row" />)}
+        {assistants.map((assistant) => <AssistantButton key={assistant.id} assistant={assistant} live={live.has(assistant.id) && state === 'connected'} variant="row" />)}
       </div>
       {snapshot.service.error && state !== 'connected'
         ? <p className="assistants-roster-error" role="alert">{snapshot.service.error}</p>

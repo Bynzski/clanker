@@ -35,7 +35,7 @@ export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarPr
   const collapseSidebar = useWorkspaceNavigationStore((state) => state.collapseSidebar);
   const expandSidebar = useWorkspaceNavigationStore((state) => state.expandSidebar);
   const collapsed = isWorkspaceSidebarCollapsed(width);
-  const assistantActive = useAssistantNavStore((state) => state.activeBotId !== null);
+  const assistantActive = useAssistantNavStore((state) => state.activeAssistantId !== null);
 
   const handleResizeStart = (event: ReactMouseEvent) => {
     event.preventDefault();

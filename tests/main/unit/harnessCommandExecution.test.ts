@@ -21,16 +21,6 @@ describe('normalizeHarnessCommand', () => {
 });
 
 describe('local bounded execution', () => {
-  it('accepts a main-owned sanitized base environment without mutating the process environment', async () => {
-    vi.stubEnv('HERMES_CONFIG', '/unwanted-config');
-    try {
-      const baseEnv = { ...process.env };
-      delete baseEnv.HERMES_CONFIG;
-      const result = await executeLocalHarnessCommand(node('console.log(process.env.HERMES_CONFIG || "unset")'), undefined, { baseEnv });
-      expect(result.stdout.trim()).toBe('unset');
-      expect(process.env.HERMES_CONFIG).toBe('/unwanted-config');
-    } finally { vi.unstubAllEnvs(); }
-  });
   it('returns stdout, stderr and stdin round trip', async () => {
     const result = await executeLocalHarnessCommand(node('process.stdin.on("data",d=>{process.stdout.write(String(d).toUpperCase());console.error("e")})', { stdin: 'abc' }));
     expect(result).toEqual({ stdout: 'ABC', stderr: 'e\n', exitCode: 0 });

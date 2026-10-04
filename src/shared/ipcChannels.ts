@@ -231,7 +231,6 @@ export const ASSISTANTS_REFRESH = 'assistants:refresh';
 export const ASSISTANTS_OPEN = 'assistants:open';
 export const ASSISTANTS_PTY_WRITE = 'assistants:pty-write';
 export const ASSISTANTS_PTY_RESIZE = 'assistants:pty-resize';
-export const ASSISTANTS_PTY_CLOSE = 'assistants:pty-close';
 export const ASSISTANTS_CHANGED = 'assistants:changed';
 export const ASSISTANTS_PTY_DATA = 'assistants:pty-data';
 
@@ -476,7 +475,6 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   ASSISTANTS_OPEN,
   ASSISTANTS_PTY_WRITE,
   ASSISTANTS_PTY_RESIZE,
-  ASSISTANTS_PTY_CLOSE,
   ASSISTANTS_CHANGED,
   ASSISTANTS_PTY_DATA,
   HARNESS_ACCOUNTS_LIST,

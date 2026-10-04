@@ -78,7 +78,7 @@ import { AgentAttentionBroker } from './agentAttentionBroker';
 import { AGENT_ATTENTION_UPDATE, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles } from './agentAttentionAdapters';
 import { waitForTerminalCleanup } from './ipc/ptySpawn';
-import { HermesBotService } from './assistants/hermesBotService';
+import { HermesAssistantService } from './assistants/hermesAssistantService';
 import { registerAssistantIpc } from './ipc/assistantIpc';
 import { ASSISTANTS_CHANGED, ASSISTANTS_PTY_DATA } from '../shared/ipcChannels';
 
@@ -127,7 +127,7 @@ const agentAttentionBroker = new AgentAttentionBroker((update) => {
 let annotationModeEnabled = false;
 let annotationController: ReturnType<typeof import('./annotation/annotationIpc').registerAnnotationIpc> | null = null;
 let browserIpcController: BrowserIpcController | null = null;
-let assistantService: HermesBotService | undefined;
+let assistantService: HermesAssistantService | undefined;
 
 const GRACEFUL_TERMINATION_TIMEOUT_MS = 1000;
 
@@ -340,7 +340,7 @@ app.whenReady().then(() => {
     getHarnessAccountService: () => harnessAccountService,
   });
 
-  assistantService = new HermesBotService({
+  assistantService = new HermesAssistantService({
     readSettings: () => store.get('assistantSettings'),
     writeSettings: (settings) => store.set('assistantSettings', settings),
     isShuttingDown: getAppShuttingDown,
@@ -349,8 +349,8 @@ app.whenReady().then(() => {
     onChanged: (snapshot) => {
       if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(ASSISTANTS_CHANGED, snapshot);
     },
-    onPtyData: (botId, data) => {
-      if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(ASSISTANTS_PTY_DATA, { botId, data });
+    onPtyData: (assistantId, data) => {
+      if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(ASSISTANTS_PTY_DATA, { assistantId, data });
     },
   });
   // Opted-in users only: a disabled configuration performs no Hermes probing or spawning at startup.

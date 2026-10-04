@@ -25,7 +25,6 @@ import {
   ASSISTANTS_OPEN,
   ASSISTANTS_PTY_WRITE,
   ASSISTANTS_PTY_RESIZE,
-  ASSISTANTS_PTY_CLOSE,
   ASSISTANTS_CHANGED,
   ASSISTANTS_PTY_DATA,
   GET_APP_VERSION,
@@ -217,10 +216,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAssistants: () => ipcRenderer.invoke(ASSISTANTS_GET),
   configureAssistants: (settings: AssistantSettings) => ipcRenderer.invoke(ASSISTANTS_CONFIGURE, settings),
   refreshAssistants: () => ipcRenderer.invoke(ASSISTANTS_REFRESH),
-  openAssistant: (botId: string) => ipcRenderer.invoke(ASSISTANTS_OPEN, botId),
-  writeAssistantPty: (botId: string, data: string) => ipcRenderer.invoke(ASSISTANTS_PTY_WRITE, botId, data),
-  resizeAssistantPty: (botId: string, cols: number, rows: number) => ipcRenderer.invoke(ASSISTANTS_PTY_RESIZE, botId, cols, rows),
-  closeAssistantPty: (botId: string) => ipcRenderer.invoke(ASSISTANTS_PTY_CLOSE, botId),
+  openAssistant: (assistantId: string) => ipcRenderer.invoke(ASSISTANTS_OPEN, assistantId),
+  writeAssistantPty: (assistantId: string, data: string) => ipcRenderer.invoke(ASSISTANTS_PTY_WRITE, assistantId, data),
+  resizeAssistantPty: (assistantId: string, cols: number, rows: number) => ipcRenderer.invoke(ASSISTANTS_PTY_RESIZE, assistantId, cols, rows),
   onAssistantPtyData: (callback: (payload: AssistantPtyData) => void) => {
     const handler = (_event: IpcRendererEvent, payload: AssistantPtyData) => callback(payload);
     ipcRenderer.on(ASSISTANTS_PTY_DATA, handler);

@@ -19,11 +19,11 @@ const OVERLAY_TEXT: Partial<Record<AssistantSurfaceState, string>> = {
 };
 
 /**
- * One persistent surface per Bot: the service-hosted canonical Bot Chat (`/api/pty`) rendered in xterm.
+ * One persistent surface per Assistant: the service-hosted canonical Bot Chat (`/api/pty`) rendered in xterm.
  * It stays mounted (parked) while another surface is active so an in-flight turn is never ended by
  * navigation. Input/output cross the narrow Assistant IPC; Hermes' TUI owns its own content.
  */
-export default function AssistantSurface({ botId, displayName, isActive }: { botId: string; displayName: string; isActive: boolean }) {
+export default function AssistantSurface({ assistantId, displayName, isActive }: { assistantId: string; displayName: string; isActive: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTermInstance | null>(null);
   const fitRef = useRef<FitInstance | null>(null);
@@ -33,7 +33,7 @@ export default function AssistantSurface({ botId, displayName, isActive }: { bot
   const refresh = useAssistantsStore((state) => state.refresh);
   const ensureSubscribed = useAssistantsStore((state) => state.ensureSubscribed);
   useEffect(() => { ensureSubscribed(); }, [ensureSubscribed]);
-  const surface = snapshot?.surfaces.find((entry) => entry.botId === botId);
+  const surface = snapshot?.surfaces.find((entry) => entry.assistantId === assistantId);
   const serviceConnected = snapshot?.service.state === 'connected';
   const surfaceState = surface?.state;
 
@@ -41,7 +41,7 @@ export default function AssistantSurface({ botId, displayName, isActive }: { bot
     const xterm = xtermRef.current; const fit = fitRef.current; const host = hostRef.current;
     if (!xterm || !fit || !host || !activeRef.current || host.offsetWidth === 0) return;
     try { fit.fit(); } catch { return; }
-    void window.electronAPI.resizeAssistantPty(botId, xterm.cols, xterm.rows);
+    void window.electronAPI.resizeAssistantPty(assistantId, xterm.cols, xterm.rows);
   };
 
   // Mount: create xterm once, wire IO, open (or re-attach) the main-owned surface.
@@ -61,10 +61,10 @@ export default function AssistantSurface({ botId, displayName, isActive }: { bot
       xterm.open(hostRef.current);
       xtermRef.current = xterm; fitRef.current = fit;
       registerThemedTerminal(xterm, useThemeStore.getState().theme);
-      xterm.onData((data) => { void window.electronAPI.writeAssistantPty(botId, data); });
-      disposeData = window.electronAPI.onAssistantPtyData((payload) => { if (payload.botId === botId) xterm.write(payload.data); });
+      xterm.onData((data) => { void window.electronAPI.writeAssistantPty(assistantId, data); });
+      disposeData = window.electronAPI.onAssistantPtyData((payload) => { if (payload.assistantId === assistantId) xterm.write(payload.data); });
       try {
-        const opened = await window.electronAPI.openAssistant(botId);
+        const opened = await window.electronAPI.openAssistant(assistantId);
         if (!cancelled && opened.replay) xterm.write(opened.replay);
       } catch { /* the overlay reflects the service state */ }
       if (typeof ResizeObserver !== 'undefined') { observer = new ResizeObserver(fitAndResize); observer.observe(hostRef.current); }
@@ -79,12 +79,12 @@ export default function AssistantSurface({ botId, displayName, isActive }: { bot
       xtermRef.current = null; fitRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [botId]);
+  }, [assistantId]);
 
   // Re-attach to the same canonical chat after a disconnect once the service is back; never creates a scratch chat.
   useEffect(() => {
-    if (surfaceState === 'disconnected' && serviceConnected) void window.electronAPI.openAssistant(botId).catch(() => undefined);
-  }, [surfaceState, serviceConnected, botId]);
+    if (surfaceState === 'disconnected' && serviceConnected) void window.electronAPI.openAssistant(assistantId).catch(() => undefined);
+  }, [surfaceState, serviceConnected, assistantId]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -98,15 +98,15 @@ export default function AssistantSurface({ botId, displayName, isActive }: { bot
     : surfaceState && surfaceState !== 'open' ? OVERLAY_TEXT[surfaceState] : undefined;
 
   return (
-    <section className={`assistant-surface ${isActive ? 'active' : 'parked'}`} data-assistant-id={botId} aria-hidden={!isActive} aria-label={`${displayName} Bot Chat`}>
+    <section className={`assistant-surface ${isActive ? 'active' : 'parked'}`} data-assistant-id={assistantId} aria-hidden={!isActive} aria-label={`${displayName} Bot Chat`}>
       <div className="assistant-surface-header">{displayName} · Hermes Bot Chat</div>
       <div className="assistant-surface-terminal" ref={hostRef} />
       {overlay && (
         <div className="assistant-surface-overlay" role="status">
           <p>{overlay}</p>
           {!serviceConnected && <Button size="xs" onClick={() => void refresh()}>Reconnect</Button>}
-          {serviceConnected && surfaceState === 'ended' && <Button size="xs" onClick={() => void window.electronAPI.openAssistant(botId).catch(() => undefined)}>Reopen</Button>}
-          {serviceConnected && surfaceState === 'unavailable' && <Button size="xs" onClick={() => void window.electronAPI.openAssistant(botId).catch(() => undefined)}>Retry</Button>}
+          {serviceConnected && surfaceState === 'ended' && <Button size="xs" onClick={() => void window.electronAPI.openAssistant(assistantId).catch(() => undefined)}>Reopen</Button>}
+          {serviceConnected && surfaceState === 'unavailable' && <Button size="xs" onClick={() => void window.electronAPI.openAssistant(assistantId).catch(() => undefined)}>Retry</Button>}
         </div>
       )}
     </section>

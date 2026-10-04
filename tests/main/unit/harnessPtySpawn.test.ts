@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { hermesProfiles } from '../../../src/main/harnesses/hermes/profiles';
 import { resolveHarnessPtySpawn, resolveHarnessSpawn } from '../../../src/main/harnessLaunch';
 import { HarnessCapabilityError } from '../../../src/main/harnesses/types';
 import { parseMsvcrtArgv, ptyCommandLine } from '../../_helpers/windowsCommandLine';
 
 const COMSPEC = 'C:\\Windows\\System32\\cmd.exe';
-const profile = { name: 'reviewer', label: 'reviewer', home: 'C:\\Users\\dev\\.hermes\\profiles\\reviewer', rootHome: 'C:\\Users\\dev\\.hermes' };
+// Representative harness argv whose last element is an arbitrary workspace path.
+const buildLaunch = (cwd: string) => ({ command: 'hermes', args: ['-p', 'reviewer', '--tui', '--in', cwd] });
 
 function windows(installed: string[]) {
   const files = new Set(installed.map((file) => file.toLowerCase()));
@@ -18,7 +18,7 @@ function windows(installed: string[]) {
 
 // The real descriptor → the real PTY spawn planner → node-pty's real Windows serializer.
 function launchFor(cwd: string, installed: string[]) {
-  const launch = hermesProfiles.buildLaunch(profile, cwd);
+  const launch = buildLaunch(cwd);
   const plan = resolveHarnessPtySpawn(launch.command, launch.args, null, windows(installed));
   return { launch, plan, commandLine: ptyCommandLine(plan.spawnCmd, plan.spawnArgs) };
 }

@@ -6,19 +6,22 @@
 import { create } from 'zustand';
 
 export interface AssistantNavState {
-  activeBotId: string | null;
+  activeAssistantId: string | null;
   /** Opened surfaces stay mounted (parked) so switching away never ends an in-flight turn. */
-  openedBotIds: string[];
-  openBot: (botId: string) => void;
+  openedAssistantIds: string[];
+  openAssistantSurface: (assistantId: string) => void;
   clearActive: () => void;
+  /** Deliberate teardown (Assistants disabled or unavailable): no active surface, none kept warm. */
+  clearAllAssistants: () => void;
 }
 
 export const useAssistantNavStore = create<AssistantNavState>((set) => ({
-  activeBotId: null,
-  openedBotIds: [],
-  openBot: (botId) => set((state) => ({
-    activeBotId: botId,
-    openedBotIds: state.openedBotIds.includes(botId) ? state.openedBotIds : [...state.openedBotIds, botId],
+  activeAssistantId: null,
+  openedAssistantIds: [],
+  openAssistantSurface: (assistantId) => set((state) => ({
+    activeAssistantId: assistantId,
+    openedAssistantIds: state.openedAssistantIds.includes(assistantId) ? state.openedAssistantIds : [...state.openedAssistantIds, assistantId],
   })),
-  clearActive: () => set((state) => (state.activeBotId === null ? state : { activeBotId: null })),
+  clearActive: () => set((state) => (state.activeAssistantId === null ? state : { activeAssistantId: null })),
+  clearAllAssistants: () => set((state) => (state.activeAssistantId === null && state.openedAssistantIds.length === 0 ? state : { activeAssistantId: null, openedAssistantIds: [] })),
 }));

@@ -20,21 +20,17 @@ export type HermesAssistantServiceState =
   | 'error'
   | 'detected-unusable';
 
-export interface HermesBot {
+export interface HermesAssistant {
   /** Opaque Clanker id (never the display name); the only handle the renderer sends back. */
   id: string;
-  /** Raw Hermes profile slug, retained for display/diagnostics; routing is resolved in main from `id`. */
-  profileName: string;
   displayName: string;
   description?: string;
-  /** Present when the Bot has a canonical persistent "Bot Chat". */
-  canonicalSessionId?: string;
 }
 
 export type AssistantSurfaceState = 'connecting' | 'open' | 'disconnected' | 'ended' | 'unavailable';
 
 export interface AssistantSurfaceStatus {
-  botId: string;
+  assistantId: string;
   state: AssistantSurfaceState;
 }
 
@@ -48,12 +44,12 @@ export interface AssistantSnapshot {
     /** Display-safe: never contains a token, URL or host path. */
     error?: string;
   };
-  bots: HermesBot[];
+  assistants: HermesAssistant[];
   surfaces: AssistantSurfaceStatus[];
 }
 
 export interface AssistantPtyData {
-  botId: string;
+  assistantId: string;
   data: string;
 }
 

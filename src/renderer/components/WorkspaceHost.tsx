@@ -111,10 +111,17 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
   const sidebarMode = navigationMode === 'sidebar';
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const activeBotId = useAssistantNavStore((state) => state.activeBotId);
-  const openedBotIds = useAssistantNavStore((state) => state.openedBotIds);
-  const knownBots = useAssistantsStore((state) => state.knownBots);
-  const assistantActive = activeBotId !== null;
+  const activeAssistantId = useAssistantNavStore((state) => state.activeAssistantId);
+  const openedAssistantIds = useAssistantNavStore((state) => state.openedAssistantIds);
+  const knownAssistants = useAssistantsStore((state) => state.knownAssistants);
+  const assistantActive = activeAssistantId !== null;
+  const clearAllAssistants = useAssistantNavStore((state) => state.clearAllAssistants);
+  const ensureAssistantsSubscribed = useAssistantsStore((state) => state.ensureSubscribed);
+  // Authoritative disabled/unavailable snapshot = deliberate teardown. A transient offline/probing/starting
+  // service is NOT: those keep their parked surfaces so they can re-attach.
+  const assistantsOff = useAssistantsStore((state) => state.snapshot !== null && (!state.snapshot.available || !state.snapshot.settings.enabled));
+  useEffect(() => { ensureAssistantsSubscribed(); }, [ensureAssistantsSubscribed]);
+  useEffect(() => { if (assistantsOff) clearAllAssistants(); }, [assistantsOff, clearAllAssistants]);
   // Track prior active ID to detect switches
   const prevActiveWorkspaceIdRef = useRef<string | null>(null);
   const recentWorkspaceIdsRef = useRef<string[]>([]);
@@ -196,8 +203,8 @@ export default function WorkspaceHost({ onOpenWorkspace }: WorkspaceHostProps = 
               showExplorerDock={!sidebarMode}
             />
           ))}
-          {openedBotIds.map((botId) => (
-            <AssistantSurface key={botId} botId={botId} displayName={knownBots[botId]?.displayName ?? botId.replace(/^hermes:/, '')} isActive={botId === activeBotId} />
+          {openedAssistantIds.map((assistantId) => (
+            <AssistantSurface key={assistantId} assistantId={assistantId} displayName={knownAssistants[assistantId]?.displayName ?? assistantId.replace(/^hermes:/, '')} isActive={assistantId === activeAssistantId} />
           ))}
         </div>
       </div>

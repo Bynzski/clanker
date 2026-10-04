@@ -6,7 +6,7 @@ import {
   type AssistantSettings,
   type AssistantSurfaceState,
   type HermesAssistantServiceState,
-  type HermesBot,
+  type HermesAssistant,
 } from '../../shared/types/assistants';
 import { readPersistedAssistantSettings, validateAssistantSettings } from './assistantSettings';
 import {
@@ -22,11 +22,11 @@ import {
 } from './hermesBackend';
 import { HermesRpcClient, RpcError, defaultWebSocketFactory, frameByteLength, type WebSocketFactory, type WebSocketLike } from './hermesTransport';
 
-export interface HermesBotServiceDeps {
+export interface HermesAssistantServiceDeps {
   readSettings(): unknown;
   writeSettings(settings: AssistantSettings): void;
   onChanged(snapshot: AssistantSnapshot): void;
-  onPtyData(botId: string, data: string): void;
+  onPtyData(assistantId: string, data: string): void;
   isShuttingDown(): boolean;
   /** Canonical local harness availability for `hermes`. Evaluated once per service lifetime (a restart picks up installs). */
   isHermesAvailable(): boolean;
@@ -41,25 +41,25 @@ export interface HermesBotServiceDeps {
   stableAfterMs?: number;
 }
 
-const MAX_BOTS = 64;
+const MAX_ASSISTANTS = 64;
 const MAX_PTY_FRAME_BYTES = 1024 * 1024;
 const REPLAY_LIMIT = 512 * 1024;
 /** Hermes closes the attached PTY socket with this code when the TUI child exits. */
 const PTY_CLOSE_CHILD_EXITED = 4410;
 const PROFILE_SLUG = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const SESSION_ID = /^[A-Za-z0-9._:-]{1,128}$/;
-const BOT_ID = /^hermes:[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const ASSISTANT_ID = /^hermes:[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 /** The one canonical title: (profile, "Bot Chat") is that profile's permanent chat identity in Hermes. */
 export const CANONICAL_CHAT_TITLE = 'Bot Chat';
 const CANONICAL_LIST_LIMIT = 200;
 
-export function isValidBotId(value: unknown): value is string { return typeof value === 'string' && BOT_ID.test(value); }
+export function isValidAssistantId(value: unknown): value is string { return typeof value === 'string' && ASSISTANT_ID.test(value); }
 
 /** `hadCanonical`: the last roster listing positively reported a canonical chat (an empty lookup is then unconfirmed, never a reason to mint). */
-interface RosterEntry { public: HermesBot; slug: string; sessionId?: string; hadCanonical: boolean }
+interface RosterEntry { public: HermesAssistant; slug: string; sessionId?: string; hadCanonical: boolean }
 
 interface PtySession {
-  botId: string;
+  assistantId: string;
   attach: string;
   socket: WebSocketLike | null;
   state: AssistantSurfaceState;
@@ -72,12 +72,12 @@ interface PtySession {
 type Endpoint = { port: number; token: string; ownership: 'external' | 'clanker' };
 
 /**
- * Main-owned Hermes Bot integration. Owns settings, backend discovery/adoption, the optional
- * Clanker-owned `hermes serve` child, the authenticated control connection, the Bot roster and the
+ * Main-owned Hermes Assistant integration. Owns settings, backend discovery/adoption, the optional
+ * Clanker-owned `hermes serve` child, the authenticated control connection, the Assistant roster and the
  * service-hosted chat PTYs. The renderer only ever sees display-safe snapshots; the backend token
  * never leaves this class.
  */
-export class HermesBotService {
+export class HermesAssistantService {
   private readonly fetcher: FetchLike;
   private readonly createWebSocket: WebSocketFactory;
   private readonly spawnServe: SpawnServe;
@@ -101,7 +101,7 @@ export class HermesBotService {
   private readonly sessions = new Map<string, PtySession>();
   private readonly opening = new Map<string, Promise<AssistantOpenResult>>();
 
-  constructor(private readonly deps: HermesBotServiceDeps) {
+  constructor(private readonly deps: HermesAssistantServiceDeps) {
     this.fetcher = deps.fetch ?? ((url, init) => fetch(url, init) as ReturnType<FetchLike>);
     this.createWebSocket = deps.createWebSocket ?? defaultWebSocketFactory;
     this.spawnServe = deps.spawnServe ?? spawnHermesServe;
@@ -123,8 +123,8 @@ export class HermesBotService {
       available: this.available,
       settings: { ...this.settings },
       service: { state: this.state, ownership: this.ownership, ...(this.error ? { error: this.error } : {}) },
-      bots: this.roster.map((entry) => ({ ...entry.public })),
-      surfaces: [...this.sessions.values()].map((session) => ({ botId: session.botId, state: session.state })),
+      assistants: this.roster.map((entry) => ({ ...entry.public })),
+      surfaces: [...this.sessions.values()].map((session) => ({ assistantId: session.assistantId, state: session.state })),
     };
   }
 
@@ -374,58 +374,57 @@ export class HermesBotService {
   private async loadRoster(generation: number, rpc: HermesRpcClient): Promise<void> {
     const result = await rpc.call('profiles.list', {});
     if (!this.current(generation)) return;
-    this.roster = parseBotRoster(result);
+    this.roster = parseAssistantRoster(result);
   }
 
   // ── Assistant surfaces (service-hosted chat PTYs) ───────────────────────────
 
-  private entry(botId: string): RosterEntry | undefined { return this.roster.find((entry) => entry.public.id === botId); }
+  private entry(assistantId: string): RosterEntry | undefined { return this.roster.find((entry) => entry.public.id === assistantId); }
 
-  /** Open (or reveal) the Assistant's canonical Bot Chat. Concurrent opens of one Bot share one resolution. */
-  openSurface(botId: unknown): Promise<AssistantOpenResult> {
-    if (!isValidBotId(botId)) return Promise.reject(new Error('Invalid assistant'));
-    const existing = this.sessions.get(botId);
+  /** Open (or reveal) the Assistant's canonical Bot Chat. Concurrent opens of one Assistant share one resolution. */
+  openSurface(assistantId: unknown): Promise<AssistantOpenResult> {
+    if (!isValidAssistantId(assistantId)) return Promise.reject(new Error('Invalid assistant'));
+    const existing = this.sessions.get(assistantId);
     if (existing && (existing.state === 'open' || existing.state === 'connecting') && existing.socket) return Promise.resolve({ state: existing.state, replay: existing.replay });
-    const inflight = this.opening.get(botId);
+    const inflight = this.opening.get(assistantId);
     if (inflight) return inflight;
-    const operation = this.openResolved(botId).finally(() => { if (this.opening.get(botId) === operation) this.opening.delete(botId); });
-    this.opening.set(botId, operation);
+    const operation = this.openResolved(assistantId).finally(() => { if (this.opening.get(assistantId) === operation) this.opening.delete(assistantId); });
+    this.opening.set(assistantId, operation);
     return operation;
   }
 
-  private async openResolved(botId: string): Promise<AssistantOpenResult> {
-    const entry = this.entry(botId);
+  private async openResolved(assistantId: string): Promise<AssistantOpenResult> {
+    const entry = this.entry(assistantId);
     const rpc = this.rpc;
     const endpoint = this.endpoint;
-    const previous = this.sessions.get(botId);
+    const previous = this.sessions.get(assistantId);
     if (!entry || !endpoint || !rpc || rpc.isClosed || this.state !== 'connected') {
       if (previous) { previous.state = 'disconnected'; this.publish(); return { state: 'disconnected', replay: previous.replay }; }
       throw new Error('Hermes service is not connected');
     }
     const generation = this.generation;
-    const session = previous ?? this.newSession(botId);
+    const session = previous ?? this.newSession(assistantId);
     session.state = 'connecting';
-    this.sessions.set(botId, session);
+    this.sessions.set(assistantId, session);
     this.publish();
     let sessionId: string;
     try {
       sessionId = await this.resolveCanonicalChat(entry, rpc);
     } catch {
       // Fail closed: nothing was created on a lookup failure, and no scratch conversation is substituted.
-      if (this.sessions.get(botId) === session && this.current(generation)) { session.state = 'unavailable'; this.publish(); }
+      if (this.sessions.get(assistantId) === session && this.current(generation)) { session.state = 'unavailable'; this.publish(); }
       return { state: 'unavailable', replay: session.replay };
     }
-    if (!this.current(generation) || this.sessions.get(botId) !== session || !this.endpoint) return { state: session.state, replay: session.replay };
+    if (!this.current(generation) || this.sessions.get(assistantId) !== session || !this.endpoint) return { state: session.state, replay: session.replay };
     entry.sessionId = sessionId;
     entry.hadCanonical = true;
-    entry.public.canonicalSessionId = sessionId;
     this.attach(session, entry, this.endpoint);
     this.publish();
     return { state: session.state, replay: session.replay };
   }
 
   /**
-   * The Bot's ONE permanent chat, per Hermes' own contract: the profile's session titled exactly
+   * The Assistant's ONE permanent chat, per Hermes' own contract: the profile's session titled exactly
    * "Bot Chat". Exact lookup first; a failed lookup, or an empty one when the roster had positively
    * reported a chat, fails closed. Only a confirmed absence creates, with no model turn: the lazy session
    * is materialized with `session.title`, and a lost title race adopts the winner. The profile's own
@@ -469,12 +468,12 @@ export class HermesBotService {
     }
   }
 
-  private newSession(botId: string): PtySession {
-    const slug = botId.slice('hermes:'.length);
+  private newSession(assistantId: string): PtySession {
+    const slug = assistantId.slice('hermes:'.length);
     return {
-      // Stable per Bot (not per run): Hermes keys its keep-alive PTY on this, so a reconnect or restart
+      // Stable per Assistant (not per run): Hermes keys its keep-alive PTY on this, so a reconnect or restart
       // re-attaches the same chat process instead of stacking a second TUI beside the lingering one.
-      botId, attach: `clanker-assistant-${slug}`, socket: null, state: 'connecting',
+      assistantId, attach: `clanker-assistant-${slug}`, socket: null, state: 'connecting',
       replay: '', decoder: new StringDecoder('utf8'), size: null, generation: 0,
     };
   }
@@ -502,7 +501,7 @@ export class HermesBotService {
         : session.decoder.write(Buffer.from(event.data instanceof ArrayBuffer ? new Uint8Array(event.data) : new Uint8Array((event.data as ArrayBufferView).buffer, (event.data as ArrayBufferView).byteOffset, (event.data as ArrayBufferView).byteLength)));
       if (!text) return;
       session.replay = (session.replay + text).slice(-REPLAY_LIMIT);
-      this.deps.onPtyData(session.botId, text);
+      this.deps.onPtyData(session.assistantId, text);
     }) as never);
     socket.addEventListener('close', ((event: { code?: number }) => {
       if (!live()) return;
@@ -521,17 +520,17 @@ export class HermesBotService {
     this.publish();
   }
 
-  writePty(botId: unknown, data: unknown): void {
-    if (!isValidBotId(botId) || typeof data !== 'string' || data.length === 0 || Buffer.byteLength(data) > 64 * 1024) return;
-    const session = this.sessions.get(botId);
+  writePty(assistantId: unknown, data: unknown): void {
+    if (!isValidAssistantId(assistantId) || typeof data !== 'string' || data.length === 0 || Buffer.byteLength(data) > 64 * 1024) return;
+    const session = this.sessions.get(assistantId);
     if (session?.socket && session.state === 'open') session.socket.send(data);
   }
 
-  resizePty(botId: unknown, cols: unknown, rows: unknown): void {
-    if (!isValidBotId(botId) || !Number.isInteger(cols) || !Number.isInteger(rows)) return;
+  resizePty(assistantId: unknown, cols: unknown, rows: unknown): void {
+    if (!isValidAssistantId(assistantId) || !Number.isInteger(cols) || !Number.isInteger(rows)) return;
     const c = cols as number; const r = rows as number;
     if (c < 1 || c > 1000 || r < 1 || r > 1000) return;
-    const session = this.sessions.get(botId);
+    const session = this.sessions.get(assistantId);
     if (!session) return;
     session.size = { cols: c, rows: r };
     if (session.socket && session.state === 'open') this.sendResize(session);
@@ -541,17 +540,6 @@ export class HermesBotService {
   private sendResize(session: PtySession): void {
     if (!session.socket || !session.size) return;
     session.socket.send(`\x1b[RESIZE:${session.size.cols};${session.size.rows}]`);
-  }
-
-  closeSurface(botId: unknown): void {
-    if (!isValidBotId(botId)) return;
-    const session = this.sessions.get(botId);
-    if (!session) return;
-    this.sessions.delete(botId);
-    session.generation++;
-    try { session.socket?.close(); } catch { /* already closed */ }
-    session.socket = null;
-    this.publish();
   }
 
   private markSessionsDisconnected(): void {
@@ -578,12 +566,12 @@ export class HermesBotService {
  * `profiles.list` is the roster authority: every valid local Hermes profile EXCEPT the raw `default`
  * (already represented by the ordinary Hermes harness). `ui_meta["hermes-bots"]` is optional presentation
  * metadata (title, description, and Desktop's own `hidden` preference), never eligibility. Routing always
- * uses the raw slug; display is Bot title, then profile display name, then the prettified slug.
+ * uses the raw slug; display is Assistant title, then profile display name, then the prettified slug.
  */
-export function parseBotRoster(result: unknown): RosterEntry[] {
+export function parseAssistantRoster(result: unknown): RosterEntry[] {
   const profiles = result && typeof result === 'object' ? (result as { profiles?: unknown }).profiles : undefined;
   if (!Array.isArray(profiles)) throw new Error('Hermes returned an unexpected profile list');
-  const bots: RosterEntry[] = [];
+  const assistants: RosterEntry[] = [];
   const seen = new Set<string>();
   for (const raw of profiles) {
     if (!raw || typeof raw !== 'object') continue;
@@ -602,18 +590,17 @@ export function parseBotRoster(result: unknown): RosterEntry[] {
     const canonical = row.canonical_session && typeof row.canonical_session === 'object' ? row.canonical_session as Record<string, unknown> : null;
     const resolved = canonical && typeof canonical.resolved_id === 'string' && SESSION_ID.test(canonical.resolved_id) ? canonical.resolved_id
       : canonical && typeof canonical.id === 'string' && SESSION_ID.test(canonical.id) ? canonical.id : undefined;
-    bots.push({
+    assistants.push({
       slug, sessionId: resolved, hadCanonical: !!resolved,
       public: {
-        id: `hermes:${slug}`, profileName: slug,
+        id: `hermes:${slug}`,
         displayName: (title || profileDisplay || prettifySlug(slug)).slice(0, 80),
         ...(description ? { description: description.slice(0, 200) } : {}),
-        ...(resolved ? { canonicalSessionId: resolved } : {}),
       },
     });
-    if (bots.length >= MAX_BOTS) break;
+    if (assistants.length >= MAX_ASSISTANTS) break;
   }
-  return bots;
+  return assistants;
 }
 
 function prettifySlug(slug: string): string {

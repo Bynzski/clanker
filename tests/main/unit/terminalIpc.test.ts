@@ -102,7 +102,6 @@ import { REMOTE_ATTENTION_PREFIX } from '../../../src/main/remote/remoteAttentio
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
 import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
 import { RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY } from '../../../src/shared/ipcChannels';
-import { hermesProfiles } from '../../../src/main/harnesses/hermes/profiles';
 import { parseMsvcrtArgv, ptyCommandLine } from '../../_helpers/windowsCommandLine';
 
 type MockIpcMain = typeof ipcMain & {
@@ -372,192 +371,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     expect(mockPtySpawn).not.toHaveBeenCalled();
   });
 
-  test('trusted profile launches retain wrapper/PTY paths and never apply harness-global model or bypass flags', async () => {
-    const { opts, terminals } = createMockDeps();
-    const onTerminalReleased = vi.fn();
-    const cwd = fs.realpathSync(process.cwd());
-    const registered = { workspaceId: 'assistant-owner', location: { environmentId: 'local', path: cwd.replace(/\\/g, '/') } };
-    const controller = registerTerminalIpc({
-      ...opts,
-      getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }) as never,
-      getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
-      getStore: () => ({ get: () => ({ hermes: { flags: '--yolo --resume', model: 'wrong-model' } }) }) as never,
-      onTerminalReleased,
-    });
-    mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
-    vi.stubEnv('HERMES_YOLO', '1');
-    try {
-      const result = await controller.spawnAssistant('assistant-owner', 'hermes', { command: 'hermes', args: ['-p', 'reviewer', '--tui', '--in', cwd], env: { HERMES_HOME: testHome() }, unsetEnvironmentKeys: ['HERMES_YOLO'] });
-      const [command, args, options] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
-      expect(command).toBe(testHarnessWrapper());
-      expect(args).toEqual(['hermes', '-p', 'reviewer', '--tui', '--in', cwd]);
-      expect(options.cwd).toBe(cwd);
-      expect(options.handleFlowControl).toBe(false);
-      expect(options.env.HERMES_YOLO).toBeUndefined();
-      expect(options.env.HERMES_HOME).toBe(testHome());
-      expect(terminals.get(result.id)).toMatchObject({ workspaceId: 'assistant-owner', environmentId: 'local', harnessId: 'hermes' });
-      controller.killTerminal(result.id);
-      expect(onTerminalReleased).toHaveBeenCalledWith(result.id);
-    } finally { vi.unstubAllEnvs(); }
-  });
-
-  describe('assistant workspace filesystem identity during asynchronous attention setup', () => {
-    type Change = 'symlink' | 'removed' | 'recreated';
-    const profileLaunch = (cwd: string) => ({ command: 'hermes', args: ['-p', 'reviewer', '--tui', '--in', cwd], env: { HERMES_HOME: testHome() }, unsetEnvironmentKeys: [] });
-    const setup = (change: Change) => {
-      const { opts, terminals } = createMockDeps();
-      const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-assistant-fs-')));
-      const workspace = path.join(base, 'workspace');
-      const elsewhere = path.join(base, 'elsewhere');
-      fs.mkdirSync(workspace);
-      fs.mkdirSync(elsewhere);
-      const registered = { workspaceId: 'assistant-owner', location: { environmentId: 'local', path: workspace.replace(/\\/g, '/') } };
-      let finishRegister!: (env: Record<string, string>) => void;
-      const broker = {
-        register: vi.fn(() => new Promise<Record<string, string>>((done) => { finishRegister = done; })),
-        release: vi.fn(),
-      };
-      const controller = registerTerminalIpc({
-        ...opts,
-        agentAttentionBroker: broker as never,
-        getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }) as never,
-        getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
-        getStore: () => ({ get: () => ({ hermes: { flags: '', model: '' } }) }) as never,
-      });
-      mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
-      const mutate = () => {
-        if (change === 'symlink') {
-          fs.renameSync(workspace, `${workspace}-moved`);
-          fs.symlinkSync(elsewhere, workspace, 'junction');
-        } else if (change === 'removed') {
-          fs.rmSync(workspace, { recursive: true });
-        } else {
-          fs.renameSync(workspace, `${workspace}-moved`);
-          fs.mkdirSync(workspace);
-        }
-      };
-      return { controller, broker, terminals, base, workspace, mutate, finish: () => finishRegister({}) };
-    };
-
-    test.each(['symlink', 'removed', 'recreated'] as const)('rejects a workspace directory that was %s during attention setup without creating a PTY', async (change) => {
-      const { controller, broker, terminals, base, workspace, mutate, finish } = setup(change);
-      try {
-        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(workspace));
-        const rejected = expect(pending).rejects.toThrow(/directory changed/);
-        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
-        mutate();
-        finish();
-        await rejected;
-        expect(mockPtySpawn).not.toHaveBeenCalled();
-        expect(terminals.size).toBe(0);
-        const [terminalId] = broker.register.mock.calls[0] as unknown as [string];
-        expect(broker.release).toHaveBeenCalledWith(terminalId);
-      } finally { fs.rmSync(base, { recursive: true, force: true }); }
-    });
-
-    test('still spawns when the directory is unchanged across the same asynchronous setup', async () => {
-      const { controller, broker, terminals, base, workspace, finish } = setup('symlink');
-      try {
-        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(workspace));
-        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
-        finish();
-        const result = await pending;
-        expect(mockPtySpawn).toHaveBeenCalledOnce();
-        expect(mockPtySpawn.mock.calls[0][2].cwd).toBe(workspace);
-        expect(terminals.has(result.id)).toBe(true);
-        expect(broker.release).not.toHaveBeenCalled();
-      } finally { fs.rmSync(base, { recursive: true, force: true }); }
-    });
-  });
-
-  describe('assistant workspaces registered through symlinks', () => {
-    const profileLaunch = (cwd: string) => ({ command: 'hermes', args: ['-p', 'reviewer', '--tui', '--in', cwd], env: { HERMES_HOME: testHome() }, unsetEnvironmentKeys: [] });
-    // `base` is canonical; the registered path is deliberately NOT canonical (link / link-ancestor).
-    const setup = (shape: 'link' | 'ancestor') => {
-      const { opts, terminals } = createMockDeps();
-      const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-assistant-link-')));
-      const real = path.join(base, 'real');
-      const other = path.join(base, 'other');
-      fs.mkdirSync(path.join(real, 'project'), { recursive: true });
-      fs.mkdirSync(path.join(other, 'project'), { recursive: true });
-      const link = path.join(base, 'link');
-      fs.symlinkSync(real, link, 'junction');
-      const registeredPath = shape === 'link' ? link : path.join(link, 'project');
-      const canonicalCwd = shape === 'link' ? real : path.join(real, 'project');
-      const registered = { workspaceId: 'assistant-owner', location: { environmentId: 'local', path: registeredPath.replace(/\\/g, '/') } };
-      let finishRegister!: (env: Record<string, string>) => void;
-      const broker = {
-        register: vi.fn(() => new Promise<Record<string, string>>((done) => { finishRegister = done; })),
-        release: vi.fn(),
-      };
-      const controller = registerTerminalIpc({
-        ...opts,
-        agentAttentionBroker: broker as never,
-        getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }) as never,
-        getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
-        getStore: () => ({ get: () => ({ hermes: { flags: '', model: '' } }) }) as never,
-      });
-      mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
-      return { controller, broker, terminals, base, real, other, link, registeredPath, canonicalCwd, finish: () => finishRegister({}) };
-    };
-    const retarget = (link: string, to: string) => { fs.rmSync(link, { recursive: true, force: true }); fs.symlinkSync(to, link, 'junction'); };
-
-    test.each(['link', 'ancestor'] as const)('allows a registered path that is a %s and spawns in the canonical directory', async (shape) => {
-      const { controller, broker, terminals, base, registeredPath, canonicalCwd, finish } = setup(shape);
-      try {
-        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(registeredPath));
-        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
-        finish();
-        const result = await pending;
-        expect(mockPtySpawn).toHaveBeenCalledOnce();
-        expect(mockPtySpawn.mock.calls[0][2].cwd).toBe(canonicalCwd);
-        expect(terminals.has(result.id)).toBe(true);
-      } finally { fs.rmSync(base, { recursive: true, force: true }); }
-    });
-
-    test.each(['link', 'ancestor'] as const)('rejects a %s redirected to another directory during attention setup', async (shape) => {
-      const { controller, broker, terminals, base, other, link, registeredPath, finish } = setup(shape);
-      try {
-        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(registeredPath));
-        const rejected = expect(pending).rejects.toThrow(/directory changed/);
-        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
-        retarget(link, other);
-        finish();
-        await rejected;
-        expect(mockPtySpawn).not.toHaveBeenCalled();
-        expect(terminals.size).toBe(0);
-      } finally { fs.rmSync(base, { recursive: true, force: true }); }
-    });
-
-    test('rejects a link that was removed during attention setup', async () => {
-      const { controller, broker, base, link, registeredPath, finish } = setup('link');
-      try {
-        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(registeredPath));
-        const rejected = expect(pending).rejects.toThrow(/directory changed/);
-        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
-        fs.rmSync(link, { recursive: true, force: true });
-        finish();
-        await rejected;
-        expect(mockPtySpawn).not.toHaveBeenCalled();
-      } finally { fs.rmSync(base, { recursive: true, force: true }); }
-    });
-
-    test('rejects a link whose target directory was replaced by a new directory at the same path', async () => {
-      const { controller, broker, base, real, registeredPath, finish } = setup('link');
-      try {
-        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(registeredPath));
-        const rejected = expect(pending).rejects.toThrow(/directory changed/);
-        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
-        fs.renameSync(real, `${real}-moved`);
-        fs.mkdirSync(real);
-        finish();
-        await rejected;
-        expect(mockPtySpawn).not.toHaveBeenCalled();
-      } finally { fs.rmSync(base, { recursive: true, force: true }); }
-    });
-  });
-
-  test('an ordinary Hermes harness launch never touches the Hermes Bot service (no probing, sockets or service code)', async () => {
+  test('an ordinary Hermes harness launch never touches the Hermes Assistant service (no probing, sockets or service code)', async () => {
     const { opts } = createMockDeps();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('must not be called'));
     const socketSpy = vi.fn();
@@ -576,143 +390,76 @@ describe('terminalIpc — error-path: handler returns', () => {
       expect(args).toEqual(['hermes', '--tui']);
       expect(fetchSpy).not.toHaveBeenCalled();
       expect(socketSpy).not.toHaveBeenCalled();
-      expect(fs.readFileSync(path.join(process.cwd(), 'src/main/ipc/terminalIpc.ts'), 'utf8')).not.toMatch(/hermesBotService|assistants\/hermesBackend/);
+      expect(fs.readFileSync(path.join(process.cwd(), 'src/main/ipc/terminalIpc.ts'), 'utf8')).not.toMatch(/hermesAssistantService|assistants\/hermesBackend/);
     } finally { vi.unstubAllGlobals(); fetchSpy.mockRestore(); }
   });
 
-  describe('Assistants and checkout contexts', () => {
-    const profileLaunch = (cwd: string) => ({ command: 'hermes', args: ['-p', 'reviewer', '--tui', '--in', cwd], env: { HERMES_HOME: testHome() }, unsetEnvironmentKeys: [] });
-    const setup = () => {
-      const { opts, terminals } = createMockDeps();
-      const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-assistant-ctx-')));
+  test('an ordinary launch with an explicit worktree context still runs in and is tagged with that context, through the Windows planner', async () => {
+    const { opts, terminals } = createMockDeps();
+    const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-ctx-win-')));
+    try {
       const workspace = path.join(base, 'workspace');
       const worktree = path.join(base, 'worktree');
-      fs.mkdirSync(workspace);
-      fs.mkdirSync(worktree);
-      const toPosix = (p: string) => p.replace(/\\/g, '/');
-      let registered: { workspaceId: string; location: { environmentId: string; path: string } } = { workspaceId: 'assistant-owner', location: { environmentId: 'local', path: toPosix(workspace) } };
-      const linked = { id: 'assistant-owner::wt', workspaceId: 'assistant-owner', environmentId: 'local', path: toPosix(worktree), kind: 'worktree' as const };
-      const registry = withCheckoutContexts({ getWorkspace: () => registered }, [linked]);
-      let mainOverride: unknown;
-      const originalGet = registry.getCheckoutContext;
-      registry.getCheckoutContext = (id: string) => (mainOverride && id === 'assistant-owner::main' ? mainOverride as never : originalGet(id));
-      let finishRegister!: (env: Record<string, string>) => void;
-      const broker = {
-        register: vi.fn(() => new Promise<Record<string, string>>((done) => { finishRegister = done; })),
-        release: vi.fn(),
-      };
-      const controller = registerTerminalIpc({
+      fs.mkdirSync(workspace); fs.mkdirSync(worktree);
+      const linked = { id: 'ws::wt', workspaceId: 'ws', environmentId: 'local', path: worktree.replace(/\\/g, '/'), kind: 'worktree' as const };
+      const registered = { workspaceId: 'ws', location: { environmentId: 'local', path: workspace.replace(/\\/g, '/') } };
+      registerTerminalIpc({
         ...opts,
-        agentAttentionBroker: broker as never,
-        getWorkspaceRegistry: () => registry as never,
-        getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
-        getStore: () => ({ get: () => ({ hermes: { flags: '', model: '' } }) }) as never,
+        getSafeWorkspacePath: (dir: string) => dir,
+        ensureHarnessWrapperScript: () => null,
+        harnessSpawnOverrides: { platform: 'win32', env: { Path: 'C:\\Tools', PATHEXT: '.EXE;.CMD', ComSpec: 'C:\\Windows\\System32\\cmd.exe' }, fileExists: (file: string) => file.toLowerCase() === 'c:\\tools\\codex.exe' },
+        getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }, [linked]) as never,
+        getHarnessOptions: () => ({ codex: { name: 'Codex', command: 'codex', args: [], icon: '' } }),
+        getStore: () => ({ get: () => ({ codex: { flags: '', model: '' } }) }) as never,
       });
       mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
-      return {
-        controller, broker, terminals, workspace, worktree, linked, registry,
-        replaceWorkspace: () => { registered = { ...registered, location: { ...registered.location } }; },
-        replaceMain: () => { mainOverride = { ...registry.resolveCheckoutContext('assistant-owner'), path: registered.location.path }; },
-        finish: () => finishRegister({}),
-        cleanup: () => fs.rmSync(base, { recursive: true, force: true }),
-      };
-    };
-
-    test('an Assistant launch runs in the MAIN checkout context even when a worktree context exists', async () => {
-      const { controller, broker, terminals, workspace, linked, finish, cleanup } = setup();
-      try {
-        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(workspace));
-        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
-        finish();
-        const result = await pending;
-        expect(result.checkoutContextId).toBe('assistant-owner::main');
-        expect(result.checkoutContextId).not.toBe(linked.id);
-        expect(terminals.get(result.id)).toMatchObject({ workspaceId: 'assistant-owner', checkoutContextId: 'assistant-owner::main' });
-        expect(mockPtySpawn.mock.calls[0][2].cwd).toBe(workspace);
-      } finally { cleanup(); }
-    });
-
-    test.each(['workspace replaced', 'main context replaced'] as const)('rejects before PTY creation when the %s during attention setup', async (change) => {
-      const { controller, broker, terminals, workspace, replaceWorkspace, replaceMain, finish, cleanup } = setup();
-      try {
-        const pending = controller.spawnAssistant('assistant-owner', 'hermes', profileLaunch(workspace));
-        const rejected = expect(pending).rejects.toThrow(/workspace was closed|closed or is being removed/);
-        await vi.waitFor(() => expect(broker.register).toHaveBeenCalledOnce());
-        if (change === 'workspace replaced') replaceWorkspace(); else replaceMain();
-        finish();
-        await rejected;
-        expect(mockPtySpawn).not.toHaveBeenCalled();
-        expect(terminals.size).toBe(0);
-        const [terminalId] = broker.register.mock.calls[0] as unknown as [string];
-        expect(broker.release).toHaveBeenCalledWith(terminalId);
-      } finally { cleanup(); }
-    });
-
-    test('an ordinary launch with an explicit worktree context still runs in and is tagged with that context, through the Windows planner', async () => {
-      const { opts, terminals } = createMockDeps();
-      const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-ctx-win-')));
-      try {
-        const workspace = path.join(base, 'workspace');
-        const worktree = path.join(base, 'worktree');
-        fs.mkdirSync(workspace); fs.mkdirSync(worktree);
-        const linked = { id: 'ws::wt', workspaceId: 'ws', environmentId: 'local', path: worktree.replace(/\\/g, '/'), kind: 'worktree' as const };
-        const registered = { workspaceId: 'ws', location: { environmentId: 'local', path: workspace.replace(/\\/g, '/') } };
-        registerTerminalIpc({
-          ...opts,
-          getSafeWorkspacePath: (dir: string) => dir,
-          ensureHarnessWrapperScript: () => null,
-          harnessSpawnOverrides: { platform: 'win32', env: { Path: 'C:\\Tools', PATHEXT: '.EXE;.CMD', ComSpec: 'C:\\Windows\\System32\\cmd.exe' }, fileExists: (file: string) => file.toLowerCase() === 'c:\\tools\\codex.exe' },
-          getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }, [linked]) as never,
-          getHarnessOptions: () => ({ codex: { name: 'Codex', command: 'codex', args: [], icon: '' } }),
-          getStore: () => ({ get: () => ({ codex: { flags: '', model: '' } }) }) as never,
-        });
-        mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
-        const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
-        const result = await handler(null, worktree, 'codex', undefined, undefined, undefined, 'ws', 'local', 'ws::wt');
-        expect(result.checkoutContextId).toBe('ws::wt');
-        expect(terminals.get(result.id)).toMatchObject({ checkoutContextId: 'ws::wt' });
-        const [file, args, options] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
-        expect(file.toLowerCase()).toBe('c:\\tools\\codex.exe');
-        expect(args).toEqual([]);
-        expect(options.cwd).toBe(worktree);
-      } finally { fs.rmSync(base, { recursive: true, force: true }); }
-    });
+      const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+      const result = await handler(null, worktree, 'codex', undefined, undefined, undefined, 'ws', 'local', 'ws::wt');
+      expect(result.checkoutContextId).toBe('ws::wt');
+      expect(terminals.get(result.id)).toMatchObject({ checkoutContextId: 'ws::wt' });
+      const [file, args, options] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
+      expect(file.toLowerCase()).toBe('c:\\tools\\codex.exe');
+      expect(args).toEqual([]);
+      expect(options.cwd).toBe(worktree);
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
   });
 
   describe('Windows PTY argument serialization through the real terminal spawn path', () => {
     const COMSPEC = 'C:\\Windows\\System32\\cmd.exe';
-    const hermesProfile = { name: 'reviewer', label: 'reviewer', home: path.join(testHome(), 'profiles', 'reviewer'), rootHome: testHome() };
     const windowsFor = (installed: string[]) => ({
       platform: 'win32' as const,
       env: { Path: 'C:\\Tools;C:\\npm', PATHEXT: '.EXE;.CMD', ComSpec: COMSPEC },
       fileExists: (file: string) => installed.some((known) => known.toLowerCase() === file.toLowerCase()),
     });
     const NASTY = ['plain', 'My Projects', 'R&D', 'Tom & Jerry (v2)', '100% done (final)', 'a^b!c,d;e'];
+    // A normal Hermes harness terminal whose argv carries the workspace path, so path metacharacters reach the planner.
     const setup = (installed: string[], dirName: string) => {
       const { opts, terminals } = createMockDeps();
-      const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-assistant-win-')));
+      const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-win-term-')));
       const workspace = path.join(base, dirName);
       fs.mkdirSync(workspace);
-      const registered = { workspaceId: 'assistant-owner', location: { environmentId: 'local', path: workspace.replace(/\\/g, '/') } };
+      const registered = { workspaceId: 'win-owner', location: { environmentId: 'local', path: workspace.replace(/\\/g, '/') } };
       const broker = { register: vi.fn().mockResolvedValue({}), release: vi.fn() };
-      const controller = registerTerminalIpc({
+      registerTerminalIpc({
         ...opts,
+        getSafeWorkspacePath: (dir: string) => dir,
         agentAttentionBroker: broker as never,
         ensureHarnessWrapperScript: () => null,
         harnessSpawnOverrides: windowsFor(installed),
         getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }) as never,
-        getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
+        getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['-p', 'reviewer', '--tui', '--in', workspace], icon: '' } }),
         getStore: () => ({ get: () => ({ hermes: { flags: '', model: '' } }) }) as never,
       });
       mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
-      return { controller, broker, terminals, workspace, cleanup: () => fs.rmSync(base, { recursive: true, force: true }) };
+      const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+      const launch = () => handler(null, workspace, 'hermes', undefined, undefined, undefined, 'win-owner', 'local');
+      return { launch, broker, terminals, workspace, cleanup: () => fs.rmSync(base, { recursive: true, force: true }) };
     };
 
     test.each(NASTY)('launches a real executable directly with intact argv for a workspace named %j', async (dirName) => {
-      const { controller, workspace, cleanup } = setup(['C:\\Tools\\hermes.exe'], dirName);
+      const { launch, workspace, cleanup } = setup(['C:\\Tools\\hermes.exe'], dirName);
       try {
-        const launch = hermesProfiles.buildLaunch(hermesProfile, workspace);
-        await controller.spawnAssistant('assistant-owner', 'hermes', launch);
+        await launch();
         const [file, args] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
         expect(file.toLowerCase()).toBe('c:\\tools\\hermes.exe');
         expect(parseMsvcrtArgv(ptyCommandLine(file, args)).slice(1)).toEqual(['-p', 'reviewer', '--tui', '--in', workspace]);
@@ -720,9 +467,9 @@ describe('terminalIpc — error-path: handler returns', () => {
     });
 
     test.each(NASTY.filter((name) => !name.includes('%')))('routes an npm .cmd shim through cmd.exe as one verbatim, escaped line for a workspace named %j', async (dirName) => {
-      const { controller, workspace, cleanup } = setup(['C:\\npm\\hermes.cmd'], dirName);
+      const { launch, cleanup } = setup(['C:\\npm\\hermes.cmd'], dirName);
       try {
-        await controller.spawnAssistant('assistant-owner', 'hermes', hermesProfiles.buildLaunch(hermesProfile, workspace));
+        await launch();
         const [file, args] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
         expect(file).toBe(COMSPEC);
         expect(typeof args).toBe('string');
@@ -734,27 +481,25 @@ describe('terminalIpc — error-path: handler returns', () => {
     });
 
     test('fails closed and releases attention state when a .cmd shim would have to carry %', async () => {
-      const { controller, broker, terminals, workspace, cleanup } = setup(['C:\\npm\\hermes.cmd'], '100% done');
+      const { launch, broker, terminals, cleanup } = setup(['C:\\npm\\hermes.cmd'], '100% done');
       try {
-        await expect(controller.spawnAssistant('assistant-owner', 'hermes', hermesProfiles.buildLaunch(hermesProfile, workspace)))
-          .rejects.toThrow(/cannot be passed safely/);
+        await expect(launch()).rejects.toThrow(/cannot be passed safely/);
         expect(mockPtySpawn).not.toHaveBeenCalled();
         expect(terminals.size).toBe(0);
-        expect(broker.release).toHaveBeenCalledWith(broker.register.mock.calls[0][0]);
+        expect(broker.release).toHaveBeenCalledOnce();
       } finally { cleanup(); }
     });
 
     test('fails closed when the command cannot be resolved instead of falling back to cmd /c', async () => {
-      const { controller, broker, workspace, cleanup } = setup([], 'R&D');
+      const { launch, broker, cleanup } = setup([], 'R&D');
       try {
-        await expect(controller.spawnAssistant('assistant-owner', 'hermes', hermesProfiles.buildLaunch(hermesProfile, workspace)))
-          .rejects.toThrow(/hermes is not installed/);
+        await expect(launch()).rejects.toThrow(/hermes is not installed/);
         expect(mockPtySpawn).not.toHaveBeenCalled();
         expect(broker.release).toHaveBeenCalledOnce();
       } finally { cleanup(); }
     });
 
-    test('ordinary (non-profile) harness launches use the same planner and keep .cmd shim resolution', async () => {
+    test('ordinary harness launches use the same planner and keep .cmd shim resolution', async () => {
       const { opts } = createMockDeps();
       registerTerminalIpc({
         ...opts,
