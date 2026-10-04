@@ -11,7 +11,6 @@ export type { AttentionAdapterFiles } from './harnesses/types';
 
 const ATTENTION_ROOT_PREFIX = 'clanker-attention-';
 const OWNER_PID_FILE = '.clanker-pid';
-const UNMARKED_ROOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 let files: AttentionAdapterFiles | null = null;
 const providerFiles = new Map<string, AttentionAdapterFiles>();
@@ -76,9 +75,9 @@ function processIsAlive(pid: number): boolean {
 
 /** Best-effort removal of attention roots a crashed or killed run left behind. Correctness never
  * depends on it (the plugin guard fails open); it only reclaims disk. A root is removed only when
- * it is a real directory we own whose recorded owner process is gone, or, for roots from builds
- * that recorded no owner, when nothing has touched it for a week. Live roots are never touched. */
-export function scavengeStaleAttentionRoots(tmp = os.tmpdir(), now = Date.now()): void {
+ * it is a real directory we own whose recorded owner process is gone. Roots without an owner
+ * record (older builds) are left alone: nothing proves they are not a live older session's. */
+export function scavengeStaleAttentionRoots(tmp = os.tmpdir()): void {
   const own = files ? path.dirname(files.command) : null;
   const uid = typeof process.getuid === 'function' ? process.getuid() : null;
   let names: string[];
@@ -92,10 +91,7 @@ export function scavengeStaleAttentionRoots(tmp = os.tmpdir(), now = Date.now())
       if (!stat.isDirectory() || (uid !== null && stat.uid !== uid) || !fs.existsSync(path.join(root, 'command.mjs'))) continue;
       let ownerPid = NaN;
       try { ownerPid = Number(fs.readFileSync(path.join(root, OWNER_PID_FILE), 'utf8')); } catch { /* unmarked */ }
-      const stale = Number.isInteger(ownerPid) && ownerPid > 0
-        ? !processIsAlive(ownerPid)
-        : now - stat.mtimeMs > UNMARKED_ROOT_MAX_AGE_MS;
-      if (stale) fs.rmSync(root, { recursive: true, force: true });
+      if (Number.isInteger(ownerPid) && ownerPid > 0 && !processIsAlive(ownerPid)) fs.rmSync(root, { recursive: true, force: true });
     } catch { /* leave anything we cannot inspect */ }
   }
 }

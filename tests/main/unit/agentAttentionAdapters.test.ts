@@ -383,6 +383,25 @@ describe('Antigravity attention plugin resilience', () => {
     }
   });
 
+  it('answers exactly once when the bridge hangs past the guard timeout', async () => {
+    const home = tempHome();
+    const slow = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-slow-bridge-'));
+    try {
+      const guard = install(home);
+      fs.writeFileSync(path.join(slow, 'command.mjs'), 'setTimeout(() => {}, 60000);');
+      fs.writeFileSync(path.join(slow, 'interpreter.mjs'), '');
+      const result = await runGuard(guard, 'PreToolUse', askPayload, {
+        CLANKER_ATTENTION_TOKEN: 't', CLANKER_ATTENTION_HARNESS: 'agy',
+        CLANKER_ATTENTION_COMMAND: path.join(slow, 'command.mjs'), CLANKER_ATTENTION_INTERPRETER: path.join(slow, 'interpreter.mjs'),
+        CLANKER_ATTENTION_GUARD_TIMEOUT_MS: '200',
+      });
+      expect(result).toEqual({ code: 0, stdout: '{}\n' });
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(slow, { recursive: true, force: true });
+    }
+  });
+
   it('still delivers Antigravity lifecycle events and decisions through the guard', async () => {
     const home = tempHome();
     const received: Array<{ terminalId: string; event: string }> = [];
@@ -443,7 +462,6 @@ describe('Antigravity attention plugin resilience', () => {
       const dead = root('clanker-attention-dead01', deadPid);
       const live = root('clanker-attention-live01', process.pid);
       const oldUnmarked = root('clanker-attention-old001');
-      const freshUnmarked = root('clanker-attention-new001');
       const longAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       fs.utimesSync(oldUnmarked, longAgo, longAgo);
       const unrelated = path.join(tmp, 'clanker-attention-unrelated-dir');
@@ -455,9 +473,9 @@ describe('Antigravity attention plugin resilience', () => {
       scavengeStaleAttentionRoots(tmp);
 
       expect(fs.existsSync(dead)).toBe(false);
-      expect(fs.existsSync(oldUnmarked)).toBe(false);
+      // No owner record: not provably dead, however old.
+      expect(fs.existsSync(oldUnmarked)).toBe(true);
       expect(fs.existsSync(live)).toBe(true);
-      expect(fs.existsSync(freshUnmarked)).toBe(true);
       expect(fs.existsSync(unrelated)).toBe(true);
       expect(fs.existsSync(path.join(tmp, 'target', 'command.mjs'))).toBe(true);
     } finally {

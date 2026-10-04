@@ -52,7 +52,15 @@ export default function interpret(input, hook, store) {
  * otherwise answers with Antigravity's neutral hook response and exit 0. */
 export const GUARD = `import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-const finish = (text) => process.stdout.write(text + '\\n', () => process.exit(0));
+let settled = false;
+let timer;
+// Every path converges here: exactly one JSON response is ever written, whatever the event order.
+const finish = (text) => {
+  if (settled) return;
+  settled = true;
+  clearTimeout(timer);
+  process.stdout.write(text + '\\n', () => process.exit(0));
+};
 const neutral = () => finish('{}');
 const LIMIT = 65536;
 async function forward() {
@@ -84,7 +92,8 @@ async function forward() {
       finish(text);
     } catch { neutral(); }
   });
-  setTimeout(() => { try { child.kill(); } catch { /* already gone */ } neutral(); }, 8000);
+  const limit = Number(env.CLANKER_ATTENTION_GUARD_TIMEOUT_MS);
+  timer = setTimeout(() => { neutral(); try { child.kill(); } catch { /* already gone */ } }, limit > 0 && limit < 8000 ? limit : 8000);
   child.stdin.end(Buffer.concat(chunks));
 }
 try { await forward(); } catch { neutral(); }
