@@ -57,6 +57,19 @@ export interface RemoteWorktreeRemovalRecord {
   worktreePath: string;
 }
 
+/**
+ * Main-owned memory of a repository's linked worktrees, written whenever main observes Git's
+ * listing or creates/attaches a checkout. It is the only record that survives once a worktree is
+ * removed and Git forgets it (a deleted branch, an adopted sibling directory), so conversations
+ * that ran there stay attributable. Never renderer-supplied; never authorizes access to a path.
+ */
+export interface WorktreeProvenanceRecord {
+  environmentId: string;
+  /** Canonical POSIX path of the repository's main checkout. */
+  mainPath: string;
+  worktrees: Array<{ path: string; branch: string | null }>;
+}
+
 /** Top-level store schema. */
 export interface StoreSchema {
   theme: ThemeId;
@@ -73,6 +86,7 @@ export interface StoreSchema {
   workspaceRecipes: WorkspaceRecipe[];
   sshEnvironments: SshEnvironmentConfig[];
   remoteWorktreeRemovals?: RemoteWorktreeRemovalRecord[];
+  worktreeProvenance?: WorktreeProvenanceRecord[];
   /** Opt-in presentation preferences; native profile data never lives here. */
   assistantSettings?: AssistantSettings;
   /** Only deviations from the keybinding registry defaults; absent command = default, null = unbound. */

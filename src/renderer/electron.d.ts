@@ -49,7 +49,7 @@ import type {
 } from '../../shared/types/credentials';
 import type { AiCommitSettings, ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
-import type { HarnessSession } from '../../shared/types/session';
+import type { HarnessSession, SessionInvokeOptions, SessionInvokeResult } from '../../shared/types/session';
 import type { HarnessUsageRequest, HarnessUsageResponse } from '../../shared/types/harnessUsage';
 import type { HarnessAccountAuthEvent, HarnessAccountAuthStart, HarnessAccountList } from '../../shared/types/harnessAccounts';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
@@ -342,7 +342,7 @@ export interface ElectronAPI {
   removeHarnessAccount: (environmentId: string, harness: string, accountId: string) => Promise<HarnessAccountList>;
   renameHarnessAccount: (environmentId: string, harness: string, accountId: string, label: string) => Promise<HarnessAccountList>;
   onHarnessAccountAuthState: (callback: (event: HarnessAccountAuthEvent) => void) => () => void;
-  invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean) => Promise<{ id: string; pid: number; harnessId?: string; attentionEnabled?: boolean; workingDir?: string }>;
+  invokeSession: (workspaceId: string, session: HarnessSession, fork?: boolean, options?: SessionInvokeOptions) => Promise<SessionInvokeResult>;
 
   // Workspace Recipes
   recipeGetAll: (workspacePath?: string) => Promise<WorkspaceRecipe[]>;

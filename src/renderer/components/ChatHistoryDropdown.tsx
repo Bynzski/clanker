@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import type { HarnessSession } from '../../shared/types/session';
+import type { HarnessSession, RecreateCheckoutOffer } from '../../shared/types/session';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import { getSessionDisplayTitles } from '../lib/sessionTitles';
 import './ChatHistoryDropdown.css';
@@ -12,6 +12,14 @@ interface Props {
   workspacePath: string;
   workspaceId: string | null;
   onClose: () => void;
+}
+
+/** Label for a conversation that ran in a linked worktree: its branch, and whether the checkout is gone. */
+export function sessionCheckoutLabel(session: HarnessSession): string | null {
+  const { checkout } = session;
+  if (!checkout) return null;
+  const name = checkout.branch ?? checkout.path.split('/').filter(Boolean).pop() ?? 'worktree';
+  return checkout.exists ? name : `${name} · removed`;
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -75,6 +83,14 @@ function HarnessGroup({ harnessId, sessions, isExpanded, onToggle, onSessionClic
                 <span className="chat-history-session-title">
                   {displayTitles.get(`${session.harness}\0${session.id}`) ?? session.title}
                 </span>
+                {sessionCheckoutLabel(session) && (
+                  <span
+                    className={`chat-history-session-checkout${session.checkout?.exists ? '' : ' is-removed'}`}
+                    title={session.checkout?.exists ? 'Resumes in this worktree' : 'This worktree was removed; it resumes in the main checkout'}
+                  >
+                    {sessionCheckoutLabel(session)}
+                  </span>
+                )}
                 {session.timestamp > 0 && (
                   <span className="chat-history-session-time">
                     {formatRelativeTime(session.timestamp)}
@@ -100,25 +116,51 @@ export default function ChatHistoryDropdown({
   const addTerminal = useWorkspaceStore((state) => state.addTerminal);
   const [launching, setLaunching] = useState(false);
   const [sessionLaunchError, setSessionLaunchError] = useState('');
+  const [resumeNotice, setResumeNotice] = useState('');
+  const upsertCheckoutContext = useWorkspaceStore((state) => state.upsertCheckoutContext);
   const environmentId = useWorkspaceStore((state) => state.getWorkspaceById(workspaceId)?.environmentId ?? 'local');
   const stillOwnsWorkspace = () => {
     const current = useWorkspaceStore.getState().getWorkspaceById(workspaceId);
     return current && (current.environmentId ?? 'local') === environmentId && current.workspacePath === workspacePath;
   };
 
-  const handleSessionClick = async (session: HarnessSession) => {
+  const [offer, setOffer] = useState<{ session: HarnessSession; checkout: RecreateCheckoutOffer } | null>(null);
+
+  const resumeSession = async (session: HarnessSession, recreateCheckout: boolean) => {
     if (launching) return;
     setLaunching(true);
     setSessionLaunchError('');
+    setResumeNotice('');
+    setOffer(null);
     try {
       if (!workspaceId) throw new Error('Workspace is not registered');
-      const info = await window.electronAPI.invokeSession(workspaceId, session);
+      const info = recreateCheckout
+        ? await window.electronAPI.invokeSession(workspaceId, session, false, { recreateCheckout: true })
+        : await window.electronAPI.invokeSession(workspaceId, session);
+      // Nothing was launched or created: main asks first because this harness can only continue in
+      // the directory it started in, and that worktree was removed.
+      if ('recreateOffer' in info) {
+        setOffer({ session, checkout: info.recreateOffer });
+        return;
+      }
       if (!stillOwnsWorkspace()) {
         await window.electronAPI.killTerminal(info.id);
         throw new Error('The workspace closed while resuming');
       }
-      addTerminal({ id: info.id, pid: info.pid, workingDir: info.workingDir ?? session.cwd, workspaceId, environmentId, harnessId: session.harness, attentionEnabled: info.attentionEnabled === true }, workspaceId);
-      if (useWorkspaceStore.getState().activeWorkspaceId === workspaceId) onClose();
+      // A conversation from an isolated agent resumes into its worktree context; record it on this
+      // workspace first so the terminal (and its agent row) is bound to that checkout.
+      if (info.checkoutContext && !upsertCheckoutContext(workspaceId, info.checkoutContext)) {
+        await window.electronAPI.killTerminal(info.id).catch(() => undefined);
+        throw new Error('The checkout this conversation ran in could not be attached to the workspace');
+      }
+      addTerminal({
+        id: info.id, pid: info.pid, workingDir: info.workingDir ?? session.cwd, workspaceId, environmentId,
+        harnessId: session.harness, attentionEnabled: info.attentionEnabled === true,
+        ...(info.checkoutContextId ? { checkoutContextId: info.checkoutContextId } : {}),
+      }, workspaceId);
+      // Never resume somewhere other than where it ran without saying so.
+      if (info.resumeNotice) setResumeNotice(info.resumeNotice);
+      else if (useWorkspaceStore.getState().activeWorkspaceId === workspaceId) onClose();
     } catch (err) {
       console.error('Failed to invoke session:', err);
       setSessionLaunchError(err instanceof Error ? err.message : 'Could not resume session');
@@ -126,6 +168,7 @@ export default function ChatHistoryDropdown({
       setLaunching(false);
     }
   };
+  const handleSessionClick = (session: HarnessSession) => resumeSession(session, false);
 
   const grouped: Record<string, HarnessSession[]> = {};
   const displayTitles = getSessionDisplayTitles(sessions);
@@ -148,6 +191,20 @@ export default function ChatHistoryDropdown({
   return (
     <div className="chat-history-dropdown">
       {sessionLaunchError && <div className="chat-history-empty" role="alert">{sessionLaunchError}</div>}
+      {resumeNotice && <div className="chat-history-empty" role="status">{resumeNotice}</div>}
+      {offer && (
+        <div className="chat-history-empty chat-history-recreate" role="alertdialog" aria-label="Recreate worktree">
+          <div>
+            This conversation ran in the worktree <strong>{offer.checkout.branch}</strong>, which was removed.
+            {' '}{HARNESS_OPTIONS.find((option) => option.id === offer.session.harness)?.label ?? offer.session.harness} can only continue
+            in the directory it started in. Recreate the worktree from its branch and resume there?
+          </div>
+          <div className="chat-history-recreate-actions">
+            <button type="button" disabled={launching} onClick={() => resumeSession(offer.session, true)}>Recreate and resume</button>
+            <button type="button" disabled={launching} onClick={() => setOffer(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
       {isLoading ? (
         <div className="chat-history-empty">Loading sessions…</div>
       ) : discoveryError ? (

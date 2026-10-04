@@ -132,3 +132,26 @@
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
 }
+
+.chat-history-session-checkout {
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-control);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.chat-history-session-checkout.is-removed {
+  opacity: 0.7;
+}
+
+.chat-history-recreate-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}

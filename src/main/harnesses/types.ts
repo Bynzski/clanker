@@ -73,6 +73,13 @@ export interface HarnessSessionsCapability {
   readonly discoveryOrder?: number;
   readonly validateLocal?: (session: HarnessSession, context: { workspacePath: string; userFlags?: string }) => HarnessSession | Promise<HarnessSession>;
   readonly validateRemote?: (session: HarnessSession) => boolean;
+  /**
+   * True only when the CLI was shown to resume a conversation from a different directory after the
+   * directory it started in was removed (see docs/harness-integration.md "Removed-worktree resume").
+   * Absent means unproven or known not to: such a conversation resumes only in its original
+   * directory, so a removed worktree must be recreated rather than substituting another checkout.
+   */
+  readonly resumesWithoutOriginalDirectory?: boolean;
   discover(workspacePath: string): Promise<HarnessSession[]>;
   readonly resume?: HarnessSessionOperation;
   readonly fork?: HarnessSessionOperation;

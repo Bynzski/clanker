@@ -57,7 +57,7 @@ describe('remote session invocation', () => {
 
   it.each(['codex', 'claude', 'opencode', 'pi', 'omp', 'agy'] as const)('resumes %s using fresh host metadata and the remote PTY lifecycle', async (harness) => {
     const f = fixture(harness);
-    const result = await invokeRemoteSession(f.deps, f.workspace, { ...f.session, cwd: '/desktop/evil', modelId: 'spoofed', filePath: '/desktop/evil.jsonl' });
+    const result = await invokeRemoteSession(f.deps, f.workspace, { ...f.session, cwd: '/desktop/evil', modelId: 'spoofed', filePath: '/desktop/evil.jsonl' }) as { id: string };
     expect(f.environment.discoverSessions).toHaveBeenCalledWith('/ws');
     expect(f.environment.resolveTerminalSpawn).toHaveBeenCalledWith(expect.objectContaining({ workingDir: '/ws/sub', harness, attentionToken: 'a'.repeat(64), attentionRootSessionId: harness === 'claude' ? undefined : f.session.id, resumeSession: { session: f.session, fork: false, workspaceRoot: '/ws' } }));
     expect(spawnPtyProcess).toHaveBeenCalledWith(expect.objectContaining({ spawnCmd: 'ssh', workspaceId: 'remote-ws', environmentId: 'ssh-a', remoteWorkingDir: '/ws/sub', filterData: expect.any(Function) }));

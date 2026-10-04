@@ -7,6 +7,16 @@ import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
 import { parseMsvcrtArgv, ptyCommandLine } from '../../_helpers/windowsCommandLine';
 
 const { mockHandle, mockSpawnPty } = vi.hoisted(() => ({ mockHandle: vi.fn(), mockSpawnPty: vi.fn() }));
+// These tests exercise unrelated resume behaviour against a fictional '/workspace'; the real
+// filesystem-backed containment rule is covered by sessionIpcWorktrees.test.ts and the real-Git test.
+vi.mock('../../../src/main/localPathContainment', async () => {
+  const path = await import('node:path');
+  return { isInsideRoot: (root: string, target: string) => {
+    const relative = path.relative(root, target);
+    return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+  } };
+});
+
 vi.mock('electron', () => ({ ipcMain: { handle: mockHandle }, BrowserWindow: vi.fn() }));
 vi.mock('../../../src/main/ipc/ptySpawn', () => ({ spawnPtyProcess: mockSpawnPty }));
 
@@ -31,6 +41,9 @@ beforeEach(() => {
 afterEach(() => { process.env = savedEnv; vi.restoreAllMocks(); });
 afterAll(() => removeAttentionAdapterFiles());
 
+const wsObject = { workspaceId: 'ws', location: { environmentId: 'local', path: '/workspace' } };
+const registry = withCheckoutContexts({ getWorkspace: (id: string) => id === 'ws' ? wsObject : null });
+
 function setup(options: { installed: string[]; flags?: string; wrapper?: string | null; platform?: NodeJS.Platform; attention?: boolean; harnessEnv?: Record<string, string> }) {
   const handlers = new Map<string, Handler>();
   mockHandle.mockImplementation((channel: string, handler: Handler) => handlers.set(channel, handler));
@@ -41,7 +54,7 @@ function setup(options: { installed: string[]; flags?: string; wrapper?: string 
     getStore: () => ({ get: () => ({ codex: { flags: options.flags ?? '', attentionEnabled: options.attention === true } }) }) as never,
     getHarnessOptions: () => ({ codex: { name: 'Codex', command: 'codex', args: [], icon: '', ...(options.harnessEnv ? { env: options.harnessEnv } : {}) } }),
     agentAttentionBroker: options.attention ? { register: vi.fn().mockResolvedValue({}), release: vi.fn() } as never : undefined,
-    getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: (id: string) => id === 'ws' ? { workspaceId: 'ws', location: { environmentId: 'local', path: '/workspace' } } : null }) as never,
+    getWorkspaceRegistry: () => registry as never,
     ensureHarnessWrapperScript: () => options.wrapper ?? null,
     harnessSpawnOverrides: { platform: options.platform ?? 'win32', fileExists },
   });

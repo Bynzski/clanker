@@ -3,6 +3,9 @@ import type { HarnessProvider } from './types';
 const RUNTIME = String.raw`import os, sys, json, stat, datetime, sqlite3, urllib.parse
 root = sys.argv[1]
 harnesses = json.loads(sys.argv[2])
+scopes = json.loads(sys.argv[3]) if len(sys.argv) > 3 else []
+if not isinstance(scopes, list) or len(scopes) > 64 or not all(isinstance(s, str) and os.path.isabs(s) and os.path.normpath(s) == s and s != '/' for s in scopes):
+    sys.exit('Invalid session scan scopes')
 home = os.path.realpath(os.path.expanduser('~'))
 if not os.path.isdir(root) or os.path.realpath(root) != root:
     sys.exit('Workspace root is no longer canonical')
@@ -21,11 +24,19 @@ def timestamp(value, fallback=0):
 def contained(parent, child):
     return child == parent or child.startswith(parent.rstrip('/') + '/')
 
+def in_scope(path):
+    return contained(root, path) or any(contained(scope, path) for scope in scopes)
+
 def emit(harness, sid, cwd, title, when, model='', provider='', file=None):
     cwd = text(cwd)
-    if not os.path.isabs(cwd) or not os.path.isdir(cwd): return
-    cwd = os.path.realpath(cwd)
-    if not contained(root, cwd) or not text(sid): return
+    if not os.path.isabs(cwd): return
+    if os.path.isdir(cwd):
+        cwd = os.path.realpath(cwd)
+    else:
+        # A removed worktree: reported (as recorded) only inside a main-provided scope, never inside the workspace itself.
+        cwd = os.path.normpath(cwd)
+        if contained(root, cwd) or not any(contained(scope, cwd) for scope in scopes): return
+    if not in_scope(cwd) or not text(sid): return
     item = dict(harness=harness, id=sid, cwd=cwd, title=text(title)[:120] or harness + ' session', timestamp=when)
     if model: item['modelId'] = text(model)[:128]
     if provider: item['provider'] = text(provider)[:128]

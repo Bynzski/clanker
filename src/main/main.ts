@@ -34,6 +34,7 @@ import Store from 'electron-store';
 import { GitService } from './gitService';
 import { EnvironmentManager } from './environment/environmentManager';
 import { WorkspaceRegistry } from './workspaceRegistry';
+import { WorktreeProvenance } from './worktreeProvenance';
 import { registerSshEnvironmentIpc } from './ipc/sshEnvironmentIpc';
 import { resolveExistingDirectory } from './security';
 import { type StoreSchema } from '../shared/types/store';
@@ -105,6 +106,7 @@ const store = new Store<StoreSchema>({
     workspaceRecipes: [],
     sshEnvironments: [],
     remoteWorktreeRemovals: [],
+    worktreeProvenance: [],
     assistantSettings: { enabled: false, autoStart: false },
   },
 });
@@ -276,6 +278,22 @@ const gitService: GitService = new GitService(
   }
 );
 
+// Main-owned memory of removed worktrees (see worktreeProvenance.ts).
+const worktreeProvenance = new WorktreeProvenance({
+  read: () => store.get('worktreeProvenance'),
+  write: (records) => store.set('worktreeProvenance', records),
+});
+
+/** Runs a Git read scoped to a registered workspace (local or SSH), exactly as the Git IPC scopes its handlers. */
+function scopedGit<T>(workspaceId: string, run: (workspacePath: string) => Promise<T>, fallback: (error: string) => T): Promise<T> {
+  const ws = workspaceRegistry.getWorkspace(workspaceId);
+  if (!ws) return Promise.resolve(fallback('Workspace is not registered'));
+  return gitService.withWorkspace(
+    { workspacePath: ws.location.path, workspaceId: ws.workspaceId, environmentId: ws.location.environmentId },
+    () => run(ws.location.path),
+  ).catch((error: unknown) => fallback(error instanceof Error ? error.message : 'Git could not be read'));
+}
+
 const fileWatcher = new FileWatcherService({ getMainWindow: () => mainWindow });
 fileWatcher.setGitService(gitService);
 
@@ -403,7 +421,8 @@ app.whenReady().then(() => {
       }
     },
   });
-  registerGitIpc({
+  const gitIpc = registerGitIpc({
+    worktreeProvenance,
     remoteWorktreeRemovalPersistence: {
       read: () => store.get('remoteWorktreeRemovals') ?? [],
       write: (records) => store.set('remoteWorktreeRemovals', records),
@@ -468,6 +487,13 @@ app.whenReady().then(() => {
     getStore: () => store,
     getHarnessOptions: getAvailableHarnessOptions,
     getWorkspaceRegistry: () => workspaceRegistry,
+    // Git reads for session history/resume, scoped to the registered workspace like the Git IPC (local or SSH).
+    listWorktrees: (workspaceId) => scopedGit(workspaceId, (workspacePath) => gitService.listWorktrees(workspacePath),
+      (error) => ({ success: false, worktrees: [], error })),
+    listBranches: (workspaceId) => scopedGit(workspaceId, async (workspacePath) => (await gitService.getBranches(workspacePath)).map((entry) => entry.name),
+      () => []),
+    worktreeProvenance,
+    recreateWorktree: (workspaceId, branch) => gitIpc.createWorktreeForSession(workspaceId, branch),
     agentAttentionBroker,
     createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
     getHarnessAccountService: () => harnessAccountService,

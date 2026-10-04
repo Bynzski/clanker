@@ -118,4 +118,69 @@ describe.skipIf(process.platform === 'win32' || !pythonAvailable)('remote sessio
     for (let index = 0; index < 513; index++) jsonl(`.pi/agent/sessions/p/${index}.jsonl`, [{ type: 'session', id: String(index), cwd: root }]);
     await expect(discoverSshSessions(executor, 'host', root, ['pi'])).rejects.toThrow('limit 512');
   });
+
+  describe('worktree scopes', () => {
+    it('reports sessions of live and removed worktrees inside a main-provided scope, once, in one host scan', async () => {
+      const container = join(fixture, 'workspace-worktrees');
+      const live = join(container, 'live-1'); mkdirSync(join(live, 'src'), { recursive: true });
+      const removed = join(container, 'removed-2', 'src'); // never created: the worktree was removed
+      jsonl('.claude/projects/a/in-live.jsonl', [{ type: 'user', cwd: join(live, 'src'), message: { content: 'live' } }]);
+      jsonl('.claude/projects/b/in-removed.jsonl', [{ type: 'user', cwd: removed, message: { content: 'removed' } }]);
+      jsonl('.codex/sessions/2026/in-main.jsonl', [{ type: 'session_meta', payload: { id: 'cx', cwd: root } }]);
+      const sessions = await discoverSshSessions(executor, 'host', root, ['claude', 'codex'], [container]);
+      expect(sessions.map((item) => [item.id, item.cwd]).sort()).toEqual([
+        ['cx', root], ['in-live', join(live, 'src')], ['in-removed', removed],
+      ]);
+      expect(exec).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(exec.mock.calls[0][2][4])).toEqual([container]);
+    });
+
+    it('never reports a missing directory outside every scope, inside the workspace itself, or beside a scope', async () => {
+      const container = join(fixture, 'workspace-worktrees');
+      jsonl('.claude/projects/a/gone-in-workspace.jsonl', [{ type: 'user', cwd: join(root, 'deleted'), message: { content: 'x' } }]);
+      jsonl('.claude/projects/a/gone-elsewhere.jsonl', [{ type: 'user', cwd: join(fixture, 'elsewhere', 'x'), message: { content: 'x' } }]);
+      jsonl('.claude/projects/a/gone-lookalike.jsonl', [{ type: 'user', cwd: join(fixture, 'workspace-worktrees-other', 'x'), message: { content: 'x' } }]);
+      jsonl('.claude/projects/a/gone-dotdot.jsonl', [{ type: 'user', cwd: join(container, '..', 'elsewhere', 'x'), message: { content: 'x' } }]);
+      expect(await discoverSshSessions(executor, 'host', root, ['claude'], [container])).toEqual([]);
+      // Without any scope a removed worktree is invisible, exactly as before.
+      jsonl('.claude/projects/a/gone-in-scope.jsonl', [{ type: 'user', cwd: join(container, 'removed'), message: { content: 'x' } }]);
+      expect(await discoverSshSessions(executor, 'host', root, ['claude'])).toEqual([]);
+      expect(await discoverSshSessions(executor, 'host', root, ['claude'], [container])).toHaveLength(1);
+    });
+
+    it('resolves symlinks for existing directories so a link cannot smuggle a path into a scope', async () => {
+      const container = join(fixture, 'workspace-worktrees'); mkdirSync(container);
+      const outside = join(fixture, 'private'); mkdirSync(outside);
+      symlinkSync(outside, join(container, 'link'));
+      jsonl('.claude/projects/a/escape.jsonl', [{ type: 'user', cwd: join(container, 'link'), message: { content: 'x' } }]);
+      expect(await discoverSshSessions(executor, 'host', root, ['claude'], [container])).toEqual([]);
+    });
+
+    it('applies scopes to Antigravity and OpenCode too', async () => {
+      const container = join(fixture, 'workspace-worktrees');
+      const removed = join(container, 'gone-3');
+      const db = join(home, '.gemini/antigravity-cli/conversation_summaries.db');
+      mkdirSync(join(db, '..'), { recursive: true });
+      execFileSync('python3', ['-c', `import sqlite3,sys,json\nwith sqlite3.connect(sys.argv[1]) as c:\n c.execute('CREATE TABLE conversation_summaries (conversation_id,title,preview,last_modified_time,last_user_input_time,workspace_uris)')\n c.execute('INSERT INTO conversation_summaries VALUES (?,?,?,?,?,?)', ('agy-id','AGY','','2026-01-03T00:00:00Z','',json.dumps(['file://' + sys.argv[2]])))`, db, removed]);
+      opencodeOutput = JSON.stringify([{ id: 'oc-id', title: 'OC', directory: removed, updated: 5 }, { id: 'oc-stranger', title: 'OC', directory: join(fixture, 'nope'), updated: 5 }]);
+      const sessions = await discoverSshSessions(executor, 'host', root, ['agy', 'opencode'], [container]);
+      expect(sessions.map((item) => item.id).sort()).toEqual(['agy-id', 'oc-id']);
+      // The OpenCode validation pass receives the same scopes.
+      expect(exec.mock.calls.every(([, command, args]) => command === 'sh' || args[4] === JSON.stringify([container]))).toBe(true);
+    });
+
+    it('rejects relative, unnormalized, root and excessive scopes before running anything', async () => {
+      for (const scopes of [['relative/path'], [`${fixture}/a/../b`], ['/'], [`/a${'\0'}b`], Array.from({ length: 65 }, (_, index) => `/s/${index}`)]) {
+        await expect(discoverSshSessions(executor, 'host', root, ['claude'], scopes)).rejects.toThrow('Invalid remote session scan scopes');
+      }
+      expect(exec).not.toHaveBeenCalled();
+      expect(await discoverSshSessions(executor, 'host', root, ['claude'], Array.from({ length: 64 }, (_, index) => `/s/${index}`))).toEqual([]);
+    });
+
+    it('keeps the existing result bound when scoped sessions are counted', async () => {
+      const container = join(fixture, 'workspace-worktrees');
+      for (let index = 0; index < 513; index++) jsonl(`.pi/agent/sessions/p/${index}.jsonl`, [{ type: 'session', id: String(index), cwd: join(container, `gone-${index}`) }]);
+      await expect(discoverSshSessions(executor, 'host', root, ['pi'], [container])).rejects.toThrow('limit 512');
+    });
+  });
 });
