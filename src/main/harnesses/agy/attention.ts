@@ -1,13 +1,13 @@
-import { localAttention } from '../localAttention';
-import { randomUUID } from 'node:crypto';
-import { acquireAgyAttentionPlugin, releaseAgyAttentionPlugin } from './attentionPlugin';
+import { interpreterPath, localAttention } from '../localAttention';
+import { ensureAgyAttentionPlugin } from './attentionPlugin';
 
 
-export const local = localAttention(({ args }) => {
-  return { args, env: {} };
-}, ({ terminalId, files, homeDir, platform }) => {
-  // A distinct lease permits repeated preparation and out-of-order disposal.
-  const leaseId = `${terminalId}:${randomUUID()}`;
-  acquireAgyAttentionPlugin(leaseId, files, homeDir, platform);
-  return () => releaseAgyAttentionPlugin(leaseId);
+export const local = localAttention(({ args, files }) => {
+  // The persistent plugin guard reads the launch-scoped interpreter from here, so it never bakes
+  // an ephemeral temp path into configuration that outlives this process.
+  return { args, env: { CLANKER_ATTENTION_INTERPRETER: interpreterPath(files) } };
+}, ({ homeDir, platform }) => {
+  // The plugin is persistent and guard-protected, so there is nothing to release.
+  ensureAgyAttentionPlugin(homeDir, platform);
+  return () => undefined;
 });

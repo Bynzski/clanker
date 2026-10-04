@@ -47,3 +47,5 @@ reports/
 
 # Fallow cache
 .fallow/
+# TypeScript incremental build info
+*.tsbuildinfo

@@ -5,9 +5,13 @@ import { findHarnessProvider, getHarnessProviders } from './harnesses/registry';
 import type { AttentionAdapterFiles, LocalAttentionContext } from './harnesses/types';
 import type { HarnessSession } from '../shared/types/session';
 import { OBSERVER, COMMAND } from './harnesses/attentionSources';
-export { acquireAgyAttentionPlugin, releaseAgyAttentionPlugin, agyAttentionPlugin } from './harnesses/agy/attentionPlugin';
+export { ensureAgyAttentionPlugin, agyAttentionPlugin, migrateLegacyAgyAttentionPlugin } from './harnesses/agy/attentionPlugin';
 export { claudeAttentionSettings } from './harnesses/claude/attention';
 export type { AttentionAdapterFiles } from './harnesses/types';
+
+const ATTENTION_ROOT_PREFIX = 'clanker-attention-';
+const OWNER_PID_FILE = '.clanker-pid';
+const UNMARKED_ROOT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 let files: AttentionAdapterFiles | null = null;
 const providerFiles = new Map<string, AttentionAdapterFiles>();
@@ -19,8 +23,9 @@ export function withoutAttentionEnvironment(env: NodeJS.ProcessEnv): Record<stri
 
 export function ensureAttentionAdapterFiles(): AttentionAdapterFiles {
   if (files) return files;
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-attention-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), ATTENTION_ROOT_PREFIX));
   try {
+    fs.writeFileSync(path.join(root, OWNER_PID_FILE), String(process.pid), { mode: 0o600 });
     fs.writeFileSync(path.join(root, 'observer.mjs'), OBSERVER, { mode: 0o600 });
     const command = path.join(root, 'command.mjs');
     fs.writeFileSync(command, COMMAND, { mode: 0o600 });
@@ -63,6 +68,36 @@ export function prepareLocalAttention(harness: string, context: LocalAttentionCo
   const local = findHarnessProvider(harness)?.attention?.local;
   if (!local || local.plan(context).status === 'blocked') return null;
   return local.prepare({ ...context, files: ensureProviderAttentionResources(harness, context.files) });
+}
+
+function processIsAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM'; }
+}
+
+/** Best-effort removal of attention roots a crashed or killed run left behind. Correctness never
+ * depends on it (the plugin guard fails open); it only reclaims disk. A root is removed only when
+ * it is a real directory we own whose recorded owner process is gone, or, for roots from builds
+ * that recorded no owner, when nothing has touched it for a week. Live roots are never touched. */
+export function scavengeStaleAttentionRoots(tmp = os.tmpdir(), now = Date.now()): void {
+  const own = files ? path.dirname(files.command) : null;
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+  let names: string[];
+  try { names = fs.readdirSync(tmp); } catch { return; }
+  for (const name of names) {
+    if (!/^clanker-attention-[A-Za-z0-9]{6}$/.test(name)) continue;
+    const root = path.join(tmp, name);
+    if (root === own) continue;
+    try {
+      const stat = fs.lstatSync(root);
+      if (!stat.isDirectory() || (uid !== null && stat.uid !== uid) || !fs.existsSync(path.join(root, 'command.mjs'))) continue;
+      let ownerPid = NaN;
+      try { ownerPid = Number(fs.readFileSync(path.join(root, OWNER_PID_FILE), 'utf8')); } catch { /* unmarked */ }
+      const stale = Number.isInteger(ownerPid) && ownerPid > 0
+        ? !processIsAlive(ownerPid)
+        : now - stat.mtimeMs > UNMARKED_ROOT_MAX_AGE_MS;
+      if (stale) fs.rmSync(root, { recursive: true, force: true });
+    } catch { /* leave anything we cannot inspect */ }
+  }
 }
 
 export function removeAttentionAdapterFiles(): void {
