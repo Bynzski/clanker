@@ -51,6 +51,7 @@ let root: string;
 let repo: string;
 let home: string;
 let savedHome: string | undefined;
+let savedProfile: string | undefined;
 let service: GitService;
 let registry: WorkspaceRegistry;
 let provenance: WorktreeProvenance;
@@ -64,7 +65,9 @@ beforeAll(async () => {
   home = path.join(root, 'home');
   fs.mkdirSync(repo); fs.mkdirSync(home);
   savedHome = process.env.HOME;
+  savedProfile = process.env.USERPROFILE;
   process.env.HOME = home; // os.homedir() on POSIX: every harness store below lives in this isolated home
+  process.env.USERPROFILE = home; // ... and on Windows
   await git('init', '--initial-branch', 'main');
   await git('config', 'user.name', 'Sessions Test');
   await git('config', 'user.email', 'sessions@example.invalid');
@@ -74,6 +77,7 @@ beforeAll(async () => {
 });
 afterAll(() => {
   if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
+  if (savedProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = savedProfile;
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -106,6 +110,7 @@ beforeEach(() => {
     worktreeProvenance: provenance,
     recreateWorktree: (id, branch) => gitIpc.createWorktreeForSession(id, branch),
     ensureHarnessWrapperScript: () => null,
+    harnessSpawnOverrides: { platform: 'linux', fileExists: () => true },
   });
 });
 

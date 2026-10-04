@@ -149,7 +149,7 @@ describe('which checkout the workspace belongs to', () => {
     let disk: string;
     afterEach(() => fs.rmSync(disk, { recursive: true, force: true }));
     it('treats a local checkout whose directory vanished (not yet reconciled) as removed', async () => {
-      disk = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-disk-')));
+      disk = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-disk-')));
       const main = path.join(disk, 'app'); const kept = path.join(disk, 'kept'); const vanished = path.join(disk, 'vanished');
       fs.mkdirSync(main); fs.mkdirSync(kept);
       const plan = await planFor({
@@ -167,18 +167,18 @@ describe('which checkout the workspace belongs to', () => {
     let root: string;
     afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
     it('compares local paths symlink-resolved', async () => {
-      root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-links-')));
+      root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-links-')));
       const main = path.join(root, 'app'); const worktree = path.join(root, 'app-worktrees', 'feat'); const link = path.join(root, 'link');
       fs.mkdirSync(path.join(main, 'packages'), { recursive: true }); fs.mkdirSync(worktree, { recursive: true });
       fs.symlinkSync(path.join(main, 'packages'), link);
       const plan = await planFor({
         workspacePath: link, worktrees: [entry(main, 'main', { isMain: true }), entry(worktree, 'feat')], realDisk: true,
       });
-      expect(plan.roots.map((item) => item.path)).toContain(worktree);
+      expect(plan.roots.map((item) => item.path)).toContain(worktree.replace(/\\/g, '/'));
       // A session recorded through the symlink still lands in the worktree it resolves to.
       const wtLink = path.join(root, 'wt-link');
       fs.symlinkSync(worktree, wtLink);
-      expect(matchSessionCheckoutRoot(plan, wtLink)?.path).toBe(worktree);
+      expect(matchSessionCheckoutRoot(plan, wtLink.replace(/\\/g, '/'))?.path).toBe(worktree.replace(/\\/g, '/'));
     });
   });
 });

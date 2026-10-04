@@ -28,7 +28,7 @@ const generated = (branch: string) => path.join(containerOf(), worktreeDirectory
 afterAll(() => removeAttentionAdapterFiles());
 
 beforeEach(() => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'session-worktrees-')));
+  root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'session-worktrees-')));
   workspacePath = path.join(root, 'app');
   fs.mkdirSync(workspacePath, { recursive: true });
   mockHandle.mockReset();
@@ -81,6 +81,8 @@ function setup(options: {
     listBranches: async () => options.branches ?? [],
     recreateWorktree,
     ensureHarnessWrapperScript: () => null,
+    // Resolution of the harness binary is not under test; keep it independent of what the CI host has installed.
+    harnessSpawnOverrides: { platform: 'linux', fileExists: () => true },
   });
   const invoke = (value: HarnessSession, fork?: boolean, invokeOptions?: unknown) => handlers.get(SESSION_INVOKE)!({}, 'ws', value, fork, invokeOptions);
   const discover = () => handlers.get(SESSION_DISCOVER)!({}, 'ws') as Promise<HarnessSession[]>;
