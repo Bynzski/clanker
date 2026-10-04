@@ -56,7 +56,7 @@ Flags are passed through as entered.
 
 ### Agent attention and pane names
 
-Terminal panes get short Grateful Dead inspired names such as Samson, Delilah, Jerry, and Bobby. Names identify panes in the UI; they are independent of the harness and its session ID.
+Terminal panes get short Grateful Dead inspired names such as Samson, Delilah, Jerry, and Bobby, picked at random from a list of more than 80 and unique within a workspace (a numeric suffix appears only if a workspace uses every name). Recently assigned names are avoided so they spread across workspaces. Names identify panes in the UI; they are independent of the harness and its session ID.
 
 In **Settings → Harness Defaults**, expand a harness and enable **Agent attention** for future launches. Clanker then uses that harness's supported hooks to show running, needs input, or turn complete in the pane header. Background needs-input and completed turns also mark the workspace (its badge on the sidebar row or tab), each agent row in the sidebar shows its own state, and the collapsed sidebar rail shows a dot on each agent's harness icon and a badge on the workspace mark. The bell button (in the sidebar header or rail, or beside the tabs in Tabs mode) jumps to the next agent needing attention. A working agent shows a spinner, a question waiting for you shows yellow, and a finished turn shows green until you focus that agent; an idle agent shows nothing. Plain shells have no agent status.
 

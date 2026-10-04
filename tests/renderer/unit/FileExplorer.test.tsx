@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import FileExplorer from '../../../src/renderer/components/FileExplorer';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
+import { AGENT_NAMES } from '../../../src/renderer/lib/agentNames';
 import { installElectronApiMock } from '../../setup/electron';
 import type { FileExplorerEntry, FileListDirectoryRequest, FileListDirectoryResult } from '../../../src/shared/types/fileExplorer';
 import type { ExplorerTreeChangedEvent } from '../../../src/shared/types/fileExplorer';
@@ -487,8 +488,10 @@ describe('FileExplorer', () => {
         id: 'terminal-2',
         pid: 2024,
         workingDir: '/workspace/src',
-        displayName: 'Samson',
+        displayName: expect.any(String),
       }));
+      const opened = useWorkspaceStore.getState().terminals.find((terminal) => terminal.id === 'terminal-2');
+      expect(AGENT_NAMES).toContain(opened?.displayName);
     });
   });
 
