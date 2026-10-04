@@ -9,6 +9,8 @@ import * as path from 'path';
 import { GitService, type GitWorkspaceIdentity } from '../gitService';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { adoptListedWorktree, attachCreatedWorktree } from '../worktreeContextAttachment';
+import { reconcileCheckoutContexts } from '../checkoutContextReconcile';
+import type { ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
 import type { GitCreateWorktreeOptions, GitWorktreeCreateResult } from '../../shared/types/git';
 import { RemoteWorktreeCoordinator, type RemoteWorktreeRemovalPersistence } from '../remote/remoteWorktreeCoordinator';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
@@ -27,6 +29,7 @@ import {
   GIT_PRUNE_WORKTREES,
   GIT_UNLOCK_WORKTREE,
   ADOPT_WORKTREE_CHECKOUT_CONTEXT,
+  RECONCILE_CHECKOUT_CONTEXTS,
   REGISTER_OPEN_WORKSPACE,
   UNREGISTER_OPEN_WORKSPACE,
   GIT_GET_OPERATION_STATE,
@@ -67,6 +70,10 @@ interface RegisterGitIpcDeps {
   /** null means an active remote terminal's directory cannot be verified. */
   getLiveRemoteTerminalPaths?: (environmentId: string) => string[] | null;
   onWorkspaceUnregistered?: (workspaceId: string) => void;
+  /** Main's release check over its own terminal table; without it reconciliation only marks contexts. */
+  releaseCheckoutContext?: (workspaceId: string, checkoutContextId: string) => ReleaseCheckoutContextResult;
+  /** Told which of a workspace's contexts Git no longer has (marked missing or dropped) after a reconciliation. */
+  onCheckoutContextsGone?: (workspaceId: string, checkoutContextIds: string[]) => void;
   remoteWorktreeRemovalPersistence?: RemoteWorktreeRemovalPersistence;
 }
 function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
@@ -124,6 +131,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     [GIT_PRUNE_WORKTREES]: 1,
     [GIT_UNLOCK_WORKTREE]: 2,
     [ADOPT_WORKTREE_CHECKOUT_CONTEXT]: 0,
+    [RECONCILE_CHECKOUT_CONTEXTS]: 0,
     [GIT_PUSH]: 5,
   };
 
@@ -271,6 +279,24 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): void {
     return adoptListedWorktree({
       registry, workspace: ws, worktreePath, listWorktrees: () => gitService.listWorktrees(safePath),
     });
+  });
+
+  // Brings the workspace's worktree contexts in line with Git (see checkoutContextReconcile.ts). The
+  // renderer names only the workspace; the listing, the release check and every field come from main.
+  registerGitHandler(RECONCILE_CHECKOUT_CONTEXTS, async (_, workspaceId: unknown) => {
+    const ws = typeof workspaceId === 'string' ? resolveWorkspace(workspaceId) : null;
+    const registry = getWorkspaceRegistry?.();
+    if (!ws || !registry) return { success: false, error: 'A registered workspace is required' };
+    const safePath = getValidatedWorkspacePath(ws.location.path);
+    if (!safePath) return { success: false, error: getInvalidWorkspaceResult().error };
+    const result = await reconcileCheckoutContexts({
+      registry, workspace: ws, listWorktrees: () => gitService.listWorktrees(safePath),
+      release: (checkoutContextId) => deps.releaseCheckoutContext?.(ws.workspaceId, checkoutContextId)
+        ?? { success: false, error: 'Release is unavailable' },
+    });
+    const gone = [...(result.contexts ?? []).filter((context) => context.missing).map((context) => context.id), ...(result.dropped ?? [])];
+    if (result.success && gone.length > 0) deps.onCheckoutContextsGone?.(ws.workspaceId, gone);
+    return result;
   });
 
   registerGitHandler(GIT_CREATE_WORKTREE,async (_, workspacePath: string, baseRef: string, branch: string, _workspaceId?: string, options?: GitCreateWorktreeOptions) => {

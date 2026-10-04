@@ -113,3 +113,10 @@ it('enforces operation transports at the canonical invocation boundary', async (
   expect(() => buildSessionCommand(session, { operation: 'fork', transport: 'ssh' })).toThrow(expect.objectContaining({ kind: 'unsupported' }));
   expect(() => buildSessionCommand({ ...session, harness: 'hermes' }, { operation: 'resume', transport: 'local' })).toThrow(expect.objectContaining({ kind: 'unsupported' }));
 });
+
+it('declares hooks that run in the agent\'s own directory only where verified (Codex)', () => {
+  // Codex 0.160.0 cannot spawn any hook once its session directory is gone; Claude's hooks keep
+  // running there, and plugin/extension providers run in-process.
+  const declaring = getHarnessProviders().filter((provider) => provider.attention?.hooksRunInAgentDirectory === true).map((provider) => provider.descriptor.id);
+  expect(declaring).toEqual(['codex']);
+});

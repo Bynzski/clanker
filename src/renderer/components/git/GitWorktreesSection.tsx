@@ -10,6 +10,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { findManagedWorktreeContext, isCheckoutContextInUse, worktreeBranchLabel } from '../../lib/worktreeAgents';
 import { formatCheckoutRemovalFailure, removeWorktreeCheckout } from '../../lib/worktreeCheckoutRemoval';
 import { removeUnmanagedWorktree } from '../../lib/unmanagedWorktreeRemoval';
+import { requestCheckoutReconciliation } from '../../lib/checkoutReconciliation';
 import './GitWorktreesSection.css';
 
 interface Notice {
@@ -73,6 +74,8 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
       if (result.success) {
         setEntries(result.worktrees.filter((entry: GitWorktree) => !entry.isMain));
         setLoadError(null);
+        // The same listing may show a managed checkout changed or gone: let main reconcile its contexts.
+        void requestCheckoutReconciliation(workspaceId);
       } else {
         setEntries([]);
         setLoadError(result.error || 'Could not list worktrees');

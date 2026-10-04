@@ -4,26 +4,34 @@ import type { AttentionAdapterFiles } from '../types';
 import { localAttention } from '../localAttention';
 
 /** `agent_settled` (no retry, compaction, or queued continuation left) is the foreground
- * completion; never regress to the lower-level `agent_end`. */
+ * completion; never regress to the lower-level `agent_end`.
+ * Location: `ctx.cwd` is the session's directory. A command never moves it; replacing the session
+ * (resume, new, fork) does: Pi ends the old session (`session_shutdown`), then starts the new one with
+ * its own cwd (`session_start`, reported as `location_changed`). */
 export const SOURCE = `import { emit } from './observer.mjs';
 // Pi exposes no turn ID. The extension owns one epoch per foreground turn: agent_start opens it
 // and only the matching agent_settled can complete it, so a late settle can never close a newer turn.
 let epoch = 0;
 let open = false;
 const sessionId = (ctx) => ctx.sessionManager?.getSessionId?.();
+const cwd = (ctx) => typeof ctx.cwd === 'string' ? ctx.cwd : undefined;
 export default function (pi) {
   pi.on('agent_start', (_event, ctx) => {
     if (!open) { epoch += 1; open = true; }
-    return emit('turn_started', { scope: 'root', sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'agent_start' });
+    return emit('turn_started', { scope: 'root', sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'agent_start', cwd: cwd(ctx) });
   });
   pi.on('agent_settled', (_event, ctx) => {
     if (!open) return;
     open = false;
-    return emit('turn_completed', { scope: 'root', sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'agent_settled' });
+    return emit('turn_completed', { scope: 'root', sessionId: sessionId(ctx), turnId: String(epoch), nativeEvent: 'agent_settled', cwd: cwd(ctx) });
   });
   pi.on('session_shutdown', (_event, ctx) => {
     open = false;
     return emit('session_ended', { scope: 'root', sessionId: sessionId(ctx), nativeEvent: 'session_shutdown' });
+  });
+  pi.on('session_start', (_event, ctx) => {
+    if (!cwd(ctx)) return;
+    return emit('location_changed', { scope: 'root', sessionId: sessionId(ctx), nativeEvent: 'session_start', cwd: cwd(ctx) });
   });
 }
 `;

@@ -32,6 +32,7 @@ import type { GitWorktree } from '../shared/types/git';
 import './App.css';
 import { useThemeStore } from './theme/themeStore';
 import { useWorkspaceNavigationStore } from './store/workspaceNavigationStore';
+import { useCheckoutReconciliation } from './lib/checkoutReconciliation';
 
 const WorkspaceHost = lazy(() => import('./components/WorkspaceHost'));
 
@@ -47,6 +48,8 @@ function App() {
     fitAllPanes,
     updateWorkspaceBrowserUrl,
   } = useWorkspaceStore();
+  // Worktree checkouts follow Git: agents and shells can finish a worktree without Clanker.
+  useCheckoutReconciliation();
 
   // One-time migration: localStorage favorites → electron-store
   useEffect(() => {

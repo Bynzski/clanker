@@ -17,7 +17,10 @@ const LEGACY_COMMAND_PATTERN = /^node "([^"]*clanker-attention-[A-Za-z0-9]+[/\\]
  * other one is reported with its own ID, so the broker rejects it. Antigravity exposes no turn
  * ID, so the interpreter keeps an epoch in the bridge store: `PreInvocation` #0 opens epoch N
  * for the root conversation and only that epoch can be answered or settled. `Stop` settles only
- * when Antigravity reports it fully idle (no background command or async task remains). */
+ * when Antigravity reports it fully idle (no background command or async task remains).
+ * Location: hooks carry no cwd; every payload carries the conversation's `workspacePaths`, and a
+ * command's Cwd never persists. A single workspace root is the root conversation's location
+ * (reported on its turn start and settle); several roots are ambiguous and report nothing. */
 export const INTERPRETER = `const ASK_TOOLS = ['ask_question', 'ask_permission', 'notify_user'];
 export default function interpret(input, hook, store) {
   const sessionId = typeof input.conversationId === 'string' ? input.conversationId : undefined;
@@ -26,6 +29,8 @@ export default function interpret(input, hook, store) {
   const state = store.read();
   const root = !state.session || state.session === sessionId;
   const event = (type, fields) => ({ event: { type, scope: 'root', sessionId, nativeEvent: hook, ...fields } });
+  const paths = Array.isArray(input.workspacePaths) ? input.workspacePaths : [];
+  const cwd = root && paths.length === 1 && typeof paths[0] === 'string' && paths[0] ? paths[0] : undefined;
   const live = root && state.open === true ? String(state.epoch) : undefined;
   switch (hook) {
     case 'PreInvocation': {
@@ -33,14 +38,14 @@ export default function interpret(input, hook, store) {
       if (!root) return event('turn_started');
       const epoch = live ? state.epoch : (Number.isInteger(state.epoch) ? state.epoch : 0) + 1;
       store.write({ session: sessionId, epoch, open: true });
-      return event('turn_started', { turnId: String(epoch) });
+      return event('turn_started', { turnId: String(epoch), cwd });
     }
     case 'PreToolUse': return asks ? { ...(live ? event('input_requested', { turnId: live, inputId: toolName, requestKind: 'input' }) : {}), output: { decision: 'allow' } } : null;
     case 'PostToolUse': return asks && live ? event('input_resolved', { turnId: live, inputId: toolName }) : null;
     case 'Stop':
       if (input.fullyIdle !== true || !live) return null;
       store.write({ ...state, open: false });
-      return event('turn_completed', { turnId: live });
+      return event('turn_completed', { turnId: live, cwd });
     default: return null;
   }
 }

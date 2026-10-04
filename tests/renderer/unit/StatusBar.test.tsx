@@ -7,6 +7,8 @@ import StatusBar from '../../../src/renderer/components/StatusBar';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import { installElectronApiMock } from '../../setup/electron';
+import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
+import { EMPTY_ATTENTION, snapshot, storeState } from '../../_helpers/attentionSnapshots';
 
 // Platform-neutral path constant for test fixtures
 const TEST_PROJECT = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 'user', 'my-project');
@@ -14,6 +16,7 @@ const TEST_PROJECT = path.join(path.sep === '\\' ? 'C:\\Users\\user' : '/home', 
 describe('StatusBar', () => {
   beforeEach(() => {
     installElectronApiMock();
+    useAgentAttentionStore.setState(EMPTY_ATTENTION);
     useWorkspaceStore.setState({
       workspaces: [],
       activeWorkspaceId: null,
@@ -194,6 +197,25 @@ describe('StatusBar', () => {
 
       expect(branchText()).toBe('main');
       expect(pathTitle()).toBe(ROOT);
+    });
+
+    it('follows the selected agent\'s reported location back to the workspace checkout after it left its worktree', () => {
+      open('t-a');
+      render(<StatusBar />);
+      expect([branchText(), pathTitle()]).toEqual(['issue-90', A.path]);
+
+      act(() => useAgentAttentionStore.setState(storeState([snapshot('t-a', 'completed', 4, { location: { path: ROOT, checkoutContextId: main.id } })])));
+      expect([branchText(), pathTitle()]).toEqual(['main', ROOT]);
+
+      act(() => useAgentAttentionStore.setState(storeState([snapshot('t-a', 'running', 5, { location: { path: `${B.path}/lib`, checkoutContextId: B.id } })])));
+      expect([branchText(), pathTitle()]).toEqual(['feature/test-isolated', B.path]);
+    });
+
+    it('marks the selected agent\'s checkout as removed once Git no longer has it', () => {
+      open('t-a', { checkoutContexts: [main, { ...A, missing: true }, B] });
+      render(<StatusBar />);
+      expect(branchText()).toBe('issue-90 · removed');
+      expect(document.querySelector('.status-branch')?.getAttribute('title')).toContain('checkout removed');
     });
 
     it('ignores a terminal bound to a context the workspace does not have', () => {

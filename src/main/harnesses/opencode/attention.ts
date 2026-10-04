@@ -6,17 +6,25 @@ import { localAttention } from '../localAttention';
 /** The plugin proves each session's parentage from native metadata (or the trusted
  * resumed ID) before reporting it. Child sessions are reported as child scope, and a
  * session whose parentage cannot be established is never reported. Handlers are
- * serialized so metadata lookups cannot reorder lifecycle events. */
+ * serialized so metadata lookups cannot reorder lifecycle events.
+ * Location: a session's native info carries its `directory`; a verified root reports it on its turn
+ * events (the plugin's own instance directory when the info has none). Children never do. */
 export const SOURCE = `import { emit } from '../observer.mjs';
 const trusted = process.env.CLANKER_ATTENTION_SESSION_ID || null;
 const parentage = new Map();
 const MAX_SESSIONS = 256;
-export const ClankerAttention = async ({ client }) => {
+const directories = new Map();
+export const ClankerAttention = async ({ client, directory }) => {
   const remember = (info) => {
     if (!info || typeof info.id !== 'string') return;
     if (parentage.size >= MAX_SESSIONS) parentage.delete(parentage.keys().next().value);
     parentage.set(info.id, !info.parentID);
+    if (typeof info.directory === 'string' && info.directory) {
+      if (directories.size >= MAX_SESSIONS) directories.delete(directories.keys().next().value);
+      directories.set(info.id, info.directory);
+    }
   };
+  const located = (id) => directories.get(id) ?? (typeof directory === 'string' && directory ? directory : undefined);
   const isRoot = async (id) => {
     if (trusted && id === trusted) return true;
     if (!parentage.has(id)) {
@@ -52,12 +60,13 @@ export const ClankerAttention = async ({ client }) => {
     if (!root) return emit(kind, fields);
     const turn = turns.get(sessionId) ?? { epoch: 0, open: false };
     turns.set(sessionId, turn);
-    if (kind === 'session_ended') { turns.delete(sessionId); return emit(kind, fields); }
+    if (kind === 'session_ended') { turns.delete(sessionId); directories.delete(sessionId); return emit(kind, fields); }
     if (kind === 'turn_started') {
       if (!turn.open) { turn.epoch += 1; turn.open = true; }
     } else if (!turn.open) return;
     if (kind === 'turn_completed') turn.open = false;
-    await emit(kind, { ...fields, turnId: String(turn.epoch), inputId: typeof inputId === 'string' ? inputId : undefined, requestKind });
+    const cwd = kind === 'turn_started' || kind === 'turn_completed' ? located(sessionId) : undefined;
+    await emit(kind, { ...fields, turnId: String(turn.epoch), inputId: typeof inputId === 'string' ? inputId : undefined, requestKind, cwd });
   };
   let queue = Promise.resolve();
   return { event: ({ event }) => (queue = queue.then(() => handle(event)).catch(() => undefined)) };

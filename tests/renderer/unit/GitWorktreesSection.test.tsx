@@ -127,6 +127,19 @@ describe('GitWorktreesSection', () => {
     });
   });
 
+  describe('keeping managed checkouts in line with Git', () => {
+    it('asks main to reconcile the workspace\'s checkouts each time the list loads, and applies the answer', async () => {
+      api.reconcileCheckoutContexts.mockResolvedValue({ success: true, contexts: [BUSY_CTX], dropped: [MANAGED_CTX.id] });
+      const { rerender } = show({ refreshKey: 0 });
+      await rowOf('old-task');
+      await waitFor(() => expect(api.reconcileCheckoutContexts).toHaveBeenCalledWith('ws'));
+      await waitFor(() => expect(workspace().checkoutContexts?.map((entry) => entry.id)).toEqual([mainCheckoutContextId('ws'), BUSY_CTX.id]));
+
+      rerender(<GitWorktreesSection workspacePath={ROOT} workspaceId="ws" refreshKey={1} />);
+      await waitFor(() => expect(api.reconcileCheckoutContexts).toHaveBeenCalledTimes(2));
+    });
+  });
+
   describe('managed or unmanaged', () => {
     it('tags a checkout with no attached context as unmanaged', async () => {
       show();

@@ -185,6 +185,8 @@
 .ws-agent-branch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A long branch truncates its text, never the glyph. */
 .ws-agent-branch svg { flex-shrink: 0; }
+/* Git no longer has this checkout: the agent's harness is still in a directory that is gone. */
+.ws-agent-branch.missing { color: var(--text-muted); }
 
 /* Inactive isolated checkouts: subdued rows under the agents, not agents themselves. */
 .ws-checkout-list,

@@ -1,4 +1,5 @@
 import type { CheckoutContext } from '../../shared/types/checkoutContext';
+import type { AgentLocation } from '../../shared/types/agentAttention';
 import { mainCheckoutContextId } from '../../shared/checkoutContext';
 import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 import { isSameWorkspaceIdentity } from '../../shared/workspaceIdentity';
@@ -17,19 +18,29 @@ export function isIsolatedWorktreeContext(
   return Boolean(context && context.kind === 'worktree' && context.id !== mainCheckoutContextId(workspace.id));
 }
 
-/** The isolated worktree an agent runs in, or null for an agent on the workspace's own checkout. */
+/**
+ * The isolated worktree an agent is working in, or null for an agent on the workspace's own
+ * checkout or outside every registered one. Once the agent's harness has reported a location, that
+ * decides (main resolved it to a context); until then, the context the terminal was launched into.
+ * Presentation only: the terminal's launch binding is never changed by where it is shown.
+ */
 export function getAgentWorktreeContext(
   workspace: Pick<WorkspaceTab, 'id' | 'checkoutContexts'>,
   terminal: Pick<Terminal, 'checkoutContextId'>,
+  location?: AgentLocation | null,
 ): CheckoutContext | null {
-  const context = getCheckoutContext(workspace, terminal.checkoutContextId);
+  const contextId = location ? location.checkoutContextId ?? undefined : terminal.checkoutContextId;
+  const context = getCheckoutContext(workspace, contextId);
   return isIsolatedWorktreeContext(workspace, context) ? context : null;
 }
 
-/** Isolated worktree contexts no terminal of the workspace references: inactive, removable checkouts. */
+/** Isolated worktree contexts no terminal of the workspace was launched into: inactive, removable
+ * checkouts. Judged by launch binding, never by reported location. A missing checkout is not one:
+ * there is nothing on disk to remove, and main drops it on its next reconciliation. */
 export function getUnusedWorktreeContexts(workspace: Pick<WorkspaceTab, 'id' | 'checkoutContexts' | 'terminals'>): CheckoutContext[] {
   const used = new Set(workspace.terminals.map((terminal) => terminal.checkoutContextId));
-  return (workspace.checkoutContexts ?? []).filter((context) => isIsolatedWorktreeContext(workspace, context) && !used.has(context.id));
+  return (workspace.checkoutContexts ?? []).filter((context) =>
+    isIsolatedWorktreeContext(workspace, context) && !context.missing && !used.has(context.id));
 }
 
 /** Short label for a worktree checkout: its branch, or HEAD when detached/unknown. */
@@ -37,16 +48,22 @@ export function worktreeBranchLabel(context: Pick<CheckoutContext, 'branch'>): s
   return context.branch || 'HEAD';
 }
 
+/** The branch as shown for an agent's checkout: marked when Git no longer has the checkout. */
+export function worktreeDisplayLabel(context: Pick<CheckoutContext, 'branch' | 'missing'>): string {
+  return context.missing ? `${worktreeBranchLabel(context)} · removed` : worktreeBranchLabel(context);
+}
+
 /**
- * The isolated worktree the workspace's selected agent runs in, or null when the selected agent (or
- * none) is on the workspace's own checkout. Presentation only: it reads the registered
- * terminal -> context mapping and never inspects the process, its directory, or the repository.
+ * The isolated worktree the workspace's selected agent is working in (see `getAgentWorktreeContext`),
+ * or null when the selected agent (or none) is on the workspace's own checkout. Presentation only:
+ * it reads registered contexts and the agent's reported location, never the process or repository.
  */
 export function getSelectedAgentWorktreeContext(
   workspace: Pick<WorkspaceTab, 'id' | 'checkoutContexts' | 'terminals' | 'activeTerminalId'>,
+  selectedLocation?: AgentLocation | null,
 ): CheckoutContext | null {
   const terminal = workspace.terminals.find((entry) => entry.id === workspace.activeTerminalId);
-  return terminal ? getAgentWorktreeContext(workspace, terminal) : null;
+  return terminal ? getAgentWorktreeContext(workspace, terminal, selectedLocation) : null;
 }
 
 /**

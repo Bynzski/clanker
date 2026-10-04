@@ -126,7 +126,7 @@ export interface HarnessLocalAttention {
 export interface AttentionInterpretation {
   event?: {
     type: 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'turn_interrupted' | 'turn_failed'
-      | 'session_ended' | 'session_continued';
+      | 'session_ended' | 'session_continued' | 'location_changed';
     /** Provider-proven subject. Anything not explicitly 'root' fails closed in the broker. */
     scope?: 'root' | 'child';
     sessionId?: string;
@@ -138,6 +138,8 @@ export interface AttentionInterpretation {
     continuesSessionId?: string;
     /** Native event class, for diagnostics only. */
     nativeEvent?: string;
+    /** The root agent's working directory, as the provider reports it (see "Agent location"). */
+    cwd?: string;
   };
   /** Hook stdout; hosts may require a decision payload. Defaults to `{}`. */
   output?: Record<string, unknown>;
@@ -154,6 +156,10 @@ export interface HarnessAttentionCapability {
   readonly authority?: 'full' | 'partial';
   /** `native`: in-process plugin/extension events; `hook`: provider hook commands. Absent means `hook`. */
   readonly source?: 'native' | 'hook';
+  /** The provider spawns its hook commands in the agent's own working directory, so once that
+   * directory is gone no lifecycle event can arrive (Codex: verified). Its agents reported inside a
+   * checkout Git no longer has are then taken off Running rather than left there forever. */
+  readonly hooksRunInAgentDirectory?: boolean;
   readonly prepareResources?: (files: AttentionAdapterFiles, observer: string) => void;
   readonly disposeResources?: () => void;
   readonly local?: HarnessLocalAttention;

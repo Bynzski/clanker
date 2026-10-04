@@ -318,3 +318,113 @@ describe('AgentAttentionBroker diagnostics', () => {
     expect(Object.keys(diagnostics[0])).not.toContain('token');
   });
 });
+
+describe('AgentAttentionBroker agent location', () => {
+  const location = (broker: AgentAttentionBroker) => broker.snapshot('term-a')?.location ?? null;
+
+  it('starts without a location and records the root agent\'s reported directory with the lifecycle change it came with', () => {
+    const { broker, send, labels } = setup();
+    expect(location(broker)).toBeNull();
+    expect(send('turn_started', { sessionId: 'root', turnId: 't1', cwd: '/srv/repo-worktrees/wt-1' })).toBe('accepted');
+    expect(location(broker)).toEqual({ path: '/srv/repo-worktrees/wt-1', checkoutContextId: null });
+    // One authoritative change carried both facts.
+    expect(labels).toEqual(['turn_started']);
+  });
+
+  it('follows a move as its own revision and does not advance the revision for an unchanged report', () => {
+    const { broker, send, recorder } = setup();
+    send('turn_started', { sessionId: 'root', turnId: 't1', cwd: '/srv/repo-worktrees/wt-1' });
+    const before = recorder.revisions().length;
+    expect(send('location_changed', { sessionId: 'root', cwd: '/srv/repo' })).toBe('accepted');
+    expect(location(broker)).toEqual({ path: '/srv/repo', checkoutContextId: null });
+    expect(broker.handoffState('term-a')).toBe('running');
+    expect(recorder.revisions().length).toBe(before + 1);
+    send('location_changed', { sessionId: 'root', cwd: '/srv/repo/' });
+    send('turn_completed', { sessionId: 'root', turnId: 't1', cwd: '/srv/repo' });
+    expect(recorder.revisions().length).toBe(before + 2);
+    expect(location(broker)).toEqual({ path: '/srv/repo', checkoutContextId: null });
+  });
+
+  it('records a location even when the event cannot change foreground state', () => {
+    const { broker, send } = setup();
+    send('turn_started', { sessionId: 'root', turnId: 't1', cwd: '/srv/a' });
+    send('turn_completed', { sessionId: 'root', turnId: 't1', cwd: '/srv/a' });
+    expect(send('turn_completed', { sessionId: 'root', turnId: 't1', cwd: '/srv/b' })).toBe('ignored-stale');
+    expect(location(broker)).toEqual({ path: '/srv/b', checkoutContextId: null });
+  });
+
+  it('never takes a location from a child, another session, or an event without a session', () => {
+    const { broker, send, updates } = setup({ rootSessionId: 'root' });
+    expect(send('location_changed', { sessionId: 'root', scope: 'child', cwd: '/srv/child' })).toBe('ignored-child');
+    expect(send('location_changed', { sessionId: 'other', cwd: '/srv/other' })).toBe('rejected-mismatch');
+    expect(send('location_changed', { cwd: '/srv/none' })).toBe('rejected-ambiguous');
+    expect(send('location_changed', { sessionId: 'root' })).toBe('rejected-ambiguous');
+    expect(location(broker)).toBeNull();
+    expect(updates).toEqual([]);
+  });
+
+  it('rejects an event whose location is not an absolute directory', () => {
+    const { broker, send, updates } = setup();
+    for (const cwd of ['relative', '', 5, '/a\nb']) send('turn_started', { sessionId: 'root', turnId: 't1', cwd });
+    expect(updates).toEqual([]);
+    expect(location(broker)).toBeNull();
+  });
+
+  it('publishes the checkout context main resolves for the reporting terminal, and rejects what it cannot resolve', () => {
+    const calls: unknown[][] = [];
+    const broker = new AgentAttentionBroker(() => undefined, () => undefined, Date.now, {
+      resolveLocation: (terminalId, transport, cwd) => {
+        calls.push([terminalId, transport, cwd]);
+        return cwd === '/srv/repo' ? { path: '/srv/repo', checkoutContextId: 'ws::main' } : null;
+      },
+    });
+    brokers.push(broker);
+    const token = broker.registerRemote('term-a', 'claude');
+    const send = (cwd: string) => broker.receiveRemote('term-a', JSON.stringify({ version: 1, token, harness: 'claude', event: 'turn_started', scope: 'root', sessionId: 'root', turnId: 't1', cwd }));
+    send('/elsewhere');
+    expect(broker.snapshot('term-a')?.runtime.status).toBe('unverified');
+    send('/srv/repo');
+    expect(broker.snapshot('term-a')?.location).toEqual({ path: '/srv/repo', checkoutContextId: 'ws::main' });
+    expect(calls).toEqual([['term-a', 'remote', '/elsewhere'], ['term-a', 'remote', '/srv/repo']]);
+  });
+
+  it('keeps the location across a native session boundary and drops it with the agent on exit', () => {
+    const { broker, send } = setup();
+    send('turn_started', { sessionId: 'root', turnId: 't1', cwd: '/srv/repo' });
+    send('session_ended', { sessionId: 'root', cwd: '/srv/repo' });
+    expect(location(broker)).toEqual({ path: '/srv/repo', checkoutContextId: null });
+    expect(send('location_changed', { sessionId: 'next', cwd: '/srv/repo/sub' })).toBe('accepted');
+    expect(location(broker)).toEqual({ path: '/srv/repo/sub', checkoutContextId: null });
+    send('agent_exited');
+    expect(broker.snapshot('term-a')).toBeNull();
+  });
+});
+
+describe('AgentAttentionBroker lost lifecycle source', () => {
+  it('gives up the open turn and its waits when the provider can no longer deliver, and recovers on the next real turn', () => {
+    const { broker, send, recorder } = setup();
+    send('turn_started', { sessionId: 'root', turnId: 't1', cwd: '/srv/wt' });
+    send('input_requested', { sessionId: 'root', turnId: 't1', inputId: 'w1' });
+    const revisions = recorder.revisions().length;
+
+    expect(broker.markLifecycleLost('term-a')).toBe(true);
+    expect(broker.snapshot('term-a')).toMatchObject({ runtime: { status: 'unverified', turnId: null }, pendingRequest: null, location: { path: '/srv/wt' } });
+    expect(recorder.revisions().length).toBe(revisions + 1);
+    // The abandoned turn can never settle anything later.
+    expect(send('turn_completed', { sessionId: 'root', turnId: 't1' })).toBe('ignored-stale');
+    // Once hooks run again (for example after the agent moved somewhere that exists), a new turn works.
+    expect(send('turn_started', { sessionId: 'root', turnId: 't2', cwd: '/srv/main' })).toBe('accepted');
+    expect(broker.handoffState('term-a')).toBe('running');
+  });
+
+  it('changes nothing for an agent with no open turn or wait, or an unknown terminal', () => {
+    const { broker, send, recorder } = setup();
+    send('turn_started', { sessionId: 'root', turnId: 't1' });
+    send('turn_completed', { sessionId: 'root', turnId: 't1' });
+    const revisions = recorder.revisions().length;
+    expect(broker.markLifecycleLost('term-a')).toBe(false);
+    expect(broker.markLifecycleLost('nobody')).toBe(false);
+    expect(recorder.revisions().length).toBe(revisions);
+    expect(broker.handoffState('term-a')).toBe('ready');
+  });
+});

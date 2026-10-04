@@ -203,4 +203,15 @@ describe('attention bridge state transactions', () => {
     expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
     expect(updates).toEqual(['turn_started', 'turn_completed']);
   });
+
+  it('does not poison the transaction when only a location report fails to deliver', async () => {
+    // A location carries no bridge state, so losing one must never hold back a later resolution.
+    const observer = OBSERVER.replace('export async function emit(event, fields) {',
+      `export async function emit(event, fields) {\n  if (event === 'location_changed') return false;`);
+    const { run, stateBase } = await bridge({
+      'move.mjs': `export default (input, hook, store) => { store.read(); return { event: { type: 'location_changed', scope: 'root', sessionId: 's', cwd: '/srv/repo' } }; };\n`,
+    }, observer);
+    await run('move.mjs', 'CwdChanged', {});
+    expect(fs.existsSync(`${stateBase}.poison`)).toBe(false);
+  });
 });

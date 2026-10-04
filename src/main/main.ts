@@ -75,6 +75,9 @@ import { KeybindingOverridesService } from './keybindingOverrides';
 import { purgeLegacyTaskSessions, seedHarnessAttention, seedWorkspaceNavigationMode } from './storeMigrations';
 import { existsSync } from 'node:fs';
 import { AgentAttentionBroker } from './agentAttentionBroker';
+import { createAgentLocationResolver, strandedAgentTerminals } from './agentLocation';
+import { findHarnessProvider } from './harnesses/registry';
+import { releaseCheckoutContext } from './checkoutContextRelease';
 import { AGENT_ATTENTION_CHANGED, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles, scavengeStaleAttentionRoots, migrateLegacyAgyAttentionPlugin } from './agentAttentionAdapters';
 import { waitForTerminalCleanup } from './ipc/ptySpawn';
@@ -121,10 +124,17 @@ const activeBrowserTabIdsByWorkspace: Map<string, string> = new Map();
 const lastBrowserBoundsByWorkspace: Map<string, Rectangle> = new Map();
 let activeBrowserWorkspaceId: string | null = null;
 let mainWindow: BrowserWindow | null = null;
+// Reported agent locations resolve against the checkout contexts main registered for the
+// reporting terminal's workspace. Read lazily: events only arrive after both exist.
 const agentAttentionBroker = new AgentAttentionBroker((change) => {
   if (isWindowAvailable(mainWindow)) {
     mainWindow.webContents.send(AGENT_ATTENTION_CHANGED, change);
   }
+}, undefined, undefined, {
+  resolveLocation: createAgentLocationResolver({
+    getTerminal: (terminalId) => terminals.get(terminalId),
+    getCheckoutContexts: (workspaceId) => workspaceRegistry.getCheckoutContextsForWorkspace(workspaceId),
+  }),
 });
 let annotationModeEnabled = false;
 let annotationController: ReturnType<typeof import('./annotation/annotationIpc').registerAnnotationIpc> | null = null;
@@ -401,6 +411,16 @@ app.whenReady().then(() => {
     getGitService: () => gitService,
     getMainWindow: () => mainWindow,
     getWorkspaceRegistry: () => workspaceRegistry,
+    releaseCheckoutContext: (workspaceId, checkoutContextId) =>
+      releaseCheckoutContext({ registry: workspaceRegistry, terminals: terminals.values(), workspaceId, checkoutContextId }),
+    // An agent whose harness runs hooks in its own (now removed) directory can never settle its turn.
+    onCheckoutContextsGone: (_workspaceId, goneContextIds) => {
+      for (const terminalId of strandedAgentTerminals({
+        terminals, goneContextIds,
+        locationOf: (id) => agentAttentionBroker.snapshot(id)?.location ?? null,
+        hooksRunInAgentDirectory: (harness) => findHarnessProvider(harness)?.attention?.hooksRunInAgentDirectory === true,
+      })) agentAttentionBroker.markLifecycleLost(terminalId);
+    },
     onWorkspaceUnregistered: (id) => { browserIpcController?.disposeWorkspace(id); remoteFileWatcher.closeWorkspace(id); void remotePreviewManager.closeWorkspace(id); },
     getLiveRemoteTerminalPaths: (environmentId) => {
       const paths: string[] = [];

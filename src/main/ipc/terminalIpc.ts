@@ -372,6 +372,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       initialCommand: recipeCommandStartup && cleanInitialCommand
         ? recipeCommandStartup.wrap(cleanInitialCommand, process.platform, userShell) : cleanInitialCommand,
       recipeCommandStartup,
+      // Recorded like the SSH path does: the resolved workspace is what an agent's reported
+      // location is resolved against (see agentLocation.ts).
+      workspaceId: resolvedWorkspace?.workspaceId,
       checkoutContextId: checkoutContext?.id,
       onExit: () => {
         disposeAttentionSafely(preparedAttention);

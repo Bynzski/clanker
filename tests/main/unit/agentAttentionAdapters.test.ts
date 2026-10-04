@@ -35,7 +35,7 @@ describe('agent attention launch adapters', () => {
       .toEqual(['--model', 'x', '--settings', path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'claude-settings.json')]);
     expect(attentionLaunchOptions('claude', ['--settings', 'custom.json'], {}, files)).toBeNull();
     const settings = JSON.parse(fs.readFileSync(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'claude-settings.json'), 'utf8')) as { hooks: Record<string, unknown> };
-    expect(Object.keys(settings.hooks)).toEqual(['UserPromptSubmit', 'PermissionRequest', 'PostToolBatch', 'Stop', 'StopFailure', 'SessionEnd']);
+    expect(Object.keys(settings.hooks)).toEqual(['UserPromptSubmit', 'PermissionRequest', 'PostToolBatch', 'Stop', 'StopFailure', 'SessionEnd', 'CwdChanged']);
     expect(JSON.stringify(settings)).toContain(JSON.stringify(path.join(ensureProviderAttentionResources('claude', files).resourceRoot!, 'interpreter.mjs')).slice(1, -1));
   });
 

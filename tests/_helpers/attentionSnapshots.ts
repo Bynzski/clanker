@@ -7,7 +7,7 @@ export function snapshot(terminalId: string, kind: SnapshotKind, revision = 1, o
   const base: AgentAttentionSnapshot = {
     terminalId, revision, sessionId: 'S',
     runtime: { status: 'unverified', turnId: null, startedAt: null },
-    pendingRequest: null, lastCompletion: null, lastOutcome: null,
+    pendingRequest: null, lastCompletion: null, lastOutcome: null, location: null,
   };
   switch (kind) {
     case 'unverified': return { ...base, sessionId: null, ...overrides };

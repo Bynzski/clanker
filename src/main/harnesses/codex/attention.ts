@@ -23,7 +23,11 @@ export const CODEX_HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PermissionR
  *   remains, so an unrelated tool finishing cannot clear a real wait. A call the user denies runs
  *   no PostToolUse, so its wait lasts until Stop or Interrupt. More than 16 live waits put the
  *   state in overflow: nothing resolves until the turn ends (live waits are never dropped).
- *   The bridge serializes each read/interpret/write transaction per terminal. */
+ *   The bridge serializes each read/interpret/write transaction per terminal.
+ * - Location: every hook carries `cwd`, the session's working directory. A command never moves it
+ *   (each runs one-shot in that directory); `/cd` and worktree switches do, and only while idle, so
+ *   the root's turn boundaries (UserPromptSubmit, Stop, Interrupt, SessionEnd) carry it and the next
+ *   prompt reports a move. Tool hooks and subagents never carry it. */
 export const INTERPRETER = `import { createHash } from 'node:crypto';
 const text = (value) => typeof value === 'string' && value ? value : undefined;
 const canonical = (value) => value === null || typeof value !== 'object' ? JSON.stringify(value)
@@ -41,6 +45,7 @@ export default function interpret(input, hook, store) {
   const turnId = text(input.turn_id);
   const scope = hook === 'SubagentStop' || input.agent_id ? 'child' : 'root';
   const event = (type, fields) => ({ event: { type, scope, sessionId, nativeEvent: hook, ...fields } });
+  const cwd = scope === 'root' ? text(input.cwd) : undefined;
   if (scope === 'child') {
     // Child activity is reported only so the broker can record why it was ignored; it never touches state.
     const mapped = { SubagentStop: 'turn_completed', PermissionRequest: 'input_requested', PostToolUse: 'input_resolved' }[hook];
@@ -54,7 +59,7 @@ export default function interpret(input, hook, store) {
   switch (hook) {
     case 'UserPromptSubmit':
       save();
-      return event('turn_started', { turnId });
+      return event('turn_started', { turnId, cwd });
     case 'PreToolUse':
       if (!current || !text(input.tool_use_id)) return null;
       state.calls = keep([...state.calls, { id: input.tool_use_id, fp: fingerprint(input) }], 32);
@@ -85,13 +90,13 @@ export default function interpret(input, hook, store) {
     }
     case 'Stop':
       if (current) reset();
-      return event('turn_completed', { turnId });
+      return event('turn_completed', { turnId, cwd });
     case 'Interrupt':
       if (current) reset();
-      return event('turn_interrupted', { turnId });
+      return event('turn_interrupted', { turnId, cwd });
     case 'SessionEnd':
       reset();
-      return event('session_ended');
+      return event('session_ended', { cwd });
     default: return null;
   }
 }

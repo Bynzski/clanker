@@ -17,7 +17,7 @@ import type {
   WorkspaceTab,
 } from './workspaceTypes';
 import type { GitStatus } from '../components/git/types';
-import type { CheckoutContext } from '../../shared/types/checkoutContext';
+import type { CheckoutContext, ReconcileCheckoutContextsResult } from '../../shared/types/checkoutContext';
 import type { FileExplorerEntry } from '../../shared/types/fileExplorer';
 
 /**
@@ -113,6 +113,8 @@ export interface WorkspaceState {
    * untouched. Returns false (changing nothing) otherwise.
    */
   removeCheckoutContext: (workspaceId: string, checkoutContextId: string) => boolean;
+  /** Applies main's reconciliation with Git: branch/missing refreshed, dropped contexts forgotten. */
+  applyCheckoutContextReconciliation: (workspaceId: string, result: ReconcileCheckoutContextsResult) => void;
   getWorkspaceById: (id: string | null) => WorkspaceTab | null;
   getActiveWorkspace: () => WorkspaceTab | null;
   isWorkspaceActive: (id: string) => boolean;

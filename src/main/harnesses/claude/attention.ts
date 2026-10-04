@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import type { AttentionAdapterFiles } from '../types';
 import { localAttention, hookNodeExecutable, interpreterPath } from '../localAttention';
 
-export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PermissionRequest', 'PostToolBatch', 'Stop', 'StopFailure', 'SessionEnd'] as const;
+export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PermissionRequest', 'PostToolBatch', 'Stop', 'StopFailure', 'SessionEnd', 'CwdChanged'] as const;
 
 /** Provider-owned meaning of Claude hooks (fields per the Claude Code hooks reference):
  * - root identity `session_id`; turn identity `prompt_id` (Claude Code >= 2.1.196); child scope:
@@ -22,25 +22,36 @@ export const CLAUDE_HOOK_EVENTS = ['UserPromptSubmit', 'PermissionRequest', 'Pos
  *   handed control back to the user, so `background_tasks`/`session_crons` are deliberately not
  *   consulted: a long-lived dev server or cron would otherwise keep the turn Running forever. Claude has no user-interrupt hook, so an interrupted turn stays
  *   Running until the next prompt.
- * `Notification` is unused: no turn or request identity. */
+ * `Notification` is unused: no turn or request identity.
+ * - Location: every hook carries `cwd`, Claude's tracked working directory, which a Bash `cd` moves
+ *   while the process itself never changes directory (an agent can leave, and even remove, the
+ *   worktree it was launched in). `CwdChanged` (`old_cwd`/`new_cwd`) reports each move as
+ *   `location_changed`; the turn boundaries (`UserPromptSubmit`, `Stop`, `StopFailure`, `SessionEnd`)
+ *   carry `cwd` too, so a reordered move is corrected at the latest when the turn ends. Mid-turn tool
+ *   hooks never carry it, and a subagent (`agent_id`) never moves the root agent's location. */
 export const INTERPRETER = `const text = (value) => typeof value === 'string' && value ? value : undefined;
 export default function interpret(input, hook, store) {
   const sessionId = text(input.session_id);
   const turnId = text(input.prompt_id);
   const scope = input.agent_id ? 'child' : 'root';
   const event = (type, fields) => ({ event: { type, scope, sessionId, nativeEvent: hook, ...fields } });
+  const cwd = scope === 'root' ? text(input.cwd) : undefined;
   if (scope === 'child') {
     // Child activity is reported only so the broker can record why it was ignored; it never touches state.
     const mapped = { PermissionRequest: 'input_requested', PostToolBatch: 'input_resolved', StopFailure: 'turn_failed' }[hook];
     return mapped ? event(mapped, { turnId, inputId: 'permission' }) : null;
   }
+  if (hook === 'CwdChanged') {
+    const moved = text(input.new_cwd) ?? cwd;
+    return moved ? event('location_changed', { cwd: moved }) : null;
+  }
   const state = store.read();
   const current = turnId !== undefined && state.turn === turnId;
-  const settle = (type) => { store.write({ turn: turnId, pending: false }); return event(type, { turnId }); };
+  const settle = (type) => { store.write({ turn: turnId, pending: false }); return event(type, { turnId, cwd }); };
   switch (hook) {
     case 'UserPromptSubmit':
       store.write({ turn: turnId, pending: false });
-      return event('turn_started', { turnId });
+      return event('turn_started', { turnId, cwd });
     case 'PermissionRequest':
       if (!current) return event('input_requested', { turnId, inputId: 'permission', requestKind: 'approval' });
       if (state.pending) return null;
@@ -56,7 +67,7 @@ export default function interpret(input, hook, store) {
       return settle('turn_failed');
     case 'SessionEnd':
       store.write({});
-      return event('session_ended');
+      return event('session_ended', { cwd });
     default: return null;
   }
 }

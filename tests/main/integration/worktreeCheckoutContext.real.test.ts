@@ -46,8 +46,10 @@ import { toPosixPath } from '../../../src/shared/pathNormalize';
 import {
   REGISTER_OPEN_WORKSPACE, SPAWN_TERMINAL, GIT_CREATE_WORKTREE, GIT_LIST_WORKTREES,
   RELEASE_CHECKOUT_CONTEXT, GIT_INSPECT_WORKTREE, GIT_REMOVE_WORKTREE, KILL_TERMINAL, ADOPT_WORKTREE_CHECKOUT_CONTEXT,
+  RECONCILE_CHECKOUT_CONTEXTS,
 } from '../../../src/shared/ipcChannels';
-import type { CheckoutContext, ReleaseCheckoutContextResult } from '../../../src/shared/types/checkoutContext';
+import type { CheckoutContext, ReconcileCheckoutContextsResult, ReleaseCheckoutContextResult } from '../../../src/shared/types/checkoutContext';
+import { releaseCheckoutContext } from '../../../src/main/checkoutContextRelease';
 import type { GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult, GitWorktreeRemoveResult } from '../../../src/shared/types/git';
 
 const execFileAsync = promisify(execFile);
@@ -58,6 +60,7 @@ let repo: string;
 let service: GitService;
 let registry: WorkspaceRegistry;
 const terminals = new Map();
+const onCheckoutContextsGone = vi.fn();
 
 async function git(...args: string[]) {
   return execFileAsync('git', args, { cwd: repo });
@@ -90,7 +93,12 @@ beforeEach(() => {
     () => [...terminals.values()].map((terminal) => terminal.cwd as string | undefined).filter((cwd): cwd is string => typeof cwd === 'string'),
     () => registry.getLocalOpenWorkspacePaths(),
   );
-  registerGitIpc({ getGitService: () => service, getMainWindow: () => null, getWorkspaceRegistry: () => registry });
+  registerGitIpc({
+    getGitService: () => service, getMainWindow: () => null, getWorkspaceRegistry: () => registry,
+    // Exactly as main.ts wires it: the release check over main's own terminal table.
+    releaseCheckoutContext: (workspaceId, checkoutContextId) => releaseCheckoutContext({ registry, terminals: terminals.values(), workspaceId, checkoutContextId }),
+    onCheckoutContextsGone,
+  });
   registerTerminalIpc({
     getTerminals: () => terminals,
     getMainWindow: () => null,
@@ -526,5 +534,50 @@ describe('explicit adoption of an existing linked worktree (local, real Git)', (
     expect(result.success).toBe(false);
     expect(registry.getCheckoutContextsForWorkspace('foreign')).toHaveLength(1);
     expect(registry.getCheckoutContextsForWorkspace('ws')).toHaveLength(1);
+  });
+});
+
+describe('reconciling worktree contexts with Git after an agent finishes a worktree itself (local, real Git)', () => {
+  const reconcile = (workspaceId: unknown) => call<ReconcileCheckoutContextsResult>(RECONCILE_CHECKOUT_CONTEXTS, workspaceId);
+
+  it('marks the checkout an agent merged and removed while the agent is open, and drops it once the agent is closed', async () => {
+    await openWorkspace();
+    const { checkoutContext } = await create('ws', 'agent-finishes-this');
+    const agent = await spawn(checkoutContext!.path, 'ws', checkoutContext!.id);
+
+    // The agent, on its own: back to the main checkout, remove the worktree, delete the branch.
+    await git('worktree', 'remove', checkoutContext!.path);
+    await git('branch', '-D', 'agent-finishes-this');
+
+    onCheckoutContextsGone.mockClear();
+    const marked = await reconcile('ws');
+    expect(onCheckoutContextsGone).toHaveBeenCalledWith('ws', [checkoutContext!.id]);
+    expect(marked.success).toBe(true);
+    expect(marked.dropped).toEqual([]);
+    expect(marked.contexts).toEqual([expect.objectContaining({ id: checkoutContext!.id, missing: true })]);
+    // The agent's launch binding is untouched.
+    expect(terminals.get(agent.id)).toMatchObject({ checkoutContextId: checkoutContext!.id });
+
+    await call(KILL_TERMINAL, agent.id);
+    const dropped = await reconcile('ws');
+    expect(dropped).toEqual({ success: true, contexts: [], dropped: [checkoutContext!.id] });
+    expect(registry.getCheckoutContext(checkoutContext!.id)).toBeNull();
+    expect(registry.getCheckoutContext(mainCheckoutContextId('ws'))).not.toBeNull();
+  });
+
+  it('follows a branch switch inside a checkout that is still there', async () => {
+    await openWorkspace();
+    const { checkoutContext } = await create('ws', 'switch-inside');
+    await execFileAsync('git', ['switch', '-c', 'switched-by-agent'], { cwd: checkoutContext!.path });
+
+    const result = await reconcile('ws');
+    expect(result.contexts).toEqual([expect.objectContaining({ id: checkoutContext!.id, branch: 'switched-by-agent', missing: false })]);
+  });
+
+  it('refuses an unknown workspace', async () => {
+    await openWorkspace();
+    // Like every workspace-scoped Git channel, an unknown or malformed identity is refused outright.
+    await expect(reconcile('nope')).rejects.toThrow('no longer registered');
+    await expect(reconcile(42)).rejects.toThrow('Invalid workspace identity');
   });
 });
