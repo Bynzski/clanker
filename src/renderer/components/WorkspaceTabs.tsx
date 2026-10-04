@@ -28,10 +28,6 @@ export default function WorkspaceTabs({ onOpenWorkspace }: WorkspaceTabsProps) {
   });
   const { dropTarget, suppressClickRef } = reorder;
 
-  if (workspaces.length === 0) {
-    return null;
-  }
-
   const handleClose = async (id: string, event: MouseEvent) => {
     event.stopPropagation();
 

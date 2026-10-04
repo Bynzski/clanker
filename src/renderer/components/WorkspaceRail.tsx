@@ -12,6 +12,7 @@ import { getRemoteEnvironmentLabel, getWorkspaceTabLabel } from '../lib/workspac
 import { toggleFocusedWorkspaceExplorer } from '../lib/explorerToggle';
 import { getAgentWorktreeContext, worktreeBranchLabel } from '../lib/worktreeAgents';
 import { useWorkspaceReorder } from '../lib/useWorkspaceReorder';
+import { resolveDestinationCapabilities, useActiveDestination } from '../lib/activeDestination';
 import { AssistantButton, useAssistantsEnabled, useAssistantRoster } from './assistants/AssistantsRoster';
 import './WorkspaceRail.css';
 
@@ -91,6 +92,9 @@ export default function WorkspaceRail({ onOpenWorkspace, onExpand }: WorkspaceRa
   const nextTarget = nextAttentionTarget(workspaces, byTerminalId, seenByTerminalId, activeTerminalId);
   const assistantsEnabled = useAssistantsEnabled();
   const { assistants, live } = useAssistantRoster();
+  // Files is workspace-only: never offered with no workspace, nor while an Assistant is on screen (it would target the parked one).
+  const destination = useActiveDestination();
+  const showFiles = destination.kind === 'workspace' && resolveDestinationCapabilities(destination).explorer;
 
   return (
     <nav className="ws-rail" aria-label="Workspaces">
@@ -195,16 +199,18 @@ export default function WorkspaceRail({ onOpenWorkspace, onExpand }: WorkspaceRa
             <BellRing size={14} strokeWidth={2} />
           </IconButton>
         )}
-        <IconButton
-          size="xs"
-          variant="ghost"
-          className="ws-rail-action"
-          aria-label="Show Files"
-          title="Show Files"
-          onClick={toggleFocusedWorkspaceExplorer}
-        >
-          <FolderTree size={14} strokeWidth={2} />
-        </IconButton>
+        {showFiles && (
+          <IconButton
+            size="xs"
+            variant="ghost"
+            className="ws-rail-action"
+            aria-label="Show Files"
+            title="Show Files"
+            onClick={toggleFocusedWorkspaceExplorer}
+          >
+            <FolderTree size={14} strokeWidth={2} />
+          </IconButton>
+        )}
       </div>
     </nav>
   );
