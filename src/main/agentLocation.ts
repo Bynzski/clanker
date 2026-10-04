@@ -45,8 +45,21 @@ export function canonicalAgentLocation(
   return pathApi.isAbsolute(reported) ? normalizeWorkspacePath(pathApi.resolve(reported)) : null;
 }
 
-const realOrSelf = (nativePath: string): string => {
-  try { return fs.realpathSync.native(nativePath); } catch { return nativePath; }
+/**
+ * The real form of a local path, even when it does not exist (a removed worktree, a subdirectory not
+ * created yet): its nearest existing ancestor is resolved and the missing tail re-appended, so a
+ * symlinked parent (or, on Windows, an 8.3 short name) never makes two spellings of one place differ.
+ */
+const realOrNearest = (nativePath: string): string => {
+  const missing: string[] = [];
+  let current = path.resolve(nativePath);
+  for (;;) {
+    try { return path.join(fs.realpathSync.native(current), ...missing.reverse()); } catch { /* walk up */ }
+    const parent = path.dirname(current);
+    if (parent === current) return path.resolve(nativePath);
+    missing.push(path.basename(current));
+    current = parent;
+  }
 };
 
 function localDepth(root: string, target: string): number | null {
@@ -65,11 +78,11 @@ export function locateCheckoutContext(
   location: string, contexts: readonly CheckoutContext[], transport: AgentLocationTransport,
 ): CheckoutContext | null {
   let best: { context: CheckoutContext; depth: number } | null = null;
-  const target = transport === 'local' ? realOrSelf(toNativePath(location, process.platform)) : location;
+  const target = transport === 'local' ? realOrNearest(toNativePath(location, process.platform)) : location;
   for (const context of contexts) {
     let depth: number | null;
     if (transport === 'local') {
-      depth = localDepth(realOrSelf(toNativePath(context.path, process.platform)), target);
+      depth = localDepth(realOrNearest(toNativePath(context.path, process.platform)), target);
     } else {
       depth = isPathContained(context.path, location) ? context.path.length : null;
     }

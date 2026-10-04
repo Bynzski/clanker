@@ -78,6 +78,20 @@ describe('locateCheckoutContext', () => {
     expect(locateCheckoutContext(`${dir}/real/repo/sub`, contexts, 'local')?.id).toBe('ws::main');
   });
 
+  it.skipIf(process.platform === 'win32')('matches a location that does not exist (yet, or any more) under a root whose real path differs', () => {
+    // The root resolves through a symlink; the location below it cannot be resolved itself. Its nearest
+    // existing ancestor is, so both sides compare in the same real form (on Windows, 8.3 short names
+    // vs long names are the same problem).
+    const dir = tempDir();
+    fs.mkdirSync(path.join(dir, 'real', 'repo'), { recursive: true });
+    fs.symlinkSync(path.join(dir, 'real'), path.join(dir, 'link'));
+    const contexts = [ctx('ws::main', `${dir}/link/repo`, 'main')];
+
+    expect(locateCheckoutContext(`${dir}/link/repo/removed/deeper`, contexts, 'local')?.id).toBe('ws::main');
+    expect(locateCheckoutContext(`${dir}/real/repo/removed`, contexts, 'local')?.id).toBe('ws::main');
+    expect(locateCheckoutContext(`${dir}/link/elsewhere/removed`, contexts, 'local')).toBeNull();
+  });
+
   it('still maps a removed local directory to the registered root it was under', () => {
     const dir = tempDir().replace(/\\/g, '/');
     const removed = `${dir}/repo-worktrees/wt-1`;
