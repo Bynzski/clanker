@@ -11,6 +11,7 @@ import type { ModelOption } from '../types/shared';
 import type { HarnessDefaultsMap } from '../../shared/types/store';
 import { isAbsoluteWorkspacePath } from '../../shared/pathClassify';
 import GateHarnessSettings from './GateHarnessSettings';
+import AssistantsRoster from './assistants/AssistantsRoster';
 import { findGeneratedWorktreeContainerOwner } from '../lib/worktreeContainer';
 import { getWorkspaceNameFromPath } from '../lib/workspaceLabels';
 import { joinPaths } from '../lib/pathUtils';
@@ -790,6 +791,7 @@ export default function WorkspaceGateContent({ initialPath, onSubmit, onLaunchRe
 
       <GateLaunchActions onLaunch={handleSubmit} opening={opening} launchDisabled={(!hasLoadedHarnessOptions || !terminalLaunches.length) || locationKind === 'local' && !selectedPath || locationKind === 'ssh' && (!hasLoadedHarnessOptions || (!remoteBaseDirectory && !remotePath.startsWith('/')))}
       />
+      {fullscreen && <AssistantsRoster variant="launcher" disabled={opening} />}
       <div className="gate-settings-footer">
         <Button type="button" className="gate-settings-link" disabled={opening} onClick={() => setWorkspaceMode('settings')}>
           <Cog size={12} aria-hidden="true" /> Settings

@@ -34,3 +34,8 @@
 .assistants-settings-header { display: flex; align-items: center; justify-content: space-between; }
 .assistants-settings-header .settings-section-title { margin: 0; }
 .assistants-settings-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+
+/* Fullscreen startup launcher: Assistants sit between the launch controls and Settings. */
+.assistants-roster-launcher { padding: var(--space-sm) 0; border-top: 1px solid var(--border-default); }
+.assistants-roster-launcher .assistants-roster-heading, .assistants-roster-launcher .assistants-roster-status, .assistants-roster-launcher .assistants-roster-error { padding: 0; }
+.assistants-roster-launcher .assistant-row:disabled { opacity: 0.5; cursor: default; }
