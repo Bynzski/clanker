@@ -288,7 +288,19 @@ carry a location):
 | Hermes (SSH) | Yes, its terminal keeps a persistent `cd` | the turn task's active **local** terminal environment `cwd` on root `pre_llm_call`/`post_llm_call` (a container backend reports nothing) |
 
 A move is shown once it is reported: immediately for Claude, at the next turn
-boundary for the others. Adding a provider means emitting `cwd` from its
+boundary for the others.
+
+**An agent left in a removed directory.** Codex spawns every hook command in its
+session directory and has no hook setting for another one, so once an agent
+removes the worktree it runs in, *no* hook can start (Codex reports `Hook failed:
+No such file or directory`), including the `Stop` that would end the turn. The
+provider declares `attention.hooksRunInAgentDirectory`; when checkout
+reconciliation finds a context gone, main calls `markLifecycleLost` for every
+such agent whose reported location is in it: the open turn and any wait are
+retired without a completion and the agent shows no state instead of Running
+forever. A later native turn start (after `/cd` to a directory that exists)
+recovers normally. Claude's hooks keep running in that situation and in-process
+plugins/extensions are unaffected, so only Codex declares it. Adding a provider means emitting `cwd` from its
 interpreter or plugin; nothing in the broker or renderer is harness-specific.
 
 Set `CLANKER_DEBUG_ATTENTION=1` to log one bounded diagnostic per accepted-envelope

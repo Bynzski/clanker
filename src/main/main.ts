@@ -75,7 +75,8 @@ import { KeybindingOverridesService } from './keybindingOverrides';
 import { purgeLegacyTaskSessions, seedHarnessAttention, seedWorkspaceNavigationMode } from './storeMigrations';
 import { existsSync } from 'node:fs';
 import { AgentAttentionBroker } from './agentAttentionBroker';
-import { createAgentLocationResolver } from './agentLocation';
+import { createAgentLocationResolver, strandedAgentTerminals } from './agentLocation';
+import { findHarnessProvider } from './harnesses/registry';
 import { releaseCheckoutContext } from './checkoutContextRelease';
 import { AGENT_ATTENTION_CHANGED, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles, scavengeStaleAttentionRoots, migrateLegacyAgyAttentionPlugin } from './agentAttentionAdapters';
@@ -412,6 +413,14 @@ app.whenReady().then(() => {
     getWorkspaceRegistry: () => workspaceRegistry,
     releaseCheckoutContext: (workspaceId, checkoutContextId) =>
       releaseCheckoutContext({ registry: workspaceRegistry, terminals: terminals.values(), workspaceId, checkoutContextId }),
+    // An agent whose harness runs hooks in its own (now removed) directory can never settle its turn.
+    onCheckoutContextsGone: (_workspaceId, goneContextIds) => {
+      for (const terminalId of strandedAgentTerminals({
+        terminals, goneContextIds,
+        locationOf: (id) => agentAttentionBroker.snapshot(id)?.location ?? null,
+        hooksRunInAgentDirectory: (harness) => findHarnessProvider(harness)?.attention?.hooksRunInAgentDirectory === true,
+      })) agentAttentionBroker.markLifecycleLost(terminalId);
+    },
     onWorkspaceUnregistered: (id) => { browserIpcController?.disposeWorkspace(id); remoteFileWatcher.closeWorkspace(id); void remotePreviewManager.closeWorkspace(id); },
     getLiveRemoteTerminalPaths: (environmentId) => {
       const paths: string[] = [];

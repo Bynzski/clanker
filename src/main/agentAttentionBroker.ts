@@ -347,6 +347,23 @@ export class AgentAttentionBroker {
     });
   }
 
+  /** The provider can no longer deliver lifecycle events for this terminal (for example its hooks
+   * run in a directory that is gone), so an open turn or wait could never be settled. Retires them
+   * without a completion and returns the agent to unverified; the registration, its bound root and
+   * location stay, and a later native turn start recovers normally. Returns whether anything changed. */
+  markLifecycleLost(terminalId: string): boolean {
+    const registration = this.current(terminalId);
+    if (!registration || (!isActive(registration) && registration.pending.length === 0)) return false;
+    this.commit(registration, () => {
+      if (registration.activeTurnId) this.retire(registration, registration.activeTurnId);
+      registration.activeTurnId = undefined;
+      registration.pending = [];
+      registration.status = 'unverified';
+      registration.startedAt = null;
+    });
+    return true;
+  }
+
   /** Lower-confidence, provider-specific live-screen evidence. Arbitrated centrally: it can
    * never override structured evidence, create a turn, or create a completion. Nothing in
    * production produces this yet (see `attentionAuthority.ts`). */

@@ -100,3 +100,26 @@ export function createAgentLocationResolver(deps: {
     return { path: canonical, checkoutContextId: context?.id ?? null };
   };
 }
+
+/**
+ * Agents left without a lifecycle source: their harness spawns its hook commands in the agent's own
+ * working directory (Codex: verified that no hook can start once it is gone), and the location the
+ * agent last reported is inside a checkout that no longer exists. Their open turns can never be
+ * settled, so the broker should stop presenting them as running.
+ */
+export function strandedAgentTerminals(params: {
+  terminals: ReadonlyMap<string, { harnessId?: string }>;
+  goneContextIds: readonly string[];
+  locationOf: (terminalId: string) => AgentLocation | null;
+  hooksRunInAgentDirectory: (harnessId: string) => boolean;
+}): string[] {
+  const gone = new Set(params.goneContextIds);
+  if (gone.size === 0) return [];
+  const stranded: string[] = [];
+  for (const [terminalId, terminal] of params.terminals) {
+    if (!terminal.harnessId || !params.hooksRunInAgentDirectory(terminal.harnessId)) continue;
+    const contextId = params.locationOf(terminalId)?.checkoutContextId;
+    if (contextId && gone.has(contextId)) stranded.push(terminalId);
+  }
+  return stranded;
+}

@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { canonicalAgentLocation, createAgentLocationResolver, locateCheckoutContext, MAX_AGENT_LOCATION_BYTES } from '../../../src/main/agentLocation';
+import { canonicalAgentLocation, createAgentLocationResolver, locateCheckoutContext, MAX_AGENT_LOCATION_BYTES, strandedAgentTerminals } from '../../../src/main/agentLocation';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 import { OBSERVER_FIELDS } from '../../../src/main/harnesses/attentionSources';
 
@@ -109,6 +109,35 @@ describe('createAgentLocationResolver', () => {
     expect(resolver('loose', 'remote', '/srv/repo')).toEqual({ path: '/srv/repo', checkoutContextId: null });
     expect(resolver('gone', 'remote', '/srv/repo')).toEqual({ path: '/srv/repo', checkoutContextId: null });
     expect(resolver('agent', 'remote', 'relative')).toBeNull();
+  });
+});
+
+describe('strandedAgentTerminals', () => {
+  // Codex spawns every hook in its session directory; once that is gone no hook can run (verified
+  // against Codex 0.160.0). Claude's hooks keep running there, and in-process plugins are unaffected.
+  const terminals = new Map([
+    ['codex-gone', { harnessId: 'codex' }],
+    ['codex-fine', { harnessId: 'codex' }],
+    ['claude-gone', { harnessId: 'claude' }],
+    ['shell', {}],
+  ]);
+  const locations: Record<string, { path: string; checkoutContextId: string | null } | null> = {
+    'codex-gone': { path: '/w/wt', checkoutContextId: 'ws::wt' },
+    'codex-fine': { path: '/w/main', checkoutContextId: 'ws::main' },
+    'claude-gone': { path: '/w/wt', checkoutContextId: 'ws::wt' },
+    shell: null,
+  };
+
+  it('finds agents of a hooks-in-their-directory harness whose reported location is in a gone checkout', () => {
+    expect(strandedAgentTerminals({
+      terminals, goneContextIds: ['ws::wt'],
+      locationOf: (id) => locations[id] ?? null,
+      hooksRunInAgentDirectory: (harness) => harness === 'codex',
+    })).toEqual(['codex-gone']);
+  });
+
+  it('finds none when nothing is gone', () => {
+    expect(strandedAgentTerminals({ terminals, goneContextIds: [], locationOf: (id) => locations[id] ?? null, hooksRunInAgentDirectory: () => true })).toEqual([]);
   });
 });
 

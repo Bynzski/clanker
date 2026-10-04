@@ -399,3 +399,32 @@ describe('AgentAttentionBroker agent location', () => {
     expect(broker.snapshot('term-a')).toBeNull();
   });
 });
+
+describe('AgentAttentionBroker lost lifecycle source', () => {
+  it('gives up the open turn and its waits when the provider can no longer deliver, and recovers on the next real turn', () => {
+    const { broker, send, recorder } = setup();
+    send('turn_started', { sessionId: 'root', turnId: 't1', cwd: '/srv/wt' });
+    send('input_requested', { sessionId: 'root', turnId: 't1', inputId: 'w1' });
+    const revisions = recorder.revisions().length;
+
+    expect(broker.markLifecycleLost('term-a')).toBe(true);
+    expect(broker.snapshot('term-a')).toMatchObject({ runtime: { status: 'unverified', turnId: null }, pendingRequest: null, location: { path: '/srv/wt' } });
+    expect(recorder.revisions().length).toBe(revisions + 1);
+    // The abandoned turn can never settle anything later.
+    expect(send('turn_completed', { sessionId: 'root', turnId: 't1' })).toBe('ignored-stale');
+    // Once hooks run again (for example after the agent moved somewhere that exists), a new turn works.
+    expect(send('turn_started', { sessionId: 'root', turnId: 't2', cwd: '/srv/main' })).toBe('accepted');
+    expect(broker.handoffState('term-a')).toBe('running');
+  });
+
+  it('changes nothing for an agent with no open turn or wait, or an unknown terminal', () => {
+    const { broker, send, recorder } = setup();
+    send('turn_started', { sessionId: 'root', turnId: 't1' });
+    send('turn_completed', { sessionId: 'root', turnId: 't1' });
+    const revisions = recorder.revisions().length;
+    expect(broker.markLifecycleLost('term-a')).toBe(false);
+    expect(broker.markLifecycleLost('nobody')).toBe(false);
+    expect(recorder.revisions().length).toBe(revisions);
+    expect(broker.handoffState('term-a')).toBe('ready');
+  });
+});

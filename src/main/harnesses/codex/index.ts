@@ -22,7 +22,7 @@ export const codexProvider = defineHarness({
     selectionFlags: ['resume', 'fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverCodexSessions(workspace),
   },
-  attention: { interpreter: INTERPRETER, resumePreservesSessionId: true, local, remote },
+  attention: { interpreter: INTERPRETER, resumePreservesSessionId: true, hooksRunInAgentDirectory: true, local, remote },
   usage: codexUsage,
   accounts: codexAccounts,
   aiCommit: { modelArg: '-m',

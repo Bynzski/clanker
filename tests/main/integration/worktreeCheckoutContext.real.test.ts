@@ -60,6 +60,7 @@ let repo: string;
 let service: GitService;
 let registry: WorkspaceRegistry;
 const terminals = new Map();
+const onCheckoutContextsGone = vi.fn();
 
 async function git(...args: string[]) {
   return execFileAsync('git', args, { cwd: repo });
@@ -96,6 +97,7 @@ beforeEach(() => {
     getGitService: () => service, getMainWindow: () => null, getWorkspaceRegistry: () => registry,
     // Exactly as main.ts wires it: the release check over main's own terminal table.
     releaseCheckoutContext: (workspaceId, checkoutContextId) => releaseCheckoutContext({ registry, terminals: terminals.values(), workspaceId, checkoutContextId }),
+    onCheckoutContextsGone,
   });
   registerTerminalIpc({
     getTerminals: () => terminals,
@@ -547,7 +549,9 @@ describe('reconciling worktree contexts with Git after an agent finishes a workt
     await git('worktree', 'remove', checkoutContext!.path);
     await git('branch', '-D', 'agent-finishes-this');
 
+    onCheckoutContextsGone.mockClear();
     const marked = await reconcile('ws');
+    expect(onCheckoutContextsGone).toHaveBeenCalledWith('ws', [checkoutContext!.id]);
     expect(marked.success).toBe(true);
     expect(marked.dropped).toEqual([]);
     expect(marked.contexts).toEqual([expect.objectContaining({ id: checkoutContext!.id, missing: true })]);
