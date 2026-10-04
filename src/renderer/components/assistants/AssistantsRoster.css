@@ -34,3 +34,13 @@
 .assistants-settings-header { display: flex; align-items: center; justify-content: space-between; }
 .assistants-settings-header .settings-section-title { margin: 0; }
 .assistants-settings-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+
+/* Fullscreen startup launcher: compact wrapping chips (same language as the gate's recipe chips). */
+.assistants-roster-launcher { padding: var(--space-sm) 0; border-top: 1px solid var(--border-default); }
+.assistants-roster-launcher .assistants-roster-heading, .assistants-roster-launcher .assistants-roster-status, .assistants-roster-launcher .assistants-roster-error { padding: 0; }
+.assistants-roster-launcher .assistants-roster-list { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+.assistant-launcher-button { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; background: var(--surface-control); border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: 4px 8px; color: var(--text-primary); font-size: var(--font-size-sm); cursor: pointer; transition: background var(--transition), border-color var(--transition); }
+.assistant-launcher-button .assistant-name { flex: 0 1 auto; max-width: 20ch; }
+.assistant-launcher-button:hover:not(:disabled) { background: color-mix(in srgb, var(--surface-tint) 8%, transparent); border-color: var(--accent-interactive); }
+.assistant-launcher-button:focus-visible { outline: 2px solid var(--accent-interactive); outline-offset: 1px; }
+.assistant-launcher-button:disabled { opacity: 0.5; cursor: default; }

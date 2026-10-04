@@ -6,6 +6,7 @@ import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-libra
 import { registerOpenSettingsHandler } from '../../../src/renderer/lib/keybindingDispatcher';
 import { useKeybindingStore } from '../../../src/renderer/store/keybindingStore';
 import App from '../../../src/renderer/App';
+import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useThemeStore } from '../../../src/renderer/theme/themeStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
@@ -191,6 +192,24 @@ describe('App', () => {
     it('does not render modal when there are no workspaces', () => {
       render(<App />);
       expect(screen.queryByTestId('workspace-gate-modal')).toBeNull();
+    });
+
+    it('enters the normal shell (not the launcher) when an Assistant is the active destination, creating no workspace', async () => {
+      useAssistantNavStore.setState({ activeAssistantId: 'hermes:fred', openedAssistantIds: ['hermes:fred'] });
+      try {
+        render(<App />);
+        expect(screen.queryByTestId('workspace-gate-fullscreen')).toBeNull();
+        expect(screen.getByTestId('title-bar')).toBeTruthy();
+        expect(await screen.findByTestId('workspace-host')).toBeTruthy();
+        expect(screen.getByTestId('status-bar')).toBeTruthy();
+        expect(useWorkspaceStore.getState().workspaces).toEqual([]);
+        expect(useWorkspaceStore.getState().activeWorkspaceId).toBeNull();
+        // Leaving the Assistant destination with zero workspaces returns to the launcher.
+        act(() => useAssistantNavStore.getState().clearAllAssistants());
+        expect(screen.getByTestId('workspace-gate-fullscreen')).toBeTruthy();
+      } finally {
+        useAssistantNavStore.setState({ activeAssistantId: null, openedAssistantIds: [] });
+      }
     });
   });
 
