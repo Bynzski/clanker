@@ -312,7 +312,7 @@ describe('Antigravity attention plugin resilience', () => {
     try {
       const guard = install(home);
       const hooks = fs.readFileSync(path.join(pluginsOf(home), 'clanker-grid-attention', 'hooks.json'), 'utf8');
-      expect(hooks).toContain(guard);
+      expect(hooks).toContain(JSON.stringify(guard).slice(1, -1));
       expect(hooks).not.toContain('clanker-attention-');
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
