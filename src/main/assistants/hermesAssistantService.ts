@@ -302,10 +302,12 @@ export class HermesAssistantService {
     try {
       const port = await waitForServeReady(child, this.deps.startTimeoutMs ?? 30_000);
       this.childReady = true;
-      if (!this.current(generation)) { void this.killChild(child); return undefined; }
+      if (!this.current(generation)) { await this.killChild(child); if (this.child === child) this.child = undefined; return undefined; }
       return { port, token, ownership: 'clanker' };
     } catch (error) {
-      void this.killChild(child);
+      // Keep owning the failed child until its bounded termination finishes: this refresh stays pending
+      // (so a Retry coalesces onto it) and no replacement can spawn beside a still-live failed child.
+      await this.killChild(child);
       if (this.child === child) this.child = undefined;
       this.finish(generation, 'error', safeMessage(error));
       return undefined;

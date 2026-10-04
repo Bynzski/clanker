@@ -13,7 +13,7 @@ type FitInstance = import('@xterm/addon-fit').FitAddon;
 
 const OVERLAY_TEXT: Partial<Record<AssistantSurfaceState, string>> = {
   connecting: 'Connecting to Bot Chat…',
-  disconnected: 'Disconnected from the Hermes service.',
+  disconnected: 'Disconnected from the Hermes Assistant terminal.',
   ended: 'This Bot Chat session ended.',
   unavailable: 'Could not open this Assistant\'s chat. Nothing was changed.',
 };
@@ -81,10 +81,15 @@ export default function AssistantSurface({ assistantId, displayName, isActive }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assistantId]);
 
-  // Re-attach to the same canonical chat after a disconnect once the service is back; never creates a scratch chat.
+  // Control-service recovery: on a real not-connected -> connected transition, re-attach a disconnected surface to
+  // the same canonical chat ONCE. A PTY-only disconnect while the service stays connected never auto-reconnects
+  // (no loop, no fighting another viewer); the user chooses Reconnect.
+  const previousServiceConnected = useRef(serviceConnected);
   useEffect(() => {
-    if (surfaceState === 'disconnected' && serviceConnected) void window.electronAPI.openAssistant(assistantId).catch(() => undefined);
-  }, [surfaceState, serviceConnected, assistantId]);
+    const wasConnected = previousServiceConnected.current;
+    previousServiceConnected.current = serviceConnected;
+    if (!wasConnected && serviceConnected && surfaceState === 'disconnected') void window.electronAPI.openAssistant(assistantId).catch(() => undefined);
+  }, [serviceConnected, surfaceState, assistantId]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -106,6 +111,7 @@ export default function AssistantSurface({ assistantId, displayName, isActive }:
           <p>{overlay}</p>
           {!serviceConnected && <Button size="xs" onClick={() => void refresh()}>Reconnect</Button>}
           {serviceConnected && surfaceState === 'ended' && <Button size="xs" onClick={() => void window.electronAPI.openAssistant(assistantId).catch(() => undefined)}>Reopen</Button>}
+          {serviceConnected && surfaceState === 'disconnected' && <Button size="xs" onClick={() => void window.electronAPI.openAssistant(assistantId).catch(() => undefined)}>Reconnect</Button>}
           {serviceConnected && surfaceState === 'unavailable' && <Button size="xs" onClick={() => void window.electronAPI.openAssistant(assistantId).catch(() => undefined)}>Retry</Button>}
         </div>
       )}

@@ -243,6 +243,43 @@ describe('Clanker-owned backend', () => {
   });
 });
 
+describe('failed owned startup cleanup', () => {
+  it('holds the operation (and any Retry) until the failed child is gone, so two owned children never coexist', async () => {
+    const { service, hermes, spawnServe, children, ready } = setup({ enabled: true, autoStart: true }, { stopGraceMs: 60_000 });
+    hermes.running = false;
+    const first = service.refresh();
+    await flush();
+    expect(spawnServe).toHaveBeenCalledTimes(1);
+    children[0].kill = vi.fn(() => true); // SIGTERM is accepted, but the process lingers
+    children[0].stderr.write('BACKEND_PORT_IN_USE port=9119\n'); // readiness failure
+    await flush(30);
+    expect(children[0].kill).toHaveBeenCalledWith('SIGTERM');
+    let settled = false;
+    void first.then(() => { settled = true; });
+    // A Retry while cleanup is unresolved coalesces onto the pending operation: no second spawn.
+    const retry = service.refresh();
+    expect(retry).toBe(first);
+    await flush(30);
+    expect(settled).toBe(false);
+    expect(spawnServe).toHaveBeenCalledTimes(1);
+    // The old child finally exits: the failed operation settles with the startup error.
+    children[0].exitCode = 1;
+    children[0].emit('exit', 1);
+    const failed = await first;
+    expect(failed.service).toMatchObject({ state: 'error' });
+    expect(failed.service.error).toMatch(/already in use/);
+    expect(spawnServe).toHaveBeenCalledTimes(1);
+    // Now a legitimate Retry starts exactly one replacement.
+    const next = service.refresh();
+    await flush(20);
+    expect(spawnServe).toHaveBeenCalledTimes(2);
+    hermes.running = true;
+    ready(children[1], 40333);
+    expect((await next).service).toMatchObject({ state: 'connected', ownership: 'clanker' });
+    expect(spawnServe).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('owned-service lifecycle under overlapping operations', () => {
   /** An owned backend that is connected, with the stop of its child deliberately held open. */
   async function ownedAndHeld() {

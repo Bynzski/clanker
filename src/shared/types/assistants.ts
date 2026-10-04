@@ -1,7 +1,8 @@
 /**
- * Optional Hermes Assistants: an app-level integration with Hermes Bot Mode through a local
- * `hermes serve` backend. Durable state is two booleans; everything else is main-owned runtime
- * state. Nothing here carries a backend token, URL, profile home or config path.
+ * Optional Hermes Assistants: an app-level integration with named Hermes profiles through a local
+ * `hermes serve` backend; each Assistant resolves Hermes' canonical "Bot Chat". Durable state is two
+ * booleans; everything else is main-owned runtime state. Nothing here carries a backend token, URL,
+ * profile home or config path.
  */
 export interface AssistantSettings {
   enabled: boolean;

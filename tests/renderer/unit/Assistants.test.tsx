@@ -211,7 +211,7 @@ it('Tabs mode reaches Assistants through a compact strip with the same roster be
   expect(useAssistantNavStore.getState().activeAssistantId).toBe('hermes:reviewer');
 });
 
-it('uses Assistant (not Assistant) wording for an empty roster', async () => {
+it('uses "Assistants" (not "Bots") wording for an empty roster', async () => {
   mockMain(snap({ assistants: [] }));
   render(<AssistantsRoster />);
   expect(await screen.findByText('No Hermes Assistants found')).toBeInTheDocument();
@@ -409,3 +409,82 @@ it.each(['offline', 'probing', 'starting'] as const)('a transient %s service kee
 });
 
 async function flushUi() { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); }); }
+
+// ── PTY recovery is bounded ──────────────────────────────────────────────────
+
+const withFredSurface = (state: 'open' | 'disconnected', service: AssistantSnapshot['service'] = { state: 'connected', ownership: 'external' }) =>
+  snap({ service, assistants: service.state === 'connected' ? [fred, reviewer] : [], surfaces: [{ assistantId: 'hermes:fred', state }] });
+
+it('a PTY-only disconnect while the service stays connected never auto-reopens; Reconnect is a single user-initiated attempt', async () => {
+  mockMain(withFredSurface('open'));
+  render(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive />);
+  await waitFor(() => expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1));
+  expect(xterms).toHaveLength(1);
+  act(() => pushSnapshot(withFredSurface('disconnected')));
+  await flushUi();
+  expect(screen.getByText('Disconnected from the Hermes Assistant terminal.')).toBeInTheDocument();
+  expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1);
+  // Repeated disconnected snapshots do not loop.
+  act(() => pushSnapshot(withFredSurface('disconnected')));
+  act(() => pushSnapshot(withFredSurface('disconnected')));
+  await flushUi();
+  expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1);
+  expect(window.electronAPI.refreshAssistants).not.toHaveBeenCalled();
+  // Reconnect: exactly one additional attempt.
+  fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
+  await waitFor(() => expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(2));
+  // It fails again (still disconnected): no third automatic attempt.
+  act(() => pushSnapshot(withFredSurface('disconnected')));
+  await flushUi();
+  expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(2);
+  expect(xterms).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
+});
+
+it('a real control-service recovery re-attaches a disconnected surface exactly once and reuses the terminal', async () => {
+  mockMain(withFredSurface('open'));
+  render(<AssistantSurface assistantId="hermes:fred" displayName="Fred" isActive />);
+  await waitFor(() => expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1));
+  const offline: AssistantSnapshot['service'] = { state: 'offline', ownership: null };
+  act(() => pushSnapshot(withFredSurface('disconnected', offline)));
+  act(() => pushSnapshot(withFredSurface('disconnected', { state: 'probing', ownership: null })));
+  act(() => pushSnapshot(withFredSurface('disconnected', { state: 'starting', ownership: null })));
+  await flushUi();
+  expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1);
+  act(() => pushSnapshot(withFredSurface('disconnected')));
+  await waitFor(() => expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(2));
+  // If that single attempt fails, further disconnected snapshots do not retry.
+  act(() => pushSnapshot(withFredSurface('disconnected')));
+  act(() => pushSnapshot(withFredSurface('disconnected')));
+  await flushUi();
+  expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(2);
+  expect(xterms).toHaveLength(1);
+  expect(xterms[0].dispose).not.toHaveBeenCalled();
+});
+
+// ── Opening a workspace while an Assistant is active ─────────────────────────
+
+const workspaceB = () => createWorkspaceFixture({ id: 'ws-b', workspacePath: '/projects/b', environmentId: 'local', name: 'b' });
+
+it('adding a workspace parks the active Assistant (kept warm) and makes the new workspace visible; selecting the Assistant reveals the same surface', async () => {
+  mockMain(snap());
+  render(<WorkspaceHost />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Fred' }));
+  await waitFor(() => expect(surfaceOf('hermes:fred')).not.toBeNull());
+  expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1);
+  act(() => useWorkspaceStore.getState().addWorkspace(workspaceB()));
+  const state = useWorkspaceStore.getState();
+  expect(state.activeWorkspaceId).toBe('ws-b');
+  expect(state.workspaces.find((workspace) => workspace.id === 'ws-b')?.lifecycle).toBe('active');
+  expect(useAssistantNavStore.getState()).toMatchObject({ activeAssistantId: null, openedAssistantIds: ['hermes:fred'] });
+  await waitFor(() => expect(document.querySelector('[data-workspace-id="ws-b"]')).toHaveAttribute('data-workspace-visibility', 'active'));
+  expect(surfaceOf('hermes:fred')).toHaveClass('parked');
+  expect(screen.getByTestId('files-section')).toBeInTheDocument();
+  expect(xterms[0].dispose).not.toHaveBeenCalled();
+  expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1);
+  // Back to Fred: the same surface is revealed, not recreated.
+  fireEvent.click(screen.getByRole('button', { name: 'Fred' }));
+  expect(surfaceOf('hermes:fred')).toHaveClass('active');
+  expect(xterms).toHaveLength(1);
+  expect(window.electronAPI.openAssistant).toHaveBeenCalledTimes(1);
+});

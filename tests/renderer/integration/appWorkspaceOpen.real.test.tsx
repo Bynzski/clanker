@@ -5,6 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../../../src/renderer/App';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
+import { createWorkspaceFixture } from '../../setup/fixtures';
+import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
+import { useAssistantsStore } from '../../../src/renderer/store/assistantsStore';
 
 function resetStore() {
   useWorkspaceStore.setState({
@@ -329,6 +332,68 @@ describe('App workspace open integration', () => {
         gitCurrentBranch: 'task/example',
         projectName: 'repo',
       }));
+    });
+  });
+
+  describe('while an Assistant is active', () => {
+    const fred = { id: 'hermes:fred', displayName: 'Fred' };
+    const snapshot = {
+      available: true, settings: { enabled: true, autoStart: false }, service: { state: 'connected', ownership: 'external' },
+      assistants: [fred], surfaces: [],
+    };
+    const startWithFredActive = async (registerOpenWorkspace: ReturnType<typeof vi.fn>) => {
+      useAssistantsStore.getState().reset();
+      useAssistantNavStore.setState({ activeAssistantId: null, openedAssistantIds: [] });
+      useWorkspaceStore.setState({
+        workspaces: [createWorkspaceFixture({ id: 'ws-a', workspacePath: '/projects/a', environmentId: 'local' })], activeWorkspaceId: 'ws-a',
+      });
+      installElectronApiMock({
+        getAssistants: vi.fn().mockResolvedValue(snapshot),
+        onAssistantsChanged: vi.fn(() => () => undefined),
+        openAssistant: vi.fn().mockResolvedValue({ state: 'open', replay: '' }),
+        registerOpenWorkspace,
+        getHarnessOptions: vi.fn().mockResolvedValue({ codex: true, '': true }),
+        getHarnessModels: vi.fn().mockResolvedValue([]),
+        spawnTerminal: vi.fn().mockResolvedValue({ id: 'terminal-b', pid: 1 }),
+        getTerminalBuffer: vi.fn().mockResolvedValue(''),
+        fileListDirectory: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+      });
+      render(<App />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Fred' }));
+      await waitFor(() => expect(useAssistantNavStore.getState().activeAssistantId).toBe('hermes:fred'));
+    };
+    const openWorkspaceViaGate = async (path: string) => {
+      fireEvent.click(screen.getAllByRole('button', { name: 'Open Workspace' })[0]);
+      const input = await waitFor(() => {
+        const element = document.querySelector('.gate-input') as HTMLInputElement | null;
+        expect(element).toBeTruthy();
+        return element!;
+      });
+      fireEvent.change(input, { target: { value: path } });
+      await chooseBasicTerminal();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
+      fireEvent.click(screen.getByText('Launch Workspace'));
+    };
+
+    it('a successfully opened workspace becomes the visible surface while Fred stays opened', async () => {
+      await startWithFredActive(vi.fn(async (_id: string, path: string) => ({ success: true, location: { environmentId: 'local', path } })));
+      await openWorkspaceViaGate('/projects/b');
+      await waitFor(() => expect(useWorkspaceStore.getState().workspaces).toHaveLength(2));
+      const opened = useWorkspaceStore.getState().workspaces[1];
+      expect(useWorkspaceStore.getState().activeWorkspaceId).toBe(opened.id);
+      expect(useAssistantNavStore.getState()).toMatchObject({ activeAssistantId: null, openedAssistantIds: ['hermes:fred'] });
+      await waitFor(() => expect(document.querySelector(`[data-workspace-id="${opened.id}"]`)).toHaveAttribute('data-workspace-visibility', 'active'));
+      expect(document.querySelector('[data-assistant-id="hermes:fred"]')).toHaveClass('parked');
+    });
+
+    it('a failed registration leaves Fred as the active surface and adds no workspace', async () => {
+      await startWithFredActive(vi.fn(async () => ({ success: false, error: 'nope' })));
+      await openWorkspaceViaGate('/projects/b');
+      await waitFor(() => expect(window.electronAPI.registerOpenWorkspace).toHaveBeenCalled());
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+      expect(useWorkspaceStore.getState().workspaces).toHaveLength(1);
+      expect(useAssistantNavStore.getState().activeAssistantId).toBe('hermes:fred');
+      expect(document.querySelector('[data-assistant-id="hermes:fred"]')).toHaveClass('active');
     });
   });
 });

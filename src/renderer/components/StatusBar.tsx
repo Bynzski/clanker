@@ -17,7 +17,7 @@ export default function StatusBar() {
   const isRepo = agentWorktree ? true : focusedWorkspace?.gitIsRepo ?? false;
   const isDetached = agentWorktree ? !agentWorktree.branch : focusedWorkspace?.gitIsDetached ?? false;
   const activeAssistantId = useAssistantNavStore((state) => state.activeAssistantId);
-  const activeBotName = useAssistantsStore((state) => (activeAssistantId ? state.knownAssistants[activeAssistantId]?.displayName ?? activeAssistantId.replace(/^hermes:/, '') : null));
+  const activeAssistantName = useAssistantsStore((state) => (activeAssistantId ? state.knownAssistants[activeAssistantId]?.displayName ?? activeAssistantId.replace(/^hermes:/, '') : null));
   const [appVersion, setAppVersion] = useState<string>('');
 
   useEffect(() => {
@@ -38,8 +38,8 @@ export default function StatusBar() {
       </div>
       
       <div className="status-center">
-        {activeBotName ? (
-          <span className="status-project" data-testid="status-assistant">{activeBotName} · Hermes Bot Chat</span>
+        {activeAssistantName ? (
+          <span className="status-project" data-testid="status-assistant">{activeAssistantName} · Hermes Bot Chat</span>
         ) : (<>
         {remoteLabel && (
           <span className="status-environment" title={remoteLabel}>

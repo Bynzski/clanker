@@ -182,6 +182,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeWorkspaceLifecycle: null,
 
   addWorkspace: (workspace) => set((state) => {
+    // The added workspace becomes the active surface, so any app-level Assistant surface is parked (kept warm, not closed).
+    // This runs only here, i.e. after a workspace was actually registered; a failed open never reaches it.
+    useAssistantNavStore.getState().clearActive();
     const id = workspace.id ?? createWorkspaceId();
     const defaultName = workspace.name || getWorkspaceNameFromPath(workspace.workspacePath);
     const storedNotesVisible = readStoredNotesVisible(workspace.workspacePath, id, workspace.environmentId);
