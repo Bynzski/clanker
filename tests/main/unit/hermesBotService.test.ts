@@ -19,6 +19,7 @@ function setup(initial: unknown = { enabled: false, autoStart: false }, override
     onChanged: (snapshot) => snapshots.push(snapshot),
     onPtyData: (botId, data) => ptyData.push([botId, data]),
     isShuttingDown: () => false,
+    isHermesAvailable: () => true,
     fetch: hermes.fetch as never,
     createWebSocket: hermes.createWebSocket,
     spawnServe,
@@ -57,6 +58,43 @@ describe('settings and enablement', () => {
     expect(() => service.configure({ enabled: 'yes', autoStart: false })).toThrow();
     service.configure({ enabled: false, autoStart: true, token: 'x', pins: [] });
     expect(stored()).toEqual({ enabled: false, autoStart: true });
+  });
+});
+
+describe('Hermes CLI availability', () => {
+  it('is dormant when Hermes is not installed even with persisted enabled+autoStart: no probe, no spawn, preference kept', async () => {
+    const { service, hermes, spawnServe, stored } = setup({ enabled: true, autoStart: true }, { isHermesAvailable: () => false });
+    service.start();
+    await flush();
+    expect((await service.refresh()).available).toBe(false);
+    service.configure({ enabled: true, autoStart: true });
+    await flush();
+    expect(hermes.fetch).not.toHaveBeenCalled();
+    expect(hermes.createWebSocket).not.toHaveBeenCalled();
+    expect(spawnServe).not.toHaveBeenCalled();
+    expect(service.get()).toMatchObject({ available: false, settings: { enabled: true, autoStart: true }, service: { state: 'disabled' } });
+    expect(stored()).toEqual({ enabled: true, autoStart: true });
+  });
+  it('treats a throwing availability check as not installed', () => {
+    const { service } = setup({ enabled: true, autoStart: false }, { isHermesAvailable: () => { throw new Error('boom'); } });
+    expect(service.get().available).toBe(false);
+  });
+  it('the same persisted settings work once Hermes is available on the next construction', async () => {
+    const first = setup({ enabled: true, autoStart: true }, { isHermesAvailable: () => false });
+    first.service.start(); await flush();
+    expect(first.hermes.fetch).not.toHaveBeenCalled();
+    const second = setup(first.stored());
+    second.service.start();
+    await flush(20);
+    expect(second.service.get()).toMatchObject({ available: true, service: { state: 'connected' } });
+  });
+  it('disabling still cleans up an owned child regardless of availability bookkeeping', async () => {
+    const { service, hermes, children, ready } = setup({ enabled: true, autoStart: true });
+    hermes.running = false;
+    const pending = service.refresh(); await flush(); hermes.running = true; ready(children[0]); await pending;
+    service.configure({ enabled: false, autoStart: true });
+    await flush(30);
+    expect(children[0].kill).toHaveBeenCalledWith('SIGTERM');
   });
 });
 

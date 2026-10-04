@@ -10,9 +10,9 @@ const defaultFileListDirectoryResult: FileListDirectoryResult = { success: true,
 
 function createElectronApiMock(overrides: Partial<ElectronApiMock> = {}): ElectronApiMock {
   return {
-    getAssistants: createAsyncMock({ settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, bots: [], surfaces: [] }),
-    configureAssistants: vi.fn(async (settings) => ({ ...{ settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, bots: [], surfaces: [] }, settings })),
-    refreshAssistants: createAsyncMock({ settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, bots: [], surfaces: [] }),
+    getAssistants: createAsyncMock({ available: false, settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, bots: [], surfaces: [] }),
+    configureAssistants: vi.fn(async (settings) => ({ ...{ available: false, settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, bots: [], surfaces: [] }, settings })),
+    refreshAssistants: createAsyncMock({ available: false, settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, bots: [], surfaces: [] }),
     openAssistant: vi.fn().mockResolvedValue({ state: 'open', replay: '' }),
     writeAssistantPty: vi.fn().mockResolvedValue(undefined),
     resizeAssistantPty: vi.fn().mockResolvedValue(undefined),

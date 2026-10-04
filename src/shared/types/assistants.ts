@@ -39,6 +39,8 @@ export interface AssistantSurfaceStatus {
 }
 
 export interface AssistantSnapshot {
+  /** The local Hermes CLI is installed (canonical harness availability). False means the feature is dormant and hidden. */
+  available: boolean;
   settings: AssistantSettings;
   service: {
     state: HermesAssistantServiceState;

@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { getHarnessOption } from '../../../src/renderer/lib/harnessOptions';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
@@ -35,7 +38,7 @@ import StatusBar from '../../../src/renderer/components/StatusBar';
 const fred: HermesBot = { id: 'hermes:fred', profileName: 'fred', displayName: 'Fred', description: 'General helper', canonicalSessionId: 's1' };
 const reviewer: HermesBot = { id: 'hermes:reviewer', profileName: 'reviewer', displayName: 'Reviewer', canonicalSessionId: 's2' };
 const snap = (over: Partial<AssistantSnapshot> = {}): AssistantSnapshot => ({
-  settings: { enabled: true, autoStart: false }, service: { state: 'connected', ownership: 'external' }, bots: [fred, reviewer], surfaces: [], ...over,
+  available: true, settings: { enabled: true, autoStart: false }, service: { state: 'connected', ownership: 'external' }, bots: [fred, reviewer], surfaces: [], ...over,
 });
 
 let pushSnapshot: (snapshot: AssistantSnapshot) => void = () => undefined;
@@ -202,16 +205,6 @@ it('Settings expose only the two options, a status and Retry; autoStart is gated
   await waitFor(() => expect(window.electronAPI.configureAssistants).toHaveBeenCalledWith({ enabled: true, autoStart: false }));
 });
 
-it('Settings reflect an enabled service and let the user opt into auto-start', async () => {
-  mockMain(snap({ service: { state: 'offline', ownership: null } }));
-  render(<AssistantsSettings />);
-  expect(await screen.findByText('Status: Offline')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Start Hermes service when needed' }));
-  await waitFor(() => expect(window.electronAPI.configureAssistants).toHaveBeenCalledWith({ enabled: true, autoStart: true }));
-  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-  await waitFor(() => expect(window.electronAPI.refreshAssistants).toHaveBeenCalled());
-});
-
 it('Tabs mode reaches Assistants through a compact strip with the same roster behaviour', async () => {
   mockMain(snap());
   render(<AssistantsRoster variant="strip" />);
@@ -219,12 +212,147 @@ it('Tabs mode reaches Assistants through a compact strip with the same roster be
   expect(useAssistantNavStore.getState().activeBotId).toBe('hermes:reviewer');
 });
 
-it('uses Assistant (not Bot) wording for an empty roster and a service-first Settings explanation', async () => {
+it('uses Assistant (not Bot) wording for an empty roster', async () => {
   mockMain(snap({ bots: [] }));
-  const { unmount } = render(<AssistantsRoster />);
+  render(<AssistantsRoster />);
   expect(await screen.findByText('No Hermes Assistants found')).toBeInTheDocument();
+});
+
+function hermesIconMarkup(): string {
+  const HermesIcon = getHarnessOption('hermes').Icon;
+  const { container, unmount } = render(<HermesIcon size={14} strokeWidth={2} aria-hidden="true" />);
+  const markup = container.innerHTML;
   unmount();
+  return markup;
+}
+
+// ── Settings presentation ────────────────────────────────────────────────────
+
+it('Settings, connected: toggles and an info control only — no status line, Retry or explanatory paragraph', async () => {
+  mockMain(snap({ service: { state: 'connected', ownership: 'clanker' } }));
   render(<AssistantsSettings />);
-  expect(await screen.findByText(/Uses a local Hermes service/)).toBeInTheDocument();
-  expect(screen.queryByText(/Bot Mode/)).toBeNull();
+  const info = await screen.findByRole('button', { name: 'Hermes Assistants information' });
+  expect(info).toHaveAttribute('title', expect.stringContaining('Uses a local Hermes service (hermes serve)'));
+  expect(info.getAttribute('title')).toContain('Ordinary Hermes harness usage is independent');
+  expect(info.getAttribute('title')).toContain('Status: Connected · Clanker-managed.');
+  expect(screen.getByRole('checkbox', { name: 'Enable Hermes Assistants' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Start Hermes service when needed' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  expect(screen.queryByText(/Status: Connected/)).toBeNull();
+  expect(screen.queryByText(/Uses a local Hermes service/)).toBeNull();
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it('Settings reports an external service in the info text without exposing ports or tokens', async () => {
+  mockMain(snap({ service: { state: 'connected', ownership: 'external' } }));
+  render(<AssistantsSettings />);
+  const title = (await screen.findByRole('button', { name: 'Hermes Assistants information' })).getAttribute('title') ?? '';
+  expect(title).toContain('Connected · External');
+  expect(title).not.toMatch(/9119|token|http|ws:/i);
+});
+
+it.each([['probing', 'Connecting…'], ['starting', 'Starting Hermes service…']] as const)('Settings, %s: a compact transition line and no Retry', async (state, text) => {
+  mockMain(snap({ service: { state, ownership: null } }));
+  render(<AssistantsSettings />);
+  expect(await screen.findByText(text)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+});
+
+it.each([
+  ['offline', undefined, 'Hermes service is not running'],
+  ['error', undefined, 'Could not connect to Hermes'],
+  ['error', 'Hermes service did not become ready in time', 'Hermes service did not become ready in time'],
+  ['detected-unusable', undefined, 'Hermes service found, but Clanker cannot connect to it'],
+] as const)('Settings, %s: one compact problem row with Retry', async (state, error, text) => {
+  mockMain(snap({ service: { state, ownership: null, ...(error ? { error } : {}) } }));
+  vi.mocked(window.electronAPI.refreshAssistants).mockResolvedValue(snap());
+  render(<AssistantsSettings />);
+  expect(await screen.findAllByText(text)).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(window.electronAPI.refreshAssistants).toHaveBeenCalled());
+});
+
+it('Settings, disabled: autoStart stays visible but subordinate, and toggling Assistants off keeps the autoStart preference', async () => {
+  mockMain(snap({ settings: { enabled: true, autoStart: true } }));
+  render(<AssistantsSettings />);
+  fireEvent.click(await screen.findByRole('checkbox', { name: 'Enable Hermes Assistants' }));
+  await waitFor(() => expect(window.electronAPI.configureAssistants).toHaveBeenCalledWith({ enabled: false, autoStart: true }));
+});
+
+// ── Hermes CLI availability ──────────────────────────────────────────────────
+
+it('without the Hermes CLI no surface of the feature exists: Settings, sidebar, rail and tabs roster', async () => {
+  mockMain(snap({ available: false, settings: { enabled: true, autoStart: true }, service: { state: 'disabled', ownership: null }, bots: [] }));
+  useWorkspaceNavigationStore.setState({ mode: 'sidebar', sidebarWidth: 280 });
+  const sidebar = render(<WorkspaceSidebar />);
+  await waitFor(() => expect(window.electronAPI.getAssistants).toHaveBeenCalled());
+  expect(screen.queryByRole('region', { name: 'Assistants' })).toBeNull();
+  expect(screen.queryByText('Assistants')).toBeNull();
+  sidebar.unmount();
+  const strip = render(<AssistantsRoster variant="strip" />);
+  await waitFor(() => expect(strip.container).toBeEmptyDOMElement());
+  strip.unmount();
+  const settings = render(<AssistantsSettings />);
+  await waitFor(() => expect(window.electronAPI.getAssistants).toHaveBeenCalled());
+  expect(settings.container).toBeEmptyDOMElement();
+  expect(screen.queryByText('Hermes Assistants')).toBeNull();
+  settings.unmount();
+  useWorkspaceNavigationStore.setState({ sidebarWidth: 44 });
+  render(<WorkspaceSidebar />);
+  expect(screen.queryByRole('button', { name: /Hermes Assistant$/ })).toBeNull();
+});
+
+it('with the Hermes CLI installed the Settings section is visible', async () => {
+  mockMain(snap({ settings: { enabled: false, autoStart: false }, service: { state: 'disabled', ownership: null }, bots: [] }));
+  render(<AssistantsSettings />);
+  expect(await screen.findByRole('checkbox', { name: 'Enable Hermes Assistants' })).toBeInTheDocument();
+});
+
+// ── Navigation layout and identity ──────────────────────────────────────────
+
+it('ASSISTANTS sits directly after WORKSPACES in one upper stack, with FILES after it', async () => {
+  mockMain(snap());
+  render(<WorkspaceSidebar />);
+  await screen.findByRole('button', { name: 'Fred' });
+  const upper = screen.getByTestId('workspace-sidebar-upper');
+  const children = [...upper.children];
+  expect(children).toHaveLength(2);
+  expect(children[0]).toHaveClass('ws-nav');
+  expect(children[1]).toHaveAttribute('aria-label', 'Assistants');
+  expect(upper.nextElementSibling).toBe(screen.getByTestId('files-section'));
+  // Layout contract: the upper stack owns the flexible area; the workspace list no longer greedily fills it.
+  const css = readFileSync(join(process.cwd(), 'src/renderer/components/assistants/AssistantsRoster.css'), 'utf8');
+  expect(css).toMatch(/\.workspace-sidebar-upper \{[^}]*flex: 1 1 auto[^}]*overflow-y: auto/);
+  expect(css).toMatch(/\.workspace-sidebar-upper \.ws-nav \{ flex: 0 0 auto; \}/);
+  expect(screen.getAllByRole('button', { name: 'Fred' })).toHaveLength(1);
+});
+
+it('every Assistant entry uses the canonical Hermes harness icon, never the generic Bot glyph', async () => {
+  mockMain(snap());
+  useWorkspaceNavigationStore.setState({ mode: 'sidebar', sidebarWidth: 280 });
+  render(<AssistantsRoster />);
+  const row = await screen.findByRole('button', { name: 'Fred' });
+  expect(row.querySelector('svg, img')!.outerHTML).toBe(hermesIconMarkup());
+  expect(row.innerHTML).not.toMatch(/lucide-bot/);
+});
+
+it('the collapsed rail and tabs strip show Hermes-icon Assistants labelled "<name> · Hermes Assistant"', async () => {
+  mockMain(snap());
+  useWorkspaceNavigationStore.setState({ mode: 'sidebar', sidebarWidth: 44 });
+  render(<WorkspaceSidebar />);
+  const fredIcon = await screen.findByRole('button', { name: 'Fred · Hermes Assistant' });
+  expect(screen.getByRole('button', { name: 'Reviewer · Hermes Assistant' })).toBeInTheDocument();
+  expect(fredIcon.innerHTML).not.toMatch(/lucide-bot/);
+  expect(fredIcon.querySelector('svg, img')!.outerHTML).toBe(hermesIconMarkup());
+  fireEvent.click(fredIcon);
+  expect(useAssistantNavStore.getState().activeBotId).toBe('hermes:fred');
+});
+
+it('the active Assistant row uses the normal navigation active treatment', async () => {
+  mockMain(snap());
+  render(<AssistantsRoster />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Fred' }));
+  expect(screen.getByRole('button', { name: 'Fred' })).toHaveAttribute('aria-current', 'true');
+  const css = readFileSync(join(process.cwd(), 'src/renderer/components/assistants/AssistantsRoster.css'), 'utf8');
+  expect(css).toMatch(/\.assistant-row\.active \{[^}]*border-left-color: var\(--accent-interactive\)/);
 });

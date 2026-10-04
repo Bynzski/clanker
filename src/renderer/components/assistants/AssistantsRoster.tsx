@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Bot } from 'lucide-react';
+import { getHarnessOption } from '../../lib/harnessOptions';
 import { useAssistantsStore } from '../../store/assistantsStore';
 import { useAssistantNavStore } from '../../store/assistantNavStore';
 import type { HermesAssistantServiceState, HermesBot } from '../../../shared/types/assistants';
@@ -29,25 +29,27 @@ const STATUS_TEXT: Partial<Record<HermesAssistantServiceState, string>> = {
 export function useAssistantsEnabled(): boolean {
   const ensure = useAssistantsStore((state) => state.ensureSubscribed);
   useEffect(() => { ensure(); }, [ensure]);
-  return useAssistantsStore((state) => state.snapshot?.settings.enabled === true);
+  // Hidden entirely unless the Hermes CLI is installed (main's canonical harness availability) and the user opted in.
+  return useAssistantsStore((state) => state.snapshot?.available === true && state.snapshot.settings.enabled === true);
 }
 
 export function BotButton({ bot, live, variant }: { bot: HermesBot; live: boolean; variant: 'row' | 'icon' }) {
   const active = useAssistantNavStore((state) => state.activeBotId === bot.id);
   const openBot = useAssistantNavStore((state) => state.openBot);
-  const title = bot.description ? `${bot.displayName} — ${bot.description}` : `${bot.displayName} · Hermes Bot Chat`;
+  const HermesIcon = getHarnessOption('hermes').Icon;
+  const label = `${bot.displayName} · Hermes Assistant`;
+  const title = bot.description ? `${label}\n${bot.description}` : label;
   return (
     <button
       type="button"
       className={`assistant-${variant}${active ? ' active' : ''}${live ? '' : ' offline'}`}
       aria-current={active ? 'true' : undefined}
-      aria-label={bot.displayName}
+      aria-label={variant === 'icon' ? label : undefined}
       title={title}
       onClick={() => openBot(bot.id)}
     >
-      {variant === 'icon'
-        ? <Bot size={14} strokeWidth={2} aria-hidden="true" />
-        : <><span className={`assistant-dot${live ? ' live' : ''}`} aria-hidden="true" /><span className="assistant-name">{bot.displayName}</span></>}
+      <HermesIcon size={14} strokeWidth={2} aria-hidden="true" />
+      {variant === 'row' && <><span className="assistant-name">{bot.displayName}</span><span className={`assistant-dot${live ? ' live' : ''}`} aria-hidden="true" /></>}
     </button>
   );
 }
@@ -65,12 +67,13 @@ export default function AssistantsRoster({ variant = 'sidebar' }: { variant?: 's
   const retry = state === 'offline' || state === 'error' || state === 'detected-unusable';
   return (
     <section className={`assistants-roster assistants-roster-${variant}`} aria-label="Assistants">
-      <div className="assistants-roster-heading">{variant === 'sidebar' ? 'Assistants' : <Bot size={12} aria-hidden="true" />}</div>
+      <div className="assistants-roster-heading">Assistants</div>
       <div className="assistants-roster-list">
         {bots.map((bot) => <BotButton key={bot.id} bot={bot} live={live.has(bot.id) && state === 'connected'} variant="row" />)}
       </div>
-      {status && <p className="assistants-roster-status" role="status">{status}</p>}
-      {snapshot.service.error && state !== 'connected' && <p className="assistants-roster-error" role="alert">{snapshot.service.error}</p>}
+      {snapshot.service.error && state !== 'connected'
+        ? <p className="assistants-roster-error" role="alert">{snapshot.service.error}</p>
+        : status && <p className="assistants-roster-status" role="status">{status}</p>}
       {retry && <Button size="xs" disabled={busy} onClick={() => void refresh()}>Retry</Button>}
     </section>
   );

@@ -1,20 +1,18 @@
 import { useEffect } from 'react';
+import { Info } from 'lucide-react';
 import { useAssistantsStore } from '../../store/assistantsStore';
-import type { HermesAssistantServiceState } from '../../../shared/types/assistants';
 import { Button } from '../ui/Button';
+import { IconButton } from '../ui/IconButton';
 import '../assistants/AssistantsRoster.css';
 
-const STATUS: Record<HermesAssistantServiceState, string> = {
-  disabled: 'Off',
-  probing: 'Connecting…',
-  starting: 'Starting…',
-  connected: 'Connected',
-  offline: 'Offline',
-  error: 'Error',
-  'detected-unusable': 'Detected, but unusable',
+const PROBLEM: Record<string, string> = {
+  offline: 'Hermes service is not running',
+  error: 'Could not connect to Hermes',
+  'detected-unusable': 'Hermes service found, but Clanker cannot connect to it',
 };
+const TRANSITION: Record<string, string> = { probing: 'Connecting…', starting: 'Starting Hermes service…' };
 
-/** The only Assistants management surface: two options, a status and Retry. */
+/** Optional Hermes Assistants. Absent entirely unless the Hermes CLI is installed. */
 export default function AssistantsSettings() {
   const snapshot = useAssistantsStore((state) => state.snapshot);
   const error = useAssistantsStore((state) => state.error);
@@ -23,32 +21,41 @@ export default function AssistantsSettings() {
   const configure = useAssistantsStore((state) => state.configure);
   const refresh = useAssistantsStore((state) => state.refresh);
   useEffect(() => { ensure(); }, [ensure]);
-  const settings = snapshot?.settings;
-  const service = snapshot?.service;
+  if (!snapshot?.available) return null;
+  const { settings, service } = snapshot;
+  const connected = settings.enabled && service.state === 'connected';
+  const transition = settings.enabled ? TRANSITION[service.state] : undefined;
+  const problem = settings.enabled && !connected && !transition ? (error || service.error || PROBLEM[service.state]) : undefined;
+  const statusText = !settings.enabled ? 'Off'
+    : connected ? `Connected${service.ownership === 'clanker' ? ' · Clanker-managed' : service.ownership === 'external' ? ' · External' : ''}`
+    : transition ?? PROBLEM[service.state] ?? 'Not connected';
+  const info = `Uses a local Hermes service (hermes serve). Ordinary Hermes harness usage is independent. Status: ${statusText}.`;
   return (
     <div className="settings-section" aria-label="Hermes Assistants">
-      <div className="settings-section-title">Hermes Assistants</div>
+      <div className="assistants-settings-header">
+        <div className="settings-section-title">Hermes Assistants</div>
+        <IconButton size="xs" variant="ghost" aria-label="Hermes Assistants information" title={info}>
+          <Info size={12} strokeWidth={2} />
+        </IconButton>
+      </div>
       <label className="settings-option">
-        <input type="checkbox" checked={settings?.enabled ?? false} disabled={!settings || busy}
-          onChange={(event) => settings && void configure({ ...settings, enabled: event.target.checked })} />
+        <input type="checkbox" checked={settings.enabled} disabled={busy}
+          onChange={(event) => void configure({ ...settings, enabled: event.target.checked })} />
         <span>Enable Hermes Assistants</span>
       </label>
       <label className="settings-option">
-        <input type="checkbox" checked={settings?.autoStart ?? false} disabled={!settings || !settings.enabled || busy}
-          onChange={(event) => settings && void configure({ ...settings, autoStart: event.target.checked })} />
+        <input type="checkbox" checked={settings.autoStart} disabled={!settings.enabled || busy}
+          onChange={(event) => void configure({ ...settings, autoStart: event.target.checked })} />
         <span>Start Hermes service when needed</span>
       </label>
-      <p className="assistants-roster-status">
-        Uses a local Hermes service (<code>hermes serve</code>). Ordinary Hermes harness usage works independently.
-      </p>
-      {settings?.enabled && service && (
-        <div className="settings-row">
-          <span role="status">Status: {STATUS[service.state]}</span>
+      {transition && <p className="assistants-roster-status" role="status">{transition}</p>}
+      {problem && (
+        <div className="assistants-settings-row">
+          <span className="assistants-roster-error" role="alert">{problem}</span>
           <Button size="xs" disabled={busy} onClick={() => void refresh()}>Retry</Button>
         </div>
       )}
-      {service?.error && settings?.enabled && <p className="assistants-roster-error" role="alert">{service.error}</p>}
-      {error && <p className="assistants-roster-error" role="alert">{error}</p>}
+      {!settings.enabled && error && <p className="assistants-roster-error" role="alert">{error}</p>}
     </div>
   );
 }

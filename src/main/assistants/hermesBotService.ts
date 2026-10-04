@@ -28,6 +28,8 @@ export interface HermesBotServiceDeps {
   onChanged(snapshot: AssistantSnapshot): void;
   onPtyData(botId: string, data: string): void;
   isShuttingDown(): boolean;
+  /** Canonical local harness availability for `hermes`. Evaluated once per service lifetime (a restart picks up installs). */
+  isHermesAvailable(): boolean;
   fetch?: FetchLike;
   createWebSocket?: WebSocketFactory;
   spawnServe?: SpawnServe;
@@ -80,6 +82,7 @@ export class HermesBotService {
   private readonly createWebSocket: WebSocketFactory;
   private readonly spawnServe: SpawnServe;
   private readonly now: () => number;
+  private readonly available: boolean;
   private settings: AssistantSettings = { ...DEFAULT_ASSISTANT_SETTINGS };
   private state: HermesAssistantServiceState = 'disabled';
   private ownership: 'external' | 'clanker' | null = null;
@@ -104,6 +107,9 @@ export class HermesBotService {
     this.spawnServe = deps.spawnServe ?? spawnHermesServe;
     this.now = deps.now ?? Date.now;
     this.settings = this.loadSettings();
+    let available = false;
+    try { available = deps.isHermesAvailable(); } catch { /* treated as not installed */ }
+    this.available = available;
   }
 
   private loadSettings(): AssistantSettings {
@@ -114,6 +120,7 @@ export class HermesBotService {
 
   get(): AssistantSnapshot {
     return {
+      available: this.available,
       settings: { ...this.settings },
       service: { state: this.state, ownership: this.ownership, ...(this.error ? { error: this.error } : {}) },
       bots: this.roster.map((entry) => ({ ...entry.public })),
@@ -136,7 +143,8 @@ export class HermesBotService {
 
   /** App startup: nothing happens (no probe, no spawn) unless Assistants were already enabled. */
   start(): void {
-    if (this.settings.enabled) void this.refresh().catch(() => undefined);
+    // Dormant without the Hermes CLI: persisted preferences are kept but nothing is probed or spawned.
+    if (this.available && this.settings.enabled) void this.refresh().catch(() => undefined);
   }
 
   configure(value: unknown): AssistantSnapshot {
@@ -148,6 +156,7 @@ export class HermesBotService {
       void this.disable();
       return this.get();
     }
+    if (!this.available) return this.publish();
     if (!previous.enabled && next.enabled) {
       this.episodeRestarts = 0;
       void this.refresh().catch(() => undefined);
@@ -191,6 +200,7 @@ export class HermesBotService {
 
   refresh(): Promise<AssistantSnapshot> {
     if (!this.settings.enabled) return Promise.reject(new Error('Assistants integration is disabled'));
+    if (!this.available) return Promise.resolve(this.get());
     if (this.refreshOp) return this.refreshOp;
     const generation = this.generation;
     const operation = this.run(generation);

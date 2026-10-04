@@ -344,6 +344,8 @@ app.whenReady().then(() => {
     readSettings: () => store.get('assistantSettings'),
     writeSettings: (settings) => store.set('assistantSettings', settings),
     isShuttingDown: getAppShuttingDown,
+    // The same authority behind the toolbar's Hermes launcher: a missing CLI makes Assistants dormant.
+    isHermesAvailable: () => Boolean(getAvailableHarnessOptions().hermes),
     onChanged: (snapshot) => {
       if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(ASSISTANTS_CHANGED, snapshot);
     },

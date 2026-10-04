@@ -10,6 +10,7 @@ import AssistantsRoster from './assistants/AssistantsRoster';
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import './EdgeResizeHandle.css';
 import './WorkspaceSidebar.css';
+import './assistants/AssistantsRoster.css';
 
 const FileExplorer = lazy(() => import('./FileExplorer'));
 
@@ -70,8 +71,10 @@ export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarPr
       {collapsed && <WorkspaceRail onOpenWorkspace={onOpenWorkspace} onExpand={expandSidebar} />}
       {/* The navigator stays mounted while collapsed so per-workspace expansion survives the rail. */}
       <div className="workspace-sidebar-sections" hidden={collapsed}>
-        <WorkspaceNavigatorSection onOpenWorkspace={onOpenWorkspace} onCollapseSidebar={collapseSidebar} />
-        <AssistantsRoster />
+        <div className="workspace-sidebar-upper" data-testid="workspace-sidebar-upper">
+          <WorkspaceNavigatorSection onOpenWorkspace={onOpenWorkspace} onCollapseSidebar={collapseSidebar} />
+          <AssistantsRoster />
+        </div>
         {activeWorkspaceId && !collapsed && !assistantActive && (
           <Suspense fallback={null}>
             <WorkspaceScopeProvider workspaceId={activeWorkspaceId}>
