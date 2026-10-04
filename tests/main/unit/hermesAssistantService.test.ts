@@ -243,6 +243,119 @@ describe('Clanker-owned backend', () => {
   });
 });
 
+describe('owned-service lifecycle under overlapping operations', () => {
+  /** An owned backend that is connected, with the stop of its child deliberately held open. */
+  async function ownedAndHeld() {
+    const ctx = setup({ enabled: true, autoStart: true }, { stopGraceMs: 60_000 });
+    const { service, hermes, children, ready } = ctx;
+    hermes.running = false; // nothing else answers on the default port
+    const first = service.refresh(); await flush(); hermes.running = true; ready(children[0]); await first;
+    expect(service.get().service).toMatchObject({ state: 'connected', ownership: 'clanker' });
+    hermes.running = false;
+    children[0].kill = vi.fn(() => true); // SIGTERM is accepted but the process lingers until released
+    const releaseOldChild = () => { children[0].exitCode = 0; children[0].emit('exit', 0); };
+    return { ...ctx, releaseOldChild };
+  }
+
+  it('a re-enable during the old child\'s stop waits for it, then performs a fresh start without a manual refresh', async () => {
+    const { service, hermes, spawnServe, children, ready, releaseOldChild, stored } = await ownedAndHeld();
+    service.configure({ enabled: false, autoStart: true });
+    await flush();
+    service.configure({ enabled: true, autoStart: true });
+    await flush(30);
+    // The old child is still stopping: no competing child, not connected, nothing stranded yet.
+    expect(spawnServe).toHaveBeenCalledTimes(1);
+    expect(children[0].kill).toHaveBeenCalledWith('SIGTERM');
+    expect(service.get().service.state).not.toBe('connected');
+    releaseOldChild();
+    await flush(30);
+    expect(spawnServe).toHaveBeenCalledTimes(2);
+    hermes.running = true;
+    ready(children[1], 40222);
+    await flush(30);
+    expect(service.get().service).toMatchObject({ state: 'connected', ownership: 'clanker' });
+    expect(spawnServe).toHaveBeenCalledTimes(2);
+    expect(stored()).toEqual({ enabled: true, autoStart: true });
+    expect(children[1].kill).not.toHaveBeenCalled();
+  });
+
+  it('disable, re-enable, then disable again before the stop settles never restarts Hermes', async () => {
+    const { service, spawnServe, releaseOldChild } = await ownedAndHeld();
+    service.configure({ enabled: false, autoStart: true });
+    await flush();
+    service.configure({ enabled: true, autoStart: true });
+    await flush(10);
+    service.configure({ enabled: false, autoStart: true });
+    await flush(10);
+    releaseOldChild();
+    await flush(40);
+    expect(spawnServe).toHaveBeenCalledTimes(1);
+    expect(service.get()).toMatchObject({ settings: { enabled: false }, service: { state: 'disabled', ownership: null } });
+  });
+
+  it('an enable followed by a disable never resurrects Assistants after the old stop settles', async () => {
+    const { service, hermes, spawnServe, releaseOldChild } = await ownedAndHeld();
+    service.configure({ enabled: false, autoStart: true });
+    service.configure({ enabled: true, autoStart: true });
+    service.configure({ enabled: false, autoStart: true });
+    hermes.running = false;
+    releaseOldChild();
+    await flush(40);
+    expect(spawnServe).toHaveBeenCalledTimes(1);
+    expect(service.get().service.state).toBe('disabled');
+  });
+});
+
+describe('control connection loss', () => {
+  it('with a live owned child: publishes offline + disconnected surfaces, keeps the child, and Retry reconnects to it without a second child or a second Bot Chat', async () => {
+    const { service, hermes, spawnServe, children, ready, snapshots } = setup({ enabled: true, autoStart: true });
+    hermes.running = false;
+    const first = service.refresh(); await flush(); hermes.running = true; ready(children[0]); await first;
+    await service.openSurface('hermes:reviewer'); await flush();
+    expect(service.get().surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'open' }]);
+    const before = snapshots.length;
+    hermes.wsSockets()[0].close(1006); // only the control socket dies; the child process survives
+    expect(snapshots.length).toBeGreaterThan(before);
+    const published = snapshots[snapshots.length - 1];
+    expect(published.service).toMatchObject({ state: 'offline', ownership: 'clanker' });
+    expect(published.surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'disconnected' }]);
+    expect(published.assistants).toEqual([]);
+    expect(children[0].kill).not.toHaveBeenCalled();
+    expect(spawnServe).toHaveBeenCalledTimes(1);
+    const reconnected = await service.refresh();
+    expect(reconnected.service).toMatchObject({ state: 'connected', ownership: 'clanker' });
+    expect(spawnServe).toHaveBeenCalledTimes(1);
+    expect(hermes.wsSockets()).toHaveLength(2);
+    expect(hermes.wsSockets()[1].url).toContain(':40123/api/ws');
+    await service.openSurface('hermes:reviewer');
+    expect(hermes.calls.filter((call) => call.method === 'session.create')).toHaveLength(0);
+    expect(hermes.ptySockets()).toHaveLength(2);
+  });
+
+  it('with an external backend the lost connection still clears the endpoint and reports offline', async () => {
+    const { service, hermes, spawnServe, snapshots } = setup({ enabled: true, autoStart: false });
+    await service.refresh();
+    await service.openSurface('hermes:reviewer'); await flush();
+    hermes.running = false;
+    hermes.wsSockets()[0].close(1006);
+    const published = snapshots[snapshots.length - 1];
+    expect(published.service.state).toBe('offline');
+    expect(published.surfaces).toEqual([{ assistantId: 'hermes:reviewer', state: 'disconnected' }]);
+    expect(spawnServe).not.toHaveBeenCalled();
+    expect((await service.refresh()).service.state).toBe('offline');
+  });
+
+  it('intentional teardown (disable, refresh replacement, shutdown) is not treated as an unexpected loss', async () => {
+    const { service, snapshots } = setup({ enabled: true, autoStart: false });
+    await service.refresh();
+    service.configure({ enabled: false, autoStart: false });
+    await flush();
+    expect(snapshots.some((snapshot) => snapshot.service.error === 'Hermes service connection was lost')).toBe(false);
+    await service.shutdown();
+    expect(snapshots.some((snapshot) => snapshot.service.error === 'Hermes service connection was lost')).toBe(false);
+  });
+});
+
 describe('roster', () => {
   it('lists every valid named profile except default; the renderer sees only opaque id, display name and description', async () => {
     const { service } = setup({ enabled: true, autoStart: false });

@@ -93,6 +93,8 @@ export class HermesAssistantService {
   private child: ServeChild | undefined;
   private childExited: Promise<void> | undefined;
   private childReady = false;
+  /** The latest in-flight owned-child stop. Discovery waits for it so a quick re-enable never races (or strands behind) an old stop. */
+  private stopPromise: Promise<void> | undefined;
   private stopping = false;
   private generation = 0;
   private refreshOp: Promise<AssistantSnapshot> | undefined;
@@ -178,8 +180,9 @@ export class HermesAssistantService {
     this.setState('disabled');
     this.ownership = null;
     this.publish();
-    await this.stopOwnedChild();
-    this.ownership = null;
+    const generation = this.generation;
+    await this.stopOwned();
+    if (generation === this.generation) this.ownership = null;
   }
 
   /** Window teardown: surfaces end, the backend (including an owned child) keeps running. */
@@ -193,7 +196,7 @@ export class HermesAssistantService {
     this.refreshOp = undefined;
     this.closeAllSessions();
     this.dropRpc();
-    await this.stopOwnedChild();
+    await this.stopOwned();
   }
 
   // ── refresh (coalesced within one generation) ───────────────────────────────
@@ -215,6 +218,13 @@ export class HermesAssistantService {
   }
 
   private async run(generation: number): Promise<AssistantSnapshot> {
+    // Serialize behind any owned-child stop still in flight: no second backend starts while the old one is
+    // stopping, and once it settles this attempt is revalidated against the LATEST generation/settings
+    // (a newer disable makes it a no-op; a newer enable is the attempt that proceeds).
+    if (this.stopPromise) {
+      await this.stopPromise;
+      if (!this.current(generation)) return this.get();
+    }
     this.setState(this.endpoint ? this.state : 'probing');
     if (this.state === 'probing') this.publish();
     try {
@@ -333,6 +343,17 @@ export class HermesAssistantService {
     if (child.exitCode === null) { try { child.kill('SIGKILL'); } catch { /* already gone */ } }
   }
 
+  /** Records the stop so later discovery can wait for it; chained so overlapping stops settle together. */
+  private stopOwned(): Promise<void> {
+    const previous = this.stopPromise;
+    const operation = this.stopOwnedChild();
+    const combined: Promise<void> = Promise.all([previous, operation]).then(() => undefined).finally(() => {
+      if (this.stopPromise === combined) this.stopPromise = undefined;
+    });
+    this.stopPromise = combined;
+    return combined;
+  }
+
   /** Stops exactly the child Clanker spawned. An adopted/external backend is never touched. */
   private async stopOwnedChild(): Promise<void> {
     const child = this.child;
@@ -364,9 +385,10 @@ export class HermesAssistantService {
     this.rpc = undefined;
     if (!this.settings.enabled || this.deps.isShuttingDown() || this.stopping || this.state === 'disabled') return;
     this.markSessionsDisconnected();
-    if (this.childAlive() && this.endpoint?.ownership === 'clanker') return; // the child exit handler owns recovery
     this.roster = [];
-    this.endpoint = undefined;
+    // A still-live Clanker-owned child is kept (endpoint and ownership): Retry reconnects to it instead of
+    // spawning another backend. Anything else is genuinely gone.
+    if (!(this.childAlive() && this.endpoint?.ownership === 'clanker')) this.endpoint = undefined;
     this.setState('offline', 'Hermes service connection was lost');
     this.publish();
   }
