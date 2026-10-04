@@ -207,9 +207,10 @@ host observer plugin. The broker contains no harness-name switch.
 
 The wire envelope carries `event`, `scope` (`root` or `child`, provider-asserted),
 `sessionId`, `turnId`, optional `inputId` (matches a wait to its resolution),
-`continuesSessionId` (only on `session_continued`) and a diagnostic-only
-`nativeEvent`. Prompts, responses, tool arguments and results never enter it, and
-the renderer receives only the approved lifecycle event name.
+`continuesSessionId` (only on `session_continued`), an optional `cwd` (see *Agent
+location* below) and a diagnostic-only `nativeEvent`. Prompts, responses, tool
+arguments and results never enter it, and the renderer receives only the approved
+lifecycle event name.
 
 `AgentAttentionBroker` is the sole lifecycle authority. Per terminal it tracks the
 bound root session, the active turn, a bounded list of retired turns, pending
@@ -246,6 +247,38 @@ emitted only by Clanker's wrapper (`command.mjs --ended`) or SSH cleanup when th
 harness process itself exits to the fallback shell: it retires the registration,
 so handoff becomes unavailable and the shell is an ordinary shell. PTY exit/kill
 remains the unconditional final release.
+
+### Agent location
+
+A harness can move without its process changing directory (Claude Code tracks the
+directory a Bash `cd` leaves it in, so an agent can leave, and even remove, the
+worktree it was launched in). Providers report where the root agent is working as
+`cwd` on any root event, or as a location-only `location_changed` event
+(`sessionId` + `cwd`, no turn). The shared envelope forwards `cwd` only when it is a
+printable path of at most 1024 bytes, otherwise it drops that field and still
+delivers the event, and a failed `location_changed` delivery is not a failed bridge
+transaction.
+
+The broker (`agentLocation.ts`) canonicalizes the path in the registry's form
+(resolved, POSIX, no trailing slash; host paths for SSH) and rejects an event whose
+`cwd` is not absolute. Main then resolves it to the most specific checkout context of
+the reporting terminal's own workspace (symlink-aware locally, lexical on the host).
+Only the bound root session (or an unbound registration) can move the location;
+children and other sessions cannot. A move rides in the same revision as the
+lifecycle change of its event, otherwise it gets its own. The snapshot's
+`location: { path, checkoutContextId }` survives `session_ended` and goes with the
+agent on `agent_exited`.
+
+Location is presentation only. Agent rows and the status bar show the reported
+context (falling back to the launch context until a report arrives). It never
+re-binds `terminal.checkoutContextId`, never authorizes a root, and never relaxes
+release or removal checks, which stay on the launch binding.
+
+Claude reports `cwd` on `UserPromptSubmit`, `Stop`, `StopFailure` and `SessionEnd`,
+and maps `CwdChanged` (`new_cwd`) to `location_changed`. Mid-turn tool hooks carry
+none, so a reordered move is corrected when the turn ends at the latest. Other
+providers do not report a location yet. Adding one means emitting `cwd` from its
+interpreter or plugin; nothing in the broker or renderer is harness-specific.
 
 Set `CLANKER_DEBUG_ATTENTION=1` to log one bounded diagnostic per accepted-envelope
 event: harness, terminal ID, native event class, truncated session/turn IDs,

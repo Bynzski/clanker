@@ -17,6 +17,7 @@ import { useWorkspaceRename } from '../lib/useWorkspaceRename';
 import { useWorkspaceReorder } from '../lib/useWorkspaceReorder';
 import WorkspaceCheckouts from './WorkspaceCheckouts';
 import { getAgentWorktreeContext, worktreeBranchLabel } from '../lib/worktreeAgents';
+import { useAgentLocation } from '../lib/useAgentLocation';
 import './WorkspaceNavigatorSection.css';
 
 function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab; terminal: Terminal; isCurrent: boolean }) {
@@ -26,7 +27,7 @@ function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab;
   const HarnessIcon = harness.Icon;
   const showAttention = Boolean(terminal.harnessId && terminal.attentionEnabled);
   const name = terminal.displayName ?? harness.label;
-  const worktree = getAgentWorktreeContext(workspace, terminal);
+  const worktree = getAgentWorktreeContext(workspace, terminal, useAgentLocation(terminal.id));
   const branch = worktree ? worktreeBranchLabel(worktree) : null;
   const attentionSuffix = showAttention ? getAttentionSuffix(attention) : '';
 

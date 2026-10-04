@@ -377,6 +377,36 @@ describe('Claude lifecycle', () => {
     feed(hook('Stop', { ...common, session_id: 'two', prompt_id: 'p2' }));
     expect(state()).toBe('ready');
   });
+
+  // Location: every hook carries `cwd` (Claude's tracked working directory, which moves with a
+  // Bash `cd` while the process itself never changes directory). `CwdChanged` carries `old_cwd` and
+  // `new_cwd` (and `cwd` already equal to `new_cwd`); captured from Claude Code 2.1.289.
+  it('subscribes to CwdChanged and follows the root agent out of a worktree it removed', async () => {
+    expect(CLAUDE_HOOK_EVENTS).toContain('CwdChanged');
+    const hook = await interpreter('claude');
+    const { feed, state, broker } = rig('claude');
+    const worktree = '/home/u/repo-worktrees/wt-1';
+    feed(hook('UserPromptSubmit', { ...common, cwd: worktree, hook_event_name: 'UserPromptSubmit' }));
+    expect(broker.snapshot('term')?.location).toEqual({ path: worktree, checkoutContextId: null });
+
+    // `cd /home/u/repo && git worktree remove ...` in one Bash call.
+    feed(hook('CwdChanged', { ...common, cwd: '/home/u/repo', hook_event_name: 'CwdChanged', old_cwd: worktree, new_cwd: '/home/u/repo' }));
+    expect(broker.snapshot('term')?.location).toEqual({ path: '/home/u/repo', checkoutContextId: null });
+    expect(state()).toBe('running');
+
+    feed(hook('Stop', { ...common, cwd: '/home/u/repo', hook_event_name: 'Stop' }));
+    expect(state()).toBe('ready');
+    expect(broker.snapshot('term')?.location).toEqual({ path: '/home/u/repo', checkoutContextId: null });
+  });
+  it('ignores a subagent changing directory and never reports location from mid-turn tool hooks', async () => {
+    const hook = await interpreter('claude');
+    const { feed, broker } = rig('claude');
+    feed(hook('UserPromptSubmit', { ...common, cwd: '/home/u/repo' }));
+    expect(hook('CwdChanged', { ...common, agent_id: 'agent-1', cwd: '/tmp', old_cwd: '/home/u/repo', new_cwd: '/tmp' })).toBeNull();
+    feed(hook('PermissionRequest', request({ cwd: '/elsewhere' })));
+    expect(hook('PermissionRequest', request({ cwd: '/elsewhere' }))).toBeNull();
+    expect(broker.snapshot('term')?.location).toEqual({ path: '/home/u/repo', checkoutContextId: null });
+  });
 });
 
 describe('Agy lifecycle', () => {

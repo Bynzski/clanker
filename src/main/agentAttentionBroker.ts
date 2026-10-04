@@ -1,25 +1,28 @@
 import { randomBytes } from 'node:crypto';
 import * as net from 'node:net';
 import type {
-  AgentAttentionChange, AgentAttentionEvidence, AgentAttentionSnapshot, AgentPendingRequestKind, AgentRuntimeStatus,
+  AgentAttentionChange, AgentAttentionEvidence, AgentAttentionSnapshot, AgentLocation, AgentPendingRequestKind, AgentRuntimeStatus,
 } from '../shared/types/agentAttention';
+import { unresolvedAgentLocation, type AgentLocationResolver } from './agentLocation';
 import {
   arbitrateFallback, type FallbackEvidence, type FallbackSuppression, type SourceQuality, type StructuredAuthority,
 } from './attentionAuthority';
 
-/** Wire events. `session_continued` is an identity transition; `agent_exited` retires the registration. */
+/** Wire events. `session_continued` is an identity transition; `agent_exited` retires the registration.
+ * `location_changed` only moves the agent's reported location; any root event may also carry `cwd`. */
 type WireEvent =
   | 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'turn_interrupted'
-  | 'turn_failed' | 'session_ended' | 'session_continued' | 'agent_exited';
+  | 'turn_failed' | 'session_ended' | 'session_continued' | 'agent_exited' | 'location_changed';
 const EVENTS = new Set<WireEvent>([
   'turn_started', 'input_requested', 'input_resolved', 'turn_completed', 'turn_interrupted', 'turn_failed',
-  'session_ended', 'session_continued', 'agent_exited',
+  'session_ended', 'session_continued', 'agent_exited', 'location_changed',
 ]);
 const MAX_RETIRED_TURNS = 32;
 const MAX_MESSAGE_BYTES = 2048;
 const MAX_REMEMBERED_REVISIONS = 1024;
 const EVENT_FIELDS = new Set([
   'version', 'token', 'harness', 'event', 'sessionId', 'turnId', 'scope', 'inputId', 'requestKind', 'nativeEvent', 'continuesSessionId',
+  'cwd',
 ]);
 const NATIVE_EVENT = /^[A-Za-z0-9_.:-]{1,64}$/;
 const DIAGNOSTIC_ID_LENGTH = 64;
@@ -97,6 +100,7 @@ interface Registration {
   pending: PendingRequest[];
   lastCompletion: AgentAttentionSnapshot['lastCompletion'];
   lastOutcome: AgentAttentionSnapshot['lastOutcome'];
+  location: AgentLocation | null;
   lastAccepted?: AttentionExplanation['lastAccepted'];
   lastRejected?: AttentionExplanation['lastRejected'];
   lastFallback?: AttentionExplanation['lastFallback'];
@@ -112,6 +116,13 @@ interface ParsedEvent {
   inputId?: string;
   requestKind?: AgentPendingRequestKind;
   nativeEvent?: string;
+  location?: AgentLocation;
+}
+
+export interface AgentAttentionBrokerOptions {
+  /** Canonicalizes a reported directory and resolves its checkout context. Defaults to a canonical
+   * path in no context. A report it rejects rejects the whole event. */
+  resolveLocation?: AgentLocationResolver;
 }
 
 const pendingEvidence = (registration: Registration): AgentAttentionEvidence | null =>
@@ -137,12 +148,16 @@ export class AgentAttentionBroker {
   private readonly revisionFloors = new Map<string, number>();
   private server: net.Server | null = null;
   private startPromise: Promise<number> | null = null;
+  private readonly resolveLocation: AgentLocationResolver;
 
   constructor(
     private readonly onChange: (change: AgentAttentionChange) => void,
     private readonly onDiagnostic: (diagnostic: AttentionDiagnostic) => void = defaultDiagnostics,
     private readonly now: () => number = Date.now,
-  ) {}
+    options: AgentAttentionBrokerOptions = {},
+  ) {
+    this.resolveLocation = options.resolveLocation ?? unresolvedAgentLocation;
+  }
 
   async start(): Promise<number> {
     if (this.startPromise) return this.startPromise;
@@ -202,7 +217,7 @@ export class AgentAttentionBroker {
     this.registrations.set(token, {
       terminalId, harness, transport, retiredTurns: [], status: 'unverified', startedAt: null, pending: [],
       authority: options.authority ?? 'full', quality: options.quality ?? 'hook',
-      lastCompletion: null, lastOutcome: null,
+      lastCompletion: null, lastOutcome: null, location: null,
       revision: this.issueRevision(terminalId),
       ...(options.rootSessionId ? { rootSessionId: options.rootSessionId } : {}),
     });
@@ -273,6 +288,7 @@ export class AgentAttentionBroker {
       } : null,
       lastCompletion: r.lastCompletion ? { ...r.lastCompletion } : null,
       lastOutcome: r.lastOutcome ? { ...r.lastOutcome } : null,
+      location: r.location ? { ...r.location } : null,
     };
   }
 
@@ -383,6 +399,12 @@ export class AgentAttentionBroker {
     if (data.scope !== undefined && data.scope !== 'root' && data.scope !== 'child') return null;
     if (data.requestKind !== undefined && data.requestKind !== 'input' && data.requestKind !== 'approval') return null;
     if (data.nativeEvent !== undefined && (typeof data.nativeEvent !== 'string' || !NATIVE_EVENT.test(data.nativeEvent))) return null;
+    let location: AgentLocation | null = null;
+    if (data.cwd !== undefined) {
+      if (typeof data.cwd !== 'string') return null;
+      location = this.resolveLocation(registration.terminalId, registration.transport, data.cwd);
+      if (!location) return null;
+    }
     return { registration, parsed: {
       event: data.event as WireEvent,
       ...(typeof data.sessionId === 'string' ? { sessionId: data.sessionId } : {}),
@@ -392,6 +414,7 @@ export class AgentAttentionBroker {
       ...(data.requestKind ? { requestKind: data.requestKind } : {}),
       ...(typeof data.continuesSessionId === 'string' ? { continuesSessionId: data.continuesSessionId } : {}),
       ...(typeof data.nativeEvent === 'string' ? { nativeEvent: data.nativeEvent } : {}),
+      ...(location ? { location } : {}),
     } };
   }
 
@@ -399,7 +422,14 @@ export class AgentAttentionBroker {
     const accepted = this.parse(raw, remoteTerminalId);
     if (!accepted) return;
     const { registration, parsed } = accepted;
+    // A location moves with whatever lifecycle change this event makes, in the same revision; only
+    // when the lifecycle does not change does it get a revision of its own.
+    const moved = this.stageLocation(registration, parsed);
+    const revision = registration.revision;
     const decision = this.apply(registration, parsed);
+    if (moved && registration.revision === revision && this.current(registration.terminalId) === registration) {
+      this.commit(registration, () => undefined);
+    }
     const record = { semantic: parsed.event, ...(parsed.nativeEvent ? { nativeEvent: parsed.nativeEvent } : {}) };
     if (decision === 'accepted') registration.lastAccepted = { ...record, revision: registration.revision };
     else registration.lastRejected = { ...record, decision };
@@ -410,6 +440,18 @@ export class AgentAttentionBroker {
       ...(parsed.turnId ? { turnId: parsed.turnId.slice(0, DIAGNOSTIC_ID_LENGTH) } : {}),
       semantic: parsed.event, decision, revision: registration.revision, status: registration.status,
     });
+  }
+
+  /** Records the reported location of the bound (or not yet bound) root agent; a child, another
+   * session, or an event without a session never moves it. Returns whether it changed. */
+  private stageLocation(registration: Registration, event: ParsedEvent): boolean {
+    const next = event.location;
+    if (!next || event.event === 'agent_exited' || event.scope !== 'root' || !event.sessionId) return false;
+    if (registration.rootSessionId && registration.rootSessionId !== event.sessionId) return false;
+    const current = registration.location;
+    if (current && current.path === next.path && current.checkoutContextId === next.checkoutContextId) return false;
+    registration.location = { ...next };
+    return true;
   }
 
   /** Identity and lifecycle authority are separate checks, in that order. */
@@ -434,6 +476,9 @@ export class AgentAttentionBroker {
     }
 
     if (registration.rootSessionId && registration.rootSessionId !== event.sessionId) return 'rejected-mismatch';
+
+    // Location only: staged before lifecycle authority, it can neither bind a root nor touch a turn.
+    if (event.event === 'location_changed') return event.location ? 'accepted' : 'rejected-ambiguous';
 
     if (event.event === 'session_ended') {
       // A native boundary clears the binding; the registration and credentials stay alive.

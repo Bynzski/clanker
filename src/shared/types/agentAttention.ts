@@ -17,6 +17,16 @@ export type AgentPendingRequestKind = 'input' | 'approval';
  * a fallback detector (see `attentionAuthority.ts`). */
 export type AgentAttentionEvidence = 'structured' | 'fallback';
 
+/** Where the agent reports it is working now. Presentation only: it never re-binds the terminal's
+ * launch context or changes what the terminal may reach. */
+export interface AgentLocation {
+  /** Canonical POSIX path (a host path for SSH terminals). */
+  path: string;
+  /** The registered checkout context of the terminal's workspace containing `path`, resolved by
+   * main when the location was reported; null when it is in none. */
+  checkoutContextId: string | null;
+}
+
 export interface AgentAttentionSnapshot {
   terminalId: string;
   /** Monotonic per terminal, across registration replacement. Advances only on a semantic change. */
@@ -54,6 +64,9 @@ export interface AgentAttentionSnapshot {
     revision: number;
     at: number;
   } | null;
+  /** Latest location the root agent reported; null until it reports one. Survives a native session
+   * boundary (the agent is still where it was) and is gone with the agent on exit. */
+  location: AgentLocation | null;
 }
 
 /** Pushed on every authoritative change. `snapshot: null` is a revisioned tombstone: the agent

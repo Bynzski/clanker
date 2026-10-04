@@ -11,6 +11,8 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
 import { createTerminalFixture, createWorkspaceFixture } from '../../setup/fixtures';
 import { mainCheckoutContextId } from '../../../src/shared/checkoutContext';
+import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
+import { EMPTY_ATTENTION, snapshot, storeState } from '../../_helpers/attentionSnapshots';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 
 const ROOT = '/projects/clanker';
@@ -310,5 +312,76 @@ describe('worktree-backed agents in the collapsed rail', () => {
     const { container } = render(<WorkspaceRail onExpand={() => undefined} />);
     expect(container.querySelector('.ws-rail-agent-worktree')).toBeNull();
     expect(screen.getByRole('button', { name: 'Samson · Codex' })).toBeTruthy();
+  });
+});
+
+describe('worktree agents follow the location their harness reports', () => {
+  afterEach(() => {
+    cleanup();
+    useAgentAttentionStore.setState(EMPTY_ATTENTION);
+  });
+  beforeEach(() => installElectronApiMock());
+
+  /** Delilah (launched into ACTIVE) reports she is now in `path`, resolved by main to `checkoutContextId`. */
+  const delilahAt = (path: string, checkoutContextId: string | null) =>
+    useAgentAttentionStore.setState(storeState([snapshot('t-wt', 'completed', 3, { location: { path, checkoutContextId } })]));
+  const delilah = (container: HTMLElement) => agentRows(container).find((row) => row.querySelector('.ws-agent-name')?.textContent === 'Delilah')!;
+
+  it('drops the branch badge once the agent reports it is back on the workspace\'s own checkout', () => {
+    openWorkspace();
+    delilahAt(ROOT, MAIN.id);
+    const { container } = render(<WorkspaceNavigatorSection />);
+
+    expect(delilah(container).querySelector('.ws-agent-branch')).toBeNull();
+    expect(delilah(container).title).not.toContain(ACTIVE.path);
+  });
+
+  it('shows the branch of whichever isolated checkout the agent reports being in', () => {
+    openWorkspace();
+    delilahAt(`${FINISHED.path}/src`, FINISHED.id);
+    const { container } = render(<WorkspaceNavigatorSection />);
+
+    expect(within(delilah(container)).getByLabelText('on branch issue-72-finished')).toBeTruthy();
+    expect(delilah(container).title).toContain(FINISHED.path);
+  });
+
+  it('shows no branch for an agent that reports a directory outside every registered checkout', () => {
+    openWorkspace();
+    delilahAt('/tmp/scratch', null);
+    const { container } = render(<WorkspaceNavigatorSection />);
+
+    expect(delilah(container).querySelector('.ws-agent-branch')).toBeNull();
+  });
+
+  it('keeps the launch checkout\'s branch until the agent reports a location', () => {
+    openWorkspace();
+    useAgentAttentionStore.setState(storeState([snapshot('t-wt', 'running', 2)]));
+    const { container } = render(<WorkspaceNavigatorSection />);
+
+    expect(within(delilah(container)).getByLabelText('on branch issue-90')).toBeTruthy();
+  });
+
+  it('never re-binds the terminal: its launch context stays, so that checkout is not offered as inactive', () => {
+    openWorkspace({ terminals: [
+      createTerminalFixture({ id: 't-main', displayName: 'Samson', harnessId: 'codex', checkoutContextId: MAIN.id }),
+      createTerminalFixture({ id: 't-wt', displayName: 'Delilah', harnessId: 'claude', checkoutContextId: ACTIVE.id }),
+    ] });
+    delilahAt(ROOT, MAIN.id);
+    render(<WorkspaceNavigatorSection />);
+
+    expect(workspace().terminals.find((terminal) => terminal.id === 't-wt')?.checkoutContextId).toBe(ACTIVE.id);
+    const inactive = screen.getByRole('list', { name: /inactive checkouts/ });
+    expect(within(inactive).queryByText('issue-90')).toBeNull();
+    expect(within(inactive).getByText('issue-72-finished')).toBeTruthy();
+  });
+
+  it('updates the collapsed rail the same way', () => {
+    openWorkspace();
+    delilahAt(ROOT, MAIN.id);
+    render(<WorkspaceRail onExpand={() => undefined} />);
+    const agent = screen.getByRole('button', { name: /^Delilah · Claude/ });
+
+    expect(agent.getAttribute('aria-label')).not.toContain('on branch');
+    expect(agent.className).not.toContain('worktree');
   });
 });

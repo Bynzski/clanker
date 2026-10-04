@@ -98,6 +98,7 @@ vi.mock('electron', () => ({
 
 import { ipcMain } from 'electron';
 import { AgentAttentionBroker } from '../../../src/main/agentAttentionBroker';
+import { createAgentLocationResolver } from '../../../src/main/agentLocation';
 import { REMOTE_ATTENTION_PREFIX } from '../../../src/main/remote/remoteAttentionTransport';
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
 import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
@@ -423,6 +424,36 @@ describe('terminalIpc — error-path: handler returns', () => {
       expect(file.toLowerCase()).toBe('c:\\tools\\codex.exe');
       expect(args).toEqual([]);
       expect(options.cwd).toBe(worktree);
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+  });
+
+  test('a local launch records its resolved workspace, so a location its agent reports resolves to that workspace\'s context', async () => {
+    const { opts, terminals } = createMockDeps();
+    const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-ctx-loc-')));
+    try {
+      const workspace = path.join(base, 'workspace');
+      const worktree = path.join(base, 'workspace-worktrees', 'wt-1');
+      fs.mkdirSync(workspace); fs.mkdirSync(worktree, { recursive: true });
+      const posix = (value: string) => value.replace(/\\/g, '/');
+      const main = { id: 'ws::main', workspaceId: 'ws', environmentId: 'local', path: posix(workspace), kind: 'main' as const };
+      const linked = { id: 'ws::wt', workspaceId: 'ws', environmentId: 'local', path: posix(worktree), kind: 'worktree' as const };
+      const registered = { workspaceId: 'ws', location: { environmentId: 'local', path: posix(workspace) } };
+      registerTerminalIpc({
+        ...opts,
+        getSafeWorkspacePath: (dir: string) => dir,
+        getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: (id: string) => (id === 'ws' ? registered : null) }, [linked]) as never,
+      });
+      mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
+      const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+      const result = await handler(null, posix(worktree), undefined, undefined, undefined, undefined, 'ws', 'local', 'ws::wt');
+
+      expect(terminals.get(result.id)).toMatchObject({ workspaceId: 'ws', checkoutContextId: 'ws::wt' });
+      const resolve = createAgentLocationResolver({
+        getTerminal: (id) => terminals.get(id),
+        getCheckoutContexts: (workspaceId) => (workspaceId === 'ws' ? [main, linked] : []),
+      });
+      expect(resolve(result.id, 'local', worktree)).toEqual({ path: posix(worktree), checkoutContextId: 'ws::wt' });
+      expect(resolve(result.id, 'local', workspace)).toEqual({ path: posix(workspace), checkoutContextId: 'ws::main' });
     } finally { fs.rmSync(base, { recursive: true, force: true }); }
   });
 

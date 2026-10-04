@@ -22,7 +22,7 @@ A workspace's persistent identity is its environment ID plus canonical POSIX pat
 
 ### Checkout Contexts
 
-A workspace owns `checkoutContexts` (validated working roots) and every terminal carries a `checkoutContextId`. The main context's id is `<workspaceId>::main` and its path equals `workspacePath`; `sanitizeWorkspace` adds it (and binds unbound terminals to it) for workspaces created without contexts. A legacy linked-worktree workspace is its own root, so its single context has `kind: 'worktree'`. A terminal's recorded context is never rewritten by backfill. The authoritative, validated copy lives in main's `WorkspaceRegistry`; the renderer's copy is descriptive and cannot change where a terminal may run.
+A workspace owns `checkoutContexts` (validated working roots) and every terminal carries a `checkoutContextId`. The main context's id is `<workspaceId>::main` and its path equals `workspacePath`; `sanitizeWorkspace` adds it (and binds unbound terminals to it) for workspaces created without contexts. A legacy linked-worktree workspace is its own root, so its single context has `kind: 'worktree'`. A terminal's recorded context is never rewritten by backfill. The authoritative, validated copy lives in main's `WorkspaceRegistry`; the renderer's copy is descriptive and cannot change where a terminal may run. An agent's reported location (`AgentAttentionSnapshot.location`, resolved by main) only changes which checkout is *shown* for it; it never rewrites `checkoutContextId`.
 
 ## Workspace Lifecycle Model
 

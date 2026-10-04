@@ -1,5 +1,8 @@
+import { MAX_AGENT_LOCATION_BYTES } from '../agentLocation';
+
 /** Shared observer helpers. Providers own the meaning of native events; shared
- * code only bounds and forwards the sanitized canonical envelope. */
+ * code only bounds and forwards the sanitized canonical envelope. A reported working directory
+ * (`cwd`) that is not bounded and printable is dropped on its own: the lifecycle event still goes. */
 export const OBSERVER_FIELDS = `const IDENTIFIERS = ['sessionId', 'turnId', 'inputId', 'continuesSessionId'];
 function envelope(event, fields) {
   const extra = {};
@@ -9,6 +12,7 @@ function envelope(event, fields) {
   if (fields?.scope === 'root' || fields?.scope === 'child') extra.scope = fields.scope;
   if (fields?.requestKind === 'input' || fields?.requestKind === 'approval') extra.requestKind = fields.requestKind;
   if (typeof fields?.nativeEvent === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(fields.nativeEvent)) extra.nativeEvent = fields.nativeEvent;
+  if (typeof fields?.cwd === 'string' && fields.cwd && Buffer.byteLength(fields.cwd) <= ${MAX_AGENT_LOCATION_BYTES} && !/[\\u0000-\\u001f\\u007f]/.test(fields.cwd)) extra.cwd = fields.cwd;
   return { event, ...extra };
 }
 `;
@@ -176,7 +180,8 @@ if (interpreter) {
       let delivered = false;
       try { delivered = await emit(type, fields); } catch { /* counts as undelivered */ }
       // The broker may not have seen this transition: stay conservative until a boundary lands.
-      if (!delivered) failed = true;
+      // A location report carries no bridge state, so losing one is not a failed transaction.
+      if (!delivered && type !== 'location_changed') failed = true;
       else if (boundary.includes(type) && !failed) { try { fs.unlinkSync(poisonPath); } catch { /* none set */ } }
     }
     if (failed && !poisoned) { try { fs.writeFileSync(poisonPath, '', { flag: 'wx', mode: 0o600 }); } catch { /* best effort */ } }

@@ -11,6 +11,7 @@ import { getHarnessOption } from '../lib/harnessOptions';
 import { getRemoteEnvironmentLabel, getWorkspaceTabLabel } from '../lib/workspaceLabels';
 import { toggleFocusedWorkspaceExplorer } from '../lib/explorerToggle';
 import { getAgentWorktreeContext, worktreeBranchLabel } from '../lib/worktreeAgents';
+import { useAgentLocation } from '../lib/useAgentLocation';
 import { useWorkspaceReorder } from '../lib/useWorkspaceReorder';
 import { resolveDestinationCapabilities, useActiveDestination } from '../lib/activeDestination';
 import { AssistantButton, useAssistantsEnabled, useAssistantRoster } from './assistants/AssistantsRoster';
@@ -42,7 +43,7 @@ function RailAgent({ workspace, terminal, isCurrent, suppressClickRef }: RailAge
   const attention = attentionOn ? attentionView : null;
   const display = attention?.display ?? null;
   const suffix = getAttentionSuffix(attention);
-  const worktree = getAgentWorktreeContext(workspace, terminal);
+  const worktree = getAgentWorktreeContext(workspace, terminal, useAgentLocation(terminal.id));
   // Branch identity only: management of checkouts lives in the expanded sidebar.
   const description = worktree
     ? `${name} · ${harness.label} · on branch ${worktreeBranchLabel(worktree)}${suffix}`
