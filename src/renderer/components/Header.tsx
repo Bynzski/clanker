@@ -22,6 +22,8 @@ import RecipeModal from './RecipeModal';
 import { executeWorkspaceRecipe } from '../lib/recipeExecution';
 import { serializeWorkspaceLayout } from '../lib/workspaceLayoutStorage';
 import { resolveToolbarLaunch } from '../lib/toolbarLaunch';
+import { resolveDestinationCapabilities, useActiveDestination } from '../lib/activeDestination';
+import { useAssistantSurfaceStore } from '../store/assistantSurfaceStore';
 
 interface HeaderProps {
   /** `bar` is the standalone toolbar row (tabs mode); `titlebar` docks it into the title bar (sidebar mode). */
@@ -38,8 +40,14 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   const undoLayout = useWorkspaceStore((state) => state.undoLayout);
   const setHarness = useWorkspaceStore((state) => state.setHarness);
 
+  // Controls act on the ACTIVE destination: a warm workspace in the background is never a target.
+  const destination = useActiveDestination();
+  const capabilities = resolveDestinationCapabilities(destination);
+  const activeAssistantId = destination.kind === 'assistant' ? destination.assistantId : null;
+  const assistantBrowserVisible = useAssistantSurfaceStore((state) => (activeAssistantId ? state.byId[activeAssistantId]?.browserVisible ?? false : false));
+  const toggleAssistantBrowser = useAssistantSurfaceStore((state) => state.toggleBrowser);
   const workspacePath = focusedWorkspace?.workspacePath ?? '';
-  const browserVisible = focusedWorkspace?.browserVisible ?? false;
+  const browserVisible = activeAssistantId ? assistantBrowserVisible : focusedWorkspace?.browserVisible ?? false;
   const notesVisible = focusedWorkspace?.notesVisible ?? false;
   const explorerVisible = focusedWorkspace?.explorerVisible ?? false;
   const sidebarMode = useWorkspaceNavigationStore((state) => state.mode === 'sidebar');
@@ -140,7 +148,8 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   };
 
   const handleToggleBrowser = () => {
-    toggleBrowser();
+    if (activeAssistantId) toggleAssistantBrowser(activeAssistantId);
+    else toggleBrowser();
   };
 
   const handleToggleNotes = () => {
@@ -235,7 +244,7 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   // no Explorer toggle here: FILES is pinned to the bottom of the sidebar instead.
   const panelToggles = (
     <div className="toolbar-group" role="group" aria-label="Panels">
-      {!sidebarMode && (
+      {!sidebarMode && capabilities.explorer && (
         <IconButton
           type="button"
           size="xs"
@@ -249,30 +258,34 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
           {explorerShown ? <PanelLeftClose size={14} strokeWidth={2} /> : <PanelLeft size={14} strokeWidth={2} />}
         </IconButton>
       )}
-      <IconButton
-        type="button"
-        size="xs"
-        variant="ghost"
-        className={`header-btn header-btn-icon toolbar-btn ${browserVisible ? 'active' : ''}`}
-        onClick={handleToggleBrowser}
-        aria-pressed={browserVisible}
-        aria-label="Toggle browser panel"
-        title="Toggle browser panel"
-      >
-        <Globe size={14} strokeWidth={2} />
-      </IconButton>
-      <IconButton
-        type="button"
-        size="xs"
-        variant="ghost"
-        className={`header-btn header-btn-icon toolbar-btn ${notesVisible ? 'active' : ''}`}
-        onClick={handleToggleNotes}
-        aria-pressed={notesVisible}
-        aria-label="Toggle notes panel"
-        title="Toggle notes panel"
-      >
-        <NotebookPen size={14} strokeWidth={2} />
-      </IconButton>
+      {capabilities.browser && (
+        <IconButton
+          type="button"
+          size="xs"
+          variant="ghost"
+          className={`header-btn header-btn-icon toolbar-btn ${browserVisible ? 'active' : ''}`}
+          onClick={handleToggleBrowser}
+          aria-pressed={browserVisible}
+          aria-label="Toggle browser panel"
+          title="Toggle browser panel"
+        >
+          <Globe size={14} strokeWidth={2} />
+        </IconButton>
+      )}
+      {capabilities.notes && (
+        <IconButton
+          type="button"
+          size="xs"
+          variant="ghost"
+          className={`header-btn header-btn-icon toolbar-btn ${notesVisible ? 'active' : ''}`}
+          onClick={handleToggleNotes}
+          aria-pressed={notesVisible}
+          aria-label="Toggle notes panel"
+          title="Toggle notes panel"
+        >
+          <NotebookPen size={14} strokeWidth={2} />
+        </IconButton>
+      )}
     </div>
   );
 
@@ -280,7 +293,7 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
   return (
     <header className={`header${placement === 'titlebar' ? ' header-inline' : ''}`} data-placement={placement}>
       <div className="header-center">
-        <div className="harness-pills" role="group" aria-label="New terminal">
+        {capabilities.terminalLaunch && <div className="harness-pills" role="group" aria-label="New terminal">
           {HARNESS_OPTIONS.filter((opt) => visibleHarnessIds.includes(opt.id)).map(opt => {
             const IconComponent = opt.Icon;
             return (
@@ -296,8 +309,8 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
               </button>
             );
           })}
-        </div>
-        {focusedWorkspace && !focusedWorkspace.isLinkedWorktree && (
+        </div>}
+        {capabilities.isolatedAgent && focusedWorkspace && !focusedWorkspace.isLinkedWorktree && (
           <>
             {/* Set apart from the harness launchers: this creates a worktree-backed agent, it is not another harness. */}
             <span className="toolbar-divider" aria-hidden="true" />
@@ -305,7 +318,7 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
           </>
         )}
 
-        {workspacePath && (
+        {capabilities.git && workspacePath && (
           <>
             <span className="toolbar-divider" aria-hidden="true" />
             <GitButton key={focusedWorkspace?.id} workspacePath={workspacePath} workspaceId={focusedWorkspace?.id} />
@@ -314,6 +327,7 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
       </div>
 
       <HeaderRightControls
+        capabilities={capabilities}
         panelToggles={panelToggles}
         fitAllPanes={fitAllPanes}
         undoLayout={() => undoLayout(activeWorkspaceId ?? undefined)}

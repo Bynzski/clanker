@@ -13,7 +13,7 @@ vi.mock('electron', () => ({ ipcMain: { handle: mockHandle, on: vi.fn() }, Brows
 vi.mock('../../../../src/main/ipc/ptySpawn', () => ({ spawnPtyProcess: mockSpawnPty, waitForTerminalCleanup: vi.fn() }));
 vi.mock('../../../../src/main/platformShell', async (importOriginal) => ({ ...(await importOriginal<object>()), defaultShell: () => 'shell' }));
 vi.mock('../../../../src/main/sessionHistory', async (importOriginal) => ({
-  ...(await importOriginal<object>()), discoverSessions: mockDiscover, buildSessionInvokeArgs: mockBuildArgs,
+  ...(await importOriginal<object>()), discoverSessions: mockDiscover, buildSessionLaunch: mockBuildArgs,
 }));
 
 import { registerTerminalIpc } from '../../../../src/main/ipc/terminalIpc';
@@ -33,7 +33,7 @@ beforeEach(() => {
   mockHandle.mockReset().mockImplementation((channel: string, handler: Handler) => { handlers.set(channel, handler); });
   mockSpawnPty.mockReset().mockReturnValue({ id: 'term', pid: 1 });
   mockDiscover.mockReset().mockResolvedValue([]);
-  mockBuildArgs.mockReset().mockReturnValue({ spawnCmd: 'wrapper', spawnArgs: ['codex', 'resume', 'x'] });
+  mockBuildArgs.mockReset().mockReturnValue({ command: 'codex', args: ['resume', 'x'] });
   h = createHarness();
 });
 afterEach(() => {
@@ -141,6 +141,8 @@ describe('resume and fork keep the account that owns the session', () => {
       getTerminals: () => new Map(), getMainWindow: () => ({ webContents: { send: vi.fn() } }) as never,
       getSafeWorkspacePath: (dir: string) => dir, getIsShuttingDown: () => false, getStore: () => store as never,
       getHarnessOptions: () => options,
+      // Account/session ownership is the subject here, not host installation: the real planner runs, with a deterministic fake executable.
+      harnessSpawnOverrides: { fileExists: () => true },
       getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: (id: string) => (id === 'ws' ? { workspaceId: 'ws', location: { environmentId: 'local', path: '/workspace' } } : null) }) as never,
       getHarnessAccountService: () => h.service,
     });
@@ -219,7 +221,7 @@ describe('resume and fork keep the account that owns the session', () => {
     const claude = await addAccount(h, 'claude', 'C');
     h.capabilities.claude.discoverSessions.mockResolvedValue([{ id: 'c-1', harness: 'claude', title: 't', cwd: WORKSPACE, timestamp: 1 }]);
     registerSession();
-    mockBuildArgs.mockReturnValue({ spawnCmd: 'wrapper', spawnArgs: ['claude', '--resume', 'c-1'] });
+    mockBuildArgs.mockReturnValue({ command: 'claude', args: ['--resume', 'c-1'] });
     await invoke({ id: 'c-1', harness: 'claude', title: 't', cwd: WORKSPACE, timestamp: 1, accountId: claude.id });
     expect(spawnedEnv().CLAUDE_CONFIG_DIR).toBe(h.homes.resolve('claude', claude.id));
     expect(spawnedEnv()).not.toHaveProperty('CODEX_HOME');

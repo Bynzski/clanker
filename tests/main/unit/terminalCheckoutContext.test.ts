@@ -327,6 +327,9 @@ describe('local terminals resolve through checkout context identity', () => {
       const { spawn, terminals } = install(registry, safePath, {
         getHarnessOptions: () => codex,
         ensureHarnessWrapperScript: () => null,
+        // These tests are about launch-target revalidation, not whether Codex is installed on the host: the real
+        // planner runs (Windows included) but the fake executable deterministically exists.
+        harnessSpawnOverrides: { fileExists: () => true },
         agentAttentionBroker: broker as never,
       });
       const launch = (dir: string, workspaceId: string | undefined, contextId?: string) =>

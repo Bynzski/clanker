@@ -6,6 +6,10 @@ import { migrateLegacyFavorites } from './lib/harnessDefaultsMigration';
 import Header from './components/Header';
 import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
+import { useAssistantNavStore } from './store/assistantNavStore';
+
+const workspaceDestinationActive = () => useAssistantNavStore.getState().activeAssistantId === null;
+import AssistantsRoster from './components/assistants/AssistantsRoster';
 import { WorkspaceGateFullscreen, WorkspaceGateModal } from './components/WorkspaceGate';
 import { Pane, Terminal, useWorkspaceStore, DEFAULT_RUNTIME_STATE } from './store/workspaceStore';
 import { getWheelZoomAction } from './lib/keyboardShortcuts';
@@ -69,9 +73,11 @@ function App() {
   useEffect(() => {
     const actions: AppCommandActions = {
       openSettings,
-      fitAllPanes,
-      toggleExplorer: toggleFocusedWorkspaceExplorer,
+      // Workspace-scoped commands never act on a parked workspace while an Assistant is the active destination.
+      fitAllPanes: () => { if (workspaceDestinationActive()) fitAllPanes(); },
+      toggleExplorer: () => { if (workspaceDestinationActive()) toggleFocusedWorkspaceExplorer(); },
       saveActiveEditorFile: () => {
+        if (!workspaceDestinationActive()) return;
         const state = useWorkspaceStore.getState();
         const workspace = selectFocusedWorkspace(state);
         if (workspace?.activeEditorTabId) void state.saveEditorFile(workspace.activeEditorTabId, workspace.id);
@@ -112,7 +118,7 @@ function App() {
 
   useEffect(() => {
     return window.electronAPI.onFitAllPanes(() => {
-      fitAllPanes();
+      if (workspaceDestinationActive()) fitAllPanes();
     });
   }, [fitAllPanes]);
 
@@ -389,6 +395,7 @@ function App() {
         toolbar={sidebarMode ? <Header placement="titlebar" /> : undefined}
       />
       {!sidebarMode && <Header />}
+      {!sidebarMode && <AssistantsRoster variant="strip" />}
       {recipeFailure && (
         <div className="recipe-workspace-error" role="alert">
           <div>

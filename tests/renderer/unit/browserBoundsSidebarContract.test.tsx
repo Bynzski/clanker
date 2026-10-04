@@ -27,8 +27,8 @@ function Harness() {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   useBrowserBoundsLifecycle({
-    workspaceId: 'ws', activeTabId: 'tab', browserVisible: true, browserOverlayCount: 0,
-    isActiveWorkspace: true, layoutVersion: 0, containerRef, contentRef,
+    ownerId: 'ws', activeTabId: 'tab', browserVisible: true, browserOverlayCount: 0,
+    isActiveOwner: true, layoutVersion: 0, containerRef, contentRef,
   });
   return (
     <div ref={containerRef}>

@@ -1,3 +1,4 @@
+import { useAssistantNavStore } from './assistantNavStore';
 import { create } from 'zustand';
 import {
   buildWorkspaceLayout,
@@ -181,6 +182,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeWorkspaceLifecycle: null,
 
   addWorkspace: (workspace) => set((state) => {
+    // The added workspace becomes the active surface, so any app-level Assistant surface is parked (kept warm, not closed).
+    // This runs only here, i.e. after a workspace was actually registered; a failed open never reaches it.
+    useAssistantNavStore.getState().clearActive();
     const id = workspace.id ?? createWorkspaceId();
     const defaultName = workspace.name || getWorkspaceNameFromPath(workspace.workspacePath);
     const storedNotesVisible = readStoredNotesVisible(workspace.workspacePath, id, workspace.environmentId);
@@ -230,6 +234,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   selectWorkspace: (id, terminalId) => set((state) => {
+    // Choosing a workspace always leaves any app-level Assistant surface (opened ones stay alive, parked).
+    useAssistantNavStore.getState().clearActive();
     const workspace = findWorkspaceById(state.workspaces, id);
     if (workspace == null) {
       return state;

@@ -102,6 +102,7 @@ import { REMOTE_ATTENTION_PREFIX } from '../../../src/main/remote/remoteAttentio
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';
 import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
 import { RECIPE_COMMAND_WAIT, SPAWN_TERMINAL, TERMINAL_READY } from '../../../src/shared/ipcChannels';
+import { parseMsvcrtArgv, ptyCommandLine } from '../../_helpers/windowsCommandLine';
 
 type MockIpcMain = typeof ipcMain & {
   handle: ReturnType<typeof vi.fn>;
@@ -370,6 +371,154 @@ describe('terminalIpc — error-path: handler returns', () => {
     expect(mockPtySpawn).not.toHaveBeenCalled();
   });
 
+  test('an ordinary Hermes harness launch never touches the Hermes Assistant service (no probing, sockets or service code)', async () => {
+    const { opts } = createMockDeps();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('must not be called'));
+    const socketSpy = vi.fn();
+    vi.stubGlobal('WebSocket', socketSpy);
+    try {
+      registerTerminalIpc({
+        ...opts,
+        getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['--tui'], icon: '' } }),
+        getStore: () => ({ get: () => ({ hermes: { flags: '', model: '' } }) }) as never,
+      });
+      mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
+      const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+      const result = await handler(null, process.cwd(), 'hermes');
+      expect(result.harnessId).toBe('hermes');
+      const [, args] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
+      expect(args).toEqual(['hermes', '--tui']);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(socketSpy).not.toHaveBeenCalled();
+      expect(fs.readFileSync(path.join(process.cwd(), 'src/main/ipc/terminalIpc.ts'), 'utf8')).not.toMatch(/hermesAssistantService|assistants\/hermesBackend/);
+    } finally { vi.unstubAllGlobals(); fetchSpy.mockRestore(); }
+  });
+
+  test('an ordinary launch with an explicit worktree context still runs in and is tagged with that context, through the Windows planner', async () => {
+    const { opts, terminals } = createMockDeps();
+    const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-ctx-win-')));
+    try {
+      const workspace = path.join(base, 'workspace');
+      const worktree = path.join(base, 'worktree');
+      fs.mkdirSync(workspace); fs.mkdirSync(worktree);
+      const linked = { id: 'ws::wt', workspaceId: 'ws', environmentId: 'local', path: worktree.replace(/\\/g, '/'), kind: 'worktree' as const };
+      const registered = { workspaceId: 'ws', location: { environmentId: 'local', path: workspace.replace(/\\/g, '/') } };
+      registerTerminalIpc({
+        ...opts,
+        getSafeWorkspacePath: (dir: string) => dir,
+        ensureHarnessWrapperScript: () => null,
+        harnessSpawnOverrides: { platform: 'win32', env: { Path: 'C:\\Tools', PATHEXT: '.EXE;.CMD', ComSpec: 'C:\\Windows\\System32\\cmd.exe' }, fileExists: (file: string) => file.toLowerCase() === 'c:\\tools\\codex.exe' },
+        getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }, [linked]) as never,
+        getHarnessOptions: () => ({ codex: { name: 'Codex', command: 'codex', args: [], icon: '' } }),
+        getStore: () => ({ get: () => ({ codex: { flags: '', model: '' } }) }) as never,
+      });
+      mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
+      const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+      const result = await handler(null, worktree, 'codex', undefined, undefined, undefined, 'ws', 'local', 'ws::wt');
+      expect(result.checkoutContextId).toBe('ws::wt');
+      expect(terminals.get(result.id)).toMatchObject({ checkoutContextId: 'ws::wt' });
+      const [file, args, options] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
+      expect(file.toLowerCase()).toBe('c:\\tools\\codex.exe');
+      expect(args).toEqual([]);
+      expect(options.cwd).toBe(worktree);
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+  });
+
+  describe('Windows PTY argument serialization through the real terminal spawn path', () => {
+    const COMSPEC = 'C:\\Windows\\System32\\cmd.exe';
+    const windowsFor = (installed: string[]) => ({
+      platform: 'win32' as const,
+      env: { Path: 'C:\\Tools;C:\\npm', PATHEXT: '.EXE;.CMD', ComSpec: COMSPEC },
+      fileExists: (file: string) => installed.some((known) => known.toLowerCase() === file.toLowerCase()),
+    });
+    const NASTY = ['plain', 'My Projects', 'R&D', 'Tom & Jerry (v2)', '100% done (final)', 'a^b!c,d;e'];
+    // A normal Hermes harness terminal whose argv carries the workspace path, so path metacharacters reach the planner.
+    const setup = (installed: string[], dirName: string) => {
+      const { opts, terminals } = createMockDeps();
+      const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-win-term-')));
+      const workspace = path.join(base, dirName);
+      fs.mkdirSync(workspace);
+      const registered = { workspaceId: 'win-owner', location: { environmentId: 'local', path: workspace.replace(/\\/g, '/') } };
+      const broker = { register: vi.fn().mockResolvedValue({}), release: vi.fn() };
+      registerTerminalIpc({
+        ...opts,
+        getSafeWorkspacePath: (dir: string) => dir,
+        agentAttentionBroker: broker as never,
+        ensureHarnessWrapperScript: () => null,
+        harnessSpawnOverrides: windowsFor(installed),
+        getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => registered }) as never,
+        getHarnessOptions: () => ({ hermes: { name: 'Hermes', command: 'hermes', args: ['-p', 'reviewer', '--tui', '--in', workspace], icon: '' } }),
+        getStore: () => ({ get: () => ({ hermes: { flags: '', model: '' } }) }) as never,
+      });
+      mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
+      const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+      const launch = () => handler(null, workspace, 'hermes', undefined, undefined, undefined, 'win-owner', 'local');
+      return { launch, broker, terminals, workspace, cleanup: () => fs.rmSync(base, { recursive: true, force: true }) };
+    };
+
+    test.each(NASTY)('launches a real executable directly with intact argv for a workspace named %j', async (dirName) => {
+      const { launch, workspace, cleanup } = setup(['C:\\Tools\\hermes.exe'], dirName);
+      try {
+        await launch();
+        const [file, args] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
+        expect(file.toLowerCase()).toBe('c:\\tools\\hermes.exe');
+        expect(parseMsvcrtArgv(ptyCommandLine(file, args)).slice(1)).toEqual(['-p', 'reviewer', '--tui', '--in', workspace]);
+      } finally { cleanup(); }
+    });
+
+    test.each(NASTY.filter((name) => !name.includes('%')))('routes an npm .cmd shim through cmd.exe as one verbatim, escaped line for a workspace named %j', async (dirName) => {
+      const { launch, cleanup } = setup(['C:\\npm\\hermes.cmd'], dirName);
+      try {
+        await launch();
+        const [file, args] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
+        expect(file).toBe(COMSPEC);
+        expect(typeof args).toBe('string');
+        expect((args as string).startsWith('/d /s /c ""C:\\npm\\hermes.CMD" ')).toBe(true);
+        const live = (args as string).slice('/d /s /c '.length).slice(1, -1).replace(/^"[^"]*"/, '').replace(/\^./g, '');
+        expect(live).not.toMatch(/[&|<>()!"%,;]/);
+        expect(live.trim().split(' ')).toHaveLength(5);
+      } finally { cleanup(); }
+    });
+
+    test('fails closed and releases attention state when a .cmd shim would have to carry %', async () => {
+      const { launch, broker, terminals, cleanup } = setup(['C:\\npm\\hermes.cmd'], '100% done');
+      try {
+        await expect(launch()).rejects.toThrow(/cannot be passed safely/);
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+        expect(terminals.size).toBe(0);
+        expect(broker.release).toHaveBeenCalledOnce();
+      } finally { cleanup(); }
+    });
+
+    test('fails closed when the command cannot be resolved instead of falling back to cmd /c', async () => {
+      const { launch, broker, cleanup } = setup([], 'R&D');
+      try {
+        await expect(launch()).rejects.toThrow(/hermes is not installed/);
+        expect(mockPtySpawn).not.toHaveBeenCalled();
+        expect(broker.release).toHaveBeenCalledOnce();
+      } finally { cleanup(); }
+    });
+
+    test('ordinary harness launches use the same planner and keep .cmd shim resolution', async () => {
+      const { opts } = createMockDeps();
+      registerTerminalIpc({
+        ...opts,
+        ensureHarnessWrapperScript: () => null,
+        harnessSpawnOverrides: windowsFor(['C:\\npm\\codex.cmd']),
+        getHarnessOptions: () => ({ codex: { name: 'Codex', command: 'codex', args: [], icon: '' } }),
+        getStore: () => ({ get: () => ({ codex: { flags: '--sandbox workspace-write', model: 'gpt-5' } }) }) as never,
+      });
+      mockPtySpawn.mockReturnValue({ pid: 1234, write: vi.fn(), onData: vi.fn(), onExit: vi.fn(), kill: vi.fn() });
+      const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === SPAWN_TERMINAL)?.[1];
+      await handler(null, '/test/workspace', 'codex');
+      const [file, args] = mockPtySpawn.mock.calls[mockPtySpawn.mock.calls.length - 1];
+      expect(file).toBe(COMSPEC);
+      expect(args).toMatch(/^\/d \/s \/c ""C:\\npm\\codex\.CMD"/);
+      expect(args).toContain('gpt-5');
+      expect(args).toContain('workspace-write');
+    });
+  });
+
   test('records no durable task-session state for local or SSH harness launches', async () => {
     const { opts } = createMockDeps();
     const storeSet = vi.fn();
@@ -509,7 +658,7 @@ describe('terminalIpc — error-path: handler returns', () => {
       const getOpenWorkspacePath = vi.fn().mockReturnValue(null);
       registerTerminalIpc({
         ...opts, getOpenWorkspacePath, agentAttentionBroker: broker as never,
-        getWorkspaceRegistry: () => ({ getWorkspace: (id: string) => (workspace && id === workspace.workspaceId ? workspace : null) }) as never,
+        getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: (id: string) => (workspace && id === workspace.workspaceId ? workspace : null) }) as never,
       });
       const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'send-annotation-to-agent')?.[1] as (
         _: unknown, payload: unknown,
@@ -573,7 +722,7 @@ describe('terminalIpc — error-path: handler returns', () => {
         mockIpcMain.handle.mockClear();
         registerTerminalIpc({
           ...opts, getOpenWorkspacePath: () => workspacePath, agentAttentionBroker: broker as never,
-          getWorkspaceRegistry: () => ({ getWorkspace: () => ({ workspaceId: 'ws-local', location: { environmentId: 'local', path: workspacePath } }) }) as never,
+          getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => ({ workspaceId: 'ws-local', location: { environmentId: 'local', path: workspacePath } }) }) as never,
         });
         const handler = mockIpcMain.handle.mock.calls.find((call) => call[0] === 'send-annotation-to-agent')?.[1] as (_: unknown, payload: unknown) => { success: boolean };
         expect(handler(null, { workspaceId: 'ws-local', terminalId: 'term-agent', message: 'x' }).success).toBe(false);

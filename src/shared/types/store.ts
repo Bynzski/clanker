@@ -3,6 +3,7 @@ import type { SshEnvironmentConfig } from './environments';
 import type { ThemeId } from './theme';
 import type { WorkspaceNavigationMode } from './workspaceNavigation';
 import type { KeybindingOverrides } from '../keybindings';
+import type { AssistantSettings } from './assistants';
 /**
  * Shared store schema types.
  *
@@ -72,6 +73,8 @@ export interface StoreSchema {
   workspaceRecipes: WorkspaceRecipe[];
   sshEnvironments: SshEnvironmentConfig[];
   remoteWorktreeRemovals?: RemoteWorktreeRemovalRecord[];
+  /** Opt-in presentation preferences; native profile data never lives here. */
+  assistantSettings?: AssistantSettings;
   /** Only deviations from the keybinding registry defaults; absent command = default, null = unbound. */
   keybindingOverrides?: KeybindingOverrides;
 }

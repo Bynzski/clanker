@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WorkspaceHost from '../../../src/renderer/components/WorkspaceHost';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { createWorkspaceFixture } from '../../setup/fixtures';
+import { installElectronApiMock } from '../../setup/electron';
 import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import { MAX_WARM_WORKSPACE_SURFACES } from '../../../src/renderer/lib/workspaceWarmth';
 
@@ -24,9 +25,7 @@ const mockBrowserHide = vi.fn();
 
 describe('WorkspaceHost', () => {
   beforeEach(() => {
-    window.electronAPI = {
-      browserHide: mockBrowserHide,
-    } as unknown as typeof window.electronAPI;
+    installElectronApiMock({ browserHide: mockBrowserHide });
     mockBrowserHide.mockReset();
     useWorkspaceStore.setState({
       workspaces: [],

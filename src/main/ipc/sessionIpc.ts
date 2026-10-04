@@ -14,7 +14,8 @@ import { ipcMain, BrowserWindow } from 'electron';
 import * as path from 'node:path';
 import Store from 'electron-store';
 import { type StoreSchema } from '../../shared/types/store';
-import { discoverSessions, buildSessionInvokeArgs } from '../sessionHistory';
+import { discoverSessions, buildSessionLaunch } from '../sessionHistory';
+import { ensureHarnessWrapperScript, resolveHarnessPtySpawn, type HarnessPtySpawnOptions } from '../harnessLaunch';
 import { SESSION_DISCOVER, SESSION_INVOKE } from '../../shared/ipcChannels';
 import { spawnPtyProcess } from './ptySpawn';
 import type { Terminal } from './terminalIpc';
@@ -43,6 +44,9 @@ export interface RegisterSessionIpcDeps {
   getWorkspaceRegistry?: () => WorkspaceRegistry;
   /** Optional: without it (or without managed accounts) discovery and resume use the native account only. */
   getHarnessAccountService?: () => HarnessAccountService | undefined;
+  /** Test seams mirroring terminal spawning: wrapper lookup and Windows file/platform resolution. */
+  ensureHarnessWrapperScript?: () => string | null;
+  harnessSpawnOverrides?: Partial<HarnessPtySpawnOptions>;
 }
 
 export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
@@ -139,7 +143,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     };
 
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const { spawnCmd, spawnArgs: baseArgs } = buildSessionInvokeArgs(nativeSession, fork ?? false, userFlags);
+    const { command: sessionCommand, args: baseArgs } = buildSessionLaunch(nativeSession, fork ?? false, userFlags);
     const harnessEnv = accountBinding.mergeEnvironment(harnessConfig.env ?? {});
     let spawnArgs = baseArgs;
     let attentionEnv: Record<string, string> = {};
@@ -182,12 +186,14 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
         FORCE_COLOR: '1',
       };
 
-      const launchLabel = `[clanker-grid] ${spawnArgs.join(' ')}`;
+      // Planned last, from the final (attention-mutated) argv and the exact child environment.
+      const planned = resolveHarnessPtySpawn(sessionCommand, spawnArgs, (deps.ensureHarnessWrapperScript ?? ensureHarnessWrapperScript)(), { env, ...deps.harnessSpawnOverrides });
+      const launchLabel = `[clanker-grid] ${sessionCommand} ${spawnArgs.join(' ')}`;
 
       const result = spawnPtyProcess({
       id,
-      spawnCmd,
-      spawnArgs,
+      spawnCmd: planned.spawnCmd,
+      spawnArgs: planned.spawnArgs,
       cwd,
       env,
       terminals,

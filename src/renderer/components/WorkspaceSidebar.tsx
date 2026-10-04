@@ -6,8 +6,11 @@ import { isWorkspaceSidebarCollapsed } from '../../shared/types/workspaceNavigat
 import { WorkspaceScopeProvider } from './WorkspaceScope';
 import WorkspaceNavigatorSection from './WorkspaceNavigatorSection';
 import WorkspaceRail from './WorkspaceRail';
+import AssistantsRoster from './assistants/AssistantsRoster';
+import { useAssistantNavStore } from '../store/assistantNavStore';
 import './EdgeResizeHandle.css';
 import './WorkspaceSidebar.css';
+import './assistants/AssistantsRoster.css';
 
 const FileExplorer = lazy(() => import('./FileExplorer'));
 
@@ -32,6 +35,7 @@ export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarPr
   const collapseSidebar = useWorkspaceNavigationStore((state) => state.collapseSidebar);
   const expandSidebar = useWorkspaceNavigationStore((state) => state.expandSidebar);
   const collapsed = isWorkspaceSidebarCollapsed(width);
+  const assistantActive = useAssistantNavStore((state) => state.activeAssistantId !== null);
 
   const handleResizeStart = (event: ReactMouseEvent) => {
     event.preventDefault();
@@ -67,8 +71,11 @@ export default function WorkspaceSidebar({ onOpenWorkspace }: WorkspaceSidebarPr
       {collapsed && <WorkspaceRail onOpenWorkspace={onOpenWorkspace} onExpand={expandSidebar} />}
       {/* The navigator stays mounted while collapsed so per-workspace expansion survives the rail. */}
       <div className="workspace-sidebar-sections" hidden={collapsed}>
-        <WorkspaceNavigatorSection onOpenWorkspace={onOpenWorkspace} onCollapseSidebar={collapseSidebar} />
-        {activeWorkspaceId && !collapsed && (
+        <div className="workspace-sidebar-upper" data-testid="workspace-sidebar-upper">
+          <WorkspaceNavigatorSection onOpenWorkspace={onOpenWorkspace} onCollapseSidebar={collapseSidebar} />
+          <AssistantsRoster />
+        </div>
+        {activeWorkspaceId && !collapsed && !assistantActive && (
           <Suspense fallback={null}>
             <WorkspaceScopeProvider workspaceId={activeWorkspaceId}>
               <FileExplorer key={activeWorkspaceId} workspaceId={activeWorkspaceId} variant="section" />

@@ -120,6 +120,8 @@ import {
 } from '../../../src/main/ipc/browserIpc';
 import { KeybindingOverridesService } from '../../../src/main/keybindingOverrides';
 import { BrowserHistoryService, __resetBrowserHistoryServiceForTests } from '../../../src/main/browserHistory';
+import { assistantBrowserOwners, resolveBrowserOwnerKind } from '../../../src/main/browserOwner';
+import { assistantBrowserOwnerId } from '../../../src/shared/browserOwner';
 import type { BrowserHistoryEntry } from '../../../src/shared/types/browserHistory';
 
 class MemoryHistoryStore {
@@ -193,6 +195,32 @@ describe('registerBrowserIpc', () => {
     expect(partition('a', 'one')).not.toBe(partition('b', 'one'));
     expect(partition('local', 'one')).toBe('persist:browser-global');
     expect(createBrowserViewForTab('missing', 'one', scoped)).toBeNull();
+  });
+
+  test('an Assistant Browser owner is local and persistent only while main resolves it; fabricated ids and SSH workspaces keep their scopes', () => {
+    const { deps } = createMockDeps();
+    const known = new Set(['hermes:fred']);
+    const scoped = {
+      ...deps,
+      getWorkspaceEnvironmentKind: (id: string) => resolveBrowserOwnerKind(id, {
+        hasAssistant: (assistantId) => known.has(assistantId),
+        getWorkspaceKind: (workspaceId) => workspaceId === 'ssh-ws' ? 'ssh' : workspaceId === 'local-ws' ? 'local' : null,
+      }),
+    };
+    const partition = (id: string, tab: string) => (createBrowserViewForTab(id, tab, scoped)?.view as unknown as { options: { webPreferences: { partition: string } } }).options.webPreferences.partition;
+    expect(partition(assistantBrowserOwnerId('hermes:fred'), 'one')).toBe('persist:browser-global');
+    expect(partition('local-ws', 'one')).toBe('persist:browser-global');
+    expect(createBrowserViewForTab(assistantBrowserOwnerId('hermes:fabricated'), 'one', scoped)).toBeNull();
+    expect(createBrowserViewForTab('assistant-browser:', 'one', scoped)).toBeNull();
+    // A workspace id that merely looks like an Assistant id never reaches the workspace registry path.
+    expect(partition('ssh-ws', 'one')).toMatch(/^browser-ssh-/);
+    expect(partition('ssh-ws', 'one')).not.toBe(partition(assistantBrowserOwnerId('hermes:fred'), 'one'));
+  });
+
+  test('disabling Assistants selects only Assistant-owned Browser owners for disposal, never workspaces', () => {
+    const owners = ['ws-a', assistantBrowserOwnerId('hermes:fred'), 'ssh-ws', assistantBrowserOwnerId('hermes:ops')];
+    expect(assistantBrowserOwners(owners)).toEqual([assistantBrowserOwnerId('hermes:fred'), assistantBrowserOwnerId('hermes:ops')]);
+    expect(assistantBrowserOwners(['ws-a', 'assistant-x'])).toEqual([]);
   });
 
   test('registers browser context-menu and keyboard shortcut handlers', () => {

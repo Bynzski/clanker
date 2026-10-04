@@ -224,6 +224,16 @@ export const SESSION_INVOKE = 'session-invoke';
 
 export const HARNESS_USAGE_GET = 'harness-usage:get';
 
+/** Optional Hermes Assistants (Bot Mode via a local `hermes serve`). Main owns the backend, token and sockets. */
+export const ASSISTANTS_GET = 'assistants:get';
+export const ASSISTANTS_CONFIGURE = 'assistants:configure';
+export const ASSISTANTS_REFRESH = 'assistants:refresh';
+export const ASSISTANTS_OPEN = 'assistants:open';
+export const ASSISTANTS_PTY_WRITE = 'assistants:pty-write';
+export const ASSISTANTS_PTY_RESIZE = 'assistants:pty-resize';
+export const ASSISTANTS_CHANGED = 'assistants:changed';
+export const ASSISTANTS_PTY_DATA = 'assistants:pty-data';
+
 /* ============================================================================
  * Harness Accounts
  * ============================================================================ */
@@ -459,6 +469,14 @@ export const ALL_IPC_CHANNELS: readonly string[] = [
   SESSION_INVOKE,
   // Harness usage
   HARNESS_USAGE_GET,
+  ASSISTANTS_GET,
+  ASSISTANTS_CONFIGURE,
+  ASSISTANTS_REFRESH,
+  ASSISTANTS_OPEN,
+  ASSISTANTS_PTY_WRITE,
+  ASSISTANTS_PTY_RESIZE,
+  ASSISTANTS_CHANGED,
+  ASSISTANTS_PTY_DATA,
   HARNESS_ACCOUNTS_LIST,
   HARNESS_ACCOUNTS_SELECT,
   HARNESS_ACCOUNTS_ADD_START,

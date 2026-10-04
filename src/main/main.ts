@@ -78,6 +78,10 @@ import { AgentAttentionBroker } from './agentAttentionBroker';
 import { AGENT_ATTENTION_UPDATE, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles } from './agentAttentionAdapters';
 import { waitForTerminalCleanup } from './ipc/ptySpawn';
+import { HermesAssistantService } from './assistants/hermesAssistantService';
+import { registerAssistantIpc } from './ipc/assistantIpc';
+import { ASSISTANTS_CHANGED, ASSISTANTS_PTY_DATA } from '../shared/ipcChannels';
+import { assistantBrowserOwners, resolveBrowserOwnerKind } from './browserOwner';
 
 
 
@@ -98,6 +102,7 @@ const store = new Store<StoreSchema>({
     workspaceRecipes: [],
     sshEnvironments: [],
     remoteWorktreeRemovals: [],
+    assistantSettings: { enabled: false, autoStart: false },
   },
 });
 
@@ -123,6 +128,7 @@ const agentAttentionBroker = new AgentAttentionBroker((update) => {
 let annotationModeEnabled = false;
 let annotationController: ReturnType<typeof import('./annotation/annotationIpc').registerAnnotationIpc> | null = null;
 let browserIpcController: BrowserIpcController | null = null;
+let assistantService: HermesAssistantService | undefined;
 
 const GRACEFUL_TERMINATION_TIMEOUT_MS = 1000;
 
@@ -181,6 +187,7 @@ const killAllTerminals = () => {
 };
 
 const cleanupWorkspaceResources = () => {
+  assistantService?.reset();
   // Pending sign-ins must not outlive the window that started them.
   void harnessAccountService.cancelAllAuth();
   void remotePreviewManager.closeWorkspaces();
@@ -334,10 +341,34 @@ app.whenReady().then(() => {
     getHarnessAccountService: () => harnessAccountService,
   });
 
+  assistantService = new HermesAssistantService({
+    readSettings: () => store.get('assistantSettings'),
+    writeSettings: (settings) => store.set('assistantSettings', settings),
+    isShuttingDown: getAppShuttingDown,
+    // The same authority behind the toolbar's Hermes launcher: a missing CLI makes Assistants dormant.
+    isHermesAvailable: () => Boolean(getAvailableHarnessOptions().hermes),
+    onChanged: (snapshot) => {
+      // Deliberately disabled (or unavailable) Assistants own no native Browser views: dispose them all.
+      if (!snapshot.settings.enabled || !snapshot.available) {
+        for (const owner of assistantBrowserOwners(browserViews.keys())) browserIpcController?.disposeWorkspace(owner);
+      }
+      if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(ASSISTANTS_CHANGED, snapshot);
+    },
+    onPtyData: (assistantId, data) => {
+      if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(ASSISTANTS_PTY_DATA, { assistantId, data });
+    },
+  });
+  // Opted-in users only: a disabled configuration performs no Hermes probing or spawning at startup.
+  assistantService.start();
+  registerAssistantIpc({ getService: () => assistantService! });
+
   registerRemotePreviewIpc(remotePreviewManager);
   browserIpcController = registerBrowserIpc({
     onBrowserNavigation: (id, url, code) => remotePreviewManager.reportBrowserNavigation(id, url, code),
-    getWorkspaceEnvironmentKind: (id) => workspaceRegistry.getWorkspace(id)?.environment.kind ?? null,
+    getWorkspaceEnvironmentKind: (id) => resolveBrowserOwnerKind(id, {
+      hasAssistant: (assistantId) => assistantService?.hasAssistant(assistantId) ?? false,
+      getWorkspaceKind: (workspaceId) => workspaceRegistry.getWorkspace(workspaceId)?.environment.kind ?? null,
+    }),
     getMainWindow: () => mainWindow,
     getKeybindingOverrides: () => keybindingOverrides.get(),
     getBrowserViews: () => browserViews,
@@ -483,6 +514,7 @@ app.on('before-quit', (event) => {
   const previewsClosed = remotePreviewManager.close();
   remoteFileWatcher.close();
   setAppShuttingDown(true);
+  const assistantsStopped = assistantService?.shutdown() ?? Promise.resolve();
   harnessUsageService.dispose();
   const accountsClosed = harnessAccountService.dispose();
   workspaceRegistry.clear();
@@ -491,7 +523,7 @@ app.on('before-quit', (event) => {
   removeAttentionAdapterFiles();
   // Keep the event loop alive for SSH SIGKILL escalation and host launch-file
   // cleanup. A repeated quit request shares this drain instead of bypassing it.
-  quitCleanup = Promise.all([previewsClosed, waitForTerminalCleanup(), accountsClosed]).then(() => undefined);
+  quitCleanup = Promise.all([previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped]).then(() => undefined);
   void quitCleanup.catch((error: unknown) => console.warn('[clanker-grid] shutdown cleanup failed:', error)).finally(() => {
     quitCleanupComplete = true;
     app.quit();

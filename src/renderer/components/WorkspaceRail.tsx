@@ -9,6 +9,7 @@ import { getHarnessOption } from '../lib/harnessOptions';
 import { getRemoteEnvironmentLabel, getWorkspaceTabLabel } from '../lib/workspaceLabels';
 import { toggleFocusedWorkspaceExplorer } from '../lib/explorerToggle';
 import { getAgentWorktreeContext, worktreeBranchLabel } from '../lib/worktreeAgents';
+import { AssistantButton, useAssistantsEnabled, useAssistantRoster } from './assistants/AssistantsRoster';
 import './WorkspaceRail.css';
 
 /** Two-letter mark for a workspace: word initials ("demo-repo" → "DR") or the first two letters. */
@@ -69,6 +70,8 @@ export default function WorkspaceRail({ onOpenWorkspace, onExpand }: WorkspaceRa
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
   const byTerminalId = useAgentAttentionStore((state) => state.byTerminalId);
   const nextTarget = nextAttentionTarget(workspaces, byTerminalId, activeTerminalId);
+  const assistantsEnabled = useAssistantsEnabled();
+  const { assistants, live } = useAssistantRoster();
 
   return (
     <nav className="ws-rail" aria-label="Workspaces">
@@ -128,6 +131,11 @@ export default function WorkspaceRail({ onOpenWorkspace, onExpand }: WorkspaceRa
             </li>
           );
         })}
+        {assistantsEnabled && assistants.length > 0 && (
+          <li className="ws-rail-workspace" aria-label="Assistants">
+            {assistants.map((assistant) => <AssistantButton key={assistant.id} assistant={assistant} live={live.has(assistant.id)} variant="icon" />)}
+          </li>
+        )}
         {/* Opening a workspace sits right under the open ones, not down with the footer. */}
         {onOpenWorkspace && (
           <li className="ws-rail-workspace ws-rail-add">

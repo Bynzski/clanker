@@ -15,6 +15,7 @@ Clanker Grid is a single-window desktop app that brings your terminals, AI codin
 
 - **Terminal grid** — multiple terminal panes in flexible split layouts, with proper copy/paste.
 - **AI harnesses** — launch Claude, Codex, OpenCode, Pi, OMP, Antigravity, or Hermes straight into a pane. Search and resume supported harness conversations locally or on an SSH host.
+- **Optional Hermes Assistants** — connect your named Hermes profiles through `hermes serve`, keep each one's persistent Bot Chat open, and pair it with its own embedded Browser. Ordinary Hermes launching is unchanged and needs none of this.
 - **Harness usage** — check subscription usage and remaining quota for Codex, Claude, OMP, Hermes, and Antigravity in the active local or SSH workspace. The Usage popover refreshes while open; choose which providers appear in Harness Defaults.
 - **Git, built in** — branches, stashes, merges, diffs, remotes, and AI-assisted commits without leaving the app.
 - **VCS at a glance** — PR status, CI checks, and quick links from GitHub, GitLab, and Bitbucket.

@@ -1,29 +1,30 @@
 import { useEffect } from 'react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { useAssistantSurfaceStore } from '../store/assistantSurfaceStore';
+import { assistantBrowserOwnerId } from '../../shared/browserOwner';
 
 interface BrowserLifecycleCoordinatorProps {
-  activeWorkspaceId: string | null;
+  /** The single Browser owner (a workspace id or an Assistant browser scope) allowed to show a native view. */
+  activeOwnerId: string | null;
 }
 
-export default function BrowserLifecycleCoordinator({ activeWorkspaceId }: BrowserLifecycleCoordinatorProps) {
+export default function BrowserLifecycleCoordinator({ activeOwnerId }: BrowserLifecycleCoordinatorProps) {
   const { workspaces } = useWorkspaceStore();
+  const assistantSurfaces = useAssistantSurfaceStore((state) => state.byId);
 
   useEffect(() => {
+    // Hide every owner except the active one: a workspace and an Assistant native view never coexist.
+    // Store invariant W4 guarantees workspace.id === activeWorkspaceId implies lifecycle === 'active'.
     for (const workspace of workspaces) {
-      if (!workspace.browserVisible) {
-        continue;
-      }
-
-      // Hide non-focused workspaces. Store invariant W4 guarantees
-      // workspace.id === activeWorkspaceId implies lifecycle === 'active',
-      // so a separate lifecycle check is redundant here.
-      if (workspace.id === activeWorkspaceId) {
-        continue;
-      }
-
+      if (!workspace.browserVisible || workspace.id === activeOwnerId) continue;
       window.electronAPI.browserHide(workspace.id);
     }
-  }, [activeWorkspaceId, workspaces]);
+    for (const [assistantId, ui] of Object.entries(assistantSurfaces)) {
+      const ownerId = assistantBrowserOwnerId(assistantId);
+      if (!ui.browserVisible || ownerId === activeOwnerId) continue;
+      window.electronAPI.browserHide(ownerId);
+    }
+  }, [activeOwnerId, workspaces, assistantSurfaces]);
 
   return null;
 }

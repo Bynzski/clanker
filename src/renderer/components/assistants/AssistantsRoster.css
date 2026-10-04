@@ -1,0 +1,36 @@
+.assistants-roster { min-width: 0; padding: var(--space-sm) 0; border-top: 1px solid var(--border-default); flex: 0 0 auto; }
+.assistants-roster-heading, .assistants-roster-status, .assistants-roster-error { padding: 0 var(--space-sm); }
+.assistants-roster-heading { color: var(--text-secondary); font-size: var(--font-size-sm); text-transform: uppercase; margin-bottom: var(--space-xs); }
+.assistants-roster-list { display: flex; flex-direction: column; gap: 2px; }
+.assistant-row { display: flex; align-items: center; gap: var(--space-sm); width: 100%; min-height: 26px; padding: 0 6px 0 4px; background: none; border: 0; border-left: 2px solid transparent; color: var(--text-secondary); font-size: var(--font-size-md); text-align: left; cursor: pointer; }
+.assistant-row:hover { background: var(--surface-control); color: var(--text-primary); }
+.assistant-row.active { background: var(--surface-app); color: var(--text-primary); border-left-color: var(--accent-interactive); }
+.assistant-row.offline { opacity: 0.7; }
+.assistant-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-dot { width: 5px; height: 5px; opacity: 0.8; border-radius: 50%; background: var(--text-secondary); flex: none; }
+.assistant-dot.live { background: var(--status-success); }
+.assistants-roster-status { color: var(--text-secondary); font-size: var(--font-size-sm); margin: var(--space-xs) 0; }
+.assistants-roster-error { color: var(--status-error); font-size: var(--font-size-sm); overflow-wrap: anywhere; margin: var(--space-xs) 0; }
+.assistant-icon { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: none; border: 0; border-radius: var(--radius-sm); color: var(--text-primary); cursor: pointer; }
+.assistant-icon:hover, .assistant-icon.active { background: var(--surface-raised); }
+.assistant-icon.offline { opacity: 0.6; }
+.assistants-roster-strip { display: flex; align-items: center; gap: var(--space-sm); padding: 2px var(--space-md); border-top: 0; border-bottom: 1px solid var(--border-default); }
+.assistants-roster-strip .assistants-roster-heading { margin: 0; }
+.assistants-roster-strip .assistants-roster-list { flex-direction: row; flex-wrap: wrap; }
+.assistants-roster-strip .assistant-row { width: auto; }
+.assistants-roster-strip .assistants-roster-status, .assistants-roster-strip .assistants-roster-error { margin: 0; }
+.assistant-surface { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; position: relative; background: var(--surface-app); }
+.assistant-surface.parked { display: none; }
+.assistant-surface-header { padding: 4px var(--space-md); border-bottom: 1px solid var(--border-default); color: var(--text-secondary); font-size: var(--font-size-sm); }
+.assistant-surface-body { flex: 1; min-height: 0; min-width: 0; }
+.assistant-terminal { position: relative; display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; }
+.assistant-surface-terminal { flex: 1; min-height: 0; padding: 4px; }
+.assistant-surface-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; gap: var(--space-sm); align-items: center; justify-content: center; text-align: center; background: var(--surface-app); padding: var(--space-lg); }
+
+/* One upper navigation stack: WORKSPACES then ASSISTANTS, scrolling together above the bottom-pinned FILES. */
+.workspace-sidebar-upper { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.workspace-sidebar-upper .ws-nav { flex: 0 0 auto; }
+.workspace-sidebar-upper .ws-nav-list { overflow-y: visible; }
+.assistants-settings-header { display: flex; align-items: center; justify-content: space-between; }
+.assistants-settings-header .settings-section-title { margin: 0; }
+.assistants-settings-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }

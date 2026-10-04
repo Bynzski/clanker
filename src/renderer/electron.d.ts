@@ -88,7 +88,17 @@ export type {
   GlobalCredentialStatusResult,
 };
 
-interface ElectronAPI {
+import type { AssistantOpenResult, AssistantPtyData, AssistantSettings, AssistantSnapshot } from '../shared/types/assistants';
+
+export interface ElectronAPI {
+  getAssistants: () => Promise<AssistantSnapshot>;
+  configureAssistants: (settings: AssistantSettings) => Promise<AssistantSnapshot>;
+  refreshAssistants: () => Promise<AssistantSnapshot>;
+  openAssistant: (assistantId: string) => Promise<AssistantOpenResult>;
+  writeAssistantPty: (assistantId: string, data: string) => Promise<void>;
+  resizeAssistantPty: (assistantId: string, cols: number, rows: number) => Promise<void>;
+  onAssistantPtyData: (callback: (payload: AssistantPtyData) => void) => () => void;
+  onAssistantsChanged: (callback: (snapshot: AssistantSnapshot) => void) => () => void;
   // App
   getAppVersion: () => Promise<string>;
 

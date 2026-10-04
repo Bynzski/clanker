@@ -14,7 +14,7 @@ import Store from 'electron-store';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { type StoreSchema } from '../../shared/types/store';
-import { buildHarnessSpawnArgs, ensureHarnessWrapperScript, resolveHarnessSpawn } from '../harnessLaunch';
+import { buildHarnessSpawnArgs, ensureHarnessWrapperScript, resolveHarnessPtySpawn, type HarnessPtySpawnOptions } from '../harnessLaunch';
 import { defaultShell, prependUserCliBinsToPath } from '../platformShell';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
 import {
@@ -87,6 +87,8 @@ interface RegisterTerminalIpcDeps {
   createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
   /** Optional: without it (or without managed accounts) every launch uses the native account. */
   getHarnessAccountService?: () => HarnessAccountService | undefined;
+  /** Test seam (mirrors LocalLaunchOverrides): plan harness spawns for another platform/host. */
+  harnessSpawnOverrides?: Partial<HarnessPtySpawnOptions>;
 }
 
 let appShuttingDown = false;
@@ -120,8 +122,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
   const isFiniteNumber = (value: unknown): value is number =>
     typeof value === 'number' && Number.isFinite(value);
 
-  ipcMain.handle(SPAWN_TERMINAL, async (
-    _,
+  const spawnTerminal = async (
     workingDir: string,
     harness?: string,
     model?: string,
@@ -308,12 +309,14 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     }
     try {
       const wrapperPath = harnessConfig ? ensureHarnessWrapperScriptPath() : null;
-      const harnessCmd = harnessConfig
-        ? resolveHarnessSpawn(harnessConfig.command, harnessArgs, wrapperPath)
-        : { spawnCmd: userShell, spawnArgs: shellArgs };
-
+      // PATH is case-insensitive on Windows: keep one spelling so the resolved executable is the one
+      // the child will see.
+      const inheritedEnv = withoutAttentionEnvironment(process.env);
+      if (process.platform === 'win32') {
+        for (const key of Object.keys(inheritedEnv)) if (key.toLowerCase() === 'path') delete inheritedEnv[key];
+      }
       const env: { [key: string]: string } = {
-        ...withoutAttentionEnvironment(process.env),
+        ...inheritedEnv,
         PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
         ...withoutAttentionEnvironment(harnessEnv),
         ...attentionEnv,
@@ -327,6 +330,11 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         TERM_PROGRAM: 'clanker-grid',
         FORCE_COLOR: '1',
       };
+      // Resolved from the final child environment so Windows PATH/PATHEXT resolution and shim
+      // escaping (or fail-closed rejection) apply to exactly what will be spawned.
+      const harnessCmd = harnessConfig
+        ? resolveHarnessPtySpawn(harnessConfig.command, harnessArgs, wrapperPath, { env, ...deps.harnessSpawnOverrides })
+        : { spawnCmd: userShell, spawnArgs: shellArgs };
 
       let launchLabel: string | undefined;
       const cleanInitialCommand = (!harness && typeof initialCommand === 'string' && initialCommand.trim())
@@ -379,7 +387,10 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       agentAttentionBroker?.release(id);
       throw error;
     }
-  });
+  };
+  // Explicit positional bridge: extra renderer arguments cannot become a trusted descriptor.
+  ipcMain.handle(SPAWN_TERMINAL, (_event, workingDir: string, harness?: string, model?: string, initialCommand?: string, recipeCommand?: boolean, workspaceId?: string, environmentId?: string, checkoutContextId?: string) =>
+    spawnTerminal(workingDir, harness, model, initialCommand, recipeCommand, workspaceId, environmentId, checkoutContextId));
 
   /**
    * @deprecated GET_TERMINAL_BUFFER is retained as a no-op returning ''.

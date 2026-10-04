@@ -1,6 +1,6 @@
 import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type {
   ReactNode,
   ChangeEventHandler,
@@ -11,6 +11,10 @@ import type {
 } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, X, ExternalLink, MousePointer2 } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { useAssistantNavStore } from '../store/assistantNavStore';
+import type { BrowserTab } from '../store/workspaceTypes';
+import { createAndActivateBrowserTab, syncSelectedBrowserTab } from '../lib/browserTabActions';
+import { useActiveBrowserOwner } from '../lib/activeDestination';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { BrowserKeybindingCommandPayload } from '../../shared/keybindings';
 import { useScopedWorkspace } from './WorkspaceScope';
@@ -31,6 +35,37 @@ import {
 interface BrowserPanelProps {
   workspaceId?: string;
   layoutVersion: number;
+}
+
+/**
+ * Everything the shared Browser mechanics need from whoever owns the browser. Workspace and Assistant
+ * adapters build this from their own state; the core knows nothing about either.
+ */
+export interface BrowserPanelModel {
+  ownerId: string;
+  visible: boolean;
+  /** This owner is the single active Browser owner (the only one allowed to show a native view). */
+  isActiveOwner: boolean;
+  tabs: BrowserTab[];
+  activeTabId: string | null;
+  browserUrl: string;
+  overlayCount: number;
+  updateTab(tabId: string, partial: Partial<Pick<BrowserTab, 'url' | 'title' | 'canGoBack' | 'canGoForward'>>): void;
+  removeTab(tabId: string): { removed: boolean; nextActiveTabId: string | null };
+  setActiveTab(tabId: string): boolean;
+  moveTab(tabId: string, targetTabId: string): void;
+  pushOverlay(): void;
+  popOverlay(): void;
+  createTab(): Promise<string | null>;
+  syncSelectedTab(): Promise<void>;
+  features: {
+    /** Annotation-to-agent handoff (workspace semantics). */
+    annotation: boolean;
+    /** The pane header is a workspace drag handle. */
+    paneDrag: boolean;
+  };
+  /** Workspace-only: SSH remote preview control. */
+  renderRemotePreview?: (navigate: (url: string) => Promise<string | null>) => ReactNode;
 }
 
 function isWindowsDrivePath(value: string): boolean {
@@ -77,7 +112,7 @@ interface BrowserToolbarProps {
   submitUrl: () => Promise<void>;
   handleOpenExternal: () => void;
   annotationActive: boolean;
-  handleAnnotationToggle: () => Promise<void>;
+  handleAnnotationToggle?: () => Promise<void>;
   urlInputRef: Ref<HTMLInputElement>;
 }
 
@@ -141,37 +176,31 @@ function BrowserToolbar({
       </IconButton>
 
       {remotePreviewControl}
-      <IconButton variant="ghost" aria-label={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}
-        className={`browser-nav-btn ${annotationActive ? 'browser-annotation-active' : ''}`}
-        onClick={handleAnnotationToggle}
-        title={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}
-      >
-        <MousePointer2 size={16} strokeWidth={2} />
-      </IconButton>
+      {handleAnnotationToggle && (
+        <IconButton variant="ghost" aria-label={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}
+          className={`browser-nav-btn ${annotationActive ? 'browser-annotation-active' : ''}`}
+          onClick={handleAnnotationToggle}
+          title={annotationActive ? 'Exit annotation mode (Esc)' : 'Enter annotation mode'}
+        >
+          <MousePointer2 size={16} strokeWidth={2} />
+        </IconButton>
+      )}
     </div>
   );
 }
 
-export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPanelProps) {
-  const workspace = useScopedWorkspace(workspaceId);
-  const activeTab = workspace?.browserPane?.tabs.find((tab) => tab.id === workspace.browserPane?.activeTabId) ?? null;
-  const activeTabId = activeTab?.id ?? null;
-  const displayedUrl = activeTab?.url ?? workspace?.browserUrl ?? '';
+export function BrowserPanelCore({ model, layoutVersion }: { model: BrowserPanelModel; layoutVersion: number }) {
+  const { ownerId, tabs: browserTabs, activeTabId, isActiveOwner } = model;
+  const activeTab = browserTabs.find((tab) => tab.id === activeTabId) ?? null;
+  const displayedUrl = activeTab?.url ?? model.browserUrl;
+  const annotationEnabled = model.features.annotation;
 
   const [canGoBack, setCanGoBack] = useState(activeTab?.canGoBack ?? false);
   const [canGoForward, setCanGoForward] = useState(activeTab?.canGoForward ?? false);
   const containerRef = useRef<HTMLDivElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
-  const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
-  const removeBrowserTab = useWorkspaceStore((state) => state.removeBrowserTab);
-  const setActiveBrowserTab = useWorkspaceStore((state) => state.setActiveBrowserTab);
-  const moveBrowserTab = useWorkspaceStore((state) => state.moveBrowserTab);
-  const updateBrowserTab = useWorkspaceStore((state) => state.updateBrowserTab);
-  const browserOverlayCount = workspace?.browserOverlayCount ?? 0;
-  const browserTabs = workspace?.browserPane?.tabs ?? [];
+  const browserOverlayCount = model.overlayCount;
   const [annotationActive, setAnnotationActive] = useState(false);
   const [handoffQueue, setHandoffQueue] = useState<Array<{ id: number; message: string }>>([]);
   const nextHandoffId = useRef(0);
@@ -179,22 +208,23 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   const dragHandleProps = useDragHandle();
   // Empty header chrome is a pointer-only drag surface; the title/grip owns keyboard/a11y activation.
   const dragPointerDown = dragHandleProps?.onPointerDown as PointerEventHandler<HTMLDivElement> | undefined;
-  const isActiveWorkspace = workspace?.id != null && workspace.id === activeWorkspaceId;
+  const modelRef = useRef(model);
+  modelRef.current = model;
 
   useEffect(() => {
-    browserReactMount(workspace?.id ?? 'unknown');
+    browserReactMount(ownerId);
     return () => {
-      browserReactUnmount(workspace?.id ?? 'unknown');
+      browserReactUnmount(ownerId);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const { scheduleBoundsUpdate } = useBrowserBoundsLifecycle({
-    workspaceId: workspace?.id,
+    ownerId,
     activeTabId,
-    browserVisible: workspace?.browserVisible,
+    browserVisible: model.visible,
     browserOverlayCount,
-    isActiveWorkspace,
+    isActiveOwner,
     layoutVersion,
     containerRef,
     contentRef,
@@ -209,24 +239,24 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
 
   const handleNavigate = useCallback(async (rawUrl: string): Promise<string | null> => {
     let navigateUrl = rawUrl.trim();
-    if (!navigateUrl || !workspace?.id) return null;
+    if (!navigateUrl) return null;
 
     navigateUrl = normalizeBrowserInputUrl(navigateUrl);
 
     const success = activeTabId
-      ? await window.electronAPI.browserTabNavigate(workspace.id, activeTabId, navigateUrl)
-      : await window.electronAPI.browserNavigate(workspace.id, navigateUrl);
+      ? await window.electronAPI.browserTabNavigate(ownerId, activeTabId, navigateUrl)
+      : await window.electronAPI.browserNavigate(ownerId, navigateUrl);
 
     if (!success) {
       return null;
     }
 
     if (activeTabId) {
-      updateBrowserTab(activeTabId, { url: navigateUrl }, workspace.id);
+      modelRef.current.updateTab(activeTabId, { url: navigateUrl });
     }
 
     return navigateUrl;
-  }, [activeTabId, updateBrowserTab, workspace?.id]);
+  }, [activeTabId, ownerId]);
 
   const {
     inputUrl,
@@ -254,13 +284,13 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   }, [activeTabId, displayedUrl, resetAutocompleteState, syncDisplayedUrl]);
 
   useEffect(() => {
-    if (historySuggestions.length === 0 || !workspace?.id) {
+    if (historySuggestions.length === 0) {
       return;
     }
 
-    pushBrowserOverlay(workspace.id);
-    return () => popBrowserOverlay(workspace.id);
-  }, [historySuggestions.length, popBrowserOverlay, pushBrowserOverlay, workspace?.id]);
+    modelRef.current.pushOverlay();
+    return () => modelRef.current.popOverlay();
+  }, [historySuggestions.length]);
 
   const handleAnnotationActions = useCallback((state: Awaited<ReturnType<typeof window.electronAPI.annotationGetState>>) => {
     const pendingMessages = state.actions.flatMap((action) =>
@@ -275,7 +305,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   }, []);
 
   useEffect(() => {
-    if (!workspace?.id || !isActiveWorkspace) {
+    if (!isActiveOwner) {
       setCanGoBack(false);
       setCanGoForward(false);
       return;
@@ -285,14 +315,14 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     const updateState = async () => {
       try {
         const [back, forward] = await Promise.all([
-          window.electronAPI.canGoBack(workspace.id),
-          window.electronAPI.canGoForward(workspace.id),
+          window.electronAPI.canGoBack(ownerId),
+          window.electronAPI.canGoForward(ownerId),
         ]);
         if (!cancelled) {
           setCanGoBack(back);
           setCanGoForward(forward);
           if (activeTabId) {
-            updateBrowserTab(activeTabId, { canGoBack: back, canGoForward: forward }, workspace.id);
+            modelRef.current.updateTab(activeTabId, { canGoBack: back, canGoForward: forward });
           }
         }
       } catch {
@@ -306,10 +336,10 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
       cancelled = true;
       clearInterval(interval);
     };
-  }, [activeTabId, isActiveWorkspace, updateBrowserTab, workspace?.id]);
+  }, [activeTabId, isActiveOwner, ownerId]);
 
   useEffect(() => {
-    if (!workspace?.id || !isActiveWorkspace) {
+    if (!annotationEnabled || !isActiveOwner) {
       setAnnotationActive(false);
       setHandoffQueue([]);
       return;
@@ -321,14 +351,14 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
       workspaceId: string | null;
     }) => {
       if (!cancelled) {
-        setAnnotationActive(state.enabled && state.workspaceId === workspace.id);
+        setAnnotationActive(state.enabled && state.workspaceId === ownerId);
       }
     };
     const loadInitialState = async () => {
       try {
         const state = await window.electronAPI.annotationGetState();
         applyState(state);
-        if (!cancelled && state.enabled && state.workspaceId === workspace.id) handleAnnotationActions(state);
+        if (!cancelled && state.enabled && state.workspaceId === ownerId) handleAnnotationActions(state);
       } catch {
         // Ignore errors
       }
@@ -336,7 +366,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
 
     const unsubscribeState = window.electronAPI.onAnnotationStateChanged(applyState);
     const unsubscribeEscape = window.electronAPI.onAnnotationEscape((payload) => {
-      if (payload.workspaceId === workspace.id) {
+      if (payload.workspaceId === ownerId) {
         setAnnotationActive(false);
       }
     });
@@ -347,10 +377,10 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
       unsubscribeState();
       unsubscribeEscape();
     };
-  }, [handleAnnotationActions, isActiveWorkspace, workspace?.id]);
+  }, [annotationEnabled, handleAnnotationActions, isActiveOwner, ownerId]);
 
   useEffect(() => {
-    if (!workspace?.id || !workspace.browserVisible || !isActiveWorkspace || !annotationActive) {
+    if (!annotationEnabled || !model.visible || !isActiveOwner || !annotationActive) {
       return;
     }
 
@@ -362,8 +392,8 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
       try {
         const state = await window.electronAPI.annotationGetState();
         if (cancelled) return;
-        setAnnotationActive(state.enabled && state.workspaceId === workspace.id);
-        if (state.enabled && state.workspaceId === workspace.id) handleAnnotationActions(state);
+        setAnnotationActive(state.enabled && state.workspaceId === ownerId);
+        if (state.enabled && state.workspaceId === ownerId) handleAnnotationActions(state);
       } catch {
         // Ignore transient page-context errors while navigating.
       } finally {
@@ -376,7 +406,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
       cancelled = true;
       clearInterval(interval);
     };
-  }, [annotationActive, handleAnnotationActions, isActiveWorkspace, workspace?.browserVisible, workspace?.id]);
+  }, [annotationActive, annotationEnabled, handleAnnotationActions, isActiveOwner, model.visible, ownerId]);
 
   const {
     handleBack,
@@ -390,14 +420,16 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
     handleCloseTab,
     closeTabById,
   } = useBrowserPanelActions({
-    workspaceId: workspace?.id ?? null,
+    ownerId,
     activeTabId,
     browserTabsCount: browserTabs.length,
     displayedUrl,
     annotationActive,
     setAnnotationActive,
-    removeBrowserTab,
-    setActiveBrowserTab,
+    removeBrowserTab: (tabId) => modelRef.current.removeTab(tabId),
+    setActiveBrowserTab: (tabId) => modelRef.current.setActiveTab(tabId),
+    createTab: () => modelRef.current.createTab(),
+    syncSelectedTab: () => modelRef.current.syncSelectedTab(),
     scheduleBoundsUpdate,
   });
 
@@ -405,7 +437,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   // arrive here as one typed signal; this runs them through the panel's own actions.
   const runKeybindingCommand = useRef<(payload: BrowserKeybindingCommandPayload) => void>(() => undefined);
   runKeybindingCommand.current = (payload) => {
-    if (!workspace?.id || payload.workspaceId !== workspace.id || payload.tabId !== activeTabId) return;
+    if (payload.workspaceId !== ownerId || payload.tabId !== activeTabId) return;
     switch (payload.command) {
       case 'browser.focusAddress':
         urlInputRef.current?.focus();
@@ -435,20 +467,24 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
   }, []);
 
   const handleMoveTab = useCallback(async (tabId: string, targetTabId: string) => {
-    if (!workspace?.id || !activeTabId) return;
-    const moved = await window.electronAPI.browserMoveTab(workspace.id, tabId, targetTabId, activeTabId);
+    if (!activeTabId) return;
+    const moved = await window.electronAPI.browserMoveTab(ownerId, tabId, targetTabId, activeTabId);
     if (!moved) return;
-    moveBrowserTab(tabId, targetTabId, workspace.id);
+    modelRef.current.moveTab(tabId, targetTabId);
     scheduleBoundsUpdate(true);
-  }, [activeTabId, moveBrowserTab, scheduleBoundsUpdate, workspace?.id]);
+  }, [activeTabId, ownerId, scheduleBoundsUpdate]);
 
   return (
     <div className="browser-panel" ref={containerRef}>
       <div className="browser-pane-header">
-        <div className="pane-drag-surface" title="Drag to move pane" aria-label="Move browser pane" {...dragHandleProps}>
-          <div className="browser-pane-drag-handle" aria-hidden="true" />
-          <span className="browser-pane-title">Browser</span>
-        </div>
+        {model.features.paneDrag ? (
+          <div className="pane-drag-surface" title="Drag to move pane" aria-label="Move browser pane" {...dragHandleProps}>
+            <div className="browser-pane-drag-handle" aria-hidden="true" />
+            <span className="browser-pane-title">Browser</span>
+          </div>
+        ) : (
+          <div className="pane-drag-surface"><span className="browser-pane-title">Browser</span></div>
+        )}
         <BrowserTabStrip
           tabs={browserTabs}
           activeTabId={activeTabId}
@@ -457,7 +493,7 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
           onCloseTab={(event, tabId) => void handleCloseTab(event, tabId)}
           onMoveTab={(tabId, targetTabId) => void handleMoveTab(tabId, targetTabId)}
         />
-        <div className="browser-pane-drag-fill" aria-hidden="true" data-testid="browser-header-drag-fill" onPointerDown={dragPointerDown} />
+        <div className="browser-pane-drag-fill" aria-hidden="true" data-testid="browser-header-drag-fill" onPointerDown={model.features.paneDrag ? dragPointerDown : undefined} />
       </div>
       <BrowserToolbar
         canGoBack={canGoBack}
@@ -478,17 +514,57 @@ export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPane
         submitUrl={submitUrl}
         handleOpenExternal={handleOpenExternal}
         annotationActive={annotationActive}
-        handleAnnotationToggle={handleAnnotationToggle}
+        handleAnnotationToggle={annotationEnabled ? handleAnnotationToggle : undefined}
         urlInputRef={urlInputRef}
-        remotePreviewControl={workspace?.environmentId && workspace.environmentId !== 'local' ? <RemotePreviewControl
-          key={workspace.id} workspaceId={workspace.id} enabled={isActiveWorkspace && Boolean(workspace.browserVisible)} onOpen={handleNavigate}
-        /> : undefined}
+        remotePreviewControl={model.renderRemotePreview?.(handleNavigate)}
       />
       {handoffError && <div className="browser-annotation-error" role="alert">{handoffError}</div>}
       <div className="browser-content-shell">
         <div className="browser-content" ref={contentRef} />
       </div>
-      {handoffQueue[0] && workspace?.id && <AnnotationHandoffDialog key={handoffQueue[0].id} sourceWorkspaceId={workspace.id} initialMessage={handoffQueue[0].message} onClose={() => setHandoffQueue((queue) => queue.slice(1))} />}
+      {annotationEnabled && handoffQueue[0] && <AnnotationHandoffDialog key={handoffQueue[0].id} sourceWorkspaceId={ownerId} initialMessage={handoffQueue[0].message} onClose={() => setHandoffQueue((queue) => queue.slice(1))} />}
     </div>
   );
+}
+
+/** Workspace adapter: state from the workspace store; annotation and SSH remote preview enabled. */
+export default function BrowserPanel({ workspaceId, layoutVersion }: BrowserPanelProps) {
+  const workspace = useScopedWorkspace(workspaceId);
+  const activeOwner = useActiveBrowserOwner();
+  const pushBrowserOverlay = useWorkspaceStore((state) => state.pushBrowserOverlay);
+  const popBrowserOverlay = useWorkspaceStore((state) => state.popBrowserOverlay);
+  const removeBrowserTab = useWorkspaceStore((state) => state.removeBrowserTab);
+  const setActiveBrowserTab = useWorkspaceStore((state) => state.setActiveBrowserTab);
+  const moveBrowserTab = useWorkspaceStore((state) => state.moveBrowserTab);
+  const updateBrowserTab = useWorkspaceStore((state) => state.updateBrowserTab);
+  const id = workspace?.id ?? '';
+  const assistantActive = useAssistantNavStore((state) => state.activeAssistantId !== null);
+  const model = useMemo<BrowserPanelModel | null>(() => {
+    if (!workspace) return null;
+    const remote = workspace.environmentId && workspace.environmentId !== 'local';
+    return {
+      ownerId: id,
+      visible: workspace.browserVisible,
+      // A workspace owns the native view only while it is the single active Browser owner.
+      isActiveOwner: !assistantActive && activeOwner === id,
+      tabs: workspace.browserPane?.tabs ?? [],
+      activeTabId: workspace.browserPane?.activeTabId ?? null,
+      browserUrl: workspace.browserUrl ?? '',
+      overlayCount: workspace.browserOverlayCount ?? 0,
+      updateTab: (tabId, partial) => { updateBrowserTab(tabId, partial, id); },
+      removeTab: (tabId) => removeBrowserTab(tabId, id),
+      setActiveTab: (tabId) => setActiveBrowserTab(tabId, id),
+      moveTab: (tabId, targetTabId) => moveBrowserTab(tabId, targetTabId, id),
+      pushOverlay: () => pushBrowserOverlay(id),
+      popOverlay: () => popBrowserOverlay(id),
+      createTab: () => createAndActivateBrowserTab(id),
+      syncSelectedTab: () => syncSelectedBrowserTab(id),
+      features: { annotation: true, paneDrag: true },
+      renderRemotePreview: remote
+        ? (navigate) => <RemotePreviewControl key={id} workspaceId={id} enabled={!assistantActive && activeOwner === id && Boolean(workspace.browserVisible)} onOpen={navigate} />
+        : undefined,
+    };
+  }, [workspace, id, activeOwner, assistantActive, updateBrowserTab, removeBrowserTab, setActiveBrowserTab, moveBrowserTab, pushBrowserOverlay, popBrowserOverlay]);
+  if (!model) return null;
+  return <BrowserPanelCore model={model} layoutVersion={layoutVersion} />;
 }

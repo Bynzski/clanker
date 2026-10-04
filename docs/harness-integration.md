@@ -78,8 +78,9 @@ this function. Session invocation requires an explicit transport and rejects
 unsupported operation/transport pairs with `HarnessCapabilityError`.
 User flags (including reasoning/effort options) remain opaque, whitespace-split
 arguments in their existing order; this migration does not reinterpret them.
-The common launcher retains the POSIX wrapper, fallback shell, Windows
-`cmd.exe /c` resolution, cwd and PTY behavior.
+The common launcher retains the POSIX wrapper, fallback shell, cwd and PTY behavior;
+on Windows every local PTY (terminal and session resume/fork) is planned by
+`resolveHarnessPtySpawn()` from the final argv and child environment.
 
 Model capabilities retain native parsers, intentional fallback lists, TTL and
 explicit-refresh behavior. Discovery implementations load lazily. The shared
@@ -636,8 +637,8 @@ reports a signed-out state, `parse-failure` for unrecognised output, and tolerat
 schema drift.
 
 Local execution reuses the desktop PATH augmentation and strips attention
-credentials. It does not reuse the interactive launcher's `cmd.exe /c` wrapper:
-`environment/boundedSpawn.ts` plans the launch. POSIX runs the command directly.
+credentials. It does not use the legacy `cmd.exe /c` form (interactive PTY launches now share
+the same planner through `resolveHarnessPtySpawn()`): `environment/boundedSpawn.ts` plans the launch. POSIX runs the command directly.
 On Windows it resolves the bare name through PATH/PATHEXT; a missing executable is
 `binary-unavailable`; `.exe`/`.com` run directly so argv keeps its boundaries and
 metacharacters (`& | < > ^ % "`) are inert; `.cmd`/`.bat` (npm shims) must go
@@ -1092,9 +1093,8 @@ before copying an existing adapter.
 ## Hermes (`hermes`) implementation notes
 
 Local CLI (Linux, September 2026): `/home/jay/.local/bin/hermes`, version
-`0.21.5+2453.gd0288be` (upstream `d0288be5`). `hermes --help` and
-`hermes chat --help` establish `hermes --tui` for interactive launch and
-`-m <model>` as a TUI model override. Clanker uses the common PTY wrapper,
+`0.21.5+2453.gd0288be` (upstream `d0288be5`). `hermes --help` establishes
+`hermes --tui` for interactive launch and `-m <model>` as a TUI model override. Clanker uses the common PTY wrapper,
 passing `-m` before `--tui`, and retains the user's workspace as the CLI cwd.
 The installed `hermes model` command is interactive, not a machine-readable
 list. Clanker requests the documented `model.options` JSON-RPC inventory from
@@ -1189,3 +1189,65 @@ rules. Neither `OMP_HOME` nor `OMP_CODING_AGENT_DIR` appears in that resolver;
 do not canonize those names without version-specific evidence. OMP storage
 integration remains conventional locally and on SSH. Future storage work should
 extend provider root specifications and keep host environment resolution on-host.
+
+## Hermes Assistants
+
+Hermes Assistants are an optional, disabled-by-default, local-only integration that is **independent of the ordinary Hermes harness** above. The ordinary harness remains a normal provider launching `hermes --tui` in a normal Clanker terminal; it needs no `hermes serve` and never calls into the code below.
+
+```text
+ordinary Hermes
+  -> Hermes harness provider
+  -> normal terminal PTY
+
+optional Hermes Assistants
+  -> AssistantSettings                       {enabled, autoStart}
+  -> HermesAssistantService
+     -> hermesBackend                        adopt or start `hermes serve`
+     -> hermesTransport                      WebSocket + small JSON-RPC client
+     -> profiles.list                        roster
+     -> canonical "Bot Chat"                 session.list / create / title
+     -> /api/pty                             terminal bridge
+  -> Assistant destination / navigation      app-level, not a workspace
+  -> Assistant surface shell
+     -> Hermes TUI (primary)
+     -> Browser sidecar
+```
+
+Sources checked against upstream Hermes (`0.21.5`, September 2026): the headless root bootstrap, `HERMES_BACKEND_READY port=<n>`, `profiles.list`, `session.list`/`session.create`/`session.title`, and `/api/pty`. Hermes changes quickly; re-verify before relying on these.
+
+### Service lifecycle
+
+- Settings persist only `enabled` and `autoStart` (both default false). A legacy `pins` config is tolerated: `enabled` is kept, pins dropped, `autoStart` false. Tokens, ports, profile homes and session content are never persisted.
+- If the Hermes CLI is unavailable (the same `getAvailableHarnessOptions()` authority as the toolbar launcher), the feature is dormant and invisible: no probe, no spawn, persisted preferences kept. Availability is evaluated once per app run.
+- `autoStart=false` only adopts an already-running compatible backend at `http://127.0.0.1:9119`: a bounded `GET /api/status` must look like Hermes, and the loopback token is read only from the exact `window.__HERMES_SESSION_TOKEN__="…";` assignment in a size-bounded root response. A running service that cannot be authenticated (auth-gated, no token) is reported `detected-unusable`: it is never killed and no second backend is started.
+- `autoStart=true` may start `hermes serve --host 127.0.0.1 --port 0` (no shell, through the shared local launch planner) with a fresh random token supplied through `HERMES_DASHBOARD_SESSION_TOKEN`. Readiness is the exact `HERMES_BACKEND_READY port=<n>` line on stdout or stderr, bounded by time, line length and total output; `BACKEND_PORT_IN_USE`, early exit and timeouts are failures.
+- Clanker owns and stops only the exact child it started (on disable and quit); an external backend is never stopped. One bounded automatic restart per crash episode.
+- Failed-startup cleanup finishes (bounded termination) before a Retry can spawn again; a coalesced Retry waits on the same operation. Fast disable → re-enable is serialized behind any in-flight stop, so a newer enable is never stranded and an older enable never resurrects a newer disable.
+- If only the control WebSocket drops, the service publishes offline with surfaces disconnected and keeps a live owned child; Retry reconnects to it instead of spawning another.
+
+### Roster
+
+`profiles.list` is authoritative: every valid named profile except the raw `default`. `ui_meta["hermes-bots"]` is optional presentation metadata (title, description, `hidden`), not eligibility, and no messaging gateway is required. Display precedence is Bot title, profile `display_name`, then a prettified slug. The renderer receives only `{id, displayName, description?}` with an opaque id; the raw slug and session identity stay main-only.
+
+### Canonical Bot Chat
+
+Per profile, the session titled exactly `"Bot Chat"` is the permanent chat:
+
+1. exact `session.list {profile, title: "Bot Chat", limit, include_hidden: true}`;
+2. a failed lookup, or an empty one when the last roster positively reported a canonical chat, fails closed (nothing is created);
+3. only on confirmed absence: `session.create {profile, title, hidden: true, follow_profile_config: true}`, then `session.title` on the runtime id to materialize it;
+4. an "already in use" title error means another writer won: re-run the lookup and adopt the winner.
+
+No prompt or model turn is ever sent to create the chat. Clanker never passes a workspace cwd; the profile's own `terminal.cwd` applies.
+
+### PTY
+
+`/api/pty?profile=<slug>&resume=<id>&attach=<key>` with the loopback token (main-only). The stable attach key `clanker-assistant-<slug>` lets a reconnect or restart re-attach to the lingering Hermes TUI instead of stacking another. Hermes allows one live viewer per attach key: a newer viewer (for example a second Clanker process) supersedes the old one (close code `4409`). Clanker never auto-loops on a PTY disconnect; the surface offers an explicit Reconnect, and re-attaches once only when the control service itself recovers. Resize uses Hermes' `ESC[RESIZE:<cols>;<rows>]` framing. Hermes keeps a detached chat process for a while after a viewer closes.
+
+### Destinations, surfaces and Browser
+
+Workspace and Assistant are peer app destinations with different capabilities (`lib/activeDestination.ts`). An Assistant is not a WorkspaceTab, CheckoutContext, filesystem scope or Git scope, and toolbar controls follow the active destination's capabilities (Browser and Settings only for an Assistant) instead of acting on a parked workspace. The surface shell has a primary slot (today the Hermes TUI, replaceable later by a native Assistant UI without changing service/session ownership) and an optional sidecar (today only Browser). The Assistant Browser reuses the shared Browser mechanics under its own owner `assistant-browser:<assistantId>`, which main validates against the service roster (local persistent partition; never an SSH workspace's), with its UI state in a renderer-only store. Annotation handoff and SSH remote preview are workspace-only features. Disabling Assistants disposes the Assistant-owned views and clears their UI state.
+
+### Known V1 limitations
+
+Assistants need at least one open workspace to be reachable; no SSH Assistants; no profile creation/editing; a second Clanker process can supersede the first's viewer; no live Windows validation.

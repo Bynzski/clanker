@@ -22,7 +22,8 @@ export async function waitForTerminalCleanup(): Promise<void> {
 export interface SpawnPtyOptions {
   id: string;
   spawnCmd: string;
-  spawnArgs: string[];
+  /** A single string is a verbatim Windows command line (node-pty passes it unchanged). */
+  spawnArgs: string[] | string;
   cwd: string;
   env: { [key: string]: string };
   terminals: Map<string, Terminal>;

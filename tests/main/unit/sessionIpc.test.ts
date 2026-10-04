@@ -11,11 +11,11 @@ const { mockHandle } = vi.hoisted(() => ({
 
 const {
   mockDiscoverSessions,
-  mockBuildSessionInvokeArgs,
+  mockBuildSessionLaunch,
   mockSpawnPtyProcess,
 } = vi.hoisted(() => ({
   mockDiscoverSessions: vi.fn(),
-  mockBuildSessionInvokeArgs: vi.fn(),
+  mockBuildSessionLaunch: vi.fn(),
   mockSpawnPtyProcess: vi.fn(),
 }));
 
@@ -28,7 +28,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../../../src/main/sessionHistory', () => ({
   discoverSessions: mockDiscoverSessions,
-  buildSessionInvokeArgs: mockBuildSessionInvokeArgs,
+  buildSessionLaunch: mockBuildSessionLaunch,
 }));
 
 vi.mock('../../../src/main/ipc/ptySpawn', () => ({
@@ -72,6 +72,7 @@ function registerHandlers(
     getHarnessOptions,
     agentAttentionBroker,
     getWorkspaceRegistry,
+    ensureHarnessWrapperScript: () => '/wrapper',
   });
 
   return handlers;
@@ -99,7 +100,7 @@ describe('registerSessionIpc', () => {
   beforeEach(() => {
     mockHandle.mockReset();
     mockDiscoverSessions.mockReset();
-    mockBuildSessionInvokeArgs.mockReset();
+    mockBuildSessionLaunch.mockReset();
     mockSpawnPtyProcess.mockReset();
   });
 
@@ -107,7 +108,7 @@ describe('registerSessionIpc', () => {
     const handlers = registerHandlers(vi.fn(() => ({ pi: { name: 'Pi', command: 'pi', args: [], icon: 'π' } })));
     const session: HarnessSession = { id: 'forged-missing-id', harness: 'pi', title: '', cwd: '/workspace', timestamp: 0, filePath: '/workspace/arbitrary.jsonl' };
     await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toMatchObject({ kind: 'not-configured' });
-    expect(mockBuildSessionInvokeArgs).not.toHaveBeenCalled();
+    expect(mockBuildSessionLaunch).not.toHaveBeenCalled();
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
 
@@ -151,14 +152,14 @@ describe('registerSessionIpc', () => {
       modelId: 'gemini&calc',
     };
     await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toThrow('Antigravity model ID is invalid');
-    expect(mockBuildSessionInvokeArgs).not.toHaveBeenCalled();
+    expect(mockBuildSessionLaunch).not.toHaveBeenCalled();
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
 
   it('invokes an Antigravity session with a valid UUID', async () => {
-    mockBuildSessionInvokeArgs.mockReturnValue({
-      spawnCmd: '/bin/agy',
-      spawnArgs: ['agy', '--conversation', '79cbc62b-b055-48a5-8655-d9aa83d3a00f'],
+    mockBuildSessionLaunch.mockReturnValue({
+      command: 'agy',
+      args: ['--conversation', '79cbc62b-b055-48a5-8655-d9aa83d3a00f'],
     });
     mockSpawnPtyProcess.mockReturnValue({
       ptyProcess: { pid: 12345 },
@@ -179,7 +180,7 @@ describe('registerSessionIpc', () => {
 
     const result = await handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session);
     expect(result).toEqual(expect.objectContaining({ harnessId: 'agy', ptyProcess: { pid: 12345 } }));
-    expect(mockBuildSessionInvokeArgs).toHaveBeenCalledWith(
+    expect(mockBuildSessionLaunch).toHaveBeenCalledWith(
       expect.objectContaining({
         id: '79cbc62b-b055-48a5-8655-d9aa83d3a00f',
         harness: 'agy',
@@ -197,7 +198,7 @@ describe('registerSessionIpc', () => {
     const session = { ...codexSession, harness: 'hermes' } as unknown as HarnessSession;
 
     await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toThrow('hermes session invocation is not supported');
-    expect(mockBuildSessionInvokeArgs).not.toHaveBeenCalled();
+    expect(mockBuildSessionLaunch).not.toHaveBeenCalled();
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
 
@@ -261,14 +262,14 @@ describe('registerSessionIpc', () => {
       handlers.get(SESSION_INVOKE)?.({}, 'local-ws', codexSession, false)
     ).rejects.toThrow('codex harness is not available');
 
-    expect(mockBuildSessionInvokeArgs).not.toHaveBeenCalled();
+    expect(mockBuildSessionLaunch).not.toHaveBeenCalled();
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
 
   it('invokes a session when its harness is available', async () => {
-    mockBuildSessionInvokeArgs.mockReturnValue({
-      spawnCmd: 'codex',
-      spawnArgs: ['resume', 'codex-session', '--yolo'],
+    mockBuildSessionLaunch.mockReturnValue({
+      command: 'codex',
+      args: ['resume', 'codex-session', '--yolo'],
     });
     mockSpawnPtyProcess.mockReturnValue({ id: 'term-1', pid: 123 });
 
@@ -288,14 +289,14 @@ describe('registerSessionIpc', () => {
     expect(result).toEqual({ id: 'term-1', pid: 123, harnessId: 'codex', attentionEnabled: false, checkoutContextId: 'local-ws::main' });
     // A fork creates a new native session: the old ID is never pre-seeded.
     expect(broker.register).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: undefined });
-    expect(mockBuildSessionInvokeArgs).toHaveBeenCalledWith(
+    expect(mockBuildSessionLaunch).toHaveBeenCalledWith(
       { ...codexSession, cwd: nativeWorkspacePath },
       true,
       '--yolo'
     );
     expect(mockSpawnPtyProcess).toHaveBeenCalledWith(expect.objectContaining({
-      spawnCmd: 'codex',
-      spawnArgs: ['resume', 'codex-session', '--yolo'],
+      spawnCmd: '/wrapper',
+      spawnArgs: ['codex', 'resume', 'codex-session', '--yolo'],
       cwd: nativeWorkspacePath,
       env: expect.objectContaining({
         CODEX_HOME: '/tmp/codex',
@@ -306,7 +307,7 @@ describe('registerSessionIpc', () => {
     }));
   });
   it('records no durable task-session state when resuming a native conversation', async () => {
-    mockBuildSessionInvokeArgs.mockReturnValue({ spawnCmd: 'codex', spawnArgs: ['resume', 'codex-session'] });
+    mockBuildSessionLaunch.mockReturnValue({ command: 'codex', args: ['resume', 'codex-session'] });
     mockSpawnPtyProcess.mockReturnValue({ id: 'term-1', pid: 123 });
     const storeSet = vi.fn();
     const handlers = new Map<string, Handler>();
@@ -320,6 +321,7 @@ describe('registerSessionIpc', () => {
       getIsShuttingDown: () => false,
       getStore: () => ({ get: vi.fn(() => ({ codex: { flags: '' } })), set: storeSet }) as never,
       getHarnessOptions: vi.fn(() => ({ codex: { name: 'Codex', command: 'codex', args: [], icon: 'Codex' } })),
+      ensureHarnessWrapperScript: () => '/wrapper',
       getWorkspaceRegistry: () => withCheckoutContexts({
         getWorkspace: (id: string) => id === 'local-ws'
           ? { workspaceId: 'local-ws', location: { environmentId: 'local', path: '/workspace' } }
@@ -342,7 +344,7 @@ describe('registerSessionIpc', () => {
       codex: { name: 'Codex', command: 'codex', args: [], icon: 'Codex' },
     })), undefined, () => withCheckoutContexts({ getWorkspace }) as never);
     mockDiscoverSessions.mockResolvedValue([codexSession]);
-    mockBuildSessionInvokeArgs.mockReturnValue({ spawnCmd: 'codex', spawnArgs: ['resume', 'codex-session'] });
+    mockBuildSessionLaunch.mockReturnValue({ command: 'codex', args: ['resume', 'codex-session'] });
     mockSpawnPtyProcess.mockReturnValue({ id: 'term-1', pid: 123 });
 
     expect(await handlers.get(SESSION_DISCOVER)?.({}, 'remote-ws')).toEqual([]);
@@ -387,7 +389,7 @@ it('disposes prepared provider attention if PTY creation fails', async () => {
     .mockReturnValue({ args: ['codex', 'resume', 'codex-session'], env: {}, dispose });
   const broker = { register: vi.fn().mockResolvedValue({}), release: vi.fn() } as never;
   const handlers = registerHandlers(vi.fn(() => ({ codex: { command: 'codex', args: [], name: 'Codex', icon: '' } })), broker, undefined, true);
-  mockBuildSessionInvokeArgs.mockReturnValue({ spawnCmd: 'wrapper', spawnArgs: ['codex', 'resume', 'codex-session'] });
+  mockBuildSessionLaunch.mockReturnValue({ command: 'codex', args: ['resume', 'codex-session'] });
   mockSpawnPtyProcess.mockImplementation(() => { throw new Error('PTY failed'); });
   await expect(handlers.get(SESSION_INVOKE)!({}, 'local-ws', codexSession)).rejects.toThrow('PTY failed');
   expect(prepare).toHaveBeenCalledOnce();
@@ -397,7 +399,7 @@ it('disposes prepared provider attention if PTY creation fails', async () => {
 describe('trusted resume identity for local attention', () => {
   const resume = async (session: HarnessSession, fork: boolean) => {
     mockHandle.mockReset();
-    mockBuildSessionInvokeArgs.mockReturnValue({ spawnCmd: session.harness, spawnArgs: ['resume', session.id] });
+    mockBuildSessionLaunch.mockReturnValue({ command: session.harness, args: ['resume', session.id] });
     mockSpawnPtyProcess.mockReturnValue({ id: 'term-1', pid: 123 });
     const broker = { register: vi.fn().mockResolvedValue({}), release: vi.fn() };
     const handlers = registerHandlers(vi.fn(() => ({

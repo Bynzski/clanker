@@ -95,7 +95,7 @@ function makeReadableLines(lines: string[]): Readable {
 
 import {
   discoverSessions,
-  buildSessionInvokeArgs,
+  buildSessionLaunch,
   clearSessionCache,
   sessionMatchesWorkspace,
   encodeClaudeProjectDir,
@@ -160,7 +160,13 @@ describe('sessionMatchesWorkspace', () => {
 //    alongside session-specific args (--resume, --session, --fork, etc.)
 // ============================================================================
 
-describe('buildSessionInvokeArgs — harness default flag parity', () => {
+// Legacy-shaped view over the raw provider launch: the wrapper is applied by the PTY planner at spawn time.
+const buildSessionInvokeArgs = (...args: Parameters<typeof buildSessionLaunch>) => {
+  const { command, args: rest } = buildSessionLaunch(...args);
+  return { spawnCmd: TEST_HARNESS_WRAPPER, spawnArgs: [command, ...rest] };
+};
+
+describe('buildSessionLaunch — harness default flag parity', () => {
   describe('session-specific args always appear before userFlags', () => {
     it('opencode: session id + userFlags', () => {
       const session: HarnessSession = {

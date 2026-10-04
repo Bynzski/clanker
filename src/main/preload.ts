@@ -16,8 +16,17 @@ import type { AgentAttentionUpdate } from '../shared/types/agentAttention';
 import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchRequest } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { ThemeId } from '../shared/types/theme';
+import type { AssistantPtyData, AssistantSettings, AssistantSnapshot } from '../shared/types/assistants';
 import type { WorkspaceNavigationMode } from '../shared/types/workspaceNavigation';
 import {
+  ASSISTANTS_GET,
+  ASSISTANTS_CONFIGURE,
+  ASSISTANTS_REFRESH,
+  ASSISTANTS_OPEN,
+  ASSISTANTS_PTY_WRITE,
+  ASSISTANTS_PTY_RESIZE,
+  ASSISTANTS_CHANGED,
+  ASSISTANTS_PTY_DATA,
   GET_APP_VERSION,
   GET_LAST_WORKSPACE,
   GET_BASE_DIRECTORY,
@@ -203,6 +212,23 @@ import {
 } from '../shared/ipcChannels';
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // Optional native-profile roster; settings do not contain native credentials.
+  getAssistants: () => ipcRenderer.invoke(ASSISTANTS_GET),
+  configureAssistants: (settings: AssistantSettings) => ipcRenderer.invoke(ASSISTANTS_CONFIGURE, settings),
+  refreshAssistants: () => ipcRenderer.invoke(ASSISTANTS_REFRESH),
+  openAssistant: (assistantId: string) => ipcRenderer.invoke(ASSISTANTS_OPEN, assistantId),
+  writeAssistantPty: (assistantId: string, data: string) => ipcRenderer.invoke(ASSISTANTS_PTY_WRITE, assistantId, data),
+  resizeAssistantPty: (assistantId: string, cols: number, rows: number) => ipcRenderer.invoke(ASSISTANTS_PTY_RESIZE, assistantId, cols, rows),
+  onAssistantPtyData: (callback: (payload: AssistantPtyData) => void) => {
+    const handler = (_event: IpcRendererEvent, payload: AssistantPtyData) => callback(payload);
+    ipcRenderer.on(ASSISTANTS_PTY_DATA, handler);
+    return () => ipcRenderer.removeListener(ASSISTANTS_PTY_DATA, handler);
+  },
+  onAssistantsChanged: (callback: (snapshot: AssistantSnapshot) => void) => {
+    const handler = (_event: IpcRendererEvent, snapshot: AssistantSnapshot) => callback(snapshot);
+    ipcRenderer.on(ASSISTANTS_CHANGED, handler);
+    return () => ipcRenderer.removeListener(ASSISTANTS_CHANGED, handler);
+  },
   // App
   getAppVersion: () => ipcRenderer.invoke(GET_APP_VERSION),
 

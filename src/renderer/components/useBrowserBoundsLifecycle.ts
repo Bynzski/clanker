@@ -28,22 +28,23 @@ export function browserBoundsFromDomRect(
 }
 
 interface UseBrowserBoundsLifecycleOptions {
-  workspaceId?: string;
+  /** Opaque Browser owner: a workspace id or an Assistant browser scope. */
+  ownerId?: string;
   activeTabId: string | null;
   browserVisible?: boolean;
   browserOverlayCount: number;
-  isActiveWorkspace: boolean;
+  isActiveOwner: boolean;
   layoutVersion: number;
   containerRef: React.RefObject<HTMLDivElement | null>;
   contentRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export function useBrowserBoundsLifecycle({
-  workspaceId,
+  ownerId,
   activeTabId,
   browserVisible,
   browserOverlayCount,
-  isActiveWorkspace,
+  isActiveOwner,
   layoutVersion,
   containerRef,
   contentRef,
@@ -53,22 +54,22 @@ export function useBrowserBoundsLifecycle({
   const firstBoundsSentRef = useRef(false);
 
   useEffect(() => {
-    if (!workspaceId || !isActiveWorkspace || !browserVisible || browserOverlayCount > 0) return;
+    if (!ownerId || !isActiveOwner || !browserVisible || browserOverlayCount > 0) return;
     // Reconcile selection separately from geometry; late bounds cannot select a tab.
-    void window.electronAPI.browserActivate(workspaceId, activeTabId ?? undefined);
-  }, [workspaceId, activeTabId, isActiveWorkspace, browserVisible, browserOverlayCount]);
+    void window.electronAPI.browserActivate(ownerId, activeTabId ?? undefined);
+  }, [ownerId, activeTabId, isActiveOwner, browserVisible, browserOverlayCount]);
 
   const callBrowserSetBounds = useCallback((bounds: BrowserBounds) => {
-    if (!workspaceId) return;
+    if (!ownerId) return;
     if (activeTabId) {
-      window.electronAPI.browserSetBounds(workspaceId, bounds, activeTabId);
+      window.electronAPI.browserSetBounds(ownerId, bounds, activeTabId);
     } else {
-      window.electronAPI.browserSetBounds(workspaceId, bounds);
+      window.electronAPI.browserSetBounds(ownerId, bounds);
     }
-  }, [activeTabId, workspaceId]);
+  }, [activeTabId, ownerId]);
 
   const updateBounds = useCallback(() => {
-    if (!contentRef.current || !browserVisible || browserOverlayCount > 0 || !workspaceId || !isActiveWorkspace) return;
+    if (!contentRef.current || !browserVisible || browserOverlayCount > 0 || !ownerId || !isActiveOwner) return;
 
     const rect = contentRef.current.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -100,9 +101,9 @@ export function useBrowserBoundsLifecycle({
 
     if (!firstBoundsSentRef.current) {
       firstBoundsSentRef.current = true;
-      browserFirstBounds(workspaceId, newBounds.x, newBounds.y, newBounds.width, newBounds.height);
+      browserFirstBounds(ownerId, newBounds.x, newBounds.y, newBounds.width, newBounds.height);
     }
-  }, [browserOverlayCount, browserVisible, callBrowserSetBounds, contentRef, isActiveWorkspace, workspaceId]);
+  }, [browserOverlayCount, browserVisible, callBrowserSetBounds, contentRef, isActiveOwner, ownerId]);
 
   const scheduleBoundsUpdate = useCallback((force = false) => {
     if (force) {
@@ -123,12 +124,12 @@ export function useBrowserBoundsLifecycle({
   }, [layoutVersion, scheduleBoundsUpdate]);
 
   useEffect(() => {
-    if (!browserVisible || browserOverlayCount > 0 || !workspaceId || !isActiveWorkspace) return;
+    if (!browserVisible || browserOverlayCount > 0 || !ownerId || !isActiveOwner) return;
     const healthCheckInterval = setInterval(() => {
       scheduleBoundsUpdate();
     }, 2000);
     return () => clearInterval(healthCheckInterval);
-  }, [browserOverlayCount, browserVisible, isActiveWorkspace, scheduleBoundsUpdate, workspaceId]);
+  }, [browserOverlayCount, browserVisible, isActiveOwner, scheduleBoundsUpdate, ownerId]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -139,14 +140,14 @@ export function useBrowserBoundsLifecycle({
 
     resizeObserver.observe(containerRef.current);
     firstBoundsSentRef.current = false;
-    if (workspaceId && isActiveWorkspace) {
-      browserMount(workspaceId, lastBoundsRef.current === null);
+    if (ownerId && isActiveOwner) {
+      browserMount(ownerId, lastBoundsRef.current === null);
     }
 
     return () => {
       resizeObserver.disconnect();
     };
-  }, [containerRef, isActiveWorkspace, scheduleBoundsUpdate, workspaceId]);
+  }, [containerRef, isActiveOwner, scheduleBoundsUpdate, ownerId]);
 
   useEffect(() => {
     const handleWindowResize = () => {
@@ -158,14 +159,14 @@ export function useBrowserBoundsLifecycle({
   }, [scheduleBoundsUpdate]);
 
   useEffect(() => {
-    if (!workspaceId) return;
+    if (!ownerId) return;
 
-    if (!isActiveWorkspace || !browserVisible) {
+    if (!isActiveOwner || !browserVisible) {
       if (rafRef.current != null) {
         window.cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-      window.electronAPI.browserHide(workspaceId);
+      window.electronAPI.browserHide(ownerId);
       return;
     }
 
@@ -179,7 +180,7 @@ export function useBrowserBoundsLifecycle({
         rafRef.current = null;
       }
       lastBoundsRef.current = null;
-      window.electronAPI.browserHide(workspaceId);
+      window.electronAPI.browserHide(ownerId);
       return;
     }
 
@@ -195,9 +196,9 @@ export function useBrowserBoundsLifecycle({
     browserOverlayCount,
     browserVisible,
     callBrowserSetBounds,
-    isActiveWorkspace,
+    isActiveOwner,
     scheduleBoundsUpdate,
-    workspaceId,
+    ownerId,
   ]);
 
   useEffect(() => {
@@ -208,12 +209,12 @@ export function useBrowserBoundsLifecycle({
       const lb = lastBoundsRef.current;
       lastBoundsRef.current = null;
       firstBoundsSentRef.current = false;
-      if (workspaceId) {
-        browserUnmount(workspaceId, lb?.x ?? null, lb?.y ?? null, lb?.width ?? null, lb?.height ?? null);
-        window.electronAPI.browserHide(workspaceId);
+      if (ownerId) {
+        browserUnmount(ownerId, lb?.x ?? null, lb?.y ?? null, lb?.width ?? null, lb?.height ?? null);
+        window.electronAPI.browserHide(ownerId);
       }
     };
-  }, [workspaceId]);
+  }, [ownerId]);
 
   return { scheduleBoundsUpdate };
 }

@@ -1,6 +1,5 @@
 import type { HarnessSession } from '../shared/types/session';
 import type { HarnessId } from '../shared/harnessIds';
-import { ensureHarnessWrapperScript, resolveHarnessSpawn } from './harnessLaunch';
 import { buildSessionCommand } from './sessionLaunch';
 import { toNativePath, toPosixPath } from '../shared/pathNormalize';
 import { getHarnessProviders } from './harnesses/registry';
@@ -147,7 +146,11 @@ export async function discoverSessionsDetailed(
   return discovery;
 }
 
-export function buildSessionInvokeArgs(session: HarnessSession, fork = false, userFlags?: string): { spawnCmd: string; spawnArgs: string[] } {
-  const launch = buildSessionCommand({ ...session, ...(session.filePath ? { filePath: toPosixPath(session.filePath) } : {}) }, { operation: fork ? 'fork' : 'resume', transport: 'local', userFlags });
-  return resolveHarnessSpawn(launch.command, launch.args, ensureHarnessWrapperScript());
+/**
+ * Raw provider command and argv for a local resume/fork. Deliberately not a spawn plan: the caller
+ * must apply attention integration to this argv and only then plan the PTY spawn (wrapper or
+ * Windows resolution) from the final argv and child environment.
+ */
+export function buildSessionLaunch(session: HarnessSession, fork = false, userFlags?: string): { command: string; args: string[] } {
+  return buildSessionCommand({ ...session, ...(session.filePath ? { filePath: toPosixPath(session.filePath) } : {}) }, { operation: fork ? 'fork' : 'resume', transport: 'local', userFlags });
 }

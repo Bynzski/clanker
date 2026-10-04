@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Hermes Assistants** — optionally connect to a local `hermes serve` backend and open your named Hermes profiles as persistent Assistant surfaces with their canonical Bot Chat and an independent embedded Browser. Clanker can optionally start the local Hermes service when needed; the ordinary Hermes launcher in the toolbar is unchanged and does not need any of this. The feature is hidden when the Hermes CLI is not installed.
+
+### Fixed
+
+- **Windows harness PTY safety** — local harness terminals and resumed sessions now resolve their final command through the bounded Windows PTY planner instead of constructing raw `cmd.exe /c` invocations, so unusual paths and arguments can no longer be misinterpreted by the shell.
+
 ## [0.10.0] - 2026-10-03
 
 ### Added
