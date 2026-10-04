@@ -125,13 +125,15 @@ export interface HarnessLocalAttention {
 /** Canonical lifecycle event a provider interpreter asks the shared bridge to forward. */
 export interface AttentionInterpretation {
   event?: {
-    type: 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'turn_interrupted'
+    type: 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'turn_interrupted' | 'turn_failed'
       | 'session_ended' | 'session_continued';
     /** Provider-proven subject. Anything not explicitly 'root' fails closed in the broker. */
     scope?: 'root' | 'child';
     sessionId?: string;
     turnId?: string;
     inputId?: string;
+    /** Only when the provider can prove input vs approval; never inferred from weak evidence. */
+    requestKind?: 'input' | 'approval';
     /** Only for `session_continued`: the bound root session this one continues. */
     continuesSessionId?: string;
     /** Native event class, for diagnostics only. */
@@ -147,6 +149,11 @@ export interface HarnessAttentionCapability {
   readonly interpreter?: string;
   /** Whether a non-fork resume keeps its native session ID, so the validated ID may seed the root. */
   readonly resumePreservesSessionId?: boolean;
+  /** How completely this provider's structured lifecycle covers a foreground turn. Absent means `full`:
+   * every lower-confidence source stays suppressed. `partial` marks an unobservable boundary. */
+  readonly authority?: 'full' | 'partial';
+  /** `native`: in-process plugin/extension events; `hook`: provider hook commands. Absent means `hook`. */
+  readonly source?: 'native' | 'hook';
   readonly prepareResources?: (files: AttentionAdapterFiles, observer: string) => void;
   readonly disposeResources?: () => void;
   readonly local?: HarnessLocalAttention;

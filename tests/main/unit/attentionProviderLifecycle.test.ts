@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { AgentAttentionBroker, type AttentionDecision } from '../../../src/main/agentAttentionBroker';
+import { AgentAttentionBroker, type AttentionDiagnostic } from '../../../src/main/agentAttentionBroker';
 import { CLAUDE_HOOK_EVENTS } from '../../../src/main/harnesses/claude/attention';
 import { OBSERVER_FIELDS } from '../../../src/main/harnesses/attentionSources';
 import { getHarnessProvider } from '../../../src/main/harnesses/registry';
@@ -13,7 +13,7 @@ import { HERMES_REMOTE_ATTENTION_PLUGIN } from '../../../src/main/harnesses/herm
 import { SOURCE as PI } from '../../../src/main/harnesses/pi/attention';
 import { SOURCE as OMP } from '../../../src/main/harnesses/omp/attention';
 import { SOURCE as OPENCODE } from '../../../src/main/harnesses/opencode/attention';
-import type { AgentAttentionUpdate } from '../../../src/shared/types/agentAttention';
+import { attentionRecorder } from '../../_helpers/attentionChanges';
 
 /** Provider-native lifecycle fixtures run through the real provider interpreter or plugin source
  * and the real broker. Nothing here calls a model or an installed harness.
@@ -30,15 +30,16 @@ afterEach(() => {
 
 interface Wire { event: string; [key: string]: unknown }
 function rig(harness: string, rootSessionId?: string) {
-  const updates: AgentAttentionUpdate[] = [];
-  const decisions: AttentionDecision[] = [];
-  const broker = new AgentAttentionBroker((update) => updates.push(update), (diagnostic) => decisions.push(diagnostic.decision));
+  const recorder = attentionRecorder();
+  const updates = recorder.changes;
+  const decisions: AttentionDiagnostic['decision'][] = [];
+  const broker = new AgentAttentionBroker(recorder.onChange, (diagnostic) => decisions.push(diagnostic.decision));
   brokers.push(broker);
   const token = broker.registerRemote('term', harness, { rootSessionId });
   const feed = (wire: Wire | null | undefined) => {
     if (wire) broker.receiveRemote('term', JSON.stringify({ version: 1, token, harness, ...wire }));
   };
-  return { broker, updates, decisions, feed, state: () => broker.handoffState('term'), updatesOf: () => updates.map((update) => update.event) };
+  return { broker, updates, decisions, feed, state: () => broker.handoffState('term'), updatesOf: () => recorder.labels };
 }
 
 async function importSource(source: string, location = 'source.mjs') {
@@ -301,9 +302,9 @@ describe('Claude lifecycle', () => {
     feed(hook('PostToolBatch', batch()));
     expect(state()).toBe('running');
   });
-  it('settles on StopFailure for the current prompt and ignores a stale one', async () => {
+  it('fails on StopFailure for the current prompt and ignores a stale one', async () => {
     const hook = await interpreter('claude');
-    const { feed, state, decisions } = rig('claude');
+    const { feed, state, decisions, broker, updatesOf } = rig('claude');
     feed(hook('UserPromptSubmit', { ...common, prompt_id: 'p1' }));
     feed(hook('StopFailure', { ...common, prompt_id: 'p0', error: 'rate_limit', error_details: 'PRIVATE', last_assistant_message: 'API Error' }));
     expect(state()).toBe('running');
@@ -311,15 +312,29 @@ describe('Claude lifecycle', () => {
     const failure = hook('StopFailure', { ...common, prompt_id: 'p1', error: 'overloaded', error_details: 'PRIVATE' });
     expect(JSON.stringify(failure)).not.toContain('PRIVATE');
     feed(failure);
-    expect(state()).toBe('ready'); // settled; says nothing about success
+    // StopFailure is explicit failure evidence: Failed, never a completion or a Ready handoff.
+    expect(broker.snapshot('term')).toMatchObject({ runtime: { status: 'failed' }, lastCompletion: null, lastOutcome: { kind: 'failed', turnId: 'p1' } });
+    expect(state()).toBe('unverified');
+    expect(updatesOf()).toEqual(['turn_started', 'turn_failed']);
+  });
+  it('keeps a Stop a completion while StopFailure never creates one', async () => {
+    const hook = await interpreter('claude');
+    const { feed, broker } = rig('claude');
+    feed(hook('UserPromptSubmit', { ...common, prompt_id: 'p1' }));
+    feed(hook('Stop', { ...common, prompt_id: 'p1' }));
+    const completion = broker.snapshot('term')!.lastCompletion;
+    expect(completion).toMatchObject({ turnId: 'p1' });
+    feed(hook('UserPromptSubmit', { ...common, prompt_id: 'p2' }));
+    feed(hook('StopFailure', { ...common, prompt_id: 'p2', error: 'rate_limit' }));
+    expect(broker.snapshot('term')).toMatchObject({ runtime: { status: 'failed' }, lastCompletion: completion, lastOutcome: { kind: 'failed' } });
   });
   it('clears a pending wait when the turn settles, so the next prompt starts clean', async () => {
     const hook = await interpreter('claude');
-    const { feed, state } = rig('claude');
+    const { feed, state, broker } = rig('claude');
     feed(hook('UserPromptSubmit', { ...common, prompt_id: 'p1' }));
     feed(hook('PermissionRequest', request({ prompt_id: 'p1' })));
     feed(hook('StopFailure', { ...common, prompt_id: 'p1', error: 'unknown' }));
-    expect(state()).toBe('ready');
+    expect(broker.snapshot('term')).toMatchObject({ runtime: { status: 'failed' }, pendingRequest: null });
     feed(hook('UserPromptSubmit', { ...common, prompt_id: 'p2' }));
     expect(hook('PostToolBatch', batch({ prompt_id: 'p2' }))).toBeNull();
     feed(hook('PermissionRequest', request({ prompt_id: 'p2' })));

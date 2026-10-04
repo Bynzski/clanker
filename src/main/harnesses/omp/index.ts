@@ -21,7 +21,7 @@ export const ompProvider = defineHarness({
     selectionFlags: ['--resume', '-r', '--continue', '-c', '--fork'],
     discover: async (workspace: string) => (await import('./sessions')).discoverOmpSessions(workspace),
   },
-  attention: { resumePreservesSessionId: true, prepareResources, local, remote },
+  attention: { resumePreservesSessionId: true, authority: 'partial', source: 'native', prepareResources, local, remote },
   usage: ompUsage,
   aiCommit: { modelArg: '--model',
     buildInvocation: ({ model, prompt }) => ({ command: 'omp', args: [...['--print', '--no-session', '--no-tools', '--no-extensions'], ...(model ? ['--model', model] : [])], stdin: prompt, timeoutMs: 60000 }),

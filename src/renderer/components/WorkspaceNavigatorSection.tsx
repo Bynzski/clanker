@@ -8,6 +8,7 @@ import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 import { attentionCounts, useAgentAttentionStore } from '../store/agentAttentionStore';
 import { nextAttentionTarget } from '../lib/agentAttentionNavigation';
 import { getAttentionSuffix } from '../lib/agentAttentionPresentation';
+import { useTerminalAttention } from '../lib/useTerminalAttention';
 import { AgentAttentionState, WorkspaceAttentionBadge } from './AgentAttentionIndicators';
 import { getHarnessOption } from '../lib/harnessOptions';
 import { closeWorkspaceWithCleanup } from '../lib/workspaceClose';
@@ -20,7 +21,7 @@ import './WorkspaceNavigatorSection.css';
 
 function AgentRow({ workspace, terminal, isCurrent }: { workspace: WorkspaceTab; terminal: Terminal; isCurrent: boolean }) {
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
-  const attention = useAgentAttentionStore((state) => state.byTerminalId[terminal.id]);
+  const attention = useTerminalAttention(terminal.id);
   const harness = getHarnessOption(terminal.harnessId);
   const HarnessIcon = harness.Icon;
   const showAttention = Boolean(terminal.harnessId && terminal.attentionEnabled);
@@ -69,7 +70,8 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace, onCollapseS
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
   const moveWorkspace = useWorkspaceStore((state) => state.moveWorkspace);
   const byTerminalId = useAgentAttentionStore((state) => state.byTerminalId);
-  const nextTarget = nextAttentionTarget(workspaces, byTerminalId, activeTerminalId);
+  const seenByTerminalId = useAgentAttentionStore((state) => state.seenByTerminalId);
+  const nextTarget = nextAttentionTarget(workspaces, byTerminalId, seenByTerminalId, activeTerminalId);
 
   // Expansion is navigation-only UI state: it never affects residency or terminals.
   const [sectionOpen, setSectionOpen] = useState(true);
@@ -151,7 +153,7 @@ export default function WorkspaceNavigatorSection({ onOpenWorkspace, onCollapseS
             const label = getWorkspaceTabLabel(workspace);
             const remoteLabel = getRemoteEnvironmentLabel(workspace);
             const branch = workspace.gitCurrentBranch;
-            const counts = attentionCounts(workspace.terminals.map((terminal) => terminal.id), byTerminalId);
+            const counts = attentionCounts(workspace.terminals.map((terminal) => terminal.id), byTerminalId, seenByTerminalId);
             const editName = getWorkspaceRenameValue(workspace);
             const dropClass = reorder.dropTarget?.id === workspace.id ? ` drop-${reorder.dropTarget.side === 'start' ? 'before' : 'after'}` : '';
 

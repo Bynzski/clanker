@@ -28,6 +28,7 @@ import { invokeRemoteSession } from './remoteSessionInvocation';
 import {
   ensureAttentionAdapterFiles,
   prepareLocalAttention,
+  attentionSourceOptions,
   trustedRootSessionId,
   withoutAttentionEnvironment,
 } from '../agentAttentionAdapters';
@@ -159,7 +160,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
             platform: process.platform, rootSessionId,
           }) ?? null;
         }
-        attentionEnv = await agentAttentionBroker.register(id, session.harness, { rootSessionId });
+        attentionEnv = await agentAttentionBroker.register(id, session.harness, { rootSessionId, ...attentionSourceOptions(session.harness) });
         attentionCommand = files.command;
         if (preparedAttention) {
           attentionEnv = { ...attentionEnv, ...preparedAttention.env };

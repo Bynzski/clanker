@@ -7,6 +7,7 @@ function envelope(event, fields) {
     if (typeof fields?.[key] === 'string' && fields[key]) extra[key] = fields[key].slice(0, 128);
   }
   if (fields?.scope === 'root' || fields?.scope === 'child') extra.scope = fields.scope;
+  if (fields?.requestKind === 'input' || fields?.requestKind === 'approval') extra.requestKind = fields.requestKind;
   if (typeof fields?.nativeEvent === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(fields.nativeEvent)) extra.nativeEvent = fields.nativeEvent;
   return { event, ...extra };
 }
@@ -158,7 +159,7 @@ const degraded = { read: () => ({}), write: () => false };
 let result = null;
 let interpreter = null;
 try { interpreter = await import(pathToFileURL(process.argv[2]).href); } catch { /* an unreadable interpreter emits nothing */ }
-const boundary = ['turn_started', 'turn_completed', 'turn_interrupted', 'session_ended'];
+const boundary = ['turn_started', 'turn_completed', 'turn_interrupted', 'turn_failed', 'session_ended'];
 if (interpreter) {
   const locked = await acquire();
   if (!locked) failed = true;

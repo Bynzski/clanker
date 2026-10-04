@@ -69,15 +69,15 @@ describe('remote session invocation', () => {
   it('seeds the rediscovered host session as the expected root for resume, never for fork or untrusted providers', async () => {
     const resumed = fixture('codex');
     await invokeRemoteSession(resumed.deps, resumed.workspace, resumed.session);
-    expect(resumed.broker.registerRemote).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: 'native-id' });
+    expect(resumed.broker.registerRemote).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: 'native-id', authority: 'full', quality: 'hook' });
     expect(resumed.environment.resolveTerminalSpawn).toHaveBeenCalledWith(expect.objectContaining({ attentionRootSessionId: 'native-id' }));
     const forked = fixture('codex');
     await invokeRemoteSession(forked.deps, forked.workspace, forked.session, true);
-    expect(forked.broker.registerRemote).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: undefined });
+    expect(forked.broker.registerRemote).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: undefined, authority: 'full', quality: 'hook' });
     expect(forked.environment.resolveTerminalSpawn).toHaveBeenCalledWith(expect.objectContaining({ attentionRootSessionId: undefined }));
     const claude = fixture('claude');
     await invokeRemoteSession(claude.deps, claude.workspace, claude.session);
-    expect(claude.broker.registerRemote).toHaveBeenCalledWith(expect.any(String), 'claude', { rootSessionId: undefined });
+    expect(claude.broker.registerRemote).toHaveBeenCalledWith(expect.any(String), 'claude', { rootSessionId: undefined, authority: 'partial', quality: 'hook' });
   });
   it('refuses unsupported, missing, unavailable, invalid and escaping sessions before spawning', async () => {
     const f = fixture();

@@ -1,5 +1,7 @@
 import type { WorkspaceTab } from '../store/workspaceTypes';
-import type { TerminalAttention } from '../store/agentAttentionStore';
+import type { AgentAttentionSnapshot } from '../../shared/types/agentAttention';
+import type { AttentionSeen } from '../store/agentAttentionStore';
+import { deriveAttention } from './agentAttentionPresentation';
 import { collectLeafPaneIds } from '../store/workspaceLayout';
 
 export interface AttentionTarget {
@@ -9,7 +11,8 @@ export interface AttentionTarget {
 
 export function nextAttentionTarget(
   workspaces: WorkspaceTab[],
-  byTerminalId: Record<string, TerminalAttention>,
+  byTerminalId: Record<string, AgentAttentionSnapshot>,
+  seenByTerminalId: Record<string, AttentionSeen>,
   currentTerminalId: string | null,
 ): AttentionTarget | null {
   const ordered = workspaces.flatMap((workspace) => {
@@ -28,9 +31,9 @@ export function nextAttentionTarget(
   if (ordered.length === 0) return null;
   const currentIndex = ordered.findIndex((item) => item.terminalId === currentTerminalId);
   const rotated = [...ordered.slice(currentIndex + 1), ...ordered.slice(0, currentIndex + 1)];
-  return rotated.find((target) => byTerminalId[target.terminalId]?.unseen
-    && byTerminalId[target.terminalId]?.lifecycle === 'needs_input')
-    ?? rotated.find((target) => byTerminalId[target.terminalId]?.unseen
-      && byTerminalId[target.terminalId]?.lifecycle === 'turn_complete')
-    ?? null;
+  const unseen = (display: 'needs_input' | 'turn_complete') => rotated.find((target) => {
+    const view = deriveAttention(byTerminalId[target.terminalId], seenByTerminalId[target.terminalId]);
+    return view?.unseen && view.display === display;
+  });
+  return unseen('needs_input') ?? unseen('turn_complete') ?? null;
 }

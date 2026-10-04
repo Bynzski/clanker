@@ -21,18 +21,28 @@ export function startTerminalSessionBridge(): () => void {
   if (typeof window.electronAPI?.onTerminalExit === 'function') {
     disposers.push(window.electronAPI.onTerminalExit(({ id, exitCode }) => {
       writeCachedTerminalExit(id, exitCode);
-      useAgentAttentionStore.getState().markExited(id);
+      useAgentAttentionStore.getState().retire(id);
     }));
   }
 
-  if (typeof window.electronAPI?.onAgentAttentionUpdate === 'function') {
-    disposers.push(window.electronAPI.onAgentAttentionUpdate((update) => {
+  // Main owns the lifecycle. Subscribe first, then hydrate: revision ordering in the store makes
+  // the two safe in either arrival order, and a recreated renderer recovers the live state.
+  if (typeof window.electronAPI?.onAgentAttentionChanged === 'function') {
+    const isForeground = (terminalId: string): boolean => {
       const state = useWorkspaceStore.getState();
-      const workspace = state.workspaces.find((entry) => entry.terminals.some((terminal) => terminal.id === update.terminalId));
-      const foreground = workspace?.id === state.activeWorkspaceId
-        && workspace?.activeTerminalId === update.terminalId;
-      useAgentAttentionStore.getState().applyUpdate(update, foreground);
+      const workspace = state.workspaces.find((entry) => entry.terminals.some((terminal) => terminal.id === terminalId));
+      return workspace?.id === state.activeWorkspaceId && workspace?.activeTerminalId === terminalId;
+    };
+    disposers.push(window.electronAPI.onAgentAttentionChanged((change) => {
+      useAgentAttentionStore.getState().applyChange(change, isForeground(change.terminalId));
     }));
+    if (typeof window.electronAPI.getAgentAttentionSnapshots === 'function') {
+      let disposed = false;
+      disposers.push(() => { disposed = true; });
+      void window.electronAPI.getAgentAttentionSnapshots()
+        .then((snapshots) => { if (!disposed && Array.isArray(snapshots)) useAgentAttentionStore.getState().hydrate(snapshots, isForeground); })
+        .catch(() => undefined);
+    }
   }
 
   disposers.push(useWorkspaceStore.subscribe((state, previous) => {
@@ -43,7 +53,7 @@ export function startTerminalSessionBridge(): () => void {
     const liveIds = new Set(state.workspaces.flatMap((workspace) => workspace.terminals.map((terminal) => terminal.id)));
     for (const workspace of previous.workspaces) {
       for (const terminal of workspace.terminals) {
-        if (!liveIds.has(terminal.id)) useAgentAttentionStore.getState().remove(terminal.id);
+        if (!liveIds.has(terminal.id)) useAgentAttentionStore.getState().retire(terminal.id);
       }
     }
   }));

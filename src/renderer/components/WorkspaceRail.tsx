@@ -5,7 +5,8 @@ import type { MutableRefObject } from 'react';
 import type { Terminal, WorkspaceTab } from '../store/workspaceTypes';
 import { attentionCounts, useAgentAttentionStore } from '../store/agentAttentionStore';
 import { nextAttentionTarget } from '../lib/agentAttentionNavigation';
-import { getAttentionDisplay, getAttentionSuffix } from '../lib/agentAttentionPresentation';
+import { getAttentionSuffix } from '../lib/agentAttentionPresentation';
+import { useTerminalAttention } from '../lib/useTerminalAttention';
 import { getHarnessOption } from '../lib/harnessOptions';
 import { getRemoteEnvironmentLabel, getWorkspaceTabLabel } from '../lib/workspaceLabels';
 import { toggleFocusedWorkspaceExplorer } from '../lib/explorerToggle';
@@ -32,13 +33,14 @@ interface RailAgentProps {
 
 function RailAgent({ workspace, terminal, isCurrent, suppressClickRef }: RailAgentProps) {
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
-  const attention = useAgentAttentionStore((state) => state.byTerminalId[terminal.id]);
+  const attentionView = useTerminalAttention(terminal.id);
   const harness = getHarnessOption(terminal.harnessId);
   const HarnessIcon = harness.Icon;
   const name = terminal.displayName ?? harness.label;
   const attentionOn = Boolean(terminal.harnessId && terminal.attentionEnabled);
-  const display = attentionOn ? getAttentionDisplay(attention) : null;
-  const suffix = attentionOn ? getAttentionSuffix(attention) : '';
+  const attention = attentionOn ? attentionView : null;
+  const display = attention?.display ?? null;
+  const suffix = getAttentionSuffix(attention);
   const worktree = getAgentWorktreeContext(workspace, terminal);
   // Branch identity only: management of checkouts lives in the expanded sidebar.
   const description = worktree
@@ -80,12 +82,13 @@ export default function WorkspaceRail({ onOpenWorkspace, onExpand }: WorkspaceRa
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
   const moveWorkspace = useWorkspaceStore((state) => state.moveWorkspace);
   const byTerminalId = useAgentAttentionStore((state) => state.byTerminalId);
+  const seenByTerminalId = useAgentAttentionStore((state) => state.seenByTerminalId);
   const reorder = useWorkspaceReorder(workspaces, moveWorkspace, {
     axis: 'vertical',
     // Nothing inside an entry opts out of dragging.
     ignoreDragSelector: '[data-no-reorder]',
   });
-  const nextTarget = nextAttentionTarget(workspaces, byTerminalId, activeTerminalId);
+  const nextTarget = nextAttentionTarget(workspaces, byTerminalId, seenByTerminalId, activeTerminalId);
   const assistantsEnabled = useAssistantsEnabled();
   const { assistants, live } = useAssistantRoster();
 
@@ -108,7 +111,7 @@ export default function WorkspaceRail({ onOpenWorkspace, onExpand }: WorkspaceRa
           const label = getWorkspaceTabLabel(workspace);
           const remoteLabel = getRemoteEnvironmentLabel(workspace);
           const branch = workspace.gitCurrentBranch;
-          const counts = attentionCounts(workspace.terminals.map((terminal) => terminal.id), byTerminalId);
+          const counts = attentionCounts(workspace.terminals.map((terminal) => terminal.id), byTerminalId, seenByTerminalId);
           const pending = counts.needsInput > 0 ? 'needs-input' : counts.completed > 0 ? 'complete' : null;
           const details = [
             remoteLabel,

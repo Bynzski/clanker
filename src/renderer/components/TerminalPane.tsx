@@ -6,7 +6,7 @@ import type { ILink, ILinkProvider } from '@xterm/xterm';
 import { useThemeStore } from '../theme/themeStore';
 import { getTerminalTheme, registerThemedTerminal, unregisterThemedTerminal } from '../theme/terminalTheme';
 import { useWorkspaceStore } from '../store/workspaceStore';
-import { useAgentAttentionStore } from '../store/agentAttentionStore';
+import { useTerminalAttention } from '../lib/useTerminalAttention';
 import { getAttentionSuffix } from '../lib/agentAttentionPresentation';
 import { AgentAttentionState } from './AgentAttentionIndicators';
 import { getHarnessOption } from '../lib/harnessOptions';
@@ -171,7 +171,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const pane = workspace?.panes.find((item) => item.id === paneId);
   const terminal = workspace?.terminals.find((item) => item.id === pane?.terminalId);
   const terminalId = terminal?.id ?? null;
-  const attention = useAgentAttentionStore((state) => terminalId ? state.byTerminalId[terminalId] : undefined);
+  const attention = useTerminalAttention(terminalId);
   const showAgentAttention = Boolean(terminal?.harnessId && terminal.attentionEnabled);
   const attentionSuffix = showAgentAttention ? getAttentionSuffix(attention) : '';
   const harnessOption = getHarnessOption(terminal?.harnessId);

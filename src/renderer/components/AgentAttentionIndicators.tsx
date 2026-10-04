@@ -1,15 +1,14 @@
-import { getAttentionDisplay, getAttentionPresentation } from '../lib/agentAttentionPresentation';
-import type { TerminalAttention } from '../store/agentAttentionStore';
+import { getAttentionPresentation, type AttentionView } from '../lib/agentAttentionPresentation';
 import './AgentAttentionIndicators.css';
 
 /** Lifecycle icon for one agent terminal; renders nothing while the agent is idle. */
-export function AgentAttentionState({ attention, name }: { attention: TerminalAttention | undefined; name: string }) {
-  const display = getAttentionDisplay(attention);
-  if (!display) return null;
+export function AgentAttentionState({ attention, name }: { attention: AttentionView | null; name: string }) {
+  if (!attention) return null;
+  const { display } = attention;
   const { label, Icon } = getAttentionPresentation(display);
   return (
     <span
-      className={`agent-attention-state state-${display}${attention?.unseen ? ' unseen' : ''}`}
+      className={`agent-attention-state state-${display}${attention.unseen ? ' unseen' : ''}`}
       role="img"
       aria-label={`${name}: ${label}`}
       title={label}

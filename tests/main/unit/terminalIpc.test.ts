@@ -162,7 +162,7 @@ describe('registerTerminalIpc — registration', () => {
       ensureHarnessWrapperScript: vi.fn().mockReturnValue(testHarnessWrapper()),
     });
 
-    expect(mockHandle.mock.calls.length).toBe(12);
+    expect(mockHandle.mock.calls.length).toBe(13);
   });
 
   test('registers 3 event IPC channels (terminal-data, terminal-exit, terminal-resized)', () => {
@@ -198,7 +198,7 @@ describe('registerTerminalIpc — registration', () => {
     };
     registerTerminalIpc(opts);
     registerTerminalIpc(opts);
-    expect(mockHandle.mock.calls.length).toBe(24);
+    expect(mockHandle.mock.calls.length).toBe(26);
   });
 });
 
@@ -295,13 +295,15 @@ describe('terminalIpc — error-path: handler returns', () => {
       expect(result.attentionEnabled).toBe(true);
       const raw = JSON.stringify({ version: 1, token, harness: 'opencode', event: 'turn_started', scope: 'root', sessionId: 'session-a', turnId: '1' });
       onData('ordinary output' + REMOTE_ATTENTION_PREFIX + Buffer.from(raw).toString('base64') + '\x07');
-      expect(updates).toHaveBeenCalledWith({ terminalId: result.id, event: 'turn_started' });
+      expect(updates).toHaveBeenCalledWith(expect.objectContaining({ terminalId: result.id, snapshot: expect.objectContaining({ runtime: expect.objectContaining({ status: 'running' }) }) }));
       expect(opts.getTerminals().get(result.id)?.startupBuffer).toEqual(['ordinary output']);
       onExit({ exitCode: 0 });
       expect(releaseAttention).toHaveBeenCalledTimes(1);
       expect(broker.handoffState(result.id)).toBe('unavailable');
       broker.receiveRemote(result.id, raw);
-      expect(updates).toHaveBeenCalledTimes(1);
+      // The start, then the PTY exit's retirement tombstone; the retired credential adds nothing.
+      expect(updates).toHaveBeenCalledTimes(2);
+      expect(updates).toHaveBeenLastCalledWith(expect.objectContaining({ terminalId: result.id, snapshot: null }));
       mockPtySpawn.mockImplementationOnce(() => { throw new Error('spawn failed'); });
       await expect(handler(null, '/srv/project', 'opencode', undefined, undefined, undefined, 'remote', 'host')).rejects.toThrow('spawn failed');
       expect(releaseAttention).toHaveBeenCalledTimes(2);
@@ -977,7 +979,7 @@ describe('terminalIpc — error-path: handler returns', () => {
     const result = await handler(null, '/test/workspace', 'codex', 'gpt-5.4-mini');
 
     expect(result).toBeDefined();
-    expect(broker.register).toHaveBeenCalledWith(result.id, 'codex');
+    expect(broker.register).toHaveBeenCalledWith(result.id, 'codex', { authority: 'full', quality: 'hook' });
     expect(ensureWrapper).toHaveBeenCalledTimes(1);
     expect(mockPtySpawn).toHaveBeenCalledWith(
       testHarnessWrapper(),

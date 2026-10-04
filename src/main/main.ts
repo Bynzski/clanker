@@ -75,7 +75,7 @@ import { KeybindingOverridesService } from './keybindingOverrides';
 import { purgeLegacyTaskSessions, seedHarnessAttention, seedWorkspaceNavigationMode } from './storeMigrations';
 import { existsSync } from 'node:fs';
 import { AgentAttentionBroker } from './agentAttentionBroker';
-import { AGENT_ATTENTION_UPDATE, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
+import { AGENT_ATTENTION_CHANGED, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles, scavengeStaleAttentionRoots, migrateLegacyAgyAttentionPlugin } from './agentAttentionAdapters';
 import { waitForTerminalCleanup } from './ipc/ptySpawn';
 import { HermesAssistantService } from './assistants/hermesAssistantService';
@@ -121,9 +121,9 @@ const activeBrowserTabIdsByWorkspace: Map<string, string> = new Map();
 const lastBrowserBoundsByWorkspace: Map<string, Rectangle> = new Map();
 let activeBrowserWorkspaceId: string | null = null;
 let mainWindow: BrowserWindow | null = null;
-const agentAttentionBroker = new AgentAttentionBroker((update) => {
+const agentAttentionBroker = new AgentAttentionBroker((change) => {
   if (isWindowAvailable(mainWindow)) {
-    mainWindow.webContents.send(AGENT_ATTENTION_UPDATE, update);
+    mainWindow.webContents.send(AGENT_ATTENTION_CHANGED, change);
   }
 });
 let annotationModeEnabled = false;

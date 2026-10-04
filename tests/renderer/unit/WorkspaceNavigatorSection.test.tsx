@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WorkspaceNavigatorSection from '../../../src/renderer/components/WorkspaceNavigatorSection';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
+import { EMPTY_ATTENTION, snapshot, storeState } from '../../_helpers/attentionSnapshots';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import * as closeModule from '../../../src/renderer/lib/workspaceClose';
 import { installElectronApiMock } from '../../setup/electron';
@@ -38,7 +39,7 @@ function seed() {
 describe('WorkspaceNavigatorSection', () => {
   beforeEach(() => {
     installElectronApiMock();
-    useAgentAttentionStore.setState({ byTerminalId: {} });
+    useAgentAttentionStore.setState(EMPTY_ATTENTION);
     seed();
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -91,12 +92,7 @@ describe('WorkspaceNavigatorSection', () => {
     // Idle agents show no indicator.
     expect(names()).toEqual([]);
     act(() => {
-      useAgentAttentionStore.setState({
-        byTerminalId: {
-          t2: { lifecycle: 'needs_input', unseen: true, updatedAt: 2 },
-          t1: { lifecycle: 'running', unseen: false, updatedAt: 1 },
-        },
-      });
+      useAgentAttentionStore.setState(storeState([snapshot('t2', 'needs_input', 2), snapshot('t1', 'running', 1)]));
     });
     expect(names()).toEqual(['Samson: Running', 'Delilah: Needs input']);
     expect(screen.getByLabelText('1 agents need input, 0 turns complete')).toBeTruthy();
@@ -109,7 +105,7 @@ describe('WorkspaceNavigatorSection', () => {
     render(<WorkspaceNavigatorSection />);
     expect(screen.queryByLabelText('Jump to next agent needing attention')).toBeNull();
     act(() => {
-      useAgentAttentionStore.setState({ byTerminalId: { t3: { lifecycle: 'needs_input', unseen: true, updatedAt: 1 } } });
+      useAgentAttentionStore.setState(storeState([snapshot('t3', 'needs_input', 1)]));
     });
     fireEvent.click(screen.getByLabelText('Jump to next agent needing attention'));
     expect(selectWorkspace).toHaveBeenCalledWith('beta', 't3');

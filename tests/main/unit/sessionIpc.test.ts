@@ -288,7 +288,7 @@ describe('registerSessionIpc', () => {
 
     expect(result).toEqual({ id: 'term-1', pid: 123, harnessId: 'codex', attentionEnabled: false, checkoutContextId: 'local-ws::main' });
     // A fork creates a new native session: the old ID is never pre-seeded.
-    expect(broker.register).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: undefined });
+    expect(broker.register).toHaveBeenCalledWith(expect.any(String), 'codex', { rootSessionId: undefined, authority: 'full', quality: 'hook' });
     expect(mockBuildSessionLaunch).toHaveBeenCalledWith(
       { ...codexSession, cwd: nativeWorkspacePath },
       true,
@@ -409,10 +409,10 @@ describe('trusted resume identity for local attention', () => {
     return broker.register.mock.calls[0];
   };
   it('seeds the validated native ID for a non-fork resume only', async () => {
-    expect(await resume(codexSession, false)).toEqual([expect.any(String), 'codex', { rootSessionId: 'codex-session' }]);
-    expect((await resume(codexSession, true))[2]).toEqual({ rootSessionId: undefined });
+    expect(await resume(codexSession, false)).toEqual([expect.any(String), 'codex', { rootSessionId: 'codex-session', authority: 'full', quality: 'hook' }]);
+    expect((await resume(codexSession, true))[2]).toEqual({ rootSessionId: undefined, authority: 'full', quality: 'hook' });
   });
   it('does not seed when a provider may re-identify the resumed session', async () => {
-    expect((await resume(claudeSession, false))[2]).toEqual({ rootSessionId: undefined });
+    expect((await resume(claudeSession, false))[2]).toEqual({ rootSessionId: undefined, authority: 'partial', quality: 'hook' });
   });
 });

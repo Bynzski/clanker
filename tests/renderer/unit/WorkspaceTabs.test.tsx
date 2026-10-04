@@ -7,6 +7,7 @@ import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import type { WorkspaceTab } from '../../../src/renderer/store/workspaceTypes';
 import WorkspaceTabs from '../../../src/renderer/components/WorkspaceTabs';
 import { installElectronApiMock } from '../../setup/electron';
+import { change, EMPTY_ATTENTION, snapshot } from '../../_helpers/attentionSnapshots';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 
 // Platform-neutral path constants for test fixtures
@@ -60,7 +61,7 @@ describe('WorkspaceTabs', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     installElectronApiMock();
-    useAgentAttentionStore.setState({ byTerminalId: {} });
+    useAgentAttentionStore.setState(EMPTY_ATTENTION);
     
     // Set up default store state
     useWorkspaceStore.setState({
@@ -395,12 +396,13 @@ describe('WorkspaceTabs', () => {
         activeTerminalId: 't1',
         selectWorkspace,
       });
-      useAgentAttentionStore.getState().applyUpdate({ terminalId: 't2', event: 'input_requested' }, false);
+      useAgentAttentionStore.getState().applyChange(change(snapshot('t2', 'needs_input', 4)), false);
       render(<WorkspaceTabs />);
       expect(screen.getByLabelText('1 agents need input, 0 turns complete')).toBeTruthy();
       fireEvent.click(screen.getByLabelText('Jump to next agent needing attention'));
       expect(selectWorkspace).toHaveBeenCalledWith('ws2', 't2');
-      expect(useAgentAttentionStore.getState().byTerminalId.t2.unseen).toBe(false);
+      expect(useAgentAttentionStore.getState().seenByTerminalId.t2).toEqual({ completion: 0, request: 4 });
+      expect(useAgentAttentionStore.getState().byTerminalId.t2.pendingRequest).not.toBeNull();
     });
 
     it('uses fallback name when workspace has no name or path', () => {

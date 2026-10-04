@@ -22,6 +22,7 @@ import {
   GET_TERMINAL_BUFFER,
   WRITE_TERMINAL,
   GET_AGENT_HANDOFF_STATUSES,
+  GET_AGENT_ATTENTION_SNAPSHOTS,
   SEND_ANNOTATION_TO_AGENT,
   RESIZE_TERMINAL,
   KILL_TERMINAL,
@@ -44,6 +45,7 @@ import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport'
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import {
   ensureAttentionAdapterFiles,
+  attentionSourceOptions,
   prepareLocalAttention,
   withoutAttentionEnvironment,
 } from '../agentAttentionAdapters';
@@ -194,7 +196,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
 
       const attentionRequested = Boolean(harness && store.get('harnessDefaults')[harness]?.attentionEnabled
         && resolvedWorkspace.environment.capabilities.agentAttention && agentAttentionBroker);
-      const attentionToken = attentionRequested && harness ? agentAttentionBroker!.registerRemote(id, harness) : undefined;
+      const attentionToken = attentionRequested && harness ? agentAttentionBroker!.registerRemote(id, harness, attentionSourceOptions(harness)) : undefined;
       let releaseAttention: (() => Promise<void>) | undefined;
       try {
         const resolved = await resolvedWorkspace.environment.resolveTerminalSpawn({
@@ -296,7 +298,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
             platform: process.platform,
           }) ?? null;
         }
-        attentionEnv = await agentAttentionBroker.register(id, harness);
+        attentionEnv = await agentAttentionBroker.register(id, harness, attentionSourceOptions(harness));
         attentionCommand = files.command;
         if (preparedAttention) {
           attentionEnv = { ...attentionEnv, ...preparedAttention.env };
@@ -460,6 +462,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       id, agentAttentionBroker?.handoffState(id) ?? 'unavailable',
     ]),
   ));
+
+  // Hydration for a renderer that subscribed late or was recreated. Retired agents are absent.
+  ipcMain.handle(GET_AGENT_ATTENTION_SNAPSHOTS, () => agentAttentionBroker?.snapshots() ?? []);
 
   ipcMain.handle(SEND_ANNOTATION_TO_AGENT, (_, payload: unknown) => {
     if (!isRecord(payload)

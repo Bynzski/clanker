@@ -115,6 +115,12 @@ export function attentionLaunchOptions(
   return local.options({ ...context, files: ensureProviderAttentionResources(harness, adapterFiles) });
 }
 
+/** Source authority a provider declares for its structured lifecycle; the broker arbitrates with it. */
+export function attentionSourceOptions(harness: string): { authority: 'full' | 'partial'; quality: 'native' | 'hook' } {
+  const attention = findHarnessProvider(harness)?.attention;
+  return { authority: attention?.authority ?? 'full', quality: attention?.source ?? 'hook' };
+}
+
 /** Native session identity Clanker itself validated for a non-fork resume. A fork creates
  * a new native session, and a provider whose resume may re-identify the session cannot be
  * pre-seeded; both start unbound. Renderer-supplied IDs never reach this function. */

@@ -1,73 +1,109 @@
 import { create } from 'zustand';
-import type { AgentAttentionUpdate } from '../../shared/types/agentAttention';
+import type { AgentAttentionChange, AgentAttentionSnapshot } from '../../shared/types/agentAttention';
+import { deriveAttention } from '../lib/agentAttentionPresentation';
 
-export type AgentLifecycle = 'unknown' | 'running' | 'needs_input' | 'turn_complete';
-export interface TerminalAttention {
-  lifecycle: AgentLifecycle;
-  unseen: boolean;
-  updatedAt: number;
+/** UI acknowledgement watermarks: revisions of the canonical facts the user has already seen.
+ * They never feed back into lifecycle; a later completion or request carries a higher revision
+ * and so is unseen again. */
+export interface AttentionSeen {
+  completion: number;
+  request: number;
 }
 
+/**
+ * Cache of main's canonical attention snapshots plus UI-only acknowledgement. There is no
+ * lifecycle logic here: main (the broker) decides what happened, this store only keeps the
+ * newest revision it has been told about. A retirement is remembered as a revision with no
+ * snapshot, so a stale in-flight or hydrated snapshot cannot resurrect an exited agent.
+ */
 interface AgentAttentionState {
-  byTerminalId: Record<string, TerminalAttention>;
-  applyUpdate: (update: AgentAttentionUpdate, foreground: boolean) => void;
+  byTerminalId: Record<string, AgentAttentionSnapshot>;
+  /** Newest accepted revision per terminal, including retirements. */
+  revisionByTerminalId: Record<string, number>;
+  seenByTerminalId: Record<string, AttentionSeen>;
+  /** Accept an equal or newer revision; `foreground` panes acknowledge what they are already showing. */
+  applyChange: (change: AgentAttentionChange, foreground: boolean) => void;
+  /** Merge a full hydration set by the same revision ordering as pushes. */
+  hydrate: (snapshots: AgentAttentionSnapshot[], isForeground: (terminalId: string) => boolean) => void;
   acknowledge: (terminalId: string) => void;
-  markExited: (terminalId: string) => void;
-  remove: (terminalId: string) => void;
+  /** The terminal or its agent is gone locally: drop the snapshot, keep the revision floor. */
+  retire: (terminalId: string) => void;
 }
 
-const UNKNOWN: TerminalAttention = { lifecycle: 'unknown', unseen: false, updatedAt: 0 };
+function acknowledged(snapshot: AgentAttentionSnapshot, seen: AttentionSeen | undefined): AttentionSeen | undefined {
+  const completion = Math.max(seen?.completion ?? 0, snapshot.lastCompletion?.revision ?? 0);
+  const request = Math.max(seen?.request ?? 0, snapshot.pendingRequest?.revision ?? 0);
+  if (seen && seen.completion === completion && seen.request === request) return seen;
+  return completion === 0 && request === 0 ? seen : { completion, request };
+}
+
+type Slice = Pick<AgentAttentionState, 'byTerminalId' | 'revisionByTerminalId' | 'seenByTerminalId'>;
+
+function without<T>(record: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in record)) return record;
+  const next = { ...record };
+  delete next[key];
+  return next;
+}
+
+function merge(state: Slice, change: AgentAttentionChange, foreground: boolean): Slice {
+  const known = state.revisionByTerminalId[change.terminalId];
+  if (known !== undefined && change.revision < known) return state;
+  const revisionByTerminalId = { ...state.revisionByTerminalId, [change.terminalId]: change.revision };
+  if (!change.snapshot) {
+    return {
+      byTerminalId: without(state.byTerminalId, change.terminalId),
+      revisionByTerminalId,
+      seenByTerminalId: without(state.seenByTerminalId, change.terminalId),
+    };
+  }
+  const seen = foreground ? acknowledged(change.snapshot, state.seenByTerminalId[change.terminalId]) : state.seenByTerminalId[change.terminalId];
+  return {
+    byTerminalId: { ...state.byTerminalId, [change.terminalId]: change.snapshot },
+    revisionByTerminalId,
+    seenByTerminalId: seen ? { ...state.seenByTerminalId, [change.terminalId]: seen } : state.seenByTerminalId,
+  };
+}
 
 export const useAgentAttentionStore = create<AgentAttentionState>((set) => ({
   byTerminalId: {},
-  applyUpdate: (update, foreground) => set((state) => {
-    const previous = state.byTerminalId[update.terminalId] ?? UNKNOWN;
-    let lifecycle: AgentLifecycle;
-    switch (update.event) {
-      case 'turn_started': lifecycle = 'running'; break;
-      case 'input_requested': lifecycle = 'needs_input'; break;
-      case 'input_resolved':
-        if (previous.lifecycle !== 'needs_input') return state;
-        lifecycle = 'running';
-        break;
-      case 'turn_completed': lifecycle = 'turn_complete'; break;
-      // Main already decided these are authoritative; the pane has no foreground state to show.
-      case 'turn_interrupted':
-      case 'session_ended':
-      case 'agent_exited': lifecycle = 'unknown'; break;
+  revisionByTerminalId: {},
+  seenByTerminalId: {},
+  applyChange: (change, foreground) => set((state) => merge(state, change, foreground)),
+  hydrate: (snapshots, isForeground) => set((state) => {
+    let next: Slice = state;
+    for (const snapshot of snapshots) {
+      next = merge(next, { terminalId: snapshot.terminalId, revision: snapshot.revision, snapshot }, isForeground(snapshot.terminalId));
     }
-    const unseen = (lifecycle === 'needs_input' || lifecycle === 'turn_complete') && !foreground;
-    return { byTerminalId: { ...state.byTerminalId, [update.terminalId]: { lifecycle, unseen, updatedAt: Date.now() } } };
+    return next === state ? state : { ...state, ...next };
   }),
   acknowledge: (terminalId) => set((state) => {
-    const current = state.byTerminalId[terminalId];
-    if (!current?.unseen) return state;
-    return { byTerminalId: { ...state.byTerminalId, [terminalId]: { ...current, unseen: false } } };
+    const snapshot = state.byTerminalId[terminalId];
+    if (!snapshot) return state;
+    const current = state.seenByTerminalId[terminalId];
+    const seen = acknowledged(snapshot, current);
+    if (!seen || seen === current) return state;
+    return { seenByTerminalId: { ...state.seenByTerminalId, [terminalId]: seen } };
   }),
-  markExited: (terminalId) => set((state) => {
-    const current = state.byTerminalId[terminalId];
-    if (!current) return state;
-    return { byTerminalId: { ...state.byTerminalId, [terminalId]: { ...current, lifecycle: 'unknown', unseen: false } } };
-  }),
-  remove: (terminalId) => set((state) => {
-    if (!state.byTerminalId[terminalId]) return state;
-    const next = { ...state.byTerminalId };
-    delete next[terminalId];
-    return { byTerminalId: next };
+  retire: (terminalId) => set((state) => {
+    if (!state.byTerminalId[terminalId] && !state.seenByTerminalId[terminalId]) return state;
+    return merge(state, { terminalId, revision: state.revisionByTerminalId[terminalId] ?? 0, snapshot: null }, false);
   }),
 }));
 
+/** Workspace aggregate of unseen attention, projected through the shared selector. */
 export function attentionCounts(
   terminalIds: string[],
-  byTerminalId: Record<string, TerminalAttention>,
+  byTerminalId: Record<string, AgentAttentionSnapshot>,
+  seenByTerminalId: Record<string, AttentionSeen>,
 ): { needsInput: number; completed: number } {
   let needsInput = 0;
   let completed = 0;
   for (const id of terminalIds) {
-    const attention = byTerminalId[id];
-    if (!attention?.unseen) continue;
-    if (attention.lifecycle === 'needs_input') needsInput++;
-    if (attention.lifecycle === 'turn_complete') completed++;
+    const view = deriveAttention(byTerminalId[id], seenByTerminalId[id]);
+    if (!view?.unseen) continue;
+    if (view.display === 'needs_input') needsInput++;
+    if (view.display === 'turn_complete') completed++;
   }
   return { needsInput, completed };
 }
