@@ -4,7 +4,8 @@ import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { AgentBridgeCredentials, AgentBridgeGrant } from './credentials';
-import type { AgentBridgeToolResult, AgentBridgeToolSchema } from './capabilities';
+import type { AgentBridgeToolResult } from './capabilities';
+import type { ToolJsonSchema } from './input';
 
 export const AGENT_BRIDGE_PATH = '/mcp';
 export const AGENT_BRIDGE_LOOPBACK_HOST = '127.0.0.1';
@@ -15,14 +16,17 @@ export const AGENT_BRIDGE_LIMITS = Object.freeze({
   maxBatch: 16,
   maxConcurrentRequests: 32,
   maxHeaderBytes: 8 * 1024,
+  /** Receiving a request (headers and body). Tool execution has its own bound below. */
   requestTimeoutMs: 15_000,
   maxToolResultBytes: 64 * 1024,
+  /** Upper bound on one tool call (the HTTP timeouts above only bound receiving the request). */
+  toolTimeoutMs: 10_000,
 });
 
 export interface AgentBridgeToolDescriptor {
   readonly name: string;
   readonly description: string;
-  readonly inputSchema: AgentBridgeToolSchema;
+  readonly inputSchema: ToolJsonSchema;
 }
 
 /**
@@ -31,7 +35,7 @@ export interface AgentBridgeToolDescriptor {
  */
 export interface AgentBridgeToolHost {
   listTools(grant: AgentBridgeGrant): AgentBridgeToolDescriptor[];
-  callTool(grant: AgentBridgeGrant, name: string, args: Record<string, unknown>): Promise<AgentBridgeToolResult>;
+  callTool(grant: AgentBridgeGrant, name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<AgentBridgeToolResult>;
   readonly instructions?: string;
 }
 
@@ -219,11 +223,11 @@ export class AgentBridgeServer {
       { capabilities: { tools: {} }, ...(host.instructions ? { instructions: host.instructions } : {}) },
     );
     server.setRequestHandler(ListToolsRequestSchema, () => ({
-      tools: host.listTools(grant).map((tool) => ({ name: tool.name, description: tool.description, inputSchema: { ...tool.inputSchema, properties: { ...tool.inputSchema.properties } } })),
+      tools: host.listTools(grant).map((tool) => ({ name: tool.name, description: tool.description, inputSchema: { ...tool.inputSchema, properties: { ...tool.inputSchema.properties }, ...(tool.inputSchema.required ? { required: [...tool.inputSchema.required] } : {}) } })),
     }));
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const args = request.params.arguments;
-      const result = await host.callTool(grant, request.params.name, args && typeof args === 'object' && !Array.isArray(args) ? args : {});
+      const result = await host.callTool(grant, request.params.name, args && typeof args === 'object' && !Array.isArray(args) ? args : {}, extra.signal);
       const text = JSON.stringify(result.data) ?? 'null';
       if (Buffer.byteLength(text) > AGENT_BRIDGE_LIMITS.maxToolResultBytes) {
         return { isError: true, content: [{ type: 'text' as const, text: 'Result too large' }] };

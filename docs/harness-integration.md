@@ -545,11 +545,21 @@ are independent, minted by different code, validated by different code, and not 
   bound to main's own record `{ terminalId, workspaceId, environmentId, checkoutContextId, harnessId }`.
   Only a SHA-256 digest is retained server-side; the raw token exists in the launch environment
   (`CLANKER_MCP_TOKEN`) and nowhere else: not in argv, not in a config file (providers reference the
-  variable by name), not in logs. Everything is in memory.
+  variable by name), not in logs. Everything is in memory. In main the raw token is transient: it exists
+  while the child environment is composed and is not retained afterwards. The attachment coordinator
+  keeps only disposer functions (never an attachment's args/env), the bridge's disposer holds only the
+  registry's revoke closure, and the terminal's `onExit` holds only the coordinator's `dispose`. Tests
+  force a GC and assert the lease and the composed attachment are collected while revocation still works.
 - **Identity comes from the credential, every request.** The server is stateless: each request is
   authenticated before its body is read, and the resolved grant is closed over by a short-lived
   protocol server. Tools declare closed schemas; **any undeclared argument is refused**, so a model
   cannot hand a tool a workspace, terminal, checkout or harness. The renderer never participates.
+- **Executable input boundary.** A capability declares its input once with `defineCapability({ input })`
+  (`src/main/agentBridge/input.ts`): flat, closed objects of booleans, bounded strings (optionally enums)
+  and bounded integers. The same declaration produces the advertised JSON Schema **and** the parser, and
+  `run()` receives only the parsed, typed value. Undeclared (including `__proto__`/`constructor`),
+  missing, mistyped (no coercion: `"true"` is not a boolean), out-of-range, nested or array values are
+  refused before the capability executes. Error text names the field and rule, never the value.
 - **Live authority re-check.** On every `tools/list` and `tools/call` the service re-derives the caller
   from main's live state: the terminal must still exist in main's terminal table with the same
   workspace, checkout context, harness and environment, and the workspace and checkout context must
@@ -561,8 +571,11 @@ are independent, minted by different code, validated by different code, and not 
   and a failed or aborted launch disposes the same attachment. Revocation is idempotent and happens
   before provider cleanup, so a cleanup failure cannot leave authority behind.
 - **Bounds, fail closed.** 64 KiB request bodies (checked against `Content-Length` and while
-  reading), 16-message batches, 32 concurrent requests, 8 KiB headers, 15 s request timeout, 64 KiB
-  tool results (refused, never truncated). Malformed JSON, wrong content type, non-POST methods,
+  reading), 16-message batches, 32 concurrent requests, 8 KiB headers, 15 s to *receive* a request
+  (HTTP-level only), 10 s per tool *execution*, 64 KiB tool results (refused, never truncated). Tool
+  execution is cut off at its bound and its `AbortSignal` is aborted (also when the client disconnects
+  or cancels). The signal is cooperative: a capability that ignores it gets its response cut off but its
+  work may continue, so a mutating capability must honor `signal` and be safe to abandon before it ships. Malformed JSON, wrong content type, non-POST methods,
   unknown paths and unknown tools are refused; tool failures return a generic error, never internals.
 - **Scoping.** A credential is issued a set of capability names; `tools/list` shows only those and an
   ungranted name behaves as unknown. V1 grants every shipped capability; the seam exists for policy.
@@ -591,8 +604,12 @@ and the bridge share **only** this mechanism, not semantics or credentials.
 - `dispose()` is idempotent, runs in reverse order, never throws, and one failing disposal does not
   stop the others. `terminalIpc` and `sessionIpc` hold a single `attachments` value: on PTY spawn
   failure they `await attachments.dispose()`; on exit it is the terminal's `onExit`.
+- The coordinator retains only each attachment's bare `dispose` (it must not rely on `this`), so an
+  attachment's args/env are collectable once composed. Its default error report names the step and phase
+  only and never prints exception text, because a future attachment's errors might carry a credential.
 - Both fresh launches (`SPAWN_TERMINAL`) and local resume/fork (`SESSION_INVOKE`) use it. Stale
-  `CLANKER_MCP_*` variables inherited from an outer process are stripped from every launch.
+  `CLANKER_MCP_*` (and `CLANKER_ATTENTION_*`) variables inherited from an outer process are stripped from
+  every launch, case-insensitively, since Windows environment names are case-insensitive.
 
 ### Provider capability
 
@@ -643,8 +660,9 @@ main's records, stateless requests) prevents that.
 
 ### Adding a Clanker capability
 
-Add an `AgentBridgeCapability` (`name`, `description`, closed `inputSchema`, `run(args, caller)`) to
-`DEFAULT_AGENT_BRIDGE_CAPABILITIES`. No provider changes. `run` receives the live-resolved caller and must
+Add a `defineCapability({ name, description, input, run })` entry to `DEFAULT_AGENT_BRIDGE_CAPABILITIES`.
+No provider changes. `run(input, { caller, signal })` receives validated input and the live-resolved
+caller, honors `signal`, and must
 call an existing validated main-process service rather than re-implement authorization; where the
 behavior today lives only in renderer → IPC code, extract a main-process service and have IPC and the
 capability both call it. Arguments describe the operation only, never identity. Keep results bounded and

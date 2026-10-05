@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import type { RegisteredWorkspace } from '../workspaceRegistry';
+import { defineInput, type InferInput, type InputSpec, type ToolJsonSchema } from './input';
 
 /**
  * The authority of one authenticated MCP caller, re-derived from main's live state on every call.
@@ -25,22 +26,49 @@ export interface AgentBridgeToolResult {
   readonly isError?: boolean;
 }
 
-export interface AgentBridgeToolSchema {
-  readonly type: 'object';
-  readonly properties: Readonly<Record<string, unknown>>;
-  readonly required?: readonly string[];
-  readonly additionalProperties: false;
+/** Everything a capability's `run` may use besides its validated input. */
+export interface AgentBridgeCallContext {
+  readonly caller: AgentBridgeCaller;
+  /**
+   * Aborted when the call exceeds the bridge's execution bound or the client goes away. A capability
+   * that does I/O or spawns work must honor it; mutating capabilities must also be safe to abandon.
+   */
+  readonly signal: AbortSignal;
 }
 
 /**
- * One agent-callable Clanker capability. Adding one means adding an entry here and nothing in any
- * harness provider. `run` must be bounded and must not widen the caller's authority.
+ * One agent-callable Clanker capability, built with `defineCapability`. Adding one means adding an
+ * entry to the capability list and nothing in any harness provider.
  */
 export interface AgentBridgeCapability {
   readonly name: string;
   readonly description: string;
-  readonly inputSchema: AgentBridgeToolSchema;
-  run(args: Readonly<Record<string, unknown>>, caller: AgentBridgeCaller): AgentBridgeToolResult | Promise<AgentBridgeToolResult>;
+  readonly inputSchema: ToolJsonSchema;
+  /** Parses `rawArgs` against the declared input first; an invalid call never reaches the capability. */
+  invoke(rawArgs: unknown, context: AgentBridgeCallContext): Promise<AgentBridgeToolResult>;
+}
+
+export interface AgentBridgeCapabilityDefinition<S extends InputSpec> {
+  readonly name: string;
+  readonly description: string;
+  readonly input: S;
+  /** Receives validated, typed input only. Must be bounded, must not widen the caller's authority and
+   * must call existing validated main-process services rather than re-implementing authorization. */
+  run(input: InferInput<S>, context: AgentBridgeCallContext): AgentBridgeToolResult | Promise<AgentBridgeToolResult>;
+}
+
+export function defineCapability<const S extends InputSpec>(definition: AgentBridgeCapabilityDefinition<S>): AgentBridgeCapability {
+  const input = defineInput(definition.input);
+  return {
+    name: definition.name,
+    description: definition.description,
+    inputSchema: input.jsonSchema,
+    async invoke(rawArgs, context) {
+      const parsed = input.parse(rawArgs);
+      if (!parsed.ok) return { isError: true, data: { error: parsed.error } };
+      return definition.run(parsed.value, context);
+    },
+  };
 }
 
 /** Display-safe: the last path segment only, never a path. */
@@ -66,11 +94,11 @@ function relativeLaunchDirectory(caller: AgentBridgeCaller): string | null {
  * launch only (no credentials, no ids that select authority, no other terminals or workspaces, no
  * absolute paths).
  */
-export const clankerContextCapability: AgentBridgeCapability = {
+export const clankerContextCapability: AgentBridgeCapability = defineCapability({
   name: 'clanker_context',
   description: 'Describe the Clanker workspace and checkout this agent was launched in, and which Clanker capabilities are available. Read-only; takes no arguments.',
-  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-  run(_args, caller) {
+  input: {},
+  run(_input, { caller }) {
     const { workspace, checkoutContext } = caller;
     return {
       data: {
@@ -87,7 +115,7 @@ export const clankerContextCapability: AgentBridgeCapability = {
       },
     };
   },
-};
+});
 
 /** Every capability the bridge can offer. A credential is granted a subset at issue time. */
 export const DEFAULT_AGENT_BRIDGE_CAPABILITIES: readonly AgentBridgeCapability[] = Object.freeze([clankerContextCapability]);

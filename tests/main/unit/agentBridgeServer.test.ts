@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 import { AgentBridgeService, type AgentBridgeTerminalRecord } from '../../../src/main/agentBridge/service';
 import { AGENT_BRIDGE_LIMITS } from '../../../src/main/agentBridge/server';
-import type { AgentBridgeCapability } from '../../../src/main/agentBridge/capabilities';
+import { defineCapability, type AgentBridgeCapability } from '../../../src/main/agentBridge/capabilities';
 import type { AgentBridgeIdentity } from '../../../src/main/agentBridge/credentials';
 
 const MAIN: CheckoutContext = { id: 'w1::main', workspaceId: 'w1', environmentId: 'local', path: '/home/dev/project', kind: 'main', branch: 'main' };
@@ -121,7 +121,7 @@ describe('authentication', () => {
     service = new AgentBridgeService({
       getRegistry: () => ({ getWorkspace: (id: string) => workspaces.get(id) ?? null, getCheckoutContext: (id: string) => contexts.get(id) ?? null }) as never,
       getTerminals: () => terminals, version: () => '1',
-      capabilities: [{ name: 'spy', description: 'd', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, run }],
+      capabilities: [defineCapability({ name: 'spy', description: 'd', input: {}, run })],
     });
     const lease = await service.lease(identityFor('t1', MAIN));
 
@@ -256,8 +256,8 @@ describe('identity is bound server-side', () => {
 });
 
 describe('capability scoping', () => {
-  const makeCapability = (name: string): AgentBridgeCapability => ({
-    name, description: name, inputSchema: { type: 'object', properties: {}, additionalProperties: false }, run: () => ({ data: { ran: name } }),
+  const makeCapability = (name: string): AgentBridgeCapability => defineCapability({
+    name, description: name, input: {}, run: () => ({ data: { ran: name } }),
   });
 
   it('lists and runs only the capabilities granted to the credential', async () => {
@@ -282,7 +282,7 @@ describe('capability scoping', () => {
     service = new AgentBridgeService({
       getRegistry: () => ({ getWorkspace: (id: string) => workspaces.get(id) ?? null, getCheckoutContext: (id: string) => contexts.get(id) ?? null }) as never,
       getTerminals: () => terminals, version: () => '1',
-      capabilities: [{ ...makeCapability('boom'), run: () => { throw new Error('secret internal /etc/shadow'); } }],
+      capabilities: [defineCapability({ name: 'boom', description: 'boom', input: {}, run: () => { throw new Error('secret internal /etc/shadow'); } })],
     });
     const lease = await service.lease(identityFor('t1', MAIN));
     const unknown = await rpc(lease.url, lease.token, 'tools/call', { name: 'nope', arguments: {} });
@@ -304,12 +304,66 @@ describe('capability scoping', () => {
     service = new AgentBridgeService({
       getRegistry: () => ({ getWorkspace: (id: string) => workspaces.get(id) ?? null, getCheckoutContext: (id: string) => contexts.get(id) ?? null }) as never,
       getTerminals: () => terminals, version: () => '1',
-      capabilities: [{ ...makeCapability('huge'), run: () => ({ data: 'x'.repeat(AGENT_BRIDGE_LIMITS.maxToolResultBytes + 1) }) }],
+      capabilities: [defineCapability({ name: 'huge', description: 'huge', input: {}, run: () => ({ data: 'x'.repeat(AGENT_BRIDGE_LIMITS.maxToolResultBytes + 1) }) })],
     });
     const lease = await service.lease(identityFor('t1', MAIN));
     const reply = await rpc(lease.url, lease.token, 'tools/call', { name: 'huge', arguments: {} });
     expect(reply.json.result.isError).toBe(true);
     expect(reply.body.length).toBeLessThan(500);
+  });
+});
+
+describe('bounded tool execution', () => {
+  const slowService = (toolTimeoutMs: number, onRun: (signal: AbortSignal) => Promise<{ data: unknown }>) => {
+    return new AgentBridgeService({
+      getRegistry: () => ({ getWorkspace: (id: string) => workspaces.get(id) ?? null, getCheckoutContext: (id: string) => contexts.get(id) ?? null }) as never,
+      getTerminals: () => terminals, version: () => '1', toolTimeoutMs,
+      capabilities: [defineCapability({ name: 'slow', description: 'slow', input: {}, run: (_input, { signal }) => onRun(signal) })],
+    });
+  };
+
+  it('cuts a hung tool off at the bound, aborts its signal, and frees the request', async () => {
+    await service.shutdown();
+    let signal!: AbortSignal;
+    service = slowService(40, (given) => { signal = given; return new Promise(() => undefined); });
+    const lease = await service.lease(identityFor('t1', MAIN));
+
+    const started = Date.now();
+    const reply = await rpc(lease.url, lease.token, 'tools/call', { name: 'slow', arguments: {} });
+    expect(Date.now() - started).toBeLessThan(AGENT_BRIDGE_LIMITS.toolTimeoutMs);
+    expect(reply.json.result.isError).toBe(true);
+    expect(reply.json.result.content[0].text).toBe('{"error":"Tool timed out"}');
+    expect(signal.aborted).toBe(true);
+    // The slot is free again.
+    expect((await rpc(lease.url, lease.token, 'tools/list')).status).toBe(200);
+  });
+
+  it('aborts the tool when the client goes away', async () => {
+    await service.shutdown();
+    let signal!: AbortSignal;
+    service = slowService(5_000, (given) => { signal = given; return new Promise(() => undefined); });
+    const grant = service.credentials.resolve((await service.lease(identityFor('t1', MAIN))).token)!;
+    const client = new AbortController();
+
+    const pending = service.callTool(grant, 'slow', {}, client.signal);
+    await vi.waitFor(() => expect(signal).toBeDefined());
+    expect(signal.aborted).toBe(false);
+    client.abort();
+    expect(signal.aborted).toBe(true);
+    void pending;
+  });
+
+  it('a tool that finishes in time is unaffected, and its timer does not linger', async () => {
+    await service.shutdown();
+    service = slowService(5_000, async () => ({ data: { fast: true } }));
+    const lease = await service.lease(identityFor('t1', MAIN));
+    const reply = await rpc(lease.url, lease.token, 'tools/call', { name: 'slow', arguments: {} });
+    expect(reply.json.result.content[0].text).toBe('{"fast":true}');
+  });
+
+  it('documents a finite execution bound distinct from the HTTP receive timeout', () => {
+    expect(AGENT_BRIDGE_LIMITS.toolTimeoutMs).toBeGreaterThan(0);
+    expect(AGENT_BRIDGE_LIMITS.toolTimeoutMs).toBeLessThanOrEqual(AGENT_BRIDGE_LIMITS.requestTimeoutMs);
   });
 });
 

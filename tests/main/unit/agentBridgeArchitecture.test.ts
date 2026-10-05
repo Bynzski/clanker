@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { DEFAULT_AGENT_BRIDGE_CAPABILITIES } from '../../../src/main/agentBridge/capabilities';
 import { KNOWN_HARNESS_IDS } from '../../../src/shared/harnessIds';
 
 const main = resolve('src/main');
@@ -42,9 +43,14 @@ describe('agent bridge architecture contract', () => {
   it('exposes no model-invoked lifecycle tools and no authority-selecting arguments', () => {
     const source = read(resolve(main, 'agentBridge', 'capabilities.ts'));
     expect(source).not.toMatch(/i_am_working|i_am_done|i_need_input|change_cwd|delete_worktree|delete_branch/);
-    // Every shipped schema is closed and declares no identity-shaped property.
-    expect(source).toMatch(/additionalProperties: false/);
-    expect(source).not.toMatch(/properties:\s*\{[^}]*(terminalId|workspaceId|checkoutContextId|environmentId|harnessId)/);
+    // Every shipped schema is closed, executable (built by defineCapability) and identity-free.
+    for (const capability of DEFAULT_AGENT_BRIDGE_CAPABILITIES) {
+      expect(capability.inputSchema.additionalProperties, capability.name).toBe(false);
+      expect(Object.keys(capability.inputSchema.properties), capability.name)
+        .not.toEqual(expect.arrayContaining([expect.stringMatching(/terminal|workspace|checkout|environment|harness/i)]));
+      expect(typeof capability.invoke, capability.name).toBe('function');
+      expect('run' in capability, `${capability.name} exposes an unvalidated run()`).toBe(false);
+    }
   });
 
   it('the credential is never written to argv, config or logs by shared bridge code', () => {

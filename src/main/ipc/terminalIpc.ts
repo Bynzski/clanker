@@ -307,6 +307,9 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     const attachments: PreparedLaunchAttachments = await prepareLaunchAttachments(
       { args: harnessArgs, env: { ...process.env, ...harnessEnv } }, steps);
     harnessArgs = attachments.args;
+    // The terminal's cleanup keeps only the disposer: `attachments.env` holds the launch credentials and
+    // must not outlive spawning.
+    const disposeAttachments = attachments.dispose;
     try {
       const wrapperPath = harnessConfig ? ensureHarnessWrapperScriptPath() : null;
       // PATH is case-insensitive on Windows: keep one spelling so the resolved executable is the one
@@ -373,7 +376,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       // location is resolved against (see agentLocation.ts).
       workspaceId: resolvedWorkspace?.workspaceId,
       checkoutContextId: checkoutContext?.id,
-      onExit: () => attachments.dispose(),
+      onExit: disposeAttachments,
       });
       return {
         ...result,

@@ -251,6 +251,9 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     }
     const attachments = await prepareLaunchAttachments({ args: baseArgs, env: { ...process.env, ...harnessEnv } }, steps);
     const spawnArgs = attachments.args;
+    // The terminal's cleanup keeps only the disposer: `attachments.env` holds the launch credentials and
+    // must not outlive spawning.
+    const disposeAttachments = attachments.dispose;
     try {
       // Never a directory outside the root being launched into: a session whose recorded cwd is not
       // inside it (or no longer exists) starts at that root.
@@ -300,7 +303,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       // Main's own record of ownership: an agent's reported location is resolved against it (agentLocation.ts).
       workspaceId: workspace.workspaceId,
       checkoutContextId: launchContext?.id,
-      onExit: () => attachments.dispose(),
+      onExit: disposeAttachments,
       });
       return {
         ...result, harnessId: session.harness, attentionEnabled, checkoutContextId: launchContext?.id,

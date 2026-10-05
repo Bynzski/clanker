@@ -8,6 +8,8 @@ import { KNOWN_HARNESS_IDS } from '../../../src/shared/harnessIds';
 import { getHarnessProviders, findHarnessProvider } from '../../../src/main/harnesses/registry';
 import { AgentBridgeService, agentBridgeLaunchStep, AGENT_BRIDGE_TOKEN_ENV, withoutAgentBridgeEnvironment } from '../../../src/main/agentBridge/service';
 import { prepareLaunchAttachments, type LaunchAttachmentStep } from '../../../src/main/launchAttachments';
+import { collectGarbage, weakHandle, type WeakHandle } from '../../_helpers/gc';
+import { withoutAttentionEnvironment } from '../../../src/main/agentAttentionAdapters';
 import { codexBridgeConflicts } from '../../../src/main/harnesses/codex/agentBridge';
 import type { HarnessAgentBridgeContext } from '../../../src/main/harnesses/types';
 
@@ -256,7 +258,54 @@ describe('agentBridgeLaunchStep', () => {
   });
 });
 
+describe('the raw credential is not retained after launch', () => {
+  const MAIN = { id: 'w1::main', workspaceId: 'w1', environmentId: 'local', path: '/p', kind: 'main' as const };
+  it('the bridge step keeps neither the lease nor the composed attachment alive; revoking still works', async () => {
+    const service = new AgentBridgeService({
+      getRegistry: () => ({ getWorkspace: () => ({ workspaceId: 'w1', location: { environmentId: 'local', path: '/p' } }), getCheckoutContext: () => MAIN }) as never,
+      getTerminals: () => new Map([['t1', { workspaceId: 'w1', checkoutContextId: MAIN.id, harnessId: 'claude' }]]),
+      version: () => '1',
+    });
+    const leases: WeakHandle[] = [];
+    const lease = service.lease.bind(service);
+    service.lease = async (identity) => { const result = await lease(identity); leases.push(weakHandle(result)); return result; };
+    const attachments: WeakHandle[] = [];
+    const recording: LaunchAttachmentStep = { name: 'recorder', optional: true, prepare: () => null };
+    const bridge = agentBridgeLaunchStep({ service, harness: 'claude', identity: { terminalId: 't1', workspaceId: 'w1', environmentId: 'local', checkoutContextId: MAIN.id, harnessId: 'claude' } });
+    const wrapped: LaunchAttachmentStep = { ...bridge, async prepare(state) {
+      const prepared = await bridge.prepare(state);
+      if (prepared) attachments.push(weakHandle(prepared));
+      return prepared;
+    } };
+
+    let prepared: Awaited<ReturnType<typeof prepareLaunchAttachments>> | null = await prepareLaunchAttachments({ args: [], env: {} }, [recording, wrapped], () => undefined);
+    const token = prepared.env[AGENT_BRIDGE_TOKEN_ENV];
+    const dispose = prepared.dispose; // all a terminal keeps
+    prepared = null; // the child exists now: the composed env may go
+    await collectGarbage();
+
+    expect(leases).toHaveLength(1);
+    expect(leases[0].deref()).toBeUndefined();
+    expect(attachments[0].deref()).toBeUndefined();
+    // Authority is still live until the terminal's disposer runs, and the disposer still revokes.
+    expect(service.credentials.resolve(token)).not.toBeNull();
+    await dispose();
+    expect(service.credentials.resolve(token)).toBeNull();
+    await service.shutdown();
+  });
+});
+
 describe('inherited bridge environment', () => {
+  it.each(['clanker_mcp_token', 'Clanker_Mcp_Token', 'CLANKER_mcp_X'])('drops %s regardless of case (Windows names are case-insensitive)', (name) => {
+    expect(withoutAgentBridgeEnvironment({ [name]: 'stale', PATH: '/bin' })).toEqual({ PATH: '/bin' });
+  });
+
+  it('attention variables are stripped case-insensitively too', () => {
+    expect(withoutAttentionEnvironment({
+      clanker_attention_token: 'a', Clanker_Remote_Attention_X: 'b', CLANKER_ATTENTION_Y: 'c', CLANKER_MCP_TOKEN: 'kept-by-this-filter', PATH: '/bin',
+    })).toEqual({ CLANKER_MCP_TOKEN: 'kept-by-this-filter', PATH: '/bin' });
+  });
+
   it('drops stale CLANKER_MCP_* variables and keeps everything else', () => {
     expect(withoutAgentBridgeEnvironment({ CLANKER_MCP_TOKEN: 'stale', CLANKER_MCP_X: '1', PATH: '/bin', CLANKER_ATTENTION_Y: 'kept-here' }))
       .toEqual({ PATH: '/bin', CLANKER_ATTENTION_Y: 'kept-here' });

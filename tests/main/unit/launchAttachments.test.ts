@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { collectGarbage, weakHandle, type WeakHandle } from '../../_helpers/gc';
 import { prepareLaunchAttachments, type LaunchAttachmentStep, type PreparedHarnessAttachment } from '../../../src/main/launchAttachments';
 
 const quiet = () => undefined;
@@ -6,6 +7,27 @@ const quiet = () => undefined;
 function step(name: string, make: (state: Parameters<LaunchAttachmentStep['prepare']>[0]) => PreparedHarnessAttachment | null | Promise<PreparedHarnessAttachment | null>, optional = false): LaunchAttachmentStep {
   return { name, optional, prepare: make };
 }
+
+describe('retention after preparation', () => {
+  it('keeps only disposers: the attachment (and its args/env) is collectable once composed', async () => {
+    let released = 0;
+    const refs: WeakHandle[] = [];
+    const recorder = (name: string): LaunchAttachmentStep => step(name, () => {
+      const attachment = { env: { SECRET: `secret-${name}` }, args: ['--x'], dispose: () => { released += 1; } };
+      refs.push(weakHandle(attachment));
+      return attachment;
+    });
+    let prepared: Awaited<ReturnType<typeof prepareLaunchAttachments>> | null = await prepareLaunchAttachments({ args: [], env: {} }, [recorder('a'), recorder('b')], quiet);
+    const dispose = prepared.dispose;
+    prepared = null;
+    await collectGarbage();
+
+    expect(refs.map((ref) => ref.deref())).toEqual([undefined, undefined]);
+    await dispose();
+    await dispose();
+    expect(released).toBe(2);
+  });
+});
 
 describe('prepareLaunchAttachments', () => {
   it('composes args and env deterministically, in step order, each step seeing the earlier result', async () => {
@@ -95,12 +117,19 @@ describe('prepareLaunchAttachments', () => {
     ], quiet)).rejects.toBe(original);
   });
 
-  it('the default reporter never prints a stack or the failing value', async () => {
+  it('the default reporter names the step and phase only, never the exception text or object', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
-      await prepareLaunchAttachments({ args: [], env: {} }, [step('x', () => { throw new Error('clanker_mcp_v1_secret'); }, true)]);
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn.mock.calls[0].every((part) => !(part instanceof Error))).toBe(true);
+      await prepareLaunchAttachments({ args: [], env: {} }, [
+        step('x', () => { throw new Error('clanker_mcp_v1_secret'); }, true),
+        step('y', () => ({ dispose: () => { throw Object.assign(new Error('another-secret'), { token: 'clanker_mcp_v1_secret2' }); } })),
+      ]).then((prepared) => prepared.dispose());
+      expect(warn).toHaveBeenCalledTimes(2);
+      const printed = JSON.stringify(warn.mock.calls) + warn.mock.calls.flat().map(String).join(' ');
+      expect(printed).toContain('"x" prepare failed');
+      expect(printed).toContain('"y" dispose failed');
+      expect(printed).not.toMatch(/secret/);
+      expect(warn.mock.calls.flat().every((part) => typeof part === 'string')).toBe(true);
     } finally { warn.mockRestore(); }
   });
 

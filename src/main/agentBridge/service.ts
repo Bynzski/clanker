@@ -12,7 +12,7 @@ import {
   type AgentBridgeToolResult,
 } from './capabilities';
 import { AgentBridgeCredentials, type AgentBridgeGrant, type AgentBridgeIdentity } from './credentials';
-import { AgentBridgeServer, type AgentBridgeToolDescriptor, type AgentBridgeToolHost } from './server';
+import { AgentBridgeServer, AGENT_BRIDGE_LIMITS, type AgentBridgeToolDescriptor, type AgentBridgeToolHost } from './server';
 
 export const AGENT_BRIDGE_SERVER_NAME = 'clanker-grid';
 /** Environment variable carrying the bearer credential into the launched harness only. */
@@ -20,7 +20,9 @@ export const AGENT_BRIDGE_TOKEN_ENV = 'CLANKER_MCP_TOKEN';
 
 /** A stale bridge credential inherited from an outer Clanker (or a user's profile) is never passed on. */
 export function withoutAgentBridgeEnvironment(env: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('CLANKER_MCP_')));
+  // Windows variable names are case-insensitive, so `clanker_mcp_token` would otherwise survive next to
+  // the freshly issued `CLANKER_MCP_TOKEN`. Compare upper-cased everywhere; the prefix is reserved.
+  return Object.fromEntries(Object.entries(env).filter(([key]) => !key.toUpperCase().startsWith('CLANKER_MCP_')));
 }
 const INSTRUCTIONS = 'Clanker is the desktop workspace this agent runs in. These tools describe the launching workspace and are read-only unless a tool says otherwise. Nothing here is required for normal work.';
 
@@ -39,6 +41,8 @@ export interface AgentBridgeServiceDeps {
   version: () => string;
   /** Test seam; defaults to the shipped capability set. */
   capabilities?: readonly AgentBridgeCapability[];
+  /** Test seam; defaults to AGENT_BRIDGE_LIMITS.toolTimeoutMs. */
+  toolTimeoutMs?: number;
 }
 
 /** Everything a launch needs to wire the bridge, and the means to give it all back. */
@@ -72,8 +76,10 @@ export class AgentBridgeService implements AgentBridgeToolHost {
     const url = await this.server.start();
     // start() awaited: shutdown may have run meanwhile.
     if (this.shutDown) throw new Error('Agent bridge is shut down');
-    const credential = this.credentials.issue(identity, this.capabilities.keys());
-    return { url, token: credential.token, release: () => credential.revoke() };
+    const { token, revoke } = this.credentials.issue(identity, this.capabilities.keys());
+    // `release` is the registry's own revoke closure (it holds only the digest), so keeping it alive
+    // for the terminal's lifetime never keeps the raw token alive.
+    return { url, token, release: revoke };
   }
 
   /** Revokes a terminal's authority. Safe for unknown terminals. */
@@ -94,20 +100,33 @@ export class AgentBridgeService implements AgentBridgeToolHost {
       .map(({ name, description, inputSchema }) => ({ name, description, inputSchema }));
   }
 
-  async callTool(grant: AgentBridgeGrant, name: string, args: Record<string, unknown>): Promise<AgentBridgeToolResult> {
+  async callTool(grant: AgentBridgeGrant, name: string, args: Record<string, unknown>, clientSignal?: AbortSignal): Promise<AgentBridgeToolResult> {
     const caller = this.resolveCaller(grant);
     if (!caller) return { isError: true, data: { error: 'This Clanker session is no longer active' } };
     const capability = grant.capabilities.has(name) ? this.capabilities.get(name) : undefined;
     if (!capability) return { isError: true, data: { error: `Unknown tool: ${name.slice(0, 64)}` } };
-    // Closed schema: an argument that is not declared is refused, so no tool can be handed an
-    // identity (or anything else) it did not ask for.
-    const unexpected = Object.keys(args).filter((key) => !Object.prototype.hasOwnProperty.call(capability.inputSchema.properties, key));
-    if (unexpected.length > 0) return { isError: true, data: { error: 'Unexpected arguments' } };
+
+    // Bounded execution: the capability's own input parser runs first (undeclared, missing, mistyped
+    // or out-of-range arguments never reach `run`), and the whole call is cut off at the bound.
+    const controller = new AbortController();
+    const onClientAbort = () => controller.abort();
+    if (clientSignal?.aborted) controller.abort(); else clientSignal?.addEventListener('abort', onClientAbort, { once: true });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<AgentBridgeToolResult>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        resolve({ isError: true, data: { error: 'Tool timed out' } });
+      }, this.deps.toolTimeoutMs ?? AGENT_BRIDGE_LIMITS.toolTimeoutMs);
+    });
     try {
-      return await capability.run(args, caller);
-    } catch {
-      // Detail stays in main; a failing capability must not echo internals to the model.
-      return { isError: true, data: { error: 'Tool failed' } };
+      return await Promise.race([
+        capability.invoke(args, { caller, signal: controller.signal }).catch((): AgentBridgeToolResult => ({ isError: true, data: { error: 'Tool failed' } })),
+        timeout,
+      ]);
+    } finally {
+      // Detail stays in main; a failing capability never echoes internals to the model.
+      clearTimeout(timer);
+      clientSignal?.removeEventListener('abort', onClientAbort);
     }
   }
 
@@ -180,13 +199,17 @@ export function agentBridgeLaunchStep(input: AgentBridgeLaunchStepInput): Launch
           removeScratch();
           return null;
         }
+        // The disposer holds only what releasing needs: the revoke closure and the provider's own
+        // disposer. It must not capture the lease or the composed attachment, which carry the token.
+        const release = lease.release;
+        const disposeProvider = prepared.dispose;
         return {
           ...(prepared.args ? { args: prepared.args } : {}),
           env: { ...prepared.env, [AGENT_BRIDGE_TOKEN_ENV]: lease.token },
           async dispose() {
             // Revoke first: authority must end even if provider cleanup fails.
-            lease.release();
-            try { await prepared.dispose(); } finally { removeScratch(); }
+            release();
+            try { await disposeProvider.call(undefined); } finally { removeScratch(); }
           },
         };
       } catch (error) {

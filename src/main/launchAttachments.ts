@@ -22,7 +22,11 @@ export interface PreparedHarnessAttachment {
   args?: string[];
   /** Environment variables added for the child. Later attachments override earlier ones. */
   env?: Record<string, string>;
-  /** Releases everything the attachment acquired. Called at most once by the coordinator. */
+  /**
+   * Releases everything the attachment acquired. Called at most once by the coordinator, as a bare
+   * function: it must not rely on `this`, and should close over only what releasing needs (never the
+   * attachment's own args/env, which may carry credentials).
+   */
   dispose(): void | Promise<void>;
 }
 
@@ -58,11 +62,13 @@ export interface PreparedLaunchAttachments {
   dispose(): Promise<void>;
 }
 
+/** The error is for custom reporters (tests, diagnostics); the default never prints it. */
 export type LaunchAttachmentErrorReporter = (stepName: string, phase: 'prepare' | 'dispose', error: unknown) => void;
 
-const defaultReporter: LaunchAttachmentErrorReporter = (stepName, phase, error) => {
-  // Name and message only: attachment errors must never carry credentials, and the stack adds nothing here.
-  console.warn(`[clanker-grid] launch attachment "${stepName}" ${phase} failed:`, error instanceof Error ? error.message : String(error));
+const defaultReporter: LaunchAttachmentErrorReporter = (stepName, phase) => {
+  // The generic layer cannot know what an attachment's exception text contains (a future attachment
+  // may well carry a credential), so it reports only which step failed and when.
+  console.warn(`[clanker-grid] launch attachment "${stepName}" ${phase} failed`);
 };
 
 export async function prepareLaunchAttachments(
@@ -70,7 +76,9 @@ export async function prepareLaunchAttachments(
   steps: readonly LaunchAttachmentStep[],
   report: LaunchAttachmentErrorReporter = defaultReporter,
 ): Promise<PreparedLaunchAttachments> {
-  const acquired: Array<{ name: string; attachment: PreparedHarnessAttachment }> = [];
+  // Only disposers are retained once a step has been composed in. The attachment itself carries the
+  // launch's args/env (credentials included) and must be collectable as soon as the child exists.
+  const acquired: Array<{ name: string; dispose: () => void | Promise<void> }> = [];
   let args = [...base.args];
   let additions: Record<string, string> = {};
 
@@ -78,8 +86,8 @@ export async function prepareLaunchAttachments(
   const dispose = (): Promise<void> => {
     disposal ??= (async () => {
       // Reverse acquisition order: later attachments may depend on earlier ones.
-      for (const { name, attachment } of [...acquired].reverse()) {
-        try { await attachment.dispose(); } catch (error) { report(name, 'dispose', error); }
+      for (const { name, dispose: release } of [...acquired].reverse()) {
+        try { await release.call(undefined); } catch (error) { report(name, 'dispose', error); }
       }
     })();
     return disposal;
@@ -89,7 +97,8 @@ export async function prepareLaunchAttachments(
     try {
       const attachment = await step.prepare({ args, env: { ...base.env, ...additions } });
       if (!attachment) continue;
-      acquired.push({ name: step.name, attachment });
+      // The bare function, deliberately not bound to the attachment (a bound `this` would retain it).
+      acquired.push({ name: step.name, dispose: attachment.dispose });
       if (attachment.args) args = [...attachment.args];
       if (attachment.env) additions = { ...additions, ...attachment.env };
     } catch (error) {
