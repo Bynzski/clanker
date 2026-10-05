@@ -1,4 +1,5 @@
 import { findHarnessProvider } from '../harnesses/registry';
+import type { CheckoutRehomeMode, HarnessCheckoutRehomeCapability } from '../harnesses/types';
 
 /**
  * Whether a harness conversation can be moved to another checkout by resuming it there, judged from
@@ -8,6 +9,9 @@ import { findHarnessProvider } from '../harnesses/registry';
  * - `sessions.resumesWithoutOriginalDirectory === true`: the CLI was shown to continue a conversation
  *   from a directory other than the one it started in (see docs/harness-integration.md "Removed-worktree
  *   resume"). Anything unproven keeps its conversation where it started;
+ * - the provider declares an explicit `checkoutRehome` strategy. `resumesWithoutOriginalDirectory` only
+ *   says a conversation can be resumed once its directory is gone; it does not say a *running* one can be
+ *   moved, and the two strategies (hot replacement, after the turn) are very different;
  * - local attention exists: the live conversation's native session id is learned from native lifecycle
  *   events (the attention broker), never from the model, so a harness without them cannot be identified.
  *
@@ -18,6 +22,7 @@ export function supportsCheckoutRehoming(harness: string): boolean {
   const resume = provider?.sessions?.resume;
   return Boolean(
     provider?.agentBridge
+    && provider.checkoutRehome
     && provider.attention?.local
     && provider.sessions?.resumesWithoutOriginalDirectory === true
     && resume
@@ -32,4 +37,13 @@ export function supportsCheckoutRehoming(harness: string): boolean {
  */
 export function grantsCheckoutRehoming(harness: string, options: { attentionEnabled: boolean }): boolean {
   return options.attentionEnabled && supportsCheckoutRehoming(harness);
+}
+
+/** The provider's explicit strategy for moving a live conversation, or undefined when it has none. */
+export function checkoutRehomeOf(harness: string): HarnessCheckoutRehomeCapability | undefined {
+  return supportsCheckoutRehoming(harness) ? findHarnessProvider(harness)?.checkoutRehome : undefined;
+}
+
+export function checkoutRehomeModeOf(harness: string): CheckoutRehomeMode | undefined {
+  return checkoutRehomeOf(harness)?.mode;
 }

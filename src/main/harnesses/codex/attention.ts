@@ -1,4 +1,5 @@
 import { localAttention, hookNodeExecutable, interpreterPath } from '../localAttention';
+import { codexConfigOverrides } from './configArgs';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -108,12 +109,7 @@ export const CODEX_OWNED_CONFIG_KEY = /(?:^|\.)\s*(?:hooks\s*\.|(?:hooks|profile
 /** Command-line forms Codex accepts (`-c k=v`, `-ck=v`, `--config k=v`, `--config=k=v`, `-p x`,
  * `-px`, `--profile x`, `--profile=x`). Remote preparation mirrors this parser in Python. */
 export function codexArgsConflict(args: string[]): boolean {
-  const overrides: string[] = [];
-  args.forEach((arg, index) => {
-    if ((arg === '-c' || arg === '--config') && index + 1 < args.length) overrides.push(args[index + 1]);
-    else if (arg.startsWith('--config=')) overrides.push(arg.slice('--config='.length));
-    else if (arg.startsWith('-c') && !arg.startsWith('--') && arg !== '-c') overrides.push(arg.slice(2));
-  });
+  const overrides = codexConfigOverrides(args);
   const profile = args.some((arg) => arg === '-p' || arg === '--profile' || arg.startsWith('--profile=')
     || (arg.startsWith('-p') && !arg.startsWith('--')));
   return profile || overrides.some((value) => CODEX_OWNED_CONFIG_KEY.test(value));

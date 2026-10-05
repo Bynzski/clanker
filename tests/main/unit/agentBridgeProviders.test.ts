@@ -6,11 +6,14 @@ import { createHash } from 'node:crypto';
 import { AGENT_BRIDGE_HARNESS_IDS, HARNESS_DESCRIPTORS } from '../../../src/shared/harnessDescriptors';
 import { KNOWN_HARNESS_IDS } from '../../../src/shared/harnessIds';
 import { getHarnessProviders, findHarnessProvider } from '../../../src/main/harnesses/registry';
+import { DEFAULT_AGENT_BRIDGE_CAPABILITIES } from '../../../src/main/agentBridge/capabilities';
+import { createCheckoutLifecycleCapabilities } from '../../../src/main/agentBridge/lifecycleCapabilities';
 import { AgentBridgeService, agentBridgeLaunchStep, AGENT_BRIDGE_TOKEN_ENV, withoutAgentBridgeEnvironment } from '../../../src/main/agentBridge/service';
 import { prepareLaunchAttachments, type LaunchAttachmentStep } from '../../../src/main/launchAttachments';
 import { collectGarbage, weakHandle, type WeakHandle } from '../../_helpers/gc';
 import { withoutAttentionEnvironment } from '../../../src/main/agentAttentionAdapters';
-import { codexBridgeConflicts } from '../../../src/main/harnesses/codex/agentBridge';
+import { codexBridgeConflicts, codexDeveloperInstructionsConflict } from '../../../src/main/harnesses/codex/agentBridge';
+import { bridgeInstructions } from '../../../src/main/agentBridge/instructions';
 import type { HarnessAgentBridgeContext } from '../../../src/main/harnesses/types';
 
 const URL_ = 'http://127.0.0.1:41234/mcp';
@@ -127,6 +130,89 @@ describe('Codex attachment', () => {
   it('does not mistake other servers or similar names for a conflict', () => {
     expect(codexBridgeConflicts('clanker-grid', [], '[mcp_servers.clanker]\n[mcp_servers.clanker-grid-two]\n')).toBe(false);
     expect(codexBridgeConflicts('clanker-grid', ['-c', 'mcp_servers.other.url="x"'], '')).toBe(false);
+  });
+});
+
+describe('Codex guidance through its own launch-scoped instruction channel', () => {
+  const guidance = bridgeInstructions(new Set(['clanker_context', 'clanker_create_isolated_checkout', 'clanker_complete_isolated_checkout']));
+  const overrideValue = (args: readonly string[] | undefined) => {
+    const index = args!.findIndex((arg) => arg.startsWith('developer_instructions='));
+    return index < 0 ? null : args![index];
+  };
+
+  it('carries the guidance as a developer_instructions override when the user has none, correctly escaped', () => {
+    const prepared = bridgeOf('codex')!.prepare(context({ args: ['-m', 'gpt-5'], env: { CODEX_HOME: root }, instructions: guidance }))!;
+    const value = overrideValue(prepared.args)!;
+    expect(prepared.args![prepared.args!.indexOf(value) - 1]).toBe('-c');
+    // A TOML basic string: the exact text round-trips through JSON escaping, and no raw newline reaches argv.
+    expect(JSON.parse(value.slice('developer_instructions='.length))).toBe(guidance);
+    expect(value).not.toMatch(/[\r\n]/);
+    expect(guidance).toContain('clanker_create_isolated_checkout');
+    expect(guidance).toMatch(/search for them by name/);
+  });
+
+  it('is placed before a resume subcommand, like every other override', () => {
+    const prepared = bridgeOf('codex')!.prepare(context({ args: ['resume', 'abc'], env: { CODEX_HOME: root }, instructions: guidance }))!;
+    expect(prepared.args!.indexOf(overrideValue(prepared.args)!)).toBeLessThan(prepared.args!.indexOf('resume'));
+  });
+
+  it.each([
+    ['on the command line', { args: ['-c', 'developer_instructions="mine"'] }, ''],
+    ['attached to -c', { args: ['-cdeveloper_instructions="mine"'] }, ''],
+    ['with --config=', { args: ['--config=developer_instructions="mine"'] }, ''],
+    ['in config.toml', { args: [] }, 'developer_instructions = "mine"\n'],
+    ['in config.toml, indented', { args: [] }, '  developer_instructions="mine"\n'],
+    ['through a profile (which may define them)', { args: ['--profile', 'work'] }, ''],
+    ['through -p', { args: ['-p', 'work'] }, ''],
+  ])('never replaces instructions the user wrote (%s): the bridge still attaches, without guidance', (_label, input, toml) => {
+    fs.writeFileSync(path.join(root, 'config.toml'), toml);
+    const prepared = bridgeOf('codex')!.prepare(context({ ...input, env: { CODEX_HOME: root }, instructions: guidance }))!;
+    expect(prepared).not.toBeNull();
+    expect(prepared.args!.some((arg) => arg.startsWith('mcp_servers.clanker-grid.url='))).toBe(true);
+    // Ours is absent; whatever the user supplied on the command line is left exactly as it was.
+    expect(prepared.args!.some((arg) => arg.includes('Checkout lifecycle belongs to Clanker'))).toBe(false);
+    expect(prepared.args!.filter((arg) => arg.startsWith('developer_instructions=') || arg.includes('developer_instructions="mine"')).every((arg) => arg.includes('mine'))).toBe(true);
+  });
+
+  it('adds no guidance when the launch was given none (a context-only grant that supplied no text)', () => {
+    const prepared = bridgeOf('codex')!.prepare(context({ env: { CODEX_HOME: root } }))!;
+    expect(overrideValue(prepared.args)).toBeNull();
+  });
+
+  it('only recognizes the key itself, not a similarly named one', () => {
+    expect(codexDeveloperInstructionsConflict(['-c', 'model_instructions_file="x"'], '')).toBe(false);
+    expect(codexDeveloperInstructionsConflict([], '# developer_instructions = "commented"')).toBe(false);
+    expect(codexDeveloperInstructionsConflict([], 'additional_developer_instructions = "x"')).toBe(false);
+  });
+
+  it('other providers get no instruction override: Claude shows server instructions itself, OpenCode is unchanged', () => {
+    const claude = bridgeOf('claude')!.prepare(context({ instructions: guidance }))!;
+    expect(claude.args!.join(' ')).not.toContain('developer_instructions');
+    expect(fs.readFileSync(claude.args![claude.args!.indexOf('--mcp-config') + 1], 'utf8')).not.toContain('Checkout lifecycle');
+    const opencode = bridgeOf('opencode')!.prepare(context({ instructions: guidance }))!;
+    expect(opencode.env!.OPENCODE_CONFIG_CONTENT).not.toContain('Checkout lifecycle');
+  });
+
+  it('the launch step hands the provider exactly the guidance for what its credential was granted', async () => {
+    const MAIN = { id: 'w1::main', workspaceId: 'w1', environmentId: 'local', path: '/p', kind: 'main' as const };
+    const service = new AgentBridgeService({
+      getRegistry: () => ({ getWorkspace: () => ({ workspaceId: 'w1', location: { environmentId: 'local', path: '/p' } }), getCheckoutContext: () => MAIN }) as never,
+      getTerminals: () => new Map([['t1', { workspaceId: 'w1', checkoutContextId: MAIN.id, harnessId: 'codex' }]]),
+      version: () => '1',
+      capabilities: [...DEFAULT_AGENT_BRIDGE_CAPABILITIES, ...createCheckoutLifecycleCapabilities({ create: async () => ({ data: {} }), complete: async () => ({ data: {} }) })],
+    });
+    const identity = { terminalId: 't1', workspaceId: 'w1', environmentId: 'local', checkoutContextId: MAIN.id, harnessId: 'codex' };
+    try {
+      const granted = await prepareLaunchAttachments({ args: [], env: { CODEX_HOME: root } },
+        [agentBridgeLaunchStep({ service, harness: 'codex', identity, grants: { checkoutRehoming: true } })], () => undefined);
+      expect(JSON.parse(granted.args.find((arg) => arg.startsWith('developer_instructions='))!.slice('developer_instructions='.length))).toContain('Checkout lifecycle belongs to Clanker');
+      await granted.dispose();
+      const contextOnly = await prepareLaunchAttachments({ args: [], env: { CODEX_HOME: root } },
+        [agentBridgeLaunchStep({ service, harness: 'codex', identity, grants: {} })], () => undefined);
+      const text = JSON.parse(contextOnly.args.find((arg) => arg.startsWith('developer_instructions='))!.slice('developer_instructions='.length));
+      expect(text).not.toMatch(/worktree|clanker_create|clanker_complete/i);
+      await contextOnly.dispose();
+    } finally { await service.shutdown(); }
   });
 });
 

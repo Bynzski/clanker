@@ -25,6 +25,7 @@ export interface HarnessProvider {
   readonly usage?: HarnessUsageCapability;
   readonly accounts?: HarnessAccountsCapability;
   readonly agentBridge?: HarnessAgentBridgeCapability;
+  readonly checkoutRehome?: HarnessCheckoutRehomeCapability;
 }
 
 export type CapabilitySupport = 'native' | 'emulated';
@@ -302,6 +303,38 @@ export interface HarnessAccountsCapability {
 }
 
 /**
+ * How a LIVE conversation of this harness may be moved to another checkout (issue #102). This is not
+ * implied by `sessions.resumesWithoutOriginalDirectory`, which only says a conversation can be resumed
+ * once its original directory is gone. Moving a running one is a different property, so a provider says
+ * so explicitly, and shared code never branches on a harness name:
+ *
+ * - `hot-replace`: a second process may resume the conversation while the first is still alive and
+ *   waiting inside the request that asked for the move. Shared code proves the second one, then retires
+ *   the first.
+ * - `after-turn`: the conversation must not be resumed while its process (or an in-flight turn) still
+ *   owns it. The move is scheduled when the request is accepted and performed after the harness'
+ *   native root turn completes: the first process is retired completely, and only then is the same
+ *   conversation resumed in the target.
+ */
+export type CheckoutRehomeMode = 'hot-replace' | 'after-turn';
+export interface HarnessCheckoutRehomeCapability {
+  readonly mode: CheckoutRehomeMode;
+  /**
+   * The resume argv with the harness' own explicit "work in this directory" option set to `directory`
+   * (any such option already present is replaced: the target is Clanker's, never the user's). `directory`
+   * is a native path taken from a main-owned checkout context. Absent: the launch directory alone decides.
+   */
+  withTargetDirectory?(args: readonly string[], directory: string): string[];
+  /**
+   * Whether the output of a resume that failed at startup is this provider's own recognizable, transient
+   * "the conversation is still owned" failure. Only this provider-owned recognition permits a retry.
+   */
+  isWriterContention?(output: string): boolean;
+  /** Bound for such retries; absent means none. */
+  readonly writerContentionRetry?: { readonly attempts: number; readonly delayMs: number };
+}
+
+/**
  * Optional, distinct from attention: how this harness receives the shared Clanker MCP bridge for one
  * local launch. Shared code owns the server, the credential, identity binding and every tool; the
  * provider owns only the harness-native mechanism (launch args, environment, a temporary owned
@@ -326,6 +359,14 @@ export interface HarnessAgentBridgeContext {
   readonly platform: NodeJS.Platform;
   /** Private (0700) directory owned by this launch, created on first use and removed on disposal. */
   scratchDir(): string;
+  /**
+   * Clanker's guidance for exactly what this launch was granted (see bridgeInstructions). Claude shows MCP
+   * server instructions to the model itself; a harness that does not (Codex defers MCP tools behind a
+   * search and never surfaces the server's text) may pass this through its own launch-scoped instruction
+   * channel, but only where that cannot replace instructions the user wrote. Guidance only: nothing
+   * depends on the model following it.
+   */
+  readonly instructions?: string;
 }
 export interface HarnessAgentBridgeCapability {
   /**

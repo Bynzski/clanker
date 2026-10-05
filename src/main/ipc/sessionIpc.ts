@@ -123,11 +123,15 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
   });
 
   /** Local history for a workspace, labelled with checkouts: exactly what SESSION_DISCOVER returns. */
-  const discoverLocalSessions = async (workspace: RegisteredWorkspace, plan: SessionCheckoutPlan | null): Promise<HarnessSession[]> => {
+  const discoverLocalSessions = async (workspace: RegisteredWorkspace, plan: SessionCheckoutPlan | null, forceRefresh = false): Promise<HarnessSession[]> => {
     const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
     const availableHarnessIds = new Set(Object.keys(getHarnessOptions()));
     const managed = deps.getHarnessAccountService?.()?.discoverySource('local');
-    const discover = (scanPath: string) => managed ? discoverSessions(scanPath, { managed }) : discoverSessions(scanPath);
+    // `forceRefresh` bypasses the history cache. A listing is only a recent view; a conversation that began
+    // after it was cached (the first turn of a new conversation) would otherwise be "not found".
+    const discover = (scanPath: string) => managed || forceRefresh
+      ? discoverSessions(scanPath, { ...(managed ? { managed } : {}), ...(forceRefresh ? { forceRefresh: true } : {}) })
+      : discoverSessions(scanPath);
     // Conversations of isolated agents live in linked worktrees outside the workspace root; they
     // belong to this workspace's history, labelled with their checkout.
     const sessions = plan
@@ -288,7 +292,11 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
     };
 
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const { command: sessionCommand, args: baseArgs } = buildSessionLaunch(nativeSession, fork ?? false, userFlags);
+    const { command: sessionCommand, args: builtArgs } = buildSessionLaunch(nativeSession, fork ?? false, userFlags);
+    // A Clanker-authoritative move names its target explicitly when the harness has an option for it,
+    // from the checkout context main chose (never from the caller, the renderer or the model). An
+    // ordinary history resume has no `internal` request and keeps exactly the arguments it always had.
+    const baseArgs = internal ? (findHarnessProvider(session.harness)?.checkoutRehome?.withTargetDirectory?.(builtArgs, launchRoot) ?? builtArgs) : builtArgs;
     const harnessEnv = accountBinding.mergeEnvironment(harnessConfig.env ?? {});
     // Same coordinator as an ordinary launch: attention first, then the optional agent bridge.
     const steps: LaunchAttachmentStep[] = [];
@@ -388,7 +396,8 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
     async findSession(workspaceId, harness, sessionId) {
       const workspace = deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId);
       if (!workspace || workspace.location.environmentId !== 'local') return null;
-      const found = await discoverLocalSessions(workspace, await loadPlan(workspaceId, workspace));
+      // Fresh, never cached: this is about a conversation that is running right now.
+      const found = await discoverLocalSessions(workspace, await loadPlan(workspaceId, workspace), true);
       return found.find((entry) => entry.harness === harness && entry.id === sessionId) ?? null;
     },
     async resumeInCheckout(workspaceId, session, request) {

@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HarnessSession } from '../../../src/shared/types/session';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
+import { SESSION_DISCOVER } from '../../../src/shared/ipcChannels';
 import { removeAttentionAdapterFiles } from '../../../src/main/agentAttentionAdapters';
 import { worktreeDirectoryName } from '../../../src/main/worktreePaths';
 
@@ -151,6 +152,24 @@ describe('findSession is main\'s own rediscovery', () => {
     mockDiscover.mockImplementation(async (scanPath: string) => (scanPath === `${workspacePath}-worktrees` ? [session('claude', generated('feature'), 'in-tree')] : []));
     const controller = setup({ registered: [tree] });
     expect(await controller.findSession('ws', 'claude', 'in-tree')).toMatchObject({ id: 'in-tree' });
+  });
+
+  it('never reads the history cache: a conversation that began after the listing was cached must still be found', async () => {
+    mockDiscover.mockResolvedValue([session('claude', workspacePath, 'abc')]);
+    const controller = setup();
+    await controller.findSession('ws', 'claude', 'abc');
+    // Every scan (the workspace and each worktree scope) is a forced refresh.
+    expect(mockDiscover.mock.calls.length).toBeGreaterThan(0);
+    for (const call of mockDiscover.mock.calls) expect(call[1]).toMatchObject({ forceRefresh: true });
+  });
+
+  it('ordinary history discovery is unchanged: it still uses the cache', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>();
+    mockHandle.mockImplementation((channel: string, handler: never) => handlers.set(channel, handler));
+    mockDiscover.mockResolvedValue([]);
+    setup();
+    await handlers.get(SESSION_DISCOVER)!(null, 'ws');
+    for (const call of mockDiscover.mock.calls) expect(call[1]).toBeUndefined();
   });
 
   it('is null for an unknown workspace and for an SSH workspace', async () => {

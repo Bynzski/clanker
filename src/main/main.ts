@@ -133,10 +133,14 @@ let activeBrowserWorkspaceId: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 // Reported agent locations resolve against the checkout contexts main registered for the
 // reporting terminal's workspace. Read lazily: events only arrive after both exist.
+/** Late-bound: the lifecycle service needs controllers that only exist once the app is ready. */
+let isolatedCheckout: IsolatedCheckoutService | undefined;
 const agentAttentionBroker = new AgentAttentionBroker((change) => {
   if (isWindowAvailable(mainWindow)) {
     mainWindow.webContents.send(AGENT_ATTENTION_CHANGED, change);
   }
+  // A scheduled `after-turn` checkout move is triggered only by a native root turn completing.
+  isolatedCheckout?.onAttentionChange(change);
 }, undefined, undefined, {
   resolveLocation: createAgentLocationResolver({
     getTerminal: (terminalId) => terminals.get(terminalId),
@@ -258,7 +262,6 @@ const agentBridge = new AgentBridgeService({
   version: () => app.getVersion(),
   capabilities: [...DEFAULT_AGENT_BRIDGE_CAPABILITIES, ...createCheckoutLifecycleCapabilities(checkoutLifecyclePort.port)],
 });
-let isolatedCheckout: IsolatedCheckoutService | undefined;
 const harnessUsageService = new HarnessUsageService(workspaceRegistry, { clientVersion: () => app.getVersion(), accounts: harnessAccountService });
 
 const remotePreviewManager = new RemotePreviewManager(workspaceRegistry, (update) => {

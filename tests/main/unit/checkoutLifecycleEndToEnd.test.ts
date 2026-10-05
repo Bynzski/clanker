@@ -72,9 +72,9 @@ beforeEach(() => {
   recordedCwd = appPath;
   handlers.clear();
   mockHandle.mockReset().mockImplementation((channel: string, handler: never) => { handlers.set(channel, handler); });
-  mockBuildArgs.mockReset().mockReturnValue({ command: 'codex', args: ['resume', 'native-1'] });
+  mockBuildArgs.mockReset().mockReturnValue({ command: 'claude', args: ['resume', 'native-1'] });
   // History records the conversation where it last ran, like the harness does.
-  mockDiscover.mockReset().mockImplementation(async () => [{ id: 'native-1', harness: 'codex', title: 't', cwd: toPosixPath(recordedCwd), timestamp: 1 }]);
+  mockDiscover.mockReset().mockImplementation(async () => [{ id: 'native-1', harness: 'claude', title: 't', cwd: toPosixPath(recordedCwd), timestamp: 1 }]);
   mockSpawnPty.mockReset().mockImplementation((options: Spawned) => {
     spawns.push(options);
     recordedCwd = options.cwd;
@@ -112,11 +112,11 @@ function build(bridgeOptions: { toolTimeoutMs?: number } = {}) {
   const broker = {
     register: vi.fn(async (terminalId: string) => { attended.add(terminalId); return { CLANKER_ATTENTION_TOKEN: `a-${terminalId}` }; }),
     release: vi.fn((terminalId: string) => { attended.delete(terminalId); }),
-    snapshot: (terminalId: string) => (attended.has(terminalId) ? { sessionId: 'native-1' } : null),
+    snapshot: (terminalId: string) => (attended.has(terminalId) ? { sessionId: 'native-1', lastOutcome: null } : null),
   };
-  const defaults = { codex: { agentBridgeEnabled: true, attentionEnabled: true } };
+  const defaults = { claude: { agentBridgeEnabled: true, attentionEnabled: true } };
   const store = { get: (key: string) => (key === 'harnessDefaults' ? defaults : false) } as never;
-  const options = { codex: { name: 'codex', command: 'codex', args: [] as string[], icon: 'c' } };
+  const options = { claude: { name: 'claude', command: 'claude', args: [] as string[], icon: 'c' } };
   const common = {
     getTerminals: () => terminals as never, getMainWindow: () => ({ webContents: { send: vi.fn() } }) as never, getStore: () => store,
     getSafeWorkspacePath: (dir: string) => dir, getHarnessOptions: () => options, getWorkspaceRegistry: () => registry as never,
@@ -196,7 +196,7 @@ function views(expected: { contextId: string }) {
 describe('create then complete, end to end', () => {
   it('after CREATE the terminal table, the credential, clanker_context and the renderer event all name the new worktree', async () => {
     build();
-    const first = await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'codex', undefined, undefined, undefined, 'ws', 'local') as { id: string };
+    const first = await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'claude', undefined, undefined, undefined, 'ws', 'local') as { id: string };
     const oldToken = grants();
     const before = await callAs(oldToken, 'clanker_context');
     expect((before.data as { checkout: { kind: string } }).checkout.kind).toBe('main');
@@ -229,7 +229,7 @@ describe('create then complete, end to end', () => {
 
   it('after COMPLETE they all name main, the old checkout is gone, and the order was re-home -> retire -> remove', async () => {
     build();
-    await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'codex', undefined, undefined, undefined, 'ws', 'local');
+    await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'claude', undefined, undefined, undefined, 'ws', 'local');
     await callAs(grants(), 'clanker_create_isolated_checkout', { branch: 'feature' });
     const treeToken = grants();
     const treeTerminal = spawns[spawns.length - 1].id;
@@ -260,7 +260,7 @@ describe('create then complete, end to end', () => {
 
   it('the replacement of each stage gets lifecycle tools too, so the cycle can be repeated', async () => {
     build();
-    await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'codex', undefined, undefined, undefined, 'ws', 'local');
+    await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'claude', undefined, undefined, undefined, 'ws', 'local');
     await callAs(grants(), 'clanker_create_isolated_checkout', { branch: 'one' });
     expect(bridge.listTools(bridge.credentials.resolve(grants())!).map((tool) => tool.name)).toContain('clanker_complete_isolated_checkout');
     await callAs(grants(), 'clanker_complete_isolated_checkout', {});
@@ -272,7 +272,7 @@ describe('create then complete, end to end', () => {
 
   it('repeating a call after the move is safe: the conversation is told where it already is', async () => {
     build();
-    await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'codex', undefined, undefined, undefined, 'ws', 'local');
+    await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'claude', undefined, undefined, undefined, 'ws', 'local');
     await callAs(grants(), 'clanker_create_isolated_checkout', { branch: 'feature' });
     // The resumed conversation sees its interrupted call and tries again with its new credential.
     expect((await callAs(grants(), 'clanker_create_isolated_checkout', { branch: 'feature' })).data).toMatchObject({ status: 'already-isolated' });
@@ -284,7 +284,7 @@ describe('create then complete, end to end', () => {
 
   it('the smoke-test scenario: the worktree was deleted behind the agent\'s back, and completion still lands everything in main', async () => {
     build();
-    await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'codex', undefined, undefined, undefined, 'ws', 'local');
+    await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'claude', undefined, undefined, undefined, 'ws', 'local');
     await callAs(grants(), 'clanker_create_isolated_checkout', { branch: 'feature' });
     // Someone removes the checkout (and Git's record turns prunable) while the agent is still running.
     fs.rmSync(generated('feature'), { recursive: true, force: true });
@@ -303,7 +303,7 @@ describe('create then complete, end to end', () => {
 
   it('a failed re-home leaves every view on the ORIGINAL checkout', async () => {
     build();
-    await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'codex', undefined, undefined, undefined, 'ws', 'local');
+    await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'claude', undefined, undefined, undefined, 'ws', 'local');
     const originalToken = grants();
     const originalTerminal = spawns[0].id;
     // The next launch (the replacement) dies at once.
@@ -328,7 +328,7 @@ describe('create then complete, end to end', () => {
 
   it('a bridge timeout before the commit point cancels the transaction: no split ownership, the original keeps running', async () => {
     build({ toolTimeoutMs: 40 });
-    await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'codex', undefined, undefined, undefined, 'ws', 'local');
+    await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'claude', undefined, undefined, undefined, 'ws', 'local');
     const originalToken = grants();
     const originalTerminal = spawns[0].id;
     // The replacement starts but never produces output, so the transaction is still before its commit point when the bridge times out.

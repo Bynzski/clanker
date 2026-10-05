@@ -27,14 +27,33 @@ export const CHECKOUT_LIFECYCLE_TIMEOUT_MS = 30_000;
 /** Longest branch name accepted; Git's own validation (check-ref-format) decides the rest. */
 export const MAX_BRANCH_LENGTH = 200;
 
+export const CREATE_ISOLATED_CHECKOUT = 'clanker_create_isolated_checkout';
+export const COMPLETE_ISOLATED_CHECKOUT = 'clanker_complete_isolated_checkout';
+
+/**
+ * The text the model reads when it decides how to create or finish a worktree. It is discoverability, not
+ * a security boundary (nothing here stops a shell command), and it exists because smoke tests showed both
+ * Claude and Codex otherwise reach for their own worktree mechanisms: Claude's `EnterWorktree`, Codex's
+ * `git worktree remove`. Some harnesses load tool schemas lazily, so the description itself carries the
+ * rule rather than relying on the server instructions alone.
+ */
+export const CREATE_DESCRIPTION = 'Use this whenever you need to create or enter an isolated worktree or branch to work in while running in Clanker. '
+  + 'Prefer this over `git worktree add`, Claude `EnterWorktree`, Codex `--worktree` or any other provider-native worktree creation, because '
+  + 'Clanker must track the checkout and move this same conversation into it. Give it a new branch name; Clanker creates the worktree, '
+  + 'then restarts this conversation inside it. After calling it, finish your reply without running more tools: the conversation continues '
+  + 'in the isolated checkout on its next turn. Use normal Git and GitHub tools for everything else.';
+export const COMPLETE_DESCRIPTION = 'Use this after the work in an isolated checkout is merged or finished, whenever you would otherwise remove or leave that worktree. '
+  + 'Prefer this over `git worktree remove`, Claude `ExitWorktree`, `git branch -d/-D` or any manual worktree or branch cleanup, because '
+  + 'Clanker must move this same conversation back to the main checkout before it removes the isolated one. Pass deleteBranch to also delete '
+  + 'the branch when Git considers it fully merged (it is never force-deleted). After calling it, finish your reply without running more '
+  + 'tools: the conversation continues in the main checkout on its next turn. Use normal Git and GitHub tools to commit, push, open and merge pull requests first.';
+
 export function createCheckoutLifecycleCapabilities(port: AgentCheckoutLifecyclePort): AgentBridgeCapability[] {
   const run = (context: AgentBridgeCallContext) => ({ caller: context.caller, signal: context.signal });
   return [
     defineCapability({
-      name: 'clanker_create_isolated_checkout',
-      description: 'Create a new isolated Git worktree for this conversation on a new branch and move this same conversation into it, '
-        + 'using Clanker. Clanker restarts the agent process in the new checkout, so this call ends your current turn: your next '
-        + 'turn runs in the isolated checkout. Do not create worktrees yourself.',
+      name: CREATE_ISOLATED_CHECKOUT,
+      description: CREATE_DESCRIPTION,
       requires: 'checkout-rehoming',
       timeoutMs: CHECKOUT_LIFECYCLE_TIMEOUT_MS,
       input: {
@@ -43,10 +62,8 @@ export function createCheckoutLifecycleCapabilities(port: AgentCheckoutLifecycle
       run: (input, context) => port.create(run(context).caller, input, run(context).signal),
     }),
     defineCapability({
-      name: 'clanker_complete_isolated_checkout',
-      description: 'Finish the isolated checkout this conversation is running in, using Clanker: move this same conversation back to '
-        + 'the main checkout, then remove the isolated worktree. Call it after your work is merged. Clanker restarts the agent process '
-        + 'in the main checkout, so this call ends your current turn. Do not remove the worktree or its branch yourself.',
+      name: COMPLETE_ISOLATED_CHECKOUT,
+      description: COMPLETE_DESCRIPTION,
       requires: 'checkout-rehoming',
       timeoutMs: CHECKOUT_LIFECYCLE_TIMEOUT_MS,
       input: {

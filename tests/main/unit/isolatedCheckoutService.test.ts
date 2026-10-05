@@ -136,7 +136,7 @@ function makeWorld(options: Options = {}) {
     getRegistry: () => registry as never,
     getTerminals: () => terminals,
     attention: {
-      snapshot: (id) => (id === 'caller' ? { sessionId } : attention.has(id) ? { sessionId: attention.get(id) ?? null } : null),
+      snapshot: (id) => (id === 'caller' ? { sessionId, lastOutcome: null } : attention.has(id) ? { sessionId: attention.get(id) ?? null, lastOutcome: null } : null),
       release: (id) => { log.push(`attention.release ${id}`); },
     },
     git: git as never,
@@ -662,7 +662,8 @@ describe('complete: isolated worktree -> main checkout, then cleanup', () => {
 
     it('a context that is not the registered one of this workspace', async () => {
       const world = inTree();
-      const forged: CheckoutContext = { ...TREE };
+      // A context that differs in identity values from the registered one (a clone with the same values is equivalent).
+      const forged: CheckoutContext = { ...TREE, path: toPosixPath(path.join(root, 'not-the-registered-root')) };
       const result = await world.service.complete(world.callerIn(forged), {}, new AbortController().signal);
       expect(result.isError).toBe(true);
       expect(world.sessions.resumeInCheckout).not.toHaveBeenCalled();

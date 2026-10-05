@@ -12,6 +12,7 @@ import {
   type AgentBridgeToolResult,
 } from './capabilities';
 import { AgentBridgeCredentials, type AgentBridgeGrant, type AgentBridgeIdentity } from './credentials';
+import { bridgeInstructions } from './instructions';
 import { AgentBridgeServer, AGENT_BRIDGE_LIMITS, type AgentBridgeToolDescriptor, type AgentBridgeToolHost } from './server';
 
 export const AGENT_BRIDGE_SERVER_NAME = 'clanker-grid';
@@ -24,7 +25,6 @@ export function withoutAgentBridgeEnvironment(env: Record<string, string>): Reco
   // the freshly issued `CLANKER_MCP_TOKEN`. Compare upper-cased everywhere; the prefix is reserved.
   return Object.fromEntries(Object.entries(env).filter(([key]) => !key.toUpperCase().startsWith('CLANKER_MCP_')));
 }
-const INSTRUCTIONS = 'Clanker is the desktop workspace this agent runs in. These tools describe the launching workspace and are read-only unless a tool says otherwise. Nothing here is required for normal work.';
 
 /** The part of a registered terminal the bridge reads. Authority is re-checked against it on every call. */
 export interface AgentBridgeTerminalRecord {
@@ -55,6 +55,8 @@ export interface AgentBridgeGrants {
 export interface AgentBridgeLaunchLease {
   readonly url: string;
   readonly token: string;
+  /** Guidance for what THIS credential was granted (the same text the server sends in `initialize`). */
+  readonly instructions: string;
   /** Idempotent. */
   release(): void;
 }
@@ -62,7 +64,6 @@ export interface AgentBridgeLaunchLease {
 /** Main-owned facade: server lifecycle, credentials, live authority checks and the capability set. */
 export class AgentBridgeService implements AgentBridgeToolHost {
   readonly credentials = new AgentBridgeCredentials();
-  readonly instructions = INSTRUCTIONS;
   private readonly server: AgentBridgeServer;
   private readonly capabilities: ReadonlyMap<string, AgentBridgeCapability>;
   private shutDown = false;
@@ -90,7 +91,7 @@ export class AgentBridgeService implements AgentBridgeToolHost {
     const { token, revoke } = this.credentials.issue(identity, granted);
     // `release` is the registry's own revoke closure (it holds only the digest), so keeping it alive
     // for the terminal's lifetime never keeps the raw token alive.
-    return { url, token, release: revoke };
+    return { url, token, instructions: bridgeInstructions(new Set(granted)), release: revoke };
   }
 
   /** Revokes a terminal's authority. Safe for unknown terminals. */
@@ -102,6 +103,10 @@ export class AgentBridgeService implements AgentBridgeToolHost {
     this.shutDown = true;
     this.credentials.revokeAll();
     await this.server.close();
+  }
+
+  instructionsFor(grant: AgentBridgeGrant): string {
+    return bridgeInstructions(grant.capabilities);
   }
 
   listTools(grant: AgentBridgeGrant): AgentBridgeToolDescriptor[] {
@@ -200,7 +205,7 @@ export function agentBridgeLaunchStep(input: AgentBridgeLaunchStepInput): Launch
       try {
         const prepared = provider.prepare({
           url: lease.url, serverName: AGENT_BRIDGE_SERVER_NAME, tokenEnvVar: AGENT_BRIDGE_TOKEN_ENV,
-          args: state.args, env: state.env, platform: input.platform ?? process.platform,
+          args: state.args, env: state.env, platform: input.platform ?? process.platform, instructions: lease.instructions,
           scratchDir() {
             scratch ??= fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-mcp-'));
             fs.chmodSync(scratch, 0o700);
