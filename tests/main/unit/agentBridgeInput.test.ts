@@ -83,6 +83,18 @@ describe('defineInput parser', () => {
     expect(() => defineInput({ s: { type: 'string', maxLength: Number.POSITIVE_INFINITY } })).toThrow(/bounded/);
     expect(() => defineInput({ n: { type: 'integer', minimum: 5, maximum: 1 } })).toThrow(/range/);
   });
+
+  it.each([
+    ['negative', -1], ['fractional', 2.5], ['NaN', Number.NaN], ['infinite', Number.POSITIVE_INFINITY],
+    ['unsafe', 2 ** 60], ['greater than maxLength', 11],
+  ])('refuses a %s minLength, which would advertise an invalid schema', (_label, minLength) => {
+    expect(() => defineInput({ s: { type: 'string', maxLength: 10, minLength } })).toThrow(/minLength/);
+  });
+
+  it('accepts minLength from 0 up to and including maxLength', () => {
+    expect(defineInput({ s: { type: 'string', maxLength: 10, minLength: 0 } }).jsonSchema.properties.s).toMatchObject({ minLength: 0 });
+    expect(defineInput({ s: { type: 'string', maxLength: 10, minLength: 10 } }).jsonSchema.properties.s).toMatchObject({ minLength: 10 });
+  });
 });
 
 describe('capability input is enforced before run()', () => {

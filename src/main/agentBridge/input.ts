@@ -47,6 +47,10 @@ export function defineInput<const S extends InputSpec>(spec: S): InputDefinition
   for (const name of names) {
     const field = spec[name];
     if (field.type === 'string' && (!Number.isSafeInteger(field.maxLength) || field.maxLength < 0)) throw new Error(`Input "${name}" needs a bounded maxLength`);
+    if (field.type === 'string' && field.minLength !== undefined
+      && !(Number.isSafeInteger(field.minLength) && field.minLength >= 0 && field.minLength <= field.maxLength)) {
+      throw new Error(`Input "${name}" needs a minLength that is a safe integer between 0 and maxLength`);
+    }
     if (field.type === 'integer' && !(Number.isSafeInteger(field.minimum) && Number.isSafeInteger(field.maximum) && field.minimum <= field.maximum)) {
       throw new Error(`Input "${name}" needs a safe integer range`);
     }
