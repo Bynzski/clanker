@@ -6,6 +6,7 @@ import { getSelectedAgentWorktreeContext, worktreeBranchLabel, worktreeDisplayLa
 import { useAgentLocation } from '../lib/useAgentLocation';
 import { useAssistantNavStore } from '../store/assistantNavStore';
 import { useAssistantsStore } from '../store/assistantsStore';
+import { useCheckoutNoticeStore } from '../store/checkoutNoticeStore';
 import './StatusBar.css';
 
 export default function StatusBar() {
@@ -22,6 +23,16 @@ export default function StatusBar() {
   const activeAssistantId = useAssistantNavStore((state) => state.activeAssistantId);
   const activeAssistantName = useAssistantsStore((state) => (activeAssistantId ? state.knownAssistants[activeAssistantId]?.displayName ?? activeAssistantId.replace(/^hermes:/, '') : null));
   const [appVersion, setAppVersion] = useState<string>('');
+  // The outcome of a checkout transition main performed for an agent (which can no longer be told).
+  const notice = useCheckoutNoticeStore((state) => state.notice);
+  const dismissNotice = useCheckoutNoticeStore((state) => state.dismiss);
+  const visibleNotice = notice && (!focusedWorkspace || notice.workspaceId === focusedWorkspace.id) ? notice : null;
+  useEffect(() => {
+    if (!notice) return undefined;
+    // Routine outcomes fade quickly; warnings (something was left in place or restored) stay longer.
+    const timer = setTimeout(() => dismissNotice(notice.id), notice.tone === 'warning' ? 20_000 : 6_000);
+    return () => clearTimeout(timer);
+  }, [notice, dismissNotice]);
 
   useEffect(() => {
     window.electronAPI?.getAppVersion().then(setAppVersion);
@@ -69,6 +80,17 @@ export default function StatusBar() {
       </div>
       
       <div className="status-right">
+        {visibleNotice && (
+          <button
+            type="button"
+            className={`status-item status-notice status-notice-${visibleNotice.tone}`}
+            role="status"
+            title={`${visibleNotice.message}\n(click to dismiss)`}
+            onClick={() => dismissNotice(visibleNotice.id)}
+          >
+            {visibleNotice.message}
+          </button>
+        )}
         <span className="status-item">
           <Circle size={8} fill="var(--status-success)" strokeWidth={0} />
           Ready

@@ -3,6 +3,8 @@ import { remote } from './remoteAttention';
 import { local, prepareResources } from './attention';
 import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
+import { agentBridge } from './agentBridge';
+import { checkoutRehome } from './rehome';
 import { defineHarness, type HarnessProvider } from '../types';
 
 export const opencodeProvider = defineHarness({
@@ -23,6 +25,8 @@ export const opencodeProvider = defineHarness({
     discover: async (workspace: string) => (await import('./sessions')).discoverOpenCodeSessions(workspace),
   },
   attention: { resumePreservesSessionId: true, source: 'native', prepareResources, local, remote },
+  agentBridge,
+  checkoutRehome,
   aiCommit: { modelArg: '-m',
     buildInvocation: ({ model, prompt }) => ({ command: 'opencode', args: [...['run'], ...(model ? ['-m', model] : [])], stdin: prompt, timeoutMs: 90000 }),
   },

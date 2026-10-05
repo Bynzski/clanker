@@ -51,7 +51,8 @@ selected environment's bound `HarnessCommandExecutor` (never an SSH target). Cla
 and Hermes is not queried remotely; a failed or unsupported remote discovery yields no catalog, with no
 local cache or static fallback. Only Codex, Claude, OMP, Hermes and Agy implement `usage` so far (see
 "Usage capability"); OpenCode and Pi remain without it. Only Codex and Claude implement the
-optional `accounts` capability (see "Accounts capability").
+optional `accounts` capability (see "Accounts capability"). Only Codex, Claude and OpenCode implement the
+optional, opt-in `agentBridge` capability (see "Agent MCP bridge"); Pi, OMP, Hermes and Agy do not.
 
 | Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -495,6 +496,430 @@ args and timeout values derive from `buildInvocation()`; `modelArg` is descripti
 legacy metadata, not executable authority. Git context and prompts
 stay shared; Windows resolution and desktop PATH remain in the executor. There
 is no remote inference or general inference framework.
+
+## Agent MCP bridge (issue #102)
+
+> **Native provider signals tell Clanker what the agent is doing. MCP lets the agent intentionally ask
+> Clanker to do something.** MCP is a transport and capability boundary, never the source of truth.
+
+The bridge is one small, authenticated agent → Clanker capability plane owned by the main process. It
+exists so a future Clanker-owned operation is implemented **once**, behind one authorization boundary,
+instead of once per harness. It ships three tools: the read-only `clanker_context`, and the two high-level checkout
+transactions `clanker_create_isolated_checkout` and `clanker_complete_isolated_checkout` (see "Isolated checkout
+lifecycle").
+
+### Lifecycle versus MCP
+
+| | Native lifecycle (attention) | Agent MCP bridge |
+| --- | --- | --- |
+| Answers | what is the agent doing (working / done / needs input) | what can the agent ask Clanker to do |
+| Source | the harness' own hooks / plugins / extensions | the agent, on purpose, through a tool call |
+| Authority | `AgentAttentionBroker` | main-process services, via the authenticated session |
+| Credential | attention credential (`CLANKER_ATTENTION_*`) | MCP credential (`CLANKER_MCP_TOKEN`) |
+| Provider code | `HarnessAttentionCapability` | `HarnessAgentBridgeCapability` (separate) |
+
+MCP traffic is **never** lifecycle evidence: no tool call, listing or connection changes an agent's
+attention state, and there are deliberately no model-invoked *attention* tools (`clanker_i_am_done` and
+the like). A model can forget, be late, or be a subagent; a native event cannot. The checkout transactions
+below are a different thing: operations Clanker performs on resources it owns, never reports of what an
+agent is doing. The two credentials
+are independent, minted by different code, validated by different code, and not interchangeable
+(a test asserts an attention token never resolves as a bridge credential).
+
+### Pieces
+
+- `src/main/launchAttachments.ts`: the generic launch-attachment lifecycle (below).
+- `src/main/attentionLaunchStep.ts`: existing attention preparation expressed as a launch attachment
+  (behavior unchanged).
+- `src/main/agentBridge/credentials.ts`: launch-scoped credential registry.
+- `src/main/agentBridge/server.ts`: loopback Streamable HTTP endpoint (official
+  `@modelcontextprotocol/sdk`, stateless, JSON responses).
+- `src/main/agentBridge/capabilities.ts`: the agent-callable capability set (`clanker_context`) and
+  `defineCapability()`.
+- `src/main/agentBridge/lifecycleCapabilities.ts`: the two checkout transactions as capabilities, written
+  against a port; they contain no Git, registry or terminal code.
+- `src/main/isolatedCheckout/`: `IsolatedCheckoutService` (the transactions) and `rehomeSupport.ts` (which
+  harnesses can be re-homed).
+- `src/main/agentBridge/service.ts`: `AgentBridgeService` (server lifecycle, leases, live authority
+  checks) and `agentBridgeLaunchStep()`.
+- `src/main/harnesses/<id>/agentBridge.ts`: the thin provider attachments (Claude, Codex, OpenCode).
+
+### Identity and security model
+
+- **Loopback only.** The listener binds the literal `127.0.0.1` on an ephemeral port and verifies the
+  bound address; it never binds a wildcard or LAN interface. Requests must carry exactly that
+  loopback `Host` (DNS-rebinding guard) and no `Origin` header (agents are not browsers). It starts on
+  first use, is owned by main, and closes (dropping open connections) at quit. There is no daemon.
+- **One credential per launched terminal.** At launch main mints `clanker_mcp_v1_<256-bit CSPRNG>`
+  bound to main's own record `{ terminalId, workspaceId, environmentId, checkoutContextId, harnessId }`.
+  Only a SHA-256 digest is retained server-side; the raw token exists in the launch environment
+  (`CLANKER_MCP_TOKEN`) and nowhere else: not in argv, not in a config file (providers reference the
+  variable by name), not in logs. Everything is in memory. In main the raw token is transient: it exists
+  while the child environment is composed and is not retained afterwards. The attachment coordinator
+  keeps only disposer functions (never an attachment's args/env), the bridge's disposer holds only the
+  registry's revoke closure, and the terminal's `onExit` holds only the coordinator's `dispose`. Tests
+  force a GC and assert the lease and the composed attachment are collected while revocation still works.
+- **Identity comes from the credential, every request.** The server is stateless: each request is
+  authenticated before its body is read, and the resolved grant is closed over by a short-lived
+  protocol server. Tools declare closed schemas; **any undeclared argument is refused**, so a model
+  cannot hand a tool a workspace, terminal, checkout or harness. The renderer never participates.
+- **Executable input boundary.** A capability declares its input once with `defineCapability({ input })`
+  (`src/main/agentBridge/input.ts`): flat, closed objects of booleans, bounded strings (optionally enums)
+  and bounded integers. The same declaration produces the advertised JSON Schema **and** the parser, and
+  `run()` receives only the parsed, typed value. Undeclared (including `__proto__`/`constructor`),
+  missing, mistyped (no coercion: `"true"` is not a boolean), out-of-range, nested or array values are
+  refused before the capability executes. Error text names the field and rule, never the value.
+- **Live authority re-check.** On every `tools/list` and `tools/call` the service re-derives the caller
+  from main's live state: the terminal must still exist in main's terminal table with the same
+  workspace, checkout context, harness and environment, and the workspace and checkout context must
+  still be the registered ones (`WorkspaceRegistry`). A closed workspace, released context or exited
+  terminal ends authority even if revocation has not yet run. Capabilities receive that resolved
+  caller only.
+- **Revocation.** The credential is revoked first when the launch attachment is disposed: PTY exit,
+  `KILL_TERMINAL`, workspace cleanup and quit all funnel through the terminal's `releaseResources`,
+  and a failed or aborted launch disposes the same attachment. Revocation is idempotent and happens
+  before provider cleanup, so a cleanup failure cannot leave authority behind.
+- **Bounds, fail closed.** 64 KiB request bodies (checked against `Content-Length` and while
+  reading), 16-message batches, 32 concurrent requests, 8 KiB headers, 15 s to *receive* a request
+  (HTTP-level only), 64 KiB tool results (refused, never truncated). Tool execution has its own bound: 10 s
+  by default, or the capability's declared `timeoutMs` (never more than 60 s; the checkout transactions
+  declare 30 s). Execution is cut off at its bound and its `AbortSignal` is aborted (also when the client
+  disconnects or cancels). The signal is cooperative: a capability that ignores it gets its response cut off
+  but its work may continue, so a mutating capability must honor `signal` and be safe to abandon, and the
+  checkout transactions are written that way (see below). Malformed JSON, wrong content type, non-POST methods,
+  unknown paths and unknown tools are refused; tool failures return a generic error, never internals.
+- **Scoping.** A credential is issued a set of capability names; `tools/list` shows only those and an
+  ungranted name behaves as unknown. A capability may `require` something of the launch
+  (`checkout-rehoming`): only launches whose harness can be re-homed, with agent attention on, are granted the
+  checkout transactions, so an unsupported agent never sees a tool that is guaranteed to fail.
+- **Output discipline.** `clanker_context` returns display-safe facts about the caller's own launch
+  only: workspace folder name, `local`, checkout kind / isolated / branch, harness, launch directory
+  *relative to the checkout root*, and granted capability names. No tokens, ids, absolute paths, other
+  terminals or other workspaces.
+
+The agent's own child processes inherit `CLANKER_MCP_TOKEN` (they are the agent). That is the same
+authority as the agent itself, and the credential dies with the terminal.
+
+### Generic launch attachments
+
+`prepareLaunchAttachments(base, steps)` is the one lifecycle for resources a launch acquires. Attention
+and the bridge share **only** this mechanism, not semantics or credentials.
+
+- A step is `{ name, optional?, prepare(state) -> PreparedHarnessAttachment | null }` and a prepared
+  attachment is `{ args?, env?, dispose() }`. `args` is the complete argv derived from the argv the step
+  was handed (so a step can insert before a `resume` subcommand); `env` is additive.
+- Steps run in order and each sees the earlier result; `env` additions merge deterministically (later
+  wins). A step returning `null` is skipped.
+- A required step that fails rolls back every earlier attachment (reverse order) and rejects with the
+  original error. An **optional** step (attention and the bridge) that fails releases itself, is
+  reported by name/message only, and the launch proceeds without it, so neither can break an
+  ordinary launch or each other.
+- `dispose()` is idempotent, runs in reverse order, never throws, and one failing disposal does not
+  stop the others. `terminalIpc` and `sessionIpc` hold a single `attachments` value: on PTY spawn
+  failure they `await attachments.dispose()`; on exit it is the terminal's `onExit`.
+- The coordinator retains only each attachment's bare `dispose` (it must not rely on `this`), so an
+  attachment's args/env are collectable once composed. Its default error report names the step and phase
+  only and never prints exception text, because a future attachment's errors might carry a credential.
+- Both fresh launches (`SPAWN_TERMINAL`) and local resume/fork (`SESSION_INVOKE`) use it. Stale
+  `CLANKER_MCP_*` (and `CLANKER_ATTENTION_*`) variables inherited from an outer process are stripped from
+  every launch, case-insensitively, since Windows environment names are case-insensitive.
+
+### Provider capability
+
+`HarnessProvider.agentBridge?: HarnessAgentBridgeCapability` is optional and distinct from `attention`.
+Shared code owns the server, credential, identity binding, capability set, validation and revocation;
+the provider owns only how *its* CLI receives the one shared server. `prepare(context)` gets the
+endpoint URL, the shared server name (`clanker-grid`), the **name** of the token variable (never the
+token), the argv/env so far, and a lazily created private (`0700`) scratch directory that shared code
+removes on disposal. It returns a prepared attachment or `null`, and `null` means "do not attach":
+the user already owns this name or channel. A provider that cannot attach without replacing or
+disabling user MCP configuration omits the capability. There is no no-op support, and
+`defineHarness()` plus the descriptor's `agentBridge` flag keep metadata and implementation in step.
+
+Verified against the installed CLIs (Claude Code 2.1.289, Codex 0.160.0, OpenCode 1.18.34) without
+relying on remembered flags; each attachment was exercised against a real bridge instance:
+
+| Harness | Mechanism | User config | Credential |
+| --- | --- | --- | --- |
+| Claude | extra `--mcp-config <scratch>/claude-mcp.json` placed last (it is variadic); no `--strict-mcp-config` | merged with user/project/local servers; skipped when the user passed `--strict-mcp-config` | header `Bearer ${CLANKER_MCP_TOKEN}` expanded from the environment |
+| Codex | `-c mcp_servers.clanker-grid.url=…` and `….bearer_token_env_var="CLANKER_MCP_TOKEN"`, before a `resume`/`fork` subcommand | overrides merge per key; `codex mcp list` shows the user's own servers beside ours; skipped if the name is already defined on the command line or in `config.toml` | `bearer_token_env_var` |
+| OpenCode | `OPENCODE_CONFIG_CONTENT` with an `mcp` entry | deep-merged over every other config source; skipped if the user already sets the variable | `Bearer {env:CLANKER_MCP_TOKEN}` |
+
+Intentionally **unsupported** (capability absent):
+
+- **Pi**: MCP servers come only from `~/.pi/agent/mcp.json` and a trusted project's `.pi/mcp.json`.
+  There is no launch-scoped channel; relocating the agent directory would replace sessions and auth,
+  and writing either file would modify user (or project) configuration.
+- **Oh My Pi**: `--config` loads an overlay for the run, but support for MCP servers in that overlay
+  was not verified, and no other launch-scoped channel exists. Not faked.
+- **Hermes** and **Antigravity**: MCP servers live in persisted configuration managed by
+  `hermes mcp add` / `agy mcp add`; there is no launch-scoped override.
+
+### Opt-in
+
+The bridge is **off by default** and does nothing unless the user enables *Clanker bridge (MCP)* for a
+supported harness (`harnessDefaults[harness].agentBridgeEnabled`, shown only for harnesses whose
+descriptor advertises `agentBridge`). Only local launches bound to a registered workspace and checkout
+context attach it; plain shells, unbound legacy launches, unsupported harnesses and SSH launches launch
+exactly as before.
+
+### Local-only V1 and the SSH direction
+
+SSH launches never attach the bridge, and `AgentBridgeService.lease()` rejects non-local identities. A
+future SSH design should forward the desktop-owned bridge over the existing OpenSSH connection with an
+ephemeral, launch-scoped tunnel (no remote daemon or installation, no reusable desktop credential, the
+tunnel dies with the launch/workspace). Nothing in V1 (loopback listener, per-launch credential bound to
+main's records, stateless requests) prevents that.
+
+### Adding a Clanker capability
+
+Add a `defineCapability({ name, description, input, run })` entry to `DEFAULT_AGENT_BRIDGE_CAPABILITIES`.
+No provider changes. `run(input, { caller, signal })` receives validated input and the live-resolved
+caller, honors `signal`, and must
+call an existing validated main-process service rather than re-implement authorization; where the
+behavior today lives only in renderer → IPC code, extract a main-process service and have IPC and the
+capability both call it. Arguments describe the operation only, never identity. Keep results bounded and
+display-safe. Do not add attention (working / done / needs-input) tools.
+
+### Attaching the bridge to another harness
+
+Verify the CLI's *launch-scoped, additive* MCP mechanism first (flag, env or an owned temp file) and that
+it merges with user servers. Then add `src/main/harnesses/<id>/agentBridge.ts` that returns args/env
+referencing the token by variable name, returns `null` on conflicting user configuration, and add the
+`agentBridge` flag to the descriptor. Write temp files only through `scratchDir()`. If no such mechanism
+exists, leave the capability absent and document why here.
+
+### Isolated checkout lifecycle
+
+An agent can ask Clanker to move its own conversation into a fresh Clanker-owned worktree and, when it is done,
+back to the main checkout, without ever naming a path, workspace, terminal or checkout:
+
+| Tool | Input (operation data only) | Effect |
+| --- | --- | --- |
+| `clanker_create_isolated_checkout` | `branch` (1-200 chars, validated by Git) | new worktree on a new branch, same conversation resumed inside it |
+| `clanker_complete_isolated_checkout` | `deleteBranch?` (boolean) | same conversation resumed in the main checkout, then the worktree is removed and its context released |
+
+These are **transactions, not Git wrappers**. There is deliberately no create-branch, create-worktree, adopt,
+change-cwd, switch-checkout, delete-worktree or delete-branch tool: each exposes an unsafe ordering and allows
+a split between where the conversation runs and what Clanker thinks it owns. The workspace, terminal, checkout,
+harness and every path come from the authenticated caller and main's own state; the checkout being completed is
+`caller.checkoutContext`, resolved from the terminal's launch binding in main.
+
+**The lifecycle tools are authoritative when granted.** Inside Clanker, creating and finishing an isolated
+checkout is Clanker's job. An agent that has these tools should use them instead of `git worktree add/remove`,
+`git branch -d/-D` on the checkout's branch, Claude's `EnterWorktree` / `ExitWorktree`, Codex's `--worktree`, or any
+manual cwd switching: Clanker must track the checkout and move the same conversation with it. Everything else
+stays normal (edits, commits, pushes, pull requests and merges use ordinary Git and GitHub tools; there are no
+PR or Git tools in the bridge). Outside Clanker, or for a launch that was not granted the tools, provider-native
+behavior is unchanged: nothing intercepts shell commands or disables a provider's own worktree feature.
+
+**Guidance is discoverability, not security.** Authorization is the credential, the grants and main's live state;
+nothing depends on the model reading or obeying text. Smoke tests showed why the text matters anyway: with the old
+wording ("nothing here is required for normal work") Claude chose `EnterWorktree`, and Codex ran
+`git worktree remove`. Three layers now carry the rule:
+
+1. *Tool descriptions* (some harnesses show only names or descriptions before loading a schema) say when to use
+   the tool, name the competing mechanisms, and say why Clanker must own it.
+2. *MCP server instructions*, built from what the credential was **granted** (`bridgeInstructions`): a launch with
+   only `clanker_context` is never told it owns worktree lifecycle or pointed at tools it cannot call.
+3. *A launch-scoped instruction channel for harnesses that do not surface server instructions.* Codex defers
+   MCP tools behind `tool_search` and, asked, reported seeing neither the tool nor any server instructions, so it
+   never reached for it. Its provider therefore adds `-c developer_instructions="<the same guidance>"` to the launch.
+   It is added **only when the user has no `developer_instructions` of their own** on the command line, in
+   `config.toml` or via a profile; a user's instructions are never replaced or merged by guessing (the bridge still
+   attaches, without the guidance). Nothing is written to the project or to the user's config.
+
+Observed in the real app (Claude Sonnet 5.5, Codex with GPT-6 Luna), starting from the single sentence
+"create a branch and worktree with any name and make a small edit to one file", with the guidance in place:
+both chose `clanker_create_isolated_checkout` and neither used a native worktree mechanism; and from
+"make a small edit, commit it, merge it into main and clean up when done" both finished with
+`clanker_complete_isolated_checkout` and no manual removal. This is behavior of those models in those runs, not a
+guarantee.
+
+**Who gets them, and why `resumesWithoutOriginalDirectory` is not enough.** `sessions.resumesWithoutOriginalDirectory`
+only says a conversation can be resumed once its original directory is gone. It does not say a *running*
+conversation can be moved. A provider therefore declares an explicit `checkoutRehome` capability
+(`HarnessCheckoutRehomeCapability`: `mode: 'hot-replace' | 'after-turn'`, an optional explicit target-directory
+option and writer-contention recognition). Two separate facts follow, in `rehomeSupport.ts`:
+
+- **Rehome capability is a provider/runtime fact** (`canSafelyRehomeConversation`): an explicit `checkoutRehome`
+  strategy, a native local `sessions.resume`, a way for the CLI to run the conversation elsewhere (either
+  `resumesWithoutOriginalDirectory === true` or a provider-owned native `checkoutRehome.relocateConversation`), and local
+  attention (the live conversation's native session id comes from native lifecycle events, never from the model). It does
+  **not** involve MCP: `IsolatedCheckoutService` and `checkoutRehomeOf()` rely on it alone, so another invocation
+  transport can use the same transaction later. That is **Claude (`hot-replace`), Codex (`after-turn`) and OpenCode
+  (`after-turn` with native relocation)**. Pi, Agy, Hermes and OMP do not have it.
+- **MCP lifecycle availability is that capability plus this launch's transport facts** (`grantsCheckoutRehoming`, fails
+  closed on all three): the provider can safely rehome, the provider has the MCP bridge capability, and native attention
+  has **actually attached** to this launch, not just the setting. The attention launch step provides a generic
+  `native-attention` launch fact only when the provider's hooks/plugin were prepared (a provider declines on user-owned
+  config such as Claude `--bare`, Codex `--profile`, OpenCode `--pure`/`OPENCODE_CONFIG_DIR`; the harness still launches),
+  and the bridge step reads it (`LaunchAttachmentState.provided`) to decide the grant. Attention and the bridge stay
+  separate attachments and credentials.
+
+This keeps the earlier distinction: native lifecycle says what the agent IS doing; MCP is what the agent ASKS Clanker to
+do. Shared code never branches on a harness name:
+it reads the provider's declared mode.
+
+**Re-homing is a real resume** of the same native conversation in the target checkout, through the launch every
+history resume uses (`SessionIpcController.resumeInCheckout`, the body of `SESSION_INVOKE` with main's routing
+decision; not reachable through IPC). Main re-finds the conversation by harness and native id in its own history
+(`findSession`: managed accounts and worktrees included, and it **bypasses the history cache**, because the cache
+can predate a conversation that began after the renderer last listed history; observed as a first-turn "not
+found").
+
+| Harness | Strategy | Mechanism | Evidence |
+| --- | --- | --- | --- |
+| Claude | `hot-replace` | `claude --resume <id>` started in the target directory (launch directory decides; no target option) while the first process waits in the request | one session file continued across main -> worktree -> main in the real app |
+| Codex | `after-turn` | after the native root Stop: retire the first process, then `codex ... resume <id> -s ... --cd <target>` | measured below, plus the real app |
+| OpenCode | `after-turn` + `relocateConversation` | after the native root idle: retire the first process, move the conversation's recorded directory with OpenCode's own `move-session`, then `opencode --session <id>` | measured below, plus the real app |
+
+**OpenCode (measured with 1.18.34, isolated XDG profile).** `opencode --session <id>` ignores both the process
+directory and `--dir`: it runs in the directory *recorded in the conversation*, so resuming alone never re-homes it
+and a removed directory is not recoverable that way. The one native operation that changes the record while keeping
+the session id is `POST /experimental/control-plane/move-session` `{sessionID, destination: {directory}}` (204;
+`session list` then reports the new directory and a later resume runs there; no file is touched because
+`moveChanges` is never sent). OpenCode refuses a destination outside the conversation's project (400, so a worktree
+of the same repository is fine, `/etc` is not) and a relative path (500); a refusal changes nothing. Clanker reaches it
+through a transient `opencode serve` owned by that one call (`harnesses/opencode/rehome.ts`): loopback, a free port,
+a fresh random `OPENCODE_SERVER_PASSWORD`, Basic auth, killed in every outcome. The service never names OpenCode: the
+provider's `relocateConversation` runs before *every* replacement attempt with the source already retired, so
+recovery relocates back before it resumes, and a refusal fails the attempt (nothing is resumed in the wrong
+directory). OpenCode is `after-turn` because a second process cannot be shown safe next to a live one (it shares the
+SQLite store and the live process owns the session); its native `session.status` busy/idle is the turn boundary the
+attention plugin already reports. The target comes only from the main-owned checkout context. `opencode session list`
+lists only the project of its working directory (empty from an unrelated one), so history discovery now runs it inside
+the workspace (or, for the `<repo>-worktrees` container, inside its first checkout); without this a conversation that
+lives in a worktree was never found. **Guidance:** OpenCode concatenates the `instructions` array across config
+sources (measured: the user's entry stays, ours is appended), so the lifecycle guidance is one launch-owned file in
+a fresh 0700 temp directory referenced from `OPENCODE_CONFIG_CONTENT` and removed by `dispose`; no project file and no
+user config is touched. Real runs (big-pickle): explicit create -> same session id, `pwd`, `clanker_context` and status
+bar agree -> edit, commit, merge -> explicit complete removed the worktree and the branch; unprompted
+"please create an isolated worktree and branch and make one small edit" called `clanker_create_isolated_checkout`;
+"make a small edit, create a PR, merge it and clean up when done" created the checkout, merged (a local bare origin
+has no PR, so by push) and called `clanker_complete_isolated_checkout` unprompted. As with Codex the agent's turn ends
+at the move; the user (or the next prompt) continues in the new checkout.
+
+**Why Codex cannot be hot-replaced.** Measured with Codex 0.160.0 in an isolated `CODEX_HOME` (so as not to
+touch real conversations): Codex runs threads in a shared per-`CODEX_HOME` app-server daemon, and that daemon, not
+the TUI, holds the thread's writer lock (`thread-writer-locks/<id>.lock`). While a TUI is attached to a thread, or a turn
+is still running after its TUI was killed, a second `codex resume <id> --cd <other>` does **not** fail: it attaches to
+the live thread, which keeps its original working directory (the header and `pwd` still showed the source). Only
+once the turn has completed and no TUI is attached does `resume <id> --cd <other>` take effect immediately; the
+thread's `pwd` is then the new directory. So a hot replacement can silently produce a UI that says "target" while the
+thread works in the source. The binary also contains `failed to acquire thread writer lock` and `... is already
+running with a different rollout path`; those were **not reproduced** by any flow above, so Codex's provider treats
+exactly those strings as a transient contention to retry (at most 3 attempts, 250 ms apart) and nothing else.
+
+**Create (`hot-replace`).** (1) authenticate; re-check live terminal, workspace and local-only; (2) a re-homeable
+harness and a bound native session; refuse a worktree workspace (judged from Git's listing) and an already isolated
+caller (idempotent `already-isolated`); (3) find the conversation, *before any mutation*; (4) validate the branch (Git's
+`check-ref-format` decides; an existing branch is never taken over, except this workspace's own idle attached
+checkout for it, a retry); (5) base from Git now; (6) create and attach through `New isolated agent`'s path; (7)
+`checkout-attached`; (8) start and prove the replacement; **commit**; (9) hand off; (10) report.
+
+**Create / complete (`after-turn`).** The request is *accepted*, not performed. Create does steps 1-7 (the worktree
+is created and attached now, and stays visible whatever happens next); complete does the same preflight (nobody
+else uses the checkout, Git lists it unlocked or it is already gone, nothing unsaved). Then one `PendingMove` is
+recorded and the tool returns normally with `{ status: 'scheduled' }` and a message telling the agent to finish its
+reply. The agent's turn completes normally.
+
+- *Key:* one pending move per source terminal, bound to the terminal, its native session id, workspace, source and
+  target checkout, harness and kind. A repeated identical call returns `already-scheduled`; a different kind is
+  refused. The model supplies none of these.
+- *Trigger:* the broker's own published change for **that** terminal, whose snapshot is bound to **that** native
+  session and whose `lastOutcome` is a **completed** root turn recorded **after** the request (a revision baseline, so an
+  earlier completion or an approval prompt never triggers). The broker already drops child/subagent lifecycle, so a child
+  Stop cannot; another terminal's Stop, another session's Stop and a stale completion cannot.
+- *Interrupt, failed turn, session end:* **cancel** the pending move (nothing moves behind the user's back; a user
+  notice says so; a created checkout is kept). The terminal disappearing drops it. Shutdown drops it.
+- *At the trigger,* everything is re-validated (the world may have changed during the turn; checkout identity is compared
+  by value, since Git reconciliation legitimately replaces context objects): terminal, workspace, session, both
+  contexts, and for complete again "no other terminal / not dirty / not locked". A move that is no longer valid is cancelled
+  *before the source is touched*.
+- *Source retirement:* only then is the source retired completely through `retireTerminal` (process killed, attachments
+  disposed, attention released, bridge credential revoked, removed from the terminal table), and Codex is never killed
+  inside the MCP request.
+- *Resume:* the same thread is resumed with the provider's explicit `--cd <target>` (any `-C`/`--cd` the user's flags
+  carried is replaced; the path is the native path of a main-owned checkout context, never from MCP, the renderer or the
+  model) and proven exactly as for hot replacement. Ordinary history resume keeps its exact arguments; only
+  Clanker re-homing forces a target.
+- *Recovery:* if the target resume fails (after the bounded contention retry), the same thread is resumed back where it
+  was (create: the original checkout; complete: the isolated checkout, if it still exists). If that works the pane adopts
+  it and the user is warned. If both fail, nothing is removed, released or deleted, the checkouts and branch stay and
+  stay visible, success is never reported, and a strong notice says to resume from history. A failed re-home is never followed
+  by cleanup.
+- *Only after the replacement is proven* (complete): release the context (existing protections), inspect and remove, optionally
+  safe-delete the branch.
+
+**Proof before commit.** The replacement must produce output within a deadline, survive a short observation window
+(a resume that cannot find its conversation prints an error and exits at once), be registered in main's terminal table
+bound to the target context and harness, have an attention registration, and the target must still be the registered
+context of the same registered workspace.
+
+**Handoff (`hot-replace`).** `terminal-replaced` is sent first so the pane adopts the replacement; then the
+requesting process is retired **before any response is written**, so it can never append a result to the transcript
+the replacement already loaded. The agent never receives that result; the resumed conversation sees an interrupted
+call and, if it repeats it, gets `already-isolated` / `already-complete`. For `after-turn` the source was already retired
+before the replacement existed, so the order is source retired, replacement proven, `terminal-replaced`.
+
+**Credential rotation.** Nothing is mutated in place. The replacement is a fresh launch, so it gets a *new* bridge
+credential bound to its own terminal id and the **target** checkout (and the same grants and guidance); the old
+credential is revoked when the old terminal is retired (before the replacement exists, for Codex).
+
+**Attention.** The replacement goes through the normal launch (native hook -> interpreter -> `AgentAttentionBroker`).
+For Codex the source registration is released before the replacement registers, so there is never more than one
+authoritative root for the conversation; Claude's two registrations coexist only between spawn and handoff, while the
+replacement is idle. A provider whose resume preserves the session id seeds its root (Codex); Claude binds on its
+first event, so its replacement shows `unverified` until its next turn. MCP traffic is never lifecycle evidence.
+
+**Renderer.** Main sends `AGENT_CHECKOUT_TRANSITION` events (`checkout-attached`, `terminal-replaced`,
+`checkout-released`, `notice`) in the order things became true. The renderer only applies them (`replaceTerminal` swaps
+the terminal inside the same pane, keeping layout position and name; contexts are upserted or removed; the old xterm is
+disposed first) and cannot start, confirm or alter a transition. The status bar, sidebar and rail read the active
+terminal's checkout, so they follow. For Codex the old pane briefly shows its process as exited between source retirement
+and `terminal-replaced`. A replacement whose pane no longer exists is closed rather than left untracked. A `notice`
+(status bar) tells the user each outcome, including a scheduled move, a cancelled move and partial cleanup.
+
+**Failure and rollback.** Before the commit point (hot replacement) everything rolls back to the starting state: the
+replacement is retired and the original keeps running. A worktree `create` already made is **kept** and announced so it
+is listed as an inactive checkout; nothing is deleted to recover, and a retry reuses it. After the commit point the
+conversation lives in its new home and the rest is finished, never rolled back: a refused release, a failed removal (for
+instance system Trash unavailable), a dirty checkout or a failed branch deletion leave the checkout and branch in place and
+say so. An exception in any post-commit step is a partial cleanup, never "left where it was". `git branch -d` only: a branch Git
+does not consider fully merged into the main checkout's current branch is kept (a squash merge never pulled locally looks
+unmerged).
+
+**Cancellation and timeouts.** The tools declare a 30 s bound. For hot replacement a cancel or timeout before the commit point
+aborts and rolls back; past it, the abort is ignored and the transaction finishes under `IsolatedCheckoutService`'s
+ownership (tracked; shutdown waits). The `after-turn` request itself returns immediately; the move that follows is owned
+by the service the same way.
+
+**Known limits of this feature.**
+
+- Claude, Codex and OpenCode, local workspaces, native attention attached to the launch. SSH is refused.
+- Claude (`hot-replace`): the agent's current turn is cut off at the move and not continued; the resumed conversation waits
+  for the next prompt. Codex (`after-turn`): the turn completes, then the conversation continues in the target on the next turn.
+- The replaced pane gets a new terminal: its scrollback is rebuilt from the resumed TUI.
+- Codex asks its own approval for MCP tool calls and for commands outside its sandbox; those prompts are the user's.
+- The guidance reaches Codex only when the user has no `developer_instructions` of their own; otherwise Codex may choose
+  its own worktree commands, and Clanker does not intercept them.
+- A worktree an agent creates itself (`.claude/worktrees/...`, `git worktree add`) is not adopted by Clanker.
+- Removal uses the system Trash (the existing path); where it is unavailable the checkout is left and reported.
+- Not verified: Codex against a real GitHub pull request flow (the smokes merged locally into the main checkout).
+
+### Known limitations
+
+- Local launches only; three harnesses (the checkout transactions: Claude and Codex).
+- A user who already defines an MCP server named `clanker-grid` in a place Clanker does not inspect
+  (Claude's own configuration, OpenCode's merged configuration) may see the two collide for that launch;
+  which one wins was not verified. Codex checks `config.toml` and the command line; Claude and OpenCode
+  rely on the distinct name.
+- Harness tool-approval prompts still apply to every bridge tool (the Claude smoke allow-listed them).
+- `clanker_context` reports `branch: null` for the main checkout (its context does not record one).
+- No OAuth discovery endpoints; a client that probes them gets 404 and uses the bearer header.
+- A crash can leave a `clanker-mcp-*` scratch directory in the system temp area. It holds only a config
+  with no credential (the credential never touches disk).
 
 ## Accounts capability
 
@@ -1391,3 +1816,20 @@ Workspace and Assistant are peer app destinations with different capabilities (`
 ### Known V1 limitations
 
 No SSH Assistants; no profile creation/editing; a second Clanker process can supersede the first's viewer; no live Windows validation.
+
+### Hardening notes (review of the after-turn work)
+
+- **Exit is proven, not assumed.** A terminal record owns an `exited` promise settled by node-pty's own `onExit`.
+  `retireTerminalAndWait` revokes authority and removes the record exactly as `retireTerminal` does, then waits
+  (graceful kill, then SIGKILL, bounded) for that event; `absent`/`timeout`/`unverifiable` all stop an `after-turn` move
+  before anything is resumed (nothing moved, relocated, removed or deleted; the user is told). A failed replacement is
+  discarded the same way, and if it cannot be proven dead no recovery resume is attempted (a new process could silently
+  attach to the live one and keep its directory). Ordinary close/kill is unchanged.
+- **A cancelled create schedules nothing.** After the awaited worktree creation, and again as the last gate before a move
+  is scheduled, the request's abort signal is re-checked. A checkout already created is kept attached and listed, the user
+  is told it was kept and the conversation not moved (never "nothing changed"), and the tool result says the same.
+- **OpenCode relocation uses the canonical launch plan** (`planLocalLaunch`: user CLI bin directories on PATH, Windows
+  PATH/PATHEXT with the escaped `.cmd` form, attention credentials stripped). The call succeeds only after the server's
+  own `exit` event: POSIX SIGTERM, then SIGKILL; Windows awaited `taskkill /PID n /T`, then `/T /F` (the tree, since a
+  `.cmd` shim runs the server under `cmd.exe`); each phase bounded. If exit cannot be proven the call rejects with
+  `UnverifiedProcessExitError`, the lifecycle treats the move as failed and resumes nothing, not even the recovery.

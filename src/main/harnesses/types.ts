@@ -1,4 +1,5 @@
 import type { HarnessSession } from '../../shared/types/session';
+import type { PreparedHarnessAttachment } from '../launchAttachments';
 import type { HarnessCommandExecutor, HarnessCommandSessionExecutor } from './commandExecution';
 
 import type { HarnessDescriptor } from '../../shared/harnessDescriptors';
@@ -23,6 +24,8 @@ export interface HarnessProvider {
   readonly aiCommit?: HarnessAiCommitCapability;
   readonly usage?: HarnessUsageCapability;
   readonly accounts?: HarnessAccountsCapability;
+  readonly agentBridge?: HarnessAgentBridgeCapability;
+  readonly checkoutRehome?: HarnessCheckoutRehomeCapability;
 }
 
 export type CapabilitySupport = 'native' | 'emulated';
@@ -299,6 +302,99 @@ export interface HarnessAccountsCapability {
   discoverSessions(workspacePath: string, home: string): Promise<HarnessSession[]>;
 }
 
+/**
+ * How a LIVE conversation of this harness may be moved to another checkout (issue #102). This is not
+ * implied by `sessions.resumesWithoutOriginalDirectory`, which only says a conversation can be resumed
+ * once its original directory is gone. Moving a running one is a different property, so a provider says
+ * so explicitly, and shared code never branches on a harness name:
+ *
+ * - `hot-replace`: a second process may resume the conversation while the first is still alive and
+ *   waiting inside the request that asked for the move. Shared code proves the second one, then retires
+ *   the first.
+ * - `after-turn`: the conversation must not be resumed while its process (or an in-flight turn) still
+ *   owns it. The move is scheduled when the request is accepted and performed after the harness'
+ *   native root turn completes: the first process is retired completely, and only then is the same
+ *   conversation resumed in the target.
+ */
+export type CheckoutRehomeMode = 'hot-replace' | 'after-turn';
+/**
+ * A provider helper process that touched native conversation state could not be PROVEN to have exited. Nothing may
+ * be resumed afterwards: a second process around the same native session state is exactly what the checkout
+ * lifecycle exists to prevent.
+ */
+export class UnverifiedProcessExitError extends Error {
+  constructor(message = 'A helper process could not be confirmed stopped') { super(message); this.name = 'UnverifiedProcessExitError'; }
+}
+
+export interface HarnessCheckoutRehomeCapability {
+  readonly mode: CheckoutRehomeMode;
+  /**
+   * The resume argv with the harness' own explicit "work in this directory" option set to `directory`
+   * (any such option already present is replaced: the target is Clanker's, never the user's). `directory`
+   * is a native path taken from a main-owned checkout context. Absent: the launch directory alone decides.
+   */
+  withTargetDirectory?(args: readonly string[], directory: string): string[];
+  /**
+   * Whether the output of a resume that failed at startup is this provider's own recognizable, transient
+   * "the conversation is still owned" failure. Only this provider-owned recognition permits a retry.
+   */
+  isWriterContention?(output: string): boolean;
+  /**
+   * For a CLI whose resume ignores the launch directory and runs in the directory *recorded in the
+   * conversation*: moves that recorded directory with the CLI's own native operation, so the resume that
+   * follows really runs in `directory` (a native path from a main-owned checkout context). Called with the
+   * source process already retired, before every replacement attempt (including recovery, which relocates
+   * back). Rejects when the CLI refuses; the caller then treats the attempt as failed and never resumes.
+   */
+  relocateConversation?(request: { readonly sessionId: string; readonly directory: string; readonly env: NodeJS.ProcessEnv }): Promise<void>;
+  /** Bound for such retries; absent means none. */
+  readonly writerContentionRetry?: { readonly attempts: number; readonly delayMs: number };
+}
+
+/**
+ * Optional, distinct from attention: how this harness receives the shared Clanker MCP bridge for one
+ * local launch. Shared code owns the server, the credential, identity binding and every tool; the
+ * provider owns only the harness-native mechanism (launch args, environment, a temporary owned
+ * config file). A provider that cannot attach the bridge without replacing or disabling the user's
+ * own MCP configuration omits this capability: there is no no-op support.
+ */
+export interface HarnessAgentBridgeContext {
+  /** Loopback Streamable HTTP endpoint (`http://127.0.0.1:<port>/mcp`). */
+  readonly url: string;
+  /** MCP server name to register; shared by every provider so tool names are uniform. */
+  readonly serverName: string;
+  /**
+   * Environment variable that will carry the bearer credential into the child. Providers reference
+   * it by name (header expansion / bearer-token env var); they never receive the credential itself,
+   * so it cannot end up in argv or a config file.
+   */
+  readonly tokenEnvVar: string;
+  /** Launch argv so far (after earlier attachments). */
+  readonly args: readonly string[];
+  /** User + harness environment so far, for detecting conflicting user configuration. */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly platform: NodeJS.Platform;
+  /** Private (0700) directory owned by this launch, created on first use and removed on disposal. */
+  scratchDir(): string;
+  /**
+   * Clanker's guidance for exactly what this launch was granted (see bridgeInstructions). Claude shows MCP
+   * server instructions to the model itself; a harness that does not (Codex defers MCP tools behind a
+   * search and never surfaces the server's text) may pass this through its own launch-scoped instruction
+   * channel, but only where that cannot replace instructions the user wrote. Guidance only: nothing
+   * depends on the model following it.
+   */
+  readonly instructions?: string;
+}
+export interface HarnessAgentBridgeCapability {
+  /**
+   * Returns null when the bridge cannot be attached to this launch without touching user-owned
+   * configuration (e.g. the user already defines the same server name or the same override channel).
+   * The returned `dispose` releases only provider-owned resources; the credential and the scratch
+   * directory are released by shared code.
+   */
+  prepare(context: HarnessAgentBridgeContext): PreparedHarnessAttachment | null;
+}
+
 export type AttentionPlan = { status: 'ready'; options: AttentionLaunchOptions }
   | { status: 'blocked'; failure: HarnessCapabilityError };
 
@@ -312,4 +408,7 @@ export function defineHarness<Provider extends HarnessProvider>(provider: Provid
 ) & (
   Provider['descriptor'] extends { accounts: unknown }
     ? { accounts: HarnessAccountsCapability } : { accounts?: never }
+) & (
+  Provider['descriptor'] extends { agentBridge: unknown }
+    ? { agentBridge: HarnessAgentBridgeCapability } : { agentBridge?: never }
 )): Provider { return provider; }

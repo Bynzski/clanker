@@ -41,6 +41,8 @@ export interface HarnessDefaults {
   visible: boolean;
   /** Opt in to per-turn attention signals for launches of this harness. */
   attentionEnabled?: boolean;
+  /** Opt in to attaching the Clanker MCP bridge to local launches of this harness (only for harnesses that support it). */
+  agentBridgeEnabled?: boolean;
   /** Show this harness in the Usage panel (only meaningful for harnesses with a usage capability). Default true. */
   usageVisible?: boolean;
 }

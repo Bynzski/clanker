@@ -43,6 +43,7 @@ export default function GateHarnessSettings({ selectedHarness, onSelectHarness, 
           handleSetHarnessVisible={settings.handleSetHarnessVisible}
           handleSetHarnessAttention={settings.handleSetHarnessAttention}
           handleSetHarnessUsageVisible={settings.handleSetHarnessUsageVisible}
+          handleSetHarnessAgentBridge={settings.handleSetHarnessAgentBridge}
           handleSetDefaultModel={settings.handleSetDefaultModel}
           handleToggleFavorite={settings.handleToggleFavorite}
         />

@@ -1,5 +1,3 @@
-import { disposeAttentionSafely } from '../harnesses/localAttention';
-import type { PreparedLocalAttention } from '../harnesses/types';
 import { findHarnessProvider, isHarnessId } from '../harnesses/registry';
 import { prepareHarnessAccountContext, type HarnessAccountService } from '../accounts/harnessAccountService';
 import { DEFAULT_HARNESS_ACCOUNT_ID } from '../../shared/types/harnessAccounts';
@@ -27,13 +25,12 @@ import type { GitWorktreeCreateResult, GitWorktreeListResult } from '../../share
 import type { SessionInvokeOptions } from '../../shared/types/session';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { invokeRemoteSession } from './remoteSessionInvocation';
-import {
-  ensureAttentionAdapterFiles,
-  prepareLocalAttention,
-  attentionSourceOptions,
-  trustedRootSessionId,
-  withoutAttentionEnvironment,
-} from '../agentAttentionAdapters';
+import { trustedRootSessionId, withoutAttentionEnvironment } from '../agentAttentionAdapters';
+import { prepareLaunchAttachments, type LaunchAttachmentStep } from '../launchAttachments';
+import { attentionLaunchStep, NATIVE_ATTENTION_ATTACHED } from '../attentionLaunchStep';
+import { agentBridgeLaunchStep, withoutAgentBridgeEnvironment, type AgentBridgeService } from '../agentBridge/service';
+import { grantsCheckoutRehoming } from '../isolatedCheckout/rehomeSupport';
+import type { CheckoutContext } from '../../shared/types/checkoutContext';
 import { isInsideRoot } from '../localPathContainment';
 import { sessionMatchesWorkspace } from '../harnesses/sessionFiles';
 import {
@@ -51,6 +48,8 @@ export interface RegisterSessionIpcDeps {
   getStore: () => Store<StoreSchema>;
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
   agentAttentionBroker?: AgentAttentionBroker;
+  /** Optional: without it no launch attaches the Clanker MCP bridge. */
+  agentBridge?: AgentBridgeService;
   createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
   getWorkspaceRegistry?: () => WorkspaceRegistry;
   /**
@@ -74,7 +73,46 @@ export interface RegisterSessionIpcDeps {
   harnessSpawnOverrides?: Partial<HarnessPtySpawnOptions>;
 }
 
-export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
+/**
+ * A resume main performs on its own account (never a renderer request): the conversation runs in a
+ * checkout main chose, instead of the one its recorded directory implies.
+ */
+export interface InternalResumeRequest {
+  /** The checkout the conversation must run in. Re-verified as still registered just before the PTY exists. */
+  targetContext: CheckoutContext;
+  /** Sees PTY output as it arrives (the lifecycle service's liveness proof). */
+  onOutput?: (data: string) => void;
+  /** Called once the process has exited and its launch attachments were disposed. */
+  onExit?: () => void;
+  /** The replacement starts before its pane adopts it, so it may need to hold more startup output. */
+  startupBufferLimit?: { bytes: number; chunks: number };
+}
+
+export interface ResumedSessionLaunch {
+  id: string;
+  pid: number;
+  harnessId: string;
+  attentionEnabled: boolean;
+  checkoutContextId?: string;
+  workingDir: string;
+}
+
+export interface SessionIpcController {
+  /**
+   * Main's own rediscovery of one local conversation by harness and native session id, from the same
+   * history SESSION_DISCOVER shows (managed accounts and worktree checkouts included). Null when it is
+   * not found. The result, not any caller's description of it, is what a resume is launched from.
+   */
+  findSession(workspaceId: string, harness: string, sessionId: string): Promise<HarnessSession | null>;
+  /**
+   * Resumes `session` (main's own rediscovered record) in `request.targetContext`. Local workspaces only.
+   * Goes through exactly the launch SESSION_INVOKE uses (account binding, attention, the bridge, the
+   * revalidation just before spawn); only the routing decision is replaced by main's choice.
+   */
+  resumeInCheckout(workspaceId: string, session: HarnessSession, request: InternalResumeRequest): Promise<ResumedSessionLaunch>;
+}
+
+export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcController {
   const { getTerminals, getMainWindow, getSafeWorkspacePath, getIsShuttingDown, getStore, getHarnessOptions, agentAttentionBroker } = deps;
 
   const loadPlan = (workspaceId: string, workspace: RegisteredWorkspace): Promise<SessionCheckoutPlan | null> => loadSessionCheckoutPlan({
@@ -83,6 +121,27 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     listBranches: deps.listBranches ? () => deps.listBranches!(workspaceId) : undefined,
     provenance: deps.worktreeProvenance,
   });
+
+  /** Local history for a workspace, labelled with checkouts: exactly what SESSION_DISCOVER returns. */
+  const discoverLocalSessions = async (workspace: RegisteredWorkspace, plan: SessionCheckoutPlan | null, forceRefresh = false): Promise<HarnessSession[]> => {
+    const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
+    const availableHarnessIds = new Set(Object.keys(getHarnessOptions()));
+    const managed = deps.getHarnessAccountService?.()?.discoverySource('local');
+    // `forceRefresh` bypasses the history cache. A listing is only a recent view; a conversation that began
+    // after it was cached (the first turn of a new conversation) would otherwise be "not found".
+    const discover = (scanPath: string) => managed || forceRefresh
+      ? discoverSessions(scanPath, { ...(managed ? { managed } : {}), ...(forceRefresh ? { forceRefresh: true } : {}) })
+      : discoverSessions(scanPath);
+    // Conversations of isolated agents live in linked worktrees outside the workspace root; they
+    // belong to this workspace's history, labelled with their checkout.
+    const sessions = plan
+      ? await discoverSessionsWithCheckouts({
+        plan, scanWorkspacePath: nativeWorkspacePath, discover,
+        toScanPath: (posixPath) => toNativePath(posixPath, process.platform),
+      })
+      : await discover(nativeWorkspacePath);
+    return sessions.filter((session) => availableHarnessIds.has(session.harness));
+  };
 
   ipcMain.handle(SESSION_DISCOVER, async (_, workspaceId: string) => {
     const workspace = typeof workspaceId === 'string'
@@ -101,27 +160,18 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       return plan ? classifySessions(plan, found) : found;
     }
 
-    const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
-    const availableHarnessIds = new Set(Object.keys(getHarnessOptions()));
-    const managed = deps.getHarnessAccountService?.()?.discoverySource('local');
-    const discover = (scanPath: string) => managed ? discoverSessions(scanPath, { managed }) : discoverSessions(scanPath);
-    // Conversations of isolated agents live in linked worktrees outside the workspace root; they
-    // belong to this workspace's history, labelled with their checkout.
-    const sessions = plan
-      ? await discoverSessionsWithCheckouts({
-        plan, scanWorkspacePath: nativeWorkspacePath, discover,
-        toScanPath: (posixPath) => toNativePath(posixPath, process.platform),
-      })
-      : await discover(nativeWorkspacePath);
-    return sessions.filter((session) => availableHarnessIds.has(session.harness));
+    return discoverLocalSessions(workspace, plan);
   });
 
-  ipcMain.handle(SESSION_INVOKE, async (_, workspaceId: string, requestedSession: HarnessSession, fork?: boolean, options?: SessionInvokeOptions) => {
+  const invokeSession = async (
+    workspaceId: string, requestedSession: HarnessSession, fork?: boolean, options?: SessionInvokeOptions, internal?: InternalResumeRequest,
+  ) => {
     const workspace = typeof workspaceId === 'string'
       ? deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId)
       : null;
     if (!workspace) throw new Error('Workspace is not registered');
     if (workspace.location.environmentId !== 'local') {
+      if (internal) throw new Error('Moving a conversation to another checkout is available for local workspaces only');
       return invokeRemoteSession(deps, workspace, requestedSession, fork, options);
     }
     const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
@@ -199,7 +249,16 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       const managedSource = accountService?.discoverySource('local');
       return managedSource ? discoverSessions(scanPath, { managed: managedSource }) : discoverSessions(scanPath);
     };
-    const target = plan ? await resolveSessionResumeTarget({
+    // A target must be a checkout of THIS workspace, whatever the caller meant to pass.
+    if (internal && (internal.targetContext.workspaceId !== workspace.workspaceId
+      || internal.targetContext.environmentId !== workspace.location.environmentId)) {
+      throw new Error('The target checkout does not belong to this workspace');
+    }
+    // An internal request carries main's own routing decision (the checkout the lifecycle transaction
+    // chose); the recorded directory of the conversation does not get a say.
+    const target = internal ? {
+      kind: 'launch' as const, target: internal.targetContext.id === mainContext?.id ? 'main' as const : 'worktree' as const, context: internal.targetContext,
+    } : plan ? await resolveSessionResumeTarget({
       registry, workspace, plan, harness: session.harness, cwd: sessionPosixCwd, mainContext,
       listWorktrees: deps.listWorktrees ? () => deps.listWorktrees!(workspaceId) : undefined,
       recreateWorktree: deps.recreateWorktree ? (branch) => deps.recreateWorktree!(workspaceId, branch) : undefined,
@@ -233,33 +292,35 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     };
 
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const { command: sessionCommand, args: baseArgs } = buildSessionLaunch(nativeSession, fork ?? false, userFlags);
+    const { command: sessionCommand, args: builtArgs } = buildSessionLaunch(nativeSession, fork ?? false, userFlags);
+    // A Clanker-authoritative move names its target explicitly when the harness has an option for it,
+    // from the checkout context main chose (never from the caller, the renderer or the model). An
+    // ordinary history resume has no `internal` request and keeps exactly the arguments it always had.
+    const baseArgs = internal ? (findHarnessProvider(session.harness)?.checkoutRehome?.withTargetDirectory?.(builtArgs, launchRoot) ?? builtArgs) : builtArgs;
     const harnessEnv = accountBinding.mergeEnvironment(harnessConfig.env ?? {});
-    let spawnArgs = baseArgs;
-    let attentionEnv: Record<string, string> = {};
-    let attentionCommand: string | undefined;
-    let preparedAttention: PreparedLocalAttention | null = null;
+    // Same coordinator as an ordinary launch: attention first, then the optional agent bridge.
+    const steps: LaunchAttachmentStep[] = [];
     if (agentAttentionBroker) {
-      try {
-        const files = ensureAttentionAdapterFiles();
-        const rootSessionId = trustedRootSessionId(session.harness, validatedSession, fork === true);
-        if (attentionEnabled) {
-          preparedAttention = prepareLocalAttention(session.harness, {
-            terminalId: id, args: baseArgs, env: { ...process.env, ...harnessEnv }, files,
-            platform: process.platform, rootSessionId,
-          }) ?? null;
-        }
-        attentionEnv = await agentAttentionBroker.register(id, session.harness, { rootSessionId, ...attentionSourceOptions(session.harness) });
-        attentionCommand = files.command;
-        if (preparedAttention) {
-          attentionEnv = { ...attentionEnv, ...preparedAttention.env };
-          spawnArgs = preparedAttention.args;
-        }
-      } catch {
-        disposeAttentionSafely(preparedAttention);
-        agentAttentionBroker.release(id);
-      }
+      steps.push(attentionLaunchStep({
+        broker: agentAttentionBroker, harness: session.harness, terminalId: id, enabled: attentionEnabled,
+        rootSessionId: trustedRootSessionId(session.harness, validatedSession, fork === true),
+      }));
     }
+    if (deps.agentBridge && harnessDefaults[session.harness]?.agentBridgeEnabled === true && launchContext) {
+      steps.push(agentBridgeLaunchStep({
+        service: deps.agentBridge, harness: session.harness,
+        grants: ({ state, bridgeAvailable }) => ({ checkoutRehoming: grantsCheckoutRehoming(session.harness, { nativeAttentionAttached: state.provided.has(NATIVE_ATTENTION_ATTACHED), bridgeAvailable }) }),
+        identity: {
+          terminalId: id, workspaceId: workspace.workspaceId, environmentId: workspace.location.environmentId,
+          checkoutContextId: launchContext.id, harnessId: session.harness,
+        },
+      }));
+    }
+    const attachments = await prepareLaunchAttachments({ args: baseArgs, env: { ...process.env, ...harnessEnv } }, steps);
+    const spawnArgs = attachments.args;
+    // The terminal's cleanup keeps only the disposer: `attachments.env` holds the launch credentials and
+    // must not outlive spawning.
+    const disposeAttachments = attachments.dispose;
     try {
       // Never a directory outside the root being launched into: a session whose recorded cwd is not
       // inside it (or no longer exists) starts at that root.
@@ -275,10 +336,9 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       const userShell = defaultShell();
 
       const env: { [key: string]: string } = {
-        ...withoutAttentionEnvironment(process.env),
-        ...withoutAttentionEnvironment(harnessEnv),
-        ...attentionEnv,
-        ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
+        ...withoutAgentBridgeEnvironment(withoutAttentionEnvironment(process.env)),
+        ...withoutAgentBridgeEnvironment(withoutAttentionEnvironment(harnessEnv)),
+        ...attachments.env,
         CLANKER_GRID_FALLBACK_SHELL: userShell,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
@@ -310,10 +370,11 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       // Main's own record of ownership: an agent's reported location is resolved against it (agentLocation.ts).
       workspaceId: workspace.workspaceId,
       checkoutContextId: launchContext?.id,
-      onExit: () => {
-        disposeAttentionSafely(preparedAttention);
-        agentAttentionBroker?.release(id);
-      },
+      onExit: internal?.onExit
+        ? async () => { try { await disposeAttachments(); } finally { internal.onExit?.(); } }
+        : disposeAttachments,
+      ...(internal?.onOutput ? { onOutput: internal.onOutput } : {}),
+      ...(internal?.startupBufferLimit ? { startupBufferLimit: internal.startupBufferLimit } : {}),
       });
       return {
         ...result, harnessId: session.harness, attentionEnabled, checkoutContextId: launchContext?.id,
@@ -323,9 +384,27 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
         ...(resumeNotice ? { resumeNotice } : {}),
       };
     } catch (error) {
-      disposeAttentionSafely(preparedAttention);
-      agentAttentionBroker?.release(id);
+      await attachments.dispose();
       throw error;
     }
-  });
+  };
+
+  ipcMain.handle(SESSION_INVOKE, (_, workspaceId: string, requestedSession: HarnessSession, fork?: boolean, options?: SessionInvokeOptions) =>
+    invokeSession(workspaceId, requestedSession, fork, options));
+
+  return {
+    async findSession(workspaceId, harness, sessionId) {
+      const workspace = deps.getWorkspaceRegistry?.()?.getWorkspace(workspaceId);
+      if (!workspace || workspace.location.environmentId !== 'local') return null;
+      // Fresh, never cached: this is about a conversation that is running right now.
+      const found = await discoverLocalSessions(workspace, await loadPlan(workspaceId, workspace), true);
+      return found.find((entry) => entry.harness === harness && entry.id === sessionId) ?? null;
+    },
+    async resumeInCheckout(workspaceId, session, request) {
+      const launched = await invokeSession(workspaceId, session, false, undefined, request);
+      // An internal request replaces the routing decision, so it never yields a recreate offer.
+      if (!('id' in launched)) throw new Error('The conversation could not be resumed in the requested checkout');
+      return launched;
+    },
+  };
 }

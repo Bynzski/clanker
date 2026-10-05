@@ -1,5 +1,8 @@
-import { disposeAttentionSafely } from '../harnesses/localAttention';
-import type { PreparedLocalAttention } from '../harnesses/types';
+import { prepareLaunchAttachments, type LaunchAttachmentStep, type PreparedLaunchAttachments } from '../launchAttachments';
+import { attentionLaunchStep, NATIVE_ATTENTION_ATTACHED } from '../attentionLaunchStep';
+import { retireTerminal } from '../terminalRetirement';
+import { grantsCheckoutRehoming } from '../isolatedCheckout/rehomeSupport';
+import { agentBridgeLaunchStep, withoutAgentBridgeEnvironment, type AgentBridgeService } from '../agentBridge/service';
 import { findHarnessProvider } from '../harnesses/registry';
 import { prepareHarnessAccountContext, type HarnessAccountService } from '../accounts/harnessAccountService';
 /**
@@ -44,9 +47,7 @@ import { isPathContained } from '../remote/sshEnvironment';
 import { createRemoteAttentionFilter } from '../remote/remoteAttentionTransport';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import {
-  ensureAttentionAdapterFiles,
   attentionSourceOptions,
-  prepareLocalAttention,
   withoutAttentionEnvironment,
 } from '../agentAttentionAdapters';
 
@@ -62,6 +63,8 @@ interface Terminal {
   environmentId?: string;
   harnessId?: string;
   releaseResources?: () => Promise<void>;
+  /** Settles when the PTY process has REALLY exited (node-pty `onExit`); never because the record was removed. */
+  exited?: Promise<void>;
   /**
    * between PTY spawn and renderer confirming xterm is ready.
    * Cleared after flush on TERMINAL_READY.
@@ -86,6 +89,8 @@ interface RegisterTerminalIpcDeps {
   ensureHarnessWrapperScript?: () => string | null;
   getAppShuttingDown?: () => boolean;
   agentAttentionBroker?: AgentAttentionBroker;
+  /** Optional: without it no launch attaches the Clanker MCP bridge. */
+  agentBridge?: AgentBridgeService;
   createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
   /** Optional: without it (or without managed accounts) every launch uses the native account. */
   getHarnessAccountService?: () => HarnessAccountService | undefined;
@@ -286,46 +291,46 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     let harnessArgs = harnessConfig
       ? buildHarnessSpawnArgs(harnessConfig, effectiveModel, userFlags, findHarnessProvider(harness)?.launch.modelArgs)
       : [];
-    let attentionEnv: Record<string, string> = {};
-    let attentionCommand: string | undefined;
-    let preparedAttention: PreparedLocalAttention | null = null;
+    // Everything a launch acquires (attention, the agent bridge) goes through one coordinator: it
+    // composes argv/env deterministically and gives every resource back on a failed launch or exit.
+    const steps: LaunchAttachmentStep[] = [];
     if (harnessConfig && harness && agentAttentionBroker) {
-      try {
-        const files = ensureAttentionAdapterFiles();
-        if (attentionEnabled) {
-          preparedAttention = prepareLocalAttention(harness, {
-            terminalId: id, args: harnessArgs, env: { ...process.env, ...harnessEnv }, files,
-            platform: process.platform,
-          }) ?? null;
-        }
-        attentionEnv = await agentAttentionBroker.register(id, harness, attentionSourceOptions(harness));
-        attentionCommand = files.command;
-        if (preparedAttention) {
-          attentionEnv = { ...attentionEnv, ...preparedAttention.env };
-          harnessArgs = preparedAttention.args;
-        }
-      } catch {
-        disposeAttentionSafely(preparedAttention);
-        agentAttentionBroker.release(id);
-      }
+      steps.push(attentionLaunchStep({ broker: agentAttentionBroker, harness, terminalId: id, enabled: attentionEnabled }));
     }
+    // Local, registered launches only: the credential is bound to main's own record of this launch.
+    if (harnessConfig && harness && deps.agentBridge && harnessDefaults[harness]?.agentBridgeEnabled === true
+      && resolvedWorkspace && checkoutContext && !isRemote) {
+      steps.push(agentBridgeLaunchStep({
+        service: deps.agentBridge, harness,
+        grants: ({ state, bridgeAvailable }) => ({ checkoutRehoming: grantsCheckoutRehoming(harness, { nativeAttentionAttached: state.provided.has(NATIVE_ATTENTION_ATTACHED), bridgeAvailable }) }),
+        identity: {
+          terminalId: id, workspaceId: resolvedWorkspace.workspaceId, environmentId: effectiveEnvironmentId,
+          checkoutContextId: checkoutContext.id, harnessId: harness,
+        },
+      }));
+    }
+    const attachments: PreparedLaunchAttachments = await prepareLaunchAttachments(
+      { args: harnessArgs, env: { ...process.env, ...harnessEnv } }, steps);
+    harnessArgs = attachments.args;
+    // The terminal's cleanup keeps only the disposer: `attachments.env` holds the launch credentials and
+    // must not outlive spawning.
+    const disposeAttachments = attachments.dispose;
     try {
       const wrapperPath = harnessConfig ? ensureHarnessWrapperScriptPath() : null;
       // PATH is case-insensitive on Windows: keep one spelling so the resolved executable is the one
       // the child will see.
-      const inheritedEnv = withoutAttentionEnvironment(process.env);
+      const inheritedEnv = withoutAgentBridgeEnvironment(withoutAttentionEnvironment(process.env));
       if (process.platform === 'win32') {
         for (const key of Object.keys(inheritedEnv)) if (key.toLowerCase() === 'path') delete inheritedEnv[key];
       }
       const env: { [key: string]: string } = {
         ...inheritedEnv,
         PATH: prependUserCliBinsToPath(process.env.PATH ?? ''),
-        ...withoutAttentionEnvironment(harnessEnv),
-        ...attentionEnv,
+        ...withoutAgentBridgeEnvironment(withoutAttentionEnvironment(harnessEnv)),
+        ...attachments.env,
         // Hermes' TUI starts a backend child process; bridge its documented
         // process-level bypass explicitly instead of relying on CLI propagation.
         ...(findHarnessProvider(harness)?.launch.localEnvironment?.(userFlags) ?? {}),
-        ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
         ...(harnessConfig ? { CLANKER_GRID_FALLBACK_SHELL: userShell } : {}),
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
@@ -376,10 +381,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       // location is resolved against (see agentLocation.ts).
       workspaceId: resolvedWorkspace?.workspaceId,
       checkoutContextId: checkoutContext?.id,
-      onExit: () => {
-        disposeAttentionSafely(preparedAttention);
-        agentAttentionBroker?.release(id);
-      },
+      onExit: disposeAttachments,
       });
       return {
         ...result,
@@ -388,8 +390,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
         checkoutContextId: checkoutContext?.id,
       };
     } catch (error) {
-      disposeAttentionSafely(preparedAttention);
-      agentAttentionBroker?.release(id);
+      await attachments.dispose();
       throw error;
     }
   };
@@ -569,36 +570,17 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     if (!isNonEmptyString(id)) {
       return fail('Invalid terminal id');
     }
-    const terminal = terminals.get(id);
-    if (terminal) {
-      agentAttentionBroker?.release(id);
-      void terminal.releaseResources?.();
-      try {
-        terminal.pty.kill();
-      } catch {
-        // On Windows, node-pty may warn about SIGTERM before falling back
-        // to TerminateProcess. Suppress the noise — the process is gone.
-      }
-      terminals.delete(id);
-      return ok();
-    }
-    return ok(); // no-op for missing terminal
+    // A missing terminal is a no-op.
+    void retireTerminal({ terminals, releaseAttention: (terminalId) => agentAttentionBroker?.release(terminalId) }, id);
+    return ok();
   });
 
   ipcMain.handle(TERMINAL_CLEANUP_WORKSPACE, (_, ids: string[]) => {
     const terminals = getTerminals();
     let killed = 0;
     for (const id of ids) {
-      const terminal = terminals.get(id);
-      if (terminal) {
-        agentAttentionBroker?.release(id);
-        void terminal.releaseResources?.();
-        try {
-          terminal.pty.kill();
-        } catch {
-          // On Windows, node-pty may warn about SIGTERM — suppress.
-        }
-        terminals.delete(id);
+      if (terminals.has(id)) {
+        void retireTerminal({ terminals, releaseAttention: (terminalId) => agentAttentionBroker?.release(terminalId) }, id);
         killed++;
       }
     }

@@ -24,6 +24,8 @@ interface HarnessDefaultsSectionProps {
   handleSetHarnessVisible: (harnessId: string, visible: boolean) => Promise<void>;
   handleSetHarnessAttention: (harnessId: string, enabled: boolean) => Promise<void>;
   handleSetHarnessUsageVisible: (harnessId: string, visible: boolean) => Promise<void>;
+  /** Opt-in Clanker MCP bridge for local launches; the row only exists for harnesses that support it. */
+  handleSetHarnessAgentBridge?: (harnessId: string, enabled: boolean) => Promise<void>;
   handleSetDefaultModel: (harnessId: string, modelId: string) => Promise<void>;
   handleToggleFavorite: (harnessId: string, modelId: string) => Promise<void>;
   /** Environment whose accounts are managed here; defaults to the local machine. */
@@ -52,6 +54,7 @@ export default function HarnessDefaultsSection({
   handleSetHarnessVisible,
   handleSetHarnessAttention,
   handleSetHarnessUsageVisible,
+  handleSetHarnessAgentBridge,
   handleSetDefaultModel,
   handleToggleFavorite,
   accountEnvironmentId,
@@ -140,6 +143,18 @@ export default function HarnessDefaultsSection({
                     aria-label={`Agent attention for ${option?.label ?? harnessId}`}
                   />
                 </label>
+                {handleSetHarnessAgentBridge && 'agentBridge' in HARNESS_DESCRIPTORS[harnessId as keyof typeof HARNESS_DESCRIPTORS] && (
+                  <label className="harness-defaults-attention-toggle">
+                    <span className="harness-defaults-field-label">Clanker bridge (MCP)</span>
+                    <input
+                      type="checkbox"
+                      checked={defaults?.agentBridgeEnabled === true}
+                      title="Lets this agent read basic context about its Clanker workspace. Local launches only; your own MCP configuration is not changed."
+                      onChange={(event) => void handleSetHarnessAgentBridge(harnessId, event.target.checked)}
+                      aria-label={`Clanker bridge for ${option?.label ?? harnessId}`}
+                    />
+                  </label>
+                )}
                 {'usage' in HARNESS_DESCRIPTORS[harnessId as keyof typeof HARNESS_DESCRIPTORS] && (
                   <label className="harness-defaults-attention-toggle">
                     <span className="harness-defaults-field-label">Show in Usage</span>

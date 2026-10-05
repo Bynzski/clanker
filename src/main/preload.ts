@@ -13,6 +13,7 @@ import type { HarnessSession, SessionInvokeOptions } from '../shared/types/sessi
 import type { HarnessUsageRequest } from '../shared/types/harnessUsage';
 import type { HarnessAccountAuthEvent } from '../shared/types/harnessAccounts';
 import type { AgentAttentionChange } from '../shared/types/agentAttention';
+import type { AgentCheckoutTransitionEvent } from '../shared/types/checkoutTransition';
 import type { RemotePreviewRequest, RemotePreviewUpdate, RemotePreviewWatchRequest } from '../shared/types/remotePreview';
 import type { RemoteFileWatchRequest, RemoteFilesChangedEvent } from '../shared/types/remoteFileWatch';
 import type { ThemeId } from '../shared/types/theme';
@@ -73,6 +74,7 @@ import {
   TERMINAL_DATA,
   TERMINAL_EXIT,
   AGENT_ATTENTION_CHANGED,
+  AGENT_CHECKOUT_TRANSITION,
   GET_AGENT_ATTENTION_SNAPSHOTS,
   HARNESS_ACCOUNTS_LIST,
   HARNESS_ACCOUNTS_SELECT,
@@ -286,6 +288,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event: IpcRendererEvent, data: AgentAttentionChange) => callback(data);
     ipcRenderer.on(AGENT_ATTENTION_CHANGED, handler);
     return () => ipcRenderer.removeListener(AGENT_ATTENTION_CHANGED, handler);
+  },
+  onAgentCheckoutTransition: (callback: (data: AgentCheckoutTransitionEvent) => void) => {
+    const handler = (_event: IpcRendererEvent, data: AgentCheckoutTransitionEvent) => callback(data);
+    ipcRenderer.on(AGENT_CHECKOUT_TRANSITION, handler);
+    return () => ipcRenderer.removeListener(AGENT_CHECKOUT_TRANSITION, handler);
   },
   onTerminalResized: (callback: (data: { id: string; cols: number; rows: number }) => void) => {
     const handler = (_event: IpcRendererEvent, data: { id: string; cols: number; rows: number }) => callback(data);

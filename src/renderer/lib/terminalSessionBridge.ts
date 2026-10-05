@@ -1,6 +1,7 @@
 import { writeCachedTerminalData, writeCachedTerminalExit } from '../components/TerminalPane';
 import { useAgentAttentionStore } from '../store/agentAttentionStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { applyAgentCheckoutTransition } from './agentCheckoutTransition';
 
 /**
  * Keep terminal output flowing even when the owning workspace is unmounted.
@@ -23,6 +24,12 @@ export function startTerminalSessionBridge(): () => void {
       writeCachedTerminalExit(id, exitCode);
       useAgentAttentionStore.getState().retire(id);
     }));
+  }
+
+  // Main moved a conversation to another checkout: the pane adopts its replacement (this arrives before
+  // the old terminal's exit, so the exit is for a terminal the store no longer has).
+  if (typeof window.electronAPI?.onAgentCheckoutTransition === 'function') {
+    disposers.push(window.electronAPI.onAgentCheckoutTransition(applyAgentCheckoutTransition));
   }
 
   // Main owns the lifecycle. Subscribe first, then hydrate: revision ordering in the store makes

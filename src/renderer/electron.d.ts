@@ -54,6 +54,7 @@ import type { HarnessUsageRequest, HarnessUsageResponse } from '../../shared/typ
 import type { HarnessAccountAuthEvent, HarnessAccountAuthStart, HarnessAccountList } from '../../shared/types/harnessAccounts';
 import type { BrowserHistoryEntry } from '../../shared/types/browserHistory';
 import type { AgentAttentionChange, AgentAttentionSnapshot } from '../../shared/types/agentAttention';
+import type { AgentCheckoutTransitionEvent } from '../../shared/types/checkoutTransition';
 import type { ThemeId } from '../../shared/types/theme';
 import type { WorkspaceNavigationMode } from '../../shared/types/workspaceNavigation';
 import type { KeybindingOverrides, BrowserKeybindingCommandPayload } from '../../shared/keybindings';
@@ -140,6 +141,7 @@ export interface ElectronAPI {
   onTerminalExit: (callback: (data: { id: string; exitCode: number }) => void) => () => void;
   getAgentAttentionSnapshots: () => Promise<AgentAttentionSnapshot[]>;
   onAgentAttentionChanged: (callback: (data: AgentAttentionChange) => void) => () => void;
+  onAgentCheckoutTransition: (callback: (data: AgentCheckoutTransitionEvent) => void) => () => void;
   /** Phase 1 resize confirmation: main sends confirmed PTY geometry after resize. */
   onTerminalResized: (callback: (data: { id: string; cols: number; rows: number }) => void) => () => void;
   /** Phase 1 startup fix: renderer signals xterm is ready to receive data. Triggers flush of startup buffer. */

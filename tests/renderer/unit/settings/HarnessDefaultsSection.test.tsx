@@ -26,6 +26,7 @@ function renderSettings({ harness = 'hermes', model = '', options = catalog, fav
     handleSetHarnessVisible: vi.fn().mockResolvedValue(undefined),
     handleSetHarnessAttention: vi.fn().mockResolvedValue(undefined),
     handleSetHarnessUsageVisible: vi.fn().mockResolvedValue(undefined),
+    handleSetHarnessAgentBridge: vi.fn().mockResolvedValue(undefined),
     handleSetDefaultModel: vi.fn().mockResolvedValue(undefined),
     handleToggleFavorite: vi.fn().mockResolvedValue(undefined),
   };
@@ -196,6 +197,21 @@ describe('searchable harness default settings', () => {
     expect(checkbox).toBeEnabled();
     fireEvent.click(checkbox);
     expect(props.handleSetHarnessAttention).toHaveBeenCalledWith('agy', true);
+  });
+});
+
+describe('Clanker bridge setting', () => {
+  it.each(['claude', 'codex', 'opencode'])('offers the opt-in for %s, off by default, and persists the choice', (harness) => {
+    const { props } = renderSettings({ harness, options: models });
+    const checkbox = screen.getByRole('checkbox', { name: /Clanker bridge for/ });
+    expect(checkbox).not.toBeChecked();
+    fireEvent.click(checkbox);
+    expect(props.handleSetHarnessAgentBridge).toHaveBeenCalledWith(harness, true);
+  });
+
+  it.each(['pi', 'omp', 'hermes', 'agy'])('has no bridge row for %s, which cannot attach it', (harness) => {
+    renderSettings({ harness, options: models });
+    expect(screen.queryByRole('checkbox', { name: /Clanker bridge/ })).not.toBeInTheDocument();
   });
 });
 

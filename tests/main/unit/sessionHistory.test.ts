@@ -26,6 +26,7 @@ const { mockHomedir } = vi.hoisted(() => ({ mockHomedir: vi.fn() }));
 // Platform-neutral path constants — built from path.join so tests run on
 // Linux, macOS, and Windows with native separators.
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 const TEST_HOME = path.join(process.platform === 'win32' ? 'C:\\Users\\testuser' : '/tmp', 'testuser');
 const TEST_WORKSPACE = path.join(TEST_HOME, 'project');
@@ -643,6 +644,39 @@ describe('discoverSessions — opencode', () => {
     expect(opencodeSessions[0].title).toBe('Image fix');
     expect(opencodeSessions[0].cwd).toBe(TEST_WORKSPACE_POSIX);
     expect(opencodeSessions[0].timestamp).toBe(1700000000000);
+  });
+
+  it('runs `opencode session list` inside the workspace, because OpenCode lists only the project of its working directory', async () => {
+    const workspace = process.cwd(); // a directory that really exists
+    {
+      const seen: Array<{ cwd?: string }> = [];
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], opts: { cwd?: string }, cb: (...args: unknown[]) => void) => {
+        seen.push(opts);
+        cb(null, JSON.stringify([{ id: 'ses_001', title: 'x', directory: workspace, updated: 1 }]), '');
+      });
+      const sessions = await discoverSessions(workspace);
+      expect(sessions.filter((entry) => entry.harness === 'opencode')).toHaveLength(1);
+      expect(seen.some((opts) => opts.cwd === workspace)).toBe(true);
+    }
+  });
+
+  it('picks the directory OpenCode lists from: a checkout as is, a worktree container through its first checkout, else where asked', async () => {
+    const { openCodeListingDirectory } = await import('../../../src/main/harnesses/opencode/sessions');
+    const base = path.join(process.cwd(), 'node_modules', '.cache', `oc-listing-${process.pid}`);
+    const container = path.join(base, 'repo-worktrees');
+    const tree = path.join(container, 'feature');
+    const plain = path.join(base, 'plain');
+    fs.mkdirSync(path.join(tree), { recursive: true });
+    fs.mkdirSync(path.join(base, 'repo', '.git'), { recursive: true });
+    fs.mkdirSync(plain, { recursive: true });
+    fs.writeFileSync(path.join(tree, '.git'), 'gitdir: x');
+    try {
+      expect(openCodeListingDirectory(path.join(base, 'repo'))).toBe(path.join(base, 'repo'));
+      expect(openCodeListingDirectory(container)).toBe(tree);
+      expect(openCodeListingDirectory(plain)).toBe(plain);
+      expect(openCodeListingDirectory(path.join(base, 'missing'))).toBeUndefined();
+      expect(openCodeListingDirectory('')).toBeUndefined();
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
   });
 
   it('handles JSONL output format', async () => {

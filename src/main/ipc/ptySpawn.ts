@@ -40,6 +40,13 @@ export interface SpawnPtyOptions {
   recipeCommandStartup?: RecipeCommandStartup;
   onExit?: (id: string) => void | Promise<void>;
   onOutput?: (data: string) => void;
+  /**
+   * Bound on output held until the renderer reports its terminal ready. The default fits an ordinary
+   * launch, whose pane exists before the process starts. A replacement process starts before its pane
+   * adopts it and replays a whole conversation, so it asks for more; output past the bound is
+   * forwarded as before (a later resize makes the TUI redraw).
+   */
+  startupBufferLimit?: { bytes: number; chunks: number };
   filterData?: (data: string) => string;
 }
 
@@ -59,6 +66,8 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     recipeCommandStartup,
     onExit,
   } = opts;
+
+  const startupLimit = opts.startupBufferLimit ?? { bytes: 16 * 1024, chunks: 100 };
 
   const ptyProcess = pty.spawn(spawnCmd, spawnArgs, {
     name: 'xterm-256color',
@@ -82,6 +91,10 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     initialCommand,
     recipeCommandStartup,
   };
+  // The process' real exit, owned by the record: lifecycle moves that must not overlap a live process wait on
+  // this, never on the record having left the terminal table (which retirement does immediately).
+  let markExited!: () => void;
+  terminal.exited = new Promise<void>((resolve) => { markExited = resolve; });
   let cleanup: Promise<void> | undefined;
   terminal.releaseResources = () => {
     if (!cleanup) {
@@ -115,7 +128,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
 
     if (!term.startupBufferReady) {
       const totalSize = term.startupBuffer.reduce((acc, chunk) => acc + chunk.length, 0);
-      if (totalSize < 16 * 1024 && term.startupBuffer.length < 100) {
+      if (totalSize < startupLimit.bytes && term.startupBuffer.length < startupLimit.chunks) {
         term.startupBuffer.push(data);
         return;
       }
@@ -127,6 +140,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
   });
 
   ptyProcess.onExit(({ exitCode }) => {
+    markExited();
     terminal.recipeCommandStartup?.onExit(exitCode);
     void terminal.releaseResources?.();
     if (getIsShuttingDown()) return;

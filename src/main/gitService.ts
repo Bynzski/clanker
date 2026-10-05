@@ -468,14 +468,21 @@ export class GitService {
     });
   }
 
-  async inspectWorktree(workspacePath: string, worktreePath: string, openWorkspacePaths: string[] = []): Promise<GitWorktreeInspectionResult> {
+  /**
+   * `skipOpenCheck` is for a preflight that only asks whether the checkout holds uncommitted, untracked
+   * or ignored files, from a caller that knows its own terminal is still inside it. Removal never skips
+   * it: `removeWorktree` always runs the full inspection.
+   */
+  async inspectWorktree(
+    workspacePath: string, worktreePath: string, openWorkspacePaths: string[] = [], options: { skipOpenCheck?: boolean } = {},
+  ): Promise<GitWorktreeInspectionResult> {
     const listed = await this.listWorktrees(workspacePath);
     if (!listed.success) return { success: false, error: listed.error };
     const worktree = listed.worktrees.find((entry) => this.sameWorktreePath(entry.path, worktreePath));
     if (!worktree || worktree.isMain) return { success: false, error: 'This is not a linked worktree' };
     if (worktree.isPrunable || worktree.isLocked) return { success: false, error: 'Worktree is missing or locked' };
     try {
-      if (this.isOpenWorkspace(worktree.path, openWorkspacePaths)) {
+      if (options.skipOpenCheck !== true && this.isOpenWorkspace(worktree.path, openWorkspacePaths)) {
         return { success: false, error: 'Close this workspace tab before removing its worktree' };
       }
       const { stdout } = await this.execGit(worktree.path, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored']);
@@ -538,6 +545,35 @@ export class GitService {
     } finally {
       this.worktreesBeingRemoved.delete(removalKey);
     }
+  }
+
+  /**
+   * Drops Git's record of ONE linked worktree whose directory is already gone, leaving every other
+   * stale record, every branch and every directory alone. Git cannot delete a branch while a stale
+   * record still names it as checked out, so this is what makes cleanup of a manually deleted checkout
+   * possible without a repository-wide prune. The target must be a listed, linked, prunable and
+   * unlocked entry; Git's own listed path is what is removed, never the caller's string.
+   */
+  async forgetMissingWorktree(workspacePath: string, worktreePath: string): Promise<{ success: boolean; error?: string }> {
+    const listed = await this.listWorktrees(workspacePath);
+    if (!listed.success) return { success: false, error: listed.error };
+    const isRemote = (this.getScopedWorkspaceIdentity()?.environmentId ?? 'local') !== 'local';
+    const target = listed.worktrees.find((entry) => isRemote ? entry.path === worktreePath : this.sameWorktreePath(entry.path, worktreePath));
+    if (!target || target.isMain) return { success: false, error: 'This is not a linked worktree' };
+    // Git never lists a locked worktree as prunable, so the lock is the more precise reason to refuse.
+    if (target.isLocked) return { success: false, error: 'This worktree is locked' };
+    if (!target.isPrunable) return { success: false, error: 'This worktree\'s directory still exists' };
+    try {
+      await this.execGit(workspacePath, ['worktree', 'remove', target.path], 60000);
+    } catch (error) {
+      return { success: false, error: this.getGitErrorMessage(error, 'Failed to forget the missing worktree') };
+    }
+    const after = await this.listWorktrees(workspacePath);
+    if (!after.success) return { success: false, error: after.error };
+    if (after.worktrees.some((entry) => entry.path === target.path)) {
+      return { success: false, error: 'Git still lists the missing worktree; prune it from the Git menu' };
+    }
+    return { success: true };
   }
 
   private isBranchNotFullyMerged(error: unknown): boolean {

@@ -64,6 +64,8 @@ export function validateHarnessDefaultsMap(
       flags: typeof e.flags === 'string' ? e.flags : '',
       visible: typeof e.visible === 'boolean' ? e.visible : true,
       attentionEnabled: e.attentionEnabled === true,
+      // Opt-in and sparse: absent means off, so existing stored shapes are unchanged.
+      ...(e.agentBridgeEnabled === true ? { agentBridgeEnabled: true } : {}),
       // Legacy or malformed values keep the previous behavior: shown.
       usageVisible: typeof e.usageVisible === 'boolean' ? e.usageVisible : true,
     };

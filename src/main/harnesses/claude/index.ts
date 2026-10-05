@@ -5,6 +5,8 @@ import { remoteSessions } from './remoteSessions';
 import { buildInvocation } from './invocation';
 import { claudeUsage } from './usage';
 import { claudeAccounts } from './accounts';
+import { agentBridge } from './agentBridge';
+import { checkoutRehome } from './rehome';
 import { defineHarness, type HarnessProvider } from '../types';
 
 export const claudeProvider = defineHarness({
@@ -20,6 +22,8 @@ export const claudeProvider = defineHarness({
   },
   // Claude may assign a new session ID on resume, so a resumed ID is never pre-seeded.
   attention: { interpreter: INTERPRETER, authority: 'partial', prepareResources, local, remote },
+  agentBridge,
+  checkoutRehome,
   usage: claudeUsage,
   accounts: claudeAccounts,
   launch: { command: 'claude', args: [], modelArg: '--model' },

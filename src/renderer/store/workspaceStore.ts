@@ -520,6 +520,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return nextState;
   }),
 
+  replaceTerminal: (workspaceId, previousTerminalId, replacement) => {
+    const workspace = findWorkspaceById(get().workspaces, workspaceId);
+    if (!workspace) return false;
+    const previous = workspace.terminals.find((terminal) => terminal.id === previousTerminalId);
+    const pane = workspace.panes.find((entry) => entry.terminalId === previousTerminalId);
+    if (!previous || !pane) return false;
+    if (replacement.workspaceId !== undefined && replacement.workspaceId !== workspaceId) return false;
+    if (replacement.id !== previousTerminalId && workspace.terminals.some((terminal) => terminal.id === replacement.id)) return false;
+    const adopted = bindTerminalToCheckoutContext(
+      { ...replacement, workspaceId, ...(previous.displayName ? { displayName: previous.displayName } : {}) },
+      workspaceId,
+    );
+    set((state) => patchWorkspaceById(state, workspaceId, (entry) => ({
+      ...entry,
+      terminals: entry.terminals.map((terminal) => (terminal.id === previousTerminalId ? adopted : terminal)),
+      panes: entry.panes.map((candidate) => (candidate.id === pane.id ? { ...candidate, terminalId: adopted.id } : candidate)),
+      activeTerminalId: entry.activeTerminalId === previousTerminalId ? adopted.id : entry.activeTerminalId,
+    })));
+    return true;
+  },
+
   setActiveTerminal: (id) => set((state) => {
     const nextState = {
       activeTerminalId: id,
