@@ -72,9 +72,9 @@ describe('which harnesses can be re-homed (derived from provider evidence, never
 
   it.each([
     ['pi', 'it refuses to resume when the stored directory does not exist'],
-    ['agy', 'resume-from-another-directory is unproven and it has no bridge'],
-    ['hermes', 'it has no resumable history and no bridge'],
-    ['omp', 'it resumes from another directory but has no bridge to ask through'],
+    ['agy', 'resume-from-another-directory is unproven and it declares no checkoutRehome strategy'],
+    ['hermes', 'it has no resumable history and declares no checkoutRehome strategy'],
+    ['omp', 'it resumes from another directory but declares no checkoutRehome strategy'],
   ])('%s cannot be re-homed: %s', (harness) => {
     expect(canSafelyRehomeConversation(harness)).toBe(false);
   });
@@ -262,8 +262,9 @@ describe('the provider-owned re-home strategy', () => {
     expect(canSafelyRehomeConversation('opencode')).toBe(true);
   });
 
-  it('OMP proves resume from another directory yet is not re-homeable (it has no bridge to ask through)', () => {
+  it('OMP can resume from another directory, but that alone does not prove live checkout re-homing: without an explicit checkoutRehome strategy it stays not re-homeable', () => {
     expect(findHarnessProvider('omp')?.sessions?.resumesWithoutOriginalDirectory).toBe(true);
+    expect(findHarnessProvider('omp')?.checkoutRehome).toBeUndefined();
     expect(canSafelyRehomeConversation('omp')).toBe(false);
   });
 });
