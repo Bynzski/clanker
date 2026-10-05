@@ -160,6 +160,7 @@ function build(bridgeOptions: { toolTimeoutMs?: number } = {}) {
     reconcileCheckoutContexts: async () => ({ success: true }),
   };
   const lifecycle = new IsolatedCheckoutService({
+    isAttentionEnabled: () => true,
     getRegistry: () => registry as never, getTerminals: () => terminals as never, attention: broker, git: git as never,
     getSessions: () => sessions,
     releaseCheckoutContext: (workspaceId, checkoutContextId) => releaseCheckoutContext({ registry: registry as never, terminals: terminals.values() as never, workspaceId, checkoutContextId }),

@@ -6,9 +6,10 @@ import * as path from 'node:path';
 
 /** Native Codex lifecycle hooks. Legacy `notify` is deliberately unused: it can report
  * hidden auxiliary completions and carries no root/subagent distinction. */
-export const CODEX_HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PermissionRequest', 'PostToolUse', 'Stop', 'SubagentStop', 'Interrupt', 'SessionEnd'] as const;
+export const CODEX_HOOK_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PermissionRequest', 'PostToolUse', 'Stop', 'SubagentStop', 'Interrupt', 'SessionEnd', 'SessionStart'] as const;
 
 /** Provider-owned meaning of native hook events (fields per the Codex hooks source).
+ * - SessionStart binds root identity on startup/resume without declaring a turn.
  * - root identity `session_id`; turn identity `turn_id`; child scope: `SubagentStop` or `agent_id`.
  * - Settled: root `Stop`. User cancel: root `Interrupt` (`turn_interrupted`, never a completion).
  * - Input wait: `PermissionRequest` has `turn_id`, `tool_name`, `tool_input` and NO `tool_use_id`,
@@ -58,6 +59,8 @@ export default function interpret(input, hook, store) {
   const save = () => { if (current || hook === 'UserPromptSubmit') store.write(state); };
   const reset = () => store.write({ turn: undefined, calls: [], done: [], waits: [], seq: state.seq });
   switch (hook) {
+    case 'SessionStart':
+      return event('session_started', { cwd });
     case 'UserPromptSubmit':
       save();
       return event('turn_started', { turnId, cwd });

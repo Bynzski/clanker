@@ -348,6 +348,15 @@ path (`invokeRemoteSession`, from the host-rediscovered session) pass it to
 host configuration can use it (OpenCode). Forks, fresh launches, renderer-supplied
 IDs and providers whose resume may assign a new ID (Claude) start unbound.
 
+Codex also handles native `SessionStart` on startup/resume. It binds an unbound root
+without declaring a turn or completion, and never replaces an existing different root.
+After `SessionEnd` clears identity, a valid native session start or turn start restores
+it; no cached or model-provided ID is used for checkout lifecycle recovery. Missing
+identity errors distinguish disabled attention, a missing registration, a cleared
+binding and pending identification. For Codex, review Clanker hooks in `/hooks` and
+submit a prompt; if events remain unavailable, resume the conversation from History
+with attention enabled. Refusal preserves the checkout and branch.
+
 ### Authoritative events per provider
 
 Fields below are the native ones the adapter relies on (identity = which field proves
@@ -355,7 +364,7 @@ the root session; turn = the turn identity; child = how child scope is proven).
 
 | Provider | Root start (identity / turn) | Input wait / resolution | Completion (Ready) | Never completes / child scope | Session boundary |
 | --- | --- | --- | --- | --- | --- |
-| Codex | `UserPromptSubmit` (`session_id` / `turn_id`) | `PermissionRequest` (no `tool_use_id`) correlated with `PreToolUse`/`PostToolUse` calls (see below) | root `Stop`; root `Interrupt` ends the turn without a completion (`turn_interrupted`) | `SubagentStop`, events with `agent_id`, other threads, legacy `notify` | `SessionEnd` |
+| Codex | `SessionStart` (`session_id`, identity only); `UserPromptSubmit` (`session_id` / `turn_id`) | `PermissionRequest` (no `tool_use_id`) correlated with `PreToolUse`/`PostToolUse` calls (see below) | root `Stop`; root `Interrupt` ends the turn without a completion (`turn_interrupted`) | `SubagentStop`, events with `agent_id`, other threads, legacy `notify` | `SessionEnd` |
 | Claude | `UserPromptSubmit` (`session_id` / `prompt_id`) | `PermissionRequest` (no `tool_use_id`) = turn-level wait / `PostToolBatch` for the same prompt | root `Stop` (background tasks and crons do not hold the turn open), `StopFailure` = `turn_failed` (Failed, never Done) | events with `agent_id`; `Notification` is not used (no turn or request identity) | `SessionEnd` |
 | OpenCode | `session.status` busy of a verified top-level session (parentage from `client.session.get`, or the trusted resumed ID) / plugin epoch | `permission.asked`/`question.asked` (`id`) / `*.replied`, `question.rejected` (`requestID`) | verified-root `session.status` idle (the legacy `session.idle` duplicate is absorbed by the closed epoch) | sessions with a `parentID`; sessions with unknown parentage | `session.deleted` |
 | Pi | `agent_start` (`ctx.sessionManager` session ID / extension epoch) | not reported | `agent_settled` | `agent_end` and lower-level events | `session_shutdown` |

@@ -104,7 +104,7 @@ describe('agent attention launch adapters', () => {
     expect(result?.args[0]).toBe('codex');
     expect(result?.args.slice(-2)).toEqual(['resume', 'abc']);
     const overrides = result!.args.filter((arg) => arg !== '-c' && arg.startsWith('hooks.'));
-    expect(overrides.map((arg) => arg.split('=')[0])).toEqual(['hooks.UserPromptSubmit', 'hooks.PreToolUse', 'hooks.PermissionRequest', 'hooks.PostToolUse', 'hooks.Stop', 'hooks.SubagentStop', 'hooks.Interrupt', 'hooks.SessionEnd']);
+    expect(overrides.map((arg) => arg.split('=')[0])).toEqual(['hooks.UserPromptSubmit', 'hooks.PreToolUse', 'hooks.PermissionRequest', 'hooks.PostToolUse', 'hooks.Stop', 'hooks.SubagentStop', 'hooks.Interrupt', 'hooks.SessionEnd', 'hooks.SessionStart']);
     expect(result!.args.join(' ')).not.toContain('notify=');
     // The definition is identical for every launch (Codex hook trust is keyed by it); the launch
     // resources arrive through the environment.

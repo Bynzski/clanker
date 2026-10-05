@@ -41,12 +41,12 @@ export const CREATE_DESCRIPTION = 'Use this whenever you need to create or enter
   + 'Prefer this over `git worktree add`, Claude `EnterWorktree`, Codex `--worktree` or any other provider-native worktree creation, because '
   + 'Clanker must track the checkout and move this same conversation into it. Give it a new branch name; Clanker creates the worktree, '
   + 'then restarts this conversation inside it. After calling it, finish your reply without running more tools: the conversation continues '
-  + 'in the isolated checkout on its next turn. Use normal Git and GitHub tools for everything else.';
+  + 'in the isolated checkout on its next turn. Use normal Git and GitHub tools for everything else. Native conversation identification is required; for Codex, enable Clanker hooks in /hooks before requesting a move.';
 export const COMPLETE_DESCRIPTION = 'Use this after the work in an isolated checkout is merged or finished, whenever you would otherwise remove or leave that worktree. '
   + 'Prefer this over `git worktree remove`, Claude `ExitWorktree`, `git branch -d/-D` or any manual worktree or branch cleanup, because '
   + 'Clanker must move this same conversation back to the main checkout before it removes the isolated one. Pass deleteBranch to also delete '
   + 'the branch when Git considers it fully merged (it is never force-deleted). After calling it, finish your reply without running more '
-  + 'tools: the conversation continues in the main checkout on its next turn. Use normal Git and GitHub tools to commit, push, open and merge pull requests first.';
+  + 'tools: the conversation continues in the main checkout on its next turn. Use normal Git and GitHub tools to commit, push, open and merge pull requests first. Native conversation identification is required; for Codex, enable Clanker hooks in /hooks before requesting a move.';
 
 export function createCheckoutLifecycleCapabilities(port: AgentCheckoutLifecyclePort): AgentBridgeCapability[] {
   const run = (context: AgentBridgeCallContext) => ({ caller: context.caller, signal: context.signal });
