@@ -403,7 +403,7 @@ describe('complete (OpenCode)', () => {
     relocateBehavior = (request) => { if (request.directory === appPath) throw new Error('refused'); };
     await stop(spawn, 't2');
     expect(relocations.map((request) => where(request.directory))).toEqual(['main', 'feature']);
-    expect(effectiveCwd.get(SESSION)).toBe(tree.path);
+    expect(effectiveCwd.get(SESSION)).toBe(path.normalize(tree.path)); // native form (the context path is POSIX)
     expect(removedPaths).toEqual([]);
     expect(deletedBranches).toEqual([]);
     expect(log).not.toContain('removeWorktree');

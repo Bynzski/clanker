@@ -58,10 +58,10 @@ describe('GitService.forgetMissingWorktree', () => {
     expect(result).toEqual({ success: true });
 
     const listing = await service().listWorktrees(repo);
-    const byPath = new Map(listing.worktrees.map((entry) => [fs.existsSync(entry.path) ? fs.realpathSync.native(entry.path) : entry.path, entry]));
-    expect(byPath.has(one)).toBe(false); // gone
-    expect(byPath.get(two)?.isPrunable).toBe(true); // the other stale record is untouched
-    expect(byPath.get(live)).toBeDefined(); // a live worktree is untouched
+    const byPath = new Map(listing.worktrees.map((entry) => [toPosixPath(fs.existsSync(entry.path) ? fs.realpathSync.native(entry.path) : entry.path), entry]));
+    expect(byPath.has(toPosixPath(one))).toBe(false); // gone
+    expect(byPath.get(toPosixPath(two))?.isPrunable).toBe(true); // the other stale record is untouched
+    expect(byPath.get(toPosixPath(live))).toBeDefined(); // a live worktree is untouched
     expect(fs.existsSync(live)).toBe(true);
     const branches = await git(repo, 'branch', '--list');
     for (const branch of ['one', 'two', 'live']) expect(branches).toContain(branch); // no branch deleted
