@@ -132,6 +132,13 @@ export interface WorkspaceState {
   setModel: (model: string) => void;
   addTerminal: (terminal: Terminal, workspaceId?: string) => void;
   removeTerminal: (id: string) => void;
+  /**
+   * Main moved a conversation to another checkout and started a replacement process: the pane that
+   * showed `previousTerminalId` now shows `replacement`, in the same layout position, with the same
+   * name. Descriptive only (main already did it). Returns false, changing nothing, when the workspace,
+   * the previous terminal or its pane is gone, the workspace differs, or the replacement id is taken.
+   */
+  replaceTerminal: (workspaceId: string, previousTerminalId: string, replacement: Terminal) => boolean;
   setActiveTerminal: (id: string) => void;
   /** Scoped, nondestructive browser visibility; restores placement best-effort on show. */
   setBrowserVisible: (visible: boolean, workspaceId?: string) => void;
