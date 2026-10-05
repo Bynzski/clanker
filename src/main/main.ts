@@ -34,6 +34,7 @@ import Store from 'electron-store';
 import { GitService } from './gitService';
 import { EnvironmentManager } from './environment/environmentManager';
 import { WorkspaceRegistry } from './workspaceRegistry';
+import { AgentBridgeService } from './agentBridge/service';
 import { WorktreeProvenance } from './worktreeProvenance';
 import { registerSshEnvironmentIpc } from './ipc/sshEnvironmentIpc';
 import { resolveExistingDirectory } from './security';
@@ -245,6 +246,12 @@ const harnessAccountService = new HarnessAccountService({
 // Cached discovery results carry account provenance, so any change to the account set drops them.
 harnessAccountService.onAccountsChanged(() => clearSessionCache());
 
+// Main-owned MCP endpoint for agents (loopback, launch-scoped credentials). Starts on first attached launch.
+const agentBridge = new AgentBridgeService({
+  getRegistry: () => workspaceRegistry,
+  getTerminals: () => terminals,
+  version: () => app.getVersion(),
+});
 const harnessUsageService = new HarnessUsageService(workspaceRegistry, { clientVersion: () => app.getVersion(), accounts: harnessAccountService });
 
 const remotePreviewManager = new RemotePreviewManager(workspaceRegistry, (update) => {
@@ -370,6 +377,7 @@ app.whenReady().then(() => {
     getWorkspaceRegistry: () => workspaceRegistry,
     getHarnessOptions: () => HARNESS_OPTIONS,
     agentAttentionBroker,
+    agentBridge,
     createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
     getHarnessAccountService: () => harnessAccountService,
   });
@@ -495,6 +503,7 @@ app.whenReady().then(() => {
     worktreeProvenance,
     recreateWorktree: (workspaceId, branch) => gitIpc.createWorktreeForSession(workspaceId, branch),
     agentAttentionBroker,
+    agentBridge,
     createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
     getHarnessAccountService: () => harnessAccountService,
   });
@@ -566,6 +575,7 @@ app.on('before-quit', (event) => {
   remoteFileWatcher.close();
   setAppShuttingDown(true);
   const assistantsStopped = assistantService?.shutdown() ?? Promise.resolve();
+  const agentBridgeStopped = agentBridge.shutdown();
   harnessUsageService.dispose();
   const accountsClosed = harnessAccountService.dispose();
   workspaceRegistry.clear();
@@ -574,7 +584,7 @@ app.on('before-quit', (event) => {
   removeAttentionAdapterFiles();
   // Keep the event loop alive for SSH SIGKILL escalation and host launch-file
   // cleanup. A repeated quit request shares this drain instead of bypassing it.
-  quitCleanup = Promise.all([previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped]).then(() => undefined);
+  quitCleanup = Promise.all([previewsClosed, waitForTerminalCleanup(), accountsClosed, assistantsStopped, agentBridgeStopped]).then(() => undefined);
   void quitCleanup.catch((error: unknown) => console.warn('[clanker-grid] shutdown cleanup failed:', error)).finally(() => {
     quitCleanupComplete = true;
     app.quit();

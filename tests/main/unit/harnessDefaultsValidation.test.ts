@@ -229,3 +229,17 @@ describe('usageVisible', () => {
     expect(result.valid && result.sanitized.codex.usageVisible).toBe(true);
   });
 });
+
+describe('agentBridgeEnabled', () => {
+  it('is opt-in and sparse: absent unless the user explicitly enabled it', () => {
+    const result = validateHarnessDefaultsMap({ claude: { agentBridgeEnabled: true }, codex: { agentBridgeEnabled: false }, opencode: {} });
+    expect(result.valid && result.sanitized.claude.agentBridgeEnabled).toBe(true);
+    expect(result.valid && 'agentBridgeEnabled' in result.sanitized.codex).toBe(false);
+    expect(result.valid && 'agentBridgeEnabled' in result.sanitized.opencode).toBe(false);
+    expect(result.valid && 'agentBridgeEnabled' in result.sanitized.pi).toBe(false); // filled defaults
+  });
+  it.each(['true', 1, null, 'yes', {}, []])('treats malformed value %j as off', (value) => {
+    const result = validateHarnessDefaultsMap({ claude: { agentBridgeEnabled: value } });
+    expect(result.valid && 'agentBridgeEnabled' in result.sanitized.claude).toBe(false);
+  });
+});

@@ -1,5 +1,3 @@
-import { disposeAttentionSafely } from '../harnesses/localAttention';
-import type { PreparedLocalAttention } from '../harnesses/types';
 import { findHarnessProvider, isHarnessId } from '../harnesses/registry';
 import { prepareHarnessAccountContext, type HarnessAccountService } from '../accounts/harnessAccountService';
 import { DEFAULT_HARNESS_ACCOUNT_ID } from '../../shared/types/harnessAccounts';
@@ -27,13 +25,10 @@ import type { GitWorktreeCreateResult, GitWorktreeListResult } from '../../share
 import type { SessionInvokeOptions } from '../../shared/types/session';
 import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { invokeRemoteSession } from './remoteSessionInvocation';
-import {
-  ensureAttentionAdapterFiles,
-  prepareLocalAttention,
-  attentionSourceOptions,
-  trustedRootSessionId,
-  withoutAttentionEnvironment,
-} from '../agentAttentionAdapters';
+import { trustedRootSessionId, withoutAttentionEnvironment } from '../agentAttentionAdapters';
+import { prepareLaunchAttachments, type LaunchAttachmentStep } from '../launchAttachments';
+import { attentionLaunchStep } from '../attentionLaunchStep';
+import { agentBridgeLaunchStep, withoutAgentBridgeEnvironment, type AgentBridgeService } from '../agentBridge/service';
 import { isInsideRoot } from '../localPathContainment';
 import { sessionMatchesWorkspace } from '../harnesses/sessionFiles';
 import {
@@ -51,6 +46,8 @@ export interface RegisterSessionIpcDeps {
   getStore: () => Store<StoreSchema>;
   getHarnessOptions: () => Record<string, { name: string; command: string; args: string[]; icon: string; env?: Record<string, string> }>;
   agentAttentionBroker?: AgentAttentionBroker;
+  /** Optional: without it no launch attaches the Clanker MCP bridge. */
+  agentBridge?: AgentBridgeService;
   createRemoteOutputObserver?: (workspaceId: string) => (data: string) => void;
   getWorkspaceRegistry?: () => WorkspaceRegistry;
   /**
@@ -235,31 +232,25 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
     const id = `term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const { command: sessionCommand, args: baseArgs } = buildSessionLaunch(nativeSession, fork ?? false, userFlags);
     const harnessEnv = accountBinding.mergeEnvironment(harnessConfig.env ?? {});
-    let spawnArgs = baseArgs;
-    let attentionEnv: Record<string, string> = {};
-    let attentionCommand: string | undefined;
-    let preparedAttention: PreparedLocalAttention | null = null;
+    // Same coordinator as an ordinary launch: attention first, then the optional agent bridge.
+    const steps: LaunchAttachmentStep[] = [];
     if (agentAttentionBroker) {
-      try {
-        const files = ensureAttentionAdapterFiles();
-        const rootSessionId = trustedRootSessionId(session.harness, validatedSession, fork === true);
-        if (attentionEnabled) {
-          preparedAttention = prepareLocalAttention(session.harness, {
-            terminalId: id, args: baseArgs, env: { ...process.env, ...harnessEnv }, files,
-            platform: process.platform, rootSessionId,
-          }) ?? null;
-        }
-        attentionEnv = await agentAttentionBroker.register(id, session.harness, { rootSessionId, ...attentionSourceOptions(session.harness) });
-        attentionCommand = files.command;
-        if (preparedAttention) {
-          attentionEnv = { ...attentionEnv, ...preparedAttention.env };
-          spawnArgs = preparedAttention.args;
-        }
-      } catch {
-        disposeAttentionSafely(preparedAttention);
-        agentAttentionBroker.release(id);
-      }
+      steps.push(attentionLaunchStep({
+        broker: agentAttentionBroker, harness: session.harness, terminalId: id, enabled: attentionEnabled,
+        rootSessionId: trustedRootSessionId(session.harness, validatedSession, fork === true),
+      }));
     }
+    if (deps.agentBridge && harnessDefaults[session.harness]?.agentBridgeEnabled === true && launchContext) {
+      steps.push(agentBridgeLaunchStep({
+        service: deps.agentBridge, harness: session.harness,
+        identity: {
+          terminalId: id, workspaceId: workspace.workspaceId, environmentId: workspace.location.environmentId,
+          checkoutContextId: launchContext.id, harnessId: session.harness,
+        },
+      }));
+    }
+    const attachments = await prepareLaunchAttachments({ args: baseArgs, env: { ...process.env, ...harnessEnv } }, steps);
+    const spawnArgs = attachments.args;
     try {
       // Never a directory outside the root being launched into: a session whose recorded cwd is not
       // inside it (or no longer exists) starts at that root.
@@ -275,10 +266,9 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       const userShell = defaultShell();
 
       const env: { [key: string]: string } = {
-        ...withoutAttentionEnvironment(process.env),
-        ...withoutAttentionEnvironment(harnessEnv),
-        ...attentionEnv,
-        ...(attentionCommand ? { CLANKER_ATTENTION_COMMAND: attentionCommand } : {}),
+        ...withoutAgentBridgeEnvironment(withoutAttentionEnvironment(process.env)),
+        ...withoutAgentBridgeEnvironment(withoutAttentionEnvironment(harnessEnv)),
+        ...attachments.env,
         CLANKER_GRID_FALLBACK_SHELL: userShell,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
@@ -310,10 +300,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
       // Main's own record of ownership: an agent's reported location is resolved against it (agentLocation.ts).
       workspaceId: workspace.workspaceId,
       checkoutContextId: launchContext?.id,
-      onExit: () => {
-        disposeAttentionSafely(preparedAttention);
-        agentAttentionBroker?.release(id);
-      },
+      onExit: () => attachments.dispose(),
       });
       return {
         ...result, harnessId: session.harness, attentionEnabled, checkoutContextId: launchContext?.id,
@@ -323,8 +310,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): void {
         ...(resumeNotice ? { resumeNotice } : {}),
       };
     } catch (error) {
-      disposeAttentionSafely(preparedAttention);
-      agentAttentionBroker?.release(id);
+      await attachments.dispose();
       throw error;
     }
   });

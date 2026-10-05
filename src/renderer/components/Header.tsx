@@ -101,6 +101,7 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
     handleSetHarnessVisible,
     handleSetHarnessAttention,
     handleSetHarnessUsageVisible,
+    handleSetHarnessAgentBridge,
     handleSetDefaultModel,
     handleToggleFavorite,
     loadHarnessModels,
@@ -383,6 +384,7 @@ export default function Header({ placement = 'bar' }: HeaderProps) {
         handleSetHarnessVisible={handleSetHarnessVisible}
         handleSetHarnessAttention={handleSetHarnessAttention}
         handleSetHarnessUsageVisible={handleSetHarnessUsageVisible}
+        handleSetHarnessAgentBridge={handleSetHarnessAgentBridge}
         handleSetDefaultModel={handleSetDefaultModel}
         handleToggleFavorite={handleToggleFavorite}
       />

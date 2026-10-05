@@ -68,6 +68,7 @@ interface HeaderRightControlsProps {
   handleSetHarnessVisible: (harnessId: string, visible: boolean) => Promise<void>;
   handleSetHarnessAttention: (harnessId: string, enabled: boolean) => Promise<void>;
   handleSetHarnessUsageVisible: (harnessId: string, visible: boolean) => Promise<void>;
+  handleSetHarnessAgentBridge?: (harnessId: string, enabled: boolean) => Promise<void>;
   handleSetDefaultModel: (harnessId: string, modelId: string) => Promise<void>;
   handleToggleFavorite: (harnessId: string, modelId: string) => Promise<void>;
 }
@@ -121,6 +122,7 @@ export default function HeaderRightControls({
   handleSetHarnessVisible,
   handleSetHarnessAttention,
   handleSetHarnessUsageVisible,
+  handleSetHarnessAgentBridge,
   handleSetDefaultModel,
   handleToggleFavorite,
 }: HeaderRightControlsProps) {
@@ -320,6 +322,7 @@ export default function HeaderRightControls({
               handleSetHarnessVisible={handleSetHarnessVisible}
               handleSetHarnessAttention={handleSetHarnessAttention}
               handleSetHarnessUsageVisible={handleSetHarnessUsageVisible}
+              handleSetHarnessAgentBridge={handleSetHarnessAgentBridge}
               handleSetDefaultModel={handleSetDefaultModel}
               handleToggleFavorite={handleToggleFavorite}
               accountEnvironmentId={environmentId}

@@ -11,13 +11,15 @@ export interface HarnessDescriptor {
   readonly usage?: { readonly support: 'native' | 'emulated' };
   /** Optional manually-managed accounts (see HarnessAccountsCapability). Only advertised with an implementation. */
   readonly accounts?: { readonly support: 'native' | 'emulated' };
+  /** Optional launch-scoped attachment of the Clanker MCP bridge (see HarnessAgentBridgeCapability). Only advertised with an implementation. */
+  readonly agentBridge?: { readonly support: 'native' };
 }
 export const HARNESS_DESCRIPTORS = {
-  codex: { id: 'codex', name: 'Codex', iconKey: 'codex', legacyIcon: '🧠', aiCommit: { support: 'native' }, usage: { support: 'native' }, accounts: { support: 'native' } },
-  opencode: { id: 'opencode', name: 'OpenCode', iconKey: 'opencode', legacyIcon: '⚡', aiCommit: { support: 'native' } },
+  codex: { id: 'codex', name: 'Codex', iconKey: 'codex', legacyIcon: '🧠', aiCommit: { support: 'native' }, usage: { support: 'native' }, accounts: { support: 'native' }, agentBridge: { support: 'native' } },
+  opencode: { id: 'opencode', name: 'OpenCode', iconKey: 'opencode', legacyIcon: '⚡', aiCommit: { support: 'native' }, agentBridge: { support: 'native' } },
   pi: { id: 'pi', name: 'Pi', iconKey: 'pi', legacyIcon: 'π', aiCommit: { support: 'native' } },
   omp: { id: 'omp', name: 'Oh My Pi', iconKey: 'omp', legacyIcon: 'π', aiCommit: { support: 'native' }, usage: { support: 'native' } },
-  claude: { id: 'claude', name: 'Claude', iconKey: 'claude', legacyIcon: '✨', usage: { support: 'native' }, accounts: { support: 'native' } },
+  claude: { id: 'claude', name: 'Claude', iconKey: 'claude', legacyIcon: '✨', usage: { support: 'native' }, accounts: { support: 'native' }, agentBridge: { support: 'native' } },
   hermes: { id: 'hermes', name: 'Hermes', iconKey: 'hermes', legacyIcon: '☿', usage: { support: 'native' } },
   agy: { id: 'agy', name: 'Antigravity', iconKey: 'agy', legacyIcon: '🪐', aiCommit: { support: 'native' }, usage: { support: 'native' } },
 } as const satisfies Record<HarnessId, HarnessDescriptor>;
@@ -47,4 +49,13 @@ export type AccountHarnessId = {
 /** Harnesses whose providers implement optional account management, in canonical order. */
 export const ACCOUNT_HARNESS_IDS: readonly AccountHarnessId[] = KNOWN_HARNESS_IDS.filter(
   (id): id is AccountHarnessId => 'accounts' in HARNESS_DESCRIPTORS[id],
+);
+
+export type AgentBridgeHarnessId = {
+  [Id in HarnessId]: typeof HARNESS_DESCRIPTORS[Id] extends { agentBridge: unknown } ? Id : never
+}[HarnessId];
+
+/** Harnesses whose providers can attach the Clanker MCP bridge, in canonical order. */
+export const AGENT_BRIDGE_HARNESS_IDS: readonly AgentBridgeHarnessId[] = KNOWN_HARNESS_IDS.filter(
+  (id): id is AgentBridgeHarnessId => 'agentBridge' in HARNESS_DESCRIPTORS[id],
 );

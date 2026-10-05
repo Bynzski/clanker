@@ -1,4 +1,5 @@
 import type { HarnessSession } from '../../shared/types/session';
+import type { PreparedHarnessAttachment } from '../launchAttachments';
 import type { HarnessCommandExecutor, HarnessCommandSessionExecutor } from './commandExecution';
 
 import type { HarnessDescriptor } from '../../shared/harnessDescriptors';
@@ -23,6 +24,7 @@ export interface HarnessProvider {
   readonly aiCommit?: HarnessAiCommitCapability;
   readonly usage?: HarnessUsageCapability;
   readonly accounts?: HarnessAccountsCapability;
+  readonly agentBridge?: HarnessAgentBridgeCapability;
 }
 
 export type CapabilitySupport = 'native' | 'emulated';
@@ -299,6 +301,42 @@ export interface HarnessAccountsCapability {
   discoverSessions(workspacePath: string, home: string): Promise<HarnessSession[]>;
 }
 
+/**
+ * Optional, distinct from attention: how this harness receives the shared Clanker MCP bridge for one
+ * local launch. Shared code owns the server, the credential, identity binding and every tool; the
+ * provider owns only the harness-native mechanism (launch args, environment, a temporary owned
+ * config file). A provider that cannot attach the bridge without replacing or disabling the user's
+ * own MCP configuration omits this capability: there is no no-op support.
+ */
+export interface HarnessAgentBridgeContext {
+  /** Loopback Streamable HTTP endpoint (`http://127.0.0.1:<port>/mcp`). */
+  readonly url: string;
+  /** MCP server name to register; shared by every provider so tool names are uniform. */
+  readonly serverName: string;
+  /**
+   * Environment variable that will carry the bearer credential into the child. Providers reference
+   * it by name (header expansion / bearer-token env var); they never receive the credential itself,
+   * so it cannot end up in argv or a config file.
+   */
+  readonly tokenEnvVar: string;
+  /** Launch argv so far (after earlier attachments). */
+  readonly args: readonly string[];
+  /** User + harness environment so far, for detecting conflicting user configuration. */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly platform: NodeJS.Platform;
+  /** Private (0700) directory owned by this launch, created on first use and removed on disposal. */
+  scratchDir(): string;
+}
+export interface HarnessAgentBridgeCapability {
+  /**
+   * Returns null when the bridge cannot be attached to this launch without touching user-owned
+   * configuration (e.g. the user already defines the same server name or the same override channel).
+   * The returned `dispose` releases only provider-owned resources; the credential and the scratch
+   * directory are released by shared code.
+   */
+  prepare(context: HarnessAgentBridgeContext): PreparedHarnessAttachment | null;
+}
+
 export type AttentionPlan = { status: 'ready'; options: AttentionLaunchOptions }
   | { status: 'blocked'; failure: HarnessCapabilityError };
 
@@ -312,4 +350,7 @@ export function defineHarness<Provider extends HarnessProvider>(provider: Provid
 ) & (
   Provider['descriptor'] extends { accounts: unknown }
     ? { accounts: HarnessAccountsCapability } : { accounts?: never }
+) & (
+  Provider['descriptor'] extends { agentBridge: unknown }
+    ? { agentBridge: HarnessAgentBridgeCapability } : { agentBridge?: never }
 )): Provider { return provider; }

@@ -267,6 +267,20 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     }
   };
 
+  const handleSetHarnessAgentBridge = async (harnessId: string, agentBridgeEnabled: boolean) => {
+    if (!harnessDefaults) return;
+    const newDefaults = {
+      ...harnessDefaults,
+      [harnessId]: { ...harnessDefaults[harnessId], agentBridgeEnabled },
+    };
+    setHarnessDefaultsState(newDefaults);
+    try {
+      await window.electronAPI.setHarnessDefaults(newDefaults);
+    } catch (err) {
+      console.error('Failed to save Clanker bridge setting:', err);
+    }
+  };
+
   const handleSetHarnessUsageVisible = async (harnessId: string, usageVisible: boolean) => {
     if (!harnessDefaults) return;
     const newDefaults = {
@@ -373,6 +387,7 @@ export function useHeaderSettings({ harness, setHarness, includeAiCommit = true,
     handleSetHarnessVisible,
     handleSetHarnessAttention,
     handleSetHarnessUsageVisible,
+    handleSetHarnessAgentBridge,
     handleSetDefaultModel,
     handleToggleFavorite,
     loadHarnessModels,
