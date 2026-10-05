@@ -1,6 +1,6 @@
 import type { AgentCheckoutTransitionEvent } from '../../shared/types/checkoutTransition';
 import { markTerminalDisposed } from '../components/TerminalPane';
-import { useCheckoutNoticeStore } from '../store/checkoutNoticeStore';
+import { useNotificationStore } from '../store/notificationStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import type { Terminal } from '../store/workspaceTypes';
 
@@ -42,7 +42,13 @@ export function applyAgentCheckoutTransition(event: AgentCheckoutTransitionEvent
       store.removeCheckoutContext(event.workspaceId, event.checkoutContextId);
       return;
     case 'notice':
-      useCheckoutNoticeStore.getState().show({ workspaceId: event.workspaceId, tone: event.tone, message: event.message });
+      useNotificationStore.getState().show({
+        workspaceId: event.workspaceId,
+        workspaceName: store.getWorkspaceById(event.workspaceId)?.name,
+        tone: event.tone,
+        message: event.message,
+        dedupeKey: `checkout-transition:${event.message}`,
+      });
       return;
   }
 }

@@ -6,6 +6,7 @@ import { migrateLegacyFavorites } from './lib/harnessDefaultsMigration';
 import Header from './components/Header';
 import TitleBar from './components/TitleBar';
 import StatusBar from './components/StatusBar';
+import { NotificationCenter, ToastViewport } from './components/NotificationCenter';
 import { useAssistantNavStore } from './store/assistantNavStore';
 
 const workspaceDestinationActive = () => useAssistantNavStore.getState().activeAssistantId === null;
@@ -389,7 +390,11 @@ function App() {
 
   if (workspaces.length === 0 && !assistantDestinationActive) {
     return (
-      <WorkspaceGateFullscreen onWorkspaceSelect={handleWorkspaceSelect} onLaunchRecipe={(recipe) => handleLaunchRecipe(recipe, false)} />
+      <div className="app app-launcher">
+        <WorkspaceGateFullscreen onWorkspaceSelect={handleWorkspaceSelect} onLaunchRecipe={(recipe) => handleLaunchRecipe(recipe, false)} />
+        <ToastViewport />
+        <footer className="status-bar"><span /><NotificationCenter /></footer>
+      </div>
     );
   }
 
@@ -429,6 +434,7 @@ function App() {
           </Suspense>
         </ErrorBoundary>
       </div>
+      <ToastViewport />
       <StatusBar />
       
       <WorkspaceGateModal

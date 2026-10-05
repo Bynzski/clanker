@@ -194,3 +194,25 @@ browserPane?.tabs[]
 - **Nullability invariant:** `null` ↔ `length === 0` — A field is `null` if and only if its collection is empty. This simplifies null checks in the UI.
 - **Reference invariant:** `id !== null` → `collection.some(item => item.id === id)` — An ID field always points to an existing item in its collection.
 - **Layout tree invariant:** All IDs referenced in the `layoutRoot` tree exist in the corresponding panes collections.
+
+## App Notifications
+
+`notificationStore.ts` is app-level, in-memory presentation state, independent of workspace and
+Assistant lifecycles. Features call `useNotificationStore.getState().show({ tone, message, ... })`;
+optional workspace identity/name is captured at emission, and closing/switching a workspace never
+removes its notices. Checkout transitions are the first consumer. Notification data never authorizes
+filesystem, terminal or checkout operations; optional action callbacks are renderer-owned and use the
+normal validated IPC paths.
+
+- Pending warnings/errors persist until explicitly dismissed. Reading history marks notifications
+  read but does not dismiss them. A later success cannot replace a warning.
+- An optional `dedupeKey` collapses pending notices only within the same workspace and tone. Each
+  update receives a new ID so a stale dismissal/timer cannot dismiss its replacement.
+- Info/success toasts fade after six seconds, pausing while hovered, focused or running an action.
+  Routine messages queued behind the three visible toasts expire into history too.
+- History retains the most recent 100 dismissed notices plus all pending notices. Pending warnings
+  are intentionally never evicted; callers should use stable keys for recurring events. Clearing
+  history removes only dismissed entries. Nothing is persisted across application restarts.
+- The single `ToastViewport` reserves layout space outside the native Browser bounds, capped at
+  28% of the window height. History uses the shared Popover and its workspace/Assistant Browser
+  suppression lease. Both surfaces remain available in the zero-workspace launcher.

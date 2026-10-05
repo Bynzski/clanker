@@ -6,6 +6,7 @@ import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-libra
 import { registerOpenSettingsHandler } from '../../../src/renderer/lib/keybindingDispatcher';
 import { useKeybindingStore } from '../../../src/renderer/store/keybindingStore';
 import App from '../../../src/renderer/App';
+import { useNotificationStore } from '../../../src/renderer/store/notificationStore';
 import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useThemeStore } from '../../../src/renderer/theme/themeStore';
@@ -88,6 +89,7 @@ describe('App', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    useNotificationStore.setState({ notifications: [] });
     useKeybindingStore.setState({ overrides: {}, loaded: false, capturing: false });
     mockSpawnTerminal.mockReset();
     mockOnFitAllPanes.mockReset();
@@ -171,6 +173,15 @@ describe('App', () => {
     it('renders WorkspaceGateFullscreen when there are no workspaces', () => {
       render(<App />);
       expect(screen.getByTestId('workspace-gate-fullscreen')).toBeTruthy();
+    });
+
+    it('keeps pending notices and history accessible with no workspaces', async () => {
+      useNotificationStore.getState().show({ tone: 'warning', message: 'Checkout remains on disk', workspaceId: 'closed', workspaceName: 'Closed project' });
+      render(<App />);
+      expect(screen.getAllByRole('alert')).toHaveLength(1);
+      expect(screen.getByRole('alert')).toHaveTextContent('Closed project');
+      fireEvent.click(screen.getByRole('button', { name: 'Notifications, 1 unread' }));
+      expect(await screen.findByRole('dialog', { name: 'Notification history' })).toHaveTextContent('Checkout remains on disk');
     });
 
     it('does not render main layout when there are no workspaces', () => {

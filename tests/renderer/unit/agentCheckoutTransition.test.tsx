@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
 import type { AgentCheckoutTransitionEvent } from '../../../src/shared/types/checkoutTransition';
@@ -18,7 +18,8 @@ vi.mock('../../../src/renderer/components/TerminalPane', () => ({
 import StatusBar from '../../../src/renderer/components/StatusBar';
 import { applyAgentCheckoutTransition } from '../../../src/renderer/lib/agentCheckoutTransition';
 import { startTerminalSessionBridge } from '../../../src/renderer/lib/terminalSessionBridge';
-import { useCheckoutNoticeStore } from '../../../src/renderer/store/checkoutNoticeStore';
+import { useNotificationStore } from '../../../src/renderer/store/notificationStore';
+import { ToastViewport } from '../../../src/renderer/components/NotificationCenter';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { useAgentAttentionStore } from '../../../src/renderer/store/agentAttentionStore';
 import { EMPTY_ATTENTION } from '../../_helpers/attentionSnapshots';
@@ -51,7 +52,7 @@ beforeEach(() => {
   installElectronApiMock({ killTerminal });
   markTerminalDisposed.mockClear();
   useAgentAttentionStore.setState(EMPTY_ATTENTION);
-  useCheckoutNoticeStore.setState({ notice: null });
+  useNotificationStore.setState({ notifications: [] });
   useWorkspaceStore.setState({ workspaces: [], activeWorkspaceId: null, activeWorkspaceLifecycle: null });
 });
 
@@ -160,7 +161,7 @@ describe('applyAgentCheckoutTransition', () => {
 
   it('notice reaches the notice store', () => {
     applyAgentCheckoutTransition({ kind: 'notice', workspaceId: WS, tone: 'warning', message: 'kept the branch' });
-    expect(useCheckoutNoticeStore.getState().notice).toMatchObject({ workspaceId: WS, tone: 'warning', message: 'kept the branch' });
+    expect(useNotificationStore.getState().notifications[0]).toMatchObject({ workspaceId: WS, tone: 'warning', message: 'kept the branch' });
   });
 });
 
@@ -238,60 +239,24 @@ describe('the status bar follows the terminal\'s real checkout (the smoke-test s
   });
 });
 
-describe('the transition notice', () => {
-  it('shows the outcome for the focused workspace, with its tone, and is dismissible', () => {
+describe('checkout notifications', () => {
+  it('preserves a warning when a later successful transition arrives', () => {
     seed();
-    render(<StatusBar />);
-    expect(document.querySelector('.status-notice')).toBeNull();
-    act(() => applyAgentCheckoutTransition({ kind: 'notice', workspaceId: WS, tone: 'warning', message: 'Branch "x" was kept.' }));
-    const notice = screen.getByRole('status');
-    expect(notice).toHaveTextContent('Branch "x" was kept.');
-    expect(notice.className).toContain('status-notice-warning');
-    fireEvent.click(notice);
-    expect(document.querySelector('.status-notice')).toBeNull();
-  });
-
-  it('is not shown for another workspace', () => {
-    seed();
-    render(<StatusBar />);
-    act(() => applyAgentCheckoutTransition({ kind: 'notice', workspaceId: 'someone-else', tone: 'info', message: 'elsewhere' }));
-    expect(document.querySelector('.status-notice')).toBeNull();
-  });
-
-  it('a newer notice replaces the older one', () => {
-    seed();
-    render(<StatusBar />);
+    render(<ToastViewport />);
     act(() => {
-      applyAgentCheckoutTransition({ kind: 'notice', workspaceId: WS, tone: 'info', message: 'first' });
-      applyAgentCheckoutTransition({ kind: 'notice', workspaceId: WS, tone: 'info', message: 'second' });
+      applyAgentCheckoutTransition({ kind: 'notice', workspaceId: WS, tone: 'warning', message: 'Branch "x" was kept.' });
+      applyAgentCheckoutTransition({ kind: 'notice', workspaceId: WS, tone: 'info', message: 'Completed checkout y.' });
     });
-    expect(screen.getByRole('status')).toHaveTextContent('second');
+    expect(screen.getByRole('alert')).toHaveTextContent('Branch "x" was kept.');
+    expect(screen.getByRole('status')).toHaveTextContent('Completed checkout y.');
+    expect(useNotificationStore.getState().notifications[1].workspaceName).toBe('app');
   });
 
-  it('a routine (info) notice fades after a few seconds', () => {
-    vi.useFakeTimers();
-    try {
-      seed();
-      render(<StatusBar />);
-      act(() => applyAgentCheckoutTransition({ kind: 'notice', workspaceId: WS, tone: 'info', message: 'temporary' }));
-      expect(screen.getByRole('status')).toBeTruthy();
-      act(() => { vi.advanceTimersByTime(5_900); });
-      expect(document.querySelector('.status-notice')).not.toBeNull();
-      act(() => { vi.advanceTimersByTime(200); });
-      expect(document.querySelector('.status-notice')).toBeNull();
-    } finally { vi.useRealTimers(); }
-  });
-
-  it('a warning stays longer, because something was left in place or restored', () => {
-    vi.useFakeTimers();
-    try {
-      seed();
-      render(<StatusBar />);
-      act(() => applyAgentCheckoutTransition({ kind: 'notice', workspaceId: WS, tone: 'warning', message: 'left on disk' }));
-      act(() => { vi.advanceTimersByTime(19_900); });
-      expect(document.querySelector('.status-notice')).not.toBeNull();
-      act(() => { vi.advanceTimersByTime(200); });
-      expect(document.querySelector('.status-notice')).toBeNull();
-    } finally { vi.useRealTimers(); }
+  it('keeps notices from a background or closed workspace visible', () => {
+    seed();
+    render(<ToastViewport />);
+    act(() => applyAgentCheckoutTransition({ kind: 'notice', workspaceId: 'someone-else', tone: 'warning', message: 'elsewhere' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('someone-else');
+    expect(screen.getByRole('alert')).toHaveTextContent('elsewhere');
   });
 });
