@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { KNOWN_HARNESS_IDS } from '../../../src/shared/harnessIds';
 import { getHarnessProviders } from '../../../src/main/harnesses/registry';
-import { grantsCheckoutRehoming, supportsCheckoutRehoming } from '../../../src/main/isolatedCheckout/rehomeSupport';
+import { grantsCheckoutRehoming, canSafelyRehomeConversation } from '../../../src/main/isolatedCheckout/rehomeSupport';
 import {
   CHECKOUT_LIFECYCLE_TIMEOUT_MS, createCheckoutLifecycleCapabilities, deferredLifecyclePort, MAX_BRANCH_LENGTH,
   type AgentCheckoutLifecyclePort,
@@ -13,7 +13,7 @@ import { bridgeInstructions } from '../../../src/main/agentBridge/instructions';
 import { COMPLETE_DESCRIPTION, COMPLETE_ISOLATED_CHECKOUT, CREATE_DESCRIPTION, CREATE_ISOLATED_CHECKOUT } from '../../../src/main/agentBridge/lifecycleCapabilities';
 import { checkoutRehome as codexRehome } from '../../../src/main/harnesses/codex/rehome';
 import { findHarnessProvider } from '../../../src/main/harnesses/registry';
-import { checkoutRehomeModeOf } from '../../../src/main/isolatedCheckout/rehomeSupport';
+import { checkoutRehomeModeOf, checkoutRehomeOf } from '../../../src/main/isolatedCheckout/rehomeSupport';
 
 const caller = { terminalId: 't', harnessId: 'claude', workspace: {}, checkoutContext: {}, granted: [] } as unknown as AgentBridgeCaller;
 const context = { caller, signal: new AbortController().signal };
@@ -22,19 +22,52 @@ function stubPort(): AgentCheckoutLifecyclePort & { create: ReturnType<typeof vi
   return { create: vi.fn(async () => ({ data: { ok: 'create' } })), complete: vi.fn(async () => ({ data: { ok: 'complete' } })) };
 }
 
+describe('rehome capability is a provider/runtime fact, separate from MCP transport', () => {
+  type Mutable = { agentBridge?: unknown };
+  const without = <T>(id: string, body: () => T): T => {
+    const provider = findHarnessProvider(id) as Mutable;
+    const saved = provider.agentBridge;
+    try { provider.agentBridge = undefined; return body(); } finally { provider.agentBridge = saved; }
+  };
+  const allFacts = { nativeAttentionAttached: true, bridgeAvailable: true };
+
+  it.each(['claude', 'codex', 'opencode'])('%s without any bridge transport still satisfies the rehome predicate and keeps its strategy, but no MCP grant exists', (id) => {
+    without(id, () => {
+      expect(canSafelyRehomeConversation(id)).toBe(true);
+      expect(checkoutRehomeOf(id)).toBeDefined();
+      expect(checkoutRehomeModeOf(id)).toBe(findHarnessProvider(id)?.checkoutRehome?.mode);
+      expect(grantsCheckoutRehoming(id, { nativeAttentionAttached: true, bridgeAvailable: false })).toBe(false);
+    });
+    expect(grantsCheckoutRehoming(id, allFacts)).toBe(true); // with the bridge restored, as before
+  });
+
+  it.each(['claude', 'codex', 'opencode'])('%s: safe to rehome + bridge + attention NOT attached -> no lifecycle grant', (id) => {
+    expect(grantsCheckoutRehoming(id, { nativeAttentionAttached: false, bridgeAvailable: true })).toBe(false);
+  });
+
+  it('the grant needs all three facts, and a harness that cannot be rehomed never gets one even with both transport facts', () => {
+    for (const id of ['claude', 'codex', 'opencode']) {
+      expect(grantsCheckoutRehoming(id, allFacts)).toBe(true);
+      expect(grantsCheckoutRehoming(id, { ...allFacts, bridgeAvailable: false })).toBe(false);
+      expect(grantsCheckoutRehoming(id, { ...allFacts, nativeAttentionAttached: false })).toBe(false);
+    }
+    for (const id of ['pi', 'omp', 'hermes', 'agy', 'not-a-harness']) expect(grantsCheckoutRehoming(id, allFacts)).toBe(false);
+  });
+});
+
 describe('which harnesses can be re-homed (derived from provider evidence, never from a name)', () => {
-  it('is exactly the providers that have the bridge, local attention, a native local resume and proven resume-from-another-directory', () => {
+  it('is exactly the providers with an explicit strategy, local attention, a native local resume and a way to run the conversation elsewhere (the MCP bridge is NOT part of it)', () => {
     const derived = getHarnessProviders().filter((provider) => {
       const resume = provider.sessions?.resume;
-      return Boolean(provider.agentBridge && provider.checkoutRehome && provider.attention?.local
+      return Boolean(provider.checkoutRehome && provider.attention?.local
         && (provider.sessions?.resumesWithoutOriginalDirectory === true || typeof provider.checkoutRehome.relocateConversation === 'function')
         && resume && (!resume.transports || resume.transports.includes('local')));
     }).map((provider) => provider.descriptor.id);
-    expect(KNOWN_HARNESS_IDS.filter(supportsCheckoutRehoming)).toEqual(derived);
+    expect(KNOWN_HARNESS_IDS.filter(canSafelyRehomeConversation)).toEqual(derived);
   });
 
   it('currently Claude, Codex and OpenCode', () => {
-    expect(KNOWN_HARNESS_IDS.filter(supportsCheckoutRehoming).sort()).toEqual(['claude', 'codex', 'opencode']);
+    expect(KNOWN_HARNESS_IDS.filter(canSafelyRehomeConversation).sort()).toEqual(['claude', 'codex', 'opencode']);
   });
 
   it.each([
@@ -43,19 +76,19 @@ describe('which harnesses can be re-homed (derived from provider evidence, never
     ['hermes', 'it has no resumable history and no bridge'],
     ['omp', 'it resumes from another directory but has no bridge to ask through'],
   ])('%s cannot be re-homed: %s', (harness) => {
-    expect(supportsCheckoutRehoming(harness)).toBe(false);
+    expect(canSafelyRehomeConversation(harness)).toBe(false);
   });
 
   it('an unknown harness name never qualifies', () => {
-    expect(supportsCheckoutRehoming('not-a-harness')).toBe(false);
-    expect(supportsCheckoutRehoming('')).toBe(false);
+    expect(canSafelyRehomeConversation('not-a-harness')).toBe(false);
+    expect(canSafelyRehomeConversation('')).toBe(false);
   });
 
   it('the grant also needs native attention to have ATTACHED to the launch, because the live conversation is identified by native lifecycle events', () => {
-    expect(grantsCheckoutRehoming('claude', { nativeAttentionAttached: true })).toBe(true);
-    expect(grantsCheckoutRehoming('claude', { nativeAttentionAttached: false })).toBe(false);
-    expect(grantsCheckoutRehoming('opencode', { nativeAttentionAttached: true })).toBe(true);
-    expect(grantsCheckoutRehoming('opencode', { nativeAttentionAttached: false })).toBe(false);
+    expect(grantsCheckoutRehoming('claude', { nativeAttentionAttached: true, bridgeAvailable: true })).toBe(true);
+    expect(grantsCheckoutRehoming('claude', { nativeAttentionAttached: false, bridgeAvailable: true })).toBe(false);
+    expect(grantsCheckoutRehoming('opencode', { nativeAttentionAttached: true, bridgeAvailable: true })).toBe(true);
+    expect(grantsCheckoutRehoming('opencode', { nativeAttentionAttached: false, bridgeAvailable: true })).toBe(false);
   });
 });
 
@@ -211,10 +244,10 @@ describe('the provider-owned re-home strategy', () => {
       const declared = provider.checkoutRehome;
       try {
         provider.checkoutRehome = undefined;
-        expect(supportsCheckoutRehoming(id)).toBe(false);
-        expect(grantsCheckoutRehoming(id, { nativeAttentionAttached: true })).toBe(false);
+        expect(canSafelyRehomeConversation(id)).toBe(false);
+        expect(grantsCheckoutRehoming(id, { nativeAttentionAttached: true, bridgeAvailable: true })).toBe(false);
       } finally { provider.checkoutRehome = declared; }
-      expect(supportsCheckoutRehoming(id)).toBe(true);
+      expect(canSafelyRehomeConversation(id)).toBe(true);
     }
   });
 
@@ -224,14 +257,14 @@ describe('the provider-owned re-home strategy', () => {
     const declared = provider.checkoutRehome;
     try {
       provider.checkoutRehome = { ...declared, relocateConversation: undefined } as never;
-      expect(supportsCheckoutRehoming('opencode')).toBe(false);
+      expect(canSafelyRehomeConversation('opencode')).toBe(false);
     } finally { provider.checkoutRehome = declared; }
-    expect(supportsCheckoutRehoming('opencode')).toBe(true);
+    expect(canSafelyRehomeConversation('opencode')).toBe(true);
   });
 
   it('OMP proves resume from another directory yet is not re-homeable (it has no bridge to ask through)', () => {
     expect(findHarnessProvider('omp')?.sessions?.resumesWithoutOriginalDirectory).toBe(true);
-    expect(supportsCheckoutRehoming('omp')).toBe(false);
+    expect(canSafelyRehomeConversation('omp')).toBe(false);
   });
 });
 

@@ -585,6 +585,27 @@ describe('lifecycle grants follow what native attention actually did for THIS la
     });
   });
 
+  it('a harness that can safely rehome but has no bridge transport gets no credential at all, so no lifecycle tools exist for it', async () => {
+    arrange();
+    const provider = findHarnessProvider('claude') as { agentBridge?: unknown };
+    const saved = provider.agentBridge;
+    defaults.claude = { agentBridgeEnabled: true, attentionEnabled: true };
+    try {
+      provider.agentBridge = undefined;
+      await spawn('claude');
+      expect(mockSpawnPty).toHaveBeenCalledTimes(1); // it still launches
+      expect(last().env[AGENT_BRIDGE_TOKEN_ENV]).toBeUndefined();
+      expect(toolsOfLast()).toBeNull();
+    } finally { provider.agentBridge = saved; }
+  });
+
+  it('Pi (no rehome capability) gets the bridge-less treatment it always had: no lifecycle tools', async () => {
+    arrange();
+    defaults.pi = { agentBridgeEnabled: true, attentionEnabled: true };
+    await spawn('pi');
+    expect(toolsOfLast()?.filter((name) => lifecycleNames.includes(name)) ?? []).toEqual([]);
+  });
+
   it('OpenCode: a user-owned OPENCODE_CONFIG_DIR also declines attention, and the lifecycle tools are not granted', async () => {
     arrange();
     defaults.opencode = { agentBridgeEnabled: true, attentionEnabled: true };

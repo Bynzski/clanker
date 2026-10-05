@@ -740,17 +740,25 @@ guarantee.
 only says a conversation can be resumed once its original directory is gone. It does not say a *running*
 conversation can be moved. A provider therefore declares an explicit `checkoutRehome` capability
 (`HarnessCheckoutRehomeCapability`: `mode: 'hot-replace' | 'after-turn'`, an optional explicit target-directory
-option and writer-contention recognition), and `rehomeSupport.ts` grants the tools only when the provider has that
-*and* a native local `sessions.resume`, a way for the CLI to run the conversation elsewhere (either
-`resumesWithoutOriginalDirectory === true`, or a provider-owned native `checkoutRehome.relocateConversation`),
-local attention (the live conversation's native session id comes from native
-lifecycle events, never from the model) and the bridge. That is **Claude (`hot-replace`), Codex (`after-turn`) and
-OpenCode (`after-turn` with native relocation)**. Pi, Agy, Hermes and OMP are not granted the tools (OMP proves resume from another directory but has no
-bridge to ask through). The launch also needs native attention to have **actually attached** to it, not just the setting: the attention launch step
-provides a generic `native-attention` launch fact only when the provider's hooks/plugin were prepared (a provider declines on
-user-owned config such as Claude `--bare`, Codex `--profile`, OpenCode `--pure`/`OPENCODE_CONFIG_DIR`; the harness still
-launches), and the bridge step reads it (`LaunchAttachmentState.provided`) to decide the grant. Attention and the bridge stay
-separate attachments and credentials. Shared code never branches on a harness name:
+option and writer-contention recognition). Two separate facts follow, in `rehomeSupport.ts`:
+
+- **Rehome capability is a provider/runtime fact** (`canSafelyRehomeConversation`): an explicit `checkoutRehome`
+  strategy, a native local `sessions.resume`, a way for the CLI to run the conversation elsewhere (either
+  `resumesWithoutOriginalDirectory === true` or a provider-owned native `checkoutRehome.relocateConversation`), and local
+  attention (the live conversation's native session id comes from native lifecycle events, never from the model). It does
+  **not** involve MCP: `IsolatedCheckoutService` and `checkoutRehomeOf()` rely on it alone, so another invocation
+  transport can use the same transaction later. That is **Claude (`hot-replace`), Codex (`after-turn`) and OpenCode
+  (`after-turn` with native relocation)**. Pi, Agy, Hermes and OMP do not have it.
+- **MCP lifecycle availability is that capability plus this launch's transport facts** (`grantsCheckoutRehoming`, fails
+  closed on all three): the provider can safely rehome, the provider has the MCP bridge capability, and native attention
+  has **actually attached** to this launch, not just the setting. The attention launch step provides a generic
+  `native-attention` launch fact only when the provider's hooks/plugin were prepared (a provider declines on user-owned
+  config such as Claude `--bare`, Codex `--profile`, OpenCode `--pure`/`OPENCODE_CONFIG_DIR`; the harness still launches),
+  and the bridge step reads it (`LaunchAttachmentState.provided`) to decide the grant. Attention and the bridge stay
+  separate attachments and credentials.
+
+This keeps the earlier distinction: native lifecycle says what the agent IS doing; MCP is what the agent ASKS Clanker to
+do. Shared code never branches on a harness name:
 it reads the provider's declared mode.
 
 **Re-homing is a real resume** of the same native conversation in the target checkout, through the launch every

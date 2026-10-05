@@ -180,9 +180,10 @@ export interface AgentBridgeLaunchStepInput {
   identity: AgentBridgeIdentity;
   /**
    * Capabilities this launch can honor beyond the always-available ones. A function is evaluated when the step
-   * runs, against what the earlier attachments of THIS launch actually provided.
+   * runs, against what the earlier attachments of THIS launch actually provided and whether the provider has the
+   * bridge capability at all.
    */
-  grants?: AgentBridgeGrants | ((state: LaunchAttachmentState) => AgentBridgeGrants);
+  grants?: AgentBridgeGrants | ((launch: { state: LaunchAttachmentState; bridgeAvailable: boolean }) => AgentBridgeGrants);
   platform?: NodeJS.Platform;
 }
 
@@ -199,7 +200,7 @@ export function agentBridgeLaunchStep(input: AgentBridgeLaunchStepInput): Launch
     async prepare(state) {
       const provider = findHarnessProvider(harness)?.agentBridge;
       if (!provider) return null;
-      const lease = await service.lease(identity, typeof input.grants === 'function' ? input.grants(state) : input.grants);
+      const lease = await service.lease(identity, typeof input.grants === 'function' ? input.grants({ state, bridgeAvailable: Boolean(provider) }) : input.grants);
       let scratch: string | undefined;
       const removeScratch = () => {
         if (scratch) fs.rmSync(scratch, { recursive: true, force: true });

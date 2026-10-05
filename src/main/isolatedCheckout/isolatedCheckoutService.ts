@@ -15,7 +15,7 @@ import { directoryExists } from '../sessionWorktrees';
 import type { RetirableTerminal, TerminalExitOutcome } from '../terminalRetirement';
 import { findListedWorktree } from '../worktreeContextAttachment';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
-import { checkoutRehomeOf, supportsCheckoutRehoming } from './rehomeSupport';
+import { checkoutRehomeOf, canSafelyRehomeConversation } from './rehomeSupport';
 import type { RegisteredWorkspace } from '../workspaceRegistry';
 
 /**
@@ -360,7 +360,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       throw new TransitionFailure('Isolated checkouts are available for local workspaces only');
     }
     // Defense in depth: the credential is only granted to such launches, but the support rule is the authority.
-    if (!supportsCheckoutRehoming(caller.harnessId)) {
+    if (!canSafelyRehomeConversation(caller.harnessId)) {
       throw new TransitionFailure('This agent cannot be moved between checkouts: its conversation cannot be resumed from another directory');
     }
     const main = registry.resolveCheckoutContext(workspaceId);

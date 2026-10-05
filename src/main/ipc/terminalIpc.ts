@@ -302,7 +302,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       && resolvedWorkspace && checkoutContext && !isRemote) {
       steps.push(agentBridgeLaunchStep({
         service: deps.agentBridge, harness,
-        grants: (state) => ({ checkoutRehoming: grantsCheckoutRehoming(harness, { nativeAttentionAttached: state.provided.has(NATIVE_ATTENTION_ATTACHED) }) }),
+        grants: ({ state, bridgeAvailable }) => ({ checkoutRehoming: grantsCheckoutRehoming(harness, { nativeAttentionAttached: state.provided.has(NATIVE_ATTENTION_ATTACHED), bridgeAvailable }) }),
         identity: {
           terminalId: id, workspaceId: resolvedWorkspace.workspaceId, environmentId: effectiveEnvironmentId,
           checkoutContextId: checkoutContext.id, harnessId: harness,

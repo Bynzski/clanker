@@ -309,7 +309,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
     if (deps.agentBridge && harnessDefaults[session.harness]?.agentBridgeEnabled === true && launchContext) {
       steps.push(agentBridgeLaunchStep({
         service: deps.agentBridge, harness: session.harness,
-        grants: (state) => ({ checkoutRehoming: grantsCheckoutRehoming(session.harness, { nativeAttentionAttached: state.provided.has(NATIVE_ATTENTION_ATTACHED) }) }),
+        grants: ({ state, bridgeAvailable }) => ({ checkoutRehoming: grantsCheckoutRehoming(session.harness, { nativeAttentionAttached: state.provided.has(NATIVE_ATTENTION_ATTACHED), bridgeAvailable }) }),
         identity: {
           terminalId: id, workspaceId: workspace.workspaceId, environmentId: workspace.location.environmentId,
           checkoutContextId: launchContext.id, harnessId: session.harness,

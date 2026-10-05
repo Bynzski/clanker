@@ -16,14 +16,15 @@ import type { CheckoutRehomeMode, HarnessCheckoutRehomeCapability } from '../har
  * - local attention exists: the live conversation's native session id is learned from native lifecycle
  *   events (the attention broker), never from the model, so a harness without them cannot be identified.
  *
- * The bridge itself is required too: only a launch that has it can ask.
+ * This is a provider/runtime fact and says nothing about HOW a move is requested. In particular it does not
+ * require the MCP bridge: the domain transaction (`IsolatedCheckoutService`) and any future invocation
+ * transport rely on it, while whether a given launch can *ask through MCP* is `grantsCheckoutRehoming`.
  */
-export function supportsCheckoutRehoming(harness: string): boolean {
+export function canSafelyRehomeConversation(harness: string): boolean {
   const provider = findHarnessProvider(harness);
   const resume = provider?.sessions?.resume;
   return Boolean(
-    provider?.agentBridge
-    && provider.checkoutRehome
+    provider?.checkoutRehome
     && provider.attention?.local
     && (provider.sessions?.resumesWithoutOriginalDirectory === true || typeof provider.checkoutRehome.relocateConversation === 'function')
     && resume
@@ -32,19 +33,23 @@ export function supportsCheckoutRehoming(harness: string): boolean {
 }
 
 /**
- * Whether *this launch* gets the checkout lifecycle tools: the harness can be re-homed and native attention
- * ACTUALLY attached to this launch. The user's setting is not enough: a provider declines on user-owned
+ * Whether *this launch* gets the checkout lifecycle tools through the MCP bridge. This is the transport layer,
+ * separate from the provider fact above, and it fails closed on all three:
+ *
+ * - `canSafelyRehomeConversation(harness)`: the provider can really move a conversation;
+ * - `bridgeAvailable`: the provider has the MCP bridge capability (so something can actually ask);
+ * - `nativeAttentionAttached`: native attention ACTUALLY attached to this launch. The user's setting is not enough: a provider declines on user-owned
  * configuration (Claude `--bare`/conflicting `--settings`, Codex hook/profile conflicts, OpenCode
  * `OPENCODE_CONFIG_DIR`/`--pure`) and the harness then launches without hooks. Without them the live
  * conversation cannot be identified, so the tools could only ever fail and are not offered.
  */
-export function grantsCheckoutRehoming(harness: string, options: { nativeAttentionAttached: boolean }): boolean {
-  return options.nativeAttentionAttached && supportsCheckoutRehoming(harness);
+export function grantsCheckoutRehoming(harness: string, options: { nativeAttentionAttached: boolean; bridgeAvailable: boolean }): boolean {
+  return options.bridgeAvailable && options.nativeAttentionAttached && canSafelyRehomeConversation(harness);
 }
 
 /** The provider's explicit strategy for moving a live conversation, or undefined when it has none. */
 export function checkoutRehomeOf(harness: string): HarnessCheckoutRehomeCapability | undefined {
-  return supportsCheckoutRehoming(harness) ? findHarnessProvider(harness)?.checkoutRehome : undefined;
+  return canSafelyRehomeConversation(harness) ? findHarnessProvider(harness)?.checkoutRehome : undefined;
 }
 
 export function checkoutRehomeModeOf(harness: string): CheckoutRehomeMode | undefined {
