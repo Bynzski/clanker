@@ -51,7 +51,8 @@ selected environment's bound `HarnessCommandExecutor` (never an SSH target). Cla
 and Hermes is not queried remotely; a failed or unsupported remote discovery yields no catalog, with no
 local cache or static fallback. Only Codex, Claude, OMP, Hermes and Agy implement `usage` so far (see
 "Usage capability"); OpenCode and Pi remain without it. Only Codex and Claude implement the
-optional `accounts` capability (see "Accounts capability").
+optional `accounts` capability (see "Accounts capability"). Only Codex, Claude and OpenCode implement the
+optional, opt-in `agentBridge` capability (see "Agent MCP bridge"); Pi, OMP, Hermes and Agy do not.
 
 | Provider | Local models | Local / SSH history + resume | Local fork | SSH fork | Local / SSH attention | AI commit |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -495,6 +496,190 @@ args and timeout values derive from `buildInvocation()`; `modelArg` is descripti
 legacy metadata, not executable authority. Git context and prompts
 stay shared; Windows resolution and desktop PATH remain in the executor. There
 is no remote inference or general inference framework.
+
+## Agent MCP bridge (issue #102)
+
+> **Native provider signals tell Clanker what the agent is doing. MCP lets the agent intentionally ask
+> Clanker to do something.** MCP is a transport and capability boundary, never the source of truth.
+
+The bridge is one small, authenticated agent → Clanker capability plane owned by the main process. It
+exists so a future Clanker-owned operation is implemented **once**, behind one authorization boundary,
+instead of once per harness. It is a foundation: V1 ships a single read-only tool.
+
+### Lifecycle versus MCP
+
+| | Native lifecycle (attention) | Agent MCP bridge |
+| --- | --- | --- |
+| Answers | what is the agent doing (working / done / needs input) | what can the agent ask Clanker to do |
+| Source | the harness' own hooks / plugins / extensions | the agent, on purpose, through a tool call |
+| Authority | `AgentAttentionBroker` | main-process services, via the authenticated session |
+| Credential | attention credential (`CLANKER_ATTENTION_*`) | MCP credential (`CLANKER_MCP_TOKEN`) |
+| Provider code | `HarnessAttentionCapability` | `HarnessAgentBridgeCapability` (separate) |
+
+MCP traffic is **never** lifecycle evidence: no tool call, listing or connection changes an agent's
+attention state, and there are deliberately no model-invoked lifecycle tools (`clanker_i_am_done` and
+the like). A model can forget, be late, or be a subagent; a native event cannot. The two credentials
+are independent, minted by different code, validated by different code, and not interchangeable
+(a test asserts an attention token never resolves as a bridge credential).
+
+### Pieces
+
+- `src/main/launchAttachments.ts`: the generic launch-attachment lifecycle (below).
+- `src/main/attentionLaunchStep.ts`: existing attention preparation expressed as a launch attachment
+  (behavior unchanged).
+- `src/main/agentBridge/credentials.ts`: launch-scoped credential registry.
+- `src/main/agentBridge/server.ts`: loopback Streamable HTTP endpoint (official
+  `@modelcontextprotocol/sdk`, stateless, JSON responses).
+- `src/main/agentBridge/capabilities.ts`: the agent-callable capability set (`clanker_context`).
+- `src/main/agentBridge/service.ts`: `AgentBridgeService` (server lifecycle, leases, live authority
+  checks) and `agentBridgeLaunchStep()`.
+- `src/main/harnesses/<id>/agentBridge.ts`: the thin provider attachments (Claude, Codex, OpenCode).
+
+### Identity and security model
+
+- **Loopback only.** The listener binds the literal `127.0.0.1` on an ephemeral port and verifies the
+  bound address; it never binds a wildcard or LAN interface. Requests must carry exactly that
+  loopback `Host` (DNS-rebinding guard) and no `Origin` header (agents are not browsers). It starts on
+  first use, is owned by main, and closes (dropping open connections) at quit. There is no daemon.
+- **One credential per launched terminal.** At launch main mints `clanker_mcp_v1_<256-bit CSPRNG>`
+  bound to main's own record `{ terminalId, workspaceId, environmentId, checkoutContextId, harnessId }`.
+  Only a SHA-256 digest is retained server-side; the raw token exists in the launch environment
+  (`CLANKER_MCP_TOKEN`) and nowhere else: not in argv, not in a config file (providers reference the
+  variable by name), not in logs. Everything is in memory.
+- **Identity comes from the credential, every request.** The server is stateless: each request is
+  authenticated before its body is read, and the resolved grant is closed over by a short-lived
+  protocol server. Tools declare closed schemas; **any undeclared argument is refused**, so a model
+  cannot hand a tool a workspace, terminal, checkout or harness. The renderer never participates.
+- **Live authority re-check.** On every `tools/list` and `tools/call` the service re-derives the caller
+  from main's live state: the terminal must still exist in main's terminal table with the same
+  workspace, checkout context, harness and environment, and the workspace and checkout context must
+  still be the registered ones (`WorkspaceRegistry`). A closed workspace, released context or exited
+  terminal ends authority even if revocation has not yet run. Capabilities receive that resolved
+  caller only.
+- **Revocation.** The credential is revoked first when the launch attachment is disposed: PTY exit,
+  `KILL_TERMINAL`, workspace cleanup and quit all funnel through the terminal's `releaseResources`,
+  and a failed or aborted launch disposes the same attachment. Revocation is idempotent and happens
+  before provider cleanup, so a cleanup failure cannot leave authority behind.
+- **Bounds, fail closed.** 64 KiB request bodies (checked against `Content-Length` and while
+  reading), 16-message batches, 32 concurrent requests, 8 KiB headers, 15 s request timeout, 64 KiB
+  tool results (refused, never truncated). Malformed JSON, wrong content type, non-POST methods,
+  unknown paths and unknown tools are refused; tool failures return a generic error, never internals.
+- **Scoping.** A credential is issued a set of capability names; `tools/list` shows only those and an
+  ungranted name behaves as unknown. V1 grants every shipped capability; the seam exists for policy.
+- **Output discipline.** `clanker_context` returns display-safe facts about the caller's own launch
+  only: workspace folder name, `local`, checkout kind / isolated / branch, harness, launch directory
+  *relative to the checkout root*, and granted capability names. No tokens, ids, absolute paths, other
+  terminals or other workspaces.
+
+The agent's own child processes inherit `CLANKER_MCP_TOKEN` (they are the agent). That is the same
+authority as the agent itself, and the credential dies with the terminal.
+
+### Generic launch attachments
+
+`prepareLaunchAttachments(base, steps)` is the one lifecycle for resources a launch acquires. Attention
+and the bridge share **only** this mechanism, not semantics or credentials.
+
+- A step is `{ name, optional?, prepare(state) -> PreparedHarnessAttachment | null }` and a prepared
+  attachment is `{ args?, env?, dispose() }`. `args` is the complete argv derived from the argv the step
+  was handed (so a step can insert before a `resume` subcommand); `env` is additive.
+- Steps run in order and each sees the earlier result; `env` additions merge deterministically (later
+  wins). A step returning `null` is skipped.
+- A required step that fails rolls back every earlier attachment (reverse order) and rejects with the
+  original error. An **optional** step (attention and the bridge) that fails releases itself, is
+  reported by name/message only, and the launch proceeds without it, so neither can break an
+  ordinary launch or each other.
+- `dispose()` is idempotent, runs in reverse order, never throws, and one failing disposal does not
+  stop the others. `terminalIpc` and `sessionIpc` hold a single `attachments` value: on PTY spawn
+  failure they `await attachments.dispose()`; on exit it is the terminal's `onExit`.
+- Both fresh launches (`SPAWN_TERMINAL`) and local resume/fork (`SESSION_INVOKE`) use it. Stale
+  `CLANKER_MCP_*` variables inherited from an outer process are stripped from every launch.
+
+### Provider capability
+
+`HarnessProvider.agentBridge?: HarnessAgentBridgeCapability` is optional and distinct from `attention`.
+Shared code owns the server, credential, identity binding, capability set, validation and revocation;
+the provider owns only how *its* CLI receives the one shared server. `prepare(context)` gets the
+endpoint URL, the shared server name (`clanker-grid`), the **name** of the token variable (never the
+token), the argv/env so far, and a lazily created private (`0700`) scratch directory that shared code
+removes on disposal. It returns a prepared attachment or `null`, and `null` means "do not attach":
+the user already owns this name or channel. A provider that cannot attach without replacing or
+disabling user MCP configuration omits the capability. There is no no-op support, and
+`defineHarness()` plus the descriptor's `agentBridge` flag keep metadata and implementation in step.
+
+Verified against the installed CLIs (Claude Code 2.1.289, Codex 0.160.0, OpenCode 1.18.34) without
+relying on remembered flags; each attachment was exercised against a real bridge instance:
+
+| Harness | Mechanism | User config | Credential |
+| --- | --- | --- | --- |
+| Claude | extra `--mcp-config <scratch>/claude-mcp.json` placed last (it is variadic); no `--strict-mcp-config` | merged with user/project/local servers; skipped when the user passed `--strict-mcp-config` | header `Bearer ${CLANKER_MCP_TOKEN}` expanded from the environment |
+| Codex | `-c mcp_servers.clanker-grid.url=…` and `….bearer_token_env_var="CLANKER_MCP_TOKEN"`, before a `resume`/`fork` subcommand | overrides merge per key; `codex mcp list` shows the user's own servers beside ours; skipped if the name is already defined on the command line or in `config.toml` | `bearer_token_env_var` |
+| OpenCode | `OPENCODE_CONFIG_CONTENT` with an `mcp` entry | deep-merged over every other config source; skipped if the user already sets the variable | `Bearer {env:CLANKER_MCP_TOKEN}` |
+
+Intentionally **unsupported** (capability absent):
+
+- **Pi**: MCP servers come only from `~/.pi/agent/mcp.json` and a trusted project's `.pi/mcp.json`.
+  There is no launch-scoped channel; relocating the agent directory would replace sessions and auth,
+  and writing either file would modify user (or project) configuration.
+- **Oh My Pi**: `--config` loads an overlay for the run, but support for MCP servers in that overlay
+  was not verified, and no other launch-scoped channel exists. Not faked.
+- **Hermes** and **Antigravity**: MCP servers live in persisted configuration managed by
+  `hermes mcp add` / `agy mcp add`; there is no launch-scoped override.
+
+### Opt-in
+
+The bridge is **off by default** and does nothing unless the user enables *Clanker bridge (MCP)* for a
+supported harness (`harnessDefaults[harness].agentBridgeEnabled`, shown only for harnesses whose
+descriptor advertises `agentBridge`). Only local launches bound to a registered workspace and checkout
+context attach it; plain shells, unbound legacy launches, unsupported harnesses and SSH launches launch
+exactly as before.
+
+### Local-only V1 and the SSH direction
+
+SSH launches never attach the bridge, and `AgentBridgeService.lease()` rejects non-local identities. A
+future SSH design should forward the desktop-owned bridge over the existing OpenSSH connection with an
+ephemeral, launch-scoped tunnel (no remote daemon or installation, no reusable desktop credential, the
+tunnel dies with the launch/workspace). Nothing in V1 (loopback listener, per-launch credential bound to
+main's records, stateless requests) prevents that.
+
+### Adding a Clanker capability
+
+Add an `AgentBridgeCapability` (`name`, `description`, closed `inputSchema`, `run(args, caller)`) to
+`DEFAULT_AGENT_BRIDGE_CAPABILITIES`. No provider changes. `run` receives the live-resolved caller and must
+call an existing validated main-process service rather than re-implement authorization; where the
+behavior today lives only in renderer → IPC code, extract a main-process service and have IPC and the
+capability both call it. Arguments describe the operation only, never identity. Keep results bounded and
+display-safe. Do not add lifecycle tools.
+
+### Attaching the bridge to another harness
+
+Verify the CLI's *launch-scoped, additive* MCP mechanism first (flag, env or an owned temp file) and that
+it merges with user servers. Then add `src/main/harnesses/<id>/agentBridge.ts` that returns args/env
+referencing the token by variable name, returns `null` on conflicting user configuration, and add the
+`agentBridge` flag to the descriptor. Write temp files only through `scratchDir()`. If no such mechanism
+exists, leave the capability absent and document why here.
+
+### Future: isolated-checkout completion
+
+The intended follow-up is one high-level capability, "complete / release my isolated checkout", never
+low-level primitives such as change-cwd, delete-worktree or delete-branch. The caller's checkout comes from
+the authenticated session (`caller.checkoutContext`; the model names no path or terminal). Clanker would
+verify it is a Clanker-owned worktree context, re-home the agent according to proven harness semantics
+(`sessions.resumesWithoutOriginalDirectory`, native session relocation, or retire and relaunch;
+a running process's directory cannot be changed from outside), prove the old checkout is no longer needed,
+then reuse the existing `removeWorktreeCheckout` / release transaction. Existing stranded-agent
+detection remains the fallback for manual deletion.
+
+### Known limitations
+
+- Local launches only; three harnesses.
+- A user who already defines an MCP server named `clanker-grid` in a place Clanker does not inspect
+  (Claude's own configuration, OpenCode's merged configuration) may see the two collide for that launch;
+  which one wins was not verified. Codex checks `config.toml` and the command line; Claude and OpenCode
+  rely on the distinct name.
+- Harness tool-approval prompts still apply to `clanker_context`.
+- No OAuth discovery endpoints; a client that probes them gets 404 and uses the bearer header.
+- A crash can leave a `clanker-mcp-*` scratch directory in the system temp area. It holds only a config
+  with no credential (the credential never touches disk).
 
 ## Accounts capability
 
