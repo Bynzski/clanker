@@ -26,18 +26,18 @@ describe('which harnesses can be re-homed (derived from provider evidence, never
   it('is exactly the providers that have the bridge, local attention, a native local resume and proven resume-from-another-directory', () => {
     const derived = getHarnessProviders().filter((provider) => {
       const resume = provider.sessions?.resume;
-      return Boolean(provider.agentBridge && provider.attention?.local && provider.sessions?.resumesWithoutOriginalDirectory === true
+      return Boolean(provider.agentBridge && provider.checkoutRehome && provider.attention?.local
+        && (provider.sessions?.resumesWithoutOriginalDirectory === true || typeof provider.checkoutRehome.relocateConversation === 'function')
         && resume && (!resume.transports || resume.transports.includes('local')));
     }).map((provider) => provider.descriptor.id);
     expect(KNOWN_HARNESS_IDS.filter(supportsCheckoutRehoming)).toEqual(derived);
   });
 
-  it('currently Claude and Codex', () => {
-    expect(KNOWN_HARNESS_IDS.filter(supportsCheckoutRehoming).sort()).toEqual(['claude', 'codex']);
+  it('currently Claude, Codex and OpenCode', () => {
+    expect(KNOWN_HARNESS_IDS.filter(supportsCheckoutRehoming).sort()).toEqual(['claude', 'codex', 'opencode']);
   });
 
   it.each([
-    ['opencode', 'its resume fails once the original directory is gone'],
     ['pi', 'it refuses to resume when the stored directory does not exist'],
     ['agy', 'resume-from-another-directory is unproven and it has no bridge'],
     ['hermes', 'it has no resumable history and no bridge'],
@@ -54,7 +54,8 @@ describe('which harnesses can be re-homed (derived from provider evidence, never
   it('the grant also needs agent attention, because the live conversation is identified by native lifecycle events', () => {
     expect(grantsCheckoutRehoming('claude', { attentionEnabled: true })).toBe(true);
     expect(grantsCheckoutRehoming('claude', { attentionEnabled: false })).toBe(false);
-    expect(grantsCheckoutRehoming('opencode', { attentionEnabled: true })).toBe(false);
+    expect(grantsCheckoutRehoming('opencode', { attentionEnabled: true })).toBe(true);
+    expect(grantsCheckoutRehoming('opencode', { attentionEnabled: false })).toBe(false);
   });
 });
 
@@ -193,13 +194,14 @@ describe('the deferred port (capabilities exist before the services they call)',
 describe('the provider-owned re-home strategy', () => {
   it('Claude hot-replaces, Codex moves after the turn, and no other provider has a strategy', () => {
     const modes = Object.fromEntries(KNOWN_HARNESS_IDS.map((id) => [id, getHarnessProviders().find((provider) => provider.descriptor.id === id)?.checkoutRehome?.mode]));
-    expect(modes).toEqual({ codex: 'after-turn', claude: 'hot-replace', opencode: undefined, pi: undefined, omp: undefined, hermes: undefined, agy: undefined });
+    expect(modes).toEqual({ codex: 'after-turn', claude: 'hot-replace', opencode: 'after-turn', pi: undefined, omp: undefined, hermes: undefined, agy: undefined });
   });
 
   it('support and the mode the service uses come from that explicit capability', () => {
     expect(checkoutRehomeModeOf('claude')).toBe('hot-replace');
     expect(checkoutRehomeModeOf('codex')).toBe('after-turn');
-    for (const id of ['opencode', 'pi', 'omp', 'hermes', 'agy']) expect(checkoutRehomeModeOf(id)).toBeUndefined();
+    expect(checkoutRehomeModeOf('opencode')).toBe('after-turn');
+    for (const id of ['pi', 'omp', 'hermes', 'agy']) expect(checkoutRehomeModeOf(id)).toBeUndefined();
   });
 
   it('resumesWithoutOriginalDirectory alone is NOT enough: without a declared strategy a provider is not re-homeable', () => {
@@ -214,6 +216,17 @@ describe('the provider-owned re-home strategy', () => {
       } finally { provider.checkoutRehome = declared; }
       expect(supportsCheckoutRehoming(id)).toBe(true);
     }
+  });
+
+  it('OpenCode does not resume from another directory; it qualifies only through its native relocation', () => {
+    const provider = findHarnessProvider('opencode') as { checkoutRehome?: { relocateConversation?: unknown }; sessions?: { resumesWithoutOriginalDirectory?: boolean } };
+    expect(provider.sessions?.resumesWithoutOriginalDirectory).not.toBe(true);
+    const declared = provider.checkoutRehome;
+    try {
+      provider.checkoutRehome = { ...declared, relocateConversation: undefined } as never;
+      expect(supportsCheckoutRehoming('opencode')).toBe(false);
+    } finally { provider.checkoutRehome = declared; }
+    expect(supportsCheckoutRehoming('opencode')).toBe(true);
   });
 
   it('OMP proves resume from another directory yet is not re-homeable (it has no bridge to ask through)', () => {

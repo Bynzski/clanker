@@ -710,6 +710,12 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
     const attempts = Math.max(1, rehome?.writerContentionRetry?.attempts ?? 1);
     for (let attempt = 1; ; attempt += 1) {
       try {
+        // A provider whose CLI runs a conversation where it *recorded* it relocates that record first;
+        // a refusal fails this attempt (nothing is resumed in the wrong directory).
+        if (rehome?.relocateConversation) {
+          await rehome.relocateConversation({ sessionId: session.id, directory: toNativePath(target.path, process.platform), env: process.env })
+            .catch((error: unknown) => { throw new ReplacementFailure(messageOf(error, 'The conversation could not be relocated'), ''); });
+        }
         return await this.startReplacement(subject, session, target, NEVER_ABORTED);
       } catch (error) {
         const contended = error instanceof ReplacementFailure && rehome?.isWriterContention?.(error.output) === true;

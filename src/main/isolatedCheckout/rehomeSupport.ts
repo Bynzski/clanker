@@ -6,9 +6,10 @@ import type { CheckoutRehomeMode, HarnessCheckoutRehomeCapability } from '../har
  * the provider's own proven capabilities (never from its name, and never from MCP support alone):
  *
  * - `sessions.resume` is a native local operation (the replacement is that CLI's real resume);
- * - `sessions.resumesWithoutOriginalDirectory === true`: the CLI was shown to continue a conversation
- *   from a directory other than the one it started in (see docs/harness-integration.md "Removed-worktree
- *   resume"). Anything unproven keeps its conversation where it started;
+ * - the CLI can run the conversation in another directory: either `sessions.resumesWithoutOriginalDirectory
+ *   === true` (it continues from a directory other than the one it started in, see docs/harness-integration.md
+ *   "Removed-worktree resume"), or the provider owns a native `checkoutRehome.relocateConversation` that
+ *   moves the directory the CLI records. Anything unproven keeps its conversation where it started;
  * - the provider declares an explicit `checkoutRehome` strategy. `resumesWithoutOriginalDirectory` only
  *   says a conversation can be resumed once its directory is gone; it does not say a *running* one can be
  *   moved, and the two strategies (hot replacement, after the turn) are very different;
@@ -24,7 +25,7 @@ export function supportsCheckoutRehoming(harness: string): boolean {
     provider?.agentBridge
     && provider.checkoutRehome
     && provider.attention?.local
-    && provider.sessions?.resumesWithoutOriginalDirectory === true
+    && (provider.sessions?.resumesWithoutOriginalDirectory === true || typeof provider.checkoutRehome.relocateConversation === 'function')
     && resume
     && (!resume.transports || resume.transports.includes('local')),
   );

@@ -741,10 +741,11 @@ only says a conversation can be resumed once its original directory is gone. It 
 conversation can be moved. A provider therefore declares an explicit `checkoutRehome` capability
 (`HarnessCheckoutRehomeCapability`: `mode: 'hot-replace' | 'after-turn'`, an optional explicit target-directory
 option and writer-contention recognition), and `rehomeSupport.ts` grants the tools only when the provider has that
-*and* a native local `sessions.resume`, `resumesWithoutOriginalDirectory === true` (needed to resume a conversation
-whose worktree is already gone), local attention (the live conversation's native session id comes from native
-lifecycle events, never from the model) and the bridge. That is **Claude (`hot-replace`) and Codex (`after-turn`)**.
-OpenCode, Pi, Agy, Hermes and OMP are not granted the tools (OMP proves resume from another directory but has no
+*and* a native local `sessions.resume`, a way for the CLI to run the conversation elsewhere (either
+`resumesWithoutOriginalDirectory === true`, or a provider-owned native `checkoutRehome.relocateConversation`),
+local attention (the live conversation's native session id comes from native
+lifecycle events, never from the model) and the bridge. That is **Claude (`hot-replace`), Codex (`after-turn`) and
+OpenCode (`after-turn` with native relocation)**. Pi, Agy, Hermes and OMP are not granted the tools (OMP proves resume from another directory but has no
 bridge to ask through). The launch also needs agent attention enabled. Shared code never branches on a harness name:
 it reads the provider's declared mode.
 
@@ -759,6 +760,33 @@ found").
 | --- | --- | --- | --- |
 | Claude | `hot-replace` | `claude --resume <id>` started in the target directory (launch directory decides; no target option) while the first process waits in the request | one session file continued across main -> worktree -> main in the real app |
 | Codex | `after-turn` | after the native root Stop: retire the first process, then `codex ... resume <id> -s ... --cd <target>` | measured below, plus the real app |
+| OpenCode | `after-turn` + `relocateConversation` | after the native root idle: retire the first process, move the conversation's recorded directory with OpenCode's own `move-session`, then `opencode --session <id>` | measured below, plus the real app |
+
+**OpenCode (measured with 1.18.34, isolated XDG profile).** `opencode --session <id>` ignores both the process
+directory and `--dir`: it runs in the directory *recorded in the conversation*, so resuming alone never re-homes it
+and a removed directory is not recoverable that way. The one native operation that changes the record while keeping
+the session id is `POST /experimental/control-plane/move-session` `{sessionID, destination: {directory}}` (204;
+`session list` then reports the new directory and a later resume runs there; no file is touched because
+`moveChanges` is never sent). OpenCode refuses a destination outside the conversation's project (400, so a worktree
+of the same repository is fine, `/etc` is not) and a relative path (500); a refusal changes nothing. Clanker reaches it
+through a transient `opencode serve` owned by that one call (`harnesses/opencode/rehome.ts`): loopback, a free port,
+a fresh random `OPENCODE_SERVER_PASSWORD`, Basic auth, killed in every outcome. The service never names OpenCode: the
+provider's `relocateConversation` runs before *every* replacement attempt with the source already retired, so
+recovery relocates back before it resumes, and a refusal fails the attempt (nothing is resumed in the wrong
+directory). OpenCode is `after-turn` because a second process cannot be shown safe next to a live one (it shares the
+SQLite store and the live process owns the session); its native `session.status` busy/idle is the turn boundary the
+attention plugin already reports. The target comes only from the main-owned checkout context. `opencode session list`
+lists only the project of its working directory (empty from an unrelated one), so history discovery now runs it inside
+the workspace (or, for the `<repo>-worktrees` container, inside its first checkout); without this a conversation that
+lives in a worktree was never found. **Guidance:** OpenCode concatenates the `instructions` array across config
+sources (measured: the user's entry stays, ours is appended), so the lifecycle guidance is one launch-owned file in
+a fresh 0700 temp directory referenced from `OPENCODE_CONFIG_CONTENT` and removed by `dispose`; no project file and no
+user config is touched. Real runs (big-pickle): explicit create -> same session id, `pwd`, `clanker_context` and status
+bar agree -> edit, commit, merge -> explicit complete removed the worktree and the branch; unprompted
+"please create an isolated worktree and branch and make one small edit" called `clanker_create_isolated_checkout`;
+"make a small edit, create a PR, merge it and clean up when done" created the checkout, merged (a local bare origin
+has no PR, so by push) and called `clanker_complete_isolated_checkout` unprompted. As with Codex the agent's turn ends
+at the move; the user (or the next prompt) continues in the new checkout.
 
 **Why Codex cannot be hot-replaced.** Measured with Codex 0.160.0 in an isolated `CODEX_HOME` (so as not to
 touch real conversations): Codex runs threads in a shared per-`CODEX_HOME` app-server daemon, and that daemon, not

@@ -382,7 +382,7 @@ describe('create: main checkout -> new isolated worktree', () => {
   });
 
   describe('authority and support are refused before anything changes', () => {
-    it.each(['opencode', 'pi', 'hermes', 'agy', 'omp'])('an agent that cannot be resumed elsewhere (%s) cannot invoke it', async (harness) => {
+    it.each(['pi', 'hermes', 'agy', 'omp'])('an agent that cannot be resumed elsewhere (%s) cannot invoke it', async (harness) => {
       const world = inMain({ harness });
       const result = await call(world, 'create', MAIN, { branch: 'feature-x' });
       expect(result.isError).toBe(true);
@@ -669,7 +669,7 @@ describe('complete: isolated worktree -> main checkout, then cleanup', () => {
       expect(world.sessions.resumeInCheckout).not.toHaveBeenCalled();
     });
 
-    it.each(['opencode', 'pi'])('an agent that cannot be resumed elsewhere (%s)', async (harness) => {
+    it.each(['pi'])('an agent that cannot be resumed elsewhere (%s)', async (harness) => {
       const world = inTree({ harness });
       const result = await call(world, 'complete', TREE, {});
       expect(result.isError).toBe(true);

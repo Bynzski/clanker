@@ -414,8 +414,9 @@ describe('resumeInCheckout (the re-home launch)', () => {
     const controller = setup();
     await controller.resumeInCheckout('ws', session, { targetContext: TREE });
     expect(toolNames()).toEqual(['clanker_context', ...lifecycleNames]);
+    // OpenCode declares after-turn re-homing with a native relocation, so it is granted the same tools.
     await controller.resumeInCheckout('ws', { ...session, harness: 'opencode', id: 's2' }, { targetContext: TREE });
-    expect(toolNames()).toEqual(['clanker_context']);
+    expect(toolNames()).toEqual(['clanker_context', ...lifecycleNames]);
   });
 
   it('without agent attention a re-homeable harness still gets only the context tool', async () => {
@@ -433,7 +434,7 @@ describe('resumeInCheckout (the re-home launch)', () => {
     await spawn('codex');
     expect(toolNames()).toEqual(['clanker_context', ...lifecycleNames]);
     await spawn('opencode');
-    expect(toolNames()).toEqual(['clanker_context']);
+    expect(toolNames()).toEqual(['clanker_context', ...lifecycleNames]);
   });
 
   it('passes the liveness hook, the exit hook and the startup buffer bound to the PTY, and still disposes attachments on exit', async () => {

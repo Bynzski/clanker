@@ -189,8 +189,21 @@ describe('Codex guidance through its own launch-scoped instruction channel', () 
     const claude = bridgeOf('claude')!.prepare(context({ instructions: guidance }))!;
     expect(claude.args!.join(' ')).not.toContain('developer_instructions');
     expect(fs.readFileSync(claude.args![claude.args!.indexOf('--mcp-config') + 1], 'utf8')).not.toContain('Checkout lifecycle');
+  });
+
+  it('OpenCode gets the guidance as an extra, launch-owned instructions file; the credential is never in it, and dispose removes it', async () => {
     const opencode = bridgeOf('opencode')!.prepare(context({ instructions: guidance }))!;
+    const config = JSON.parse(opencode.env!.OPENCODE_CONFIG_CONTENT);
+    expect(config.instructions).toHaveLength(1);
+    const file = config.instructions[0] as string;
+    expect(path.isAbsolute(file)).toBe(true);
+    expect(fs.readFileSync(file, 'utf8')).toBe(guidance);
     expect(opencode.env!.OPENCODE_CONFIG_CONTENT).not.toContain('Checkout lifecycle');
+    await opencode.dispose();
+    expect(fs.existsSync(file)).toBe(false);
+    expect(fs.existsSync(path.dirname(file))).toBe(false);
+    const plain = JSON.parse(bridgeOf('opencode')!.prepare(context())!.env!.OPENCODE_CONFIG_CONTENT);
+    expect(plain.instructions).toBeUndefined();
   });
 
   it('the launch step hands the provider exactly the guidance for what its credential was granted', async () => {

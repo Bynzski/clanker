@@ -330,6 +330,14 @@ export interface HarnessCheckoutRehomeCapability {
    * "the conversation is still owned" failure. Only this provider-owned recognition permits a retry.
    */
   isWriterContention?(output: string): boolean;
+  /**
+   * For a CLI whose resume ignores the launch directory and runs in the directory *recorded in the
+   * conversation*: moves that recorded directory with the CLI's own native operation, so the resume that
+   * follows really runs in `directory` (a native path from a main-owned checkout context). Called with the
+   * source process already retired, before every replacement attempt (including recovery, which relocates
+   * back). Rejects when the CLI refuses; the caller then treats the attempt as failed and never resumes.
+   */
+  relocateConversation?(request: { readonly sessionId: string; readonly directory: string; readonly env: NodeJS.ProcessEnv }): Promise<void>;
   /** Bound for such retries; absent means none. */
   readonly writerContentionRetry?: { readonly attempts: number; readonly delayMs: number };
 }
