@@ -25,6 +25,8 @@ interface NotificationState {
   notifications: AppNotification[];
   show: (input: NotificationInput) => number;
   dismiss: (id: number) => void;
+  /** Routine timeout: archive without claiming that the user read the message. */
+  expire: (id: number) => void;
   markAllRead: () => void;
   clearHistory: () => void;
 }
@@ -55,6 +57,8 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   },
   dismiss: (id) => set((state) => ({ notifications: retainHistory(state.notifications.map((entry) =>
     entry.id === id ? { ...entry, dismissed: true, read: true } : entry)) })),
+  expire: (id) => set((state) => ({ notifications: retainHistory(state.notifications.map((entry) =>
+    entry.id === id && !isPersistentNotification(entry.tone) ? { ...entry, dismissed: true } : entry)) })),
   markAllRead: () => set((state) => state.notifications.every((entry) => entry.read) ? state : ({
     notifications: state.notifications.map((entry) => entry.read ? entry : { ...entry, read: true }),
   })),

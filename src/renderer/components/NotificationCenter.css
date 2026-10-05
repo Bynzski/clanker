@@ -1,15 +1,20 @@
-/* In-flow shelf keeps Electron's native Browser outside the toast bounds. */
+/* Floating above renderer panes; never participates in the workspace flex layout. */
 .toast-viewport {
-  flex: 0 0 auto;
-  display: flex;
-  justify-content: flex-end;
-  padding: var(--space-xs) var(--space-md);
-  border-top: 1px solid var(--border-default);
-  background: var(--surface-app);
-  max-height: 28vh;
+  position: fixed;
+  top: calc(var(--toolbar-height) + var(--space-sm));
+  right: var(--space-md);
+  z-index: 900;
+  width: min(520px, calc(100vw - 2 * var(--space-md)));
+  max-height: 50vh;
   overflow: auto;
+  pointer-events: none;
 }
-.toast-stack { width: min(100%, 520px); display: flex; flex-direction: column; gap: var(--space-xs); }
+/* In tab mode the standalone toolbar sits below the title bar. */
+.app:has(> .header) .toast-viewport {
+  top: calc(2 * var(--toolbar-height) + var(--space-sm));
+}
+.toast-stack { display: flex; flex-direction: column; gap: var(--space-xs); }
+.toast-stack > * { pointer-events: auto; }
 .notification-card {
   display: flex;
   align-items: flex-start;
@@ -34,7 +39,13 @@
 .notification-message, .notification-action-error { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .notification-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-xs); }
 .notification-action-error { margin-top: var(--space-xs); }
-.notification-overflow { text-align: right; }
+.notification-overflow {
+  padding: var(--space-xs) var(--space-sm);
+  text-align: right;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+}
 .notification-trigger { gap: var(--space-xs); }
 .notification-history { width: min(480px, 90vw); padding: var(--space-sm); }
 .notification-history-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); margin-bottom: var(--space-sm); }

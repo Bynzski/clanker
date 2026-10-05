@@ -209,10 +209,14 @@ normal validated IPC paths.
 - An optional `dedupeKey` collapses pending notices only within the same workspace and tone. Each
   update receives a new ID so a stale dismissal/timer cannot dismiss its replacement.
 - Info/success toasts fade after six seconds, pausing while hovered, focused or running an action.
-  Routine messages queued behind the three visible toasts expire into history too.
+  Routine messages queued behind the three visible toasts or deferred for a native Browser expire
+  into history too, retaining their unread state until explicitly dismissed or read in history.
 - History retains the most recent 100 dismissed notices plus all pending notices. Pending warnings
   are intentionally never evicted; callers should use stable keys for recurring events. Clearing
   history removes only dismissed entries. Nothing is persisted across application restarts.
-- The single `ToastViewport` reserves layout space outside the native Browser bounds, capped at
-  28% of the window height. History uses the shared Popover and its workspace/Assistant Browser
+- The single `ToastViewport` floats at the top right below the toolbar, outside the layout flow;
+  showing/dismissing it never changes pane geometry. With an active workspace/Assistant native
+  Browser, toasts defer to the bell/history rather than hiding or resizing the Browser (native
+  views paint above HTML overlays). Pending warnings stay pending, and routine outcomes remain
+  unread in history. History uses the shared Popover and its workspace/Assistant Browser
   suppression lease. Both surfaces remain available in the zero-workspace launcher.

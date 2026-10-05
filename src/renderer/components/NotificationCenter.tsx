@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Bell, CircleAlert, CircleCheck, Info, TriangleAlert, X } from 'lucide-react';
 import { useNotificationStore, isPersistentNotification, MAX_VISIBLE_TOASTS, TOAST_DURATION_MS } from '../store/notificationStore';
 import type { AppNotification } from '../store/notificationStore';
+import { useActiveDestination } from '../lib/activeDestination';
+import { useWorkspaceStore } from '../store/workspaceStore';
+import { useAssistantSurfaceStore } from '../store/assistantSurfaceStore';
 import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover';
@@ -11,6 +14,7 @@ const TONE_ICONS = { info: Info, success: CircleCheck, warning: TriangleAlert, e
 
 function NotificationCard({ notification, history = false }: { notification: AppNotification; history?: boolean }) {
   const dismiss = useNotificationStore((state) => state.dismiss);
+  const expire = useNotificationStore((state) => state.expire);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [running, setRunning] = useState<number | null>(null);
@@ -20,12 +24,12 @@ function NotificationCard({ notification, history = false }: { notification: App
   useEffect(() => {
     if (history || paused || isPersistentNotification(notification.tone)) return;
     const startedAt = Date.now();
-    const timer = setTimeout(() => dismiss(notification.id), remaining.current);
+    const timer = setTimeout(() => expire(notification.id), remaining.current);
     return () => {
       clearTimeout(timer);
       remaining.current = Math.max(0, remaining.current - (Date.now() - startedAt));
     };
-  }, [dismiss, history, notification.id, notification.tone, paused]);
+  }, [expire, history, notification.id, notification.tone, paused]);
 
   const Icon = TONE_ICONS[notification.tone];
   return (
@@ -59,27 +63,35 @@ function NotificationCard({ notification, history = false }: { notification: App
   );
 }
 
-/** Reserves space outside the native Browser bounds; persistent toasts never hide a live preview. */
+/** Floating renderer overlay. Native Browser destinations defer to the always-available history. */
 export function ToastViewport() {
+  const destination = useActiveDestination();
+  const workspaceBrowserVisible = useWorkspaceStore((state) => destination.kind === 'workspace'
+    && state.workspaces.some((workspace) => workspace.id === destination.workspaceId && workspace.browserVisible));
+  const assistantBrowserVisible = useAssistantSurfaceStore((state) => destination.kind === 'assistant'
+    && state.byId[destination.assistantId]?.browserVisible === true);
+  // A WebContentsView is composited above renderer HTML regardless of z-index. Do not hide or
+  // resize a live Browser just to show a toast; the bell/history retains these notifications.
+  const deferToHistory = workspaceBrowserVisible || assistantBrowserVisible;
   const notifications = useNotificationStore((state) => state.notifications);
   const pending = notifications.filter((entry) => !entry.dismissed).reverse();
   const visible = pending.slice(0, MAX_VISIBLE_TOASTS);
   // Routine messages queued behind persistent warnings still expire into readable history.
   // Otherwise an unattended warning stack could accumulate an unbounded routine queue.
   useEffect(() => {
-    const queued = notifications.filter((entry) => !entry.dismissed).reverse().slice(MAX_VISIBLE_TOASTS)
+    const queued = notifications.filter((entry) => !entry.dismissed).reverse().slice(deferToHistory ? 0 : MAX_VISIBLE_TOASTS)
       .filter((entry) => !isPersistentNotification(entry.tone));
     if (queued.length === 0) return;
     const deadline = queued.reduce((earliest, entry) => Math.min(earliest, entry.createdAt + TOAST_DURATION_MS), Infinity);
     const timer = setTimeout(() => {
       const now = Date.now();
       for (const entry of queued) {
-        if (entry.createdAt + TOAST_DURATION_MS <= now) useNotificationStore.getState().dismiss(entry.id);
+        if (entry.createdAt + TOAST_DURATION_MS <= now) useNotificationStore.getState().expire(entry.id);
       }
     }, Math.max(0, deadline - Date.now()));
     return () => clearTimeout(timer);
-  }, [notifications]);
-  if (visible.length === 0) return null;
+  }, [notifications, deferToHistory]);
+  if (deferToHistory || visible.length === 0) return null;
   return <section className="toast-viewport" aria-label="Notifications">
     <div className="toast-stack">
       {visible.map((notification) => <NotificationCard key={notification.id} notification={notification} />)}

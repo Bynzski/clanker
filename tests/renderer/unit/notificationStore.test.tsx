@@ -34,6 +34,15 @@ describe('notification store', () => {
     expect(store().notifications).toMatchObject([{ id: warning }]);
   });
 
+  it('archives routine outcomes as unread and never expires a persistent warning', () => {
+    const info = store().show({ tone: 'info', message: 'background outcome' });
+    const warning = store().show({ tone: 'warning', message: 'needs attention' });
+    store().expire(info);
+    store().expire(warning);
+    expect(store().notifications.find((entry) => entry.id === info)).toMatchObject({ dismissed: true, read: false });
+    expect(store().notifications.find((entry) => entry.id === warning)).toMatchObject({ dismissed: false, read: false });
+  });
+
   it('reading history does not dismiss pending warnings', () => {
     store().show({ tone: 'error', message: 'failed' });
     store().markAllRead();

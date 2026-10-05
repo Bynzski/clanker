@@ -116,6 +116,41 @@ describe('notifications', () => {
     expect(useWorkspaceStore.getState().workspaces[0].browserOverlayCount).toBe(0);
   });
 
+  it('defers to history without hiding a workspace Browser, keeping missed outcomes unread', () => {
+    vi.useFakeTimers();
+    const ws = createWorkspaceFixture({ id: 'ws', browserVisible: true });
+    useWorkspaceStore.setState({ workspaces: [ws], activeWorkspaceId: ws.id });
+    render(<><ToastViewport /><NotificationCenter /></>);
+    act(() => {
+      store().show({ tone: 'warning', message: 'kept checkout' });
+      store().show({ tone: 'info', message: 'moved conversation' });
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Notifications, 2 unread' })).toBeTruthy();
+    expect(useWorkspaceStore.getState().workspaces[0].browserOverlayCount ?? 0).toBe(0);
+    act(() => vi.advanceTimersByTime(TOAST_DURATION_MS));
+    expect(store().notifications.find((entry) => entry.message === 'moved conversation')).toMatchObject({ dismissed: true, read: false });
+    act(() => useWorkspaceStore.setState({ workspaces: [{ ...ws, browserVisible: false }] }));
+    expect(screen.getByRole('alert')).toHaveTextContent('kept checkout');
+  });
+
+  it('follows the active destination instead of a parked workspace Browser', () => {
+    const ws = createWorkspaceFixture({ id: 'parked', browserVisible: true });
+    useWorkspaceStore.setState({ workspaces: [ws], activeWorkspaceId: ws.id });
+    useAssistantNavStore.setState({ activeAssistantId: 'hermes:fred', openedAssistantIds: ['hermes:fred'] });
+    store().show({ tone: 'warning', message: 'retained' });
+    render(<ToastViewport />);
+    expect(screen.getByRole('alert')).toHaveTextContent('retained');
+    act(() => useAssistantSurfaceStore.getState().setBrowserVisible('hermes:fred', true));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(useAssistantSurfaceStore.getState().byId['hermes:fred'].browserOverlayCount).toBe(0);
+    act(() => useAssistantNavStore.getState().clearActive());
+    expect(screen.queryByRole('alert')).toBeNull(); // the workspace Browser now owns the app
+    act(() => useWorkspaceStore.setState({ workspaces: [{ ...ws, browserVisible: false }] }));
+    expect(screen.getByRole('alert')).toHaveTextContent('retained');
+  });
+
   it('suppresses the active Assistant Browser while history is open', async () => {
     useAssistantNavStore.setState({ activeAssistantId: 'hermes:fred', openedAssistantIds: ['hermes:fred'] });
     render(<NotificationCenter />);
