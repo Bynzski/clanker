@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NotificationCenter, ToastViewport } from '../../../src/renderer/components/NotificationCenter';
-import { useNotificationStore, TOAST_DURATION_MS } from '../../../src/renderer/store/notificationStore';
+import { useNotificationStore, MAX_VISIBLE_TOASTS, TOAST_DURATION_MS } from '../../../src/renderer/store/notificationStore';
 import { useAssistantNavStore } from '../../../src/renderer/store/assistantNavStore';
 import { useAssistantSurfaceStore } from '../../../src/renderer/store/assistantSurfaceStore';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
@@ -46,18 +46,58 @@ describe('notifications', () => {
     expect(store().notifications).toHaveLength(4);
   });
 
-  it('expires a routine queue behind warnings into history without losing warnings', () => {
+  it.each(['warning', 'error'] as const)('shows a new %s when three older persistent warnings occupy the toast slots', async (tone) => {
+    vi.useFakeTimers();
+    render(<><ToastViewport /><NotificationCenter /></>);
+    act(() => {
+      for (let i = 0; i < MAX_VISIBLE_TOASTS; i++) store().show({ tone: 'warning', message: `older warning ${i}` });
+    });
+    expect(screen.getAllByRole('alert')).toHaveLength(MAX_VISIBLE_TOASTS);
+    act(() => { store().show({ tone, message: 'new urgent outcome' }); });
+    expect(screen.getAllByRole('alert').map((card) => card.textContent)).toEqual([
+      'older warning 1', 'older warning 2', 'new urgent outcome',
+    ]);
+    expect(screen.queryByText('older warning 0')).toBeNull();
+    expect(screen.getByText('1 more in notification history')).toBeTruthy();
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(store().notifications).toHaveLength(4);
+    expect(store().notifications.every((entry) => !entry.dismissed && !entry.read)).toBe(true);
+
+    // Restore real timers for Radix focus/portal scheduling after proving persistence.
+    vi.useRealTimers();
+    // Overflow is still available in history, and only explicit dismissal retires a warning.
+    fireEvent.click(screen.getByRole('button', { name: 'Notifications, 4 unread' }));
+    const history = await screen.findByRole('dialog', { name: 'Notification history' });
+    for (const message of ['older warning 0', 'older warning 1', 'older warning 2', 'new urgent outcome']) {
+      expect(within(history).getByText(message)).toBeTruthy();
+    }
+    expect(store().notifications.every((entry) => !entry.dismissed)).toBe(true);
+    fireEvent.click(within(history).getByRole('button', { name: 'Dismiss notification: older warning 0' }));
+    expect(store().notifications.filter((entry) => !entry.dismissed)).toHaveLength(3);
+    expect(store().notifications).toHaveLength(4);
+    expect(within(history).getByText('older warning 0')).toBeTruthy();
+  });
+
+  it.each(['before', 'after'] as const)('archives a routine burst raised %s persistent warnings without losing pending warnings', (order) => {
     vi.useFakeTimers();
     render(<ToastViewport />);
+    const warnings = () => { for (let i = 0; i < MAX_VISIBLE_TOASTS; i++) store().show({ tone: 'warning', message: `warning ${i}` }); };
+    const routines = () => { for (let i = 0; i < 10; i++) store().show({ tone: 'success', message: `routine ${i}` }); };
     act(() => {
-      for (let i = 0; i < 3; i++) store().show({ tone: 'warning', message: `warning ${i}` });
-      for (let i = 0; i < 10; i++) store().show({ tone: 'success', message: `routine ${i}` });
+      if (order === 'before') { routines(); warnings(); } else { warnings(); routines(); }
     });
-    expect(screen.getAllByRole('alert')).toHaveLength(3);
+    if (order === 'before') {
+      expect(screen.getAllByRole('alert')).toHaveLength(MAX_VISIBLE_TOASTS);
+    } else {
+      expect(screen.getAllByRole('status').map((card) => card.textContent)).toEqual(['routine 7', 'routine 8', 'routine 9']);
+      expect(screen.queryByRole('alert')).toBeNull();
+    }
     expect(screen.getByText('10 more in notification history')).toBeTruthy();
     act(() => vi.advanceTimersByTime(TOAST_DURATION_MS));
-    expect(store().notifications.filter((entry) => !entry.dismissed)).toHaveLength(3);
+    expect(store().notifications.filter((entry) => !entry.dismissed)).toHaveLength(MAX_VISIBLE_TOASTS);
     expect(store().notifications).toHaveLength(13);
+    expect(store().notifications.every((entry) => !entry.read)).toBe(true);
+    expect(screen.getAllByRole('alert')).toHaveLength(MAX_VISIBLE_TOASTS);
     expect(screen.queryByText('10 more in notification history')).toBeNull();
   });
 
@@ -72,6 +112,26 @@ describe('notifications', () => {
     expect(screen.queryByText('first')).toBeNull();
     act(() => vi.advanceTimersByTime(4_000));
     expect(screen.queryByText('updated')).toBeNull();
+  });
+
+  it('gives a deduped replacement a fresh visible lifetime after its original was pushed into the queue', () => {
+    vi.useFakeTimers();
+    render(<ToastViewport />);
+    act(() => { store().show({ tone: 'info', message: 'first', dedupeKey: 'same' }); });
+    act(() => {
+      for (let i = 0; i < MAX_VISIBLE_TOASTS; i++) store().show({ tone: 'warning', message: `warning ${i}` });
+    });
+    expect(screen.queryByText('first')).toBeNull();
+    act(() => vi.advanceTimersByTime(5_000));
+    act(() => { store().show({ tone: 'info', message: 'updated', dedupeKey: 'same' }); });
+    expect(screen.getByRole('status')).toHaveTextContent('updated');
+    act(() => vi.advanceTimersByTime(2_000)); // past the old queued notice's deadline
+    expect(screen.getByRole('status')).toHaveTextContent('updated');
+    act(() => vi.advanceTimersByTime(4_000));
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(store().notifications).toHaveLength(4);
+    expect(store().notifications.find((entry) => entry.message === 'updated')).toMatchObject({ dismissed: true, read: false });
+    expect(store().notifications.filter((entry) => !entry.dismissed)).toHaveLength(MAX_VISIBLE_TOASTS);
   });
 
   it('pauses expiry on hover and keyboard focus, then resumes the remaining time', () => {

@@ -204,6 +204,8 @@ removes its notices. Checkout transitions are the first consumer. Notification d
 filesystem, terminal or checkout operations; optional action callbacks are renderer-owned and use the
 normal validated IPC paths.
 
+- The three newest pending notifications occupy the toast slots; only that subset is reversed
+  for oldest-at-top stacking. Older pending warnings remain in overflow/history.
 - Pending warnings/errors persist until explicitly dismissed. Reading history marks notifications
   read but does not dismiss them. A later success cannot replace a warning.
 - An optional `dedupeKey` collapses pending notices only within the same workspace and tone. Each

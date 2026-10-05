@@ -74,12 +74,13 @@ export function ToastViewport() {
   // resize a live Browser just to show a toast; the bell/history retains these notifications.
   const deferToHistory = workspaceBrowserVisible || assistantBrowserVisible;
   const notifications = useNotificationStore((state) => state.notifications);
-  const pending = notifications.filter((entry) => !entry.dismissed).reverse();
-  const visible = pending.slice(0, MAX_VISIBLE_TOASTS);
+  const pending = notifications.filter((entry) => !entry.dismissed);
+  // New arrivals get the slots. Reverse only that subset for oldest-at-top visual stacking.
+  const visible = pending.slice(0, MAX_VISIBLE_TOASTS).reverse();
   // Routine messages queued behind persistent warnings still expire into readable history.
   // Otherwise an unattended warning stack could accumulate an unbounded routine queue.
   useEffect(() => {
-    const queued = notifications.filter((entry) => !entry.dismissed).reverse().slice(deferToHistory ? 0 : MAX_VISIBLE_TOASTS)
+    const queued = notifications.filter((entry) => !entry.dismissed).slice(deferToHistory ? 0 : MAX_VISIBLE_TOASTS)
       .filter((entry) => !isPersistentNotification(entry.tone));
     if (queued.length === 0) return;
     const deadline = queued.reduce((earliest, entry) => Math.min(earliest, entry.createdAt + TOAST_DURATION_MS), Infinity);
