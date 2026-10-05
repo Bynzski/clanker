@@ -194,3 +194,31 @@ browserPane?.tabs[]
 - **Nullability invariant:** `null` ↔ `length === 0` — A field is `null` if and only if its collection is empty. This simplifies null checks in the UI.
 - **Reference invariant:** `id !== null` → `collection.some(item => item.id === id)` — An ID field always points to an existing item in its collection.
 - **Layout tree invariant:** All IDs referenced in the `layoutRoot` tree exist in the corresponding panes collections.
+
+## App Notifications
+
+`notificationStore.ts` is app-level, in-memory presentation state, independent of workspace and
+Assistant lifecycles. Features call `useNotificationStore.getState().show({ tone, message, ... })`;
+optional workspace identity/name is captured at emission, and closing/switching a workspace never
+removes its notices. Checkout transitions are the first consumer. Notification data never authorizes
+filesystem, terminal or checkout operations; optional action callbacks are renderer-owned and use the
+normal validated IPC paths.
+
+- The three newest pending notifications occupy the toast slots; only that subset is reversed
+  for oldest-at-top stacking. Older pending warnings remain in overflow/history.
+- Pending warnings/errors persist until explicitly dismissed. Reading history marks notifications
+  read but does not dismiss them. A later success cannot replace a warning.
+- An optional `dedupeKey` collapses pending notices only within the same workspace and tone. Each
+  update receives a new ID so a stale dismissal/timer cannot dismiss its replacement.
+- Info/success toasts fade after six seconds, pausing while hovered, focused or running an action.
+  Routine messages queued behind the three visible toasts or deferred for a native Browser expire
+  into history too, retaining their unread state until explicitly dismissed or read in history.
+- History retains the most recent 100 dismissed notices plus all pending notices. Pending warnings
+  are intentionally never evicted; callers should use stable keys for recurring events. Clearing
+  history removes only dismissed entries. Nothing is persisted across application restarts.
+- The single `ToastViewport` floats at the top right below the toolbar, outside the layout flow;
+  showing/dismissing it never changes pane geometry. With an active workspace/Assistant native
+  Browser, toasts defer to the bell/history rather than hiding or resizing the Browser (native
+  views paint above HTML overlays). Pending warnings stay pending, and routine outcomes remain
+  unread in history. History uses the shared Popover and its workspace/Assistant Browser
+  suppression lease. Both surfaces remain available in the zero-workspace launcher.

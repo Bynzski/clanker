@@ -111,19 +111,3 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-/* Outcome of an agent checkout transition; one line, truncated, full text in the tooltip. */
-.status-notice {
-  max-width: 48ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  background: none;
-  border: none;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-.status-notice-warning {
-  color: var(--status-warning);
-}

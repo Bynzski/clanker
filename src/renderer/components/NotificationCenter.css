@@ -1,0 +1,58 @@
+/* Floating above renderer panes; never participates in the workspace flex layout. */
+.toast-viewport {
+  position: fixed;
+  top: calc(var(--toolbar-height) + var(--space-sm));
+  right: var(--space-md);
+  z-index: 900;
+  width: min(520px, calc(100vw - 2 * var(--space-md)));
+  max-height: 50vh;
+  overflow: auto;
+  pointer-events: none;
+}
+/* In tab mode the standalone toolbar sits below the title bar. */
+.app:has(> .header) .toast-viewport {
+  top: calc(2 * var(--toolbar-height) + var(--space-sm));
+}
+.toast-stack { display: flex; flex-direction: column; gap: var(--space-xs); }
+.toast-stack > * { pointer-events: auto; }
+.notification-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-raised);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  animation: notification-enter 120ms ease-out;
+}
+.notification-tone-icon { flex-shrink: 0; margin-top: 2px; }
+.notification-info .notification-tone-icon { color: var(--status-info); }
+.notification-success .notification-tone-icon { color: var(--status-success); }
+.notification-warning .notification-tone-icon, .notification-trigger-warning { color: var(--status-warning); }
+.notification-error .notification-tone-icon, .notification-action-error { color: var(--status-error); }
+.notification-body { flex: 1; min-width: 0; }
+.notification-workspace, .notification-time, .notification-overflow, .notification-empty { color: var(--text-secondary); font-size: var(--font-size-sm); }
+.notification-workspace { margin-bottom: var(--space-xs); overflow-wrap: anywhere; }
+.notification-message, .notification-action-error { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.notification-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-xs); }
+.notification-action-error { margin-top: var(--space-xs); }
+.notification-overflow {
+  padding: var(--space-xs) var(--space-sm);
+  text-align: right;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+}
+.notification-trigger { gap: var(--space-xs); }
+.notification-history { width: min(480px, 90vw); padding: var(--space-sm); }
+.notification-history-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); margin-bottom: var(--space-sm); }
+.notification-history-header h2 { font-size: var(--font-size-md); margin: 0; }
+.notification-history-list { display: flex; flex-direction: column; gap: var(--space-xs); }
+.notification-history .notification-card { animation: none; box-shadow: none; }
+.notification-empty { padding: var(--space-sm); }
+.app-launcher .workspace-gate { flex: 1; min-height: 0; height: auto; }
+@keyframes notification-enter { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .notification-card { animation: none; } }
