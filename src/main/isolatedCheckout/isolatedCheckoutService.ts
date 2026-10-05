@@ -3,6 +3,7 @@ import type { AgentAttentionChange, AgentAttentionSnapshot } from '../../shared/
 import type { AgentCheckoutTransitionEvent } from '../../shared/types/checkoutTransition';
 import { LOCAL_ENVIRONMENT_ID } from '../../shared/types/environments';
 import type { HarnessSession } from '../../shared/types/session';
+import { UnverifiedProcessExitError } from '../harnesses/types';
 import { toNativePath } from '../../shared/pathNormalize';
 import type { AgentBridgeCaller, AgentBridgeToolResult } from '../agentBridge/capabilities';
 import type { AgentCheckoutLifecyclePort } from '../agentBridge/lifecycleCapabilities';
@@ -767,7 +768,12 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
         // a refusal fails this attempt (nothing is resumed in the wrong directory).
         if (rehome?.relocateConversation) {
           await rehome.relocateConversation({ sessionId: session.id, directory: toNativePath(target.path, process.platform), env: process.env })
-            .catch((error: unknown) => { throw new ReplacementFailure(messageOf(error, 'The conversation could not be relocated'), ''); });
+            .catch((error: unknown) => {
+              const failure = new ReplacementFailure(messageOf(error, 'The conversation could not be relocated'), '');
+              // A helper that touched the conversation's native state and cannot be proven gone: nothing is resumed.
+              failure.unsafeToResume = error instanceof UnverifiedProcessExitError;
+              throw failure;
+            });
         }
         return await this.startReplacement(subject, session, target, NEVER_ABORTED);
       } catch (error) {

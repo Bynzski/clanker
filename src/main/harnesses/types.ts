@@ -317,6 +317,15 @@ export interface HarnessAccountsCapability {
  *   conversation resumed in the target.
  */
 export type CheckoutRehomeMode = 'hot-replace' | 'after-turn';
+/**
+ * A provider helper process that touched native conversation state could not be PROVEN to have exited. Nothing may
+ * be resumed afterwards: a second process around the same native session state is exactly what the checkout
+ * lifecycle exists to prevent.
+ */
+export class UnverifiedProcessExitError extends Error {
+  constructor(message = 'A helper process could not be confirmed stopped') { super(message); this.name = 'UnverifiedProcessExitError'; }
+}
+
 export interface HarnessCheckoutRehomeCapability {
   readonly mode: CheckoutRehomeMode;
   /**

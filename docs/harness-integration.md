@@ -1821,5 +1821,7 @@ No SSH Assistants; no profile creation/editing; a second Clanker process can sup
   is scheduled, the request's abort signal is re-checked. A checkout already created is kept attached and listed, the user
   is told it was kept and the conversation not moved (never "nothing changed"), and the tool result says the same.
 - **OpenCode relocation uses the canonical launch plan** (`planLocalLaunch`: user CLI bin directories on PATH, Windows
-  PATH/PATHEXT with the escaped `.cmd` form, attention credentials stripped). On Windows the server is stopped with
-  `taskkill /T /F`; on every platform the call returns only once the server has exited (bounded).
+  PATH/PATHEXT with the escaped `.cmd` form, attention credentials stripped). The call succeeds only after the server's
+  own `exit` event: POSIX SIGTERM, then SIGKILL; Windows awaited `taskkill /PID n /T`, then `/T /F` (the tree, since a
+  `.cmd` shim runs the server under `cmd.exe`); each phase bounded. If exit cannot be proven the call rejects with
+  `UnverifiedProcessExitError`, the lifecycle treats the move as failed and resumes nothing, not even the recovery.

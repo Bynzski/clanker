@@ -10,7 +10,9 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...actual, default: { ...actual, homedir: () => fakeHome.dir || actual.homedir() }, homedir: () => fakeHome.dir || actual.homedir() };
 });
 
-import { killProcessTree, moveOpenCodeConversation, planOpenCodeServe } from '../../../src/main/harnesses/opencode/rehome';
+import { EventEmitter } from 'node:events';
+import { moveOpenCodeConversation, planOpenCodeServe, stopTransientServer } from '../../../src/main/harnesses/opencode/rehome';
+import { UnverifiedProcessExitError } from '../../../src/main/harnesses/types';
 
 // A stand-in `opencode serve` (a node script named `opencode` on PATH) that records what it was asked, so the
 // transient-server protocol is checked without the real CLI: loopback, Basic auth with a fresh password, the
@@ -40,6 +42,8 @@ http.createServer((req, res) => {
     res.statusCode = req.method === 'POST' ? ${moveStatus} : 200; res.end('{}');
   });
 }).listen(port, host);
+fs.writeFileSync(${JSON.stringify(path.join(dir, 'pid'))}, String(process.pid));
+setTimeout(() => process.exit(0), 20000); // a stand-in never outlives its test
 process.on('SIGTERM', () => { fs.writeFileSync(${JSON.stringify(record.killed)}, '1'); process.exit(0); });
 `, { mode: 0o755 });
   return { bin, ...record };
@@ -118,17 +122,127 @@ describe('command resolution is the canonical one', () => {
   });
 });
 
-describe('killProcessTree', () => {
-  it('kills the whole tree with taskkill on Windows (the shim runs the server as a grandchild of cmd.exe)', () => {
-    const run = vi.fn();
-    const kill = vi.fn();
-    killProcessTree({ pid: 4242, kill }, 'win32', run);
-    expect(run).toHaveBeenCalledWith('taskkill', ['/pid', '4242', '/T', '/F']);
-    expect(kill).not.toHaveBeenCalled();
+/** A child whose exit the TEST decides: kill() only records the request, exactly like a signal sent to a process. */
+function fakeChild(pid: number | undefined = 4242) {
+  const events = new EventEmitter();
+  const calls: string[] = [];
+  const child = {
+    pid, exitCode: null as number | null, signalCode: null as NodeJS.Signals | null,
+    kill: vi.fn((signal?: NodeJS.Signals | number) => { calls.push(`kill ${String(signal)}`); return true; }),
+  };
+  const exited = new Promise<void>((resolve) => { events.once('exit', () => resolve()); });
+  const exit = () => { child.exitCode = 0; events.emit('exit', 0, null); };
+  return { child, exited, exit, calls };
+}
+const tick = (ms = 30) => new Promise((resolve) => setTimeout(resolve, ms));
+const state = (promise: Promise<unknown>) => { const box = { done: false, error: undefined as unknown }; promise.then(() => { box.done = true; }, (error) => { box.done = true; box.error = error; }); return box; };
+
+describe('stopTransientServer: the exit is proven by the child\'s own exit event', () => {
+  const timing = { gracefulMs: 60, forcedMs: 60 };
+
+  it('graceful termination: resolves once the real exit happened (POSIX: SIGTERM only)', async () => {
+    const { child, exited, exit, calls } = fakeChild();
+    const stopping = state(stopTransientServer(child, exited, { ...timing, platform: 'linux' }));
+    await tick(10);
+    expect(calls).toEqual(['kill SIGTERM']);
+    expect(stopping.done).toBe(false); // the signal was sent; nothing is proven yet
+    exit();
+    await tick(5);
+    expect(stopping.done).toBe(true);
+    expect(stopping.error).toBeUndefined();
+    expect(calls).toEqual(['kill SIGTERM']); // never escalated
   });
-  it('uses an ordinary kill elsewhere, and never throws', () => {
-    const kill = vi.fn(() => { throw new Error('gone'); });
-    expect(() => killProcessTree({ pid: 1, kill }, 'linux', vi.fn())).not.toThrow();
-    expect(kill).toHaveBeenCalled();
+
+  it('CRITICAL: SIGTERM ignored -> SIGKILL requested -> still pending until the REAL exit event', async () => {
+    const { child, exited, exit, calls } = fakeChild();
+    const stopping = state(stopTransientServer(child, exited, { gracefulMs: 40, forcedMs: 400, platform: 'linux' }));
+    await tick(120); // past the graceful bound
+    expect(calls).toEqual(['kill SIGTERM', 'kill SIGKILL']); // the forced kill was requested...
+    expect(stopping.done).toBe(false); // ...and that alone proves nothing: the helper is still pending
+    exit(); // the process really ends
+    await tick(5);
+    expect(stopping.done).toBe(true);
+    expect(stopping.error).toBeUndefined();
+  });
+
+  it('forced termination also fails: rejects (bounded, safe text), never succeeds on a timer', async () => {
+    const { child, exited, calls } = fakeChild();
+    const started = Date.now();
+    const outcome = state(stopTransientServer(child, exited, { ...timing, platform: 'linux' }));
+    await tick(300);
+    expect(outcome.done).toBe(true);
+    expect(outcome.error).toBeInstanceOf(UnverifiedProcessExitError);
+    expect(String((outcome.error as Error).message)).toBe('The OpenCode relocation server could not be confirmed stopped');
+    expect(calls).toEqual(['kill SIGTERM', 'kill SIGKILL']);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it('an exit that races the end of the graceful wait still counts, and an already-exited child needs nothing', async () => {
+    const done = fakeChild(); done.exit();
+    await expect(stopTransientServer(done.child, done.exited, { ...timing, platform: 'linux' })).resolves.toBeUndefined();
+    expect(done.calls).toEqual([]);
+  });
+
+  describe('Windows: the whole tree, awaited, with the child\'s exit still the final proof', () => {
+    it('phase 1 `taskkill /PID n /T`, phase 2 `taskkill /PID n /T /F`, each awaited; resolves only after the child\'s exit event', async () => {
+      const { child, exited, exit, calls } = fakeChild(777);
+      const commands: string[] = [];
+      let finishForced!: () => void;
+      const run = vi.fn((command: string, args: string[]) => {
+        commands.push([command, ...args].join(' '));
+        if (args.includes('/F')) return new Promise<void>((resolve) => { finishForced = resolve; });
+        return Promise.resolve();
+      });
+      const stopping = state(stopTransientServer(child, exited, { gracefulMs: 30, forcedMs: 500, platform: 'win32', run }));
+      await tick(80);
+      expect(commands).toEqual(['taskkill /PID 777 /T', 'taskkill /PID 777 /T /F']);
+      expect(calls).toEqual([]); // no plain kill(): cmd.exe alone would leave the server behind
+      expect(stopping.done).toBe(false); // taskkill still running
+      finishForced(); // taskkill has completed...
+      await tick(30);
+      expect(stopping.done).toBe(false); // ...but the OpenCode child has not exited: still not proven
+      exit();
+      await tick(5);
+      expect(stopping.done).toBe(true);
+      expect(stopping.error).toBeUndefined();
+    });
+
+    it('taskkill succeeding but the child never exiting rejects; a failing/hung taskkill cannot hang or crash the teardown', async () => {
+      const { child, exited } = fakeChild(5);
+      const failing = vi.fn(async () => { throw new Error('taskkill: access denied'); });
+      const outcome = state(stopTransientServer(child, exited, { gracefulMs: 30, forcedMs: 30, platform: 'win32', run: failing }));
+      await tick(200);
+      expect(outcome.error).toBeInstanceOf(UnverifiedProcessExitError);
+      expect(failing).toHaveBeenCalledTimes(2);
+    });
+
+    it('a graceful tree kill that works needs no force', async () => {
+      const { child, exited, exit } = fakeChild(9);
+      const commands: string[] = [];
+      const run = vi.fn(async (command: string, args: string[]) => { commands.push([command, ...args].join(' ')); exit(); });
+      await stopTransientServer(child, exited, { gracefulMs: 200, platform: 'win32', run });
+      expect(commands).toEqual(['taskkill /PID 9 /T']);
+    });
+  });
+});
+
+describe('moveOpenCodeConversation: teardown is part of success', () => {
+  posixOnly('a server that ignores SIGTERM is force-killed and the call resolves only after its real exit', async () => {
+    const fake = fakeOpenCode(204);
+    fs.appendFileSync(path.join(fake.bin, 'opencode'), "process.removeAllListeners('SIGTERM'); process.on('SIGTERM', () => {});\n");
+    const started = Date.now();
+    await moveOpenCodeConversation({ sessionId: 'ses_abc', directory: dir, env: process.env }, { ...onPath(fake.bin), teardown: { gracefulMs: 150, forcedMs: 3_000 } });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(150); // it really waited out the ignored SIGTERM
+    expect(fs.existsSync(fake.request)).toBe(true);
+  });
+
+  posixOnly('an unprovable teardown REJECTS even though the move itself was accepted (so nothing is resumed afterwards)', async () => {
+    const fake = fakeOpenCode(204);
+    await expect(moveOpenCodeConversation({ sessionId: 'ses_abc', directory: dir, env: process.env },
+      { ...onPath(fake.bin), teardown: { gracefulMs: 1, forcedMs: 1, platform: 'win32', run: async () => undefined } }))
+      .rejects.toBeInstanceOf(UnverifiedProcessExitError);
+    expect(fs.existsSync(fake.request)).toBe(true); // the move had been accepted: success is still refused
+    // This test disabled the real teardown on purpose; end the stand-in it left running.
+    try { process.kill(Number(fs.readFileSync(path.join(dir, 'pid'), 'utf8')), 'SIGKILL'); } catch { /* already gone */ }
   });
 });

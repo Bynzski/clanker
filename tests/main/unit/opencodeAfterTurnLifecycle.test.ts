@@ -42,6 +42,7 @@ import { IsolatedCheckoutService } from '../../../src/main/isolatedCheckout/isol
 import { releaseCheckoutContext } from '../../../src/main/checkoutContextRelease';
 import { retireTerminal, retireTerminalAndWait } from '../../../src/main/terminalRetirement';
 import { openCodeMover } from '../../../src/main/harnesses/opencode/rehome';
+import { UnverifiedProcessExitError } from '../../../src/main/harnesses/types';
 
 const SESSION = '01a10b90-0961-7001-a289-382027d5a088';
 let root: string;
@@ -503,5 +504,44 @@ describe('a cancelled or timed-out create never schedules a move (OpenCode)', ()
     expect(fs.existsSync(generated('feature'))).toBe(false);
     await stop(spawn, 't1');
     expect(spawns).toHaveLength(1);
+  });
+});
+
+describe('a relocation server that cannot be proven dead (OpenCode)', () => {
+  it('CREATE: nothing is resumed, not even the recovery; nothing is removed or deleted; the user is told', async () => {
+    const first = await launch();
+    await turn(first.spawn, 't1');
+    await call(first.spawn, 'clanker_create_isolated_checkout', { branch: 'feature' });
+    relocateBehavior = () => { throw new UnverifiedProcessExitError('The OpenCode relocation server could not be confirmed stopped'); };
+    await stop(first.spawn, 't1');
+    await settle();
+
+    expect(spawns).toHaveLength(1); // the source only: no target resume, no recovery resume
+    expect(relocations).toHaveLength(1); // and no second relocation attempt either
+    expect(removedPaths).toEqual([]);
+    expect(deletedBranches).toEqual([]);
+    expect(fs.existsSync(generated('feature'))).toBe(true);
+    expect(live()).toEqual([]); // the source was retired; the history is intact for a manual resume
+    expect((events.filter((event) => event.kind === 'notice').pop() as { tone: string; message: string })).toMatchObject({ tone: 'warning', message: expect.stringMatching(/could not be resumed automatically.*history is intact/s) });
+  });
+
+  it('COMPLETE: the worktree and branch are kept and nothing is resumed', async () => {
+    const first = await launch();
+    await turn(first.spawn, 't1');
+    await call(first.spawn, 'clanker_create_isolated_checkout', { branch: 'feature' });
+    await stop(first.spawn, 't1');
+    const spawn = lastSpawn();
+    await turn(spawn, 't2');
+    await call(spawn, 'clanker_complete_isolated_checkout', { deleteBranch: true });
+    const before = spawns.length;
+    relocateBehavior = () => { throw new UnverifiedProcessExitError(); };
+    await stop(spawn, 't2');
+    await settle();
+
+    expect(spawns).toHaveLength(before);
+    expect(removedPaths).toEqual([]);
+    expect(deletedBranches).toEqual([]);
+    expect(fs.existsSync(generated('feature'))).toBe(true);
+    expect(contexts.some((context) => context.kind === 'worktree')).toBe(true);
   });
 });
