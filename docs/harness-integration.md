@@ -705,106 +705,168 @@ a split between where the conversation runs and what Clanker thinks it owns. The
 harness and every path come from the authenticated caller and main's own state; the checkout being completed is
 `caller.checkoutContext`, resolved from the terminal's launch binding in main.
 
-**Who gets them.** `rehomeSupport.ts` derives support from provider evidence, not from names: a native local
-`sessions.resume`, `sessions.resumesWithoutOriginalDirectory === true` (proven that the CLI continues a
-conversation from a directory other than the one it started in; see "Removed-worktree resume"), local attention
-and the bridge. That is **Claude and Codex**. OpenCode (resume fails once the original directory is gone), Pi
-(refuses a missing stored directory), Agy (unproven, no bridge), Hermes (no resumable history, no bridge) and OMP
-(resumes elsewhere but has no bridge to ask through) are not granted the tools: they see only `clanker_context`.
-The launch also needs agent attention enabled, because the live conversation's native session id is learned from
-native lifecycle events (`AgentAttentionBroker`), never from the model.
+**The lifecycle tools are authoritative when granted.** Inside Clanker, creating and finishing an isolated
+checkout is Clanker's job. An agent that has these tools should use them instead of `git worktree add/remove`,
+`git branch -d/-D` on the checkout's branch, Claude's `EnterWorktree` / `ExitWorktree`, Codex's `--worktree`, or any
+manual cwd switching: Clanker must track the checkout and move the same conversation with it. Everything else
+stays normal (edits, commits, pushes, pull requests and merges use ordinary Git and GitHub tools; there are no
+PR or Git tools in the bridge). Outside Clanker, or for a launch that was not granted the tools, provider-native
+behavior is unchanged: nothing intercepts shell commands or disables a provider's own worktree feature.
 
-**Re-homing is a real resume.** A running process cannot be moved by changing a directory from outside, so the
-conversation is resumed in the target checkout through the same launch every history resume uses
-(`SessionIpcController.resumeInCheckout`, the body of `SESSION_INVOKE` with main's routing decision in place of
-the recorded-directory routing; it is not reachable through IPC):
+**Guidance is discoverability, not security.** Authorization is the credential, the grants and main's live state;
+nothing depends on the model reading or obeying text. Smoke tests showed why the text matters anyway: with the old
+wording ("nothing here is required for normal work") Claude chose `EnterWorktree`, and Codex ran
+`git worktree remove`. Three layers now carry the rule:
 
-| Harness | Mechanism | Evidence |
-| --- | --- | --- |
-| Claude | `claude --resume <id>` launched in the target directory, plus the attention settings and a fresh `--mcp-config` | smoke-tested in the real app: main -> worktree -> main kept appending to one session file (`<id>.jsonl`), and the resumed conversation remembered its earlier prompts |
-| Codex | `codex resume <id>` (bridge `-c` overrides placed before the subcommand), launched in the target directory | provider evidence for resume-from-another-directory ("Removed-worktree resume") and launch/argv tests; **not smoke-tested live in this change** |
+1. *Tool descriptions* (some harnesses show only names or descriptions before loading a schema) say when to use
+   the tool, name the competing mechanisms, and say why Clanker must own it.
+2. *MCP server instructions*, built from what the credential was **granted** (`bridgeInstructions`): a launch with
+   only `clanker_context` is never told it owns worktree lifecycle or pointed at tools it cannot call.
+3. *A launch-scoped instruction channel for harnesses that do not surface server instructions.* Codex defers
+   MCP tools behind `tool_search` and, asked, reported seeing neither the tool nor any server instructions, so it
+   never reached for it. Its provider therefore adds `-c developer_instructions="<the same guidance>"` to the launch.
+   It is added **only when the user has no `developer_instructions` of their own** on the command line, in
+   `config.toml` or via a profile; a user's instructions are never replaced or merged by guessing (the bridge still
+   attaches, without the guidance). Nothing is written to the project or to the user's config.
 
-The conversation is never taken from a caller's description: main re-finds it by harness and native id in its own
-history (`SessionIpcController.findSession`, managed accounts and worktree checkouts included), so a managed
-account's conversation resumes under the account that owns it, and one main cannot find is refused before anything
-changes.
+Observed in the real app (Claude Sonnet 5.5, Codex with GPT-6 Luna), starting from the single sentence
+"create a branch and worktree with any name and make a small edit to one file", with the guidance in place:
+both chose `clanker_create_isolated_checkout` and neither used a native worktree mechanism; and from
+"make a small edit, commit it, merge it into main and clean up when done" both finished with
+`clanker_complete_isolated_checkout` and no manual removal. This is behavior of those models in those runs, not a
+guarantee.
 
-**Create.** (1) authenticate; re-check live terminal, workspace and local-only; (2) require a re-homeable harness and
-a bound native session; refuse a worktree workspace and an already isolated caller (idempotent
-`already-isolated`); (3) find the conversation in history, *before any mutation*; (4) validate the branch (empty,
-leading dash, control characters; Git's `check-ref-format` decides the rest); an existing branch is never taken
-over, except this workspace's own idle attached checkout for it (a retry); (5) base is read from Git now (the main
-checkout's branch, `HEAD` when detached); (6) create and attach through the same path as `New isolated agent`
-(`createWorktreeInScope`); (7) tell the renderer `checkout-attached`; (8) start the replacement and prove it;
-**commit**; (9) hand off; (10) report.
+**Who gets them, and why `resumesWithoutOriginalDirectory` is not enough.** `sessions.resumesWithoutOriginalDirectory`
+only says a conversation can be resumed once its original directory is gone. It does not say a *running*
+conversation can be moved. A provider therefore declares an explicit `checkoutRehome` capability
+(`HarnessCheckoutRehomeCapability`: `mode: 'hot-replace' | 'after-turn'`, an optional explicit target-directory
+option and writer-contention recognition), and `rehomeSupport.ts` grants the tools only when the provider has that
+*and* a native local `sessions.resume`, `resumesWithoutOriginalDirectory === true` (needed to resume a conversation
+whose worktree is already gone), local attention (the live conversation's native session id comes from native
+lifecycle events, never from the model) and the bridge. That is **Claude (`hot-replace`) and Codex (`after-turn`)**.
+OpenCode, Pi, Agy, Hermes and OMP are not granted the tools (OMP proves resume from another directory but has no
+bridge to ask through). The launch also needs agent attention enabled. Shared code never branches on a harness name:
+it reads the provider's declared mode.
 
-**Complete.** (1)-(3) as above, plus the checkout must be this workspace's own registered worktree context;
-(4) no *other* live terminal may use it (the same rule `releaseCheckoutContext` enforces); (5) Git must list it as an
-unlocked linked worktree (or no longer have its directory at all) and it must hold no uncommitted, untracked or
-ignored files, all *before any mutation*; (6) main is resolved from the registry; (7) start the replacement in main
-and prove it; **commit**; (8) hand off; (9) `releaseCheckoutContext` (the existing protections); (10) inspect and
-remove through the existing `gitService.removeWorktree` (or, when the directory was already gone, forget only that
-one Git record); (11) optionally `git branch -d` the branch the context was registered with; (12) reconcile.
+**Re-homing is a real resume** of the same native conversation in the target checkout, through the launch every
+history resume uses (`SessionIpcController.resumeInCheckout`, the body of `SESSION_INVOKE` with main's routing
+decision; not reachable through IPC). Main re-finds the conversation by harness and native id in its own history
+(`findSession`: managed accounts and worktrees included, and it **bypasses the history cache**, because the cache
+can predate a conversation that began after the renderer last listed history; observed as a first-turn "not
+found").
+
+| Harness | Strategy | Mechanism | Evidence |
+| --- | --- | --- | --- |
+| Claude | `hot-replace` | `claude --resume <id>` started in the target directory (launch directory decides; no target option) while the first process waits in the request | one session file continued across main -> worktree -> main in the real app |
+| Codex | `after-turn` | after the native root Stop: retire the first process, then `codex ... resume <id> -s ... --cd <target>` | measured below, plus the real app |
+
+**Why Codex cannot be hot-replaced.** Measured with Codex 0.160.0 in an isolated `CODEX_HOME` (so as not to
+touch real conversations): Codex runs threads in a shared per-`CODEX_HOME` app-server daemon, and that daemon, not
+the TUI, holds the thread's writer lock (`thread-writer-locks/<id>.lock`). While a TUI is attached to a thread, or a turn
+is still running after its TUI was killed, a second `codex resume <id> --cd <other>` does **not** fail: it attaches to
+the live thread, which keeps its original working directory (the header and `pwd` still showed the source). Only
+once the turn has completed and no TUI is attached does `resume <id> --cd <other>` take effect immediately; the
+thread's `pwd` is then the new directory. So a hot replacement can silently produce a UI that says "target" while the
+thread works in the source. The binary also contains `failed to acquire thread writer lock` and `... is already
+running with a different rollout path`; those were **not reproduced** by any flow above, so Codex's provider treats
+exactly those strings as a transient contention to retry (at most 3 attempts, 250 ms apart) and nothing else.
+
+**Create (`hot-replace`).** (1) authenticate; re-check live terminal, workspace and local-only; (2) a re-homeable
+harness and a bound native session; refuse a worktree workspace (judged from Git's listing) and an already isolated
+caller (idempotent `already-isolated`); (3) find the conversation, *before any mutation*; (4) validate the branch (Git's
+`check-ref-format` decides; an existing branch is never taken over, except this workspace's own idle attached
+checkout for it, a retry); (5) base from Git now; (6) create and attach through `New isolated agent`'s path; (7)
+`checkout-attached`; (8) start and prove the replacement; **commit**; (9) hand off; (10) report.
+
+**Create / complete (`after-turn`).** The request is *accepted*, not performed. Create does steps 1-7 (the worktree
+is created and attached now, and stays visible whatever happens next); complete does the same preflight (nobody
+else uses the checkout, Git lists it unlocked or it is already gone, nothing unsaved). Then one `PendingMove` is
+recorded and the tool returns normally with `{ status: 'scheduled' }` and a message telling the agent to finish its
+reply. The agent's turn completes normally.
+
+- *Key:* one pending move per source terminal, bound to the terminal, its native session id, workspace, source and
+  target checkout, harness and kind. A repeated identical call returns `already-scheduled`; a different kind is
+  refused. The model supplies none of these.
+- *Trigger:* the broker's own published change for **that** terminal, whose snapshot is bound to **that** native
+  session and whose `lastOutcome` is a **completed** root turn recorded **after** the request (a revision baseline, so an
+  earlier completion or an approval prompt never triggers). The broker already drops child/subagent lifecycle, so a child
+  Stop cannot; another terminal's Stop, another session's Stop and a stale completion cannot.
+- *Interrupt, failed turn, session end:* **cancel** the pending move (nothing moves behind the user's back; a user
+  notice says so; a created checkout is kept). The terminal disappearing drops it. Shutdown drops it.
+- *At the trigger,* everything is re-validated (the world may have changed during the turn; checkout identity is compared
+  by value, since Git reconciliation legitimately replaces context objects): terminal, workspace, session, both
+  contexts, and for complete again "no other terminal / not dirty / not locked". A move that is no longer valid is cancelled
+  *before the source is touched*.
+- *Source retirement:* only then is the source retired completely through `retireTerminal` (process killed, attachments
+  disposed, attention released, bridge credential revoked, removed from the terminal table), and Codex is never killed
+  inside the MCP request.
+- *Resume:* the same thread is resumed with the provider's explicit `--cd <target>` (any `-C`/`--cd` the user's flags
+  carried is replaced; the path is the native path of a main-owned checkout context, never from MCP, the renderer or the
+  model) and proven exactly as for hot replacement. Ordinary history resume keeps its exact arguments; only
+  Clanker re-homing forces a target.
+- *Recovery:* if the target resume fails (after the bounded contention retry), the same thread is resumed back where it
+  was (create: the original checkout; complete: the isolated checkout, if it still exists). If that works the pane adopts
+  it and the user is warned. If both fail, nothing is removed, released or deleted, the checkouts and branch stay and
+  stay visible, success is never reported, and a strong notice says to resume from history. A failed re-home is never followed
+  by cleanup.
+- *Only after the replacement is proven* (complete): release the context (existing protections), inspect and remove, optionally
+  safe-delete the branch.
 
 **Proof before commit.** The replacement must produce output within a deadline, survive a short observation window
-(a resume that cannot find its conversation prints an error and exits at once, so first output alone proves
-nothing), be registered in main's terminal table bound to the target context and harness, have an attention
-registration, and the target must still be the registered context of the same registered workspace.
+(a resume that cannot find its conversation prints an error and exits at once), be registered in main's terminal table
+bound to the target context and harness, have an attention registration, and the target must still be the registered
+context of the same registered workspace.
 
-**Handoff.** `terminal-replaced` is sent to the renderer first, so the pane adopts the replacement; then the
-requesting process is retired (`retireTerminal`: attention released, launch attachments disposed, process killed,
-removed from the terminal table) **before any response is written**. The agent therefore never receives a result
-and can never append one to the transcript the replacement already loaded; its client disconnects and the request
-is abandoned. This is deliberate: delivering the result would let the old process race the replacement on one
-session file. The resumed conversation sees an interrupted call; if it repeats the call it gets an idempotent
-status (`already-isolated` / `already-complete`).
+**Handoff (`hot-replace`).** `terminal-replaced` is sent first so the pane adopts the replacement; then the
+requesting process is retired **before any response is written**, so it can never append a result to the transcript
+the replacement already loaded. The agent never receives that result; the resumed conversation sees an interrupted
+call and, if it repeats it, gets `already-isolated` / `already-complete`. For `after-turn` the source was already retired
+before the replacement existed, so the order is source retired, replacement proven, `terminal-replaced`.
 
 **Credential rotation.** Nothing is mutated in place. The replacement is a fresh launch, so it gets a *new* bridge
-credential bound to its own terminal id and the **target** checkout (and the same grants); the old credential is
-revoked when the old terminal is retired. A test asserts the old token no longer resolves and the new one
-resolves to the new checkout, and that `clanker_context` through the new credential reports the live worktree.
+credential bound to its own terminal id and the **target** checkout (and the same grants and guidance); the old
+credential is revoked when the old terminal is retired (before the replacement exists, for Codex).
 
-**Attention and session continuity.** The replacement goes through the normal launch: native hook -> provider
-interpreter -> `AgentAttentionBroker`. A provider whose resume preserves the session id seeds its root (Codex);
-Claude binds on its first event, so the replacement shows `unverified` until the next turn, which is when the
-lifecycle tools become usable again. The old registration is released with a revisioned tombstone at handoff; the
-two are both registered only between spawn and handoff, and the replacement is idle (no turn, no events) then. MCP
-traffic is not used as lifecycle evidence anywhere in this.
+**Attention.** The replacement goes through the normal launch (native hook -> interpreter -> `AgentAttentionBroker`).
+For Codex the source registration is released before the replacement registers, so there is never more than one
+authoritative root for the conversation; Claude's two registrations coexist only between spawn and handoff, while the
+replacement is idle. A provider whose resume preserves the session id seeds its root (Codex); Claude binds on its
+first event, so its replacement shows `unverified` until its next turn. MCP traffic is never lifecycle evidence.
 
 **Renderer.** Main sends `AGENT_CHECKOUT_TRANSITION` events (`checkout-attached`, `terminal-replaced`,
-`checkout-released`, `notice`; `src/shared/types/checkoutTransition.ts`) in the order things became true. The
-renderer only applies them to its descriptive state (`replaceTerminal` swaps the terminal inside the same pane,
-keeping layout position and name; contexts are upserted/removed; the old xterm is disposed first) and cannot start,
-confirm or alter a transition. The status bar, sidebar and rail read the active terminal's checkout, so they follow.
-A replacement whose pane no longer exists is closed rather than left untracked. The agent that asked can no longer
-be told the outcome, so a `notice` (status bar) tells the user, including partial cleanup.
+`checkout-released`, `notice`) in the order things became true. The renderer only applies them (`replaceTerminal` swaps
+the terminal inside the same pane, keeping layout position and name; contexts are upserted or removed; the old xterm is
+disposed first) and cannot start, confirm or alter a transition. The status bar, sidebar and rail read the active
+terminal's checkout, so they follow. For Codex the old pane briefly shows its process as exited between source retirement
+and `terminal-replaced`. A replacement whose pane no longer exists is closed rather than left untracked. A `notice`
+(status bar) tells the user each outcome, including a scheduled move, a cancelled move and partial cleanup.
 
-**Failure and rollback.** Before the commit point everything rolls back to the starting state: the replacement is
-retired and the original conversation keeps running untouched. A worktree `create` already made is **kept** and
-announced (`checkout-attached`) so it is listed as an inactive checkout, as for every isolated launch; nothing is
-deleted to recover from a failure, and a retry reuses it. After the commit point the conversation lives in its new
-home and the remainder is finished, never rolled back: a release the existing protections refuse, a failed removal
-(for instance system Trash unavailable), a dirty checkout or a failed branch deletion leave the checkout (and
-branch) in place, state exactly what was and was not done in the notice, and never touch the new conversation.
-`git branch -d` only: a branch Git does not consider fully merged into the main checkout's current branch is kept
-(squash merges on a host that were never pulled locally will look unmerged), and a branch Git reports differently
-from the registered one is not deleted.
+**Failure and rollback.** Before the commit point (hot replacement) everything rolls back to the starting state: the
+replacement is retired and the original keeps running. A worktree `create` already made is **kept** and announced so it
+is listed as an inactive checkout; nothing is deleted to recover, and a retry reuses it. After the commit point the
+conversation lives in its new home and the rest is finished, never rolled back: a refused release, a failed removal (for
+instance system Trash unavailable), a dirty checkout or a failed branch deletion leave the checkout and branch in place and
+say so. An exception in any post-commit step is a partial cleanup, never "left where it was". `git branch -d` only: a branch Git
+does not consider fully merged into the main checkout's current branch is kept (a squash merge never pulled locally looks
+unmerged).
 
-**Cancellation and timeouts.** The tools declare a 30 s bound. A cancel or timeout before the commit point aborts
-the transaction (checked at every phase boundary, and while waiting for the replacement) and rolls it back; once
-past it, the abort is ignored and the transaction finishes under `IsolatedCheckoutService`'s ownership (it is
-tracked and shutdown waits for it, so there is never an orphaned task). One transition per conversation at a time.
+**Cancellation and timeouts.** The tools declare a 30 s bound. For hot replacement a cancel or timeout before the commit point
+aborts and rolls back; past it, the abort is ignored and the transaction finishes under `IsolatedCheckoutService`'s
+ownership (tracked; shutdown waits). The `after-turn` request itself returns immediately; the move that follows is owned
+by the service the same way.
 
 **Known limits of this feature.**
 
 - Claude and Codex, local workspaces, agent attention enabled. SSH is refused.
-- The agent's current turn is cut off at the move and not continued automatically; the resumed conversation waits
-  for the next prompt. No text is typed into the replacement.
-- The replaced pane gets a new terminal: its xterm scrollback is rebuilt from the resumed TUI.
-- The status line, `clanker_context` and the sidebar agree because they all follow the terminal's registered
-  checkout; an agent that creates its own worktrees outside Clanker is still outside this model.
+- Claude (`hot-replace`): the agent's current turn is cut off at the move and not continued; the resumed conversation waits
+  for the next prompt. Codex (`after-turn`): the turn completes, then the conversation continues in the target on the next turn.
+- The replaced pane gets a new terminal: its scrollback is rebuilt from the resumed TUI.
+- Codex asks its own approval for MCP tool calls and for commands outside its sandbox; those prompts are the user's.
+- The guidance reaches Codex only when the user has no `developer_instructions` of their own; otherwise Codex may choose
+  its own worktree commands, and Clanker does not intercept them.
+- A worktree an agent creates itself (`.claude/worktrees/...`, `git worktree add`) is not adopted by Clanker.
 - Removal uses the system Trash (the existing path); where it is unavailable the checkout is left and reported.
-- Codex has not been exercised live for this feature.
+- Not verified: Codex against a real GitHub pull request flow (the smokes merged locally into the main checkout).
 
 ### Known limitations
 
