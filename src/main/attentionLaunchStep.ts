@@ -4,6 +4,13 @@ import { disposeAttentionSafely } from './harnesses/localAttention';
 import type { PreparedLocalAttention } from './harnesses/types';
 import type { LaunchAttachmentStep } from './launchAttachments';
 
+/**
+ * Provided only when the provider's native hooks/plugin were actually prepared for THIS launch: attention
+ * enabled in settings is not enough (user-owned config such as `--bare`, conflicting settings, hooks or
+ * profiles make a provider decline, and the harness still launches without them).
+ */
+export const NATIVE_ATTENTION_ATTACHED = 'native-attention';
+
 export interface AttentionLaunchStepInput {
   broker: AgentAttentionBroker;
   harness: string;
@@ -39,6 +46,7 @@ export function attentionLaunchStep(input: AttentionLaunchStepInput): LaunchAtta
         return {
           ...(prepared ? { args: prepared.args } : {}),
           env: { ...brokerEnv, ...prepared?.env, CLANKER_ATTENTION_COMMAND: files.command },
+          ...(prepared ? { provides: [NATIVE_ATTENTION_ATTACHED] } : {}),
           dispose() {
             disposeAttentionSafely(prepared);
             broker.release(terminalId);

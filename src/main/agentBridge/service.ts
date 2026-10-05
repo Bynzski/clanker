@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { LOCAL_ENVIRONMENT_ID } from '../../shared/types/environments';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { findHarnessProvider } from '../harnesses/registry';
-import type { LaunchAttachmentStep } from '../launchAttachments';
+import type { LaunchAttachmentState, LaunchAttachmentStep } from '../launchAttachments';
 import {
   DEFAULT_AGENT_BRIDGE_CAPABILITIES,
   type AgentBridgeCaller,
@@ -178,8 +178,11 @@ export interface AgentBridgeLaunchStepInput {
   service: AgentBridgeService;
   harness: string;
   identity: AgentBridgeIdentity;
-  /** Capabilities this launch can honor beyond the always-available ones. */
-  grants?: AgentBridgeGrants;
+  /**
+   * Capabilities this launch can honor beyond the always-available ones. A function is evaluated when the step
+   * runs, against what the earlier attachments of THIS launch actually provided.
+   */
+  grants?: AgentBridgeGrants | ((state: LaunchAttachmentState) => AgentBridgeGrants);
   platform?: NodeJS.Platform;
 }
 
@@ -196,7 +199,7 @@ export function agentBridgeLaunchStep(input: AgentBridgeLaunchStepInput): Launch
     async prepare(state) {
       const provider = findHarnessProvider(harness)?.agentBridge;
       if (!provider) return null;
-      const lease = await service.lease(identity, input.grants);
+      const lease = await service.lease(identity, typeof input.grants === 'function' ? input.grants(state) : input.grants);
       let scratch: string | undefined;
       const removeScratch = () => {
         if (scratch) fs.rmSync(scratch, { recursive: true, force: true });

@@ -27,7 +27,7 @@ import type { AgentAttentionBroker } from '../agentAttentionBroker';
 import { invokeRemoteSession } from './remoteSessionInvocation';
 import { trustedRootSessionId, withoutAttentionEnvironment } from '../agentAttentionAdapters';
 import { prepareLaunchAttachments, type LaunchAttachmentStep } from '../launchAttachments';
-import { attentionLaunchStep } from '../attentionLaunchStep';
+import { attentionLaunchStep, NATIVE_ATTENTION_ATTACHED } from '../attentionLaunchStep';
 import { agentBridgeLaunchStep, withoutAgentBridgeEnvironment, type AgentBridgeService } from '../agentBridge/service';
 import { grantsCheckoutRehoming } from '../isolatedCheckout/rehomeSupport';
 import type { CheckoutContext } from '../../shared/types/checkoutContext';
@@ -309,7 +309,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
     if (deps.agentBridge && harnessDefaults[session.harness]?.agentBridgeEnabled === true && launchContext) {
       steps.push(agentBridgeLaunchStep({
         service: deps.agentBridge, harness: session.harness,
-        grants: { checkoutRehoming: grantsCheckoutRehoming(session.harness, { attentionEnabled }) },
+        grants: (state) => ({ checkoutRehoming: grantsCheckoutRehoming(session.harness, { nativeAttentionAttached: state.provided.has(NATIVE_ATTENTION_ATTACHED) }) }),
         identity: {
           terminalId: id, workspaceId: workspace.workspaceId, environmentId: workspace.location.environmentId,
           checkoutContextId: launchContext.id, harnessId: session.harness,

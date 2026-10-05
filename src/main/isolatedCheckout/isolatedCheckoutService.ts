@@ -11,7 +11,7 @@ import { isCurrentCheckoutContext } from '../sessionResumeTarget';
 import type { GitIpcController } from '../ipc/gitIpc';
 import type { ResumedSessionLaunch, SessionIpcController } from '../ipc/sessionIpc';
 import { directoryExists } from '../sessionWorktrees';
-import type { RetirableTerminal } from '../terminalRetirement';
+import type { RetirableTerminal, TerminalExitOutcome } from '../terminalRetirement';
 import { findListedWorktree } from '../worktreeContextAttachment';
 import type { WorkspaceRegistry } from '../workspaceRegistry';
 import { checkoutRehomeOf, supportsCheckoutRehoming } from './rehomeSupport';
@@ -80,6 +80,11 @@ export interface IsolatedCheckoutServiceDeps {
   releaseCheckoutContext(workspaceId: string, checkoutContextId: string): ReleaseCheckoutContextResult;
   /** Retires a terminal exactly as an explicit close does; resolves when its cleanup finished. */
   retireTerminal(terminalId: string): Promise<void>;
+  /**
+   * `retireTerminal`, then waits (bounded, with a forced kill) for the process' REAL exit. A conversation that
+   * must not overlap a second process is never resumed on the strength of the terminal merely leaving the table.
+   */
+  retireTerminalAndWait(terminalId: string): Promise<TerminalExitOutcome>;
   notify(event: AgentCheckoutTransitionEvent): void;
   isShuttingDown(): boolean;
   /** Test seam. */
@@ -132,6 +137,11 @@ interface MoveSubject { workspaceId: string; workspace: RegisteredWorkspace; har
 
 /** A replacement that did not come up; `output` is what it printed (bounded), for provider-owned recognition. */
 class ReplacementFailure extends Error {
+  /**
+   * The failed replacement could not be proven dead, so nothing may be resumed for this conversation: a new
+   * process could silently attach to the live one (and keep its directory).
+   */
+  unsafeToResume = false;
   constructor(message: string, readonly output: string) { super(message); }
 }
 
@@ -139,6 +149,8 @@ class ReplacementFailure extends Error {
 class TransitionFailure extends Error {}
 /** The caller cancelled or the call timed out before the commit point. */
 class TransitionAborted extends Error {}
+/** Cancelled after a checkout was already created and kept: said so, never "nothing changed". */
+class TransitionAbortedAfterCreate extends TransitionAborted {}
 
 /** What the agent is told when a move is scheduled rather than done (the move follows its turn). */
 const SCHEDULED_MESSAGE = 'The move is scheduled. Finish your reply now without running more tools; Clanker moves this same conversation when this turn completes, and it continues in the new checkout on its next turn.';
@@ -232,6 +244,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       const session = await this.conversationOf(caller);
       this.throwIfAborted(signal);
       await this.requireProjectWorkspace(workspaceId, caller.workspace.location.path);
+      this.throwIfAborted(signal);
 
       // Reuse this workspace's own attached checkout for the branch only when nothing runs in it (a retry
       // after a failed move). A checkout another conversation is using is never joined, and any other
@@ -262,10 +275,13 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       }
       // Visible and recoverable from here on, whatever happens next.
       this.deps.notify({ kind: 'checkout-attached', workspaceId, checkoutContext: target });
+      // Creation can take far longer than the tool's timeout. A request that was cancelled or timed out while it
+      // ran schedules and moves nothing; the checkout it made stays attached and listed.
+      this.abortAfterCreate(signal, workspaceId, branch, createdNow);
 
       // A conversation that must not be replaced while it runs is moved after its turn instead.
       if (checkoutRehomeOf(caller.harnessId)?.mode === 'after-turn') {
-        return this.schedule(caller, session, { kind: 'create', source: caller.checkoutContext, target, label: branch, createdNow, deleteBranch: false });
+        return this.schedule(caller, session, signal, { kind: 'create', source: caller.checkoutContext, target, label: branch, createdNow, deleteBranch: false });
       }
 
       let launched: ResumedSessionLaunch;
@@ -309,7 +325,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       this.throwIfAborted(signal);
 
       if (checkoutRehomeOf(caller.harnessId)?.mode === 'after-turn') {
-        return this.schedule(caller, session, { kind: 'complete', source: old, target: main, label: old.branch ?? 'HEAD', createdNow: false, deleteBranch: input.deleteBranch === true });
+        return this.schedule(caller, session, signal, { kind: 'complete', source: old, target: main, label: old.branch ?? 'HEAD', createdNow: false, deleteBranch: input.deleteBranch === true });
       }
 
       let launched: ResumedSessionLaunch;
@@ -423,7 +439,12 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
     let captured = '';
 
     let launched: ResumedSessionLaunch | undefined;
-    const discard = async (): Promise<void> => { if (launched) await this.deps.retireTerminal(launched.id).catch(() => undefined); };
+    // A replacement that failed must be PROVEN dead before anything else is resumed for this conversation.
+    const discard = async (): Promise<boolean> => {
+      if (!launched) return true;
+      const outcome = await this.deps.retireTerminalAndWait(launched.id).catch((): TerminalExitOutcome => 'unverifiable');
+      return outcome === 'exited' || outcome === 'absent';
+    };
     try {
       launched = await sessions.resumeInCheckout(workspaceId, session, {
         targetContext: target,
@@ -444,10 +465,16 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       this.proveOwnership(subject, launched, target);
       return launched;
     } catch (error) {
-      await discard();
+      const stopped = await discard();
       // Anything that is not already a classified failure still carries what the process printed.
-      throw error instanceof TransitionAborted || error instanceof ReplacementFailure || error instanceof TransitionFailure
+      const failure = error instanceof TransitionAborted || error instanceof ReplacementFailure || error instanceof TransitionFailure
         ? error : new ReplacementFailure(messageOf(error, 'The conversation could not be resumed'), captured);
+      if (!stopped) {
+        const unsafe = failure instanceof ReplacementFailure ? failure : new ReplacementFailure(messageOf(failure, 'The conversation could not be resumed'), captured);
+        unsafe.unsafeToResume = true;
+        throw unsafe;
+      }
+      throw failure;
     } finally {
       signal.removeEventListener('abort', onAbort);
     }
@@ -594,9 +621,14 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
    * on the native completion of that turn (`onAttentionChange`).
    */
   private schedule(
-    caller: AgentBridgeCaller, session: HarnessSession,
+    caller: AgentBridgeCaller, session: HarnessSession, signal: AbortSignal,
     spec: Pick<PendingMove, 'kind' | 'source' | 'target' | 'label' | 'createdNow' | 'deleteBranch'>,
   ): AgentBridgeToolResult {
+    // The last gate before a conversation move can exist: a cancelled or timed-out request never schedules one.
+    if (signal.aborted) {
+      if (spec.kind === 'create') this.abortAfterCreate(signal, caller.workspace.workspaceId, spec.label, spec.createdNow);
+      throw new TransitionAborted();
+    }
     const snapshot = this.deps.attention.snapshot(caller.terminalId);
     this.pending.set(caller.terminalId, {
       ...spec, terminalId: caller.terminalId, sessionId: session.id, workspaceId: caller.workspace.workspaceId,
@@ -606,6 +638,15 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
       ? `This conversation will move into isolated checkout "${spec.label}" when its current turn finishes.`
       : `This conversation will move back to the main checkout and "${spec.label}" will be cleaned up when its current turn finishes.`);
     return ok({ status: 'scheduled', message: SCHEDULED_MESSAGE, checkout: this.describe(spec.target) });
+  }
+
+  /** Throws (after saying what was kept) when the request was cancelled once the checkout already existed. */
+  private abortAfterCreate(signal: AbortSignal, workspaceId: string, branch: string, createdNow: boolean): void {
+    if (!signal.aborted) return;
+    const message = `The request to move into "${branch}" was cancelled or timed out ${createdNow ? 'after the checkout was created' : 'while its checkout was being prepared'}. `
+      + `The checkout was kept (it is listed under the workspace and in the Git menu) and this conversation was not moved.`;
+    this.notice(workspaceId, 'warning', message);
+    throw new TransitionAbortedAfterCreate(message);
   }
 
   /** Runs a triggered move under this service's ownership: tracked (shutdown waits) and never an orphan. */
@@ -661,15 +702,27 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
 
     // ---- the source process goes first, and completely: terminal removed, attachments disposed, attention
     // released, bridge credential revoked. Only then may the conversation be resumed anywhere.
-    await this.deps.retireTerminal(terminalId).catch((error: unknown) => {
+    const retired = await this.deps.retireTerminalAndWait(terminalId).catch((error: unknown): TerminalExitOutcome => {
       console.warn('[clanker-grid] retiring the source terminal failed:', messageOf(error, 'unknown error'));
+      return 'unverifiable';
     });
+    // The record leaving the table proves nothing: only the process' own exit does. Until then a second
+    // process could silently attach to the live conversation and keep its old directory, so nothing is resumed.
+    if (retired !== 'exited') {
+      this.notice(workspaceId, 'warning', `The move to "${pending.label}" was stopped: the previous process of this conversation could not be confirmed stopped (${retired}). `
+        + 'Nothing was moved, removed or deleted, and the conversation history is intact. Resume it from the chat history once it has closed.');
+      return;
+    }
 
     const subject: MoveSubject = { workspaceId, workspace: pending.workspace, harnessId: pending.harnessId };
     let moved: ResumedSessionLaunch | undefined;
     let targetError = '';
+    let unsafeToResume = false;
     try { moved = await this.startWithRetry(subject, session, pending.target, rehome); }
-    catch (error) { targetError = messageOf(error, 'the conversation could not be resumed there'); }
+    catch (error) {
+      targetError = messageOf(error, 'the conversation could not be resumed there');
+      unsafeToResume = error instanceof ReplacementFailure && error.unsafeToResume;
+    }
 
     if (moved) {
       await this.handOff(workspaceId, terminalId, moved, false);
@@ -685,8 +738,8 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
     // ---- recovery: put the same conversation back where it was. Nothing is deleted on this path.
     const stillThere = registry.getCheckoutContext(pending.source.id) === pending.source
       && directoryExists(toNativePath(pending.source.path, process.platform));
-    let recoveryError = 'its original checkout is gone';
-    if (stillThere) {
+    let recoveryError = unsafeToResume ? 'the failed attempt could not be confirmed stopped' : 'its original checkout is gone';
+    if (stillThere && !unsafeToResume) {
       try {
         const restored = await this.startWithRetry(subject, session, pending.source, rehome);
         await this.handOff(workspaceId, terminalId, restored, false);
@@ -718,7 +771,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
         }
         return await this.startReplacement(subject, session, target, NEVER_ABORTED);
       } catch (error) {
-        const contended = error instanceof ReplacementFailure && rehome?.isWriterContention?.(error.output) === true;
+        const contended = error instanceof ReplacementFailure && !error.unsafeToResume && rehome?.isWriterContention?.(error.output) === true;
         if (!contended || attempt >= attempts || this.shutDown) throw error;
         await new Promise((resolve) => setTimeout(resolve, this.timing.retryDelayMs ?? rehome?.writerContentionRetry?.delayMs ?? 0));
       }
@@ -752,6 +805,7 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
         return await body();
       } catch (error) {
         if (error instanceof TransitionFailure) return refuse(error.message);
+        if (error instanceof TransitionAbortedAfterCreate) return refuse(error.message);
         if (error instanceof TransitionAborted) return refuse('The request was cancelled before the conversation was moved; nothing changed');
         // Unknown failures keep their detail in main; the agent gets a bounded generic error.
         console.warn('[clanker-grid] isolated checkout transition failed:', messageOf(error, 'unknown error'));

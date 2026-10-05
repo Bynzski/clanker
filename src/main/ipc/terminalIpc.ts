@@ -1,5 +1,5 @@
 import { prepareLaunchAttachments, type LaunchAttachmentStep, type PreparedLaunchAttachments } from '../launchAttachments';
-import { attentionLaunchStep } from '../attentionLaunchStep';
+import { attentionLaunchStep, NATIVE_ATTENTION_ATTACHED } from '../attentionLaunchStep';
 import { retireTerminal } from '../terminalRetirement';
 import { grantsCheckoutRehoming } from '../isolatedCheckout/rehomeSupport';
 import { agentBridgeLaunchStep, withoutAgentBridgeEnvironment, type AgentBridgeService } from '../agentBridge/service';
@@ -63,6 +63,8 @@ interface Terminal {
   environmentId?: string;
   harnessId?: string;
   releaseResources?: () => Promise<void>;
+  /** Settles when the PTY process has REALLY exited (node-pty `onExit`); never because the record was removed. */
+  exited?: Promise<void>;
   /**
    * between PTY spawn and renderer confirming xterm is ready.
    * Cleared after flush on TERMINAL_READY.
@@ -300,7 +302,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       && resolvedWorkspace && checkoutContext && !isRemote) {
       steps.push(agentBridgeLaunchStep({
         service: deps.agentBridge, harness,
-        grants: { checkoutRehoming: grantsCheckoutRehoming(harness, { attentionEnabled }) },
+        grants: (state) => ({ checkoutRehoming: grantsCheckoutRehoming(harness, { nativeAttentionAttached: state.provided.has(NATIVE_ATTENTION_ATTACHED) }) }),
         identity: {
           terminalId: id, workspaceId: resolvedWorkspace.workspaceId, environmentId: effectiveEnvironmentId,
           checkoutContextId: checkoutContext.id, harnessId: harness,

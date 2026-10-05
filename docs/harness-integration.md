@@ -746,7 +746,11 @@ option and writer-contention recognition), and `rehomeSupport.ts` grants the too
 local attention (the live conversation's native session id comes from native
 lifecycle events, never from the model) and the bridge. That is **Claude (`hot-replace`), Codex (`after-turn`) and
 OpenCode (`after-turn` with native relocation)**. Pi, Agy, Hermes and OMP are not granted the tools (OMP proves resume from another directory but has no
-bridge to ask through). The launch also needs agent attention enabled. Shared code never branches on a harness name:
+bridge to ask through). The launch also needs native attention to have **actually attached** to it, not just the setting: the attention launch step
+provides a generic `native-attention` launch fact only when the provider's hooks/plugin were prepared (a provider declines on
+user-owned config such as Claude `--bare`, Codex `--profile`, OpenCode `--pure`/`OPENCODE_CONFIG_DIR`; the harness still
+launches), and the bridge step reads it (`LaunchAttachmentState.provided`) to decide the grant. Attention and the bridge stay
+separate attachments and credentials. Shared code never branches on a harness name:
 it reads the provider's declared mode.
 
 **Re-homing is a real resume** of the same native conversation in the target checkout, through the launch every
@@ -885,7 +889,7 @@ by the service the same way.
 
 **Known limits of this feature.**
 
-- Claude and Codex, local workspaces, agent attention enabled. SSH is refused.
+- Claude, Codex and OpenCode, local workspaces, native attention attached to the launch. SSH is refused.
 - Claude (`hot-replace`): the agent's current turn is cut off at the move and not continued; the resumed conversation waits
   for the next prompt. Codex (`after-turn`): the turn completes, then the conversation continues in the target on the next turn.
 - The replaced pane gets a new terminal: its scrollback is rebuilt from the resumed TUI.
@@ -1804,3 +1808,18 @@ Workspace and Assistant are peer app destinations with different capabilities (`
 ### Known V1 limitations
 
 No SSH Assistants; no profile creation/editing; a second Clanker process can supersede the first's viewer; no live Windows validation.
+
+### Hardening notes (review of the after-turn work)
+
+- **Exit is proven, not assumed.** A terminal record owns an `exited` promise settled by node-pty's own `onExit`.
+  `retireTerminalAndWait` revokes authority and removes the record exactly as `retireTerminal` does, then waits
+  (graceful kill, then SIGKILL, bounded) for that event; `absent`/`timeout`/`unverifiable` all stop an `after-turn` move
+  before anything is resumed (nothing moved, relocated, removed or deleted; the user is told). A failed replacement is
+  discarded the same way, and if it cannot be proven dead no recovery resume is attempted (a new process could silently
+  attach to the live one and keep its directory). Ordinary close/kill is unchanged.
+- **A cancelled create schedules nothing.** After the awaited worktree creation, and again as the last gate before a move
+  is scheduled, the request's abort signal is re-checked. A checkout already created is kept attached and listed, the user
+  is told it was kept and the conversation not moved (never "nothing changed"), and the tool result says the same.
+- **OpenCode relocation uses the canonical launch plan** (`planLocalLaunch`: user CLI bin directories on PATH, Windows
+  PATH/PATHEXT with the escaped `.cmd` form, attention credentials stripped). On Windows the server is stopped with
+  `taskkill /T /F`; on every platform the call returns only once the server has exited (bounded).

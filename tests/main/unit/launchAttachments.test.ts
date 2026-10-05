@@ -139,3 +139,27 @@ describe('prepareLaunchAttachments', () => {
     await expect(prepared.dispose()).resolves.toBeUndefined();
   });
 });
+
+describe('facts provided to later steps', () => {
+  it('a step sees only what earlier steps that really attached provided', async () => {
+    const seen: string[][] = [];
+    const observe = (name: string): LaunchAttachmentStep => step(name, (state) => { seen.push([...state.provided].sort()); return { dispose: quiet }; });
+    await prepareLaunchAttachments({ args: [], env: {} }, [
+      step('first', () => ({ provides: ['alpha'], dispose: quiet })),
+      step('declines', () => null, true),
+      step('fails', () => { throw new Error('boom'); }, true),
+      observe('reader'),
+    ], quiet);
+    expect(seen).toEqual([['alpha']]);
+  });
+
+  it('a step that declined or failed provides nothing, and facts are a copy: a reader cannot alter what later steps see', async () => {
+    const seen: string[][] = [];
+    await prepareLaunchAttachments({ args: [], env: {} }, [
+      step('declines', () => null, true),
+      step('mutating reader', (state) => { (state.provided as Set<string>).add('forged'); return { dispose: quiet }; }),
+      step('reader', (state) => { seen.push([...state.provided]); return { dispose: quiet }; }),
+    ], quiet);
+    expect(seen).toEqual([[]]);
+  });
+});

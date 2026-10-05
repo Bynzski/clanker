@@ -93,3 +93,19 @@ describe('startup buffer bound', () => {
     expect(flushed(f)).toBe(1);
   });
 });
+
+describe('the terminal record\'s real-exit signal', () => {
+  it('settles only on the PTY\'s own exit event, not when the record leaves the table or resources are released', async () => {
+    const f = fixture();
+    const record = f.terminals.get('remote')!;
+    let settled = false;
+    void record.exited!.then(() => { settled = true; });
+    f.terminals.delete('remote');
+    await record.releaseResources!();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    f.exit();
+    await record.exited;
+    expect(settled).toBe(true);
+  });
+});

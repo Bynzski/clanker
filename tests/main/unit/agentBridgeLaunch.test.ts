@@ -427,10 +427,10 @@ describe('resumeInCheckout (the re-home launch)', () => {
 
   it('a fresh terminal launch gets the same grants', async () => {
     setup();
-    registerTerminal();
+    registerTerminal({ agentAttentionBroker: broker as never });
     handlers.clear();
     mockHandle.mockClear();
-    registerTerminal();
+    registerTerminal({ agentAttentionBroker: broker as never });
     await spawn('codex');
     expect(toolNames()).toEqual(['clanker_context', ...lifecycleNames]);
     await spawn('opencode');
@@ -498,5 +498,101 @@ describe('the ordinary SESSION_INVOKE is unchanged by the internal route', () =>
     // The internal route is not reachable through IPC: the handler has no way to name a target context.
     expect(handlers.get(SESSION_INVOKE)!.length).toBeLessThanOrEqual(5);
     expect(controller.resumeInCheckout).toBeTypeOf('function');
+  });
+});
+
+describe('lifecycle grants follow what native attention actually did for THIS launch', () => {
+  const TREE_PATH = toNativePath('/workspace-worktrees/task', process.platform);
+  const TREE = { id: 'ws::ckt-1', workspaceId: 'ws', environmentId: 'local', path: '/workspace-worktrees/task', kind: 'worktree' as const, branch: 'task' };
+  const lifecycleNames = ['clanker_create_isolated_checkout', 'clanker_complete_isolated_checkout'];
+  const port = { create: async () => ({ data: {} }), complete: async () => ({ data: {} }) };
+
+  // What the user can put in front of each provider so that it declines native attention (user-owned config).
+  const BLOCKERS: Array<{ harness: string; flags: string; resumeArgs: string[]; env?: Record<string, string> }> = [
+    { harness: 'claude', flags: '--bare', resumeArgs: ['--resume', 's1', '--bare'] },
+    { harness: 'codex', flags: '--profile mine', resumeArgs: ['resume', 's1', '--profile', 'mine'] },
+    { harness: 'opencode', flags: '--pure', resumeArgs: ['--session', 's1', '--pure'] },
+  ];
+
+  function arrange() {
+    service = new AgentBridgeService({
+      getRegistry: () => registry as never, getTerminals: () => terminals, version: () => '1',
+      capabilities: [...DEFAULT_AGENT_BRIDGE_CAPABILITIES, ...createCheckoutLifecycleCapabilities(port)],
+    });
+    registry = withCheckoutContexts({ getWorkspace: (id: string) => (id === 'ws' ? workspaceObject : null), getWorkspaceByLocation: () => null }, [TREE]) as never;
+    const common = {
+      getTerminals: () => terminals as never, getMainWindow: () => ({ webContents: { send: vi.fn() } }) as never,
+      getStore: () => ({ get: (key: string) => (key === 'harnessDefaults' ? defaults : false) }) as never,
+      getSafeWorkspacePath: (dir: string) => dir, getHarnessOptions: () => options, harnessSpawnOverrides: { fileExists: () => true },
+      getWorkspaceRegistry: () => registry as never, agentBridge: service, agentAttentionBroker: broker as never,
+    };
+    registerTerminalIpc({ ...common, ensureHarnessWrapperScript: () => testHarnessWrapper() });
+    return registerSessionIpc({
+      ...common, getIsShuttingDown: () => false,
+      listWorktrees: async () => ({ success: true, worktrees: [
+        { path: WORKSPACE, branch: 'main', isMain: true, isLocked: false, isPrunable: false },
+        { path: TREE_PATH, branch: 'task', isMain: false, isLocked: false, isPrunable: false },
+      ] }),
+    });
+  }
+  const last = () => mockSpawnPty.mock.calls[mockSpawnPty.mock.calls.length - 1][0] as { env: Record<string, string>; spawnArgs: string[] | string };
+  const toolsOfLast = () => {
+    const token = last().env[AGENT_BRIDGE_TOKEN_ENV];
+    const grant = token ? service.credentials.resolve(token) : null;
+    return grant ? service.listTools(grant).map((tool) => tool.name) : null;
+  };
+  const argvOfLast = () => { const { spawnArgs } = last(); return Array.isArray(spawnArgs) ? spawnArgs.join(' ') : spawnArgs; };
+
+  describe.each(BLOCKERS)('$harness', ({ harness, flags, resumeArgs }) => {
+    it('terminal launch: attention declined by user config -> the harness still launches, the bridge attaches, only clanker_context is granted', async () => {
+      const controller = arrange();
+      defaults[harness] = { agentBridgeEnabled: true, attentionEnabled: true, flags };
+      await spawn(harness);
+      expect(mockSpawnPty).toHaveBeenCalledTimes(1); // it launched
+      expect(argvOfLast()).toContain(flags.split(' ')[0]); // with the user's own flag, untouched
+      expect(last().env.CLANKER_ATTENTION_COMMAND).toBeDefined(); // the broker registration is separate and still exists
+      expect(toolsOfLast()).toEqual(['clanker_context']);
+      expect(controller).toBeDefined();
+    });
+
+    it('terminal launch: attention attached -> the lifecycle tools are granted as before', async () => {
+      arrange();
+      defaults[harness] = { agentBridgeEnabled: true, attentionEnabled: true };
+      await spawn(harness);
+      expect(toolsOfLast()).toEqual(['clanker_context', ...lifecycleNames]);
+    });
+
+    it('terminal launch: attention switched off in settings -> only clanker_context (unchanged)', async () => {
+      arrange();
+      defaults[harness] = { agentBridgeEnabled: true, attentionEnabled: false };
+      await spawn(harness);
+      expect(toolsOfLast()).toEqual(['clanker_context']);
+    });
+
+    it('re-home/resume launch: attention declined -> still launches with clanker_context only; attached -> lifecycle tools', async () => {
+      const controller = arrange();
+      defaults[harness] = { agentBridgeEnabled: true, attentionEnabled: true };
+      const session = { id: 's1', harness, title: 't', cwd: WORKSPACE, timestamp: 1 } as HarnessSession;
+
+      mockBuildArgs.mockReturnValue({ command: harness, args: resumeArgs });
+      await controller.resumeInCheckout('ws', session, { targetContext: TREE });
+      expect(toolsOfLast()).toEqual(['clanker_context']);
+
+      const attached = harness === 'claude' ? ['--resume', 's1'] : harness === 'codex' ? ['resume', 's1'] : ['--session', 's1'];
+      mockBuildArgs.mockReturnValue({ command: harness, args: attached });
+      await controller.resumeInCheckout('ws', session, { targetContext: TREE });
+      expect(toolsOfLast()).toEqual(['clanker_context', ...lifecycleNames]);
+    });
+  });
+
+  it('OpenCode: a user-owned OPENCODE_CONFIG_DIR also declines attention, and the lifecycle tools are not granted', async () => {
+    arrange();
+    defaults.opencode = { agentBridgeEnabled: true, attentionEnabled: true };
+    options.opencode = { ...options.opencode, env: { OPENCODE_CONFIG_DIR: '/home/me/.config/opencode-mine' } };
+    try {
+      await spawn('opencode');
+      expect(mockSpawnPty).toHaveBeenCalledTimes(1);
+      expect(toolsOfLast()).toEqual(['clanker_context']);
+    } finally { delete options.opencode.env; }
   });
 });

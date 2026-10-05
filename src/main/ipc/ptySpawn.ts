@@ -91,6 +91,10 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     initialCommand,
     recipeCommandStartup,
   };
+  // The process' real exit, owned by the record: lifecycle moves that must not overlap a live process wait on
+  // this, never on the record having left the terminal table (which retirement does immediately).
+  let markExited!: () => void;
+  terminal.exited = new Promise<void>((resolve) => { markExited = resolve; });
   let cleanup: Promise<void> | undefined;
   terminal.releaseResources = () => {
     if (!cleanup) {
@@ -136,6 +140,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
   });
 
   ptyProcess.onExit(({ exitCode }) => {
+    markExited();
     terminal.recipeCommandStartup?.onExit(exitCode);
     void terminal.releaseResources?.();
     if (getIsShuttingDown()) return;

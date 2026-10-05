@@ -51,11 +51,11 @@ describe('which harnesses can be re-homed (derived from provider evidence, never
     expect(supportsCheckoutRehoming('')).toBe(false);
   });
 
-  it('the grant also needs agent attention, because the live conversation is identified by native lifecycle events', () => {
-    expect(grantsCheckoutRehoming('claude', { attentionEnabled: true })).toBe(true);
-    expect(grantsCheckoutRehoming('claude', { attentionEnabled: false })).toBe(false);
-    expect(grantsCheckoutRehoming('opencode', { attentionEnabled: true })).toBe(true);
-    expect(grantsCheckoutRehoming('opencode', { attentionEnabled: false })).toBe(false);
+  it('the grant also needs native attention to have ATTACHED to the launch, because the live conversation is identified by native lifecycle events', () => {
+    expect(grantsCheckoutRehoming('claude', { nativeAttentionAttached: true })).toBe(true);
+    expect(grantsCheckoutRehoming('claude', { nativeAttentionAttached: false })).toBe(false);
+    expect(grantsCheckoutRehoming('opencode', { nativeAttentionAttached: true })).toBe(true);
+    expect(grantsCheckoutRehoming('opencode', { nativeAttentionAttached: false })).toBe(false);
   });
 });
 
@@ -212,7 +212,7 @@ describe('the provider-owned re-home strategy', () => {
       try {
         provider.checkoutRehome = undefined;
         expect(supportsCheckoutRehoming(id)).toBe(false);
-        expect(grantsCheckoutRehoming(id, { attentionEnabled: true })).toBe(false);
+        expect(grantsCheckoutRehoming(id, { nativeAttentionAttached: true })).toBe(false);
       } finally { provider.checkoutRehome = declared; }
       expect(supportsCheckoutRehoming(id)).toBe(true);
     }

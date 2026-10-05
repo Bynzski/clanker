@@ -38,7 +38,7 @@ import { AgentBridgeService } from './agentBridge/service';
 import { DEFAULT_AGENT_BRIDGE_CAPABILITIES } from './agentBridge/capabilities';
 import { createCheckoutLifecycleCapabilities, deferredLifecyclePort } from './agentBridge/lifecycleCapabilities';
 import { IsolatedCheckoutService } from './isolatedCheckout/isolatedCheckoutService';
-import { retireTerminal } from './terminalRetirement';
+import { retireTerminal, retireTerminalAndWait } from './terminalRetirement';
 import { WorktreeProvenance } from './worktreeProvenance';
 import { registerSshEnvironmentIpc } from './ipc/sshEnvironmentIpc';
 import { resolveExistingDirectory } from './security';
@@ -529,6 +529,7 @@ app.whenReady().then(() => {
     releaseCheckoutContext: (workspaceId, checkoutContextId) =>
       releaseCheckoutContext({ registry: workspaceRegistry, terminals: terminals.values(), workspaceId, checkoutContextId }),
     retireTerminal: (terminalId) => retireTerminal({ terminals, releaseAttention: (id) => agentAttentionBroker.release(id) }, terminalId),
+    retireTerminalAndWait: (terminalId) => retireTerminalAndWait({ terminals, releaseAttention: (id) => agentAttentionBroker.release(id) }, terminalId),
     notify: (event) => { if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(AGENT_CHECKOUT_TRANSITION, event); },
     isShuttingDown: getAppShuttingDown,
   });

@@ -32,12 +32,14 @@ export function supportsCheckoutRehoming(harness: string): boolean {
 }
 
 /**
- * Whether *this launch* gets the checkout lifecycle tools: the harness can be re-homed and the user
- * enabled agent attention for it (without attention the live conversation cannot be identified, so
- * the tools would only ever fail and are not offered).
+ * Whether *this launch* gets the checkout lifecycle tools: the harness can be re-homed and native attention
+ * ACTUALLY attached to this launch. The user's setting is not enough: a provider declines on user-owned
+ * configuration (Claude `--bare`/conflicting `--settings`, Codex hook/profile conflicts, OpenCode
+ * `OPENCODE_CONFIG_DIR`/`--pure`) and the harness then launches without hooks. Without them the live
+ * conversation cannot be identified, so the tools could only ever fail and are not offered.
  */
-export function grantsCheckoutRehoming(harness: string, options: { attentionEnabled: boolean }): boolean {
-  return options.attentionEnabled && supportsCheckoutRehoming(harness);
+export function grantsCheckoutRehoming(harness: string, options: { nativeAttentionAttached: boolean }): boolean {
+  return options.nativeAttentionAttached && supportsCheckoutRehoming(harness);
 }
 
 /** The provider's explicit strategy for moving a live conversation, or undefined when it has none. */

@@ -164,6 +164,7 @@ function build(bridgeOptions: { toolTimeoutMs?: number } = {}) {
     getSessions: () => sessions,
     releaseCheckoutContext: (workspaceId, checkoutContextId) => releaseCheckoutContext({ registry: registry as never, terminals: terminals.values() as never, workspaceId, checkoutContextId }),
     retireTerminal: (id) => retireTerminal({ terminals: terminals as never, releaseAttention: (terminalId) => broker.release(terminalId) }, id),
+    retireTerminalAndWait: async (id) => { await retireTerminal({ terminals: terminals as never, releaseAttention: (terminalId) => broker.release(terminalId) }, id); return 'exited'; },
     notify: (event) => { events.push(event); },
     isShuttingDown: () => false,
     timing: { startDeadlineMs: 2_000, observationMs: 10 },

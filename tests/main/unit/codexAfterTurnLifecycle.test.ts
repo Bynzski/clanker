@@ -41,7 +41,7 @@ import { DEFAULT_AGENT_BRIDGE_CAPABILITIES } from '../../../src/main/agentBridge
 import { createCheckoutLifecycleCapabilities, deferredLifecyclePort } from '../../../src/main/agentBridge/lifecycleCapabilities';
 import { IsolatedCheckoutService } from '../../../src/main/isolatedCheckout/isolatedCheckoutService';
 import { releaseCheckoutContext } from '../../../src/main/checkoutContextRelease';
-import { retireTerminal } from '../../../src/main/terminalRetirement';
+import { retireTerminal, retireTerminalAndWait } from '../../../src/main/terminalRetirement';
 
 const SESSION = '01a10b90-0961-7001-a289-382027d5a088';
 let root: string;
@@ -53,7 +53,7 @@ interface Spawned {
   id: string; cwd: string; env: Record<string, string>; spawnArgs: string[] | string; checkoutContextId?: string; workspaceId?: string; harnessId?: string;
   onExit: () => unknown; onOutput?: (data: string) => void;
 }
-type Fake = { workspaceId?: string; checkoutContextId?: string; harnessId?: string; cwd: string; pty: { kill: ReturnType<typeof vi.fn> }; releaseResources: ReturnType<typeof vi.fn> };
+type Fake = { exited: Promise<void>; workspaceId?: string; checkoutContextId?: string; harnessId?: string; cwd: string; pty: { kill: ReturnType<typeof vi.fn> }; releaseResources: ReturnType<typeof vi.fn> };
 
 let terminals: Map<string, Fake>;
 let contexts: CheckoutContext[];
@@ -69,6 +69,11 @@ let dirty: boolean;
 let effectiveCwd: Map<string, string>;
 let spawnBehavior: (options: Spawned, attempt: number) => 'ok' | { fail: string };
 let resumeAttempts: number;
+/** When set, Git worktree creation waits for it (a creation that outlives the tool call's timeout). */
+let createGate: Promise<void> | null;
+/** How a killed process behaves: exits at once, only on SIGKILL, or only when the test lets it. */
+let killMode: 'prompt' | 'manual' | 'ignores-sigterm';
+const processExits = new Map<string, () => void>();
 const handlers = new Map<string, (event: unknown, ...args: unknown[]) => Promise<Record<string, unknown>>>();
 const removedPaths: string[] = [];
 const deletedBranches: string[] = [];
@@ -83,7 +88,7 @@ beforeEach(async () => {
   root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-after-turn-')));
   appPath = path.join(root, 'app');
   fs.mkdirSync(appPath, { recursive: true });
-  terminals = new Map(); contexts = [MAIN()]; events = []; log = []; spawns = []; dirty = false; resumeAttempts = 0;
+  terminals = new Map(); contexts = [MAIN()]; events = []; log = []; spawns = []; dirty = false; resumeAttempts = 0; killMode = 'prompt'; createGate = null; processExits.clear();
   effectiveCwd = new Map(); removedPaths.length = 0; deletedBranches.length = 0;
   listed = [{ path: appPath, branch: 'main', isMain: true }];
   spawnBehavior = () => 'ok';
@@ -102,9 +107,18 @@ beforeEach(async () => {
     const requested = cdIndex >= 0 ? argv(options)[cdIndex + 1] : options.cwd;
     log.push(`spawn ${options.id} cd=${requested === appPath ? 'main' : path.basename(requested)} sourceStillLive=${owner ? 'yes' : 'no'}`);
     const behavior = spawnBehavior(options, resumeAttempts);
+    // The process' REAL exit is separate from the record leaving the table: kill() only REQUESTS it.
+    let markExited!: () => void;
+    const exited = new Promise<void>((resolve) => { markExited = resolve; });
+    const exitNow = () => { log.push(`exit ${options.id}`); markExited(); };
+    processExits.set(options.id, exitNow);
     const terminal: Fake = {
+      exited,
       workspaceId: options.workspaceId, checkoutContextId: options.checkoutContextId, harnessId: options.harnessId, cwd: options.cwd,
-      pty: { kill: vi.fn(() => { log.push(`kill ${options.id}`); }) },
+      pty: { kill: vi.fn((signal?: string) => {
+        log.push(signal ? `kill ${options.id} ${signal}` : `kill ${options.id}`);
+        if (killMode === 'prompt' || (killMode === 'ignores-sigterm' && signal === 'SIGKILL')) setTimeout(exitNow, 1);
+      }) },
       releaseResources: vi.fn(async () => { log.push(`dispose ${options.id}`); await options.onExit(); }),
     };
     terminals.set(options.id, terminal);
@@ -159,6 +173,7 @@ async function build() {
   const git = {
     getBranchState: async () => ({ success: true, isRepo: true, currentBranch: 'main', isDetached: false, branches: [{ name: 'main', isCurrent: true }] }),
     createCheckoutWorktree: async (_ws: string, branch: string) => {
+      if (createGate) await createGate;
       fs.mkdirSync(generated(branch), { recursive: true });
       const context = treeOf(branch);
       contexts.push(context);
@@ -188,6 +203,7 @@ async function build() {
     getSessions: () => sessions,
     releaseCheckoutContext: (workspaceId, checkoutContextId) => releaseCheckoutContext({ registry: registry as never, terminals: terminals.values() as never, workspaceId, checkoutContextId }),
     retireTerminal: (id) => retireTerminal({ terminals: terminals as never, releaseAttention: (terminalId) => broker.release(terminalId) }, id),
+    retireTerminalAndWait: (id) => retireTerminalAndWait({ terminals: terminals as never, releaseAttention: (terminalId) => broker.release(terminalId) }, id, { gracefulMs: 200, forcedMs: 200 }),
     notify: (event) => { events.push(event); log.push(`notify ${event.kind}`); },
     isShuttingDown: () => false,
     timing: { startDeadlineMs: 2_000, observationMs: 10, retryDelayMs: 1 },
@@ -223,6 +239,7 @@ async function call(spawn: Spawned, name: string, args: Record<string, unknown> 
   const result = await bridge.callTool(grant, name, args);
   return { revoked: false as const, result, data: result.data as Record<string, unknown> };
 }
+const spawnLine = (id: string) => log.findIndex((line) => line.startsWith(`spawn ${id}`));
 const treeContext = () => contexts.find((context) => context.kind === 'worktree');
 const kinds = () => events.map((event) => event.kind);
 
@@ -669,5 +686,113 @@ describe('the explicit target directory', () => {
     expect(args).toEqual(expect.arrayContaining(['resume', SESSION]));
     expect(args).not.toContain('--cd');
     expect(args).not.toContain('-C');
+  });
+});
+
+describe('the source must REALLY exit before the replacement exists (Codex)', () => {
+  async function scheduledCreate() {
+    const { id, spawn } = await launch();
+    await turn(spawn, 't1');
+    await call(spawn, 'clanker_create_isolated_checkout', { branch: 'feature' });
+    return { id, spawn };
+  }
+  const spawnedAfterSource = (id: string) => spawns.filter((entry) => entry.id !== id).length;
+
+  it('kill() only requests the exit: nothing is spawned until the process\' own exit event, then the replacement starts', async () => {
+    killMode = 'manual';
+    const { id, spawn } = await scheduledCreate();
+    void stop(spawn, 't1'); // do not await: the move is parked on the exit
+    await settle();
+
+    expect(log).toContain(`kill ${id}`); // termination was requested...
+    expect(terminals.has(id)).toBe(false); // ...and the record is gone from the table (which proves nothing)
+    expect(spawnedAfterSource(id)).toBe(0); // so no replacement exists
+    expect(log.some((line) => line.startsWith('spawn') && line.includes(id) === false)).toBe(false);
+    expect(bridge.credentials.resolve(tokenOf(spawn))).toBeNull(); // authority was revoked up front
+
+    processExits.get(id)!(); // the delayed REAL exit
+    await settle();
+    const replacement = lastSpawn();
+    expect(replacement.id).not.toBe(id);
+    const exitAt = log.indexOf(`exit ${id}`);
+    expect(exitAt).toBeGreaterThanOrEqual(0);
+    expect(exitAt).toBeLessThan(spawnLine(replacement.id));
+    expect(live()).toEqual([replacement.id]);
+  });
+
+  it('a source that ignores the graceful kill is force-killed, and only its exit lets the replacement start', async () => {
+    killMode = 'ignores-sigterm';
+    const { id, spawn } = await scheduledCreate();
+    await stop(spawn, 't1');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(log).toContain(`kill ${id} SIGKILL`);
+    const replacement = lastSpawn();
+    expect(replacement.id).not.toBe(id);
+    expect(log.indexOf(`exit ${id}`)).toBeLessThan(spawnLine(replacement.id));
+  });
+
+  it('a source that never exits stops the move: nothing is resumed, relocated, removed or deleted, and the user is told', async () => {
+    killMode = 'manual';
+    const { id, spawn } = await scheduledCreate();
+    await stop(spawn, 't1');
+    await new Promise((resolve) => setTimeout(resolve, 700)); // graceful + forced waits
+    expect(spawnedAfterSource(id)).toBe(0);
+    expect(log.filter((line) => line.startsWith('spawn'))).toHaveLength(1);
+
+    expect(removedPaths).toEqual([]);
+    expect(deletedBranches).toEqual([]);
+    expect(fs.existsSync(generated('feature'))).toBe(true);
+    expect((events.filter((event) => event.kind === 'notice').pop() as { tone: string; message: string })).toMatchObject({ tone: 'warning', message: expect.stringMatching(/could not be confirmed stopped/) });
+  });
+});
+
+describe('a cancelled or timed-out create never schedules a move (Codex)', () => {
+  it('git creation finishes AFTER the request was aborted: the checkout is kept and listed, no move is pending, a later turn end moves nothing', async () => {
+    const { id, spawn } = await launch();
+    await turn(spawn, 't1');
+    let release!: () => void;
+    createGate = new Promise<void>((resolve) => { release = resolve; });
+    const abort = new AbortController();
+    const grant = bridge.credentials.resolve(tokenOf(spawn))!;
+    const pendingCall = bridge.callTool(grant, 'clanker_create_isolated_checkout', { branch: 'feature' }, abort.signal);
+    await settle();
+    abort.abort(); // the MCP client gave up / the tool timed out while git was still working
+    release(); // ...and Git then succeeds
+    const result = await pendingCall;
+    createGate = null;
+
+    expect(result.isError).toBe(true);
+    expect((result.data as { error: string }).error).toMatch(/was kept/);
+    expect((result.data as { error: string }).error).not.toMatch(/nothing changed/i);
+    // The checkout exists, is attached and visible...
+    expect(fs.existsSync(generated('feature'))).toBe(true);
+    expect(contexts.some((context) => context.kind === 'worktree')).toBe(true);
+    expect(kinds()).toContain('checkout-attached');
+    // ...the user was told accurately...
+    const notice = events.filter((event) => event.kind === 'notice').pop() as { tone: string; message: string };
+    expect(notice).toMatchObject({ tone: 'warning', message: expect.stringMatching(/kept.*not moved/) });
+    // ...and no move survives: the next native turn end does nothing.
+    await stop(spawn, 't1');
+    await settle();
+    expect(spawns).toHaveLength(1);
+    expect(live()).toEqual([id]);
+    expect(terminals.has(id)).toBe(true);
+    expect(log.some((line) => line.startsWith('kill'))).toBe(false);
+
+    expect(kinds()).not.toContain('terminal-replaced');
+    expect(removedPaths).toEqual([]);
+    expect(bridge.credentials.resolve(tokenOf(spawn))).not.toBeNull(); // the source conversation is untouched
+  });
+
+  it('an abort that arrives before git creation starts creates nothing at all', async () => {
+    const { spawn } = await launch();
+    await turn(spawn, 't1');
+    const abort = new AbortController();
+    abort.abort();
+    const result = await bridge.callTool(bridge.credentials.resolve(tokenOf(spawn))!, 'clanker_create_isolated_checkout', { branch: 'feature' }, abort.signal);
+    expect(result.isError).toBe(true);
+    expect(fs.existsSync(generated('feature'))).toBe(false);
+    await stop(spawn, 't1');
+    expect(spawns).toHaveLength(1);
   });
 });

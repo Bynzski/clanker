@@ -28,6 +28,12 @@ export interface PreparedHarnessAttachment {
    * attachment's own args/env, which may carry credentials).
    */
   dispose(): void | Promise<void>;
+  /**
+   * Facts about what this launch can now honor, for LATER steps to read (never for their own authority:
+   * a step still validates everything it relies on). Plain names; the coordinator attaches no meaning to
+   * them and never merges what two attachments are. Only an attachment that really attached provides any.
+   */
+  provides?: readonly string[];
 }
 
 /** The launch as earlier attachments left it; attachments read it, never mutate it. */
@@ -35,6 +41,8 @@ export interface LaunchAttachmentState {
   readonly args: readonly string[];
   /** The user/harness environment plus what earlier attachments added (for conflict detection). */
   readonly env: Readonly<Record<string, string | undefined>>;
+  /** Facts provided by the steps that attached before this one (see `PreparedHarnessAttachment.provides`). */
+  readonly provided: ReadonlySet<string>;
 }
 
 export interface LaunchAttachmentStep {
@@ -81,6 +89,7 @@ export async function prepareLaunchAttachments(
   const acquired: Array<{ name: string; dispose: () => void | Promise<void> }> = [];
   let args = [...base.args];
   let additions: Record<string, string> = {};
+  const provided = new Set<string>();
 
   let disposal: Promise<void> | undefined;
   const dispose = (): Promise<void> => {
@@ -95,12 +104,13 @@ export async function prepareLaunchAttachments(
 
   for (const step of steps) {
     try {
-      const attachment = await step.prepare({ args, env: { ...base.env, ...additions } });
+      const attachment = await step.prepare({ args, env: { ...base.env, ...additions }, provided: new Set(provided) });
       if (!attachment) continue;
       // The bare function, deliberately not bound to the attachment (a bound `this` would retain it).
       acquired.push({ name: step.name, dispose: attachment.dispose });
       if (attachment.args) args = [...attachment.args];
       if (attachment.env) additions = { ...additions, ...attachment.env };
+      for (const fact of attachment.provides ?? []) provided.add(fact);
     } catch (error) {
       if (step.optional) {
         report(step.name, 'prepare', error);

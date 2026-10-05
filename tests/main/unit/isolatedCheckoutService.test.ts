@@ -143,6 +143,7 @@ function makeWorld(options: Options = {}) {
     getSessions: () => sessions as never,
     releaseCheckoutContext,
     retireTerminal: (id) => retireTerminal({ terminals, releaseAttention: (terminalId) => { log.push(`attention.release ${terminalId}`); } }, id),
+    retireTerminalAndWait: async (id) => { await retireTerminal({ terminals, releaseAttention: (terminalId) => { log.push(`attention.release ${terminalId}`); } }, id); return 'exited'; },
     notify: (event) => { events.push(event); log.push(`notify ${event.kind}`); },
     isShuttingDown: () => options.shuttingDown === true,
     timing: { startDeadlineMs: 150, observationMs: 15 },
