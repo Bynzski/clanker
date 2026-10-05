@@ -199,6 +199,7 @@ async function build() {
     reconcileCheckoutContexts: async () => ({ success: true }),
   };
   lifecycle = new IsolatedCheckoutService({
+    isAttentionEnabled: () => true,
     getRegistry: () => registry as never, getTerminals: () => terminals as never, attention: broker, git: git as never,
     getSessions: () => sessions,
     releaseCheckoutContext: (workspaceId, checkoutContextId) => releaseCheckoutContext({ registry: registry as never, terminals: terminals.values() as never, workspaceId, checkoutContextId }),
@@ -530,6 +531,31 @@ describe('complete (after-turn)', () => {
     expect((await call(replacement, 'clanker_context')).data).toMatchObject({ checkout: { kind: 'main', isolated: false } });
     expect(bridge.credentials.resolve(tokenOf(spawn))).toBeNull();
     expect(kinds().slice(-3)).toEqual(['terminal-replaced', 'checkout-released', 'notice']);
+  });
+
+  it('keeps a checkout safe while identity is lost and completes after an authoritative resume start restores it', async () => {
+    const { spawn, tree } = await inWorktree();
+    await frame(spawn, 'session_ended');
+    expect(broker.snapshot(spawn.id)?.sessionId).toBeNull();
+    for (let retry = 0; retry < 2; retry++) {
+      const refused = await call(spawn, 'clanker_complete_isolated_checkout', { deleteBranch: true });
+      expect(refused.result?.isError).toBe(true);
+      expect(refused.data).toMatchObject({ error: expect.stringMatching(/binding.*cleared/) });
+    }
+    expect(live()).toEqual([spawn.id]);
+    expect(fs.existsSync(tree.path)).toBe(true);
+    expect(removedPaths).toEqual([]);
+    expect(deletedBranches).toEqual([]);
+    await frame(spawn, 'session_started', { nativeEvent: 'SessionStart', cwd: tree.path });
+    expect(broker.snapshot(spawn.id)?.sessionId).toBe(SESSION);
+    expect(broker.handoffState(spawn.id)).toBe('unverified');
+    await turn(spawn, 'recovered');
+    expect((await call(spawn, 'clanker_complete_isolated_checkout', { deleteBranch: true })).data).toMatchObject({ status: 'scheduled' });
+    await stop(spawn, 'recovered');
+    expect(live()).toEqual([lastSpawn().id]);
+    expect(effectiveCwd.get(SESSION)).toBe(appPath);
+    expect(removedPaths).toEqual([tree.path]);
+    expect(deletedBranches).toEqual(['feature']);
   });
 
   it('a worktree that became dirty during the turn cancels the move before the source is retired', async () => {

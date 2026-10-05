@@ -45,6 +45,7 @@ import { resolveExistingDirectory } from './security';
 import { type StoreSchema } from '../shared/types/store';
 import { DEFAULT_THEME_ID } from '../shared/types/theme';
 import { KNOWN_HARNESS_IDS } from '../shared/harnessIds';
+import { isHarnessId } from './harnesses/registry';
 import { HARNESS_OPTIONS, getAvailableHarnessOptions, discoverHarnessModels } from './harnessCatalog';
 import { createMainWindow, getPreloadPath, isWindowAvailable, resolveInitialTheme, resolveInitialWindowBackground } from './windowManager';
 import { registerSettingsIpc } from './ipc/settingsIpc';
@@ -524,6 +525,7 @@ app.whenReady().then(() => {
     getRegistry: () => workspaceRegistry,
     getTerminals: () => terminals,
     attention: agentAttentionBroker,
+    isAttentionEnabled: (harnessId) => isHarnessId(harnessId) && store.get('harnessDefaults')[harnessId]?.attentionEnabled === true,
     git: gitIpc,
     getSessions: () => sessionIpc,
     releaseCheckoutContext: (workspaceId, checkoutContextId) =>

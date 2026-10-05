@@ -71,6 +71,26 @@ async function interpreter(harness: 'codex' | 'claude' | 'agy') {
 }
 
 describe('Codex lifecycle', () => {
+  it('recovers a cleared resume binding from native SessionStart without inventing a turn', async () => {
+    const hook = await interpreter('codex');
+    const { broker, feed, state, decisions } = rig('codex', 'root');
+    feed(hook('SessionEnd', { session_id: 'root', cwd: '/repo' }));
+    expect(broker.snapshot('term')?.sessionId).toBeNull();
+    // SessionStart carries identity and source, but no turn_id (native Codex contract).
+    feed(hook('SessionStart', { session_id: 'root', source: 'resume', cwd: '/repo' }));
+    expect(broker.snapshot('term')).toMatchObject({ sessionId: 'root', runtime: { status: 'unverified', turnId: null } });
+    expect(state()).toBe('unverified');
+    feed(hook('Stop', { session_id: 'root', turn_id: 'old' }));
+    expect(state()).toBe('unverified');
+    feed(hook('SessionStart', { session_id: 'child', source: 'resume', agent_id: 'worker' }));
+    feed(hook('SessionStart', { session_id: 'other', source: 'resume' }));
+    expect(broker.snapshot('term')?.sessionId).toBe('root');
+    feed(hook('UserPromptSubmit', { session_id: 'root', turn_id: 'new' }));
+    feed(hook('Stop', { session_id: 'root', turn_id: 'new' }));
+    expect(state()).toBe('ready');
+    expect(decisions).toContain('rejected-mismatch');
+  });
+
   // Native hook fields (Codex hooks source): root identity `session_id`; turn identity `turn_id`;
   // child scope: `SubagentStop` or `agent_id`; settled: root `Stop`; user cancel: root `Interrupt`.
   // `PreToolUse`/`PostToolUse` carry `tool_use_id`; `PermissionRequest` carries `turn_id`,

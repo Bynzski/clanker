@@ -12,10 +12,10 @@ import {
  * `location_changed` only moves the agent's reported location; any root event may also carry `cwd`. */
 type WireEvent =
   | 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'turn_interrupted'
-  | 'turn_failed' | 'session_ended' | 'session_continued' | 'agent_exited' | 'location_changed';
+  | 'turn_failed' | 'session_started' | 'session_ended' | 'session_continued' | 'agent_exited' | 'location_changed';
 const EVENTS = new Set<WireEvent>([
   'turn_started', 'input_requested', 'input_resolved', 'turn_completed', 'turn_interrupted', 'turn_failed',
-  'session_ended', 'session_continued', 'agent_exited', 'location_changed',
+  'session_started', 'session_ended', 'session_continued', 'agent_exited', 'location_changed',
 ]);
 const MAX_RETIRED_TURNS = 32;
 const MAX_MESSAGE_BYTES = 2048;
@@ -493,6 +493,16 @@ export class AgentAttentionBroker {
     }
 
     if (registration.rootSessionId && registration.rootSessionId !== event.sessionId) return 'rejected-mismatch';
+
+    // A provider's native root session start can restore identity after a boundary, including a
+    // resume that has not submitted a prompt yet. It proves no turn or completion. Duplicates
+    // leave an active turn alone; the mismatch check above prevents replacing an existing root.
+    if (event.event === 'session_started') {
+      if (!registration.rootSessionId) {
+        this.commit(registration, () => { registration.rootSessionId = event.sessionId; });
+      }
+      return 'accepted';
+    }
 
     // Location only: staged before lifecycle authority, it can neither bind a root nor touch a turn.
     if (event.event === 'location_changed') return event.location ? 'accepted' : 'rejected-ambiguous';

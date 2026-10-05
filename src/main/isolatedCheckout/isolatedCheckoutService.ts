@@ -70,6 +70,7 @@ export interface LifecycleTerminal extends TerminalUsage, RetirableTerminal {
 export interface IsolatedCheckoutServiceDeps {
   getRegistry(): WorkspaceRegistry | undefined;
   getTerminals(): Map<string, LifecycleTerminal>;
+  isAttentionEnabled(harnessId: string): boolean;
   attention: {
     snapshot(terminalId: string): Pick<AgentAttentionSnapshot, 'sessionId' | 'lastOutcome'> | null;
     release(terminalId: string): void;
@@ -374,9 +375,19 @@ export class IsolatedCheckoutService implements AgentCheckoutLifecyclePort {
    * from the model, and a conversation main cannot find is refused before anything is changed.
    */
   private async conversationOf(caller: AgentBridgeCaller): Promise<HarnessSession> {
-    const sessionId = this.deps.attention.snapshot(caller.terminalId)?.sessionId ?? null;
+    const snapshot = this.deps.attention.snapshot(caller.terminalId);
+    const sessionId = snapshot?.sessionId ?? null;
     if (!sessionId) {
-      throw new TransitionFailure('Clanker has not identified this conversation yet (agent attention must be enabled and the conversation started); try again after your next turn');
+      if (!this.deps.isAttentionEnabled(caller.harnessId)) {
+        throw new TransitionFailure('Agent attention is disabled for this harness. Enable it in harness settings, then resume this conversation from History to attach native lifecycle hooks. The checkout and branch were kept.');
+      }
+      if (!snapshot) {
+        throw new TransitionFailure('This terminal has no live agent attention registration. Resume this conversation from History with agent attention enabled to restore it. The checkout and branch were kept.');
+      }
+      const reason = snapshot.lastOutcome?.kind === 'session_ended'
+        ? 'The conversation binding was cleared by a native session-end event.'
+        : 'Clanker has not identified this conversation from native lifecycle events yet.';
+      throw new TransitionFailure(`${reason} For Codex, review and enable Clanker hooks in /hooks, then submit a prompt. A native session start or turn start restores identification; if it remains unavailable, resume this conversation from History with agent attention enabled. The checkout and branch were kept.`);
     }
     const sessions = this.deps.getSessions();
     const session = sessions ? await sessions.findSession(caller.workspace.workspaceId, caller.harnessId, sessionId) : null;

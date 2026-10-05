@@ -287,6 +287,25 @@ describe('AgentAttentionBroker session boundary versus agent exit', () => {
 });
 
 describe('AgentAttentionBroker trusted resume identity', () => {
+  it('only binds an authenticated explicit root session start and preserves a running turn on duplicates', () => {
+    const { broker, send, updates } = setup();
+    expect(send('session_started', { sessionId: 'child', scope: 'child' })).toBe('ignored-child');
+    expect(send('session_started', { sessionId: 'ambiguous', scope: undefined })).toBe('rejected-ambiguous');
+    expect(send('session_started')).toBe('rejected-ambiguous');
+    expect(broker.snapshot('term-a')?.sessionId).toBeNull();
+    expect(send('session_started', { sessionId: 'root' })).toBe('accepted');
+    expect(broker.snapshot('term-a')).toMatchObject({ sessionId: 'root', runtime: { status: 'unverified' }, lastCompletion: null });
+    send('turn_started', { sessionId: 'root', turnId: 'turn' });
+    send('input_requested', { sessionId: 'root', turnId: 'turn', inputId: 'approval' });
+    const before = broker.snapshot('term-a');
+    const count = updates.length;
+    expect(send('session_started', { sessionId: 'root' })).toBe('accepted');
+    expect(send('session_started', { sessionId: 'other' })).toBe('rejected-mismatch');
+    expect(broker.snapshot('term-a')).toEqual(before);
+    expect(updates).toHaveLength(count);
+    expect(broker.handoffState('term-a')).toBe('needs_input');
+  });
+
   it('seeds the validated root so other sessions cannot bind first', () => {
     const { broker, send } = setup({ rootSessionId: 'resumed' });
     expect(send('turn_started', { sessionId: 'hidden-title-thread', turnId: 'turn-1' })).toBe('rejected-mismatch');

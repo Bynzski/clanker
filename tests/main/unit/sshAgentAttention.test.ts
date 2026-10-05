@@ -161,7 +161,7 @@ describe.skipIf(process.platform === 'win32')('remote attention adapters', () =>
     expect(prepared.env.CLANKER_ATTENTION_PORT).toBeUndefined();
     expect(readFileSync(join(root, 'observer.mjs'), 'utf8')).toContain('/dev/tty');
     if (harness === 'codex') {
-      expect(prepared.args.filter((arg) => arg.startsWith('hooks.')).map((arg) => arg.split('=')[0])).toEqual(['hooks.UserPromptSubmit', 'hooks.PreToolUse', 'hooks.PermissionRequest', 'hooks.PostToolUse', 'hooks.Stop', 'hooks.SubagentStop', 'hooks.Interrupt', 'hooks.SessionEnd']);
+      expect(prepared.args.filter((arg) => arg.startsWith('hooks.')).map((arg) => arg.split('=')[0])).toEqual(['hooks.UserPromptSubmit', 'hooks.PreToolUse', 'hooks.PermissionRequest', 'hooks.PostToolUse', 'hooks.Stop', 'hooks.SubagentStop', 'hooks.Interrupt', 'hooks.SessionEnd', 'hooks.SessionStart']);
       expect(prepared.args.join(' ')).not.toContain('notify=');
       expect(prepared.args.join(' ')).toContain(JSON.stringify('node "$CLANKER_REMOTE_ATTENTION_COMMAND" "$CLANKER_REMOTE_ATTENTION_INTERPRETER" Stop').slice(1, -1));
       expect(prepared.args.join(' ')).not.toContain(root);

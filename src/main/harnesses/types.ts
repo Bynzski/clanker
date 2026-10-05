@@ -136,7 +136,7 @@ export interface HarnessLocalAttention {
 export interface AttentionInterpretation {
   event?: {
     type: 'turn_started' | 'input_requested' | 'input_resolved' | 'turn_completed' | 'turn_interrupted' | 'turn_failed'
-      | 'session_ended' | 'session_continued' | 'location_changed';
+      | 'session_started' | 'session_ended' | 'session_continued' | 'location_changed';
     /** Provider-proven subject. Anything not explicitly 'root' fails closed in the broker. */
     scope?: 'root' | 'child';
     sessionId?: string;

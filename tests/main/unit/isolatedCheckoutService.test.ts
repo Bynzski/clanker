@@ -29,6 +29,9 @@ interface Options {
   /** Terminal ids already in the table (besides the caller's). */
   others?: Array<{ id: string; ctx: string; cwd: string }>;
   sessionId?: string | null;
+  attentionEnabled?: boolean;
+  attentionRegistered?: boolean;
+  sessionEnded?: boolean;
   session?: HarnessSession | null;
   branchState?: { success: boolean; isRepo: boolean; currentBranch: string | null; isDetached: boolean; branches: Array<{ name: string; isCurrent: boolean }>; error?: string };
   listing?: unknown;
@@ -133,10 +136,16 @@ function makeWorld(options: Options = {}) {
   });
 
   const service = new IsolatedCheckoutService({
+    isAttentionEnabled: () => options.attentionEnabled !== false,
     getRegistry: () => registry as never,
     getTerminals: () => terminals,
     attention: {
-      snapshot: (id) => (id === 'caller' ? { sessionId, lastOutcome: null } : attention.has(id) ? { sessionId: attention.get(id) ?? null, lastOutcome: null } : null),
+      snapshot: (id) => {
+        if (id === 'caller') return options.attentionRegistered === false ? null : {
+          sessionId, lastOutcome: options.sessionEnded ? { kind: 'session_ended', turnId: null, revision: 1, at: 1 } as const : null,
+        };
+        return attention.has(id) ? { sessionId: attention.get(id) ?? null, lastOutcome: null } : null;
+      },
       release: (id) => { log.push(`attention.release ${id}`); },
     },
     git: git as never,
@@ -676,6 +685,26 @@ describe('complete: isolated worktree -> main checkout, then cleanup', () => {
       expect(result.isError).toBe(true);
       expect(world.git.listWorktrees).not.toHaveBeenCalled();
       expect(world.terminals.has('caller')).toBe(true);
+    });
+
+    it.each([
+      [{ attentionEnabled: false }, /attention is disabled/],
+      [{ attentionRegistered: false }, /no live agent attention registration/],
+      [{ sessionEnded: true }, /binding was cleared/],
+      [{}, /not identified/],
+    ] as const)('explains missing identity (%j) and keeps the checkout, branch and caller', async (options, expected) => {
+      const world = inTree({ ...options, sessionId: null });
+      const result = await call(world, 'complete', TREE, { deleteBranch: true });
+      expect(result.isError).toBe(true);
+      expect(text(result)).toMatch(expected);
+      expect(text(result)).toContain('History');
+      expect(text(result)).not.toContain('try again after your next turn');
+      expect(world.sessions.resumeInCheckout).not.toHaveBeenCalled();
+      expect(world.releaseCheckoutContext).not.toHaveBeenCalled();
+      expect(world.git.removeWorktree).not.toHaveBeenCalled();
+      expect(world.git.deleteBranch).not.toHaveBeenCalled();
+      expect(world.terminals.has('caller')).toBe(true);
+      expect(fs.existsSync(wtPath)).toBe(true);
     });
 
     it('an unidentified conversation', async () => {
