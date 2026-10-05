@@ -60,4 +60,35 @@ describe('agent bridge architecture contract', () => {
     expect(source).not.toMatch(/console\.(log|warn|error|info|debug)\([^)]*token/i);
     expect(source).not.toMatch(/writeFileSync\([^)]*\.token/);
   });
+
+  it('the MCP layer reaches the lifecycle only through its port: no Git, registry, terminal or session code in agentBridge/', () => {
+    for (const file of filesIn(resolve(main, 'agentBridge'))) {
+      const offending = imports(read(file)).filter((specifier) =>
+        /isolatedCheckout|gitService|gitIpc|sessionIpc|terminalIpc|terminalRetirement|worktreeContextAttachment|checkoutContextRelease|sessionWorktrees/.test(specifier));
+      expect(offending, file).toEqual([]);
+    }
+  });
+
+  it('the lifecycle capabilities are defined from nothing but the capability DSL', () => {
+    const source = read(resolve(main, 'agentBridge', 'lifecycleCapabilities.ts'));
+    expect(imports(source).sort()).toEqual(['./capabilities', './capabilities']);
+    expect(source).not.toMatch(/ipcMain|webContents|child_process|simple-git|execFile/);
+  });
+
+  it('the lifecycle service is a main-process service: no Electron, no IPC registration, no renderer code', () => {
+    const source = read(resolve(main, 'isolatedCheckout', 'isolatedCheckoutService.ts'));
+    expect(imports(source).filter((specifier) => /^electron$|renderer|ipcMain/.test(specifier))).toEqual([]);
+    expect(source).not.toMatch(/ipcMain|webContents\.send|BrowserWindow/);
+  });
+
+  it('nothing in the transaction deletes with force or changes a directory from outside', () => {
+    const source = read(resolve(main, 'isolatedCheckout', 'isolatedCheckoutService.ts'));
+    expect(source).not.toMatch(/forceDeleteBranch|branch -D|--force|process\.chdir|\.chdir\(/);
+  });
+
+  it('there is no generic cwd or terminal-context mutation anywhere in the bridge or the lifecycle service', () => {
+    for (const file of [...filesIn(resolve(main, 'agentBridge')), ...filesIn(resolve(main, 'isolatedCheckout'))]) {
+      expect(read(file), file).not.toMatch(/change_cwd|set_terminal_context|switch_checkout|checkoutContextId\s*=[^=]/);
+    }
+  });
 });

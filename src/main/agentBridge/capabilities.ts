@@ -44,14 +44,28 @@ export interface AgentBridgeCapability {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: ToolJsonSchema;
+  /**
+   * Granted only to launches that can honor it. Absent: every launch. `checkout-rehoming`: launches
+   * whose harness conversation can be moved by resuming it elsewhere (see rehomeSupport.ts).
+   */
+  readonly requires?: AgentBridgeRequirement;
+  /** Execution bound for this tool, at most `maxToolTimeoutMs`. Absent: the bridge default. */
+  readonly timeoutMs?: number;
   /** Parses `rawArgs` against the declared input first; an invalid call never reaches the capability. */
   invoke(rawArgs: unknown, context: AgentBridgeCallContext): Promise<AgentBridgeToolResult>;
 }
+
+export type AgentBridgeRequirement = 'checkout-rehoming';
+
+/** No capability may be given longer than this to run; a longer operation must be broken into owned phases. */
+export const MAX_TOOL_TIMEOUT_MS = 60_000;
 
 export interface AgentBridgeCapabilityDefinition<S extends InputSpec> {
   readonly name: string;
   readonly description: string;
   readonly input: S;
+  readonly requires?: AgentBridgeRequirement;
+  readonly timeoutMs?: number;
   /** Receives validated, typed input only. Must be bounded, must not widen the caller's authority and
    * must call existing validated main-process services rather than re-implementing authorization. */
   run(input: InferInput<S>, context: AgentBridgeCallContext): AgentBridgeToolResult | Promise<AgentBridgeToolResult>;
@@ -59,10 +73,15 @@ export interface AgentBridgeCapabilityDefinition<S extends InputSpec> {
 
 export function defineCapability<const S extends InputSpec>(definition: AgentBridgeCapabilityDefinition<S>): AgentBridgeCapability {
   const input = defineInput(definition.input);
+  if (definition.timeoutMs !== undefined && !(Number.isSafeInteger(definition.timeoutMs) && definition.timeoutMs > 0 && definition.timeoutMs <= MAX_TOOL_TIMEOUT_MS)) {
+    throw new Error(`Capability "${definition.name}" needs a timeout between 1 and ${MAX_TOOL_TIMEOUT_MS} ms`);
+  }
   return {
     name: definition.name,
     description: definition.description,
     inputSchema: input.jsonSchema,
+    ...(definition.requires ? { requires: definition.requires } : {}),
+    ...(definition.timeoutMs !== undefined ? { timeoutMs: definition.timeoutMs } : {}),
     async invoke(rawArgs, context) {
       const parsed = input.parse(rawArgs);
       if (!parsed.ok) return { isError: true, data: { error: parsed.error } };

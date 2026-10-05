@@ -45,6 +45,12 @@ export interface AgentBridgeServiceDeps {
   toolTimeoutMs?: number;
 }
 
+/** What this launch can honor; decides which capabilities its credential is granted. */
+export interface AgentBridgeGrants {
+  /** The harness conversation can be re-homed by resuming it in another checkout. */
+  checkoutRehoming?: boolean;
+}
+
 /** Everything a launch needs to wire the bridge, and the means to give it all back. */
 export interface AgentBridgeLaunchLease {
   readonly url: string;
@@ -70,13 +76,18 @@ export class AgentBridgeService implements AgentBridgeToolHost {
    * Starts the endpoint if needed and binds a fresh credential to one launch. The identity is main's
    * own record; callers never pass anything the renderer or a model chose.
    */
-  async lease(identity: AgentBridgeIdentity): Promise<AgentBridgeLaunchLease> {
+  async lease(identity: AgentBridgeIdentity, grants: AgentBridgeGrants = {}): Promise<AgentBridgeLaunchLease> {
     if (this.shutDown) throw new Error('Agent bridge is shut down');
     if (identity.environmentId !== LOCAL_ENVIRONMENT_ID) throw new Error('Agent bridge is local-only');
     const url = await this.server.start();
     // start() awaited: shutdown may have run meanwhile.
     if (this.shutDown) throw new Error('Agent bridge is shut down');
-    const { token, revoke } = this.credentials.issue(identity, this.capabilities.keys());
+    // A launch is granted only what it can honor: capabilities that `require` something it lacks are
+    // absent for it (not listed, and refused as unknown), rather than advertised and doomed to fail.
+    const granted = [...this.capabilities.values()]
+      .filter((capability) => capability.requires === undefined || (capability.requires === 'checkout-rehoming' && grants.checkoutRehoming === true))
+      .map((capability) => capability.name);
+    const { token, revoke } = this.credentials.issue(identity, granted);
     // `release` is the registry's own revoke closure (it holds only the digest), so keeping it alive
     // for the terminal's lifetime never keeps the raw token alive.
     return { url, token, release: revoke };
@@ -116,7 +127,7 @@ export class AgentBridgeService implements AgentBridgeToolHost {
       timer = setTimeout(() => {
         controller.abort();
         resolve({ isError: true, data: { error: 'Tool timed out' } });
-      }, this.deps.toolTimeoutMs ?? AGENT_BRIDGE_LIMITS.toolTimeoutMs);
+      }, this.deps.toolTimeoutMs ?? capability.timeoutMs ?? AGENT_BRIDGE_LIMITS.toolTimeoutMs);
     });
     try {
       return await Promise.race([
@@ -162,6 +173,8 @@ export interface AgentBridgeLaunchStepInput {
   service: AgentBridgeService;
   harness: string;
   identity: AgentBridgeIdentity;
+  /** Capabilities this launch can honor beyond the always-available ones. */
+  grants?: AgentBridgeGrants;
   platform?: NodeJS.Platform;
 }
 
@@ -178,7 +191,7 @@ export function agentBridgeLaunchStep(input: AgentBridgeLaunchStepInput): Launch
     async prepare(state) {
       const provider = findHarnessProvider(harness)?.agentBridge;
       if (!provider) return null;
-      const lease = await service.lease(identity);
+      const lease = await service.lease(identity, input.grants);
       let scratch: string | undefined;
       const removeScratch = () => {
         if (scratch) fs.rmSync(scratch, { recursive: true, force: true });

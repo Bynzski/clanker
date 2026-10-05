@@ -12,8 +12,10 @@ import { adoptListedWorktree, attachCreatedWorktree } from '../worktreeContextAt
 import { recordListedWorktrees } from '../sessionWorktrees';
 import type { WorktreeProvenance } from '../worktreeProvenance';
 import { reconcileCheckoutContexts } from '../checkoutContextReconcile';
-import type { ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
-import type { GitCreateWorktreeOptions, GitWorktreeCreateResult } from '../../shared/types/git';
+import type { ReconcileCheckoutContextsResult, ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
+import type {
+  GitBranchStateResult, GitCreateWorktreeOptions, GitDeleteBranchResult, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult,
+} from '../../shared/types/git';
 import { RemoteWorktreeCoordinator, type RemoteWorktreeRemovalPersistence } from '../remote/remoteWorktreeCoordinator';
 import { toNativePath, toPosixPath } from '../../shared/pathNormalize';
 import {
@@ -90,6 +92,12 @@ function getValidatedOpenWorkspacePaths(paths: unknown): string[] | null {
   return validated.every((entry): entry is string => entry !== null) ? validated : null;
 }
 
+/**
+ * Main-process entry points to the same worktree machinery the renderer reaches through IPC, for the
+ * isolated-checkout lifecycle service. Each takes only a workspace id; Git is scoped to that registered
+ * workspace and every path/branch is validated by the same inner functions the IPC handlers use.
+ * Local workspaces only: an SSH workspace gets a failure result, never a different code path.
+ */
 export interface GitIpcController {
   /**
    * Creates the worktree for an *existing* branch at its generated path and attaches it to the
@@ -97,6 +105,24 @@ export interface GitIpcController {
    * recovery blocking and reservations. Used only after the user confirms recreating a removed one.
    */
   createWorktreeForSession(workspaceId: string, branch: string): Promise<GitWorktreeCreateResult>;
+  /** Branch state of the workspace's own checkout. */
+  getBranchState(workspaceId: string): Promise<GitBranchStateResult>;
+  /** `New isolated agent`'s creation: a new branch from `baseRef` (or an existing branch), attached as a context. */
+  createCheckoutWorktree(workspaceId: string, branch: string, baseRef: string): Promise<GitWorktreeCreateResult>;
+  /** Git's worktree listing for the workspace's repository (native paths). */
+  listWorktrees(workspaceId: string): Promise<GitWorktreeListResult>;
+  /** Whether a linked worktree holds uncommitted, untracked or ignored files; ignores open terminals (a preflight only). */
+  checkWorktreeClean(workspaceId: string, worktreePath: string): Promise<GitWorktreeInspectionResult>;
+  /** The full inspection removal requires (including the open-workspace/terminal check). */
+  inspectWorktree(workspaceId: string, worktreePath: string, openWorkspacePaths: string[]): Promise<GitWorktreeInspectionResult>;
+  /** Removal through `gitService.removeWorktree` with its own inspection, branch-identity and trash protections. */
+  removeWorktree(workspaceId: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]): Promise<{ success: boolean; error?: string; warning?: string }>;
+  /** Drops Git's record of one missing linked worktree (nothing else). */
+  forgetMissingWorktree(workspaceId: string, worktreePath: string): Promise<{ success: boolean; error?: string }>;
+  /** Safe `git branch -d` only: refuses an unmerged branch and the current one. */
+  deleteBranch(workspaceId: string, name: string): Promise<GitDeleteBranchResult>;
+  /** `RECONCILE_CHECKOUT_CONTEXTS` for one workspace. */
+  reconcileCheckoutContexts(workspaceId: string): Promise<ReconcileCheckoutContextsResult>;
 }
 
 export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
@@ -295,9 +321,7 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     });
   });
 
-  // Brings the workspace's worktree contexts in line with Git (see checkoutContextReconcile.ts). The
-  // renderer names only the workspace; the listing, the release check and every field come from main.
-  registerGitHandler(RECONCILE_CHECKOUT_CONTEXTS, async (_, workspaceId: unknown) => {
+  const reconcileInScope = async (workspaceId: unknown): Promise<ReconcileCheckoutContextsResult> => {
     const ws = typeof workspaceId === 'string' ? resolveWorkspace(workspaceId) : null;
     const registry = getWorkspaceRegistry?.();
     if (!ws || !registry) return { success: false, error: 'A registered workspace is required' };
@@ -311,7 +335,10 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     const gone = [...(result.contexts ?? []).filter((context) => context.missing).map((context) => context.id), ...(result.dropped ?? [])];
     if (result.success && gone.length > 0) deps.onCheckoutContextsGone?.(ws.workspaceId, gone);
     return result;
-  });
+  };
+  // Brings the workspace's worktree contexts in line with Git (see checkoutContextReconcile.ts). The
+  // renderer names only the workspace; the listing, the release check and every field come from main.
+  registerGitHandler(RECONCILE_CHECKOUT_CONTEXTS, (_, workspaceId: unknown) => reconcileInScope(workspaceId));
 
   const createWorktreeInScope = async (
     ws: ReturnType<typeof resolveWorkspace>, workspacePath: string, baseRef: string, branch: string, attachRequested: boolean,
@@ -400,11 +427,8 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     return { success: true };
   });
 
-  registerGitHandler(GIT_INSPECT_WORKTREE, async (_, workspacePath: string, worktreePath: string, openWorkspacePaths: string[]) => {
-    const ws = resolveWorkspace();
-    if (ws && ws.location.environmentId !== 'local') {
-      return remoteWorktrees.inspect(ws, worktreePath);
-    }
+  // Local inspection/removal bodies, shared by the IPC handlers and the lifecycle controller.
+  const inspectLocalWorktree = async (workspacePath: string, worktreePath: string, openWorkspacePaths: string[]): Promise<GitWorktreeInspectionResult> => {
     const safePath = getValidatedWorkspacePath(workspacePath);
     const safeWorktreePath = getValidatedLocalWorkspacePath(worktreePath);
     const safeOpenPaths = getValidatedOpenWorkspacePaths(openWorkspacePaths);
@@ -413,13 +437,8 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     return result.worktree
       ? { ...result, worktree: { ...result.worktree, path: toPosixPath(result.worktree.path) } }
       : result;
-  });
-
-  registerGitHandler(GIT_REMOVE_WORKTREE, async (_, workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) => {
-    const ws = resolveWorkspace();
-    if (ws && ws.location.environmentId !== 'local') {
-      return remoteWorktrees.remove(ws, worktreePath, expectedBranch);
-    }
+  };
+  const removeLocalWorktree = async (workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) => {
     const safePath = getValidatedWorkspacePath(workspacePath);
     const safeWorktreePath = getValidatedLocalWorkspacePath(worktreePath);
     const safeOpenPaths = getValidatedOpenWorkspacePaths(openWorkspacePaths);
@@ -427,6 +446,22 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       return getInvalidWorkspaceResult();
     }
     return gitService.removeWorktree(safePath, safeWorktreePath, expectedBranch, safeOpenPaths);
+  };
+
+  registerGitHandler(GIT_INSPECT_WORKTREE, async (_, workspacePath: string, worktreePath: string, openWorkspacePaths: string[]) => {
+    const ws = resolveWorkspace();
+    if (ws && ws.location.environmentId !== 'local') {
+      return remoteWorktrees.inspect(ws, worktreePath);
+    }
+    return inspectLocalWorktree(workspacePath, worktreePath, openWorkspacePaths);
+  });
+
+  registerGitHandler(GIT_REMOVE_WORKTREE, async (_, workspacePath: string, worktreePath: string, expectedBranch: string | null, openWorkspacePaths: string[]) => {
+    const ws = resolveWorkspace();
+    if (ws && ws.location.environmentId !== 'local') {
+      return remoteWorktrees.remove(ws, worktreePath, expectedBranch);
+    }
+    return removeLocalWorktree(workspacePath, worktreePath, expectedBranch, openWorkspacePaths);
   });
   registerGitHandler(GIT_GET_OPERATION_STATE, async (_, workspacePath: string) => {
     const safeWorkspacePath = getValidatedWorkspacePath(workspacePath);
@@ -786,6 +821,24 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
   // This is one-way: main sends events to renderer (no handler needed).
   ipcMain.on(GIT_STATUS_UPDATE, () => { });
 
+  /** Runs `run` scoped to a registered *local* workspace, exactly as the IPC handlers scope theirs. */
+  const withLocalScope = <T>(
+    workspaceId: string, run: (ws: NonNullable<ReturnType<typeof resolveWorkspace>>, nativeWorkspacePath: string) => Promise<T>,
+    fail: (error: string) => T,
+  ): Promise<T> => {
+    const ws = typeof workspaceId === 'string' ? resolveWorkspace(workspaceId) : null;
+    if (!ws) return Promise.resolve(fail('A registered workspace is required'));
+    if (ws.location.environmentId !== 'local') return Promise.resolve(fail('This operation is available for local workspaces only'));
+    const identity: GitWorkspaceIdentity = {
+      workspacePath: ws.location.path, workspaceId: ws.workspaceId, environmentId: ws.location.environmentId,
+    };
+    return gitService.withWorkspace(identity, async () => {
+      const safePath = getValidatedWorkspacePath(ws.location.path);
+      if (!safePath) return fail(getInvalidWorkspaceResult().error ?? 'Invalid workspace');
+      return run(ws, safePath);
+    });
+  };
+
   return {
     createWorktreeForSession: (workspaceId, branch) => {
       const ws = resolveWorkspace(workspaceId);
@@ -795,5 +848,40 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
       };
       return gitService.withWorkspace(identity, () => createWorktreeInScope(ws, ws.location.path, '', branch, true));
     },
+    getBranchState: (workspaceId) => withLocalScope(workspaceId,
+      (_ws, safePath) => gitService.getBranchState(safePath),
+      (error) => ({ success: false, isRepo: false, currentBranch: null, isDetached: false, branches: [], error })),
+    createCheckoutWorktree: (workspaceId, branch, baseRef) => withLocalScope(workspaceId,
+      (ws) => createWorktreeInScope(ws, ws.location.path, baseRef, branch, true),
+      (error) => ({ success: false, error })),
+    listWorktrees: (workspaceId) => withLocalScope(workspaceId,
+      (_ws, safePath) => gitService.listWorktrees(safePath),
+      (error) => ({ success: false, worktrees: [], error })),
+    checkWorktreeClean: (workspaceId, worktreePath) => withLocalScope(workspaceId,
+      async (_ws, safePath) => {
+        const safeWorktreePath = getValidatedLocalWorkspacePath(worktreePath);
+        if (!safeWorktreePath) return getInvalidWorkspaceResult();
+        return gitService.inspectWorktree(safePath, safeWorktreePath, [], { skipOpenCheck: true });
+      },
+      (error) => ({ success: false, error })),
+    inspectWorktree: (workspaceId, worktreePath, openWorkspacePaths) => withLocalScope(workspaceId,
+      (ws) => inspectLocalWorktree(ws.location.path, worktreePath, openWorkspacePaths),
+      (error) => ({ success: false, error })),
+    removeWorktree: (workspaceId, worktreePath, expectedBranch, openWorkspacePaths) => withLocalScope(workspaceId,
+      (ws) => removeLocalWorktree(ws.location.path, worktreePath, expectedBranch, openWorkspacePaths),
+      (error) => ({ success: false, error })),
+    forgetMissingWorktree: (workspaceId, worktreePath) => withLocalScope(workspaceId,
+      (_ws, safePath) => gitService.forgetMissingWorktree(safePath, toNativePath(worktreePath, process.platform)),
+      (error) => ({ success: false, error })),
+    deleteBranch: (workspaceId, name) => withLocalScope(workspaceId,
+      async (_ws, safePath) => {
+        const result = await gitService.deleteBranch(safePath, name);
+        if (result.success) await refreshGitStatus(safePath);
+        return result;
+      },
+      (error) => ({ success: false, error })),
+    reconcileCheckoutContexts: (workspaceId) => withLocalScope(workspaceId,
+      (ws) => reconcileInScope(ws.workspaceId),
+      (error) => ({ success: false, error })),
   };
 }

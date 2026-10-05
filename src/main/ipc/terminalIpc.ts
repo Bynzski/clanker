@@ -1,5 +1,7 @@
 import { prepareLaunchAttachments, type LaunchAttachmentStep, type PreparedLaunchAttachments } from '../launchAttachments';
 import { attentionLaunchStep } from '../attentionLaunchStep';
+import { retireTerminal } from '../terminalRetirement';
+import { grantsCheckoutRehoming } from '../isolatedCheckout/rehomeSupport';
 import { agentBridgeLaunchStep, withoutAgentBridgeEnvironment, type AgentBridgeService } from '../agentBridge/service';
 import { findHarnessProvider } from '../harnesses/registry';
 import { prepareHarnessAccountContext, type HarnessAccountService } from '../accounts/harnessAccountService';
@@ -298,6 +300,7 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
       && resolvedWorkspace && checkoutContext && !isRemote) {
       steps.push(agentBridgeLaunchStep({
         service: deps.agentBridge, harness,
+        grants: { checkoutRehoming: grantsCheckoutRehoming(harness, { attentionEnabled }) },
         identity: {
           terminalId: id, workspaceId: resolvedWorkspace.workspaceId, environmentId: effectiveEnvironmentId,
           checkoutContextId: checkoutContext.id, harnessId: harness,
@@ -565,36 +568,17 @@ export function registerTerminalIpc(deps: RegisterTerminalIpcDeps): void {
     if (!isNonEmptyString(id)) {
       return fail('Invalid terminal id');
     }
-    const terminal = terminals.get(id);
-    if (terminal) {
-      agentAttentionBroker?.release(id);
-      void terminal.releaseResources?.();
-      try {
-        terminal.pty.kill();
-      } catch {
-        // On Windows, node-pty may warn about SIGTERM before falling back
-        // to TerminateProcess. Suppress the noise — the process is gone.
-      }
-      terminals.delete(id);
-      return ok();
-    }
-    return ok(); // no-op for missing terminal
+    // A missing terminal is a no-op.
+    void retireTerminal({ terminals, releaseAttention: (terminalId) => agentAttentionBroker?.release(terminalId) }, id);
+    return ok();
   });
 
   ipcMain.handle(TERMINAL_CLEANUP_WORKSPACE, (_, ids: string[]) => {
     const terminals = getTerminals();
     let killed = 0;
     for (const id of ids) {
-      const terminal = terminals.get(id);
-      if (terminal) {
-        agentAttentionBroker?.release(id);
-        void terminal.releaseResources?.();
-        try {
-          terminal.pty.kill();
-        } catch {
-          // On Windows, node-pty may warn about SIGTERM — suppress.
-        }
-        terminals.delete(id);
+      if (terminals.has(id)) {
+        void retireTerminal({ terminals, releaseAttention: (terminalId) => agentAttentionBroker?.release(terminalId) }, id);
         killed++;
       }
     }

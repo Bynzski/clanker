@@ -35,6 +35,10 @@ import { GitService } from './gitService';
 import { EnvironmentManager } from './environment/environmentManager';
 import { WorkspaceRegistry } from './workspaceRegistry';
 import { AgentBridgeService } from './agentBridge/service';
+import { DEFAULT_AGENT_BRIDGE_CAPABILITIES } from './agentBridge/capabilities';
+import { createCheckoutLifecycleCapabilities, deferredLifecyclePort } from './agentBridge/lifecycleCapabilities';
+import { IsolatedCheckoutService } from './isolatedCheckout/isolatedCheckoutService';
+import { retireTerminal } from './terminalRetirement';
 import { WorktreeProvenance } from './worktreeProvenance';
 import { registerSshEnvironmentIpc } from './ipc/sshEnvironmentIpc';
 import { resolveExistingDirectory } from './security';
@@ -80,7 +84,7 @@ import { AgentAttentionBroker } from './agentAttentionBroker';
 import { createAgentLocationResolver, strandedAgentTerminals } from './agentLocation';
 import { findHarnessProvider } from './harnesses/registry';
 import { releaseCheckoutContext } from './checkoutContextRelease';
-import { AGENT_ATTENTION_CHANGED, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
+import { AGENT_ATTENTION_CHANGED, AGENT_CHECKOUT_TRANSITION, GIT_STATUS_UPDATE } from '../shared/ipcChannels';
 import { removeAttentionAdapterFiles, scavengeStaleAttentionRoots, migrateLegacyAgyAttentionPlugin } from './agentAttentionAdapters';
 import { waitForTerminalCleanup } from './ipc/ptySpawn';
 import { HermesAssistantService } from './assistants/hermesAssistantService';
@@ -247,11 +251,14 @@ const harnessAccountService = new HarnessAccountService({
 harnessAccountService.onAccountsChanged(() => clearSessionCache());
 
 // Main-owned MCP endpoint for agents (loopback, launch-scoped credentials). Starts on first attached launch.
+const checkoutLifecyclePort = deferredLifecyclePort();
 const agentBridge = new AgentBridgeService({
   getRegistry: () => workspaceRegistry,
   getTerminals: () => terminals,
   version: () => app.getVersion(),
+  capabilities: [...DEFAULT_AGENT_BRIDGE_CAPABILITIES, ...createCheckoutLifecycleCapabilities(checkoutLifecyclePort.port)],
 });
+let isolatedCheckout: IsolatedCheckoutService | undefined;
 const harnessUsageService = new HarnessUsageService(workspaceRegistry, { clientVersion: () => app.getVersion(), accounts: harnessAccountService });
 
 const remotePreviewManager = new RemotePreviewManager(workspaceRegistry, (update) => {
@@ -487,7 +494,7 @@ app.whenReady().then(() => {
   registerUsageIpc({ getUsageService: () => harnessUsageService });
   registerAccountIpc({ getAccountService: () => harnessAccountService });
 
-  registerSessionIpc({
+  const sessionIpc = registerSessionIpc({
     getTerminals: () => terminals,
     getMainWindow: () => mainWindow,
     getSafeWorkspacePath: (workingDir: string) => getSafeWorkspacePath(workingDir, store),
@@ -507,6 +514,22 @@ app.whenReady().then(() => {
     createRemoteOutputObserver: (workspaceId) => createTerminalPreviewSignal((endpoint) => remotePreviewManager.discovery.hint(workspaceId, endpoint)),
     getHarnessAccountService: () => harnessAccountService,
   });
+
+  // Agent-requested isolated-checkout transactions. Main-owned: it reads main's terminal table, registry,
+  // attention broker and Git, and only reports (never asks) the renderer to adopt what became true.
+  isolatedCheckout = new IsolatedCheckoutService({
+    getRegistry: () => workspaceRegistry,
+    getTerminals: () => terminals,
+    attention: agentAttentionBroker,
+    git: gitIpc,
+    getSessions: () => sessionIpc,
+    releaseCheckoutContext: (workspaceId, checkoutContextId) =>
+      releaseCheckoutContext({ registry: workspaceRegistry, terminals: terminals.values(), workspaceId, checkoutContextId }),
+    retireTerminal: (terminalId) => retireTerminal({ terminals, releaseAttention: (id) => agentAttentionBroker.release(id) }, terminalId),
+    notify: (event) => { if (isWindowAvailable(mainWindow)) mainWindow.webContents.send(AGENT_CHECKOUT_TRANSITION, event); },
+    isShuttingDown: getAppShuttingDown,
+  });
+  checkoutLifecyclePort.bind(isolatedCheckout);
 
   // Register annotation IPC handlers
   annotationController = registerAnnotationIpc({
@@ -575,7 +598,7 @@ app.on('before-quit', (event) => {
   remoteFileWatcher.close();
   setAppShuttingDown(true);
   const assistantsStopped = assistantService?.shutdown() ?? Promise.resolve();
-  const agentBridgeStopped = agentBridge.shutdown();
+  const agentBridgeStopped = Promise.all([isolatedCheckout?.shutdown(), agentBridge.shutdown()]).then(() => undefined);
   harnessUsageService.dispose();
   const accountsClosed = harnessAccountService.dispose();
   workspaceRegistry.clear();

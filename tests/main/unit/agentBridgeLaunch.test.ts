@@ -6,6 +6,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import { SESSION_INVOKE, SPAWN_TERMINAL } from '../../../src/shared/ipcChannels';
+import type { HarnessSession } from '../../../src/shared/types/session';
 import { toNativePath } from '../../../src/shared/pathNormalize';
 import { testHarnessWrapper } from '../../_helpers/tempPaths';
 import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
@@ -32,6 +33,8 @@ import { registerSessionIpc } from '../../../src/main/ipc/sessionIpc';
 import { AgentBridgeService, AGENT_BRIDGE_TOKEN_ENV, type AgentBridgeTerminalRecord } from '../../../src/main/agentBridge/service';
 import { removeAttentionAdapterFiles } from '../../../src/main/agentAttentionAdapters';
 import { findHarnessProvider } from '../../../src/main/harnesses/registry';
+import { DEFAULT_AGENT_BRIDGE_CAPABILITIES } from '../../../src/main/agentBridge/capabilities';
+import { createCheckoutLifecycleCapabilities } from '../../../src/main/agentBridge/lifecycleCapabilities';
 
 const WORKSPACE = toNativePath('/workspace', process.platform);
 type Handler = (event: unknown, ...args: unknown[]) => Promise<Record<string, unknown>>;
@@ -340,5 +343,159 @@ describe('resumed sessions', () => {
     expect(lastSpawn().env).not.toHaveProperty(AGENT_BRIDGE_TOKEN_ENV);
     expect(lastSpawn().spawnArgs as string[]).not.toContain('-c');
     expect(service.credentials.size).toBe(0);
+  });
+});
+
+describe('resumeInCheckout (the re-home launch)', () => {
+  const TREE_PATH = toNativePath('/workspace-worktrees/task', process.platform);
+  const TREE = { id: 'ws::ckt-1', workspaceId: 'ws', environmentId: 'local', path: '/workspace-worktrees/task', kind: 'worktree' as const, branch: 'task' };
+  const session: HarnessSession = { id: 's1', harness: 'codex', title: 't', cwd: WORKSPACE, timestamp: 1 };
+
+  function setup(extraDefaults: Record<string, unknown> = {}) {
+    // A bridge that offers the lifecycle tools (the port is irrelevant to which tools a launch is granted).
+    const port = { create: async () => ({ data: {} }), complete: async () => ({ data: {} }) };
+    service = new AgentBridgeService({
+      getRegistry: () => registry as never, getTerminals: () => terminals, version: () => '1',
+      capabilities: [...DEFAULT_AGENT_BRIDGE_CAPABILITIES, ...createCheckoutLifecycleCapabilities(port)],
+    });
+    const treeRegistry = withCheckoutContexts({ getWorkspace: (id: string) => (id === 'ws' ? workspaceObject : null), getWorkspaceByLocation: () => null }, [TREE]);
+    registry = treeRegistry as never;
+    defaults.codex = { agentBridgeEnabled: true, attentionEnabled: true, ...extraDefaults };
+    defaults.opencode = { agentBridgeEnabled: true, attentionEnabled: true };
+    const controller = registerSessionIpc({
+      getTerminals: () => terminals as never, getMainWindow: () => ({ webContents: { send: vi.fn() } }) as never,
+      getSafeWorkspacePath: (dir: string) => dir, getIsShuttingDown: () => false,
+      getStore: () => ({ get: (key: string) => (key === 'harnessDefaults' ? defaults : false) }) as never,
+      getHarnessOptions: () => options, harnessSpawnOverrides: { fileExists: () => true },
+      getWorkspaceRegistry: () => treeRegistry as never, agentBridge: service, agentAttentionBroker: broker as never,
+      // Git's listing, as in production, so a conversation that ran in the worktree is routed to it.
+      listWorktrees: async () => ({ success: true, worktrees: [
+        { path: WORKSPACE, branch: 'main', isMain: true, isLocked: false, isPrunable: false },
+        { path: TREE_PATH, branch: 'task', isMain: false, isLocked: false, isPrunable: false },
+      ] }),
+    });
+    return controller;
+  }
+  const grantOf = () => service.credentials.resolve(lastSpawn().env[AGENT_BRIDGE_TOKEN_ENV])!;
+  const toolNames = () => service.listTools(grantOf()).map((tool) => tool.name);
+  const lifecycleNames = ['clanker_create_isolated_checkout', 'clanker_complete_isolated_checkout'];
+
+  it('launches the conversation in the checkout main chose, not the one its recorded directory implies', async () => {
+    const controller = setup();
+    const launched = await controller.resumeInCheckout('ws', session, { targetContext: TREE });
+
+    expect(launched.checkoutContextId).toBe(TREE.id);
+    expect(mockSpawnPty).toHaveBeenCalledWith(expect.objectContaining({ cwd: TREE_PATH, checkoutContextId: TREE.id, workspaceId: 'ws' }));
+    // It is a resume of the same native conversation.
+    expect(lastSpawn().spawnArgs as string[]).toEqual(expect.arrayContaining(['resume', 's1']));
+  });
+
+  it('issues a fresh bridge credential bound to the new terminal and the TARGET checkout', async () => {
+    const controller = setup();
+    // The conversation's old process has its own credential, bound to the main checkout.
+    terminals.set('old', { workspaceId: 'ws', checkoutContextId: 'ws::main', harnessId: 'codex' });
+    const old = await service.lease({ terminalId: 'old', workspaceId: 'ws', environmentId: 'local', checkoutContextId: 'ws::main', harnessId: 'codex' });
+
+    const launched = await controller.resumeInCheckout('ws', session, { targetContext: TREE });
+    const fresh = lastSpawn().env[AGENT_BRIDGE_TOKEN_ENV];
+
+    expect(fresh).not.toBe(old.token);
+    expect(service.credentials.resolve(fresh)?.identity).toEqual({
+      terminalId: launched.id, workspaceId: 'ws', environmentId: 'local', checkoutContextId: TREE.id, harnessId: 'codex',
+    });
+    // The old credential keeps meaning exactly what it did (main) until its terminal is retired, then dies.
+    expect(service.credentials.resolve(old.token)?.identity.checkoutContextId).toBe('ws::main');
+    service.revokeTerminal('old');
+    expect(service.credentials.resolve(old.token)).toBeNull();
+    expect(service.credentials.resolve(fresh)).not.toBeNull();
+  });
+
+  it('grants the lifecycle tools only to a launch whose harness can be re-homed and that has attention', async () => {
+    const controller = setup();
+    await controller.resumeInCheckout('ws', session, { targetContext: TREE });
+    expect(toolNames()).toEqual(['clanker_context', ...lifecycleNames]);
+    await controller.resumeInCheckout('ws', { ...session, harness: 'opencode', id: 's2' }, { targetContext: TREE });
+    expect(toolNames()).toEqual(['clanker_context']);
+  });
+
+  it('without agent attention a re-homeable harness still gets only the context tool', async () => {
+    const controller = setup({ attentionEnabled: false });
+    await controller.resumeInCheckout('ws', session, { targetContext: TREE });
+    expect(toolNames()).toEqual(['clanker_context']);
+  });
+
+  it('a fresh terminal launch gets the same grants', async () => {
+    setup();
+    registerTerminal();
+    handlers.clear();
+    mockHandle.mockClear();
+    registerTerminal();
+    await spawn('codex');
+    expect(toolNames()).toEqual(['clanker_context', ...lifecycleNames]);
+    await spawn('opencode');
+    expect(toolNames()).toEqual(['clanker_context']);
+  });
+
+  it('passes the liveness hook, the exit hook and the startup buffer bound to the PTY, and still disposes attachments on exit', async () => {
+    const controller = setup();
+    const onOutput = vi.fn();
+    const onExit = vi.fn();
+    const startupBufferLimit = { bytes: 123456, chunks: 789 };
+    const launched = await controller.resumeInCheckout('ws', session, { targetContext: TREE, onOutput, onExit, startupBufferLimit });
+
+    const spawnOptions = lastSpawn() as unknown as { onOutput: (d: string) => void; onExit: () => Promise<void>; startupBufferLimit: unknown; id: string };
+    expect(spawnOptions.id).toBe(launched.id);
+    expect(spawnOptions.startupBufferLimit).toEqual(startupBufferLimit);
+    spawnOptions.onOutput('x');
+    expect(onOutput).toHaveBeenCalledWith('x');
+
+    const token = lastSpawn().env[AGENT_BRIDGE_TOKEN_ENV];
+    await spawnOptions.onExit();
+    expect(service.credentials.resolve(token)).toBeNull(); // attachments were disposed first
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(broker.release).toHaveBeenCalledWith(launched.id);
+  });
+
+  it('a failed spawn revokes the credential and releases attention', async () => {
+    const controller = setup();
+    mockSpawnPty.mockImplementationOnce(() => { throw new Error('pty failed'); });
+    await expect(controller.resumeInCheckout('ws', session, { targetContext: TREE })).rejects.toThrow('pty failed');
+    expect(service.credentials.size).toBe(0);
+    expect(broker.release).toHaveBeenCalled();
+  });
+
+  it('refuses a target context that is no longer the registered one, before any process exists', async () => {
+    const controller = setup();
+    await expect(controller.resumeInCheckout('ws', session, { targetContext: { ...TREE, id: 'ws::unregistered' } })).rejects.toThrow();
+    expect(mockSpawnPty).not.toHaveBeenCalled();
+    expect(service.credentials.size).toBe(0);
+  });
+
+  it('is local-only', async () => {
+    const remote = { workspaceId: 'ws', location: { environmentId: 'vps', path: '/srv/p' }, environment: { capabilities: {} } };
+    const controller = registerSessionIpc({
+      getTerminals: () => terminals as never, getMainWindow: () => null, getSafeWorkspacePath: (dir: string) => dir, getIsShuttingDown: () => false,
+      getStore: () => ({ get: () => defaults }) as never, getHarnessOptions: () => options,
+      getWorkspaceRegistry: () => withCheckoutContexts({ getWorkspace: () => remote }) as never,
+    });
+    await expect(controller.resumeInCheckout('ws', session, { targetContext: TREE })).rejects.toThrow(/local workspaces only/);
+    expect(mockSpawnPty).not.toHaveBeenCalled();
+  });
+});
+
+describe('the ordinary SESSION_INVOKE is unchanged by the internal route', () => {
+  it('still routes by the conversation\'s recorded directory and still accepts only renderer-shaped requests', async () => {
+    const controller = registerSessionIpc({
+      getTerminals: () => terminals as never, getMainWindow: () => ({ webContents: { send: vi.fn() } }) as never,
+      getSafeWorkspacePath: (dir: string) => dir, getIsShuttingDown: () => false,
+      getStore: () => ({ get: (key: string) => (key === 'harnessDefaults' ? defaults : false) }) as never,
+      getHarnessOptions: () => options, harnessSpawnOverrides: { fileExists: () => true },
+      getWorkspaceRegistry: () => registry as never, agentBridge: service,
+    });
+    const result = await handlers.get(SESSION_INVOKE)!({}, 'ws', { id: 's1', harness: 'codex', title: 't', cwd: WORKSPACE, timestamp: 1 }, false) as { checkoutContextId?: string };
+    expect(result.checkoutContextId).toBe('ws::main');
+    // The internal route is not reachable through IPC: the handler has no way to name a target context.
+    expect(handlers.get(SESSION_INVOKE)!.length).toBeLessThanOrEqual(5);
+    expect(controller.resumeInCheckout).toBeTypeOf('function');
   });
 });

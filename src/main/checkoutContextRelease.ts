@@ -38,6 +38,20 @@ function isUsing(terminal: TerminalUsage, context: CheckoutContext, registry: Wo
 }
 
 /**
+ * How many of `terminals` are using the context's root by the same rule release enforces. A terminal
+ * can be excluded by id (the lifecycle transaction's own, which is about to be retired).
+ */
+export function countTerminalsUsingContext(
+  registry: WorkspaceRegistry, context: CheckoutContext, terminals: Iterable<[string, TerminalUsage]>, exceptTerminalId?: string,
+): number {
+  let active = 0;
+  for (const [id, terminal] of terminals) {
+    if (id !== exceptTerminalId && isUsing(terminal, context, registry)) active++;
+  }
+  return active;
+}
+
+/**
  * Releases a worktree checkout context owned by a workspace so the checkout can go through
  * inspection and removal. It only unregisters the context: no worktree, branch or process is
  * touched, and nothing is re-registered if a later step fails.
