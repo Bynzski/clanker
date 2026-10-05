@@ -268,14 +268,29 @@ describe('the transition notice', () => {
     expect(screen.getByRole('status')).toHaveTextContent('second');
   });
 
-  it('clears itself after a while', () => {
+  it('a routine (info) notice fades after a few seconds', () => {
     vi.useFakeTimers();
     try {
       seed();
       render(<StatusBar />);
       act(() => applyAgentCheckoutTransition({ kind: 'notice', workspaceId: WS, tone: 'info', message: 'temporary' }));
       expect(screen.getByRole('status')).toBeTruthy();
-      act(() => { vi.advanceTimersByTime(20_001); });
+      act(() => { vi.advanceTimersByTime(5_900); });
+      expect(document.querySelector('.status-notice')).not.toBeNull();
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(document.querySelector('.status-notice')).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('a warning stays longer, because something was left in place or restored', () => {
+    vi.useFakeTimers();
+    try {
+      seed();
+      render(<StatusBar />);
+      act(() => applyAgentCheckoutTransition({ kind: 'notice', workspaceId: WS, tone: 'warning', message: 'left on disk' }));
+      act(() => { vi.advanceTimersByTime(19_900); });
+      expect(document.querySelector('.status-notice')).not.toBeNull();
+      act(() => { vi.advanceTimersByTime(200); });
       expect(document.querySelector('.status-notice')).toBeNull();
     } finally { vi.useRealTimers(); }
   });

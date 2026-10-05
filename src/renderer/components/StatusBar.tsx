@@ -29,7 +29,8 @@ export default function StatusBar() {
   const visibleNotice = notice && (!focusedWorkspace || notice.workspaceId === focusedWorkspace.id) ? notice : null;
   useEffect(() => {
     if (!notice) return undefined;
-    const timer = setTimeout(() => dismissNotice(notice.id), 20_000);
+    // Routine outcomes fade quickly; warnings (something was left in place or restored) stay longer.
+    const timer = setTimeout(() => dismissNotice(notice.id), notice.tone === 'warning' ? 20_000 : 6_000);
     return () => clearTimeout(timer);
   }, [notice, dismissNotice]);
 
