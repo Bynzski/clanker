@@ -226,7 +226,19 @@ function frame(spawn: Spawned, event: string, fields: Record<string, unknown> = 
 }
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 async function turn(spawn: Spawned, turnId: string) { await frame(spawn, 'turn_started', { turnId }); await settle(); }
-async function stop(spawn: Spawned, turnId: string, fields: Record<string, unknown> = {}) { await frame(spawn, 'turn_completed', { turnId, ...fields }); await settle(); }
+
+/** Transitions the service has in flight (a test-only look at its own bookkeeping). */
+const inFlight = () => [...(lifecycle as unknown as { active: Map<string, Promise<unknown>> }).active.values()];
+/**
+ * After a native turn end: give the broker time to publish it, then wait for the move it may have started to
+ * run to its end. Waiting on the service's own work (not a fixed delay) keeps this independent of machine speed.
+ */
+async function finishMove(): Promise<void> {
+  const until = Date.now() + 400;
+  while (inFlight().length === 0 && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 10));
+  while (inFlight().length > 0) await Promise.allSettled(inFlight());
+}
+async function stop(spawn: Spawned, turnId: string, fields: Record<string, unknown> = {}) { await frame(spawn, 'turn_completed', { turnId, ...fields }); await settle(); await finishMove(); }
 
 async function launch() {
   const result = await handlers.get(SPAWN_TERMINAL)!(null, toPosixPath(appPath), 'codex', undefined, undefined, undefined, 'ws', 'local') as { id: string };

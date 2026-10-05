@@ -16,6 +16,7 @@ vi.mock('electron', () => ({ ipcMain: { handle: mockHandle, on: vi.fn() }, Brows
 import { GitService } from '../../../src/main/gitService';
 import { registerGitIpc, type GitIpcController } from '../../../src/main/ipc/gitIpc';
 import type { CheckoutContext } from '../../../src/shared/types/checkoutContext';
+import { toPosixPath } from '../../../src/shared/pathNormalize';
 
 const exec = promisify(execFile);
 let root: string;
@@ -28,7 +29,8 @@ const commit = async (cwd: string, message: string) => {
 };
 
 beforeEach(async () => {
-  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-lifecycle-git-')));
+  // `.native` expands Windows 8.3 short names (RUNNER~1), which Git never reports.
+  root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'clanker-lifecycle-git-')));
   repo = path.join(root, 'repo');
   fs.mkdirSync(repo);
   await git(repo, 'init', '-q', '--initial-branch', 'main');
@@ -41,7 +43,7 @@ const service = (livePaths: string[] = []) => new GitService(() => undefined, as
 const addWorktree = async (branch: string) => {
   const dir = path.join(root, `wt-${branch}`);
   await git(repo, 'worktree', 'add', '-q', '-b', branch, dir);
-  return fs.realpathSync(dir);
+  return fs.realpathSync.native(dir);
 };
 
 describe('GitService.forgetMissingWorktree', () => {
@@ -56,7 +58,7 @@ describe('GitService.forgetMissingWorktree', () => {
     expect(result).toEqual({ success: true });
 
     const listing = await service().listWorktrees(repo);
-    const byPath = new Map(listing.worktrees.map((entry) => [fs.existsSync(entry.path) ? fs.realpathSync(entry.path) : entry.path, entry]));
+    const byPath = new Map(listing.worktrees.map((entry) => [fs.existsSync(entry.path) ? fs.realpathSync.native(entry.path) : entry.path, entry]));
     expect(byPath.has(one)).toBe(false); // gone
     expect(byPath.get(two)?.isPrunable).toBe(true); // the other stale record is untouched
     expect(byPath.get(live)).toBeDefined(); // a live worktree is untouched
@@ -191,7 +193,7 @@ describe('GitIpcController (the scoped entry points IPC and the lifecycle servic
     expect(fs.existsSync(created.checkoutContext!.path)).toBe(true);
     // Branch and path come from Git's own listing, and the context lives under the generated container.
     expect(created.checkoutContext!.path).toContain(`${path.basename(repo)}-worktrees`);
-    expect(created.checkoutContext!.mainCheckoutPath).toBe(repo);
+    expect(created.checkoutContext!.mainCheckoutPath).toBe(toPosixPath(repo));
     expect(registry.registerCheckoutContext).toHaveBeenCalledTimes(1);
     expect(contexts).toHaveLength(1);
     expect(await git(repo, 'branch', '--list')).toContain('feature');

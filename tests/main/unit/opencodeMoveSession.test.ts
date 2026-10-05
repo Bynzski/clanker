@@ -27,7 +27,7 @@ function fakeOpenCode(moveStatus: number, where = 'bin'): { bin: string; request
   const bin = path.join(dir, where);
   fs.mkdirSync(bin, { recursive: true });
   const record = { request: path.join(dir, 'request.json'), killed: path.join(dir, 'killed'), env: path.join(dir, 'env.json') };
-  fs.writeFileSync(path.join(bin, 'opencode'), `#!/usr/bin/env node
+  fs.writeFileSync(path.join(bin, 'opencode'), `#!${process.execPath}
 const http = require('node:http'); const fs = require('node:fs');
 const args = process.argv.slice(2);
 const port = Number(args[args.indexOf('--port') + 1]);
@@ -114,7 +114,8 @@ describe('command resolution is the canonical one', () => {
   });
 
   it('the plan carries user CLI bin directories on PATH (host platform) and never an attention credential', () => {
-    const plan = planOpenCodeServe({ port: 1, password: 'pw', directory: '/repo', env: { PATH: '/usr/bin', CLANKER_ATTENTION_TOKEN: 'x' } });
+    // Resolution is not what is under test here (on Windows nothing named opencode is installed on the runner).
+    const plan = planOpenCodeServe({ port: 1, password: 'pw', directory: '/repo', env: { PATH: '/usr/bin', CLANKER_ATTENTION_TOKEN: 'x' } }, 'opencode', { fileExists: () => true });
     const entries = (plan.env.PATH ?? '').split(path.delimiter);
     expect(entries.length).toBeGreaterThan(1);
     expect(entries).toContain(process.platform === 'win32' ? entries.find((entry) => /npm/i.test(entry)) : path.join(os.homedir(), '.local', 'bin'));
