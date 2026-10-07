@@ -279,6 +279,8 @@ export class GitService {
           isMain: index === 0,
           isLocked: lines.some((line) => line === 'locked' || line.startsWith('locked ')),
           isPrunable: lines.some((line) => line === 'prunable' || line.startsWith('prunable ')),
+          lockReason: lines.find((line) => line.startsWith('locked '))?.slice(7),
+          pruneReason: lines.find((line) => line.startsWith('prunable '))?.slice(9),
         };
       });
       return { success: true, worktrees };
@@ -292,7 +294,7 @@ export class GitService {
    * Git prunes per repository, not per path, so this is a repository-wide cleanup. Locked worktrees are
    * never pruned by Git. Branches and existing checkout directories are untouched.
    */
-  async pruneWorktrees(workspacePath: string): Promise<GitWorktreePruneResult> {
+  async pruneWorktrees(workspacePath: string, guard?: (entries: GitWorktree[]) => string | null): Promise<GitWorktreePruneResult> {
     if (this.worktreesBeingRemoved.size > 0) {
       return { success: false, pruned: [], error: 'A worktree removal is in progress; try again when it finishes' };
     }
@@ -301,7 +303,13 @@ export class GitService {
     const stale = before.worktrees.filter((entry) => entry.isPrunable && !entry.isMain && !entry.isLocked);
     if (stale.length === 0) return { success: true, pruned: [] };
     try {
-      await this.execGit(workspacePath, ['worktree', 'prune', '--expire', 'now'], 60000);      const after = await this.listWorktrees(workspacePath);
+      // Check main-owned usage after the async listing, immediately before dispatch. Guard every
+      // unlocked linked entry: repository-wide Git pruning may find a newly missing directory too.
+      const blocked = guard?.(before.worktrees.filter((entry) => !entry.isMain && !entry.isLocked));
+      if (blocked) return { success: false, pruned: [], error: blocked };
+      if (this.worktreesBeingRemoved.size > 0) return { success: false, pruned: [], error: 'A worktree removal is in progress' };
+      await this.execGit(workspacePath, ['worktree', 'prune', '--expire', 'now'], 60000);
+      const after = await this.listWorktrees(workspacePath);
       if (!after.success) return { success: false, pruned: [], error: after.error };
       const stillListed = new Set(after.worktrees.map((entry) => entry.path));
       return { success: true, pruned: stale.map((entry) => entry.path).filter((entryPath) => !stillListed.has(entryPath)) };

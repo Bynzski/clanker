@@ -115,6 +115,37 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
     expect(document.querySelector('.git-menu')).not.toBeNull();
   });
 
+  it('forgets only an authoritative unused stale context and does not resurrect it when reopened', async () => {
+    const context = { id: 'ws::stale', workspaceId: 'ws', environmentId: 'local', path: '/projects/app-worktrees/stale', kind: 'worktree' as const, branch: 'stale', missing: true };
+    useWorkspaceStore.getState().upsertCheckoutContext('ws', context);
+    api.reconcileCheckoutContexts.mockResolvedValue({ success: true, contexts: [context], dropped: [] });
+    await openMenu();
+    await user.click(await screen.findByRole('button', { name: 'Forget stale checkout…' }));
+    expect((await screen.findByRole('alertdialog')).textContent).toContain(context.path);
+    api.reconcileCheckoutContexts.mockResolvedValue({ success: true, contexts: [], dropped: [context.id] });
+    await user.click(screen.getByRole('button', { name: 'Forget checkout' }));
+    await waitFor(() => expect(useWorkspaceStore.getState().getWorkspaceById('ws')!.checkoutContexts!.some((entry) => entry.id === context.id)).toBe(false));
+    expect(screen.queryByRole('button', { name: 'Forget stale checkout…' })).toBeNull();
+    expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
+    expect(api.gitPruneWorktrees).not.toHaveBeenCalled();
+    expect(api.releaseCheckoutContext).not.toHaveBeenCalled();
+    cleanup();
+    await openMenu();
+    expect(screen.queryByRole('button', { name: 'Forget stale checkout…' })).toBeNull();
+  });
+
+  it('keeps a stale checkout visible when main says it is still in use', async () => {
+    const context = { id: 'ws::stale', workspaceId: 'ws', environmentId: 'local', path: '/projects/app-worktrees/stale', kind: 'worktree' as const, branch: 'stale', missing: true };
+    useWorkspaceStore.getState().upsertCheckoutContext('ws', context);
+    api.reconcileCheckoutContexts.mockResolvedValue({ success: true, contexts: [context], dropped: [] });
+    await openMenu();
+    await user.click(await screen.findByRole('button', { name: 'Forget stale checkout…' }));
+    await user.click(await screen.findByRole('button', { name: 'Forget checkout' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('still registered');
+    expect(useWorkspaceStore.getState().getWorkspaceById('ws')!.checkoutContexts!.some((entry) => entry.id === context.id)).toBe(true);
+    expect(api.gitRemoveWorktree).not.toHaveBeenCalled();
+  });
+
   describe('missing worktrees', () => {
     const GONE = listed('/projects/app-worktrees/player', 'player', { isPrunable: true });
     beforeEach(() => {
@@ -189,6 +220,9 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
       expect(within(await row()).queryByRole('button', { name: /Remove checkout/ })).toBeNull();
 
       await user.click(within(await row()).getByRole('button', { name: 'Unlock checkout for branch external-task' }));
+      expect(api.gitUnlockWorktree).not.toHaveBeenCalled();
+      expect((await screen.findByRole('alertdialog')).textContent).toContain(LOCKED.path);
+      await user.click(screen.getByRole('button', { name: 'Unlock worktree' }));
       await waitFor(() => expect(api.gitUnlockWorktree).toHaveBeenCalledExactlyOnceWith(ROOT, LOCKED.path, 'ws'));
       await waitFor(() => expect(screen.queryByText('Locked')).toBeNull());
       expect(within(await row()).getByText('Unmanaged')).toBeTruthy();
@@ -199,10 +233,22 @@ describe('Git menu worktree management (real GitButton ownership)', () => {
       expect(within(await row()).getByRole('button', { name: 'Remove checkout for branch external-task' })).toBeTruthy();
     });
 
+    it('shows the lock reason and Cancel does not unlock', async () => {
+      remaining = [MAIN_ENTRY, { ...LOCKED, lockReason: 'external drive' }];
+      await openMenu('external-task');
+      expect(within(await row()).getByText(/Lock reason: external drive/)).toBeTruthy();
+      await user.click(within(await row()).getByRole('button', { name: /Unlock checkout/ }));
+      expect((await screen.findByRole('alertdialog')).textContent).toContain('external drive');
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(api.gitUnlockWorktree).not.toHaveBeenCalled();
+      expect(document.querySelector('.git-menu')).not.toBeNull();
+    });
+
     it('keeps a refused unlock visible with its error', async () => {
       api.gitUnlockWorktree.mockResolvedValueOnce({ success: false, error: 'This worktree is not locked' });
       await openMenu('external-task');
       await user.click(within(await row()).getByRole('button', { name: 'Unlock checkout for branch external-task' }));
+      await user.click(await screen.findByRole('button', { name: 'Unlock worktree' }));
       expect((await screen.findByRole('alert')).textContent).toContain('This worktree is not locked');
     });
 

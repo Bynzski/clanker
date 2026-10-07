@@ -1,5 +1,5 @@
 /* Geometry comes from .git-menu-section; rows follow the branch/stash list treatment. */
-.git-menu .git-worktree-list {
+.git-worktree-list {
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -40,6 +40,13 @@
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--font-size-2xs);
+}
+
+.git-worktree-explanation {
+  color: var(--text-muted);
+  font-size: var(--font-size-2xs);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .git-worktree-actions {

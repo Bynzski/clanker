@@ -4,6 +4,7 @@ import { GitBranchPlus } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { FormMessage } from './ui/Field';
+import { GitWorktreesSection } from './git/GitWorktreesSection';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover';
 import { HARNESS_OPTIONS } from '../lib/harnessOptions';
 import { launchIsolatedAgent } from '../lib/isolatedAgentLaunch';
@@ -28,14 +29,16 @@ const NO_CHOICES: IsolatedAgentChoices = { branches: [], worktrees: [] };
 
 /**
  * One compact toolbar action beside the harness pills: pick a harness and where its agent runs.
- * The pills keep launching straight into the current checkout. This is launch-only; removing,
- * unlocking and pruning worktrees stay in the Git menu. Keyed by workspace by its parent, so its
+ * The pills keep launching straight into the current checkout. Recovery opens the shared Git-menu
+ * management surface, never a second mutation path. Keyed by workspace by its parent, so its
  * draft and any error never carry over to another workspace.
  */
 export default function IsolatedAgentButton({ workspace, visibleHarnessIds }: IsolatedAgentButtonProps) {
   const options = HARNESS_OPTIONS.filter((option) => visibleHarnessIds.includes(option.id));
   const preferred = options.find((option) => option.id === workspace.harness) ?? options[0];
   const [open, setOpen] = useState(false);
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [recoveryModalOpen, setRecoveryModalOpen] = useState(false);
   // null until the user picks one, so the default follows the workspace harness as the list loads.
   const [chosenHarnessId, setChosenHarnessId] = useState<string | null>(null);
   const [destination, setDestination] = useState<Destination>({ kind: 'new' });
@@ -103,11 +106,12 @@ export default function IsolatedAgentButton({ workspace, visibleHarnessIds }: Is
     : choices;
 
   const handleOpenChange = (next: boolean) => {
-    if (busy) return;
+    if (busy || recoveryModalOpen) return;
     setOpen(next);
     if (next) {
       setError('');
       setDestination({ kind: 'new' });
+      setShowRecovery(false);
     }
   };
 
@@ -229,8 +233,8 @@ export default function IsolatedAgentButton({ workspace, visibleHarnessIds }: Is
                       const selected = destination.kind === 'worktree' && destination.path === entry.path;
                       const stateLabel = WORKTREE_STATE_LABEL[entry.state];
                       return (
+                        <div key={entry.path} className="isolated-agent-worktree">
                         <button
-                          key={entry.path}
                           type="button"
                           aria-pressed={selected}
                           className={`isolated-agent-choice${selected ? ' selected' : ''}`}
@@ -243,6 +247,8 @@ export default function IsolatedAgentButton({ workspace, visibleHarnessIds }: Is
                           <span className="isolated-agent-choice-label">{entry.label}</span>
                           <span className={`isolated-agent-state ${entry.state}`}>{stateLabel}</span>
                         </button>
+                        {entry.disabled && <Button type="button" size="xs" variant="ghost" disabled={busy} aria-label={`Repair checkout for branch ${entry.label}`} onClick={() => setShowRecovery(true)}>Repair…</Button>}
+                        </div>
                       );
                     })}
                   </div>
@@ -251,6 +257,7 @@ export default function IsolatedAgentButton({ workspace, visibleHarnessIds }: Is
             </div>
           </div>
 
+          {showRecovery && liveWorkspace && <GitWorktreesSection workspacePath={liveWorkspace.workspacePath} workspaceId={workspace.id} refreshKey={0} onRefresh={loadChoices} onModalOpenChange={setRecoveryModalOpen} />}
           {error && <FormMessage variant="error" role="alert">{error}</FormMessage>}
           <Button type="submit" size="sm" variant="primary" disabled={busy || !pending || !effectiveHarness}>
             {launchLabel}

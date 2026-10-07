@@ -12,6 +12,8 @@ import { adoptListedWorktree, attachCreatedWorktree } from '../worktreeContextAt
 import { recordListedWorktrees } from '../sessionWorktrees';
 import type { WorktreeProvenance } from '../worktreeProvenance';
 import { reconcileCheckoutContexts } from '../checkoutContextReconcile';
+import { guardWorktreePrune } from '../worktreePruneGuard';
+import type { TerminalUsage } from '../checkoutContextRelease';
 import type { ReconcileCheckoutContextsResult, ReleaseCheckoutContextResult } from '../../shared/types/checkoutContext';
 import type {
   GitBranchStateResult, GitCreateWorktreeOptions, GitDeleteBranchResult, GitWorktreeCreateResult, GitWorktreeInspectionResult, GitWorktreeListResult, GitWorktreeRemovalOptions,
@@ -73,6 +75,8 @@ interface RegisterGitIpcDeps {
   getWorkspaceRegistry?: () => WorkspaceRegistry;
   /** null means an active remote terminal's directory cannot be verified. */
   getLiveRemoteTerminalPaths?: (environmentId: string) => string[] | null;
+  /** Main-owned live terminals and pending/live headless services, never renderer claims. */
+  getCheckoutUsages?: () => Iterable<TerminalUsage>;
   onWorkspaceUnregistered?: (workspaceId: string) => void;
   /** Main's release check over its own terminal table; without it reconciliation only marks contexts. */
   releaseCheckoutContext?: (workspaceId: string, checkoutContextId: string) => ReleaseCheckoutContextResult;
@@ -290,7 +294,11 @@ export function registerGitIpc(deps: RegisterGitIpcDeps): GitIpcController {
     if (blocked) return { success: false, pruned: [], error: blocked };
     const safePath = getValidatedWorkspacePath(workspacePath);
     if (!safePath) return { success: false, pruned: [], error: getInvalidWorkspaceResult().error };
-    const result = await gitService.pruneWorktrees(safePath);
+    const result = await gitService.pruneWorktrees(safePath, (entries) => {
+      const registry = getWorkspaceRegistry?.();
+      if (!registry || !deps.getCheckoutUsages) return 'Cannot verify open checkout ownership';
+      return guardWorktreePrune(registry, gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local', entries, deps.getCheckoutUsages());
+    });
     return (gitService.getScopedWorkspaceIdentity?.()?.environmentId ?? 'local') === 'local'
       ? { ...result, pruned: result.pruned.map(toPosixPath) }
       : result;

@@ -20,13 +20,17 @@ interface Notice {
 
 type Confirmation =
   | { kind: 'remove'; entry: GitWorktree; managed: CheckoutContext | null }
-  | { kind: 'prune'; count: number };
+  | { kind: 'unlock'; entry: GitWorktree }
+  | { kind: 'forget'; context: CheckoutContext }
+  | { kind: 'prune'; entries: GitWorktree[] };
 
 interface GitWorktreesSectionProps {
   workspacePath: string;
   workspaceId?: string;
   /** Changes whenever the menu refreshes its data; the list reloads with it (no polling of its own). */
   refreshKey: number;
+  /** Refreshes the isolated-agent picker after reading authoritative recovery state. */
+  onRefresh?: () => void;
   /**
    * Reports whether this section has a confirmation open. It renders in a portal outside the menu, so
    * the menu's host uses this to avoid treating clicks inside it as outside clicks and closing the menu
@@ -48,7 +52,7 @@ interface GitWorktreesSectionProps {
  * `Unlock` clears the lock of one listed worktree (removal stays a separate step), and a section-level
  * prune drops Git's stale records for checkouts whose directory is already gone (repository-wide).
  */
-export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, onModalOpenChange }: GitWorktreesSectionProps) {
+export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, onModalOpenChange, onRefresh }: GitWorktreesSectionProps) {
   const workspace = useWorkspaceStore((state) => (workspaceId ? state.getWorkspaceById(workspaceId) : null));
   const [entries, setEntries] = useState<GitWorktree[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -74,6 +78,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
       if (result.success) {
         setEntries(result.worktrees.filter((entry: GitWorktree) => !entry.isMain));
         setLoadError(null);
+        onRefresh?.();
         // The same listing may show a managed checkout changed or gone: let main reconcile its contexts.
         void requestCheckoutReconciliation(workspaceId);
       } else {
@@ -85,7 +90,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
       setEntries([]);
       setLoadError(cause instanceof Error ? cause.message : 'Could not list worktrees');
     }
-  }, [workspacePath, workspaceId]);
+  }, [workspacePath, workspaceId, onRefresh]);
 
   useEffect(() => {
     void load();
@@ -93,10 +98,33 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
     return () => { requestRef.current += 1; };
   }, [load, refreshKey]);
 
-  if (!workspace || (entries.length === 0 && !loadError)) return null;
+  const staleContexts = workspace?.checkoutContexts?.filter((context) => context.kind === 'worktree' && context.missing
+    && !entries.some((entry) => isSameWorkspaceIdentity({ environmentId: context.environmentId, path: context.path }, { environmentId: context.environmentId, path: entry.path }))) ?? [];
+  if (!workspace || (entries.length === 0 && staleContexts.length === 0 && !loadError && !notice)) return null;
 
   const environmentId = workspace.environmentId || 'local';
-  const staleCount = entries.filter((entry) => entry.isPrunable && !entry.isLocked).length;
+  const staleEntries = entries.filter((entry) => entry.isPrunable && !entry.isLocked);
+  const staleCount = staleEntries.length;
+
+  const forget = async (context: CheckoutContext) => {
+    setConfirming(null);
+    if (working) return;
+    setWorking(true);
+    setNotice(null);
+    try {
+      // Main re-lists Git and uses its normal release/usage guard, never a UI-selected root.
+      const result = await window.electronAPI.reconcileCheckoutContexts(workspace.id);
+      useWorkspaceStore.getState().applyCheckoutContextReconciliation(workspace.id, result);
+      setNotice(result.success && !result.contexts.some((entry: CheckoutContext) => entry.id === context.id)
+        ? { tone: 'info', message: 'Stale checkout forgotten; no files or branches were deleted' }
+        : { tone: 'error', message: result.success ? 'Checkout is still registered: it is in use or Git lists it again. Close its terminals and stop its dev servers before retrying.' : result.error || 'Could not verify checkout state' });
+    } catch (cause) {
+      setNotice({ tone: 'error', message: cause instanceof Error ? cause.message : 'Could not forget stale checkout' });
+    } finally {
+      setWorking(false);
+      void load();
+    }
+  };
 
   const prune = async () => {
     setConfirming(null);
@@ -124,6 +152,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
   };
 
   const unlock = async (entry: GitWorktree) => {
+    setConfirming(null);
     if (working) return;
     setWorking(true);
     setNotice(null);
@@ -171,7 +200,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
     <div className="git-menu-section">
       <div className="git-menu-section-header">
         Worktrees
-        <span className="git-menu-count">{entries.length}</span>
+        <span className="git-menu-count">{entries.length + staleContexts.length}</span>
       </div>
 
       {notice && (
@@ -205,6 +234,9 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
               <div className="git-worktree-meta">
                 <span className="git-worktree-branch">{branch}</span>
                 <span className="git-worktree-path">{entry.path}</span>
+                {entry.isPrunable && <span className="git-worktree-explanation">Directory is missing. {entry.pruneReason}</span>}
+                {entry.isLocked && <span className="git-worktree-explanation">{entry.lockReason ? `Lock reason: ${entry.lockReason}. ` : ''}Unlock explicitly before removal or pruning; a missing locked checkout cannot be pruned.</span>}
+                {inUse && <span className="git-worktree-explanation">Close this checkout’s terminals and stop its dev servers before cleanup.</span>}
               </div>
               <div className="git-worktree-actions">
                 <span className={`git-worktree-tag${managed ? ' managed' : ''}`}>{tag}</span>
@@ -229,7 +261,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
                     className="git-branch-action"
                     disabled={working || removingPath !== null}
                     aria-label={`Unlock checkout for branch ${branch}`}
-                    onClick={() => void unlock(entry)}
+                    onClick={() => setConfirming({ kind: 'unlock', entry })}
                   >
                     Unlock
                   </Button>
@@ -238,6 +270,16 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
             </div>
           );
         })}
+        {staleContexts.map((context) => (
+          <div key={context.id} className="git-worktree-item">
+            <div className="git-worktree-meta">
+              <span className="git-worktree-branch">{worktreeBranchLabel(context)}</span>
+              <span className="git-worktree-path">{context.path}</span>
+              <span className="git-worktree-explanation">Missing checkout; retained while a terminal or dev server uses it. Forget rechecks Git and live usage; it deletes no files or branches.</span>
+            </div>
+            <Button type="button" size="xs" variant="ghost" disabled={working || removingPath !== null} onClick={() => setConfirming({ kind: 'forget', context })}>Forget stale checkout…</Button>
+          </div>
+        ))}
       </div>
 
       {staleCount > 0 && (
@@ -248,7 +290,7 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
             type="button"
             className="git-branch-action"
             disabled={working || removingPath !== null}
-            onClick={() => setConfirming({ kind: 'prune', count: staleCount })}
+            onClick={() => setConfirming({ kind: 'prune', entries: staleEntries })}
           >
             Prune missing worktrees…
           </Button>
@@ -257,15 +299,23 @@ export function GitWorktreesSection({ workspacePath, workspaceId, refreshKey, on
 
       <ConfirmCloseDialog
         isOpen={confirming !== null}
-        title={confirming?.kind === 'prune' ? 'Prune missing worktrees?' : confirming ? `Remove checkout for branch ${confirming.entry.branch ?? 'HEAD'}?` : 'Remove checkout?'}
+        title={confirming?.kind === 'prune' ? 'Prune missing worktrees?' : confirming?.kind === 'unlock' ? `Unlock checkout for branch ${confirming.entry.branch ?? 'HEAD'}?` : confirming?.kind === 'forget' ? 'Forget stale checkout?' : confirming ? `Remove checkout for branch ${confirming.entry.branch ?? 'HEAD'}?` : 'Remove checkout?'}
         message={confirming?.kind === 'prune'
-          ? 'Git still lists worktrees whose directories are already gone. This cleans up those stale records for every such worktree in this repository. No branch and no existing checkout directory is deleted.'
-          : confirming
-            ? `The branch remains. The checkout at ${confirming.entry.path} is removed only if it has no uncommitted, untracked, or ignored files.`
-            : ''}
+          ? `Git still lists worktrees whose directories are already gone. This cleans up those stale records for every such worktree in this repository. No branch and no existing checkout directory is deleted. Active workspaces, terminals and dev servers block pruning.\n${confirming.entries.map((entry) => `${entry.branch ?? 'HEAD'}: ${entry.path}`).join('\n')}`
+          : confirming?.kind === 'unlock'
+            ? `Unlock ${confirming.entry.path}? ${confirming.entry.lockReason ? `Lock reason: ${confirming.entry.lockReason}. ` : ''}Locks may be intentional. Nothing is deleted. If the directory is missing, prune its stale metadata after unlocking.`
+            : confirming?.kind === 'forget'
+              ? `Recheck and forget ${worktreeBranchLabel(confirming.context)} at ${confirming.context.path} only if Git no longer has it and no terminal or dev server uses it. No files or branches are deleted.`
+              : confirming
+                ? `The branch remains. The checkout at ${confirming.entry.path} is removed only if it has no uncommitted, untracked, or ignored files.`
+                : ''}
         options={!confirming ? [] : confirming.kind === 'prune'
           ? [{ label: 'Prune records', variant: 'danger', action: () => void prune() }]
-          : [{ label: 'Remove worktree', variant: 'danger', action: () => void remove(confirming.entry, confirming.managed) }]}
+          : confirming.kind === 'unlock'
+            ? [{ label: 'Unlock worktree', variant: 'danger', action: () => void unlock(confirming.entry) }]
+            : confirming.kind === 'forget'
+              ? [{ label: 'Forget checkout', variant: 'danger', action: () => void forget(confirming.context) }]
+              : [{ label: 'Remove worktree', variant: 'danger', action: () => void remove(confirming.entry, confirming.managed) }]}
         onCancel={() => setConfirming(null)}
       />
     </div>

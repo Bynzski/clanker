@@ -128,6 +128,9 @@ export interface GitWorktree {
   isMain: boolean;
   isLocked: boolean;
   isPrunable: boolean;
+  /** Git's authoritative reasons, when supplied by porcelain output. */
+  lockReason?: string;
+  pruneReason?: string;
 }
 
 export interface GitWorktreeListResult {
