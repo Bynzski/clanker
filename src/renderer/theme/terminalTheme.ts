@@ -5,6 +5,9 @@ import type { ThemeId } from '../../shared/types/theme';
 // background. Light variants deliberately use darker hues for readability.
 const TERMINAL_THEMES: Readonly<Record<ThemeId, Readonly<ITheme>>> = {
   dark: {
+    scrollbarSliderBackground: '#3a3a3a',
+    scrollbarSliderHoverBackground: '#9b9b9b',
+    scrollbarSliderActiveBackground: '#9b9b9b',
     background: '#121212',
     foreground: '#e8e8e8',
     cursor: '#8b949e',
@@ -28,6 +31,9 @@ const TERMINAL_THEMES: Readonly<Record<ThemeId, Readonly<ITheme>>> = {
     brightWhite: '#ffffff',
   },
   slate: {
+    scrollbarSliderBackground: '#545d68',
+    scrollbarSliderHoverBackground: '#768390',
+    scrollbarSliderActiveBackground: '#768390',
     background: '#22272e',
     foreground: '#adbac7',
     cursor: '#6cb6ff',
@@ -53,6 +59,9 @@ const TERMINAL_THEMES: Readonly<Record<ThemeId, Readonly<ITheme>>> = {
     brightWhite: '#cdd9e5',
   },
   light: {
+    scrollbarSliderBackground: '#b1bac6',
+    scrollbarSliderHoverBackground: '#8895a5',
+    scrollbarSliderActiveBackground: '#8895a5',
     background: '#f3f4f6',
     foreground: '#202630',
     cursor: '#46566b',

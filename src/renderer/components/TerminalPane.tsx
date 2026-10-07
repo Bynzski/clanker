@@ -35,6 +35,7 @@ import {
 } from '../lib/linkUtils';
 import { getWheelZoomAction, getZoomActionForCommand, resolveKeyboardCommand } from '../lib/keyboardShortcuts';
 import { linkRangeForMatch, readWrappedLogicalLine } from '../lib/terminalLinkRanges';
+import { observeTerminalGeometry } from '../lib/terminalGeometry';
 
 type XTermInstance = import('@xterm/xterm').Terminal;
 type FitAddonInstance = import('@xterm/addon-fit').FitAddon;
@@ -140,25 +141,12 @@ export function clearTerminalCache(): void {
   disposedTerminalIds.clear();
 }
 
-// ---------------------------------------------------------------------------
-// Resize lock — coalesces rapid resize calls during pane drag
-// ---------------------------------------------------------------------------
-// Only one resize IPC call may be in-flight at a time. Intermediate resize
-// events are queued; only the latest dimensions are sent after the lock
-// expires (100 ms). This prevents IPC flooding during rapid pane drag.
-// ---------------------------------------------------------------------------
-
-const RESIZE_LOCK_MS = 100;
-
 export default function TerminalPane({ workspaceId, paneId, compact = false }: Props) {
   const paneRootRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTermInstance | null>(null);
   const fitAddonRef = useRef<FitAddonInstance | null>(null);
-  const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const resizeLockRef = useRef<NodeJS.Timeout | null>(null);
-  const lifecycleTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
-  const pendingResizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const geometryRef = useRef<ReturnType<typeof observeTerminalGeometry> | null>(null);
   const [isActive, setIsActive] = useState(false);
   const [terminalRuntimeReady, setTerminalRuntimeReady] = useState(false);
   const dragHandleProps = useDragHandle();
@@ -177,48 +165,6 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
   const harnessOption = getHarnessOption(terminal?.harnessId);
   const HarnessIcon = harnessOption.Icon;
   const headerDragHandleProps = isInteractive ? dragHandleProps : undefined;
-
-  const scheduleLifecycleTimeout = useCallback((callback: () => void, delayMs: number) => {
-    const timeout: ReturnType<typeof setTimeout> = setTimeout(() => {
-      lifecycleTimeoutsRef.current.delete(timeout);
-      callback();
-    }, delayMs);
-    lifecycleTimeoutsRef.current.add(timeout);
-  }, []);
-
-  // -------------------------------------------------------------------------
-  // Core resize logic — sends dimensions to main with lock coalescing
-  // -------------------------------------------------------------------------
-  const doResize = useCallback((cols: number, rows: number) => {
-    if (terminalId == null) return;
-    window.electronAPI.resizeTerminal(terminalId, cols, rows).catch(console.error);
-  }, [terminalId]);
-
-  const sendResize = useCallback((cols: number, rows: number) => {
-    if (resizeLockRef.current !== null) {
-      // Already in a lock window — queue latest dimensions, drop intermediates
-      pendingResizeRef.current = { cols, rows };
-      return;
-    }
-    doResize(cols, rows);
-    resizeLockRef.current = setTimeout(() => {
-      resizeLockRef.current = null;
-      if (pendingResizeRef.current) {
-        const { cols: c, rows: r } = pendingResizeRef.current;
-        pendingResizeRef.current = null;
-        doResize(c, r);
-      }
-    }, RESIZE_LOCK_MS);
-  }, [doResize]);
-
-  const fitAndResize = useCallback(() => {
-    if (fitAddonRef.current == null || xtermRef.current == null) return;
-    fitAddonRef.current.fit();
-    const dims = fitAddonRef.current.proposeDimensions();
-    if (dims != null) {
-      sendResize(dims.cols, dims.rows);
-    }
-  }, [sendResize]);
 
   // -------------------------------------------------------------------------
   // Interaction boundary — parked workspaces stay mounted but non-interactive.
@@ -243,8 +189,6 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
     if (terminalRef.current == null) return;
 
     let cancelled = false;
-    let handleResize: (() => void) | null = null;
-    const lifecycleTimeouts = lifecycleTimeoutsRef.current;
     setTerminalRuntimeReady(false);
 
     // Check for a cached xterm instance (workspace tab switch restore)
@@ -263,17 +207,6 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       }
       terminalCacheHit(terminalId, workspaceId ?? undefined);
       setTerminalRuntimeReady(true);
-
-      // Re-fit to the new container dimensions
-      scheduleLifecycleTimeout(() => {
-        if (!cancelled) {
-          cached.fitAddon.fit();
-          const dims = cached.fitAddon.proposeDimensions();
-          if (dims != null) {
-            sendResize(dims.cols, dims.rows);
-          }
-        }
-      }, 50);
     } else {
       // No cached instance — create a new one
       terminalCacheMiss(terminalId ?? 'unknown', workspaceId ?? undefined);
@@ -309,7 +242,6 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
           xterm.loadAddon(fitAddon);
           xterm.loadAddon(clipboardAddon);
           xterm.open(terminalRef.current);
-          fitAddon.fit();
         } catch (error) {
           xterm.dispose();
           throw error;
@@ -323,53 +255,15 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
           registerThemedTerminal(xterm, useThemeStore.getState().theme);
         }
         setTerminalRuntimeReady(true);
-
-        handleResize = () => {
-          if (resizeTimeoutRef.current != null) {
-            clearTimeout(resizeTimeoutRef.current);
-          }
-          resizeTimeoutRef.current = setTimeout(fitAndResize, 50);
-        };
-
-        window.addEventListener('resize', handleResize);
-        scheduleLifecycleTimeout(handleResize, 100);
       }).catch((error) => {
         console.error('Failed to initialize terminal runtime:', error);
       });
     }
 
-    // Shared resize handler for window resize events
-    handleResize = () => {
-      if (resizeTimeoutRef.current != null) {
-        clearTimeout(resizeTimeoutRef.current);
-      }
-      resizeTimeoutRef.current = setTimeout(fitAndResize, 50);
-    };
-
-    if (!cached) {
-      // For newly created terminals, handleResize is set up in the promise callback
-    } else {
-      window.addEventListener('resize', handleResize);
-    }
-
     return () => {
       cancelled = true;
-      if (handleResize) {
-        window.removeEventListener('resize', handleResize);
-      }
-      if (resizeTimeoutRef.current != null) {
-        clearTimeout(resizeTimeoutRef.current);
-        resizeTimeoutRef.current = null;
-      }
-      if (resizeLockRef.current != null) {
-        clearTimeout(resizeLockRef.current);
-        resizeLockRef.current = null;
-      }
-      pendingResizeRef.current = null;
-      for (const timeout of lifecycleTimeouts) {
-        clearTimeout(timeout);
-      }
-      lifecycleTimeouts.clear();
+      geometryRef.current?.dispose();
+      geometryRef.current = null;
 
       // On unmount: cache the xterm instance instead of disposing it.
       // This preserves scrollback and session state across workspace tab switches.
@@ -399,18 +293,9 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       fitAddonRef.current = null;
       setTerminalRuntimeReady(false);
     };
-  // Deliberately NOT dependent on fitAndResize/sendResize — these are stable
-  // via useCallback. We want this effect to run on mount/unmount only.
+  // Runtime ownership changes only when the terminal identity changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terminalId]);
-
-  useEffect(() => {
-    if (!terminalRuntimeReady || terminalId == null) {
-      return;
-    }
-
-    window.electronAPI.terminalReady(terminalId).catch(console.error);
-  }, [terminalId, terminalRuntimeReady]);
 
   // -------------------------------------------------------------------------
   // Terminal links — URLs open in a new in-app tab; workspace files in editor.
@@ -509,7 +394,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
         const xtermDims = fitAddonRef.current.proposeDimensions();
         if (xtermDims != null && (xtermDims.cols !== data.cols || xtermDims.rows !== data.rows)) {
           // Geometry mismatch — re-fit to reconcile
-          fitAddonRef.current.fit();
+          geometryRef.current?.scheduleFit();
         }
       }
     };
@@ -532,7 +417,7 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       const next = Math.min(TERMINAL_MAX_FONT_SIZE, Math.max(TERMINAL_MIN_FONT_SIZE, requested));
       if (next !== current) {
         xterm.options.fontSize = next;
-        scheduleLifecycleTimeout(fitAndResize, 0);
+        geometryRef.current?.scheduleFit();
       }
     };
 
@@ -580,43 +465,31 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
       return true;
     });
 
-    // Kick off initial resize to sync PTY dimensions
-    const initialResizeTimeout = setTimeout(fitAndResize, 100);
-
     return () => {
-      clearTimeout(initialResizeTimeout);
       inputDisposable?.dispose();
       disposeResized?.();
       selectionDisposable?.dispose();
     };
-  // fitAndResize is a stable callback; we want this effect to re-run when
-  // the terminal connection changes, not on every resize callback identity.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isInteractive, terminalId, terminalRuntimeReady]);
 
-  // -------------------------------------------------------------------------
-  // ResizeObserver — triggers resize on container size change
-  // -------------------------------------------------------------------------
+  // Attach after input listeners: startup output can contain terminal queries.
+  // Readiness is sent only after a visible fit and its PTY resize have completed.
   useEffect(() => {
-    if (terminalRef.current == null) return;
-
-    const observer = new ResizeObserver(() => {
-      if (resizeTimeoutRef.current != null) {
-        clearTimeout(resizeTimeoutRef.current);
-      }
-      resizeTimeoutRef.current = setTimeout(fitAndResize, 50);
+    if (!terminalRuntimeReady || !terminalRef.current || !fitAddonRef.current || terminalId == null) return;
+    const geometry = observeTerminalGeometry({
+      container: terminalRef.current,
+      fitAddon: fitAddonRef.current,
+      isAlive: () => !isTerminalDisposed(terminalId),
+      resize: (cols, rows) => window.electronAPI.resizeTerminal(terminalId, cols, rows),
+      ready: () => window.electronAPI.terminalReady(terminalId),
+      onError: console.error,
     });
-
-    observer.observe(terminalRef.current);
-
+    geometryRef.current = geometry;
     return () => {
-      observer.disconnect();
-      if (resizeTimeoutRef.current != null) {
-        clearTimeout(resizeTimeoutRef.current);
-        resizeTimeoutRef.current = null;
-      }
+      geometry.dispose();
+      if (geometryRef.current === geometry) geometryRef.current = null;
     };
-  }, [fitAndResize]);
+  }, [terminalId, terminalRuntimeReady]);
 
   // -------------------------------------------------------------------------
   // Active state — track which terminal is focused
@@ -654,15 +527,6 @@ export default function TerminalPane({ workspaceId, paneId, compact = false }: P
 
     xtermRef.current?.focus();
   }, [isInteractive, terminalId, terminalRuntimeReady, workspace?.activeTerminalId]);
-
-  // Trigger resize when terminalId changes (e.g., pane gets a new terminal)
-  useEffect(() => {
-    if (terminalRuntimeReady && fitAddonRef.current != null) {
-      const timeout = setTimeout(fitAndResize, 50);
-      return () => clearTimeout(timeout);
-    }
-    return undefined;
-  }, [terminalId, terminalRuntimeReady, fitAndResize]);
 
   // -------------------------------------------------------------------------
   // Action handlers
