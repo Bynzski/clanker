@@ -11,6 +11,7 @@ import { loadSessionCheckoutPlan, sessionScanScopes, MAX_REMOTE_SESSION_SCOPES }
 import { isCurrentCheckoutContext, resolveSessionResumeTarget, type SessionResumeTarget } from '../sessionResumeTarget';
 
 import { SUPPORTED_RESUME_HARNESSES, assertSessionSelectionFlags, supportsSessionOperation } from '../sessionLaunch';
+import { readInitialTerminalGeometry } from '../../shared/terminalGeometry';
 /**
  * Re-read the host session instead of trusting renderer-supplied paths or models. The conversation
  * is found by one bounded on-host scan of the workspace plus the worktree scopes main derived from
@@ -20,6 +21,7 @@ import { SUPPORTED_RESUME_HARNESSES, assertSessionSelectionFlags, supportsSessio
  * or is offered for recreation, and a removed path is never the working directory.
  */
 export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspace: RegisteredWorkspace, requested: HarnessSession, fork?: boolean, invokeOptions?: SessionInvokeOptions) {
+  const initialGeometry = readInitialTerminalGeometry(invokeOptions?.initialGeometry);
   const environment = workspace.environment;
   if (!environment?.capabilities.sessionDiscovery || !environment.discoverSessions) throw new Error('Remote session invocation is not supported by this environment');
   if (!requested || !SUPPORTED_RESUME_HARNESSES.has(requested.harness) || typeof requested.id !== 'string'
@@ -105,6 +107,7 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
       terminals: deps.getTerminals(), mainWindow: deps.getMainWindow(), getIsShuttingDown: deps.getIsShuttingDown,
       launchLabel: resolved.launchLabel, harnessId: session.harness, workspaceId: workspace.workspaceId,
       checkoutContextId: launchContext?.id,
+      ...(initialGeometry ? { initialGeometry } : {}),
       environmentId: workspace.location.environmentId, remoteWorkingDir: session.cwd,
       onOutput: deps.createRemoteOutputObserver?.(workspace.workspaceId),
       filterData: resolved.attentionEnabled && broker ? createRemoteAttentionFilter((raw) => broker.receiveRemote(id, raw)) : undefined,

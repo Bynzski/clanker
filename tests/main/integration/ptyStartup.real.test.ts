@@ -18,9 +18,10 @@ describe.skipIf(process.platform === 'win32')('real PTY startup backpressure', (
       webContents: { isDestroyed: () => false, isCrashed: () => false,
         send: (channel: string, payload: { data: string }) => { if (channel === TERMINAL_DATA) delivered.push(payload.data); } },
     };
-    const payload = 'BEGIN:' + '0123456789'.repeat(10_000) + ':END';
+    const body = 'BEGIN:' + '0123456789'.repeat(10_000) + ':END';
+    const payload = 'SIZE:120x40:' + body;
     spawnPtyProcess({ id: 'real', spawnCmd: process.execPath,
-      spawnArgs: ['-e', `process.stdout.write(${JSON.stringify(payload)}); setInterval(() => {}, 1000);`],
+      spawnArgs: ['-e', `process.stdout.write('SIZE:' + process.stdout.columns + 'x' + process.stdout.rows + ':' + ${JSON.stringify(body)}); setInterval(() => {}, 1000);`],
       cwd: os.tmpdir(), env: {}, terminals,
       mainWindow: window as unknown as BrowserWindow, getIsShuttingDown: () => false,
       startupBufferLimit: { bytes: 1024, chunks: 100 }, initialGeometry: { cols: 120, rows: 40 },

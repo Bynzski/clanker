@@ -109,9 +109,10 @@ Use a disposable repository/worktree and a normal user-requested root turn:
 
 - #131 / former #118: native Claude hook integration and real active-turn OpenCode/Codex experiments. Enabling any live
   provider without these would misrepresent turn continuity and risk split-brain checkout authority.
-- #131 / former #114: ordinary history-resume pane geometry is still unavailable before its new pane exists. Source
-  geometry covers replacement resumes only. Long OpenCode/Pi visual smoke and a geometry-first ordinary
-  resume handshake remain; no transcript renderer or bigger default buffer is introduced.
+- #131 / former #114: ordinary history resume now measures a reserved destination pane before local/SSH
+  PTY creation, then attaches without another split. Preparation is bounded/cancellable and cannot leave
+  an untracked process. Long native OpenCode/Pi visual smoke and the complete local/SSH readiness matrix
+  remain; no transcript renderer or bigger default buffer is introduced. See `terminal-geometry.md`.
 - #131 / former #116: partial-cache behavior, lifecycle integrity and ordinary default-account local
   handoff authority are covered, not the complete live local/SSH/removed-checkout resume/fork matrix.
 - #91 dev services, #89 pages and #104 recovery UX are separate features, not prerequisites for this gate.

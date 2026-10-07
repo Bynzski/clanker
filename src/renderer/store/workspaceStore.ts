@@ -422,7 +422,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     );
   }),
 
-  addTerminal: (unnamedTerminal, workspaceId) => set((current) => {
+  addTerminal: (unnamedTerminal, workspaceId, reservedPaneId) => set((current) => {
     const scopedWorkspace = workspaceId ? resolveWorkspaceByScope(current, workspaceId) : null;
     if (workspaceId && !scopedWorkspace) return current;
     const state = scopedWorkspace ? { ...current, ...getActiveWorkspaceSnapshot(scopedWorkspace) } : current;
@@ -430,11 +430,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const named = nameTerminal(unnamedTerminal, state.terminals);
     const terminal = owningWorkspaceId ? bindTerminalToCheckoutContext(named, owningWorkspaceId) : named;
     const nextTerminals = [...state.terminals, terminal];
-    const paneExists = state.panes.some((pane) => pane.terminalId === terminal.id);
-    const nextPane = paneExists
+    const reservedPane = reservedPaneId ? state.panes.find((pane) => pane.id === reservedPaneId && pane.terminalId === null) : undefined;
+    if (reservedPaneId && !reservedPane) throw new Error('The reserved resume pane is no longer available');
+    const paneExists = Boolean(reservedPane) || state.panes.some((pane) => pane.terminalId === terminal.id);
+    const nextPane = reservedPane ? { ...reservedPane, terminalId: terminal.id } : paneExists
       ? state.panes.find((pane) => pane.terminalId === terminal.id) ?? createPane(terminal.id)
       : createPane(terminal.id);
-    const nextPanes = paneExists
+    const nextPanes = reservedPane ? state.panes.map((pane) => pane.id === reservedPane.id ? nextPane : pane) : paneExists
       ? state.panes
       : [...state.panes, nextPane];
 
@@ -1231,45 +1233,56 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     })),
   })),
 
-  addPane: (terminalId, position) => set((state) => {
-    const nextPane = createPane(terminalId, position);
-    const nextPanes = [...state.panes, nextPane];
-    const nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, nextPane.id, {
-      panes: state.panes,
-      explorerPane: state.explorerPane,
-      explorerVisible: state.explorerVisible,
-      browserPane: state.browserPane,
-      browserVisible: state.browserVisible,
-      editorPane: state.editorPane,
-      editorVisible: state.editorVisible,
-      notesPane: state.notesPane,
-      notesVisible: state.notesVisible,
-      activeTerminalId: state.activeTerminalId,
-    });
-    return {
-      panes: nextPanes,
-      layoutRoot: nextLayoutRoot,
-      layoutRevision: state.layoutRevision + 1,
-      ...syncActiveWorkspace(state, (workspace) => ({
-        ...workspace,
+  addPane: (terminalId, position, workspaceId) => {
+    let paneId: string | null = null;
+    set((current) => {
+      const scopedWorkspace = workspaceId ? resolveWorkspaceByScope(current, workspaceId) : null;
+      if (workspaceId && !scopedWorkspace) return current;
+      const state = scopedWorkspace ? { ...current, ...getActiveWorkspaceSnapshot(scopedWorkspace) } : current;
+      const nextPane = createPane(terminalId, position);
+      paneId = nextPane.id;
+      const nextPanes = [...state.panes, nextPane];
+      const nextLayoutRoot = insertPaneIntoLayout(state.layoutRoot, nextPane.id, {
+        panes: state.panes,
+        explorerPane: state.explorerPane,
+        explorerVisible: state.explorerVisible,
+        browserPane: state.browserPane,
+        browserVisible: state.browserVisible,
+        editorPane: state.editorPane,
+        editorVisible: state.editorVisible,
+        notesPane: state.notesPane,
+        notesVisible: state.notesVisible,
+        activeTerminalId: state.activeTerminalId,
+      });
+      const updateWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
+        ...workspace, panes: nextPanes, layoutRoot: nextLayoutRoot, layoutRevision: state.layoutRevision + 1,
+      });
+      if (workspaceId) return patchWorkspaceById(current, workspaceId, updateWorkspace);
+      return {
         panes: nextPanes,
         layoutRoot: nextLayoutRoot,
-      })),
-    };
-  }),
+        layoutRevision: state.layoutRevision + 1,
+        ...syncActiveWorkspace(state, updateWorkspace),
+      };
+    });
+    return paneId;
+  },
 
-  removePane: (paneId) => set((state) => {
+  removePane: (paneId, workspaceId) => set((current) => {
+    const scopedWorkspace = workspaceId ? resolveWorkspaceByScope(current, workspaceId) : null;
+    if (workspaceId && !scopedWorkspace) return current;
+    const state = scopedWorkspace ? { ...current, ...getActiveWorkspaceSnapshot(scopedWorkspace) } : current;
     const nextPanes = state.panes.filter((pane) => pane.id !== paneId);
     const nextLayoutRoot = removePaneFromLayout(state.layoutRoot, paneId);
+    const updateWorkspace = (workspace: WorkspaceTab): WorkspaceTab => ({
+      ...workspace, panes: nextPanes, layoutRoot: nextLayoutRoot, layoutRevision: state.layoutRevision + 1,
+    });
+    if (workspaceId) return patchWorkspaceById(current, workspaceId, updateWorkspace);
     return {
       panes: nextPanes,
       layoutRoot: nextLayoutRoot,
       layoutRevision: state.layoutRevision + 1,
-      ...syncActiveWorkspace(state, (workspace) => ({
-        ...workspace,
-        panes: nextPanes,
-        layoutRoot: nextLayoutRoot,
-      })),
+      ...syncActiveWorkspace(state, updateWorkspace),
     };
   }),
 

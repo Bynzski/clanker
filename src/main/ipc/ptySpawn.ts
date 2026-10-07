@@ -11,6 +11,7 @@ import { TERMINAL_DATA, TERMINAL_EXIT } from '../../shared/ipcChannels';
 import type { Terminal } from './terminalIpc';
 import type { RecipeCommandStartup } from '../recipeCommandStartup';
 import { isWindowAvailable } from '../windowManager';
+import { isTerminalGeometry } from '../../shared/terminalGeometry';
 
 const pendingCleanups = new Set<Promise<void>>();
 
@@ -76,9 +77,7 @@ export function spawnPtyProcess(opts: SpawnPtyOptions): { id: string; pid: numbe
     cwd,
     env,
     handleFlowControl: false,
-    ...(opts.initialGeometry && Number.isInteger(opts.initialGeometry.cols) && Number.isInteger(opts.initialGeometry.rows)
-      && opts.initialGeometry.cols >= 2 && opts.initialGeometry.cols <= 1000 && opts.initialGeometry.rows >= 1 && opts.initialGeometry.rows <= 1000
-      ? opts.initialGeometry : {}),
+    ...(isTerminalGeometry(opts.initialGeometry) ? { cols: opts.initialGeometry.cols, rows: opts.initialGeometry.rows } : {}),
   });
 
   const terminal: Terminal = {

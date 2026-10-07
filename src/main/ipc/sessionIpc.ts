@@ -40,6 +40,7 @@ import {
 import { isCurrentCheckoutContext, resolveSessionResumeTarget } from '../sessionResumeTarget';
 import type { WorktreeProvenance } from '../worktreeProvenance';
 import { rediscoverDefaultLocalSession } from '../localSessionSelection';
+import { readInitialTerminalGeometry } from '../../shared/terminalGeometry';
 
 export interface RegisterSessionIpcDeps {
   getTerminals: () => Map<string, Terminal>;
@@ -202,6 +203,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
       if (internal) throw new Error('Moving a conversation to another checkout is available for local workspaces only');
       return invokeRemoteSession(deps, workspace, requestedSession, fork, options);
     }
+    const initialGeometry = readInitialTerminalGeometry(options?.initialGeometry);
     if (!requestedSession || !isHarnessId(requestedSession.harness) || typeof requestedSession.id !== 'string'
       || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(requestedSession.id.trim())
       || /[\u0000-\u001f\u007f]/.test(requestedSession.id) || (fork !== undefined && typeof fork !== 'boolean')) {
@@ -435,7 +437,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
         : disposeAttachments,
       ...(internal?.onOutput ? { onOutput: internal.onOutput } : {}),
       ...(internal?.startupBufferLimit ? { startupBufferLimit: internal.startupBufferLimit } : {}),
-      ...(internal?.initialGeometry ? { initialGeometry: internal.initialGeometry } : {}),
+      ...(internal?.initialGeometry || initialGeometry ? { initialGeometry: internal?.initialGeometry ?? initialGeometry } : {}),
       });
       return {
         ...result, harnessId: session.harness, attentionEnabled, checkoutContextId: launchContext?.id,

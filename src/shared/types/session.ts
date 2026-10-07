@@ -1,5 +1,6 @@
 import type { HarnessId } from '../harnessIds';
 import type { CheckoutContext } from './checkoutContext';
+import type { TerminalGeometry } from '../terminalGeometry';
 
 /**
  * The linked worktree a conversation ran in. Presentation provenance derived by main from Git and the
@@ -46,6 +47,8 @@ export interface RecreateCheckoutOffer {
 export interface SessionInvokeOptions {
   /** Confirms an earlier `recreateCheckout` offer. Main re-derives and re-verifies everything. */
   recreateCheckout?: boolean;
+  /** Measured visible destination pane, supplied before ordinary local/SSH PTY creation. */
+  initialGeometry?: TerminalGeometry;
 }
 
 /** A launched resumed conversation. */

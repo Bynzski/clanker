@@ -267,6 +267,23 @@ describe('registerSessionIpc', () => {
     expect(mockSpawnPtyProcess).toHaveBeenCalledWith(expect.objectContaining({ cwd: toNativePath(native.cwd, process.platform) }));
   });
 
+  it('starts an ordinary resume with measured destination geometry and unchanged native argv', async () => {
+    mockBuildSessionLaunch.mockReturnValue({ command: 'codex', args: ['resume', codexSession.id] });
+    mockSpawnPtyProcess.mockReturnValue({ id: 'term', pid: 1 });
+    const handlers = registerHandlers(vi.fn(() => ({ codex: { command: 'codex', args: [], name: 'Codex', icon: '' } })));
+    await handlers.get(SESSION_INVOKE)!({}, 'local-ws', codexSession, false, { initialGeometry: { cols: 130, rows: 43 } });
+    expect(mockSpawnPtyProcess).toHaveBeenCalledWith(expect.objectContaining({ initialGeometry: { cols: 130, rows: 43 }, spawnArgs: ['codex', 'resume', codexSession.id] }));
+  });
+
+  it.each([null, { cols: 1, rows: 24 }, { cols: 80, rows: 0 }, { cols: 1001, rows: 24 }, { cols: 80, rows: 1001 }, { cols: 80.5, rows: 24 }, { cols: '80', rows: 24 }])(
+    'rejects malformed initial geometry %j before discovery or checkout side effects', async (initialGeometry) => {
+      const handlers = registerHandlers(vi.fn(() => ({ codex: { command: 'codex', args: [], name: 'Codex', icon: '' } })));
+      await expect(handlers.get(SESSION_INVOKE)!({}, 'local-ws', codexSession, false, { initialGeometry })).rejects.toThrow('Invalid initial terminal geometry');
+      expect(mockDiscoverSessionsDetailed).not.toHaveBeenCalled();
+      expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+    },
+  );
+
   it('rejects user defaults that would override the rediscovered conversation', async () => {
     const handlers = registerHandlers(vi.fn(() => ({ codex: { command: 'codex', args: [], name: 'Codex', icon: '' } })),
       undefined, undefined, false, () => false, 'resume another-session');

@@ -9,6 +9,10 @@ import { installElectronApiMock } from '../../setup/electron';
 import { createWorkspaceFixture } from '../../setup/fixtures';
 import type { WorkspaceRecipe } from '../../../src/shared/types/recipes';
 
+vi.mock('../../../src/renderer/lib/terminalPaneGeometry', async (original) => ({
+  ...(await original<object>()), waitForTerminalPaneGeometry: vi.fn().mockResolvedValue({ cols: 120, rows: 40 }),
+}));
+
 function resetStore() {
   useWorkspaceStore.setState({
     workspaces: [],
@@ -216,6 +220,8 @@ describe('Workspace Recipes and Conversation Resume Integration', () => {
             harness: 'codex',
             cwd: '/projects/my-app',
           }),
+          false,
+          { initialGeometry: { cols: 120, rows: 40 } },
         );
       });
 

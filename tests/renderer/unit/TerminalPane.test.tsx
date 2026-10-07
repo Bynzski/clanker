@@ -17,6 +17,7 @@ import { useThemeStore } from '../../../src/renderer/theme/themeStore';
 import { startTerminalThemeSync } from '../../../src/renderer/theme/themeRuntime';
 import { getTerminalTheme } from '../../../src/renderer/theme/terminalTheme';
 import type { ILinkProvider } from '@xterm/xterm';
+import { waitForTerminalPaneGeometry } from '../../../src/renderer/lib/terminalPaneGeometry';
 
 let attachedWheelHandler: ((event: WheelEvent) => boolean) | null = null;
 let attachedKeyHandler: ((event: KeyboardEvent) => boolean) | null = null;
@@ -210,6 +211,16 @@ function setupElectronAPIMocks() {
 }
 
 describe('TerminalPane', () => {
+  it('measures an actual empty destination pane before a PTY exists, without sending terminal IPC', async () => {
+    setupEmptyStore();
+    useWorkspaceStore.setState({ panes: [{ id: 'reserved-resume', terminalId: null }] });
+    const measured = waitForTerminalPaneGeometry('reserved-resume');
+    render(<TerminalPane paneId="reserved-resume" />);
+    expect(await measured).toEqual({ cols: 80, rows: 24 });
+    expect(mockResizeTerminal).not.toHaveBeenCalled();
+    expect(window.electronAPI.terminalReady).not.toHaveBeenCalled();
+    expect(mockWriteTerminal).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers({ shouldAdvanceTime: true });
