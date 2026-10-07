@@ -70,10 +70,6 @@ const INTENTIONAL_EXCEPTIONS: Record<string, string[]> = {
   'components/RecipeModal.css': ['.recipe-badge'],
   // Workspace tabs use rounded top corners only (tab silhouette)
   'components/WorkspaceTabs.css': ['.workspace-tab'],
-  'components/WorkspaceGate.css': [
-    '.gate-directory-badge',
-    '.gate-recipe-chip-count',
-  ],
 };
 
 

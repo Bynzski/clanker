@@ -345,7 +345,7 @@ describe('isolated agent picker: harness + working copy', () => {
     render(<Header />);
     await user.click(await screen.findByRole('button', { name: 'Codex' }));
     await waitFor(() => expect(workspace().terminals).toHaveLength(1));
-    expect(api.spawnTerminal).toHaveBeenCalledExactlyOnceWith(ROOT, 'codex', undefined);
+    expect(api.spawnTerminal).toHaveBeenCalledExactlyOnceWith(ROOT, 'codex', undefined, undefined, undefined, 'ws', 'local');
     expect(api.adoptWorktreeCheckoutContext).not.toHaveBeenCalled();
     expect(api.gitCreateWorktree).not.toHaveBeenCalled();
   });

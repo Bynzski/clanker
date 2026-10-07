@@ -36,8 +36,8 @@ const ASSISTANT_CAPABILITIES: DestinationCapabilities = {
 export function resolveDestinationCapabilities(destination: ActiveDestination): DestinationCapabilities {
   if (destination.kind === 'workspace') return WORKSPACE_CAPABILITIES;
   if (destination.kind === 'assistant') return ASSISTANT_CAPABILITIES;
-  // No destination is the legacy no-workspace shell: its toolbar keeps its existing behavior.
-  return WORKSPACE_CAPABILITIES;
+  return { browser: false, explorer: false, notes: false, recipes: false, terminalLaunch: false, isolatedAgent: false,
+    git: false, layout: false, sessionHistory: false, usage: false };
 }
 
 /** The single Browser owner allowed to show native views: the active Assistant's scope, else the active workspace. */

@@ -91,8 +91,8 @@ describe('isolated agents from the toolbar', () => {
       await user.click(await screen.findByRole('button', { name: 'Codex' }));
 
       await waitFor(() => expect(workspace().terminals).toHaveLength(1));
-      // The exact pre-existing call: three arguments, no workspace/context identity.
-      expect(spawnTerminal).toHaveBeenCalledExactlyOnceWith(ROOT, 'codex', undefined);
+      // Ordinary launches are now explicitly scoped to the registered workspace.
+      expect(spawnTerminal).toHaveBeenCalledExactlyOnceWith(ROOT, 'codex', undefined, undefined, undefined, 'ws', 'local');
       expect(gitCreateWorktree).not.toHaveBeenCalled();
       expect(gitGetBranchState).not.toHaveBeenCalled();
       expect(screen.queryByLabelText('New branch')).toBeNull();

@@ -1,5 +1,7 @@
 # Stage 5B raw-control inventory
 
+> Historical audit: issue #120 removed the Workspace Gate and its launcher-only controls. Current workspace opening uses OpenWorkspaceDialog and shared location controls.
+
 Baseline: `fe511064b835d07869f9adbbb9773b683e0c109b` on `ui/64-design-system-alignment`. Counts are JSX source sites, not mounted DOM instances. Every `.tsx` under `src/renderer` was scanned using the TypeScript JSX parser.
 
 Before: **208** sites (34 input, 2 textarea, 7 select, 165 button). **158** ordinary raw controls migrated. Two specialized tab selectors now use semantic div wrappers to avoid nesting shared action buttons inside buttons; two span close controls additionally migrated to IconButton.

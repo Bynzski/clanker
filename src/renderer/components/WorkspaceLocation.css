@@ -1,0 +1,113 @@
+.workspace-location-label { font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: left; }
+.input-wrapper { display: flex;
+  align-items: stretch;
+  height: var(--control-height-md); }
+.workspace-location-input { height: 100%;
+  flex: 1;
+  min-width: 0;
+  text-align: left; }
+.cog-button { height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  border-left: 1px solid var(--border-default); }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.suggestions-list { position: static;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-popover);
+  list-style: none;
+  max-height: min(240px, 32vh);
+  overflow-y: auto;
+  z-index: 100;
+  padding: 4px; }
+.suggestion-item { display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition); }
+.suggestion-item:hover,
+.suggestion-item.selected { background: var(--surface-control); }
+.suggestion-icon { color: var(--accent-interactive);
+  opacity: 0.85;
+  flex-shrink: 0; }
+.suggestion-path { font-family: var(--font-mono);
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1; }
+
+
+
+.workspace-location-error { margin: 4px 0 0; font-size: var(--font-size-xs); color: var(--status-error); }
+.ssh-manager-overlay { position: fixed;
+  inset: 0;
+  background: var(--overlay-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100; }
+.clanker-dialog-content.ssh-manager-modal { z-index: 1100;
+  background: var(--surface-app);
+  width: min(480px, 90vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden; }
+.ssh-manager-body { overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px; }
+.ssh-manager-form { display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface-raised);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default); }
+.ssh-form-row { display: flex;
+  flex-direction: column;
+  gap: 4px; }
+.ssh-form-row label { font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  text-transform: uppercase; }
+.ssh-form-actions { display: flex;
+  gap: 8px;
+  margin-top: 6px; }
+.ssh-env-item { display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm); }
+.ssh-env-info { display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere; }
+.ssh-env-actions { display: flex; flex-shrink: 0; gap: 4px; }
+.ssh-manager-error, .ssh-manager-success { margin: 4px 0 0; font-size: var(--font-size-md); }
+.ssh-manager-error { color: var(--status-error); }
+.ssh-manager-success { color: var(--status-success); }
+.ssh-saved-list > .workspace-location-label { display: block; margin-bottom: 8px; }
+.ssh-saved-list > .ssh-env-item { margin-top: 6px; }
+.ssh-env-label { font-weight: 500;
+  font-size: var(--font-size-lg);
+  color: var(--text-primary); }
+.ssh-env-target { font-size: var(--font-size-md);
+  color: var(--text-secondary); }
+.ssh-env-edit-btn, .ssh-env-delete-btn { width: 22px; height: 22px; }

@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { WorkspaceTargetPicker } from '../../../src/renderer/components/gate/WorkspaceTargetPicker';
+import { WorkspaceTargetPicker } from '../../../src/renderer/components/workspaceOpen/WorkspaceTargetPicker';
 import { installElectronApiMock } from '../../setup/electron';
 
 const environments = [
@@ -13,8 +13,8 @@ const environments = [
 function show() {
   const onSelect = vi.fn();
   const onAddServer = vi.fn();
-  render(<WorkspaceTargetPicker value="local" environments={environments} localRoot="/home/dev/workspaces/"
-    disabled={false} settingsBusy={false} onSelect={onSelect} onAddServer={onAddServer} onSettings={vi.fn()} />);
+  render(<WorkspaceTargetPicker value="local" environments={environments}
+    disabled={false} onSelect={onSelect} onAddServer={onAddServer} onSettings={vi.fn()} />);
   return { onSelect, onAddServer };
 }
 

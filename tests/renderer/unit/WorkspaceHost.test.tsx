@@ -38,9 +38,12 @@ describe('WorkspaceHost', () => {
     useWorkspaceNavigationStore.setState({ mode: 'tabs' });
   });
 
-  it('renders nothing when no workspaces exist', () => {
-    const { container } = render(<WorkspaceHost />);
-    expect(container.firstChild).toBeNull();
+  it('renders normal navigation and a simple empty state with no workspaces', async () => {
+    useWorkspaceNavigationStore.setState({ mode: 'sidebar' });
+    render(<WorkspaceHost onOpenWorkspace={vi.fn()} />);
+    expect(await screen.findByText('No workspace open')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-sidebar')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Open Workspace/i }).length).toBeGreaterThan(0);
   });
 
   it('renders the active workspace in the shared surfaces container', async () => {

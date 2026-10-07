@@ -6,19 +6,6 @@
   background: var(--surface-app);
 }
 
-.recipe-workspace-error {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--status-error) 18%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--status-error) 45%, transparent);
-  font-size: var(--font-size-md);
-}
-
-.recipe-workspace-error ul { margin: 4px 0 0; padding-left: 18px; }
 .main-content {
   flex: 1;
   display: flex;

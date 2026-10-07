@@ -1,5 +1,7 @@
 # Renderer-Wide UI Design-System Audit
 
+> Historical audit: issue #120 removed the Workspace Gate and its launcher-only controls. Current workspace opening uses OpenWorkspaceDialog and shared location controls.
+
 Comprehensive UI audit for GitHub issue **#64**: *Complete renderer-wide UI design-system alignment and enforce future consistency*.
 
 This audit reviews every user-visible renderer screen, dialog, panel, control, and CSS file in `src/renderer/`, classifying each area into standard alignment categories and defining the migration path.

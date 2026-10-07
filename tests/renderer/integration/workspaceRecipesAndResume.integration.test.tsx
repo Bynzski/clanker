@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { useWorkspaceNavigationStore } from '../../../src/renderer/store/workspaceNavigationStore';
 import App from '../../../src/renderer/App';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { installElectronApiMock } from '../../setup/electron';
@@ -23,6 +24,7 @@ describe('Workspace Recipes and Conversation Resume Integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStore();
+    useWorkspaceNavigationStore.setState({ mode: 'tabs', resolved: true });
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
       value: {
@@ -34,109 +36,6 @@ describe('Workspace Recipes and Conversation Resume Integration', () => {
     });
   });
   describe('Recipe Workflow (#42)', () => {
-    it('shows saved recipes in launcher, requires explicit click, and launches all steps', async () => {
-      const mockRecipe: WorkspaceRecipe = {
-        id: 'recipe-dev',
-        name: 'Full Stack App',
-        workspacePath: '/projects/my-web-app',
-        description: 'Frontend and agent',
-        launches: [
-          { id: 'step-1', type: 'harness', harnessId: 'codex', modelId: 'gpt-5' },
-          { id: 'step-2', type: 'command', command: 'npm run dev' },
-        ],
-        browser: { url: 'http://localhost:5173' },
-        createdAt: 1000,
-        updatedAt: 1000,
-        version: 1,
-      };
-
-      const spawnTerminalMock = vi.fn()
-        .mockResolvedValueOnce({ id: 'term-agent', pid: 1001, harnessId: 'codex' })
-        .mockResolvedValueOnce({ id: 'term-server', pid: 1002 });
-
-      const registerOpenWorkspaceMock = vi.fn(async (_id: string, path: string, environmentId = 'local') => ({
-        success: true, location: { path, environmentId },
-      }));
-      const browserNavigateMock = vi.fn().mockResolvedValue(true);
-
-      installElectronApiMock({
-        recipeGetAll: vi.fn().mockResolvedValue([mockRecipe]),
-        spawnTerminal: spawnTerminalMock,
-        registerOpenWorkspace: registerOpenWorkspaceMock,
-        browserNavigate: browserNavigateMock,
-        getLastWorkspace: vi.fn().mockResolvedValue('/projects/my-web-app'),
-      });
-
-      render(<App />);
-
-      // Verify the launcher shows the recipe chip
-      const recipeChip = await screen.findByRole('button', { name: /^Full Stack App/i });
-      expect(recipeChip).toBeInTheDocument();
-
-      // Verify NO terminal has been spawned yet (no auto-execution!)
-      expect(spawnTerminalMock).not.toHaveBeenCalled();
-
-      // Play launches the full saved recipe directly, independently of the directory input.
-      fireEvent.change(screen.getByLabelText('Workspace directory'), { target: { value: '/different-workspace' } });
-      expect(screen.queryByRole('button', { name: 'Inspect recipe Full Stack App' })).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: 'Launch recipe Full Stack App' }));
-      expect(screen.queryByText('Will launch:')).not.toBeInTheDocument();
-
-      // Verify workspace opened and all steps executed
-      await waitFor(() => {
-        expect(registerOpenWorkspaceMock).toHaveBeenCalled();
-        expect(spawnTerminalMock).toHaveBeenCalledTimes(2);
-        expect(spawnTerminalMock).toHaveBeenNthCalledWith(1, '/projects/my-web-app', 'codex', 'gpt-5');
-        expect(spawnTerminalMock).toHaveBeenNthCalledWith(2, '/projects/my-web-app', undefined, undefined, 'npm run dev', true);
-        expect(browserNavigateMock).toHaveBeenCalledWith(expect.any(String), 'http://localhost:5173', undefined, true);
-      });
-    });
-    it('blocks repeated Play clicks and workspace launches, shows failure, and allows retry', async () => {
-      const recipe: WorkspaceRecipe = { id: 'retry', name: 'Retry recipe', workspacePath: '/saved', version: 1,
-        createdAt: 0, updatedAt: 0, launches: [{ id: 'shell', type: 'shell' }] };
-      let rejectOpen!: (result: { success: false; error: string }) => void;
-      const registration = new Promise<{ success: false; error: string }>((resolve) => { rejectOpen = resolve; });
-      const registerOpenWorkspace = vi.fn().mockReturnValue(registration);
-      const spawnTerminal = vi.fn();
-      installElectronApiMock({ recipeGetAll: vi.fn().mockResolvedValue([recipe]), registerOpenWorkspace, spawnTerminal });
-      render(<App />);
-      const play = await screen.findByRole('button', { name: 'Launch recipe Retry recipe' });
-      fireEvent.click(play);
-      fireEvent.click(play);
-      expect(play).toBeDisabled();
-      expect(play).toHaveAttribute('aria-busy', 'true');
-      const workspaceLaunch = screen.getByRole('button', { name: 'Opening workspace…' });
-      expect(workspaceLaunch).toBeDisabled();
-      fireEvent.click(workspaceLaunch);
-      expect(registerOpenWorkspace).toHaveBeenCalledOnce();
-      rejectOpen({ success: false, error: 'Directory unavailable' });
-      expect(await screen.findByRole('alert')).toHaveTextContent('Failed to open workspace directory');
-      expect(play).toBeEnabled();
-      expect(play).toHaveAttribute('aria-busy', 'false');
-      fireEvent.click(play);
-      await waitFor(() => expect(registerOpenWorkspace).toHaveBeenCalledTimes(2));
-      expect(spawnTerminal).not.toHaveBeenCalled();
-    });
-
-    it('does not open a New Workspace dialog while direct recipe commands are starting', async () => {
-      const recipe: WorkspaceRecipe = { id: 'pending', name: 'Pending recipe', workspacePath: '/saved', version: 1,
-        createdAt: 0, updatedAt: 0, launches: [{ id: 'command', type: 'command', command: 'npm run dev' }] };
-      let finish!: (result: { status: 'started' }) => void;
-      const command = new Promise<{ status: 'started' }>((resolve) => { finish = resolve; });
-      const waitRecipeCommand = vi.fn().mockReturnValue(command);
-      installElectronApiMock({ recipeGetAll: vi.fn().mockResolvedValue([recipe]), waitRecipeCommand,
-        spawnTerminal: vi.fn().mockResolvedValue({ id: 'pending-term', pid: 1234 }),
-        registerOpenWorkspace: vi.fn(async (_id, path) => ({ success: true, location: { path, environmentId: 'local' } })),
-      });
-      render(<App />);
-      fireEvent.click(await screen.findByRole('button', { name: 'Launch recipe Pending recipe' }));
-      await waitFor(() => expect(waitRecipeCommand).toHaveBeenCalledWith('pending-term'));
-      expect(screen.queryByText('New Workspace')).not.toBeInTheDocument();
-      expect(screen.queryByText('Will launch:')).not.toBeInTheDocument();
-      finish({ status: 'started' });
-      await waitFor(() => expect(useWorkspaceStore.getState().terminals).toHaveLength(1));
-    });
-
     it('restores saved recipe layout topology onto newly spawned panes', async () => {
       const recipeWithLayout: WorkspaceRecipe = {
         id: 'recipe-layout',
@@ -174,10 +73,13 @@ describe('Workspace Recipes and Conversation Resume Integration', () => {
         getLastWorkspace: vi.fn().mockResolvedValue('/projects/split-app'),
       });
 
+      useWorkspaceStore.getState().addWorkspace(createWorkspaceFixture({
+        workspacePath: recipeWithLayout.workspacePath, terminals: [], panes: [], activeTerminalId: null, layoutRoot: null,
+      }));
       render(<App />);
 
-      const chip = await screen.findByRole('button', { name: /Launch recipe Split Layout Recipe/i });
-      fireEvent.click(chip);
+      fireEvent.click(screen.getByRole('button', { name: /Recipes/i }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Launch Recipe' }));
 
 
       await waitFor(() => {
@@ -219,8 +121,12 @@ describe('Workspace Recipes and Conversation Resume Integration', () => {
         probeRecipePreview: vi.fn().mockResolvedValue({ status: 'remote' }),
         browserNavigate,
       });
+      useWorkspaceStore.getState().addWorkspace(createWorkspaceFixture({
+        workspacePath: recipe.workspacePath, terminals: [], panes: [], activeTerminalId: null, layoutRoot: null,
+      }));
       render(<App />);
-      fireEvent.click(await screen.findByRole('button', { name: /Launch recipe Browser Layout Recipe/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Recipes/i }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Launch Recipe' }));
       await waitFor(() => {
         const workspace = useWorkspaceStore.getState().workspaces.find((entry) => entry.workspacePath === '/projects/browser-app');
         expect(workspace?.browserVisible).toBe(true);
@@ -249,9 +155,13 @@ describe('Workspace Recipes and Conversation Resume Integration', () => {
         spawnTerminal,
         waitRecipeCommand: vi.fn().mockResolvedValue({ status: 'failed', error: 'Command exited immediately with code 127' }),
       });
+      useWorkspaceStore.getState().addWorkspace(createWorkspaceFixture({
+        workspacePath: recipe.workspacePath, terminals: [], panes: [], activeTerminalId: null, layoutRoot: null,
+      }));
       render(<App />);
-      fireEvent.click(await screen.findByRole('button', { name: /Launch recipe Partial Recipe/i }));
-      expect(await screen.findByRole('alert')).toHaveTextContent('Command exited immediately with code 127');
+      fireEvent.click(screen.getByRole('button', { name: /Recipes/i }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Launch Recipe' }));
+      expect(await screen.findByText('Command exited immediately with code 127')).toBeInTheDocument();
       const ws = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.workspacePath === '/projects/partial');
       expect(ws?.terminals.map((terminal) => terminal.id)).toEqual(['shell-term', 'command-term']);
       expect(spawnTerminal).toHaveBeenCalledTimes(2);

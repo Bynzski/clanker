@@ -38,7 +38,7 @@ Each harness (Codex, OpenCode, Pi, Oh My Pi, Claude, Hermes, Antigravity) has it
 
 **Show in Usage** is available for Codex, Claude, Oh My Pi, Hermes, and Antigravity. It is independent of **Visible**: hiding a launch button does not hide its usage row. Disabling **Show in Usage** removes that provider from usage reads, polling, and manual refresh. See [Subscription usage](terminals.md#subscription-usage).
 
-Hermes discovers provider-aware models from the local Hermes TUI gateway when its standard Python installation is available. Model IDs appear before their providers so subscription variants stay distinguishable. Choose a provider/model in the default picker, or enter a custom model ID; leaving the field empty uses Hermes's own default. Favorites work in the workspace gate. The initial list may be served from Hermes's cache: use **Refresh Hermes models** in settings or the gate to query live connector catalogs. If discovery is unavailable, the manual model field remains usable. Agent attention supports SSH Hermes launches through a host observer plugin; local Hermes attention remains unavailable. Hermes is not an AI commit provider.
+Hermes discovers provider-aware models from the local Hermes TUI gateway when its standard Python installation is available. Model IDs appear before their providers so subscription variants stay distinguishable. Choose a provider/model in the default picker, or enter a custom model ID; leaving the field empty uses Hermes's own default. Favorites are available in the model picker in Settings. The initial list may be served from Hermes's cache: use **Refresh Hermes models** in Settings to query live connector catalogs. If discovery is unavailable, the manual model field remains usable. Agent attention supports SSH Hermes launches through a host observer plugin; local Hermes attention remains unavailable. Hermes is not an AI commit provider.
 
 Antigravity discovers available models via `agy models`. The model list supports Gemini and Claude variants. Extra flags accept `--dangerously-skip-permissions`, `--effort <level>`, and `--mode <mode>`. Agent attention is supported via native plugin hooks, reporting running, needs input, and turn complete statuses. Antigravity can be selected as an AI commit provider in settings, generating commit messages via piped prompt execution.
 
@@ -54,7 +54,7 @@ All changes persist immediately to `electron-store`.
 #### Visibility Behavior
 
 - Harnesses are visible by default.
-- Hidden harnesses are removed from the header harness list and workspace gate.
+- Hidden harnesses are removed from the Header harness list.
 - Hiding a harness does not disable it. Previous chats can still be resumed when the harness command is installed and available.
 
 #### Flags Behavior
@@ -68,7 +68,7 @@ All changes persist immediately to `electron-store`.
 
 When spawning a terminal with a harness:
 
-1. **Explicit launch model** — used when selected in the workspace gate or launcher
+1. **Explicit launch model** — used by an explicit runtime launch, such as a Recipe
 2. **Harness default model** — used when no launch model was selected
 3. **Harness choice** — if neither is set, the CLI chooses its own model
 
@@ -76,7 +76,7 @@ Plain shells have no model and do not inherit a harness from global defaults.
 
 Favorites are **never** used at spawn time — they only affect the picker/discovery UI.
 
-For SSH workspaces in V1, harness availability is discovered on the host. Extra flags still apply. A locally saved default model is never applied; the workspace gate lists the host's own models for harnesses that support remote discovery (Codex, OpenCode, Pi, OMP, Antigravity) and otherwise leaves the remote CLI on its own model configuration. Agent attention uses host-side adapters when enabled in harness defaults; see [Remote Agent Attention](workspaces.md#remote-agent-attention) for setup and limits. Locally installed CLIs and desktop attention credentials are not used for remote launches. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh).
+For SSH workspaces in V1, harness availability is discovered on the host. Extra flags still apply. A locally saved default model is never applied; Header launchers use the remote CLI's own model configuration. Agent attention uses host-side adapters when enabled in harness defaults; see [Remote Agent Attention](workspaces.md#remote-agent-attention) for setup and limits. Locally installed CLIs and desktop attention credentials are not used for remote launches. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh).
 
 ### VCS Credentials
 

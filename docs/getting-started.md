@@ -48,31 +48,18 @@ Requires Node.js 22.12+ and npm 10+. On Windows, also install **Git for Windows*
 ## First Launch
 
 1. Open the installed app, or run `npm run dev` from a source checkout
-2. The workspace gate opens if no workspaces exist
-3. Select **Local** and enter or browse for a directory, or select **SSH Remote** and choose a saved SSH target and remote directory
-4. Optionally select an AI harness
-5. With a selected harness, choose a model from its picker when available. Local workspaces use the harness's local catalog; SSH workspaces show a picker only when the host returns a real model list, otherwise the host's own default applies
-6. Choose terminal count (1, 2, or 4)
-7. Click **Launch Workspace**
+2. Clanker shows its normal shell immediately, including navigation and Settings
+3. Click **Open Workspace** (`+`) and choose **This PC**, then **Choose Folder…**, or choose a saved SSH environment and enter/browse an absolute remote directory
+4. Click **Open Workspace**. The workspace opens empty
+5. Choose **Terminal** or an AI harness in the Header to start work explicitly. Configure local harness defaults in Settings
 
-### Model Selection in the Gate
+On subsequent launches Clanker revalidates and reopens the previously open workspace identities in their saved order, with the previously active workspace selected. It does not restore terminals, agents, conversations, Browser views, editor tabs, Notes visibility, or pane layouts. Notes content is retained. Failed restores produce a compact warning and are removed from the saved open set; the first surviving workspace becomes active if the saved active workspace failed.
 
-For local workspaces, selecting a harness shows model selection controls:
+## Opening Workspaces
 
-- Click the model pill to open favorites and browse/search models supplied by the harness
-- If a harness cannot supply models, the app may show only configured models
-- **Selected model** is used for workspace launch
+Click **Open Workspace** (`+`) in the Workspaces sidebar, collapsed rail, or tab strip. Local folders use the operating-system folder picker. For SSH, use **Add server…** or **Server settings…** to manage environments and **Browse remote directories** to navigate or create a direct child folder. Clanker starts at the saved default root when accessible, then `$HOME/workspaces`, then `$HOME`.
 
-The default model for each harness can be configured in the header settings dropdown (gear icon). A locally saved default is not applied to SSH launches.
-
-## Creating Workspaces
-
-From the gate, or from the navigation you are using:
-- Click **Open Workspace** (`+`): in the **WORKSPACES** sidebar header (or under the open workspaces when the sidebar is collapsed to its rail), or beside the tabs in Tabs mode
-- For **Local**, enter a local directory path or use the operating-system folder picker
-- For **SSH Remote**, add a target in **Manage SSH Targets** if needed, select it, and browse directories over SSH or enter an absolute POSIX path. **New Folder** in the remote chooser creates a directory on the remote host. Clanker starts at `$HOME/workspaces` when it exists and is accessible, otherwise at `$HOME`.
-
-Remote workspaces require system OpenSSH access to a Linux/POSIX host and Python 3 on that host. The SSH account must have permission to access the selected directory. Remote harnesses must be installed on the host; the launcher shows harnesses discovered there. Remote worktree management, optional host-side Agent Attention, and automatic SSH web service previews are supported. Remote session history and native conversation recovery are available for supported harnesses. Remote recipes and persistent processes remain unavailable. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh) for setup and the complete limitations list.
+Remote workspaces require system OpenSSH access to a Linux/POSIX host and Python 3 on that host. Opening only registers the root; harness discovery and runtime launch belong to the normal Header. See [SSH Workspaces](workspaces.md#remote-workspaces-ssh) for setup and limitations.
 
 ## Navigation
 

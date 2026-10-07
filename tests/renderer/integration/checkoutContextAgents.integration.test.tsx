@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import App from '../../../src/renderer/App';
+import { openWorkspace as openShell } from '../../../src/renderer/lib/openWorkspace';
 import { useWorkspaceStore } from '../../../src/renderer/store/workspaceStore';
 import { launchTerminalInCheckoutContext } from '../../../src/renderer/lib/checkoutContextLaunch';
 import { installElectronApiMock } from '../../setup/electron';
@@ -29,15 +28,7 @@ function spawnLikeMain() {
 }
 
 async function openWorkspace() {
-  render(<App />);
-  fireEvent.change(document.querySelector('.gate-input') as HTMLInputElement, { target: { value: ROOT } });
-  const add = screen.getByRole('button', { name: 'Add plain terminal' });
-  await waitFor(() => expect(add).toBeEnabled());
-  fireEvent.click(add);
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Launch Workspace' })).toBeEnabled());
-  fireEvent.click(screen.getByText('Launch Workspace'));
-  await waitFor(() => expect(useWorkspaceStore.getState().workspaces).toHaveLength(1));
-  return useWorkspaceStore.getState().workspaces[0];
+  return openShell({ environmentId: 'local', path: ROOT });
 }
 
 describe('main and worktree agents in one workspace', () => {
@@ -116,7 +107,7 @@ describe('main and worktree agents in one workspace', () => {
     const stored = state().terminals;
     expect(stored.map((terminal) => terminal.id)).toEqual(expect.arrayContaining([agentA.id, agentB.id]));
     expect(stored.every((terminal) => terminal.workspaceId === workspace.id)).toBe(true);
-    // The launcher's own plain terminal stays on the main checkout.
+    // The first explicitly launched agent stays on the main checkout.
     expect(stored[0].checkoutContextId).toBe(mainContext.id);
   });
 
@@ -132,7 +123,7 @@ describe('main and worktree agents in one workspace', () => {
     const { state, mainContext } = await setUpTwoAgents();
 
     expect(registerOpenWorkspace).toHaveBeenCalledTimes(1);
-    expect(registerOpenWorkspace).toHaveBeenCalledWith(expect.any(String), expect.stringContaining(ROOT));
+    expect(registerOpenWorkspace).toHaveBeenCalledWith(expect.any(String), expect.stringContaining(ROOT), 'local');
     expect(registerOpenWorkspace).not.toHaveBeenCalledWith(expect.anything(), WORKTREE, expect.anything());
     expect(state().checkoutContexts![0]).toEqual(mainContext);
     expect(useWorkspaceStore.getState().activeWorkspaceId).toBe(state().id);

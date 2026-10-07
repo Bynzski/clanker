@@ -20,7 +20,7 @@ ssh_target='<user>@<host>' # Replace with the target of your saved SSH environme
 ssh -o BatchMode=yes "$ssh_target" 'test -f "$HOME/workspaces/clanker-test/README.md" && export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:$HOME/.npm-packages/bin:$HOME/bin:$PATH" && command -v opencode && opencode --version'
 ```
 
-1. In **New Workspace → SSH Remote**, select the configured smoke-test environment. Confirm the default path resolves to `$HOME/workspaces` when that directory is accessible.
+1. In **Open Workspace → saved SSH environment**, select the configured smoke-test environment. Confirm the default path resolves to `$HOME/workspaces` when that directory is accessible.
 2. Open the application-rendered remote chooser over SSH, confirm `clanker-test` appears, open and select it. Launch one plain terminal. Confirm `pwd -P` is the canonical persistent fixture path, Explorer shows `README.md`, and Git status loads. Close the workspace.
 3. Generate a unique fixture name *before* creating it, such as `clanker-smoke-$(date +%s)-$(openssl rand -hex 4)`. Record its exact expected absolute path directly under the canonical workspace root.
 4. Reopen the chooser and use **New Folder** with that exact name. Navigate into it, select it, launch one plain terminal, and confirm `pwd -P` matches the recorded path. Before closing it, perform the file-monitoring checks below.
@@ -47,7 +47,7 @@ Remote worktree discovery checks (use an existing remote repository with linked 
 
 - With two saved SSH aliases whose effective hostname/user/port/proxy route match, open the disposable checkout through one alias and confirm inspection/removal through the other refuses it. Closing that checkout must allow inspection again. Keep same-path workspaces on unrelated SSH hosts independent.
 
-- Keep the SSH repository workspace open. In **New Workspace → SSH Remote**, select its saved target and click **Worktree**. Confirm the repository selector contains only workspaces on that target and discovery shows its worktree paths and branches.
+- Keep the SSH repository workspace open. In **Open Workspace → saved SSH environment**, use **New isolated agent** for creation/adoption and the **Git → Worktrees** section for management. Confirm discovery stays scoped to that registered repository and environment.
 - Open an existing checkout. Confirm the new workspace's terminal is on the same remote host at the canonical checkout path, and its tab shows the repository name and worktree branch. Open it again and confirm Clanker selects the existing tab.
 - Confirm missing checkouts have disabled **Open** buttons, and removal refuses missing or locked checkouts. Interrupt SSH during discovery, confirm an error appears, restore connectivity, and use **Refresh worktrees** to recover.
 - In a unique temporary repository fixture, enter a new branch and base `HEAD`, then **Create and open worktree**. Confirm the checkout is under `<repository>-worktrees` beside the main fixture repository, the terminal is on the same SSH host, and the tab shows the new branch. Confirm attempting the same branch again fails without altering the existing checkout. Close all fixture workspaces before cleanup.

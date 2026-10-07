@@ -28,10 +28,7 @@ vi.mock('../../../src/renderer/components/StatusBar', () => ({
   default: () => <div data-testid="status-bar">StatusBar</div>,
 }));
 
-vi.mock('../../../src/renderer/components/WorkspaceGate', () => ({
-  WorkspaceGateFullscreen: () => <div data-testid="gate">Gate</div>,
-  WorkspaceGateModal: () => null,
-}));
+vi.mock('../../../src/renderer/components/OpenWorkspaceDialog', () => ({ default: () => null }));
 
 vi.mock('../../../src/renderer/lib/harnessDefaultsMigration', () => ({
   migrateLegacyFavorites: vi.fn().mockResolvedValue(undefined),

@@ -33,7 +33,7 @@ export function useAssistantsEnabled(): boolean {
   return useAssistantsStore((state) => state.snapshot?.available === true && state.snapshot.settings.enabled === true);
 }
 
-export function AssistantButton({ assistant, live, variant, disabled = false }: { assistant: HermesAssistant; live: boolean; variant: 'row' | 'icon' | 'launcher'; disabled?: boolean }) {
+export function AssistantButton({ assistant, live, variant, disabled = false }: { assistant: HermesAssistant; live: boolean; variant: 'row' | 'icon'; disabled?: boolean }) {
   const active = useAssistantNavStore((state) => state.activeAssistantId === assistant.id);
   const openAssistantSurface = useAssistantNavStore((state) => state.openAssistantSurface);
   const HermesIcon = getHarnessOption('hermes').Icon;
@@ -42,7 +42,7 @@ export function AssistantButton({ assistant, live, variant, disabled = false }: 
   return (
     <button
       type="button"
-      className={`${variant === 'launcher' ? 'assistant-launcher-button' : `assistant-${variant}`}${active ? ' active' : ''}${live ? '' : ' offline'}`}
+      className={`assistant-${variant}${active ? ' active' : ''}${live ? '' : ' offline'}`}
       aria-current={active ? 'true' : undefined}
       aria-label={variant === 'icon' ? label : undefined}
       title={title}
@@ -50,7 +50,6 @@ export function AssistantButton({ assistant, live, variant, disabled = false }: 
       onClick={() => openAssistantSurface(assistant.id)}
     >
       <HermesIcon size={14} strokeWidth={2} aria-hidden="true" />
-      {variant === 'launcher' && <span className="assistant-name">{assistant.displayName}</span>}
       {variant === 'row' && <><span className="assistant-name">{assistant.displayName}</span><span className={`assistant-dot${live ? ' live' : ''}`} aria-hidden="true" /></>}
     </button>
   );
@@ -58,26 +57,22 @@ export function AssistantButton({ assistant, live, variant, disabled = false }: 
 
 /**
  * Sidebar (and compact strip) roster: one row per Assistant; click opens/focuses its canonical Bot Chat.
- * The `launcher` variant is the fullscreen startup launcher's section: the same service state and statuses,
- * but only the live roster is launchable (an opened-then-offline Assistant is not offered from a cold start),
- * and `disabled` lets the launcher's own busy state block it while a workspace/recipe opens.
  */
-export default function AssistantsRoster({ variant = 'sidebar', disabled = false }: { variant?: 'sidebar' | 'strip' | 'launcher'; disabled?: boolean }) {
+export default function AssistantsRoster({ variant = 'sidebar', disabled = false }: { variant?: 'sidebar' | 'strip'; disabled?: boolean }) {
   const enabled = useAssistantsEnabled();
   const snapshot = useAssistantsStore((state) => state.snapshot);
   const refresh = useAssistantsStore((state) => state.refresh);
   const busy = useAssistantsStore((state) => state.busy);
-  const { assistants: rosterAssistants, live } = useAssistantRoster();
+  const { assistants, live } = useAssistantRoster();
   if (!enabled || !snapshot) return null;
   const state = snapshot.service.state;
-  const assistants = variant === 'launcher' ? rosterAssistants.filter((assistant) => live.has(assistant.id) && state === 'connected') : rosterAssistants;
   const status = state === 'connected' ? (assistants.length === 0 ? 'No Hermes Assistants found' : null) : STATUS_TEXT[state] ?? null;
   const retry = state === 'offline' || state === 'error' || state === 'detected-unusable';
   return (
     <section className={`assistants-roster assistants-roster-${variant}`} aria-label="Assistants">
       <div className="assistants-roster-heading">Assistants</div>
       <div className="assistants-roster-list">
-        {assistants.map((assistant) => <AssistantButton key={assistant.id} assistant={assistant} live={live.has(assistant.id) && state === 'connected'} variant={variant === 'launcher' ? 'launcher' : 'row'} disabled={disabled} />)}
+        {assistants.map((assistant) => <AssistantButton key={assistant.id} assistant={assistant} live={live.has(assistant.id) && state === 'connected'} variant="row" disabled={disabled} />)}
       </div>
       {snapshot.service.error && state !== 'connected'
         ? <p className="assistants-roster-error" role="alert">{snapshot.service.error}</p>

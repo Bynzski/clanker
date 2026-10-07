@@ -44,9 +44,6 @@ const runtimeDimensions = new Map([
   [resolve(rendererRoot, 'components/ui/Popover.css'), new Set([
     '--radix-popover-content-available-width', '--radix-popover-content-available-height',
   ])],
-  [resolve(rendererRoot, 'components/WorkspaceGate.css'), new Set([
-    '--radix-popover-trigger-width', '--radix-popover-content-available-height',
-  ])],
 ]);
 
 // WCAG relative luminance for the opaque text/control palette contract.

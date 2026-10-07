@@ -278,7 +278,7 @@ describe('Header', () => {
       setHarness.mockClear();
       fireEvent.click(screen.getByText('Codex'));
       await waitFor(() => {
-        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', 'codex', undefined);
+        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', 'codex', undefined, undefined, undefined, 'ws-1', 'local');
       });
       expect(setHarness).not.toHaveBeenCalled();
     });
@@ -351,7 +351,8 @@ describe('Header', () => {
           pid: 42,
           workingDir: '/workspace',
           harnessId: null,
-        }));
+          workspaceId: 'ws-1',
+        }), 'ws-1');
       });
     });
 
@@ -680,7 +681,7 @@ describe('Header', () => {
       });
       fireEvent.click(screen.getByText('Codex'));
       await waitFor(() => {
-        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', 'codex', 'gpt-4');
+        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', 'codex', 'gpt-4', undefined, undefined, 'ws-1', 'local');
       });
     });
 
@@ -697,7 +698,7 @@ describe('Header', () => {
       });
       fireEvent.click(screen.getByText('Claude'));
       await waitFor(() => {
-        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', 'claude', undefined);
+        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', 'claude', undefined, undefined, undefined, 'ws-1', 'local');
       });
     });
 
@@ -710,11 +711,11 @@ describe('Header', () => {
       renderHeader();
       fireEvent.click(screen.getByText('Terminal'));
       await waitFor(() => {
-        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', undefined, undefined);
+        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/workspace', undefined, undefined, undefined, undefined, 'ws-1', 'local');
       });
     });
 
-    it('uses the root path when the workspace path is empty', async () => {
+    it('refuses to spawn when the workspace path is empty', async () => {
       useWorkspaceStore.setState((state) => ({
         workspaces: state.workspaces.map((workspace) => (
           workspace.id === 'ws-1' ? { ...workspace, workspacePath: '' } : workspace
@@ -723,7 +724,7 @@ describe('Header', () => {
       renderHeader();
       fireEvent.click(screen.getByText('Terminal'));
       await waitFor(() => {
-        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/', undefined, undefined);
+        expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
       });
     });
   });
@@ -784,7 +785,7 @@ describe('Header', () => {
         workspacePath: '',
       });
       renderHeader();
-      expect(screen.getByText('Terminal')).toBeTruthy();
+      expect(screen.queryByText('Terminal')).toBeNull();
       expect(screen.queryByText('New Terminal')).toBeNull();
     });
 
@@ -798,16 +799,16 @@ describe('Header', () => {
       expect(screen.queryByTestId('git-button')).toBeNull();
     });
 
-    it('can still add terminals without a workspace', async () => {
+    it('exposes no terminal launch without a workspace', async () => {
       useWorkspaceStore.setState({
         workspaces: [],
         activeWorkspaceId: null,
         workspacePath: '',
       });
       renderHeader();
-      fireEvent.click(screen.getByText('Terminal'));
+      expect(screen.queryByText('Terminal')).toBeNull();
       await waitFor(() => {
-        expect(window.electronAPI.spawnTerminal).toHaveBeenCalledWith('/', undefined, undefined);
+        expect(window.electronAPI.spawnTerminal).not.toHaveBeenCalled();
       });
     });
   });
