@@ -22,6 +22,7 @@ import { removeAttentionAdapterFiles } from '../../../src/main/agentAttentionAda
 import { worktreeDirectoryName } from '../../../src/main/worktreePaths';
 import { toPosixPath } from '../../../src/shared/pathNormalize';
 import { testHarnessWrapper } from '../../_helpers/tempPaths';
+import { successfulSessionDiscovery } from '../../_helpers/sessionDiscovery';
 
 const { mockHandle, mockSpawnPty, mockDiscover, mockBuildArgs } = vi.hoisted(() => ({
   mockHandle: vi.fn(), mockSpawnPty: vi.fn(), mockDiscover: vi.fn(), mockBuildArgs: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock('../../../src/main/ipc/ptySpawn', () => ({ spawnPtyProcess: mockSpawnPty
 vi.mock('../../../src/main/platformShell', async (importOriginal) => ({ ...(await importOriginal<object>()), defaultShell: () => 'shell' }));
 vi.mock('../../../src/main/sessionHistory', async (importOriginal) => ({
   ...(await importOriginal<object>()), discoverSessions: mockDiscover, buildSessionLaunch: mockBuildArgs,
+  discoverSessionsDetailed: async (...args: unknown[]) => successfulSessionDiscovery(await mockDiscover(...args)),
 }));
 
 import { registerTerminalIpc } from '../../../src/main/ipc/terminalIpc';

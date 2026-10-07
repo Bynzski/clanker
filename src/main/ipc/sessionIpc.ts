@@ -1,7 +1,7 @@
 import { findHarnessProvider, isHarnessId } from '../harnesses/registry';
 import { prepareHarnessAccountContext, type HarnessAccountService } from '../accounts/harnessAccountService';
 import { DEFAULT_HARNESS_ACCOUNT_ID } from '../../shared/types/harnessAccounts';
-import { supportsSessionOperation } from '../sessionLaunch';
+import { assertSessionSelectionFlags, supportsSessionOperation } from '../sessionLaunch';
 /**
  * Session History IPC Handlers
  *
@@ -39,6 +39,7 @@ import {
 } from '../sessionWorktrees';
 import { isCurrentCheckoutContext, resolveSessionResumeTarget } from '../sessionResumeTarget';
 import type { WorktreeProvenance } from '../worktreeProvenance';
+import { rediscoverDefaultLocalSession } from '../localSessionSelection';
 
 export interface RegisterSessionIpcDeps {
   getTerminals: () => Map<string, Terminal>;
@@ -201,12 +202,36 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
       if (internal) throw new Error('Moving a conversation to another checkout is available for local workspaces only');
       return invokeRemoteSession(deps, workspace, requestedSession, fork, options);
     }
+    if (!requestedSession || !isHarnessId(requestedSession.harness) || typeof requestedSession.id !== 'string'
+      || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(requestedSession.id.trim())
+      || /[\u0000-\u001f\u007f]/.test(requestedSession.id) || (fork !== undefined && typeof fork !== 'boolean')) {
+      throw new Error('Invalid local session selection');
+    }
+    if (!supportsSessionOperation(requestedSession.harness, fork === true, 'local')) {
+      throw new Error(`${requestedSession.harness} session invocation is not supported`);
+    }
+    if (!getHarnessOptions()[requestedSession.harness]) throw new Error(`${requestedSession.harness} harness is not available`);
     const nativeWorkspacePath = toNativePath(workspace.location.path, process.platform);
     const registry = deps.getWorkspaceRegistry?.();
+    const checkWorkspace = () => {
+      if (getIsShuttingDown() || registry?.getWorkspace(workspaceId) !== workspace) {
+        throw new Error('Workspace was closed or is being removed');
+      }
+    };
+    checkWorkspace();
     // Resume runs in the workspace's main checkout context unless the conversation ran in one of its
     // linked worktrees (decided below from the session's recorded cwd, never from renderer fields).
     const mainContext = registry?.resolveCheckoutContext(workspaceId) ?? null;
     const plan = await loadPlan(workspaceId, workspace);
+    checkWorkspace();
+    const claimedAccountId = (requestedSession as { accountId?: unknown }).accountId;
+    const managedClaim = claimedAccountId !== undefined && claimedAccountId !== DEFAULT_HARNESS_ACCOUNT_ID;
+    const defaultSelection = !internal && !managedClaim;
+    let session = defaultSelection ? await rediscoverDefaultLocalSession({
+      selection: { harness: requestedSession.harness, id: requestedSession.id.trim() },
+      workspacePath: workspace.location.path, plan,
+    }) : requestedSession;
+    checkWorkspace();
     const routeFor = (candidate: HarnessSession): ReturnType<typeof routeSessionResume> => {
       const cwd = typeof candidate?.cwd === 'string' ? toPosixPath(candidate.cwd) : '';
       if (plan) return routeSessionResume(plan, cwd);
@@ -214,7 +239,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
       return cwd && !cwd.split('/').some((segment) => segment === '..' || segment === '.')
         && sessionMatchesWorkspace(workspace.location.path, cwd) ? { kind: 'main' } : { kind: 'outside' };
     };
-    const preRoute = routeFor(requestedSession);
+    const preRoute = routeFor(session);
     if (preRoute.kind === 'outside') throw new Error('Session working directory is outside the workspace');
     // The checkout root the session's own history lives under (the workspace root for ordinary sessions).
     const sessionRootPath = preRoute.kind === 'worktree' || preRoute.kind === 'gone'
@@ -223,9 +248,6 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
     // that account's own storage and launches that authoritative copy with that account's binding;
     // a session without a claim resumes under the native account, never the currently selected one.
     const accountService = deps.getHarnessAccountService?.();
-    let session = requestedSession;
-    const claimedAccountId = (requestedSession as { accountId?: unknown } | null)?.accountId;
-    const managedClaim = claimedAccountId !== undefined && claimedAccountId !== DEFAULT_HARNESS_ACCOUNT_ID;
     let accountBinding = prepareHarnessAccountContext(accountService, {
       environmentId: 'local', harness: String(requestedSession?.harness), accountId: DEFAULT_HARNESS_ACCOUNT_ID,
     });
@@ -241,6 +263,7 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
       session = owned.session;
       accountBinding = owned.binding;
     }
+    checkWorkspace();
     const nativeSessionCwd = typeof session?.cwd === 'string'
       ? toNativePath(session.cwd, process.platform)
       : '';
@@ -267,6 +290,12 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
       throw new Error(`${session.harness} harness is not available`);
     }
 
+    // Same defaults as SPAWN_TERMINAL, but they may not override main's selected conversation.
+    const harnessDefaults = store.get('harnessDefaults');
+    const attentionEnabled = harnessDefaults[session.harness]?.attentionEnabled === true;
+    const userFlags = harnessDefaults[session.harness]?.flags?.trim();
+    assertSessionSelectionFlags(session.harness, userFlags, 'local');
+
     // Where it launches: the checkout the conversation ran in when that still exists (its registered
     // context, or one adopted through Git's own listing); otherwise the main checkout with an
     // explicit notice, or an offer to recreate the worktree for a harness that cannot resume
@@ -291,21 +320,24 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
       recreateWorktree: deps.recreateWorktree ? (branch) => deps.recreateWorktree!(workspaceId, branch) : undefined,
       recreateRequested: options?.recreateCheckout === true,
       isUsable: (context) => directoryExists(toNativePath(context.path, process.platform)),
-      // A renderer-named cwd must be a conversation main itself finds before anything is offered or created.
-      confirmSession: async () => (await discoverSessionsWithCheckouts({
+      // Default selections already have fresh, unambiguous native evidence; other paths retain their confirmation.
+      confirmSession: defaultSelection ? async () => true : async () => (await discoverSessionsWithCheckouts({
         plan, scanWorkspacePath: nativeWorkspacePath, discover: discoverForConfirmation,
         toScanPath: (posixPath) => toNativePath(posixPath, process.platform),
       })).some((entry) => entry.harness === session.harness && entry.id === session.id && toPosixPath(entry.cwd) === sessionPosixCwd),
     }) : { kind: 'launch' as const, target: 'main' as const, context: mainContext };
+    checkWorkspace();
     if (target.kind === 'offer') return { recreateOffer: target.offer };
 
-    // Look up per-harness default flags from store — same source as SPAWN_TERMINAL
-    const harnessDefaults = store.get('harnessDefaults');
-    const attentionEnabled = harnessDefaults[session.harness]?.attentionEnabled === true;
-    const userFlags = harnessDefaults[session.harness]?.flags?.trim();
     // A recreated worktree exists again by now, so a harness that validates against its own store
     // (Pi) does so exactly as for any live worktree; nothing about that check is relaxed.
     const validatedSession = await findHarnessProvider(session.harness)?.sessions?.validateLocal?.(session, { workspacePath: sessionRootPath, userFlags }) ?? session;
+    checkWorkspace();
+    const validatedRoute = routeFor(validatedSession);
+    if (validatedSession.id !== session.id || validatedSession.harness !== session.harness
+      || validatedRoute.kind !== route.kind || rootPathOf(validatedRoute) !== rootPathOf(route)) {
+      throw new Error('Session identity or checkout changed while preparing the launch. Refresh History and try again.');
+    }
 
     const launchContext = target.context;
     const resumeNotice = target.notice;
@@ -379,7 +411,8 @@ export function registerSessionIpc(deps: RegisterSessionIpcDeps): SessionIpcCont
 
       // Everything above awaited: the workspace or the selected checkout may have been closed or
       // released meanwhile. Fail closed before any process exists.
-      if (registry && (registry.getWorkspace(workspaceId) !== workspace || !isCurrentCheckoutContext(registry, launchContext))) {
+      checkWorkspace();
+      if (registry && !isCurrentCheckoutContext(registry, launchContext)) {
         throw new Error('Workspace was closed or is being removed');
       }
 

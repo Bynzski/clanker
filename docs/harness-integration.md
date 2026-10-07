@@ -1753,6 +1753,21 @@ do not canonize those names without version-specific evidence. OMP storage
 integration remains conventional locally and on SSH. Future storage work should
 extend provider root specifications and keep host environment resolution on-host.
 
+## Ordinary local history handoff (issue #131)
+
+A default-account `SESSION_INVOKE` selection is a harness plus native ID, not renderer-supplied
+launch metadata. `localSessionSelection.ts` forces fresh detailed discovery across history's bounded
+checkout scopes before routing, adoption/recreation or spawn. It collects matching records before
+display deduplication and rejects missing, malformed or conflicting launch evidence and selected-provider
+or scope failures. Unrelated provider errors do not block a verified selection. Native cwd is canonicalized
+before checkout routing; presentation checkout labels and renderer cwd/file/model/provider hints are ignored.
+Managed accounts retain their owned-store lookup; SSH retains host rediscovery; internal lifecycle moves
+retain main's target authority. Workspace replacement/closure/shutdown is checked after awaits, and a
+provider validator cannot change the selected native identity or checkout route. User defaults containing
+provider-declared selection flags fail closed through a shared local/SSH guard (before local checkout
+creation). Native-store fixtures exercise all six local resume/supported-fork handoffs with PTY creation
+mocked; live CLI compatibility and the full SSH/removed-checkout matrix still need smoke verification.
+
 ## Removed-worktree resume (issue #100)
 
 Conversations that ran in an isolated agent's worktree appear in the workspace's chat history

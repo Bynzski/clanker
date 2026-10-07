@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { HarnessSession } from '../../../../src/shared/types/session';
 import { SESSION_DISCOVER, SESSION_INVOKE, SPAWN_TERMINAL } from '../../../../src/shared/ipcChannels';
+import { successfulSessionDiscovery } from '../../../_helpers/sessionDiscovery';
 import { toNativePath } from '../../../../src/shared/pathNormalize';
 import { testHarnessWrapper } from '../../../_helpers/tempPaths';
 
@@ -24,6 +25,7 @@ vi.mock('../../../../src/main/ipc/ptySpawn', () => ({ spawnPtyProcess: mockSpawn
 vi.mock('../../../../src/main/platformShell', async (importOriginal) => ({ ...(await importOriginal<object>()), defaultShell: () => 'shell' }));
 vi.mock('../../../../src/main/sessionHistory', async (importOriginal) => ({
   ...(await importOriginal<object>()), discoverSessions: mockDiscover, buildSessionLaunch: mockBuildArgs,
+  discoverSessionsDetailed: async (...args: unknown[]) => successfulSessionDiscovery(await mockDiscover(...args)),
 }));
 
 import { registerTerminalIpc } from '../../../../src/main/ipc/terminalIpc';
@@ -223,6 +225,7 @@ describe('resume and fork keep the account that owns the session', () => {
 
   it('a session without account provenance resumes under the native account, not the selected one', async () => {
     await twoAccounts();
+    mockDiscover.mockResolvedValue([{ ...codexSession(), cwd: WORKSPACE }]);
     await invoke({ ...codexSession(), cwd: WORKSPACE });
     expect(spawnedEnv()).not.toHaveProperty('CODEX_HOME');
     await invoke({ ...codexSession(), cwd: WORKSPACE, accountId: 'default' });

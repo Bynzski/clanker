@@ -1,7 +1,8 @@
 # Checkout relocation: review checkpoint
 
-Related issues: #118 (live relocation), #114 (resume redraw), #116 (history reliability).
-This checkpoint is **partial implementation**, not grounds to close all three issues.
+Tracking: #131, superseding #118 (live relocation), #114 (resume redraw) and
+#116 (history reliability). Those originals were closed as superseded, not completed.
+This review checkpoint remains **partial implementation**; #131 stays open.
 
 ## Implemented
 
@@ -31,6 +32,19 @@ This checkpoint is **partial implementation**, not grounds to close all three is
   regression emits 100 KB, proves reads stop before READY, and verifies exact ordered delivery after it.
 - Partial history scans remain visible with warnings, but cannot overwrite a complete last-good renderer
   cache. Partial idle warm-ups retry when returning to their workspace.
+
+### Follow-up: ordinary local history handoffs
+
+Default-account resume/fork now rediscover the native harness/ID with forced freshness,
+across the bounded checkout scopes, before routing or checkout side effects. Renderer
+launch hints are ignored; missing/conflicting/malformed native evidence and selected-provider
+or scope failures block invocation, while unrelated provider failures do not. Canonical native
+cwd prevents symlink escapes. Workspace and provider-validation identity/route checks protect
+async stages; shared local/SSH selection-flag checks prevent defaults overriding the conversation.
+Managed-account and internal relocation paths retain their existing authority checks.
+Six-provider native-store fixtures exercise resume/supported-fork IPC with only PTY creation mocked.
+This is automated handoff evidence, not live provider compatibility or geometry/redraw proof.
+See [conversation-history-reliability.md](conversation-history-reliability.md).
 
 ## Provider research and unresolved proof
 
@@ -93,13 +107,13 @@ Use a disposable repository/worktree and a normal user-requested root turn:
 
 ## Still open
 
-- #118: native Claude hook integration and real active-turn OpenCode/Codex experiments. Enabling any live
+- #131 / former #118: native Claude hook integration and real active-turn OpenCode/Codex experiments. Enabling any live
   provider without these would misrepresent turn continuity and risk split-brain checkout authority.
-- #114: ordinary history-resume pane geometry is still unavailable before its new pane exists. Source
+- #131 / former #114: ordinary history-resume pane geometry is still unavailable before its new pane exists. Source
   geometry covers replacement resumes only. Long OpenCode/Pi visual smoke and a geometry-first ordinary
   resume handshake remain; no transcript renderer or bigger default buffer is introduced.
-- #116: this checkpoint covers partial-cache behavior and lifecycle rediscovery integrity, not a complete
-  current-format fixture/smoke matrix for all local/SSH providers and ordinary history resume handoffs.
+- #131 / former #116: partial-cache behavior, lifecycle integrity and ordinary default-account local
+  handoff authority are covered, not the complete live local/SSH/removed-checkout resume/fork matrix.
 - #91 dev services, #89 pages and #104 recovery UX are separate features, not prerequisites for this gate.
 
 The existing large `isolatedCheckoutService.ts` remains the transaction integration point; new proof and

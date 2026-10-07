@@ -13,6 +13,15 @@ export function supportsSessionOperation(harness: unknown, fork: boolean, transp
   return Boolean(operation && (!operation.transports || operation.transports.includes(transport)));
 }
 
+/** User defaults must not override the native conversation selected by main. */
+export function assertSessionSelectionFlags(harness: HarnessSession['harness'], flags: string | undefined, transport: 'local' | 'ssh'): void {
+  const selectionFlags = getHarnessProvider(harness).sessions?.selectionFlags ?? [];
+  if ((flags?.split(/\s+/) ?? []).some((token) => selectionFlags.some((option) => token === option
+    || token.startsWith(`${option}=`) || (option.length === 2 && token.startsWith(option))))) {
+    throw new Error(`Harness default flags conflict with ${transport === 'ssh' ? 'remote' : 'local'} session selection`);
+  }
+}
+
 /** Pure provider CLI arguments, shared by local and SSH session launches. */
 export function buildSessionCommand(session: HarnessSession, options: { operation: 'resume' | 'fork'; transport: 'local' | 'ssh'; userFlags?: string }) {
   const capability = getHarnessProvider(session.harness).sessions;

@@ -5,6 +5,7 @@ import { getHarnessProvider } from '../../../src/main/harnesses/registry';
 import { removeAttentionAdapterFiles } from '../../../src/main/agentAttentionAdapters';
 import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
 import { parseMsvcrtArgv, ptyCommandLine } from '../../_helpers/windowsCommandLine';
+import { successfulSessionDiscovery } from '../../_helpers/sessionDiscovery';
 
 const { mockHandle, mockSpawnPty } = vi.hoisted(() => ({ mockHandle: vi.fn(), mockSpawnPty: vi.fn() }));
 // These tests exercise unrelated resume behaviour against a fictional '/workspace'; the real
@@ -19,6 +20,10 @@ vi.mock('../../../src/main/localPathContainment', async () => {
 
 vi.mock('electron', () => ({ ipcMain: { handle: mockHandle }, BrowserWindow: vi.fn() }));
 vi.mock('../../../src/main/ipc/ptySpawn', () => ({ spawnPtyProcess: mockSpawnPty }));
+vi.mock('../../../src/main/sessionHistory', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  discoverSessionsDetailed: async () => successfulSessionDiscovery([session]),
+}));
 
 import { registerSessionIpc } from '../../../src/main/ipc/sessionIpc';
 

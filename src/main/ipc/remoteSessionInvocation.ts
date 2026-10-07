@@ -10,7 +10,7 @@ import { attentionSourceOptions, trustedRootSessionId } from '../agentAttentionA
 import { loadSessionCheckoutPlan, sessionScanScopes, MAX_REMOTE_SESSION_SCOPES } from '../sessionWorktrees';
 import { isCurrentCheckoutContext, resolveSessionResumeTarget, type SessionResumeTarget } from '../sessionResumeTarget';
 
-import { SUPPORTED_RESUME_HARNESSES, supportsSessionOperation } from '../sessionLaunch';
+import { SUPPORTED_RESUME_HARNESSES, assertSessionSelectionFlags, supportsSessionOperation } from '../sessionLaunch';
 /**
  * Re-read the host session instead of trusting renderer-supplied paths or models. The conversation
  * is found by one bounded on-host scan of the workspace plus the worktree scopes main derived from
@@ -83,8 +83,7 @@ export async function invokeRemoteSession(deps: RegisterSessionIpcDeps, workspac
   if (registry?.isRemotePathReserved?.(workspace.location.environmentId, session.cwd)) throw new Error('Remote session directory is being removed');
   const defaults = deps.getStore().get('harnessDefaults')[session.harness];
   const flags = defaults?.flags?.trim();
-  const tokens = flags?.split(/\s+/) ?? [];
-  if (tokens.some((token) => (getHarnessProvider(session.harness).sessions?.selectionFlags ?? []).some((option) => token === option || token.startsWith(`${option}=`) || (option.length === 2 && token.startsWith(option))))) throw new Error('Harness default flags conflict with remote session selection');
+  assertSessionSelectionFlags(session.harness, flags, 'ssh');
   const id = `term-${randomUUID()}`;
   const broker = deps.agentAttentionBroker;
   // The rediscovered host session is the only authority for a resumed root identity.

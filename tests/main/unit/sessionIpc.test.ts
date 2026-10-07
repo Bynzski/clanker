@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HarnessSession } from '../../../src/shared/types/session';
 import { SESSION_DISCOVER, SESSION_INVOKE } from '../../../src/shared/ipcChannels';
 import { toNativePath } from '../../../src/shared/pathNormalize';
+import { successfulSessionDiscovery } from '../../_helpers/sessionDiscovery';
 
 const { mockHandle } = vi.hoisted(() => ({
   mockHandle: vi.fn(),
@@ -66,6 +67,8 @@ function registerHandlers(
   agentAttentionBroker?: Parameters<typeof registerSessionIpc>[0]['agentAttentionBroker'],
   getWorkspaceRegistry: NonNullable<Parameters<typeof registerSessionIpc>[0]['getWorkspaceRegistry']> = () => stableLocalRegistry() as never,
   attentionEnabled = false,
+  getIsShuttingDown = () => false,
+  defaultFlags = ' --yolo ',
 ): Map<string, Handler> {
   const handlers = new Map<string, Handler>();
   mockHandle.mockImplementation((channel: string, handler: Handler) => {
@@ -76,10 +79,10 @@ function registerHandlers(
     getTerminals: () => new Map(),
     getMainWindow: () => ({ webContents: { send: vi.fn() } }) as never,
     getSafeWorkspacePath: (workingDir: string) => workingDir,
-    getIsShuttingDown: () => false,
+    getIsShuttingDown,
     getStore: () => ({
       get: vi.fn(() => ({
-        codex: { flags: ' --yolo ', attentionEnabled },
+        codex: { flags: defaultFlags, attentionEnabled },
       })),
     }) as never,
     getHarnessOptions,
@@ -109,14 +112,15 @@ const claudeSession: HarnessSession = {
 
 const nativeWorkspacePath = toNativePath('/workspace', process.platform);
 
+beforeEach(() => {
+  mockHandle.mockReset();
+  mockDiscoverSessions.mockReset().mockResolvedValue([codexSession, claudeSession]);
+  mockDiscoverSessionsDetailed.mockReset().mockImplementation(async (...args) => successfulSessionDiscovery(await mockDiscoverSessions(...args)));
+  mockBuildSessionLaunch.mockReset();
+  mockSpawnPtyProcess.mockReset();
+});
+
 describe('registerSessionIpc', () => {
-  beforeEach(() => {
-    mockHandle.mockReset();
-    mockDiscoverSessions.mockReset();
-    mockDiscoverSessionsDetailed.mockReset();
-    mockBuildSessionLaunch.mockReset();
-    mockSpawnPtyProcess.mockReset();
-  });
 
   it('keeps successful history and returns safe diagnostics only for available providers', async () => {
     mockDiscoverSessionsDetailed.mockResolvedValue({ sessions: [codexSession, claudeSession], harnessStatus: {
@@ -147,7 +151,7 @@ describe('registerSessionIpc', () => {
   it('rejects forged Pi files before command construction or spawning', async () => {
     const handlers = registerHandlers(vi.fn(() => ({ pi: { name: 'Pi', command: 'pi', args: [], icon: 'π' } })));
     const session: HarnessSession = { id: 'forged-missing-id', harness: 'pi', title: '', cwd: '/workspace', timestamp: 0, filePath: '/workspace/arbitrary.jsonl' };
-    await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toMatchObject({ kind: 'not-configured' });
+    await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toThrow('Session was not found');
     expect(mockBuildSessionLaunch).not.toHaveBeenCalled();
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
@@ -160,6 +164,7 @@ describe('registerSessionIpc', () => {
       id: 'session-1', harness: 'omp', title: 'Task', cwd: '/workspace',
       timestamp: 1, filePath: '/workspace/session.txt',
     };
+    mockDiscoverSessions.mockResolvedValue([session]);
     await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toThrow('OMP session file is invalid');
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
@@ -175,11 +180,12 @@ describe('registerSessionIpc', () => {
     const session: HarnessSession = {
       id, harness: 'agy', title: 'Task', cwd: '/workspace', timestamp: 1,
     };
-    await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toThrow('Antigravity session ID is invalid');
+    mockDiscoverSessions.mockResolvedValue([session]);
+    await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toThrow(/Invalid local session selection|Antigravity session ID is invalid/);
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
 
-  it('rejects an unsafe renderer-supplied Antigravity model ID', async () => {
+  it('rejects unsafe Antigravity model metadata rediscovered from the native store', async () => {
     const handlers = registerHandlers(vi.fn(() => ({
       agy: { name: 'Antigravity', command: 'agy', args: [], icon: '🪐' },
     })));
@@ -191,6 +197,7 @@ describe('registerSessionIpc', () => {
       timestamp: 1,
       modelId: 'gemini&calc',
     };
+    mockDiscoverSessions.mockResolvedValue([session]);
     await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session)).rejects.toThrow('Antigravity model ID is invalid');
     expect(mockBuildSessionLaunch).not.toHaveBeenCalled();
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
@@ -218,6 +225,7 @@ describe('registerSessionIpc', () => {
       modelId: ' gemini-3.8-flash-high ',
     };
 
+    mockDiscoverSessions.mockResolvedValue([{ ...session, id: session.id.trim(), modelId: session.modelId!.trim() }]);
     const result = await handlers.get(SESSION_INVOKE)?.({}, 'local-ws', session);
     expect(result).toEqual(expect.objectContaining({ harnessId: 'agy', ptyProcess: { pid: 12345 } }));
     expect(mockBuildSessionLaunch).toHaveBeenCalledWith(
@@ -241,6 +249,107 @@ describe('registerSessionIpc', () => {
     expect(mockBuildSessionLaunch).not.toHaveBeenCalled();
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
+
+  it.each([false, true])('ordinary resume/fork (%s) uses only fresh native metadata, ignoring renderer launch hints', async (fork) => {
+    const native = { ...codexSession, cwd: '/workspace/src', modelId: 'native-model', provider: 'native-provider', filePath: '/native/sessions/owned.jsonl' };
+    mockDiscoverSessions.mockResolvedValue([native]);
+    mockBuildSessionLaunch.mockReturnValue({ command: 'codex', args: ['resume', native.id] });
+    mockSpawnPtyProcess.mockReturnValue({ id: 'term', pid: 1 });
+    const handlers = registerHandlers(vi.fn(() => ({ codex: { command: 'codex', args: [], name: 'Codex', icon: '' } })));
+    await handlers.get(SESSION_INVOKE)!({}, 'local-ws', { ...codexSession,
+      cwd: '/outside', filePath: '/forged/session.jsonl', modelId: 'forged', provider: 'forged',
+      checkout: { path: '/outside', branch: 'forged', exists: true },
+    }, fork);
+    expect(mockDiscoverSessionsDetailed).toHaveBeenCalledWith(nativeWorkspacePath, { forceRefresh: true });
+    expect(mockBuildSessionLaunch).toHaveBeenCalledWith({ ...native,
+      cwd: toNativePath(native.cwd, process.platform), filePath: toNativePath(native.filePath, process.platform),
+    }, fork, '--yolo');
+    expect(mockSpawnPtyProcess).toHaveBeenCalledWith(expect.objectContaining({ cwd: toNativePath(native.cwd, process.platform) }));
+  });
+
+  it('rejects user defaults that would override the rediscovered conversation', async () => {
+    const handlers = registerHandlers(vi.fn(() => ({ codex: { command: 'codex', args: [], name: 'Codex', icon: '' } })),
+      undefined, undefined, false, () => false, 'resume another-session');
+    await expect(handlers.get(SESSION_INVOKE)!({}, 'local-ws', codexSession)).rejects.toThrow('conflict with local session selection');
+    expect(mockBuildSessionLaunch).not.toHaveBeenCalled();
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+  });
+
+  it.each(['id', 'harness', 'checkout'] as const)('does not accept a provider validator changing the native %s', async (field) => {
+    const native = { ...codexSession, harness: 'pi' as const, filePath: '/native/session.jsonl' };
+    mockDiscoverSessions.mockResolvedValue([native]);
+    const changed = field === 'id' ? { ...native, id: 'another-session' } : field === 'harness'
+      ? { ...native, harness: 'codex' as const } : { ...native, cwd: '/outside' };
+    vi.spyOn(getHarnessProvider('pi').sessions, 'validateLocal').mockResolvedValue(changed);
+    const handlers = registerHandlers(vi.fn(() => ({ pi: { command: 'pi', args: [], name: 'Pi', icon: '' } })));
+    await expect(handlers.get(SESSION_INVOKE)!({}, 'local-ws', native)).rejects.toThrow('Session identity or checkout changed');
+    expect(mockBuildSessionLaunch).not.toHaveBeenCalled();
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+  });
+
+  it('stops before allocating launch resources on shutdown during a native validator await', async () => {
+    let shuttingDown = false;
+    const native = { ...codexSession, harness: 'pi' as const, filePath: '/native/session.jsonl' };
+    mockDiscoverSessions.mockResolvedValue([native]);
+    vi.spyOn(getHarnessProvider('pi').sessions, 'validateLocal').mockImplementation(async (session) => {
+      shuttingDown = true;
+      return session;
+    });
+    const handlers = registerHandlers(vi.fn(() => ({ pi: { command: 'pi', args: [], name: 'Pi', icon: '' } })),
+      undefined, undefined, false, () => shuttingDown);
+    await expect(handlers.get(SESSION_INVOKE)!({}, 'local-ws', native)).rejects.toThrow('Workspace was closed');
+    expect(mockBuildSessionLaunch).not.toHaveBeenCalled();
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+  });
+
+  it.each(['deleted', 'other harness', 'other account', 'conflicting evidence'])('does not spawn on %s despite a plausible renderer cwd', async (kind) => {
+    const records = kind === 'deleted' ? [] : kind === 'other harness' ? [{ ...codexSession, harness: 'claude' as const }]
+      : kind === 'other account' ? [{ ...codexSession, accountId: 'acct_other' }]
+      : [codexSession, { ...codexSession, cwd: '/workspace/other' }];
+    mockDiscoverSessions.mockResolvedValue(records);
+    const handlers = registerHandlers(vi.fn(() => ({ codex: { command: 'codex', args: [], name: 'Codex', icon: '' } })));
+    await expect(handlers.get(SESSION_INVOKE)!({}, 'local-ws', codexSession)).rejects.toThrow(
+      kind === 'conflicting evidence' ? 'Conflicting' : 'Session was not found',
+    );
+    expect(mockBuildSessionLaunch).not.toHaveBeenCalled();
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+  });
+
+  it('does not silently use a candidate when the selected provider failed to read its history', async () => {
+    mockDiscoverSessionsDetailed.mockResolvedValue({ sessions: [codexSession], harnessStatus: { codex: { status: 'error', error: 'private path/token' } } });
+    const handlers = registerHandlers(vi.fn(() => ({ codex: { command: 'codex', args: [], name: 'Codex', icon: '' } })));
+    await expect(handlers.get(SESSION_INVOKE)!({}, 'local-ws', codexSession)).rejects.toThrow('Session history could not be verified');
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+  });
+
+  it.each(['closed', 'replaced', 'shutdown'])('does not route or spawn after the workspace is %s during native rediscovery', async (kind) => {
+    let current: typeof localWorkspace | null = localWorkspace;
+    let shuttingDown = false;
+    const registry = withCheckoutContexts({ getWorkspace: () => current });
+    let finish!: (value: ReturnType<typeof successfulSessionDiscovery>) => void;
+    mockDiscoverSessionsDetailed.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const broker = { register: vi.fn(), release: vi.fn() } as never;
+    const handlers = registerHandlers(vi.fn(() => ({ codex: { command: 'codex', args: [], name: 'Codex', icon: '' } })), broker,
+      () => registry as never, true, () => shuttingDown);
+    const pending = handlers.get(SESSION_INVOKE)!({}, 'local-ws', codexSession);
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    if (kind === 'closed') current = null;
+    if (kind === 'replaced') current = { ...localWorkspace };
+    if (kind === 'shutdown') shuttingDown = true;
+    finish(successfulSessionDiscovery([codexSession]));
+    await expect(pending).rejects.toThrow('Workspace was closed or is being removed');
+    expect(mockBuildSessionLaunch).not.toHaveBeenCalled();
+    expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+  });
+
+  it.each([null, {}, { ...codexSession, id: '/path' }, { ...codexSession, id: 'bad\nidentifier' }])(
+    'rejects malformed selection %j before reading any native store', async (selection) => {
+      const handlers = registerHandlers(vi.fn(() => ({ codex: { command: 'codex', args: [], name: 'Codex', icon: '' } })));
+      await expect(handlers.get(SESSION_INVOKE)!({}, 'local-ws', selection)).rejects.toThrow('Invalid local session selection');
+      expect(mockDiscoverSessionsDetailed).not.toHaveBeenCalled();
+      expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
+    },
+  );
 
   it('filters discovered sessions to currently available harnesses', async () => {
     mockDiscoverSessions.mockResolvedValue([codexSession, claudeSession]);
@@ -409,12 +518,13 @@ describe('registerSessionIpc', () => {
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
   });
 
-  it('rejects sessions whose cwd escapes the selected local workspace', async () => {
+  it('rejects native sessions whose rediscovered cwd escapes the selected local workspace', async () => {
     const handlers = registerHandlers(vi.fn(() => ({
       codex: { name: 'Codex', command: 'codex', args: [], icon: 'Codex' },
     })));
     for (const cwd of ['/workspace-other', '/workspace/../other']) {
-      await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', { ...codexSession, cwd }))
+      mockDiscoverSessions.mockResolvedValue([{ ...codexSession, cwd }]);
+      await expect(handlers.get(SESSION_INVOKE)?.({}, 'local-ws', { ...codexSession, cwd: '/workspace' }))
         .rejects.toThrow('Session working directory is outside the workspace');
     }
     expect(mockSpawnPtyProcess).not.toHaveBeenCalled();
@@ -438,6 +548,7 @@ it('disposes prepared provider attention if PTY creation fails', async () => {
 describe('trusted resume identity for local attention', () => {
   const resume = async (session: HarnessSession, fork: boolean) => {
     mockHandle.mockReset();
+    mockDiscoverSessions.mockResolvedValue([session]);
     mockBuildSessionLaunch.mockReturnValue({ command: session.harness, args: ['resume', session.id] });
     mockSpawnPtyProcess.mockReturnValue({ id: 'term-1', pid: 123 });
     const broker = { register: vi.fn().mockResolvedValue({}), release: vi.fn() };

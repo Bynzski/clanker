@@ -9,11 +9,15 @@ import { encodeClaudeProjectDir } from '../../../src/main/harnesses/claude/sessi
 import { discoverAgySessions } from '../../../src/main/harnesses/agy/sessions';
 import { discoverSessionsDetailed, buildSessionLaunch, clearSessionCache } from '../../../src/main/sessionHistory';
 import { registerSessionIpc } from '../../../src/main/ipc/sessionIpc';
-import { SESSION_DISCOVER } from '../../../src/shared/ipcChannels';
+import { SESSION_DISCOVER, SESSION_INVOKE } from '../../../src/shared/ipcChannels';
+import { withCheckoutContexts } from '../../_helpers/checkoutContexts';
+import { toNativePath, toPosixPath } from '../../../src/shared/pathNormalize';
 import type { SessionDiscoveryResult } from '../../../src/shared/types/session';
 import { classifyHarnessFailure } from '../../../src/main/harnesses/types';
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
+const spawn = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/main/ipc/ptySpawn', () => ({ spawnPtyProcess: spawn }));
 vi.mock('electron', () => ({ ipcMain: { handle: (name: string, handler: (...args: unknown[]) => unknown) => handlers.set(name, handler) }, BrowserWindow: vi.fn() }));
 const state = vi.hoisted(() => ({ home: '', output: '[]', calls: [] as string[][] }));
 vi.mock('os', async (importOriginal) => ({ ...(await importOriginal<typeof import('os')>()), homedir: () => state.home }));
@@ -27,6 +31,7 @@ beforeEach(() => {
   state.home = path.join(root, 'home'); workspace = path.join(root, 'workspace');
   fs.mkdirSync(state.home); fs.mkdirSync(workspace);
   state.output = '[]'; state.calls = []; clearSessionCache(); handlers.clear();
+  spawn.mockReset().mockReturnValue({ id: 'fixture-term', pid: 1 });
 });
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 function fixture(id: string, relative: string) {
@@ -52,12 +57,15 @@ describe('local provider session fixtures', () => {
     db.prepare('INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?)').run(
       '22222222-2222-2222-2222-222222222222', 'SQLite conversation', '', '2026-09-27T10:00:00Z', '', JSON.stringify([pathToFileURL(workspace).href]));
     db.close();
-    const registered = { workspaceId: 'fixture', location: { environmentId: 'local', path: workspace } };
+    const registered = { workspaceId: 'fixture', location: { environmentId: 'local', path: toPosixPath(workspace) } };
+    const registry = withCheckoutContexts({ getWorkspace: () => registered });
     registerSessionIpc({
       getTerminals: () => new Map(), getMainWindow: () => null, getSafeWorkspacePath: (value) => value,
-      getIsShuttingDown: () => false, getStore: () => ({}) as never,
+      getIsShuttingDown: () => false, getStore: () => ({ get: () => ({}) }) as never,
       getHarnessOptions: () => Object.fromEntries(['codex', 'claude', 'pi', 'omp', 'opencode', 'agy'].map((id) => [id, { name: id, command: id, args: [], icon: '' }])),
-      getWorkspaceRegistry: () => ({ getWorkspace: () => registered, getCheckoutContextsForWorkspace: () => [] }) as never,
+      getWorkspaceRegistry: () => registry as never,
+      ensureHarnessWrapperScript: () => null,
+      harnessSpawnOverrides: { platform: 'linux', fileExists: () => true },
     });
     const result = await handlers.get(SESSION_DISCOVER)!({}, 'fixture', { detailed: true, forceRefresh: true }) as SessionDiscoveryResult;
     expect(result.issues).toEqual([]);
@@ -65,6 +73,20 @@ describe('local provider session fixtures', () => {
     expect(result.sessions.map((entry) => entry.timestamp)).toEqual([...result.sessions.map((entry) => entry.timestamp)].sort((a, b) => b - a));
     for (const entry of result.sessions) {
       expect(buildSessionLaunch(entry).args).toContain(entry.filePath ?? entry.id);
+      // Run the ordinary IPC handoff too: the six actual store readers and validators rediscover
+      // the native identity; only the PTY is faked. No harness/model call or transcript modification.
+      for (const fork of [false, true]) {
+        if (fork && !getHarnessProvider(entry.harness).sessions?.fork) continue;
+        spawn.mockClear();
+        await handlers.get(SESSION_INVOKE)!({}, 'fixture', { ...entry,
+          cwd: '/forged/outside', filePath: '/forged/evil.jsonl', modelId: 'bad&calc', provider: 'forged',
+        }, fork);
+        expect(spawn).toHaveBeenCalledOnce();
+        const options = spawn.mock.calls[0][0];
+        expect(options).toMatchObject({ harnessId: entry.harness, cwd: toNativePath(workspace, process.platform), checkoutContextId: 'fixture::main' });
+        expect(JSON.stringify(options.spawnArgs)).not.toMatch(/forged|bad&calc/);
+        expect(options.spawnArgs).toEqual(expect.arrayContaining([toNativePath(entry.filePath ?? entry.id, process.platform)]));
+      }
     }
     state.output = 'broken JSON';
     const log = vi.spyOn(console, 'warn').mockImplementation(() => {});

@@ -9,6 +9,7 @@ import { SESSION_DISCOVER, SESSION_INVOKE } from '../../../src/shared/ipcChannel
 import { removeAttentionAdapterFiles } from '../../../src/main/agentAttentionAdapters';
 import { createAgentLocationResolver } from '../../../src/main/agentLocation';
 import { worktreeDirectoryName } from '../../../src/main/worktreePaths';
+import { successfulSessionDiscovery } from '../../_helpers/sessionDiscovery';
 
 const { mockHandle, mockSpawnPty, mockDiscover } = vi.hoisted(() => ({ mockHandle: vi.fn(), mockSpawnPty: vi.fn(), mockDiscover: vi.fn() }));
 vi.mock('electron', () => ({ ipcMain: { handle: mockHandle }, BrowserWindow: vi.fn() }));
@@ -16,6 +17,7 @@ vi.mock('../../../src/main/ipc/ptySpawn', () => ({ spawnPtyProcess: mockSpawnPty
 vi.mock('../../../src/main/sessionHistory', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/main/sessionHistory')>()),
   discoverSessions: mockDiscover,
+  discoverSessionsDetailed: async (...args: unknown[]) => successfulSessionDiscovery(await mockDiscover(...args)),
 }));
 
 import { registerSessionIpc } from '../../../src/main/ipc/sessionIpc';
@@ -45,6 +47,7 @@ const live = (...branches: string[]) => branches.map((branch) => { fs.mkdirSync(
 function setup(options: {
   registered?: string[]; listed?: Array<{ path: string; branch: string | null; isPrunable?: boolean; isLocked?: boolean }>; branches?: string[];
   harnesses?: string[]; safe?: (dir: string, contexts: CheckoutContext[]) => string;
+  defaultFlags?: Record<string, { flags: string }>;
 } = {}) {
   const handlers = new Map<string, Handler>();
   mockHandle.mockImplementation((channel: string, handler: Handler) => handlers.set(channel, handler));
@@ -74,7 +77,7 @@ function setup(options: {
   const harnessIds = options.harnesses ?? ['codex', 'claude', 'pi', 'opencode', 'agy'];
   registerSessionIpc({
     getTerminals: () => new Map(), getMainWindow: () => null, getSafeWorkspacePath: (dir: string) => options.safe ? options.safe(dir, contexts) : dir, getIsShuttingDown: () => false,
-    getStore: () => ({ get: () => ({}) }) as never,
+    getStore: () => ({ get: () => options.defaultFlags ?? {} }) as never,
     getHarnessOptions: () => Object.fromEntries(harnessIds.map((id) => [id, { name: id, command: id, args: [], icon: '' }])),
     getWorkspaceRegistry: () => registry as never,
     listWorktrees: async () => ({ success: true, worktrees: listed.map((entry) => ({ isMain: false, isPrunable: false, isLocked: false, ...entry })) }),
@@ -110,15 +113,75 @@ describe('local resume of isolated-agent conversations', () => {
   it('resumes into the registered checkout context of a live worktree, in the session\'s own directory', async () => {
     const [liveDir] = live('feature/live');
     const { invoke, spawned } = setup({ registered: [liveDir], branches: ['main', 'feature/live'] });
+    mockDiscover.mockResolvedValue([session('codex', path.join(liveDir, 'src'))]);
     const result = await invoke(session('codex', path.join(liveDir, 'src')));
     expect(spawned()).toMatchObject({ cwd: path.join(liveDir, 'src'), checkoutContextId: 'ws::wt-0' });
     expect(result).toMatchObject({ checkoutContextId: 'ws::wt-0', checkoutContext: { id: 'ws::wt-0' }, workingDir: posix(path.join(liveDir, 'src')) });
     expect(result).not.toHaveProperty('resumeNotice');
   });
 
+  it('routes by the rediscovered checkout rather than stale renderer cwd or checkout labels', async () => {
+    const [liveDir] = live('feature/live');
+    const { invoke, spawned } = setup({ registered: [liveDir], branches: ['main', 'feature/live'] });
+    mockDiscover.mockResolvedValue([session('codex', path.join(liveDir, 'src'))]);
+    await invoke({ ...session('codex', workspacePath), checkout: { branch: 'forged', path: posix(workspacePath), exists: true } });
+    expect(spawned()).toMatchObject({ cwd: path.join(liveDir, 'src'), checkoutContextId: 'ws::wt-0' });
+  });
+
+  it('cannot request worktree recreation with a forged removed-checkout cwd for a main-checkout session', async () => {
+    const { invoke, spawned, recreateWorktree } = setup({ branches: ['main', 'feature/foo'] });
+    mockDiscover.mockResolvedValue([session('opencode', workspacePath)]);
+    const result = await invoke(session('opencode', path.join(generated('feature/foo'), 'src')), false, { recreateCheckout: true });
+    expect(result).not.toHaveProperty('recreateOffer');
+    expect(recreateWorktree).not.toHaveBeenCalled();
+    expect(spawned()).toMatchObject({ cwd: workspacePath, checkoutContextId: 'ws::main' });
+  });
+
+  it('rejects conflicting native-selection flags before recreating a removed checkout', async () => {
+    const t = setup({ branches: ['main', 'feature/foo'], defaultFlags: { opencode: { flags: '--session foreign' } } });
+    mockDiscover.mockResolvedValue([session('opencode', generated('feature/foo'))]);
+    await expect(t.invoke(session('opencode', generated('feature/foo')), false, { recreateCheckout: true })).rejects.toThrow('conflict with local session selection');
+    expect(t.registerCheckoutContext).not.toHaveBeenCalled();
+    expect(t.recreateWorktree).not.toHaveBeenCalled();
+    expect(fs.existsSync(generated('feature/foo'))).toBe(false);
+    expect(mockSpawnPty).not.toHaveBeenCalled();
+  });
+
+  it('refuses cross-checkout identity conflicts before adoption, recreation or PTY spawn', async () => {
+    const [liveDir] = live('feature/live');
+    const t = setup({ listed: [{ path: liveDir, branch: 'feature/live' }], branches: ['main', 'feature/live'] });
+    mockDiscover.mockImplementation(async (scope: string) => [session('opencode', scope === workspacePath ? workspacePath : liveDir)]);
+    await expect(t.invoke(session('opencode', workspacePath), false, { recreateCheckout: true })).rejects.toThrow('Conflicting');
+    expect(t.registerCheckoutContext).not.toHaveBeenCalled();
+    expect(t.recreateWorktree).not.toHaveBeenCalled();
+    expect(mockSpawnPty).not.toHaveBeenCalled();
+  });
+
+  it('does not offer or recreate a checkout after workspace closure during discovery', async () => {
+    const t = setup({ branches: ['main', 'feature/foo'] });
+    mockDiscover.mockImplementationOnce(async () => {
+      t.registry.getWorkspace = () => null;
+      return [session('opencode', generated('feature/foo'))];
+    });
+    await expect(t.invoke(session('opencode', generated('feature/foo')), false, { recreateCheckout: true })).rejects.toThrow('Workspace was closed');
+    expect(t.recreateWorktree).not.toHaveBeenCalled();
+    expect(mockSpawnPty).not.toHaveBeenCalled();
+  });
+
+  it.skipIf(process.platform === 'win32')('does not authorize a lexical in-workspace symlink whose native cwd resolves outside', async () => {
+    const outside = path.join(root, 'outside');
+    const alias = path.join(workspacePath, 'alias');
+    fs.mkdirSync(outside); fs.symlinkSync(outside, alias);
+    const t = setup();
+    mockDiscover.mockResolvedValue([session('opencode', alias)]);
+    await expect(t.invoke(session('opencode', workspacePath))).rejects.toThrow('outside the workspace');
+    expect(mockSpawnPty).not.toHaveBeenCalled();
+  });
+
   it('adopts an unmanaged live worktree through Git\'s listing before resuming into it', async () => {
     const [liveDir] = live('feature/live');
     const { invoke, spawned, registerCheckoutContext } = setup({ listed: [{ path: liveDir, branch: 'feature/live' }], branches: ['main', 'feature/live'] });
+    mockDiscover.mockResolvedValue([session('claude', liveDir)]);
     await invoke(session('claude', liveDir));
     expect(registerCheckoutContext).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'ws', kind: 'worktree', path: posix(liveDir) }));
     expect(spawned().checkoutContextId).toBe('ws::adopted');
@@ -126,6 +189,7 @@ describe('local resume of isolated-agent conversations', () => {
 
   it('resumes a portable harness in the main checkout and says so when the worktree was removed', async () => {
     const { invoke, spawned } = setup({ branches: ['main', 'feature/foo'] });
+    mockDiscover.mockResolvedValue([session('claude', path.join(generated('feature/foo'), 'src'))]);
     const result = await invoke(session('claude', path.join(generated('feature/foo'), 'src'))) as { resumeNotice?: string; checkoutContextId?: string; workingDir?: string };
     expect(spawned()).toMatchObject({ cwd: workspacePath, checkoutContextId: 'ws::main' });
     expect(result.checkoutContextId).toBe('ws::main');
@@ -167,6 +231,7 @@ describe('local resume of isolated-agent conversations', () => {
     expect(first.recreateWorktree).not.toHaveBeenCalled();
     const second = setup({ branches: ['main'] });
     // Deleted branch and never remembered: nothing proves the directory was this repository's worktree.
+    mockDiscover.mockResolvedValue([session('pi', cwd)]);
     await expect(second.invoke(session('pi', cwd))).rejects.toThrow(/outside the workspace/);
     expect(mockSpawnPty).not.toHaveBeenCalled();
   });
@@ -174,6 +239,7 @@ describe('local resume of isolated-agent conversations', () => {
   it('refuses stranger directories under the container, other repositories and dot-segment tricks', async () => {
     const { invoke } = setup({ branches: ['main', 'feature/foo'] });
     for (const cwd of [path.join(containerOf(), 'random-folder'), path.join(root, 'other-repo'), `${workspacePath}/../elsewhere`, `${containerOf()}-other/x`]) {
+      mockDiscover.mockResolvedValue([session('claude', cwd)]);
       await expect(invoke(session('claude', cwd))).rejects.toThrow(/outside the workspace/);
     }
     expect(mockSpawnPty).not.toHaveBeenCalled();
@@ -186,6 +252,7 @@ describe('resume fails closed and keeps main-side ownership', () => {
   it('never falls back to another directory when getSafeWorkspacePath leaves the selected worktree', async () => {
     const [liveDir] = live('feature/live');
     const { invoke } = setup({ registered: [liveDir], branches: ['main', 'feature/live'], safe: () => fallbackDir() });
+    mockDiscover.mockResolvedValue([session('claude', path.join(liveDir, 'src'))]);
     await expect(invoke(session('claude', path.join(liveDir, 'src')))).rejects.toThrow(/outside the checkout/);
     expect(mockSpawnPty).not.toHaveBeenCalled();
   });
@@ -197,12 +264,14 @@ describe('resume fails closed and keeps main-side ownership', () => {
       // The requested path is gone by the time it is resolved: the helper's own fallback is home/lastWorkspace.
       safe: (dir) => { fs.rmSync(liveDir, { recursive: true, force: true }); return fs.existsSync(dir) ? dir : fallbackDir(); },
     });
+    mockDiscover.mockResolvedValue([session('claude', path.join(liveDir, 'src'))]);
     await expect(invoke(session('claude', path.join(liveDir, 'src')))).rejects.toThrow(/outside the checkout/);
     expect(mockSpawnPty).not.toHaveBeenCalled();
   });
 
   it('confines main-checkout resume to the main root too', async () => {
     const { invoke } = setup({ safe: () => fallbackDir() });
+    mockDiscover.mockResolvedValue([session('claude', path.join(workspacePath, 'src'))]);
     await expect(invoke(session('claude', path.join(workspacePath, 'src')))).rejects.toThrow(/outside the checkout/);
     expect(mockSpawnPty).not.toHaveBeenCalled();
   });
@@ -213,6 +282,7 @@ describe('resume fails closed and keeps main-side ownership', () => {
       registered: [liveDir], branches: ['main', 'feature/live'],
       safe: (dir, contexts) => { contexts.splice(contexts.findIndex((entry) => entry.kind === 'worktree'), 1); return dir; },
     });
+    mockDiscover.mockResolvedValue([session('claude', liveDir)]);
     await expect(invoke(session('claude', liveDir))).rejects.toThrow(/closed or is being removed/);
     expect(mockSpawnPty).not.toHaveBeenCalled();
   });
@@ -220,6 +290,7 @@ describe('resume fails closed and keeps main-side ownership', () => {
   it('records the owning workspace in main so later location reports resolve (issue 99 behaviour after a resume)', async () => {
     const [liveDir] = live('feature/live');
     const t = setup({ registered: [liveDir], branches: ['main', 'feature/live'] });
+    mockDiscover.mockResolvedValue([session('claude', liveDir)]);
     await t.invoke(session('claude', liveDir));
     const options = t.spawned();
     expect(options).toMatchObject({ workspaceId: 'ws', checkoutContextId: 'ws::wt-0' });
